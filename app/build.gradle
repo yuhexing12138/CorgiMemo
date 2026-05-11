@@ -1,0 +1,154 @@
+// 应用模块构建配置文件
+// 配置当前应用模块的编译选项、依赖等
+
+plugins {
+    // Android 应用插件
+    id 'com.android.application'
+    
+    // Kotlin 插件
+    id 'org.jetbrains.kotlin.android'
+    
+    // Hilt 依赖注入插件
+    id 'com.google.dagger.hilt.android'
+    
+    // Kotlin 注解处理器插件（用于 Room、Hilt 等）
+    id 'kotlin-kapt'
+}
+
+android {
+    // 编译 SDK 版本（Android 14）
+    compileSdk 34
+
+    // 默认配置
+    defaultConfig {
+        // 应用包名
+        applicationId "com.corgimemo.app"
+        
+        // 最低支持的 Android 版本（Android 8.0）
+        minSdk 26
+        
+        // 目标 Android 版本（Android 14）
+        targetSdk 34
+        
+        // 版本号和版本名称
+        versionCode 1
+        versionName "1.0"
+
+        // 测试工具配置
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        
+        // 启用 Compose 功能
+        vectorDrawables {
+            useSupportLibrary true
+        }
+    }
+
+    // 构建类型配置
+    buildTypes {
+        release {
+            // 启用代码压缩（混淆）
+            minifyEnabled false
+            
+            // 配置混淆规则文件
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    // Kotlin 编译配置
+    compileOptions {
+        // 使用 Java 17 特性
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    
+    kotlinOptions {
+        // 启用 Java 17 特性支持
+        jvmTarget = '17'
+        
+        // 启用 Compose 编译器插件
+        freeCompilerArgs += [
+            "-Xopt-in=kotlin.RequiresOptIn",
+            "-Xallow-jvm-ir-dependencies"
+        ]
+    }
+
+    // Compose 构建配置
+    buildFeatures {
+        compose true
+    }
+    
+    composeOptions {
+        // 指定 Compose 编译器版本
+        kotlinCompilerExtensionVersion "1.5.3"
+    }
+
+    // 资源配置
+    packagingOptions {
+        resources {
+            // 排除重复的元数据文件
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
+}
+
+// 依赖配置
+dependencies {
+    // ============ AndroidX 基础库 ============
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'androidx.activity:activity-compose:1.8.2'
+    
+    // ============ Jetpack Compose ============
+    // Compose UI 核心库
+    implementation "androidx.compose.ui:ui:1.6.1"
+    
+    // Compose Material3 组件库（新版 Material Design）
+    implementation "androidx.compose.material3:material3:1.2.1"
+    
+    // Compose UI 工具库（如状态管理、动画等）
+    implementation "androidx.compose.ui:ui-tooling-preview:1.6.1"
+    
+    // Compose 测试工具
+    debugImplementation "androidx.compose.ui:ui-tooling:1.6.1"
+    
+    // ============ Room 数据库 ============
+    // Room 运行时库
+    implementation "androidx.room:room-runtime:$roomVersion"
+    
+    // Room Kotlin 扩展（支持协程）
+    implementation "androidx.room:room-ktx:$roomVersion"
+    
+    // Room 注解处理器（编译期生成代码）
+    kapt "androidx.room:room-compiler:$roomVersion"
+    
+    // ============ Hilt 依赖注入 ============
+    // Hilt 核心库
+    implementation "com.google.dagger:hilt-android:$hiltVersion"
+    
+    // Hilt 注解处理器
+    kapt "com.google.dagger:hilt-compiler:$hiltVersion"
+    
+    // Hilt 与 Navigation 集成
+    implementation "androidx.hilt:hilt-navigation-compose:1.1.0"
+    
+    // ============ Navigation 导航 ============
+    // Compose 导航组件
+    implementation "androidx.navigation:navigation-compose:$navigationVersion"
+    
+    // ============ 协程 ============
+    // Android 协程支持
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion"
+    
+    // ============ Koin 依赖注入 ============
+    // Koin 核心库
+    implementation "io.insert-koin:koin-android:3.5.0"
+    // Koin Compose 支持
+    implementation "io.insert-koin:koin-androidx-compose:3.5.0"
+    
+    // ============ 测试依赖 ============
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    androidTestImplementation "androidx.compose.ui:ui-test-junit4:1.6.1"
+    debugImplementation "androidx.compose.ui:ui-test-manifest:1.6.1"
+}

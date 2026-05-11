@@ -1,0 +1,27 @@
+# Gradle 文件
+.gradle/
+build/
+
+# 本地配置文件
+local.properties
+
+# IDE 文件
+.idea/
+*.iml
+
+# 编译输出
+app/build/
+*.apk
+*.aab
+
+# 密钥文件（重要！）
+*.jks
+*.keystore
+key.properties
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log

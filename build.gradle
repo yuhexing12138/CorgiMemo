@@ -1,0 +1,53 @@
+// 项目级构建配置文件
+// 这里配置适用于项目中所有模块的构建选项
+
+buildscript {
+    // 定义所有模块共用的依赖版本
+    ext {
+        // Android 构建工具版本
+        compileSdkVersion = 34
+        minSdkVersion = 26
+        targetSdkVersion = 34
+        
+        // Jetpack Compose 版本
+        composeVersion = "1.6.1"
+        
+        // Hilt 依赖注入版本
+        hiltVersion = "2.48"
+        
+        // Room 数据库版本
+        roomVersion = "2.6.1"
+        
+        // Navigation 导航版本
+        navigationVersion = "2.7.7"
+        
+        // 协程版本
+        coroutinesVersion = "1.7.3"
+    }
+    
+    // 依赖仓库
+    repositories {
+        google()
+        mavenCentral()
+    }
+    
+    // 构建脚本依赖（用于编译期处理）
+    dependencies {
+        classpath "com.android.tools.build:gradle:8.3.0"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.20"
+        classpath "com.google.dagger:hilt-android-gradle-plugin:$hiltVersion"
+    }
+}
+
+// 配置项目中所有模块
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+// 清理任务
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}

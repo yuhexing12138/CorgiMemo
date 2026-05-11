@@ -1,0 +1,31 @@
+<!-- 深色模式颜色配置文件 -->
+
+<resources>
+    <!-- 主色调 - 暖橙色（保持不变） -->
+    <color name="colorPrimary">#FF9A5C</color>
+    <color name="colorPrimaryDark">#E88A4B</color>
+    <color name="colorPrimaryLight">#FFB380</color>
+    
+    <!-- 辅助色 -->
+    <color name="colorSecondary">#FFB380</color>
+    <color name="colorSecondaryVariant">#E8A06A</color>
+    
+    <!-- 深色背景色 -->
+    <color name="colorBackground">#1C1C1E</color>
+    <color name="colorSurface">#2C2C2E</color>
+    
+    <!-- 文字颜色（深色模式下更亮） -->
+    <color name="colorOnPrimary">#1C1C1E</color>
+    <color name="colorOnSecondary">#1C1C1E</color>
+    <color name="colorOnBackground">#FFFFFF</color>
+    <color name="colorOnSurface">#FFFFFF</color>
+    
+    <!-- 错误和警告颜色 -->
+    <color name="colorError">#FF6E6E</color>
+    <color name="colorOnError">#FFFFFF</color>
+    
+    <!-- 其他常用颜色 -->
+    <color name="colorDivider">#3A3A3C</color>
+    <color name="colorSuccess">#66BB6A</color>
+    <color name="colorWarning">#FFB74D</color>
+</resources>

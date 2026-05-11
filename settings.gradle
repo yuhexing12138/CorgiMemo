@@ -1,0 +1,25 @@
+// 项目设置文件
+// 定义项目包含的模块和构建配置
+
+pluginManagement {
+    repositories {
+        // Gradle 插件仓库
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    // 依赖版本管理
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        // 依赖仓库
+        google()
+        mavenCentral()
+    }
+}
+
+// 项目名称和模块
+rootProject.name = "CorgiMemo"
+include ':app'
