@@ -1,36 +1,96 @@
 package com.corgimemo.app.ui
 
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.activity.compose.setContent
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
+import com.corgimemo.app.data.model.CorgiData
+import com.corgimemo.app.data.repository.CorgiRepository
+import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.ui.theme.CorgiMemoTheme
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import javax.inject.Inject
 
-/**
- * 应用的主 Activity
- * 
- * 作为应用的入口点，负责设置 Compose 内容和主题
- */
-class MainActivity : AppCompatActivity() {
-    
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var todoRepository: TodoRepository
+
+    @Inject
+    lateinit var corgiRepository: CorgiRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // 设置 Compose 内容
+        // 初始化数据库
+        initDatabase()
+
         setContent {
-            // 应用主题
             CorgiMemoTheme {
-                // 表面容器，提供背景色
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    // 应用主内容（导航宿主）
-                    CorgiMemoApp()
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "CorgiMemo",
+                            fontSize = 32.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.headlineLarge
+                        )
+                        Text(
+                            text = "你的专属备忘录",
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Text(
+                            text = "数据库已初始化",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
                 }
+            }
+        }
+    }
+
+    private fun initDatabase() {
+        lifecycleScope.launch {
+            // 检查是否已有柯基数据
+            val existingCorgi = corgiRepository.getCorgiData()
+            if (existingCorgi == null) {
+                // 创建初始柯基数据
+                val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                val today = dateFormat.format(Date())
+                
+                val newCorgi = CorgiData(
+                    name = "小柯基",
+                    lastActiveDate = today
+                )
+                corgiRepository.insertCorgi(newCorgi)
             }
         }
     }

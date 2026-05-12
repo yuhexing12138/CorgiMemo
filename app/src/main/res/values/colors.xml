@@ -1,32 +1,5 @@
-<!-- 颜色配置文件 -->
-<!-- 浅色模式下的颜色定义 -->
-
 <resources>
-    <!-- 主色调 - 暖橙色 -->
-    <color name="colorPrimary">#FF9A5C</color>
-    <color name="colorPrimaryDark">#E88A4B</color>
-    <color name="colorPrimaryLight">#FFB380</color>
-    
-    <!-- 辅助色 - 橙色系变体 -->
-    <color name="colorSecondary">#FFB380</color>
-    <color name="colorSecondaryVariant">#FFCC99</color>
-    
-    <!-- 背景色 -->
-    <color name="colorBackground">#FFFFFF</color>
-    <color name="colorSurface">#FFFFFF</color>
-    
-    <!-- 文字颜色 -->
-    <color name="colorOnPrimary">#FFFFFF</color>
-    <color name="colorOnSecondary">#000000</color>
-    <color name="colorOnBackground">#1C1C1E</color>
-    <color name="colorOnSurface">#1C1C1E</color>
-    
-    <!-- 错误和警告颜色 -->
-    <color name="colorError">#FF5252</color>
-    <color name="colorOnError">#FFFFFF</color>
-    
-    <!-- 其他常用颜色 -->
-    <color name="colorDivider">#E0E0E0</color>
-    <color name="colorSuccess">#4CAF50</color>
-    <color name="colorWarning">#FF9800</color>
+    <color name="primary">#FF9A5C</color>
+    <color name="primaryDark">#E8844A</color>
+    <color name="accent">#FFB380</color>
 </resources>

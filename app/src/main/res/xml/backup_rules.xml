@@ -1,5 +1,3 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- 备份数据库文件 -->
-    <include domain="database" path="corgimemo_db"/>
 </full-backup-content>

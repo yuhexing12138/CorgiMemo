@@ -1,34 +1,30 @@
 package com.corgimemo.app.di
 
-import android.content.Context
-import com.corgimemo.app.data.local.db.AppDatabase
-import com.corgimemo.app.data.local.db.TodoDao
-import com.corgimemo.app.data.repository.TodoRepository
-import org.koin.android.ext.koin.androidContext
-import org.koin.dsl.module
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import javax.inject.Qualifier
 
-/**
- * Koin 依赖注入模块配置
- * 
- * 定义应用中所有需要依赖注入的组件
- */
-val appModule = module {
+@Module
+@InstallIn(SingletonComponent::class)
+object AppModule {
 
-    // 单例：数据库实例
-    single {
-        AppDatabase.getInstance(androidContext())
-    }
+    @Provides
+    @IoDispatcher
+    fun provideIoDispatcher(): CoroutineDispatcher = Dispatchers.IO
 
-    // 单例：TodoDao
-    single<TodoDao> {
-        get<AppDatabase>().todoDao()
-    }
-
-    // 单例：TodoRepository
-    single {
-        TodoRepository(get())
-    }
-
-    // ViewModel 定义（使用 by viewModels() 或 koinViewModel() 自动注入）
-    // ViewModel 的注入通过 Koin 的 viewModel 函数自动处理
+    @Provides
+    @MainDispatcher
+    fun provideMainDispatcher(): CoroutineDispatcher = Dispatchers.Main
 }
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class IoDispatcher
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class MainDispatcher

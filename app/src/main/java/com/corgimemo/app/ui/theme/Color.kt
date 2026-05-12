@@ -2,80 +2,60 @@ package com.corgimemo.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-/**
- * 暖橙色主题颜色定义
- * 主色调: #FF9A5C (暖橙色)
- */
-
-// ============ 主色（Primary）===========
 val OrangePrimary = Color(0xFFFF9A5C)
-val OrangeOnPrimary = Color(0xFF1C1C1E)
-val OrangePrimaryContainer = Color(0xFFFFE4D0)
-val OrangeOnPrimaryContainer = Color(0xFF3D1F0A)
+val OrangePrimaryLight = Color(0xFFFFB88A)
+val OrangePrimaryDark = Color(0xFFE68044)
+val OrangeSecondary = Color(0xFFFFC9A0)
+val OrangeTertiary = Color(0xFFFFE4D0)
 
-// ============ 次色（Secondary）===========
-val OrangeSecondary = Color(0xFFFFB380)
-val OrangeOnSecondary = Color(0xFF2D1808)
-val OrangeSecondaryContainer = Color(0xFFFFEDDF)
-val OrangeOnSecondaryContainer = Color(0xFF4A2810)
+val DarkOrangePrimary = Color(0xFFFFB380)
+val DarkOrangePrimaryLight = Color(0xFFFFD4B3)
+val DarkOrangePrimaryDark = Color(0xFFE68044)
 
-// ============ 第三色（Tertiary）===========
-val OrangeTertiary = Color(0xFFFFCC99)
-val OrangeOnTertiary = Color(0xFF3D220A)
-val OrangeTertiaryContainer = Color(0xFFFFF5EB)
-val OrangeOnTertiaryContainer = Color(0xFF5C3515)
+val LightColorScheme = androidx.compose.material3.lightColorScheme(
+    primary = OrangePrimary,
+    onPrimary = Color.White,
+    primaryContainer = OrangeSecondary,
+    onPrimaryContainer = Color(0xFF4A2C1A),
+    secondary = OrangeTertiary,
+    onSecondary = Color(0xFF5D3A1A),
+    secondaryContainer = OrangeSecondary,
+    onSecondaryContainer = Color(0xFF4A2C1A),
+    background = Color(0xFFFFFBF5),
+    onBackground = Color(0xFF2D1B0E),
+    surface = Color.White,
+    onSurface = Color(0xFF2D1B0E),
+    surfaceVariant = OrangeTertiary,
+    onSurfaceVariant = Color(0xFF5D4030),
+    error = Color(0xFFDC2626),
+    onError = Color.White,
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF410002),
+    outline = Color(0xFF8B7355),
+    outlineVariant = Color(0xFFD4C4B0),
+    scrim = Color(0xFF000000)
+)
 
-// ============ 浅色模式背景 ============
-val LightBackground = Color(0xFFFFFFFF)
-val LightOnBackground = Color(0xFF1C1C1E)
-val LightSurface = Color(0xFFFFFFFF)
-val LightOnSurface = Color(0xFF1C1C1E)
-val LightSurfaceVariant = Color(0xFFF5F5F5)
-val LightOnSurfaceVariant = Color(0xFF424242)
-
-// ============ 深色模式背景 ============
-val DarkBackground = Color(0xFF1C1C1E)
-val DarkOnBackground = Color(0xFFFFFFFF)
-val DarkSurface = Color(0xFF2C2C2E)
-val DarkOnSurface = Color(0xFFFFFFFF)
-val DarkSurfaceVariant = Color(0xFF3A3A3C)
-val DarkOnSurfaceVariant = Color(0xFFC8C8C8)
-
-// ============ 深色模式橙色变体 ============
-val DarkOrangeOnPrimary = Color(0xFF1C1C1E)
-val DarkOrangePrimaryContainer = Color(0xFF3D1F0A)
-val DarkOrangeOnPrimaryContainer = Color(0xFFFFE4D0)
-val DarkOrangeSecondary = Color(0xFFE8A06A)
-val DarkOrangeOnSecondary = Color(0xFF1C1C1E)
-val DarkOrangeSecondaryContainer = Color(0xFF2D1808)
-val DarkOrangeOnSecondaryContainer = Color(0xFFFFEDDF)
-val DarkOrangeTertiary = Color(0xFFE8B37A)
-val DarkOrangeOnTertiary = Color(0xFF1C1C1E)
-val DarkOrangeTertiaryContainer = Color(0xFF3D220A)
-val DarkOrangeOnTertiaryContainer = Color(0xFFFFF5EB)
-
-// ============ 错误颜色 ============
-val LightError = Color(0xFFFF5252)
-val LightOnError = Color(0xFFFFFFFF)
-val LightErrorContainer = Color(0xFFFFEBEE)
-val LightOnErrorContainer = Color(0xFFC62828)
-
-val DarkError = Color(0xFFFF6E6E)
-val DarkOnError = Color(0xFF1C1C1E)
-val DarkErrorContainer = Color(0xFF410E0E)
-val DarkOnErrorContainer = Color(0xFFFFB4AB)
-
-// ============ 其他颜色 ============
-val LightOutline = Color(0xFFE0E0E0)
-val LightOutlineVariant = Color(0xFFBDBDBD)
-val LightScrim = Color(0x99000000)
-val LightInverseSurface = Color(0xFF1C1C1E)
-val LightInverseOnSurface = Color(0xFFFFFFFF)
-val LightInversePrimary = Color(0xFFFFB380)
-
-val DarkOutline = Color(0xFF3A3A3C)
-val DarkOutlineVariant = Color(0xFF525252)
-val DarkScrim = Color(0x99000000)
-val DarkInverseSurface = Color(0xFFEFEFEF)
-val DarkInverseOnSurface = Color(0xFF1C1C1E)
-val DarkInversePrimary = Color(0xFFFFB380)
+val DarkColorScheme = androidx.compose.material3.darkColorScheme(
+    primary = DarkOrangePrimary,
+    onPrimary = Color(0xFF4A2C1A),
+    primaryContainer = DarkOrangePrimaryDark,
+    onPrimaryContainer = Color(0xFFFFE4D0),
+    secondary = Color(0xFFCC8855),
+    onSecondary = Color(0xFFFFE4D0),
+    secondaryContainer = Color(0xFF8B5A35),
+    onSecondaryContainer = Color(0xFFFFE4D0),
+    background = Color(0xFF1A0F08),
+    onBackground = Color(0xFFFFE4D0),
+    surface = Color(0xFF2D1B0E),
+    onSurface = Color(0xFFFFE4D0),
+    surfaceVariant = Color(0xFF4A3525),
+    onSurfaceVariant = Color(0xFFD4C4B0),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFB4AB),
+    outline = Color(0xFFA39078),
+    outlineVariant = Color(0xFF4A3525),
+    scrim = Color(0xFF000000)
+)

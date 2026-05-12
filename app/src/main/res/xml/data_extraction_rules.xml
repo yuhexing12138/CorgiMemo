@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
-    <!-- 允许提取应用数据 -->
     <cloud-backup>
-        <include domain="database" path="corgimemo_db"/>
+        <include domain="sharedpref" path="." />
+        <include domain="database" path="." />
     </cloud-backup>
-    <device-transfer>
-        <include domain="database" path="corgimemo_db"/>
-    </device-transfer>
 </data-extraction-rules>

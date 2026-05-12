@@ -1,29 +1,29 @@
 package com.corgimemo.app.data.model
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
-import java.time.LocalDateTime
-import java.util.UUID
 
-/**
- * 待办事项数据模型
- * 
- * 使用 Room 数据库注解定义实体
- * 
- * @param id 唯一标识（UUID）
- * @param title 待办标题
- * @param description 待办描述（可选）
- * @param isCompleted 是否已完成
- * @param createdAt 创建时间
- * @param updatedAt 更新时间
- */
-@Entity(tableName = "todo_items")
+@Entity(
+    tableName = "todo_items",
+    indices = [
+        Index(value = ["status", "createdAt"]),
+        Index(value = ["categoryId", "status"]),
+        Index(value = ["priority", "dueDate"])
+    ]
+)
 data class TodoItem(
-    @PrimaryKey
-    val id: String = UUID.randomUUID().toString(),
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
     val title: String,
-    val description: String? = null,
-    val isCompleted: Boolean = false,
-    val createdAt: LocalDateTime = LocalDateTime.now(),
-    val updatedAt: LocalDateTime = LocalDateTime.now()
+    val content: String? = null,
+    val categoryId: Long,
+    val priority: Int,
+    val status: Int,
+    val dueDate: Long? = null,
+    val reminderTime: Long? = null,
+    val repeatType: Int,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val completedAt: Long? = null
 )

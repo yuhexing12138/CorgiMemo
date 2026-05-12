@@ -1,30 +1,6 @@
-<!-- 应用字符串资源 -->
-
 <resources>
-    <!-- 应用名称 -->
     <string name="app_name">CorgiMemo</string>
-    
-    <!-- 首页 -->
-    <string name="home_title">柯基备忘录</string>
-    <string name="home_add_todo">添加待办</string>
-    <string name="home_no_todo">暂无待办事项</string>
-    
-    <!-- 待办页面 -->
-    <string name="todo_title">新建待办</string>
-    <string name="todo_edit_title">编辑待办</string>
-    <string name="todo_title_hint">输入待办标题...</string>
-    <string name="todo_description_hint">输入待办描述...</string>
-    <string name="todo_save">保存</string>
-    <string name="todo_cancel">取消</string>
-    
-    <!-- 个人页面 -->
+    <string name="home_title">首页</string>
+    <string name="todo_title">待办</string>
     <string name="profile_title">我的</string>
-    <string name="profile_settings">设置</string>
-    <string name="profile_about">关于我们</string>
-    <string name="profile_dark_mode">深色模式</string>
-    
-    <!-- 通用提示 -->
-    <string name="error">出错了</string>
-    <string name="success">操作成功</string>
-    <string name="confirm_delete">确定要删除吗？</string>
 </resources>
