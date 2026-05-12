@@ -25,5 +25,12 @@ data class TodoItem(
     val repeatType: Int,
     val createdAt: Long,
     val updatedAt: Long,
-    val completedAt: Long? = null
+    val completedAt: Long? = null,
+    // 地理围栏相关字段
+    val geofenceLat: Double? = null,
+    val geofenceLng: Double? = null,
+    val geofenceRadius: Float? = null,
+    val geofenceType: Int = 0,
+    val geofenceEnabled: Boolean = false,
+    val geofenceAddress: String? = null
 )

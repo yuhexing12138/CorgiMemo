@@ -4,12 +4,14 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.TodoItem
 
 @Database(
     entities = [TodoItem::class, CorgiData::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -30,9 +32,22 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     context.applicationContext,
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
-                ).build()
+                )
+                    .addMigrations(MIGRATION_2_3)
+                    .build()
                 INSTANCE = instance
                 instance
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceLat REAL")
+                database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceLng REAL")
+                database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceRadius REAL")
+                database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceType INTEGER DEFAULT 0")
+                database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceEnabled INTEGER DEFAULT 0")
+                database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceAddress TEXT")
             }
         }
     }

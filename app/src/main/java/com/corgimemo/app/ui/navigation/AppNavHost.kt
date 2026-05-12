@@ -1,0 +1,34 @@
+package com.corgimemo.app.ui.navigation
+
+import androidx.compose.runtime.Composable
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import com.corgimemo.app.ui.screens.home.HomeScreen
+import com.corgimemo.app.ui.screens.profile.ProfileScreen
+import com.corgimemo.app.ui.screens.todo.TodoEditScreen
+
+@Composable
+fun AppNavHost(navController: NavHostController) {
+    NavHost(
+        navController = navController,
+        startDestination = Screen.Home.route
+    ) {
+        composable(Screen.Home.route) {
+            HomeScreen(navController = navController)
+        }
+        
+        composable(Screen.TodoEdit.route) {
+            TodoEditScreen(navController = navController)
+        }
+        
+        composable(Screen.TodoEditWithId.route) { backStackEntry ->
+            val todoId = backStackEntry.arguments?.getString("todoId")?.toLongOrNull()
+            TodoEditScreen(navController = navController, todoId = todoId)
+        }
+        
+        composable(Screen.Profile.route) {
+            ProfileScreen(navController = navController)
+        }
+    }
+}
