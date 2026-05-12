@@ -27,18 +27,27 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.ui.components.CorgiCompanion
+import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.ui.components.EmptyState
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.viewmodel.HomeViewModel
 
+/**
+ * 首页屏幕组件
+ * 包含柯基陪伴展示和待办列表
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     navController: NavController,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
+    // 收集状态
     val todos by viewModel.todos.collectAsState()
     val filterStatus by viewModel.filterStatus.collectAsState()
+    val corgiData by viewModel.corgiData.collectAsState()
+    val showNamerDialog by viewModel.showNamerDialog.collectAsState()
 
     Scaffold(
         topBar = {
@@ -59,6 +68,10 @@ fun HomeScreen(
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)) {
             Column(modifier = Modifier.fillMaxSize()) {
+                // 柯基陪伴展示组件
+                CorgiCompanion(corgiData = corgiData)
+
+                // 过滤器按钮
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -82,6 +95,7 @@ fun HomeScreen(
                     )
                 }
 
+                // 待办列表或空状态
                 if (todos.isEmpty()) {
                     EmptyState()
                 } else {
@@ -98,9 +112,20 @@ fun HomeScreen(
                 }
             }
         }
+
+        // 命名对话框（首次启动时显示）
+        if (showNamerDialog) {
+            CorgiNamerDialog(
+                onConfirm = { name -> viewModel.saveCorgiName(name) },
+                onDismiss = { viewModel.dismissNamerDialog() }
+            )
+        }
     }
 }
 
+/**
+ * 过滤器按钮组件
+ */
 @Composable
 fun FilterButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
     Button(
