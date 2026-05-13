@@ -49,18 +49,5 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun initDatabase() {
-        lifecycleScope.launch {
-            val existingCorgi = corgiRepository.getCorgiData()
-            if (existingCorgi == null) {
-                val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                val today = dateFormat.format(Date())
-                
-                val newCorgi = CorgiData(
-                    name = "小柯基",
-                    lastActiveDate = today
-                )
-                corgiRepository.insertCorgi(newCorgi)
-            }
-        }
     }
 }

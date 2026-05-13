@@ -33,17 +33,12 @@ import com.corgimemo.app.ui.components.EmptyState
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.viewmodel.HomeViewModel
 
-/**
- * 首页屏幕组件
- * 包含柯基陪伴展示和待办列表
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     navController: NavController,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
-    // 收集状态
     val todos by viewModel.todos.collectAsState()
     val filterStatus by viewModel.filterStatus.collectAsState()
     val corgiData by viewModel.corgiData.collectAsState()
@@ -68,10 +63,8 @@ fun HomeScreen(
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // 柯基陪伴展示组件
                 CorgiCompanion(corgiData = corgiData)
 
-                // 过滤器按钮
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -95,12 +88,11 @@ fun HomeScreen(
                     )
                 }
 
-                // 待办列表或空状态
                 if (todos.isEmpty()) {
                     EmptyState()
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(todos) { todo ->
+                        items(todos, key = { it.id }) { todo ->
                             TodoListItem(
                                 todo = todo,
                                 onToggleComplete = { id, isChecked -> viewModel.toggleTodoStatus(id, isChecked) },
@@ -113,7 +105,6 @@ fun HomeScreen(
             }
         }
 
-        // 命名对话框（首次启动时显示）
         if (showNamerDialog) {
             CorgiNamerDialog(
                 onConfirm = { name -> viewModel.saveCorgiName(name) },
@@ -123,9 +114,6 @@ fun HomeScreen(
     }
 }
 
-/**
- * 过滤器按钮组件
- */
 @Composable
 fun FilterButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
     Button(

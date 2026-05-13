@@ -9,6 +9,15 @@ android {
     namespace = "com.corgimemo.app"
     compileSdk = 34
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../corgimemo-key.jks")
+            storePassword = "yhx31415926@"
+            keyAlias = "corgimemo"
+            keyPassword = "yhx31415926@"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.corgimemo.app"
         minSdk = 26
@@ -24,6 +33,7 @@ android {
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
