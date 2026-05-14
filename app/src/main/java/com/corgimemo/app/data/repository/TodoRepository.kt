@@ -64,4 +64,23 @@ class TodoRepository @Inject constructor(
 
     fun getTodosByStatusPriorityDueDate(status: Int): Flow<List<TodoItem>> = 
         todoDao.getTodosByStatusPriorityDueDate(status)
+
+    /**
+     * 获取指定分类已完成任务数
+     *
+     * @param categoryId 分类 ID
+     * @return 已完成任务数
+     */
+    suspend fun getCompletedCountByCategory(categoryId: Long): Int = withContext(ioDispatcher) {
+        todoDao.getCompletedCountByCategory(categoryId)
+    }
+
+    /**
+     * 获取累计完成任务总数
+     *
+     * @return 累计完成任务数
+     */
+    suspend fun getTotalCompletedCount(): Int = withContext(ioDispatcher) {
+        todoDao.getTotalCompletedCount()
+    }
 }

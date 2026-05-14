@@ -49,4 +49,10 @@ interface CorgiDao {
 
     @Query("UPDATE corgi_data SET consecutiveDays = 0")
     suspend fun resetConsecutiveDays()
+
+    @Query("UPDATE corgi_data SET unlockedAchievements = :achievements")
+    suspend fun updateUnlockedAchievements(achievements: String)
+
+    @Query("UPDATE corgi_data SET maxConsecutiveDays = :days")
+    suspend fun updateMaxConsecutiveDays(days: Int)
 }

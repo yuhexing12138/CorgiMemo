@@ -36,6 +36,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +52,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.ui.components.LocationPicker
+import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.TodoEditViewModel
 import kotlinx.coroutines.launch
@@ -63,7 +65,8 @@ import java.util.Locale
 fun TodoEditScreen(
     navController: NavController,
     todoId: Long? = null,
-    viewModel: TodoEditViewModel = hiltViewModel()
+    viewModel: TodoEditViewModel = hiltViewModel(),
+    homeViewModel: HomeViewModel = hiltViewModel()
 ) {
     val title by viewModel.title.collectAsState()
     val content by viewModel.content.collectAsState()
@@ -106,6 +109,10 @@ fun TodoEditScreen(
 
     if (todoId != null && todoId > 0) {
         viewModel.loadTodo(todoId)
+    }
+
+    LaunchedEffect(Unit) {
+        homeViewModel.setPoseForCreating()
     }
 
     if (speechResult.isNotEmpty()) {
@@ -273,6 +280,7 @@ fun TodoEditScreen(
             Button(
                 onClick = {
                     if (viewModel.saveTodo()) {
+                        homeViewModel.setPoseForLoading()
                         navController.popBackStack()
                     }
                 },

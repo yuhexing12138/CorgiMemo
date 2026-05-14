@@ -64,4 +64,22 @@ class CorgiRepository @Inject constructor(
     suspend fun resetConsecutiveDays() = withContext(ioDispatcher) {
         corgiDao.resetConsecutiveDays()
     }
+
+    /**
+     * 更新已解锁成就列表
+     *
+     * @param achievements 成就 ID JSON 字符串
+     */
+    suspend fun updateUnlockedAchievements(achievements: String) = withContext(ioDispatcher) {
+        corgiDao.updateUnlockedAchievements(achievements)
+    }
+
+    /**
+     * 更新历史最长连续天数
+     *
+     * @param days 天数
+     */
+    suspend fun updateMaxConsecutiveDays(days: Int) = withContext(ioDispatcher) {
+        corgiDao.updateMaxConsecutiveDays(days)
+    }
 }

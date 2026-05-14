@@ -53,4 +53,10 @@ interface TodoDao {
 
     @Query("SELECT * FROM todo_items WHERE status = :status ORDER BY priority DESC, dueDate ASC")
     fun getTodosByStatusPriorityDueDate(status: Int): Flow<List<TodoItem>>
+
+    @Query("SELECT COUNT(*) FROM todo_items WHERE status = 1 AND categoryId = :categoryId")
+    suspend fun getCompletedCountByCategory(categoryId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM todo_items WHERE status = 1")
+    suspend fun getTotalCompletedCount(): Int
 }
