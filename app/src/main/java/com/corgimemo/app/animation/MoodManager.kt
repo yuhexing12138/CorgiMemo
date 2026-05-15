@@ -140,6 +140,81 @@ object MoodManager {
         }
     }
 
+    // ==================== 情绪变化检测 ====================
+
+    /**
+     * 显著变化阈值
+     * 变化幅度超过此值时显示提示
+     */
+    const val SIGNIFICANT_CHANGE_THRESHOLD = 20
+
+    /**
+     * 判断情绪值变化是否显著
+     *
+     * @param oldMood 旧情绪值
+     * @param newMood 新情绪值
+     * @return 是否显著变化
+     */
+    fun isSignificantChange(oldMood: Int, newMood: Int): Boolean {
+        return kotlin.math.abs(newMood - oldMood) >= SIGNIFICANT_CHANGE_THRESHOLD
+    }
+
+    /**
+     * 获取情绪变化提示消息
+     *
+     * @param oldMood 旧情绪值
+     * @param newMood 新情绪值
+     * @param completionRate 今日完成率（0-1）
+     * @param overdueCount 超期任务数
+     * @param consecutiveDays 连续活跃天数
+     * @return 提示消息字符串
+     */
+    fun getChangeMessage(
+        oldMood: Int,
+        newMood: Int,
+        completionRate: Float = 0f,
+        overdueCount: Int = 0,
+        consecutiveDays: Int = 0
+    ): String {
+        val delta = newMood - oldMood
+        return when {
+            delta > 0 -> getPositiveChangeMessage(completionRate, consecutiveDays, delta)
+            delta < 0 -> getNegativeChangeMessage(overdueCount, delta)
+            else -> "柯基的心情保持稳定~"
+        }
+    }
+
+    /**
+     * 获取正面变化提示消息
+     */
+    private fun getPositiveChangeMessage(
+        completionRate: Float,
+        consecutiveDays: Int,
+        delta: Int
+    ): String {
+        return when {
+            completionRate >= 0.8f -> "今天任务完成率高，柯基很开心！🎉"
+            consecutiveDays >= 3 -> "连续打卡中，柯基越来越有活力！💪"
+            delta >= 30 -> "完成了不少任务，柯基心情大好！🎊"
+            else -> "完成了不少任务，柯基心情不错！😊"
+        }
+    }
+
+    /**
+     * 获取负面变化提示消息
+     */
+    private fun getNegativeChangeMessage(
+        overdueCount: Int,
+        delta: Int
+    ): String {
+        return when {
+            overdueCount >= 3 -> "好多任务超期了，柯基有点担心... 😟"
+            overdueCount >= 1 -> "待办堆积中，柯基有点焦虑... 😔"
+            delta <= -30 -> "柯基情绪有点低落，快来陪陪它吧... 🥺"
+            else -> "好多任务还没完成，柯基有点焦虑... 😔"
+        }
+    }
+
     // ==================== 兼容旧接口（保持向后兼容） ====================
 
     // 情绪变化值

@@ -141,6 +141,68 @@ private fun AnimatedHeartParticle(particle: HeartParticle) {
 }
 
 /**
+ * 持续模式的爱心粒子特效
+ * 只要 isActive 为 true，动画就持续
+ *
+ * @param isActive 是否激活特效
+ * @param particleCount 粒子数量
+ * @param modifier 修饰符
+ */
+@Composable
+fun HeartParticleEffectContinuous(
+    isActive: Boolean,
+    particleCount: Int = 15,
+    modifier: Modifier = Modifier
+) {
+    var particles by remember { mutableStateOf<List<HeartParticle>>(emptyList()) }
+    var showParticles by remember { mutableStateOf(false) }
+
+    // 当 isActive 变为 true 时生成粒子并持续播放
+    LaunchedEffect(isActive) {
+        if (isActive) {
+            // 持续生成粒子
+            while (isActive) {
+                particles = (0 until particleCount).map { i ->
+                    HeartParticle(
+                        id = i,
+                        startX = (Math.random() * 100 + 50).toFloat(),
+                        startY = (Math.random() * 30 + 60).toFloat(),
+                        angle = (Math.random() * 60 - 30).toFloat(),
+                        speed = (Math.random() * 2 + 1).toFloat(),
+                        size = (Math.random() * 8 + 8).toFloat(),
+                        color = when ((Math.random() * 3).toInt()) {
+                            0 -> Color(0xFFFF6B6B)
+                            1 -> Color(0xFFFF4757)
+                            else -> Color(0xFFFF6B6B).copy(alpha = 0.8f)
+                        },
+                        delayMs = (Math.random() * 300).toLong()
+                    )
+                }
+                showParticles = true
+
+                // 每1.5秒重新生成一批粒子，形成持续效果
+                delay(1500)
+            }
+        } else {
+            // isActive 变为 false 时停止
+            showParticles = false
+            particles = emptyList()
+        }
+    }
+
+    if (showParticles && particles.isNotEmpty()) {
+        Box(
+            modifier = modifier,
+            contentAlignment = Alignment.Center
+        ) {
+            particles.forEach { particle ->
+                AnimatedHeartParticle(particle = particle)
+            }
+        }
+    }
+}
+
+/**
  * 绘制爱心形状
  */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHeart(

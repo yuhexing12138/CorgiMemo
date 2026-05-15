@@ -15,18 +15,57 @@ import com.corgimemo.app.animation.PoseManager
 import com.corgimemo.app.animation.PoseScene
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.CorgiData
+import com.corgimemo.app.data.model.MoodHistory
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.CorgiRepository
+import com.corgimemo.app.data.repository.MoodHistoryRepository
 import com.corgimemo.app.data.repository.TodoRepository
+import com.corgimemo.app.animation.BehaviorType
+import com.corgimemo.app.animation.CorgiBehaviorManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/**
+ * 庆祝动画级别
+ * 根据任务优先级决定庆祝动画的类型
+ */
+enum class CelebrationLevel(val priority: Int) {
+    LOW(0),
+    MEDIUM(1),
+    HIGH(2);
+
+    companion object {
+        /**
+         * 根据 priority 值获取对应的庆祝级别
+         */
+        fun fromPriority(priority: Int): CelebrationLevel {
+            return when (priority) {
+                2 -> HIGH
+                1 -> MEDIUM
+                else -> LOW
+            }
+        }
+    }
+}
+
+/**
+ * 庆祝状态数据类
+ * 包含显示状态、级别和鼓励语
+ */
+data class CelebrationState(
+    val isShowing: Boolean = false,
+    val level: CelebrationLevel = CelebrationLevel.LOW,
+    val message: String = "太棒了！"
+)
 
 /**
  * 首页视图模型
@@ -38,7 +77,8 @@ class HomeViewModel @Inject constructor(
     private val todoRepository: TodoRepository,
     private val corgiRepository: CorgiRepository,
     private val categoryRepository: CategoryRepository,
-    private val corgiPreferences: CorgiPreferences
+    private val corgiPreferences: CorgiPreferences,
+    private val moodHistoryRepository: MoodHistoryRepository
 ) : ViewModel() {
 
     // ========== 待办列表相关 ==========
@@ -59,7 +99,7 @@ class HomeViewModel @Inject constructor(
 
     // ========== 动画和情绪状态 ==========
 
-    private val _currentPose = MutableStateFlow(CorgiPose.SIT)
+    private val _currentPose = MutableStateFlow(PoseManager.getDefaultPose())
     val currentPose: StateFlow<CorgiPose> = _currentPose.asStateFlow()
 
     private val _currentMood = MutableStateFlow(CorgiMood.NORMAL)
@@ -71,8 +111,8 @@ class HomeViewModel @Inject constructor(
     private val _levelStage = MutableStateFlow(LevelStage.BABY)
     val levelStage: StateFlow<LevelStage> = _levelStage.asStateFlow()
 
-    private val _showCelebration = MutableStateFlow(false)
-    val showCelebration: StateFlow<Boolean> = _showCelebration.asStateFlow()
+    private val _celebrationState = MutableStateFlow(CelebrationState())
+    val celebrationState: StateFlow<CelebrationState> = _celebrationState.asStateFlow()
 
     private val _greeting = MutableStateFlow("")
     val greeting: StateFlow<String> = _greeting.asStateFlow()
@@ -88,11 +128,51 @@ class HomeViewModel @Inject constructor(
     private val _showConsecutiveBonus = MutableStateFlow(false)
     val showConsecutiveBonus: StateFlow<Boolean> = _showConsecutiveBonus.asStateFlow()
 
+    // ========== 自主行为状态 ==========
+
+    private val _currentBehavior = MutableStateFlow(BehaviorType.NONE)
+    val currentBehavior: StateFlow<BehaviorType> = _currentBehavior.asStateFlow()
+
+    private val _showMissedYouDialog = MutableStateFlow(false)
+    val showMissedYouDialog: StateFlow<Boolean> = _showMissedYouDialog.asStateFlow()
+
+    private val _missedYouDays = MutableStateFlow(0)
+    val missedYouDays: StateFlow<Int> = _missedYouDays.asStateFlow()
+
+    // ========== 快速换装 BottomSheet ==========
+
+    private val _showOutfitSheet = MutableStateFlow(false)
+    val showOutfitSheet: StateFlow<Boolean> = _showOutfitSheet.asStateFlow()
+
+    // ========== 情绪历史记录 ==========
+
+    private val _moodHistory7Days = MutableStateFlow<List<MoodHistory>>(emptyList())
+    val moodHistory7Days: StateFlow<List<MoodHistory>> = _moodHistory7Days.asStateFlow()
+
+    // ========== 情绪变化提示 ==========
+
+    private val _moodChangeMessage = MutableStateFlow<String?>(null)
+    val moodChangeMessage: StateFlow<String?> = _moodChangeMessage.asStateFlow()
+
+    private var lastMoodChangeHintTime = 0L
+
+    // 空闲检测相关
+    private var lastUserInteractionTime = System.currentTimeMillis()
+    private var lastYawnTime = 0L
+    private var idleCheckJob: Job? = null
+
+    // 连续完成任务相关
+    private val recentCompletedTimes = mutableListOf<Long>()
+
     init {
         loadTodos()
         initCorgiData()
         initPoseAndMood()
         initDefaultCategories()
+        checkStartupBehaviors()
+        startIdleDetection()
+        recordDailyMoodIfNeeded()
+        loadMoodHistory()
     }
 
     /**
@@ -124,6 +204,8 @@ class HomeViewModel @Inject constructor(
                     FilterStatus.PENDING -> allTodos.filter { it.status == 0 }
                     FilterStatus.COMPLETED -> allTodos.filter { it.status == 1 }
                 }
+                // 待办列表变化后检查待办堆积
+                checkWorriedBehavior()
             }
         }
     }
@@ -146,7 +228,10 @@ class HomeViewModel @Inject constructor(
 
     /**
      * 从数据库加载柯基数据
-     * 同步更新装扮、等级阶段和情绪姿态
+     * 同步更新装扮、等级阶段和情绪
+     * 注意：用户要求无论什么时候进入APP，第一眼柯基都要是趴卧姿态
+     * 所以这里只加载数据但不设置情绪对应的姿态
+     * 也不调用 recalculateMood()，避免重新计算情绪后改变姿态
      */
     private fun loadCorgiData() {
         viewModelScope.launch {
@@ -159,12 +244,9 @@ class HomeViewModel @Inject constructor(
 
                 val mood = MoodManager.getMoodFromValue(corgi.moodValue)
                 _currentMood.value = mood
-                _currentPose.value = PoseManager.getPoseForMood(mood)
             }
 
             updateGreeting()
-            checkDateChange()
-            recalculateMood()
         }
     }
 
@@ -252,25 +334,58 @@ class HomeViewModel @Inject constructor(
      */
     private fun recalculateMood() {
         viewModelScope.launch {
-            val completedToday = getTodayCompletedCount()
-            val totalToday = getTodayTotalCount()
-            val completionRate = MoodManager.calculateCompletionRate(completedToday, totalToday)
-            val consecutiveDays = _corgiData.value?.consecutiveDays ?: 0
-            val overdueCount = getOverdueTasksCount()
-
-            val newMoodValue = MoodManager.calculateMoodValue(
-                todayCompletionRate = completionRate,
-                consecutiveDays = consecutiveDays,
-                overdueTasksCount = overdueCount
-            )
-
-            val newMood = MoodManager.getMoodFromValue(newMoodValue)
-            corgiRepository.updateMood(newMoodValue)
-            _corgiData.value = _corgiData.value?.copy(moodValue = newMoodValue)
-            _currentMood.value = newMood
-            _currentPose.value = PoseManager.getPoseForMood(newMood)
-            updateGreeting()
+            recalculateMoodSuspend()
         }
+    }
+
+    /**
+     * 挂起版本的重新计算情绪
+     */
+    private suspend fun recalculateMoodSuspend() {
+        val corgiData = _corgiData.value ?: return
+        val oldMoodValue = corgiData.moodValue
+
+        val completedToday = getTodayCompletedCount()
+        val totalToday = getTodayTotalCount()
+        val completionRate = MoodManager.calculateCompletionRate(completedToday, totalToday)
+        val consecutiveDays = corgiData.consecutiveDays
+        val overdueCount = getOverdueTasksCount()
+
+        val newMoodValue = MoodManager.calculateMoodValue(
+            todayCompletionRate = completionRate,
+            consecutiveDays = consecutiveDays,
+            overdueTasksCount = overdueCount
+        )
+
+        val newMood = MoodManager.getMoodFromValue(newMoodValue)
+        corgiRepository.updateMood(newMoodValue)
+        _corgiData.value = _corgiData.value?.copy(moodValue = newMoodValue)
+        _currentMood.value = newMood
+        _currentPose.value = PoseManager.getPoseForMood(newMood)
+        updateGreeting()
+
+        if (MoodManager.isSignificantChange(oldMoodValue, newMoodValue)) {
+            val now = System.currentTimeMillis()
+            val cooldownMs = 5 * 60 * 1000L
+            if (now - lastMoodChangeHintTime > cooldownMs) {
+                val message = MoodManager.getChangeMessage(
+                    oldMood = oldMoodValue,
+                    newMood = newMoodValue,
+                    completionRate = completionRate,
+                    overdueCount = overdueCount,
+                    consecutiveDays = consecutiveDays
+                )
+                _moodChangeMessage.value = message
+                lastMoodChangeHintTime = now
+            }
+        }
+    }
+
+    /**
+     * 清除情绪变化提示消息
+     */
+    fun clearMoodChangeMessage() {
+        _moodChangeMessage.value = null
     }
 
     /**
@@ -443,18 +558,47 @@ class HomeViewModel @Inject constructor(
                 todoRepository.updateTodo(updatedTodo)
 
                 if (isChecked) {
-                    handleTaskCompleted()
+                    handleTaskCompleted(todo.priority)
                 }
             }
         }
     }
 
     /**
-     * 处理任务完成后的逻辑
-     * 包括：增加经验值、累计任务数、检测成就、重新计算情绪
+     * 获取鼓励语
+     * 根据庆祝级别返回对应的鼓励语
      */
-    private suspend fun handleTaskCompleted() {
+    private fun getEncouragementMessage(level: CelebrationLevel): String {
+        return when (level) {
+            CelebrationLevel.LOW -> "太棒了！"
+            CelebrationLevel.MEDIUM -> "完成得不错哦！"
+            CelebrationLevel.HIGH -> "这么重要的任务都完成了！柯基为你骄傲！"
+        }
+    }
+
+    /**
+     * 获取庆祝持续时间
+     * 根据庆祝级别返回对应的持续时间（毫秒）
+     */
+    private fun getCelebrationDuration(level: CelebrationLevel): Long {
+        return when (level) {
+            CelebrationLevel.LOW -> 1000L
+            CelebrationLevel.MEDIUM -> 2000L
+            CelebrationLevel.HIGH -> 3000L
+        }
+    }
+
+    /**
+     * 处理任务完成后的逻辑
+     * 包括：增加经验值、累计任务数、检测成就、重新计算情绪、柯基庆祝姿态
+     *
+     * @param priority 任务优先级（0=低, 1=中, 2=高）
+     */
+    private suspend fun handleTaskCompleted(priority: Int) {
         val currentData = _corgiData.value ?: return
+
+        // 记录任务完成时间（用于连续完成开心检测）
+        recordTaskCompletion()
 
         val expGain = LevelManager.getExpOnTaskComplete()
         addExperience(expGain)
@@ -464,15 +608,26 @@ class HomeViewModel @Inject constructor(
         _corgiData.value = _corgiData.value?.copy(totalCompleted = newTotalCompleted)
 
         checkAchievements()
-        recalculateMood()
+        recalculateMoodSuspend()
 
-        _showCelebration.value = true
+        val level = CelebrationLevel.fromPriority(priority)
+        val message = getEncouragementMessage(level)
+        val duration = getCelebrationDuration(level)
+
+        _celebrationState.value = CelebrationState(
+            isShowing = true,
+            level = level,
+            message = message
+        )
         _currentPose.value = CorgiPose.STAND
-        loadCorgiData()
 
-        delay(2000)
-        _showCelebration.value = false
-        _currentPose.value = PoseManager.getDefaultPose()
+        delay(duration)
+        _celebrationState.value = CelebrationState(isShowing = false)
+
+        // 如果没有进入连续开心模式，恢复默认姿态
+        if (_currentBehavior.value != BehaviorType.HAPPY_STREAK) {
+            _currentPose.value = PoseManager.getDefaultPose()
+        }
     }
 
     /**
@@ -504,6 +659,16 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 任务创建后调用
+     * 刷新任务列表，保持柯基状态
+     */
+    fun onTaskCreated() {
+        viewModelScope.launch {
+            loadTodos()
+        }
+    }
+
+    /**
      * 获取柯基名字
      */
     fun getCorgiName(): String? {
@@ -522,6 +687,14 @@ class HomeViewModel @Inject constructor(
      */
     fun setPoseForLoading() {
         _currentPose.value = PoseManager.getPoseForScene(PoseScene.LOADING)
+    }
+
+    /**
+     * 设置为庆祝姿态
+     * 保存任务成功时调用
+     */
+    fun setPoseForCelebrating() {
+        _currentPose.value = PoseManager.getPoseForScene(PoseScene.CELEBRATING)
     }
 
     /**
@@ -555,5 +728,312 @@ class HomeViewModel @Inject constructor(
      */
     enum class FilterStatus {
         ALL, PENDING, COMPLETED
+    }
+
+    // ==================== 自主行为相关方法 ====================
+
+    /**
+     * 用户操作时调用
+     * 重置空闲计时器，标记用户活跃
+     */
+    fun onUserInteraction() {
+        lastUserInteractionTime = System.currentTimeMillis()
+        viewModelScope.launch {
+            corgiPreferences.saveLastActiveTimestamp(lastUserInteractionTime)
+        }
+        // 如果当前是打哈欠状态，用户操作后恢复正常
+        if (_currentBehavior.value == BehaviorType.YAWNING) {
+            _currentBehavior.value = BehaviorType.NONE
+        }
+    }
+
+    /**
+     * 检查启动时行为
+     * 包括：被忽略想念、深夜入睡
+     */
+    private fun checkStartupBehaviors() {
+        viewModelScope.launch {
+            val currentTime = System.currentTimeMillis()
+
+            // 1. 检查是否被忽略想念（3天未打开）
+            val lastActive = corgiPreferences.getLastActiveTimestamp()
+            val daysDiff = MoodManager.calculateDaysBetween(lastActive, currentTime)
+
+            if (CorgiBehaviorManager.wasMissed(daysDiff)) {
+                _missedYouDays.value = daysDiff
+                _showMissedYouDialog.value = true
+                _currentBehavior.value = BehaviorType.MISSED_YOU
+                _currentMood.value = CorgiMood.SAD
+                _currentPose.value = PoseManager.getPoseForMood(CorgiMood.SAD)
+            }
+
+            // 2. 检查是否需要深夜入睡
+            checkNightSleepBehavior(currentTime)
+
+            // 3. 检查待办堆积担心
+            checkWorriedBehavior()
+
+            // 更新最后活跃时间
+            corgiPreferences.saveLastActiveTimestamp(currentTime)
+        }
+    }
+
+    /**
+     * 检查深夜入睡行为
+     * 23:00 后首次打开 APP 触发
+     *
+     * @param currentTime 当前时间戳
+     */
+    private suspend fun checkNightSleepBehavior(currentTime: Long) {
+        val currentHour = CorgiBehaviorManager.getCurrentHour(currentTime)
+        val currentDate = CorgiBehaviorManager.getCurrentDateString(currentTime)
+        val checkedDate = corgiPreferences.getNightSleepCheckedDate()
+
+        // 23点后且今日未检查过
+        if (CorgiBehaviorManager.isNightTime(currentHour) && checkedDate != currentDate) {
+            // 标记今日已检查
+            corgiPreferences.saveNightSleepCheckedDate(currentDate)
+
+            // 如果不是被忽略想念状态，显示深夜入睡
+            if (_currentBehavior.value != BehaviorType.MISSED_YOU) {
+                _currentBehavior.value = BehaviorType.SLEEPING_NIGHT
+                _currentMood.value = CorgiMood.SLEEPY
+                _currentPose.value = CorgiPose.SLEEP
+                _greeting.value = CorgiBehaviorManager.getSleepMessage(_corgiData.value?.name)
+            }
+        }
+    }
+
+    /**
+     * 检查待办堆积担心行为
+     * 待办数 > 10 且 > 50% 超期
+     */
+    private fun checkWorriedBehavior() {
+        val pendingTodos = _todos.value.filter { it.status == 0 }
+        val overdueCount = pendingTodos.count { todo ->
+            MoodManager.isOverdue(todo.dueDate)
+        }
+
+        if (CorgiBehaviorManager.shouldWorry(pendingTodos.size, overdueCount)) {
+            // 只在没有更高优先级行为时设置
+            if (CorgiBehaviorManager.shouldOverrideBehavior(
+                    _currentBehavior.value,
+                    BehaviorType.WORRIED
+                )
+            ) {
+                _currentBehavior.value = BehaviorType.WORRIED
+                _currentMood.value = CorgiMood.WORRIED
+                _currentPose.value = PoseManager.getPoseForMood(CorgiMood.WORRIED)
+                _greeting.value = CorgiBehaviorManager.getWorriedMessage(
+                    _corgiData.value?.name,
+                    pendingTodos.size,
+                    overdueCount
+                )
+            }
+        }
+    }
+
+    /**
+     * 启动空闲检测
+     * 每 1 秒检查一次用户是否操作
+     */
+    private fun startIdleDetection() {
+        idleCheckJob = viewModelScope.launch {
+            while (isActive) {
+                delay(1000)
+
+                val currentTime = System.currentTimeMillis()
+
+                // 检查是否应该打哈欠
+                if (CorgiBehaviorManager.shouldYawn(
+                        lastUserInteractionTime,
+                        lastYawnTime,
+                        currentTime
+                    )
+                ) {
+                    // 检查当前行为优先级是否允许打哈欠
+                    if (CorgiBehaviorManager.shouldOverrideBehavior(
+                            _currentBehavior.value,
+                            BehaviorType.YAWNING
+                        ) || _currentBehavior.value == BehaviorType.NONE
+                    ) {
+                        triggerYawn()
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 停止空闲检测
+     * ViewModel 销毁时调用
+     */
+    private fun stopIdleDetection() {
+        idleCheckJob?.cancel()
+        idleCheckJob = null
+    }
+
+    /**
+     * 触发打哈欠行为
+     */
+    private fun triggerYawn() {
+        viewModelScope.launch {
+            lastYawnTime = System.currentTimeMillis()
+            _currentBehavior.value = BehaviorType.YAWNING
+
+            // TODO: 打哈欠帧动画暂未就绪，暂用 SLEEP 姿态作为占位
+            // 后续替换为真实的打哈欠动画资源
+            _currentPose.value = CorgiPose.SLEEP
+
+            // 打哈欠持续约 2 秒
+            delay(CorgiBehaviorManager.YAWN_DURATION_MS)
+
+            // 恢复正常
+            if (_currentBehavior.value == BehaviorType.YAWNING) {
+                _currentBehavior.value = BehaviorType.NONE
+                _currentPose.value = PoseManager.getDefaultPose()
+                _currentMood.value = CorgiMood.NORMAL
+            }
+        }
+    }
+
+    /**
+     * 记录任务完成时间
+     * 用于连续完成开心检测
+     */
+    private fun recordTaskCompletion() {
+        val currentTime = System.currentTimeMillis()
+        recentCompletedTimes.add(currentTime)
+
+        // 只保留最近的完成时间
+        val windowStart = currentTime - CorgiBehaviorManager.HAPPY_STREAK_WINDOW_MS
+        recentCompletedTimes.removeAll { it < windowStart }
+
+        // 检查是否达成连续完成开心
+        if (CorgiBehaviorManager.hasHappyStreak(recentCompletedTimes, currentTime)) {
+            // 检查当前行为优先级
+            if (CorgiBehaviorManager.shouldOverrideBehavior(
+                    _currentBehavior.value,
+                    BehaviorType.HAPPY_STREAK
+                )
+            ) {
+                triggerHappyStreak()
+            }
+        }
+    }
+
+    /**
+     * 触发连续完成开心行为
+     */
+    private fun triggerHappyStreak() {
+        viewModelScope.launch {
+            _currentBehavior.value = BehaviorType.HAPPY_STREAK
+            _currentMood.value = CorgiMood.EXCITED
+            _currentPose.value = CorgiPose.RUN
+            _greeting.value = CorgiBehaviorManager.getHappyStreakMessage(_corgiData.value?.name)
+
+            // 持续 30 秒后恢复
+            delay(CorgiBehaviorManager.HAPPY_STREAK_DURATION_MS)
+
+            if (_currentBehavior.value == BehaviorType.HAPPY_STREAK) {
+                _currentBehavior.value = BehaviorType.NONE
+                _currentMood.value = CorgiMood.NORMAL
+                _currentPose.value = PoseManager.getDefaultPose()
+                updateGreeting()
+            }
+        }
+    }
+
+    /**
+     * 关闭被忽略想念弹窗
+     */
+    fun dismissMissedYouDialog() {
+        _showMissedYouDialog.value = false
+        _currentBehavior.value = BehaviorType.NONE
+        _currentMood.value = CorgiMood.NORMAL
+        _currentPose.value = PoseManager.getDefaultPose()
+        updateGreeting()
+    }
+
+    // ==================== 快速换装 BottomSheet ====================
+
+    /**
+     * 显示/隐藏快速换装 BottomSheet
+     */
+    fun toggleOutfitSheet() {
+        _showOutfitSheet.value = !_showOutfitSheet.value
+    }
+
+    /**
+     * 隐藏快速换装 BottomSheet
+     */
+    fun hideOutfitSheet() {
+        _showOutfitSheet.value = false
+    }
+
+    /**
+     * 快速切换装扮
+     *
+     * @param outfitId 装扮 ID（null 或 DEFAULT 表示默认）
+     */
+    fun quickSwitchOutfit(outfitId: String?) {
+        viewModelScope.launch {
+            val effectiveId = if (outfitId == OutfitManager.defaultOutfit.id) null else outfitId
+            corgiRepository.updateOutfit(effectiveId)
+            _corgiData.value = _corgiData.value?.copy(currentOutfit = effectiveId)
+            _currentOutfit.value = effectiveId
+            _showOutfitSheet.value = false
+        }
+    }
+
+    // ==================== 情绪历史记录 ====================
+
+    /**
+     * 记录今日情绪值（如果今天还没记录）
+     * 每日首次进入 App 时调用
+     */
+    private fun recordDailyMoodIfNeeded() {
+        viewModelScope.launch {
+            val corgi = _corgiData.value ?: return@launch
+            val alreadyRecorded = moodHistoryRepository.isTodayRecorded()
+            if (!alreadyRecorded) {
+                moodHistoryRepository.recordTodayMood(
+                    moodValue = corgi.moodValue,
+                    reason = "每日记录"
+                )
+            }
+        }
+    }
+
+    /**
+     * 加载近7天的情绪历史
+     */
+    private fun loadMoodHistory() {
+        viewModelScope.launch {
+            val history = moodHistoryRepository.getLast7Days()
+            _moodHistory7Days.value = history
+        }
+    }
+
+    /**
+     * 重新计算并更新今日情绪历史记录
+     * 在情绪值变化时调用
+     *
+     * @param newMoodValue 新的情绪值
+     * @param reason 变化原因
+     */
+    fun updateTodayMoodHistory(newMoodValue: Int, reason: String? = null) {
+        viewModelScope.launch {
+            moodHistoryRepository.recordTodayMood(newMoodValue, reason)
+            loadMoodHistory()
+        }
+    }
+
+    /**
+     * ViewModel 销毁时清理资源
+     */
+    override fun onCleared() {
+        super.onCleared()
+        stopIdleDetection()
     }
 }

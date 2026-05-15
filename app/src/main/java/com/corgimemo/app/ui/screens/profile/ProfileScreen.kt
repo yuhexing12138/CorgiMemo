@@ -1,7 +1,9 @@
 package com.corgimemo.app.ui.screens.profile
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -45,9 +48,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.animation.Achievement
+import com.corgimemo.app.animation.InteractiveCorgi
 import com.corgimemo.app.animation.Outfit
 import com.corgimemo.app.animation.OutfitManager
-import com.corgimemo.app.ui.navigation.Screen
+import com.corgimemo.app.animation.CorgiMood
+import com.corgimemo.app.animation.CorgiPose
+import com.corgimemo.app.animation.PoseManager
+import com.corgimemo.app.animation.OutfitRecommendation
 import com.corgimemo.app.viewmodel.ProfileViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,6 +69,10 @@ fun ProfileScreen(
     val levelStage by viewModel.levelStage.collectAsState()
     val levelProgress by viewModel.levelProgress.collectAsState()
     val progressText by viewModel.progressText.collectAsState()
+    val isPreviewMode by viewModel.isPreviewMode.collectAsState()
+    val previewOutfit by viewModel.previewOutfit.collectAsState()
+    val recommendedOutfit by viewModel.recommendedOutfit.collectAsState()
+    val moodHistory7Days by viewModel.moodHistory7Days.collectAsState()
 
     var showAchievementDetail by remember { mutableStateOf<Achievement?>(null) }
 
@@ -76,6 +87,15 @@ fun ProfileScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { navController.navigate("settings") }) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "设置",
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
@@ -191,6 +211,19 @@ fun ProfileScreen(
                     .fillMaxWidth()
                     .padding(top = 16.dp)
             ) {
+                com.corgimemo.app.ui.components.MoodHistoryChart(
+                    historyList = moodHistory7Days,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+            ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = "成就",
@@ -214,56 +247,158 @@ fun ProfileScreen(
                 }
             }
 
+            recommendedOutfit?.let { recommendation ->
+                OutfitRecommendationBanner(
+                    recommendation = recommendation,
+                    onApply = {
+                        if (isPreviewMode) {
+                            viewModel.previewOutfit(recommendation.outfitId)
+                        } else {
+                            viewModel.selectOutfit(recommendation.outfitId)
+                        }
+                    }
+                )
+            }
+
             Card(
                 shape = RoundedCornerShape(16.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 16.dp)
+                    .padding(top = if (recommendedOutfit != null) 12.dp else 16.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "装扮",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "装扮",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (!isPreviewMode) {
+                            androidx.compose.material3.TextButton(
+                                onClick = { viewModel.enterPreviewMode() }
+                            ) {
+                                Text(
+                                    text = "🎨 预览模式",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+
+                    if (isPreviewMode) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                text = "✨ 预览模式：点击下方装扮卡片即可预览效果，不会立即保存",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
 
                     Text(
-                        text = "当前装扮: ${viewModel.getCurrentOutfit().name}",
+                        text = if (isPreviewMode) {
+                            val previewOutfitObj = OutfitManager.getCurrentOutfit(previewOutfit)
+                            "预览装扮: ${previewOutfitObj.name}"
+                        } else {
+                            "当前装扮: ${viewModel.getCurrentOutfit().name}"
+                        },
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 12.dp)
+                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
                     )
+
+                    corgiData?.let { data ->
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isPreviewMode) {
+                                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
+                                } else {
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                }
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp)
+                        ) {
+                            InteractiveCorgi(
+                                pose = PoseManager.getDefaultPose(),
+                                mood = CorgiMood.NORMAL,
+                                corgiName = data.name,
+                                level = data.level,
+                                outfitId = if (isPreviewMode) previewOutfit else data.currentOutfit,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
 
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         items(outfits) { (outfit, isUnlocked) ->
-                            val isSelected = corgiData?.currentOutfit == outfit.id ||
-                                    (outfit.isDefault && corgiData?.currentOutfit == null)
+                            val currentDisplayId = if (isPreviewMode) previewOutfit else corgiData?.currentOutfit
+                            val isSelected = currentDisplayId == outfit.id ||
+                                    (outfit.isDefault && currentDisplayId == null)
                             OutfitCard(
                                 outfit = outfit,
                                 isUnlocked = isUnlocked,
                                 isSelected = isSelected,
                                 onSelect = {
                                     if (isUnlocked) {
-                                        if (outfit.isDefault) {
-                                            viewModel.unselectOutfit()
+                                        val effectiveOutfitId = if (outfit.isDefault) null else outfit.id
+                                        if (isPreviewMode) {
+                                            viewModel.previewOutfit(effectiveOutfitId)
                                         } else {
-                                            viewModel.selectOutfit(outfit.id)
+                                            viewModel.selectOutfit(effectiveOutfitId)
                                         }
                                     }
                                 }
                             )
                         }
                     }
+
+                    if (isPreviewMode) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            androidx.compose.material3.OutlinedButton(
+                                onClick = { viewModel.cancelPreview() },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(text = "取消")
+                            }
+                            androidx.compose.material3.Button(
+                                onClick = { viewModel.applyPreview() },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(text = "应用装扮")
+                            }
+                        }
+                    }
                 }
             }
 
             androidx.compose.material3.Button(
-                onClick = { navController.navigate(Screen.Home.route) },
+                onClick = { navController.popBackStack() },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp),
@@ -296,6 +431,8 @@ fun AchievementCard(
     isUnlocked: Boolean,
     onClick: () -> Unit
 ) {
+    val icon = com.corgimemo.app.animation.AchievementManager.getAchievementIcon(achievement.id)
+
     Card(
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -307,8 +444,8 @@ fun AchievementCard(
             }
         ),
         modifier = Modifier
-            .width(100.dp)
-            .height(120.dp)
+            .width(110.dp)
+            .height(140.dp)
             .clickable(onClick = onClick)
     ) {
         Column(
@@ -319,8 +456,9 @@ fun AchievementCard(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = if (isUnlocked) "🏆" else "🔒",
-                fontSize = 28.sp
+                text = icon,
+                fontSize = 32.sp,
+                color = if (!isUnlocked) Color.Gray.copy(alpha = 0.5f) else Color.Unspecified
             )
             Text(
                 text = achievement.name,
@@ -332,6 +470,16 @@ fun AchievementCard(
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
                 modifier = Modifier.padding(top = 4.dp)
+            )
+            Text(
+                text = if (isUnlocked) "✓ 已解锁" else "🔒",
+                fontSize = 10.sp,
+                color = if (isUnlocked) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.padding(top = 2.dp)
             )
         }
     }
@@ -364,7 +512,7 @@ fun OutfitCard(
         ),
         modifier = Modifier
             .width(90.dp)
-            .height(100.dp)
+            .height(120.dp)
             .clickable(enabled = isUnlocked, onClick = onSelect)
     ) {
         Column(
@@ -400,9 +548,19 @@ fun OutfitCard(
             )
             if (!isUnlocked) {
                 Text(
-                    text = "🔒",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = OutfitManager.getUnlockCondition(outfit.id),
+                    fontSize = 8.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+            if (isSelected) {
+                Text(
+                    text = "✓ 已装备",
+                    fontSize = 9.sp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.padding(top = 2.dp)
                 )
             }
         }
@@ -422,6 +580,8 @@ fun AchievementDetailDialog(
     isUnlocked: Boolean,
     onDismiss: () -> Unit
 ) {
+    val icon = com.corgimemo.app.animation.AchievementManager.getAchievementIcon(achievement.id)
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(24.dp),
@@ -434,12 +594,13 @@ fun AchievementDetailDialog(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = if (isUnlocked) "🏆" else "🔒",
-                    fontSize = 48.sp
+                    text = icon,
+                    fontSize = 56.sp,
+                    color = if (!isUnlocked) Color.Gray.copy(alpha = 0.5f) else Color.Unspecified
                 )
                 Text(
                     text = achievement.name,
-                    fontSize = 20.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isUnlocked) {
                         MaterialTheme.colorScheme.primary
@@ -463,12 +624,29 @@ fun AchievementDetailDialog(
                 achievement.outfitId?.let { outfitId ->
                     val outfit = OutfitManager.getOutfitById(outfitId)
                     outfit?.let {
-                        Text(
-                            text = "🎁 解锁装扮：${it.name}",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.primary,
+                        val outfitIcon = when (it.id) {
+                            com.corgimemo.app.animation.OutfitId.SCHOLAR_HAT -> "🎓"
+                            com.corgimemo.app.animation.OutfitId.TIE -> "👔"
+                            com.corgimemo.app.animation.OutfitId.CROWN -> "👑"
+                            com.corgimemo.app.animation.OutfitId.ANGEL_WINGS -> "🪽"
+                            com.corgimemo.app.animation.OutfitId.CAPE -> "🧥"
+                            else -> "🎁"
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(top = 8.dp)
-                        )
+                        ) {
+                            Text(
+                                text = outfitIcon,
+                                fontSize = 18.sp,
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                            Text(
+                                text = "解锁装扮：${it.name}",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
                 androidx.compose.material3.Button(
@@ -519,5 +697,81 @@ fun StatRow(label: String, value: String) {
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium
         )
+    }
+}
+
+/**
+ * 装扮推荐横幅组件
+ * 显示在装扮区域顶部，推荐适合当前节日/季节的装扮
+ *
+ * @param recommendation 装扮推荐
+ * @param onApply 点击应用回调
+ */
+@Composable
+fun OutfitRecommendationBanner(
+    recommendation: OutfitRecommendation,
+    onApply: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = recommendation.badge,
+                    fontSize = 28.sp
+                )
+                Column {
+                    Text(
+                        text = recommendation.reason,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        Text(
+                            text = recommendation.outfitIcon,
+                            fontSize = 16.sp,
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                        Text(
+                            text = "推荐：${recommendation.outfitName}",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            androidx.compose.material3.TextButton(
+                onClick = onApply,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    text = "试试看",
+                    fontSize = 13.sp
+                )
+            }
+        }
     }
 }

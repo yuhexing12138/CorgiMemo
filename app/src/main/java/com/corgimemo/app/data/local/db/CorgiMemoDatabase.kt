@@ -8,6 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
+import com.corgimemo.app.data.model.MoodHistory
 import com.corgimemo.app.data.model.TodoItem
 
 /**
@@ -15,8 +16,8 @@ import com.corgimemo.app.data.model.TodoItem
  * 管理待办事项、柯基数据和任务分类
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class],
-    version = 4,
+    entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class],
+    version = 5,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -26,6 +27,8 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     abstract fun corgiDao(): CorgiDao
 
     abstract fun categoryDao(): CategoryDao
+
+    abstract fun moodHistoryDao(): MoodHistoryDao
 
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
@@ -40,7 +43,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                 INSTANCE = instance
                 instance
@@ -68,9 +71,22 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                         isDefault INTEGER NOT NULL DEFAULT 0
                     )
                 """.trimIndent())
-                
+
                 database.execSQL("ALTER TABLE corgi_data ADD COLUMN unlockedAchievements TEXT NOT NULL DEFAULT '[]'")
                 database.execSQL("ALTER TABLE corgi_data ADD COLUMN maxConsecutiveDays INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS mood_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        date TEXT NOT NULL,
+                        moodValue INTEGER NOT NULL,
+                        changeReason TEXT
+                    )
+                """.trimIndent())
             }
         }
     }

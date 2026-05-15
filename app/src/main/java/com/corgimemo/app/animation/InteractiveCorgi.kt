@@ -1,5 +1,12 @@
 package com.corgimemo.app.animation
 
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.SoundPool
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -16,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,12 +35,164 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import java.util.LinkedList
+import kotlin.random.Random
+
+/**
+ * 触觉反馈管理器
+ * 负责处理不同类型的震动反馈
+ */
+object HapticFeedbackManager {
+    /**
+     * 执行触觉反馈
+     *
+     * @param context Android 上下文
+     * @param type 交互类型
+     * @param enabled 是否启用触觉反馈
+     */
+    fun performHapticFeedback(
+        context: Context,
+        type: InteractionType,
+        enabled: Boolean = true
+    ) {
+        if (!enabled) return
+
+        try {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vibratorManager =
+                    context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                vibratorManager.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            }
+
+            when (type) {
+                InteractionType.SINGLE_CLICK -> {
+                    // 短震动 50ms
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(
+                            VibrationEffect.createOneShot(
+                                50,
+                                VibrationEffect.DEFAULT_AMPLITUDE
+                            )
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(50)
+                    }
+                }
+                InteractionType.DOUBLE_CLICK -> {
+                    // 中等震动 100ms
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(
+                            VibrationEffect.createOneShot(
+                                100,
+                                VibrationEffect.DEFAULT_AMPLITUDE
+                            )
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(100)
+                    }
+                }
+                InteractionType.LONG_CLICK -> {
+                    // 脉冲震动：等待50ms + 震动50ms + 等待50ms + 震动50ms + 等待50ms + 震动50ms
+                    val pattern = longArrayOf(50, 50, 50, 50, 50, 50)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(
+                            VibrationEffect.createWaveform(pattern, -1)
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(pattern, -1)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
+
+/**
+ * 音效管理器
+ * 负责加载和播放音效
+ */
+class SoundFeedbackManager(private val context: Context) {
+    private var soundPool: SoundPool? = null
+    private var wagSoundId: Int = 0
+    private var soundLoaded: Boolean = false
+
+    init {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                soundPool = SoundPool.Builder()
+                    .setMaxStreams(5)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_GAME)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    )
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                soundPool = SoundPool(5, android.media.AudioManager.STREAM_MUSIC, 0)
+            }
+
+            soundPool?.setOnLoadCompleteListener { _, _, status ->
+                soundLoaded = status == 0
+            }
+
+            // 尝试加载音效资源（如果资源不存在则忽略）
+            try {
+                val resId = context.resources.getIdentifier(
+                    "wag_sound",
+                    "raw",
+                    context.packageName
+                )
+                if (resId != 0) {
+                    wagSoundId = soundPool?.load(context, resId, 1) ?: 0
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * 播放汪音效
+     */
+    fun playWagSound(enabled: Boolean = true) {
+        if (!enabled || !soundLoaded || wagSoundId == 0) return
+
+        try {
+            soundPool?.play(wagSoundId, 1.0f, 1.0f, 1, 0, 1.0f)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * 释放资源
+     */
+    fun release() {
+        try {
+            soundPool?.release()
+            soundPool = null
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
 
 /**
  * 触摸互动类型
@@ -43,43 +203,7 @@ enum class InteractionType {
     /** 双击 */
     DOUBLE_CLICK,
     /** 长按 */
-    LONG_CLICK,
-    /** 快速连点 */
-    RAPID_TAPS
-}
-
-/**
- * 快速连点检测器
- * 检测 3 秒内 5 次点击
- */
-class RapidTapDetector(
-    private val windowMs: Long = 3000,
-    private val threshold: Int = 5
-) {
-    private val tapTimestamps = LinkedList<Long>()
-
-    /**
-     * 记录点击时间，检测是否达到快速连点阈值
-     * @return 是否触发快速连点
-     */
-    fun onTap(): Boolean {
-        val now = System.currentTimeMillis()
-        tapTimestamps.add(now)
-
-        // 移除超过时间窗口的点击记录
-        while (tapTimestamps.isNotEmpty() && now - tapTimestamps.first > windowMs) {
-            tapTimestamps.removeFirst()
-        }
-
-        return tapTimestamps.size >= threshold
-    }
-
-    /**
-     * 重置检测器
-     */
-    fun reset() {
-        tapTimestamps.clear()
-    }
+    LONG_CLICK
 }
 
 /**
@@ -109,8 +233,54 @@ fun hasGlowEffectForLevel(level: Int): Boolean {
 }
 
 /**
+ * 可用于随机动画的动画类型列表
+ * 排除 LIE（趴卧），因为它是默认姿态
+ */
+private val INTERACTION_ANIMATIONS = listOf(
+    AnimationType.WINK,   // 眨眼
+    AnimationType.WAG,    // 摇尾巴
+    AnimationType.TILT,   // 歪头
+    AnimationType.SLEEP,  // 睡觉
+    AnimationType.SAD,    // 悲伤
+    AnimationType.PROUD,  // 骄傲
+    AnimationType.SHY,    // 害羞
+    AnimationType.WORRY,  // 担心
+    AnimationType.RUN,    // 跑步
+    AnimationType.ROLL,   // 打滚
+    AnimationType.SIT,    // 坐立
+    AnimationType.STAND   // 站立
+)
+
+/**
+ * 随机选择一个动画类型
+ */
+private fun getRandomAnimation(): AnimationType {
+    val index = Random.nextInt(INTERACTION_ANIMATIONS.size)
+    return INTERACTION_ANIMATIONS[index]
+}
+
+/**
+ * 随机选择两个不同的动画类型
+ */
+private fun getTwoRandomAnimations(): Pair<AnimationType, AnimationType> {
+    val index1 = Random.nextInt(INTERACTION_ANIMATIONS.size)
+    var index2 = Random.nextInt(INTERACTION_ANIMATIONS.size)
+    // 确保两个动画不同
+    while (index2 == index1) {
+        index2 = Random.nextInt(INTERACTION_ANIMATIONS.size)
+    }
+    return Pair(INTERACTION_ANIMATIONS[index1], INTERACTION_ANIMATIONS[index2])
+}
+
+/**
  * 互动柯基组件
  * 整合姿态、动画、情绪、触摸互动、等级形态、装扮显示
+ * 动画互斥：上一个动画要结束，不能影响下一个动画
+ *
+ * 触摸交互：
+ * - 单击：随机播放一种动画 + 短震动 + 汪音效
+ * - 双击：随机播放两种动画组合 + 中等震动 + 汪音效
+ * - 长按：打滚动画循环 + 位置随机变动 + 脉冲震动 + 汪音效
  *
  * @param pose 当前姿态
  * @param mood 当前情绪
@@ -119,6 +289,8 @@ fun hasGlowEffectForLevel(level: Int): Boolean {
  * @param outfitId 当前装扮 ID
  * @param modifier 修饰符
  * @param onInteraction 互动回调
+ * @param soundEnabled 音效开关
+ * @param hapticEnabled 触觉反馈开关
  */
 @Composable
 fun InteractiveCorgi(
@@ -128,16 +300,50 @@ fun InteractiveCorgi(
     level: Int = 1,
     outfitId: String? = null,
     modifier: Modifier = Modifier,
-    onInteraction: ((InteractionType) -> Unit)? = null
+    onInteraction: ((InteractionType) -> Unit)? = null,
+    soundEnabled: Boolean = true,
+    hapticEnabled: Boolean = true
 ) {
-    var isWinking by remember { mutableStateOf(false) }
-    var isWagging by remember { mutableStateOf(false) }
-    var isRolling by remember { mutableStateOf(false) }
-    var showHearts by remember { mutableStateOf(false) }
-    var isShy by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
-    val rapidTapDetector = remember { RapidTapDetector() }
-    val shyOffsetX = remember { Animatable(0f) }
+    // 创建音效管理器
+    val soundManager = remember(context) {
+        SoundFeedbackManager(context)
+    }
+
+    // 释放音效资源
+    DisposableEffect(soundManager) {
+        onDispose {
+            soundManager.release()
+        }
+    }
+
+    // 执行触觉反馈的函数
+    fun triggerHaptic(type: InteractionType) {
+        HapticFeedbackManager.performHapticFeedback(context, type, hapticEnabled)
+    }
+
+    // 播放音效的函数
+    fun triggerSound() {
+        soundManager.playWagSound(soundEnabled)
+    }
+
+    // 单个动画播放状态
+    var isPlayingSingle by remember { mutableStateOf(false) }
+    var singleAnimationType by remember { mutableStateOf<AnimationType?>(null) }
+
+    // 双击动画播放状态
+    var isPlayingDouble by remember { mutableStateOf(false) }
+    var doubleAnimation1 by remember { mutableStateOf<AnimationType?>(null) }
+    var doubleAnimation2 by remember { mutableStateOf<AnimationType?>(null) }
+    var currentDoubleIndex by remember { mutableStateOf(0) }
+
+    // 长按状态
+    var isLongPressing by remember { mutableStateOf(false) }
+
+    // 位置偏移（用于长按时的随机位置变动）
+    val randomOffsetX = remember { Animatable(0f) }
+    val randomOffsetY = remember { Animatable(0f) }
 
     val sizeScale = getSizeScaleForLevel(level)
     val baseSize = 120.dp
@@ -153,26 +359,79 @@ fun InteractiveCorgi(
 
     val greeting = GreetingManager.getGreeting(mood, corgiName)
 
-    LaunchedEffect(isShy) {
-        if (isShy) {
-            shyOffsetX.animateTo(
-                targetValue = 200f,
-                animationSpec = tween(durationMillis = 500)
-            )
+    // 单个动画播放逻辑
+    LaunchedEffect(isPlayingSingle, singleAnimationType) {
+        if (isPlayingSingle && singleAnimationType != null) {
+            // 播放2秒后结束
             delay(2000)
-            shyOffsetX.animateTo(
-                targetValue = 0f,
-                animationSpec = tween(durationMillis = 500)
-            )
-            isShy = false
+            isPlayingSingle = false
+            singleAnimationType = null
         }
     }
 
-    LaunchedEffect(isWagging) {
-        if (isWagging) {
+    // 双击动画播放逻辑
+    LaunchedEffect(isPlayingDouble, currentDoubleIndex) {
+        if (isPlayingDouble) {
+            // 每个动画播放1.5秒
             delay(1500)
-            isWagging = false
+            if (currentDoubleIndex == 0) {
+                // 第一个动画播放完，切换到第二个
+                currentDoubleIndex = 1
+            } else {
+                // 第二个动画播放完，结束
+                isPlayingDouble = false
+                doubleAnimation1 = null
+                doubleAnimation2 = null
+                currentDoubleIndex = 0
+            }
         }
+    }
+
+    // 长按位置随机变动逻辑
+    LaunchedEffect(isLongPressing) {
+        if (isLongPressing) {
+            // 长按时，每隔1秒随机变动一次位置
+            while (isLongPressing) {
+                // 随机生成新的偏移位置
+                // X轴：±150dp，Y轴：±50dp
+                val targetX = (Random.nextFloat() - 0.5f) * 300f  // ±150dp
+                val targetY = (Random.nextFloat() - 0.5f) * 100f  // ±50dp
+
+                // 平滑移动到新位置（300ms动画）
+                randomOffsetX.animateTo(
+                    targetValue = targetX,
+                    animationSpec = tween(durationMillis = 300)
+                )
+                randomOffsetY.animateTo(
+                    targetValue = targetY,
+                    animationSpec = tween(durationMillis = 300)
+                )
+
+                // 等待1秒后再变动
+                delay(1000)
+            }
+        } else {
+            // 长按结束，平滑返回原始位置
+            randomOffsetX.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 500)
+            )
+            randomOffsetY.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 500)
+            )
+        }
+    }
+
+    // 停止所有动画的函数
+    fun stopAllAnimations() {
+        isPlayingSingle = false
+        singleAnimationType = null
+        isPlayingDouble = false
+        doubleAnimation1 = null
+        doubleAnimation2 = null
+        currentDoubleIndex = 0
+        isLongPressing = false
     }
 
     Box(
@@ -182,24 +441,60 @@ fun InteractiveCorgi(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = {
-                        val rapid = rapidTapDetector.onTap()
-                        if (rapid) {
-                            isShy = true
-                            onInteraction?.invoke(InteractionType.RAPID_TAPS)
-                            rapidTapDetector.reset()
-                        } else {
-                            isWinking = true
-                            isWagging = true
-                            onInteraction?.invoke(InteractionType.SINGLE_CLICK)
-                        }
+                        // 停止其他动画
+                        stopAllAnimations()
+
+                        // 触觉反馈：短震动 50ms
+                        triggerHaptic(InteractionType.SINGLE_CLICK)
+
+                        // 音效反馈：播放汪音效
+                        triggerSound()
+
+                        // 单击：随机播放一种动画
+                        val randomAnim = getRandomAnimation()
+                        singleAnimationType = randomAnim
+                        isPlayingSingle = true
+                        onInteraction?.invoke(InteractionType.SINGLE_CLICK)
                     },
                     onDoubleTap = {
-                        isRolling = true
+                        // 停止其他动画
+                        stopAllAnimations()
+
+                        // 触觉反馈：中等震动 100ms
+                        triggerHaptic(InteractionType.DOUBLE_CLICK)
+
+                        // 音效反馈：播放汪音效
+                        triggerSound()
+
+                        // 双击：随机播放两种动画组合
+                        val (anim1, anim2) = getTwoRandomAnimations()
+                        doubleAnimation1 = anim1
+                        doubleAnimation2 = anim2
+                        currentDoubleIndex = 0
+                        isPlayingDouble = true
                         onInteraction?.invoke(InteractionType.DOUBLE_CLICK)
                     },
                     onLongPress = {
-                        showHearts = true
+                        // 停止其他动画
+                        stopAllAnimations()
+
+                        // 触觉反馈：脉冲震动
+                        triggerHaptic(InteractionType.LONG_CLICK)
+
+                        // 音效反馈：播放汪音效
+                        triggerSound()
+
+                        // 长按：打滚动画循环 + 位置随机变动
+                        isLongPressing = true
                         onInteraction?.invoke(InteractionType.LONG_CLICK)
+                    },
+                    onPress = {
+                        // 等待释放事件来检测长按结束
+                        val released = tryAwaitRelease()
+                        if (released && isLongPressing) {
+                            // 长按结束
+                            isLongPressing = false
+                        }
                     }
                 )
             },
@@ -232,8 +527,8 @@ fun InteractiveCorgi(
             modifier = Modifier
                 .offset {
                     IntOffset(
-                        x = shyOffsetX.value.toInt(),
-                        y = 0
+                        x = randomOffsetX.value.toInt(),
+                        y = randomOffsetY.value.toInt()
                     )
                 }
                 .padding(24.dp),
@@ -248,67 +543,63 @@ fun InteractiveCorgi(
                 )
             }
 
-            PoseAnimation(
-                pose = if (isRolling) pose else if (isShy) CorgiPose.SIT else pose,
-                modifier = Modifier.size(corgiSize)
-            )
+            // 判断是否有交互动画正在播放
+            val hasInteractionAnimation = isPlayingSingle || isPlayingDouble || isLongPressing
 
-            AnimatedVisibility(
-                visible = isWinking,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                FrameAnimation(
-                    animationType = AnimationType.WINK,
-                    isLooping = false,
-                    fps = 10,
-                    modifier = Modifier.size(corgiSize),
-                    onFinished = { isWinking = false }
-                )
-            }
-
-            AnimatedVisibility(
-                visible = isWagging,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                FrameAnimation(
-                    animationType = AnimationType.WAG,
-                    isLooping = true,
-                    fps = 12,
+            // 基础姿态动画（只有在没有交互动画播放时才显示）
+            if (!hasInteractionAnimation) {
+                PoseAnimation(
+                    pose = pose,
                     modifier = Modifier.size(corgiSize)
                 )
             }
 
+            // 单击动画（随机选择的一种动画）
             AnimatedVisibility(
-                visible = isRolling,
+                visible = isPlayingSingle && singleAnimationType != null,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                singleAnimationType?.let { animType ->
+                    FrameAnimation(
+                        animationType = animType,
+                        isLooping = true,
+                        fps = 8,
+                        modifier = Modifier.size(corgiSize)
+                    )
+                }
+            }
+
+            // 双击动画（两种动画组合）
+            AnimatedVisibility(
+                visible = isPlayingDouble,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                val currentAnim = if (currentDoubleIndex == 0) doubleAnimation1 else doubleAnimation2
+                currentAnim?.let { animType ->
+                    FrameAnimation(
+                        animationType = animType,
+                        isLooping = true,
+                        fps = 8,
+                        modifier = Modifier.size(corgiSize)
+                    )
+                }
+            }
+
+            // 长按动画（打滚循环）
+            AnimatedVisibility(
+                visible = isLongPressing,
                 enter = fadeIn(),
                 exit = fadeOut()
             ) {
                 FrameAnimation(
                     animationType = AnimationType.ROLL,
-                    isLooping = false,
+                    isLooping = true,
                     fps = 8,
-                    modifier = Modifier.size(corgiSize),
-                    onFinished = { isRolling = false }
-                )
-            }
-
-            AnimatedVisibility(
-                visible = isShy,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                FrameAnimation(
-                    animationType = AnimationType.SHY,
                     modifier = Modifier.size(corgiSize)
                 )
             }
-
-            HeartParticleEffect(
-                isActive = showHearts,
-                modifier = Modifier.size(corgiSize + 30.dp)
-            )
         }
 
         Text(

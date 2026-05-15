@@ -6,6 +6,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.corgimemo.app.ui.screens.home.HomeScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
+import com.corgimemo.app.ui.screens.settings.SettingsScreen
 import com.corgimemo.app.ui.screens.todo.TodoEditScreen
 
 @Composable
@@ -29,6 +30,10 @@ fun AppNavHost(navController: NavHostController) {
         
         composable(Screen.Profile.route) {
             ProfileScreen(navController = navController)
+        }
+        
+        composable(Screen.Settings.route) {
+            SettingsScreen(navController = navController)
         }
     }
 }

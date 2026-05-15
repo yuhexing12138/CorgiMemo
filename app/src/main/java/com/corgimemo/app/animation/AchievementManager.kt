@@ -63,6 +63,27 @@ object AchievementManager {
     const val TARGET_ANGEL_WINGS = 500
 
     /**
+     * 成就图标映射
+     */
+    val achievementIcons: Map<String, String> = mapOf(
+        AchievementId.SCHOLAR_HAT to "🎓",
+        AchievementId.TIE to "👔",
+        AchievementId.CROWN to "👑",
+        AchievementId.ANGEL_WINGS to "🪽",
+        AchievementId.CAPE to "🧥"
+    )
+
+    /**
+     * 获取成就图标
+     *
+     * @param achievementId 成就 ID
+     * @return 图标字符串
+     */
+    fun getAchievementIcon(achievementId: String): String {
+        return achievementIcons[achievementId] ?: "🏆"
+    }
+
+    /**
      * 所有成就定义列表
      */
     val allAchievements: List<Achievement> = listOf(

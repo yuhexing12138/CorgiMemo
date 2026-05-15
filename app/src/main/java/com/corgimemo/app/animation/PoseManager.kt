@@ -56,7 +56,7 @@ object PoseManager {
         return when (mood) {
             CorgiMood.EXCITED -> CorgiPose.RUN
             CorgiMood.HAPPY -> CorgiPose.SIT
-            CorgiMood.NORMAL -> CorgiPose.SIT
+            CorgiMood.NORMAL -> CorgiPose.LIE
             CorgiMood.EXPECTING -> CorgiPose.STAND
             CorgiMood.WORRIED -> CorgiPose.SIT
             CorgiMood.SLEEPY -> CorgiPose.SLEEP

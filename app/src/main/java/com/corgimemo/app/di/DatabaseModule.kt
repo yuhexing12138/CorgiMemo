@@ -1,8 +1,10 @@
 package com.corgimemo.app.di
 
 import android.content.Context
+import com.corgimemo.app.data.local.db.CategoryDao
 import com.corgimemo.app.data.local.db.CorgiDao
 import com.corgimemo.app.data.local.db.CorgiMemoDatabase
+import com.corgimemo.app.data.local.db.MoodHistoryDao
 import com.corgimemo.app.data.local.db.TodoDao
 import dagger.Module
 import dagger.Provides
@@ -33,5 +35,17 @@ object DatabaseModule {
     @Singleton
     fun provideCorgiDao(database: CorgiMemoDatabase): CorgiDao {
         return database.corgiDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideCategoryDao(database: CorgiMemoDatabase): CategoryDao {
+        return database.categoryDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideMoodHistoryDao(database: CorgiMemoDatabase): MoodHistoryDao {
+        return database.moodHistoryDao()
     }
 }
