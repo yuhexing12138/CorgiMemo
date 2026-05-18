@@ -1,5 +1,6 @@
 package com.corgimemo.app.animation
 
+import com.corgimemo.app.model.UserType
 import java.util.Calendar
 import java.util.TimeZone
 
@@ -293,6 +294,56 @@ object GreetingManager {
             CorgiMood.NORMAL -> "完成啦！${mood.emoji}"
             else -> "又完成一个任务啦！${mood.emoji}"
         }
+    }
+
+    /**
+     * 根据身份获取专属问候语
+     * 用于切换身份时的预览和个性化问候
+     *
+     * @param userType 用户类型
+     * @return 身份专属问候语
+     */
+    fun getIdentityPreviewGreeting(userType: UserType): String {
+        return when (userType) {
+            UserType.WORKER -> "工作辛苦啦！记得休息一下哦 💼"
+            UserType.STUDENT -> "学习加油！劳逸结合很重要~ 📚"
+        }
+    }
+
+    /**
+     * 根据情绪、名字和身份获取问候语
+     * 包含身份专属的个性化内容
+     *
+     * @param mood 情绪状态
+     * @param name 柯基名字
+     * @param userType 用户类型
+     * @return 问候语字符串
+     */
+    fun getGreetingForUserType(
+        mood: CorgiMood,
+        name: String? = null,
+        userType: UserType
+    ): String {
+        val corgiName = name ?: "柯基"
+
+        // 获取基础问候语
+        val baseGreeting = getGreeting(mood, name)
+
+        // 根据身份添加专属后缀
+        val identitySuffix = when (userType) {
+            UserType.WORKER -> when (mood) {
+                CorgiMood.EXCITED, CorgiMood.HAPPY -> "工作也要开心哦 💼"
+                CorgiMood.WORRIED, CorgiMood.SAD -> "工作太累了就休息一下吧 💼"
+                else -> "工作加油！记得劳逸结合 💼"
+            }
+            UserType.STUDENT -> when (mood) {
+                CorgiMood.EXCITED, CorgiMood.HAPPY -> "学习也要开心哦 📚"
+                CorgiMood.WORRIED, CorgiMood.SAD -> "学习太累了就休息一下吧 📚"
+                else -> "学习加油！记得劳逸结合 📚"
+            }
+        }
+
+        return "$baseGreeting\n$identitySuffix"
     }
 }
 

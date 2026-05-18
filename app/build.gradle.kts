@@ -92,6 +92,8 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
 
     implementation(libs.coil.compose)
+    implementation(libs.google.accompanist.permissions)
+    implementation(libs.androidx.work.runtime.ktx)
 
     implementation(libs.google.dagger.hilt.android)
     ksp(libs.google.dagger.hilt.compiler)

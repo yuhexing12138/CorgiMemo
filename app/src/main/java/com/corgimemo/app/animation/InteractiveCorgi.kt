@@ -113,6 +113,32 @@ object HapticFeedbackManager {
                         vibrator.vibrate(pattern, -1)
                     }
                 }
+                InteractionType.TASK_COMPLETE -> {
+                    // 双短震动：等待100ms + 震动50ms + 等待100ms + 震动50ms
+                    val pattern = longArrayOf(100, 50, 100, 50)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(
+                            VibrationEffect.createWaveform(pattern, -1)
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(pattern, -1)
+                    }
+                }
+                InteractionType.ACHIEVEMENT_UNLOCK -> {
+                    // 长震动 200ms
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(
+                            VibrationEffect.createOneShot(
+                                200,
+                                VibrationEffect.DEFAULT_AMPLITUDE
+                            )
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(200)
+                    }
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -203,7 +229,11 @@ enum class InteractionType {
     /** 双击 */
     DOUBLE_CLICK,
     /** 长按 */
-    LONG_CLICK
+    LONG_CLICK,
+    /** 任务完成 */
+    TASK_COMPLETE,
+    /** 成就解锁 */
+    ACHIEVEMENT_UNLOCK
 }
 
 /**
@@ -289,6 +319,7 @@ private fun getTwoRandomAnimations(): Pair<AnimationType, AnimationType> {
  * @param outfitId 当前装扮 ID
  * @param modifier 修饰符
  * @param onInteraction 互动回调
+ * @param onLongPress 长按专用回调（用于快速换装等）
  * @param soundEnabled 音效开关
  * @param hapticEnabled 触觉反馈开关
  */
@@ -301,6 +332,7 @@ fun InteractiveCorgi(
     outfitId: String? = null,
     modifier: Modifier = Modifier,
     onInteraction: ((InteractionType) -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
     soundEnabled: Boolean = true,
     hapticEnabled: Boolean = true
 ) {
@@ -487,6 +519,9 @@ fun InteractiveCorgi(
                         // 长按：打滚动画循环 + 位置随机变动
                         isLongPressing = true
                         onInteraction?.invoke(InteractionType.LONG_CLICK)
+
+                        // 调用长按专用回调（用于快速换装等）
+                        onLongPress?.invoke()
                     },
                     onPress = {
                         // 等待释放事件来检测长按结束

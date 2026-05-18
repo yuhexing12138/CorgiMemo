@@ -39,6 +39,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -59,6 +63,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.PermissionStatus
+import com.google.accompanist.permissions.rememberPermissionState
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -69,8 +77,11 @@ import com.corgimemo.app.animation.GreetingManager
 import com.corgimemo.app.animation.InteractiveCorgi
 import com.corgimemo.app.animation.LevelManager
 import com.corgimemo.app.data.model.CorgiData
+import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.data.repository.GeofenceRepository
 import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.ui.components.EmptyState
+import com.corgimemo.app.ui.components.EmptyStateType
 import com.corgimemo.app.ui.components.TodoCreateBottomSheet
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.viewmodel.CelebrationLevel
@@ -104,9 +115,13 @@ fun HomeScreen(
     val missedYouDays by viewModel.missedYouDays.collectAsState()
     val showOutfitSheet by viewModel.showOutfitSheet.collectAsState()
     val moodChangeMessage by viewModel.moodChangeMessage.collectAsState()
+    val hapticEnabled by viewModel.hapticEnabled.collectAsState()
+    val soundEnabled by viewModel.soundEnabled.collectAsState()
+    val pendingDeletedTodo by viewModel.pendingDeletedTodo.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
     moodChangeMessage?.let { message ->
         LaunchedEffect(message) {
@@ -117,6 +132,20 @@ fun HomeScreen(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var isSheetVisible by remember { mutableStateOf(false) }
     val outfitSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // 监听待办删除事件，显示 Snackbar
+    LaunchedEffect(pendingDeletedTodo) {
+        if (pendingDeletedTodo != null) {
+            val result = snackbarHostState.showSnackbar(
+                message = "已删除",
+                actionLabel = "撤销",
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.undoDelete()
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
@@ -158,6 +187,9 @@ fun HomeScreen(
                 ) {
                     Icon(imageVector = Icons.Default.Add, contentDescription = "Add Todo")
                 }
+            },
+            snackbarHost = {
+                SnackbarHost(hostState = snackbarHostState)
             }
         ) { innerPadding ->
             Box(modifier = Modifier.padding(innerPadding)) {
@@ -169,6 +201,9 @@ fun HomeScreen(
                             currentMood = currentMood,
                             currentOutfit = currentOutfit,
                             onLongClick = { viewModel.toggleOutfitSheet() },
+                            onInteraction = { viewModel.onUserInteraction() },
+                            soundEnabled = soundEnabled,
+                            hapticEnabled = hapticEnabled,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -205,8 +240,36 @@ fun HomeScreen(
                         )
                     }
 
+                    // 临时测试按钮：触发通知测试
+                    NotificationTestButton(todos = todos, context = context)
+
                     if (todos.isEmpty()) {
-                        EmptyState()
+                        EmptyState(
+                            emptyType = when (filterStatus) {
+                                HomeViewModel.FilterStatus.PENDING -> EmptyStateType.PENDING
+                                HomeViewModel.FilterStatus.COMPLETED -> EmptyStateType.COMPLETED
+                                else -> EmptyStateType.PENDING
+                            },
+                            onAction = {
+                                when (filterStatus) {
+                                    HomeViewModel.FilterStatus.COMPLETED -> {
+                                        viewModel.setFilterStatus(HomeViewModel.FilterStatus.PENDING)
+                                    }
+                                    else -> {
+                                        viewModel.onUserInteraction()
+                                        todoEditViewModel.setTitle("")
+                                        todoEditViewModel.setContent("")
+                                        todoEditViewModel.setPriority(1)
+                                        todoEditViewModel.setDueDate(null)
+                                        viewModel.setPoseForCreating()
+                                        isSheetVisible = true
+                                        coroutineScope.launch {
+                                            sheetState.show()
+                                        }
+                                    }
+                                }
+                            }
+                        )
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
                             items(todos, key = { it.id }) { todo ->
@@ -353,6 +416,9 @@ fun HomeScreen(
  * @param currentMood 当前情绪
  * @param currentOutfit 当前装扮 ID
  * @param onLongClick 柯基长按回调（快速换装）
+ * @param onInteraction 柯基被触摸时的回调（单击/双击/长按）
+ * @param soundEnabled 音效开关
+ * @param hapticEnabled 触觉反馈开关
  * @param modifier 修饰符
  */
 @Composable
@@ -362,6 +428,9 @@ fun CorgiInteractionCard(
     currentMood: CorgiMood,
     currentOutfit: String?,
     onLongClick: () -> Unit = {},
+    onInteraction: () -> Unit = {},
+    soundEnabled: Boolean = true,
+    hapticEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val levelStage = LevelManager.getLevelStage(corgiData.level)
@@ -385,7 +454,10 @@ fun CorgiInteractionCard(
                 currentPose = currentPose,
                 currentMood = currentMood,
                 currentOutfit = currentOutfit,
-                onLongClick = onLongClick
+                onLongClick = onLongClick,
+                onInteraction = onInteraction,
+                soundEnabled = soundEnabled,
+                hapticEnabled = hapticEnabled
             )
 
             CorgiInfoArea(
@@ -409,15 +481,20 @@ fun CorgiInteractionCard(
  * @param currentMood 当前情绪
  * @param currentOutfit 当前装扮 ID
  * @param onLongClick 长按回调（快速换装入口）
+ * @param onInteraction 柯基被触摸时的回调（单击/双击/长按）
+ * @param soundEnabled 音效开关
+ * @param hapticEnabled 触觉反馈开关
  */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun CorgiDisplayArea(
     corgiData: CorgiData,
     currentPose: com.corgimemo.app.animation.CorgiPose,
     currentMood: CorgiMood,
     currentOutfit: String?,
-    onLongClick: () -> Unit = {}
+    onLongClick: () -> Unit = {},
+    onInteraction: () -> Unit = {},
+    soundEnabled: Boolean = true,
+    hapticEnabled: Boolean = true
 ) {
     val gradient = Brush.verticalGradient(
         colors = listOf(
@@ -431,11 +508,7 @@ fun CorgiDisplayArea(
             .fillMaxWidth()
             .height(220.dp)
             .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-            .background(gradient)
-            .combinedClickable(
-                onClick = {},
-                onLongClick = onLongClick
-            ),
+            .background(gradient),
         contentAlignment = Alignment.Center
     ) {
         val sizeScale = when {
@@ -477,6 +550,10 @@ fun CorgiDisplayArea(
                 corgiName = corgiData.name,
                 level = corgiData.level,
                 outfitId = currentOutfit,
+                onInteraction = { onInteraction() },
+                onLongPress = { onLongClick() },
+                soundEnabled = soundEnabled,
+                hapticEnabled = hapticEnabled,
                 modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
             )
         }
@@ -958,7 +1035,7 @@ fun ConsecutiveBonusDialog(
  * 庆祝动画覆盖层
  * 根据任务优先级显示不同的庆祝效果
  *
- * @param level 庆祝级别（低、中、高）
+ * @param level 庆祝级别（低、中、高、超级）
  * @param message 鼓励语
  */
 @Composable
@@ -967,6 +1044,7 @@ fun CelebrationOverlay(level: CelebrationLevel, message: String) {
         CelebrationLevel.LOW -> Triple(0.25f, "😊", 28.sp)
         CelebrationLevel.MEDIUM -> Triple(0.35f, "⭐", 30.sp)
         CelebrationLevel.HIGH -> Triple(0.5f, "🎉", 32.sp)
+        CelebrationLevel.SUPER -> Triple(0.6f, "🏆", 36.sp)
     }
 
     Box(
@@ -986,6 +1064,22 @@ fun CelebrationOverlay(level: CelebrationLevel, message: String) {
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
+
+            if (level == CelebrationLevel.SUPER) {
+                Text(
+                    text = "超级棒！经验值 +10",
+                    fontSize = 20.sp,
+                    color = Color(0xFFFFD700),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                Text(
+                    text = "柯基为你感到骄傲！",
+                    fontSize = 16.sp,
+                    color = Color.White.copy(alpha = 0.9f),
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
 
             if (level == CelebrationLevel.HIGH) {
                 Text(
@@ -1041,7 +1135,7 @@ fun FilterButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
  * 边缘光晕效果组件
  * 根据庆祝级别显示不同的边缘渐变光效
  *
- * @param level 庆祝级别（LOW/MEDIUM/HIGH）
+ * @param level 庆祝级别（LOW/MEDIUM/HIGH/SUPER）
  */
 @Composable
 fun GlowOverlay(level: CelebrationLevel) {
@@ -1050,18 +1144,27 @@ fun GlowOverlay(level: CelebrationLevel) {
 
     // 根据级别获取配置参数：(光晕宽度, 透明度)
     val (glowWidth, alpha) = when (level) {
-        CelebrationLevel.LOW -> Pair(0.dp, 0f)  // 不会执行到这里
+        CelebrationLevel.LOW -> Pair(0.dp, 0f)
         CelebrationLevel.MEDIUM -> Pair(60.dp, 0.20f)
         CelebrationLevel.HIGH -> Pair(80.dp, 0.35f)
+        CelebrationLevel.SUPER -> Pair(100.dp, 0.5f)
     }
 
-    // 中优先级使用暖橙色，高优先级使用彩虹渐变
-    if (level == CelebrationLevel.MEDIUM) {
-        // 中优先级：暖橙色光晕
-        MediumGlowOverlay(width = glowWidth, alpha = alpha)
-    } else {
-        // 高优先级：彩虹渐变光晕
-        HighGlowOverlay(width = glowWidth, alpha = alpha)
+    // 中优先级使用暖橙色，高优先级使用彩虹渐变，超级级别使用金色光晕
+    when (level) {
+        CelebrationLevel.MEDIUM -> {
+            // 中优先级：暖橙色光晕
+            MediumGlowOverlay(width = glowWidth, alpha = alpha)
+        }
+        CelebrationLevel.HIGH -> {
+            // 高优先级：彩虹渐变光晕
+            HighGlowOverlay(width = glowWidth, alpha = alpha)
+        }
+        CelebrationLevel.SUPER -> {
+            // 超级级别：金色光晕（结合彩虹和金色）
+            SuperGlowOverlay(width = glowWidth, alpha = alpha)
+        }
+        else -> {}
     }
 }
 
@@ -1251,6 +1354,165 @@ private fun HighGlowOverlay(width: androidx.compose.ui.unit.Dp, alpha: Float) {
                         colors = listOf(
                             Color.Transparent,
                             Color(0xFF9C27B0).copy(alpha = alpha),  // 紫色（底部）
+                        )
+                    )
+                )
+        )
+    }
+}
+
+/**
+ * 超级级别光晕效果
+ * 金色渐变边缘光效，结合彩虹和金色元素
+ *
+ * @param width 光晕宽度
+ * @param alpha 透明度
+ */
+@Composable
+private fun SuperGlowOverlay(width: androidx.compose.ui.unit.Dp, alpha: Float) {
+    // 金色系列颜色
+    val goldColors = listOf(
+        Color(0xFFFFD700).copy(alpha = alpha),  // 金色
+        Color(0xFFFFA500).copy(alpha = alpha),  // 橙色
+        Color(0xFFFFD700).copy(alpha = alpha),  // 金色
+    )
+
+    // 顶部到底部的金色渐变（垂直方向）
+    val verticalGold = listOf(
+        Color(0xFFFFD700).copy(alpha = alpha * 0.7f),  // 顶部金色
+        Color.Transparent,
+        Color.Transparent,
+        Color(0xFFFFA500).copy(alpha = alpha * 0.7f),  // 底部橙色
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = verticalGold,
+                    startY = 0f,
+                    endY = Float.POSITIVE_INFINITY
+                )
+            )
+    ) {
+        // 左侧边缘光晕：金色
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(width)
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color(0xFFFFD700).copy(alpha = alpha),  // 金色（外侧）
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        // 右侧边缘光晕：金色
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(width)
+                .align(Alignment.CenterEnd)
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color(0xFFFFA500).copy(alpha = alpha),  // 橙色（外侧）
+                        )
+                    )
+                )
+        )
+
+        // 顶部边缘光晕：金色
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(width)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFFFFD700).copy(alpha = alpha),  // 金色（顶部）
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        // 底部边缘光晕：橙色
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(width)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color(0xFFFFA500).copy(alpha = alpha),  // 橙色（底部）
+                        )
+                    )
+                )
+        )
+
+        // 四个角落的亮点装饰
+        // 左上角
+        Box(
+            modifier = Modifier
+                .size(width * 1.5f)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFFFFD700).copy(alpha = alpha * 1.2f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        // 右上角
+        Box(
+            modifier = Modifier
+                .size(width * 1.5f)
+                .align(Alignment.TopEnd)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFFFFD700).copy(alpha = alpha * 1.2f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        // 左下角
+        Box(
+            modifier = Modifier
+                .size(width * 1.5f)
+                .align(Alignment.BottomStart)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFFFFA500).copy(alpha = alpha * 1.2f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        // 右下角
+        Box(
+            modifier = Modifier
+                .size(width * 1.5f)
+                .align(Alignment.BottomEnd)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFFFFA500).copy(alpha = alpha * 1.2f),
+                            Color.Transparent
                         )
                     )
                 )
@@ -1481,6 +1743,60 @@ fun QuickOutfitCard(
                     modifier = Modifier.padding(top = 2.dp)
                 )
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalPermissionsApi::class)
+@Composable
+fun NotificationTestButton(
+    todos: List<com.corgimemo.app.data.model.TodoItem>,
+    context: android.content.Context
+) {
+    val notificationPermissionState = rememberPermissionState(
+        permission = android.Manifest.permission.POST_NOTIFICATIONS
+    )
+
+    Row(
+        modifier = androidx.compose.ui.Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+    ) {
+        Button(
+            onClick = {
+                when (notificationPermissionState.status) {
+                    is PermissionStatus.Granted -> {
+                        val firstTodo = todos.firstOrNull()
+                        if (firstTodo != null) {
+                            val geofenceRepo = com.corgimemo.app.data.repository.GeofenceRepository(context)
+                            geofenceRepo.createNotificationChannel()
+
+                            val testTodo = firstTodo.copy(
+                                geofenceEnabled = true,
+                                geofenceAddress = "测试位置 - 北京市朝阳区"
+                            )
+                            geofenceRepo.showGeofenceNotification(testTodo)
+                        }
+                    }
+                    is PermissionStatus.Denied -> {
+                        notificationPermissionState.launchPermissionRequest()
+                    }
+                }
+            },
+            enabled = todos.isNotEmpty(),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+        ) {
+            Text(
+                text = if (todos.isNotEmpty()) {
+                    when (notificationPermissionState.status) {
+                        is PermissionStatus.Granted -> "🧪 测试通知按钮 (ID: ${todos.first().id})"
+                        is PermissionStatus.Denied -> "🔔 请求通知权限"
+                    }
+                } else {
+                        "请先创建待办"
+                }
+            )
         }
     }
 }

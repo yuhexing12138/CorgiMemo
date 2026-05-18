@@ -10,6 +10,7 @@ import com.corgimemo.app.animation.Outfit
 import com.corgimemo.app.animation.OutfitManager
 import com.corgimemo.app.animation.OutfitRecommendation
 import com.corgimemo.app.animation.SeasonalOutfitRecommender
+import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.MoodHistory
 import com.corgimemo.app.data.repository.CategoryRepository
@@ -20,16 +21,18 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
  * 个人中心视图模型
- * 管理成就展示、装扮选择等功能
+ * 管理成就展示、装扮选择、柯基名字修改等功能
  */
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val corgiRepository: CorgiRepository,
+    private val corgiPreferences: CorgiPreferences,
     private val todoRepository: TodoRepository,
     private val categoryRepository: CategoryRepository,
     private val moodHistoryRepository: MoodHistoryRepository
@@ -56,6 +59,23 @@ class ProfileViewModel @Inject constructor(
     private val _progressText = MutableStateFlow("0/50")
     val progressText: StateFlow<String> = _progressText.asStateFlow()
 
+    // ========== 触觉/音效反馈设置 ==========
+    // 直接使用 corgiPreferences 的 Flow，响应式更新用户设置
+
+    val hapticEnabled: StateFlow<Boolean> = corgiPreferences.hapticEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+            initialValue = true
+        )
+
+    val soundEnabled: StateFlow<Boolean> = corgiPreferences.soundEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+            initialValue = true
+        )
+
     // ========== 预览模式状态 ==========
 
     private val _isPreviewMode = MutableStateFlow(false)
@@ -70,6 +90,13 @@ class ProfileViewModel @Inject constructor(
 
     private val _recommendedOutfit = MutableStateFlow<OutfitRecommendation?>(null)
     val recommendedOutfit: StateFlow<OutfitRecommendation?> = _recommendedOutfit.asStateFlow()
+
+    // ========== 敏感词汇列表 ==========
+
+    private val sensitiveWords = listOf(
+        "傻逼", "操", "尼玛", "草泥马", "fuck", "shit", "nigger", "bitch",
+        "去死", "脑残", "智障", "白痴", "笨蛋", "废物", "垃圾"
+    )
 
     init {
         loadCorgiData()
@@ -230,5 +257,56 @@ class ProfileViewModel @Inject constructor(
      */
     fun refresh() {
         loadCorgiData()
+    }
+
+    // ==================== 名字修改相关 ====================
+
+    /**
+     * 验证名字是否有效
+     *
+     * @param name 待验证的名字
+     * @return 验证结果（是否有效 + 错误信息）
+     */
+    fun validateName(name: String): Pair<Boolean, String> {
+        // 长度验证
+        if (name.isEmpty()) {
+            return Pair(false, "名字不能为空")
+        }
+        if (name.length > 8) {
+            return Pair(false, "名字不能超过8个字符")
+        }
+
+        // 敏感词过滤
+        val lowerCaseName = name.lowercase()
+        for (word in sensitiveWords) {
+            if (lowerCaseName.contains(word.lowercase())) {
+                return Pair(false, "名字中包含敏感词汇，请重新输入")
+            }
+        }
+
+        return Pair(true, "")
+    }
+
+    /**
+     * 更新柯基名字
+     * 同时更新 DataStore 和 Room 数据库
+     *
+     * @param newName 新的柯基名字
+     */
+    fun updateCorgiName(newName: String) {
+        viewModelScope.launch {
+            // 验证名字
+            val (isValid, _) = validateName(newName)
+            if (!isValid) return@launch
+
+            // 更新 Room 数据库
+            corgiRepository.updateCorgiName(newName)
+
+            // 更新 DataStore
+            corgiPreferences.saveCorgiName(newName)
+
+            // 更新本地状态（UI 立即刷新）
+            _corgiData.value = _corgiData.value?.copy(name = newName)
+        }
     }
 }

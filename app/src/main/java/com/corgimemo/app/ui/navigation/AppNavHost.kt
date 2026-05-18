@@ -5,16 +5,24 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.corgimemo.app.ui.screens.home.HomeScreen
+import com.corgimemo.app.ui.screens.onboarding.OnboardingScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
 import com.corgimemo.app.ui.screens.settings.SettingsScreen
 import com.corgimemo.app.ui.screens.todo.TodoEditScreen
 
 @Composable
-fun AppNavHost(navController: NavHostController) {
+fun AppNavHost(
+    navController: NavHostController,
+    startDestination: String = Screen.Home.route
+) {
     NavHost(
         navController = navController,
-        startDestination = Screen.Home.route
+        startDestination = startDestination
     ) {
+        composable(Screen.Onboarding.route) {
+            OnboardingScreen(navController = navController)
+        }
+
         composable(Screen.Home.route) {
             HomeScreen(navController = navController)
         }

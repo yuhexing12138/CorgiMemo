@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -32,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +57,7 @@ import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.CorgiPose
 import com.corgimemo.app.animation.PoseManager
 import com.corgimemo.app.animation.OutfitRecommendation
+import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.viewmodel.ProfileViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,8 +76,20 @@ fun ProfileScreen(
     val previewOutfit by viewModel.previewOutfit.collectAsState()
     val recommendedOutfit by viewModel.recommendedOutfit.collectAsState()
     val moodHistory7Days by viewModel.moodHistory7Days.collectAsState()
+    val hapticEnabled by viewModel.hapticEnabled.collectAsState()
+    val soundEnabled by viewModel.soundEnabled.collectAsState()
 
     var showAchievementDetail by remember { mutableStateOf<Achievement?>(null) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var showConfirmDialog by remember { mutableStateOf(false) }
+    var pendingNewName by remember { mutableStateOf("") }
+
+    // 退出页面时取消预览模式，恢复原装扮
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.cancelPreview()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -102,13 +117,14 @@ fun ProfileScreen(
             )
         }
     ) { innerPadding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(16.dp),
             verticalArrangement = Arrangement.Top
         ) {
+            item {
             Card(
                 shape = RoundedCornerShape(16.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
@@ -340,6 +356,8 @@ fun ProfileScreen(
                                 corgiName = data.name,
                                 level = data.level,
                                 outfitId = if (isPreviewMode) previewOutfit else data.currentOutfit,
+                                hapticEnabled = hapticEnabled,
+                                soundEnabled = soundEnabled,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -360,11 +378,11 @@ fun ProfileScreen(
                                 onSelect = {
                                     if (isUnlocked) {
                                         val effectiveOutfitId = if (outfit.isDefault) null else outfit.id
-                                        if (isPreviewMode) {
-                                            viewModel.previewOutfit(effectiveOutfitId)
-                                        } else {
-                                            viewModel.selectOutfit(effectiveOutfitId)
+                                        // 点击装扮卡片时自动进入预览模式并预览
+                                        if (!isPreviewMode) {
+                                            viewModel.enterPreviewMode()
                                         }
+                                        viewModel.previewOutfit(effectiveOutfitId)
                                     }
                                 }
                             )
@@ -397,6 +415,29 @@ fun ProfileScreen(
                 }
             }
 
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "柯基设置",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    SettingItemCard(
+                        title = "修改名字",
+                        description = "当前名字：${corgiData?.name ?: "小柯基"}",
+                        onClick = { showRenameDialog = true }
+                    )
+                }
+            }
+
             androidx.compose.material3.Button(
                 onClick = { navController.popBackStack() },
                 modifier = Modifier
@@ -406,6 +447,7 @@ fun ProfileScreen(
             ) {
                 Text(text = "返回首页")
             }
+            }
         }
     }
 
@@ -414,6 +456,60 @@ fun ProfileScreen(
             achievement = achievement,
             isUnlocked = viewModel.isAchievementUnlocked(achievement.id),
             onDismiss = { showAchievementDetail = null }
+        )
+    }
+
+    if (showRenameDialog) {
+        CorgiRenameDialog(
+            currentName = corgiData?.name ?: "小柯基",
+            onConfirm = { newName ->
+                val (isValid, _) = viewModel.validateName(newName)
+                if (isValid) {
+                    pendingNewName = newName
+                    showRenameDialog = false
+                    showConfirmDialog = true
+                }
+            },
+            onDismiss = { showRenameDialog = false }
+        )
+    }
+
+    if (showConfirmDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showConfirmDialog = false },
+            title = {
+                Text(
+                    text = "确认修改",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
+            text = {
+                Text(
+                    text = "确定要将柯基的名字改为「$pendingNewName」吗？",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        viewModel.updateCorgiName(pendingNewName)
+                        showConfirmDialog = false
+                        pendingNewName = ""
+                    }
+                ) {
+                    Text(text = "确定")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showConfirmDialog = false
+                        showRenameDialog = true
+                    }
+                ) {
+                    Text(text = "取消")
+                }
+            }
         )
     }
 }
@@ -774,4 +870,142 @@ fun OutfitRecommendationBanner(
             }
         }
     }
+}
+
+/**
+ * 设置项卡片组件
+ * 显示标题和描述，可点击跳转
+ *
+ * @param title 标题
+ * @param description 描述
+ * @param onClick 点击回调
+ */
+@Composable
+fun SettingItemCard(
+    title: String,
+    description: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = description,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        Text(
+            text = "›",
+            fontSize = 20.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * 柯基改名对话框
+ *
+ * @param currentName 当前柯基名字
+ * @param onConfirm 确认回调，返回新名字
+ * @param onDismiss 取消回调
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CorgiRenameDialog(
+    currentName: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(currentName) }
+    val isValidName = name.length in 1..8
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "\uD83D\uDC3A",
+                    style = MaterialTheme.typography.displayLarge
+                )
+                Text(
+                    text = "修改柯基名字",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "当前名字：$currentName",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                androidx.compose.material3.OutlinedTextField(
+                    value = name,
+                    onValueChange = {
+                        if (it.length <= 8) {
+                            name = it
+                        }
+                    },
+                    placeholder = { Text(text = "请输入新名字（1-8个字符）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = {
+                        Text(
+                            text = "${name.length}/8",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (name.isNotEmpty() && !isValidName) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    },
+                    isError = name.isNotEmpty() && !isValidName
+                )
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.Button(
+                onClick = { onConfirm(name) },
+                enabled = isValidName && name != currentName,
+                modifier = Modifier.padding(end = 8.dp)
+            ) {
+                Text(text = "确认")
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.padding(start = 8.dp)
+            ) {
+                Text(text = "取消")
+            }
+        }
+    )
 }

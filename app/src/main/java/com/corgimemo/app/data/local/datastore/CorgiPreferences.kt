@@ -32,6 +32,9 @@ class CorgiPreferences(context: Context) {
         // 行为追踪相关键
         private val LAST_ACTIVE_TIMESTAMP = stringPreferencesKey("last_active_timestamp")
         private val NIGHT_SLEEP_CHECKED_DATE = stringPreferencesKey("night_sleep_checked_date")
+        // 首次引导相关键
+        private val IS_ONBOARDING_COMPLETED = booleanPreferencesKey("is_onboarding_completed")
+        private val USER_TYPE = stringPreferencesKey("user_type")
     }
 
     /**
@@ -80,6 +83,22 @@ class CorgiPreferences(context: Context) {
     val nightSleepCheckedDate: Flow<String?> = dataStore.data
         .map { preferences: Preferences ->
             preferences[NIGHT_SLEEP_CHECKED_DATE]
+        }
+
+    /**
+     * 获取是否已完成首次引导的Flow
+     */
+    val isOnboardingCompleted: Flow<Boolean> = dataStore.data
+        .map { preferences: Preferences ->
+            preferences[IS_ONBOARDING_COMPLETED] ?: false
+        }
+
+    /**
+     * 获取用户类型的Flow
+     */
+    val userType: Flow<String?> = dataStore.data
+        .map { preferences: Preferences ->
+            preferences[USER_TYPE]
         }
 
     /**
@@ -161,5 +180,25 @@ class CorgiPreferences(context: Context) {
         return dataStore.data.map { preferences ->
             preferences[NIGHT_SLEEP_CHECKED_DATE]
         }.first()
+    }
+
+    /**
+     * 设置首次引导完成标志
+     */
+    suspend fun setOnboardingCompleted() {
+        dataStore.edit { preferences: MutablePreferences ->
+            preferences[IS_ONBOARDING_COMPLETED] = true
+        }
+    }
+
+    /**
+     * 保存用户类型
+     *
+     * @param userType 用户类型字符串
+     */
+    suspend fun saveUserType(userType: String) {
+        dataStore.edit { preferences: MutablePreferences ->
+            preferences[USER_TYPE] = userType
+        }
     }
 }

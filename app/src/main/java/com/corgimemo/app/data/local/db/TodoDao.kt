@@ -59,4 +59,7 @@ interface TodoDao {
 
     @Query("SELECT COUNT(*) FROM todo_items WHERE status = 1")
     suspend fun getTotalCompletedCount(): Int
+
+    @Query("DELETE FROM todo_items WHERE status = 1 AND completedAt < :threshold AND completedAt IS NOT NULL")
+    suspend fun deleteOldCompletedTodos(threshold: Long): Int
 }

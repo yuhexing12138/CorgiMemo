@@ -55,4 +55,7 @@ interface CorgiDao {
 
     @Query("UPDATE corgi_data SET maxConsecutiveDays = :days")
     suspend fun updateMaxConsecutiveDays(days: Int)
+
+    @Query("UPDATE corgi_data SET name = :name WHERE id = (SELECT id FROM corgi_data LIMIT 1)")
+    suspend fun updateName(name: String)
 }

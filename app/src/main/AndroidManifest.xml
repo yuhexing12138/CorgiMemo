@@ -12,6 +12,9 @@
     
     <!-- 震动权限（触觉反馈） -->
     <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- 通知权限（Android 13+ 需要） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
     <uses-feature android:name="android.hardware.location.gps" />
 
@@ -35,6 +38,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 通知操作按钮广播接收器 -->
+        <receiver
+            android:name=".receiver.ReminderActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.corgimemo.app.ACTION_COMPLETE" />
+                <action android:name="com.corgimemo.app.ACTION_SNOOZE_10M" />
+                <action android:name="com.corgimemo.app.ACTION_SNOOZE_1H" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

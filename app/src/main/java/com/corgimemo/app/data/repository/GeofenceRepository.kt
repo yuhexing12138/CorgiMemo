@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.receiver.ReminderActionReceiver
 
 class GeofenceRepository(private val context: Context) {
 
@@ -69,14 +70,91 @@ class GeofenceRepository(private val context: Context) {
         val typedValue = TypedValue()
         context.theme.resolveAttribute(android.R.attr.icon, typedValue, true)
         val iconResId = typedValue.resourceId
-        
+
+        // 使用 todo.id 作为通知 ID，确保多个待办的通知不会互相覆盖
+        val notificationId = todo.id.toInt()
+
+        // 创建"完成"操作按钮的 PendingIntent
+        val completeIntent = Intent(context, ReminderActionReceiver::class.java).apply {
+            action = ReminderActionReceiver.ACTION_COMPLETE
+            putExtra(ReminderActionReceiver.EXTRA_TODO_ID, todo.id)
+            putExtra(ReminderActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+        }
+        val completePendingIntent = PendingIntent.getBroadcast(
+            context,
+            todo.id.toInt(),
+            completeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // 创建"稍后10分钟"操作按钮的 PendingIntent
+        val snooze10mIntent = Intent(context, ReminderActionReceiver::class.java).apply {
+            action = ReminderActionReceiver.ACTION_SNOOZE_10M
+            putExtra(ReminderActionReceiver.EXTRA_TODO_ID, todo.id)
+            putExtra(ReminderActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+        }
+        val snooze10mPendingIntent = PendingIntent.getBroadcast(
+            context,
+            (todo.id.toInt() + 1),
+            snooze10mIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // 创建"稍后1小时"操作按钮的 PendingIntent
+        val snooze1hIntent = Intent(context, ReminderActionReceiver::class.java).apply {
+            action = ReminderActionReceiver.ACTION_SNOOZE_1H
+            putExtra(ReminderActionReceiver.EXTRA_TODO_ID, todo.id)
+            putExtra(ReminderActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+        }
+        val snooze1hPendingIntent = PendingIntent.getBroadcast(
+            context,
+            (todo.id.toInt() + 2),
+            snooze1hIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // 构建通知
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(if (iconResId != 0) iconResId else android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText("${todo.title} - ${address}")
+            // 使用 BigTextStyle 展开显示完整内容
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("${todo.title}\n${address}")
+            )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            // Android 12+ 适配：使用 CATEGORY_REMINDER
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            // 添加"完成"操作按钮
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    android.R.drawable.ic_menu_myplaces,
+                    "完成",
+                    completePendingIntent
+                )
+                    .build()
+            )
+            // 添加"稍后10分钟"操作按钮
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    android.R.drawable.ic_menu_recent_history,
+                    "稍后10分钟",
+                    snooze10mPendingIntent
+                )
+                    .build()
+            )
+            // 添加"稍后1小时"操作按钮
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    android.R.drawable.ic_menu_rotate,
+                    "稍后1小时",
+                    snooze1hPendingIntent
+                )
+                    .build()
+            )
 
         with(NotificationManagerCompat.from(context)) {
             if (ContextCompat.checkSelfPermission(
@@ -84,7 +162,7 @@ class GeofenceRepository(private val context: Context) {
                     Manifest.permission.POST_NOTIFICATIONS
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-                notify(NOTIFICATION_ID, builder.build())
+                notify(notificationId, builder.build())
             }
         }
     }

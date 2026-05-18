@@ -1,5 +1,6 @@
 package com.corgimemo.app.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.corgimemo.app.animation.Achievement
@@ -7,6 +8,8 @@ import com.corgimemo.app.animation.AchievementManager
 import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.CorgiPose
 import com.corgimemo.app.animation.GreetingManager
+import com.corgimemo.app.animation.HapticFeedbackManager
+import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.animation.LevelManager
 import com.corgimemo.app.animation.LevelStage
 import com.corgimemo.app.animation.MoodManager
@@ -17,6 +20,7 @@ import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.MoodHistory
 import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.model.UserType
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.CorgiRepository
 import com.corgimemo.app.data.repository.MoodHistoryRepository
@@ -24,6 +28,7 @@ import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiBehaviorManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,23 +37,31 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 /**
  * 庆祝动画级别
- * 根据任务优先级决定庆祝动画的类型
+ * 根据任务优先级和截止日期决定庆祝动画的类型
  */
 enum class CelebrationLevel(val priority: Int) {
+    /** 低优先级/普通任务 */
     LOW(0),
+    /** 中优先级任务 */
     MEDIUM(1),
-    HIGH(2);
+    /** 高优先级任务 */
+    HIGH(2),
+    /** 截止日期当天完成的任务（超级庆祝） */
+    SUPER(3);
 
     companion object {
         /**
          * 根据 priority 值获取对应的庆祝级别
+         * 注意：SUPER 级别不会通过此方法获取，需要特殊判断截止日期
          */
         fun fromPriority(priority: Int): CelebrationLevel {
             return when (priority) {
+                3 -> SUPER
                 2 -> HIGH
                 1 -> MEDIUM
                 else -> LOW
@@ -78,7 +91,8 @@ class HomeViewModel @Inject constructor(
     private val corgiRepository: CorgiRepository,
     private val categoryRepository: CategoryRepository,
     private val corgiPreferences: CorgiPreferences,
-    private val moodHistoryRepository: MoodHistoryRepository
+    private val moodHistoryRepository: MoodHistoryRepository,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     // ========== 待办列表相关 ==========
@@ -156,6 +170,54 @@ class HomeViewModel @Inject constructor(
 
     private var lastMoodChangeHintTime = 0L
 
+    // ========== 撤销删除相关 ==========
+
+    // 待删除待办的临时存储（用于撤销）
+    private val _pendingDeletedTodo = MutableStateFlow<TodoItem?>(null)
+    val pendingDeletedTodo: StateFlow<TodoItem?> = _pendingDeletedTodo.asStateFlow()
+
+    // 倒计时任务（可取消）
+    private var deleteTimerJob: Job? = null
+
+    // 倒计时时长（5秒）
+    private val UNDO_DELETE_DELAY_MS = 5000L
+
+    // ========== 触觉/音效反馈设置 ==========
+    // 直接使用 corgiPreferences 的 Flow，响应式更新用户设置
+
+    val hapticEnabled: StateFlow<Boolean> = corgiPreferences.hapticEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+            initialValue = true
+        )
+
+    val soundEnabled: StateFlow<Boolean> = corgiPreferences.soundEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+            initialValue = true
+        )
+
+    /**
+     * 执行触觉反馈
+     * 读取用户设置的震动开关状态，并触发对应的震动模式
+     *
+     * @param type 交互类型
+     */
+    private fun triggerHapticFeedback(type: InteractionType) {
+        val hapticEnabledValue = hapticEnabled.value
+        HapticFeedbackManager.performHapticFeedback(
+            context = context,
+            type = type,
+            enabled = hapticEnabledValue
+        )
+    }
+
+    // 用户身份状态
+    private val _userType = MutableStateFlow<UserType>(UserType.WORKER)
+    val userType: StateFlow<UserType> = _userType.asStateFlow()
+
     // 空闲检测相关
     private var lastUserInteractionTime = System.currentTimeMillis()
     private var lastYawnTime = 0L
@@ -173,6 +235,21 @@ class HomeViewModel @Inject constructor(
         startIdleDetection()
         recordDailyMoodIfNeeded()
         loadMoodHistory()
+        observeUserType()
+    }
+
+    /**
+     * 监听用户身份变化
+     * 当用户切换身份时，自动更新问候语
+     */
+    private fun observeUserType() {
+        viewModelScope.launch {
+            corgiPreferences.userType.collect { typeValue ->
+                val userType = UserType.fromValue(typeValue)
+                _userType.value = userType
+                updateGreeting()
+            }
+        }
     }
 
     /**
@@ -202,7 +279,14 @@ class HomeViewModel @Inject constructor(
                 _todos.value = when (_filterStatus.value) {
                     FilterStatus.ALL -> allTodos
                     FilterStatus.PENDING -> allTodos.filter { it.status == 0 }
-                    FilterStatus.COMPLETED -> allTodos.filter { it.status == 1 }
+                    FilterStatus.COMPLETED -> {
+                        val thirtyDaysAgo = System.currentTimeMillis() - 30 * 24 * 60 * 60 * 1000L
+                        allTodos.filter { 
+                            it.status == 1 && 
+                            it.completedAt != null && 
+                            it.completedAt >= thirtyDaysAgo 
+                        }
+                    }
                 }
                 // 待办列表变化后检查待办堆积
                 checkWorriedBehavior()
@@ -212,17 +296,11 @@ class HomeViewModel @Inject constructor(
 
     /**
      * 初始化柯基数据
-     * 检查是否首次启动，若是则显示命名对话框
-     * 否则加载已保存的柯基数据
+     * 直接加载已保存的柯基数据（首次启动已由引导流程处理）
      */
     private fun initCorgiData() {
         viewModelScope.launch {
-            val isFirst = corgiPreferences.isFirstLaunch.first()
-            if (isFirst) {
-                _showNamerDialog.value = true
-            } else {
-                loadCorgiData()
-            }
+            loadCorgiData()
         }
     }
 
@@ -252,9 +330,14 @@ class HomeViewModel @Inject constructor(
 
     /**
      * 更新问候语
+     * 根据用户身份生成个性化问候语
      */
     private fun updateGreeting() {
-        _greeting.value = GreetingManager.getGreeting(_currentMood.value, _corgiData.value?.name)
+        _greeting.value = GreetingManager.getGreetingForUserType(
+            mood = _currentMood.value,
+            name = _corgiData.value?.name,
+            userType = _userType.value
+        )
     }
 
     /**
@@ -537,6 +620,8 @@ class HomeViewModel @Inject constructor(
             )
 
             for (achievement in newAchievements) {
+                // 触觉反馈：成就解锁长震动
+                triggerHapticFeedback(InteractionType.ACHIEVEMENT_UNLOCK)
                 _showAchievementUnlock.value = achievement
                 delay(3000)
             }
@@ -558,7 +643,7 @@ class HomeViewModel @Inject constructor(
                 todoRepository.updateTodo(updatedTodo)
 
                 if (isChecked) {
-                    handleTaskCompleted(todo.priority)
+                    handleTaskCompleted(todo)
                 }
             }
         }
@@ -570,9 +655,10 @@ class HomeViewModel @Inject constructor(
      */
     private fun getEncouragementMessage(level: CelebrationLevel): String {
         return when (level) {
-            CelebrationLevel.LOW -> "太棒了！"
+            CelebrationLevel.LOW -> "太棒了！又完成一个！"
             CelebrationLevel.MEDIUM -> "完成得不错哦！"
-            CelebrationLevel.HIGH -> "这么重要的任务都完成了！柯基为你骄傲！"
+            CelebrationLevel.HIGH -> "这么重要的任务都完成了！太厉害了！"
+            CelebrationLevel.SUPER -> "抢在截止前完成了！柯基为你骄傲！"
         }
     }
 
@@ -585,16 +671,17 @@ class HomeViewModel @Inject constructor(
             CelebrationLevel.LOW -> 1000L
             CelebrationLevel.MEDIUM -> 2000L
             CelebrationLevel.HIGH -> 3000L
+            CelebrationLevel.SUPER -> 4000L
         }
     }
 
     /**
      * 处理任务完成后的逻辑
-     * 包括：增加经验值、累计任务数、检测成就、重新计算情绪、柯基庆祝姿态
+     * 包括：增加经验值、累计任务数、检测成就、重新计算情绪、柯基庆祝姿态、触觉反馈
      *
-     * @param priority 任务优先级（0=低, 1=中, 2=高）
+     * @param todo 完成的任务项
      */
-    private suspend fun handleTaskCompleted(priority: Int) {
+    private suspend fun handleTaskCompleted(todo: TodoItem) {
         val currentData = _corgiData.value ?: return
 
         // 记录任务完成时间（用于连续完成开心检测）
@@ -610,9 +697,13 @@ class HomeViewModel @Inject constructor(
         checkAchievements()
         recalculateMoodSuspend()
 
-        val level = CelebrationLevel.fromPriority(priority)
+        // 综合判断庆祝级别（优先级 + 截止日期）
+        val level = calculateCelebrationLevel(todo)
         val message = getEncouragementMessage(level)
         val duration = getCelebrationDuration(level)
+
+        // 触觉反馈：任务完成双短震动
+        triggerHapticFeedback(InteractionType.TASK_COMPLETE)
 
         _celebrationState.value = CelebrationState(
             isShowing = true,
@@ -628,6 +719,25 @@ class HomeViewModel @Inject constructor(
         if (_currentBehavior.value != BehaviorType.HAPPY_STREAK) {
             _currentPose.value = PoseManager.getDefaultPose()
         }
+    }
+
+    /**
+     * 综合判断庆祝级别
+     * 截止日期当天完成的任务优先级最高
+     *
+     * @param todo 任务项
+     * @return 庆祝级别
+     */
+    private fun calculateCelebrationLevel(todo: TodoItem): CelebrationLevel {
+        val currentTime = System.currentTimeMillis()
+
+        // 检查是否截止日期当天完成（优先级最高）
+        if (todo.dueDate != null && MoodManager.isToday(todo.dueDate, currentTime)) {
+            return CelebrationLevel.SUPER
+        }
+
+        // 根据优先级返回
+        return CelebrationLevel.fromPriority(todo.priority)
     }
 
     /**
@@ -715,11 +825,50 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * 删除待办
+     * 删除待办（支持撤销）
+     *
+     * @param id 待办 ID
      */
     fun deleteTodo(id: Long) {
         viewModelScope.launch {
+            // 1. 先获取完整的待办对象（用于撤销）
+            val todo = todoRepository.getTodoById(id) ?: return@launch
+
+            // 2. 立即从数据库删除（让列表立即更新）
             todoRepository.deleteTodoById(id)
+
+            // 3. 临时存储待办
+            _pendingDeletedTodo.value = todo
+
+            // 4. 取消之前的倒计时任务（如果有）
+            deleteTimerJob?.cancel()
+
+            // 5. 启动新的倒计时
+            deleteTimerJob = launch {
+                delay(UNDO_DELETE_DELAY_MS)
+                // 倒计时结束，清除临时数据
+                _pendingDeletedTodo.value = null
+            }
+        }
+    }
+
+    /**
+     * 撤销删除
+     * 将临时存储的待办重新插入数据库
+     */
+    fun undoDelete() {
+        viewModelScope.launch {
+            val todo = _pendingDeletedTodo.value ?: return@launch
+
+            // 1. 取消倒计时任务
+            deleteTimerJob?.cancel()
+            deleteTimerJob = null
+
+            // 2. 重新插入待办
+            todoRepository.insertTodo(todo)
+
+            // 3. 清除临时数据
+            _pendingDeletedTodo.value = null
         }
     }
 
@@ -741,9 +890,12 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             corgiPreferences.saveLastActiveTimestamp(lastUserInteractionTime)
         }
-        // 如果当前是打哈欠状态，用户操作后恢复正常
+        // 如果当前是打哈欠状态，用户操作后立即恢复正常姿态
         if (_currentBehavior.value == BehaviorType.YAWNING) {
             _currentBehavior.value = BehaviorType.NONE
+            _currentPose.value = PoseManager.getDefaultPose()
+            // 重置打哈欠冷却时间，让用户下次空闲时可以立即再次打哈欠
+            lastYawnTime = 0L
         }
     }
 
@@ -875,6 +1027,7 @@ class HomeViewModel @Inject constructor(
 
     /**
      * 触发打哈欠行为
+     * 一直保持打哈欠状态，直到用户操作才恢复
      */
     private fun triggerYawn() {
         viewModelScope.launch {
@@ -885,15 +1038,8 @@ class HomeViewModel @Inject constructor(
             // 后续替换为真实的打哈欠动画资源
             _currentPose.value = CorgiPose.SLEEP
 
-            // 打哈欠持续约 2 秒
-            delay(CorgiBehaviorManager.YAWN_DURATION_MS)
-
-            // 恢复正常
-            if (_currentBehavior.value == BehaviorType.YAWNING) {
-                _currentBehavior.value = BehaviorType.NONE
-                _currentPose.value = PoseManager.getDefaultPose()
-                _currentMood.value = CorgiMood.NORMAL
-            }
+            // 注意：打哈欠状态会一直持续，直到用户操作触发 onUserInteraction() 才恢复
+            // 不再自动结束，保持"睡着了"的状态
         }
     }
 
@@ -1035,5 +1181,7 @@ class HomeViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         stopIdleDetection()
+        // 取消删除倒计时任务
+        deleteTimerJob?.cancel()
     }
 }

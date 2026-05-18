@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.corgimemo.app.data.model.TodoItem
+import java.util.concurrent.TimeUnit
 
 @Composable
 fun TodoListItem(
@@ -115,7 +117,14 @@ fun TodoListItem(
                         textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
                         color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                     )
-                    if (!todo.content.isNullOrBlank()) {
+                    if (todo.status == 1 && todo.completedAt != null) {
+                        Text(
+                            text = formatCompletedTime(todo.completedAt),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    } else if (!todo.content.isNullOrBlank()) {
                         Text(
                             text = todo.content,
                             fontSize = 14.sp,
@@ -128,5 +137,25 @@ fun TodoListItem(
                 PriorityBadge(priority = todo.priority)
             }
         }
+    }
+}
+
+/**
+ * 格式化完成时间为友好的显示文本
+ *
+ * @param completedAt 完成时间戳（毫秒）
+ * @return 格式化后的时间文本，如 "3 分钟前完成"、"2 小时前完成"、"5 天前完成"
+ */
+private fun formatCompletedTime(completedAt: Long): String {
+    val diffMillis = System.currentTimeMillis() - completedAt
+    val diffMinutes = TimeUnit.MILLISECONDS.toMinutes(diffMillis)
+    val diffHours = TimeUnit.MILLISECONDS.toHours(diffMillis)
+    val diffDays = TimeUnit.MILLISECONDS.toDays(diffMillis)
+
+    return when {
+        diffMinutes < 1 -> "刚刚完成"
+        diffMinutes < 60 -> "$diffMinutes 分钟前完成"
+        diffHours < 24 -> "$diffHours 小时前完成"
+        else -> "$diffDays 天前完成"
     }
 }

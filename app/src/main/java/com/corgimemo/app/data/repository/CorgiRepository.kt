@@ -82,4 +82,13 @@ class CorgiRepository @Inject constructor(
     suspend fun updateMaxConsecutiveDays(days: Int) = withContext(ioDispatcher) {
         corgiDao.updateMaxConsecutiveDays(days)
     }
+
+    /**
+     * 更新柯基名字
+     *
+     * @param name 新的柯基名字
+     */
+    suspend fun updateCorgiName(name: String) = withContext(ioDispatcher) {
+        corgiDao.updateName(name)
+    }
 }

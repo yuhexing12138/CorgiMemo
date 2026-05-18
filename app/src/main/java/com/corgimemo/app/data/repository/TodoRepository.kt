@@ -83,4 +83,14 @@ class TodoRepository @Inject constructor(
     suspend fun getTotalCompletedCount(): Int = withContext(ioDispatcher) {
         todoDao.getTotalCompletedCount()
     }
+
+    /**
+     * 清理超过指定时间的已完成待办
+     *
+     * @param threshold 时间阈值（毫秒），超过此时间的已完成待办将被删除
+     * @return 删除的待办数量
+     */
+    suspend fun cleanupOldCompletedTodos(threshold: Long): Int = withContext(ioDispatcher) {
+        todoDao.deleteOldCompletedTodos(threshold)
+    }
 }
