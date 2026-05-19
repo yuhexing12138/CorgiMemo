@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
     id("com.google.devtools.ksp")
     id("dagger.hilt.android.plugin")
 }
@@ -94,11 +95,14 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.google.accompanist.permissions)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.glance.material3)
+    implementation(libs.androidx.glance.appwidget)
 
     implementation(libs.google.dagger.hilt.android)
     ksp(libs.google.dagger.hilt.compiler)
 
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.androidx.appcompat)
 

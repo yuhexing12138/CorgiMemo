@@ -2,6 +2,8 @@ package com.corgimemo.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.corgimemo.app.backup.BackupManager
+import com.corgimemo.app.backup.BackupManager.ExportFormat
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CategoryType
@@ -17,7 +19,7 @@ import javax.inject.Inject
 
 /**
  * 设置页面视图模型
- * 管理音效反馈、触觉反馈和用户身份设置
+ * 管理音效反馈、触觉反馈、用户身份设置和数据备份
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -40,6 +42,12 @@ class SettingsViewModel @Inject constructor(
     private val _reminderAdvances = MutableStateFlow<Map<Long, Int?>>(emptyMap())
     val reminderAdvances: StateFlow<Map<Long, Int?>> = _reminderAdvances.asStateFlow()
 
+    private val _backupMessage = MutableStateFlow<String?>(null)
+    val backupMessage: StateFlow<String?> = _backupMessage.asStateFlow()
+
+    private val _isProcessing = MutableStateFlow(false)
+    val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
+
     init {
         loadSettings()
         loadCategories()
@@ -53,7 +61,6 @@ class SettingsViewModel @Inject constructor(
             _soundEnabled.value = corgiPreferences.soundEnabled.first()
             _hapticEnabled.value = corgiPreferences.hapticEnabled.first()
 
-            // 加载用户类型
             val userTypeValue = corgiPreferences.userType.first()
             _userType.value = UserType.fromValue(userTypeValue)
         }
@@ -168,6 +175,78 @@ class SettingsViewModel @Inject constructor(
             CategoryType.LIFE -> 60
             CategoryType.CUSTOM -> 30
             else -> 30
+        }
+    }
+
+    /**
+     * 清除备份消息
+     */
+    fun clearBackupMessage() {
+        _backupMessage.value = null
+    }
+
+    /**
+     * 导出数据
+     *
+     * @param context 上下文
+     * @param uri 文件 URI
+     * @param format 导出格式
+     * @param password 密码（可选）
+     */
+    fun exportData(
+        context: android.content.Context,
+        uri: android.net.Uri,
+        format: ExportFormat,
+        password: String? = null
+    ) {
+        viewModelScope.launch {
+            _isProcessing.value = true
+            val result = BackupManager.exportData(context, uri, format, password)
+            when (result) {
+                is BackupManager.ExportResult.Success -> {
+                    _backupMessage.value = "导出成功！"
+                }
+                is BackupManager.ExportResult.Error -> {
+                    _backupMessage.value = "导出失败：${result.message}"
+                }
+            }
+            _isProcessing.value = false
+        }
+    }
+
+    /**
+     * 恢复数据
+     *
+     * @param context 上下文
+     * @param uri 文件 URI
+     * @param password 密码（可选）
+     * @param onSuccess 成功回调
+     */
+    fun restoreData(
+        context: android.content.Context,
+        uri: android.net.Uri,
+        password: String? = null,
+        onSuccess: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isProcessing.value = true
+            val result = BackupManager.restoreData(context, uri, password)
+            when (result) {
+                is BackupManager.RestoreResult.Success -> {
+                    _backupMessage.value = "恢复成功！已恢复 ${result.todoCount} 个待办"
+                    onSuccess()
+                }
+                is BackupManager.RestoreResult.Error -> {
+                    _backupMessage.value = "恢复失败：${result.message}"
+                }
+                BackupManager.RestoreResult.WrongPassword -> {
+                    _backupMessage.value = "密码错误"
+                }
+                BackupManager.RestoreResult.VersionIncompatible -> {
+                    _backupMessage.value = "备份文件版本过高，请升级应用"
+                }
+            }
+            _isProcessing.value = false
         }
     }
 }

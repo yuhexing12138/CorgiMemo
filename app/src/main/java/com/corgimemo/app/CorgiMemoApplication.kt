@@ -2,6 +2,7 @@ package com.corgimemo.app
 
 import android.app.Application
 import com.corgimemo.app.notification.NotificationHelper
+import com.corgimemo.app.widget.WidgetUpdateWorker
 import com.corgimemo.app.worker.ArchiveCleanupScheduler
 import dagger.hilt.android.HiltAndroidApp
 
@@ -11,5 +12,6 @@ class CorgiMemoApplication : Application() {
         super.onCreate()
         NotificationHelper.createNotificationChannels(this)
         ArchiveCleanupScheduler.scheduleIfNeeded(this)
+        WidgetUpdateWorker.scheduleWidgetUpdates(this)
     }
 }

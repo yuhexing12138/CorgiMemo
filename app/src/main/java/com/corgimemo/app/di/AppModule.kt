@@ -30,7 +30,7 @@ object AppModule {
     @Provides
     @Singleton
     fun provideCorgiPreferences(@ApplicationContext context: Context): CorgiPreferences {
-        return CorgiPreferences(context)
+        return CorgiPreferences.getInstance(context)
     }
 }
 

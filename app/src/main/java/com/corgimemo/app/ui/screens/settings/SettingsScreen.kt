@@ -21,6 +21,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +31,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -45,9 +47,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.animation.GreetingManager
+import com.corgimemo.app.backup.BackupManager
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CategoryType
 import com.corgimemo.app.model.UserType
@@ -55,25 +59,43 @@ import com.corgimemo.app.viewmodel.SettingsViewModel
 
 /**
  * 设置页面
- * 管理音效反馈、触觉反馈和用户身份设置
+ * 管理音效反馈、触觉反馈、用户身份设置和数据备份
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     navController: NavController,
-    viewModel: SettingsViewModel = hiltViewModel()
+    viewModel: SettingsViewModel = hiltViewModel(),
+    onExportClick: (BackupManager.ExportFormat) -> Unit = {},
+    onImportClick: () -> Unit = {}
 ) {
     val soundEnabled by viewModel.soundEnabled.collectAsState()
     val hapticEnabled by viewModel.hapticEnabled.collectAsState()
     val userType by viewModel.userType.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val reminderAdvances by viewModel.reminderAdvances.collectAsState()
+    val backupMessage by viewModel.backupMessage.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
 
     var showUserTypeDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var pendingUserType by remember { mutableStateOf<UserType?>(null) }
     var showAdvanceDialog by remember { mutableStateOf(false) }
     var selectedCategoryForAdvance by remember { mutableStateOf<Category?>(null) }
+
+    var showExportDialog by remember { mutableStateOf(false) }
+    var showImportConfirmDialog by remember { mutableStateOf(false) }
+
+    if (backupMessage != null) {
+        BackupMessageDialog(
+            message = backupMessage!!,
+            onDismiss = { viewModel.clearBackupMessage() }
+        )
+    }
+
+    if (isProcessing) {
+        ProcessingDialog(message = "处理中...")
+    }
 
     Scaffold(
         topBar = {
@@ -102,10 +124,17 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 音效反馈开关
+            Text(
+                text = "应用设置",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
             SettingSwitchCard(
                 title = "音效反馈",
                 description = "触摸柯基时播放轻快音效",
@@ -115,7 +144,6 @@ fun SettingsScreen(
                 }
             )
 
-            // 触觉反馈开关
             SettingSwitchCard(
                 title = "触觉反馈",
                 description = "触摸柯基时震动",
@@ -125,7 +153,6 @@ fun SettingsScreen(
                 }
             )
 
-            // 身份设置
             SettingItemCard(
                 title = "身份设置",
                 description = "当前身份：${getUserTypeName(userType)}",
@@ -134,7 +161,6 @@ fun SettingsScreen(
                 }
             )
 
-            // 提醒提前量
             SettingItemCard(
                 title = "提醒提前量",
                 description = "按分类设置提醒提前时间",
@@ -142,10 +168,80 @@ fun SettingsScreen(
                     showAdvanceDialog = true
                 }
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "数据管理",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            SettingItemCard(
+                title = "⬆️ 导出数据",
+                description = "导出为 JSON 或 CSV 格式",
+                onClick = {
+                    showExportDialog = true
+                }
+            )
+
+            SettingItemCard(
+                title = "⬇️ 恢复数据",
+                description = "从备份文件恢复数据",
+                onClick = {
+                    showImportConfirmDialog = true
+                }
+            )
         }
     }
 
-    // 身份选择弹窗
+    if (showExportDialog) {
+        ExportFormatDialog(
+            onDismiss = { showExportDialog = false },
+            onConfirm = { format ->
+                showExportDialog = false
+                onExportClick(format)
+            }
+        )
+    }
+
+    if (showImportConfirmDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showImportConfirmDialog = false },
+            title = { Text("恢复数据") },
+            text = {
+                Column {
+                    Text("恢复数据将覆盖当前所有数据，包括：")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("• 待办列表")
+                    Text("• 分类设置")
+                    Text("• 柯基成长数据")
+                    Text("• 心情历史记录")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("确定要继续吗？")
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showImportConfirmDialog = false
+                        onImportClick()
+                    }
+                ) {
+                    Text("继续")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showImportConfirmDialog = false }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
     if (showUserTypeDialog) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showUserTypeDialog = false },
@@ -195,7 +291,6 @@ fun SettingsScreen(
         )
     }
 
-    // 确认切换身份弹窗
     if (showConfirmDialog && pendingUserType != null) {
         val newUserType = pendingUserType!!
         androidx.compose.material3.AlertDialog(
@@ -271,7 +366,6 @@ fun SettingsScreen(
         )
     }
 
-    // 提醒提前量设置弹窗
     if (showAdvanceDialog) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showAdvanceDialog = false },
@@ -317,7 +411,6 @@ fun SettingsScreen(
         )
     }
 
-    // 单个分类提前量设置弹窗
     if (selectedCategoryForAdvance != null) {
         val category = selectedCategoryForAdvance!!
         val advanceOptions = listOf(
@@ -443,6 +536,243 @@ fun SettingsScreen(
                 }
             }
         )
+    }
+}
+
+/**
+ * 导出格式选择对话框
+ *
+ * @param onDismiss 取消回调
+ * @param onConfirm 确认回调，携带选择的格式
+ */
+@Composable
+fun ExportFormatDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (BackupManager.ExportFormat) -> Unit
+) {
+    var selectedFormat by remember { mutableStateOf<BackupManager.ExportFormat?>(null) }
+    var usePassword by remember { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择导出格式") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (selectedFormat == BackupManager.ExportFormat.JSON) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        }
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { selectedFormat = BackupManager.ExportFormat.JSON }
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "📄 JSON",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (selectedFormat == BackupManager.ExportFormat.JSON) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                            if (selectedFormat == BackupManager.ExportFormat.JSON) {
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text(
+                                    text = "✓",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                        Text(
+                            text = "完整数据备份，可恢复",
+                            fontSize = 13.sp,
+                            color = if (selectedFormat == BackupManager.ExportFormat.JSON) {
+                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (selectedFormat == BackupManager.ExportFormat.CSV) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        }
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { selectedFormat = BackupManager.ExportFormat.CSV }
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "📊 CSV",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (selectedFormat == BackupManager.ExportFormat.CSV) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                            if (selectedFormat == BackupManager.ExportFormat.CSV) {
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text(
+                                    text = "✓",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                        Text(
+                            text = "仅待办列表，Excel 兼容",
+                            fontSize = 13.sp,
+                            color = if (selectedFormat == BackupManager.ExportFormat.CSV) {
+                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+
+                if (selectedFormat == BackupManager.ExportFormat.JSON) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Switch(
+                            checked = usePassword,
+                            onCheckedChange = { usePassword = it }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "密码保护",
+                            fontSize = 14.sp
+                        )
+                    }
+                    if (usePassword) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text("输入密码") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextField(
+                            value = confirmPassword,
+                            onValueChange = { confirmPassword = it },
+                            label = { Text("确认密码") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = selectedFormat != null,
+                onClick = {
+                    selectedFormat?.let { format ->
+                        onConfirm(format)
+                    }
+                }
+            ) {
+                Text("下一步")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+/**
+ * 备份消息对话框
+ *
+ * @param message 消息内容
+ * @param onDismiss 关闭回调
+ */
+@Composable
+fun BackupMessageDialog(
+    message: String,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("提示") },
+        text = { Text(message) },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("确定")
+            }
+        }
+    )
+}
+
+/**
+ * 处理中对话框
+ *
+ * @param message 消息内容
+ */
+@Composable
+fun ProcessingDialog(message: String) {
+    Dialog(onDismissRequest = {}) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = message,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
     }
 }
 

@@ -17,25 +17,36 @@ import kotlinx.coroutines.flow.map
  * 柯基偏好设置管理器
  * 使用DataStore存储柯基名字、首次启动标志和反馈设置
  */
-class CorgiPreferences(context: Context) {
+class CorgiPreferences(private val dataStore: DataStore<Preferences>) {
 
-    // 创建DataStore实例
-    private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "corgi_preferences")
+    // 创建单例DataStore
+    companion object {
+        private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "corgi_preferences")
 
-    private val dataStore: DataStore<Preferences> = context.dataStore
+        @Volatile
+        private var instance: CorgiPreferences? = null
+
+        fun getInstance(context: Context): CorgiPreferences {
+            return instance ?: synchronized(this) {
+                instance ?: CorgiPreferences(context.dataStore).also { instance = it }
+            }
+        }
+    }
 
     // 定义存储键
-    companion object {
-        private val CORGI_NAME = stringPreferencesKey("corgi_name")
-        private val IS_FIRST_LAUNCH = booleanPreferencesKey("is_first_launch")
-        private val SOUND_ENABLED = booleanPreferencesKey("sound_enabled")
-        private val HAPTIC_ENABLED = booleanPreferencesKey("haptic_enabled")
-        // 行为追踪相关键
-        private val LAST_ACTIVE_TIMESTAMP = stringPreferencesKey("last_active_timestamp")
-        private val NIGHT_SLEEP_CHECKED_DATE = stringPreferencesKey("night_sleep_checked_date")
-        // 首次引导相关键
-        private val IS_ONBOARDING_COMPLETED = booleanPreferencesKey("is_onboarding_completed")
-        private val USER_TYPE = stringPreferencesKey("user_type")
+    private object Keys {
+        val CORGI_NAME = stringPreferencesKey("corgi_name")
+        val IS_FIRST_LAUNCH = booleanPreferencesKey("is_first_launch")
+        val SOUND_ENABLED = booleanPreferencesKey("sound_enabled")
+        val HAPTIC_ENABLED = booleanPreferencesKey("haptic_enabled")
+        val LAST_ACTIVE_TIMESTAMP = stringPreferencesKey("last_active_timestamp")
+        val NIGHT_SLEEP_CHECKED_DATE = stringPreferencesKey("night_sleep_checked_date")
+        val IS_ONBOARDING_COMPLETED = booleanPreferencesKey("is_onboarding_completed")
+        val USER_TYPE = stringPreferencesKey("user_type")
+        val AUTO_BACKUP_ENABLED = booleanPreferencesKey("auto_backup_enabled")
+        val AUTO_BACKUP_URI = stringPreferencesKey("auto_backup_uri")
+        val AUTO_BACKUP_PASSWORD = stringPreferencesKey("auto_backup_password")
+        val AUTO_BACKUP_KEEP_COUNT = intPreferencesKey("auto_backup_keep_count")
     }
 
     /**
@@ -43,7 +54,7 @@ class CorgiPreferences(context: Context) {
      */
     val corgiName: Flow<String?> = dataStore.data
         .map { preferences: Preferences ->
-            preferences[CORGI_NAME]
+            preferences[Keys.CORGI_NAME]
         }
 
     /**
@@ -51,7 +62,7 @@ class CorgiPreferences(context: Context) {
      */
     val isFirstLaunch: Flow<Boolean> = dataStore.data
         .map { preferences: Preferences ->
-            preferences[IS_FIRST_LAUNCH] ?: true
+            preferences[Keys.IS_FIRST_LAUNCH] ?: true
         }
 
     /**
@@ -59,7 +70,7 @@ class CorgiPreferences(context: Context) {
      */
     val soundEnabled: Flow<Boolean> = dataStore.data
         .map { preferences: Preferences ->
-            preferences[SOUND_ENABLED] ?: true
+            preferences[Keys.SOUND_ENABLED] ?: true
         }
 
     /**
@@ -67,7 +78,7 @@ class CorgiPreferences(context: Context) {
      */
     val hapticEnabled: Flow<Boolean> = dataStore.data
         .map { preferences: Preferences ->
-            preferences[HAPTIC_ENABLED] ?: true
+            preferences[Keys.HAPTIC_ENABLED] ?: true
         }
 
     /**
@@ -75,7 +86,7 @@ class CorgiPreferences(context: Context) {
      */
     val lastActiveTimestamp: Flow<String?> = dataStore.data
         .map { preferences: Preferences ->
-            preferences[LAST_ACTIVE_TIMESTAMP]
+            preferences[Keys.LAST_ACTIVE_TIMESTAMP]
         }
 
     /**
@@ -83,7 +94,7 @@ class CorgiPreferences(context: Context) {
      */
     val nightSleepCheckedDate: Flow<String?> = dataStore.data
         .map { preferences: Preferences ->
-            preferences[NIGHT_SLEEP_CHECKED_DATE]
+            preferences[Keys.NIGHT_SLEEP_CHECKED_DATE]
         }
 
     /**
@@ -91,7 +102,7 @@ class CorgiPreferences(context: Context) {
      */
     val isOnboardingCompleted: Flow<Boolean> = dataStore.data
         .map { preferences: Preferences ->
-            preferences[IS_ONBOARDING_COMPLETED] ?: false
+            preferences[Keys.IS_ONBOARDING_COMPLETED] ?: false
         }
 
     /**
@@ -99,7 +110,7 @@ class CorgiPreferences(context: Context) {
      */
     val userType: Flow<String?> = dataStore.data
         .map { preferences: Preferences ->
-            preferences[USER_TYPE]
+            preferences[Keys.USER_TYPE]
         }
 
     /**
@@ -107,7 +118,7 @@ class CorgiPreferences(context: Context) {
      */
     suspend fun saveCorgiName(name: String) {
         dataStore.edit { preferences: MutablePreferences ->
-            preferences[CORGI_NAME] = name
+            preferences[Keys.CORGI_NAME] = name
         }
     }
 
@@ -116,7 +127,7 @@ class CorgiPreferences(context: Context) {
      */
     suspend fun setFirstLaunchDone() {
         dataStore.edit { preferences: MutablePreferences ->
-            preferences[IS_FIRST_LAUNCH] = false
+            preferences[Keys.IS_FIRST_LAUNCH] = false
         }
     }
 
@@ -125,7 +136,7 @@ class CorgiPreferences(context: Context) {
      */
     suspend fun setSoundEnabled(enabled: Boolean) {
         dataStore.edit { preferences: MutablePreferences ->
-            preferences[SOUND_ENABLED] = enabled
+            preferences[Keys.SOUND_ENABLED] = enabled
         }
     }
 
@@ -134,7 +145,7 @@ class CorgiPreferences(context: Context) {
      */
     suspend fun setHapticEnabled(enabled: Boolean) {
         dataStore.edit { preferences: MutablePreferences ->
-            preferences[HAPTIC_ENABLED] = enabled
+            preferences[Keys.HAPTIC_ENABLED] = enabled
         }
     }
 
@@ -145,7 +156,7 @@ class CorgiPreferences(context: Context) {
      */
     suspend fun saveLastActiveTimestamp(timestamp: Long) {
         dataStore.edit { preferences: MutablePreferences ->
-            preferences[LAST_ACTIVE_TIMESTAMP] = timestamp.toString()
+            preferences[Keys.LAST_ACTIVE_TIMESTAMP] = timestamp.toString()
         }
     }
 
@@ -156,7 +167,7 @@ class CorgiPreferences(context: Context) {
      */
     suspend fun getLastActiveTimestamp(): Long {
         return dataStore.data.map { preferences ->
-            preferences[LAST_ACTIVE_TIMESTAMP]?.toLongOrNull() ?: System.currentTimeMillis()
+            preferences[Keys.LAST_ACTIVE_TIMESTAMP]?.toLongOrNull() ?: System.currentTimeMillis()
         }.first()
     }
 
@@ -168,7 +179,7 @@ class CorgiPreferences(context: Context) {
      */
     suspend fun saveNightSleepCheckedDate(date: String) {
         dataStore.edit { preferences: MutablePreferences ->
-            preferences[NIGHT_SLEEP_CHECKED_DATE] = date
+            preferences[Keys.NIGHT_SLEEP_CHECKED_DATE] = date
         }
     }
 
@@ -179,7 +190,7 @@ class CorgiPreferences(context: Context) {
      */
     suspend fun getNightSleepCheckedDate(): String? {
         return dataStore.data.map { preferences ->
-            preferences[NIGHT_SLEEP_CHECKED_DATE]
+            preferences[Keys.NIGHT_SLEEP_CHECKED_DATE]
         }.first()
     }
 
@@ -188,7 +199,7 @@ class CorgiPreferences(context: Context) {
      */
     suspend fun setOnboardingCompleted() {
         dataStore.edit { preferences: MutablePreferences ->
-            preferences[IS_ONBOARDING_COMPLETED] = true
+            preferences[Keys.IS_ONBOARDING_COMPLETED] = true
         }
     }
 
@@ -199,7 +210,7 @@ class CorgiPreferences(context: Context) {
      */
     suspend fun saveUserType(userType: String) {
         dataStore.edit { preferences: MutablePreferences ->
-            preferences[USER_TYPE] = userType
+            preferences[Keys.USER_TYPE] = userType
         }
     }
 
@@ -334,6 +345,56 @@ class CorgiPreferences(context: Context) {
                     keysToRemove.forEach { mutablePrefs.remove(it) }
                 }
             }
+        }
+    }
+
+    val autoBackupEnabled: Flow<Boolean> = dataStore.data
+        .map { prefs ->
+            prefs[Keys.AUTO_BACKUP_ENABLED] ?: false
+        }
+
+    val autoBackupUri: Flow<String?> = dataStore.data
+        .map { prefs ->
+            prefs[Keys.AUTO_BACKUP_URI]
+        }
+
+    val autoBackupPassword: Flow<String?> = dataStore.data
+        .map { prefs ->
+            prefs[Keys.AUTO_BACKUP_PASSWORD]
+        }
+
+    val autoBackupKeepCount: Flow<Int> = dataStore.data
+        .map { prefs ->
+            prefs[Keys.AUTO_BACKUP_KEEP_COUNT] ?: 5
+        }
+
+    suspend fun setAutoBackupEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[Keys.AUTO_BACKUP_ENABLED] = enabled
+        }
+    }
+
+    suspend fun saveAutoBackupUri(uri: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.AUTO_BACKUP_URI] = uri
+        }
+    }
+
+    suspend fun saveAutoBackupPassword(password: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.AUTO_BACKUP_PASSWORD] = password
+        }
+    }
+
+    suspend fun clearAutoBackupPassword() {
+        dataStore.edit { prefs ->
+            prefs.remove(Keys.AUTO_BACKUP_PASSWORD)
+        }
+    }
+
+    suspend fun saveAutoBackupKeepCount(count: Int) {
+        dataStore.edit { prefs ->
+            prefs[Keys.AUTO_BACKUP_KEEP_COUNT] = count
         }
     }
 }

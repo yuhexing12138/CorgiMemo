@@ -6,8 +6,6 @@ import android.content.Context
 import android.content.Intent
 import com.corgimemo.app.data.local.db.CorgiMemoDatabase
 import com.corgimemo.app.data.model.TodoItem
-import com.corgimemo.app.data.repository.CategoryRepository
-import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.notification.AlarmScheduler
 import com.corgimemo.app.notification.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
@@ -45,41 +43,35 @@ class ReminderActionReceiver : BroadcastReceiver() {
 
         if (todoId == -1L) return
 
-        // 获取 Repository
+        // 获取 DAO
         val database = CorgiMemoDatabase.getDatabase(context)
-        val todoRepository = TodoRepository(
-            todoDao = database.todoDao(),
-            ioDispatcher = Dispatchers.IO
-        )
-        val categoryRepository = CategoryRepository(
-            categoryDao = database.categoryDao(),
-            ioDispatcher = Dispatchers.IO
-        )
+        val todoDao = database.todoDao()
+        val categoryDao = database.categoryDao()
 
         when (intent.action) {
             ACTION_REMINDER -> {
                 // 提醒触发，显示通知
-                handleReminderTrigger(context, todoRepository, categoryRepository, todoId)
+                handleReminderTrigger(context, todoDao, categoryDao, todoId)
             }
             ACTION_COMPLETE -> {
                 // 标记待办完成
-                handleCompleteAction(context, todoRepository, todoId, notificationId)
+                handleCompleteAction(context, todoDao, todoId, notificationId)
             }
             ACTION_SNOOZE_10M -> {
                 // 稍后10分钟
-                handleSnoozeAction(context, todoRepository, categoryRepository, todoId, notificationId, SNOOZE_10_MINUTES)
+                handleSnoozeAction(context, todoDao, categoryDao, todoId, notificationId, SNOOZE_10_MINUTES)
             }
             ACTION_SNOOZE_1H -> {
                 // 稍后1小时
-                handleSnoozeAction(context, todoRepository, categoryRepository, todoId, notificationId, SNOOZE_1_HOUR)
+                handleSnoozeAction(context, todoDao, categoryDao, todoId, notificationId, SNOOZE_1_HOUR)
             }
             ACTION_SNOOZE_TOMORROW -> {
                 // 推迟到明天
-                handleSnoozeTomorrow(context, todoRepository, categoryRepository, todoId, notificationId)
+                handleSnoozeTomorrow(context, todoDao, categoryDao, todoId, notificationId)
             }
             ACTION_SNOOZE_WEEKEND -> {
                 // 改到周末
-                handleSnoozeWeekend(context, todoRepository, categoryRepository, todoId, notificationId)
+                handleSnoozeWeekend(context, todoDao, categoryDao, todoId, notificationId)
             }
         }
     }
@@ -88,24 +80,24 @@ class ReminderActionReceiver : BroadcastReceiver() {
      * 处理"完成"操作
      *
      * @param context 上下文
-     * @param todoRepository 待办 Repository
+     * @param todoDao 待办 DAO
      * @param todoId 待办 ID
      * @param notificationId 通知 ID
      */
     private fun handleCompleteAction(
         context: Context,
-        todoRepository: TodoRepository,
+        todoDao: com.corgimemo.app.data.local.db.TodoDao,
         todoId: Long,
         notificationId: Int
     ) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 // 1. 从数据库获取待办
-                val todo = todoRepository.getTodoById(todoId)
+                val todo = todoDao.getTodoById(todoId)
                 todo?.let {
                     // 2. 更新为已完成状态
                     val updatedTodo = createCompletedTodo(it)
-                    todoRepository.updateTodo(updatedTodo)
+                    todoDao.update(updatedTodo)
                 }
 
                 // 3. 关闭通知
@@ -121,25 +113,25 @@ class ReminderActionReceiver : BroadcastReceiver() {
      * 显示待办通知
      *
      * @param context 上下文
-     * @param todoRepository 待办 Repository
-     * @param categoryRepository 分类 Repository
+     * @param todoDao 待办 DAO
+     * @param categoryDao 分类 DAO
      * @param todoId 待办 ID
      */
     private fun handleReminderTrigger(
         context: Context,
-        todoRepository: TodoRepository,
-        categoryRepository: CategoryRepository,
+        todoDao: com.corgimemo.app.data.local.db.TodoDao,
+        categoryDao: com.corgimemo.app.data.local.db.CategoryDao,
         todoId: Long
     ) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val todo = todoRepository.getTodoById(todoId) ?: return@launch
+                val todo = todoDao.getTodoById(todoId) ?: return@launch
 
                 if (todo.status == 1) return@launch
 
-                val category = todo.categoryId?.let { categoryRepository.getCategoryById(it) }
+                val category = todo.categoryId?.let { categoryDao.getCategoryById(it) }
 
-                val pendingTodos = todoRepository.getTodosByStatus(0).first()
+                val pendingTodos = todoDao.getTodosByStatus(0).first()
                 val upcomingTodos = pendingTodos.filter { it.reminderTime != null }
 
                 NotificationHelper.notifyTodo(
@@ -158,28 +150,28 @@ class ReminderActionReceiver : BroadcastReceiver() {
      * 处理"稍后提醒"操作
      *
      * @param context 上下文
-     * @param todoRepository 待办 Repository
-     * @param categoryRepository 分类 Repository
+     * @param todoDao 待办 DAO
+     * @param categoryDao 分类 DAO
      * @param todoId 待办 ID
      * @param notificationId 通知 ID
      * @param delayMillis 延迟时间（毫秒）
      */
     private fun handleSnoozeAction(
         context: Context,
-        todoRepository: TodoRepository,
-        categoryRepository: CategoryRepository,
+        todoDao: com.corgimemo.app.data.local.db.TodoDao,
+        categoryDao: com.corgimemo.app.data.local.db.CategoryDao,
         todoId: Long,
         notificationId: Int,
         delayMillis: Long
     ) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val todo = todoRepository.getTodoById(todoId)
+                val todo = todoDao.getTodoById(todoId)
                 todo?.let {
                     val updatedTodo = createSnoozedTodo(it, delayMillis)
-                    todoRepository.updateTodo(updatedTodo)
+                    todoDao.update(updatedTodo)
 
-                    val category = it.categoryId?.let { categoryRepository.getCategoryById(it) }
+                    val category = it.categoryId?.let { categoryDao.getCategoryById(it) }
                     AlarmScheduler.rescheduleReminder(context, updatedTodo, category)
                 }
 
@@ -195,21 +187,21 @@ class ReminderActionReceiver : BroadcastReceiver() {
      * 保持相同的时分秒
      *
      * @param context 上下文
-     * @param todoRepository 待办 Repository
-     * @param categoryRepository 分类 Repository
+     * @param todoDao 待办 DAO
+     * @param categoryDao 分类 DAO
      * @param todoId 待办 ID
      * @param notificationId 通知 ID
      */
     private fun handleSnoozeTomorrow(
         context: Context,
-        todoRepository: TodoRepository,
-        categoryRepository: CategoryRepository,
+        todoDao: com.corgimemo.app.data.local.db.TodoDao,
+        categoryDao: com.corgimemo.app.data.local.db.CategoryDao,
         todoId: Long,
         notificationId: Int
     ) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val todo = todoRepository.getTodoById(todoId)
+                val todo = todoDao.getTodoById(todoId)
                 todo?.let {
                     val currentTime = it.reminderTime ?: System.currentTimeMillis()
                     val tomorrowTime = AlarmScheduler.calculateTomorrowSameTime(currentTime)
@@ -217,9 +209,9 @@ class ReminderActionReceiver : BroadcastReceiver() {
                         reminderTime = tomorrowTime,
                         updatedAt = System.currentTimeMillis()
                     )
-                    todoRepository.updateTodo(updatedTodo)
+                    todoDao.update(updatedTodo)
 
-                    val category = it.categoryId?.let { categoryRepository.getCategoryById(it) }
+                    val category = it.categoryId?.let { categoryDao.getCategoryById(it) }
                     AlarmScheduler.rescheduleReminder(context, updatedTodo, category)
                 }
 
@@ -235,30 +227,30 @@ class ReminderActionReceiver : BroadcastReceiver() {
      * 改到本周六 9:00
      *
      * @param context 上下文
-     * @param todoRepository 待办 Repository
-     * @param categoryRepository 分类 Repository
+     * @param todoDao 待办 DAO
+     * @param categoryDao 分类 DAO
      * @param todoId 待办 ID
      * @param notificationId 通知 ID
      */
     private fun handleSnoozeWeekend(
         context: Context,
-        todoRepository: TodoRepository,
-        categoryRepository: CategoryRepository,
+        todoDao: com.corgimemo.app.data.local.db.TodoDao,
+        categoryDao: com.corgimemo.app.data.local.db.CategoryDao,
         todoId: Long,
         notificationId: Int
     ) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val todo = todoRepository.getTodoById(todoId)
+                val todo = todoDao.getTodoById(todoId)
                 todo?.let {
                     val weekendTime = AlarmScheduler.calculateNextSaturday()
                     val updatedTodo = it.copy(
                         reminderTime = weekendTime,
                         updatedAt = System.currentTimeMillis()
                     )
-                    todoRepository.updateTodo(updatedTodo)
+                    todoDao.update(updatedTodo)
 
-                    val category = it.categoryId?.let { categoryRepository.getCategoryById(it) }
+                    val category = it.categoryId?.let { categoryDao.getCategoryById(it) }
                     AlarmScheduler.rescheduleReminder(context, updatedTodo, category)
                 }
 

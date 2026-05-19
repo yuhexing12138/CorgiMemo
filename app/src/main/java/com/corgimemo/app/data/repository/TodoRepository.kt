@@ -1,8 +1,11 @@
 package com.corgimemo.app.data.repository
 
+import android.content.Context
 import com.corgimemo.app.data.local.db.TodoDao
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.di.IoDispatcher
+import com.corgimemo.app.widget.WidgetUpdateReceiver
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -12,33 +15,76 @@ import javax.inject.Singleton
 @Singleton
 class TodoRepository @Inject constructor(
     private val todoDao: TodoDao,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
+    @ApplicationContext private val context: Context
 ) {
 
+    /**
+     * 插入单个待办
+     *
+     * @param todo 待办项
+     * @return 插入的 ID
+     */
     suspend fun insertTodo(todo: TodoItem): Long = withContext(ioDispatcher) {
-        todoDao.insert(todo)
+        val result = todoDao.insert(todo)
+        WidgetUpdateReceiver.sendRefreshBroadcast(context)
+        result
     }
 
+    /**
+     * 批量插入待办
+     *
+     * @param todos 待办列表
+     */
     suspend fun insertTodos(todos: List<TodoItem>) = withContext(ioDispatcher) {
         todoDao.insertAll(todos)
+        WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }
 
+    /**
+     * 更新待办
+     *
+     * @param todo 待办项
+     */
     suspend fun updateTodo(todo: TodoItem) = withContext(ioDispatcher) {
         todoDao.update(todo)
+        WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }
 
+    /**
+     * 删除待办
+     *
+     * @param todo 待办项
+     */
     suspend fun deleteTodo(todo: TodoItem) = withContext(ioDispatcher) {
         todoDao.delete(todo)
+        WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }
 
+    /**
+     * 根据 ID 删除待办
+     *
+     * @param todoId 待办 ID
+     */
     suspend fun deleteTodoById(todoId: Long) = withContext(ioDispatcher) {
         todoDao.deleteById(todoId)
+        WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }
 
+    /**
+     * 删除所有待办
+     */
     suspend fun deleteAllTodos() = withContext(ioDispatcher) {
         todoDao.deleteAll()
+        WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }
 
+    /**
+     * 根据 ID 获取待办
+     *
+     * @param todoId 待办 ID
+     * @return 待办项
+     */
     suspend fun getTodoById(todoId: Long): TodoItem? = withContext(ioDispatcher) {
         todoDao.getTodoById(todoId)
     }
@@ -91,6 +137,10 @@ class TodoRepository @Inject constructor(
      * @return 删除的待办数量
      */
     suspend fun cleanupOldCompletedTodos(threshold: Long): Int = withContext(ioDispatcher) {
-        todoDao.deleteOldCompletedTodos(threshold)
+        val deleted = todoDao.deleteOldCompletedTodos(threshold)
+        if (deleted > 0) {
+            WidgetUpdateReceiver.sendRefreshBroadcast(context)
+        }
+        deleted
     }
 }
