@@ -256,7 +256,7 @@ object MoodManager {
 
 /**
  * 问候语管理器
- * 根据情绪和时间生成不同的问候语
+ * 根据情绪、时间和节日生成不同的问候语
  */
 object GreetingManager {
 
@@ -279,6 +279,32 @@ object GreetingManager {
             CorgiMood.SLEEPY -> "${corgiName}有点困了，但还是会陪着你 💤"
             CorgiMood.SAD -> "${corgiName}有点低落...陪陪它好吗？ 🥺"
         }
+    }
+
+    /**
+     * 获取节日问候语
+     * 如果当前是节日，返回节日专属问候语
+     *
+     * @param name 柯基名字
+     * @param currentTime 当前时间戳（默认为系统时间）
+     * @return 节日问候语，如果不是节日返回 null
+     */
+    fun getHolidayGreeting(
+        name: String? = null,
+        currentTime: Long = System.currentTimeMillis()
+    ): String? {
+        val holiday = HolidayManager.getCurrentHoliday(currentTime)
+        return holiday?.getRandomGreeting(name)
+    }
+
+    /**
+     * 获取当前节日对象
+     *
+     * @param currentTime 当前时间戳
+     * @return 节日对象，如果不是节日返回 null
+     */
+    fun getCurrentHoliday(currentTime: Long = System.currentTimeMillis()): Holiday? {
+        return HolidayManager.getCurrentHoliday(currentTime)
     }
 
     /**
@@ -312,25 +338,48 @@ object GreetingManager {
 
     /**
      * 根据情绪、名字和身份获取问候语
-     * 包含身份专属的个性化内容
+     * 包含节日问候、身份专属的个性化内容
      *
      * @param mood 情绪状态
      * @param name 柯基名字
      * @param userType 用户类型
+     * @param currentTime 当前时间戳（用于节日判断）
      * @return 问候语字符串
      */
     fun getGreetingForUserType(
         mood: CorgiMood,
         name: String? = null,
-        userType: UserType
+        userType: UserType,
+        currentTime: Long = System.currentTimeMillis()
     ): String {
         val corgiName = name ?: "柯基"
+
+        // 优先检查节日问候语
+        val holidayGreeting = getHolidayGreeting(corgiName, currentTime)
+        if (holidayGreeting != null) {
+            // 如果是节日，返回节日问候语 + 身份后缀
+            val identitySuffix = getIdentitySuffix(userType, mood)
+            return "$holidayGreeting\n$identitySuffix"
+        }
 
         // 获取基础问候语
         val baseGreeting = getGreeting(mood, name)
 
         // 根据身份添加专属后缀
-        val identitySuffix = when (userType) {
+        val identitySuffix = getIdentitySuffix(userType, mood)
+
+        return "$baseGreeting\n$identitySuffix"
+    }
+
+    /**
+     * 获取身份专属后缀
+     *
+     * @param userType 用户类型
+     * @param mood 情绪状态
+     * @return 身份专属后缀
+     */
+    private fun getIdentitySuffix(userType: UserType, mood: CorgiMood): String {
+        return when (userType) {
             UserType.WORKER -> when (mood) {
                 CorgiMood.EXCITED, CorgiMood.HAPPY -> "工作也要开心哦 💼"
                 CorgiMood.WORRIED, CorgiMood.SAD -> "工作太累了就休息一下吧 💼"
@@ -342,8 +391,6 @@ object GreetingManager {
                 else -> "学习加油！记得劳逸结合 📚"
             }
         }
-
-        return "$baseGreeting\n$identitySuffix"
     }
 }
 

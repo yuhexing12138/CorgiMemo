@@ -2,6 +2,7 @@ package com.corgimemo.app.viewmodel
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
+import java.util.Calendar
 import androidx.lifecycle.viewModelScope
 import com.corgimemo.app.animation.Achievement
 import com.corgimemo.app.animation.AchievementManager
@@ -9,6 +10,10 @@ import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.CorgiPose
 import com.corgimemo.app.animation.GreetingManager
 import com.corgimemo.app.animation.HapticFeedbackManager
+import com.corgimemo.app.animation.Holiday
+import com.corgimemo.app.animation.HolidayManager
+import com.corgimemo.app.animation.SolarTerm
+import com.corgimemo.app.animation.SolarTermManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.animation.LevelManager
 import com.corgimemo.app.animation.LevelStage
@@ -27,6 +32,10 @@ import com.corgimemo.app.data.repository.MoodHistoryRepository
 import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiBehaviorManager
+import com.corgimemo.app.animation.DynamicGreetingManager
+import com.corgimemo.app.animation.GreetingContext
+import com.corgimemo.app.animation.TimeSlot
+import com.corgimemo.app.data.weather.WeatherManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -130,6 +139,22 @@ class HomeViewModel @Inject constructor(
 
     private val _greeting = MutableStateFlow("")
     val greeting: StateFlow<String> = _greeting.asStateFlow()
+
+    // 动态问候语缓存
+    private var cachedGreeting: DynamicGreetingManager.CachedGreeting? = null
+
+    // ========== 节日相关状态 ==========
+
+    private val _currentHoliday = MutableStateFlow<Holiday?>(null)
+    val currentHoliday: StateFlow<Holiday?> = _currentHoliday.asStateFlow()
+
+    // ========== 节气相关状态 ==========
+
+    private val _currentSolarTerm = MutableStateFlow<SolarTerm?>(null)
+    val currentSolarTerm: StateFlow<SolarTerm?> = _currentSolarTerm.asStateFlow()
+
+    private val _showSolarTermCard = MutableStateFlow(false)
+    val showSolarTermCard: StateFlow<Boolean> = _showSolarTermCard.asStateFlow()
 
     // ========== 成长系统状态 ==========
 
@@ -236,6 +261,89 @@ class HomeViewModel @Inject constructor(
         recordDailyMoodIfNeeded()
         loadMoodHistory()
         observeUserType()
+        checkHoliday()
+        checkSolarTerm()
+    }
+
+    /**
+     * 检查当前节日
+     * 更新节日状态和相关的问候语、装扮
+     */
+    private fun checkHoliday() {
+        val currentTime = System.currentTimeMillis()
+        val holiday = HolidayManager.getCurrentHoliday(currentTime)
+        _currentHoliday.value = holiday
+        updateGreeting()
+    }
+
+    /**
+     * 刷新节日状态
+     * 在测试模式切换节日时调用，触发 UI 实时更新
+     */
+    fun refreshHoliday() {
+        checkHoliday()
+    }
+
+    /**
+     * 检查当前节气
+     * 更新节气状态和节气卡片显示
+     */
+    private fun checkSolarTerm() {
+        viewModelScope.launch {
+            val currentTime = System.currentTimeMillis()
+            val calendar = Calendar.getInstance().apply { timeInMillis = currentTime }
+            val todayStr = String.format(
+                "%04d%02d%02d",
+                calendar.get(Calendar.YEAR),
+                calendar.get(Calendar.MONTH) + 1,
+                calendar.get(Calendar.DAY_OF_MONTH)
+            )
+
+            val solarTerm = SolarTermManager.getCurrentSolarTerm(currentTime)
+            _currentSolarTerm.value = solarTerm
+
+            if (solarTerm != null) {
+                val isDismissed = corgiPreferences.isSolarTermCardDismissed(
+                    solarTermId = solarTerm.id,
+                    today = todayStr
+                )
+                _showSolarTermCard.value = !isDismissed
+            } else {
+                _showSolarTermCard.value = false
+            }
+        }
+    }
+
+    /**
+     * 关闭节气科普卡片
+     * 保存关闭状态，当天不再显示
+     */
+    fun dismissSolarTermCard() {
+        val solarTerm = _currentSolarTerm.value ?: return
+        val currentTime = System.currentTimeMillis()
+        val calendar = Calendar.getInstance().apply { timeInMillis = currentTime }
+        val todayStr = String.format(
+            "%04d%02d%02d",
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH) + 1,
+            calendar.get(Calendar.DAY_OF_MONTH)
+        )
+
+        viewModelScope.launch {
+            corgiPreferences.saveSolarTermCardDismissed(
+                solarTermId = solarTerm.id,
+                today = todayStr
+            )
+            _showSolarTermCard.value = false
+        }
+    }
+
+    /**
+     * 刷新节气状态
+     * 在测试模式切换节气时调用，触发 UI 实时更新
+     */
+    fun refreshSolarTerm() {
+        checkSolarTerm()
     }
 
     /**
@@ -329,15 +437,77 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 刷新问候语（按需刷新）
+     * 检查缓存是否过期或时间段变化，需要时重新生成
+     */
+    suspend fun refreshGreetingIfNeeded() {
+        val currentTime = System.currentTimeMillis()
+
+        if (DynamicGreetingManager.shouldRefreshGreeting(cachedGreeting, currentTime)) {
+            val greeting = generateDynamicGreeting(currentTime)
+            _greeting.value = greeting
+            cachedGreeting = DynamicGreetingManager.CachedGreeting(
+                greeting = greeting,
+                timeSlot = getCurrentTimeSlot(),
+                timestamp = currentTime
+            )
+        }
+    }
+
+    /**
+     * 获取当前时间段
+     */
+    private fun getCurrentTimeSlot(): TimeSlot {
+        val calendar = Calendar.getInstance()
+        val hour = calendar.get(Calendar.HOUR_OF_DAY)
+        return DynamicGreetingManager.getTimeSlot(hour)
+    }
+
+    /**
+     * 生成动态问候语
+     * 失败时降级为原有的固定问候语
+     */
+    private suspend fun generateDynamicGreeting(currentTime: Long): String {
+        return try {
+            val calendar = Calendar.getInstance().apply { timeInMillis = currentTime }
+            val hour = calendar.get(Calendar.HOUR_OF_DAY)
+            val dayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
+            val isWeekend = dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY
+
+            val todos = todoRepository.getAllTodos().first()
+            val pendingCount = todos.count { it.status == 0 }
+            val urgentTodo = DynamicGreetingManager.getMostUrgentTodo(todos, currentTime)
+
+            val weatherInfo = WeatherManager.getWeatherInfo()
+            val userName = _corgiData.value?.name
+
+            val context = GreetingContext(
+                hour = hour,
+                isWeekend = isWeekend,
+                pendingTodoCount = pendingCount,
+                urgentTodoTitle = urgentTodo?.title,
+                userName = userName,
+                weatherInfo = weatherInfo
+            )
+
+            DynamicGreetingManager.generateGreeting(context)
+        } catch (e: Exception) {
+            GreetingManager.getGreetingForUserType(
+                mood = _currentMood.value,
+                name = _corgiData.value?.name,
+                userType = _userType.value
+            )
+        }
+    }
+
+    /**
      * 更新问候语
      * 根据用户身份生成个性化问候语
      */
     private fun updateGreeting() {
-        _greeting.value = GreetingManager.getGreetingForUserType(
-            mood = _currentMood.value,
-            name = _corgiData.value?.name,
-            userType = _userType.value
-        )
+        viewModelScope.launch {
+            refreshGreetingIfNeeded()
+        }
     }
 
     /**

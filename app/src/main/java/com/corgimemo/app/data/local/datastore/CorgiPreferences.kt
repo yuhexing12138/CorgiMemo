@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -199,6 +200,140 @@ class CorgiPreferences(context: Context) {
     suspend fun saveUserType(userType: String) {
         dataStore.edit { preferences: MutablePreferences ->
             preferences[USER_TYPE] = userType
+        }
+    }
+
+    /**
+     * 获取提醒提前量的 Key
+     *
+     * @param categoryId 分类 ID
+     * @return DataStore Key
+     */
+    private fun getReminderAdvanceKey(categoryId: Long) =
+        intPreferencesKey("reminder_advance_$categoryId")
+
+    /**
+     * 获取指定分类的提醒提前量（Flow）
+     *
+     * @param categoryId 分类 ID
+     * @return 提前分钟数的 Flow
+     */
+    fun getReminderAdvanceFlow(categoryId: Long): Flow<Int?> = dataStore.data
+        .map { preferences ->
+            preferences[getReminderAdvanceKey(categoryId)]
+        }
+
+    /**
+     * 获取指定分类的提醒提前量（一次获取）
+     *
+     * @param categoryId 分类 ID
+     * @return 提前分钟数，未设置则返回 null
+     */
+    suspend fun getReminderAdvanceMinutes(categoryId: Long): Int? {
+        val key = getReminderAdvanceKey(categoryId)
+        return dataStore.data.map { prefs ->
+            prefs[key]
+        }.first()
+    }
+
+    /**
+     * 保存指定分类的提醒提前量
+     *
+     * @param categoryId 分类 ID
+     * @param minutes 提前分钟数
+     */
+    suspend fun saveReminderAdvanceMinutes(categoryId: Long, minutes: Int) {
+        val key = getReminderAdvanceKey(categoryId)
+        dataStore.edit { prefs ->
+            prefs[key] = minutes
+        }
+    }
+
+    /**
+     * 清除指定分类的提醒提前量设置
+     *
+     * @param categoryId 分类 ID
+     */
+    suspend fun clearReminderAdvanceMinutes(categoryId: Long) {
+        val key = getReminderAdvanceKey(categoryId)
+        dataStore.edit { prefs ->
+            prefs.remove(key)
+        }
+    }
+
+    /**
+     * 获取节气卡片关闭状态的 Key
+     * Key 格式：solar_term_card_dismissed_{solarTermId}_{yyyyMMdd}
+     * 日期是为了确保每天只记录一次
+     *
+     * @param solarTermId 节气 ID
+     * @param date 日期字符串（yyyyMMdd）
+     * @return DataStore Key
+     */
+    private fun getSolarTermCardDismissedKey(solarTermId: String, date: String) =
+        booleanPreferencesKey("solar_term_card_dismissed_${solarTermId}_$date")
+
+    /**
+     * 检查今天是否已关闭过某个节气的科普卡片
+     *
+     * @param solarTermId 节气 ID
+     * @param today 今天的日期字符串（yyyyMMdd）
+     * @return 是否已关闭
+     */
+    suspend fun isSolarTermCardDismissed(solarTermId: String, today: String): Boolean {
+        val key = getSolarTermCardDismissedKey(solarTermId, today)
+        return dataStore.data.map { prefs ->
+            prefs[key] ?: false
+        }.first()
+    }
+
+    /**
+     * 保存节气卡片的关闭状态
+     * 关闭后当天不再显示
+     *
+     * @param solarTermId 节气 ID
+     * @param today 今天的日期字符串（yyyyMMdd）
+     */
+    suspend fun saveSolarTermCardDismissed(solarTermId: String, today: String) {
+        val key = getSolarTermCardDismissedKey(solarTermId, today)
+        dataStore.edit { prefs ->
+            prefs[key] = true
+        }
+    }
+
+    /**
+     * 清理过期的节气卡片关闭状态
+     * 保留最近 30 天的数据
+     *
+     * @param currentDate 当前日期（yyyyMMdd）
+     */
+    suspend fun cleanupExpiredSolarTermCardDismissedKeys(currentDate: String) {
+        val currentDateInt = currentDate.toIntOrNull() ?: return
+        val keysToRemove = mutableListOf<Preferences.Key<*>>()
+
+        dataStore.data.collect { prefs ->
+            prefs.asMap().keys.forEach { key ->
+                val keyName = key.name
+                if (keyName.startsWith("solar_term_card_dismissed_")) {
+                    val parts = keyName.split("_")
+                    if (parts.size >= 5) {
+                        val dateStr = parts.last()
+                        val dateInt = dateStr.toIntOrNull()
+                        if (dateInt != null) {
+                            val diff = currentDateInt - dateInt
+                            if (diff > 30) {
+                                keysToRemove.add(key)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (keysToRemove.isNotEmpty()) {
+                dataStore.edit { mutablePrefs ->
+                    keysToRemove.forEach { mutablePrefs.remove(it) }
+                }
+            }
         }
     }
 }

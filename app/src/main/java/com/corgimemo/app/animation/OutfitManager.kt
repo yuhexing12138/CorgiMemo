@@ -9,12 +9,14 @@ import org.json.JSONArray
  * @property name 装扮名称
  * @property description 装扮描述
  * @property isDefault 是否为默认装扮
+ * @property isHoliday 是否为节日装扮
  */
 data class Outfit(
     val id: String,
     val name: String,
     val description: String,
-    val isDefault: Boolean = false
+    val isDefault: Boolean = false,
+    val isHoliday: Boolean = false
 )
 
 /**
@@ -28,6 +30,7 @@ data class Outfit(
  * 4. 皇冠 - 连续 30 天完成任务解锁
  * 5. 天使翅膀 - 累计完成 500 个任务解锁
  * 6. 披风 - 解锁其他 4 个成就解锁
+ * 7-15. 节日装扮（节日期间自动显示）
  */
 object OutfitManager {
 
@@ -70,6 +73,70 @@ object OutfitManager {
             name = "披风",
             description = "全成就大师的荣耀",
             isDefault = false
+        ),
+        // 节日装扮（节日期间自动显示，无需解锁）
+        Outfit(
+            id = HolidayOutfitId.NEW_YEAR_HAT,
+            name = "派对帽",
+            description = "元旦/新年专属装扮",
+            isDefault = false,
+            isHoliday = true
+        ),
+        Outfit(
+            id = HolidayOutfitId.RED_SCARF,
+            name = "红色围巾",
+            description = "春节专属装扮",
+            isDefault = false,
+            isHoliday = true
+        ),
+        Outfit(
+            id = HolidayOutfitId.LANTERN,
+            name = "灯笼",
+            description = "元宵节专属装扮",
+            isDefault = false,
+            isHoliday = true
+        ),
+        Outfit(
+            id = HolidayOutfitId.LABOR_HAT,
+            name = "工作帽",
+            description = "劳动节专属装扮",
+            isDefault = false,
+            isHoliday = true
+        ),
+        Outfit(
+            id = HolidayOutfitId.DRAGON_HAT,
+            name = "龙舟帽",
+            description = "端午节专属装扮",
+            isDefault = false,
+            isHoliday = true
+        ),
+        Outfit(
+            id = HolidayOutfitId.FLAG,
+            name = "国旗",
+            description = "国庆节专属装扮",
+            isDefault = false,
+            isHoliday = true
+        ),
+        Outfit(
+            id = HolidayOutfitId.MOON_DECOR,
+            name = "月亮装饰",
+            description = "中秋节专属装扮",
+            isDefault = false,
+            isHoliday = true
+        ),
+        Outfit(
+            id = HolidayOutfitId.SCARF,
+            name = "围巾",
+            description = "冬至专属装扮",
+            isDefault = false,
+            isHoliday = true
+        ),
+        Outfit(
+            id = HolidayOutfitId.CHRISTMAS_HAT,
+            name = "圣诞帽",
+            description = "圣诞节专属装扮",
+            isDefault = false,
+            isHoliday = true
         )
     )
 
@@ -102,10 +169,16 @@ object OutfitManager {
         get() = allOutfits.first { it.isDefault }
 
     /**
-     * 获取所有可解锁装扮（排除默认）
+     * 获取所有可解锁装扮（排除默认和节日装扮）
      */
     val unlockableOutfits: List<Outfit>
-        get() = allOutfits.filter { !it.isDefault }
+        get() = allOutfits.filter { !it.isDefault && !it.isHoliday }
+
+    /**
+     * 获取所有节日装扮
+     */
+    val holidayOutfits: List<Outfit>
+        get() = allOutfits.filter { it.isHoliday }
 
     /**
      * 根据 ID 获取装扮
@@ -129,13 +202,38 @@ object OutfitManager {
     }
 
     /**
+     * 获取当前节日装扮
+     *
+     * @param currentTime 当前时间戳
+     * @return 节日装扮对象，如果不是节日返回 null
+     */
+    fun getHolidayOutfit(currentTime: Long = System.currentTimeMillis()): Outfit? {
+        val holiday = HolidayManager.getCurrentHoliday(currentTime)
+        return holiday?.outfitId?.let { getOutfitById(it) }
+    }
+
+    /**
      * 获取装扮对应的解锁条件
      *
      * @param outfitId 装扮 ID
      * @return 解锁条件描述
      */
     fun getUnlockCondition(outfitId: String): String {
+        // 节日装扮无需解锁
+        if (isHolidayOutfit(outfitId)) {
+            return "节日期间自动显示"
+        }
         return outfitUnlockConditions[outfitId] ?: "默认装扮"
+    }
+
+    /**
+     * 判断是否为节日装扮
+     *
+     * @param outfitId 装扮 ID
+     * @return 是否为节日装扮
+     */
+    fun isHolidayOutfit(outfitId: String): Boolean {
+        return getOutfitById(outfitId)?.isHoliday ?: false
     }
 
     /**
@@ -146,7 +244,11 @@ object OutfitManager {
      * @return 是否已解锁
      */
     fun isOutfitUnlocked(outfitId: String, unlockedOutfitsJson: String): Boolean {
+        // 默认装扮始终已解锁
         if (outfitId == OutfitId.DEFAULT) return true
+        // 节日装扮始终已解锁
+        if (isHolidayOutfit(outfitId)) return true
+        // 成就装扮需要检查解锁状态
         val unlockedIds = parseOutfitIds(unlockedOutfitsJson)
         return unlockedIds.contains(outfitId)
     }

@@ -32,6 +32,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -45,6 +46,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ModalBottomSheet
@@ -74,7 +76,9 @@ import androidx.navigation.NavController
 import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.GreetingManager
+import com.corgimemo.app.animation.HolidayManager
 import com.corgimemo.app.animation.InteractiveCorgi
+import com.corgimemo.app.animation.SolarTermManager
 import com.corgimemo.app.animation.LevelManager
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.TodoItem
@@ -82,6 +86,7 @@ import com.corgimemo.app.data.repository.GeofenceRepository
 import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.ui.components.EmptyState
 import com.corgimemo.app.ui.components.EmptyStateType
+import com.corgimemo.app.ui.components.SolarTermCard
 import com.corgimemo.app.ui.components.TodoCreateBottomSheet
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.viewmodel.CelebrationLevel
@@ -106,6 +111,14 @@ fun HomeScreen(
     val currentPose by viewModel.currentPose.collectAsState()
     val currentMood by viewModel.currentMood.collectAsState()
     val currentOutfit by viewModel.currentOutfit.collectAsState()
+    val currentHoliday by viewModel.currentHoliday.collectAsState()
+    val currentSolarTerm by viewModel.currentSolarTerm.collectAsState()
+    val showSolarTermCard by viewModel.showSolarTermCard.collectAsState()
+    val greeting by viewModel.greeting.collectAsState()
+
+    // 实际显示的装扮：节日装扮优先级高于用户选择的装扮
+    val effectiveOutfit = currentHoliday?.outfitId ?: currentOutfit
+
     val celebrationState by viewModel.celebrationState.collectAsState()
     val showLevelUp by viewModel.showLevelUp.collectAsState()
     val showAchievementUnlock by viewModel.showAchievementUnlock.collectAsState()
@@ -129,6 +142,11 @@ fun HomeScreen(
             viewModel.clearMoodChangeMessage()
         }
     }
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshGreetingIfNeeded()
+    }
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var isSheetVisible by remember { mutableStateOf(false) }
     val outfitSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -194,12 +212,30 @@ fun HomeScreen(
         ) { innerPadding ->
             Box(modifier = Modifier.padding(innerPadding)) {
                 Column(modifier = Modifier.fillMaxSize()) {
+                    if (showSolarTermCard && currentSolarTerm != null) {
+                        AnimatedVisibility(
+                            visible = showSolarTermCard,
+                            enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 2 })
+                        ) {
+                            SolarTermCard(
+                                solarTerm = currentSolarTerm!!,
+                                onShare = {
+                                    Toast.makeText(context, "分享功能开发中...", Toast.LENGTH_SHORT).show()
+                                },
+                                onDismiss = {
+                                    viewModel.dismissSolarTermCard()
+                                }
+                            )
+                        }
+                    }
+
                     corgiData?.let { data ->
                         CorgiInteractionCard(
                             corgiData = data,
                             currentPose = currentPose,
                             currentMood = currentMood,
-                            currentOutfit = currentOutfit,
+                            currentOutfit = effectiveOutfit,
+                            greeting = greeting,
                             onLongClick = { viewModel.toggleOutfitSheet() },
                             onInteraction = { viewModel.onUserInteraction() },
                             soundEnabled = soundEnabled,
@@ -240,8 +276,8 @@ fun HomeScreen(
                         )
                     }
 
-                    // 临时测试按钮：触发通知测试
-                    NotificationTestButton(todos = todos, context = context)
+                    // 临时测试按钮：调试工具（通知测试 + 节日调试）
+                    DebugTools(todos = todos, context = context, viewModel = viewModel)
 
                     if (todos.isEmpty()) {
                         EmptyState(
@@ -415,6 +451,7 @@ fun HomeScreen(
  * @param currentPose 当前姿态
  * @param currentMood 当前情绪
  * @param currentOutfit 当前装扮 ID
+ * @param greeting 问候语（由 ViewModel 计算，已包含节日问候逻辑）
  * @param onLongClick 柯基长按回调（快速换装）
  * @param onInteraction 柯基被触摸时的回调（单击/双击/长按）
  * @param soundEnabled 音效开关
@@ -427,6 +464,7 @@ fun CorgiInteractionCard(
     currentPose: com.corgimemo.app.animation.CorgiPose,
     currentMood: CorgiMood,
     currentOutfit: String?,
+    greeting: String,
     onLongClick: () -> Unit = {},
     onInteraction: () -> Unit = {},
     soundEnabled: Boolean = true,
@@ -436,7 +474,6 @@ fun CorgiInteractionCard(
     val levelStage = LevelManager.getLevelStage(corgiData.level)
     val (_, progress) = LevelManager.getCurrentLevelAndProgress(corgiData.experience)
     val progressText = LevelManager.getProgressText(corgiData.experience)
-    val greeting = GreetingManager.getGreeting(currentMood, corgiData.name)
 
     Card(
         modifier = modifier.padding(16.dp),
@@ -588,6 +625,16 @@ fun OutfitDisplay(
         com.corgimemo.app.animation.OutfitId.CROWN -> "👑"
         com.corgimemo.app.animation.OutfitId.ANGEL_WINGS -> "🪽"
         com.corgimemo.app.animation.OutfitId.CAPE -> "🧥"
+        // 节日装扮
+        com.corgimemo.app.animation.HolidayOutfitId.NEW_YEAR_HAT -> "🎉"
+        com.corgimemo.app.animation.HolidayOutfitId.RED_SCARF -> "🧣"
+        com.corgimemo.app.animation.HolidayOutfitId.LANTERN -> "🏮"
+        com.corgimemo.app.animation.HolidayOutfitId.LABOR_HAT -> "⛑️"
+        com.corgimemo.app.animation.HolidayOutfitId.DRAGON_HAT -> "🐲"
+        com.corgimemo.app.animation.HolidayOutfitId.FLAG -> "🇨🇳"
+        com.corgimemo.app.animation.HolidayOutfitId.MOON_DECOR -> "🌕"
+        com.corgimemo.app.animation.HolidayOutfitId.SCARF -> "🧶"
+        com.corgimemo.app.animation.HolidayOutfitId.CHRISTMAS_HAT -> "🎅"
         else -> null
     }
 
@@ -1720,6 +1767,16 @@ fun QuickOutfitCard(
                     com.corgimemo.app.animation.OutfitId.CROWN -> "👑"
                     com.corgimemo.app.animation.OutfitId.ANGEL_WINGS -> "🪽"
                     com.corgimemo.app.animation.OutfitId.CAPE -> "🧥"
+                    // 节日装扮
+                    com.corgimemo.app.animation.HolidayOutfitId.NEW_YEAR_HAT -> "🎉"
+                    com.corgimemo.app.animation.HolidayOutfitId.RED_SCARF -> "🧣"
+                    com.corgimemo.app.animation.HolidayOutfitId.LANTERN -> "🏮"
+                    com.corgimemo.app.animation.HolidayOutfitId.LABOR_HAT -> "⛑️"
+                    com.corgimemo.app.animation.HolidayOutfitId.DRAGON_HAT -> "🐲"
+                    com.corgimemo.app.animation.HolidayOutfitId.FLAG -> "🇨🇳"
+                    com.corgimemo.app.animation.HolidayOutfitId.MOON_DECOR -> "🌕"
+                    com.corgimemo.app.animation.HolidayOutfitId.SCARF -> "🧶"
+                    com.corgimemo.app.animation.HolidayOutfitId.CHRISTMAS_HAT -> "🎅"
                     else -> "🐕"
                 },
                 fontSize = 32.sp
@@ -1749,54 +1806,273 @@ fun QuickOutfitCard(
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
-fun NotificationTestButton(
+fun DebugTools(
     todos: List<com.corgimemo.app.data.model.TodoItem>,
-    context: android.content.Context
+    context: android.content.Context,
+    viewModel: HomeViewModel
 ) {
     val notificationPermissionState = rememberPermissionState(
         permission = android.Manifest.permission.POST_NOTIFICATIONS
     )
 
-    Row(
+    var showHolidayPicker by remember { mutableStateOf(false) }
+    var currentTestMode by remember { mutableStateOf(HolidayManager.isTestModeEnabled()) }
+    var currentForcedHoliday by remember {
+        mutableStateOf(HolidayManager.getForcedHoliday()?.displayName ?: "")
+    }
+    var showSolarTermPicker by remember { mutableStateOf(false) }
+
+    Column(
         modifier = androidx.compose.ui.Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
     ) {
-        Button(
-            onClick = {
-                when (notificationPermissionState.status) {
-                    is PermissionStatus.Granted -> {
-                        val firstTodo = todos.firstOrNull()
-                        if (firstTodo != null) {
-                            val geofenceRepo = com.corgimemo.app.data.repository.GeofenceRepository(context)
-                            geofenceRepo.createNotificationChannel()
-
-                            val testTodo = firstTodo.copy(
-                                geofenceEnabled = true,
-                                geofenceAddress = "测试位置 - 北京市朝阳区"
-                            )
-                            geofenceRepo.showGeofenceNotification(testTodo)
-                        }
-                    }
-                    is PermissionStatus.Denied -> {
-                        notificationPermissionState.launchPermissionRequest()
-                    }
-                }
-            },
-            enabled = todos.isNotEmpty(),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
-        ) {
+        if (currentTestMode) {
             Text(
-                text = if (todos.isNotEmpty()) {
-                    when (notificationPermissionState.status) {
-                        is PermissionStatus.Granted -> "🧪 测试通知按钮 (ID: ${todos.first().id})"
-                        is PermissionStatus.Denied -> "🔔 请求通知权限"
-                    }
+                text = if (currentForcedHoliday.isNotEmpty()) {
+                    "🎯 测试模式：强制显示 $currentForcedHoliday"
                 } else {
-                        "请先创建待办"
-                }
+                    "🎯 测试模式：使用最近节日"
+                },
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(bottom = 4.dp)
             )
         }
+
+        Row(
+            modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+        ) {
+            // 测试通知按钮
+            Button(
+                onClick = {
+                    when (notificationPermissionState.status) {
+                        is PermissionStatus.Granted -> {
+                            val firstTodo = todos.firstOrNull()
+                            if (firstTodo != null) {
+                                val geofenceRepo = com.corgimemo.app.data.repository.GeofenceRepository(context)
+                                geofenceRepo.createNotificationChannel()
+
+                                val testTodo = firstTodo.copy(
+                                    geofenceEnabled = true,
+                                    geofenceAddress = "测试位置 - 北京市朝阳区"
+                                )
+                                geofenceRepo.showGeofenceNotification(testTodo)
+                            }
+                        }
+                        is PermissionStatus.Denied -> {
+                            notificationPermissionState.launchPermissionRequest()
+                        }
+                    }
+                },
+                enabled = todos.isNotEmpty(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+            ) {
+                Text(
+                    text = if (todos.isNotEmpty()) {
+                        when (notificationPermissionState.status) {
+                            is PermissionStatus.Granted -> "🧪 测试通知"
+                            is PermissionStatus.Denied -> "🔔 请求通知权限"
+                        }
+                    } else {
+                        "请先创建待办"
+                    },
+                    fontSize = 12.sp
+                )
+            }
+
+            // 节日调试按钮
+            Button(
+                onClick = { showHolidayPicker = true },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+            ) {
+                Text(
+                    text = if (currentTestMode) "🎄 节日模式" else "🎄 节日调试",
+                    fontSize = 12.sp
+                )
+            }
+
+            // 节气调试按钮
+            Button(
+                onClick = { showSolarTermPicker = true },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+            ) {
+                Text(
+                    text = "🍂 节气调试",
+                    fontSize = 12.sp
+                )
+            }
+        }
     }
+
+    // 节日选择对话框
+    if (showHolidayPicker) {
+        HolidayPickerDialog(
+            onDismiss = { showHolidayPicker = false },
+            onSelect = { holidayId ->
+                HolidayManager.enableTestMode(holidayId)
+                currentTestMode = true
+                currentForcedHoliday = holidayId?.let { HolidayManager.getHolidayById(it)?.displayName } ?: ""
+                showHolidayPicker = false
+                // 切换节日后刷新 ViewModel 状态，触发 UI 实时更新
+                viewModel.refreshHoliday()
+            },
+            onDisable = {
+                HolidayManager.disableTestMode()
+                currentTestMode = false
+                currentForcedHoliday = ""
+                showHolidayPicker = false
+                // 禁用测试模式后刷新 ViewModel 状态，恢复正常问候语
+                viewModel.refreshHoliday()
+            }
+        )
+    }
+
+    // 节气选择对话框
+    if (showSolarTermPicker) {
+        SolarTermPickerDialog(
+            onDismiss = { showSolarTermPicker = false },
+            onSelect = { solarTermId ->
+                SolarTermManager.enableTestMode(solarTermId)
+                showSolarTermPicker = false
+                viewModel.refreshSolarTerm()
+            },
+            onDisable = {
+                SolarTermManager.disableTestMode()
+                showSolarTermPicker = false
+                viewModel.refreshSolarTerm()
+            }
+        )
+    }
+}
+
+/**
+ * 节日选择对话框
+ * 用于调试时选择要测试的节日
+ */
+@Composable
+fun HolidayPickerDialog(
+    onDismiss: () -> Unit,
+    onSelect: (String?) -> Unit,
+    onDisable: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("选择节日")
+        },
+        text = {
+            Column {
+                // 使用最近节日
+                TextButton(
+                    onClick = { onSelect(null) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text("📅 使用最近的节日", fontWeight = FontWeight.Bold)
+                        Text("自动选择距离今天最近的节日", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                // 节日列表
+                LazyColumn(
+                    modifier = Modifier.height(300.dp)
+                ) {
+                    items(HolidayManager.allHolidays) { holiday ->
+                        TextButton(
+                            onClick = { onSelect(holiday.id) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(horizontalAlignment = Alignment.Start) {
+                                Text("${holiday.emoji} ${holiday.displayName}", fontWeight = FontWeight.Bold)
+                                val dateType = if (holiday.date.isLunar) "农历" else "公历"
+                                Text(
+                                    "$dateType ${holiday.date.month}月${holiday.date.day}日",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDisable) {
+                Text("恢复正常", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+/**
+ * 节气选择对话框
+ * 用于调试时选择要测试的节气
+ */
+@Composable
+fun SolarTermPickerDialog(
+    onDismiss: () -> Unit,
+    onSelect: (String?) -> Unit,
+    onDisable: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("选择节气")
+        },
+        text = {
+            Column {
+                Text(
+                    text = "选择要测试的节气，或恢复正常模式",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+                LazyColumn(
+                    modifier = Modifier.height(300.dp)
+                ) {
+                    items(com.corgimemo.app.animation.SolarTermData.allSolarTerms) { solarTerm ->
+                        TextButton(
+                            onClick = { onSelect(solarTerm.id) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(horizontalAlignment = Alignment.Start) {
+                                Text(
+                                    "${solarTerm.iconEmoji} ${solarTerm.displayName}",
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "公历 ${solarTerm.date.month}月${solarTerm.date.dayRange.first}-${solarTerm.date.dayRange.last}日",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDisable) {
+                Text("恢复正常", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }
