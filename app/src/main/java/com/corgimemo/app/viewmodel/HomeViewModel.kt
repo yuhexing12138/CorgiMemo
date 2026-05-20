@@ -24,11 +24,14 @@ import com.corgimemo.app.animation.PoseScene
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.MoodHistory
+import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.model.UserType
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.CorgiRepository
 import com.corgimemo.app.data.repository.MoodHistoryRepository
+import com.corgimemo.app.data.repository.RepeatTaskManager
+import com.corgimemo.app.data.repository.SubTaskManager
 import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiBehaviorManager
@@ -111,6 +114,18 @@ class HomeViewModel @Inject constructor(
 
     private val _filterStatus = MutableStateFlow(FilterStatus.ALL)
     val filterStatus: StateFlow<FilterStatus> = _filterStatus.asStateFlow()
+
+    // 子任务进度映射：todoId -> 进度文本（如 "2/5"）
+    private val _subTaskProgressMap = MutableStateFlow<Map<Long, String>>(emptyMap())
+    val subTaskProgressMap: StateFlow<Map<Long, String>> = _subTaskProgressMap.asStateFlow()
+
+    // 子任务列表映射：todoId -> 子任务列表
+    private val _subTasksMap = MutableStateFlow<Map<Long, List<SubTask>>>(emptyMap())
+    val subTasksMap: StateFlow<Map<Long, List<SubTask>>> = _subTasksMap.asStateFlow()
+
+    // 展开状态集：已展开的待办 ID 集合
+    private val _expandedTodos = MutableStateFlow<Set<Long>>(emptySet())
+    val expandedTodos: StateFlow<Set<Long>> = _expandedTodos.asStateFlow()
 
     // ========== 柯基数据相关 ==========
 
@@ -395,7 +410,7 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * 加载待办列表
+     * 加载待办列表及子任务进度
      */
     private fun loadTodos() {
         viewModelScope.launch {
@@ -412,6 +427,22 @@ class HomeViewModel @Inject constructor(
                         }
                     }
                 }
+
+                // 加载所有待办的子任务进度和子任务列表
+                val progressMap = mutableMapOf<Long, String>()
+                val subTasksMap = mutableMapOf<Long, List<SubTask>>()
+                for (todo in allTodos) {
+                    val progress = SubTaskManager.getProgressText(context, todo.id)
+                    if (progress != null) {
+                        progressMap[todo.id] = progress
+                        // 同时加载子任务列表
+                        val subTasks = SubTaskManager.getSubTasks(context, todo.id)
+                        subTasksMap[todo.id] = subTasks
+                    }
+                }
+                _subTaskProgressMap.value = progressMap
+                _subTasksMap.value = subTasksMap
+
                 // 待办列表变化后检查待办堆积
                 checkWorriedBehavior()
             }
@@ -836,6 +867,80 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 刷新子任务进度
+     * 当从编辑页面返回时调用，确保子任务进度更新
+     */
+    fun refreshSubTaskProgress() {
+        viewModelScope.launch {
+            val allTodos = todoRepository.getAllTodos().first()
+            val progressMap = mutableMapOf<Long, String>()
+            val subTasksMap = mutableMapOf<Long, List<SubTask>>()
+            for (todo in allTodos) {
+                val progress = SubTaskManager.getProgressText(context, todo.id)
+                if (progress != null) {
+                    progressMap[todo.id] = progress
+                    val subTasks = SubTaskManager.getSubTasks(context, todo.id)
+                    subTasksMap[todo.id] = subTasks
+                }
+            }
+            _subTaskProgressMap.value = progressMap
+            _subTasksMap.value = subTasksMap
+        }
+    }
+
+    /**
+     * 切换待办展开状态
+     *
+     * @param todoId 待办 ID
+     */
+    fun toggleExpand(todoId: Long) {
+        val currentExpanded = _expandedTodos.value.toMutableSet()
+        if (currentExpanded.contains(todoId)) {
+            currentExpanded.remove(todoId)
+        } else {
+            currentExpanded.add(todoId)
+        }
+        _expandedTodos.value = currentExpanded
+    }
+
+    /**
+     * 切换子任务完成状态
+     * 如果所有子任务完成，会自动完成父任务
+     *
+     * @param subTaskId 子任务 ID
+     */
+    fun toggleSubTaskCompletion(subTaskId: Long) {
+        viewModelScope.launch {
+            val result = SubTaskManager.toggleSubTaskCompletion(context, subTaskId)
+
+            // 刷新子任务进度和列表
+            val allTodos = todoRepository.getAllTodos().first()
+            val progressMap = mutableMapOf<Long, String>()
+            val subTasksMap = mutableMapOf<Long, List<SubTask>>()
+            for (todo in allTodos) {
+                val progress = SubTaskManager.getProgressText(context, todo.id)
+                if (progress != null) {
+                    progressMap[todo.id] = progress
+                    val subTasks = SubTaskManager.getSubTasks(context, todo.id)
+                    subTasksMap[todo.id] = subTasks
+                }
+            }
+            _subTaskProgressMap.value = progressMap
+            _subTasksMap.value = subTasksMap
+
+            // 如果父任务被自动完成，触发完成逻辑
+            if (result.parentTodoCompleted) {
+                result.updatedSubTask?.let { subTask ->
+                    val parentTodo = todoRepository.getTodoById(subTask.todoId)
+                    if (parentTodo != null) {
+                        handleTaskCompleted(parentTodo)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * 获取鼓励语
      * 根据庆祝级别返回对应的鼓励语
      */
@@ -879,6 +984,9 @@ class HomeViewModel @Inject constructor(
         corgiRepository.incrementTotalCompleted()
         val newTotalCompleted = currentData.totalCompleted + 1
         _corgiData.value = _corgiData.value?.copy(totalCompleted = newTotalCompleted)
+
+        // 处理重复任务：自动创建下一周期的任务
+        RepeatTaskManager.handleRepeatTaskCompletion(context, todo)
 
         checkAchievements()
         recalculateMoodSuspend()
@@ -961,6 +1069,7 @@ class HomeViewModel @Inject constructor(
     fun onTaskCreated() {
         viewModelScope.launch {
             loadTodos()
+            refreshSubTaskProgress()
         }
     }
 

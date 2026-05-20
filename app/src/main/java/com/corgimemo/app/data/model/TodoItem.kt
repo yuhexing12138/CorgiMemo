@@ -9,7 +9,8 @@ import androidx.room.PrimaryKey
     indices = [
         Index(value = ["status", "createdAt"]),
         Index(value = ["categoryId", "status"]),
-        Index(value = ["priority", "dueDate"])
+        Index(value = ["priority", "dueDate"]),
+        Index(value = ["hasSubTasks"])
     ]
 )
 data class TodoItem(
@@ -32,5 +33,7 @@ data class TodoItem(
     val geofenceRadius: Float? = null,
     val geofenceType: Int = 0,
     val geofenceEnabled: Boolean = false,
-    val geofenceAddress: String? = null
+    val geofenceAddress: String? = null,
+    // 是否有子任务（用于列表快速判断是否显示进度条）
+    val hasSubTasks: Boolean = false
 )

@@ -139,6 +139,15 @@ fun HomeScreen(
     val soundEnabled by viewModel.soundEnabled.collectAsState()
     val pendingDeletedTodo by viewModel.pendingDeletedTodo.collectAsState()
 
+    // 子任务进度映射
+    val subTaskProgressMap by viewModel.subTaskProgressMap.collectAsState()
+
+    // 子任务列表映射
+    val subTasksMap by viewModel.subTasksMap.collectAsState()
+
+    // 展开状态
+    val expandedTodos by viewModel.expandedTodos.collectAsState()
+
     // 批量选择模式状态
     val isBatchMode by viewModel.isBatchMode.collectAsState()
     val selectedTodoIds by viewModel.selectedTodoIds.collectAsState()
@@ -435,6 +444,9 @@ fun HomeScreen(
                             items(todos, key = { it.id }) { todo ->
                                 TodoListItem(
                                     todo = todo,
+                                    subTaskProgress = subTaskProgressMap[todo.id],
+                                    subTasks = subTasksMap[todo.id] ?: emptyList(),
+                                    isExpanded = expandedTodos.contains(todo.id),
                                     isBatchMode = isBatchMode,
                                     isSelected = selectedTodoIds.contains(todo.id),
                                     onToggleComplete = { id, isChecked ->
@@ -457,6 +469,13 @@ fun HomeScreen(
                                     },
                                     onShareAsImage = {
                                         shareTodoAsImage(context, todo, categories)
+                                    },
+                                    onToggleExpand = {
+                                        viewModel.toggleExpand(todo.id)
+                                    },
+                                    onToggleSubTask = { subTaskId ->
+                                        viewModel.onUserInteraction()
+                                        viewModel.toggleSubTaskCompletion(subTaskId)
                                     }
                                 )
                             }

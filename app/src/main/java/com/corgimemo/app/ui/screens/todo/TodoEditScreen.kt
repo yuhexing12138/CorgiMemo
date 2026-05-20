@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
@@ -51,7 +53,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.ui.components.LocationPicker
+import com.corgimemo.app.ui.components.SubTaskList
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.TodoEditViewModel
@@ -72,7 +76,8 @@ fun TodoEditScreen(
     val content by viewModel.content.collectAsState()
     val priority by viewModel.priority.collectAsState()
     val dueDate by viewModel.dueDate.collectAsState()
-    
+    val repeatType by viewModel.repeatType.collectAsState()
+
     // 地理围栏相关状态
     val geofenceLat by viewModel.geofenceLat.collectAsState()
     val geofenceLng by viewModel.geofenceLng.collectAsState()
@@ -80,6 +85,9 @@ fun TodoEditScreen(
     val geofenceType by viewModel.geofenceType.collectAsState()
     val geofenceEnabled by viewModel.geofenceEnabled.collectAsState()
     val geofenceAddress by viewModel.geofenceAddress.collectAsState()
+
+    // 子任务相关状态
+    val subTasks by viewModel.subTasks.collectAsState()
 
     val context = LocalContext.current
     val speechViewModel = remember { SpeechViewModel(context) }
@@ -149,7 +157,8 @@ fun TodoEditScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.Top
         ) {
             Row(
@@ -254,6 +263,26 @@ fun TodoEditScreen(
                 Text(text = dateText)
             }
 
+            // 重复类型选择
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+                Text(
+                    text = "重复",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(modifier = Modifier.padding(top = 8.dp)) {
+                    val repeatOptions = RepeatTaskManager.getRepeatTypeOptions()
+                    repeatOptions.forEach { (type, name) ->
+                        RepeatTypeChip(
+                            text = name,
+                            type = type,
+                            isSelected = repeatType == type,
+                            onClick = { viewModel.setRepeatType(type) }
+                        )
+                    }
+                }
+            }
+
             LocationPicker(
                 lat = geofenceLat,
                 lng = geofenceLng,
@@ -277,10 +306,20 @@ fun TodoEditScreen(
                 }
             )
 
+            // 子任务列表
+            SubTaskList(
+                subTasks = subTasks,
+                onAddSubTask = { viewModel.addSubTask(it) },
+                onToggleSubTask = { viewModel.toggleSubTaskCompletion(it) },
+                onDeleteSubTask = { viewModel.deleteSubTask(it) },
+                modifier = Modifier.padding(top = 16.dp)
+            )
+
             Button(
                 onClick = {
                     if (viewModel.saveTodo()) {
                         homeViewModel.setPoseForLoading()
+                        homeViewModel.refreshSubTaskProgress()
                         navController.popBackStack()
                     }
                 },
@@ -381,6 +420,55 @@ fun PriorityChip(text: String, priority: Int, isSelected: Boolean, onClick: () -
         else -> Pair(
             androidx.compose.ui.graphics.Color(0xFF16A34A),
             androidx.compose.ui.graphics.Color(0xFFECFDF5)
+        )
+    }
+
+    Button(
+        onClick = onClick,
+        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+            containerColor = if (isSelected) bgColor else MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = if (isSelected) color else MaterialTheme.colorScheme.onSurfaceVariant
+        ),
+        modifier = Modifier.padding(end = 8.dp)
+    ) {
+        Text(text = text)
+    }
+}
+
+/**
+ * 重复类型选择芯片组件
+ *
+ * @param text 显示文本
+ * @param type 重复类型值
+ * @param isSelected 是否选中
+ * @param onClick 点击回调
+ */
+@Composable
+fun RepeatTypeChip(text: String, type: Int, isSelected: Boolean, onClick: () -> Unit) {
+    val (color, bgColor) = when (type) {
+        com.corgimemo.app.data.repository.RepeatType.DAILY -> Pair(
+            androidx.compose.ui.graphics.Color(0xFF2563EB),
+            androidx.compose.ui.graphics.Color(0xFFDBEAFE)
+        )
+        com.corgimemo.app.data.repository.RepeatType.WEEKLY -> Pair(
+            androidx.compose.ui.graphics.Color(0xFF7C3AED),
+            androidx.compose.ui.graphics.Color(0xFFEDE9FE)
+        )
+        com.corgimemo.app.data.repository.RepeatType.MONTHLY -> Pair(
+            androidx.compose.ui.graphics.Color(0xFFDB2777),
+            androidx.compose.ui.graphics.Color(0xFFFCE7F3)
+        )
+        com.corgimemo.app.data.repository.RepeatType.WEEKDAYS -> Pair(
+            androidx.compose.ui.graphics.Color(0xFF0891B2),
+            androidx.compose.ui.graphics.Color(0xFFCFFAFE)
+        )
+        com.corgimemo.app.data.repository.RepeatType.WEEKENDS -> Pair(
+            androidx.compose.ui.graphics.Color(0xFF65A30D),
+            androidx.compose.ui.graphics.Color(0xFFECFCCB)
+        )
+        else -> Pair(
+            androidx.compose.ui.graphics.Color(0xFF6B7280),
+            androidx.compose.ui.graphics.Color(0xFFF3F4F6)
         )
     }
 

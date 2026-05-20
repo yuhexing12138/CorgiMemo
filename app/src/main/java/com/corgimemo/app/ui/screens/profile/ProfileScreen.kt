@@ -201,15 +201,26 @@ fun ProfileScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp)
+                    .clickable { navController.navigate("stats") }
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "成就统计",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "成就统计",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "查看详情 ›",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
                     StatRow(label = "累计完成任务", value = "${corgiData?.totalCompleted ?: 0} 个")
                     StatRow(label = "连续完成天数", value = "${corgiData?.consecutiveDays ?: 0} 天")
                     StatRow(label = "最长连续天数", value = "${corgiData?.maxConsecutiveDays ?: 0} 天")

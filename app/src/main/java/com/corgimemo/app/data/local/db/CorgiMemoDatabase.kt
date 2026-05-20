@@ -9,6 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.MoodHistory
+import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
 
 /**
@@ -16,8 +17,8 @@ import com.corgimemo.app.data.model.TodoItem
  * 管理待办事项、柯基数据和任务分类
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class],
-    version = 5,
+    entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class, SubTask::class],
+    version = 7,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -29,6 +30,8 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
 
     abstract fun moodHistoryDao(): MoodHistoryDao
+
+    abstract fun subTaskDao(): SubTaskDao
 
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
@@ -43,7 +46,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                 INSTANCE = instance
                 instance
@@ -87,6 +90,37 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                         changeReason TEXT
                     )
                 """.trimIndent())
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS sub_tasks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        todoId INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        isCompleted INTEGER NOT NULL DEFAULT 0,
+                        createdAt INTEGER NOT NULL,
+                        completedAt INTEGER,
+                        `order` INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_sub_tasks_todoId ON sub_tasks(todoId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_sub_tasks_todoId_order ON sub_tasks(todoId, `order`)")
+            }
+        }
+
+        /**
+         * 数据库迁移：版本 6 → 7
+         * 添加 todo_items 表的 hasSubTasks 字段
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // 添加 hasSubTasks 字段，默认值为 false
+                database.execSQL("ALTER TABLE todo_items ADD COLUMN hasSubTasks INTEGER NOT NULL DEFAULT 0")
+                // 为 hasSubTasks 创建索引，提高查询效率
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_hasSubTasks ON todo_items(hasSubTasks)")
             }
         }
     }

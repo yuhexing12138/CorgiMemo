@@ -10,6 +10,7 @@ import com.corgimemo.app.ui.screens.home.HomeScreen
 import com.corgimemo.app.ui.screens.onboarding.OnboardingScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
 import com.corgimemo.app.ui.screens.settings.SettingsScreen
+import com.corgimemo.app.ui.screens.stats.StatsScreen
 import com.corgimemo.app.ui.screens.todo.TodoEditScreen
 
 @Composable
@@ -56,6 +57,10 @@ fun AppNavHost(
             BackupHistoryScreen(
                 onBack = { navController.popBackStack() }
             )
+        }
+
+        composable(Screen.Stats.route) {
+            StatsScreen(navController = navController)
         }
     }
 }
