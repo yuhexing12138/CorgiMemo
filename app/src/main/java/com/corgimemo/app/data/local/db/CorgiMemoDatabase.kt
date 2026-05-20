@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.corgimemo.app.data.model.AchievementEntity
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.MoodHistory
@@ -14,11 +15,11 @@ import com.corgimemo.app.data.model.TodoItem
 
 /**
  * 应用数据库
- * 管理待办事项、柯基数据和任务分类
+ * 管理待办事项、柯基数据、任务分类和成就
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class, SubTask::class],
-    version = 7,
+    entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class, SubTask::class, AchievementEntity::class],
+    version = 8,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -33,6 +34,8 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
 
     abstract fun subTaskDao(): SubTaskDao
 
+    abstract fun achievementDao(): AchievementDao
+
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
 
@@ -46,7 +49,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build()
                 INSTANCE = instance
                 instance
@@ -121,6 +124,26 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE todo_items ADD COLUMN hasSubTasks INTEGER NOT NULL DEFAULT 0")
                 // 为 hasSubTasks 创建索引，提高查询效率
                 database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_hasSubTasks ON todo_items(hasSubTasks)")
+            }
+        }
+
+        /**
+         * 数据库迁移：版本 7 → 8
+         * 创建 achievements 表并添加 corgi_data 表的新字段
+         */
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // 创建 achievements 表
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS achievements (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        unlockedAt INTEGER
+                    )
+                """.trimIndent())
+
+                // 为 corgi_data 添加新字段
+                database.execSQL("ALTER TABLE corgi_data ADD COLUMN consecutiveEarlyDays INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE corgi_data ADD COLUMN lastEarlyDate TEXT NOT NULL DEFAULT ''")
             }
         }
     }

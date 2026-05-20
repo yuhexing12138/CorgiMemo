@@ -27,6 +27,8 @@ import com.corgimemo.app.data.model.MoodHistory
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.model.UserType
+import com.corgimemo.app.data.repository.AchievementChecker
+import com.corgimemo.app.data.repository.AchievementRepository
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.CorgiRepository
 import com.corgimemo.app.data.repository.MoodHistoryRepository
@@ -44,6 +46,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -102,6 +105,8 @@ class HomeViewModel @Inject constructor(
     private val todoRepository: TodoRepository,
     private val corgiRepository: CorgiRepository,
     private val categoryRepository: CategoryRepository,
+    private val achievementChecker: AchievementChecker,
+    private val achievementRepository: AchievementRepository,
     private val corgiPreferences: CorgiPreferences,
     private val moodHistoryRepository: MoodHistoryRepository,
     @ApplicationContext private val context: Context
@@ -198,6 +203,15 @@ class HomeViewModel @Inject constructor(
     private val _showOutfitSheet = MutableStateFlow(false)
     val showOutfitSheet: StateFlow<Boolean> = _showOutfitSheet.asStateFlow()
 
+    // ========== 新成就系统事件流 ==========
+
+    /**
+     * 新成就解锁事件流
+     * 用于 UI 层显示成就解锁弹窗
+     */
+    val achievementUnlockEvents: SharedFlow<com.corgimemo.app.data.model.Achievement> =
+        achievementChecker.achievementUnlockEvents
+
     // ========== 情绪历史记录 ==========
 
     private val _moodHistory7Days = MutableStateFlow<List<MoodHistory>>(emptyList())
@@ -209,6 +223,11 @@ class HomeViewModel @Inject constructor(
     val moodChangeMessage: StateFlow<String?> = _moodChangeMessage.asStateFlow()
 
     private var lastMoodChangeHintTime = 0L
+
+    // ========== 待办操作提示 ==========
+
+    private val _todoActionMessage = MutableStateFlow<String?>(null)
+    val todoActionMessage: StateFlow<String?> = _todoActionMessage.asStateFlow()
 
     // ========== 批量选择模式 ==========
 
@@ -294,6 +313,17 @@ class HomeViewModel @Inject constructor(
         observeUserType()
         checkHoliday()
         checkSolarTerm()
+        initAchievements()
+    }
+
+    /**
+     * 初始化成就系统
+     * 插入所有成就并从旧 JSON 数据迁移
+     */
+    private fun initAchievements() {
+        viewModelScope.launch {
+            achievementRepository.initialize()
+        }
     }
 
     /**
@@ -689,6 +719,13 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 清除待办操作提示消息
+     */
+    fun clearTodoActionMessage() {
+        _todoActionMessage.value = null
+    }
+
+    /**
      * 检查是否跨天，如果是则重置连续活跃天数并重新计算情绪
      */
     private fun checkDateChange() {
@@ -726,6 +763,10 @@ class HomeViewModel @Inject constructor(
                 }
 
                 checkAchievements()
+
+                // 新成就系统：检测每日相关成就
+                achievementChecker.checkOnDailyOpen()
+
                 recalculateMood()
             }
         }
@@ -772,6 +813,9 @@ class HomeViewModel @Inject constructor(
 
         if (levelUp) {
             _showLevelUp.value = newLevel
+
+            // 新成就系统：检测等级成就
+            achievementChecker.checkOnLevelUp(newLevel)
         }
 
         corgiRepository.addExperience(amount)
@@ -848,10 +892,22 @@ class HomeViewModel @Inject constructor(
 
     /**
      * 切换待办完成状态
+     * 如果用户尝试勾选完成但子任务未全部完成，则阻止操作并显示提示
      */
     fun toggleTodoStatus(id: Long, isChecked: Boolean) {
         viewModelScope.launch {
             todoRepository.getTodoById(id)?.let { todo ->
+                // 如果是勾选完成状态，先检查子任务是否全部完成
+                if (isChecked) {
+                    val progress = SubTaskManager.getProgress(context, id)
+                    // 如果有子任务但未全部完成，则阻止完成操作并显示提示
+                    if (progress.total > 0 && progress.completed < progress.total) {
+                        val unfinishedCount = progress.total - progress.completed
+                        _todoActionMessage.value = "还有 $unfinishedCount 个子任务未完成，请先完成所有子任务"
+                        return@launch
+                    }
+                }
+
                 val updatedTodo = todo.copy(
                     status = if (isChecked) 1 else 0,
                     completedAt = if (isChecked) System.currentTimeMillis() else null,
@@ -989,6 +1045,10 @@ class HomeViewModel @Inject constructor(
         RepeatTaskManager.handleRepeatTaskCompletion(context, todo)
 
         checkAchievements()
+
+        // 新成就系统：检测任务完成相关成就
+        achievementChecker.checkOnTaskComplete(todo)
+
         recalculateMoodSuspend()
 
         // 综合判断庆祝级别（优先级 + 截止日期）

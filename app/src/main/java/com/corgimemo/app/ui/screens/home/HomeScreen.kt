@@ -90,6 +90,7 @@ import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.repository.GeofenceRepository
 import com.corgimemo.app.backup.exporter.ImageExporter
 import com.corgimemo.app.backup.exporter.ShareIntentHelper
+import com.corgimemo.app.ui.components.AchievementUnlockDialog
 import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.ui.components.EmptyState
 import com.corgimemo.app.ui.components.EmptyStateType
@@ -135,6 +136,7 @@ fun HomeScreen(
     val missedYouDays by viewModel.missedYouDays.collectAsState()
     val showOutfitSheet by viewModel.showOutfitSheet.collectAsState()
     val moodChangeMessage by viewModel.moodChangeMessage.collectAsState()
+    val todoActionMessage by viewModel.todoActionMessage.collectAsState()
     val hapticEnabled by viewModel.hapticEnabled.collectAsState()
     val soundEnabled by viewModel.soundEnabled.collectAsState()
     val pendingDeletedTodo by viewModel.pendingDeletedTodo.collectAsState()
@@ -156,6 +158,18 @@ fun HomeScreen(
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var showBatchMoveDialog by remember { mutableStateOf(false) }
 
+    // 新成就解锁弹窗状态
+    var currentUnlockedAchievement by remember {
+        mutableStateOf<com.corgimemo.app.data.model.Achievement?>(null)
+    }
+
+    // 监听新的成就解锁事件
+    LaunchedEffect(Unit) {
+        viewModel.achievementUnlockEvents.collect { achievement ->
+            currentUnlockedAchievement = achievement
+        }
+    }
+
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -164,6 +178,13 @@ fun HomeScreen(
         LaunchedEffect(message) {
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             viewModel.clearMoodChangeMessage()
+        }
+    }
+
+    todoActionMessage?.let { message ->
+        LaunchedEffect(message) {
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            viewModel.clearTodoActionMessage()
         }
     }
 
@@ -527,6 +548,14 @@ fun HomeScreen(
                 MissedYouDialog(
                     daysAway = missedYouDays,
                     onDismiss = { viewModel.dismissMissedYouDialog() }
+                )
+            }
+
+            // 新成就解锁弹窗（使用新系统）
+            currentUnlockedAchievement?.let { achievement ->
+                AchievementUnlockDialog(
+                    achievement = achievement,
+                    onDismiss = { currentUnlockedAchievement = null }
                 )
             }
         }

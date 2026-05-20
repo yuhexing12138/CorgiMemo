@@ -62,4 +62,23 @@ interface TodoDao {
 
     @Query("DELETE FROM todo_items WHERE status = 1 AND completedAt < :threshold AND completedAt IS NOT NULL")
     suspend fun deleteOldCompletedTodos(threshold: Long): Int
+
+    /**
+     * 获取指定分类类型（工作=0/学习=1/生活=2）的已完成任务数
+     */
+    @Query("""
+        SELECT COUNT(*) FROM todo_items t
+        INNER JOIN categories c ON t.categoryId = c.id
+        WHERE t.status = 1 AND c.type = :categoryType
+    """)
+    suspend fun getCompletedCountByCategoryType(categoryType: Int): Int
+
+    /**
+     * 获取今天完成的任务数
+     */
+    @Query("""
+        SELECT COUNT(*) FROM todo_items 
+        WHERE status = 1 AND completedAt >= :startOfDay AND completedAt < :endOfDay
+    """)
+    suspend fun getCompletedCountToday(startOfDay: Long, endOfDay: Long): Int
 }

@@ -5,6 +5,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.corgimemo.app.backup.BackupManager
+import com.corgimemo.app.ui.screens.achievement.AchievementScreen
 import com.corgimemo.app.ui.screens.backup.BackupHistoryScreen
 import com.corgimemo.app.ui.screens.home.HomeScreen
 import com.corgimemo.app.ui.screens.onboarding.OnboardingScreen
@@ -61,6 +62,10 @@ fun AppNavHost(
 
         composable(Screen.Stats.route) {
             StatsScreen(navController = navController)
+        }
+
+        composable(Screen.Achievement.route) {
+            AchievementScreen(navController = navController)
         }
     }
 }

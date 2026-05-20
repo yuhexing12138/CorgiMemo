@@ -19,6 +19,8 @@ import androidx.room.PrimaryKey
  * @property totalCompleted 累计完成任务数
  * @property consecutiveDays 连续活跃天数
  * @property maxConsecutiveDays 历史最长连续天数
+ * @property consecutiveEarlyDays 连续早起天数
+ * @property lastEarlyDate 最后一次早起日期（格式：yyyy-MM-dd）
  */
 @Entity(tableName = "corgi_data")
 data class CorgiData(
@@ -34,5 +36,7 @@ data class CorgiData(
     val lastActiveDate: String,
     val totalCompleted: Int = 0,
     val consecutiveDays: Int = 0,
-    val maxConsecutiveDays: Int = 0
+    val maxConsecutiveDays: Int = 0,
+    val consecutiveEarlyDays: Int = 0,
+    val lastEarlyDate: String = ""
 )

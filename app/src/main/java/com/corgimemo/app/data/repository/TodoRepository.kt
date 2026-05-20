@@ -12,6 +12,8 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+import java.util.Calendar
+
 @Singleton
 class TodoRepository @Inject constructor(
     private val todoDao: TodoDao,
@@ -142,5 +144,34 @@ class TodoRepository @Inject constructor(
             WidgetUpdateReceiver.sendRefreshBroadcast(context)
         }
         deleted
+    }
+
+    /**
+     * 获取指定分类类型的已完成任务数
+     *
+     * @param categoryType 分类类型（0=工作，1=学习，2=生活）
+     * @return 已完成任务数
+     */
+    suspend fun getCompletedCountByCategoryType(categoryType: Int): Int = withContext(ioDispatcher) {
+        todoDao.getCompletedCountByCategoryType(categoryType)
+    }
+
+    /**
+     * 获取今天完成的任务数
+     *
+     * @return 今天完成的任务数
+     */
+    suspend fun getCompletedCountToday(): Int = withContext(ioDispatcher) {
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        val startOfDay = calendar.timeInMillis
+
+        calendar.add(Calendar.DAY_OF_YEAR, 1)
+        val endOfDay = calendar.timeInMillis
+
+        todoDao.getCompletedCountToday(startOfDay, endOfDay)
     }
 }
