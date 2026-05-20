@@ -7,6 +7,7 @@ sealed class Screen(val route: String) {
     object TodoEditWithId : Screen("todo_edit/{todoId}")
     object Profile : Screen("profile")
     object Settings : Screen("settings")
+    object BackupHistory : Screen("backup_history")
 
     fun withArgs(vararg args: String): String {
         return buildString {

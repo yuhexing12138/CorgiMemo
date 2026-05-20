@@ -11,6 +11,7 @@ import com.corgimemo.app.backup.data.BackupMeta
 import com.corgimemo.app.backup.data.BackupMoodHistory
 import com.corgimemo.app.backup.data.BackupTodoItem
 import com.corgimemo.app.backup.data.BackupCategory
+import com.corgimemo.app.backup.exporter.IcsExporter
 import com.corgimemo.app.backup.serializer.CsvSerializer
 import com.corgimemo.app.backup.serializer.JsonSerializer
 import com.corgimemo.app.data.local.db.CorgiDao
@@ -26,6 +27,7 @@ import com.corgimemo.app.data.model.TodoItem
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 
@@ -40,7 +42,9 @@ object BackupManager {
      */
     enum class ExportFormat {
         JSON,
-        CSV
+        CSV,
+        ICAL,
+        IMAGE
     }
 
     /**
@@ -101,7 +105,16 @@ object BackupManager {
                     CsvSerializer.serialize(
                         todos = backupData.todos,
                         categories = backupData.categories
-                    ).toByteArray(Charsets.UTF_8)
+                    ).toByteArray(StandardCharsets.UTF_8)
+                }
+                ExportFormat.ICAL -> {
+                    IcsExporter.exportTodos(
+                        todos = backupData.todos.map { it.toModel() },
+                        categories = backupData.categories.map { it.toModel() }
+                    ).toByteArray(StandardCharsets.UTF_8)
+                }
+                ExportFormat.IMAGE -> {
+                    throw IllegalArgumentException("图片导出需要单独处理")
                 }
             }
 
@@ -225,6 +238,7 @@ object BackupManager {
         val moodHistoryDao = database.moodHistoryDao()
 
         todoDao.deleteAll()
+        categoryDao.deleteAll()
         moodHistoryDao.clearAll()
 
         backupData.categories.forEach { category ->

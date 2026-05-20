@@ -106,6 +106,26 @@
                 <action android:name="com.corgimemo.app.ACTION_COMPLETE_TODO" />
             </intent-filter>
         </receiver>
+
+        <!-- 自动备份广播接收器 -->
+        <receiver
+            android:name=".receiver.AutoBackupReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.corgimemo.app.ACTION_AUTO_BACKUP" />
+            </intent-filter>
+        </receiver>
+
+        <!-- FileProvider 用于分享文件 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

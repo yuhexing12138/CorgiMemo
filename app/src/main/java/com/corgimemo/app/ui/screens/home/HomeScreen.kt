@@ -24,9 +24,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -82,7 +86,10 @@ import com.corgimemo.app.animation.SolarTermManager
 import com.corgimemo.app.animation.LevelManager
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.repository.GeofenceRepository
+import com.corgimemo.app.backup.exporter.ImageExporter
+import com.corgimemo.app.backup.exporter.ShareIntentHelper
 import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.ui.components.EmptyState
 import com.corgimemo.app.ui.components.EmptyStateType
@@ -132,6 +139,14 @@ fun HomeScreen(
     val soundEnabled by viewModel.soundEnabled.collectAsState()
     val pendingDeletedTodo by viewModel.pendingDeletedTodo.collectAsState()
 
+    // 批量选择模式状态
+    val isBatchMode by viewModel.isBatchMode.collectAsState()
+    val selectedTodoIds by viewModel.selectedTodoIds.collectAsState()
+    val categories by viewModel.categories.collectAsState()
+
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
+    var showBatchMoveDialog by remember { mutableStateOf(false) }
+
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -165,25 +180,69 @@ fun HomeScreen(
         }
     }
 
+    // 批量模式下拦截返回键
+    if (isBatchMode) {
+        BackHandler {
+            viewModel.exitBatchMode()
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = {
-                        Text(text = "待办事项", color = MaterialTheme.colorScheme.onSurface)
-                    },
-                    actions = {
-                        IconButton(
-                            onClick = { navController.navigate("profile") }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Person,
-                                contentDescription = "个人中心",
-                                tint = MaterialTheme.colorScheme.onSurface
+                if (isBatchMode) {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = "已选择 ${selectedTodoIds.size} 项",
+                                color = MaterialTheme.colorScheme.onSurface
                             )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { viewModel.exitBatchMode() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "关闭批量模式",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = {
+                                    if (selectedTodoIds.size == todos.size) {
+                                        viewModel.clearSelection()
+                                    } else {
+                                        viewModel.selectAll()
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SelectAll,
+                                    contentDescription = "全选",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
-                    }
-                )
+                    )
+                } else {
+                    TopAppBar(
+                        title = {
+                            Text(text = "待办事项", color = MaterialTheme.colorScheme.onSurface)
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = { navController.navigate("profile") }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Person,
+                                    contentDescription = "个人中心",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    )
+                }
             },
             floatingActionButton = {
                 FloatingActionButton(
@@ -208,6 +267,71 @@ fun HomeScreen(
             },
             snackbarHost = {
                 SnackbarHost(hostState = snackbarHostState)
+            },
+            bottomBar = {
+                AnimatedVisibility(
+                    visible = isBatchMode,
+                    enter = slideInVertically(initialOffsetY = { it }),
+                    exit = slideOutVertically(targetOffsetY = { it })
+                ) {
+                    Surface(
+                        shadowElevation = 8.dp,
+                        color = MaterialTheme.colorScheme.surface
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            val hasSelection = selectedTodoIds.isNotEmpty()
+
+                            // 全部完成按钮
+                            Button(
+                                onClick = {
+                                    viewModel.batchComplete()
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar("已完成 ${selectedTodoIds.size} 个待办")
+                                    }
+                                },
+                                enabled = hasSelection,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(text = "✅ 全部完成")
+                            }
+
+                            // 移动按钮
+                            Button(
+                                onClick = { showBatchMoveDialog = true },
+                                enabled = hasSelection,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(text = "📂 移动")
+                            }
+
+                            // 删除按钮
+                            Button(
+                                onClick = { showBatchDeleteDialog = true },
+                                enabled = hasSelection,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFEF4444),
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                Text(text = "🗑️ 删除")
+                            }
+
+                            // 取消按钮
+                            TextButton(
+                                onClick = { viewModel.exitBatchMode() },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(text = "✕ 取消")
+                            }
+                        }
+                    }
+                }
             }
         ) { innerPadding ->
             Box(modifier = Modifier.padding(innerPadding)) {
@@ -311,6 +435,8 @@ fun HomeScreen(
                             items(todos, key = { it.id }) { todo ->
                                 TodoListItem(
                                     todo = todo,
+                                    isBatchMode = isBatchMode,
+                                    isSelected = selectedTodoIds.contains(todo.id),
                                     onToggleComplete = { id, isChecked ->
                                         viewModel.onUserInteraction()
                                         viewModel.toggleTodoStatus(id, isChecked)
@@ -322,6 +448,15 @@ fun HomeScreen(
                                     onClick = {
                                         viewModel.onUserInteraction()
                                         navController.navigate("todo_edit/${todo.id}")
+                                    },
+                                    onLongClick = {
+                                        viewModel.enterBatchMode(todo.id)
+                                    },
+                                    onSelectClick = {
+                                        viewModel.toggleSelection(todo.id)
+                                    },
+                                    onShareAsImage = {
+                                        shareTodoAsImage(context, todo, categories)
                                     }
                                 )
                             }
@@ -392,6 +527,77 @@ fun HomeScreen(
         ) {
             YawnOverlay()
         }
+    }
+
+    // 批量删除确认对话框
+    if (showBatchDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteDialog = false },
+            title = { Text("删除选中项") },
+            text = {
+                Text(
+                    "确定要删除已选择的 ${selectedTodoIds.size} 个待办吗？\n此操作不可撤销。"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBatchDeleteDialog = false
+                        val count = selectedTodoIds.size
+                        viewModel.batchDelete()
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("已删除 $count 个待办")
+                        }
+                    }
+                ) {
+                    Text("删除", color = Color(0xFFEF4444))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 批量移动分类选择对话框
+    if (showBatchMoveDialog) {
+        val categoryList = categories
+        AlertDialog(
+            onDismissRequest = { showBatchMoveDialog = false },
+            title = { Text("移动到分类") },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    categoryList.forEach { category ->
+                        androidx.compose.foundation.layout.Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showBatchMoveDialog = false
+                                    viewModel.batchMove(category.id)
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar("已移动到「${category.name}」")
+                                    }
+                                }
+                                .padding(vertical = 12.dp)
+                        ) {
+                            Text(
+                                text = category.name,
+                                fontSize = 16.sp
+                            )
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showBatchMoveDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
     }
 
     if (isSheetVisible) {
@@ -2075,4 +2281,53 @@ fun SolarTermPickerDialog(
             }
         }
     )
+}
+
+/**
+ * 分享待办为图片
+ *
+ * @param context 上下文
+ * @param todo 待办项
+ * @param categories 分类列表
+ */
+fun shareTodoAsImage(
+    context: android.content.Context,
+    todo: TodoItem,
+    categories: List<Category>
+) {
+    val coroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
+    coroutineScope.launch {
+        try {
+            val category = categories.find { it.id == todo.categoryId }
+
+            val bitmap = ImageExporter.createTodoShareCard(
+                context = context,
+                todo = todo,
+                category = category
+            )
+
+            val imageFile = ImageExporter.saveBitmapToCache(context, bitmap)
+
+            val shareIntent = ShareIntentHelper.createShareImageIntent(
+                context = context,
+                imageFile = imageFile,
+                text = "我在 CorgiMemo 创建了待办：${todo.title}"
+            )
+
+            shareIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                context.startActivity(shareIntent)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(
+                    context,
+                    "分享失败：${e.message}",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
 }

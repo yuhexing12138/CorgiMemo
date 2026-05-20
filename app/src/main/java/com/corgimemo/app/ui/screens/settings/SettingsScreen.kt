@@ -85,6 +85,7 @@ fun SettingsScreen(
 
     var showExportDialog by remember { mutableStateOf(false) }
     var showImportConfirmDialog by remember { mutableStateOf(false) }
+    var showAutoBackupDialog by remember { mutableStateOf(false) }
 
     if (backupMessage != null) {
         BackupMessageDialog(
@@ -172,6 +173,23 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
+                text = "自动备份",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            SettingItemCard(
+                title = "🔄 自动备份设置",
+                description = "自动备份数据到 Downloads 目录",
+                onClick = {
+                    showAutoBackupDialog = true
+                }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
                 text = "数据管理",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
@@ -183,6 +201,14 @@ fun SettingsScreen(
                 description = "导出为 JSON 或 CSV 格式",
                 onClick = {
                     showExportDialog = true
+                }
+            )
+
+            SettingItemCard(
+                title = "📚 备份历史",
+                description = "查看和管理自动备份记录",
+                onClick = {
+                    navController.navigate("backup_history")
                 }
             )
 
@@ -537,6 +563,12 @@ fun SettingsScreen(
             }
         )
     }
+
+    if (showAutoBackupDialog) {
+        AutoBackupSettingsDialog(
+            onDismiss = { showAutoBackupDialog = false }
+        )
+    }
 }
 
 /**
@@ -658,6 +690,110 @@ fun ExportFormatDialog(
                             text = "仅待办列表，Excel 兼容",
                             fontSize = 13.sp,
                             color = if (selectedFormat == BackupManager.ExportFormat.CSV) {
+                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (selectedFormat == BackupManager.ExportFormat.ICAL) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        }
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { selectedFormat = BackupManager.ExportFormat.ICAL }
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "📅 iCal",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (selectedFormat == BackupManager.ExportFormat.ICAL) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                            if (selectedFormat == BackupManager.ExportFormat.ICAL) {
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text(
+                                    text = "✓",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                        Text(
+                            text = "导出到日历应用",
+                            fontSize = 13.sp,
+                            color = if (selectedFormat == BackupManager.ExportFormat.ICAL) {
+                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (selectedFormat == BackupManager.ExportFormat.IMAGE) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        }
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { selectedFormat = BackupManager.ExportFormat.IMAGE }
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "🖼️ 图片",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (selectedFormat == BackupManager.ExportFormat.IMAGE) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                            if (selectedFormat == BackupManager.ExportFormat.IMAGE) {
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text(
+                                    text = "✓",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                        Text(
+                            text = "分享到社交媒体",
+                            fontSize = 13.sp,
+                            color = if (selectedFormat == BackupManager.ExportFormat.IMAGE) {
                                 MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant

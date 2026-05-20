@@ -33,8 +33,15 @@ object BackupFileHandler {
         val extension = when (format) {
             BackupManager.ExportFormat.JSON -> "json"
             BackupManager.ExportFormat.CSV -> "csv"
+            BackupManager.ExportFormat.ICAL -> "ics"
+            BackupManager.ExportFormat.IMAGE -> "png"
         }
-        return "corgimemo_backup_$timestamp.$extension"
+        val prefix = when (format) {
+            BackupManager.ExportFormat.ICAL -> "CorgiMemo_待办"
+            BackupManager.ExportFormat.IMAGE -> "CorgiMemo_分享"
+            else -> "corgimemo_backup"
+        }
+        return "${prefix}_$timestamp.$extension"
     }
 
     /**
@@ -45,6 +52,8 @@ object BackupFileHandler {
         val mimeType = when (format) {
             BackupManager.ExportFormat.JSON -> "application/json"
             BackupManager.ExportFormat.CSV -> "text/csv"
+            BackupManager.ExportFormat.ICAL -> "text/calendar"
+            BackupManager.ExportFormat.IMAGE -> "image/png"
         }
         return Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)

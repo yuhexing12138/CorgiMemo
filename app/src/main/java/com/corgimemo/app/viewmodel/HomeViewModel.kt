@@ -195,6 +195,14 @@ class HomeViewModel @Inject constructor(
 
     private var lastMoodChangeHintTime = 0L
 
+    // ========== 批量选择模式 ==========
+
+    private val _isBatchMode = MutableStateFlow(false)
+    val isBatchMode: StateFlow<Boolean> = _isBatchMode.asStateFlow()
+
+    private val _selectedTodoIds = MutableStateFlow<Set<Long>>(emptySet())
+    val selectedTodoIds: StateFlow<Set<Long>> = _selectedTodoIds.asStateFlow()
+
     // ========== 撤销删除相关 ==========
 
     // 待删除待办的临时存储（用于撤销）
@@ -223,6 +231,14 @@ class HomeViewModel @Inject constructor(
             started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
             initialValue = true
         )
+
+    val categories: StateFlow<List<com.corgimemo.app.data.model.Category>> =
+        categoryRepository.getAllCategories()
+            .stateIn(
+                scope = viewModelScope,
+                started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
 
     /**
      * 执行触觉反馈
@@ -1342,6 +1358,129 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             moodHistoryRepository.recordTodayMood(newMoodValue, reason)
             loadMoodHistory()
+        }
+    }
+
+    // ==================== 批量选择模式方法 ====================
+
+    /**
+     * 进入批量模式
+     * @param todoId 初始选中的待办 ID
+     */
+    fun enterBatchMode(todoId: Long) {
+        _isBatchMode.value = true
+        _selectedTodoIds.value = setOf(todoId)
+    }
+
+    /**
+     * 退出批量模式，清空选择
+     */
+    fun exitBatchMode() {
+        _isBatchMode.value = false
+        _selectedTodoIds.value = emptySet()
+    }
+
+    /**
+     * 切换待办选中状态
+     */
+    fun toggleSelection(todoId: Long) {
+        val currentSelection = _selectedTodoIds.value
+        if (currentSelection.contains(todoId)) {
+            _selectedTodoIds.value = currentSelection - todoId
+        } else {
+            _selectedTodoIds.value = currentSelection + todoId
+        }
+    }
+
+    /**
+     * 全选当前可见待办
+     */
+    fun selectAll() {
+        _selectedTodoIds.value = _todos.value.map { it.id }.toSet()
+    }
+
+    /**
+     * 取消全选
+     */
+    fun clearSelection() {
+        _selectedTodoIds.value = emptySet()
+    }
+
+    /**
+     * 是否有选中项
+     */
+    fun hasSelection(): Boolean {
+        return _selectedTodoIds.value.isNotEmpty()
+    }
+
+    /**
+     * 获取选中的待办列表
+     */
+    private fun getSelectedTodos(): List<TodoItem> {
+        val selectedIds = _selectedTodoIds.value
+        return _todos.value.filter { selectedIds.contains(it.id) }
+    }
+
+    /**
+     * 批量完成选中的待办
+     */
+    fun batchComplete() {
+        val selectedIds = _selectedTodoIds.value
+        if (selectedIds.isEmpty()) return
+
+        val currentTime = System.currentTimeMillis()
+        viewModelScope.launch {
+            selectedIds.forEach { id ->
+                val todo = todoRepository.getTodoById(id)
+                if (todo != null && todo.status == 0) {
+                    val updatedTodo = todo.copy(
+                        status = 1,
+                        completedAt = currentTime,
+                        updatedAt = currentTime
+                    )
+                    todoRepository.updateTodo(updatedTodo)
+                    handleTaskCompleted(todo)
+                }
+            }
+            exitBatchMode()
+        }
+    }
+
+    /**
+     * 批量移动选中的待办到指定分类
+     * @param categoryId 目标分类 ID
+     */
+    fun batchMove(categoryId: Long) {
+        val selectedIds = _selectedTodoIds.value
+        if (selectedIds.isEmpty()) return
+
+        viewModelScope.launch {
+            selectedIds.forEach { id ->
+                val todo = todoRepository.getTodoById(id)
+                if (todo != null) {
+                    val updatedTodo = todo.copy(
+                        categoryId = categoryId,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    todoRepository.updateTodo(updatedTodo)
+                }
+            }
+            exitBatchMode()
+        }
+    }
+
+    /**
+     * 批量删除选中的待办
+     */
+    fun batchDelete() {
+        val selectedIds = _selectedTodoIds.value
+        if (selectedIds.isEmpty()) return
+
+        viewModelScope.launch {
+            selectedIds.forEach { id ->
+                todoRepository.deleteTodoById(id)
+            }
+            exitBatchMode()
         }
     }
 

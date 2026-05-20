@@ -31,6 +31,9 @@ object NotificationChannels {
 
     /** 次要提醒（低优先级待办，priority=1） */
     const val TODO_LOW = "todo_low"
+
+    /** 备份状态通知 */
+    const val BACKUP_STATUS = "backup_status"
 }
 
 /**
@@ -81,7 +84,8 @@ object NotificationHelper {
             val channels = listOf(
                 createImportantChannel(context),
                 createNormalChannel(context),
-                createLowChannel(context)
+                createLowChannel(context),
+                createBackupStatusChannel(context)
             )
             val notificationManager = context.getSystemService(
                 Context.NOTIFICATION_SERVICE
@@ -170,6 +174,29 @@ object NotificationHelper {
             NotificationManager.IMPORTANCE_LOW
         ).apply {
             description = "低优先级待办的提醒，安静不打扰"
+            enableLights(false)
+            enableVibration(false)
+            setSound(null, null)
+        }
+        return channel
+    }
+
+    /**
+     * 创建备份状态通知渠道
+     * - IMPORTANCE_LOW：仅在通知栏显示
+     * - 无声音
+     * - 无震动
+     *
+     * @param context 上下文
+     * @return NotificationChannel 对象
+     */
+    private fun createBackupStatusChannel(context: Context): NotificationChannel {
+        val channel = NotificationChannel(
+            NotificationChannels.BACKUP_STATUS,
+            "备份状态",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "自动备份完成或失败时的通知"
             enableLights(false)
             enableVibration(false)
             setSound(null, null)
@@ -623,5 +650,78 @@ object NotificationHelper {
             Context.MODE_PRIVATE
         )
         prefs.edit().clear().apply()
+    }
+
+    /**
+     * 显示备份完成通知
+     *
+     * @param context 上下文
+     * @param success 是否成功
+     * @param todoCount 备份的待办数量
+     * @param errorMessage 错误信息（失败时）
+     */
+    fun showBackupNotification(
+        context: Context,
+        success: Boolean,
+        todoCount: Int,
+        errorMessage: String?
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                return
+            }
+        }
+
+        val notificationManager = NotificationManagerCompat.from(context)
+        val notificationId = 10000
+
+        val intent = try {
+            Intent(context, Class.forName("com.corgimemo.app.ui.MainActivity")).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                putExtra("navigate_to", "backup_history")
+            }
+        } catch (e: ClassNotFoundException) {
+            null
+        }
+
+        val pendingIntent = intent?.let {
+            PendingIntent.getActivity(
+                context,
+                0,
+                it,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        val title = if (success) "自动备份完成" else "自动备份失败"
+        val content = if (success) {
+            if (todoCount > 0) "共备份 $todoCount 条待办" else "备份完成"
+        } else {
+            errorMessage ?: "请检查存储空间"
+        }
+
+        val builder = NotificationCompat.Builder(context, NotificationChannels.BACKUP_STATUS)
+            .setSmallIcon(getAppIconResId(context))
+            .setContentTitle(title)
+            .setContentText(content)
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText(content)
+            )
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setAutoCancel(true)
+            .setOngoing(false)
+            .setOnlyAlertOnce(true)
+
+        pendingIntent?.let {
+            builder.setContentIntent(it)
+        }
+
+        notificationManager.notify(notificationId, builder.build())
     }
 }

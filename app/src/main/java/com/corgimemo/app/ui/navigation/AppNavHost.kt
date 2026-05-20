@@ -5,6 +5,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.corgimemo.app.backup.BackupManager
+import com.corgimemo.app.ui.screens.backup.BackupHistoryScreen
 import com.corgimemo.app.ui.screens.home.HomeScreen
 import com.corgimemo.app.ui.screens.onboarding.OnboardingScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
@@ -48,6 +49,12 @@ fun AppNavHost(
                 navController = navController,
                 onExportClick = onExportClick,
                 onImportClick = onImportClick
+            )
+        }
+
+        composable(Screen.BackupHistory.route) {
+            BackupHistoryScreen(
+                onBack = { navController.popBackStack() }
             )
         }
     }

@@ -47,6 +47,9 @@ class CorgiPreferences(private val dataStore: DataStore<Preferences>) {
         val AUTO_BACKUP_URI = stringPreferencesKey("auto_backup_uri")
         val AUTO_BACKUP_PASSWORD = stringPreferencesKey("auto_backup_password")
         val AUTO_BACKUP_KEEP_COUNT = intPreferencesKey("auto_backup_keep_count")
+        val AUTO_BACKUP_FREQUENCY = stringPreferencesKey("auto_backup_frequency")
+        val AUTO_BACKUP_LAST_TIME = stringPreferencesKey("auto_backup_last_time")
+        val BACKUP_HISTORY = stringPreferencesKey("backup_history")
     }
 
     /**
@@ -395,6 +398,150 @@ class CorgiPreferences(private val dataStore: DataStore<Preferences>) {
     suspend fun saveAutoBackupKeepCount(count: Int) {
         dataStore.edit { prefs ->
             prefs[Keys.AUTO_BACKUP_KEEP_COUNT] = count
+        }
+    }
+
+    // ==================== 自动备份频率 ====================
+
+    /**
+     * 获取自动备份频率的 Flow
+     *
+     * @return 频率字符串的 Flow（weekly/monthly）
+     */
+    val autoBackupFrequency: Flow<String> = dataStore.data
+        .map { prefs ->
+            prefs[Keys.AUTO_BACKUP_FREQUENCY] ?: "weekly"
+        }
+
+    /**
+     * 获取自动备份频率（一次获取）
+     *
+     * @return 频率字符串（weekly/monthly）
+     */
+    suspend fun getAutoBackupFrequency(): String {
+        return dataStore.data.map { prefs ->
+            prefs[Keys.AUTO_BACKUP_FREQUENCY] ?: "weekly"
+        }.first()
+    }
+
+    /**
+     * 保存自动备份频率
+     *
+     * @param frequency 频率字符串（weekly/monthly）
+     */
+    suspend fun saveAutoBackupFrequency(frequency: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.AUTO_BACKUP_FREQUENCY] = frequency
+        }
+    }
+
+    // ==================== 上次备份时间 ====================
+
+    /**
+     * 获取上次自动备份时间的 Flow
+     *
+     * @return 时间戳的 Flow
+     */
+    val autoBackupLastTime: Flow<Long> = dataStore.data
+        .map { prefs ->
+            prefs[Keys.AUTO_BACKUP_LAST_TIME]?.toLongOrNull() ?: 0L
+        }
+
+    /**
+     * 获取上次自动备份时间（一次获取）
+     *
+     * @return 时间戳
+     */
+    suspend fun getAutoBackupLastTime(): Long {
+        return dataStore.data.map { prefs ->
+            prefs[Keys.AUTO_BACKUP_LAST_TIME]?.toLongOrNull() ?: 0L
+        }.first()
+    }
+
+    /**
+     * 更新上次自动备份时间为当前时间
+     */
+    suspend fun updateAutoBackupLastTime() {
+        dataStore.edit { prefs ->
+            prefs[Keys.AUTO_BACKUP_LAST_TIME] = System.currentTimeMillis().toString()
+        }
+    }
+
+    // ==================== 自动备份启用状态 ====================
+
+    /**
+     * 获取自动备份是否启用（一次获取）
+     *
+     * @return 是否启用
+     */
+    suspend fun getAutoBackupEnabled(): Boolean {
+        return dataStore.data.map { prefs ->
+            prefs[Keys.AUTO_BACKUP_ENABLED] ?: false
+        }.first()
+    }
+
+    /**
+     * 获取自动备份位置 URI（一次获取）
+     *
+     * @return 位置 URI，未设置则返回 null
+     */
+    suspend fun getAutoBackupUri(): String? {
+        return dataStore.data.map { prefs ->
+            prefs[Keys.AUTO_BACKUP_URI]
+        }.first()
+    }
+
+    /**
+     * 获取自动备份保留版本数（一次获取）
+     *
+     * @return 保留数量
+     */
+    suspend fun getAutoBackupKeepCount(): Int {
+        return dataStore.data.map { prefs ->
+            prefs[Keys.AUTO_BACKUP_KEEP_COUNT] ?: 5
+        }.first()
+    }
+
+    // ==================== 备份历史 ====================
+
+    /**
+     * 获取备份历史的 Flow
+     *
+     * @return 备份历史 JSON 字符串的 Flow
+     */
+    val backupHistory: Flow<String?> = dataStore.data
+        .map { prefs ->
+            prefs[Keys.BACKUP_HISTORY]
+        }
+
+    /**
+     * 获取备份历史（一次获取）
+     *
+     * @return 备份历史 JSON 字符串
+     */
+    suspend fun getBackupHistory(): String? {
+        return dataStore.data.map { prefs ->
+            prefs[Keys.BACKUP_HISTORY]
+        }.first()
+    }
+
+    /**
+     * 保存备份历史
+     *
+     * @param json 备份历史 JSON 字符串
+     */
+    suspend fun saveBackupHistory(json: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.BACKUP_HISTORY] = json
+        }
+    }
+
+    /**
+     * 清除备份历史
+     */
+    suspend fun clearBackupHistory() {
+        dataStore.edit { prefs ->
+            prefs.remove(Keys.BACKUP_HISTORY)
         }
     }
 }

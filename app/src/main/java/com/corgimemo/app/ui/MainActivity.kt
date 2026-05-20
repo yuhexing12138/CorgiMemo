@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
         private const val VALUE_CREATE_TODO = "create_todo"
         private const val VALUE_HOME = "home"
         private const val VALUE_EDIT_TODO = "edit_todo"
+        private const val VALUE_BACKUP_HISTORY = "backup_history"
         private const val EXTRA_TODO_ID = "extra_todo_id"
     }
 
@@ -210,6 +211,7 @@ class MainActivity : ComponentActivity() {
                     null
                 }
             }
+            VALUE_BACKUP_HISTORY -> NavigationTarget.BackupHistory
             else -> null
         }
     }
@@ -219,6 +221,7 @@ sealed class NavigationTarget {
     object Home : NavigationTarget()
     object CreateTodo : NavigationTarget()
     data class EditTodo(val todoId: Long) : NavigationTarget()
+    object BackupHistory : NavigationTarget()
 }
 
 /**
@@ -281,6 +284,9 @@ private fun OnboardingRouter(
                 }
                 is NavigationTarget.EditTodo -> {
                     navController.navigate(Screen.TodoEditWithId.withArgs(pendingNavigation.todoId.toString()))
+                }
+                NavigationTarget.BackupHistory -> {
+                    navController.navigate(Screen.BackupHistory.route)
                 }
                 null -> { }
             }
