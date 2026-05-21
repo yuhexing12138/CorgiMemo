@@ -79,6 +79,8 @@ fun TodoListItem(
     isExpanded: Boolean = false,
     isBatchMode: Boolean = false,
     isSelected: Boolean = false,
+    categoryName: String? = null,
+    categoryIcon: String? = null,
     onToggleComplete: (Long, Boolean) -> Unit,
     onDelete: (Long) -> Unit,
     onClick: () -> Unit = {},
@@ -237,7 +239,34 @@ fun TodoListItem(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1
                             )
-                        } else if (subTaskProgress != null) {
+                        }
+
+                        if (categoryName != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(top = 4.dp)
+                            ) {
+                                Text(
+                                    text = categoryIcon ?: "📋",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = categoryName,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .background(
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            shape = RoundedCornerShape(4.dp)
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        if (todo.status != 1 && todo.content.isNullOrBlank() && subTaskProgress != null) {
                             SubTaskProgressBar(
                                 progress = parseProgress(subTaskProgress),
                                 modifier = Modifier.padding(top = 6.dp)

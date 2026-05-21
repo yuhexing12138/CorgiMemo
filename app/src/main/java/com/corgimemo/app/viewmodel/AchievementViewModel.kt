@@ -2,12 +2,13 @@ package com.corgimemo.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.corgimemo.app.animation.CorgiPose
+import com.corgimemo.app.animation.PoseManager
 import com.corgimemo.app.data.model.Achievement
-import com.corgimemo.app.data.model.AchievementCondition
+import com.corgimemo.app.data.model.AchievementStage
+import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.repository.AchievementRepository
-import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.CorgiRepository
-import com.corgimemo.app.data.repository.TodoRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,9 +23,7 @@ import javax.inject.Inject
 @HiltViewModel
 class AchievementViewModel @Inject constructor(
     private val achievementRepository: AchievementRepository,
-    private val todoRepository: TodoRepository,
-    private val corgiRepository: CorgiRepository,
-    private val categoryRepository: CategoryRepository
+    private val corgiRepository: CorgiRepository
 ) : ViewModel() {
 
     // 所有成就列表（带解锁状态和当前进度）
@@ -53,9 +52,22 @@ class AchievementViewModel @Inject constructor(
     private val _selectedProgress = MutableStateFlow<Int?>(null)
     val selectedProgress: StateFlow<Int?> = _selectedProgress.asStateFlow()
 
+    // 柯基数据
+    private val _corgiData = MutableStateFlow<CorgiData?>(null)
+    val corgiData: StateFlow<CorgiData?> = _corgiData.asStateFlow()
+
+    // 当前成就阶段
+    private val _currentStage = MutableStateFlow<AchievementStage>(AchievementStage.BEGINNER)
+    val currentStage: StateFlow<AchievementStage> = _currentStage.asStateFlow()
+
+    // 根据成就阶段获取柯基姿态
+    private val _corgiPoseForStage = MutableStateFlow<CorgiPose>(PoseManager.getDefaultPose())
+    val corgiPoseForStage: StateFlow<CorgiPose> = _corgiPoseForStage.asStateFlow()
+
     // 初始化
     init {
         loadAchievements()
+        loadCorgiData()
     }
 
     /**
@@ -64,94 +76,67 @@ class AchievementViewModel @Inject constructor(
      */
     fun loadAchievements() {
         viewModelScope.launch {
-            val achievements = achievementRepository.getAllAchievements()
-            val unlockedIds = achievementRepository.getUnlockedAchievementIds()
+            // 先初始化成就系统（确保数据库有数据）
+            achievementRepository.initialize()
+            
+            // 获取所有成就及其解锁状态
+            val achievementsWithStatus = achievementRepository.getAllAchievements()
+            val unlockedCount = achievementRepository.getUnlockedCount()
+            val totalCount = achievementRepository.getTotalCount()
 
             val result = mutableListOf<Triple<Achievement, Boolean, Int?>>()
-            var unlocked = 0
 
-            achievements.forEach { achievement ->
-                val isUnlocked = unlockedIds.contains(achievement.id)
-                if (isUnlocked) {
-                    unlocked++
-                }
-
+            achievementsWithStatus.forEach { (achievement, isUnlocked) ->
                 // 计算当前进度（只对未解锁成就）
                 val progress = if (!isUnlocked) {
-                    getCurrentProgress(achievement)
+                    achievementRepository.getProgress(achievement.id)
                 } else {
                     null
                 }
 
-                // 为已解锁成就添加解锁时间
-                val achievementWithTime = if (isUnlocked) {
-                    val unlockedAt = achievementRepository.getUnlockedAt(achievement.id)
-                    achievement.copy(unlockedAt = unlockedAt)
-                } else {
-                    achievement
-                }
-
-                result.add(Triple(achievementWithTime, isUnlocked, progress))
+                result.add(Triple(achievement, isUnlocked, progress))
             }
 
             _achievementsWithProgress.value = result
-            _unlockedCount.value = unlocked
-            _totalCount.value = achievements.size
+            _unlockedCount.value = unlockedCount
+            _totalCount.value = totalCount
+
+            // 根据已解锁数量计算当前阶段并更新柯基姿态
+            updateStageAndPose(unlockedCount)
         }
     }
 
     /**
-     * 获取成就的当前进度
-     * 根据成就条件类型查询相应数据
+     * 加载柯基数据
      */
-    private suspend fun getCurrentProgress(achievement: Achievement): Int {
-        return when (achievement.condition) {
-            AchievementCondition.COMPLETED_TASKS -> {
-                todoRepository.getCompletedCount()
-            }
-            AchievementCondition.DAILY_OPEN -> {
-                corgiRepository.getConsecutiveOpenDays()
-            }
-            AchievementCondition.LOGIN_DAYS -> {
-                corgiRepository.getTotalOpenDays()
-            }
-            AchievementCondition.LEVEL -> {
-                corgiRepository.getCorgiData()?.level ?: 1
-            }
-            AchievementCondition.STUDY_TASKS -> {
-                getCompletedCountByCategoryType("study")
-            }
-            AchievementCondition.WORK_TASKS -> {
-                getCompletedCountByCategoryType("work")
-            }
-            AchievementCondition.LIFE_TASKS -> {
-                getCompletedCountByCategoryType("life")
-            }
-            AchievementCondition.HEALTH_TASKS -> {
-                getCompletedCountByCategoryType("health")
-            }
-            AchievementCondition.CATEGORIES -> {
-                categoryRepository.getActiveCategoriesCount()
-            }
-            AchievementCondition.TODO_NOTES -> {
-                todoRepository.getTotalCount()
-            }
-            AchievementCondition.ALL_ACHIEVEMENTS -> {
-                achievementRepository.getUnlockedAchievementIds().size
-            }
+    private fun loadCorgiData() {
+        viewModelScope.launch {
+            val data = corgiRepository.getCorgiData()
+            _corgiData.value = data
         }
     }
 
     /**
-     * 根据分类类型获取已完成任务数量
+     * 根据已解锁成就数量更新阶段和柯基姿态
      */
-    private suspend fun getCompletedCountByCategoryType(type: String): Int {
-        val category = categoryRepository.getCategoryByType(type)
-        return if (category != null) {
-            todoRepository.getCompletedCountByCategoryId(category.id)
-        } else {
-            0
+    private fun updateStageAndPose(unlockedCount: Int) {
+        // 计算当前阶段
+        val stage = when {
+            unlockedCount >= AchievementStage.PEAK.requiredUnlocked -> AchievementStage.PEAK
+            unlockedCount >= AchievementStage.LEAP.requiredUnlocked -> AchievementStage.LEAP
+            unlockedCount >= AchievementStage.GROWTH.requiredUnlocked -> AchievementStage.GROWTH
+            else -> AchievementStage.BEGINNER
         }
+        _currentStage.value = stage
+
+        // 根据阶段设置柯基姿态
+        val pose = when (stage) {
+            AchievementStage.BEGINNER -> CorgiPose.LIE   // 初见阶段：趴卧（休闲）
+            AchievementStage.GROWTH -> CorgiPose.SIT     // 成长阶段：坐立（专注）
+            AchievementStage.LEAP -> CorgiPose.RUN       // 飞跃阶段：奔跑（兴奋）
+            AchievementStage.PEAK -> CorgiPose.STAND    // 巅峰阶段：站立（骄傲）
+        }
+        _corgiPoseForStage.value = pose
     }
 
     /**

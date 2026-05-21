@@ -23,7 +23,7 @@ class CategoryRepository @Inject constructor(
 
     /**
      * 初始化默认分类
-     * 如果数据库中没有分类，则创建学习、工作、生活三个默认分类
+     * 如果数据库中没有分类，则创建学习、工作、生活、运动四个默认分类
      */
     suspend fun initDefaultCategories() = withContext(ioDispatcher) {
         val existingCategories = categoryDao.getAllCategoriesList()
@@ -31,9 +31,15 @@ class CategoryRepository @Inject constructor(
             val defaultCategories = listOf(
                 Category(name = DefaultCategoryName.STUDY, type = CategoryType.STUDY, isDefault = true),
                 Category(name = DefaultCategoryName.WORK, type = CategoryType.WORK, isDefault = true),
-                Category(name = DefaultCategoryName.LIFE, type = CategoryType.LIFE, isDefault = true)
+                Category(name = DefaultCategoryName.LIFE, type = CategoryType.LIFE, isDefault = true),
+                Category(name = DefaultCategoryName.SPORT, type = CategoryType.SPORT, isDefault = true)
             )
             categoryDao.insertAll(defaultCategories)
+        } else {
+            val hasSport = existingCategories.any { it.type == CategoryType.SPORT }
+            if (!hasSport) {
+                categoryDao.insert(Category(name = DefaultCategoryName.SPORT, type = CategoryType.SPORT, isDefault = true))
+            }
         }
     }
 
@@ -84,6 +90,11 @@ class CategoryRepository @Inject constructor(
      * 获取生活类分类
      */
     suspend fun getLifeCategory(): Category? = getCategoryByType(CategoryType.LIFE)
+
+    /**
+     * 获取运动类分类
+     */
+    suspend fun getSportCategory(): Category? = getCategoryByType(CategoryType.SPORT)
 
     /**
      * 获取学习类分类 ID

@@ -10,13 +10,16 @@ import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -32,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -54,7 +58,10 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.data.repository.RepeatTaskManager
+import com.corgimemo.app.ui.components.CategorySelector
+import com.corgimemo.app.ui.components.KeywordSelectionDialog
 import com.corgimemo.app.ui.components.LocationPicker
+import com.corgimemo.app.ui.components.RecommendationChip
 import com.corgimemo.app.ui.components.SubTaskList
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.SpeechViewModel
@@ -75,6 +82,13 @@ fun TodoEditScreen(
     val title by viewModel.title.collectAsState()
     val content by viewModel.content.collectAsState()
     val priority by viewModel.priority.collectAsState()
+    val categoryId by viewModel.categoryId.collectAsState()
+    val categories by viewModel.categories.collectAsState()
+    val recommendedCategory by viewModel.recommendedCategory.collectAsState()
+    val hasManuallySelectedCategory by viewModel.hasManuallySelectedCategory.collectAsState()
+    val showKeywordSelection by viewModel.showKeywordSelection.collectAsState()
+    val extractedKeywords by viewModel.extractedKeywords.collectAsState()
+    val isCategoriesLoaded by viewModel.isCategoriesLoaded.collectAsState()
     val dueDate by viewModel.dueDate.collectAsState()
     val repeatType by viewModel.repeatType.collectAsState()
 
@@ -121,10 +135,12 @@ fun TodoEditScreen(
 
     LaunchedEffect(Unit) {
         homeViewModel.setPoseForCreating()
+        viewModel.loadCategories()
     }
 
     if (speechResult.isNotEmpty()) {
         viewModel.setTitle(speechResult)
+        viewModel.triggerRecommendation()
         speechViewModel.startListening()
     }
 
@@ -168,7 +184,7 @@ fun TodoEditScreen(
             ) {
                 TextField(
                     value = title,
-                    onValueChange = { viewModel.setTitle(it) },
+                    onValueChange = { viewModel.setTitleWithRecommendation(it) },
                     label = { Text("标题") },
                     placeholder = { Text("请输入待办标题") },
                     modifier = Modifier.weight(1f)
@@ -249,6 +265,58 @@ fun TodoEditScreen(
                     )
                 }
             }
+
+            AnimatedVisibility(visible = recommendedCategory != null) {
+                Column(modifier = Modifier.padding(top = 16.dp)) {
+                    recommendedCategory?.let { category ->
+                        RecommendationChip(
+                            category = category,
+                            onClick = { viewModel.acceptRecommendation() }
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(visible = recommendedCategory == null && title.isNotBlank() && !hasManuallySelectedCategory) {
+                Column(modifier = Modifier.padding(top = 16.dp)) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "⚠️",
+                                fontSize = 18.sp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "需要分类",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Text(
+                                    text = "请为这条待办选择一个分类",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            CategorySelector(
+                categories = categories,
+                selectedCategoryId = categoryId,
+                onCategorySelected = { viewModel.setCategoryId(it) },
+                modifier = Modifier.padding(top = 8.dp)
+            )
 
             Button(
                 onClick = { showDatePicker = true },
@@ -355,6 +423,28 @@ fun TodoEditScreen(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+
+    if (showKeywordSelection) {
+        KeywordSelectionDialog(
+            title = title,
+            keywords = extractedKeywords,
+            categories = categories,
+            onConfirm = { keyword, categoryId ->
+                if (viewModel.confirmKeywordSelection(keyword, categoryId)) {
+                    homeViewModel.setPoseForLoading()
+                    homeViewModel.refreshSubTaskProgress()
+                    navController.popBackStack()
+                }
+            },
+            onSkip = {
+                viewModel.skipKeywordSelection()
+                homeViewModel.setPoseForLoading()
+                homeViewModel.refreshSubTaskProgress()
+                navController.popBackStack()
+            },
+            onDismiss = { viewModel.cancelKeywordSelection() }
+        )
     }
 }
 

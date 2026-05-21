@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -225,14 +226,17 @@ fun AchievementDetailSheet(
  */
 private fun getUnlockedBackgroundBrush(stage: AchievementStage): Brush {
     return when (stage) {
-        AchievementStage.SPRING -> Brush.verticalGradient(
-            colors = listOf(Color(0xFF10B981), Color(0xFF059669))
+        AchievementStage.BEGINNER -> Brush.verticalGradient(
+            colors = listOf(Color(0xFF94A3B8), Color(0xFF64748B))
         )
-        AchievementStage.GROWING -> Brush.verticalGradient(
+        AchievementStage.GROWTH -> Brush.verticalGradient(
+            colors = listOf(Color(0xFF34D399), Color(0xFF10B981))
+        )
+        AchievementStage.LEAP -> Brush.verticalGradient(
             colors = listOf(Color(0xFF3B82F6), Color(0xFF2563EB))
         )
-        AchievementStage.MATURE -> Brush.verticalGradient(
-            colors = listOf(Color(0xFF8B5CF6), Color(0xFF7C3AED))
+        AchievementStage.PEAK -> Brush.verticalGradient(
+            colors = listOf(Color(0xFFF97316), Color(0xFFEA580C))
         )
     }
 }
@@ -242,9 +246,10 @@ private fun getUnlockedBackgroundBrush(stage: AchievementStage): Brush {
  */
 private fun getStageFullLabel(stage: AchievementStage): String {
     return when (stage) {
-        AchievementStage.SPRING -> "🌱 萌芽期"
-        AchievementStage.GROWING -> "🌿 成长期"
-        AchievementStage.MATURE -> "🌳 成熟期"
+        AchievementStage.BEGINNER -> "🌱 初见阶段"
+        AchievementStage.GROWTH -> "🌿 成长阶段"
+        AchievementStage.LEAP -> "🚀 飞跃阶段"
+        AchievementStage.PEAK -> "🏆 巅峰阶段"
     }
 }
 
@@ -253,9 +258,10 @@ private fun getStageFullLabel(stage: AchievementStage): String {
  */
 private fun getStageColor(stage: AchievementStage): Color {
     return when (stage) {
-        AchievementStage.SPRING -> Color(0xFF059669)
-        AchievementStage.GROWING -> Color(0xFF2563EB)
-        AchievementStage.MATURE -> Color(0xFF7C3AED)
+        AchievementStage.BEGINNER -> Color(0xFF64748B)
+        AchievementStage.GROWTH -> Color(0xFF10B981)
+        AchievementStage.LEAP -> Color(0xFF2563EB)
+        AchievementStage.PEAK -> Color(0xFFEA580C)
     }
 }
 

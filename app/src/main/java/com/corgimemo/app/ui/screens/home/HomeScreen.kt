@@ -80,7 +80,9 @@ import androidx.navigation.NavController
 import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.GreetingManager
+import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.HolidayManager
+import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.animation.InteractiveCorgi
 import com.corgimemo.app.animation.SolarTermManager
 import com.corgimemo.app.animation.LevelManager
@@ -158,21 +160,30 @@ fun HomeScreen(
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var showBatchMoveDialog by remember { mutableStateOf(false) }
 
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
     // 新成就解锁弹窗状态
     var currentUnlockedAchievement by remember {
         mutableStateOf<com.corgimemo.app.data.model.Achievement?>(null)
     }
 
     // 监听新的成就解锁事件
-    LaunchedEffect(Unit) {
+    LaunchedEffect(hapticEnabled) {
         viewModel.achievementUnlockEvents.collect { achievement ->
+            // 触发震动反馈：成就解锁长震动
+            HapticFeedbackManager.performHapticFeedback(
+                context = context,
+                type = InteractionType.ACHIEVEMENT_UNLOCK,
+                enabled = hapticEnabled
+            )
+            // 触发柯基庆祝动画
+            viewModel.setPoseForCelebrating()
+            // 显示成就解锁弹窗
             currentUnlockedAchievement = achievement
         }
     }
-
-    val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val snackbarHostState = remember { SnackbarHostState() }
 
     moodChangeMessage?.let { message ->
         LaunchedEffect(message) {
@@ -463,6 +474,16 @@ fun HomeScreen(
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
                             items(todos, key = { it.id }) { todo ->
+                                val category = categories.find { it.id == todo.categoryId }
+                                val categoryIcon = category?.let { c ->
+                                    when(c.type) {
+                                        com.corgimemo.app.data.model.CategoryType.STUDY -> "📚"
+                                        com.corgimemo.app.data.model.CategoryType.WORK -> "💼"
+                                        com.corgimemo.app.data.model.CategoryType.LIFE -> "🏠"
+                                        com.corgimemo.app.data.model.CategoryType.SPORT -> "🏃"
+                                        else -> "📋"
+                                    }
+                                }
                                 TodoListItem(
                                     todo = todo,
                                     subTaskProgress = subTaskProgressMap[todo.id],
@@ -470,6 +491,8 @@ fun HomeScreen(
                                     isExpanded = expandedTodos.contains(todo.id),
                                     isBatchMode = isBatchMode,
                                     isSelected = selectedTodoIds.contains(todo.id),
+                                    categoryName = category?.name,
+                                    categoryIcon = categoryIcon,
                                     onToggleComplete = { id, isChecked ->
                                         viewModel.onUserInteraction()
                                         viewModel.toggleTodoStatus(id, isChecked)
@@ -555,7 +578,11 @@ fun HomeScreen(
             currentUnlockedAchievement?.let { achievement ->
                 AchievementUnlockDialog(
                     achievement = achievement,
-                    onDismiss = { currentUnlockedAchievement = null }
+                    onDismiss = {
+                        currentUnlockedAchievement = null
+                        // 弹窗关闭后恢复柯基默认姿态
+                        viewModel.restorePoseWithDelay(200)
+                    }
                 )
             }
         }

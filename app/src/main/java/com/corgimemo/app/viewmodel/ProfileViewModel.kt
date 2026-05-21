@@ -2,8 +2,6 @@ package com.corgimemo.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.corgimemo.app.animation.Achievement
-import com.corgimemo.app.animation.AchievementManager
 import com.corgimemo.app.animation.LevelManager
 import com.corgimemo.app.animation.LevelStage
 import com.corgimemo.app.animation.Outfit
@@ -11,8 +9,10 @@ import com.corgimemo.app.animation.OutfitManager
 import com.corgimemo.app.animation.OutfitRecommendation
 import com.corgimemo.app.animation.SeasonalOutfitRecommender
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
+import com.corgimemo.app.data.model.Achievement
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.MoodHistory
+import com.corgimemo.app.data.repository.AchievementRepository
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.CorgiRepository
 import com.corgimemo.app.data.repository.MoodHistoryRepository
@@ -35,7 +35,8 @@ class ProfileViewModel @Inject constructor(
     private val corgiPreferences: CorgiPreferences,
     private val todoRepository: TodoRepository,
     private val categoryRepository: CategoryRepository,
-    private val moodHistoryRepository: MoodHistoryRepository
+    private val moodHistoryRepository: MoodHistoryRepository,
+    private val achievementRepository: AchievementRepository
 ) : ViewModel() {
 
     private val _corgiData = MutableStateFlow<CorgiData?>(null)
@@ -116,7 +117,9 @@ class ProfileViewModel @Inject constructor(
                 _levelProgress.value = progress
                 _progressText.value = LevelManager.getProgressText(it.experience)
 
-                _achievements.value = AchievementManager.getAchievementsWithStatus(it.unlockedAchievements)
+                // 使用新系统的成就数据
+                achievementRepository.initialize()
+                _achievements.value = achievementRepository.getAllAchievements()
                 _outfits.value = OutfitManager.getOutfitsWithStatus(it.unlockedOutfits)
 
                 _recommendedOutfit.value = SeasonalOutfitRecommender.getCurrentRecommendation(
@@ -204,8 +207,8 @@ class ProfileViewModel @Inject constructor(
      * @return 是否已解锁
      */
     fun isAchievementUnlocked(achievementId: String): Boolean {
-        val data = _corgiData.value ?: return false
-        return AchievementManager.isAchievementUnlocked(achievementId, data.unlockedAchievements)
+        // 使用新系统检查成就解锁状态
+        return achievements.value.any { it.first.id == achievementId && it.second }
     }
 
     /**
@@ -222,34 +225,16 @@ class ProfileViewModel @Inject constructor(
      * @return 当前进度值
      */
     suspend fun getAchievementProgress(achievement: Achievement): Int {
-        val data = _corgiData.value ?: return 0
-
-        val studyCategoryId = categoryRepository.getStudyCategoryId()
-        val workCategoryId = categoryRepository.getWorkCategoryId()
-
-        val learningCompleted = studyCategoryId?.let {
-            todoRepository.getCompletedCountByCategory(it)
-        } ?: 0
-
-        val workCompleted = workCategoryId?.let {
-            todoRepository.getCompletedCountByCategory(it)
-        } ?: 0
-
-        return AchievementManager.getAchievementProgress(
-            achievementId = achievement.id,
-            learningCompleted = learningCompleted,
-            workCompleted = workCompleted,
-            consecutiveDays = data.consecutiveDays,
-            totalCompleted = data.totalCompleted,
-            unlockedAchievementsJson = data.unlockedAchievements
-        )
+        // 使用新系统的成就进度获取方法
+        return achievementRepository.getProgress(achievement.id)
     }
 
     /**
      * 获取成就进度百分比
      */
     fun getAchievementProgressPercentage(achievement: Achievement, progress: Int): Float {
-        return AchievementManager.getProgressPercentage(achievement, progress)
+        if (achievement.threshold <= 0) return 1.0f
+        return (progress.toFloat() / achievement.threshold.toFloat()).coerceIn(0f, 1f)
     }
 
     /**

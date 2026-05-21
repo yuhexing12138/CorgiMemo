@@ -21,7 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
-import kotlin.math.random
+import kotlin.random.Random
 
 /**
  * 彩色纸屑动画组件
@@ -57,6 +57,7 @@ fun ConfettiOverlay(
 @Composable
 private fun ConfettiCanvas() {
     val infiniteTransition = rememberInfiniteTransition(label = "ConfettiTransition")
+    val random = Random(System.currentTimeMillis())
 
     // 纸屑颜色列表（使用 MaterialTheme 颜色 + 暖橙色）
     val colors = listOf(
@@ -76,13 +77,13 @@ private fun ConfettiCanvas() {
         List(60) { index ->
             ConfettiParticle(
                 id = index,
-                startX = (0f..1f).random(),
-                startY = (-0.2f..0f).random(),
-                size = (4.dp..12.dp).random().value,
-                color = colors.random(),
-                speed = (0.5f..1.5f).random(),
-                horizontalDrift = (-0.3f..0.3f).random(),
-                rotationSpeed = (-180f..180f).random()
+                startX = random.nextFloat(),
+                startY = -0.2f + random.nextFloat() * 0.2f,
+                size = 4.dp.value + random.nextFloat() * 8.dp.value,
+                color = colors[random.nextInt(colors.size)],
+                speed = 0.5f + random.nextFloat() * 1.0f,
+                horizontalDrift = -0.3f + random.nextFloat() * 0.6f,
+                rotationSpeed = -180f + random.nextFloat() * 360f
             )
         }
     }
@@ -111,7 +112,7 @@ private fun ConfettiCanvas() {
 
             // 只绘制在画布范围内的纸屑
             if (y >= 0 && y <= canvasHeight) {
-                drawIntoCanvas { canvas ->
+                drawIntoCanvas {
                     // 绘制纸屑（小圆点）
                     drawCircle(
                         color = particle.color,

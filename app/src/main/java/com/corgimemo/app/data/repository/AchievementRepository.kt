@@ -6,6 +6,9 @@ import com.corgimemo.app.data.local.db.AchievementEntity
 import com.corgimemo.app.data.model.Achievement
 import com.corgimemo.app.data.model.AchievementCondition
 import com.corgimemo.app.data.model.AchievementDefinition
+import com.corgimemo.app.data.model.CategoryType
+import com.corgimemo.app.data.model.NewAchievementId
+import com.corgimemo.app.model.UserType
 import com.corgimemo.app.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -21,6 +24,7 @@ class AchievementRepository @Inject constructor(
     private val achievementDao: AchievementDao,
     private val corgiRepository: CorgiRepository,
     private val todoRepository: TodoRepository,
+    private val taskDailyStatsRepository: TaskDailyStatsRepository,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
@@ -64,7 +68,28 @@ class AchievementRepository @Inject constructor(
     }
 
     /**
-     * 获取所有成就及其解锁状态
+     * 根据用户类型获取可见的成就及其解锁状态
+     *
+     * @param userType 用户类型（上班族/学生）
+     * @return 成就和解锁状态的列表
+     */
+    suspend fun getVisibleAchievements(userType: UserType): List<Pair<Achievement, Boolean>> = withContext(ioDispatcher) {
+        val entities = achievementDao.getAll()
+        val unlockedIds = entities.filter { it.unlockedAt != null }.map { it.id }.toSet()
+        val visibleAchievements = AchievementDefinition.getVisibleAchievements(userType)
+
+        visibleAchievements.map { achievement ->
+            val entity = entities.find { it.id == achievement.id }
+            val isUnlocked = unlockedIds.contains(achievement.id)
+            val achievementWithTime = entity?.unlockedAt?.let { timestamp ->
+                achievement.copy(unlockedAt = timestamp)
+            } ?: achievement
+            achievementWithTime to isUnlocked
+        }
+    }
+
+    /**
+     * 获取所有成就及其解锁状态（包含所有身份的成就）
      *
      * @return 成就和解锁状态的列表
      */
@@ -97,7 +122,19 @@ class AchievementRepository @Inject constructor(
     }
 
     /**
-     * 获取已解锁成就的数量
+     * 根据用户类型获取可见的已解锁成就数量
+     *
+     * @param userType 用户类型
+     * @return 已解锁数量
+     */
+    suspend fun getVisibleUnlockedCount(userType: UserType): Int = withContext(ioDispatcher) {
+        val unlockedIds = achievementDao.getUnlockedIds().toSet()
+        val visibleIds = AchievementDefinition.getVisibleAchievementIds(userType)
+        visibleIds.count { unlockedIds.contains(it) }
+    }
+
+    /**
+     * 获取已解锁成就的数量（所有成就）
      *
      * @return 已解锁数量
      */
@@ -150,15 +187,21 @@ class AchievementRepository @Inject constructor(
 
         when (achievement.condition) {
             AchievementCondition.CUMULATIVE_TOTAL -> corgiData.totalCompleted
-            AchievementCondition.CUMULATIVE_STUDY -> todoRepository.getCompletedCountByCategoryType(1)
-            AchievementCondition.CUMULATIVE_WORK -> todoRepository.getCompletedCountByCategoryType(0)
-            AchievementCondition.CUMULATIVE_LIFE -> todoRepository.getCompletedCountByCategoryType(2)
+            AchievementCondition.CUMULATIVE_STUDY -> todoRepository.getCompletedCountByCategoryType(CategoryType.STUDY)
+            AchievementCondition.CUMULATIVE_WORK -> todoRepository.getCompletedCountByCategoryType(CategoryType.WORK)
+            AchievementCondition.CUMULATIVE_LIFE -> todoRepository.getCompletedCountByCategoryType(CategoryType.LIFE)
+            AchievementCondition.CUMULATIVE_ENTERTAINMENT -> taskDailyStatsRepository.getTodayStats()?.entertainmentCompleted ?: 0
             AchievementCondition.CONSECUTIVE_DAYS -> corgiData.consecutiveDays
+            AchievementCondition.CONSECUTIVE_WORK_DAYS -> taskDailyStatsRepository.getConsecutiveWorkDays()
+            AchievementCondition.CONSECUTIVE_STUDY_DAYS -> taskDailyStatsRepository.getConsecutiveStudyDays()
             AchievementCondition.CORGI_LEVEL -> corgiData.level
             AchievementCondition.EARLY_BIRD -> corgiData.consecutiveEarlyDays
             AchievementCondition.DAILY_TOTAL -> todoRepository.getCompletedCountToday()
+            AchievementCondition.MONTHLY_WORK -> taskDailyStatsRepository.getMonthlyWorkCompleted()
+            AchievementCondition.SEMESTER_STUDY -> taskDailyStatsRepository.getSemesterStudyCompleted()
+            AchievementCondition.BEFORE_TIME -> taskDailyStatsRepository.getTodayStats()?.workCompleted ?: 0
             AchievementCondition.ALL_ACHIEVEMENTS -> achievementDao.getUnlockedIds()
-                .count { it != AchievementDefinition.NewAchievementId.ALL_ACHIEVEMENTS }
+                .count { it != NewAchievementId.ALL_ACHIEVEMENTS }
             AchievementCondition.FIRST_COMPLETE -> corgiData.totalCompleted
         }
     }
@@ -173,7 +216,17 @@ class AchievementRepository @Inject constructor(
     }
 
     /**
-     * 获取总成就数量
+     * 根据用户类型获取总成就数量
+     *
+     * @param userType 用户类型
+     * @return 总数量
+     */
+    fun getVisibleTotalCount(userType: UserType): Int {
+        return AchievementDefinition.getVisibleCount(userType)
+    }
+
+    /**
+     * 获取总成就数量（所有身份）
      *
      * @return 总数量
      */

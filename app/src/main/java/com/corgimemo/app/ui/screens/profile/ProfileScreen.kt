@@ -49,7 +49,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.corgimemo.app.animation.Achievement
 import com.corgimemo.app.animation.InteractiveCorgi
 import com.corgimemo.app.animation.Outfit
 import com.corgimemo.app.animation.OutfitManager
@@ -57,6 +56,7 @@ import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.CorgiPose
 import com.corgimemo.app.animation.PoseManager
 import com.corgimemo.app.animation.OutfitRecommendation
+import com.corgimemo.app.data.model.Achievement as NewAchievement
 import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.viewmodel.ProfileViewModel
 
@@ -79,7 +79,7 @@ fun ProfileScreen(
     val hapticEnabled by viewModel.hapticEnabled.collectAsState()
     val soundEnabled by viewModel.soundEnabled.collectAsState()
 
-    var showAchievementDetail by remember { mutableStateOf<Achievement?>(null) }
+    var showAchievementDetail by remember { mutableStateOf<NewAchievement?>(null) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var pendingNewName by remember { mutableStateOf("") }
@@ -258,7 +258,7 @@ fun ProfileScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "成就",
+                            text = "🏆 ${achievements.count { it.second }}/${achievements.size}",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -549,11 +549,12 @@ fun ProfileScreen(
  */
 @Composable
 fun AchievementCard(
-    achievement: Achievement,
+    achievement: NewAchievement,
     isUnlocked: Boolean,
     onClick: () -> Unit
 ) {
-    val icon = com.corgimemo.app.animation.AchievementManager.getAchievementIcon(achievement.id)
+    // 使用新系统的成就图标
+    val icon = achievement.icon
 
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -698,11 +699,13 @@ fun OutfitCard(
  */
 @Composable
 fun AchievementDetailDialog(
-    achievement: Achievement,
+    achievement: NewAchievement,
     isUnlocked: Boolean,
     onDismiss: () -> Unit
 ) {
-    val icon = com.corgimemo.app.animation.AchievementManager.getAchievementIcon(achievement.id)
+    // 使用新系统的成就图标和描述
+    val icon = achievement.icon
+    val conditionText = achievement.description
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -732,17 +735,21 @@ fun AchievementDetailDialog(
                     modifier = Modifier.padding(top = 12.dp)
                 )
                 Text(
-                    text = achievement.description,
+                    text = conditionText,
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)
                 )
-                Text(
-                    text = achievement.conditionText,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
+                // 显示解锁故事
+                if (isUnlocked && achievement.story.isNotEmpty()) {
+                    Text(
+                        text = "\"${achievement.story}\"",
+                        fontSize = 13.sp,
+                        color = Color(0xFFEA580C),
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
                 achievement.outfitId?.let { outfitId ->
                     val outfit = OutfitManager.getOutfitById(outfitId)
                     outfit?.let {

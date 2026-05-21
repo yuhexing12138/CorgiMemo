@@ -17,8 +17,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
@@ -34,6 +36,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -58,16 +61,6 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-/**
- * 创建待办的底部弹窗组件
- * 使用 ModalBottomSheet 实现，让柯基在背景可见
- * 包含语音输入和位置输入功能
- *
- * @param sheetState 底部弹窗状态
- * @param viewModel TodoEditViewModel
- * @param onSave 保存回调
- * @param onDismiss 关闭回调
- */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun TodoCreateBottomSheet(
@@ -77,13 +70,18 @@ fun TodoCreateBottomSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // 基础待办状态
     val title by viewModel.title.collectAsState()
     val content by viewModel.content.collectAsState()
     val priority by viewModel.priority.collectAsState()
     val dueDate by viewModel.dueDate.collectAsState()
 
-    // 地理围栏相关状态
+    val categoryId by viewModel.categoryId.collectAsState()
+    val categories by viewModel.categories.collectAsState()
+    val recommendedCategory by viewModel.recommendedCategory.collectAsState()
+    val hasManuallySelectedCategory by viewModel.hasManuallySelectedCategory.collectAsState()
+    val showKeywordSelection by viewModel.showKeywordSelection.collectAsState()
+    val extractedKeywords by viewModel.extractedKeywords.collectAsState()
+
     val geofenceLat by viewModel.geofenceLat.collectAsState()
     val geofenceLng by viewModel.geofenceLng.collectAsState()
     val geofenceRadius by viewModel.geofenceRadius.collectAsState()
@@ -103,7 +101,10 @@ fun TodoCreateBottomSheet(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    // 录音权限请求 launcher
+    LaunchedEffect(Unit) {
+        viewModel.loadCategories()
+    }
+
     val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { granted ->
@@ -118,13 +119,11 @@ fun TodoCreateBottomSheet(
         }
     )
 
-    // 语音识别结果自动填入标题
     if (speechResult.isNotEmpty()) {
-        viewModel.setTitle(speechResult)
+        viewModel.setTitleWithRecommendation(speechResult)
         speechViewModel.startListening()
     }
 
-    // 语音识别错误提示
     if (speechError.isNotEmpty()) {
         LaunchedEffect(speechError) {
             snackbarHostState.showSnackbar(speechError)
@@ -149,7 +148,6 @@ fun TodoCreateBottomSheet(
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
-            // 标题输入 + 语音输入按钮
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -157,14 +155,13 @@ fun TodoCreateBottomSheet(
             ) {
                 TextField(
                     value = title,
-                    onValueChange = { newTitle -> viewModel.setTitle(newTitle) },
+                    onValueChange = { newTitle -> viewModel.setTitleWithRecommendation(newTitle) },
                     label = { Text("标题") },
                     placeholder = { Text("请输入待办标题") },
                     modifier = Modifier.weight(1f),
                     singleLine = true
                 )
 
-                // 语音输入按钮
                 IconButton(
                     onClick = {
                         requestRecordAudioPermission(
@@ -191,7 +188,6 @@ fun TodoCreateBottomSheet(
                 }
             }
 
-            // 录音状态显示和波形动画
             AnimatedVisibility(visible = isListening || isProcessing) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -206,7 +202,6 @@ fun TodoCreateBottomSheet(
                 }
             }
 
-            // 详情输入
             TextField(
                 value = content,
                 onValueChange = { newContent -> viewModel.setContent(newContent) },
@@ -219,7 +214,6 @@ fun TodoCreateBottomSheet(
                 maxLines = 4
             )
 
-            // 优先级选择
             Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
                 Text(
                     text = "优先级",
@@ -248,7 +242,58 @@ fun TodoCreateBottomSheet(
                 }
             }
 
-            // 日期选择按钮
+            AnimatedVisibility(visible = recommendedCategory != null) {
+                Column(modifier = Modifier.padding(top = 12.dp)) {
+                    recommendedCategory?.let { category ->
+                        RecommendationChip(
+                            category = category,
+                            onClick = { viewModel.acceptRecommendation() }
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(visible = recommendedCategory == null && title.isNotBlank() && !hasManuallySelectedCategory) {
+                Column(modifier = Modifier.padding(top = 12.dp)) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "\u26A0\uFE0F",
+                                fontSize = 18.sp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "需要分类",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Text(
+                                    text = "请为这条待办选择一个分类",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            CategorySelector(
+                categories = categories,
+                selectedCategoryId = categoryId,
+                onCategorySelected = { viewModel.setCategoryId(it) },
+                modifier = Modifier.padding(top = 8.dp)
+            )
+
             Button(
                 onClick = { showDatePicker = true },
                 modifier = Modifier
@@ -264,7 +309,6 @@ fun TodoCreateBottomSheet(
                 Text(text = dateText)
             }
 
-            // 位置选择器
             LocationPicker(
                 lat = geofenceLat,
                 lng = geofenceLng,
@@ -290,7 +334,6 @@ fun TodoCreateBottomSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 取消和保存按钮
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -321,10 +364,8 @@ fun TodoCreateBottomSheet(
         }
     }
 
-    // SnackbarHost 用于显示提示信息
     SnackbarHost(hostState = snackbarHostState)
 
-    // 日期选择器弹窗
     if (showDatePicker) {
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
@@ -348,14 +389,26 @@ fun TodoCreateBottomSheet(
             DatePicker(state = datePickerState)
         }
     }
+
+    if (showKeywordSelection) {
+        KeywordSelectionDialog(
+            title = title,
+            keywords = extractedKeywords,
+            categories = categories,
+            onConfirm = { keyword, catId ->
+                if (viewModel.confirmKeywordSelection(keyword, catId)) {
+                    onSave()
+                }
+            },
+            onSkip = {
+                viewModel.skipKeywordSelection()
+                onSave()
+            },
+            onDismiss = { viewModel.cancelKeywordSelection() }
+        )
+    }
 }
 
-/**
- * 检查是否有录音权限
- *
- * @param context Context
- * @return 是否有权限
- */
 private fun hasRecordAudioPermission(context: Context): Boolean {
     return ContextCompat.checkSelfPermission(
         context,
@@ -363,13 +416,6 @@ private fun hasRecordAudioPermission(context: Context): Boolean {
     ) == PackageManager.PERMISSION_GRANTED
 }
 
-/**
- * 请求录音权限
- *
- * @param context Context
- * @param speechViewModel SpeechViewModel
- * @param launcher 权限请求 launcher
- */
 private fun requestRecordAudioPermission(
     context: Context,
     speechViewModel: SpeechViewModel,
@@ -382,11 +428,6 @@ private fun requestRecordAudioPermission(
     }
 }
 
-/**
- * 录音状态指示器
- *
- * @param isListening 是否正在录音
- */
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun RecordingIndicator(isListening: Boolean) {
@@ -398,11 +439,6 @@ fun RecordingIndicator(isListening: Boolean) {
     )
 }
 
-/**
- * 录音波形动画
- *
- * @param isListening 是否正在录音
- */
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun RecordingWaveAnimation(isListening: Boolean) {
@@ -421,14 +457,6 @@ fun RecordingWaveAnimation(isListening: Boolean) {
     }
 }
 
-/**
- * 优先级选择按钮
- *
- * @param text 按钮文本
- * @param priority 优先级值
- * @param isSelected 是否选中
- * @param onClick 点击回调
- */
 @Composable
 fun PriorityChip(text: String, priority: Int, isSelected: Boolean, onClick: () -> Unit) {
     val (color, bgColor) = when (priority) {

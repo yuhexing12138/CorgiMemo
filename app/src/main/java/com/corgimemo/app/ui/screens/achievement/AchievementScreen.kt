@@ -1,7 +1,5 @@
 package com.corgimemo.app.ui.screens.achievement
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.corgimemo.app.data.model.Achievement
+import com.corgimemo.app.animation.CorgiMood
+import com.corgimemo.app.animation.InteractiveCorgi
 import com.corgimemo.app.data.model.AchievementStage
 import com.corgimemo.app.ui.components.AchievementBadge
 import com.corgimemo.app.ui.components.AchievementDetailSheet
@@ -50,6 +49,7 @@ import kotlinx.coroutines.launch
 /**
  * 成就墙页面
  * 显示所有成就的完成情况和进度
+ * 柯基根据当前成就阶段显示不同姿态
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,14 +63,18 @@ fun AchievementScreen(
     val selectedAchievement by viewModel.selectedAchievement.collectAsState()
     val selectedIsUnlocked by viewModel.selectedIsUnlocked.collectAsState()
     val selectedProgress by viewModel.selectedProgress.collectAsState()
+    val corgiData by viewModel.corgiData.collectAsState()
+    val currentStage by viewModel.currentStage.collectAsState()
+    val corgiPose by viewModel.corgiPoseForStage.collectAsState()
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
 
-    // 按阶段分组
-    val springAchievements = achievementsWithProgress.filter { it.first.stage == AchievementStage.SPRING }
-    val growingAchievements = achievementsWithProgress.filter { it.first.stage == AchievementStage.GROWING }
-    val matureAchievements = achievementsWithProgress.filter { it.first.stage == AchievementStage.MATURE }
+    // 按阶段分组（使用正确的枚举值）
+    val beginnerAchievements = achievementsWithProgress.filter { it.first.stage == AchievementStage.BEGINNER }
+    val growthAchievements = achievementsWithProgress.filter { it.first.stage == AchievementStage.GROWTH }
+    val leapAchievements = achievementsWithProgress.filter { it.first.stage == AchievementStage.LEAP }
+    val peakAchievements = achievementsWithProgress.filter { it.first.stage == AchievementStage.PEAK }
 
     Scaffold(
         topBar = {
@@ -103,24 +107,32 @@ fun AchievementScreen(
                 )
             }
 
+            // 柯基展示卡片（根据阶段显示不同姿态）
+            corgiData?.let { data ->
+                CorgiStageCard(
+                    corgiName = data.name,
+                    currentStage = currentStage,
+                    corgiPose = corgiPose,
+                    currentOutfit = data.currentOutfit,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+
             // 成就列表（按阶段分组）
             LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
+                columns = GridCells.Fixed(2),
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // 萌芽期成就
-                if (springAchievements.isNotEmpty()) {
-                    item {
-                        StageHeader(
-                            label = "🌱 萌芽期",
-                            modifier = Modifier.gridItemSpan { maxCurrentLineSpan }
-                        )
+                // 初见阶段成就
+                if (beginnerAchievements.isNotEmpty()) {
+                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                        StageHeader(label = "🌱 初见阶段")
                     }
-                    items(springAchievements) { (achievement, isUnlocked, progress) ->
+                    items(beginnerAchievements) { (achievement, isUnlocked, progress) ->
                         AchievementBadge(
                             achievement = achievement,
                             isUnlocked = isUnlocked,
@@ -135,15 +147,12 @@ fun AchievementScreen(
                     }
                 }
 
-                // 成长期成就
-                if (growingAchievements.isNotEmpty()) {
-                    item {
-                        StageHeader(
-                            label = "🌿 成长期",
-                            modifier = Modifier.gridItemSpan { maxCurrentLineSpan }
-                        )
+                // 成长阶段成就
+                if (growthAchievements.isNotEmpty()) {
+                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                        StageHeader(label = "🌿 成长阶段")
                     }
-                    items(growingAchievements) { (achievement, isUnlocked, progress) ->
+                    items(growthAchievements) { (achievement, isUnlocked, progress) ->
                         AchievementBadge(
                             achievement = achievement,
                             isUnlocked = isUnlocked,
@@ -158,15 +167,32 @@ fun AchievementScreen(
                     }
                 }
 
-                // 成熟期成就
-                if (matureAchievements.isNotEmpty()) {
-                    item {
-                        StageHeader(
-                            label = "🌳 成熟期",
-                            modifier = Modifier.gridItemSpan { maxCurrentLineSpan }
+                // 飞跃阶段成就
+                if (leapAchievements.isNotEmpty()) {
+                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                        StageHeader(label = "🚀 飞跃阶段")
+                    }
+                    items(leapAchievements) { (achievement, isUnlocked, progress) ->
+                        AchievementBadge(
+                            achievement = achievement,
+                            isUnlocked = isUnlocked,
+                            currentProgress = progress,
+                            onClick = {
+                                viewModel.selectAchievement(achievement, isUnlocked, progress)
+                                coroutineScope.launch {
+                                    sheetState.show()
+                                }
+                            }
                         )
                     }
-                    items(matureAchievements) { (achievement, isUnlocked, progress) ->
+                }
+
+                // 巅峰阶段成就
+                if (peakAchievements.isNotEmpty()) {
+                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                        StageHeader(label = "🏆 巅峰阶段")
+                    }
+                    items(peakAchievements) { (achievement, isUnlocked, progress) ->
                         AchievementBadge(
                             achievement = achievement,
                             isUnlocked = isUnlocked,
@@ -216,12 +242,6 @@ private fun OverallProgressCard(
     totalCount: Int,
     modifier: Modifier = Modifier
 ) {
-    val progressPercent = if (totalCount > 0) {
-        (unlockedCount.toFloat() / totalCount.toFloat()).coerceIn(0f, 1f)
-    } else {
-        0f
-    }
-
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -290,10 +310,89 @@ private fun StageHeader(
 }
 
 /**
- * GridItemSpan 扩展函数
+ * 柯基阶段展示卡片
+ * 根据成就阶段显示不同姿态的柯基
+ *
+ * @param corgiName 柯基名字
+ * @param currentStage 当前成就阶段
+ * @param corgiPose 柯基姿态
+ * @param currentOutfit 当前装扮 ID
+ * @param modifier 修饰符
  */
-inline fun androidx.compose.foundation.lazy.grid.LazyGridScope.gridItemSpan(
-    crossinline span: androidx.compose.foundation.lazy.grid.GridItemSpanScope.() -> Int
-): androidx.compose.foundation.lazy.grid.GridItemSpan {
-    return androidx.compose.foundation.lazy.grid.GridItemSpan { span() }
+@Composable
+private fun CorgiStageCard(
+    corgiName: String,
+    currentStage: AchievementStage,
+    corgiPose: com.corgimemo.app.animation.CorgiPose,
+    currentOutfit: String?,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = getStageCardColor(currentStage)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // 阶段标题
+            Text(
+                text = "当前阶段：${currentStage.displayName}",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = getStageTextColor(currentStage)
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // 阶段描述
+            Text(
+                text = currentStage.description,
+                fontSize = 12.sp,
+                color = getStageTextColor(currentStage).copy(alpha = 0.8f)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 柯基展示
+            InteractiveCorgi(
+                pose = corgiPose,
+                mood = CorgiMood.HAPPY,
+                corgiName = corgiName,
+                level = 1,
+                outfitId = currentOutfit,
+                soundEnabled = false,
+                hapticEnabled = false,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+/**
+ * 获取阶段卡片背景色
+ */
+private fun getStageCardColor(stage: AchievementStage): Color {
+    return when (stage) {
+        AchievementStage.BEGINNER -> Color(0xFFF1F5F9)
+        AchievementStage.GROWTH -> Color(0xFFD1FAE5)
+        AchievementStage.LEAP -> Color(0xFFDBEAFE)
+        AchievementStage.PEAK -> Color(0xFFFED7AA)
+    }
+}
+
+/**
+ * 获取阶段文字颜色
+ */
+private fun getStageTextColor(stage: AchievementStage): Color {
+    return when (stage) {
+        AchievementStage.BEGINNER -> Color(0xFF475569)
+        AchievementStage.GROWTH -> Color(0xFF065F46)
+        AchievementStage.LEAP -> Color(0xFF1E40AF)
+        AchievementStage.PEAK -> Color(0xFF9A3412)
+    }
 }

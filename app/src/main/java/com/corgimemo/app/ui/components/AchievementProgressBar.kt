@@ -9,10 +9,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,7 +36,7 @@ import com.corgimemo.app.data.model.AchievementStage
 
 /**
  * 成就阶段进度条组件
- * 显示成就完成进度和三个阶段（萌芽期/成长期/成熟期）
+ * 显示成就完成进度和四个阶段（初见期/成长期/飞跃期/巅峰期）
  *
  * @param currentProgress 当前进度值
  * @param targetProgress 目标进度值
@@ -69,17 +69,21 @@ fun AchievementProgressBar(
         animatedProgress = progressPercent
     }
 
-    // 确定当前阶段
+    // 确定当前阶段（基于进度百分比）
     val currentStage = when {
-        progressPercent >= 1f -> AchievementStage.MATURE
-        progressPercent >= 0.5f -> AchievementStage.GROWING
-        else -> AchievementStage.SPRING
+        progressPercent >= 1f -> AchievementStage.PEAK
+        progressPercent >= 0.66f -> AchievementStage.LEAP
+        progressPercent >= 0.33f -> AchievementStage.GROWTH
+        else -> AchievementStage.BEGINNER
     }
 
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        // 提前获取主题颜色，避免在 Canvas 中调用 Composable 函数
+        val outlineColor = MaterialTheme.colorScheme.outline
+
         // 阶段标签行
         if (showLabel) {
             Row(
@@ -87,16 +91,20 @@ fun AchievementProgressBar(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 StageLabel(
-                    stage = AchievementStage.SPRING,
-                    isActive = currentStage == AchievementStage.SPRING
+                    stage = AchievementStage.BEGINNER,
+                    isActive = currentStage == AchievementStage.BEGINNER
                 )
                 StageLabel(
-                    stage = AchievementStage.GROWING,
-                    isActive = currentStage == AchievementStage.GROWING
+                    stage = AchievementStage.GROWTH,
+                    isActive = currentStage == AchievementStage.GROWTH
                 )
                 StageLabel(
-                    stage = AchievementStage.MATURE,
-                    isActive = currentStage == AchievementStage.MATURE
+                    stage = AchievementStage.LEAP,
+                    isActive = currentStage == AchievementStage.LEAP
+                )
+                StageLabel(
+                    stage = AchievementStage.PEAK,
+                    isActive = currentStage == AchievementStage.PEAK
                 )
             }
         }
@@ -130,13 +138,14 @@ fun AchievementProgressBar(
 
                 // 绘制阶段节点（25%、50%、75% 位置）
                 val stagePositions = listOf(0.25f, 0.5f, 0.75f)
+                val stages = listOf(AchievementStage.BEGINNER, AchievementStage.GROWTH, AchievementStage.LEAP, AchievementStage.PEAK)
                 stagePositions.forEachIndexed { index, position ->
                     val nodeX = width * position
                     val isPassed = animatedProgressState >= position
                     val nodeColor = if (isPassed) {
-                        getProgressColor(AchievementStage.entries.getOrElse(index) { AchievementStage.SPRING })
+                        getProgressColor(stages.getOrElse(index) { AchievementStage.BEGINNER })
                     } else {
-                        MaterialTheme.colorScheme.outline
+                        outlineColor
                     }
 
                     drawCircle(
@@ -185,9 +194,10 @@ private fun DrawScope.drawProgressBar(
  */
 private fun getProgressColor(stage: AchievementStage): Color {
     return when (stage) {
-        AchievementStage.SPRING -> Color(0xFF10B981)
-        AchievementStage.GROWING -> Color(0xFF3B82F6)
-        AchievementStage.MATURE -> Color(0xFF8B5CF6)
+        AchievementStage.BEGINNER -> Color(0xFF64748B)
+        AchievementStage.GROWTH -> Color(0xFF10B981)
+        AchievementStage.LEAP -> Color(0xFF2563EB)
+        AchievementStage.PEAK -> Color(0xFFEA580C)
     }
 }
 
@@ -200,9 +210,10 @@ private fun StageLabel(
     isActive: Boolean
 ) {
     val label = when (stage) {
-        AchievementStage.SPRING -> "🌱 萌芽期"
-        AchievementStage.GROWING -> "🌿 成长期"
-        AchievementStage.MATURE -> "🌳 成熟期"
+        AchievementStage.BEGINNER -> "🌱 初见"
+        AchievementStage.GROWTH -> "🌿 成长"
+        AchievementStage.LEAP -> "🚀 飞跃"
+        AchievementStage.PEAK -> "🏆 巅峰"
     }
 
     Text(

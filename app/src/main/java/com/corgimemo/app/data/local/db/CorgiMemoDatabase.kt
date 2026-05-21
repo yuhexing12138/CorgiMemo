@@ -6,7 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
-import com.corgimemo.app.data.model.AchievementEntity
+import com.corgimemo.app.data.local.db.AchievementEntity
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.MoodHistory
@@ -18,8 +18,8 @@ import com.corgimemo.app.data.model.TodoItem
  * 管理待办事项、柯基数据、任务分类和成就
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class, SubTask::class, AchievementEntity::class],
-    version = 8,
+    entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class],
+    version = 10,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -36,6 +36,10 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
 
     abstract fun achievementDao(): AchievementDao
 
+    abstract fun taskDailyStatsDao(): TaskDailyStatsDao
+
+    abstract fun categoryKeywordDao(): CategoryKeywordDao
+
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
 
@@ -49,7 +53,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .build()
                 INSTANCE = instance
                 instance
@@ -144,6 +148,53 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 // 为 corgi_data 添加新字段
                 database.execSQL("ALTER TABLE corgi_data ADD COLUMN consecutiveEarlyDays INTEGER NOT NULL DEFAULT 0")
                 database.execSQL("ALTER TABLE corgi_data ADD COLUMN lastEarlyDate TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * 数据库迁移：版本 8 → 9
+         * 创建 task_daily_stats 表用于每日任务统计
+         */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS task_daily_stats (
+                        date TEXT PRIMARY KEY NOT NULL,
+                        studyCompleted INTEGER NOT NULL DEFAULT 0,
+                        workCompleted INTEGER NOT NULL DEFAULT 0,
+                        lifeCompleted INTEGER NOT NULL DEFAULT 0,
+                        entertainmentCompleted INTEGER NOT NULL DEFAULT 0,
+                        lastUpdated INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+            }
+        }
+
+        /**
+         * 数据库迁移：版本 9 → 10
+         * 创建 category_keywords 表用于智能分类关键词
+         */
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS category_keywords (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        keyword TEXT NOT NULL,
+                        categoryType INTEGER NOT NULL,
+                        matchType INTEGER NOT NULL,
+                        isUserDefined INTEGER NOT NULL
+                    )
+                """.trimIndent())
+
+                database.execSQL("""
+                    CREATE INDEX IF NOT EXISTS index_category_keywords_keyword 
+                    ON category_keywords(keyword)
+                """.trimIndent())
+
+                database.execSQL("""
+                    CREATE INDEX IF NOT EXISTS index_category_keywords_categoryType 
+                    ON category_keywords(categoryType)
+                """.trimIndent())
             }
         }
     }

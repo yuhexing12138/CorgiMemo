@@ -3,16 +3,26 @@ package com.corgimemo.app.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.corgimemo.app.data.local.datastore.CorgiPreferences
+import com.corgimemo.app.data.model.Category
+import com.corgimemo.app.data.model.CategoryType
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.data.repository.CategoryKeywordRepository
+import com.corgimemo.app.data.repository.CategoryMatcher
+import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.data.repository.SubTaskManager
 import com.corgimemo.app.data.repository.TodoRepository
+import com.corgimemo.app.model.UserType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -22,8 +32,14 @@ import javax.inject.Inject
 @HiltViewModel
 class TodoEditViewModel @Inject constructor(
     private val todoRepository: TodoRepository,
+    private val categoryRepository: CategoryRepository,
+    private val categoryKeywordRepository: CategoryKeywordRepository,
+    private val categoryMatcher: CategoryMatcher,
+    private val corgiPreferences: CorgiPreferences,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
+
+    private var recommendationJob: Job? = null
 
     private val _title = MutableStateFlow("")
     val title: StateFlow<String> = _title.asStateFlow()
@@ -66,10 +82,41 @@ class TodoEditViewModel @Inject constructor(
     private val _subTasks = MutableStateFlow<List<SubTask>>(emptyList())
     val subTasks: StateFlow<List<SubTask>> = _subTasks.asStateFlow()
 
+    // 分类相关
+    private val _categories = MutableStateFlow<List<Category>>(emptyList())
+    val categories: StateFlow<List<Category>> = _categories.asStateFlow()
+
+    private val _recommendedCategory = MutableStateFlow<Category?>(null)
+    val recommendedCategory: StateFlow<Category?> = _recommendedCategory.asStateFlow()
+
+    private val _hasManuallySelectedCategory = MutableStateFlow(false)
+    val hasManuallySelectedCategory: StateFlow<Boolean> = _hasManuallySelectedCategory.asStateFlow()
+
+    private val _showKeywordSelection = MutableStateFlow(false)
+    val showKeywordSelection: StateFlow<Boolean> = _showKeywordSelection.asStateFlow()
+
+    private val _extractedKeywords = MutableStateFlow<List<String>>(emptyList())
+    val extractedKeywords: StateFlow<List<String>> = _extractedKeywords.asStateFlow()
+
+    private val _isCategoriesLoaded = MutableStateFlow(false)
+    val isCategoriesLoaded: StateFlow<Boolean> = _isCategoriesLoaded.asStateFlow()
+
     private var existingTodo: TodoItem? = null
 
     fun setTitle(title: String) {
         _title.value = title
+    }
+
+    /**
+     * 设置标题并触发智能分类推荐（带防抖）
+     */
+    fun setTitleWithRecommendation(title: String) {
+        _title.value = title
+        recommendationJob?.cancel()
+        recommendationJob = viewModelScope.launch {
+            delay(300)
+            triggerRecommendation()
+        }
     }
 
     fun setContent(content: String) {
@@ -78,6 +125,7 @@ class TodoEditViewModel @Inject constructor(
 
     fun setCategoryId(categoryId: Long) {
         _categoryId.value = categoryId
+        _hasManuallySelectedCategory.value = true
     }
 
     fun setPriority(priority: Int) {
@@ -183,6 +231,7 @@ class TodoEditViewModel @Inject constructor(
                 _title.value = todo.title
                 _content.value = todo.content ?: ""
                 _categoryId.value = todo.categoryId
+                _hasManuallySelectedCategory.value = todo.categoryId > 0
                 _priority.value = todo.priority
                 _dueDate.value = todo.dueDate
                 _repeatType.value = todo.repeatType
@@ -202,13 +251,34 @@ class TodoEditViewModel @Inject constructor(
     /**
      * 保存待办
      *
-     * @return 是否成功
+     * @return 是否成功保存
      */
     fun saveTodo(): Boolean {
         if (_title.value.isBlank()) {
             return false
         }
 
+        if (!_hasManuallySelectedCategory.value) {
+            val categoriesList = _categories.value
+            
+            if (categoriesList.isEmpty()) {
+                performSave()
+                return true
+            }
+
+            val keywords = com.corgimemo.app.data.util.KeywordExtractor.extractKeywords(_title.value)
+            if (keywords.isNotEmpty()) {
+                _extractedKeywords.value = keywords
+                _showKeywordSelection.value = true
+                return false
+            }
+        }
+
+        performSave()
+        return true
+    }
+
+    private fun performSave() {
         viewModelScope.launch {
             val currentTime = System.currentTimeMillis()
             val hasSubTasks = _subTasks.value.isNotEmpty()
@@ -256,8 +326,60 @@ class TodoEditViewModel @Inject constructor(
 
             saveSubTasks(todoId)
         }
+    }
+
+    /**
+     * 确认关键词选择并保存
+     *
+     * @param selectedKeyword 用户选择的关键词
+     * @param selectedCategoryId 用户选择的分类 ID
+     * @return 是否成功
+     */
+    fun confirmKeywordSelection(selectedKeyword: String, selectedCategoryId: Long): Boolean {
+        if (selectedKeyword.isBlank() || selectedCategoryId <= 0) {
+            return false
+        }
+
+        viewModelScope.launch {
+            val selectedCategory = _categories.value.find { it.id == selectedCategoryId }
+            selectedCategory?.let { category ->
+                categoryKeywordRepository.addUserKeyword(
+                    keyword = selectedKeyword,
+                    categoryType = category.type
+                )
+            }
+
+            _categoryId.value = selectedCategoryId
+            _hasManuallySelectedCategory.value = true
+            _showKeywordSelection.value = false
+
+            performSave()
+        }
 
         return true
+    }
+
+    /**
+     * 跳过关键词添加，直接保存
+     */
+    fun skipKeywordSelection() {
+        _showKeywordSelection.value = false
+        _hasManuallySelectedCategory.value = true
+        performSave()
+    }
+
+    /**
+     * 取消关键词选择
+     */
+    fun cancelKeywordSelection() {
+        _showKeywordSelection.value = false
+    }
+
+    /**
+     * 关闭关键词选择对话框
+     */
+    fun dismissKeywordSelection() {
+        _showKeywordSelection.value = false
     }
 
     /**
@@ -291,6 +413,78 @@ class TodoEditViewModel @Inject constructor(
             viewModelScope.launch {
                 SubTaskManager.deleteSubTask(context, subTask.id)
             }
+        }
+    }
+
+    /**
+     * 加载分类列表并设置默认分类
+     */
+    fun loadCategories() {
+        viewModelScope.launch {
+            try {
+                android.util.Log.d("TodoEditVM", "开始加载分类...")
+                categoryRepository.initDefaultCategories()
+
+                val allCategories = categoryRepository.getAllCategoriesList()
+                android.util.Log.d("TodoEditVM", "加载到 ${allCategories.size} 个分类: $allCategories")
+                _categories.value = allCategories
+
+                if (existingTodo == null && _categoryId.value == 0L) {
+                    val userTypeValue = corgiPreferences.userType.first()
+                    val userType = UserType.fromValue(userTypeValue)
+                    val defaultCategory = when (userType) {
+                        UserType.WORKER -> allCategories.find { it.type == CategoryType.WORK }
+                        UserType.STUDENT -> allCategories.find { it.type == CategoryType.STUDY }
+                        else -> allCategories.firstOrNull()
+                    }
+                    defaultCategory?.let {
+                        _categoryId.value = it.id
+                        android.util.Log.d("TodoEditVM", "设置默认分类: ${it.name} (ID=${it.id})")
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("TodoEditVM", "加载分类失败", e)
+                e.printStackTrace()
+            } finally {
+                _isCategoriesLoaded.value = true
+                android.util.Log.d("TodoEditVM", "分类加载完成, isCategoriesLoaded=true, categories数量=${_categories.value.size}")
+            }
+        }
+    }
+
+    /**
+     * 触发分类推荐
+     */
+    fun triggerRecommendation() {
+        viewModelScope.launch {
+            android.util.Log.d("TodoEditVM", "触发推荐, title='${_title.value}', hasManuallySelectedCategory=${_hasManuallySelectedCategory.value}")
+            
+            val recommendation = categoryMatcher.recommendCategory(
+                title = _title.value,
+                content = _content.value.takeIf { it.isNotBlank() }
+            )
+
+            android.util.Log.d("TodoEditVM", "推荐结果: $recommendation")
+
+            if (recommendation != null) {
+                val category = _categories.value.find { it.type == recommendation.categoryType }
+                android.util.Log.d("TodoEditVM", "匹配到分类: $category")
+                _recommendedCategory.value = category
+            } else {
+                _recommendedCategory.value = null
+                android.util.Log.d("TodoEditVM", "无匹配推荐, title=${_title.value}, recommendedCategory=null, hasManuallySelected=${_hasManuallySelectedCategory.value}")
+            }
+        }
+    }
+
+    /**
+     * 接受推荐的分类
+     */
+    fun acceptRecommendation() {
+        _recommendedCategory.value?.let { category ->
+            _categoryId.value = category.id
+            _hasManuallySelectedCategory.value = true
+            _recommendedCategory.value = null
         }
     }
 }

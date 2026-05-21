@@ -170,6 +170,14 @@ fun SettingsScreen(
                 }
             )
 
+            SettingItemCard(
+                title = "🧠 智能分类设置",
+                description = "管理智能分类关键词",
+                onClick = {
+                    navController.navigate("smart_category_settings")
+                }
+            )
+
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(

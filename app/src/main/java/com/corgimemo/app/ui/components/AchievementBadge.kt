@@ -1,7 +1,6 @@
 package com.corgimemo.app.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.corgimemo.app.data.model.Achievement
 import com.corgimemo.app.data.model.AchievementStage
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 /**
  * 成就徽章组件
@@ -52,7 +53,7 @@ fun AchievementBadge(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(0.8f)
+            .aspectRatio(0.9f)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -75,7 +76,7 @@ fun AchievementBadge(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // 成就图标容器
+            // 成就图标容器（带锁标记）
             Box(
                 modifier = Modifier
                     .size(64.dp)
@@ -100,6 +101,23 @@ fun AchievementBadge(
                     modifier = Modifier.align(Alignment.Center),
                     color = if (isUnlocked) Color.Unspecified else Color.Gray
                 )
+                // 锁标记（仅未解锁时显示）
+                if (!isUnlocked) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF64748B)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "🔒",
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -121,16 +139,27 @@ fun AchievementBadge(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // 进度或阶段显示
+            // 进度、解锁日期或阶段显示
             if (!isUnlocked && currentProgress != null) {
+                val remaining = (achievement.threshold - currentProgress).coerceAtLeast(0)
                 Text(
-                    text = "$currentProgress/${achievement.threshold}",
+                    text = if (remaining > 0) "还差 $remaining 个" else "即将达成",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = FontWeight.Medium
                 )
+            } else if (isUnlocked && achievement.unlockedAt != null) {
+                // 显示解锁日期
+                val dateFormat = SimpleDateFormat("yyyy.MM.dd", Locale.getDefault())
+                val unlockDate = dateFormat.format(achievement.unlockedAt)
+                Text(
+                    text = unlockDate,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = getStageColor(achievement.stage),
+                    fontWeight = FontWeight.Medium
+                )
             } else if (isUnlocked) {
-                // 显示阶段标签
+                // 显示阶段标签（无解锁时间时）
                 Text(
                     text = getStageLabel(achievement.stage),
                     style = MaterialTheme.typography.labelSmall,
@@ -147,9 +176,10 @@ fun AchievementBadge(
  */
 private fun getUnlockedBackgroundColor(stage: AchievementStage): Color {
     return when (stage) {
-        AchievementStage.SPRING -> Color(0xFFD1FAE5)
-        AchievementStage.GROWING -> Color(0xFFDBEAFE)
-        AchievementStage.MATURE -> Color(0xFFEDE9FE)
+        AchievementStage.BEGINNER -> Color(0xFFF1F5F9)
+        AchievementStage.GROWTH -> Color(0xFFD1FAE5)
+        AchievementStage.LEAP -> Color(0xFFDBEAFE)
+        AchievementStage.PEAK -> Color(0xFFEDE9FE)
     }
 }
 
@@ -158,14 +188,17 @@ private fun getUnlockedBackgroundColor(stage: AchievementStage): Color {
  */
 private fun getUnlockedBackgroundBrush(stage: AchievementStage): Brush {
     return when (stage) {
-        AchievementStage.SPRING -> Brush.verticalGradient(
-            colors = listOf(Color(0xFF10B981), Color(0xFF059669))
+        AchievementStage.BEGINNER -> Brush.verticalGradient(
+            colors = listOf(Color(0xFF94A3B8), Color(0xFF64748B))
         )
-        AchievementStage.GROWING -> Brush.verticalGradient(
+        AchievementStage.GROWTH -> Brush.verticalGradient(
+            colors = listOf(Color(0xFF34D399), Color(0xFF10B981))
+        )
+        AchievementStage.LEAP -> Brush.verticalGradient(
             colors = listOf(Color(0xFF3B82F6), Color(0xFF2563EB))
         )
-        AchievementStage.MATURE -> Brush.verticalGradient(
-            colors = listOf(Color(0xFF8B5CF6), Color(0xFF7C3AED))
+        AchievementStage.PEAK -> Brush.verticalGradient(
+            colors = listOf(Color(0xFFF97316), Color(0xFFEA580C))
         )
     }
 }
@@ -175,9 +208,10 @@ private fun getUnlockedBackgroundBrush(stage: AchievementStage): Brush {
  */
 private fun getStageLabel(stage: AchievementStage): String {
     return when (stage) {
-        AchievementStage.SPRING -> "🌱 萌芽"
-        AchievementStage.GROWING -> "🌿 成长"
-        AchievementStage.MATURE -> "🌳 成熟"
+        AchievementStage.BEGINNER -> "🌱 初见"
+        AchievementStage.GROWTH -> "🌿 成长"
+        AchievementStage.LEAP -> "🚀 飞跃"
+        AchievementStage.PEAK -> "🏆 巅峰"
     }
 }
 
@@ -186,8 +220,9 @@ private fun getStageLabel(stage: AchievementStage): String {
  */
 private fun getStageColor(stage: AchievementStage): Color {
     return when (stage) {
-        AchievementStage.SPRING -> Color(0xFF059669)
-        AchievementStage.GROWING -> Color(0xFF2563EB)
-        AchievementStage.MATURE -> Color(0xFF7C3AED)
+        AchievementStage.BEGINNER -> Color(0xFF64748B)
+        AchievementStage.GROWTH -> Color(0xFF10B981)
+        AchievementStage.LEAP -> Color(0xFF2563EB)
+        AchievementStage.PEAK -> Color(0xFFEA580C)
     }
 }
