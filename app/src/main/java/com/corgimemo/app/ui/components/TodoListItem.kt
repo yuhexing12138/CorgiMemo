@@ -30,10 +30,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +52,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
@@ -263,6 +268,26 @@ fun TodoListItem(
                                         )
                                         .padding(horizontal = 8.dp, vertical = 2.dp)
                                 )
+                            }
+                        }
+
+                        if (todo.startDate != null) {
+                            Column(modifier = Modifier.padding(top = 4.dp)) {
+                                val timeDisplayText = todo.estimatedDurationMinutes?.let { duration ->
+                                    val endTime = todo.startDate + duration * 60 * 1000
+                                    formatTimeRange(todo.startDate, endTime)
+                                } ?: formatDateTime(todo.startDate)
+
+                                Text(
+                                    text = "\uD83D\uDD51 $timeDisplayText",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                if (todo.status != 1 && System.currentTimeMillis() < todo.startDate) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    CountdownDisplay(startDate = todo.startDate)
+                                }
                             }
                         }
 
@@ -517,4 +542,116 @@ private fun SubTaskCheckbox(
             )
         }
     }
+}
+
+/**
+ * 格式化日期时间为显示文本
+ *
+ * @param timestamp 时间戳（毫秒）
+ * @return 格式化后的日期时间文本，如 "05-15 14:30"
+ */
+private fun formatDateTime(timestamp: Long): String {
+    val sdf = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+    return sdf.format(Date(timestamp))
+}
+
+/**
+ * 格式化时间范围为显示文本
+ *
+ * @param startTime 开始时间戳（毫秒）
+ * @param endTime 结束时间戳（毫秒）
+ * @return 格式化后的时间范围文本
+ *         同一天：05-22 15:00 至 17:30
+ *         隔天：05-22 15:00 至 05-23 17:30
+ */
+private fun formatTimeRange(startTime: Long, endTime: Long): String {
+    val sdfDate = SimpleDateFormat("MM-dd", Locale.getDefault())
+    val sdfDateTime = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+    val sdfTime = SimpleDateFormat("HH:mm", Locale.getDefault())
+
+    val startDate = Date(startTime)
+    val endDate = Date(endTime)
+
+    val cal1 = java.util.Calendar.getInstance().apply { time = startDate }
+    val cal2 = java.util.Calendar.getInstance().apply { time = endDate }
+
+    val isSameDay = cal1.get(java.util.Calendar.YEAR) == cal2.get(java.util.Calendar.YEAR) &&
+                    cal1.get(java.util.Calendar.DAY_OF_YEAR) == cal2.get(java.util.Calendar.DAY_OF_YEAR)
+
+    return if (isSameDay) {
+        "${sdfDate.format(startDate)} ${sdfTime.format(startDate)} 至 ${sdfTime.format(endDate)}"
+    } else {
+        "${sdfDateTime.format(startDate)} 至 ${sdfDateTime.format(endDate)}"
+    }
+}
+
+/**
+ * 计算并格式化距离开始时间的剩余时间
+ *
+ * @param startDate 开始时间戳（毫秒）
+ * @param currentTime 当前时间戳（毫秒）
+ * @return 格式化后的剩余时间文本，大于1小时显示到分钟，小于等于1小时显示到秒
+ */
+private fun formatCountdown(startDate: Long, currentTime: Long): String {
+    val diffMillis = startDate - currentTime
+
+    if (diffMillis <= 0) return "已开始"
+
+    val diffSeconds = TimeUnit.MILLISECONDS.toSeconds(diffMillis)
+    val diffMinutes = TimeUnit.MILLISECONDS.toMinutes(diffMillis)
+    val diffHours = TimeUnit.MILLISECONDS.toHours(diffMillis)
+    val diffDays = TimeUnit.MILLISECONDS.toDays(diffMillis)
+
+    return if (diffHours > 0) {
+        when {
+            diffDays > 0 -> "还剩 ${diffDays}天 ${diffHours % 24}时${diffMinutes % 60}分"
+            else -> "还剩 ${diffHours}时${diffMinutes % 60}分"
+        }
+    } else {
+        "还剩 ${diffMinutes}分${diffSeconds % 60}秒"
+    }
+}
+
+/**
+ * 倒计时显示组件
+ * 实时显示距离开始时间的剩余时间
+ *
+ * @param startDate 开始时间戳（毫秒）
+ * @param onExpired 倒计时结束时的回调
+ */
+@Composable
+private fun CountdownDisplay(
+    startDate: Long,
+    onExpired: () -> Unit = {}
+) {
+    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(startDate) {
+        while (true) {
+            val now = System.currentTimeMillis()
+            currentTime = now
+
+            if (now >= startDate) {
+                onExpired()
+                break
+            }
+
+            val remainingMillis = startDate - now
+            val delayMillis = if (remainingMillis > 3600000L) {
+                60000L
+            } else {
+                1000L
+            }
+
+            delay(delayMillis)
+        }
+    }
+
+    val countdownText = formatCountdown(startDate, currentTime)
+
+    Text(
+        text = "⏳ $countdownText",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.primary
+    )
 }

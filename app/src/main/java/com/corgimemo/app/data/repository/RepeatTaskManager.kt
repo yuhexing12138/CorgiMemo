@@ -130,7 +130,7 @@ object RepeatTaskManager {
         val database = CorgiMemoDatabase.getDatabase(context)
         val currentTime = System.currentTimeMillis()
 
-        val nextDueDate = completedTodo.dueDate?.let {
+        val nextStartDate = completedTodo.startDate?.let {
             calculateNextRepeatTime(it, completedTodo.repeatType)
         }
 
@@ -138,7 +138,7 @@ object RepeatTaskManager {
             calculateNextRepeatTime(it, completedTodo.repeatType)
         }
 
-        if (nextDueDate == null && nextReminderTime == null) {
+        if (nextStartDate == null && nextReminderTime == null) {
             return null
         }
 
@@ -148,7 +148,8 @@ object RepeatTaskManager {
             categoryId = completedTodo.categoryId,
             priority = completedTodo.priority,
             status = 0,
-            dueDate = nextDueDate,
+            startDate = nextStartDate,
+            estimatedDurationMinutes = completedTodo.estimatedDurationMinutes,
             reminderTime = nextReminderTime,
             repeatType = completedTodo.repeatType,
             createdAt = currentTime,
@@ -159,7 +160,8 @@ object RepeatTaskManager {
             geofenceRadius = completedTodo.geofenceRadius,
             geofenceType = completedTodo.geofenceType,
             geofenceEnabled = completedTodo.geofenceEnabled,
-            geofenceAddress = completedTodo.geofenceAddress
+            geofenceAddress = completedTodo.geofenceAddress,
+            hasSubTasks = completedTodo.hasSubTasks
         )
 
         val newTodoId = database.todoDao().insert(newTodo)
@@ -167,10 +169,7 @@ object RepeatTaskManager {
 
         insertedTodo?.let { todo ->
             if (todo.reminderTime != null) {
-                val category = todo.categoryId.let { catId ->
-                    database.categoryDao().getCategoryById(catId)
-                }
-                AlarmScheduler.scheduleReminder(context, todo, category = category)
+                AlarmScheduler.scheduleReminder(context, todo)
             }
         }
 
@@ -201,18 +200,18 @@ object RepeatTaskManager {
      * 格式化重复描述（用于显示）
      *
      * @param repeatType 重复类型
-     * @param dueDate 截止日期
+     * @param startDate 开始日期
      * @return 格式化的描述
      */
-    fun formatRepeatDescription(repeatType: Int, dueDate: Long?): String {
+    fun formatRepeatDescription(repeatType: Int, startDate: Long?): String {
         if (repeatType == RepeatType.NONE) return "不重复"
 
         val baseName = getRepeatTypeName(repeatType)
 
-        if (dueDate == null) return baseName
+        if (startDate == null) return baseName
 
         val calendar = Calendar.getInstance()
-        calendar.timeInMillis = dueDate
+        calendar.timeInMillis = startDate
 
         return when (repeatType) {
             RepeatType.WEEKLY -> {
@@ -246,10 +245,10 @@ object RepeatTaskManager {
     /**
      * 获取重复任务的下一个触发时间描述
      */
-    fun getNextOccurrenceDescription(repeatType: Int, dueDate: Long?): String? {
-        if (repeatType == RepeatType.NONE || dueDate == null) return null
+    fun getNextOccurrenceDescription(repeatType: Int, startDate: Long?): String? {
+        if (repeatType == RepeatType.NONE || startDate == null) return null
 
-        val nextTime = calculateNextRepeatTime(dueDate, repeatType) ?: return null
+        val nextTime = calculateNextRepeatTime(startDate, repeatType) ?: return null
 
         val calendar = Calendar.getInstance()
         calendar.timeInMillis = nextTime

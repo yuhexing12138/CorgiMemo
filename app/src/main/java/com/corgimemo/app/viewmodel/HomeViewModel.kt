@@ -638,13 +638,28 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 获取预计完成时间
+     * 计算方式：startDate + estimatedDurationMinutes
+     *
+     * @param todo 待办项
+     * @return 预计完成时间戳，如果没有 startDate 或 estimatedDurationMinutes 则返回 null
+     */
+    private fun getEstimatedEndTime(todo: TodoItem): Long? {
+        return if (todo.startDate != null && todo.estimatedDurationMinutes != null) {
+            todo.startDate + todo.estimatedDurationMinutes * 60000L
+        } else {
+            null
+        }
+    }
+
+    /**
      * 获取今日总任务数
      */
     private fun getTodayTotalCount(): Int {
         val currentTime = System.currentTimeMillis()
         return _todos.value.count { todo ->
             MoodManager.isToday(todo.createdAt, currentTime) ||
-                    (todo.dueDate != null && MoodManager.isToday(todo.dueDate, currentTime))
+                    (getEstimatedEndTime(todo) != null && MoodManager.isToday(getEstimatedEndTime(todo)!!, currentTime))
         }
     }
 
@@ -654,7 +669,7 @@ class HomeViewModel @Inject constructor(
     private fun getOverdueTasksCount(): Int {
         val currentTime = System.currentTimeMillis()
         return _todos.value.count { todo ->
-            todo.status == 0 && MoodManager.isOverdue(todo.dueDate, currentTime)
+            todo.status == 0 && MoodManager.isOverdue(getEstimatedEndTime(todo), currentTime)
         }
     }
 
@@ -1077,16 +1092,17 @@ class HomeViewModel @Inject constructor(
 
     /**
      * 综合判断庆祝级别
-     * 截止日期当天完成的任务优先级最高
+     * 预计完成时间当天完成的任务优先级最高
      *
      * @param todo 任务项
      * @return 庆祝级别
      */
     private fun calculateCelebrationLevel(todo: TodoItem): CelebrationLevel {
         val currentTime = System.currentTimeMillis()
+        val estimatedEndTime = getEstimatedEndTime(todo)
 
-        // 检查是否截止日期当天完成（优先级最高）
-        if (todo.dueDate != null && MoodManager.isToday(todo.dueDate, currentTime)) {
+        // 检查是否预计完成时间当天完成（优先级最高）
+        if (estimatedEndTime != null && MoodManager.isToday(estimatedEndTime, currentTime)) {
             return CelebrationLevel.SUPER
         }
 
@@ -1318,7 +1334,7 @@ class HomeViewModel @Inject constructor(
     private fun checkWorriedBehavior() {
         val pendingTodos = _todos.value.filter { it.status == 0 }
         val overdueCount = pendingTodos.count { todo ->
-            MoodManager.isOverdue(todo.dueDate)
+            MoodManager.isOverdue(getEstimatedEndTime(todo))
         }
 
         if (CorgiBehaviorManager.shouldWorry(pendingTodos.size, overdueCount)) {

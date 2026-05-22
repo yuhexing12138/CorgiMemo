@@ -25,7 +25,8 @@ object CsvSerializer {
         "分类ID",
         "优先级",
         "状态",
-        "截止日期",
+        "开始时间",
+        "预计时长(分钟)",
         "提醒时间",
         "重复类型",
         "创建时间",
@@ -33,6 +34,21 @@ object CsvSerializer {
         "完成时间",
         "地理围栏地址"
     )
+
+    /**
+     * 获取预计完成时间
+     * 计算方式：startDate + estimatedDurationMinutes
+     *
+     * @param todo 待办项
+     * @return 预计完成时间戳，如果没有 startDate 或 estimatedDurationMinutes 则返回 null
+     */
+    private fun getEstimatedEndTime(todo: BackupTodoItem): Long? {
+        return if (todo.startDate != null && todo.estimatedDurationMinutes != null) {
+            todo.startDate + todo.estimatedDurationMinutes * 60000L
+        } else {
+            null
+        }
+    }
 
     /**
      * 将待办数据序列化为 CSV 字符串
@@ -60,7 +76,8 @@ object CsvSerializer {
                 todo.categoryId.toString(),
                 getPriorityText(todo.priority),
                 getStatusText(todo.status),
-                formatDate(todo.dueDate),
+                formatDate(todo.startDate),
+                todo.estimatedDurationMinutes?.toString() ?: "",
                 formatDate(todo.reminderTime),
                 getRepeatTypeText(todo.repeatType),
                 formatDate(todo.createdAt),

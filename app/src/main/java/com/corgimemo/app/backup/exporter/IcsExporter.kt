@@ -23,6 +23,21 @@ object IcsExporter {
     }
 
     /**
+     * 获取预计完成时间
+     * 计算方式：startDate + estimatedDurationMinutes
+     *
+     * @param todo 待办项
+     * @return 预计完成时间戳，如果没有 startDate 或 estimatedDurationMinutes 则返回 null
+     */
+    private fun getEstimatedEndTime(todo: TodoItem): Long? {
+        return if (todo.startDate != null && todo.estimatedDurationMinutes != null) {
+            todo.startDate + todo.estimatedDurationMinutes * 60000L
+        } else {
+            null
+        }
+    }
+
+    /**
      * 导出待办列表为 iCal 格式字符串
      *
      * @param todos 待办列表
@@ -61,7 +76,8 @@ object IcsExporter {
     private fun todoToIcs(todo: TodoItem, categoryName: String): String {
         val sb = StringBuilder()
 
-        val eventTime = todo.reminderTime ?: todo.dueDate ?: System.currentTimeMillis()
+        val estimatedEndTime = getEstimatedEndTime(todo)
+        val eventTime = todo.reminderTime ?: estimatedEndTime ?: todo.startDate ?: System.currentTimeMillis()
         val startTime = formatDateTime(eventTime)
         val endTime = formatDateTime(eventTime + 30 * 60 * 1000)
 
@@ -117,8 +133,12 @@ object IcsExporter {
     private fun buildDescription(todo: TodoItem): String {
         val sb = StringBuilder()
 
-        todo.dueDate?.let {
-            sb.append("截止时间: ${displayDateFormat.format(Date(it))}\\n")
+        todo.startDate?.let {
+            sb.append("开始时间: ${displayDateFormat.format(Date(it))}\\n")
+        }
+
+        todo.estimatedDurationMinutes?.let {
+            sb.append("预计时长: ${formatDuration(it)}\\n")
         }
 
         todo.reminderTime?.let {
@@ -139,6 +159,22 @@ object IcsExporter {
         }
 
         return sb.toString()
+    }
+
+    /**
+     * 格式化预计完成时长为显示文本
+     *
+     * @param minutes 预计完成时长（分钟）
+     * @return 格式化后的时长文本，如 "1小时30分钟"、"2小时"、"45分钟"
+     */
+    private fun formatDuration(minutes: Int): String {
+        val hours = minutes / 60
+        val mins = minutes % 60
+        return when {
+            hours > 0 && mins > 0 -> "${hours}小时${mins}分钟"
+            hours > 0 -> "${hours}小时"
+            else -> "${mins}分钟"
+        }
     }
 
     /**

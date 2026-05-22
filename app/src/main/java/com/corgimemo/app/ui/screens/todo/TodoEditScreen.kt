@@ -8,12 +8,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -39,9 +43,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,12 +58,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.corgimemo.app.animation.InteractiveCorgi
 import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.ui.components.CategorySelector
 import com.corgimemo.app.ui.components.KeywordSelectionDialog
@@ -68,6 +78,7 @@ import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.TodoEditViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -89,7 +100,8 @@ fun TodoEditScreen(
     val showKeywordSelection by viewModel.showKeywordSelection.collectAsState()
     val extractedKeywords by viewModel.extractedKeywords.collectAsState()
     val isCategoriesLoaded by viewModel.isCategoriesLoaded.collectAsState()
-    val dueDate by viewModel.dueDate.collectAsState()
+    val startDate by viewModel.startDate.collectAsState()
+    val estimatedDurationMinutes by viewModel.estimatedDurationMinutes.collectAsState()
     val repeatType by viewModel.repeatType.collectAsState()
 
     // 地理围栏相关状态
@@ -100,8 +112,21 @@ fun TodoEditScreen(
     val geofenceEnabled by viewModel.geofenceEnabled.collectAsState()
     val geofenceAddress by viewModel.geofenceAddress.collectAsState()
 
+    // 提醒时间相关状态
+    val reminderTime by viewModel.reminderTime.collectAsState()
+    val recommendedReminderTime by viewModel.recommendedReminderTime.collectAsState()
+    val showReminderRecommendation by viewModel.showReminderRecommendation.collectAsState()
+
     // 子任务相关状态
     val subTasks by viewModel.subTasks.collectAsState()
+
+    // 柯基相关状态
+    val corgiData by homeViewModel.corgiData.collectAsState()
+    val currentPose by homeViewModel.currentPose.collectAsState()
+    val currentMood by homeViewModel.currentMood.collectAsState()
+    val currentOutfit by homeViewModel.currentOutfit.collectAsState()
+    val soundEnabled by homeViewModel.soundEnabled.collectAsState()
+    val hapticEnabled by homeViewModel.hapticEnabled.collectAsState()
 
     val context = LocalContext.current
     val speechViewModel = remember { SpeechViewModel(context) }
@@ -112,6 +137,21 @@ fun TodoEditScreen(
 
     var showDatePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDatePickerState()
+    var selectedDateMillis by remember { mutableStateOf<Long?>(null) }
+    var showStartTimePicker by remember { mutableStateOf(false) }
+    val startTimePickerState = rememberTimePickerState(
+        initialHour = 9,
+        initialMinute = 0,
+        is24Hour = true
+    )
+    var estimatedHours by remember { mutableStateOf("") }
+    var estimatedMinutes by remember { mutableStateOf("") }
+    var showTimePicker by remember { mutableStateOf(false) }
+    val timePickerState = rememberTimePickerState(
+        initialHour = 9,
+        initialMinute = 0,
+        is24Hour = true
+    )
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
@@ -136,6 +176,22 @@ fun TodoEditScreen(
     LaunchedEffect(Unit) {
         homeViewModel.setPoseForCreating()
         viewModel.loadCategories()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            homeViewModel.resetPoseToDefault()
+        }
+    }
+
+    LaunchedEffect(estimatedDurationMinutes) {
+        val duration = estimatedDurationMinutes
+        if (duration != null) {
+            val hours = duration / 60
+            val minutes = duration % 60
+            estimatedHours = if (hours > 0) hours.toString() else ""
+            estimatedMinutes = if (minutes > 0) minutes.toString() else ""
+        }
     }
 
     if (speechResult.isNotEmpty()) {
@@ -177,6 +233,29 @@ fun TodoEditScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.Top
         ) {
+            val corgi = corgiData
+            if (corgi != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFFFF3E0)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    InteractiveCorgi(
+                        pose = currentPose,
+                        mood = currentMood,
+                        corgiName = corgi.name,
+                        level = corgi.level,
+                        outfitId = currentOutfit,
+                        soundEnabled = soundEnabled,
+                        hapticEnabled = hapticEnabled,
+                        showText = false
+                    )
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -322,13 +401,103 @@ fun TodoEditScreen(
                 onClick = { showDatePicker = true },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             ) {
-                val dateText = if (dueDate != null) {
-                    val format = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                    format.format(Date(dueDate!!))
+                val dateText = if (startDate != null) {
+                    val format = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                    format.format(Date(startDate!!))
                 } else {
-                    "选择截止日期（可选）"
+                    "选择开始日期时间（可选）"
                 }
                 Text(text = dateText)
+            }
+
+            // 预计完成时长选择
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+                Text(
+                    text = "预计完成时长",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextField(
+                        value = estimatedHours,
+                        onValueChange = {
+                            estimatedHours = it.filter { char -> char.isDigit() }.take(3)
+                            val hours = estimatedHours.toIntOrNull() ?: 0
+                            val minutes = estimatedMinutes.toIntOrNull() ?: 0
+                            val totalMinutes = hours * 60 + minutes
+                            viewModel.setEstimatedDurationMinutes(if (totalMinutes > 0) totalMinutes else null)
+                        },
+                        label = { Text("小时") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    TextField(
+                        value = estimatedMinutes,
+                        onValueChange = {
+                            val newMinutes = it.filter { char -> char.isDigit() }.take(2)
+                            val minutes = newMinutes.toIntOrNull() ?: 0
+                            estimatedMinutes = if (minutes < 60) newMinutes else estimatedMinutes
+                            val hours = estimatedHours.toIntOrNull() ?: 0
+                            val finalMinutes = estimatedMinutes.toIntOrNull() ?: 0
+                            val totalMinutes = hours * 60 + finalMinutes
+                            viewModel.setEstimatedDurationMinutes(if (totalMinutes > 0) totalMinutes else null)
+                        },
+                        label = { Text("分钟") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+            }
+
+            // 提醒时间选择区域
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+                Text(
+                    text = "提醒时间",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Button(
+                    onClick = { showTimePicker = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                ) {
+                    val timeText = if (reminderTime != null) {
+                        val format = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                        format.format(Date(reminderTime ?: 0L))
+                    } else {
+                        "点击选择提醒时间（可选）"
+                    }
+                    Text(text = timeText)
+                }
+
+                // 推荐提醒时间标签
+                AnimatedVisibility(visible = showReminderRecommendation) {
+                    recommendedReminderTime?.let { time ->
+                        val format = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+                        val timeText = format.format(Date(time))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
+                                .background(Color(0xFFE3F2FD), RoundedCornerShape(8.dp))
+                                .clickable { viewModel.acceptReminderRecommendation() }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "\uD83D\uDCA1 推荐提醒：$timeText",
+                                fontSize = 14.sp,
+                                color = Color(0xFF1565C0)
+                            )
+                        }
+                    }
+                }
             }
 
             // 重复类型选择
@@ -408,8 +577,11 @@ fun TodoEditScreen(
                 TextButton(
                     onClick = {
                         val selectedDate = datePickerState.selectedDateMillis
-                        viewModel.setDueDate(selectedDate)
-                        showDatePicker = false
+                        if (selectedDate != null) {
+                            selectedDateMillis = selectedDate
+                            showDatePicker = false
+                            showStartTimePicker = true
+                        }
                     }
                 ) {
                     Text("确定")
@@ -423,6 +595,69 @@ fun TodoEditScreen(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+
+    if (showStartTimePicker) {
+        AlertDialog(
+            onDismissRequest = { showStartTimePicker = false },
+            title = { Text("选择开始时间") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val cal = Calendar.getInstance()
+                        cal.timeInMillis = selectedDateMillis ?: System.currentTimeMillis()
+                        cal.set(Calendar.HOUR_OF_DAY, startTimePickerState.hour)
+                        cal.set(Calendar.MINUTE, startTimePickerState.minute)
+                        cal.set(Calendar.SECOND, 0)
+                        cal.set(Calendar.MILLISECOND, 0)
+                        viewModel.setStartDate(cal.timeInMillis)
+                        showStartTimePicker = false
+                        selectedDateMillis = null
+                    }
+                ) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStartTimePicker = false }) {
+                    Text("取消")
+                }
+            },
+            text = {
+                TimePicker(state = startTimePickerState)
+            }
+        )
+    }
+
+    if (showTimePicker) {
+        AlertDialog(
+            onDismissRequest = { showTimePicker = false },
+            title = { Text("选择提醒时间") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val cal = Calendar.getInstance()
+                        cal.timeInMillis = startDate ?: System.currentTimeMillis()
+                        cal.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                        cal.set(Calendar.MINUTE, timePickerState.minute)
+                        cal.set(Calendar.SECOND, 0)
+                        cal.set(Calendar.MILLISECOND, 0)
+                        viewModel.setReminderTime(cal.timeInMillis)
+                        showTimePicker = false
+                    }
+                ) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) {
+                    Text("取消")
+                }
+            },
+            text = {
+                TimePicker(state = timePickerState)
+            }
+        )
     }
 
     if (showKeywordSelection) {

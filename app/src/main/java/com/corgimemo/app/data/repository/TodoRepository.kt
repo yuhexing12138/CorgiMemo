@@ -4,6 +4,7 @@ import android.content.Context
 import com.corgimemo.app.data.local.db.TodoDao
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.di.IoDispatcher
+import com.corgimemo.app.notification.AlarmScheduler
 import com.corgimemo.app.widget.WidgetUpdateReceiver
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
@@ -29,6 +30,10 @@ class TodoRepository @Inject constructor(
      */
     suspend fun insertTodo(todo: TodoItem): Long = withContext(ioDispatcher) {
         val result = todoDao.insert(todo)
+        val todoWithId = todo.copy(id = result)
+        if (todo.reminderTime != null) {
+            AlarmScheduler.scheduleReminder(context, todoWithId)
+        }
         WidgetUpdateReceiver.sendRefreshBroadcast(context)
         result
     }
@@ -40,6 +45,11 @@ class TodoRepository @Inject constructor(
      */
     suspend fun insertTodos(todos: List<TodoItem>) = withContext(ioDispatcher) {
         todoDao.insertAll(todos)
+        todos.forEach { todo ->
+            if (todo.reminderTime != null) {
+                AlarmScheduler.scheduleReminder(context, todo)
+            }
+        }
         WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }
 
@@ -50,6 +60,11 @@ class TodoRepository @Inject constructor(
      */
     suspend fun updateTodo(todo: TodoItem) = withContext(ioDispatcher) {
         todoDao.update(todo)
+        if (todo.reminderTime != null) {
+            AlarmScheduler.rescheduleReminder(context, todo)
+        } else {
+            AlarmScheduler.cancelReminder(context, todo.id)
+        }
         WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }
 
@@ -60,6 +75,7 @@ class TodoRepository @Inject constructor(
      */
     suspend fun deleteTodo(todo: TodoItem) = withContext(ioDispatcher) {
         todoDao.delete(todo)
+        AlarmScheduler.cancelReminder(context, todo.id)
         WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }
 
@@ -70,6 +86,7 @@ class TodoRepository @Inject constructor(
      */
     suspend fun deleteTodoById(todoId: Long) = withContext(ioDispatcher) {
         todoDao.deleteById(todoId)
+        AlarmScheduler.cancelReminder(context, todoId)
         WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }
 
@@ -77,6 +94,10 @@ class TodoRepository @Inject constructor(
      * 删除所有待办
      */
     suspend fun deleteAllTodos() = withContext(ioDispatcher) {
+        val allTodos = todoDao.getAllTodosBlocking()
+        allTodos.forEach { todo ->
+            AlarmScheduler.cancelReminder(context, todo.id)
+        }
         todoDao.deleteAll()
         WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }
@@ -173,5 +194,14 @@ class TodoRepository @Inject constructor(
         val endOfDay = calendar.timeInMillis
 
         todoDao.getCompletedCountToday(startOfDay, endOfDay)
+    }
+
+    /**
+     * 获取所有待恢复的提醒（未完成且 reminderTime 未过期的待办）
+     *
+     * @return 待恢复的提醒列表
+     */
+    suspend fun getTodosWithPendingReminders(): List<TodoItem> = withContext(ioDispatcher) {
+        todoDao.getPendingRemindersBlocking(System.currentTimeMillis())
     }
 }

@@ -14,6 +14,7 @@ import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.data.repository.SubTaskManager
 import com.corgimemo.app.data.repository.TodoRepository
+import com.corgimemo.app.domain.ReminderRecommender
 import com.corgimemo.app.model.UserType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -40,6 +41,7 @@ class TodoEditViewModel @Inject constructor(
 ) : ViewModel() {
 
     private var recommendationJob: Job? = null
+    private val reminderRecommender = ReminderRecommender()
 
     private val _title = MutableStateFlow("")
     val title: StateFlow<String> = _title.asStateFlow()
@@ -53,8 +55,11 @@ class TodoEditViewModel @Inject constructor(
     private val _priority = MutableStateFlow(1)
     val priority: StateFlow<Int> = _priority.asStateFlow()
 
-    private val _dueDate = MutableStateFlow<Long?>(null)
-    val dueDate: StateFlow<Long?> = _dueDate.asStateFlow()
+    private val _startDate = MutableStateFlow<Long?>(null)
+    val startDate: StateFlow<Long?> = _startDate.asStateFlow()
+
+    private val _estimatedDurationMinutes = MutableStateFlow<Int?>(null)
+    val estimatedDurationMinutes: StateFlow<Int?> = _estimatedDurationMinutes.asStateFlow()
 
     private val _repeatType = MutableStateFlow(0)
     val repeatType: StateFlow<Int> = _repeatType.asStateFlow()
@@ -101,6 +106,16 @@ class TodoEditViewModel @Inject constructor(
     private val _isCategoriesLoaded = MutableStateFlow(false)
     val isCategoriesLoaded: StateFlow<Boolean> = _isCategoriesLoaded.asStateFlow()
 
+    // 提醒时间相关状态
+    private val _reminderTime = MutableStateFlow<Long?>(null)
+    val reminderTime: StateFlow<Long?> = _reminderTime.asStateFlow()
+
+    private val _recommendedReminderTime = MutableStateFlow<Long?>(null)
+    val recommendedReminderTime: StateFlow<Long?> = _recommendedReminderTime.asStateFlow()
+
+    private val _showReminderRecommendation = MutableStateFlow(false)
+    val showReminderRecommendation: StateFlow<Boolean> = _showReminderRecommendation.asStateFlow()
+
     private var existingTodo: TodoItem? = null
 
     fun setTitle(title: String) {
@@ -126,14 +141,21 @@ class TodoEditViewModel @Inject constructor(
     fun setCategoryId(categoryId: Long) {
         _categoryId.value = categoryId
         _hasManuallySelectedCategory.value = true
+        updateReminderRecommendation()
     }
 
     fun setPriority(priority: Int) {
         _priority.value = priority
     }
 
-    fun setDueDate(dueDate: Long?) {
-        _dueDate.value = dueDate
+    fun setStartDate(startDate: Long?) {
+        _startDate.value = startDate
+        updateReminderRecommendation()
+    }
+
+    fun setEstimatedDurationMinutes(minutes: Int?) {
+        _estimatedDurationMinutes.value = minutes
+        updateReminderRecommendation()
     }
 
     fun setRepeatType(repeatType: Int) {
@@ -233,7 +255,8 @@ class TodoEditViewModel @Inject constructor(
                 _categoryId.value = todo.categoryId
                 _hasManuallySelectedCategory.value = todo.categoryId > 0
                 _priority.value = todo.priority
-                _dueDate.value = todo.dueDate
+                _startDate.value = todo.startDate
+                _estimatedDurationMinutes.value = todo.estimatedDurationMinutes
                 _repeatType.value = todo.repeatType
                 _geofenceLat.value = todo.geofenceLat
                 _geofenceLng.value = todo.geofenceLng
@@ -241,6 +264,8 @@ class TodoEditViewModel @Inject constructor(
                 _geofenceType.value = todo.geofenceType
                 _geofenceEnabled.value = todo.geofenceEnabled
                 _geofenceAddress.value = todo.geofenceAddress
+
+                _reminderTime.value = todo.reminderTime
 
                 val subTasks = SubTaskManager.getSubTasks(context, todoId)
                 _subTasks.value = subTasks
@@ -289,7 +314,9 @@ class TodoEditViewModel @Inject constructor(
                     content = if (_content.value.isBlank()) null else _content.value,
                     categoryId = _categoryId.value,
                     priority = _priority.value,
-                    dueDate = _dueDate.value,
+                    startDate = _startDate.value,
+                    estimatedDurationMinutes = _estimatedDurationMinutes.value,
+                    reminderTime = _reminderTime.value,
                     repeatType = _repeatType.value,
                     updatedAt = currentTime,
                     geofenceLat = _geofenceLat.value,
@@ -309,7 +336,9 @@ class TodoEditViewModel @Inject constructor(
                     categoryId = _categoryId.value,
                     priority = _priority.value,
                     status = 0,
-                    dueDate = _dueDate.value,
+                    startDate = _startDate.value,
+                    estimatedDurationMinutes = _estimatedDurationMinutes.value,
+                    reminderTime = _reminderTime.value,
                     repeatType = _repeatType.value,
                     createdAt = currentTime,
                     updatedAt = currentTime,
@@ -486,5 +515,49 @@ class TodoEditViewModel @Inject constructor(
             _hasManuallySelectedCategory.value = true
             _recommendedCategory.value = null
         }
+    }
+
+    // ==================== 提醒时间推荐相关方法 ====================
+
+    /**
+     * 设置提醒时间
+     * 用户在 TimePicker 中手动确认时间后调用
+     *
+     * @param time 用户选择的提醒时间（毫秒时间戳）
+     */
+    fun setReminderTime(time: Long) {
+        _reminderTime.value = time
+        _showReminderRecommendation.value = false
+    }
+
+    /**
+     * 接受推荐的提醒时间
+     * 用户点击推荐标签后调用
+     */
+    fun acceptReminderRecommendation() {
+        val recommended = _recommendedReminderTime.value ?: return
+        _reminderTime.value = recommended
+        _showReminderRecommendation.value = false
+    }
+
+    /**
+     * 更新提醒时间推荐
+     * 当开始时间或分类变化时自动触发
+     */
+    private fun updateReminderRecommendation() {
+        val startDate = _startDate.value
+        val categoryId = _categoryId.value
+        val category = _categories.value.find { it.id == categoryId }
+
+        val recommended = reminderRecommender.recommend(
+            categoryType = category?.type,
+            startDate = startDate
+        )
+
+        _recommendedReminderTime.value = recommended
+
+        val isShow = recommended != null &&
+                (_reminderTime.value == null || _reminderTime.value != recommended)
+        _showReminderRecommendation.value = isShow
     }
 }

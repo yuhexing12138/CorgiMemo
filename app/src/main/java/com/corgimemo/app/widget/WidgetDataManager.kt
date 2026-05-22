@@ -3,7 +3,6 @@ package com.corgimemo.app.widget
 import android.content.Context
 import androidx.glance.unit.ColorProvider
 import com.corgimemo.app.data.local.db.CorgiMemoDatabase
-import com.corgimemo.app.data.model.CategoryType
 import com.corgimemo.app.data.model.TodoItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -29,6 +28,21 @@ object WidgetDataManager {
     }
 
     /**
+     * 获取预计完成时间
+     * 计算方式：startDate + estimatedDurationMinutes
+     *
+     * @param todo 待办项
+     * @return 预计完成时间戳，如果没有 startDate 或 estimatedDurationMinutes 则返回 null
+     */
+    private fun getEstimatedEndTime(todo: TodoItem): Long? {
+        return if (todo.startDate != null && todo.estimatedDurationMinutes != null) {
+            todo.startDate + todo.estimatedDurationMinutes * 60000L
+        } else {
+            null
+        }
+    }
+
+    /**
      * 小部件待办数据模型
      * 专门用于小部件显示的简化版待办数据
      */
@@ -44,7 +58,7 @@ object WidgetDataManager {
 
     /**
      * 获取今日待办列表
-     * 只返回未完成的待办，按优先级和截止时间排序
+     * 只返回未完成的待办，按优先级和预计完成时间排序
      *
      * @param context 上下文
      * @param maxCount 最大返回数量（-1 表示不限制）
@@ -62,8 +76,9 @@ object WidgetDataManager {
             val allPendingTodos = todoDao.getTodosByStatus(0).first()
 
             val todayTodos = allPendingTodos.filter { todo ->
-                val isDueToday = todo.dueDate?.let { dueDate ->
-                    dueDate in todayStart..todayEnd
+                val estimatedEndTime = getEstimatedEndTime(todo)
+                val isDueToday = estimatedEndTime?.let {
+                    it in todayStart..todayEnd
                 } ?: false
                 
                 val isReminderToday = todo.reminderTime?.let { reminderTime ->
@@ -73,7 +88,7 @@ object WidgetDataManager {
                 isDueToday || isReminderToday
             }.sortedWith(
                 compareByDescending<TodoItem> { it.priority }
-                    .thenBy { it.dueDate ?: it.reminderTime ?: Long.MAX_VALUE }
+                    .thenBy { getEstimatedEndTime(it) ?: it.reminderTime ?: Long.MAX_VALUE }
             )
 
             val categoryMap = mutableMapOf<Long, String>()
@@ -83,14 +98,15 @@ object WidgetDataManager {
             }
 
             val widgetItems = todayTodos.map { todo ->
+                val estimatedEndTime = getEstimatedEndTime(todo)
                 WidgetTodoItem(
                     id = todo.id,
                     title = todo.title,
-                    dueTime = todo.dueDate ?: todo.reminderTime,
-                    dueTimeText = formatDueTime(todo.dueDate ?: todo.reminderTime),
+                    dueTime = estimatedEndTime ?: todo.reminderTime,
+                    dueTimeText = formatDueTime(estimatedEndTime ?: todo.reminderTime),
                     priority = todo.priority,
                     priorityColor = getPriorityColor(todo.priority),
-                    categoryName = todo.categoryId?.let { categoryMap[it] }
+                    categoryName = categoryMap[todo.categoryId]
                 )
             }
 
@@ -153,30 +169,6 @@ object WidgetDataManager {
             2 -> PriorityColors.Medium
             1 -> PriorityColors.Low
             else -> PriorityColors.Low
-        }
-    }
-
-    /**
-     * 根据分类 ID 获取分类默认提醒提前量（分钟）
-     *
-     * @param categoryId 分类 ID
-     * @param context 上下文
-     * @return 提前分钟数
-     */
-    suspend fun getDefaultAdvanceMinutes(categoryId: Long?, context: Context): Int {
-        if (categoryId == null) {
-            return 30
-        }
-
-        val database = CorgiMemoDatabase.getDatabase(context)
-        val categoryDao = database.categoryDao()
-        val category = categoryDao.getCategoryById(categoryId)
-
-        return when (category?.type) {
-            CategoryType.WORK -> 30
-            CategoryType.LIFE -> 60
-            CategoryType.STUDY -> 120
-            else -> 30
         }
     }
 

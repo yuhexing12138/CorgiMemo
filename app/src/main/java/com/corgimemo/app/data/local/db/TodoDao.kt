@@ -36,6 +36,12 @@ interface TodoDao {
     @Query("SELECT * FROM todo_items ORDER BY createdAt DESC")
     fun getAllTodos(): Flow<List<TodoItem>>
 
+    @Query("SELECT * FROM todo_items ORDER BY createdAt DESC")
+    suspend fun getAllTodosBlocking(): List<TodoItem>
+
+    @Query("SELECT * FROM todo_items WHERE status = 0 AND reminderTime IS NOT NULL AND reminderTime > :currentTime ORDER BY reminderTime ASC")
+    suspend fun getPendingRemindersBlocking(currentTime: Long): List<TodoItem>
+
     @Query("SELECT * FROM todo_items WHERE status = :status ORDER BY createdAt DESC")
     fun getTodosByStatus(status: Int): Flow<List<TodoItem>>
 
@@ -51,7 +57,7 @@ interface TodoDao {
     @Query("SELECT * FROM todo_items WHERE categoryId = :categoryId AND status = :status ORDER BY createdAt DESC")
     fun getTodosByCategoryAndStatus(categoryId: Long, status: Int): Flow<List<TodoItem>>
 
-    @Query("SELECT * FROM todo_items WHERE status = :status ORDER BY priority DESC, dueDate ASC")
+    @Query("SELECT * FROM todo_items WHERE status = :status ORDER BY priority DESC, startDate ASC")
     fun getTodosByStatusPriorityDueDate(status: Int): Flow<List<TodoItem>>
 
     @Query("SELECT COUNT(*) FROM todo_items WHERE status = 1 AND categoryId = :categoryId")

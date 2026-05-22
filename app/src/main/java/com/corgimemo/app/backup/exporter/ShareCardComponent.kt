@@ -258,16 +258,32 @@ object ShareCardComponent {
                     )
                 }
 
-                todo.dueDate?.let {
+                todo.startDate?.let {
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "⏰",
+                            text = "🕐",
                             fontSize = 16.sp
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "截止: ${dateFormat.format(Date(it))}",
+                            text = "开始: ${dateFormat.format(Date(it))}",
+                            fontSize = 13.sp,
+                            color = Color(0xFF5D4030)
+                        )
+                    }
+                }
+
+                todo.estimatedDurationMinutes?.let {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "⏱️",
+                            fontSize = 16.sp
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "预计: ${formatDuration(it)}",
                             fontSize = 13.sp,
                             color = Color(0xFF5D4030)
                         )
@@ -359,5 +375,21 @@ private fun PriorityBadgeShare(priority: Int) {
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
         )
+    }
+}
+
+/**
+ * 格式化预计完成时长为显示文本
+ *
+ * @param minutes 预计完成时长（分钟）
+ * @return 格式化后的时长文本，如 "1小时30分钟"、"2小时"、"45分钟"
+ */
+private fun formatDuration(minutes: Int): String {
+    val hours = minutes / 60
+    val mins = minutes % 60
+    return when {
+        hours > 0 && mins > 0 -> "${hours}小时${mins}分钟"
+        hours > 0 -> "${hours}小时"
+        else -> "${mins}分钟"
     }
 }

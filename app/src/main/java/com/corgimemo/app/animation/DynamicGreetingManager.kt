@@ -131,10 +131,25 @@ object DynamicGreetingManager {
     }
 
     /**
+     * 获取预计完成时间
+     * 计算方式：startDate + estimatedDurationMinutes
+     *
+     * @param todo 待办项
+     * @return 预计完成时间戳，如果没有 startDate 或 estimatedDurationMinutes 则返回 null
+     */
+    private fun getEstimatedEndTime(todo: TodoItem): Long? {
+        return if (todo.startDate != null && todo.estimatedDurationMinutes != null) {
+            todo.startDate + todo.estimatedDurationMinutes * 60000L
+        } else {
+            null
+        }
+    }
+
+    /**
      * 从待办列表中找出最紧急的任务
      * 判断优先级（从高到低）：
-     * 1. 截止日期今天且高优先级（priority=3）
-     * 2. 截止日期今天
+     * 1. 预计完成时间今天且高优先级（priority=3）
+     * 2. 预计完成时间今天
      * 3. 高优先级（priority=3）
      * 4. 中优先级（priority=2）
      * 5. 创建时间最早的待办
@@ -153,8 +168,8 @@ object DynamicGreetingManager {
         return pendingTodos
             .sortedWith(
                 compareByDescending<TodoItem> { todo ->
-                    val dueDate = todo.dueDate
-                    val isDueToday = dueDate != null && dueDate >= todayStart && dueDate <= todayEnd
+                    val estimatedEndTime = getEstimatedEndTime(todo)
+                    val isDueToday = estimatedEndTime != null && estimatedEndTime >= todayStart && estimatedEndTime <= todayEnd
 
                     when {
                         isDueToday && todo.priority == 3 -> 4

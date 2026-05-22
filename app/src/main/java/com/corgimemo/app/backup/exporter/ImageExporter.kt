@@ -324,14 +324,25 @@ object ImageExporter {
             y += (layout.height + 12 * density).toInt()
         }
 
-        if (todo.dueDate != null) {
-            val dueText = "⏰ 截止: ${displayDateFormat.format(Date(todo.dueDate!!))}"
-            val duePaint = TextPaint().apply {
+        if (todo.startDate != null) {
+            val startText = "🕐 开始: ${displayDateFormat.format(Date(todo.startDate!!))}"
+            val startPaint = TextPaint().apply {
                 textSize = (13 * density)
                 color = Color.parseColor("#5D4030")
                 isAntiAlias = true
             }
-            canvas.drawText(dueText, (padding + (16 * density)).toFloat(), y.toFloat(), duePaint)
+            canvas.drawText(startText, (padding + (16 * density)).toFloat(), y.toFloat(), startPaint)
+            y += (20 * density).toInt()
+        }
+
+        if (todo.estimatedDurationMinutes != null) {
+            val durationText = "⏱️ 预计: ${formatDuration(todo.estimatedDurationMinutes!!)}"
+            val durationPaint = TextPaint().apply {
+                textSize = (13 * density)
+                color = Color.parseColor("#5D4030")
+                isAntiAlias = true
+            }
+            canvas.drawText(durationText, (padding + (16 * density)).toFloat(), y.toFloat(), durationPaint)
         }
 
         y += contentHeight - (y - startY)
@@ -406,6 +417,22 @@ object ImageExporter {
             if (file.lastModified() < cutoffTime) {
                 file.delete()
             }
+        }
+    }
+
+    /**
+     * 格式化预计完成时长为显示文本
+     *
+     * @param minutes 预计完成时长（分钟）
+     * @return 格式化后的时长文本，如 "1小时30分钟"、"2小时"、"45分钟"
+     */
+    private fun formatDuration(minutes: Int): String {
+        val hours = minutes / 60
+        val mins = minutes % 60
+        return when {
+            hours > 0 && mins > 0 -> "${hours}小时${mins}分钟"
+            hours > 0 -> "${hours}小时"
+            else -> "${mins}分钟"
         }
     }
 }

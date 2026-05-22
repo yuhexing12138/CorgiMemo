@@ -52,8 +52,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.animation.GreetingManager
 import com.corgimemo.app.backup.BackupManager
-import com.corgimemo.app.data.model.Category
-import com.corgimemo.app.data.model.CategoryType
 import com.corgimemo.app.model.UserType
 import com.corgimemo.app.viewmodel.SettingsViewModel
 
@@ -72,16 +70,12 @@ fun SettingsScreen(
     val soundEnabled by viewModel.soundEnabled.collectAsState()
     val hapticEnabled by viewModel.hapticEnabled.collectAsState()
     val userType by viewModel.userType.collectAsState()
-    val categories by viewModel.categories.collectAsState()
-    val reminderAdvances by viewModel.reminderAdvances.collectAsState()
     val backupMessage by viewModel.backupMessage.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
 
     var showUserTypeDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var pendingUserType by remember { mutableStateOf<UserType?>(null) }
-    var showAdvanceDialog by remember { mutableStateOf(false) }
-    var selectedCategoryForAdvance by remember { mutableStateOf<Category?>(null) }
 
     var showExportDialog by remember { mutableStateOf(false) }
     var showImportConfirmDialog by remember { mutableStateOf(false) }
@@ -159,14 +153,6 @@ fun SettingsScreen(
                 description = "当前身份：${getUserTypeName(userType)}",
                 onClick = {
                     showUserTypeDialog = true
-                }
-            )
-
-            SettingItemCard(
-                title = "提醒提前量",
-                description = "按分类设置提醒提前时间",
-                onClick = {
-                    showAdvanceDialog = true
                 }
             )
 
@@ -395,178 +381,6 @@ fun SettingsScreen(
                     }
                 ) {
                     Text(text = "取消")
-                }
-            }
-        )
-    }
-
-    if (showAdvanceDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showAdvanceDialog = false },
-            title = {
-                Text(
-                    text = "提醒提前量",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "选择分类设置提前提醒时间",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    categories.forEach { category ->
-                        CategoryAdvanceItem(
-                            category = category,
-                            currentAdvance = reminderAdvances[category.id],
-                            onClick = {
-                                selectedCategoryForAdvance = category
-                                showAdvanceDialog = false
-                            }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { showAdvanceDialog = false }
-                ) {
-                    Text(text = "完成")
-                }
-            }
-        )
-    }
-
-    if (selectedCategoryForAdvance != null) {
-        val category = selectedCategoryForAdvance!!
-        val advanceOptions = listOf(
-            0 to "不提前",
-            10 to "10分钟",
-            15 to "15分钟",
-            30 to "30分钟",
-            60 to "1小时",
-            120 to "2小时"
-        )
-        val currentAdvance = reminderAdvances[category.id]
-
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { selectedCategoryForAdvance = null },
-            title = {
-                Text(
-                    text = "「${category.name}」提前量",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    advanceOptions.forEach { (minutes, label) ->
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (currentAdvance == minutes) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.surface
-                                }
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    viewModel.saveReminderAdvance(category.id, minutes)
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = label,
-                                    fontSize = 16.sp,
-                                    color = if (currentAdvance == minutes) {
-                                        MaterialTheme.colorScheme.onPrimary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    }
-                                )
-                                if (currentAdvance == minutes) {
-                                    Spacer(modifier = Modifier.weight(1f))
-                                    Text(
-                                        text = "✓",
-                                        fontSize = 18.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Card(
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (currentAdvance == null) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.surface
-                            }
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                viewModel.saveReminderAdvance(category.id, null)
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "使用默认值",
-                                fontSize = 16.sp,
-                                color = if (currentAdvance == null) {
-                                    MaterialTheme.colorScheme.onPrimary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                }
-                            )
-                            if (currentAdvance == null) {
-                                Spacer(modifier = Modifier.weight(1f))
-                                Text(
-                                    text = "✓",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { selectedCategoryForAdvance = null }
-                ) {
-                    Text(text = "完成")
                 }
             }
         )
@@ -916,81 +730,6 @@ fun ProcessingDialog(message: String) {
                     textAlign = TextAlign.Center
                 )
             }
-        }
-    }
-}
-
-/**
- * 分类提前量设置项
- *
- * @param category 分类
- * @param currentAdvance 当前提前量（分钟，null 表示使用默认值）
- * @param onClick 点击回调
- */
-@Composable
-fun CategoryAdvanceItem(
-    category: Category,
-    currentAdvance: Int?,
-    onClick: () -> Unit
-) {
-    val defaultText = when (category.type) {
-        CategoryType.STUDY -> "默认：2小时"
-        CategoryType.WORK -> "默认：30分钟"
-        CategoryType.LIFE -> "默认：1小时"
-        else -> "默认：30分钟"
-    }
-
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = when (category.type) {
-                        CategoryType.STUDY -> "📚 ${category.name}"
-                        CategoryType.WORK -> "💼 ${category.name}"
-                        CategoryType.LIFE -> "🏠 ${category.name}"
-                        else -> "📝 ${category.name}"
-                    },
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                val advanceText = if (currentAdvance != null) {
-                    when {
-                        currentAdvance == 0 -> "已设置：不提前"
-                        currentAdvance < 60 -> "已设置：${currentAdvance}分钟"
-                        else -> "已设置：${currentAdvance / 60}小时"
-                    }
-                } else {
-                    defaultText
-                }
-                Text(
-                    text = advanceText,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-            Text(
-                text = "›",
-                fontSize = 20.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }

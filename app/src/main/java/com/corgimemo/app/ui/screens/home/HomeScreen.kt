@@ -97,12 +97,9 @@ import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.ui.components.EmptyState
 import com.corgimemo.app.ui.components.EmptyStateType
 import com.corgimemo.app.ui.components.SolarTermCard
-import com.corgimemo.app.ui.components.TodoCreateBottomSheet
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
-import com.corgimemo.app.viewmodel.TodoEditViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
@@ -111,8 +108,7 @@ import androidx.compose.ui.platform.LocalContext
 @Composable
 fun HomeScreen(
     navController: NavController,
-    viewModel: HomeViewModel = hiltViewModel(),
-    todoEditViewModel: TodoEditViewModel = hiltViewModel()
+    viewModel: HomeViewModel = hiltViewModel()
 ) {
     val todos by viewModel.todos.collectAsState()
     val filterStatus by viewModel.filterStatus.collectAsState()
@@ -203,8 +199,6 @@ fun HomeScreen(
         viewModel.refreshGreetingIfNeeded()
     }
 
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var isSheetVisible by remember { mutableStateOf(false) }
     val outfitSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // 监听待办删除事件，显示 Snackbar
@@ -289,17 +283,8 @@ fun HomeScreen(
                 FloatingActionButton(
                     onClick = {
                         viewModel.onUserInteraction()
-                        todoEditViewModel.setTitle("")
-                        todoEditViewModel.setContent("")
-                        todoEditViewModel.setPriority(1)
-                        todoEditViewModel.setDueDate(null)
-
                         viewModel.setPoseForCreating()
-                        isSheetVisible = true
-
-                        coroutineScope.launch {
-                            sheetState.show()
-                        }
+                        navController.navigate("todo_edit")
                     },
                     containerColor = MaterialTheme.colorScheme.primary
                 ) {
@@ -458,15 +443,8 @@ fun HomeScreen(
                                     }
                                     else -> {
                                         viewModel.onUserInteraction()
-                                        todoEditViewModel.setTitle("")
-                                        todoEditViewModel.setContent("")
-                                        todoEditViewModel.setPriority(1)
-                                        todoEditViewModel.setDueDate(null)
                                         viewModel.setPoseForCreating()
-                                        isSheetVisible = true
-                                        coroutineScope.launch {
-                                            sheetState.show()
-                                        }
+                                        navController.navigate("todo_edit")
                                     }
                                 }
                             }
@@ -670,32 +648,6 @@ fun HomeScreen(
             dismissButton = {
                 TextButton(onClick = { showBatchMoveDialog = false }) {
                     Text("取消")
-                }
-            }
-        )
-    }
-
-    if (isSheetVisible) {
-        TodoCreateBottomSheet(
-            sheetState = sheetState,
-            viewModel = todoEditViewModel,
-            onSave = {
-                coroutineScope.launch {
-                    viewModel.onTaskCreated()
-                    sheetState.hide()
-                    isSheetVisible = false
-                    delay(100)
-                    viewModel.resetPoseToDefault()
-                }
-            },
-            onDismiss = {
-                coroutineScope.launch {
-                    if (sheetState.isVisible) {
-                        sheetState.hide()
-                    }
-                    isSheetVisible = false
-                    delay(100)
-                    viewModel.resetPoseToDefault()
                 }
             }
         )

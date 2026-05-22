@@ -334,7 +334,8 @@ fun InteractiveCorgi(
     onInteraction: ((InteractionType) -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
     soundEnabled: Boolean = true,
-    hapticEnabled: Boolean = true
+    hapticEnabled: Boolean = true,
+    showText: Boolean = true
 ) {
     val context = LocalContext.current
 
@@ -637,24 +638,26 @@ fun InteractiveCorgi(
             }
         }
 
-        Text(
-            text = corgiName ?: "未命名",
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 40.dp)
-        )
+        if (showText) {
+            Text(
+                text = corgiName ?: "未命名",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 40.dp)
+            )
 
-        Text(
-            text = greeting,
-            fontSize = 14.sp,
-            color = Color.White.copy(alpha = 0.9f),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 16.dp)
-        )
+            Text(
+                text = greeting,
+                fontSize = 14.sp,
+                color = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 16.dp)
+            )
+        }
     }
 }
 

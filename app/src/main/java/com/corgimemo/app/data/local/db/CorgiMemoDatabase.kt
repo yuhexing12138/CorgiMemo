@@ -19,7 +19,7 @@ import com.corgimemo.app.data.model.TodoItem
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -53,7 +53,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                     .build()
                 INSTANCE = instance
                 instance
@@ -195,6 +195,64 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CREATE INDEX IF NOT EXISTS index_category_keywords_categoryType 
                     ON category_keywords(categoryType)
                 """.trimIndent())
+            }
+        }
+
+        /**
+         * 数据库迁移：版本 10 → 11
+         * 移除 dueDate 字段，添加 startDate 和 estimatedDurationMinutes 字段
+         * 现有 dueDate 数据将迁移到 startDate
+         */
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS todo_items_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        title TEXT NOT NULL,
+                        content TEXT,
+                        categoryId INTEGER NOT NULL,
+                        priority INTEGER NOT NULL,
+                        status INTEGER NOT NULL,
+                        startDate INTEGER,
+                        estimatedDurationMinutes INTEGER,
+                        reminderTime INTEGER,
+                        repeatType INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        completedAt INTEGER,
+                        geofenceLat REAL,
+                        geofenceLng REAL,
+                        geofenceRadius REAL,
+                        geofenceType INTEGER NOT NULL DEFAULT 0,
+                        geofenceEnabled INTEGER NOT NULL DEFAULT 0,
+                        geofenceAddress TEXT,
+                        hasSubTasks INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+
+                database.execSQL("""
+                    INSERT INTO todo_items_new (
+                        id, title, content, categoryId, priority, status, startDate, 
+                        reminderTime, repeatType, createdAt, updatedAt, completedAt,
+                        geofenceLat, geofenceLng, geofenceRadius, geofenceType,
+                        geofenceEnabled, geofenceAddress, hasSubTasks
+                    )
+                    SELECT 
+                        id, title, content, categoryId, priority, status, dueDate,
+                        reminderTime, repeatType, createdAt, updatedAt, completedAt,
+                        geofenceLat, geofenceLng, geofenceRadius, geofenceType,
+                        geofenceEnabled, geofenceAddress, hasSubTasks
+                    FROM todo_items
+                """.trimIndent())
+
+                database.execSQL("DROP TABLE todo_items")
+
+                database.execSQL("ALTER TABLE todo_items_new RENAME TO todo_items")
+
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_status_createdAt ON todo_items(status, createdAt)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_categoryId_status ON todo_items(categoryId, status)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_priority_startDate ON todo_items(priority, startDate)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_hasSubTasks ON todo_items(hasSubTasks)")
             }
         }
     }

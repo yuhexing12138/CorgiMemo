@@ -5,8 +5,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import com.corgimemo.app.data.model.Category
-import com.corgimemo.app.data.model.CategoryType
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.receiver.ReminderActionReceiver
 
@@ -19,31 +17,18 @@ object AlarmScheduler {
     /** 提醒广播 Action */
     private const val ACTION_REMINDER = "com.corgimemo.app.ACTION_REMINDER"
 
-    /** 一分钟（毫秒） */
-    private const val MINUTE_MS = 60 * 1000L
-
-    /** 默认提前量：30 分钟 */
-    private const val DEFAULT_ADVANCE_MINUTES = 30
-
     /**
      * 设置提醒闹钟
-     * 根据提醒提前量计算实际触发时间
+     * 直接使用 reminderTime 作为触发时间
      *
      * @param context 上下文
      * @param todo 待办项
-     * @param advanceMinutes 提前分钟数（可选，为 null 时使用默认值）
-     * @param category 待办所属分类（可选，用于获取分类默认提前量）
      */
     fun scheduleReminder(
         context: Context,
-        todo: TodoItem,
-        advanceMinutes: Int? = null,
-        category: Category? = null
+        todo: TodoItem
     ) {
-        val reminderTime = todo.reminderTime ?: return
-
-        val advance = advanceMinutes ?: getDefaultAdvanceMinutes(category)
-        val triggerTime = calculateTriggerTime(reminderTime, advance)
+        val triggerTime = todo.reminderTime ?: return
 
         if (triggerTime <= System.currentTimeMillis()) {
             return
@@ -53,11 +38,19 @@ object AlarmScheduler {
         val pendingIntent = createReminderPendingIntent(context, todo)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerTime,
-                pendingIntent
-            )
+            if (hasExactAlarmPermission(context)) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerTime,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerTime,
+                    pendingIntent
+                )
+            }
         } else {
             alarmManager.setExact(
                 AlarmManager.RTC_WAKEUP,
@@ -85,15 +78,13 @@ object AlarmScheduler {
      *
      * @param context 上下文
      * @param todo 更新后的待办项
-     * @param category 待办所属分类（可选）
      */
     fun rescheduleReminder(
         context: Context,
-        todo: TodoItem,
-        category: Category? = null
+        todo: TodoItem
     ) {
         cancelReminder(context, todo.id)
-        scheduleReminder(context, todo, category = category)
+        scheduleReminder(context, todo)
     }
 
     /**
@@ -150,33 +141,6 @@ object AlarmScheduler {
             intent,
             flags
         )
-    }
-
-    /**
-     * 计算实际触发时间
-     *
-     * @param reminderTime 原始提醒时间（毫秒）
-     * @param advanceMinutes 提前分钟数
-     * @return 实际触发时间（毫秒）
-     */
-    fun calculateTriggerTime(reminderTime: Long, advanceMinutes: Int): Long {
-        return reminderTime - (advanceMinutes * MINUTE_MS)
-    }
-
-    /**
-     * 根据分类获取默认提醒提前量（分钟）
-     *
-     * @param category 分类（可为 null）
-     * @return 提前分钟数
-     */
-    fun getDefaultAdvanceMinutes(category: Category?): Int {
-        return when (category?.type) {
-            CategoryType.WORK -> 30
-            CategoryType.LIFE -> 60
-            CategoryType.STUDY -> 120
-            CategoryType.CUSTOM -> DEFAULT_ADVANCE_MINUTES
-            else -> DEFAULT_ADVANCE_MINUTES
-        }
     }
 
     /**
@@ -260,5 +224,23 @@ object AlarmScheduler {
             intent,
             flags
         ) != null
+    }
+
+    /**
+     * 恢复所有未过期的提醒闹钟
+     * 应用启动时调用，重新设置所有待办的提醒
+     *
+     * @param context 上下文
+     * @param todos 待办列表
+     */
+    fun restoreAllReminders(context: Context, todos: List<TodoItem>) {
+        val currentTime = System.currentTimeMillis()
+        todos.filter {
+            it.status == 0 &&
+            it.reminderTime != null &&
+            it.reminderTime > currentTime
+        }.forEach {
+            scheduleReminder(context, it)
+        }
     }
 }

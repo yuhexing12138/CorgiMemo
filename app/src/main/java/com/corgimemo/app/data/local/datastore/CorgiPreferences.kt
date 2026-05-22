@@ -218,64 +218,6 @@ class CorgiPreferences(private val dataStore: DataStore<Preferences>) {
     }
 
     /**
-     * 获取提醒提前量的 Key
-     *
-     * @param categoryId 分类 ID
-     * @return DataStore Key
-     */
-    private fun getReminderAdvanceKey(categoryId: Long) =
-        intPreferencesKey("reminder_advance_$categoryId")
-
-    /**
-     * 获取指定分类的提醒提前量（Flow）
-     *
-     * @param categoryId 分类 ID
-     * @return 提前分钟数的 Flow
-     */
-    fun getReminderAdvanceFlow(categoryId: Long): Flow<Int?> = dataStore.data
-        .map { preferences ->
-            preferences[getReminderAdvanceKey(categoryId)]
-        }
-
-    /**
-     * 获取指定分类的提醒提前量（一次获取）
-     *
-     * @param categoryId 分类 ID
-     * @return 提前分钟数，未设置则返回 null
-     */
-    suspend fun getReminderAdvanceMinutes(categoryId: Long): Int? {
-        val key = getReminderAdvanceKey(categoryId)
-        return dataStore.data.map { prefs ->
-            prefs[key]
-        }.first()
-    }
-
-    /**
-     * 保存指定分类的提醒提前量
-     *
-     * @param categoryId 分类 ID
-     * @param minutes 提前分钟数
-     */
-    suspend fun saveReminderAdvanceMinutes(categoryId: Long, minutes: Int) {
-        val key = getReminderAdvanceKey(categoryId)
-        dataStore.edit { prefs ->
-            prefs[key] = minutes
-        }
-    }
-
-    /**
-     * 清除指定分类的提醒提前量设置
-     *
-     * @param categoryId 分类 ID
-     */
-    suspend fun clearReminderAdvanceMinutes(categoryId: Long) {
-        val key = getReminderAdvanceKey(categoryId)
-        dataStore.edit { prefs ->
-            prefs.remove(key)
-        }
-    }
-
-    /**
      * 获取节气卡片关闭状态的 Key
      * Key 格式：solar_term_card_dismissed_{solarTermId}_{yyyyMMdd}
      * 日期是为了确保每天只记录一次
