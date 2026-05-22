@@ -19,7 +19,7 @@ import com.corgimemo.app.data.model.TodoItem
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -53,7 +53,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                     .build()
                 INSTANCE = instance
                 instance
@@ -253,6 +253,19 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_categoryId_status ON todo_items(categoryId, status)")
                 database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_priority_startDate ON todo_items(priority, startDate)")
                 database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_hasSubTasks ON todo_items(hasSubTasks)")
+            }
+        }
+
+        /**
+         * 数据库迁移：版本 11 → 12
+         * 添加语音备注相关字段
+         */
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // 添加语音备注文件路径字段
+                database.execSQL("ALTER TABLE todo_items ADD COLUMN voiceNotePath TEXT")
+                // 添加语音时长字段（秒）
+                database.execSQL("ALTER TABLE todo_items ADD COLUMN voiceDuration INTEGER")
             }
         }
     }

@@ -116,6 +116,13 @@ class TodoEditViewModel @Inject constructor(
     private val _showReminderRecommendation = MutableStateFlow(false)
     val showReminderRecommendation: StateFlow<Boolean> = _showReminderRecommendation.asStateFlow()
 
+    // 语音备注相关状态
+    private val _voiceNotePath = MutableStateFlow<String?>(null)
+    val voiceNotePath: StateFlow<String?> = _voiceNotePath.asStateFlow()
+
+    private val _voiceDuration = MutableStateFlow<Int?>(null)
+    val voiceDuration: StateFlow<Int?> = _voiceDuration.asStateFlow()
+
     private var existingTodo: TodoItem? = null
 
     fun setTitle(title: String) {
@@ -267,6 +274,10 @@ class TodoEditViewModel @Inject constructor(
 
                 _reminderTime.value = todo.reminderTime
 
+                // 加载语音备注
+                _voiceNotePath.value = todo.voiceNotePath
+                _voiceDuration.value = todo.voiceDuration
+
                 val subTasks = SubTaskManager.getSubTasks(context, todoId)
                 _subTasks.value = subTasks
             }
@@ -325,7 +336,9 @@ class TodoEditViewModel @Inject constructor(
                     geofenceType = _geofenceType.value,
                     geofenceEnabled = _geofenceEnabled.value,
                     geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
-                    hasSubTasks = hasSubTasks
+                    hasSubTasks = hasSubTasks,
+                    voiceNotePath = _voiceNotePath.value,
+                    voiceDuration = _voiceDuration.value
                 )
                 todoRepository.updateTodo(todo)
                 existingTodo!!.id
@@ -348,7 +361,9 @@ class TodoEditViewModel @Inject constructor(
                     geofenceType = _geofenceType.value,
                     geofenceEnabled = _geofenceEnabled.value,
                     geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
-                    hasSubTasks = hasSubTasks
+                    hasSubTasks = hasSubTasks,
+                    voiceNotePath = _voiceNotePath.value,
+                    voiceDuration = _voiceDuration.value
                 )
                 todoRepository.insertTodo(todo)
             }
@@ -559,5 +574,26 @@ class TodoEditViewModel @Inject constructor(
         val isShow = recommended != null &&
                 (_reminderTime.value == null || _reminderTime.value != recommended)
         _showReminderRecommendation.value = isShow
+    }
+
+    // ==================== 语音备注相关方法 ====================
+
+    /**
+     * 设置语音备注
+     *
+     * @param path 语音文件路径
+     * @param duration 语音时长（秒）
+     */
+    fun setVoiceNote(path: String?, duration: Int?) {
+        _voiceNotePath.value = path
+        _voiceDuration.value = duration
+    }
+
+    /**
+     * 清除语音备注
+     */
+    fun clearVoiceNote() {
+        _voiceNotePath.value = null
+        _voiceDuration.value = null
     }
 }

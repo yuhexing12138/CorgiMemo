@@ -4,6 +4,10 @@
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     
+    <!-- 前台服务权限（用于语音播放） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    
     <!-- 位置权限 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -41,6 +45,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 语音播放前台服务 -->
+        <service
+            android:name=".service.VoicePlaybackService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- 通知操作按钮广播接收器 -->
         <receiver

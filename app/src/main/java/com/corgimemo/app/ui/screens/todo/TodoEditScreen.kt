@@ -36,6 +36,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -73,10 +74,18 @@ import com.corgimemo.app.ui.components.KeywordSelectionDialog
 import com.corgimemo.app.ui.components.LocationPicker
 import com.corgimemo.app.ui.components.RecommendationChip
 import com.corgimemo.app.ui.components.SubTaskList
+import com.corgimemo.app.ui.components.VoicePlayerComponent
+import com.corgimemo.app.ui.components.VoiceRecordBottomSheet
+import com.corgimemo.app.ui.components.RecordAudioPermissionChecker
+import com.corgimemo.app.ui.components.RecordAudioPermissionState
+import com.corgimemo.app.ui.components.openAppSettingsIntent
+import com.corgimemo.app.util.VoiceRecorder
+import com.corgimemo.app.util.VoicePlayer
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.TodoEditViewModel
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -120,6 +129,10 @@ fun TodoEditScreen(
     // 子任务相关状态
     val subTasks by viewModel.subTasks.collectAsState()
 
+    // 语音备注相关状态
+    val voiceNotePath by viewModel.voiceNotePath.collectAsState()
+    val voiceDuration by viewModel.voiceDuration.collectAsState()
+
     // 柯基相关状态
     val corgiData by homeViewModel.corgiData.collectAsState()
     val currentPose by homeViewModel.currentPose.collectAsState()
@@ -134,6 +147,15 @@ fun TodoEditScreen(
     val isProcessing by speechViewModel.isProcessing.collectAsState()
     val speechResult by speechViewModel.resultText.collectAsState()
     val speechError by speechViewModel.errorMessage.collectAsState()
+
+    // 语音录制器和播放器实例
+    val voiceRecorder = remember { VoiceRecorder(context) }
+    val voicePlayer = remember { VoicePlayer(context) }
+    
+    // 是否显示语音录制面板
+    var showVoiceRecordSheet by remember { mutableStateOf(false) }
+    // 是否有录音权限（用于显示录制面板）
+    var hasRecordPermission by remember { mutableStateOf(false) }
 
     var showDatePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDatePickerState()
@@ -181,6 +203,9 @@ fun TodoEditScreen(
     DisposableEffect(Unit) {
         onDispose {
             homeViewModel.resetPoseToDefault()
+            // 释放语音录制器和播放器资源
+            voiceRecorder.release()
+            voicePlayer.release()
         }
     }
 
@@ -552,6 +577,44 @@ fun TodoEditScreen(
                 modifier = Modifier.padding(top = 16.dp)
             )
 
+            // 语音备注区域
+            voiceNotePath?.let { path ->
+                VoicePlayerComponent(
+                    voicePlayer = voicePlayer,
+                    filePath = path,
+                    totalDuration = voiceDuration,
+                    onDelete = {
+                        // 删除语音文件
+                        File(path).delete()
+                        viewModel.clearVoiceNote()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp)
+                )
+            }
+
+            // 语音备注按钮
+            OutlinedButton(
+                onClick = { showVoiceRecordSheet = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp),
+                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Mic,
+                    contentDescription = "语音备注",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (voiceNotePath != null) "重新录制语音备注" else "添加语音备注"
+                )
+            }
+
             Button(
                 onClick = {
                     if (viewModel.saveTodo()) {
@@ -680,6 +743,58 @@ fun TodoEditScreen(
             },
             onDismiss = { viewModel.cancelKeywordSelection() }
         )
+    }
+
+    // 语音录制面板
+    if (showVoiceRecordSheet) {
+        // 检查权限状态
+        var permissionState by remember { mutableStateOf<RecordAudioPermissionState>(RecordAudioPermissionState.SHOULD_REQUEST) }
+        
+        RecordAudioPermissionChecker { state ->
+            permissionState = state
+        }
+        
+        when (permissionState) {
+            RecordAudioPermissionState.GRANTED -> {
+                // 权限已授予，显示录制面板
+                VoiceRecordBottomSheet(
+                    voiceRecorder = voiceRecorder,
+                    onSaved = { path, duration ->
+                        viewModel.setVoiceNote(path, duration)
+                        showVoiceRecordSheet = false
+                    },
+                    onDismiss = {
+                        showVoiceRecordSheet = false
+                    }
+                )
+            }
+            RecordAudioPermissionState.DENIED -> {
+                // 权限被拒绝，引导用户去设置
+                AlertDialog(
+                    onDismissRequest = { showVoiceRecordSheet = false },
+                    title = { Text("需要录音权限") },
+                    text = { Text("请在系统设置中开启麦克风权限以使用语音备注功能。") },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                context.startActivity(openAppSettingsIntent(context))
+                                showVoiceRecordSheet = false
+                            }
+                        ) {
+                            Text("去设置")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showVoiceRecordSheet = false }) {
+                            Text("取消")
+                        }
+                    }
+                )
+            }
+            else -> {
+                // 正在请求权限或显示说明，不显示录制面板
+            }
+        }
     }
 }
 

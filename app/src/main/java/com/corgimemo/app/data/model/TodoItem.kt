@@ -34,5 +34,7 @@ data class TodoItem(
     val geofenceType: Int = 0,
     val geofenceEnabled: Boolean = false,
     val geofenceAddress: String? = null,
-    val hasSubTasks: Boolean = false
+    val hasSubTasks: Boolean = false,
+    val voiceNotePath: String? = null,
+    val voiceDuration: Int? = null
 )
