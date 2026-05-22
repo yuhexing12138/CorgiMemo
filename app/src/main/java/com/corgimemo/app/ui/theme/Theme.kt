@@ -2,7 +2,6 @@ package com.corgimemo.app.ui.theme
 
 import android.app.Activity
 import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -15,7 +14,8 @@ import androidx.core.view.WindowCompat
 
 @Composable
 fun CorgiMemoTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean,
+    themeColor: String = "orange",
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
@@ -24,8 +24,7 @@ fun CorgiMemoTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+        else -> getColorScheme(themeColor, darkTheme)
     }
 
     val view = LocalView.current

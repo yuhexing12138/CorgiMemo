@@ -72,6 +72,8 @@ fun SettingsScreen(
     val userType by viewModel.userType.collectAsState()
     val backupMessage by viewModel.backupMessage.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsState()
+    val themeColor by viewModel.themeColor.collectAsState()
 
     var showUserTypeDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
@@ -163,6 +165,104 @@ fun SettingsScreen(
                     navController.navigate("smart_category_settings")
                 }
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "🎨 外观设置",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "深色模式",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ThemeModeOption(
+                            text = "🌓 跟随系统",
+                            selected = themeMode == "system",
+                            onClick = { viewModel.setThemeMode("system") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        ThemeModeOption(
+                            text = "☀️ 亮色",
+                            selected = themeMode == "light",
+                            onClick = { viewModel.setThemeMode("light") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        ThemeModeOption(
+                            text = "🌙 深色",
+                            selected = themeMode == "dark",
+                            onClick = { viewModel.setThemeMode("dark") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Text(
+                        text = "主题色",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        ThemeColorOption(
+                            color = Color(0xFFFF9A5C),
+                            name = "橙色",
+                            selected = themeColor == "orange",
+                            onClick = { viewModel.setThemeColor("orange") }
+                        )
+                        ThemeColorOption(
+                            color = Color(0xFF4ECDC4),
+                            name = "薄荷",
+                            selected = themeColor == "mint",
+                            onClick = { viewModel.setThemeColor("mint") }
+                        )
+                        ThemeColorOption(
+                            color = Color(0xFF5BA8E0),
+                            name = "天空",
+                            selected = themeColor == "sky",
+                            onClick = { viewModel.setThemeColor("sky") }
+                        )
+                        ThemeColorOption(
+                            color = Color(0xFFFF9AA2),
+                            name = "樱花",
+                            selected = themeColor == "sakura",
+                            onClick = { viewModel.setThemeColor("sakura") }
+                        )
+                        ThemeColorOption(
+                            color = Color(0xFFB39DDB),
+                            name = "薰衣草",
+                            selected = themeColor == "lavender",
+                            onClick = { viewModel.setThemeColor("lavender") }
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -938,5 +1038,88 @@ fun getUserTypeName(userType: UserType): String {
     return when (userType) {
         UserType.WORKER -> "上班族"
         UserType.STUDENT -> "学生"
+    }
+}
+
+@Composable
+fun ThemeModeOption(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val backgroundColor = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    val textColor = if (selected) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    androidx.compose.material3.Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = backgroundColor,
+        modifier = modifier.clickable(onClick = onClick)
+    ) {
+        Text(
+            text = text,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            color = textColor,
+            modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+fun ThemeColorOption(
+    color: Color,
+    name: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.foundation.Canvas(
+                modifier = Modifier.size(40.dp)
+            ) {
+                drawCircle(color = color)
+            }
+            if (selected) {
+                androidx.compose.foundation.Canvas(
+                    modifier = Modifier.size(44.dp).padding(2.dp)
+                ) {
+                    drawCircle(
+                        color = Color.White,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
+                    )
+                }
+                Text(
+                    text = "✓",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+        }
+        Text(
+            text = name,
+            fontSize = 11.sp,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }

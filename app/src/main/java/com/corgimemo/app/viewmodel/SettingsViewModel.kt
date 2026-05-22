@@ -6,6 +6,7 @@ import com.corgimemo.app.backup.BackupManager
 import com.corgimemo.app.backup.BackupManager.ExportFormat
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.model.UserType
+import com.corgimemo.app.ui.theme.ThemeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +39,12 @@ class SettingsViewModel @Inject constructor(
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
 
+    private val _themeMode = MutableStateFlow("system")
+    val themeMode: StateFlow<String> = _themeMode.asStateFlow()
+
+    private val _themeColor = MutableStateFlow("orange")
+    val themeColor: StateFlow<String> = _themeColor.asStateFlow()
+
     init {
         loadSettings()
     }
@@ -52,6 +59,28 @@ class SettingsViewModel @Inject constructor(
 
             val userTypeValue = corgiPreferences.userType.first()
             _userType.value = UserType.fromValue(userTypeValue)
+
+            val loadedMode = corgiPreferences.themeMode.first()
+            val loadedColor = corgiPreferences.themeColor.first()
+            _themeMode.value = loadedMode
+            _themeColor.value = loadedColor
+            ThemeManager.initTheme(loadedMode, loadedColor)
+        }
+    }
+
+    fun setThemeMode(mode: String) {
+        viewModelScope.launch {
+            _themeMode.value = mode
+            ThemeManager.setThemeMode(mode)
+            corgiPreferences.saveThemeMode(mode)
+        }
+    }
+
+    fun setThemeColor(color: String) {
+        viewModelScope.launch {
+            _themeColor.value = color
+            ThemeManager.setThemeColor(color)
+            corgiPreferences.saveThemeColor(color)
         }
     }
 

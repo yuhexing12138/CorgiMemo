@@ -19,7 +19,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
+import com.corgimemo.app.ui.theme.ThemeManager
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.rememberNavController
@@ -92,7 +95,19 @@ class MainActivity : ComponentActivity() {
         initDatabase()
 
         setContent {
-            CorgiMemoTheme {
+            val themeMode by ThemeManager.themeMode.collectAsState()
+            val themeColor by ThemeManager.themeColor.collectAsState()
+
+            val darkTheme = when (themeMode) {
+                "dark" -> true
+                "light" -> false
+                else -> isSystemInDarkTheme()
+            }
+
+            CorgiMemoTheme(
+                darkTheme = darkTheme,
+                themeColor = themeColor
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

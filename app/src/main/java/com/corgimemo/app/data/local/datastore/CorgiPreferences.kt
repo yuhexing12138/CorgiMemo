@@ -50,6 +50,8 @@ class CorgiPreferences(private val dataStore: DataStore<Preferences>) {
         val AUTO_BACKUP_FREQUENCY = stringPreferencesKey("auto_backup_frequency")
         val AUTO_BACKUP_LAST_TIME = stringPreferencesKey("auto_backup_last_time")
         val BACKUP_HISTORY = stringPreferencesKey("backup_history")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+        val THEME_COLOR = stringPreferencesKey("theme_color")
     }
 
     /**
@@ -484,6 +486,30 @@ class CorgiPreferences(private val dataStore: DataStore<Preferences>) {
     suspend fun clearBackupHistory() {
         dataStore.edit { prefs ->
             prefs.remove(Keys.BACKUP_HISTORY)
+        }
+    }
+
+    // ==================== 主题设置 ====================
+
+    val themeMode: Flow<String> = dataStore.data
+        .map { prefs ->
+            prefs[Keys.THEME_MODE] ?: "system"
+        }
+
+    val themeColor: Flow<String> = dataStore.data
+        .map { prefs ->
+            prefs[Keys.THEME_COLOR] ?: "orange"
+        }
+
+    suspend fun saveThemeMode(mode: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.THEME_MODE] = mode
+        }
+    }
+
+    suspend fun saveThemeColor(color: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.THEME_COLOR] = color
         }
     }
 }
