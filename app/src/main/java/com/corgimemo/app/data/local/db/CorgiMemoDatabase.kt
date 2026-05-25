@@ -8,6 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.corgimemo.app.data.local.db.AchievementEntity
 import com.corgimemo.app.data.local.db.CategoryKeywordEntity
+import com.corgimemo.app.data.local.db.OperationLogEntity
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.MoodHistory
@@ -20,8 +21,8 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  * 管理待办事项、柯基数据、任务分类、成就和用户模板
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class],
-    version = 13,
+    entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class],
+    version = 15,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -45,6 +46,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     /** 用户模板 DAO */
     abstract fun templateDao(): TemplateDao
 
+    /** 操作日志 DAO */
+    abstract fun operationLogDao(): OperationLogDao
+
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
 
@@ -58,7 +62,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                     .build()
                 INSTANCE = instance
                 instance
@@ -291,6 +295,69 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                         updatedAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
                     )
                 """.trimIndent())
+            }
+        }
+
+        /**
+         * 版本 13 → 14 迁移：添加操作日志表
+         * 用于记录待办操作历史，支持撤销功能
+         */
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS operation_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        operation_type TEXT NOT NULL,
+                        target_id INTEGER NOT NULL DEFAULT 0,
+                        batch_ids_json TEXT,
+                        snapshot_json TEXT NOT NULL,
+                        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+                    )
+                """.trimIndent())
+
+                /** 创建索引优化查询性能 */
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_operation_logs_created_at ON operation_logs(created_at)"
+                )
+            }
+        }
+
+        /**
+         * 版本 14 → 15 迁移：修复 operation_logs 表结构
+         * 1. 修复索引名称：idx_operation_logs_created_at → index_operation_logs_created_at
+         * 2. 重建表以修复默认值格式匹配
+         */
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                /** 1. 创建新表（与 Room Entity 定义完全匹配） */
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS operation_logs_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        operation_type TEXT NOT NULL,
+                        target_id INTEGER NOT NULL DEFAULT 0,
+                        batch_ids_json TEXT,
+                        snapshot_json TEXT NOT NULL,
+                        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+                    )
+                """.trimIndent())
+
+                /** 2. 复制数据到新表 */
+                database.execSQL("""
+                    INSERT INTO operation_logs_new (id, operation_type, target_id, batch_ids_json, snapshot_json, created_at)
+                    SELECT id, operation_type, target_id, batch_ids_json, snapshot_json, created_at
+                    FROM operation_logs
+                """.trimIndent())
+
+                /** 3. 删除旧表 */
+                database.execSQL("DROP TABLE operation_logs")
+
+                /** 4. 重命名新表 */
+                database.execSQL("ALTER TABLE operation_logs_new RENAME TO operation_logs")
+
+                /** 5. 创建正确名称的索引 */
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_operation_logs_created_at ON operation_logs(created_at)"
+                )
             }
         }
     }

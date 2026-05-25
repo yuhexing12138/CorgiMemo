@@ -10,6 +10,7 @@ import com.corgimemo.app.ui.screens.backup.BackupHistoryScreen
 import com.corgimemo.app.ui.screens.home.HomeScreen
 import com.corgimemo.app.ui.screens.onboarding.OnboardingScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
+import com.corgimemo.app.ui.screens.settings.OperationHistoryScreen
 import com.corgimemo.app.ui.screens.settings.SettingsScreen
 import com.corgimemo.app.ui.screens.settings.SmartCategorySettingsScreen
 import com.corgimemo.app.ui.screens.stats.StatsScreen
@@ -71,6 +72,12 @@ fun AppNavHost(
 
         composable("smart_category_settings") {
             SmartCategorySettingsScreen(navController = navController)
+        }
+
+        composable(Screen.OperationHistory.route) {
+            OperationHistoryScreen(
+                onBack = { navController.popBackStack() }
+            )
         }
     }
 }

@@ -7,6 +7,7 @@ import com.corgimemo.app.data.local.db.CategoryKeywordDao
 import com.corgimemo.app.data.local.db.CorgiDao
 import com.corgimemo.app.data.local.db.CorgiMemoDatabase
 import com.corgimemo.app.data.local.db.MoodHistoryDao
+import com.corgimemo.app.data.local.db.OperationLogDao
 import com.corgimemo.app.data.local.db.TaskDailyStatsDao
 import com.corgimemo.app.data.local.db.TodoDao
 import dagger.Module
@@ -68,5 +69,11 @@ object DatabaseModule {
     @Singleton
     fun provideCategoryKeywordDao(database: CorgiMemoDatabase): CategoryKeywordDao {
         return database.categoryKeywordDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideOperationLogDao(database: CorgiMemoDatabase): OperationLogDao {
+        return database.operationLogDao()
     }
 }

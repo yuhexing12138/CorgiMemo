@@ -34,6 +34,8 @@ import com.corgimemo.app.data.repository.CorgiRepository
 import com.corgimemo.app.data.repository.MoodHistoryRepository
 import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.data.repository.SubTaskManager
+import com.corgimemo.app.data.local.db.OperationLogEntity
+import com.corgimemo.app.data.repository.OperationLogRepository
 import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiBehaviorManager
@@ -109,6 +111,7 @@ class HomeViewModel @Inject constructor(
     private val achievementRepository: AchievementRepository,
     private val corgiPreferences: CorgiPreferences,
     private val moodHistoryRepository: MoodHistoryRepository,
+    private val operationLogRepository: OperationLogRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -239,15 +242,34 @@ class HomeViewModel @Inject constructor(
 
     // ========== 撤销删除相关 ==========
 
-    // 待删除待办的临时存储（用于撤销）
+    /** 待删除待办的临时存储（用于撤销）*/
     private val _pendingDeletedTodo = MutableStateFlow<TodoItem?>(null)
     val pendingDeletedTodo: StateFlow<TodoItem?> = _pendingDeletedTodo.asStateFlow()
 
-    // 倒计时任务（可取消）
+    /** 删除倒计时任务（可取消）*/
     private var deleteTimerJob: Job? = null
 
-    // 倒计时时长（5秒）
+    /** 删除倒计时时长（5秒）*/
     private val UNDO_DELETE_DELAY_MS = 5000L
+
+    // ========== 撤销完成相关 ==========
+
+    /** 待完成/待恢复的待办临时存储（Pair<待办, 操作前是否已完成>）*/
+    private val _pendingCompleteTodo = MutableStateFlow<Pair<TodoItem, Boolean>?>(null)
+    val pendingCompleteTodo: StateFlow<Pair<TodoItem, Boolean>?> =
+        _pendingCompleteTodo.asStateFlow()
+
+    /** 完成操作倒计时任务（可取消）*/
+    private var completeTimerJob: Job? = null
+
+    /** 完成倒计时时长（3秒）*/
+    private val COMPLETE_UNDO_DELAY_MS = 3000L
+
+    // ========== 批量操作撤销相关 ==========
+
+    /** 批量删除的待办列表临时存储（用于撤销）*/
+    private val _pendingBatchDeletes = MutableStateFlow<List<TodoItem>?>(null)
+    val pendingBatchDeletes: StateFlow<List<TodoItem>?> = _pendingBatchDeletes.asStateFlow()
 
     // ========== 触觉/音效反馈设置 ==========
     // 直接使用 corgiPreferences 的 Flow，响应式更新用户设置
@@ -1202,22 +1224,30 @@ class HomeViewModel @Inject constructor(
      */
     fun deleteTodo(id: Long) {
         viewModelScope.launch {
-            // 1. 先获取完整的待办对象（用于撤销）
+            /** 1. 先获取完整的待办对象（用于撤销）*/
             val todo = todoRepository.getTodoById(id) ?: return@launch
 
-            // 2. 立即从数据库删除（让列表立即更新）
+            /** 2. 立即从数据库删除（让列表立即更新）*/
             todoRepository.deleteTodoById(id)
 
-            // 3. 临时存储待办
+            /** 3. 临时存储待办 */
             _pendingDeletedTodo.value = todo
 
-            // 4. 取消之前的倒计时任务（如果有）
+            /** 4. 取消之前的倒计时任务（如果有）*/
             deleteTimerJob?.cancel()
 
-            // 5. 启动新的倒计时
+            /** 5. 启动新的倒计时 */
             deleteTimerJob = launch {
                 delay(UNDO_DELETE_DELAY_MS)
-                // 倒计时结束，清除临时数据
+                /** 倒计时结束，清除临时数据并记录确认日志 */
+                val pendingTodo = _pendingDeletedTodo.value
+                if (pendingTodo != null) {
+                    recordOperationLog(
+                        operationType = com.corgimemo.app.data.local.db.OperationType.DELETE,
+                        targetId = id,
+                        snapshotJson = todoToJson(pendingTodo)
+                    )
+                }
                 _pendingDeletedTodo.value = null
             }
         }
@@ -1231,15 +1261,195 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             val todo = _pendingDeletedTodo.value ?: return@launch
 
-            // 1. 取消倒计时任务
+            /** 1. 取消倒计时任务 */
             deleteTimerJob?.cancel()
             deleteTimerJob = null
 
-            // 2. 重新插入待办
+            /** 2. 重新插入待办 */
             todoRepository.insertTodo(todo)
 
-            // 3. 清除临时数据
+            /** 3. 记录撤销操作日志 */
+            recordOperationLog(
+                operationType = com.corgimemo.app.data.local.db.OperationType.UNDO_DELETE,
+                targetId = todo.id,
+                snapshotJson = todoToJson(todo)
+            )
+
+            /** 4. 清除临时数据 */
             _pendingDeletedTodo.value = null
+        }
+    }
+
+    /**
+     * 切换待办完成状态（支持撤销）
+     *
+     * @param id 待办 ID
+     */
+    fun toggleComplete(id: Long) {
+        viewModelScope.launch {
+            /** 1. 获取当前待办 */
+            val todo = todoRepository.getTodoById(id) ?: return@launch
+
+            /** 2. 记录操作前的状态 */
+            val wasCompleted = todo.status == 1
+            val currentTime = System.currentTimeMillis()
+
+            /** 3. 更新状态（切换）*/
+            val newStatus = if (wasCompleted) 0 else 1
+            val updatedTodo = if (newStatus == 1) {
+                todo.copy(
+                    status = 1,
+                    completedAt = currentTime,
+                    updatedAt = currentTime
+                )
+            } else {
+                todo.copy(
+                    status = 0,
+                    completedAt = null,
+                    updatedAt = currentTime
+                )
+            }
+
+            todoRepository.updateTodo(updatedTodo)
+
+            /** 4. 如果是完成操作，触发成就检测等副作用 */
+            if (!wasCompleted) {
+                handleTaskCompleted(updatedTodo)
+            }
+
+            /** 5. 存储到内存状态用于撤销 */
+            _pendingCompleteTodo.value = Pair(todo.copy(), wasCompleted)
+
+            /** 6. 取消之前的倒计时任务（如果有）*/
+            completeTimerJob?.cancel()
+
+            /** 7. 启动新的倒计时 */
+            completeTimerJob = launch {
+                delay(COMPLETE_UNDO_DELAY_MS)
+                /** 倒计时结束，清除临时数据并记录确认日志 */
+                val pendingTodo = _pendingCompleteTodo.value
+                if (pendingTodo != null) {
+                    recordOperationLog(
+                        operationType = com.corgimemo.app.data.local.db.OperationType.COMPLETE,
+                        targetId = id,
+                        snapshotJson = todoToJson(pendingTodo.first)
+                    )
+                }
+                _pendingCompleteTodo.value = null
+            }
+        }
+    }
+
+    /**
+     * 撤销完成操作
+     * 恢复待办到操作前的状态
+     */
+    fun undoComplete() {
+        viewModelScope.launch {
+            val pair = _pendingCompleteTodo.value ?: return@launch
+            val (originalTodo, wasCompleted) = pair
+
+            /** 1. 取消倒计时任务 */
+            completeTimerJob?.cancel()
+            completeTimerJob = null
+
+            /** 2. 恢复原始状态 */
+            todoRepository.updateTodo(originalTodo)
+
+            /** 3. 记录撤销操作日志 */
+            recordOperationLog(
+                operationType = com.corgimemo.app.data.local.db.OperationType.UNDO_COMPLETE,
+                targetId = originalTodo.id,
+                snapshotJson = todoToJson(originalTodo)
+            )
+
+            /** 4. 清除临时数据 */
+            _pendingCompleteTodo.value = null
+        }
+    }
+
+    /**
+     * 批量删除选中的待办（支持撤销）
+     */
+    fun batchDelete() {
+        val selectedIds = _selectedTodoIds.value
+        if (selectedIds.isEmpty()) return
+
+        viewModelScope.launch {
+            /** 1. 获取所有选中的待办对象 */
+            val todosToDelete = mutableListOf<TodoItem>()
+            selectedIds.forEach { id ->
+                val todo = todoRepository.getTodoById(id)
+                if (todo != null) {
+                    todosToDelete.add(todo)
+                }
+            }
+
+            if (todosToDelete.isEmpty()) {
+                exitBatchMode()
+                return@launch
+            }
+
+            /** 2. 从数据库删除所有选中待办 */
+            selectedIds.forEach { id ->
+                todoRepository.deleteTodoById(id)
+            }
+
+            exitBatchMode()
+
+            /** 3. 存储到内存状态用于撤销 */
+            _pendingBatchDeletes.value = todosToDelete
+
+            /** 4. 取消之前的倒计时任务（如果有）*/
+            deleteTimerJob?.cancel()
+
+            /** 5. 启动新的倒计时 */
+            deleteTimerJob = launch {
+                delay(UNDO_DELETE_DELAY_MS)
+                /** 倒计时结束，清除临时数据并记录确认日志 */
+                val batchTodos = _pendingBatchDeletes.value
+                if (batchTodos != null) {
+                    val idsJson = batchTodos.joinToString(",", "[", "]") { it.id.toString() }
+                    recordOperationLog(
+                        operationType = com.corgimemo.app.data.local.db.OperationType.BATCH_DELETE,
+                        targetId = 0,
+                        batchIdsJson = idsJson,
+                        snapshotJson = batchTodos.joinToString(",", "[", "]") { todoToJson(it) }
+                    )
+                }
+                _pendingBatchDeletes.value = null
+            }
+        }
+    }
+
+    /**
+     * 撤销批量删除
+     * 将所有被删除的待办重新插入数据库
+     */
+    fun undoBatchDelete() {
+        viewModelScope.launch {
+            val todos = _pendingBatchDeletes.value ?: return@launch
+
+            /** 1. 取消倒计时任务 */
+            deleteTimerJob?.cancel()
+            deleteTimerJob = null
+
+            /** 2. 重新插入所有待办 */
+            todos.forEach { todo ->
+                todoRepository.insertTodo(todo)
+            }
+
+            /** 3. 记录撤销操作日志 */
+            val idsJson = todos.joinToString(",", "[", "]") { it.id.toString() }
+            recordOperationLog(
+                operationType = com.corgimemo.app.data.local.db.OperationType.UNDO_DELETE,
+                targetId = 0,
+                batchIdsJson = idsJson,
+                snapshotJson = todos.joinToString(",", "[", "]") { todoToJson(it) }
+            )
+
+            /** 4. 清除临时数据 */
+            _pendingBatchDeletes.value = null
         }
     }
 
@@ -1729,27 +1939,69 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * 批量删除选中的待办
-     */
-    fun batchDelete() {
-        val selectedIds = _selectedTodoIds.value
-        if (selectedIds.isEmpty()) return
-
-        viewModelScope.launch {
-            selectedIds.forEach { id ->
-                todoRepository.deleteTodoById(id)
-            }
-            exitBatchMode()
-        }
-    }
-
-    /**
      * ViewModel 销毁时清理资源
      */
     override fun onCleared() {
         super.onCleared()
         stopIdleDetection()
-        // 取消删除倒计时任务
+        /** 取消所有倒计时任务，防止内存泄漏 */
         deleteTimerJob?.cancel()
+        completeTimerJob?.cancel()
+    }
+
+    // ========== 辅助方法 ==========
+
+    /**
+     * 将 TodoItem 对象转换为 JSON 字符串
+     * 用于操作日志的数据快照
+     *
+     * @param todo 待办对象
+     * @return JSON 格式的字符串
+     */
+    private fun todoToJson(todo: TodoItem): String {
+        return buildString {
+            append("{")
+            append("\"id\":${todo.id},")
+            append("\"title\":\"${todo.title.replace("\"", "\\\"")}\",")
+            append("\"content\":\"${(todo.content ?: "").replace("\"", "\\\"")}\",")
+            append("\"categoryId\":${todo.categoryId},")
+            append("\"priority\":${todo.priority},")
+            append("\"status\":${todo.status},")
+            append("\"repeatType\":${todo.repeatType},")
+            append("\"createdAt\":${todo.createdAt},")
+            append("\"updatedAt\":${todo.updatedAt}")
+            if (todo.completedAt != null) {
+                append(",\"completedAt\":${todo.completedAt}")
+            }
+            append("}")
+        }
+    }
+
+    /**
+     * 记录操作日志到数据库
+     *
+     * @param operationType 操作类型
+     * @param targetId 目标待办 ID
+     * @param batchIdsJson 批量操作的 ID 列表（可选）
+     * @param snapshotJson 数据快照 JSON
+     */
+    private suspend fun recordOperationLog(
+        operationType: String,
+        targetId: Long,
+        batchIdsJson: String? = null,
+        snapshotJson: String
+    ) {
+        try {
+            val log = OperationLogEntity(
+                operationType = operationType,
+                targetId = targetId,
+                batchIdsJson = batchIdsJson,
+                snapshotJson = snapshotJson
+            )
+            operationLogRepository.insertLog(log)
+        } catch (e: Exception) {
+            /** 日志记录失败不应影响主流程，仅打印日志 */
+            android.util.Log.e("HomeViewModel", "Failed to record operation log", e)
+        }
     }
 }

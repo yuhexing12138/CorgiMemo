@@ -139,6 +139,8 @@ fun HomeScreen(
     val hapticEnabled by viewModel.hapticEnabled.collectAsState()
     val soundEnabled by viewModel.soundEnabled.collectAsState()
     val pendingDeletedTodo by viewModel.pendingDeletedTodo.collectAsState()
+    val pendingBatchDeletes by viewModel.pendingBatchDeletes.collectAsState()
+    val pendingCompleteTodo by viewModel.pendingCompleteTodo.collectAsState()
 
     // 子任务进度映射
     val subTaskProgressMap by viewModel.subTaskProgressMap.collectAsState()
@@ -218,16 +220,46 @@ fun HomeScreen(
 
     val outfitSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // 监听待办删除事件，显示 Snackbar
+    /** 监听单个待办删除事件，显示 Snackbar（带标题）*/
     LaunchedEffect(pendingDeletedTodo) {
-        if (pendingDeletedTodo != null) {
+        pendingDeletedTodo?.let { todo ->
             val result = snackbarHostState.showSnackbar(
-                message = "已删除",
+                message = "☑️ '${todo.title}' 已删除",
+                actionLabel = "撤销",
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.undoDelete()
+            }
+        }
+    }
+
+    /** 监听批量删除事件，显示 Snackbar */
+    LaunchedEffect(pendingBatchDeletes) {
+        pendingBatchDeletes?.let { todos ->
+            if (todos.isNotEmpty()) {
+                val result = snackbarHostState.showSnackbar(
+                    message = "☑️ 已删除 ${todos.size} 个待办",
+                    actionLabel = "全部撤销",
+                    duration = SnackbarDuration.Long
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    viewModel.undoBatchDelete()
+                }
+            }
+        }
+    }
+
+    /** 监听待办完成事件，显示 Snackbar（支持撤销）*/
+    LaunchedEffect(pendingCompleteTodo) {
+        pendingCompleteTodo?.let { (todo, _) ->
+            val result = snackbarHostState.showSnackbar(
+                message = "✅ '${todo.title}' 已完成",
                 actionLabel = "撤销",
                 duration = SnackbarDuration.Short
             )
             if (result == SnackbarResult.ActionPerformed) {
-                viewModel.undoDelete()
+                viewModel.undoComplete()
             }
         }
     }

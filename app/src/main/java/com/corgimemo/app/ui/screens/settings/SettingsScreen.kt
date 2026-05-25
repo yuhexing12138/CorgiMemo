@@ -176,6 +176,14 @@ fun SettingsScreen(
                 }
             )
 
+            SettingItemCard(
+                title = "📋 最近操作",
+                description = "查看和撤销最近的待办操作",
+                onClick = {
+                    navController.navigate("operation_history")
+                }
+            )
+
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(

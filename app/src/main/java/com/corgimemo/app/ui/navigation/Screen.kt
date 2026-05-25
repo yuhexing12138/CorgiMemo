@@ -10,6 +10,7 @@ sealed class Screen(val route: String) {
     object BackupHistory : Screen("backup_history")
     object Stats : Screen("stats")
     object Achievement : Screen("achievement")
+    object OperationHistory : Screen("operation_history")
 
     fun withArgs(vararg args: String): String {
         return buildString {
