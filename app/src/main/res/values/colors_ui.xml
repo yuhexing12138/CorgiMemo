@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ========== 主色系 ========== -->
+    <color name="ui_primary">#FF9A5C</color>
+    <color name="ui_primary_light">#FFE0C0</color>
+    <color name="ui_primary_dark">#E88A4D</color>
+
+    <!-- ========== 背景色 ========== -->
+    <color name="ui_background">#FFFFFF</color>
+    <color name="ui_surface">#FFFFFF</color>
+
+    <!-- ========== 语义色 ========== -->
+    <color name="ui_success">#4CAF50</color>
+    <color name="ui_warning">#FF9800</color>
+    <color name="ui_error">#F44336</color>
+
+    <!-- ========== 文字色 ========== -->
+    <color name="ui_text_primary">#1C1B1F</color>
+    <color name="ui_text_secondary">#79747E</color>
+
+    <!-- ========== 分割线/边框 ========== -->
+    <color name="ui_divider">#E0E0E0</color>
+    <color name="ui_outline">#BDBDBD</color>
+
+    <!-- ========== 特殊用途 ========== -->
+    <color name="ui_overlay_dark">#99000000</color>
+    <color name="ui_overlay_light">#99FFFFFF</color>
+</resources>

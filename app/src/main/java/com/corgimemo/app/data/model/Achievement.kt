@@ -72,23 +72,27 @@ enum class AchievementCondition {
 
 /**
  * 成就阶段枚举
- * 用于成就墙页面的阶段进度条
+ * 用于成就墙页面的进度条
  *
  * @property displayName 显示名称
  * @property description 阶段描述
  * @property requiredUnlocked 需要解锁的成就数量
- * @property color 阶段颜色（十六进制）
+ * @property color 阶段主题色（用于图标、高亮等）
+ * @property backgroundColor 阶段背景色（用于页面、卡片背景）
+ * @property textColor 阶段文字色（用于卡片上的标题、数字）
  */
 enum class AchievementStage(
     val displayName: String,
     val description: String,
     val requiredUnlocked: Int,
-    val color: Long
+    val color: Long,
+    val backgroundColor: Long = 0xFFF8FAFC,
+    val textColor: Long = 0xFF475569
 ) {
-    BEGINNER("初见阶段", "一切刚刚开始", 0, 0xFF94A3B8),
-    GROWTH("成长阶段", "努力前进中", 5, 0xFF34D399),
-    LEAP("飞跃阶段", "快速成长", 10, 0xFF3B82F6),
-    PEAK("巅峰阶段", "即将登顶", 16, 0xFFF97316)
+    BEGINNER("初见阶段", "一切刚刚开始", 0, 0xFF94A3B8, 0xFFF8FAFC, 0xFF475569),
+    GROWTH("成长阶段", "努力前进中", 5, 0xFF34D399, 0xFFECFDF5, 0xFF065F46),
+    LEAP("飞跃阶段", "快速成长", 10, 0xFF3B82F6, 0xFFEFF6FF, 0xFF1E40AF),
+    PEAK("巅峰阶段", "即将登顶", 16, 0xFFF97316, 0xFFFFF7ED, 0xFF9A3412)
 }
 
 /**

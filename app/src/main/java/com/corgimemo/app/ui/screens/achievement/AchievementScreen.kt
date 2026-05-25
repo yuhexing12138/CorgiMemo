@@ -69,12 +69,7 @@ fun AchievementScreen(
     val nextProgress by viewModel.nextUnlockableProgress.collectAsState()
 
     val bgColor by animateColorAsState(
-        targetValue = when (currentStage) {
-            AchievementStage.BEGINNER -> Color(0xFFF8FAFC)
-            AchievementStage.GROWTH -> Color(0xFFECFDF5)
-            AchievementStage.LEAP -> Color(0xFFEFF6FF)
-            AchievementStage.PEAK -> Color(0xFFFFF7ED)
-        },
+        targetValue = Color(currentStage.backgroundColor),
         animationSpec = tween(800),
         label = "StageBackground"
     )
@@ -367,22 +362,12 @@ private fun CorgiStageCard(
  * 获取阶段卡片背景色
  */
 private fun getStageCardColor(stage: AchievementStage): Color {
-    return when (stage) {
-        AchievementStage.BEGINNER -> Color(0xFFF1F5F9)
-        AchievementStage.GROWTH -> Color(0xFFD1FAE5)
-        AchievementStage.LEAP -> Color(0xFFDBEAFE)
-        AchievementStage.PEAK -> Color(0xFFFED7AA)
-    }
+    return Color(stage.backgroundColor)
 }
 
 /**
  * 获取阶段文字颜色
  */
 private fun getStageTextColor(stage: AchievementStage): Color {
-    return when (stage) {
-        AchievementStage.BEGINNER -> Color(0xFF475569)
-        AchievementStage.GROWTH -> Color(0xFF065F46)
-        AchievementStage.LEAP -> Color(0xFF1E40AF)
-        AchievementStage.PEAK -> Color(0xFF9A3412)
-    }
+    return Color(stage.textColor)
 }

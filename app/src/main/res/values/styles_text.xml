@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 页面标题：22sp / Bold / 28sp行高 -->
+    <style name="TextAppearance_PageTitle" parent="android:TextAppearance.Material.Title">
+        <item name="android:textSize">22sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:lineSpacingMultiplier">1.27</item>
+    </style>
+
+    <!-- 卡片标题：16sp / Medium / 24sp行高 -->
+    <style name="TextAppearance_CardTitle" parent="android:TextAppearance.Material.Medium">
+        <item name="android:textSize">16sp</item>
+        <item name="android:lineSpacingMultiplier">1.5</item>
+    </style>
+
+    <!-- 正文：14sp / Regular / 20sp行高 -->
+    <style name="TextAppearance_Body" parent="android:TextAppearance.Material">
+        <item name="android:textSize">14sp</item>
+        <item name="android:lineSpacingMultiplier">1.43</item>
+    </style>
+
+    <!-- 辅助文字：12sp / Regular / 16sp行高 -->
+    <style name="TextAppearance_Caption" parent="android:TextAppearance.Material.Small">
+        <item name="android:textSize">12sp</item>
+        <item name="android:lineSpacingMultiplier">1.33</item>
+    </style>
+
+    <!-- 按钮文字：14sp / Medium / 20sp行高 -->
+    <style name="TextAppearance_Button" parent="android:TextAppearance.Material.Widget.Button">
+        <item name="android:textSize">14sp</item>
+        <item name="android:lineSpacingMultiplier">1.43</item>
+    </style>
+</resources>

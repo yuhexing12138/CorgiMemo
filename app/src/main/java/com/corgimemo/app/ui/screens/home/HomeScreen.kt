@@ -101,6 +101,7 @@ import com.corgimemo.app.ui.components.SolarTermCard
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
+import com.corgimemo.app.ui.theme.UiColors
 import kotlinx.coroutines.launch
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
@@ -390,7 +391,7 @@ fun HomeScreen(
                                 enabled = hasSelection,
                                 shape = RoundedCornerShape(12.dp),
                                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFFEF4444),
+                                    containerColor = UiColors.Error,
                                     contentColor = Color.White
                                 )
                             ) {
@@ -663,7 +664,7 @@ fun HomeScreen(
                         }
                     }
                 ) {
-                    Text("删除", color = Color(0xFFEF4444))
+                    Text("删除", color = UiColors.Error)
                 }
             },
             dismissButton = {

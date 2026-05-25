@@ -50,6 +50,9 @@ import com.corgimemo.app.viewmodel.CategoryStat
 import com.corgimemo.app.viewmodel.CompletionStats
 import com.corgimemo.app.viewmodel.StatsViewModel
 import com.corgimemo.app.viewmodel.TimePeriodStat
+import com.corgimemo.app.ui.theme.UiColors
+import com.corgimemo.app.ui.theme.UiDimensions
+import com.corgimemo.app.ui.theme.UiTextStyles
 
 /**
  * 完成统计页面（重构版）
@@ -411,15 +414,15 @@ private fun PredictionCard(
                         fontWeight = FontWeight.SemiBold
                     )
                     if (needsEncouragement) {
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(UiDimensions.spacingSmall))
                         Text(
                             text = "💪 加油！还差一点点就达标了",
-                            fontSize = 12.sp,
-                            color = Color(0xFFFF9800),
+                            fontSize = UiTextStyles.Caption.fontSize,
+                            color = UiColors.Warning,
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFFFF3E0))
-                                .padding(8.dp, 12.dp)
+                                .clip(RoundedCornerShape(UiDimensions.cornerRadiusSmall))
+                                .background(UiColors.PrimaryLight)
+                                .padding(UiDimensions.spacingSmall, UiDimensions.spacingCardPadding)
                         )
                     }
                 }
@@ -632,10 +635,10 @@ private fun TimePeriodCard(
         shape = RoundedCornerShape(12.dp),
         modifier = modifier,
         colors = CardDefaults.cardColors(
-            containerColor = if (isBest) Color(0xFFFFF3E0) else MaterialTheme.colorScheme.surfaceContainerLow
+            containerColor = if (isBest) UiColors.PrimaryLight else MaterialTheme.colorScheme.surfaceContainerLow
         ),
         border = if (isBest) {
-            androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFFF9800))
+            androidx.compose.foundation.BorderStroke(2.dp, UiColors.Warning)
         } else null
     ) {
         Box(
@@ -856,6 +859,7 @@ private fun ConsecutiveDaysCard(consecutiveDays: Int) {
                     fontSize = 36.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (consecutiveDays > 0) Color(0xFFFF6B00) else MaterialTheme.colorScheme.onSurface
+                    // TODO: 特殊用途颜色 - 连续天数火焰橙，可后续迁移到 UiColors.StreakOrange
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
