@@ -11,6 +11,8 @@ object AchievementId {
     const val CROWN = "crown"
     const val CAPE = "cape"
     const val ANGEL_WINGS = "angel_wings"
+    /** 首次引导完成 */
+    const val FIRST_GUIDE = "first_guide"
 }
 
 /**
@@ -23,6 +25,8 @@ object OutfitId {
     const val CROWN = "crown"
     const val CAPE = "cape"
     const val ANGEL_WINGS = "angel_wings"
+    /** 新手勋章（引导完成奖励）*/
+    const val FIRST_GUIDE_BADGE = "first_guide_badge"
 }
 
 /**
@@ -70,7 +74,8 @@ object AchievementManager {
         AchievementId.TIE to "👔",
         AchievementId.CROWN to "👑",
         AchievementId.ANGEL_WINGS to "🪽",
-        AchievementId.CAPE to "🧥"
+        AchievementId.CAPE to "🧥",
+        AchievementId.FIRST_GUIDE to "🎖️"
     )
 
     /**
@@ -126,6 +131,15 @@ object AchievementManager {
             conditionText = "解锁其他 4 个成就",
             outfitId = OutfitId.CAPE,
             target = 4
+        ),
+        /** 首次引导完成成就 */
+        Achievement(
+            id = AchievementId.FIRST_GUIDE,
+            name = "新手探险家",
+            description = "完成首次使用引导",
+            conditionText = "完成引导流程",
+            outfitId = OutfitId.FIRST_GUIDE_BADGE,
+            target = 1
         )
     )
 

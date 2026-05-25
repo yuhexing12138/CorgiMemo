@@ -96,6 +96,7 @@ import com.corgimemo.app.ui.components.AchievementUnlockDialog
 import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.ui.components.EmptyState
 import com.corgimemo.app.ui.components.EmptyStateType
+import com.corgimemo.app.ui.components.FirstTimeGuideOverlay
 import com.corgimemo.app.ui.components.SolarTermCard
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.viewmodel.CelebrationLevel
@@ -156,6 +157,12 @@ fun HomeScreen(
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var showBatchMoveDialog by remember { mutableStateOf(false) }
 
+    /** 首次引导状态 */
+    var showFirstTimeGuide by remember { mutableStateOf(false) }
+
+    /** A/B 测试组别 */
+    var abGroup by remember { mutableStateOf("A") }
+
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -197,6 +204,16 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) {
         viewModel.refreshGreetingIfNeeded()
+
+        /** 初始化 A/B 测试分组 */
+        val corgiPrefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
+        abGroup = corgiPrefs.getOrAssignAbGroup()
+
+        /** 检查是否需要显示首次引导 */
+        val isFirstGuideShown = corgiPrefs.getFirstGuideShown()
+        if (!isFirstGuideShown && todos.isEmpty()) {
+            showFirstTimeGuide = true
+        }
     }
 
     val outfitSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -430,6 +447,7 @@ fun HomeScreen(
                     DebugTools(todos = todos, context = context, viewModel = viewModel)
 
                     if (todos.isEmpty()) {
+                        /** 增强版空状态组件（包含引导动画、操作指引、模板预设） */
                         EmptyState(
                             emptyType = when (filterStatus) {
                                 HomeViewModel.FilterStatus.PENDING -> EmptyStateType.PENDING
@@ -447,7 +465,16 @@ fun HomeScreen(
                                         navController.navigate("todo_edit")
                                     }
                                 }
-                            }
+                            },
+                            onFabClicked = {
+                                /** FAB 点击回调：可以在这里添加额外逻辑 */
+                            },
+                            onTemplateSelected = { template ->
+                                /** 模板选择回调：批量创建待办 */
+                                viewModel.createTodosFromTemplate(template)
+                            },
+                            showEnhanced = filterStatus == HomeViewModel.FilterStatus.PENDING,
+                            abGroup = abGroup
                         )
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -672,6 +699,45 @@ fun HomeScreen(
             onDismiss = {
                 viewModel.hideOutfitSheet()
             }
+        )
+    }
+
+    /** 首次使用引导覆盖层 */
+    if (showFirstTimeGuide) {
+        FirstTimeGuideOverlay(
+            onGuideCompleted = {
+                showFirstTimeGuide = false
+                /** 标记首次引导已完成并记录时间戳 */
+                coroutineScope.launch {
+                    val corgiPrefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
+                    corgiPrefs.setFirstGuideShown()
+                    corgiPrefs.saveGuideCompletedAt(System.currentTimeMillis())
+                }
+                /** 触发庆祝动画和成就解锁 */
+                viewModel.completeFirstGuide(context)
+            },
+            onFabClicked = {
+                showFirstTimeGuide = false
+                /** 标记首次引导已完成并导航到待办编辑页 */
+                coroutineScope.launch {
+                    val corgiPrefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
+                    corgiPrefs.setFirstGuideShown()
+                }
+                viewModel.onUserInteraction()
+                viewModel.setPoseForCreating()
+                navController.navigate("todo_edit")
+            },
+            onTemplateSelected = { template ->
+                showFirstTimeGuide = false
+                /** 标记首次引导已完成并创建模板待办 */
+                coroutineScope.launch {
+                    val corgiPrefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
+                    corgiPrefs.setFirstGuideShown()
+                    corgiPrefs.saveGuideCompletedAt(System.currentTimeMillis())
+                }
+                viewModel.createTodosFromTemplate(template)
+            },
+            abGroup = abGroup
         )
     }
 }

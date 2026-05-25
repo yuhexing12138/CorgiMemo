@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -82,6 +83,7 @@ fun SettingsScreen(
     var showExportDialog by remember { mutableStateOf(false) }
     var showImportConfirmDialog by remember { mutableStateOf(false) }
     var showAutoBackupDialog by remember { mutableStateOf(false) }
+    var showResetGuideDialog by remember { mutableStateOf(false) }
 
     if (backupMessage != null) {
         BackupMessageDialog(
@@ -163,6 +165,14 @@ fun SettingsScreen(
                 description = "管理智能分类关键词",
                 onClick = {
                     navController.navigate("smart_category_settings")
+                }
+            )
+
+            SettingItemCard(
+                title = "🎯 重新查看引导",
+                description = "重置首次引导流程",
+                onClick = {
+                    showResetGuideDialog = true
                 }
             )
 
@@ -355,6 +365,33 @@ fun SettingsScreen(
             dismissButton = {
                 OutlinedButton(
                     onClick = { showImportConfirmDialog = false }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    if (showResetGuideDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetGuideDialog = false },
+            title = { Text("重新查看引导") },
+            text = {
+                Text("这将重置首次引导流程，下次进入待办为空的页面时将重新显示完整引导。确定要继续吗？")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetGuideDialog = false
+                        viewModel.resetFirstGuide()
+                    }
+                ) {
+                    Text("确认重置")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showResetGuideDialog = false }
                 ) {
                     Text("取消")
                 }

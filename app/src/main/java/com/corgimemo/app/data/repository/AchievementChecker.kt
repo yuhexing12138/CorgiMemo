@@ -113,6 +113,21 @@ class AchievementChecker @Inject constructor(
         checkCorgiLevel(unlockedIds, newLevel)
     }
 
+    /**
+     * 手动解锁指定成就
+     * 用于首次引导完成等特殊场景
+     *
+     * @param achievementId 成就 ID
+     * @return 是否成功解锁
+     */
+    suspend fun unlockAchievementManual(achievementId: String): Boolean {
+        val unlockedIds = achievementRepository.getUnlockedIds().toSet()
+        if (unlockedIds.contains(achievementId)) {
+            return false
+        }
+        return unlockAchievement(achievementId)
+    }
+
     // ==================== 私有检测方法 ====================
 
     /**

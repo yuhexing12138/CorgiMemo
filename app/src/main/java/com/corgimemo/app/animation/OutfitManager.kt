@@ -74,6 +74,13 @@ object OutfitManager {
             description = "全成就大师的荣耀",
             isDefault = false
         ),
+        /** 新手勋章（完成首次引导获得）*/
+        Outfit(
+            id = OutfitId.FIRST_GUIDE_BADGE,
+            name = "新手勋章",
+            description = "完成首次引导获得",
+            isDefault = false
+        ),
         // 节日装扮（节日期间自动显示，无需解锁）
         Outfit(
             id = HolidayOutfitId.NEW_YEAR_HAT,

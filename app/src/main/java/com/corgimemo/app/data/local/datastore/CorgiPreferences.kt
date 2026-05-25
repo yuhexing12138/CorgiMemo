@@ -52,6 +52,10 @@ class CorgiPreferences(private val dataStore: DataStore<Preferences>) {
         val BACKUP_HISTORY = stringPreferencesKey("backup_history")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val THEME_COLOR = stringPreferencesKey("theme_color")
+        val FIRST_GUIDE_SHOWN = booleanPreferencesKey("first_guide_shown")
+        val GUIDE_AB_GROUP = stringPreferencesKey("guide_ab_group")
+        val GUIDE_COMPLETED_AT = stringPreferencesKey("guide_completed_at")
+        val FIRST_TODO_CREATED_AT = stringPreferencesKey("first_todo_created_at")
     }
 
     /**
@@ -511,5 +515,134 @@ class CorgiPreferences(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { prefs ->
             prefs[Keys.THEME_COLOR] = color
         }
+    }
+
+    // ==================== 首次引导状态 ====================
+
+    /**
+     * 获取是否已完成首次引导的 Flow
+     *
+     * @return Boolean 类型的 Flow，默认为 false
+     */
+    val firstGuideShown: Flow<Boolean> = dataStore.data
+        .map { prefs ->
+            prefs[Keys.FIRST_GUIDE_SHOWN] ?: false
+        }
+
+    /**
+     * 获取是否已完成首次引导（一次获取）
+     *
+     * @return 是否已完成
+     */
+    suspend fun getFirstGuideShown(): Boolean {
+        return dataStore.data.map { prefs ->
+            prefs[Keys.FIRST_GUIDE_SHOWN] ?: false
+        }.first()
+    }
+
+    /**
+     * 设置首次引导完成标志
+     */
+    suspend fun setFirstGuideShown() {
+        dataStore.edit { prefs ->
+            prefs[Keys.FIRST_GUIDE_SHOWN] = true
+        }
+    }
+
+    /**
+     * 重置首次引导状态
+     * 用于设置中的"重新查看引导"功能
+     */
+    suspend fun resetFirstGuide() {
+        dataStore.edit { prefs ->
+            prefs[Keys.FIRST_GUIDE_SHOWN] = false
+        }
+    }
+
+    // ==================== A/B 测试相关 ====================
+
+    /**
+     * 获取 A/B 测试组别的 Flow
+     *
+     * @return 组别字符串的 Flow（"A" 或 "B"），默认为 "A"
+     */
+    val guideAbGroup: Flow<String> = dataStore.data
+        .map { prefs ->
+            prefs[Keys.GUIDE_AB_GROUP] ?: "A"
+        }
+
+    /**
+     * 获取 A/B 测试组别（一次获取）
+     *
+     * @return 组别字符串（"A" 或 "B"）
+     */
+    suspend fun getGuideAbGroup(): String {
+        return dataStore.data.map { prefs ->
+            prefs[Keys.GUIDE_AB_GROUP] ?: "A"
+        }.first()
+    }
+
+    /**
+     * 分配或获取 A/B 测试组别
+     * 如果尚未分配，则随机分配并保存
+     *
+     * @return 组别字符串（"A" 或 "B"）
+     */
+    suspend fun getOrAssignAbGroup(): String {
+        val currentGroup = getGuideAbGroup()
+        if (currentGroup.isNotEmpty()) {
+            return currentGroup
+        }
+
+        /** 随机分配 A 或 B 组（50/50 概率）*/
+        val newGroup = if (kotlin.random.Random.nextBoolean()) "A" else "B"
+        dataStore.edit { prefs ->
+            prefs[Keys.GUIDE_AB_GROUP] = newGroup
+        }
+        return newGroup
+    }
+
+    /**
+     * 保存引导完成时间戳
+     *
+     * @param timestamp 时间戳（毫秒）
+     */
+    suspend fun saveGuideCompletedAt(timestamp: Long) {
+        dataStore.edit { prefs ->
+            prefs[Keys.GUIDE_COMPLETED_AT] = timestamp.toString()
+        }
+    }
+
+    /**
+     * 获取引导完成时间戳
+     *
+     * @return 时间戳，如果没有记录则返回 0
+     */
+    suspend fun getGuideCompletedAt(): Long {
+        return dataStore.data.map { prefs ->
+            prefs[Keys.GUIDE_COMPLETED_AT]?.toLongOrNull() ?: 0L
+        }.first()
+    }
+
+    /**
+     * 保存首个待办创建时间戳
+     *
+     * @param timestamp 时间戳（毫秒）
+     */
+    suspend fun saveFirstTodoCreatedAt(timestamp: Long) {
+        dataStore.edit { prefs ->
+            prefs[Keys.FIRST_TODO_CREATED_AT] = timestamp.toString()
+        }
+    }
+
+    /**
+     * 获取首个待办创建时间戳
+     *
+     * @return 时间戳，如果没有记录则返回 0
+     */
+    suspend fun getFirstTodoCreatedAt(): Long {
+        return dataStore.data.map { prefs ->
+            prefs[Keys.FIRST_TODO_CREATED_AT]?.toLongOrNull() ?: 0L
+        }.first()
     }
 }

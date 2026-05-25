@@ -7,19 +7,21 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.corgimemo.app.data.local.db.AchievementEntity
+import com.corgimemo.app.data.local.db.CategoryKeywordEntity
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.MoodHistory
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.data.model.UserTemplateEntity
 
 /**
  * 应用数据库
- * 管理待办事项、柯基数据、任务分类和成就
+ * 管理待办事项、柯基数据、任务分类、成就和用户模板
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class],
-    version = 12,
+    entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class],
+    version = 13,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -40,6 +42,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
 
     abstract fun categoryKeywordDao(): CategoryKeywordDao
 
+    /** 用户模板 DAO */
+    abstract fun templateDao(): TemplateDao
+
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
 
@@ -53,7 +58,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                     .build()
                 INSTANCE = instance
                 instance
@@ -266,6 +271,26 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE todo_items ADD COLUMN voiceNotePath TEXT")
                 // 添加语音时长字段（秒）
                 database.execSQL("ALTER TABLE todo_items ADD COLUMN voiceDuration INTEGER")
+            }
+        }
+
+        /**
+         * 版本 12 → 13 迁移：添加用户自定义模板表
+         * 用于支持用户创建和保存自己的待办模板
+         */
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS user_templates (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL,
+                        icon TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        todosJson TEXT NOT NULL DEFAULT '[]',
+                        createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+                        updatedAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+                    )
+                """.trimIndent())
             }
         }
     }
