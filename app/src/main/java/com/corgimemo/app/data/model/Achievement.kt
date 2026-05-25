@@ -151,10 +151,39 @@ data class Achievement(
     val threshold: Int,
     val stage: AchievementStage,
     val story: String,
+    val storyTitle: String = "",
+    val unlockDialog: String = "",
     val visibility: AchievementVisibility = AchievementVisibility.ALL,
     val outfitId: String? = null,
     val unlockedAt: Long? = null
 )
+
+/**
+ * 判断该成就是否为重大成就
+ * 重大成就解锁时触发全屏庆祝动画 + 柯基跳跃 + 音效
+ */
+fun Achievement.isMajorAchievement(): Boolean {
+    if (outfitId != null) return true
+    val consecutiveIds = setOf(
+        NewAchievementId.CONSECUTIVE_7_DAYS,
+        NewAchievementId.CONSECUTIVE_30_DAYS,
+        NewAchievementId.WORK_PROMOTION,
+        NewAchievementId.STUDY_EXAM_WEEK,
+        NewAchievementId.EARLY_7_DAYS
+    )
+    if (id in consecutiveIds) return true
+    val milestoneIds = setOf(
+        NewAchievementId.TOTAL_100,
+        NewAchievementId.TOTAL_500,
+        NewAchievementId.CORGI_LEVEL_5,
+        NewAchievementId.CORGI_LEVEL_10,
+        NewAchievementId.ALL_ACHIEVEMENTS,
+        NewAchievementId.DAILY_10_TASKS,
+        NewAchievementId.FIRST_COMPLETE
+    )
+    if (id in milestoneIds) return true
+    return false
+}
 
 /**
  * 成就定义单例
@@ -176,6 +205,8 @@ object AchievementDefinition {
             threshold = 1,
             stage = AchievementStage.BEGINNER,
             story = "每一个伟大的旅程，都从迈出第一步开始",
+            storyTitle = "初次见面！",
+            unlockDialog = "嘿！我是你的小柯基～从今天开始，我们一起完成任务，一起成长吧！",
             visibility = AchievementVisibility.ALL
         ),
         Achievement(
@@ -187,6 +218,8 @@ object AchievementDefinition {
             threshold = 1,
             stage = AchievementStage.BEGINNER,
             story = "职场生涯，从此刻开始",
+            storyTitle = "职场新星！",
+            unlockDialog = "恭喜完成第一个工作任务！汪～你在职场一定会闪闪发光的！",
             visibility = AchievementVisibility.WORKER
         ),
 
@@ -200,6 +233,8 @@ object AchievementDefinition {
             threshold = 7,
             stage = AchievementStage.GROWTH,
             story = "坚持不是因为有希望，而是坚持下去才会看到希望",
+            storyTitle = "坚持的力量！",
+            unlockDialog = "你已经连续7天完成任务了！这份坚持让我好感动汪～继续加油！",
             visibility = AchievementVisibility.ALL
         ),
         Achievement(
@@ -211,6 +246,8 @@ object AchievementDefinition {
             threshold = 10,
             stage = AchievementStage.GROWTH,
             story = "效率不是速度，而是用最短的时间完成最重要的事",
+            storyTitle = "效率爆棚！",
+            unlockDialog = "一天完成10个任务？你也太厉害了吧！我的小短腿都追不上你的速度了！",
             visibility = AchievementVisibility.ALL
         ),
         Achievement(
@@ -222,6 +259,8 @@ object AchievementDefinition {
             threshold = 5,
             stage = AchievementStage.GROWTH,
             story = "陪伴是最长情的告白，你陪我长大",
+            storyTitle = "我们一起长大！",
+            unlockDialog = "我已经5级啦！都是因为有你的陪伴和努力，谢谢你汪！",
             visibility = AchievementVisibility.ALL
         ),
         Achievement(
@@ -233,6 +272,8 @@ object AchievementDefinition {
             threshold = 20,
             stage = AchievementStage.GROWTH,
             story = "一个又一个项目，见证你的成长",
+            storyTitle = "项目小能手！",
+            unlockDialog = "完成了20个工作项目，你已经是个可靠的职场人了！",
             visibility = AchievementVisibility.WORKER
         ),
         Achievement(
@@ -244,6 +285,8 @@ object AchievementDefinition {
             threshold = 30,
             stage = AchievementStage.GROWTH,
             story = "好记性不如烂笔头，每一个字都是进步",
+            storyTitle = "笔记小达人！",
+            unlockDialog = "30个学习任务完成！你的笔记一定写得比我的爪子印还整齐！",
             visibility = AchievementVisibility.STUDENT
         ),
         Achievement(
@@ -255,6 +298,8 @@ object AchievementDefinition {
             threshold = 30,
             stage = AchievementStage.GROWTH,
             story = "生命在于运动，每一滴汗水都是值得的",
+            storyTitle = "运动健将！",
+            unlockDialog = "30次运动打卡！你的活力让我也想多跑几圈了汪！",
             visibility = AchievementVisibility.STUDENT
         ),
 
@@ -268,6 +313,8 @@ object AchievementDefinition {
             threshold = 100,
             stage = AchievementStage.LEAP,
             story = "100 不是终点，而是新的起点",
+            storyTitle = "百日维新！",
+            unlockDialog = "100个任务！我的尾巴摇得快起飞了！你是最棒的任务终结者！",
             visibility = AchievementVisibility.ALL
         ),
         Achievement(
@@ -279,6 +326,8 @@ object AchievementDefinition {
             threshold = 7,
             stage = AchievementStage.LEAP,
             story = "早起的鸟儿有虫吃，早起的柯基有骨头",
+            storyTitle = "早起冠军！",
+            unlockDialog = "连续7天早起！太阳都没你勤快～早起的柯基有骨头吃！",
             visibility = AchievementVisibility.STUDENT
         ),
         Achievement(
@@ -290,6 +339,8 @@ object AchievementDefinition {
             threshold = 50,
             stage = AchievementStage.LEAP,
             story = "知识是最好的投资，每一分努力都在增值",
+            storyTitle = "学习标兵！",
+            unlockDialog = "50个学习任务！知识就是力量，你现在已经是一座移动的图书馆了汪！",
             visibility = AchievementVisibility.STUDENT
         ),
         Achievement(
@@ -301,6 +352,8 @@ object AchievementDefinition {
             threshold = 20,
             stage = AchievementStage.LEAP,
             story = "学习娱乐两不误，劳逸结合才是王道",
+            storyTitle = "劳逸结合！",
+            unlockDialog = "20个娱乐任务！会学习也会玩，这才是完美的人生节奏！",
             visibility = AchievementVisibility.STUDENT
         ),
         Achievement(
@@ -312,6 +365,8 @@ object AchievementDefinition {
             threshold = 50,
             stage = AchievementStage.LEAP,
             story = "职场如战场，准备好迎接挑战了吗？",
+            storyTitle = "工作能手！",
+            unlockDialog = "50个工作任务的积累，你已经从新手成长为能手了！",
             visibility = AchievementVisibility.WORKER
         ),
         Achievement(
@@ -323,6 +378,8 @@ object AchievementDefinition {
             threshold = 3,
             stage = AchievementStage.LEAP,
             story = "拒绝无效加班，高效工作，享受生活",
+            storyTitle = "准时下班！",
+            unlockDialog = "连续3天准时完成任务！拒绝加班，高效生活，这才是职场真谛！",
             visibility = AchievementVisibility.WORKER
         ),
 
@@ -336,6 +393,8 @@ object AchievementDefinition {
             threshold = 10,
             stage = AchievementStage.PEAK,
             story = "从小小的宝宝到成熟的大师，你我共同见证",
+            storyTitle = "王者搭档！",
+            unlockDialog = "10级了！从小柯基到大师，感谢你一路的陪伴～我们是永远的最佳搭档！",
             visibility = AchievementVisibility.ALL
         ),
         Achievement(
@@ -347,6 +406,8 @@ object AchievementDefinition {
             threshold = 100,
             stage = AchievementStage.PEAK,
             story = "知识改变命运，学霸改变世界",
+            storyTitle = "学霸降临！",
+            unlockDialog = "100个学习任务！学霸请收下我的膝盖...不对，我的爪子！",
             visibility = AchievementVisibility.STUDENT,
             outfitId = "scholar_hat"
         ),
@@ -359,6 +420,8 @@ object AchievementDefinition {
             threshold = 200,
             stage = AchievementStage.PEAK,
             story = "学海无涯，你已经走过了很长的路",
+            storyTitle = "学海无涯！",
+            unlockDialog = "200个学习任务！你已经走过了很长的路，但学海无涯，继续前行吧汪！",
             visibility = AchievementVisibility.STUDENT
         ),
         Achievement(
@@ -370,6 +433,8 @@ object AchievementDefinition {
             threshold = 100,
             stage = AchievementStage.PEAK,
             story = "优秀是一种习惯，奖学金是对你努力的认可",
+            storyTitle = "奖学金得主！",
+            unlockDialog = "本学期完成100个学习任务！奖学金非你莫属！",
             visibility = AchievementVisibility.STUDENT
         ),
         Achievement(
@@ -381,6 +446,8 @@ object AchievementDefinition {
             threshold = 7,
             stage = AchievementStage.PEAK,
             story = "期末周的你，是最耀眼的存在",
+            storyTitle = "考试战神！",
+            unlockDialog = "连续7天奋战学习！期末考试对你来说就是小菜一碟！",
             visibility = AchievementVisibility.STUDENT
         ),
         Achievement(
@@ -392,6 +459,8 @@ object AchievementDefinition {
             threshold = 100,
             stage = AchievementStage.PEAK,
             story = "职场如战场，准备好了吗？",
+            storyTitle = "职场精英！",
+            unlockDialog = "100个工作任务的里程碑！你就是职场最亮的星！",
             visibility = AchievementVisibility.WORKER,
             outfitId = "tie"
         ),
@@ -404,6 +473,8 @@ object AchievementDefinition {
             threshold = 30,
             stage = AchievementStage.PEAK,
             story = "KPI 达成！你的努力有目共睹",
+            storyTitle = "KPI 之王！",
+            unlockDialog = "月度30个任务达成！KPI在你面前不值一提！",
             visibility = AchievementVisibility.WORKER
         ),
         Achievement(
@@ -415,6 +486,8 @@ object AchievementDefinition {
             threshold = 30,
             stage = AchievementStage.PEAK,
             story = "30 天的坚持，是晋升路上的坚实步伐",
+            storyTitle = "晋升通道！",
+            unlockDialog = "连续30天坚持工作！你的努力领导一定看在眼里，升职加薪在望！",
             visibility = AchievementVisibility.WORKER
         ),
         Achievement(
@@ -426,6 +499,8 @@ object AchievementDefinition {
             threshold = 30,
             stage = AchievementStage.PEAK,
             story = "30 天如一日，自律让你自由",
+            storyTitle = "自律之王！",
+            unlockDialog = "30天如一日！自律让你自由，你已经做到了大多数人做不到的事！",
             visibility = AchievementVisibility.ALL,
             outfitId = "crown"
         ),
@@ -438,6 +513,8 @@ object AchievementDefinition {
             threshold = 500,
             stage = AchievementStage.PEAK,
             story = "任务终结者，勤劳的小天使",
+            storyTitle = "勤劳天使！",
+            unlockDialog = "500个任务！天啊，你是天使下凡来拯救待办清单的吗？",
             visibility = AchievementVisibility.ALL,
             outfitId = "angel_wings"
         ),
@@ -450,6 +527,8 @@ object AchievementDefinition {
             threshold = 25,
             stage = AchievementStage.PEAK,
             story = "你是真正的柯基王者",
+            storyTitle = "传说的诞生！",
+            unlockDialog = "你解锁了所有成就！这不是终点，而是传奇故事的开始...汪！",
             visibility = AchievementVisibility.ALL,
             outfitId = "cape"
         )

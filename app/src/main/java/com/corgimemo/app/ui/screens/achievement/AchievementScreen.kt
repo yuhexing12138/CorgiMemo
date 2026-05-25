@@ -1,5 +1,7 @@
 package com.corgimemo.app.ui.screens.achievement
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,11 +26,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -41,10 +41,10 @@ import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.InteractiveCorgi
 import com.corgimemo.app.data.model.AchievementStage
 import com.corgimemo.app.ui.components.AchievementBadge
-import com.corgimemo.app.ui.components.AchievementDetailSheet
 import com.corgimemo.app.ui.components.AchievementProgressBar
+import com.corgimemo.app.ui.components.NextAchievementPreview
+import com.corgimemo.app.ui.components.StageProgressSection
 import com.corgimemo.app.viewmodel.AchievementViewModel
-import kotlinx.coroutines.launch
 
 /**
  * 成就墙页面
@@ -60,15 +60,24 @@ fun AchievementScreen(
     val achievementsWithProgress by viewModel.achievementsWithProgress.collectAsState()
     val unlockedCount by viewModel.unlockedCount.collectAsState()
     val totalCount by viewModel.totalCount.collectAsState()
-    val selectedAchievement by viewModel.selectedAchievement.collectAsState()
-    val selectedIsUnlocked by viewModel.selectedIsUnlocked.collectAsState()
-    val selectedProgress by viewModel.selectedProgress.collectAsState()
     val corgiData by viewModel.corgiData.collectAsState()
     val currentStage by viewModel.currentStage.collectAsState()
     val corgiPose by viewModel.corgiPoseForStage.collectAsState()
+    val stageUnlockedCount by viewModel.stageUnlockedCount.collectAsState()
+    val stageTotalCount by viewModel.stageTotalCount.collectAsState()
+    val nextAchievement by viewModel.nextUnlockableAchievement.collectAsState()
+    val nextProgress by viewModel.nextUnlockableProgress.collectAsState()
 
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val coroutineScope = rememberCoroutineScope()
+    val bgColor by animateColorAsState(
+        targetValue = when (currentStage) {
+            AchievementStage.BEGINNER -> Color(0xFFF8FAFC)
+            AchievementStage.GROWTH -> Color(0xFFECFDF5)
+            AchievementStage.LEAP -> Color(0xFFEFF6FF)
+            AchievementStage.PEAK -> Color(0xFFFFF7ED)
+        },
+        animationSpec = tween(800),
+        label = "StageBackground"
+    )
 
     // 按阶段分组（使用正确的枚举值）
     val beginnerAchievements = achievementsWithProgress.filter { it.first.stage == AchievementStage.BEGINNER }
@@ -77,6 +86,7 @@ fun AchievementScreen(
     val peakAchievements = achievementsWithProgress.filter { it.first.stage == AchievementStage.PEAK }
 
     Scaffold(
+        containerColor = bgColor,
         topBar = {
             TopAppBar(
                 title = {
@@ -107,6 +117,17 @@ fun AchievementScreen(
                 )
             }
 
+            // 阶段进度追踪
+            StageProgressSection(
+                currentStage = currentStage,
+                stageDisplayName = currentStage.displayName,
+                stageUnlockedCount = stageUnlockedCount,
+                stageTotalCount = stageTotalCount,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // 柯基展示卡片（根据阶段显示不同姿态）
             corgiData?.let { data ->
                 CorgiStageCard(
@@ -117,6 +138,15 @@ fun AchievementScreen(
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
+
+            // 下一成就预览
+            NextAchievementPreview(
+                nextAchievement = nextAchievement,
+                nextProgress = nextProgress,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             // 成就列表（按阶段分组）
             LazyVerticalGrid(
@@ -136,13 +166,7 @@ fun AchievementScreen(
                         AchievementBadge(
                             achievement = achievement,
                             isUnlocked = isUnlocked,
-                            currentProgress = progress,
-                            onClick = {
-                                viewModel.selectAchievement(achievement, isUnlocked, progress)
-                                coroutineScope.launch {
-                                    sheetState.show()
-                                }
-                            }
+                            currentProgress = progress
                         )
                     }
                 }
@@ -156,13 +180,7 @@ fun AchievementScreen(
                         AchievementBadge(
                             achievement = achievement,
                             isUnlocked = isUnlocked,
-                            currentProgress = progress,
-                            onClick = {
-                                viewModel.selectAchievement(achievement, isUnlocked, progress)
-                                coroutineScope.launch {
-                                    sheetState.show()
-                                }
-                            }
+                            currentProgress = progress
                         )
                     }
                 }
@@ -176,13 +194,7 @@ fun AchievementScreen(
                         AchievementBadge(
                             achievement = achievement,
                             isUnlocked = isUnlocked,
-                            currentProgress = progress,
-                            onClick = {
-                                viewModel.selectAchievement(achievement, isUnlocked, progress)
-                                coroutineScope.launch {
-                                    sheetState.show()
-                                }
-                            }
+                            currentProgress = progress
                         )
                     }
                 }
@@ -196,13 +208,7 @@ fun AchievementScreen(
                         AchievementBadge(
                             achievement = achievement,
                             isUnlocked = isUnlocked,
-                            currentProgress = progress,
-                            onClick = {
-                                viewModel.selectAchievement(achievement, isUnlocked, progress)
-                                coroutineScope.launch {
-                                    sheetState.show()
-                                }
-                            }
+                            currentProgress = progress
                         )
                     }
                 }
@@ -213,22 +219,6 @@ fun AchievementScreen(
                 }
             }
         }
-    }
-
-    // 成就详情 Sheet
-    selectedAchievement?.let { achievement ->
-        AchievementDetailSheet(
-            sheetState = sheetState,
-            achievement = achievement,
-            isUnlocked = selectedIsUnlocked,
-            currentProgress = selectedProgress,
-            onDismiss = {
-                viewModel.clearSelectedAchievement()
-                coroutineScope.launch {
-                    sheetState.hide()
-                }
-            }
-        )
     }
 }
 

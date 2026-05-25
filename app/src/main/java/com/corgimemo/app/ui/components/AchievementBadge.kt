@@ -1,5 +1,8 @@
 package com.corgimemo.app.ui.components
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,11 +22,16 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -34,15 +42,6 @@ import com.corgimemo.app.data.model.AchievementStage
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-/**
- * 成就徽章组件
- * 用于在成就墙中显示单个成就
- *
- * @param achievement 成就数据
- * @param isUnlocked 是否已解锁
- * @param currentProgress 当前进度（可选，未解锁时显示）
- * @param onClick 点击事件回调
- */
 @Composable
 fun AchievementBadge(
     achievement: Achievement,
@@ -50,11 +49,22 @@ fun AchievementBadge(
     currentProgress: Int? = null,
     onClick: () -> Unit = {}
 ) {
+    var isFlipped by remember { mutableStateOf(false) }
+
+    val rotation by animateFloatAsState(
+        targetValue = if (isFlipped) 180f else 0f,
+        animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
+        label = "BadgeFlip"
+    )
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(0.9f)
-            .clickable(onClick = onClick),
+            .clickable {
+                isFlipped = !isFlipped
+                onClick()
+            },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isUnlocked) {
@@ -69,111 +79,153 @@ fun AchievementBadge(
             CardDefaults.cardElevation(defaultElevation = 0.dp)
         }
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            // 成就图标容器（带锁标记）
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (isUnlocked) {
-                            getUnlockedBackgroundBrush(achievement.stage)
-                        } else {
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.surfaceVariant,
-                                    MaterialTheme.colorScheme.surface
-                                )
-                            )
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (isUnlocked) achievement.icon else "❓",
-                    fontSize = 32.sp,
-                    modifier = Modifier.align(Alignment.Center),
-                    color = if (isUnlocked) Color.Unspecified else Color.Gray
-                )
-                // 锁标记（仅未解锁时显示）
-                if (!isUnlocked) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .size(20.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF64748B)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "🔒",
-                            fontSize = 12.sp,
-                            textAlign = TextAlign.Center
-                        )
-                    }
+                .graphicsLayer {
+                    rotationY = rotation
+                    cameraDistance = 12f * density
                 }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 成就名称
-            Text(
-                text = achievement.name,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = if (isUnlocked) FontWeight.Bold else FontWeight.Normal,
-                color = if (isUnlocked) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // 进度、解锁日期或阶段显示
-            if (!isUnlocked && currentProgress != null) {
-                val remaining = (achievement.threshold - currentProgress).coerceAtLeast(0)
-                Text(
-                    text = if (remaining > 0) "还差 $remaining 个" else "即将达成",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
+        ) {
+            if (rotation <= 90f) {
+                BadgeFrontSide(
+                    achievement = achievement,
+                    isUnlocked = isUnlocked,
+                    currentProgress = currentProgress
                 )
-            } else if (isUnlocked && achievement.unlockedAt != null) {
-                // 显示解锁日期
-                val dateFormat = SimpleDateFormat("yyyy.MM.dd", Locale.getDefault())
-                val unlockDate = dateFormat.format(achievement.unlockedAt)
-                Text(
-                    text = unlockDate,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = getStageColor(achievement.stage),
-                    fontWeight = FontWeight.Medium
-                )
-            } else if (isUnlocked) {
-                // 显示阶段标签（无解锁时间时）
-                Text(
-                    text = getStageLabel(achievement.stage),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = getStageColor(achievement.stage),
-                    fontWeight = FontWeight.Medium
+            } else {
+                BadgeBackSide(
+                    achievement = achievement,
+                    isUnlocked = isUnlocked,
+                    currentProgress = currentProgress
                 )
             }
         }
     }
 }
 
-/**
- * 获取解锁时的背景颜色
- */
+@Composable
+private fun BadgeFrontSide(
+    achievement: Achievement,
+    isUnlocked: Boolean,
+    currentProgress: Int?
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(
+                    if (isUnlocked) {
+                        getUnlockedBackgroundBrush(achievement.stage)
+                    } else {
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                MaterialTheme.colorScheme.surface
+                            )
+                        )
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (isUnlocked) achievement.icon else "❓",
+                fontSize = 32.sp,
+                modifier = Modifier.align(Alignment.Center),
+                color = if (isUnlocked) Color.Unspecified else Color.Gray
+            )
+            if (!isUnlocked) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF64748B)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "🔒",
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = achievement.name,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (isUnlocked) FontWeight.Bold else FontWeight.Normal,
+            color = if (isUnlocked) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        if (!isUnlocked && currentProgress != null) {
+            val remaining = (achievement.threshold - currentProgress).coerceAtLeast(0)
+            Text(
+                text = if (remaining > 0) "还差 $remaining 个" else "即将达成",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium
+            )
+        } else if (isUnlocked && achievement.unlockedAt != null) {
+            val dateFormat = SimpleDateFormat("yyyy.MM.dd", Locale.getDefault())
+            val unlockDate = dateFormat.format(achievement.unlockedAt)
+            Text(
+                text = unlockDate,
+                style = MaterialTheme.typography.labelSmall,
+                color = getStageColor(achievement.stage),
+                fontWeight = FontWeight.Medium
+            )
+        } else if (isUnlocked) {
+            Text(
+                text = getStageLabel(achievement.stage),
+                style = MaterialTheme.typography.labelSmall,
+                color = getStageColor(achievement.stage),
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+private fun BadgeBackSide(
+    achievement: Achievement,
+    isUnlocked: Boolean,
+    currentProgress: Int?
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                rotationY = 180f
+            }
+    ) {
+        AchievementBadgeBack(
+            achievement = achievement,
+            isUnlocked = isUnlocked,
+            currentProgress = currentProgress
+        )
+    }
+}
+
 private fun getUnlockedBackgroundColor(stage: AchievementStage): Color {
     return when (stage) {
         AchievementStage.BEGINNER -> Color(0xFFF1F5F9)
@@ -183,9 +235,6 @@ private fun getUnlockedBackgroundColor(stage: AchievementStage): Color {
     }
 }
 
-/**
- * 获取解锁时的渐变背景 Brush
- */
 private fun getUnlockedBackgroundBrush(stage: AchievementStage): Brush {
     return when (stage) {
         AchievementStage.BEGINNER -> Brush.verticalGradient(
@@ -203,9 +252,6 @@ private fun getUnlockedBackgroundBrush(stage: AchievementStage): Brush {
     }
 }
 
-/**
- * 获取阶段标签文字
- */
 private fun getStageLabel(stage: AchievementStage): String {
     return when (stage) {
         AchievementStage.BEGINNER -> "🌱 初见"
@@ -215,9 +261,6 @@ private fun getStageLabel(stage: AchievementStage): String {
     }
 }
 
-/**
- * 获取阶段颜色
- */
 private fun getStageColor(stage: AchievementStage): Color {
     return when (stage) {
         AchievementStage.BEGINNER -> Color(0xFF64748B)

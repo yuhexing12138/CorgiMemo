@@ -615,6 +615,7 @@ fun HomeScreen(
             currentUnlockedAchievement?.let { achievement ->
                 AchievementUnlockDialog(
                     achievement = achievement,
+                    isSoundEnabled = soundEnabled,
                     onDismiss = {
                         currentUnlockedAchievement = null
                         // 弹窗关闭后恢复柯基默认姿态
