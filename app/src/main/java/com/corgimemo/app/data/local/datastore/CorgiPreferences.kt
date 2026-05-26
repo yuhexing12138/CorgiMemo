@@ -56,6 +56,8 @@ class CorgiPreferences(private val dataStore: DataStore<Preferences>) {
         val GUIDE_AB_GROUP = stringPreferencesKey("guide_ab_group")
         val GUIDE_COMPLETED_AT = stringPreferencesKey("guide_completed_at")
         val FIRST_TODO_CREATED_AT = stringPreferencesKey("first_todo_created_at")
+        val FLOATING_CORGI_X = stringPreferencesKey("floating_corgi_x")
+        val FLOATING_CORGI_Y = stringPreferencesKey("floating_corgi_y")
     }
 
     /**
@@ -644,5 +646,35 @@ class CorgiPreferences(private val dataStore: DataStore<Preferences>) {
         return dataStore.data.map { prefs ->
             prefs[Keys.FIRST_TODO_CREATED_AT]?.toLongOrNull() ?: 0L
         }.first()
+    }
+
+    // ==================== 悬浮柯基按钮位置 ====================
+
+    /**
+     * 保存悬浮柯基按钮位置（百分比坐标）
+     *
+     * @param x 相对于屏幕宽度的百分比 (0.0-1.0)
+     * @param y 相对于屏幕高度的百分比 (0.0-1.0)
+     */
+    suspend fun saveFloatingCorgiPosition(x: Float, y: Float) {
+        dataStore.edit { prefs ->
+            prefs[Keys.FLOATING_CORGI_X] = x.toString()
+            prefs[Keys.FLOATING_CORGI_Y] = y.toString()
+        }
+    }
+
+    /**
+     * 获取悬浮柯基按钮位置（百分比坐标）
+     *
+     * @return 位置对 (x, y)，如果没有记录则返回 null
+     */
+    suspend fun getFloatingCorgiPosition(): Pair<Float, Float>? {
+        val x = dataStore.data.map { prefs ->
+            prefs[Keys.FLOATING_CORGI_X]?.toFloatOrNull()
+        }.first()
+        val y = dataStore.data.map { prefs ->
+            prefs[Keys.FLOATING_CORGI_Y]?.toFloatOrNull()
+        }.first()
+        return if (x != null && y != null) Pair(x, y) else null
     }
 }

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
@@ -32,9 +33,12 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,10 +58,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -99,8 +106,17 @@ import com.corgimemo.app.ui.components.EmptyStateType
 import com.corgimemo.app.ui.components.FirstTimeGuideOverlay
 import com.corgimemo.app.ui.components.SolarTermCard
 import com.corgimemo.app.ui.components.TodoListItem
+import com.corgimemo.app.ui.components.EnhancedTopBar
+import com.corgimemo.app.ui.components.SearchBar
+import com.corgimemo.app.ui.components.AnimatedFAB
+import com.corgimemo.app.ui.components.CorgiPullToRefreshIndicator
+import com.corgimemo.app.ui.components.FloatingCorgiButton
+import com.corgimemo.app.ui.components.animatedItems
+import com.google.accompanist.swiperefresh.SwipeRefresh
+import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
+import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.theme.UiColors
 import kotlinx.coroutines.launch
 import android.widget.Toast
@@ -112,20 +128,20 @@ fun HomeScreen(
     navController: NavController,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
-    val todos by viewModel.todos.collectAsState()
+    val filteredTodos by viewModel.filteredTodos.collectAsState()
     val filterStatus by viewModel.filterStatus.collectAsState()
     val corgiData by viewModel.corgiData.collectAsState()
     val showNamerDialog by viewModel.showNamerDialog.collectAsState()
-    val currentPose by viewModel.currentPose.collectAsState()
+    val _currentPose by viewModel.currentPose.collectAsState()
     val currentMood by viewModel.currentMood.collectAsState()
-    val currentOutfit by viewModel.currentOutfit.collectAsState()
+    val _currentOutfit by viewModel.currentOutfit.collectAsState()
     val currentHoliday by viewModel.currentHoliday.collectAsState()
     val currentSolarTerm by viewModel.currentSolarTerm.collectAsState()
     val showSolarTermCard by viewModel.showSolarTermCard.collectAsState()
-    val greeting by viewModel.greeting.collectAsState()
+    val _greeting by viewModel.greeting.collectAsState()
 
     // 实际显示的装扮：节日装扮优先级高于用户选择的装扮
-    val effectiveOutfit = currentHoliday?.outfitId ?: currentOutfit
+    val _effectiveOutfit = currentHoliday?.outfitId ?: _currentOutfit
 
     val celebrationState by viewModel.celebrationState.collectAsState()
     val showLevelUp by viewModel.showLevelUp.collectAsState()
@@ -159,6 +175,9 @@ fun HomeScreen(
 
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var showBatchMoveDialog by remember { mutableStateOf(false) }
+
+    /** 快速添加待办 BottomSheet 状态 */
+    var showQuickAddSheet by remember { mutableStateOf(false) }
 
     /** 首次引导状态 */
     var showFirstTimeGuide by remember { mutableStateOf(false) }
@@ -214,12 +233,13 @@ fun HomeScreen(
 
         /** 检查是否需要显示首次引导 */
         val isFirstGuideShown = corgiPrefs.getFirstGuideShown()
-        if (!isFirstGuideShown && todos.isEmpty()) {
+        if (!isFirstGuideShown && filteredTodos.isEmpty()) {
             showFirstTimeGuide = true
         }
     }
 
     val outfitSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val quickAddSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     /** 监听单个待办删除事件，显示 Snackbar（带标题）*/
     LaunchedEffect(pendingDeletedTodo) {
@@ -295,7 +315,7 @@ fun HomeScreen(
                         actions = {
                             IconButton(
                                 onClick = {
-                                    if (selectedTodoIds.size == todos.size) {
+                                    if (selectedTodoIds.size == filteredTodos.size) {
                                         viewModel.clearSelection()
                                     } else {
                                         viewModel.selectAll()
@@ -311,35 +331,22 @@ fun HomeScreen(
                         }
                     )
                 } else {
-                    TopAppBar(
-                        title = {
-                            Text(text = "待办事项", color = MaterialTheme.colorScheme.onSurface)
-                        },
-                        actions = {
-                            IconButton(
-                                onClick = { navController.navigate("profile") }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Person,
-                                    contentDescription = "个人中心",
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
+                    EnhancedTopBar(
+                        title = "📝 我的待办",
+                        onMenuClick = { /* 可扩展：打开侧滑导航 */ },
+                        onStatsClick = { /* 可扩展：打开统计页面 */ },
+                        onCorgiClick = { navController.navigate(Screen.CorgiDetail.route) }
                     )
                 }
             },
             floatingActionButton = {
-                FloatingActionButton(
+                AnimatedFAB(
                     onClick = {
                         viewModel.onUserInteraction()
                         viewModel.setPoseForCreating()
                         navController.navigate("todo_edit")
-                    },
-                    containerColor = MaterialTheme.colorScheme.primary
-                ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = "Add Todo")
-                }
+                    }
+                )
             },
             snackbarHost = {
                 SnackbarHost(hostState = snackbarHostState)
@@ -429,20 +436,22 @@ fun HomeScreen(
                         }
                     }
 
-                    corgiData?.let { data ->
-                        CorgiInteractionCard(
-                            corgiData = data,
-                            currentPose = currentPose,
-                            currentMood = currentMood,
-                            currentOutfit = effectiveOutfit,
-                            greeting = greeting,
-                            onLongClick = { viewModel.toggleOutfitSheet() },
-                            onInteraction = { viewModel.onUserInteraction() },
-                            soundEnabled = soundEnabled,
-                            hapticEnabled = hapticEnabled,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+                    val searchQuery by viewModel.searchQuery.collectAsState()
+
+                    SearchBar(
+                        query = searchQuery,
+                        onQueryChange = { newQuery ->
+                            viewModel.updateSearchQuery(newQuery)
+                        },
+                        onClear = {
+                            viewModel.clearSearch()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+
+                    // 柯基陪伴区已分离为悬浮按钮，此处不再显示
 
                     Row(
                         modifier = Modifier
@@ -477,9 +486,9 @@ fun HomeScreen(
                     }
 
                     // 临时测试按钮：调试工具（通知测试 + 节日调试）
-                    DebugTools(todos = todos, context = context, viewModel = viewModel)
+                    DebugTools(todos = filteredTodos, context = context, viewModel = viewModel)
 
-                    if (todos.isEmpty()) {
+                    if (filteredTodos.isEmpty()) {
                         /** 增强版空状态组件（包含引导动画、操作指引、模板预设） */
                         EmptyState(
                             emptyType = when (filterStatus) {
@@ -510,8 +519,24 @@ fun HomeScreen(
                             abGroup = abGroup
                         )
                     } else {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(todos, key = { it.id }) { todo ->
+                        val isRefreshing by viewModel.isRefreshing.collectAsState()
+                        val swipeRefreshState = rememberSwipeRefreshState(isRefreshing = isRefreshing)
+
+                        SwipeRefresh(
+                            state = swipeRefreshState,
+                            onRefresh = { viewModel.onRefresh() },
+                            indicator = { _, _ ->
+                                CorgiPullToRefreshIndicator(
+                                    isRefreshing = isRefreshing,
+                                    pullProgress = if (isRefreshing) 1f else 0f
+                                )
+                            }
+                        ) {
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                animatedItems(
+                                    items = filteredTodos,
+                                    key = { it.id }
+                                ) { todo, _ ->
                                 val category = categories.find { it.id == todo.categoryId }
                                 val categoryIcon = category?.let { c ->
                                     when(c.type) {
@@ -560,6 +585,7 @@ fun HomeScreen(
                                         viewModel.toggleSubTaskCompletion(subTaskId)
                                     }
                                 )
+                            }
                             }
                         }
                     }
@@ -725,7 +751,7 @@ fun HomeScreen(
     if (showOutfitSheet) {
         OutfitQuickSwitchSheet(
             sheetState = outfitSheetState,
-            currentOutfitId = currentOutfit,
+            currentOutfitId = _currentOutfit,
             unlockedOutfitsJson = corgiData?.unlockedOutfits ?: "[]",
             onSelect = { outfitId ->
                 viewModel.quickSwitchOutfit(outfitId)
@@ -733,6 +759,47 @@ fun HomeScreen(
             onDismiss = {
                 viewModel.hideOutfitSheet()
             }
+        )
+    }
+
+    // 悬浮柯基按钮位置和庆祝信号
+    var floatingCorgiPosition by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+    var celebrationTrigger by remember { mutableLongStateOf(0L) }
+
+    // 从 DataStore 恢复悬浮按钮位置
+    LaunchedEffect(Unit) {
+        val corgiPrefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
+        floatingCorgiPosition = corgiPrefs.getFloatingCorgiPosition()
+    }
+
+    // 监听待办完成事件，触发庆祝动画
+    LaunchedEffect(pendingCompleteTodo) {
+        if (pendingCompleteTodo != null) {
+            celebrationTrigger = System.currentTimeMillis()
+        }
+    }
+
+    // 悬浮柯基按钮（非批量模式时显示）
+    if (!isBatchMode) {
+        FloatingCorgiButton(
+            onClick = { navController.navigate(Screen.CorgiDetail.route) },
+            onPositionChanged = { x, y ->
+                coroutineScope.launch {
+                    val corgiPrefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
+                    corgiPrefs.saveFloatingCorgiPosition(x, y)
+                }
+            },
+            onSwipeLeft = {
+                // 快速左滑：打开快速添加待办
+                showQuickAddSheet = true
+            },
+            onSwipeRight = {
+                // 快速右滑：进入柯基详情页
+                navController.navigate(Screen.CorgiDetail.route)
+            },
+            initialPosition = floatingCorgiPosition,
+            triggerCelebration = celebrationTrigger,
+            currentMood = currentMood
         )
     }
 
@@ -773,6 +840,24 @@ fun HomeScreen(
             },
             abGroup = abGroup
         )
+    }
+
+    /** 快速添加待办 BottomSheet（悬浮柯基按钮左滑触发） */
+    if (showQuickAddSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showQuickAddSheet = false },
+            sheetState = quickAddSheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            QuickAddTodoContent(
+                categories = categories,
+                onAddTodo = { title, categoryId, priority ->
+                    viewModel.quickAddTodo(title, categoryId, priority)
+                    showQuickAddSheet = false
+                },
+                onDismiss = { showQuickAddSheet = false }
+            )
+        }
     }
 }
 
@@ -1648,16 +1733,6 @@ private fun MediumGlowOverlay(width: androidx.compose.ui.unit.Dp, alpha: Float) 
  */
 @Composable
 private fun HighGlowOverlay(width: androidx.compose.ui.unit.Dp, alpha: Float) {
-    // 彩虹颜色：红→橙→黄→绿→蓝→紫
-    val rainbowColors = listOf(
-        Color(0xFFFF6B6B).copy(alpha = alpha),  // 红
-        Color(0xFFFFB347).copy(alpha = alpha),  // 橙
-        Color(0xFFFFEB3B).copy(alpha = alpha),  // 黄
-        Color(0xFF4CAF50).copy(alpha = alpha),  // 绿
-        Color(0xFF2196F3).copy(alpha = alpha),  // 蓝
-        Color(0xFF9C27B0).copy(alpha = alpha),  // 紫
-    )
-
     // 顶部到底部的彩虹渐变（垂直方向）
     val verticalRainbow = listOf(
         Color(0xFFFF6B6B).copy(alpha = alpha * 0.5f),  // 顶部红色
@@ -1750,13 +1825,6 @@ private fun HighGlowOverlay(width: androidx.compose.ui.unit.Dp, alpha: Float) {
  */
 @Composable
 private fun SuperGlowOverlay(width: androidx.compose.ui.unit.Dp, alpha: Float) {
-    // 金色系列颜色
-    val goldColors = listOf(
-        Color(0xFFFFD700).copy(alpha = alpha),  // 金色
-        Color(0xFFFFA500).copy(alpha = alpha),  // 橙色
-        Color(0xFFFFD700).copy(alpha = alpha),  // 金色
-    )
-
     // 顶部到底部的金色渐变（垂直方向）
     val verticalGold = listOf(
         Color(0xFFFFD700).copy(alpha = alpha * 0.7f),  // 顶部金色
@@ -2408,6 +2476,151 @@ fun SolarTermPickerDialog(
             }
         }
     )
+}
+
+/**
+ * 快速添加待办内容组件
+ * 用于悬浮柯基按钮左滑触发的 BottomSheet
+ *
+ * @param categories 分类列表
+ * @param onAddTodo 添加待办回调（title, categoryId, priority）
+ * @param onDismiss 关闭回调
+ */
+@Composable
+private fun QuickAddTodoContent(
+    categories: List<com.corgimemo.app.data.model.Category>,
+    onAddTodo: (String, Long, Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var selectedCategoryId by remember { mutableLongStateOf(categories.firstOrNull()?.id ?: 1L) }
+    var selectedPriority by remember { mutableStateOf(1) }  // 0=高 1=中 2=低
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 16.dp)
+    ) {
+        Text(
+            text = "快速添加待办",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 标题输入框
+        OutlinedTextField(
+            value = title,
+            onValueChange = { title = it },
+            label = { Text("待办标题") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = UiColors.Primary,
+                focusedLabelColor = UiColors.Primary,
+                cursorColor = UiColors.Primary
+            )
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 分类选择
+        Text(
+            text = "分类",
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            categories.take(4).forEach { category ->
+                FilterChip(
+                    selected = selectedCategoryId == category.id,
+                    onClick = { selectedCategoryId = category.id },
+                    label = { Text(category.name, fontSize = 13.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = UiColors.Primary.copy(alpha = 0.15f),
+                        selectedLabelColor = UiColors.Primary
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 优先级选择
+        Text(
+            text = "优先级",
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("高" to 0, "中" to 1, "低" to 2).forEach { (label, priority) ->
+                val dotColor = when (priority) {
+                    0 -> Color(0xFFEF4444)  // 红色
+                    1 -> Color(0xFFF59E0B)  // 黄色
+                    else -> Color(0xFF10B981)  // 绿色
+                }
+                FilterChip(
+                    selected = selectedPriority == priority,
+                    onClick = { selectedPriority = priority },
+                    label = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(dotColor, CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(label, fontSize = 13.sp)
+                        }
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = UiColors.Primary.copy(alpha = 0.15f),
+                        selectedLabelColor = UiColors.Primary
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // 操作按钮
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onDismiss) {
+                Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = {
+                    if (title.isNotBlank()) {
+                        onAddTodo(title.trim(), selectedCategoryId, selectedPriority)
+                    }
+                },
+                enabled = title.isNotBlank(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = UiColors.Primary,
+                    disabledContainerColor = UiColors.Primary.copy(alpha = 0.4f)
+                )
+            ) {
+                Text("添加", color = Color.White)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+    }
 }
 
 /**

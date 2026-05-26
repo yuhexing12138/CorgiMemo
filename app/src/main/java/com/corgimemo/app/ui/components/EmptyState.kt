@@ -3,6 +3,7 @@ package com.corgimemo.app.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -25,9 +26,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import com.corgimemo.app.animation.AnimationType
 import com.corgimemo.app.animation.FrameAnimation
 import com.corgimemo.app.data.model.TodoTemplate
+import com.corgimemo.app.ui.theme.UiColors
 
 /**
  * 空状态类型枚举
@@ -39,7 +45,9 @@ enum class EmptyStateType {
     /** 已完成列表为空 */
     COMPLETED,
     /** 分类列表为空 */
-    CATEGORY
+    CATEGORY,
+    /** 搜索无结果 */
+    SEARCH_NO_RESULT
 }
 
 /**
@@ -70,10 +78,10 @@ private fun getEmptyStateConfig(
 ): EmptyStateConfig {
     return when (type) {
         EmptyStateType.PENDING -> EmptyStateConfig(
-            animationType = AnimationType.WAG,
+            animationType = AnimationType.TILT,
             title = "还没有待办~",
-            description = "添加第一个待办来和柯基互动吧！",
-            buttonText = "添加待办"
+            description = "点击下方按钮添加第一个待办吧！",
+            buttonText = "➕ 添加待办"
         )
         EmptyStateType.COMPLETED -> EmptyStateConfig(
             animationType = AnimationType.SIT,
@@ -90,6 +98,12 @@ private fun getEmptyStateConfig(
             },
             description = "在分类下添加待办试试？",
             buttonText = "添加待办"
+        )
+        EmptyStateType.SEARCH_NO_RESULT -> EmptyStateConfig(
+            animationType = AnimationType.WORRY,
+            title = "未找到相关待办~",
+            description = "换个关键词试试？",
+            buttonText = "清空搜索"
         )
     }
 }
@@ -207,7 +221,7 @@ private fun EnhancedEmptyStateContent(
 
 /**
  * 基础版空状态内容
- * 用于非 PENDING 类型或不需要增强引导的场景
+ * 包含柯基动画 + 文字提示 + CTA 按钮
  *
  * @param config 空状态配置
  * @param onAction 操作按钮回调
@@ -217,6 +231,19 @@ private fun BasicEmptyStateContent(
     config: EmptyStateConfig,
     onAction: (() -> Unit)?
 ) {
+    // 呼吸动画缩放值
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(
+                durationMillis = 2000,
+                easing = androidx.compose.animation.core.LinearEasing
+            ),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "breathingAnimation"
+    )
+
     AnimatedVisibility(
         visible = true,
         enter = fadeIn(initialAlpha = 0.5f),
@@ -225,12 +252,22 @@ private fun BasicEmptyStateContent(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            FrameAnimation(
-                animationType = config.animationType,
-                fps = 8,
-                isLooping = true,
-                modifier = Modifier.size(140.dp)
-            )
+            // 柯基动画区域（带呼吸效果）
+            Box(
+                modifier = Modifier
+                    .size(200.dp)
+                    .graphicsLayer {
+                        scaleX = 1f
+                        scaleY = 1f + (scale - 1f) * 0.05f // 轻微的 Y 轴缩放模拟呼吸
+                    }
+            ) {
+                FrameAnimation(
+                    animationType = config.animationType,
+                    fps = 8,
+                    isLooping = true,
+                    modifier = Modifier.size(200.dp)
+                )
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -246,18 +283,35 @@ private fun BasicEmptyStateContent(
             Text(
                 text = config.description,
                 fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                modifier = Modifier.padding(horizontal = 32.dp)
             )
 
             if (onAction != null) {
                 Spacer(modifier = Modifier.height(24.dp))
 
+                var isPressed by remember { mutableStateOf(false) }
+
+                val buttonScale by androidx.compose.animation.core.animateFloatAsState(
+                    targetValue = if (isPressed) 0.95f else 1f,
+                    animationSpec = androidx.compose.animation.core.spring(
+                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioHighBouncy
+                    ),
+                    label = "buttonScale"
+                )
+
                 androidx.compose.material3.Button(
                     onClick = onAction,
-                    modifier = Modifier.fillMaxWidth(0.5f),
+                    modifier = Modifier
+                        .fillMaxWidth(0.6f)
+                        .graphicsLayer {
+                            scaleX = buttonScale
+                            scaleY = buttonScale
+                        },
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
+                        containerColor = com.corgimemo.app.ui.theme.UiColors.Primary,
+                        contentColor = androidx.compose.ui.graphics.Color.White
                     )
                 ) {
                     Text(

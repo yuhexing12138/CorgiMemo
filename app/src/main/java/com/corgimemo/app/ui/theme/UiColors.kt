@@ -26,6 +26,9 @@ object UiColors {
     /** 卡片/表面 */
     val Surface = Color.White
 
+    /** 搜索栏背景 - 暖橙色浅色 */
+    val SearchBackground = Color(0xFFFFF3E8)
+
     // ========== 语义色 ==========
     /** 成功状态 */
     val Success = Color(0xFF4CAF50)

@@ -52,6 +52,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.ui.components.CircularCheckbox
+import com.corgimemo.app.ui.components.PriorityDot
+import com.corgimemo.app.ui.components.TodoActionSheet
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -75,7 +78,7 @@ import java.util.concurrent.TimeUnit
  * @param onToggleExpand 切换展开状态回调
  * @param onToggleSubTask 切换子任务完成状态回调
  */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun TodoListItem(
     todo: TodoItem,
@@ -115,6 +118,10 @@ fun TodoListItem(
     )
 
     var showLongPressMenu by remember { mutableStateOf(false) }
+
+    val actionSheetState = androidx.compose.material3.rememberModalBottomSheetState(
+        skipPartiallyExpanded = true
+    )
 
     Box(modifier = Modifier.fillMaxWidth()) {
         if (!isBatchMode) {
@@ -199,7 +206,7 @@ fun TodoListItem(
                         if (checkboxStartPadding > 0.dp) {
                             Spacer(modifier = Modifier.width(checkboxStartPadding))
                         }
-                        Checkbox(
+                        CircularCheckbox(
                             checked = todo.status == 1,
                             onCheckedChange = { isChecked ->
                                 onToggleComplete(todo.id, isChecked)
@@ -352,7 +359,7 @@ fun TodoListItem(
                             )
                         }
                     } else {
-                        PriorityBadge(priority = todo.priority)
+                        PriorityDot(priority = todo.priority.toTodoPriority())
                     }
                 }
 
@@ -378,38 +385,22 @@ fun TodoListItem(
         }
 
         if (showLongPressMenu) {
-            AlertDialog(
-                onDismissRequest = { showLongPressMenu = false },
-                title = { Text("操作") },
-                text = {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TextButton(
-                            onClick = {
-                                showLongPressMenu = false
-                                onShareAsImage()
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(text = "🖼️ 分享为图片")
-                        }
-                        TextButton(
-                            onClick = {
-                                showLongPressMenu = false
-                                onLongClick()
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(text = "📋 批量选择")
-                        }
-                    }
+            TodoActionSheet(
+                sheetState = actionSheetState,
+                onDismiss = {
+                    showLongPressMenu = false
                 },
-                confirmButton = {
-                    TextButton(onClick = { showLongPressMenu = false }) {
-                        Text("取消")
-                    }
+                onEdit = {
+                    onClick()
+                },
+                onShare = {
+                    onShareAsImage()
+                },
+                onBatchSelect = {
+                    onLongClick()
+                },
+                onDelete = {
+                    onDelete(todo.id)
                 }
             )
         }

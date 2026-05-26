@@ -15,6 +15,7 @@ import com.corgimemo.app.ui.screens.settings.SettingsScreen
 import com.corgimemo.app.ui.screens.settings.SmartCategorySettingsScreen
 import com.corgimemo.app.ui.screens.stats.StatsScreen
 import com.corgimemo.app.ui.screens.todo.TodoEditScreen
+import com.corgimemo.app.ui.screens.corgi.CorgiDetailScreen
 
 @Composable
 fun AppNavHost(
@@ -68,6 +69,10 @@ fun AppNavHost(
 
         composable(Screen.Achievement.route) {
             AchievementScreen(navController = navController)
+        }
+
+        composable(Screen.CorgiDetail.route) {
+            CorgiDetailScreen(navController = navController)
         }
 
         composable("smart_category_settings") {

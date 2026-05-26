@@ -25,4 +25,19 @@
     <dimen name="text_size_body">14sp</dimen>
     <dimen name="text_size_caption">12sp</dimen>
     <dimen name="text_size_button">14sp</dimen>
+
+    <!-- ========== 搜索栏 ========== -->
+    <dimen name="ui_search_bar_height">48dp</dimen>
+    <dimen name="ui_search_bar_corner_radius">24dp</dimen>
+
+    <!-- ========== FAB ========== -->
+    <dimen name="ui_fab_size">56dp</dimen>
+    <dimen name="ui_fab_bottom_margin">88dp</dimen>
+
+    <!-- ========== 优先级圆点 ========== -->
+    <dimen name="ui_priority_dot_size">8dp</dimen>
+
+    <!-- ========== 复选框 ========== -->
+    <dimen name="ui_checkbox_size">24dp</dimen>
+    <dimen name="ui_checkbox_border_width">2dp</dimen>
 </resources>

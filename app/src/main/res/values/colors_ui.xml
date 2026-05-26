@@ -25,4 +25,16 @@
     <!-- ========== 特殊用途 ========== -->
     <color name="ui_overlay_dark">#99000000</color>
     <color name="ui_overlay_light">#99FFFFFF</color>
+
+    <!-- ========== 搜索栏 ========== -->
+    <color name="ui_search_background">#FFF3E8</color>
+
+    <!-- ========== 优先级颜色 ========== -->
+    <color name="ui_priority_high">#EF4444</color>
+    <color name="ui_priority_medium">#F59E0B</color>
+    <color name="ui_priority_low">#10B981</color>
+
+    <!-- ========== 动画辅助色 ========== -->
+    <color name="ui_success_green">#4CAF50</color>
+    <color name="ui_error_red">#EF4444</color>
 </resources>

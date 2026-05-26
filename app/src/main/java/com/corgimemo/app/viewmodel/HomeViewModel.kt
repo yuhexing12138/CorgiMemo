@@ -36,6 +36,7 @@ import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.data.repository.SubTaskManager
 import com.corgimemo.app.data.local.db.OperationLogEntity
 import com.corgimemo.app.data.repository.OperationLogRepository
+import com.corgimemo.app.data.repository.TaskDailyStatsRepository
 import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiBehaviorManager
@@ -112,6 +113,7 @@ class HomeViewModel @Inject constructor(
     private val corgiPreferences: CorgiPreferences,
     private val moodHistoryRepository: MoodHistoryRepository,
     private val operationLogRepository: OperationLogRepository,
+    private val taskDailyStatsRepository: TaskDailyStatsRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -122,6 +124,38 @@ class HomeViewModel @Inject constructor(
 
     private val _filterStatus = MutableStateFlow(FilterStatus.ALL)
     val filterStatus: StateFlow<FilterStatus> = _filterStatus.asStateFlow()
+
+    // ========== 搜索相关状态 ==========
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    /** 过滤后的待办列表（组合 searchQuery + filterStatus） */
+    val filteredTodos: StateFlow<List<TodoItem>> =
+        kotlinx.coroutines.flow.combine(_todos, _searchQuery, _filterStatus) { todos, query, filter ->
+            var result = todos
+
+            // 应用搜索关键词过滤
+            if (query.isNotBlank()) {
+                result = result.filter { todo ->
+                    todo.title.contains(query, ignoreCase = true) ||
+                    (todo.content?.contains(query, ignoreCase = true) ?: false)
+                }
+            }
+
+            // 应用状态过滤
+            result = when (filter) {
+                FilterStatus.ALL -> result
+                FilterStatus.PENDING -> result.filter { it.status == 0 }
+                FilterStatus.COMPLETED -> result.filter { it.status == 1 }
+            }
+
+            result
+        }.stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     // 子任务进度映射：todoId -> 进度文本（如 "2/5"）
     private val _subTaskProgressMap = MutableStateFlow<Map<Long, String>>(emptyMap())
@@ -645,6 +679,42 @@ class HomeViewModel @Inject constructor(
     fun setFilterStatus(status: FilterStatus) {
         _filterStatus.value = status
         loadTodos()
+    }
+
+    /**
+     * 更新搜索关键词
+     *
+     * @param query 新的搜索关键词（支持标题和内容匹配）
+     */
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    /**
+     * 清空搜索关键词
+     */
+    fun clearSearch() {
+        _searchQuery.value = ""
+    }
+
+    // ========== 下拉刷新相关 ==========
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    /**
+     * 下拉刷新
+     * 重新加载待办列表和柯基数据
+     */
+    fun onRefresh() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            loadTodos()
+            refreshSubTaskProgress()
+            refreshGreetingIfNeeded()
+            kotlinx.coroutines.delay(800) // 确保柯基动画至少显示 800ms
+            _isRefreshing.value = false
+        }
     }
 
     /**
@@ -1208,6 +1278,43 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 柯基互动增加经验值（公开方法）
+     * 用于柯基详情页的抚摸/喂食/玩耍互动
+     *
+     * @param amount 经验值数量（默认 5）
+     */
+    fun addInteractionExperience(amount: Int = 5) {
+        viewModelScope.launch {
+            addExperience(amount)
+        }
+    }
+
+    /**
+     * 获取本周完成数
+     * 用于柯基详情页数据统计区
+     *
+     * @return 本周完成的任务数
+     */
+    suspend fun getWeeklyCompletedCount(): Int {
+        return try {
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            val calendar = java.util.Calendar.getInstance()
+            // 设置到本周一
+            calendar.set(java.util.Calendar.DAY_OF_WEEK, java.util.Calendar.MONDAY)
+            calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            calendar.set(java.util.Calendar.MINUTE, 0)
+            calendar.set(java.util.Calendar.SECOND, 0)
+            val startDate = sdf.format(calendar.time)
+            // 结束日期为今天
+            val endDate = sdf.format(java.util.Date())
+            val stats = taskDailyStatsRepository.getStatsByDateRange(startDate, endDate)
+            stats.sumOf { it.workCompleted + it.studyCompleted + it.lifeCompleted + it.entertainmentCompleted }
+        } catch (_: Exception) {
+            0
+        }
+    }
+
+    /**
      * 延迟恢复为默认姿态
      */
     fun restorePoseWithDelay(delayMs: Long = 500) {
@@ -1478,6 +1585,30 @@ class HomeViewModel @Inject constructor(
             }
 
             /** 触发用户互动（用于柯基情绪和等级系统）*/
+            onUserInteraction()
+        }
+    }
+
+    /**
+     * 快速添加待办事项
+     * 用于悬浮柯基按钮左滑触发的快速添加功能
+     *
+     * @param title 待办标题
+     * @param categoryId 分类 ID
+     * @param priority 优先级（0=高 1=中 2=低）
+     */
+    fun quickAddTodo(title: String, categoryId: Long, priority: Int) {
+        viewModelScope.launch {
+            val newTodo = com.corgimemo.app.data.model.TodoItem(
+                title = title,
+                categoryId = categoryId,
+                priority = priority,
+                status = 0,
+                repeatType = 0,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+            todoRepository.insertTodo(newTodo)
             onUserInteraction()
         }
     }

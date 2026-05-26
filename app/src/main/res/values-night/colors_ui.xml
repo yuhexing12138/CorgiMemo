@@ -25,4 +25,16 @@
     <!-- 遮罩层 -->
     <color name="ui_overlay_dark">#CC000000</color>
     <color name="ui_overlay_light">#99FFFFFF</color>
+
+    <!-- ========== 搜索栏（深色模式）========== -->
+    <color name="ui_search_background">#2D251E</color>
+
+    <!-- ========== 优先级颜色（深色模式下稍亮）========== -->
+    <color name="ui_priority_high">#EF5350</color>
+    <color name="ui_priority_medium">#FFA726</color>
+    <color name="ui_priority_low">#66BB6A</color>
+
+    <!-- ========== 动画辅助色（保持一致）========== -->
+    <color name="ui_success_green">#66BB6A</color>
+    <color name="ui_error_red">#EF5350</color>
 </resources>

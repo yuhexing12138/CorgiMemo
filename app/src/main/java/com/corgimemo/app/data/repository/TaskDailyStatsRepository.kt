@@ -200,4 +200,15 @@ class TaskDailyStatsRepository @Inject constructor(
 
         consecutiveDays
     }
+
+    /**
+     * 获取指定日期范围内的所有每日统计
+     *
+     * @param startDate 开始日期（yyyy-MM-dd）
+     * @param endDate 结束日期（yyyy-MM-dd）
+     * @return 日期范围内的每日统计列表
+     */
+    suspend fun getStatsByDateRange(startDate: String, endDate: String): List<TaskDailyStats> = withContext(ioDispatcher) {
+        taskDailyStatsDao.getByDateRange(startDate, endDate)
+    }
 }
