@@ -11,6 +11,7 @@ import com.corgimemo.app.data.local.db.CategoryKeywordEntity
 import com.corgimemo.app.data.local.db.OperationLogEntity
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
+import com.corgimemo.app.data.model.DeletedTodo
 import com.corgimemo.app.data.model.MoodHistory
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
@@ -21,8 +22,8 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  * 管理待办事项、柯基数据、任务分类、成就和用户模板
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class],
-    version = 15,
+    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class],
+    version = 16,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -49,6 +50,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     /** 操作日志 DAO */
     abstract fun operationLogDao(): OperationLogDao
 
+    /** 最近删除 DAO */
+    abstract fun deletedTodoDao(): DeletedTodoDao
+
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
 
@@ -62,7 +66,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                     .build()
                 INSTANCE = instance
                 instance
@@ -358,6 +362,42 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 database.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_operation_logs_created_at ON operation_logs(created_at)"
                 )
+            }
+        }
+
+        /**
+         * 版本 15 → 16 迁移：添加 deleted_todos 表
+         * 用于"最近删除"功能的数据持久化
+         */
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS deleted_todos (
+                        id INTEGER PRIMARY KEY NOT NULL,
+                        title TEXT NOT NULL,
+                        content TEXT,
+                        categoryId INTEGER NOT NULL,
+                        priority INTEGER NOT NULL,
+                        status INTEGER NOT NULL,
+                        startDate INTEGER,
+                        estimatedDurationMinutes INTEGER,
+                        reminderTime INTEGER,
+                        repeatType INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        completedAt INTEGER,
+                        geofenceLat REAL,
+                        geofenceLng REAL,
+                        geofenceRadius REAL,
+                        geofenceType INTEGER NOT NULL DEFAULT 0,
+                        geofenceEnabled INTEGER NOT NULL DEFAULT 0,
+                        geofenceAddress TEXT,
+                        hasSubTasks INTEGER NOT NULL DEFAULT 0,
+                        voiceNotePath TEXT,
+                        voiceDuration INTEGER,
+                        deletedAt INTEGER NOT NULL
+                    )
+                """.trimIndent())
             }
         }
     }

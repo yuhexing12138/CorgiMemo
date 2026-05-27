@@ -120,7 +120,17 @@ import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.theme.UiColors
 import kotlinx.coroutines.launch
 import android.widget.Toast
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.ui.platform.LocalContext
+import com.corgimemo.app.ui.components.AddCategoryDialog
+import com.corgimemo.app.ui.components.AppDrawerContent
+import com.corgimemo.app.ui.components.CategoryAction
+import com.corgimemo.app.ui.components.CategoryOperationSheet
+import com.corgimemo.app.ui.components.DeleteCategoryConfirmDialog
+import com.corgimemo.app.ui.components.RenameCategoryDialog
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -172,6 +182,17 @@ fun HomeScreen(
     val isBatchMode by viewModel.isBatchMode.collectAsState()
     val selectedTodoIds by viewModel.selectedTodoIds.collectAsState()
     val categories by viewModel.categories.collectAsState()
+
+    // ========== 侧滑导航栏状态 ==========
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val selectedCategoryId by viewModel.selectedCategoryId.collectAsState()
+    val todoCountByCategory by viewModel.todoCountByCategory.collectAsState()
+    val recentlyDeletedCount by viewModel.recentlyDeletedCount.collectAsState()
+
+    var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var showRenameCategoryDialog by remember { mutableStateOf<Category?>(null) }
+    var showDeleteCategoryDialog by remember { mutableStateOf<Category?>(null) }
+    var showCategorySheet by remember { mutableStateOf<Category?>(null) }
 
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var showBatchMoveDialog by remember { mutableStateOf(false) }
@@ -292,7 +313,63 @@ fun HomeScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // ========== 动态抽屉标题 ==========
+    val drawerTitle = when (selectedCategoryId) {
+        null -> "📝 我的待办"
+        0L -> "📦 未分类"
+        else -> categories.find { it.id == selectedCategoryId }?.let { "📁 ${it.name}" } ?: "📝 我的待办"
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                modifier = Modifier.width(280.dp)
+            ) {
+                AppDrawerContent(
+                    corgiData = corgiData,
+                    categories = categories,
+                    todoCountByCategory = todoCountByCategory,
+                    recentlyDeletedCount = recentlyDeletedCount,
+                    selectedCategoryId = selectedCategoryId,
+                    onCategoryClick = { categoryId ->
+                        viewModel.filterByCategory(categoryId)
+                        coroutineScope.launch { drawerState.close() }
+                    },
+                    onAddCategoryClick = { showAddCategoryDialog = true },
+                    onCategoryAction = { action ->
+                        when (action) {
+                            is CategoryAction.ShowMenu -> {
+                                showCategorySheet = action.category
+                            }
+                            is CategoryAction.Pin -> {
+                                // TODO: 置顶功能（CategoryRepository 尚无此方法）
+                            }
+                            is CategoryAction.Rename -> {
+                                showRenameCategoryDialog = action.category
+                            }
+                            is CategoryAction.Delete -> {
+                                showDeleteCategoryDialog = action.category
+                            }
+                        }
+                    },
+                    onRecentlyDeletedClick = {
+                        // TODO: 导航到最近删除页面
+                        coroutineScope.launch { drawerState.close() }
+                    },
+                    onSettingsClick = {
+                        navController.navigate(Screen.Settings.route)
+                        coroutineScope.launch { drawerState.close() }
+                    },
+                    onHelpClick = {
+                        // TODO: 帮助与反馈页面
+                        coroutineScope.launch { drawerState.close() }
+                    }
+                )
+            }
+        }
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
                 if (isBatchMode) {
@@ -332,8 +409,8 @@ fun HomeScreen(
                     )
                 } else {
                     EnhancedTopBar(
-                        title = "📝 我的待办",
-                        onMenuClick = { /* 可扩展：打开侧滑导航 */ },
+                        title = drawerTitle,
+                        onMenuClick = { coroutineScope.launch { drawerState.open() } },
                         onStatsClick = { /* 可扩展：打开统计页面 */ },
                         onCorgiClick = { navController.navigate(Screen.CorgiDetail.route) }
                     )
@@ -667,6 +744,61 @@ fun HomeScreen(
         ) {
             YawnOverlay()
         }
+    }
+    }
+
+    // ========== 侧滑导航栏弹窗 ==========
+
+    // 添加分组对话框
+    if (showAddCategoryDialog) {
+        AddCategoryDialog(
+            onConfirm = { name ->
+                viewModel.createCategory(name)
+                showAddCategoryDialog = false
+            },
+            onDismiss = { showAddCategoryDialog = false }
+        )
+    }
+
+    // 重命名分组对话框
+    showRenameCategoryDialog?.let { category ->
+        RenameCategoryDialog(
+            currentName = category.name,
+            onConfirm = { newName ->
+                viewModel.renameCategory(category.id, newName)
+                showRenameCategoryDialog = null
+            },
+            onDismiss = { showRenameCategoryDialog = null }
+        )
+    }
+
+    // 删除确认对话框
+    showDeleteCategoryDialog?.let { category ->
+        DeleteCategoryConfirmDialog(
+            categoryName = category.name,
+            onConfirm = {
+                viewModel.deleteCategory(category.id)
+                showDeleteCategoryDialog = null
+            },
+            onDismiss = { showDeleteCategoryDialog = null }
+        )
+    }
+
+    // 分类操作 BottomSheet
+    showCategorySheet?.let { category ->
+        CategoryOperationSheet(
+            category = category,
+            onPin = {
+                // TODO: 置顶功能
+            },
+            onRename = {
+                showRenameCategoryDialog = category
+            },
+            onDelete = {
+                showDeleteCategoryDialog = category
+            },
+            onDismiss = { showCategorySheet = null }
+        )
     }
 
     // 批量删除确认对话框

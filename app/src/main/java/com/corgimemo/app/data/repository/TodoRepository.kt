@@ -18,6 +18,7 @@ import java.util.Calendar
 @Singleton
 class TodoRepository @Inject constructor(
     private val todoDao: TodoDao,
+    private val deletedTodoRepository: DeletedTodoRepository,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     @ApplicationContext private val context: Context
 ) {
@@ -69,35 +70,41 @@ class TodoRepository @Inject constructor(
     }
 
     /**
-     * 删除待办
+     * 删除待办（软删除：先存入最近删除表，再物理删除）
      *
      * @param todo 待办项
      */
     suspend fun deleteTodo(todo: TodoItem) = withContext(ioDispatcher) {
+        deletedTodoRepository.insertDeletedTodo(todo)
         todoDao.delete(todo)
         AlarmScheduler.cancelReminder(context, todo.id)
         WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }
 
     /**
-     * 根据 ID 删除待办
+     * 根据 ID 删除待办（软删除：先存入最近删除表，再物理删除）
      *
      * @param todoId 待办 ID
      */
     suspend fun deleteTodoById(todoId: Long) = withContext(ioDispatcher) {
+        val todo = todoDao.getTodoById(todoId)
+        if (todo != null) {
+            deletedTodoRepository.insertDeletedTodo(todo)
+        }
         todoDao.deleteById(todoId)
         AlarmScheduler.cancelReminder(context, todoId)
         WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }
 
     /**
-     * 删除所有待办
+     * 删除所有待办（软删除：先全部存入最近删除表，再物理删除）
      */
     suspend fun deleteAllTodos() = withContext(ioDispatcher) {
         val allTodos = todoDao.getAllTodosBlocking()
         allTodos.forEach { todo ->
             AlarmScheduler.cancelReminder(context, todo.id)
         }
+        deletedTodoRepository.insertDeletedTodos(allTodos)
         todoDao.deleteAll()
         WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }

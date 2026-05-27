@@ -22,6 +22,7 @@ import com.corgimemo.app.animation.OutfitManager
 import com.corgimemo.app.animation.PoseManager
 import com.corgimemo.app.animation.PoseScene
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
+import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.MoodHistory
 import com.corgimemo.app.data.model.SubTask
@@ -31,6 +32,7 @@ import com.corgimemo.app.data.repository.AchievementChecker
 import com.corgimemo.app.data.repository.AchievementRepository
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.CorgiRepository
+import com.corgimemo.app.data.repository.DeletedTodoRepository
 import com.corgimemo.app.data.repository.MoodHistoryRepository
 import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.data.repository.SubTaskManager
@@ -52,6 +54,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -108,6 +112,7 @@ class HomeViewModel @Inject constructor(
     private val todoRepository: TodoRepository,
     private val corgiRepository: CorgiRepository,
     private val categoryRepository: CategoryRepository,
+    private val deletedTodoRepository: DeletedTodoRepository,
     private val achievementChecker: AchievementChecker,
     private val achievementRepository: AchievementRepository,
     private val corgiPreferences: CorgiPreferences,
@@ -130,10 +135,33 @@ class HomeViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    /** 过滤后的待办列表（组合 searchQuery + filterStatus） */
+    // ========== 分类相关状态（必须在 filteredTodos 之前声明） ==========
+
+    val categories: StateFlow<List<Category>> =
+        categoryRepository.getAllCategories()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
+
+    private val _selectedCategoryId = MutableStateFlow<Long?>(null)
+    val selectedCategoryId: StateFlow<Long?> = _selectedCategoryId.asStateFlow()
+
+    /** 过滤后的待办列表（组合 searchQuery + filterStatus + selectedCategoryId） */
     val filteredTodos: StateFlow<List<TodoItem>> =
-        kotlinx.coroutines.flow.combine(_todos, _searchQuery, _filterStatus) { todos, query, filter ->
+        kotlinx.coroutines.flow.combine(
+            _todos, _searchQuery, _filterStatus, _selectedCategoryId
+        ) { todos, query, filter, categoryId ->
             var result = todos
+
+            // 应用分类过滤
+            if (categoryId != null && categoryId > 0) {
+                result = result.filter { it.categoryId == categoryId }
+            } else if (categoryId != null && categoryId == 0L) {
+                val validCategoryIds = categories.value.map { it.id }.toSet()
+                result = result.filter { it.categoryId !in validCategoryIds }
+            }
 
             // 应用搜索关键词过滤
             if (query.isNotBlank()) {
@@ -322,13 +350,34 @@ class HomeViewModel @Inject constructor(
             initialValue = true
         )
 
-    val categories: StateFlow<List<com.corgimemo.app.data.model.Category>> =
-        categoryRepository.getAllCategories()
-            .stateIn(
-                scope = viewModelScope,
-                started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
-            )
+    // ========== 侧滑导航栏相关状态 ==========
+
+    private val _recentlyDeletedCount = MutableStateFlow(0)
+    val recentlyDeletedCount: StateFlow<Int> = _recentlyDeletedCount.asStateFlow()
+
+    /**
+     * 每个分类的待办计数（包括全部和未分类）
+     */
+    val todoCountByCategory: StateFlow<Map<Long, Int>> =
+        _todos.combine(categories) { todos, cats ->
+            val counts = mutableMapOf<Long, Int>()
+            val validCategoryIds = cats.map { it.id }.toSet()
+            var uncategorizedCount = 0
+            todos.forEach { todo ->
+                if (todo.categoryId in validCategoryIds) {
+                    counts[todo.categoryId] = (counts[todo.categoryId] ?: 0) + 1
+                } else {
+                    uncategorizedCount++
+                }
+            }
+            counts[-1L] = todos.size
+            counts[0L] = uncategorizedCount
+            counts
+        }.stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
+        )
 
     /**
      * 执行触觉反馈
@@ -370,6 +419,7 @@ class HomeViewModel @Inject constructor(
         checkHoliday()
         checkSolarTerm()
         initAchievements()
+        observeRecentlyDeleted()
     }
 
     /**
@@ -483,6 +533,120 @@ class HomeViewModel @Inject constructor(
     private fun initDefaultCategories() {
         viewModelScope.launch {
             categoryRepository.initDefaultCategories()
+        }
+    }
+
+    // ========== 侧滑导航栏相关方法 ==========
+
+    /**
+     * 观察最近删除待办数量
+     */
+    private fun observeRecentlyDeleted() {
+        viewModelScope.launch {
+            deletedTodoRepository.getDeletedCount().collect { count ->
+                _recentlyDeletedCount.value = count
+            }
+        }
+    }
+
+    /**
+     * 设置分类过滤
+     *
+     * @param categoryId 分类 ID（null=全部，0=未分类，>0=具体分类）
+     */
+    fun filterByCategory(categoryId: Long?) {
+        _selectedCategoryId.value = categoryId
+    }
+
+    /**
+     * 清除分类过滤，显示所有待办
+     */
+    fun clearCategoryFilter() {
+        _selectedCategoryId.value = null
+    }
+
+    /**
+     * 创建新分类
+     *
+     * @param name 分类名称
+     */
+    fun createCategory(name: String) {
+        viewModelScope.launch {
+            categoryRepository.insertCategory(
+                com.corgimemo.app.data.model.Category(
+                    name = name,
+                    type = com.corgimemo.app.data.model.CategoryType.CUSTOM,
+                    isDefault = false
+                )
+            )
+        }
+    }
+
+    /**
+     * 重命名分类
+     *
+     * @param id 分类 ID
+     * @param newName 新名称
+     */
+    fun renameCategory(id: Long, newName: String) {
+        viewModelScope.launch {
+            val category = categoryRepository.getCategoryById(id) ?: return@launch
+            categoryRepository.insertCategory(category.copy(name = newName))
+        }
+    }
+
+    /**
+     * 删除自定义分类
+     *
+     * @param id 分类 ID
+     */
+    fun deleteCategory(id: Long) {
+        viewModelScope.launch {
+            categoryRepository.deleteCustomCategory(id)
+            if (_selectedCategoryId.value == id) {
+                _selectedCategoryId.value = null
+            }
+        }
+    }
+
+    /**
+     * 获取所有已删除待办
+     */
+    fun getRecentlyDeletedTodos(): kotlinx.coroutines.flow.Flow<List<com.corgimemo.app.data.model.DeletedTodo>> {
+        return deletedTodoRepository.getAllDeletedTodos()
+    }
+
+    /**
+     * 恢复已删除的待办
+     *
+     * @param deletedTodoId 已删除待办的 ID
+     */
+    fun restoreDeletedTodo(deletedTodoId: Long) {
+        viewModelScope.launch {
+            val deleted = deletedTodoRepository.restoreDeletedTodo(deletedTodoId) ?: return@launch
+            val todo = com.corgimemo.app.data.model.DeletedTodo.toTodoItem(deleted)
+            todoRepository.insertTodo(todo)
+            deletedTodoRepository.permanentlyDelete(deletedTodoId)
+        }
+    }
+
+    /**
+     * 永久删除所有最近删除记录
+     */
+    fun permanentlyDeleteAllDeleted() {
+        viewModelScope.launch {
+            deletedTodoRepository.permanentlyDeleteAll()
+        }
+    }
+
+    /**
+     * 清理超过指定时间的最近删除记录
+     *
+     * @param threshold 时间阈值（毫秒）
+     */
+    fun cleanUpOldDeletedTodos(threshold: Long) {
+        viewModelScope.launch {
+            deletedTodoRepository.cleanUpOldDeletedTodos(threshold)
         }
     }
 

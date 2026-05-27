@@ -6,6 +6,7 @@ import com.corgimemo.app.data.local.db.CategoryDao
 import com.corgimemo.app.data.local.db.CategoryKeywordDao
 import com.corgimemo.app.data.local.db.CorgiDao
 import com.corgimemo.app.data.local.db.CorgiMemoDatabase
+import com.corgimemo.app.data.local.db.DeletedTodoDao
 import com.corgimemo.app.data.local.db.MoodHistoryDao
 import com.corgimemo.app.data.local.db.OperationLogDao
 import com.corgimemo.app.data.local.db.TaskDailyStatsDao
@@ -75,5 +76,11 @@ object DatabaseModule {
     @Singleton
     fun provideOperationLogDao(database: CorgiMemoDatabase): OperationLogDao {
         return database.operationLogDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideDeletedTodoDao(database: CorgiMemoDatabase): DeletedTodoDao {
+        return database.deletedTodoDao()
     }
 }
