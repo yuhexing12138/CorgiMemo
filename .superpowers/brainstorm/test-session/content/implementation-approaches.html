@@ -1,0 +1,126 @@
+<h2>⚙️ 底部导航栏 - 技术实现方案</h2>
+<p class="subtitle">3 种架构方案的权衡分析与推荐</p>
+
+<div class="options">
+  <!-- 方案 A -->
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Navigation Compose + 自定义组件 (推荐)</h3>
+      <p><strong>核心思路：</strong>使用 Navigation Compose 管理多页面路由，完全自定义 BottomNavigationBar 组件</p>
+      <div style="margin-top: 12px; padding: 8px; background: #f0f9ff; border-radius: 6px; font-size: 13px;">
+        <strong style="color: #0369a1;">✅ 优势：</strong><br/>
+        • 完全控制 UI 和动画（中央按钮突出、气泡展开）<br/>
+        • 符合项目现有架构（已用 Navigation Compose）<br/>
+        • 易于扩展新 Tab 页面<br/>
+        • 动画性能优化空间大<br/><br/>
+        <strong style="color: #dc2626;">❌ 劣势：</strong><br/>
+        • 需要自行管理组件状态<br/>
+        • 代码量相对较多（约 400-500 行）
+      </div>
+      <div style="margin-top: 8px; font-size: 12px; color: #666;">
+        <strong>适用场景：</strong>需要高度定制化 UI 和复杂动画
+      </div>
+    </div>
+  </div>
+
+  <!-- 方案 B -->
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Material3 NavigationBar + FAB 扩展</h3>
+      <p><strong>核心思路：</strong>使用 Material3 内置 NavigationBar，通过自定义 Slot 插入中央 FAB 按钮</p>
+      <div style="margin-top: 12px; padding: 8px; background: #f0fdf4; border-radius: 6px; font-size: 13px;">
+        <strong style="color: #16a34a;">✅ 优势：</strong><br/>
+        • 符合 Material Design 3 规范<br/>
+        • 代码量较少（约 250-300 行）<br/>
+        • 内置无障碍支持<br/>
+        • 系统级主题适配<br/><br/>
+        <strong style="color: #dc2626;">❌ 劣势：</strong><br/>
+        • 中央按钮气泡动画实现困难<br/>
+        • 突出 8dp 效果需 hack<br/>
+        • 定制灵活性受限
+      </div>
+      <div style="margin-top: 8px; font-size: 12px; color: #666;">
+        <strong>适用场景：</strong>标准 UI 需求，无需复杂动画
+      </div>
+    </div>
+  </div>
+
+  <!-- 方案 C -->
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>纯自定义 Canvas 绘制</h3>
+      <p><strong>核心思路：</strong>使用 Compose Canvas API 完全手绘底部导航栏</p>
+      <div style="margin-top: 12px; padding: 8px; background: #fefce8; border-radius: 6px; font-size: 13px;">
+        <strong style="color: #ca8a04;">✅ 优势：</strong><br/>
+        • 极致灵活性和性能<br/>
+        • 可实现任意形状和动画<br/>
+        • 渲染性能最优<br/><br/>
+        <strong style="color: #dc2626;">❌ 劣势：</strong><br/>
+        • 开发成本极高（800+ 行）<br/>
+        • 需要手动处理点击检测<br/>
+        • 无障碍支持需完全自建<br/>
+        • 维护成本高
+      </div>
+      <div style="margin-top: 8px; font-size: 12px; color: #666;">
+        <strong>适用场景：</strong>特殊形状或极致性能需求
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 32px;">
+  <h3>📊 方案对比总结</h3>
+  
+  <table style="width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px;">
+    <thead>
+      <tr style="background: #f3f4f6;">
+        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">评估维度</th>
+        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #e5e7eb;">方案 A (推荐)</th>
+        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #e5e7eb;">方案 B</th>
+        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #e5e7eb;">方案 C</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>开发效率</strong></td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; color: #16a34a;">⭐⭐⭐⭐</td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; color: #16a34a;">⭐⭐⭐⭐⭐</td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; color: #dc2626;">⭐⭐</td>
+      </tr>
+      <tr style="background: #fafafa;">
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>UI 控制力</strong></td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; color: #16a34a;">⭐⭐⭐⭐⭐</td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; color: #ca8a04;">⭐⭐⭐</td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; color: #16a34a;">⭐⭐⭐⭐⭐</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>动画支持</strong></td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; color: #16a34a;">⭐⭐⭐⭐⭐</td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; color: #dc2626;">⭐⭐</td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; color: #16a34a;">⭐⭐⭐⭐⭐</td>
+      </tr>
+      <tr style="background: #fafafa;">
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>维护成本</strong></td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; color: #16a34a;">⭐⭐⭐⭐</td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; color: #16a34a;">⭐⭐⭐⭐⭐</td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; color: #dc2626;">⭐⭐</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;"><strong>代码量估算</strong></td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb;">400-500 行</td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb;">250-300 行</td>
+        <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb;">800+ 行</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section" style="margin-top: 24px; padding: 16px; background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-radius: 8px; border-left: 4px solid #3b82f6;">
+  <h4 style="margin: 0 0 8px 0; color: #1e40af;">💡 我的推荐：方案 A</h4>
+  <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #1e3a8a;">
+    <strong>理由：</strong>CorgiMemo 项目已经使用 Navigation Compose，方案 A 可以无缝集成现有架构。虽然代码量比 B 多一些，但能够完美实现设计文档中的所有要求（中央按钮突出 8dp、扇形气泡动画、200ms 弹出时序）。方案 B 虽然代码少，但无法优雅地实现气泡展开效果；方案 C 则过度工程化。
+  </p>
+</div>

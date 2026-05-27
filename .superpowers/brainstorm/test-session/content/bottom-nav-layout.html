@@ -1,0 +1,134 @@
+<h2>📱 底部导航栏设计原型</h2>
+<p class="subtitle">CorgiMemo - 5 Tab 布局 + 中央编辑按钮</p>
+
+<div class="mockup">
+  <div class="mockup-header">布局方案 A：标准底部导航栏</div>
+  <div class="mockup-body">
+    <div style="background: #f5f5f5; border-radius: 12px; padding: 20px; max-width: 400px; margin: 0 auto;">
+      <!-- 手机屏幕模拟 -->
+      <div style="background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+        <!-- 内容区域 -->
+        <div style="height: 400px; background: linear-gradient(135deg, #FF9A5C 0%, #FFB366 100%); display: flex; align-items: center; justify-content: center;">
+          <div style="text-align: center; color: white;">
+            <div style="font-size: 48px; margin-bottom: 12px;">🐕</div>
+            <div style="font-size: 18px; font-weight: bold;">当前页面内容区域</div>
+            <div style="font-size: 14px; opacity: 0.9; margin-top: 8px;">待办列表 / 灵感 / 日期 / 我的</div>
+          </div>
+        </div>
+
+        <!-- 底部导航栏 -->
+        <div style="position: relative; height: 56px; background: white; border-top: 1px solid #E0E0E0; display: flex; align-items: center; justify-content: space-around; padding: 0 8px;">
+          <!-- Tab 1: 待办 (选中状态) -->
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer;">
+            <div style="font-size: 24px;">📝</div>
+            <div style="font-size: 12px; color: #FF9A5C; font-weight: 600;">待办</div>
+          </div>
+
+          <!-- Tab 2: 灵感 -->
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer;">
+            <div style="font-size: 24px;">💡</div>
+            <div style="font-size: 12px; color: #999999;">灵感</div>
+          </div>
+
+          <!-- 中央编辑按钮 (突出显示) -->
+          <div style="position: relative; top: -16px;">
+            <div style="width: 56px; height: 56px; background: #FF9A5C; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(255, 154, 92, 0.4); cursor: pointer;">
+              <span style="color: white; font-size: 28px; font-weight: bold;">⊕</span>
+            </div>
+          </div>
+
+          <!-- Tab 4: 日期 -->
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer;">
+            <div style="font-size: 24px;">📅</div>
+            <div style="font-size: 12px; color: #999999;">日期</div>
+          </div>
+
+          <!-- Tab 5: 我的 -->
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer;">
+            <div style="font-size: 24px;">👤</div>
+            <div style="font-size: 12px; color: #999999;">我的</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 设计说明 -->
+      <div style="margin-top: 16px; padding: 12px; background: #f9f9f9; border-radius: 6px;">
+        <div style="font-size: 13px; color: #666; line-height: 1.6;">
+          <strong>✨ 设计特点：</strong><br/>
+          • 高度：56dp（符合 Material Design 规范）<br/>
+          • 中央 ⊕ 按钮：56dp 圆形，暖橙色 #FF9A5C<br/>
+          • 突出效果：向上突出 8dp，带阴影<br/>
+          • 选中状态：图标+文字变为暖橙色<br/>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 32px;">
+  <h3>🎯 中央按钮气泡展开效果</h3>
+  <p class="subtitle">点击 ⊕ 后的扇形展开动画（200ms/个，间隔50ms）</p>
+
+  <div class="mockup" style="margin-top: 16px;">
+    <div class="mockup-header">展开状态演示</div>
+    <div class="mockup-body">
+      <div style="background: #f5f5f5; border-radius: 12px; padding: 20px; max-width: 400px; margin: 0 auto; position: relative; min-height: 320px;">
+        <!-- 遮罩层 -->
+        <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.3); border-radius: 12px;"></div>
+
+        <!-- 气泡容器 -->
+        <div style="position: relative; z-index: 10; height: 280px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+          <!-- 气泡1: 创建待办 (上方) -->
+          <div style="width: 96px; height: 48px; background: white; border-radius: 24px; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 2px solid #FF9A5C; margin-bottom: 16px; animation: bubbleIn 0.4s ease-out;">
+            <span style="font-size: 20px;">📝</span>
+            <span style="font-size: 14px; color: #333; font-weight: 500;">待办</span>
+          </div>
+
+          <!-- 气泡行 (左-中-右) -->
+          <div style="display: flex; align-items: center; gap: 32px;">
+            <!-- 气泡2: 灵感 (左侧) -->
+            <div style="width: 96px; height: 48px; background: white; border-radius: 24px; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 2px solid #FF9A5C; animation: bubbleIn 0.4s ease-out 0.15s both;">
+              <span style="font-size: 20px;">💡</span>
+              <span style="font-size: 14px; color: #333; font-weight: 500;">灵感</span>
+            </div>
+
+            <!-- 中央 ✕ 按钮 -->
+            <div style="width: 56px; height: 56px; background: #FF9A5C; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(255, 154, 92, 0.5); transform: rotate(45deg);">
+              <span style="color: white; font-size: 28px; font-weight: bold;">⊕</span>
+            </div>
+
+            <!-- 气泡3: 日期 (右侧) -->
+            <div style="width: 96px; height: 48px; background: white; border-radius: 24px; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 2px solid #FF9A5C; animation: bubbleIn 0.4s ease-out 0.3s both;">
+              <span style="font-size: 20px;">📅</span>
+              <span style="font-size: 14px; color: #333; font-weight: 500;">日期</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 动画说明 -->
+        <div style="margin-top: 180px; padding: 12px; background: #fff; border-radius: 6px; position: relative; z-index: 10;">
+          <div style="font-size: 13px; color: #666; line-height: 1.6;">
+            <strong>🎬 动画时序：</strong><br/>
+            • 点击 ⊕ → 按钮旋转 45° 变为 ✕<br/>
+            • 气泡依次弹出：上(0ms) → 左(150ms) → 右(300ms)<br/>
+            • 每个气泡动画时长：200ms（缓出效果）<br/>
+            • 点击 ✕ 或遮罩 → 反向收回
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+@keyframes bubbleIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+</style>

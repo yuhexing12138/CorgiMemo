@@ -13,6 +13,10 @@ sealed class Screen(val route: String) {
     object CorgiDetail : Screen("corgi_detail")
     object OperationHistory : Screen("operation_history")
 
+    // 新增：底部导航栏页面
+    object Inspire : Screen("inspire")           // 灵感记录
+    object Date : Screen("date")                 // 特殊日期
+
     fun withArgs(vararg args: String): String {
         return buildString {
             append(route)

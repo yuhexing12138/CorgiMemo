@@ -8,6 +8,7 @@ import com.corgimemo.app.backup.BackupManager
 import com.corgimemo.app.ui.screens.achievement.AchievementScreen
 import com.corgimemo.app.ui.screens.backup.BackupHistoryScreen
 import com.corgimemo.app.ui.screens.home.HomeScreen
+import com.corgimemo.app.ui.screens.main.MainScreen
 import com.corgimemo.app.ui.screens.onboarding.OnboardingScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
 import com.corgimemo.app.ui.screens.settings.OperationHistoryScreen
@@ -16,6 +17,8 @@ import com.corgimemo.app.ui.screens.settings.SmartCategorySettingsScreen
 import com.corgimemo.app.ui.screens.stats.StatsScreen
 import com.corgimemo.app.ui.screens.todo.TodoEditScreen
 import com.corgimemo.app.ui.screens.corgi.CorgiDetailScreen
+import com.corgimemo.app.ui.screens.date.DateScreenPlaceholder
+import com.corgimemo.app.ui.screens.inspire.InspireScreenPlaceholder
 
 @Composable
 fun AppNavHost(
@@ -33,7 +36,7 @@ fun AppNavHost(
         }
 
         composable(Screen.Home.route) {
-            HomeScreen(navController = navController)
+            MainScreen(navController = navController)
         }
 
         composable(Screen.TodoEdit.route) {
@@ -83,6 +86,15 @@ fun AppNavHost(
             OperationHistoryScreen(
                 onBack = { navController.popBackStack() }
             )
+        }
+
+        // 新增：底部导航栏页面路由
+        composable(Screen.Inspire.route) {
+            InspireScreenPlaceholder()
+        }
+
+        composable(Screen.Date.route) {
+            DateScreenPlaceholder()
         }
     }
 }
