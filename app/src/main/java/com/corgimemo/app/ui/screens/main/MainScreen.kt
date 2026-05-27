@@ -20,7 +20,7 @@ import com.corgimemo.app.ui.components.navigation.CorgiBottomNavigationBar
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.screens.date.DateScreenPlaceholder
 import com.corgimemo.app.ui.screens.home.HomeScreen
-import com.corgimemo.app.ui.screens.inspire.InspireScreenPlaceholder
+import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
 
 /**
@@ -77,7 +77,7 @@ fun MainScreen(navController: NavController) {
             // 根据选中的 Tab 显示对应页面内容
             when (selectedTab) {
                 TabItem.TODO -> HomeScreen(navController)
-                TabItem.INSPIRE -> InspireScreenPlaceholder()
+                TabItem.INSPIRE -> InspirationScreen(navController)
                 TabItem.DATE -> DateScreenPlaceholder()
                 TabItem.PROFILE -> ProfileScreen(navController)
                 TabItem.EDIT -> { /* 中央编辑按钮不是真实 Tab */ }
@@ -95,7 +95,7 @@ fun MainScreen(navController: NavController) {
                     // 根据气泡类型导航到对应页面
                     when (bubbleType) {
                         BubbleType.CREATE_TODO -> navController.navigate("todo_edit")
-                        BubbleType.RECORD_INSPIRE -> navController.navigate("inspire_edit")
+                        BubbleType.RECORD_INSPIRE -> navController.navigate("inspiration_edit")
                         BubbleType.SPECIAL_DATE -> navController.navigate("date_edit")
                     }
                 }

@@ -15,6 +15,8 @@ import com.corgimemo.app.data.model.DeletedTodo
 import com.corgimemo.app.data.model.MoodHistory
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.data.model.Inspiration
+import com.corgimemo.app.data.model.InspirationRelation
 import com.corgimemo.app.data.model.UserTemplateEntity
 
 /**
@@ -22,8 +24,8 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  * 管理待办事项、柯基数据、任务分类、成就和用户模板
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class],
-    version = 16,
+    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class],
+    version = 17,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -53,6 +55,12 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     /** 最近删除 DAO */
     abstract fun deletedTodoDao(): DeletedTodoDao
 
+    /** 灵感记录 DAO */
+    abstract fun inspirationDao(): InspirationDao
+
+    /** 灵感关联关系 DAO */
+    abstract fun inspirationRelationDao(): InspirationRelationDao
+
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
 
@@ -66,7 +74,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                     .build()
                 INSTANCE = instance
                 instance
@@ -366,39 +374,83 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
         }
 
         /**
-         * 版本 15 → 16 迁移：添加 deleted_todos 表
-         * 用于"最近删除"功能的数据持久化
-         */
-        private val MIGRATION_15_16 = object : Migration(15, 16) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("""
-                    CREATE TABLE IF NOT EXISTS deleted_todos (
-                        id INTEGER PRIMARY KEY NOT NULL,
-                        title TEXT NOT NULL,
-                        content TEXT,
-                        categoryId INTEGER NOT NULL,
-                        priority INTEGER NOT NULL,
-                        status INTEGER NOT NULL,
-                        startDate INTEGER,
-                        estimatedDurationMinutes INTEGER,
-                        reminderTime INTEGER,
-                        repeatType INTEGER NOT NULL,
-                        createdAt INTEGER NOT NULL,
-                        updatedAt INTEGER NOT NULL,
-                        completedAt INTEGER,
-                        geofenceLat REAL,
-                        geofenceLng REAL,
-                        geofenceRadius REAL,
-                        geofenceType INTEGER NOT NULL DEFAULT 0,
-                        geofenceEnabled INTEGER NOT NULL DEFAULT 0,
-                        geofenceAddress TEXT,
-                        hasSubTasks INTEGER NOT NULL DEFAULT 0,
-                        voiceNotePath TEXT,
-                        voiceDuration INTEGER,
-                        deletedAt INTEGER NOT NULL
-                    )
-                """.trimIndent())
-            }
+     * 版本 15 → 16 迁移：添加 deleted_todos 表
+     * 用于"最近删除"功能的数据持久化
+     */
+    private val MIGRATION_15_16 = object : Migration(15, 16) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS deleted_todos (
+                    id INTEGER PRIMARY KEY NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT,
+                    categoryId INTEGER NOT NULL,
+                    priority INTEGER NOT NULL,
+                    status INTEGER NOT NULL,
+                    startDate INTEGER,
+                    estimatedDurationMinutes INTEGER,
+                    reminderTime INTEGER,
+                    repeatType INTEGER NOT NULL,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    completedAt INTEGER,
+                    geofenceLat REAL,
+                    geofenceLng REAL,
+                    geofenceRadius REAL,
+                    geofenceType INTEGER NOT NULL DEFAULT 0,
+                    geofenceEnabled INTEGER NOT NULL DEFAULT 0,
+                    geofenceAddress TEXT,
+                    hasSubTasks INTEGER NOT NULL DEFAULT 0,
+                    voiceNotePath TEXT,
+                    voiceDuration INTEGER,
+                    deletedAt INTEGER NOT NULL
+                )
+            """.trimIndent())
         }
     }
+
+    /**
+     * 版本 16 → 17 迁移：添加灵感记录功能
+     * 创建 inspirations 表和 inspiration_relations 关联表
+     */
+    private val MIGRATION_16_17 = object : Migration(16, 17) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // 创建 inspirations 表（灵感记录主表）
+            // 注意：字段约束必须与 Inspiration.kt Entity 注解完全一致
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS inspirations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL DEFAULT '',
+                    tags TEXT NOT NULL DEFAULT '',
+                    imagePaths TEXT NOT NULL DEFAULT '',
+                    imageUrls TEXT NOT NULL DEFAULT '',
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    isPinned INTEGER NOT NULL DEFAULT 0,
+                    isArchived INTEGER NOT NULL DEFAULT 0
+                )
+            """.trimIndent())
+
+            // 创建灵感表索引
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_createdAt ON inspirations(createdAt)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_isPinned ON inspirations(isPinned)")
+
+            // 创建 inspiration_relations 表（关联关系表）
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS inspiration_relations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    inspirationId INTEGER NOT NULL,
+                    targetType TEXT NOT NULL,
+                    targetId INTEGER NOT NULL,
+                    createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+                    FOREIGN KEY(inspirationId) REFERENCES inspirations(id) ON DELETE CASCADE
+                )
+            """.trimIndent())
+
+            // 创建关联表索引
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspiration_relations_inspirationId ON inspiration_relations(inspirationId)")
+        }
+    }
+}
 }

@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CorgiMemo - 灵感记录功能 UI 原型</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .prototype-container {
+            max-width: 420px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 24px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+        }
+        .status-bar {
+            background: linear-gradient(135deg, #FF9A5C 0%, #FFB366 100%);
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .header {
+            background: #fff;
+            padding: 16px 20px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .header-title {
+            font-size: 22px;
+            font-weight: bold;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .header-title::after {
+            content: '';
+            flex: 1;
+            height: 3px;
+            background: linear-gradient(90deg, #FF9A5C 60%, transparent);
+            margin-left: 12px;
+            border-radius: 2px;
+        }
+        .search-bar {
+            margin: 12px 16px;
+            background: #f8f8f8;
+            border-radius: 12px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #999;
+            font-size: 14px;
+        }
+        .content {
+            padding: 0 16px;
+            min-height: 500px;
+        }
+        .date-group {
+            margin-bottom: 20px;
+        }
+        .date-header {
+            font-size: 13px;
+            color: #666;
+            font-weight: 600;
+            margin-bottom: 12px;
+            padding-left: 4px;
+        }
+        .inspiration-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            border: 1px solid #f0f0f0;
+        }
+        .card-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .card-icon {
+            font-size: 18px;
+        }
+        .card-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .card-preview {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.5;
+            margin-bottom: 10px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .card-images {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .card-image {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #e0e0e0, #f5f5f5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .tags {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .tag {
+            background: #FFF3E0;
+            color: #FF9A5C;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .card-time {
+            font-size: 12px;
+            color: #999;
+        }
+        .card-link {
+            font-size: 12px;
+            color: #666;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #eee;
+        }
+        .bottom-nav {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            background: #fff;
+            border-top: 1px solid #e0e0e0;
+            padding: 8px 0 16px;
+            position: relative;
+        }
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            padding: 4px 12px;
+        }
+        .nav-item.active .nav-icon { color: #FF9A5C; transform: scale(1.1); }
+        .nav-item.active .nav-label { color: #FF9A5C; font-weight: 600; }
+        .nav-icon { font-size: 24px; color: #999; transition: all 0.2s; }
+        .nav-label { font-size: 11px; color: #999; transition: all 0.2s; }
+        .center-btn {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #FF9A5C, #FFB366);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            color: white;
+            margin-top: -28px;
+            box-shadow: 0 4px 12px rgba(255,154,92,0.4);
+            cursor: pointer;
+        }
+
+        /* Edit Screen Styles */
+        .edit-screen {
+            display: none;
+        }
+        .edit-screen.active {
+            display: block;
+        }
+        .list-screen.active {
+            display: block;
+        }
+        .list-screen {
+            display: none;
+        }
+        .edit-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: #fff;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .edit-btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+        }
+        .btn-cancel { background: #f0f0f0; color: #666; }
+        .btn-save { background: #FF9A5C; color: white; font-weight: 600; }
+        .form-group {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .form-label {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .form-input {
+            width: 100%;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 12px 16px;
+            font-size: 15px;
+            outline: none;
+        }
+        .form-input:focus {
+            border-color: #FF9A5C;
+        }
+        textarea.form-input {
+            min-height: 100px;
+            resize: none;
+            font-family: inherit;
+        }
+        .tag-list {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .tag-item {
+            background: #FFF3E0;
+            color: #FF9A5C;
+            padding: 6px 14px;
+            border-radius: 16px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .tag-add {
+            background: #f0f0f0;
+            color: #666;
+            padding: 6px 14px;
+            border-radius: 16px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .image-list {
+            display: flex;
+            gap: 10px;
+        }
+        .image-item {
+            width: 72px;
+            height: 72px;
+            border-radius: 12px;
+            background: #f5f5f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            font-size: 28px;
+        }
+        .image-add {
+            border: 2px dashed #ddd;
+            cursor: pointer;
+        }
+        .related-card {
+            background: #f8f8f8;
+            border-radius: 10px;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 80px 40px;
+        }
+        .empty-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+        }
+        .empty-text {
+            font-size: 17px;
+            color: #333;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .empty-subtext {
+            font-size: 14px;
+            color: #999;
+            margin-bottom: 32px;
+        }
+        .cta-btn {
+            background: linear-gradient(135deg, #FF9A5C, #FFB366);
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 24px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(255,154,92,0.3);
+        }
+
+        /* Page Tabs */
+        .page-tabs {
+            display: flex;
+            background: #f0f0f0;
+            border-radius: 12px;
+            padding: 4px;
+            margin: 20px auto;
+            max-width: 420px;
+        }
+        .page-tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.2s;
+        }
+        .page-tab.active {
+            background: #fff;
+            color: #FF9A5C;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>💡 灵感记录功能 UI 原型</h1>
+    <p class="subtitle">CorgiMemo Inspiration Feature Design</p>
+
+    <div class="page-tabs">
+        <div class="page-tab active" onclick="showPage('list')">📋 列表页</div>
+        <div class="page-tab" onclick="showPage('edit')">✏️ 编辑页</div>
+        <div class="page-tab" onclick="showPage('empty')">📭 空状态</div>
+    </div>
+
+    <!-- List Screen -->
+    <div id="list-screen" class="prototype-container list-screen active">
+        <div class="status-bar">
+            <span>☰</span>
+            <span>CorgiMemo</span>
+            <span>🐕</span>
+        </div>
+        
+        <div class="header">
+            <div class="header-title">💡 我的灵感</div>
+        </div>
+
+        <div class="search-bar">
+            🔍 搜索灵感...
+        </div>
+
+        <div class="content">
+            <!-- Date Group 1 -->
+            <div class="date-group">
+                <div class="date-header">── 2026年5月27日 周三 ──</div>
+                
+                <div class="inspiration-card">
+                    <div class="card-header">
+                        <span class="card-icon">💡</span>
+                        <span class="card-title">APP新功能构思</span>
+                    </div>
+                    <div class="card-preview">可以加入番茄钟功能，帮助用户更好地管理时间。还可以加入习惯打卡功能...</div>
+                    <div class="card-images">
+                        <div class="card-image">🖼️</div>
+                        <div class="card-image">🖼️</div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="tags">
+                            <span class="tag">#产品</span>
+                            <span class="tag">#设计</span>
+                        </div>
+                        <span class="card-time">⏰ 14:30</span>
+                    </div>
+                    <div class="card-link">🔗 关联: 📝待办:完成周报</div>
+                </div>
+
+                <div class="inspiration-card">
+                    <div class="card-header">
+                        <span class="card-icon">💡</span>
+                        <span class="card-title">读书笔记</span>
+                    </div>
+                    <div class="card-preview">《原子习惯》第三章核心观点：行为改变的四大定律...</div>
+                    <div class="card-footer">
+                        <div class="tags">
+                            <span class="tag">#读书</span>
+                        </div>
+                        <span class="card-time">⏰ 20:15</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Date Group 2 -->
+            <div class="date-group">
+                <div class="date-header">── 2026年5月25日 周一 ──</div>
+                
+                <div class="inspiration-card">
+                    <div class="card-header">
+                        <span class="card-icon">💡</span>
+                        <span class="card-title">旅行计划</span>
+                    </div>
+                    <div class="card-preview">暑假想去云南，路线规划：昆明→大理→丽江→香格里拉...</div>
+                    <div class="card-images">
+                        <div class="card-image">🖼️</div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="tags">
+                            <span class="tag">#旅行</span>
+                            <span class="tag">#计划</span>
+                        </div>
+                        <span class="card-time">⏰ 09:40</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bottom-nav">
+            <div class="nav-item">
+                <span class="nav-icon">📝</span>
+                <span class="nav-label">待办</span>
+            </div>
+            <div class="nav-item active">
+                <span class="nav-icon">💡</span>
+                <span class="nav-label">灵感</span>
+            </div>
+            <div class="center-btn">⊕</div>
+            <div class="nav-item">
+                <span class="nav-icon">📅</span>
+                <span class="nav-label">日期</span>
+            </div>
+            <div class="nav-item">
+                <span class="nav-icon">👤</span>
+                <span class="nav-label">我的</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Screen -->
+    <div id="edit-screen" class="prototype-container edit-screen">
+        <div class="status-bar">
+            <span></span>
+            <span>编辑灵感</span>
+            <span></span>
+        </div>
+        
+        <div class="edit-header">
+            <button class="edit-btn btn-cancel">← 取消</button>
+            <button class="edit-btn btn-save">保存</button>
+        </div>
+
+        <div class="content">
+            <div class="form-group">
+                <div class="form-label">标题：</div>
+                <input type="text" class="form-input" value="APP新功能构思" placeholder="输入灵感标题">
+            </div>
+
+            <div class="form-group">
+                <div class="form-label">内容：</div>
+                <textarea class="form-input" placeholder="记录你的灵感...">可以加入番茄钟功能，帮助用户更好地管理时间。还可以加入习惯打卡功能...
+
+@待办:完成周报</textarea>
+            </div>
+
+            <div class="form-group">
+                <div class="form-label">🏷️ 标签：</div>
+                <div class="tag-list">
+                    <span class="tag-item">#产品 ×</span>
+                    <span class="tag-item">#设计 ×</span>
+                    <span class="tag-add">+ 添加</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <div class="form-label">🖼️ 图片：</div>
+                <div class="image-list">
+                    <div class="image-item">📷</div>
+                    <div class="image-item">🎨</div>
+                    <div class="image-item image-add">＋</div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <div class="form-label">🔗 已关联：</div>
+                <div class="related-card">
+                    <span>📝 完成周报</span>
+                    <span style="color:#999">×</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Empty State -->
+    <div id="empty-screen" class="prototype-container edit-screen">
+        <div class="status-bar">
+            <span>☰</span>
+            <span>CorgiMemo</span>
+            <span>🐕</span>
+        </div>
+        
+        <div class="header">
+            <div class="header-title">💡 我的灵感</div>
+        </div>
+
+        <div class="empty-state">
+            <div class="empty-icon">💡</div>
+            <div class="empty-text">还没有灵感记录~</div>
+            <div class="empty-subtext">点击下方按钮记录你的第一个灵感吧！</div>
+            <button class="cta-btn">💡 记录灵感</button>
+        </div>
+
+        <div class="bottom-nav">
+            <div class="nav-item">
+                <span class="nav-icon">📝</span>
+                <span class="nav-label">待办</span>
+            </div>
+            <div class="nav-item active">
+                <span class="nav-icon">💡</span>
+                <span class="nav-label">灵感</span>
+            </div>
+            <div class="center-btn">⊕</div>
+            <div class="nav-item">
+                <span class="nav-icon">📅</span>
+                <span class="nav-label">日期</span>
+            </div>
+            <div class="nav-item">
+                <span class="nav-icon">👤</span>
+                <span class="nav-label">我的</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showPage(page) {
+            document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.prototype-container').forEach(c => c.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(page + '-screen').classList.add('active');
+        }
+    </script>
+</body>
+</html>

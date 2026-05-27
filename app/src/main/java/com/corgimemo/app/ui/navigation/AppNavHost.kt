@@ -19,6 +19,8 @@ import com.corgimemo.app.ui.screens.todo.TodoEditScreen
 import com.corgimemo.app.ui.screens.corgi.CorgiDetailScreen
 import com.corgimemo.app.ui.screens.date.DateScreenPlaceholder
 import com.corgimemo.app.ui.screens.inspire.InspireScreenPlaceholder
+import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
+import com.corgimemo.app.ui.screens.inspiration.InspirationEditScreen
 
 @Composable
 fun AppNavHost(
@@ -90,11 +92,24 @@ fun AppNavHost(
 
         // 新增：底部导航栏页面路由
         composable(Screen.Inspire.route) {
-            InspireScreenPlaceholder()
+            InspirationScreen(navController = navController)
         }
 
         composable(Screen.Date.route) {
             DateScreenPlaceholder()
+        }
+
+        // 灵感编辑页面路由
+        composable(Screen.InspirationEdit.route) {
+            InspirationEditScreen(navController = navController)
+        }
+
+        composable(Screen.InspirationEditWithId.route) { backStackEntry ->
+            val inspirationId = backStackEntry.arguments?.getString("inspirationId")?.toLongOrNull()
+            InspirationEditScreen(
+                navController = navController,
+                inspirationId = inspirationId
+            )
         }
     }
 }

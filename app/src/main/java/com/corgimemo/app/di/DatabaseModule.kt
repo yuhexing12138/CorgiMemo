@@ -7,6 +7,8 @@ import com.corgimemo.app.data.local.db.CategoryKeywordDao
 import com.corgimemo.app.data.local.db.CorgiDao
 import com.corgimemo.app.data.local.db.CorgiMemoDatabase
 import com.corgimemo.app.data.local.db.DeletedTodoDao
+import com.corgimemo.app.data.local.db.InspirationDao
+import com.corgimemo.app.data.local.db.InspirationRelationDao
 import com.corgimemo.app.data.local.db.MoodHistoryDao
 import com.corgimemo.app.data.local.db.OperationLogDao
 import com.corgimemo.app.data.local.db.TaskDailyStatsDao
@@ -82,5 +84,19 @@ object DatabaseModule {
     @Singleton
     fun provideDeletedTodoDao(database: CorgiMemoDatabase): DeletedTodoDao {
         return database.deletedTodoDao()
+    }
+
+    /** 灵感记录 DAO */
+    @Provides
+    @Singleton
+    fun provideInspirationDao(database: CorgiMemoDatabase): InspirationDao {
+        return database.inspirationDao()
+    }
+
+    /** 灵感关联关系 DAO */
+    @Provides
+    @Singleton
+    fun provideInspirationRelationDao(database: CorgiMemoDatabase): InspirationRelationDao {
+        return database.inspirationRelationDao()
     }
 }

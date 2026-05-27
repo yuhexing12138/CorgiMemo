@@ -1,0 +1,362 @@
+package com.corgimemo.app.viewmodel
+
+import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.corgimemo.app.data.model.Inspiration
+import com.corgimemo.app.data.model.InspirationRelation
+import com.corgimemo.app.data.repository.InspirationRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.util.Calendar
+import javax.inject.Inject
+
+/**
+ * 灵感记录视图模型
+ * 管理灵感数据的加载、缓存和业务逻辑
+ * 包括：CRUD操作、搜索过滤、时间线分组、关联管理
+ */
+@HiltViewModel
+class InspirationViewModel @Inject constructor(
+    private val inspirationRepository: InspirationRepository,
+    @ApplicationContext private val context: Context
+) : ViewModel() {
+
+    // ========== 状态定义 ==========
+
+    /** 所有灵感列表（按置顶+时间排序） */
+    private val _inspirations = MutableStateFlow<List<Inspiration>>(emptyList())
+    val inspirations: StateFlow<List<Inspiration>> = _inspirations.asStateFlow()
+
+    /** 按日期分组后的灵感列表（用于时间线展示） */
+    val groupedInspirations: StateFlow<Map<String, List<Inspiration>>> =
+        _inspirations.map { list ->
+            list.groupBy { inspiration ->
+                formatDateKey(inspiration.createdAt)
+            }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
+        )
+
+    /** 搜索关键词 */
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    /** 当前编辑中的灵感 */
+    private val _editingInspiration = MutableStateFlow<Inspiration?>(null)
+    val editingInspiration: StateFlow<Inspiration?> = _editingInspiration.asStateFlow()
+
+    /** 关联列表 */
+    private val _relations = MutableStateFlow<List<InspirationRelation>>(emptyList())
+    val relations: StateFlow<List<InspirationRelation>> = _relations.asStateFlow()
+
+    /** 是否正在加载 */
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    // ========== 初始化 ==========
+
+    init {
+        loadInspirations()
+    }
+
+    // ========== 核心方法 ==========
+
+    /**
+     * 加载所有灵感
+     */
+    fun loadInspirations() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            inspirationRepository.getAllInspirations().collect { list ->
+                _inspirations.value = list
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * 创建新灵感
+     * @param title 标题
+     * @param content 富文本内容
+     * @param tags 标签列表
+     * @param imagePaths 本地图片路径列表
+     */
+    fun createInspiration(
+        title: String,
+        content: String,
+        tags: List<String>,
+        imagePaths: List<String>
+    ) {
+        viewModelScope.launch {
+            val currentTime = System.currentTimeMillis()
+            val newInspiration = Inspiration(
+                title = title,
+                content = content,
+                tags = encodeTags(tags),
+                imagePaths = encodePaths(imagePaths),
+                createdAt = currentTime,
+                updatedAt = currentTime
+            )
+            inspirationRepository.insert(newInspiration)
+        }
+    }
+
+    /**
+     * 更新灵感
+     * @param inspiration 更新后的灵感实体
+     */
+    fun updateInspiration(inspiration: Inspiration) {
+        viewModelScope.launch {
+            inspirationRepository.update(
+                inspiration.copy(updatedAt = System.currentTimeMillis())
+            )
+        }
+    }
+
+    /**
+     * 删除灵感（级联删除关联）
+     * @param id 灵感ID
+     */
+    fun deleteInspiration(id: Long) {
+        viewModelScope.launch {
+            inspirationRepository.deleteById(id)
+        }
+    }
+
+    /**
+     * 删除灵感实体
+     * @param inspiration 灵感实体
+     */
+    fun deleteInspiration(inspiration: Inspiration) {
+        viewModelScope.launch {
+            inspirationRepository.delete(inspiration)
+        }
+    }
+
+    // ========== 搜索方法 ==========
+
+    /**
+     * 搜索灵感
+     * @param query 搜索关键词
+     */
+    fun search(query: String) {
+        _searchQuery.value = query
+        viewModelScope.launch {
+            if (query.isBlank()) {
+                loadInspirations()
+            } else {
+                inspirationRepository.searchInspirations(query).collect { list ->
+                    _inspirations.value = list
+                }
+            }
+        }
+    }
+
+    /**
+     * 清空搜索
+     */
+    fun clearSearch() {
+        _searchQuery.value = ""
+        loadInspirations()
+    }
+
+    // ========== 关联管理方法 ==========
+
+    /**
+     * 加载指定灵感的关联关系
+     * @param inspirationId 灵感ID
+     */
+    fun loadRelations(inspirationId: Long) {
+        viewModelScope.launch {
+            inspirationRepository.getRelationsByInspirationId(inspirationId).collect { relations ->
+                _relations.value = relations
+            }
+        }
+    }
+
+    /**
+     * 添加关联关系
+     * @param inspirationId 灵感ID
+     * @param targetType 目标类型 ("todo" | "date" | "inspiration")
+     * @param targetId 目标实体ID
+     */
+    fun addRelation(inspirationId: Long, targetType: String, targetId: Long) {
+        viewModelScope.launch {
+            val relation = InspirationRelation(
+                inspirationId = inspirationId,
+                targetType = targetType,
+                targetId = targetId
+            )
+            inspirationRepository.addRelation(relation)
+        }
+    }
+
+    /**
+     * 删除关联关系
+     * @param relationId 关联ID
+     */
+    fun deleteRelation(relationId: Long) {
+        viewModelScope.launch {
+            inspirationRepository.deleteRelationById(relationId)
+        }
+    }
+
+    /**
+     * 删除指定关联
+     * @param inspirationId 灵感ID
+     * @param targetType 目标类型
+     * @param targetId 目标ID
+     */
+    fun deleteRelation(inspirationId: Long, targetType: String, targetId: Long) {
+        viewModelScope.launch {
+            inspirationRepository.deleteRelation(inspirationId, targetType, targetId)
+        }
+    }
+
+    // ========== 状态切换方法 ==========
+
+    /**
+     * 切换置顶状态
+     * @param id 灵感ID
+     */
+    fun togglePin(id: Long) {
+        viewModelScope.launch {
+            val currentList = _inspirations.value
+            val inspiration = currentList.find { it.id == id } ?: return@launch
+            inspirationRepository.togglePin(id, !inspiration.isPinned)
+        }
+    }
+
+    /**
+     * 切换归档状态
+     * @param id 灵感ID
+     */
+    fun toggleArchive(id: Long) {
+        viewModelScope.launch {
+            val currentList = _inspirations.value
+            val inspiration = currentList.find { it.id == id } ?: return@launch
+            inspirationRepository.toggleArchive(id, !inspiration.isArchived)
+        }
+    }
+
+    // ========== 编辑状态管理 ==========
+
+    /**
+     * 设置当前编辑的灵感
+     * @param inspiration 灵感实体（null表示新建模式）
+     */
+    fun setEditingInspiration(inspiration: Inspiration?) {
+        _editingInspiration.value = inspiration
+        if (inspiration != null) {
+            loadRelations(inspiration.id)
+        } else {
+            _relations.value = emptyList()
+        }
+    }
+
+    // ========== 辅助方法 ==========
+
+    /**
+     * 将时间戳格式化为日期分组 Key
+     * 格式："2026年5月27日 周三"
+     * @param timestamp 时间戳（毫秒）
+     * @return 格式化后的日期字符串
+     */
+    private fun formatDateKey(timestamp: Long): String {
+        val calendar = Calendar.getInstance().apply { timeInMillis = timestamp }
+        val weekdays = arrayOf("日", "一", "二", "三", "四", "五", "六")
+        return "${calendar.get(Calendar.YEAR)}年${calendar.get(Calendar.MONTH) + 1}月${calendar.get(Calendar.DAY_OF_MONTH)}日 周${weekdays[calendar.get(Calendar.DAY_OF_WEEK) - 1]}"
+    }
+
+    /**
+     * 编码标签列表为JSON字符串
+     * @param tags 标签列表
+     * @return JSON字符串
+     */
+    fun encodeTags(tags: List<String>): String {
+        if (tags.isEmpty()) return ""
+        return buildString {
+            append("[")
+            tags.forEachIndexed { index, tag ->
+                if (index > 0) append(",")
+                append("\"$tag\"")
+            }
+            append("]")
+        }
+    }
+
+    /**
+     * 编码图片路径列表为JSON字符串
+     * @param paths 路径列表
+     * @return JSON字符串
+     */
+    fun encodePaths(paths: List<String>): String {
+        if (paths.isEmpty()) return ""
+        return buildString {
+            append("[")
+            paths.forEachIndexed { index, path ->
+                if (index > 0) append(",")
+                append("\"$path\"")
+            }
+            append("]")
+        }
+    }
+
+    /**
+     * 解码标签JSON字符串为列表
+     * @param tagsJson JSON字符串
+     * @return 标签列表
+     */
+    fun decodeTags(tagsJson: String): List<String> {
+        if (tagsJson.isBlank()) return emptyList()
+        return try {
+            tagsJson
+                .removeSurrounding("[", "]")
+                .split(",")
+                .map { it.trim().removeSurrounding("\"") }
+                .filter { it.isNotBlank() }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * 解码图片路径JSON字符串为列表
+     * @param pathsJson JSON字符串
+     * @return 路径列表
+     */
+    fun decodePaths(pathsJson: String): List<String> {
+        if (pathsJson.isBlank()) return emptyList()
+        return try {
+            pathsJson
+                .removeSurrounding("[", "]")
+                .split(",")
+                .map { it.trim().removeSurrounding("\"") }
+                .filter { it.isNotBlank() }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * 格式化时间显示（HH:mm）
+     * @param timestamp 时间戳
+     * @return 格式化后的时间字符串
+     */
+    fun formatTime(timestamp: Long): String {
+        val calendar = Calendar.getInstance().apply { timeInMillis = timestamp }
+        val hour = calendar.get(Calendar.HOUR_OF_DAY)
+        val minute = calendar.get(Calendar.MINUTE)
+        return String.format("%02d:%02d", hour, minute)
+    }
+}
