@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>特殊日期记录功能 - UI原型</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Roboto, 'PingFang SC', sans-serif; background: #f5f5f5; color: #333; }
+  
+  .phone-frame {
+    width: 375px; height: 812px;
+    background: #fff;
+    margin: 20px auto;
+    border-radius: 40px;
+    box-shadow: 0 10px 60px rgba(0,0,0,0.15);
+    overflow: hidden;
+    position: relative;
+    display: inline-block;
+    vertical-align: top;
+  }
+
+  .status-bar {
+    height: 44px; background: linear-gradient(135deg, #FF9A5C, #FF6B9D);
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 14px; font-weight: 600;
+    padding-top: 12px;
+  }
+
+  .screen-content {
+    height: calc(100% - 44px - 70px); overflow-y: auto;
+    background: #fafafa;
+  }
+
+  .bottom-nav {
+    height: 70px; background: white;
+    display: flex; align-items: center; justify-content: space-around;
+    border-top: 1px solid #eee; position: absolute; bottom: 0; width: 100%;
+  }
+  .nav-item { text-align: center; font-size: 11px; color: #999; cursor: pointer; transition: all 0.2s; }
+  .nav-item.active { color: #FF9A5C; }
+  .nav-item .icon { font-size: 22px; margin-bottom: 2px; }
+
+  /* List Styles */
+  .section-header {
+    display: flex; align-items: center; padding: 16px 20px 8px;
+    font-size: 13px; font-weight: 600; color: #666;
+  }
+  .section-header .dot { width: 4px; height: 14px; border-radius: 2px; margin-right: 8px; }
+  .section-header.upcoming .dot { background: #FF9A5C; }
+  .section-header.celebrating .dot { background: #4CAF50; }
+  .section-header.expired .dot { background: #999; }
+
+  /* Day Card */
+  .day-card {
+    margin: 6px 16px 12px; background: white;
+    border-radius: 16px; padding: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    display: flex; align-items: center; gap: 14px;
+    cursor: pointer; transition: transform 0.15s;
+  }
+  .day-card:hover { transform: translateY(-1px); }
+
+  .day-number-box {
+    width: 64px; height: 64px; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .day-number { font-size: 22px; font-weight: 800; line-height: 1; }
+  .day-unit { font-size: 10px; font-weight: 500; margin-top: 2px; }
+  
+  .day-card-info { flex: 1; min-width: 0; }
+  .day-card-title { font-size: 15px; font-weight: 600; color: #222; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .day-card-date { font-size: 12px; color: #888; margin-top: 3px; }
+  .day-card-tag { 
+    display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 10px; 
+    margin-top: 5px; font-weight: 500;
+  }
+  .day-card-thumb {
+    width: 40px; height: 40px; border-radius: 8px;
+    background: #f0f0f0; flex-shrink: 0;
+    object-fit: cover;
+  }
+  .day-card-relation {
+    font-size: 10px; color: #aaa; margin-top: 4px;
+    display: flex; align-items: center; gap: 3px;
+  }
+
+  /* Color variants */
+  .variant-red .day-number-box { background: #FFF0F0; }
+  .variant-red .day-number, .variant-red .day-unit { color: #E53935; }
+  .variant-orange .day-number-box { background: #FFF3E0; }
+  .variant-orange .day-number, .variant-orange .day-unit { color: #FF9A5C; }
+  .variant-gray .day-number-box { background: #F5F5F5; }
+  .variant-gray .day-number, .variant-gray .day-unit { color: #999; }
+  .variant-green .day-number-box { background: #E8F5E9; }
+  .variant-green .day-number, .variant-green .day-unit { color: #4CAF50; }
+
+  .tag-birthday { background: #FFF0F5; color: #E91E63; }
+  .tag-anniversary { background: #FFF3E0; color: #FF9A5C; }
+  .tag-holiday { background: #E0F7FA; color: #00BCD4; }
+  .tag-other { background: #F3E5F5; color: #9C27B0; }
+
+  /* Empty State */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; padding: 40px 32px; text-align: center;
+  }
+  .empty-icon {
+    width: 100px; height: 100px; border-radius: 24px;
+    background: linear-gradient(135deg, #FFF3E0, #FFE0B2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 48px; margin-bottom: 24px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.05); opacity: 0.85; }
+  }
+  .empty-title { font-size: 18px; font-weight: 700; color: #333; margin-bottom: 8px; }
+  .empty-desc { font-size: 14px; color: #999; line-height: 1.5; margin-bottom: 28px; }
+  .cta-button {
+    background: linear-gradient(135deg, #FF9A5C, #FF6B9D);
+    color: white; border: none; padding: 12px 32px; border-radius: 24px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+    box-shadow: 0 4px 15px rgba(255,154,92,0.35);
+  }
+
+  /* Edit Page */
+  .edit-page .screen-content { background: #fff; }
+  .edit-topbar {
+    height: 56px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px; border-bottom: 1px solid #f0f0f0;
+  }
+  .edit-topbar button { background: none; border: none; font-size: 15px; cursor: pointer; }
+  .edit-topbar .back-btn { color: #666; }
+  .edit-topbar .save-btn { color: #FF9A5C; font-weight: 600; }
+  .edit-topbar .title { font-size: 17px; font-weight: 600; }
+  
+  .edit-form { padding: 16px; }
+  .form-group { margin-bottom: 20px; }
+  .form-label { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px; display: block; }
+  .form-input {
+    width: 100%; border: 1.5px solid #e8e8e8; border-radius: 12px;
+    padding: 12px 14px; font-size: 15px; outline: none; transition: border-color 0.2s;
+  }
+  .form-input:focus { border-color: #FF9A5C; }
+  .form-textarea { min-height: 80px; resize: none; }
+  
+  .mode-switch {
+    display: flex; gap: 0; background: #f5f5f5; border-radius: 12px; padding: 3px;
+  }
+  .mode-option {
+    flex: 1; text-align: center; padding: 10px; border-radius: 10px;
+    font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s;
+    color: #666;
+  }
+  .mode-option.active { background: white; color: #FF9A5C; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+
+  .image-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .img-thumb-sm {
+    width: 60px; height: 60px; border-radius: 10px; background: #f5f5f5;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; position: relative; cursor: pointer;
+  }
+  .img-thumb-sm.add { border: 2px dashed #ddd; color: #ccc; }
+  .img-thumb-sm .remove {
+    position: absolute; top: -4px; right: -4px; width: 18px; height: 18px;
+    background: rgba(0,0,0,0.5); color: white; border-radius: 50%;
+    font-size: 11px; display: flex; align-items: center; justify-content: center;
+  }
+
+  .relation-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: #FFF3E0; color: #FF9A5C; padding: 5px 12px;
+    border-radius: 16px; font-size: 12px; font-weight: 500; margin-right: 6px; margin-bottom: 6px;
+  }
+  .relation-chip .x { cursor: pointer; margin-left: 2px; color: #bbb; }
+
+  /* Page container for side-by-side */
+  .pages-container { text-align: center; padding: 20px; }
+  .page-label { font-size: 13px; color: #888; margin-bottom: 8px; font-weight: 500; }
+
+  h1 { text-align: center; font-size: 22px; color: #333; margin: 30px 0 10px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 30px; }
+</style>
+</head>
+<body>
+
+<h1>📅 特殊日期记录功能 — UI 原型</h1>
+<p class="subtitle">展示列表页（三组分类 + 天数卡片）、空状态、编辑页三个核心界面</p>
+
+<div class="pages-container">
+
+  <!-- ========== 页面1：列表页（有数据） ========== -->
+  <div>
+    <div class="page-label">页面 A：日期列表页（三组分类 + 天数卡片）</div>
+    <div class="phone-frame">
+      <div class="status-bar">📅 特殊日期</div>
+      <div class="screen-content">
+
+        <!-- 即将到来 -->
+        <div class="section-header upcoming"><div class="dot"></div> 即将到来 · 倒计时</div>
+
+        <div class="day-card variant-red">
+          <div class="day-number-box">
+            <span class="day-number">2</span><span class="day-unit">天后</span>
+          </div>
+          <div class="day-card-info">
+            <div class="day-card-title">小明生日 🎂</div>
+            <div class="day-card-date">2026年5月29日</div>
+            <span class="day-card-tag tag-birthday">🎂 生日</span>
+            <div class="day-card-relation">📝 关联: 买生日蛋糕</div>
+          </div>
+          <img class="day-card-thumb" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><rect fill='%23FFE0B2' width='40' height='40' rx='8'/><text x='20' y='26' text-anchor='middle' font-size='18'>🎂</text></svg>">
+        </div>
+
+        <div class="day-card variant-orange">
+          <div class="day-number-box">
+            <span class="day-number">15</span><span class="day-unit">天后</span>
+          </div>
+          <div class="day-card-info">
+            <div class="day-card-title">结婚纪念日 💕</div>
+            <div class="day-card-date">2026年6月11日</div>
+            <span class="day-card-tag tag-anniversary">💕 纪念日</span>
+          </div>
+        </div>
+
+        <div class="day-card variant-gray">
+          <div class="day-number-box">
+            <span class="day-number">88</span><span class="day-unit">天后</span>
+          </div>
+          <div class="day-card-info">
+            <div class="day-card-title">春节 🧨</div>
+            <div class="day-card-date">2027年1月23日</div>
+            <span class="day-card-tag tag-holiday">🎉 节日</span>
+          </div>
+        </div>
+
+        <!-- 正在纪念 -->
+        <div class="section-header celebrating"><div class="dot"></div> 正在纪念 · 正计时</div>
+
+        <div class="day-card variant-green">
+          <div class="day-number-box">
+            <span class="day-number">365</span><span class="day-unit">天</span>
+          </div>
+          <div class="day-card-info">
+            <div class="day-card-title">在一起的日子 💑</div>
+            <div class="day-card-date">2025年5月27日 起</div>
+            <span class="day-card-tag tag-anniversary">💕 纪念日</span>
+          </div>
+        </div>
+
+        <!-- 已过期 -->
+        <div class="section-header expired"><div class="dot"></div> 已过期</div>
+
+        <div class="day-card variant-gray">
+          <div class="day-number-box">
+            <span class="day-number">30</span><span class="day-unit">天前</span>
+          </div>
+          <div class="day-card-info">
+            <div class="day-card-title">妈妈生日</div>
+            <div class="day-card-date">2026年4月27日</div>
+            <span class="day-card-tag tag-birthday">🎂 生日</span>
+          </div>
+        </div>
+
+      </div>
+      <div class="bottom-nav">
+        <div class="nav-item"><div class="icon">📝</div>待办</div>
+        <div class="nav-item"><div class="icon">💡</div>灵感</div>
+        <div class="nav-item active"><div class="icon">📅</div>日期</div>
+        <div class="nav-item"><div class="icon">👤</div>我的</div>
+      </div>
+    </div>
+  </div>
+
+  &nbsp;&nbsp;&nbsp;&nbsp;
+
+  <!-- ========== 页面2：空状态 ========== -->
+  <div>
+    <div class="page-label">页面 B：空状态</div>
+    <div class="phone-frame">
+      <div class="status-bar">📅 特殊日期</div>
+      <div class="screen-content">
+        <div class="empty-state">
+          <div class="empty-icon">📅</div>
+          <div class="empty-title">还没有特殊日期~</div>
+          <div class="empty-desc">记录重要的日子，<br>不错过每个纪念！</div>
+          <button class="cta-button">📅 添加日期</button>
+        </div>
+      </div>
+      <div class="bottom-nav">
+        <div class="nav-item"><div class="icon">📝</div>待办</div>
+        <div class="nav-item"><div class="icon">💡</div>灵感</div>
+        <div class="nav-item active"><div class="icon">📅</div>日期</div>
+        <div class="nav-item"><div class="icon">👤</div>我的</div>
+      </div>
+    </div>
+  </div>
+
+  &nbsp;&nbsp;&nbsp;&nbsp;
+
+  <!-- ========== 页面3：编辑页 ========== -->
+  <div>
+    <div class="page-label">页面 C：编辑页</div>
+    <div class="phone-frame edit-page">
+      <div class="status-bar" style="background:#fff; color:#333;">←  编辑日期</div>
+      <div class="edit-topbar" style="position:absolute;top:44px;width:100%;background:white;z-index:10;">
+        <button class="back-btn">取消</button>
+        <span class="title">编辑日期</span>
+        <button class="save-btn">保存</button>
+      </div>
+      <div class="screen-content" style="margin-top:100px;">
+        <div class="edit-form">
+          
+          <div class="form-group">
+            <label class="form-label">标题</label>
+            <input class="form-input" value="小明生日" placeholder="例如：小明生日">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">目标日期</label>
+            <input class="form-input" type="date" value="2026-05-29">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">计时模式</label>
+            <div class="mode-switch">
+              <div class="mode-option active">⏳ 倒计时<br><small style="color:#aaa;font-weight:400">距离目标</small></div>
+              <div class="mode-option">⏱️ 正计时<br><small style="color:#aaa;font-weight:400">从目标起</small></div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">备注</label>
+            <textarea class="form-input form-textarea" placeholder="准备什么礼物好呢...&#10;&#10;📝 关联待办:买礼物">准备什么礼物好呢...</textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">🖼️ 图片</label>
+            <div class="image-row">
+              <div class="img-thumb-sm">🎂<div class="remove">×</div></div>
+              <div class="img-thumb-sm">🎁<div class="remove">×</div></div>
+              <div class="img-thumb-sm add">＋</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">🔗 已关联</label>
+            <div>
+              <span class="relation-chip">📝 买礼物<span class="x">×</span></span>
+              <span class="relation-chip">💡 礼物灵感<span class="x">×</span></span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Color Legend -->
+<div style="max-width:800px;margin:30px auto;padding:20px;background:white;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+  <h3 style="font-size:16px;color:#333;margin-bottom:14px;">🎨 天数颜色规则</h3>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:8px;"><span style="width:20px;height:20px;border-radius:50%;background:#FFF0F0;display:inline-flex;align-items:center;justify-content:center;color:#E53935;font-size:11px;font-weight:700;">≤3</span> ≤3天 — 红色（紧急）</div>
+    <div style="display:flex;align-items:center;gap:8px;"><span style="width:20px;height:20px;border-radius:50%;background:#FFF3E0;display:inline-flex;align-items:center;justify-content:center;color:#FF9A5C;font-size:11px;font-weight:700;">4-30</span> 4-30天 — 暖橙色（常规）</div>
+    <div style="display:flex;align-items:center;gap:8px;"><span style="width:20px;height:20px;border-radius:50%;background:#F5F5F5;display:inline-flex;align-items:center;justify-content:center;color:#999;font-size:11px;font-weight:700;">&gt;30</span> >30天 — 灰色（远期）</div>
+    <div style="display:flex;align-items:center;gap:8px;"><span style="width:20px;height:20px;border-radius:50%;background:#E8F5E9;display:inline-flex;align-items:center;justify-content:center;color:#4CAF50;font-size:11px;font-weight:700;">✓</span> 正计时 — 绿色（进行中）</div>
+  </div>
+</div>
+
+</body>
+</html>

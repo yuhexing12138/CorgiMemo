@@ -18,7 +18,7 @@ import com.corgimemo.app.ui.components.navigation.BubbleMenuOverlay
 import com.corgimemo.app.ui.components.navigation.BubbleType
 import com.corgimemo.app.ui.components.navigation.CorgiBottomNavigationBar
 import com.corgimemo.app.ui.components.navigation.TabItem
-import com.corgimemo.app.ui.screens.date.DateScreenPlaceholder
+import com.corgimemo.app.ui.screens.date.SpecialDateScreen
 import com.corgimemo.app.ui.screens.home.HomeScreen
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
@@ -78,7 +78,7 @@ fun MainScreen(navController: NavController) {
             when (selectedTab) {
                 TabItem.TODO -> HomeScreen(navController)
                 TabItem.INSPIRE -> InspirationScreen(navController)
-                TabItem.DATE -> DateScreenPlaceholder()
+                TabItem.DATE -> SpecialDateScreen(navController)
                 TabItem.PROFILE -> ProfileScreen(navController)
                 TabItem.EDIT -> { /* 中央编辑按钮不是真实 Tab */ }
             }

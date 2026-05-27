@@ -18,6 +18,8 @@ import com.corgimemo.app.ui.screens.stats.StatsScreen
 import com.corgimemo.app.ui.screens.todo.TodoEditScreen
 import com.corgimemo.app.ui.screens.corgi.CorgiDetailScreen
 import com.corgimemo.app.ui.screens.date.DateScreenPlaceholder
+import com.corgimemo.app.ui.screens.date.SpecialDateScreen
+import com.corgimemo.app.ui.screens.date.SpecialDateEditScreen
 import com.corgimemo.app.ui.screens.inspire.InspireScreenPlaceholder
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.inspiration.InspirationEditScreen
@@ -96,7 +98,20 @@ fun AppNavHost(
         }
 
         composable(Screen.Date.route) {
-            DateScreenPlaceholder()
+            SpecialDateScreen(navController = navController)
+        }
+
+        // 特殊日期编辑页面路由
+        composable(Screen.SpecialDateEdit.route) {
+            SpecialDateEditScreen(navController = navController)
+        }
+
+        composable(Screen.SpecialDateEditWithId.route) { backStackEntry ->
+            val specialDateId = backStackEntry.arguments?.getString("specialDateId")?.toLongOrNull()
+            SpecialDateEditScreen(
+                navController = navController,
+                specialDateId = specialDateId
+            )
         }
 
         // 灵感编辑页面路由

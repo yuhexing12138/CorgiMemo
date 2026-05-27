@@ -17,6 +17,8 @@ import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.data.model.InspirationRelation
+import com.corgimemo.app.data.model.SpecialDate
+import com.corgimemo.app.data.model.SpecialDateRelation
 import com.corgimemo.app.data.model.UserTemplateEntity
 
 /**
@@ -24,8 +26,8 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  * 管理待办事项、柯基数据、任务分类、成就和用户模板
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class],
-    version = 17,
+    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class],
+    version = 18,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -61,6 +63,12 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     /** 灵感关联关系 DAO */
     abstract fun inspirationRelationDao(): InspirationRelationDao
 
+    /** 特殊日期 DAO */
+    abstract fun specialDateDao(): SpecialDateDao
+
+    /** 特殊日期关联关系 DAO */
+    abstract fun specialDateRelationDao(): SpecialDateRelationDao
+
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
 
@@ -74,7 +82,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
                     .build()
                 INSTANCE = instance
                 instance
@@ -450,6 +458,50 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
 
             // 创建关联表索引
             database.execSQL("CREATE INDEX IF NOT EXISTS index_inspiration_relations_inspirationId ON inspiration_relations(inspirationId)")
+        }
+    }
+
+    /**
+     * 版本 17 → 18 迁移：添加特殊日期记录功能
+     * 创建 special_dates 表和 special_date_relations 关联表
+     */
+    private val MIGRATION_17_18 = object : Migration(17, 18) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS special_dates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    title TEXT NOT NULL,
+                    targetDate INTEGER NOT NULL,
+                    category TEXT NOT NULL DEFAULT 'OTHER',
+                    countMode INTEGER NOT NULL DEFAULT 0,
+                    repeatType INTEGER NOT NULL DEFAULT 0,
+                    reminderDays INTEGER NOT NULL DEFAULT 0,
+                    content TEXT NOT NULL DEFAULT '',
+                    tags TEXT NOT NULL DEFAULT '',
+                    imagePaths TEXT NOT NULL DEFAULT '',
+                    imageUrls TEXT NOT NULL DEFAULT '',
+                    isPinned INTEGER NOT NULL DEFAULT 0,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )
+            """.trimIndent())
+
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_special_dates_targetDate ON special_dates(targetDate)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_special_dates_isPinned ON special_dates(isPinned)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_special_dates_category ON special_dates(category)")
+
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS special_date_relations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    specialDateId INTEGER NOT NULL,
+                    targetType TEXT NOT NULL,
+                    targetId INTEGER NOT NULL,
+                    createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+                    FOREIGN KEY(specialDateId) REFERENCES special_dates(id) ON DELETE CASCADE
+                )
+            """.trimIndent())
+
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_special_date_relations_specialDateId ON special_date_relations(specialDateId)")
         }
     }
 }

@@ -9,6 +9,8 @@ import com.corgimemo.app.data.local.db.CorgiMemoDatabase
 import com.corgimemo.app.data.local.db.DeletedTodoDao
 import com.corgimemo.app.data.local.db.InspirationDao
 import com.corgimemo.app.data.local.db.InspirationRelationDao
+import com.corgimemo.app.data.local.db.SpecialDateDao
+import com.corgimemo.app.data.local.db.SpecialDateRelationDao
 import com.corgimemo.app.data.local.db.MoodHistoryDao
 import com.corgimemo.app.data.local.db.OperationLogDao
 import com.corgimemo.app.data.local.db.TaskDailyStatsDao
@@ -98,5 +100,19 @@ object DatabaseModule {
     @Singleton
     fun provideInspirationRelationDao(database: CorgiMemoDatabase): InspirationRelationDao {
         return database.inspirationRelationDao()
+    }
+
+    /** 特殊日期 DAO */
+    @Provides
+    @Singleton
+    fun provideSpecialDateDao(database: CorgiMemoDatabase): SpecialDateDao {
+        return database.specialDateDao()
+    }
+
+    /** 特殊日期关联关系 DAO */
+    @Provides
+    @Singleton
+    fun provideSpecialDateRelationDao(database: CorgiMemoDatabase): SpecialDateRelationDao {
+        return database.specialDateRelationDao()
     }
 }

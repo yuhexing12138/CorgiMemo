@@ -21,6 +21,10 @@ sealed class Screen(val route: String) {
     object InspirationEdit : Screen("inspiration_edit")                    // 新建灵感
     object InspirationEditWithId : Screen("inspiration_edit/{inspirationId}")  // 编辑灵感
 
+    // 特殊日期编辑页面
+    object SpecialDateEdit : Screen("date_edit")                          // 新建日期
+    object SpecialDateEditWithId : Screen("date_edit/{specialDateId}")     // 编辑日期
+
     fun withArgs(vararg args: String): String {
         return buildString {
             append(route)
