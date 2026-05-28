@@ -75,7 +75,7 @@ fun CenterEditButton(
         modifier = modifier
             .size(56.dp)
             .shadow(
-                elevation = 12.dp,
+                elevation = 6.dp,  // 设计规范11.2.3：中央按钮elevation 6dp
                 shape = CircleShape,
                 ambientColor = Color(0xFFFF9A5C).copy(alpha = 0.3f)
             )

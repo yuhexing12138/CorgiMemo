@@ -133,9 +133,10 @@ fun SpecialDateEditScreen(
      */
     LaunchedEffect(specialDateId) {
         if (specialDateId != null) {
-            viewModel.setEditingDate(
-                viewModel.specialDates.value.find { it.id == specialDateId }
-            )
+            val date = viewModel.getDateById(specialDateId)
+            if (date != null) {
+                viewModel.setEditingDate(date)
+            }
         }
     }
 
@@ -191,7 +192,7 @@ fun SpecialDateEditScreen(
                 title = {
                     Text(
                         text = if (isEditMode) "编辑日期" else "新建日期",
-                        color = Color(0xFF1C1B1F)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 },
                 navigationIcon = {
@@ -199,18 +200,14 @@ fun SpecialDateEditScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "取消",
-                            tint = Color(0xFF1C1B1F)
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 },
                 actions = {
-                    /**
-                     * 保存按钮
-                     * 点击时验证表单并保存数据
-                     */
                     Text(
                         text = "保存",
-                        color = Color(0xFFFF9A5C),
+                        color = UiColors.Primary,
                         modifier = Modifier
                             .padding(end = 16.dp)
                             .clickable { handleSave() },
@@ -218,7 +215,7 @@ fun SpecialDateEditScreen(
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
             )
         }

@@ -49,12 +49,13 @@ fun InspirationCard(
     tags: List<String>,
     imagePaths: List<String>,
     formattedTime: String,
+    hasRelation: Boolean = false,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
@@ -121,14 +122,23 @@ fun InspirationCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    /** 缩略图预览（48×48dp，圆角8px，最多显示2张） */
+                    /** 缩略图预览（32×32dp，圆角8dp，最多显示2张） */
                     if (imagePaths.isNotEmpty()) {
                         ImageThumbnails(imagePaths = imagePaths)
                     } else {
                         Spacer(modifier = Modifier.height(1.dp))
                     }
 
-                    /** 标签列表（暖橙色背景） */
+                    /** 关联提示 */
+                    if (hasRelation) {
+                        Text(
+                            text = "🔗",
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                    }
+
+                    /** 标签列表（暖橙色背景，胶囊圆角20dp） */
                     if (tags.isNotEmpty()) {
                         TagChips(tags = tags, modifier = Modifier.weight(1f))
                     }
@@ -158,14 +168,14 @@ private fun ImageThumbnails(
         imagePaths.take(2).forEach { _ ->
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(32.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFFF5F5F5)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "🖼️",
-                    fontSize = 20.sp
+                    fontSize = 14.sp
                 )
             }
         }
@@ -175,7 +185,7 @@ private fun ImageThumbnails(
             val extraCount = imagePaths.size - 2
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(32.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFFEEEEEE)),
                 contentAlignment = Alignment.Center
@@ -215,7 +225,7 @@ private fun TagChips(
                 modifier = Modifier
                     .background(
                         color = Color(0xFFFFF3E0),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(20.dp)
                     )
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             )
@@ -230,7 +240,7 @@ private fun TagChips(
                 modifier = Modifier
                     .background(
                         color = Color(0xFFF5F5F5),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(20.dp)
                     )
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             )

@@ -40,6 +40,9 @@ fun MainScreen(navController: NavController) {
     // 气泡菜单是否展开
     var isBubbleExpanded by remember { mutableStateOf(false) }
 
+    // 快速收起模式（设计规范11.2.4：切换页面时100ms快速收起）
+    var isFastCollapse by remember { mutableStateOf(false) }
+
     // 防抖：记录上次点击时间
     var lastClickTime by remember { mutableLongStateOf(0L) }
 
@@ -54,8 +57,11 @@ fun MainScreen(navController: NavController) {
             CorgiBottomNavigationBar(
                 selectedTab = selectedTab,
                 onTabSelected = { tab ->
-                    // 切换 Tab 时自动收起气泡
-                    isBubbleExpanded = false
+                    // 切换 Tab 时自动收起气泡（设计规范11.2.4：100ms快速收起）
+                    if (isBubbleExpanded) {
+                        isFastCollapse = true
+                        isBubbleExpanded = false
+                    }
                     selectedTab = tab
                 },
                 onCenterButtonClick = {
@@ -82,24 +88,29 @@ fun MainScreen(navController: NavController) {
                 TabItem.PROFILE -> ProfileScreen(navController)
                 TabItem.EDIT -> { /* 中央编辑按钮不是真实 Tab */ }
             }
-        }
 
-        // 气泡菜单覆盖层（仅在展开时显示）
-        if (isBubbleExpanded) {
-            BubbleMenuOverlay(
-                isExpanded = isBubbleExpanded,
-                onDismiss = { isBubbleExpanded = false },
-                onBubbleClick = { bubbleType ->
-                    // 收起气泡菜单
-                    isBubbleExpanded = false
-                    // 根据气泡类型导航到对应页面
-                    when (bubbleType) {
-                        BubbleType.CREATE_TODO -> navController.navigate("todo_edit")
-                        BubbleType.RECORD_INSPIRE -> navController.navigate("inspiration_edit")
-                        BubbleType.SPECIAL_DATE -> navController.navigate("date_edit")
+            // 气泡菜单覆盖层（仅在展开时显示，放在 Box 内部确保正确的层级关系）
+            if (isBubbleExpanded) {
+                BubbleMenuOverlay(
+                    isExpanded = isBubbleExpanded,
+                    isFastCollapse = isFastCollapse,  // 传递快速收起模式
+                    onDismiss = {
+                        isBubbleExpanded = false
+                        isFastCollapse = false  // 重置快速收起状态
+                    },
+                    onBubbleClick = { bubbleType ->
+                        // 收起气泡菜单
+                        isBubbleExpanded = false
+                        isFastCollapse = false  // 重置快速收起状态
+                        // 根据气泡类型导航到对应页面
+                        when (bubbleType) {
+                            BubbleType.CREATE_TODO -> navController.navigate("todo_edit")
+                            BubbleType.RECORD_INSPIRE -> navController.navigate("inspiration_edit")
+                            BubbleType.SPECIAL_DATE -> navController.navigate("date_edit")
+                        }
                     }
-                }
-            )
+                )
+            }
         }
     }
 }

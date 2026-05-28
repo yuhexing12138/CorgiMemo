@@ -81,7 +81,12 @@ fun InspirationEditScreen(
     if (isEditMode) {
         LaunchedEffect(inspirationId) {
             viewModel.setEditingInspiration(null)
-            // TODO: 从 repository 加载灵感详情并填充表单
+            inspirationId?.let { id ->
+                val existing = viewModel.getInspirationById(id)
+                if (existing != null) {
+                    viewModel.setEditingInspiration(existing)
+                }
+            }
         }
     }
 

@@ -1,40 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 主色系：保持一致或微调以保证可读性 -->
-    <color name="ui_primary">#FF9A5C</color>
+    <!-- ========== 主色系（深色模式下降低亮度30%）========== -->
+    <color name="ui_primary">#E88A4D</color>
     <color name="ui_primary_light">#CC7A40</color>
-    <color name="ui_primary_dark">#E88A4D</color>
+    <color name="ui_primary_dark">#B56B35</color>
 
-    <!-- 背景色：深色 -->
-    <color name="ui_background">#1C1B1F</color>
-    <color name="ui_surface">#2B2930</color>
+    <!-- ========== 背景色（深色模式）========== -->
+    <color name="ui_background">#1E1E1E</color>
+    <color name="ui_surface">#2A2A2A</color>
 
-    <!-- 语义色：适当调亮以在深色背景上可读 -->
-    <color name="ui_success">#66BB6A</color>
-    <color name="ui_warning">#FFB74D</color>
-    <color name="ui_error">#EF5350</color>
+    <!-- ========== 语义色（功能色，深色模式下调亮）========== -->
+    <color name="ui_success">#9AD8B8</color>
+    <color name="ui_warning">#FFCC80</color>
+    <color name="ui_error">#FFA8A0</color>
 
-    <!-- 文字色：反转 -->
-    <color name="ui_text_primary">#E6E1E5</color>
-    <color name="ui_text_secondary">#938F99</color>
+    <!-- ========== 文字色（深色模式）========== -->
+    <color name="ui_text_primary">#E8E6E3</color>
+    <color name="ui_text_secondary">#A0A0A0</color>
+    <color name="ui_text_hint">#666666</color>
 
-    <!-- 分割线/边框：适配深色背景 -->
-    <color name="ui_divider">#3C3C3C</color>
+    <!-- ========== 分割线/边框（深色模式）========== -->
+    <color name="ui_divider">#333333</color>
     <color name="ui_outline">#555555</color>
 
-    <!-- 遮罩层 -->
+    <!-- ========== 特殊用途 ========== -->
     <color name="ui_overlay_dark">#CC000000</color>
     <color name="ui_overlay_light">#99FFFFFF</color>
 
     <!-- ========== 搜索栏（深色模式）========== -->
     <color name="ui_search_background">#2D251E</color>
 
-    <!-- ========== 优先级颜色（深色模式下稍亮）========== -->
-    <color name="ui_priority_high">#EF5350</color>
-    <color name="ui_priority_medium">#FFA726</color>
-    <color name="ui_priority_low">#66BB6A</color>
+    <!-- ========== 优先级颜色（深色模式）========== -->
+    <color name="ui_priority_high">#FFA8A0</color>
+    <color name="ui_priority_medium">#FFCC80</color>
+    <color name="ui_priority_low">#A8D4F0</color>
 
-    <!-- ========== 动画辅助色（保持一致）========== -->
-    <color name="ui_success_green">#66BB6A</color>
-    <color name="ui_error_red">#EF5350</color>
+    <!-- ========== 动画辅助色 ========== -->
+    <color name="ui_success_green">#9AD8B8</color>
+    <color name="ui_error_red">#FFA8A0</color>
+
+    <!-- ========== 特殊日期-天数颜色（深色模式）========== -->
+    <color name="ui_days_urgent">#FFA8A0</color>
+    <color name="ui_days_soon">#FFCC80</color>
+    <color name="ui_days_normal">#888888</color>
+    <color name="ui_days_passed">#9AD8B8</color>
 </resources>

@@ -2,24 +2,25 @@
 <resources>
     <!-- ========== 主色系 ========== -->
     <color name="ui_primary">#FF9A5C</color>
-    <color name="ui_primary_light">#FFE0C0</color>
+    <color name="ui_primary_light">#FFE4CC</color>
     <color name="ui_primary_dark">#E88A4D</color>
 
-    <!-- ========== 背景色 ========== -->
-    <color name="ui_background">#FFFFFF</color>
+    <!-- ========== 背景色（亮色模式）========== -->
+    <color name="ui_background">#F8F6F3</color>
     <color name="ui_surface">#FFFFFF</color>
 
-    <!-- ========== 语义色 ========== -->
-    <color name="ui_success">#4CAF50</color>
-    <color name="ui_warning">#FF9800</color>
-    <color name="ui_error">#F44336</color>
+    <!-- ========== 语义色（功能色）========== -->
+    <color name="ui_success">#7EC8A0</color>
+    <color name="ui_warning">#FFB74D</color>
+    <color name="ui_error">#FF8A80</color>
 
-    <!-- ========== 文字色 ========== -->
-    <color name="ui_text_primary">#1C1B1F</color>
-    <color name="ui_text_secondary">#79747E</color>
+    <!-- ========== 文字色（亮色模式）========== -->
+    <color name="ui_text_primary">#2D2D2D</color>
+    <color name="ui_text_secondary">#666666</color>
+    <color name="ui_text_hint">#999999</color>
 
     <!-- ========== 分割线/边框 ========== -->
-    <color name="ui_divider">#E0E0E0</color>
+    <color name="ui_divider">#EEEEEE</color>
     <color name="ui_outline">#BDBDBD</color>
 
     <!-- ========== 特殊用途 ========== -->
@@ -30,11 +31,17 @@
     <color name="ui_search_background">#FFF3E8</color>
 
     <!-- ========== 优先级颜色 ========== -->
-    <color name="ui_priority_high">#EF4444</color>
-    <color name="ui_priority_medium">#F59E0B</color>
-    <color name="ui_priority_low">#10B981</color>
+    <color name="ui_priority_high">#FF8A80</color>
+    <color name="ui_priority_medium">#FFB74D</color>
+    <color name="ui_priority_low">#90CAF9</color>
 
     <!-- ========== 动画辅助色 ========== -->
-    <color name="ui_success_green">#4CAF50</color>
-    <color name="ui_error_red">#EF4444</color>
+    <color name="ui_success_green">#7EC8A0</color>
+    <color name="ui_error_red">#FF8A80</color>
+
+    <!-- ========== 特殊日期-天数颜色 ========== -->
+    <color name="ui_days_urgent">#FF8A80</color>
+    <color name="ui_days_soon">#FFB74D</color>
+    <color name="ui_days_normal">#999999</color>
+    <color name="ui_days_passed">#7EC8A0</color>
 </resources>

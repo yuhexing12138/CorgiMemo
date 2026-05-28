@@ -103,7 +103,7 @@ fun SpecialDateEmptyState(
             text = "还没有特殊日期~",
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFF333333)
+            color = Color(0xFF2D2D2D)
         )
 
         Spacer(modifier = Modifier.height(8.dp))

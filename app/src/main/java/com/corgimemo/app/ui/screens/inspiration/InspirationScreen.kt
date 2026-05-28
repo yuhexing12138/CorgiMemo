@@ -68,7 +68,7 @@ fun InspirationScreen(
                 title = {
                     Text(
                         text = "💡 我的灵感",
-                        fontSize = 20.sp,
+                        fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -114,7 +114,7 @@ fun InspirationScreen(
                     placeholder = "搜索灵感...",
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .padding(horizontal = 20.dp, vertical = 8.dp)
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -134,7 +134,7 @@ fun InspirationScreen(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         /** 遍历日期分组 */

@@ -1,6 +1,7 @@
 package com.corgimemo.app.ui.components.navigation
 
 import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.tween
@@ -16,9 +17,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -57,24 +57,31 @@ fun CorgiBottomNavigationBar(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        shadowElevation = 8.dp,
         color = Color.White,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)  // 最小高度 56dp，允许因导航栏 padding 自动扩展
-            .navigationBarsPadding()  // 处理系统导航栏（手势导航条）间距
+            .height(56.dp)  // 固定高度 56dp（Material Design 标准底部导航栏高度）
+            // 注意：不使用 navigationBarsPadding()
+            // 原因：此组件作为 Scaffold.bottomBar 使用时，
+            // Scaffold 会自动处理 Window Insets 并通过 paddingValues 传递给内容区域
+            // 如果在此处再次添加 navigationBarsPadding()，会导致 double padding 和布局错乱
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(
-                    width = 1.dp,
-                    color = Color(0xFFE0E0E0)
-                )
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 顶部1dp分割线（设计规范11.2.3）
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color(0xFFE0E0E0))
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
             // Tab 1: 待办
             NavItem(
                 icon = "📝",
@@ -91,9 +98,11 @@ fun CorgiBottomNavigationBar(
                 onClick = { onTabSelected(TabItem.INSPIRE) }
             )
 
-            // 中央编辑按钮（占位 + 实际按钮）
+            // 中央编辑按钮（突出导航栏8dp，设计规范11.2.3）
             Box(
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier
+                    .size(56.dp)
+                    .offset(y = (-8).dp),  // 向上偏移8dp，突出导航栏
                 contentAlignment = Alignment.Center
             ) {
                 CenterEditButton(
@@ -118,6 +127,7 @@ fun CorgiBottomNavigationBar(
                 onClick = { onTabSelected(TabItem.PROFILE) }
             )
         }
+        }
     }
 }
 
@@ -138,22 +148,22 @@ private fun NavItem(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    // 图标缩放动画：选中时 1.0 → 1.1
+    // 图标缩放动画：选中时 1.0 → 1.1（设计规范11.2.3：200ms ease-in-out）
     val iconScale by animateFloatAsState(
         targetValue = if (isSelected) 1.1f else 1.0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
+        animationSpec = tween(
+            durationMillis = 200,  // 设计规范：200ms
+            easing = EaseInOut      // 设计规范：ease-in-out
         ),
         label = "iconScale"
     )
 
-    // 文字上移动画：选中时 0dp → (-4).dp
+    // 文字上移动画：选中时 0dp → (-4).dp（设计规范11.2.3：200ms ease-in-out）
     val textOffsetY by animateDpAsState(
         targetValue = if (isSelected) (-4).dp else 0.dp,
         animationSpec = tween(
-            durationMillis = 200,
-            easing = EaseOutCubic
+            durationMillis = 200,  // 设计规范：200ms
+            easing = EaseInOut      // 设计规范：ease-in-out
         ),
         label = "textOffsetY"
     )
@@ -187,7 +197,7 @@ private fun NavItem(
         Text(
             text = label,
             fontSize = 12.sp,
-            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,  // 设计规范11.2.3：12sp Medium
             color = textColor,
             modifier = Modifier.offset(y = textOffsetY)
         )

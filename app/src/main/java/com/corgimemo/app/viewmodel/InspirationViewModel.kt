@@ -264,6 +264,14 @@ class InspirationViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 根据ID获取灵感（用于编辑模式加载）
+     * @param id 灵感ID
+     * @return 灵感实体，不存在返回null
+     */
+    suspend fun getInspirationById(id: Long): Inspiration? =
+        inspirationRepository.getInspirationById(id)
+
     // ========== 辅助方法 ==========
 
     /**

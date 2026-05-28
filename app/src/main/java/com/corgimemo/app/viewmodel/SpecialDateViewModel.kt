@@ -67,6 +67,14 @@ class SpecialDateViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 根据ID获取特殊日期（用于编辑模式加载）
+     * @param id 日期ID
+     * @return 日期实体，不存在返回null
+     */
+    suspend fun getDateById(id: Long): SpecialDate? =
+        repository.getById(id)
+
     fun saveDate(
         id: Long?,
         title: String,
@@ -204,50 +212,54 @@ class SpecialDateViewModel @Inject constructor(
             }.timeInMillis
             val msPerDay = 24 * 60 * 60 * 1000L
 
-            return dates.map { date ->
-                val effectiveDate = computeEffectiveDate(date, todayStart)
-                val daysDiff = ((effectiveDate - todayStart) / msPerDay)
-                val daysAbs = kotlin.math.abs(daysDiff)
+            return dates.mapNotNull { date ->
+                try {
+                    val effectiveDate = computeEffectiveDate(date, todayStart)
+                    val daysDiff = ((effectiveDate - todayStart) / msPerDay)
+                    val daysAbs = kotlin.math.abs(daysDiff)
 
-                val groupType = when {
-                    date.countMode == 1 -> GroupType.CELEBRATING
-                    daysDiff > 0 -> GroupType.UPCOMING
-                    else -> GroupType.EXPIRED
-                }
-
-                val dayColor = when (groupType) {
-                    GroupType.CELEBRATING -> DayColor.GREEN
-                    else -> when {
-                        daysAbs <= 3L -> DayColor.RED
-                        daysAbs <= 30L -> DayColor.ORANGE
-                        else -> DayColor.GRAY
+                    val groupType = when {
+                        date.countMode == 1 -> GroupType.CELEBRATING
+                        daysDiff > 0 -> GroupType.UPCOMING
+                        else -> GroupType.EXPIRED
                     }
-                }
 
-                val displayText = when (groupType) {
-                    GroupType.UPCOMING -> "${daysAbs}天后"
-                    GroupType.CELEBRATING -> "${daysAbs}天"
-                    GroupType.EXPIRED -> "${daysAbs}天前"
-                }
+                    val dayColor = when (groupType) {
+                        GroupType.CELEBRATING -> DayColor.GREEN
+                        else -> when {
+                            daysAbs <= 3L -> DayColor.RED
+                            daysAbs <= 30L -> DayColor.ORANGE
+                            else -> DayColor.GRAY
+                        }
+                    }
 
-                DisplayDate(
-                    id = date.id,
-                    title = date.title,
-                    targetDate = effectiveDate,
-                    originalTargetDate = date.targetDate,
-                    category = DateCategory.valueOf(date.category),
-                    countMode = date.countMode,
-                    daysRemaining = daysDiff,
-                    daysAbsolute = daysAbs,
-                    dayColor = dayColor,
-                    groupType = groupType,
-                    displayText = displayText,
-                    content = date.content,
-                    tags = decodeTagsSafe(date.tags),
-                    hasImage = decodePathsSafe(date.imagePaths).isNotEmpty(),
-                    hasRelation = false,
-                    isPinned = date.isPinned
-                )
+                    val displayText = when (groupType) {
+                        GroupType.UPCOMING -> "${daysAbs}天后"
+                        GroupType.CELEBRATING -> "${daysAbs}天"
+                        GroupType.EXPIRED -> "${daysAbs}天前"
+                    }
+
+                    DisplayDate(
+                        id = date.id,
+                        title = date.title,
+                        targetDate = effectiveDate,
+                        originalTargetDate = date.targetDate,
+                        category = try { DateCategory.valueOf(date.category) } catch (e: Exception) { DateCategory.OTHER },
+                        countMode = date.countMode,
+                        daysRemaining = daysDiff,
+                        daysAbsolute = daysAbs,
+                        dayColor = dayColor,
+                        groupType = groupType,
+                        displayText = displayText,
+                        content = date.content,
+                        tags = decodeTagsSafe(date.tags),
+                        hasImage = decodePathsSafe(date.imagePaths).isNotEmpty(),
+                        hasRelation = false,
+                        isPinned = date.isPinned
+                    )
+                } catch (e: Exception) {
+                    null
+                }
             }.groupBy { it.groupType }
         }
 

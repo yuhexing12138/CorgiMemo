@@ -95,7 +95,7 @@ fun InspirationEmptyState(
             text = "还没有灵感记录~",
             fontSize = 17.sp,
             fontWeight = FontWeight.Medium,
-            color = Color(0xFF333333)
+            color = Color(0xFF2D2D2D)
         )
 
         Spacer(modifier = Modifier.height(8.dp))

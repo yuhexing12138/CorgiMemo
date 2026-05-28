@@ -45,7 +45,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+// import androidx.compose.material3.Scaffold  // 已移除：避免与 MainScreen 的外层 Scaffold 嵌套
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SnackbarDuration
@@ -369,9 +369,11 @@ fun HomeScreen(
             }
         }
     ) {
+        // 使用 Box 作为根容器，确保所有子元素正确堆叠
         Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            topBar = {
+            // 主内容区域使用 Column 垂直排列
+            Column(modifier = Modifier.fillMaxSize()) {
+                // 顶部栏区域
                 if (isBatchMode) {
                     TopAppBar(
                         title = {
@@ -415,88 +417,15 @@ fun HomeScreen(
                         onCorgiClick = { navController.navigate(Screen.CorgiDetail.route) }
                     )
                 }
-            },
-            floatingActionButton = {
-                AnimatedFAB(
-                    onClick = {
-                        viewModel.onUserInteraction()
-                        viewModel.setPoseForCreating()
-                        navController.navigate("todo_edit")
-                    }
-                )
-            },
-            snackbarHost = {
-                SnackbarHost(hostState = snackbarHostState)
-            },
-            bottomBar = {
-                AnimatedVisibility(
-                    visible = isBatchMode,
-                    enter = slideInVertically(initialOffsetY = { it }),
-                    exit = slideOutVertically(targetOffsetY = { it })
+
+                // 主内容区域：使用 weight(1f) 填满剩余空间
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
                 ) {
-                    Surface(
-                        shadowElevation = 8.dp,
-                        color = MaterialTheme.colorScheme.surface
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            val hasSelection = selectedTodoIds.isNotEmpty()
-
-                            // 全部完成按钮
-                            Button(
-                                onClick = {
-                                    viewModel.batchComplete()
-                                    coroutineScope.launch {
-                                        snackbarHostState.showSnackbar("已完成 ${selectedTodoIds.size} 个待办")
-                                    }
-                                },
-                                enabled = hasSelection,
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text(text = "✅ 全部完成")
-                            }
-
-                            // 移动按钮
-                            Button(
-                                onClick = { showBatchMoveDialog = true },
-                                enabled = hasSelection,
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text(text = "📂 移动")
-                            }
-
-                            // 删除按钮
-                            Button(
-                                onClick = { showBatchDeleteDialog = true },
-                                enabled = hasSelection,
-                                shape = RoundedCornerShape(12.dp),
-                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                    containerColor = UiColors.Error,
-                                    contentColor = Color.White
-                                )
-                            ) {
-                                Text(text = "🗑️ 删除")
-                            }
-
-                            // 取消按钮
-                            TextButton(
-                                onClick = { viewModel.exitBatchMode() },
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text(text = "✕ 取消")
-                            }
-                        }
-                    }
-                }
-            }
-        ) { innerPadding ->
-            Box(modifier = Modifier.padding(innerPadding)) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    if (showSolarTermCard && currentSolarTerm != null) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (showSolarTermCard && currentSolarTerm != null) {
                         AnimatedVisibility(
                             visible = showSolarTermCard,
                             enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 2 })
@@ -668,67 +597,156 @@ fun HomeScreen(
                     }
                 }
 
-                AnimatedVisibility(
-                    visible = celebrationState.isShowing,
-                    enter = fadeIn() + slideInVertically { it / 2 },
-                    exit = fadeOut() + slideOutVertically { -it / 2 },
-                    modifier = Modifier.align(Alignment.Center)
-                ) {
-                    CelebrationOverlay(
-                        level = celebrationState.level,
-                        message = celebrationState.message
-                    )
-                }
-            }
-
-            if (showNamerDialog) {
-                CorgiNamerDialog(
-                    onConfirm = { name -> viewModel.saveCorgiName(name) },
-                    onDismiss = { viewModel.dismissNamerDialog() }
-                )
-            }
-
-            showLevelUp?.let { level ->
-                LevelUpDialog(
-                    level = level,
-                    onDismiss = { viewModel.dismissLevelUp() }
-                )
-            }
-
-            showAchievementUnlock?.let { achievement ->
-                AchievementUnlockDialog(
-                    achievement = achievement,
-                    onDismiss = { viewModel.dismissAchievementUnlock() }
-                )
-            }
-
-            if (showConsecutiveBonus) {
-                ConsecutiveBonusDialog(
-                    onDismiss = { viewModel.dismissConsecutiveBonus() }
-                )
-            }
-
-            if (showMissedYouDialog) {
-                MissedYouDialog(
-                    daysAway = missedYouDays,
-                    onDismiss = { viewModel.dismissMissedYouDialog() }
-                )
-            }
-
-            // 新成就解锁弹窗（使用新系统）
-            currentUnlockedAchievement?.let { achievement ->
-                AchievementUnlockDialog(
-                    achievement = achievement,
-                    isSoundEnabled = soundEnabled,
-                    onDismiss = {
-                        currentUnlockedAchievement = null
-                        // 弹窗关闭后恢复柯基默认姿态
-                        viewModel.restorePoseWithDelay(200)
-                    }
-                )
             }
         }
 
+        // 弹窗和覆盖层（作为外层 Box 的直接子元素）
+        if (showNamerDialog) {
+            CorgiNamerDialog(
+                onConfirm = { name -> viewModel.saveCorgiName(name) },
+                onDismiss = { viewModel.dismissNamerDialog() }
+            )
+        }
+
+        showLevelUp?.let { level ->
+            LevelUpDialog(
+                level = level,
+                onDismiss = { viewModel.dismissLevelUp() }
+            )
+        }
+
+        showAchievementUnlock?.let { achievement ->
+            AchievementUnlockDialog(
+                achievement = achievement,
+                onDismiss = { viewModel.dismissAchievementUnlock() }
+            )
+        }
+
+        if (showConsecutiveBonus) {
+            ConsecutiveBonusDialog(
+                onDismiss = { viewModel.dismissConsecutiveBonus() }
+            )
+        }
+
+        if (showMissedYouDialog) {
+            MissedYouDialog(
+                daysAway = missedYouDays,
+                onDismiss = { viewModel.dismissMissedYouDialog() }
+            )
+        }
+
+        // 新成就解锁弹窗（使用新系统）
+        currentUnlockedAchievement?.let { achievement ->
+            AchievementUnlockDialog(
+                achievement = achievement,
+                isSoundEnabled = soundEnabled,
+                onDismiss = {
+                    currentUnlockedAchievement = null
+                    // 弹窗关闭后恢复柯基默认姿态
+                    viewModel.restorePoseWithDelay(200)
+                }
+            )
+        }
+
+        // 庆祝覆盖层
+        AnimatedVisibility(
+            visible = celebrationState.isShowing,
+            enter = fadeIn() + slideInVertically { it / 2 },
+            exit = fadeOut() + slideOutVertically { -it / 2 },
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            CelebrationOverlay(
+                level = celebrationState.level,
+                message = celebrationState.message
+            )
+        }
+
+        // SnackbarHost 悬浮显示
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
+
+        // 浮动操作按钮（FAB）
+        if (!isBatchMode) {
+            AnimatedFAB(
+                onClick = {
+                    viewModel.onUserInteraction()
+                    viewModel.setPoseForCreating()
+                    navController.navigate("todo_edit")
+                },
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
+        }
+
+        // 批量操作栏（底部）
+        AnimatedVisibility(
+            visible = isBatchMode,
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it }),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+                Surface(
+                    shadowElevation = 8.dp,
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        val hasSelection = selectedTodoIds.isNotEmpty()
+
+                        // 全部完成按钮
+                        Button(
+                            onClick = {
+                                viewModel.batchComplete()
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("已完成 ${selectedTodoIds.size} 个待办")
+                                }
+                            },
+                            enabled = hasSelection,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(text = "✅ 全部完成")
+                        }
+
+                        // 移动按钮
+                        Button(
+                            onClick = { showBatchMoveDialog = true },
+                            enabled = hasSelection,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(text = "📂 移动")
+                        }
+
+                        // 删除按钮
+                        Button(
+                            onClick = { showBatchDeleteDialog = true },
+                            enabled = hasSelection,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = UiColors.Error,
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Text(text = "🗑️ 删除")
+                        }
+
+                        // 取消按钮
+                        TextButton(
+                            onClick = { viewModel.exitBatchMode() },
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(text = "✕ 取消")
+                        }
+                    }
+                }
+            }
+        }
+
+        // 覆盖层效果（在 ModalNavigationDrawer 之外但在 Box 之内）
         AnimatedVisibility(
             visible = celebrationState.isShowing,
             enter = fadeIn(),
@@ -744,7 +762,6 @@ fun HomeScreen(
         ) {
             YawnOverlay()
         }
-    }
     }
 
     // ========== 侧滑导航栏弹窗 ==========
