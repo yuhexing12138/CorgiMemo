@@ -1,5 +1,6 @@
 package com.corgimemo.app.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -36,5 +37,9 @@ data class TodoItem(
     val geofenceAddress: String? = null,
     val hasSubTasks: Boolean = false,
     val voiceNotePath: String? = null,
-    val voiceDuration: Int? = null
+    val voiceDuration: Int? = null,
+
+    /** 本地图片路径 JSON数组，用于存储待办事项关联的图片 */
+    @ColumnInfo(defaultValue = "")
+    val imagePaths: String = ""
 )

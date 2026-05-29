@@ -23,6 +23,7 @@ import com.corgimemo.app.ui.screens.date.SpecialDateEditScreen
 import com.corgimemo.app.ui.screens.inspire.InspireScreenPlaceholder
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.inspiration.InspirationEditScreen
+import com.corgimemo.app.ui.screens.common.ImagePreviewScreen
 
 @Composable
 fun AppNavHost(
@@ -124,6 +125,31 @@ fun AppNavHost(
             InspirationEditScreen(
                 navController = navController,
                 inspirationId = inspirationId
+            )
+        }
+
+        // 图片全屏预览页面路由
+        composable(Screen.ImagePreview.route) { backStackEntry ->
+            /**
+             * 从 SavedStateHandle 获取图片路径列表和初始索引
+             * 由调用方在导航前设置参数：
+             * navController.currentBackStackEntry?.savedStateHandle?.set("imagePaths", paths)
+             * navController.currentBackStackEntry?.savedStateHandle?.set("initialIndex", index)
+             */
+            val imagePaths = backStackEntry.savedStateHandle.get<List<String>>("imagePaths") ?: emptyList()
+            val initialIndex = backStackEntry.savedStateHandle.get<Int>("initialIndex") ?: 0
+
+            ImagePreviewScreen(
+                imagePaths = imagePaths,
+                initialIndex = initialIndex,
+                onDeleteClick = { index ->
+                    /** 删除图片回调（可选，编辑模式时传入）*/
+                    // TODO: 实现删除逻辑并刷新列表
+                },
+                onDismiss = {
+                    /** 关闭预览页面 */
+                    navController.popBackStack()
+                }
             )
         }
     }

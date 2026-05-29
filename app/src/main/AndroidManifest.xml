@@ -22,6 +22,10 @@
     
     <!-- 精确闹钟权限（Android 12+ 需要） -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- 相机权限（用于图片拍摄功能） -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     
     <uses-feature android:name="android.hardware.location.gps" />
 

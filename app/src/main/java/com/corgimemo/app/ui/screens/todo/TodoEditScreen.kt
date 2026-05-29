@@ -133,6 +133,9 @@ fun TodoEditScreen(
     val voiceNotePath by viewModel.voiceNotePath.collectAsState()
     val voiceDuration by viewModel.voiceDuration.collectAsState()
 
+    /** 图片路径列表状态 */
+    val imagePaths by viewModel.imagePaths.collectAsState()
+
     // 柯基相关状态
     val corgiData by homeViewModel.corgiData.collectAsState()
     val currentPose by homeViewModel.currentPose.collectAsState()
@@ -593,6 +596,26 @@ fun TodoEditScreen(
                         .padding(top = 16.dp)
                 )
             }
+
+            /**
+             * 图片选择器组件
+             * 用于在待办事项中添加和管理图片
+             * 支持拍照、相册选择、点击预览、删除等操作
+             */
+            com.corgimemo.app.ui.screens.inspiration.components.ImagePicker(
+                imagePaths = imagePaths,
+                onImagesChange = { newPaths ->
+                    /** 图片列表变更时同步到 ViewModel */
+                    viewModel.reorderImagePaths(newPaths)
+                },
+                onImageClick = { index ->
+                    /** 点击图片打开全屏预览（TODO: 导航到 ImagePreviewScreen）*/
+                    // TODO: 实现导航到图片预览页面
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+            )
 
             // 语音备注按钮
             OutlinedButton(

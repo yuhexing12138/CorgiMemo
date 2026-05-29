@@ -123,6 +123,10 @@ class TodoEditViewModel @Inject constructor(
     private val _voiceDuration = MutableStateFlow<Int?>(null)
     val voiceDuration: StateFlow<Int?> = _voiceDuration.asStateFlow()
 
+    /** 图片路径列表状态（存储内部存储中的绝对路径） */
+    private val _imagePaths = MutableStateFlow<List<String>>(emptyList())
+    val imagePaths: StateFlow<List<String>> = _imagePaths.asStateFlow()
+
     private var existingTodo: TodoItem? = null
 
     fun setTitle(title: String) {
@@ -278,6 +282,11 @@ class TodoEditViewModel @Inject constructor(
                 _voiceNotePath.value = todo.voiceNotePath
                 _voiceDuration.value = todo.voiceDuration
 
+                // 加载图片路径列表（从JSON字符串反序列化）
+                if (todo.imagePaths.isNotBlank()) {
+                    _imagePaths.value = decodePaths(todo.imagePaths)
+                }
+
                 val subTasks = SubTaskManager.getSubTasks(context, todoId)
                 _subTasks.value = subTasks
             }
@@ -338,7 +347,8 @@ class TodoEditViewModel @Inject constructor(
                     geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
                     hasSubTasks = hasSubTasks,
                     voiceNotePath = _voiceNotePath.value,
-                    voiceDuration = _voiceDuration.value
+                    voiceDuration = _voiceDuration.value,
+                    imagePaths = encodePaths(_imagePaths.value)
                 )
                 todoRepository.updateTodo(todo)
                 existingTodo!!.id
@@ -363,7 +373,8 @@ class TodoEditViewModel @Inject constructor(
                     geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
                     hasSubTasks = hasSubTasks,
                     voiceNotePath = _voiceNotePath.value,
-                    voiceDuration = _voiceDuration.value
+                    voiceDuration = _voiceDuration.value,
+                    imagePaths = encodePaths(_imagePaths.value)
                 )
                 todoRepository.insertTodo(todo)
             }
@@ -595,5 +606,91 @@ class TodoEditViewModel @Inject constructor(
     fun clearVoiceNote() {
         _voiceNotePath.value = null
         _voiceDuration.value = null
+    }
+
+    // ==================== 图片管理相关方法 ====================
+
+    /**
+     * 添加单张图片路径到列表
+     *
+     * @param path 图片在内部存储中的绝对路径
+     */
+    fun addImagePath(path: String) {
+        val currentList = _imagePaths.value.toMutableList()
+        if (path !in currentList) {
+            currentList.add(path)
+            _imagePaths.value = currentList
+        }
+    }
+
+    /**
+     * 移除指定路径的图片
+     * 同时从内部存储删除对应的文件
+     *
+     * @param path 要移除的图片路径
+     */
+    fun removeImagePath(path: String) {
+        val currentList = _imagePaths.value.toMutableList()
+        currentList.remove(path)
+        _imagePaths.value = currentList
+
+        /** 异步删除物理文件 */
+        viewModelScope.launch {
+            com.corgimemo.app.util.ImageUtils.deleteImageFromInternalStorage(context, path)
+        }
+    }
+
+    /**
+     * 重新排序图片列表（拖拽排序后调用）
+     *
+     * @param newPaths 排序后的新路径列表
+     */
+    fun reorderImagePaths(newPaths: List<String>) {
+        _imagePaths.value = newPaths
+    }
+
+    /**
+     * 清空所有图片路径
+     * 同时清理内部存储中的所有对应文件
+     */
+    fun clearImagePaths() {
+        val pathsToRemove = _imagePaths.value.toList()
+        _imagePaths.value = emptyList()
+
+        /** 批量删除物理文件 */
+        viewModelScope.launch {
+            com.corgimemo.app.util.ImageUtils.batchDeleteImages(context, pathsToRemove)
+        }
+    }
+
+    /**
+     * 将图片路径列表编码为JSON字符串
+     * 用于持久化存储到数据库
+     *
+     * @param paths 图片路径列表
+     * @return JSON格式的字符串（如 ["path1","path2"]）
+     */
+    private fun encodePaths(paths: List<String>): String {
+        return try {
+            org.json.JSONArray(paths).toString()
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    /**
+     * 从JSON字符串解码图片路径列表
+     * 用于从数据库读取时反序列化
+     *
+     * @param json JSON格式字符串
+     * @return 解析后的路径列表，解析失败返回空列表
+     */
+    private fun decodePaths(json: String): List<String> {
+        return try {
+            val jsonArray = org.json.JSONArray(json)
+            (0 until jsonArray.length()).map { i -> jsonArray.getString(i) }
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 }

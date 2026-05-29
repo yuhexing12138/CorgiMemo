@@ -754,14 +754,6 @@ fun HomeScreen(
         ) {
             GlowOverlay(level = celebrationState.level)
         }
-
-        AnimatedVisibility(
-            visible = currentBehavior == BehaviorType.YAWNING,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            YawnOverlay()
-        }
     }
 
     // ========== 侧滑导航栏弹窗 ==========
@@ -2114,33 +2106,6 @@ private fun SuperGlowOverlay(width: androidx.compose.ui.unit.Dp, alpha: Float) {
                     )
                 )
         )
-    }
-}
-
-/**
- * 打哈欠覆盖层组件
- * 显示 "Zzz 💤" 动画效果
- * TODO: 打哈欠帧动画暂未就绪，后续添加更丰富的动画效果
- */
-@Composable
-fun YawnOverlay() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize(),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Top,
-            modifier = Modifier.padding(top = 100.dp)
-        ) {
-            Text(
-                text = "Zzz 💤",
-                fontSize = 36.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF6B7280).copy(alpha = 0.8f)
-            )
-        }
     }
 }
 
