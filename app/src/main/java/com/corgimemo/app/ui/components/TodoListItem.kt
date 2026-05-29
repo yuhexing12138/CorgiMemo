@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -96,7 +97,8 @@ fun TodoListItem(
     onSelectClick: () -> Unit = {},
     onShareAsImage: () -> Unit = {},
     onToggleExpand: () -> Unit = {},
-    onToggleSubTask: (Long) -> Unit = {}
+    onToggleSubTask: (Long) -> Unit = {},
+    relationHint: String? = null
 ) {
     val deleteWidth = 80.dp
     var offsetX by remember { mutableStateOf(0f) }
@@ -312,6 +314,18 @@ fun TodoListItem(
                                     )
                                 }
                             }
+                        }
+
+                        // 关联提示
+                        if (relationHint != null) {
+                            Text(
+                                text = relationHint,
+                                fontSize = 12.sp,
+                                color = Color(0xFF999999),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
                         }
 
                         if (todo.startDate != null) {

@@ -2,8 +2,10 @@ package com.corgimemo.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.corgimemo.app.data.model.CardRelation
+import com.corgimemo.app.data.model.CardSearchResult
 import com.corgimemo.app.data.model.SpecialDate
-import com.corgimemo.app.data.model.SpecialDateRelation
+import com.corgimemo.app.data.repository.CardRelationRepository
 import com.corgimemo.app.data.repository.SpecialDateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +23,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SpecialDateViewModel @Inject constructor(
-    private val repository: SpecialDateRepository
+    private val repository: SpecialDateRepository,
+    private val cardRelationRepository: CardRelationRepository
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -30,8 +33,8 @@ class SpecialDateViewModel @Inject constructor(
     private val _editingDate = MutableStateFlow<SpecialDate?>(null)
     val editingDate: StateFlow<SpecialDate?> = _editingDate
 
-    private val _relations = MutableStateFlow<List<SpecialDateRelation>>(emptyList())
-    val relations: StateFlow<List<SpecialDateRelation>> = _relations
+    private val _relations = MutableStateFlow<List<CardRelation>>(emptyList())
+    val relations: StateFlow<List<CardRelation>> = _relations
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
@@ -60,7 +63,7 @@ class SpecialDateViewModel @Inject constructor(
         _editingDate.value = date
         if (date != null) {
             viewModelScope.launch {
-                _relations.value = repository.getRelationsBlocking(date.id)
+                _relations.value = cardRelationRepository.getRelationsBlocking("date", date.id)
             }
         } else {
             _relations.value = emptyList()
@@ -107,7 +110,7 @@ class SpecialDateViewModel @Inject constructor(
                 )
                 val newId = repository.insert(newDate)
                 _relations.value.forEach { relation ->
-                    repository.addRelation(relation.copy(specialDateId = newId))
+                    cardRelationRepository.addRelation(relation.copy(sourceId = newId))
                 }
             } else {
                 val existing = repository.getById(id) ?: return@launch
@@ -140,18 +143,35 @@ class SpecialDateViewModel @Inject constructor(
         }
     }
 
-    fun addRelation(relation: SpecialDateRelation) {
+    fun addRelation(targetType: String, targetId: Long) {
         viewModelScope.launch {
-            repository.addRelation(relation)
-            _relations.value = (_relations.value + relation).distinctBy { "${it.targetType}_${it.targetId}" }
+            val dateId = _editingDate.value?.id ?: 0L
+            val relation = CardRelation(
+                sourceType = "date",
+                sourceId = dateId,
+                targetType = targetType,
+                targetId = targetId
+            )
+            val result = cardRelationRepository.addRelation(relation)
+            if (result > 0) {
+                _relations.value = (_relations.value + relation.copy(id = result)).distinctBy { "${it.targetType}_${it.targetId}" }
+            }
         }
     }
 
     fun removeRelation(targetType: String, targetId: Long) {
         viewModelScope.launch {
             val dateId = _editingDate.value?.id ?: return@launch
-            repository.removeRelation(dateId, targetType, targetId)
+            cardRelationRepository.removeRelation("date", dateId, targetType, targetId)
             _relations.value = _relations.value.filter { !(it.targetType == targetType && it.targetId == targetId) }
+        }
+    }
+
+    /** 搜索卡片并回调结果 */
+    fun searchCards(query: String, callback: (List<CardSearchResult>) -> Unit) {
+        viewModelScope.launch {
+            val results = cardRelationRepository.searchCards(query)
+            callback(results)
         }
     }
 
@@ -254,7 +274,7 @@ class SpecialDateViewModel @Inject constructor(
                         content = date.content,
                         tags = decodeTagsSafe(date.tags),
                         hasImage = decodePathsSafe(date.imagePaths).isNotEmpty(),
-                        hasRelation = false,
+                        relationHint = null,
                         isPinned = date.isPinned
                     )
                 } catch (e: Exception) {
@@ -355,7 +375,7 @@ data class DisplayDate(
     val content: String,
     val tags: List<String>,
     val hasImage: Boolean,
-    val hasRelation: Boolean,
+    val relationHint: String?,
     val isPinned: Boolean
 )
 

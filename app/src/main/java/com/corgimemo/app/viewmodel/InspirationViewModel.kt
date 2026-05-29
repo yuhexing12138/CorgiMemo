@@ -3,8 +3,10 @@ package com.corgimemo.app.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.corgimemo.app.data.model.CardRelation
+import com.corgimemo.app.data.model.CardSearchResult
 import com.corgimemo.app.data.model.Inspiration
-import com.corgimemo.app.data.model.InspirationRelation
+import com.corgimemo.app.data.repository.CardRelationRepository
 import com.corgimemo.app.data.repository.InspirationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -26,6 +28,7 @@ import javax.inject.Inject
 @HiltViewModel
 class InspirationViewModel @Inject constructor(
     private val inspirationRepository: InspirationRepository,
+    private val cardRelationRepository: CardRelationRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -56,8 +59,8 @@ class InspirationViewModel @Inject constructor(
     val editingInspiration: StateFlow<Inspiration?> = _editingInspiration.asStateFlow()
 
     /** 关联列表 */
-    private val _relations = MutableStateFlow<List<InspirationRelation>>(emptyList())
-    val relations: StateFlow<List<InspirationRelation>> = _relations.asStateFlow()
+    private val _relations = MutableStateFlow<List<CardRelation>>(emptyList())
+    val relations: StateFlow<List<CardRelation>> = _relations.asStateFlow()
 
     /** 是否正在加载 */
     private val _isLoading = MutableStateFlow(false)
@@ -178,7 +181,7 @@ class InspirationViewModel @Inject constructor(
      */
     fun loadRelations(inspirationId: Long) {
         viewModelScope.launch {
-            inspirationRepository.getRelationsByInspirationId(inspirationId).collect { relations ->
+            cardRelationRepository.getRelations("inspiration", inspirationId).collect { relations ->
                 _relations.value = relations
             }
         }
@@ -192,12 +195,16 @@ class InspirationViewModel @Inject constructor(
      */
     fun addRelation(inspirationId: Long, targetType: String, targetId: Long) {
         viewModelScope.launch {
-            val relation = InspirationRelation(
-                inspirationId = inspirationId,
+            val relation = CardRelation(
+                sourceType = "inspiration",
+                sourceId = inspirationId,
                 targetType = targetType,
                 targetId = targetId
             )
-            inspirationRepository.addRelation(relation)
+            val result = cardRelationRepository.addRelation(relation)
+            if (result > 0) {
+                _relations.value = _relations.value + relation.copy(id = result)
+            }
         }
     }
 
@@ -207,7 +214,8 @@ class InspirationViewModel @Inject constructor(
      */
     fun deleteRelation(relationId: Long) {
         viewModelScope.launch {
-            inspirationRepository.deleteRelationById(relationId)
+            cardRelationRepository.removeRelationById(relationId)
+            _relations.value = _relations.value.filter { it.id != relationId }
         }
     }
 
@@ -219,7 +227,20 @@ class InspirationViewModel @Inject constructor(
      */
     fun deleteRelation(inspirationId: Long, targetType: String, targetId: Long) {
         viewModelScope.launch {
-            inspirationRepository.deleteRelation(inspirationId, targetType, targetId)
+            cardRelationRepository.removeRelation("inspiration", inspirationId, targetType, targetId)
+            _relations.value = _relations.value.filter { !(it.targetType == targetType && it.targetId == targetId) }
+        }
+    }
+
+    /**
+     * 搜索卡片（用于关联选择）
+     * @param query 搜索关键词
+     * @param callback 搜索结果回调
+     */
+    fun searchCards(query: String, callback: (List<CardSearchResult>) -> Unit) {
+        viewModelScope.launch {
+            val results = cardRelationRepository.searchCards(query)
+            callback(results)
         }
     }
 

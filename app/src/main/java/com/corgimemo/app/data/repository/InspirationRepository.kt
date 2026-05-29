@@ -16,7 +16,8 @@ import javax.inject.Singleton
 @Singleton
 class InspirationRepository @Inject constructor(
     private val inspirationDao: InspirationDao,
-    private val relationDao: InspirationRelationDao
+    private val relationDao: InspirationRelationDao,
+    private val cardRelationRepository: CardRelationRepository
 ) {
     
     // ========== 灵感 CRUD 操作 ==========
@@ -64,6 +65,7 @@ class InspirationRepository @Inject constructor(
      */
     suspend fun deleteById(id: Long) {
         relationDao.deleteByInspirationId(id)
+        cardRelationRepository.removeAllForCard("inspiration", id)
         inspirationDao.deleteById(id)
     }
     

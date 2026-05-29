@@ -2,6 +2,7 @@ package com.corgimemo.app.di
 
 import android.content.Context
 import com.corgimemo.app.data.local.db.AchievementDao
+import com.corgimemo.app.data.local.db.CardRelationDao
 import com.corgimemo.app.data.local.db.CategoryDao
 import com.corgimemo.app.data.local.db.CategoryKeywordDao
 import com.corgimemo.app.data.local.db.CorgiDao
@@ -114,5 +115,12 @@ object DatabaseModule {
     @Singleton
     fun provideSpecialDateRelationDao(database: CorgiMemoDatabase): SpecialDateRelationDao {
         return database.specialDateRelationDao()
+    }
+
+    /** 统一卡片关联关系 DAO */
+    @Provides
+    @Singleton
+    fun provideCardRelationDao(database: CorgiMemoDatabase): CardRelationDao {
+        return database.cardRelationDao()
     }
 }

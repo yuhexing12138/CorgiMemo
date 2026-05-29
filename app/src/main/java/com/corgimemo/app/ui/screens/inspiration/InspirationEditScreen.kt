@@ -33,8 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.Inspiration
-import com.corgimemo.app.data.model.InspirationRelation
+import com.corgimemo.app.ui.components.MentionTriggerPopup
 import com.corgimemo.app.ui.screens.inspiration.components.ImagePicker
 import com.corgimemo.app.ui.screens.inspiration.components.RelationSelector
 import com.corgimemo.app.ui.screens.inspiration.components.TagInputField
@@ -68,8 +69,11 @@ fun InspirationEditScreen(
     var tags by remember { mutableStateOf<List<String>>(emptyList()) }
     /** 图片路径列表状态 */
     var imagePaths by remember { mutableStateOf<List<String>>(emptyList()) }
-    /** 关联列表状态 */
-    var relations by remember { mutableStateOf<List<InspirationRelation>>(emptyList()) }
+
+    /** @触发弹窗状态 */
+    var showMentionPopup by remember { mutableStateOf(false) }
+    /** @搜索关键词状态 */
+    var mentionQuery by remember { mutableStateOf("") }
 
     /** 判断是否为编辑模式 */
     val isEditMode = inspirationId != null && inspirationId > 0
@@ -192,7 +196,22 @@ fun InspirationEditScreen(
              */
             OutlinedTextField(
                 value = content,
-                onValueChange = { content = it },
+                onValueChange = { newValue ->
+                    content = newValue
+                    /** 检测 @ 字符输入，触发关联选择弹窗 */
+                    if ("@" in newValue && !showMentionPopup) {
+                        showMentionPopup = true
+                        mentionQuery = ""
+                    }
+                    if (showMentionPopup) {
+                        val atIndex = newValue.lastIndexOf("@")
+                        if (atIndex >= 0) {
+                            mentionQuery = newValue.substring(atIndex + 1)
+                        } else {
+                            showMentionPopup = false
+                        }
+                    }
+                },
                 label = { Text("内容") },
                 placeholder = { Text("记录你的灵感想法...") },
                 modifier = Modifier
@@ -201,6 +220,20 @@ fun InspirationEditScreen(
                 minLines = 5,
                 maxLines = 10,
                 shape = RoundedCornerShape(12.dp)
+            )
+
+            /** @触发关联选择弹窗 */
+            MentionTriggerPopup(
+                visible = showMentionPopup,
+                searchQuery = mentionQuery,
+                onDismiss = { showMentionPopup = false },
+                onCardSelected = { cardType, cardId, cardTitle ->
+                    showMentionPopup = false
+                    viewModel.addRelation(inspirationId ?: 0L, cardType, cardId)
+                },
+                searchCards = { query, callback -> viewModel.searchCards(query, callback) },
+                sourceType = "inspiration",
+                sourceId = inspirationId ?: 0L
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -234,17 +267,19 @@ fun InspirationEditScreen(
              * 用于管理灵感与其他卡片（待办/日期/其他灵感）的关联关系
              */
             RelationSelector(
-                relations = relations,
+                relations = viewModel.relations.collectAsState().value,
                 onRelationAdd = { targetType, targetId ->
-                    /** 添加新关联关系 */
                     if (inspirationId != null) {
                         viewModel.addRelation(inspirationId, targetType, targetId)
                     }
                 },
                 onRelationDelete = { relationId ->
-                    /** 删除关联关系 */
                     viewModel.deleteRelation(relationId)
                 },
+                searchCards = { query, callback -> viewModel.searchCards(query, callback) },
+                sourceType = "inspiration",
+                sourceId = inspirationId ?: 0L,
+                cardRelationRepository = null,
                 modifier = Modifier.fillMaxWidth()
             )
 

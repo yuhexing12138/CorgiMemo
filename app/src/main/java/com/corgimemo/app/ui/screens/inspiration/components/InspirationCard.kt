@@ -49,7 +49,7 @@ fun InspirationCard(
     tags: List<String>,
     imagePaths: List<String>,
     formattedTime: String,
-    hasRelation: Boolean = false,
+    relationHint: String? = null,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -130,11 +130,13 @@ fun InspirationCard(
                     }
 
                     /** 关联提示 */
-                    if (hasRelation) {
+                    if (relationHint != null) {
                         Text(
-                            text = "🔗",
+                            text = relationHint,
                             fontSize = 12.sp,
-                            modifier = Modifier.padding(end = 4.dp)
+                            color = Color(0xFF999999),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 

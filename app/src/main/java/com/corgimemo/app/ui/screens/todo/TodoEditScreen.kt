@@ -68,10 +68,12 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.animation.InteractiveCorgi
+import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.ui.components.CategorySelector
 import com.corgimemo.app.ui.components.KeywordSelectionDialog
 import com.corgimemo.app.ui.components.LocationPicker
+import com.corgimemo.app.ui.components.MentionTriggerPopup
 import com.corgimemo.app.ui.components.RecommendationChip
 import com.corgimemo.app.ui.components.SubTaskList
 import com.corgimemo.app.ui.components.VoicePlayerComponent
@@ -79,6 +81,8 @@ import com.corgimemo.app.ui.components.VoiceRecordBottomSheet
 import com.corgimemo.app.ui.components.RecordAudioPermissionChecker
 import com.corgimemo.app.ui.components.RecordAudioPermissionState
 import com.corgimemo.app.ui.components.openAppSettingsIntent
+import com.corgimemo.app.ui.screens.inspiration.components.ImagePicker
+import com.corgimemo.app.ui.screens.inspiration.components.RelationSelector
 import com.corgimemo.app.util.VoiceRecorder
 import com.corgimemo.app.util.VoicePlayer
 import com.corgimemo.app.viewmodel.HomeViewModel
@@ -179,6 +183,11 @@ fun TodoEditScreen(
     )
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+
+    /** @触发弹窗状态 */
+    var showMentionPopup by remember { mutableStateOf(false) }
+    /** @搜索关键词状态 */
+    var mentionQuery by remember { mutableStateOf("") }
 
     val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -335,7 +344,22 @@ fun TodoEditScreen(
 
             TextField(
                 value = content,
-                onValueChange = { viewModel.setContent(it) },
+                onValueChange = { newValue ->
+                    viewModel.setContent(newValue)
+                    /** 检测 @ 字符输入，触发关联选择弹窗 */
+                    if ("@" in newValue && !showMentionPopup) {
+                        showMentionPopup = true
+                        mentionQuery = ""
+                    }
+                    if (showMentionPopup) {
+                        val atIndex = newValue.lastIndexOf("@")
+                        if (atIndex >= 0) {
+                            mentionQuery = newValue.substring(atIndex + 1)
+                        } else {
+                            showMentionPopup = false
+                        }
+                    }
+                },
                 label = { Text("详情") },
                 placeholder = { Text("请输入详细描述（可选）") },
                 modifier = Modifier
@@ -343,6 +367,20 @@ fun TodoEditScreen(
                     .padding(top = 16.dp),
                 minLines = 3,
                 maxLines = 5
+            )
+
+            /** @触发关联选择弹窗 */
+            MentionTriggerPopup(
+                visible = showMentionPopup,
+                searchQuery = mentionQuery,
+                onDismiss = { showMentionPopup = false },
+                onCardSelected = { cardType, cardId, cardTitle ->
+                    showMentionPopup = false
+                    viewModel.addRelation(cardType, cardId)
+                },
+                searchCards = { query, callback -> viewModel.searchCards(query, callback) },
+                sourceType = "todo",
+                sourceId = todoId ?: 0L
             )
 
             Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
@@ -612,6 +650,20 @@ fun TodoEditScreen(
                     /** 点击图片打开全屏预览（TODO: 导航到 ImagePreviewScreen）*/
                     // TODO: 实现导航到图片预览页面
                 },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+            )
+
+            /** 关联选择器组件 */
+            RelationSelector(
+                relations = viewModel.relations.collectAsState().value,
+                onRelationAdd = { targetType, targetId -> viewModel.addRelation(targetType, targetId) },
+                onRelationDelete = { relationId -> viewModel.deleteRelation(relationId) },
+                searchCards = { query, callback -> viewModel.searchCards(query, callback) },
+                sourceType = "todo",
+                sourceId = todoId ?: 0L,
+                cardRelationRepository = null,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp)

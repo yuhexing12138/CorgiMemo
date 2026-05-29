@@ -160,6 +160,7 @@ fun InspirationScreen(
                                     tags = tags,
                                     imagePaths = imagePaths,
                                     formattedTime = formattedTime,
+                                    relationHint = null,
                                     onClick = {
                                         /** 点击卡片：导航到编辑页（传入灵感ID） */
                                         navController.navigate("inspiration_edit/${inspiration.id}")

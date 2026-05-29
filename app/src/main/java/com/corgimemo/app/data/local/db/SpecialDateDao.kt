@@ -39,6 +39,10 @@ interface SpecialDateDao {
     @Query("SELECT * FROM special_dates ORDER BY isPinned DESC, targetDate ASC")
     fun getAllSpecialDates(): Flow<List<SpecialDate>>
 
+    /** 获取所有特殊日期（阻塞方式） */
+    @Query("SELECT * FROM special_dates ORDER BY isPinned DESC, targetDate ASC")
+    suspend fun getAllSpecialDatesBlocking(): List<SpecialDate>
+
     /** 根据ID获取特殊日期 */
     @Query("SELECT * FROM special_dates WHERE id = :id")
     suspend fun getSpecialDateById(id: Long): SpecialDate?

@@ -19,6 +19,7 @@ import java.util.Calendar
 class TodoRepository @Inject constructor(
     private val todoDao: TodoDao,
     private val deletedTodoRepository: DeletedTodoRepository,
+    private val cardRelationRepository: CardRelationRepository,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     @ApplicationContext private val context: Context
 ) {
@@ -76,6 +77,7 @@ class TodoRepository @Inject constructor(
      */
     suspend fun deleteTodo(todo: TodoItem) = withContext(ioDispatcher) {
         deletedTodoRepository.insertDeletedTodo(todo)
+        cardRelationRepository.removeAllForCard("todo", todo.id)
         todoDao.delete(todo)
         AlarmScheduler.cancelReminder(context, todo.id)
         WidgetUpdateReceiver.sendRefreshBroadcast(context)
@@ -91,6 +93,7 @@ class TodoRepository @Inject constructor(
         if (todo != null) {
             deletedTodoRepository.insertDeletedTodo(todo)
         }
+        cardRelationRepository.removeAllForCard("todo", todoId)
         todoDao.deleteById(todoId)
         AlarmScheduler.cancelReminder(context, todoId)
         WidgetUpdateReceiver.sendRefreshBroadcast(context)

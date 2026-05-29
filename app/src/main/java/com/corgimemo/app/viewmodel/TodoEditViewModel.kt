@@ -4,10 +4,13 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
+import com.corgimemo.app.data.model.CardRelation
+import com.corgimemo.app.data.model.CardSearchResult
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CategoryType
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.data.repository.CardRelationRepository
 import com.corgimemo.app.data.repository.CategoryKeywordRepository
 import com.corgimemo.app.data.repository.CategoryMatcher
 import com.corgimemo.app.data.repository.CategoryRepository
@@ -37,6 +40,7 @@ class TodoEditViewModel @Inject constructor(
     private val categoryKeywordRepository: CategoryKeywordRepository,
     private val categoryMatcher: CategoryMatcher,
     private val corgiPreferences: CorgiPreferences,
+    private val cardRelationRepository: CardRelationRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -126,6 +130,10 @@ class TodoEditViewModel @Inject constructor(
     /** 图片路径列表状态（存储内部存储中的绝对路径） */
     private val _imagePaths = MutableStateFlow<List<String>>(emptyList())
     val imagePaths: StateFlow<List<String>> = _imagePaths.asStateFlow()
+
+    /** 关联列表 */
+    private val _relations = MutableStateFlow<List<CardRelation>>(emptyList())
+    val relations: StateFlow<List<CardRelation>> = _relations.asStateFlow()
 
     private var existingTodo: TodoItem? = null
 
@@ -287,6 +295,9 @@ class TodoEditViewModel @Inject constructor(
                     _imagePaths.value = decodePaths(todo.imagePaths)
                 }
 
+                // 加载关联关系
+                _relations.value = cardRelationRepository.getRelationsBlocking("todo", todoId)
+
                 val subTasks = SubTaskManager.getSubTasks(context, todoId)
                 _subTasks.value = subTasks
             }
@@ -380,6 +391,13 @@ class TodoEditViewModel @Inject constructor(
             }
 
             saveSubTasks(todoId)
+
+            // 保存关联关系（新建时将临时关联绑定到新ID）
+            if (existingTodo == null) {
+                _relations.value.forEach { relation ->
+                    cardRelationRepository.addRelation(relation.copy(sourceId = todoId))
+                }
+            }
         }
     }
 
@@ -691,6 +709,52 @@ class TodoEditViewModel @Inject constructor(
             (0 until jsonArray.length()).map { i -> jsonArray.getString(i) }
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    // ========== 关联管理方法 ==========
+
+    /**
+     * 添加关联关系
+     * @param targetType 目标类型
+     * @param targetId 目标ID
+     */
+    fun addRelation(targetType: String, targetId: Long) {
+        viewModelScope.launch {
+            val todoId = existingTodo?.id ?: 0L
+            val relation = CardRelation(
+                sourceType = "todo",
+                sourceId = todoId,
+                targetType = targetType,
+                targetId = targetId
+            )
+            val result = cardRelationRepository.addRelation(relation)
+            if (result > 0) {
+                _relations.value = (_relations.value + relation.copy(id = result)).distinctBy { "${it.targetType}_${it.targetId}" }
+            }
+        }
+    }
+
+    /**
+     * 删除关联关系
+     * @param relationId 关联ID
+     */
+    fun deleteRelation(relationId: Long) {
+        viewModelScope.launch {
+            cardRelationRepository.removeRelationById(relationId)
+            _relations.value = _relations.value.filter { it.id != relationId }
+        }
+    }
+
+    /**
+     * 搜索卡片（用于关联选择器）
+     * @param query 搜索关键词
+     * @param callback 结果回调
+     */
+    fun searchCards(query: String, callback: (List<CardSearchResult>) -> Unit) {
+        viewModelScope.launch {
+            val results = cardRelationRepository.searchCards(query)
+            callback(results)
         }
     }
 }

@@ -27,6 +27,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -40,8 +41,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.SpecialDate
-import com.corgimemo.app.data.model.SpecialDateRelation
+import com.corgimemo.app.ui.components.MentionTriggerPopup
 import com.corgimemo.app.ui.screens.date.components.CountModeSwitch
 import com.corgimemo.app.ui.screens.date.components.DateCategoryPicker
 import com.corgimemo.app.ui.screens.date.components.ReminderSetting
@@ -89,8 +91,10 @@ fun SpecialDateEditScreen(
     /** 图片路径列表状态 */
     val imagePaths = remember { mutableStateListOf<String>() }
 
-    /** 关联关系列表状态 */
-    val relations = remember { mutableStateListOf<SpecialDateRelation>() }
+    /** @触发弹窗状态 */
+    var showMentionPopup by remember { mutableStateOf(false) }
+    /** @搜索关键词状态 */
+    var mentionQuery by remember { mutableStateOf("") }
 
     /** 控制日期选择对话框显示 */
     var showDatePicker by remember { mutableStateOf(false) }
@@ -161,12 +165,6 @@ fun SpecialDateEditScreen(
             /** 解析图片路径JSON字符串为列表 */
             imagePaths.clear()
             imagePaths.addAll(viewModel.decodePaths(date.imagePaths))
-        }
-
-        /** 监听关联关系变化 */
-        LaunchedEffect(viewModel.relations.value) {
-            relations.clear()
-            relations.addAll(viewModel.relations.value)
         }
     }
 
@@ -316,12 +314,41 @@ fun SpecialDateEditScreen(
             // ========== 7. 备注内容 ==========
             OutlinedTextField(
                 value = content,
-                onValueChange = { content = it },
+                onValueChange = { newValue ->
+                    content = newValue
+                    /** 检测 @ 字符输入，触发关联选择弹窗 */
+                    if ("@" in newValue && !showMentionPopup) {
+                        showMentionPopup = true
+                        mentionQuery = ""
+                    }
+                    if (showMentionPopup) {
+                        val atIndex = newValue.lastIndexOf("@")
+                        if (atIndex >= 0) {
+                            mentionQuery = newValue.substring(atIndex + 1)
+                        } else {
+                            showMentionPopup = false
+                        }
+                    }
+                },
                 label = { Text("备注") },
                 placeholder = { Text("准备什么礼物好呢...") },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
+            )
+
+            /** @触发关联选择弹窗 */
+            MentionTriggerPopup(
+                visible = showMentionPopup,
+                searchQuery = mentionQuery,
+                onDismiss = { showMentionPopup = false },
+                onCardSelected = { cardType, cardId, cardTitle ->
+                    showMentionPopup = false
+                    viewModel.addRelation(cardType, cardId)
+                },
+                searchCards = { query, callback -> viewModel.searchCards(query, callback) },
+                sourceType = "date",
+                sourceId = specialDateId ?: 0L
             )
 
             // ========== 8. 标签输入 ==========
@@ -344,34 +371,20 @@ fun SpecialDateEditScreen(
 
             // ========== 10. 关联选择 ==========
             RelationSelector(
-                relations = relations.toList().map { relation ->
-                    /** 将SpecialDateRelation转换为InspirationRelation格式以适配组件接口 */
-                    com.corgimemo.app.data.model.InspirationRelation(
-                        id = relation.id,
-                        inspirationId = relation.specialDateId,
-                        targetType = relation.targetType,
-                        targetId = relation.targetId
-                    )
-                },
+                relations = viewModel.relations.collectAsState().value,
                 onRelationAdd = { targetType, targetId ->
-                    /** 添加新的关联关系 */
-                    val newRelation = SpecialDateRelation(
-                        id = System.currentTimeMillis(),
-                        specialDateId = specialDateId ?: 0,
-                        targetType = targetType,
-                        targetId = targetId
-                    )
-                    relations.add(newRelation)
-                    viewModel.addRelation(newRelation)
+                    viewModel.addRelation(targetType, targetId)
                 },
                 onRelationDelete = { relationId ->
-                    /** 删除关联关系 */
-                    val relation = relations.find { it.id == relationId }
-                    if (relation != null) {
-                        relations.remove(relation)
-                        viewModel.removeRelation(relation.targetType, relation.targetId)
-                    }
-                }
+                    viewModel.removeRelation(
+                        viewModel.relations.value.find { it.id == relationId }?.targetType ?: "",
+                        viewModel.relations.value.find { it.id == relationId }?.targetId ?: 0L
+                    )
+                },
+                searchCards = { query, callback -> viewModel.searchCards(query, callback) },
+                sourceType = "date",
+                sourceId = specialDateId ?: 0L,
+                cardRelationRepository = null
             )
 
             Spacer(modifier = Modifier.height(32.dp))

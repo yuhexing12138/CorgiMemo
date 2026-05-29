@@ -15,7 +15,8 @@ import javax.inject.Singleton
 @Singleton
 class SpecialDateRepository @Inject constructor(
     private val specialDateDao: SpecialDateDao,
-    private val relationDao: SpecialDateRelationDao
+    private val relationDao: SpecialDateRelationDao,
+    private val cardRelationRepository: CardRelationRepository
 ) {
     /** 获取所有特殊日期（响应式） */
     val allDates: Flow<List<SpecialDate>> = specialDateDao.getAllSpecialDates()
@@ -32,6 +33,7 @@ class SpecialDateRepository @Inject constructor(
     /** 删除特殊日期（级联删除关联） */
     suspend fun delete(date: SpecialDate) {
         relationDao.deleteBySpecialDateId(date.id)
+        cardRelationRepository.removeAllForCard("date", date.id)
         specialDateDao.delete(date)
     }
 

@@ -114,7 +114,15 @@ fun SpecialDateCard(
                         Text("${date.category.emoji} ${date.category.displayName}", fontSize = 11.sp,
                             fontWeight = FontWeight.Medium, color = tagTextColor,
                             modifier = Modifier.background(tagBgColor, RoundedCornerShape(20.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
-                        if (date.hasRelation) Text("🔗", fontSize = 11.sp)
+                        if (date.relationHint != null) {
+                            Text(
+                                date.relationHint,
+                                fontSize = 12.sp,
+                                color = Color(0xFF999999),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
 

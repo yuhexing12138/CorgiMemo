@@ -589,7 +589,8 @@ fun HomeScreen(
                                     onToggleSubTask = { subTaskId ->
                                         viewModel.onUserInteraction()
                                         viewModel.toggleSubTaskCompletion(subTaskId)
-                                    }
+                                    },
+                                    relationHint = null
                                 )
                             }
                             }

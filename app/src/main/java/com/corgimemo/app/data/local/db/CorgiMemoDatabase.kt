@@ -10,6 +10,7 @@ import com.corgimemo.app.data.local.db.AchievementEntity
 import com.corgimemo.app.data.local.db.CategoryKeywordEntity
 import com.corgimemo.app.data.local.db.OperationLogEntity
 import com.corgimemo.app.data.model.Category
+import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.DeletedTodo
 import com.corgimemo.app.data.model.MoodHistory
@@ -26,8 +27,8 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  * 管理待办事项、柯基数据、任务分类、成就和用户模板
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class],
-    version = 19,
+    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class],
+    version = 21,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -69,6 +70,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     /** 特殊日期关联关系 DAO */
     abstract fun specialDateRelationDao(): SpecialDateRelationDao
 
+    /** 统一卡片关联关系 DAO */
+    abstract fun cardRelationDao(): CardRelationDao
+
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
 
@@ -82,7 +86,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                     .build()
                 INSTANCE = instance
                 instance
@@ -513,6 +517,81 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
         override fun migrate(database: SupportSQLiteDatabase) {
             /** 添加 imagePaths 字段，用于存储图片路径的 JSON 数组 */
             database.execSQL("ALTER TABLE todo_items ADD COLUMN imagePaths TEXT NOT NULL DEFAULT ''")
+        }
+    }
+
+    /**
+     * 版本 19 → 20 迁移：创建统一卡片关联表
+     * 创建 card_relations 表，并从现有的 inspiration_relations 和 special_date_relations 迁移数据
+     * 保留旧表以避免数据丢失
+     */
+    private val MIGRATION_19_20 = object : Migration(19, 20) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS card_relations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    sourceType TEXT NOT NULL,
+                    sourceId INTEGER NOT NULL,
+                    targetType TEXT NOT NULL,
+                    targetId INTEGER NOT NULL,
+                    createdAt INTEGER NOT NULL DEFAULT 0
+                )
+            """.trimIndent())
+
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId ON card_relations(sourceType, sourceId)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_targetType_targetId ON card_relations(targetType, targetId)")
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId_targetType_targetId ON card_relations(sourceType, sourceId, targetType, targetId)")
+
+            database.execSQL("""
+                INSERT INTO card_relations (sourceType, sourceId, targetType, targetId, createdAt)
+                SELECT 'inspiration', inspirationId, targetType, targetId, createdAt
+                FROM inspiration_relations
+            """.trimIndent())
+
+            database.execSQL("""
+                INSERT INTO card_relations (sourceType, sourceId, targetType, targetId, createdAt)
+                SELECT 'date', specialDateId, targetType, targetId, createdAt
+                FROM special_date_relations
+            """.trimIndent())
+        }
+    }
+
+    /**
+     * 版本 20 → 21 迁移：修复 card_relations 表结构
+     * 删除旧的结构不一致的表，重新创建正确的表结构（从旧表迁移数据）
+     * 修复问题：createdAt 默认值不一致、索引名称/唯一属性不一致
+     */
+    private val MIGRATION_20_21 = object : Migration(20, 21) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("DROP TABLE IF EXISTS card_relations")
+
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS card_relations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    sourceType TEXT NOT NULL,
+                    sourceId INTEGER NOT NULL,
+                    targetType TEXT NOT NULL,
+                    targetId INTEGER NOT NULL,
+                    createdAt INTEGER NOT NULL DEFAULT 0
+                )
+            """.trimIndent())
+
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId ON card_relations(sourceType, sourceId)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_targetType_targetId ON card_relations(targetType, targetId)")
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId_targetType_targetId ON card_relations(sourceType, sourceId, targetType, targetId)")
+
+            // 从旧的分散表重新迁移数据（旧的 card_relations 已删）
+            database.execSQL("""
+                INSERT OR IGNORE INTO card_relations (sourceType, sourceId, targetType, targetId, createdAt)
+                SELECT 'inspiration', inspirationId, targetType, targetId, createdAt
+                FROM inspiration_relations
+            """.trimIndent())
+
+            database.execSQL("""
+                INSERT OR IGNORE INTO card_relations (sourceType, sourceId, targetType, targetId, createdAt)
+                SELECT 'date', specialDateId, targetType, targetId, createdAt
+                FROM special_date_relations
+            """.trimIndent())
         }
     }
 }

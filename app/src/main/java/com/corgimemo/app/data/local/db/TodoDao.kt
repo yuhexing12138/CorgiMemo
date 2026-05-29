@@ -87,4 +87,12 @@ interface TodoDao {
         WHERE status = 1 AND completedAt >= :startOfDay AND completedAt < :endOfDay
     """)
     suspend fun getCompletedCountToday(startOfDay: Long, endOfDay: Long): Int
+
+    /**
+     * 搜索待办（按标题/内容模糊匹配）
+     * @param query 搜索关键词
+     * @return 匹配的待办列表
+     */
+    @Query("SELECT * FROM todo_items WHERE title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%' ORDER BY createdAt DESC")
+    suspend fun searchTodos(query: String): List<TodoItem>
 }
