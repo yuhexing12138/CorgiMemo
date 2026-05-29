@@ -51,7 +51,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
+import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.theme.UiColors
+import com.corgimemo.app.viewmodel.GroupType
 
 private const val DRAWER_ICON_ALL = "📋"
 private const val DRAWER_ICON_DELETED = "🗑️"
@@ -64,19 +66,57 @@ private val categoryIcons = mapOf(
     3 to "🏃"
 )
 
+/**
+ * 侧滑导航栏内容组件（统一版）
+ *
+ * 根据当前Tab动态切换内容区域：
+ * - 待办页：分组管理（全部/未分类/自定义分组/最近删除）
+ * - 灵感页：标签筛选（全部灵感/标签列表）
+ * - 日期页：类型筛选（全部/倒计时/正计时/已过期）
+ * - 我的页：快捷导航
+ *
+ * 用户区域和底部操作区所有页面共享。
+ *
+ * @param currentTab 当前选中的Tab
+ * @param corgiData 柯基数据
+ * @param categories 待办分组列表
+ * @param todoCountByCategory 待办分组计数
+ * @param recentlyDeletedCount 最近删除数量
+ * @param selectedCategoryId 当前选中的待办分组ID
+ * @param inspirationTags 灵感标签列表
+ * @param selectedTag 当前选中的灵感标签
+ * @param selectedDateType 当前选中的日期类型
+ * @param onCategoryClick 待办分组点击回调
+ * @param onAddCategoryClick 添加分组回调
+ * @param onCategoryAction 分组操作回调
+ * @param onTagClick 灵感标签点击回调
+ * @param onAddTagClick 添加标签回调
+ * @param onDateTypeClick 日期类型点击回调
+ * @param onRecentlyDeletedClick 最近删除点击回调
+ * @param onSettingsClick 设置点击回调
+ * @param onHelpClick 帮助点击回调
+ * @param modifier 修饰符
+ */
 @Composable
 fun AppDrawerContent(
+    currentTab: TabItem,
     corgiData: CorgiData?,
     categories: List<Category>,
     todoCountByCategory: Map<Long, Int>,
     recentlyDeletedCount: Int,
     selectedCategoryId: Long?,
-    onCategoryClick: (Long?) -> Unit,
-    onAddCategoryClick: () -> Unit,
-    onCategoryAction: (CategoryAction) -> Unit,
-    onRecentlyDeletedClick: () -> Unit,
-    onSettingsClick: () -> Unit,
-    onHelpClick: () -> Unit,
+    inspirationTags: List<String> = emptyList(),
+    selectedTag: String? = null,
+    selectedDateType: GroupType? = null,
+    onCategoryClick: (Long?) -> Unit = {},
+    onAddCategoryClick: () -> Unit = {},
+    onCategoryAction: (CategoryAction) -> Unit = {},
+    onTagClick: (String?) -> Unit = {},
+    onAddTagClick: () -> Unit = {},
+    onDateTypeClick: (GroupType?) -> Unit = {},
+    onRecentlyDeletedClick: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
+    onHelpClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -89,18 +129,44 @@ fun AppDrawerContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        CategoryGroupSection(
-            categories = categories,
-            todoCountByCategory = todoCountByCategory,
-            recentlyDeletedCount = recentlyDeletedCount,
-            selectedCategoryId = selectedCategoryId,
-            onCategoryClick = onCategoryClick,
-            onRecentlyDeletedClick = onRecentlyDeletedClick,
-            onCategoryAction = onCategoryAction,
-            modifier = Modifier.weight(1f)
-        )
-
-        AddCategoryButton(onClick = onAddCategoryClick)
+        when (currentTab) {
+            TabItem.TODO -> {
+                CategoryGroupSection(
+                    categories = categories,
+                    todoCountByCategory = todoCountByCategory,
+                    recentlyDeletedCount = recentlyDeletedCount,
+                    selectedCategoryId = selectedCategoryId,
+                    onCategoryClick = onCategoryClick,
+                    onRecentlyDeletedClick = onRecentlyDeletedClick,
+                    onCategoryAction = onCategoryAction,
+                    modifier = Modifier.weight(1f)
+                )
+                AddCategoryButton(text = "添加分组", onClick = onAddCategoryClick)
+            }
+            TabItem.INSPIRE -> {
+                InspirationFilterSection(
+                    tags = inspirationTags,
+                    selectedTag = selectedTag,
+                    onTagClick = onTagClick,
+                    onAddTagClick = onAddTagClick,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            TabItem.DATE -> {
+                DateTypeFilterSection(
+                    selectedDateType = selectedDateType,
+                    onDateTypeClick = onDateTypeClick,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            TabItem.PROFILE -> {
+                ProfileQuickNavSection(
+                    onSettingsClick = onSettingsClick,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            TabItem.EDIT -> { /* 中央编辑按钮不是真实Tab */ }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -304,7 +370,7 @@ private fun CategoryItem(
 }
 
 @Composable
-private fun AddCategoryButton(onClick: () -> Unit) {
+private fun AddCategoryButton(text: String = "添加分组", onClick: () -> Unit) {
     Button(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
@@ -324,10 +390,201 @@ private fun AddCategoryButton(onClick: () -> Unit) {
         )
         Spacer(modifier = Modifier.width(4.dp))
         Text(
-            text = "添加分组",
+            text = text,
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium
         )
+    }
+}
+
+/**
+ * 灵感标签筛选区域
+ */
+@Composable
+private fun InspirationFilterSection(
+    tags: List<String>,
+    selectedTag: String?,
+    onTagClick: (String?) -> Unit,
+    onAddTagClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = "🏷️ 标签筛选",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1C1B1F),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .height(3.dp)
+                .fillMaxWidth()
+                .background(UiColors.Primary)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LazyColumn(modifier = Modifier.fillMaxWidth()) {
+            item {
+                CategoryItem(
+                    icon = DRAWER_ICON_ALL,
+                    name = "全部灵感",
+                    count = 0,
+                    isSelected = selectedTag == null,
+                    showMenu = false,
+                    onClick = { onTagClick(null) }
+                )
+            }
+
+            items(tags) { tag ->
+                CategoryItem(
+                    icon = "#",
+                    name = tag,
+                    count = 0,
+                    isSelected = selectedTag == tag,
+                    showMenu = false,
+                    onClick = { onTagClick(tag) }
+                )
+            }
+        }
+
+        AddCategoryButton(text = "添加标签", onClick = onAddTagClick)
+    }
+}
+
+/**
+ * 日期类型筛选区域
+ */
+@Composable
+private fun DateTypeFilterSection(
+    selectedDateType: GroupType?,
+    onDateTypeClick: (GroupType?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = "📅 类型筛选",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1C1B1F),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .height(3.dp)
+                .fillMaxWidth()
+                .background(UiColors.Primary)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LazyColumn(modifier = Modifier.fillMaxWidth()) {
+            item {
+                CategoryItem(
+                    icon = DRAWER_ICON_ALL,
+                    name = "全部日期",
+                    count = 0,
+                    isSelected = selectedDateType == null,
+                    showMenu = false,
+                    onClick = { onDateTypeClick(null) }
+                )
+            }
+
+            item {
+                CategoryItem(
+                    icon = "⏳",
+                    name = "倒计时",
+                    count = 0,
+                    isSelected = selectedDateType == GroupType.UPCOMING,
+                    showMenu = false,
+                    onClick = { onDateTypeClick(GroupType.UPCOMING) }
+                )
+            }
+
+            item {
+                CategoryItem(
+                    icon = "⏱️",
+                    name = "正计时",
+                    count = 0,
+                    isSelected = selectedDateType == GroupType.CELEBRATING,
+                    showMenu = false,
+                    onClick = { onDateTypeClick(GroupType.CELEBRATING) }
+                )
+            }
+
+            item {
+                CategoryItem(
+                    icon = "📌",
+                    name = "已过期",
+                    count = 0,
+                    isSelected = selectedDateType == GroupType.EXPIRED,
+                    showMenu = false,
+                    textColor = Color(0xFF79747E),
+                    onClick = { onDateTypeClick(GroupType.EXPIRED) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 我的页快捷导航区域
+ */
+@Composable
+private fun ProfileQuickNavSection(
+    onSettingsClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = "🔗 快捷导航",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1C1B1F),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .height(3.dp)
+                .fillMaxWidth()
+                .background(UiColors.Primary)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            CategoryItem(
+                icon = "📊",
+                name = "统计",
+                count = 0,
+                isSelected = false,
+                showMenu = false,
+                onClick = { /* TODO: 导航到统计页 */ }
+            )
+            CategoryItem(
+                icon = "🏆",
+                name = "成就",
+                count = 0,
+                isSelected = false,
+                showMenu = false,
+                onClick = { /* TODO: 导航到成就页 */ }
+            )
+            CategoryItem(
+                icon = "⚙️",
+                name = "设置",
+                count = 0,
+                isSelected = false,
+                showMenu = false,
+                onClick = onSettingsClick
+            )
+        }
     }
 }
 

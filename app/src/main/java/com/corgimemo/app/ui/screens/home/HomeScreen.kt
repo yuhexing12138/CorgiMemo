@@ -77,9 +77,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.PermissionStatus
-import com.google.accompanist.permissions.rememberPermissionState
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -88,54 +85,38 @@ import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.GreetingManager
 import com.corgimemo.app.animation.HapticFeedbackManager
-import com.corgimemo.app.animation.HolidayManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.animation.InteractiveCorgi
-import com.corgimemo.app.animation.SolarTermManager
 import com.corgimemo.app.animation.LevelManager
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.data.model.Category
-import com.corgimemo.app.data.repository.GeofenceRepository
 import com.corgimemo.app.backup.exporter.ImageExporter
 import com.corgimemo.app.backup.exporter.ShareIntentHelper
 import com.corgimemo.app.ui.components.AchievementUnlockDialog
 import com.corgimemo.app.ui.components.CorgiNamerDialog
-import com.corgimemo.app.ui.components.EmptyState
-import com.corgimemo.app.ui.components.EmptyStateType
+import com.corgimemo.app.ui.components.UnifiedEmptyState
 import com.corgimemo.app.ui.components.FirstTimeGuideOverlay
 import com.corgimemo.app.ui.components.SolarTermCard
 import com.corgimemo.app.ui.components.TodoListItem
-import com.corgimemo.app.ui.components.EnhancedTopBar
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.AnimatedFAB
 import com.corgimemo.app.ui.components.CorgiPullToRefreshIndicator
-import com.corgimemo.app.ui.components.FloatingCorgiButton
 import com.corgimemo.app.ui.components.animatedItems
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
-import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.theme.UiColors
 import kotlinx.coroutines.launch
 import android.widget.Toast
-import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.ui.platform.LocalContext
-import com.corgimemo.app.ui.components.AddCategoryDialog
-import com.corgimemo.app.ui.components.AppDrawerContent
-import com.corgimemo.app.ui.components.CategoryAction
-import com.corgimemo.app.ui.components.CategoryOperationSheet
-import com.corgimemo.app.ui.components.DeleteCategoryConfirmDialog
-import com.corgimemo.app.ui.components.RenameCategoryDialog
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     navController: NavController,
+    onFabClick: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val filteredTodos by viewModel.filteredTodos.collectAsState()
@@ -183,16 +164,7 @@ fun HomeScreen(
     val selectedTodoIds by viewModel.selectedTodoIds.collectAsState()
     val categories by viewModel.categories.collectAsState()
 
-    // ========== 侧滑导航栏状态 ==========
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
     val selectedCategoryId by viewModel.selectedCategoryId.collectAsState()
-    val todoCountByCategory by viewModel.todoCountByCategory.collectAsState()
-    val recentlyDeletedCount by viewModel.recentlyDeletedCount.collectAsState()
-
-    var showAddCategoryDialog by remember { mutableStateOf(false) }
-    var showRenameCategoryDialog by remember { mutableStateOf<Category?>(null) }
-    var showDeleteCategoryDialog by remember { mutableStateOf<Category?>(null) }
-    var showCategorySheet by remember { mutableStateOf<Category?>(null) }
 
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var showBatchMoveDialog by remember { mutableStateOf(false) }
@@ -313,64 +285,8 @@ fun HomeScreen(
         }
     }
 
-    // ========== 动态抽屉标题 ==========
-    val drawerTitle = when (selectedCategoryId) {
-        null -> "📝 我的待办"
-        0L -> "📦 未分类"
-        else -> categories.find { it.id == selectedCategoryId }?.let { "📁 ${it.name}" } ?: "📝 我的待办"
-    }
-
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet(
-                modifier = Modifier.width(280.dp)
-            ) {
-                AppDrawerContent(
-                    corgiData = corgiData,
-                    categories = categories,
-                    todoCountByCategory = todoCountByCategory,
-                    recentlyDeletedCount = recentlyDeletedCount,
-                    selectedCategoryId = selectedCategoryId,
-                    onCategoryClick = { categoryId ->
-                        viewModel.filterByCategory(categoryId)
-                        coroutineScope.launch { drawerState.close() }
-                    },
-                    onAddCategoryClick = { showAddCategoryDialog = true },
-                    onCategoryAction = { action ->
-                        when (action) {
-                            is CategoryAction.ShowMenu -> {
-                                showCategorySheet = action.category
-                            }
-                            is CategoryAction.Pin -> {
-                                // TODO: 置顶功能（CategoryRepository 尚无此方法）
-                            }
-                            is CategoryAction.Rename -> {
-                                showRenameCategoryDialog = action.category
-                            }
-                            is CategoryAction.Delete -> {
-                                showDeleteCategoryDialog = action.category
-                            }
-                        }
-                    },
-                    onRecentlyDeletedClick = {
-                        // TODO: 导航到最近删除页面
-                        coroutineScope.launch { drawerState.close() }
-                    },
-                    onSettingsClick = {
-                        navController.navigate(Screen.Settings.route)
-                        coroutineScope.launch { drawerState.close() }
-                    },
-                    onHelpClick = {
-                        // TODO: 帮助与反馈页面
-                        coroutineScope.launch { drawerState.close() }
-                    }
-                )
-            }
-        }
-    ) {
-        // 使用 Box 作为根容器，确保所有子元素正确堆叠
-        Box(modifier = Modifier.fillMaxSize()) {
+    // 使用 Box 作为根容器，确保所有子元素正确堆叠
+    Box(modifier = Modifier.fillMaxSize()) {
             // 主内容区域使用 Column 垂直排列
             Column(modifier = Modifier.fillMaxSize()) {
                 // 顶部栏区域
@@ -408,13 +324,6 @@ fun HomeScreen(
                                 )
                             }
                         }
-                    )
-                } else {
-                    EnhancedTopBar(
-                        title = drawerTitle,
-                        onMenuClick = { coroutineScope.launch { drawerState.open() } },
-                        onStatsClick = { /* 可扩展：打开统计页面 */ },
-                        onCorgiClick = { navController.navigate(Screen.CorgiDetail.route) }
                     )
                 }
 
@@ -454,7 +363,7 @@ fun HomeScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .padding(horizontal = 20.dp, vertical = 8.dp)
                     )
 
                     // 柯基陪伴区已分离为悬浮按钮，此处不再显示
@@ -491,38 +400,21 @@ fun HomeScreen(
                         )
                     }
 
-                    // 临时测试按钮：调试工具（通知测试 + 节日调试）
-                    DebugTools(todos = filteredTodos, context = context, viewModel = viewModel)
-
                     if (filteredTodos.isEmpty()) {
-                        /** 增强版空状态组件（包含引导动画、操作指引、模板预设） */
-                        EmptyState(
-                            emptyType = when (filterStatus) {
-                                HomeViewModel.FilterStatus.PENDING -> EmptyStateType.PENDING
-                                HomeViewModel.FilterStatus.COMPLETED -> EmptyStateType.COMPLETED
-                                else -> EmptyStateType.PENDING
+                        UnifiedEmptyState(
+                            icon = "📝",
+                            title = "还没有待办~",
+                            subtitle = "点击下方按钮添加第一个待办吧！",
+                            ctaText = "📝 添加待办",
+                            onCtaClick = {
+                                viewModel.onUserInteraction()
+                                viewModel.setPoseForCreating()
+                                onFabClick()
                             },
-                            onAction = {
-                                when (filterStatus) {
-                                    HomeViewModel.FilterStatus.COMPLETED -> {
-                                        viewModel.setFilterStatus(HomeViewModel.FilterStatus.PENDING)
-                                    }
-                                    else -> {
-                                        viewModel.onUserInteraction()
-                                        viewModel.setPoseForCreating()
-                                        navController.navigate("todo_edit")
-                                    }
-                                }
-                            },
-                            onFabClicked = {
-                                /** FAB 点击回调：可以在这里添加额外逻辑 */
-                            },
-                            onTemplateSelected = { template ->
-                                /** 模板选择回调：批量创建待办 */
-                                viewModel.createTodosFromTemplate(template)
-                            },
-                            showEnhanced = filterStatus == HomeViewModel.FilterStatus.PENDING,
-                            abGroup = abGroup
+                            corgiData = corgiData,
+                            currentPose = _currentPose,
+                            currentMood = currentMood,
+                            modifier = Modifier.fillMaxSize()
                         )
                     } else {
                         val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -599,7 +491,8 @@ fun HomeScreen(
                 }
 
             }
-        }
+
+            }
 
         // 弹窗和覆盖层（作为外层 Box 的直接子元素）
         if (showNamerDialog) {
@@ -649,44 +542,46 @@ fun HomeScreen(
             )
         }
 
-        // 庆祝覆盖层
-        AnimatedVisibility(
-            visible = celebrationState.isShowing,
-            enter = fadeIn() + slideInVertically { it / 2 },
-            exit = fadeOut() + slideOutVertically { -it / 2 },
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            CelebrationOverlay(
-                level = celebrationState.level,
-                message = celebrationState.message
+        // 对齐组件容器（包裹需要使用 align 的组件）
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 庆祝覆盖层
+            AnimatedVisibility(
+                visible = celebrationState.isShowing,
+                enter = fadeIn() + slideInVertically { it / 2 },
+                exit = fadeOut() + slideOutVertically { -it / 2 },
+                modifier = Modifier.align(Alignment.Center)
+            ) {
+                CelebrationOverlay(
+                    level = celebrationState.level,
+                    message = celebrationState.message
+                )
+            }
+
+            // SnackbarHost 悬浮显示
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter)
             )
-        }
 
-        // SnackbarHost 悬浮显示
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
+            // 浮动操作按钮（FAB）
+            if (!isBatchMode) {
+                AnimatedFAB(
+                    onClick = {
+                        viewModel.onUserInteraction()
+                        viewModel.setPoseForCreating()
+                        onFabClick()
+                    },
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                )
+            }
 
-        // 浮动操作按钮（FAB）
-        if (!isBatchMode) {
-            AnimatedFAB(
-                onClick = {
-                    viewModel.onUserInteraction()
-                    viewModel.setPoseForCreating()
-                    navController.navigate("todo_edit")
-                },
-                modifier = Modifier.align(Alignment.BottomEnd)
-            )
-        }
-
-        // 批量操作栏（底部）
-        AnimatedVisibility(
-            visible = isBatchMode,
-            enter = slideInVertically(initialOffsetY = { it }),
-            exit = slideOutVertically(targetOffsetY = { it }),
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
+            // 批量操作栏（底部）
+            AnimatedVisibility(
+                visible = isBatchMode,
+                enter = slideInVertically(initialOffsetY = { it }),
+                exit = slideOutVertically(targetOffsetY = { it }),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
                 Surface(
                     shadowElevation = 8.dp,
                     color = MaterialTheme.colorScheme.surface
@@ -745,73 +640,18 @@ fun HomeScreen(
                     }
                 }
             }
+
+            // 覆盖层效果
+            AnimatedVisibility(
+                visible = celebrationState.isShowing,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                GlowOverlay(level = celebrationState.level)
+            }
         }
 
-        // 覆盖层效果（在 ModalNavigationDrawer 之外但在 Box 之内）
-        AnimatedVisibility(
-            visible = celebrationState.isShowing,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            GlowOverlay(level = celebrationState.level)
-        }
-    }
-
-    // ========== 侧滑导航栏弹窗 ==========
-
-    // 添加分组对话框
-    if (showAddCategoryDialog) {
-        AddCategoryDialog(
-            onConfirm = { name ->
-                viewModel.createCategory(name)
-                showAddCategoryDialog = false
-            },
-            onDismiss = { showAddCategoryDialog = false }
-        )
-    }
-
-    // 重命名分组对话框
-    showRenameCategoryDialog?.let { category ->
-        RenameCategoryDialog(
-            currentName = category.name,
-            onConfirm = { newName ->
-                viewModel.renameCategory(category.id, newName)
-                showRenameCategoryDialog = null
-            },
-            onDismiss = { showRenameCategoryDialog = null }
-        )
-    }
-
-    // 删除确认对话框
-    showDeleteCategoryDialog?.let { category ->
-        DeleteCategoryConfirmDialog(
-            categoryName = category.name,
-            onConfirm = {
-                viewModel.deleteCategory(category.id)
-                showDeleteCategoryDialog = null
-            },
-            onDismiss = { showDeleteCategoryDialog = null }
-        )
-    }
-
-    // 分类操作 BottomSheet
-    showCategorySheet?.let { category ->
-        CategoryOperationSheet(
-            category = category,
-            onPin = {
-                // TODO: 置顶功能
-            },
-            onRename = {
-                showRenameCategoryDialog = category
-            },
-            onDelete = {
-                showDeleteCategoryDialog = category
-            },
-            onDismiss = { showCategorySheet = null }
-        )
-    }
-
-    // 批量删除确认对话框
+        // 批量删除确认对话框
     if (showBatchDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showBatchDeleteDialog = false },
@@ -904,47 +744,6 @@ fun HomeScreen(
         )
     }
 
-    // 悬浮柯基按钮位置和庆祝信号
-    var floatingCorgiPosition by remember { mutableStateOf<Pair<Float, Float>?>(null) }
-    var celebrationTrigger by remember { mutableLongStateOf(0L) }
-
-    // 从 DataStore 恢复悬浮按钮位置
-    LaunchedEffect(Unit) {
-        val corgiPrefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
-        floatingCorgiPosition = corgiPrefs.getFloatingCorgiPosition()
-    }
-
-    // 监听待办完成事件，触发庆祝动画
-    LaunchedEffect(pendingCompleteTodo) {
-        if (pendingCompleteTodo != null) {
-            celebrationTrigger = System.currentTimeMillis()
-        }
-    }
-
-    // 悬浮柯基按钮（非批量模式时显示）
-    if (!isBatchMode) {
-        FloatingCorgiButton(
-            onClick = { navController.navigate(Screen.CorgiDetail.route) },
-            onPositionChanged = { x, y ->
-                coroutineScope.launch {
-                    val corgiPrefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
-                    corgiPrefs.saveFloatingCorgiPosition(x, y)
-                }
-            },
-            onSwipeLeft = {
-                // 快速左滑：打开快速添加待办
-                showQuickAddSheet = true
-            },
-            onSwipeRight = {
-                // 快速右滑：进入柯基详情页
-                navController.navigate(Screen.CorgiDetail.route)
-            },
-            initialPosition = floatingCorgiPosition,
-            triggerCelebration = celebrationTrigger,
-            currentMood = currentMood
-        )
-    }
-
     /** 首次使用引导覆盖层 */
     if (showFirstTimeGuide) {
         FirstTimeGuideOverlay(
@@ -1000,6 +799,7 @@ fun HomeScreen(
                 onDismiss = { showQuickAddSheet = false }
             )
         }
+    }
     }
 }
 
@@ -2320,278 +2120,6 @@ fun QuickOutfitCard(
     }
 }
 
-@OptIn(ExperimentalPermissionsApi::class)
-@Composable
-fun DebugTools(
-    todos: List<com.corgimemo.app.data.model.TodoItem>,
-    context: android.content.Context,
-    viewModel: HomeViewModel
-) {
-    val notificationPermissionState = rememberPermissionState(
-        permission = android.Manifest.permission.POST_NOTIFICATIONS
-    )
-
-    var showHolidayPicker by remember { mutableStateOf(false) }
-    var currentTestMode by remember { mutableStateOf(HolidayManager.isTestModeEnabled()) }
-    var currentForcedHoliday by remember {
-        mutableStateOf(HolidayManager.getForcedHoliday()?.displayName ?: "")
-    }
-    var showSolarTermPicker by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = androidx.compose.ui.Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
-    ) {
-        if (currentTestMode) {
-            Text(
-                text = if (currentForcedHoliday.isNotEmpty()) {
-                    "🎯 测试模式：强制显示 $currentForcedHoliday"
-                } else {
-                    "🎯 测试模式：使用最近节日"
-                },
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-        }
-
-        Row(
-            modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
-        ) {
-            // 测试通知按钮
-            Button(
-                onClick = {
-                    when (notificationPermissionState.status) {
-                        is PermissionStatus.Granted -> {
-                            val firstTodo = todos.firstOrNull()
-                            if (firstTodo != null) {
-                                val geofenceRepo = com.corgimemo.app.data.repository.GeofenceRepository(context)
-                                geofenceRepo.createNotificationChannel()
-
-                                val testTodo = firstTodo.copy(
-                                    geofenceEnabled = true,
-                                    geofenceAddress = "测试位置 - 北京市朝阳区"
-                                )
-                                geofenceRepo.showGeofenceNotification(testTodo)
-                            }
-                        }
-                        is PermissionStatus.Denied -> {
-                            notificationPermissionState.launchPermissionRequest()
-                        }
-                    }
-                },
-                enabled = todos.isNotEmpty(),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
-            ) {
-                Text(
-                    text = if (todos.isNotEmpty()) {
-                        when (notificationPermissionState.status) {
-                            is PermissionStatus.Granted -> "🧪 测试通知"
-                            is PermissionStatus.Denied -> "🔔 请求通知权限"
-                        }
-                    } else {
-                        "请先创建待办"
-                    },
-                    fontSize = 12.sp
-                )
-            }
-
-            // 节日调试按钮
-            Button(
-                onClick = { showHolidayPicker = true },
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
-            ) {
-                Text(
-                    text = if (currentTestMode) "🎄 节日模式" else "🎄 节日调试",
-                    fontSize = 12.sp
-                )
-            }
-
-            // 节气调试按钮
-            Button(
-                onClick = { showSolarTermPicker = true },
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
-            ) {
-                Text(
-                    text = "🍂 节气调试",
-                    fontSize = 12.sp
-                )
-            }
-        }
-    }
-
-    // 节日选择对话框
-    if (showHolidayPicker) {
-        HolidayPickerDialog(
-            onDismiss = { showHolidayPicker = false },
-            onSelect = { holidayId ->
-                HolidayManager.enableTestMode(holidayId)
-                currentTestMode = true
-                currentForcedHoliday = holidayId?.let { HolidayManager.getHolidayById(it)?.displayName } ?: ""
-                showHolidayPicker = false
-                // 切换节日后刷新 ViewModel 状态，触发 UI 实时更新
-                viewModel.refreshHoliday()
-            },
-            onDisable = {
-                HolidayManager.disableTestMode()
-                currentTestMode = false
-                currentForcedHoliday = ""
-                showHolidayPicker = false
-                // 禁用测试模式后刷新 ViewModel 状态，恢复正常问候语
-                viewModel.refreshHoliday()
-            }
-        )
-    }
-
-    // 节气选择对话框
-    if (showSolarTermPicker) {
-        SolarTermPickerDialog(
-            onDismiss = { showSolarTermPicker = false },
-            onSelect = { solarTermId ->
-                SolarTermManager.enableTestMode(solarTermId)
-                showSolarTermPicker = false
-                viewModel.refreshSolarTerm()
-            },
-            onDisable = {
-                SolarTermManager.disableTestMode()
-                showSolarTermPicker = false
-                viewModel.refreshSolarTerm()
-            }
-        )
-    }
-}
-
-/**
- * 节日选择对话框
- * 用于调试时选择要测试的节日
- */
-@Composable
-fun HolidayPickerDialog(
-    onDismiss: () -> Unit,
-    onSelect: (String?) -> Unit,
-    onDisable: () -> Unit
-) {
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text("选择节日")
-        },
-        text = {
-            Column {
-                // 使用最近节日
-                TextButton(
-                    onClick = { onSelect(null) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(horizontalAlignment = Alignment.Start) {
-                        Text("📅 使用最近的节日", fontWeight = FontWeight.Bold)
-                        Text("自动选择距离今天最近的节日", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-                // 节日列表
-                LazyColumn(
-                    modifier = Modifier.height(300.dp)
-                ) {
-                    items(HolidayManager.allHolidays) { holiday ->
-                        TextButton(
-                            onClick = { onSelect(holiday.id) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(horizontalAlignment = Alignment.Start) {
-                                Text("${holiday.emoji} ${holiday.displayName}", fontWeight = FontWeight.Bold)
-                                val dateType = if (holiday.date.isLunar) "农历" else "公历"
-                                Text(
-                                    "$dateType ${holiday.date.month}月${holiday.date.day}日",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDisable) {
-                Text("恢复正常", color = MaterialTheme.colorScheme.error)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
-}
-
-/**
- * 节气选择对话框
- * 用于调试时选择要测试的节气
- */
-@Composable
-fun SolarTermPickerDialog(
-    onDismiss: () -> Unit,
-    onSelect: (String?) -> Unit,
-    onDisable: () -> Unit
-) {
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text("选择节气")
-        },
-        text = {
-            Column {
-                Text(
-                    text = "选择要测试的节气，或恢复正常模式",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                HorizontalDivider(Modifier.padding(vertical = 4.dp))
-
-                LazyColumn(
-                    modifier = Modifier.height(300.dp)
-                ) {
-                    items(com.corgimemo.app.animation.SolarTermData.allSolarTerms) { solarTerm ->
-                        TextButton(
-                            onClick = { onSelect(solarTerm.id) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(horizontalAlignment = Alignment.Start) {
-                                Text(
-                                    "${solarTerm.iconEmoji} ${solarTerm.displayName}",
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    "公历 ${solarTerm.date.month}月${solarTerm.date.dayRange.first}-${solarTerm.date.dayRange.last}日",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDisable) {
-                Text("恢复正常", color = MaterialTheme.colorScheme.error)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
-}
 
 /**
  * 快速添加待办内容组件
