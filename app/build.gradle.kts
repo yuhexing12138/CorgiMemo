@@ -91,6 +91,8 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.androidx.datastore.preferences)
+    /** 加密 SharedPreferences（替代明文 DataStore，所有 key 自动 AES-256-GCM 加密）*/
+    implementation(libs.androidx.security.crypto.ktx)
 
     implementation(libs.coil.compose)
     implementation(libs.google.accompanist.permissions)

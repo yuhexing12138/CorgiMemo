@@ -1,6 +1,304 @@
 <resources>
+    <!-- ==================== 应用基础信息 ==================== -->
     <string name="app_name">CorgiMemo</string>
-    <string name="home_title">首页</string>
-    <string name="todo_title">待办</string>
-    <string name="profile_title">我的</string>
+    <string name="app_description">柯基待办 - 你的贴心助手</string>
+
+    <!-- ==================== 通用操作 ==================== -->
+    <string name="common_save">保存</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_confirm">确认</string>
+    <string name="common_delete">删除</string>
+    <string name="common_edit">编辑</string>
+    <string name="common_copy">复制</string>
+    <string name="common_share">分享</string>
+    <string name="common_search">搜索</string>
+    <string name="common_filter">筛选</string>
+    <string name="common_sort">排序</string>
+    <string name="common_refresh">刷新</string>
+    <string name="common_loading">加载中…</string>
+    <string name="common_done">完成</string>
+    <string name="common_next">下一步</string>
+    <string name="common_back">返回</string>
+    <string name="common_close">关闭</string>
+    <string name="common_retry">重试</string>
+    <string name="common_reset">重置</string>
+    <string name="common_apply">应用</string>
+    <string name="common_select_all">全选</string>
+    <string name="common_deselect_all">取消全选</string>
+    <string name="common_more">更多</string>
+    <string name="common_less">收起</string>
+    <string name="common_hint">提示</string>
+    <string name="common_warning">警告</string>
+    <string name="common_error">错误</string>
+    <string name="common_success">成功</string>
+    <string name="common_failed">失败</string>
+
+    <!-- ==================== 导航栏标题 ==================== -->
+    <string name="nav_home">首页</string>
+    <string name="nav_todo">待办</string>
+    <string name="nav_inspiration">灵感</string>
+    <string name="nav_date">日期</string>
+    <string name="nav_stats">统计</string>
+    <string name="nav_profile">我的</string>
+    <string name="nav_settings">设置</string>
+
+    <!-- ==================== 首页相关 ==================== -->
+    <string name="home_greeting_morning">早上好！今天也要元气满满哦 🌅</string>
+    <string name="home_greeting_afternoon">下午好！记得适当休息一下 ☀️</string>
+    <string name="home_greeting_evening">晚上好！今天辛苦啦 🌙</string>
+    <string name="home_empty_state_title">暂无待办事项</string>
+    <string name="home_empty_state_subtitle">点击右下角按钮添加你的第一个任务吧！</string>
+    <string name="home_search_placeholder">搜索待办事项…</string>
+    <string name="home_today_tasks">今日待办</string>
+    <string name="home_upcoming">即将到来</string>
+    <string name="home_overdue">已过期</string>
+    <string name="home_completed">已完成</string>
+
+    <!-- ==================== 待办相关 (80条) ==================== -->
+    <string name="todo_new">新建待办</string>
+    <string name="todo_edit">编辑待办</string>
+    <string name="todo_delete">删除待办</string>
+    <string name="todo_title_hint">输入待办标题…</string>
+    <string name="todo_content_hint">输入详细描述（可选）</string>
+    <string name="todo_save_success">待办保存成功</string>
+    <string name="todo_save_failed">保存失败，请重试</string>
+    <string name="todo_delete_confirm_title">确认删除此待办？</string>
+    <string name="todo_delete_confirm_message">删除后将无法恢复，确定要继续吗？</string>
+    <string name="todo_delete_success">已删除待办</string>
+    <string name="todo_batch_delete_confirm">确认删除 %d 个待办项？</string>
+    <string name="todo_mark_complete">标记为已完成</string>
+    <string name="todo_mark_incomplete">标记为未完成</string>
+    <string name="todo_completed_at">完成于 %s</string>
+    <string name="todo_created_at">创建于 %s</string>
+    <string name="todo_updated_at">更新于 %s</string>
+    <string name="todo_word_count">%d 字</string>
+
+    <!-- 待办优先级 -->
+    <string name="priority_low">低优先级</string>
+    <string name="priority_medium">中优先级</string>
+    <string name="priority_high">高优先级</string>
+    <string name="priority_urgent">紧急</string>
+
+    <!-- 待办状态 -->
+    <string name="status_pending">待处理</string>
+    <string name="status_in_progress">进行中</string>
+    <string name="status_completed">已完成</string>
+    <string name="status_cancelled">已取消</string>
+
+    <!-- 子任务 -->
+    <string name="subtask_add">添加子任务</string>
+    <string name="subtask_new">新子任务</string>
+    <string name="subtask_toggle_complete">切换子任务完成状态</string>
+    <string name="subtask_delete">删除子任务</string>
+    <string name="subtask_progress">%d/%d 已完成</string>
+
+    <!-- 分类 -->
+    <string name="category_all">全部分类</string>
+    <string name="category_uncategorized">未分类</string>
+    <string name="category_work">工作</string>
+    <string name="category_study">学习</string>
+    <string name="category_life">生活</string>
+    <string name="category_health">健康</string>
+    <string name="category_entertainment">娱乐</string>
+    <string name="category_other">其他</string>
+    <string name="category_select">选择分类</string>
+    <string name="category_recommendation">推荐分类：%s</string>
+    <string name="category_need_classification">需要分类</string>
+    <string name="category_need_classification_desc">请为这条待办选择一个分类</string>
+
+    <!-- 时间设置 -->
+    <string name="time_start_date">开始日期时间（可选）</string>
+    <string name="time_due_date">截止时间</string>
+    <string name="time_due_date_hint">点击选择截止时间（可选）</string>
+    <string name="time_reminder">提醒时间</string>
+    <string name="time_reminder_hint">点击选择提醒时间</string>
+    <string name="time_reminder_recommend">推荐提醒：%s</string>
+    <string name="time_estimated_duration">预计完成时长</string>
+    <string name="time_hours">小时</string>
+    <string name="time_minutes">分钟</string>
+
+    <!-- 重复类型 -->
+    <string name="repeat_none">不重复</string>
+    <string name="repeat_daily">每天</string>
+    <string name="repeat_weekly">每周</string>
+    <string name="repeat_monthly">每月</string>
+    <string name="repeat_yearly">每年</string>
+    <string name="repeat_custom">自定义</string>
+
+    <!-- 排序选项 -->
+    <string name="sort_by_updated_desc">按更新时间降序</string>
+    <string name="sort_by_updated_asc">按更新时间升序</string>
+    <string name="sort_by_created_asc">按创建时间升序</string>
+    <string name="sort_by_priority">按优先级</string>
+    <string name="sort_by_due_date">按截止时间</string>
+    <string name="sort_by_manual">手动排序</string>
+    <string name="sort_multi_level">多级排序</string>
+    <string name="sort_primary">第一级（主排序）</string>
+    <string name="sort_secondary">第二级（次排序）</string>
+    <string name="sort_tertiary">第三级（三级排序）</string>
+    <string name="sort_add_secondary">+ 添加第二级排序条件</string>
+    <string name="sort_add_tertiary">+ 添加第三级排序条件</string>
+    <string name="sort_reset_default">重置为默认</string>
+    <string name="sort_current_preview">当前排序: %s</string>
+
+    <!-- 操作菜单 -->
+    <string name="action_edit">✏️ 编辑</string>
+    <string name="action_duplicate">📋 复制</string>
+    <string name="action_share">📤 分享</string>
+    <string name="action_move_category">📂 移动到分组</string>
+    <string name="action_set_reminder">⏰ 设置提醒</string>
+    <string name="action_mark_important">⭐ 标记重要</string>
+    <string name="action_delete">🗑️ 删除</string>
+
+    <!-- ==================== 富文本编辑器 (40条) ==================== -->
+    <string name="editor_placeholder">输入内容…</string>
+    <string name="editor_bold">加粗</string>
+    <string name="editor_italic">斜体</string>
+    <string name="editor_underline">下划线</string>
+    <string name="editor_strikethrough">删除线</string>
+    <string name="editor_unordered_list">无序列表</string>
+    <string name="editor_ordered_list">有序列表</string>
+    <string name="editor_todo_item">待办子项</string>
+    <string name="editor_align_left">左对齐</string>
+    <string name="editor_align_center">居中对齐</string>
+    <string name="editor_align_right">右对齐</string>
+    <string name="editor_text_color">文字颜色</string>
+    <string name="editor_insert_image">插入图片</string>
+    <string name="editor_background_color">背景颜色</string>
+    <string name="editor_clear_format">清除格式</string>
+
+    <!-- 图片相关 -->
+    <string name="image_picker_title">选择图片来源</string>
+    <string name="image_camera">拍照</string>
+    <string name="image_gallery">从相册选择</string>
+    <string name="image_camera_desc">使用相机拍摄新照片</string>
+    <string name="image_gallery_desc">从已有照片中选择</string>
+    <string name="image_load_failed">图片加载失败</string>
+    <string name="image_delete">删除图片</string>
+    <string name="image_preview">预览图片</string>
+
+    <!-- 背景色选择器 -->
+    <string name="color_picker_title">选择背景颜色</string>
+    <string name="color_white">白色</string>
+    <string name="color_warm_white">暖白</string>
+    <string name="color_light_orange">浅橙</string>
+    <string name="color_light_blue">浅蓝</string>
+    <string name="color_light_green">浅绿</string>
+    <string name="color_warm_yellow">暖黄</string>
+    <string name="color_light_pink">浅粉</string>
+    <string name="color_light_purple">浅紫</string>
+    <string name="color_light_cyan">浅青</string>
+    <string name="color_light_yellow_green">浅黄绿</string>
+    <string name="color_dark_gray">深灰</string>
+    <string name="color_near_black">近黑</string>
+    <string name="color_custom">自定义颜色…</string>
+
+    <!-- Markdown 解析器 -->
+    <string name="markdown_parse_error">Markdown 解析错误</string>
+    <string name="markdown_export_error">导出为 Markdown 失败</string>
+
+    <!-- ==================== 拖拽排序 ==================== -->
+    <string name="drag_handle_description">拖拽以重新排序</string>
+    <string name="drag_handle_active">正在拖拽中</string>
+    <string name="drag_reorder_complete">顺序调整成功</string>
+    <string name="drag_reorder_failed">顺序调整失败</string>
+
+    <!-- ==================== 动画效果 ==================== -->
+    <string name="animation_entering">进入动画</string>
+    <string name="animation_exiting">退出动画</string>
+    <string name="animation_reordering">重排动画</string>
+
+    <!-- ==================== 语音功能 ==================== -->
+    <string name="voice_record_start">开始录音</string>
+    <string name="voice_record_stop">停止录音</string>
+    <string name="voice_record_playing">播放中</string>
+    <string name="voice_record_paused">已暂停</string>
+    <string name="voice_permission_denied">请在设置中开启录音权限</string>
+    <string name="voice_listening">正在聆听…</string>
+    <string name="voice_recognizing">正在识别…</string>
+    <string name="voice_input_hint">语音输入</string>
+    <string name="voice_permission_needed">需要录音权限</string>
+    <string name="voice_note">语音备注</string>
+    <string name="voice_rerecord">重新录制语音备注</string>
+    <string name="voice_add">添加语音备注</string>
+
+    <!-- ==================== 地理位置 ==================== -->
+    <string name="location_picker">位置选择</string>
+    <string name="location_current">当前位置</string>
+    <string name="location_custom">自定义位置</string>
+    <string name="location_radius">半径（米）</string>
+    <string name="location_geofence_enter">进入时提醒</string>
+    <string name="location_geofence_leave">离开时提醒</string>
+
+    <!-- ==================== 关联卡片 (@提及) ==================== -->
+    <string name="mention_trigger_hint">@ 提及关联卡片…</string>
+    <string name="mention_search_results">搜索结果</string>
+    <string name="mention_no_results">未找到匹配的卡片</string>
+    <string name="relation_selector">关联选择器</string>
+    <string name="relation_add">添加关联</string>
+    <string name="relation_remove">移除关联</string>
+
+    <!-- ==================== 错误提示 (30条) ==================== -->
+    <string name="error_network">网络连接异常，请检查网络后重试</string>
+    <string name="error_save_failed">保存失败，请稍后再试</string>
+    <string name="error_load_failed">加载失败，请下拉刷新</string>
+    <string name="error_permission_denied">权限被拒绝，请在设置中授权</string>
+    <string name="error_camera_permission">需要相机权限才能拍照</string>
+    <string name="error_storage_permission">需要存储权限才能保存图片</string>
+    <string name="error_microphone_permission">需要麦克风权限才能录音</string>
+    <string name="error_location_permission">需要位置权限才能获取地理位置</string>
+    <string name="error_file_not_found">文件未找到</string>
+    <string name="error_invalid_data">数据格式无效</string>
+    <string name="error_unknown">发生未知错误</string>
+    <string name="error_timeout">请求超时，请重试</string>
+    <string name="error_server">服务器错误，请稍后再试</string>
+    <string name="error_auth_expired">登录已过期，请重新登录</string>
+    <string name="error_no_data">暂无数据</string>
+    <string name="error_duplicate">该内容已存在</string>
+    <string name="error_limit_exceeded">操作次数已达上限</string>
+    <string name="error_not_supported">当前设备不支持此功能</string>
+    <string name="error_disk_space">存储空间不足</string>
+    <string name="error_image_too_large">图片过大，请选择小于 10MB 的图片</string>
+    <string name="error_unsupported_format">不支持的文件格式</string>
+    <string name="error_backup_failed">备份失败</string>
+    <string name="error_restore_failed">恢复失败</string>
+    <string name="error_sync_failed">同步失败</string>
+    <string name="error_export_failed">导出失败</string>
+    <string name="error_import_failed">导入失败</string>
+
+    <!-- ==================== 无障碍描述 ==================== -->
+    <string name="a11y_open_drawer">打开导航菜单</string>
+    <string name="a11y_close_drawer">关闭导航菜单</string>
+    <string name="a11y_scroll_to_top">滚动到顶部</string>
+    <string name="a11y_expand">展开</string>
+    <string name="a11y_collapse">收起</string>
+    <string name="a11y_play">播放</string>
+    <string name="a11y_pause">暂停</string>
+    <string name="a11y_skip_next">下一个</string>
+    <string name="a11y_skip_previous">上一个</string>
+
+    <!-- ==================== 设置页面 ==================== -->
+    <string name="settings_title">设置</string>
+    <string name="settings_account">账户与安全</string>
+    <string name="settings_appearance">外观与显示</string>
+    <string name="settings_notifications">通知管理</string>
+    <string name="settings_backup">备份与恢复</string>
+    <string name="settings_language">语言</string>
+    <string name="settings_theme">主题模式</string>
+    <string name="settings_theme_light">浅色模式</string>
+    <string name="settings_theme_dark">深色模式</string>
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_version">版本号</string>
+    <string name="settings_feedback">意见反馈</string>
+    <string name="settings_rate_us">给我们评分</string>
+    <string name="settings_privacy_policy">隐私政策</string>
+    <string name="settings_terms_of_service">服务条款</string>
+    <string name="settings_open_source_license">开源许可</string>
+
+    <!-- 语言选项 -->
+    <string name="language_zh_cn">简体中文</string>
+    <string name="language_en">English</string>
+    <string name="language_ja">日本語</string>
+    <string name="language_system_default">跟随系统</string>
 </resources>

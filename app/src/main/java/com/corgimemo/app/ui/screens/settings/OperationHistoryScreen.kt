@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -52,7 +53,9 @@ import com.corgimemo.app.viewmodel.OperationHistoryViewModel
 @Composable
 fun OperationHistoryScreen(
     viewModel: OperationHistoryViewModel = androidx.hilt.navigation.compose.hiltViewModel(),
-    onBack: () -> Unit
+    onBack: () -> Unit = {},
+    /** 编辑历史时间线入口回调（V2.5 双入口支持） */
+    onEditHistory: () -> Unit = {}
 ) {
     /** 收集 UI 状态 */
     val logs by viewModel.recentLogs.collectAsStateWithLifecycle()
@@ -87,6 +90,16 @@ fun OperationHistoryScreen(
                     }
                 },
                 actions = {
+                    /** 编辑历史时间线入口（V2.5 双入口：设置页 → 编辑历史） */
+                    IconButton(
+                        onClick = onEditHistory
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AccessTime,
+                            contentDescription = "编辑历史",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     if (logs.isNotEmpty()) {
                         IconButton(
                             onClick = { showClearDialog = true }

@@ -45,6 +45,8 @@ class TodoEditViewModel @Inject constructor(
 ) : ViewModel() {
 
     private var recommendationJob: Job? = null
+    /** 防抖导出任务引用：用于延迟执行 MarkdownParser.export() */
+    private var _debounceJob: Job? = null
     private val reminderRecommender = ReminderRecommender()
 
     private val _title = MutableStateFlow("")
@@ -61,6 +63,10 @@ class TodoEditViewModel @Inject constructor(
 
     private val _startDate = MutableStateFlow<Long?>(null)
     val startDate: StateFlow<Long?> = _startDate.asStateFlow()
+
+    /** 截止时间状态（时间戳，毫秒） */
+    private val _dueDate = MutableStateFlow<Long?>(null)
+    val dueDate: StateFlow<Long?> = _dueDate.asStateFlow()
 
     private val _estimatedDurationMinutes = MutableStateFlow<Int?>(null)
     val estimatedDurationMinutes: StateFlow<Int?> = _estimatedDurationMinutes.asStateFlow()
@@ -131,6 +137,55 @@ class TodoEditViewModel @Inject constructor(
     private val _imagePaths = MutableStateFlow<List<String>>(emptyList())
     val imagePaths: StateFlow<List<String>> = _imagePaths.asStateFlow()
 
+    /**
+     * 背景颜色状态（ARGB 整数值）
+     *
+     * 用于持久化用户在编辑页选择的卡片背景色。
+     * 默认值为 0xFFFFFFFF（白色/透明背景）。
+     *
+     * **转换方式**:
+     * - 保存到数据库：Color.toArgb() → Int
+     * - 从数据库读取：Int → Color(Int)
+     */
+    private val _backgroundColor = MutableStateFlow(-1) // 默认白色（-1 = 0xFFFFFFFF 作为有符号Int）
+    val backgroundColor: StateFlow<Int> = _backgroundColor.asStateFlow()
+
+    /**
+     * 富文本格式化内容状态（Markdown 字符串）
+     *
+     * 存储完整的 Markdown 格式文本，保留 **粗体**、*斜体*、~~删除线~~、
+     * 列表等格式信息。用于在编辑页恢复富文本显示。
+     *
+     * **与 content（纯文本）的关系**:
+     * - `content`: 纯文本版本 → 用于搜索、字数统计、列表摘要显示
+     * - `contentFormat`: 完整格式版本 → 用于编辑器恢复 AnnotatedString 显示
+     *
+     * **转换方式**:
+     * - 保存时: AnnotatedString → MarkdownParser.export() → 此字段
+     * - 加载时: 此字段 → MarkdownParser.parse() → AnnotatedString → 编辑器
+     */
+    private val _contentFormat = MutableStateFlow("") // 默认空字符串（无格式）
+    val contentFormat: StateFlow<String> = _contentFormat.asStateFlow()
+
+    // ==================== Undo/Redo 双栈（编辑器内撤销/重做） ====================
+
+    /** Undo 栈：存储可撤销的历史快照（AnnotatedString） */
+    private val _undoStack = ArrayDeque<androidx.compose.ui.text.AnnotatedString>()
+
+    /** Redo 栈：存储可重做的被撤销快照（AnnotatedString） */
+    private val _redoStack = ArrayDeque<androidx.compose.ui.text.AnnotatedString>()
+
+    /** 最大历史深度（防止内存溢出） */
+    private val MAX_UNDO_DEPTH = 50
+
+    /** 是否可以撤销（Undo 栈非空时为 true） */
+    private val _canUndo = MutableStateFlow(false)
+    val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
+
+    /** 是否可以重做（Redo 栈非空时为 true） */
+    private val _canRedo = MutableStateFlow(false)
+    val canRedo: StateFlow<Boolean> = _canRedo.asStateFlow()
+
     /** 关联列表 */
     private val _relations = MutableStateFlow<List<CardRelation>>(emptyList())
     val relations: StateFlow<List<CardRelation>> = _relations.asStateFlow()
@@ -170,6 +225,21 @@ class TodoEditViewModel @Inject constructor(
     fun setStartDate(startDate: Long?) {
         _startDate.value = startDate
         updateReminderRecommendation()
+    }
+
+    /**
+     * 设置截止时间
+     * 用户在时间选择器中确认后调用
+     * 同时自动将提醒时间关联为截止时间（若用户未手动设置过提醒时间）
+     *
+     * @param dueDate 截止时间（毫秒时间戳）
+     */
+    fun setDueDate(dueDate: Long?) {
+        _dueDate.value = dueDate
+        /** 联动逻辑：若提醒时间为空，自动将提醒时间设为截止时间 */
+        if (dueDate != null && _reminderTime.value == null) {
+            _reminderTime.value = dueDate
+        }
     }
 
     fun setEstimatedDurationMinutes(minutes: Int?) {
@@ -275,6 +345,7 @@ class TodoEditViewModel @Inject constructor(
                 _hasManuallySelectedCategory.value = todo.categoryId > 0
                 _priority.value = todo.priority
                 _startDate.value = todo.startDate
+                _dueDate.value = todo.dueDate
                 _estimatedDurationMinutes.value = todo.estimatedDurationMinutes
                 _repeatType.value = todo.repeatType
                 _geofenceLat.value = todo.geofenceLat
@@ -294,6 +365,15 @@ class TodoEditViewModel @Inject constructor(
                 if (todo.imagePaths.isNotBlank()) {
                     _imagePaths.value = decodePaths(todo.imagePaths)
                 }
+
+                /** 加载背景颜色（从 ARGB 整数值恢复为 Compose Color） */
+                _backgroundColor.value = todo.backgroundColor
+
+                /** 加载富文本格式化内容（Markdown 字符串） */
+                _contentFormat.value = todo.contentFormat ?: ""
+
+                /** 从 DataStore 恢复跨会话的 Undo/Redo 栈（如有） */
+                restoreUndoStacks(todoId)
 
                 // 加载关联关系
                 _relations.value = cardRelationRepository.getRelationsBlocking("todo", todoId)
@@ -339,6 +419,12 @@ class TodoEditViewModel @Inject constructor(
             val currentTime = System.currentTimeMillis()
             val hasSubTasks = _subTasks.value.isNotEmpty()
 
+            /** 取消未完成的防抖任务，确保不泄漏协程 */
+            _debounceJob?.cancel()
+
+            /** 保存前对 contentFormat 进行校验和修复（防止损坏数据） */
+            val safeContentFormat = com.corgimemo.app.util.MarkdownParser.validateAndSanitize(_contentFormat.value)
+
             val todoId: Long = if (existingTodo != null) {
                 val todo = existingTodo!!.copy(
                     title = _title.value,
@@ -346,6 +432,7 @@ class TodoEditViewModel @Inject constructor(
                     categoryId = _categoryId.value,
                     priority = _priority.value,
                     startDate = _startDate.value,
+                    dueDate = _dueDate.value,
                     estimatedDurationMinutes = _estimatedDurationMinutes.value,
                     reminderTime = _reminderTime.value,
                     repeatType = _repeatType.value,
@@ -359,7 +446,9 @@ class TodoEditViewModel @Inject constructor(
                     hasSubTasks = hasSubTasks,
                     voiceNotePath = _voiceNotePath.value,
                     voiceDuration = _voiceDuration.value,
-                    imagePaths = encodePaths(_imagePaths.value)
+                    imagePaths = encodePaths(_imagePaths.value),
+                    backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
+                    contentFormat = safeContentFormat /** 持久化校验后的富文本格式内容（Markdown）*/
                 )
                 todoRepository.updateTodo(todo)
                 existingTodo!!.id
@@ -371,6 +460,7 @@ class TodoEditViewModel @Inject constructor(
                     priority = _priority.value,
                     status = 0,
                     startDate = _startDate.value,
+                    dueDate = _dueDate.value,
                     estimatedDurationMinutes = _estimatedDurationMinutes.value,
                     reminderTime = _reminderTime.value,
                     repeatType = _repeatType.value,
@@ -385,7 +475,9 @@ class TodoEditViewModel @Inject constructor(
                     hasSubTasks = hasSubTasks,
                     voiceNotePath = _voiceNotePath.value,
                     voiceDuration = _voiceDuration.value,
-                    imagePaths = encodePaths(_imagePaths.value)
+                    imagePaths = encodePaths(_imagePaths.value),
+                    backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
+                    contentFormat = safeContentFormat /** 持久化校验后的富文本格式内容（Markdown）*/
                 )
                 todoRepository.insertTodo(todo)
             }
@@ -398,6 +490,9 @@ class TodoEditViewModel @Inject constructor(
                     cardRelationRepository.addRelation(relation.copy(sourceId = todoId))
                 }
             }
+
+            /** 保存成功后清除当前 Todo 的持久化 Undo 栈（V2.6: 按todoId隔离清除） */
+            corgiPreferences.clearUndoRedoStacks(existingTodo?.id ?: -1L)
         }
     }
 
@@ -497,6 +592,11 @@ class TodoEditViewModel @Inject constructor(
             try {
                 android.util.Log.d("TodoEditVM", "开始加载分类...")
                 categoryRepository.initDefaultCategories()
+
+                /** V2.7: 记录最后编辑的 Todo ID（用于设置页入口传递） */
+                existingTodo?.id?.let { todoId ->
+                    corgiPreferences.saveLastEditedTodoId(todoId)
+                }
 
                 val allCategories = categoryRepository.getAllCategoriesList()
                 android.util.Log.d("TodoEditVM", "加载到 ${allCategories.size} 个分类: $allCategories")
@@ -678,6 +778,423 @@ class TodoEditViewModel @Inject constructor(
         /** 批量删除物理文件 */
         viewModelScope.launch {
             com.corgimemo.app.util.ImageUtils.batchDeleteImages(context, pathsToRemove)
+        }
+    }
+
+    /**
+     * 设置背景颜色
+     *
+     * 更新待办项的背景颜色状态，
+     * 在保存时将此值持久化到数据库的 backgroundColor 字段。
+     *
+     * @param colorInt ARGB 整数值（通过 Compose Color.toArgb() 获取）
+     */
+    fun setBackgroundColor(colorInt: Int) {
+        _backgroundColor.value = colorInt
+    }
+
+    /**
+     * 设置富文本格式化内容（Markdown 字符串）
+     *
+     * 更新待办项的 contentFormat 状态，
+     * 在保存时将此 Markdown 文本持久化到数据库的 contentFormat 字段。
+     *
+     * @param markdown Markdown 格式的字符串（由 MarkdownParser.export() 生成）
+     */
+    fun setContentFormat(markdown: String) {
+        _contentFormat.value = markdown
+    }
+
+    /**
+     * 防抖调度：延迟 300ms 后将 AnnotatedString 导出为 Markdown 格式
+     *
+     * 每次调用会取消上一次未完成的防抖任务（cancel-and-restart 模式），
+     * 确保只有用户停止输入后的最终状态会被导出，减少高频编辑时的解析开销。
+     *
+     * **数据流**:
+     * 用户按键 → onValueChange → setContent(text) [立即]
+     *                              → scheduleFormatExport() [防抖 300ms]
+     *                                  → delay 结束 → export() → _contentFormat 更新
+     *
+     * @param annotatedString 当前的富文本内容（AnnotatedString）
+     */
+    fun scheduleFormatExport(annotatedString: androidx.compose.ui.text.AnnotatedString) {
+        /** 取消上一个未完成的防抖任务 */
+        _debounceJob?.cancel()
+        /** 启动新的防抖任务：等待 300ms 无新输入后执行导出 */
+        _debounceJob = viewModelScope.launch {
+            delay(300L)
+            val markdown = com.corgimemo.app.util.MarkdownParser.export(annotatedString)
+            _contentFormat.value = markdown
+        }
+    }
+
+    // ==================== Undo/Redo 操作方法 ====================
+
+    /**
+     * 推送当前编辑器状态快照到 Undo 栈
+     *
+     * 在执行格式变更操作（加粗/斜体/删除线/列表插入等）前调用，
+     * 用于支持后续撤销。超过最大深度时自动丢弃最旧的记录。
+     *
+     * **调用时机**（由 UI 层在以下操作前调用）:
+     * - applyBoldFormat / applyItalicFormat / applyStrikethroughFormat
+     * - insertUnorderedList / insertOrderedList / insertTodoItem
+     * - clearAllFormats
+     *
+     * **不在文本输入时调用**：避免每字一条记录导致栈爆炸。
+     *
+     * @param currentText 当前的 AnnotatedString 状态
+     */
+    /**
+     * V2.4 去重压缩阈值：文本重叠率超过此值时视为"高度相似"
+     *
+     * 当新快照与栈顶快照的文本重叠率 > SIMILARITY_THRESHOLD 时，
+     * 用新快照替换栈顶而非追加，避免连续相似操作产生冗余记录。
+     *
+     * 例如：用户连续点击 3 次加粗按钮（每次只改变一个字符的样式），
+     * 栈中只需保留最后一次操作前的状态，中间状态可被压缩。
+     */
+    private val SIMILARITY_THRESHOLD = 0.9f
+
+    fun pushSnapshot(currentText: androidx.compose.ui.text.AnnotatedString) {
+        /**
+         * V2.4 去重压缩：检查栈顶是否与新快照高度相似
+         *
+         * 如果栈非空且文本重叠率超过阈值，替换栈顶而非追加。
+         * 这显著减少了连续格式微调操作产生的冗余快照数量。
+         */
+        if (_undoStack.isNotEmpty()) {
+            val topSnapshot = _undoStack.last()
+            if (calculateTextSimilarity(topSnapshot.text, currentText.text) > SIMILARITY_THRESHOLD) {
+                /** 高度相似 → 替换栈顶（压缩冗余） */
+                _undoStack[_undoStack.lastIndex] = currentText
+                _redoStack.clear()
+                _canRedo.value = false
+                /** 异步持久化更新后的日志 */
+                persistUndoRedoStacksAsync()
+                return /** 提前返回，不追加 */
+            }
+        }
+
+        _undoStack.addLast(currentText)
+        /** 超过最大深度时丢弃最旧的记录 */
+        if (_undoStack.size > MAX_UNDO_DEPTH) {
+            _undoStack.removeFirst()
+        }
+        _canUndo.value = _undoStack.isNotEmpty()
+        /** 新操作使 Redo 栈失效（被覆盖的历史无法重做） */
+        _redoStack.clear()
+        _canRedo.value = false
+
+        /** 异步持久化 Undo 栈到 DataStore（跨会话保留撤销历史） */
+        persistUndoRedoStacksAsync()
+    }
+
+    /**
+     * 计算两个文本之间的相似度（基于最长公共子序列比例）
+     *
+     * 用于 Undo 栈去重压缩：当新快照与栈顶快照的相似度超过阈值时，
+     * 认为是冗余操作，替换而非追加。
+     *
+     * **算法**：使用简化的编辑距离（Levenshtein 距离）归一化到 [0, 1] 区间。
+     * - 1.0 = 完全相同
+     * - 0.0 = 完全不同
+     * - >0.9 = 高度相似（触发压缩）
+     *
+     * @param text1 第一个文本
+     * @param text2 第二个文本
+     * @return 相似度值（0.0 ~ 1.0）
+     */
+    private fun calculateTextSimilarity(text1: String, text2: String): Float {
+        if (text1 == text2) return 1.0f
+        if (text1.isBlank() || text2.isBlank()) return 0.0f
+
+        /** 使用最长公共子序列 (LCS) 长度作为相似度指标 */
+        val lcsLength = longestCommonSubsequenceLength(text1, text2)
+        val maxLen = maxOf(text1.length, text2.length)
+
+        return lcsLength.toFloat() / maxLen.toFloat()
+    }
+
+    /**
+     * 计算两个字符串的最长公共子序列 (LCS) 长度
+     *
+     * 使用动态规划算法，时间复杂度 O(m*n)。
+     * 对于短文本（<500 字符），性能完全可接受。
+     *
+     * @param s1 字符串 1
+     * @param s2 字符串 2
+     * @return LCS 长度
+     */
+    private fun longestCommonSubsequenceLength(s1: String, s2: String): Int {
+        /** 短文本优化：直接使用标准 DP */
+        val m = s1.length
+        val n = s2.length
+
+        /** 使用滚动数组优化空间复杂度为 O(min(m,n)) */
+        val prev = IntArray(n + 1)
+        val curr = IntArray(n + 1)
+
+        for (i in 1..m) {
+            for (j in 1..n) {
+                curr[j] = if (s1[i - 1] == s2[j - 1]) {
+                    prev[j - 1] + 1
+                } else {
+                    maxOf(curr[j - 1], prev[j])
+                }
+            }
+            /** 滚动：prev ← curr */
+            val temp = prev
+            prev.forEachIndexed { idx, _ -> prev[idx] = curr[idx] }
+            curr.forEachIndexed { idx, _ -> curr[idx] = temp[idx] }
+        }
+
+        return prev[n]
+    }
+
+    /**
+     * 撤销上一操作
+     *
+     * 从 Undo 栈弹出上一个状态并返回，
+     * 同时将当前状态推入 Redo 栈以支持重做。
+     *
+     * @return 上一状态的 AnnotatedString；无历史记录时返回 null
+     */
+    fun undo(): androidx.compose.ui.text.AnnotatedString? {
+        if (_undoStack.isEmpty()) return null
+
+        val previous = _undoStack.removeLast()
+        _canUndo.value = _undoStack.isNotEmpty()
+
+        /** 异步持久化更新后的双栈 */
+        persistUndoRedoStacksAsync()
+
+        return previous
+    }
+
+    /**
+     * 将当前状态推入 Redo 栈（undo 操作时由 UI 层调用）
+     *
+     * @param currentText 撤销前的当前状态
+     */
+    fun pushToRedo(currentText: androidx.compose.ui.text.AnnotatedString) {
+        _redoStack.addLast(currentText)
+        _canRedo.value = _redoStack.isNotEmpty()
+    }
+
+    /**
+     * 重做被撤销的操作
+     *
+     * 从 Redo 栈弹出被撤销的状态并返回，
+     * 同时将当前状态推回 Undo 栈以支持再次撤销。
+     *
+     * @return 被恢复状态的 AnnotatedString；无重做记录时返回 null
+     */
+    fun redo(): androidx.compose.ui.text.AnnotatedString? {
+        if (_redoStack.isEmpty()) return null
+
+        val restored = _redoStack.removeLast()
+        _canRedo.value = _redoStack.isNotEmpty()
+
+        /** 异步持久化更新后的双栈 */
+        persistUndoRedoStacksAsync()
+
+        return restored
+    }
+
+    /**
+     * 获取 Undo 历史快照描述列表（用于长按菜单显示）
+     *
+     * 返回栈中每个快照的可读摘要（截取前 30 个字符），
+     * 配合索引用于精确恢复到指定历史状态。
+     *
+     * **返回格式**: List<Pair<index, description>>
+     * - index: 快照在栈中的位置（从栈顶=0 到栈底）
+     * - description: 文本摘要（如 "加粗: Hello **World**"）
+     *
+     * @return 描述列表（最新的在前），空栈时返回空列表
+     */
+    fun getUndoHistoryDescriptions(): List<Pair<Int, String>> {
+        return _undoStack.reversed().mapIndexed { index, annotatedString ->
+            val text = annotatedString.text
+            /** 截取前 30 个字符作为摘要，超出显示省略号 */
+            val preview = if (text.length > 30) "${text.take(30)}..." else text
+            Pair(index, preview)
+        }
+    }
+
+    /**
+     * 批量撤销到指定历史状态
+     *
+     * 从 Undo 栈中弹出指定数量的快照，
+     * 将中间状态推入 Redo 栈（支持逐步重做）。
+     *
+     * @param steps 要撤销的步数（1 = 撤销一次，等同于 undo()）
+     * @return 目标状态的 AnnotatedString；步数不足时返回 null
+     */
+    fun undoToHistoryStep(steps: Int): androidx.compose.ui.text.AnnotatedString? {
+        if (steps <= 0 || _undoStack.size < steps) return null
+
+        var targetState: androidx.compose.ui.text.AnnotatedString? = null
+
+        repeat(steps) {
+            val previous = _undoStack.removeLast()
+            /** 将弹出的中间状态推入 Redo 栈 */
+            _redoStack.addLast(targetState ?: previous)
+            targetState = previous
+        }
+
+        _canUndo.value = _undoStack.isNotEmpty()
+        _canRedo.value = _redoStack.isNotEmpty()
+
+        persistUndoRedoStacksAsync()
+
+        return targetState
+    }
+
+    /**
+     * 获取 Redo 历史快照描述列表（用于长按菜单显示）
+     *
+     * 与 getUndoHistoryDescriptions() 对称：
+     * - 返回 Redo 栈中每个快照的可读摘要（截取前 30 个字符）
+     * - **倒序排列**：最早被重做的记录在前（索引0 = 最先可重做的）
+     * - 配合索引用于精确恢复到指定历史状态
+     *
+     * @return List<Pair<index, description>> — index 用于 redoToHistoryStep()
+     */
+    fun getRedoHistoryDescriptions(): List<Pair<Int, String>> {
+        return _redoStack.mapIndexed { index, annotatedString ->
+            val text = annotatedString.text
+            /** 截取前 30 个字符作为摘要，超出显示省略号 */
+            val preview = if (text.length > 30) "${text.take(30)}..." else text
+            Pair(index, preview)
+        }
+    }
+
+    /**
+     * 批量重做到指定历史状态
+     *
+     * 与 undoToHistoryStep() 对称但方向相反：
+     * - 从 Redo 栈**头部**（最早的重做记录）开始弹出指定数量的快照
+     * - 将中间状态推入 Undo 栈（支持再次撤销）
+     * - 这意味着索引 0 对应「最早可重做」的状态
+     *
+     * @param steps 要重做的步数（1 = 重做一次，等同于 redo()）
+     * @return 目标状态的 AnnotatedString；步数不足时返回 null
+     */
+    fun redoToHistoryStep(steps: Int): androidx.compose.ui.text.AnnotatedString? {
+        if (steps <= 0 || _redoStack.size < steps) return null
+
+        var targetState: androidx.compose.ui.text.AnnotatedString? = null
+
+        repeat(steps) {
+            /** 从头部取出（最早的 redo 记录） */
+            val next = _redoStack.removeFirst()
+            /** 将弹出的中间状态推入 Undo 栈 */
+            _undoStack.addLast(targetState ?: next)
+            targetState = next
+        }
+
+        _canUndo.value = _undoStack.isNotEmpty()
+        _canRedo.value = _redoStack.isNotEmpty()
+
+        persistUndoRedoStacksAsync()
+
+        return targetState
+    }
+
+    // ==================== Undo/Redo 栈持久化方法 ====================
+
+    /**
+     * 异步增量持久化 Undo/Redo 栈到 DataStore
+     *
+     * 采用 Append-Only 日志模式（V2.3 优化）：
+     * - pushSnapshot 时仅追加最新一条快照到日志尾部（~100B/次）
+     * - undo/redo 时同样追加操作后的当前状态
+     * - 相比 V2.2 的全量序列化模式（~2KB/次），写入量减少 ~95%
+     *
+     * **恢复时**从日志中读取全部记录并反序列化填充内存栈。
+     *
+     * **调用时机**:
+     * - pushSnapshot() 后（每次新增快照）
+     * - undo() 后（撤销操作改变栈状态）
+     * - redo() 后（重做操作改变栈状态）
+     */
+    private fun persistUndoRedoStacksAsync() {
+        val currentTodoId = existingTodo?.id ?: return /** 新建待办无 ID，跳过 */
+
+        viewModelScope.launch {
+            try {
+                /**
+                 * V2.6: 使用按 TodoId 隔离的增量持久化
+                 * 每个 Todo 独立存储编辑历史，避免多 Todo 并发时数据混淆
+                 */
+                if (_undoStack.isNotEmpty()) {
+                    /** 序列化 undoStack 栈顶的最新一条记录 */
+                    val latestUndoJson = com.corgimemo.app.util.AnnotatedStringSerializer
+                        .serialize(_undoStack.last())
+                    corgiPreferences.appendUndoLogEntry(currentTodoId, latestUndoJson)
+                }
+
+                if (_redoStack.isNotEmpty()) {
+                    /** 序列化 redoStack 栈顶的最新一条记录 */
+                    val latestRedoJson = com.corgimemo.app.util.AnnotatedStringSerializer
+                        .serialize(_redoStack.last())
+                    corgiPreferences.appendRedoLogEntry(currentTodoId, latestRedoJson)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("TodoEditViewModel", "Undo 栈增量持久化失败", e)
+            }
+        }
+    }
+
+    /**
+     * 从 DataStore 增量日志恢复 Undo/Redo 栈（V2.6 按TodoId隔离）
+     *
+     * 在加载已有待办时调用，读取属于该 TodoId 的已保存撤销日志。
+     *
+     * **V2.6 优化**：使用 `{todoId}_undo_log` / `{todoId}_redo_log` key，
+     * 每个 Todo 独立存储编辑历史，不再有全局共享冲突问题。
+     *
+     * **向后兼容**：首次使用新格式时自动检测并迁移旧的全局格式数据。
+     *
+     * @param todoId 当前编辑的待办 ID
+     */
+    private suspend fun restoreUndoStacks(todoId: Long) {
+        try {
+            /** V2.6: 向后兼容迁移 — 检测旧全局格式数据 */
+            corgiPreferences.migrateLegacyUndoLogIfPresent(todoId)
+
+            /** 从按 TodoId 隔离的增量日志读取并反序列化 */
+            val undoLogJson = corgiPreferences.getUndoLog(todoId)
+            val redoLogJson = corgiPreferences.getRedoLog(todoId)
+
+            if (!undoLogJson.isNullOrBlank() && undoLogJson != "[]") {
+                val restoredUndo = com.corgimemo.app.util.AnnotatedStringSerializer
+                    .deserializeList(undoLogJson)
+                _undoStack.clear()
+                _undoStack.addAll(restoredUndo)
+                _canUndo.value = _undoStack.isNotEmpty()
+            }
+
+            if (!redoLogJson.isNullOrBlank() && redoLogJson != "[]") {
+                val restoredRedo = com.corgimemo.app.util.AnnotatedStringSerializer
+                    .deserializeList(redoLogJson)
+                _redoStack.clear()
+                _redoStack.addAll(restoredRedo)
+                _canRedo.value = _redoStack.isNotEmpty()
+            }
+
+            android.util.Log.d("TodoEditViewModel",
+                "从增量日志恢复 Undo 栈: ${_undoStack.size} 条, Redo 栈: ${_redoStack.size} 条 (todoId=$todoId)")
+        } catch (e: Exception) {
+            android.util.Log.w("TodoEditViewModel", "Undo 栈增量日志恢复失败，使用空栈", e)
+            /** 恢复失败时清空，确保一致性 */
+            _undoStack.clear()
+            _redoStack.clear()
+            _canUndo.value = false
+            _canRedo.value = false
         }
     }
 

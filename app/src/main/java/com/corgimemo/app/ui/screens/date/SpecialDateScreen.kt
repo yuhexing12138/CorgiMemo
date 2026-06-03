@@ -24,9 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.corgimemo.app.animation.CorgiMood
-import com.corgimemo.app.animation.CorgiPose
-import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.UnifiedEmptyState
 import com.corgimemo.app.ui.screens.date.components.DateGroupHeader
@@ -44,22 +41,16 @@ import com.corgimemo.app.viewmodel.SpecialDateViewModel
  * - 搜索栏：使用共享 SearchBar 组件（暖橙色背景）
  * - 分组列表：按类型分组（即将到来/正在纪念/已过期）
  * - FAB按钮：跳转到日期编辑页（统一铅笔图标）
- * - 空状态：使用 UnifiedEmptyState 统一空状态组件（含柯基动画）
+ * - 空状态：使用 UnifiedEmptyState 统一空状态组件（含柯基帧动画）
  *
  * @param navController 导航控制器，用于页面跳转
  * @param onFabClick FAB按钮点击回调（由 MainScreen 传入）
- * @param corgiData 柯基数据（由 MainScreen 传入，用于空状态柯基动画）
- * @param currentPose 柯基当前姿态
- * @param currentMood 柯基当前情绪
  * @param viewModel 日期视图模型（通过 Hilt 自动注入）
  */
 @Composable
 fun SpecialDateScreen(
     navController: NavController,
     onFabClick: () -> Unit = {},
-    corgiData: CorgiData? = null,
-    currentPose: CorgiPose = com.corgimemo.app.animation.PoseManager.getDefaultPose(),
-    currentMood: CorgiMood = CorgiMood.NORMAL,
     viewModel: SpecialDateViewModel = hiltViewModel()
 ) {
     val groupedDates by viewModel.groupedDates.collectAsState()
@@ -86,9 +77,6 @@ fun SpecialDateScreen(
                     subtitle = "记录重要的日子，不错过每个纪念！",
                     ctaText = "📅 添加日期",
                     onCtaClick = onFabClick,
-                    corgiData = corgiData,
-                    currentPose = currentPose,
-                    currentMood = currentMood,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {

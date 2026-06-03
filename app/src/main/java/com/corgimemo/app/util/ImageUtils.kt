@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -324,5 +325,63 @@ object ImageUtils {
             }
         }
         return deletedCount
+    }
+
+    // ==================== 相机/相册 Launcher 辅助方法 ====================
+
+    /**
+     * 创建用于相机拍照的临时图片 URI
+     *
+     * 使用 FileProvider 生成 Content URI（兼容 Android 7.0+ 的 FileProvider 安全策略），
+     * 相机将照片写入此路径，之后可通过该 URI 读取拍摄的照片。
+     *
+     * **使用场景**:
+     * - 配合 `ActivityResultContracts.TakePicture()` 使用
+     * - 在 `rememberLauncherForActivityResult` 中作为 launch 参数传入
+     *
+     * @param context 应用上下文
+     * @return 可供相机写入的 Content URI（FileProvider 兼容）
+     *
+     * **示例**:
+     * ```kotlin
+     * val cameraLauncher = rememberLauncherForActivityResult(
+     *     contract = ActivityResultContracts.TakePicture()
+     * ) { uri -> /* 处理拍照结果 */ }
+     *
+     * // 启动相机时传入此方法返回的 URI
+     * cameraLauncher.launch(ImageUtils.createImageUri(context))
+     * ```
+     */
+    fun createImageUri(context: Context): Uri {
+        /** 在 pictures 目录下创建临时文件 */
+        val tempFile = File(getPicturesDirectory(context), "camera_temp_${System.currentTimeMillis()}.jpg")
+
+        /** 确保父目录存在 */
+        tempFile.parentFile?.mkdirs()
+
+        /** 使用 FileProvider 生成 Content URI（兼容 Android 7.0+） */
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider", /** 与 AndroidManifest.xml 中的 authorities 一致 */
+            tempFile
+        )
+    }
+
+    /**
+     * 将 Content URI 复制到应用内部存储（同步版本）
+     *
+     * 简化版的图片保存方法，适用于从相册选择或相机拍摄后的快速处理。
+     * 内部调用 compressAndSaveImage() 完成压缩和持久化。
+     *
+     * **与 compressAndSaveImage() 的区别**:
+     * - 此方法是挂起函数的同步包装，可直接在回调中使用
+     * - 自动处理权限和异常，失败时返回 null 而非抛出异常
+     *
+     * @param context 应用上下文
+     * @param uri 源图片 URI（Content URI 或 File URI）
+     * @return 保存后的绝对路径字符串，失败返回 null
+     */
+    suspend fun copyUriToInternalStorage(context: Context, uri: Uri): String? {
+        return compressAndSaveImage(context, uri)
     }
 }

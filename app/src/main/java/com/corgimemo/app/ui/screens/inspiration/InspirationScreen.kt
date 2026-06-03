@@ -24,9 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.corgimemo.app.animation.CorgiMood
-import com.corgimemo.app.animation.CorgiPose
-import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.UnifiedEmptyState
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationCard
@@ -43,22 +40,16 @@ import com.corgimemo.app.viewmodel.InspirationViewModel
  * - 搜索栏：支持关键词实时搜索灵感
  * - 时间线分组：按创建日期分组显示灵感卡片
  * - FAB按钮：跳转到灵感编辑页（统一铅笔图标）
- * - 空状态：使用 UnifiedEmptyState 统一空状态组件（含柯基动画）
+ * - 空状态：使用 UnifiedEmptyState 统一空状态组件（含柯基帧动画）
  *
  * @param navController 导航控制器，用于页面跳转
  * @param onFabClick FAB按钮点击回调（由 MainScreen 传入）
- * @param corgiData 柯基数据（由 MainScreen 传入，用于空状态柯基动画）
- * @param currentPose 柯基当前姿态
- * @param currentMood 柯基当前情绪
  * @param viewModel 灵感视图模型（通过 Hilt 自动注入）
  */
 @Composable
 fun InspirationScreen(
     navController: NavController,
     onFabClick: () -> Unit = {},
-    corgiData: CorgiData? = null,
-    currentPose: CorgiPose = com.corgimemo.app.animation.PoseManager.getDefaultPose(),
-    currentMood: CorgiMood = CorgiMood.NORMAL,
     viewModel: InspirationViewModel = hiltViewModel()
 ) {
     val groupedInspirations by viewModel.groupedInspirations.collectAsState()
@@ -90,9 +81,6 @@ fun InspirationScreen(
                     subtitle = "点击下方按钮记录你的第一个灵感吧！",
                     ctaText = "💡 记录灵感",
                     onCtaClick = onFabClick,
-                    corgiData = corgiData,
-                    currentPose = currentPose,
-                    currentMood = currentMood,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {

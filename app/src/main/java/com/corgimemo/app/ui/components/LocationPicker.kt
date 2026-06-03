@@ -23,7 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -102,7 +102,7 @@ fun LocationPicker(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextField(
+                        OutlinedTextField(
                             value = addressValue,
                             onValueChange = {
                                 addressValue = it
@@ -143,7 +143,7 @@ fun LocationPicker(
                         }
                     }
 
-                    TextField(
+                    OutlinedTextField(
                         value = radiusValue,
                         onValueChange = {
                             radiusValue = it

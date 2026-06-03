@@ -1,6 +1,8 @@
 package com.corgimemo.app.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -24,6 +26,7 @@ import com.corgimemo.app.ui.screens.inspire.InspireScreenPlaceholder
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.inspiration.InspirationEditScreen
 import com.corgimemo.app.ui.screens.common.ImagePreviewScreen
+import kotlinx.coroutines.launch
 
 @Composable
 fun AppNavHost(
@@ -32,6 +35,10 @@ fun AppNavHost(
     onExportClick: (BackupManager.ExportFormat) -> Unit = {},
     onImportClick: () -> Unit = {}
 ) {
+    /** 获取协程作用域和上下文（用于编辑历史回调） */
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+
     NavHost(
         navController = navController,
         startDestination = startDestination
@@ -83,13 +90,62 @@ fun AppNavHost(
             CorgiDetailScreen(navController = navController)
         }
 
-        composable("smart_category_settings") {
+        composable(Screen.SmartCategorySettings.route) {
             SmartCategorySettingsScreen(navController = navController)
         }
 
         composable(Screen.OperationHistory.route) {
             OperationHistoryScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                /**
+                 * V2.7: 设置页入口 → 编辑历史（读取最后编辑的 Todo ID）
+                 *
+                 * 从 CorgiPreferences 读取最近编辑的 Todo ID，
+                 * 传递给 EditHistory 页面以加载对应的编辑历史。
+                 */
+                onEditHistory = {
+                    val prefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
+                    coroutineScope.launch {
+                        val lastTodoId = prefs.getLastEditedTodoId()
+                        if (lastTodoId > 0) {
+                            navController.navigate(Screen.EditHistory.createRoute(lastTodoId))
+                        } else {
+                            /** 无编辑历史时仍导航到页面，显示空状态 */
+                            navController.navigate(Screen.EditHistory.route)
+                        }
+                    }
+                }
+            )
+        }
+
+        /** 编辑历史时间线页面（V2.6: 支持todoId参数+点击恢复） */
+        composable(
+            route = Screen.EditHistory.route,
+            arguments = listOf(
+                androidx.navigation.navArgument("todoId") {
+                    type = androidx.navigation.NavType.LongType
+                    defaultValue = -1L
+                }
+            )
+        ) { backStackEntry ->
+            val todoId = backStackEntry.arguments?.getLong("todoId", -1L) ?: -1L
+
+            /**
+             * V2.7: 点击恢复回调 — 使用 SavedStateHandle Result API
+             * 将目标 AnnotatedString 的原始序列化 JSON 写入前一个页面的 savedStateHandle，
+             * 然后返回上一页，由编辑器页面反序列化为完整格式（含 SpanStyle）。
+             */
+            val onRestoreText: (String) -> Unit = { annotatedJson ->
+                navController.previousBackStackEntry
+                    ?.savedStateHandle
+                    ?.set("restore_text", annotatedJson)
+                navController.popBackStack()
+            }
+
+            com.corgimemo.app.ui.screens.settings.EditHistoryScreen(
+                onBack = { navController.popBackStack() },
+                todoId = todoId,
+                onRestoreText = onRestoreText
             )
         }
 

@@ -233,17 +233,11 @@ fun MainScreen(navController: NavController) {
                         )
                         TabItem.INSPIRE -> InspirationScreen(
                             navController = navController,
-                            onFabClick = { navController.navigate("inspiration_edit") },
-                            corgiData = corgiData,
-                            currentPose = currentPose,
-                            currentMood = currentMood
+                            onFabClick = { navController.navigate("inspiration_edit") }
                         )
                         TabItem.DATE -> SpecialDateScreen(
                             navController = navController,
-                            onFabClick = { navController.navigate("date_edit") },
-                            corgiData = corgiData,
-                            currentPose = currentPose,
-                            currentMood = currentMood
+                            onFabClick = { navController.navigate("date_edit") }
                         )
                         TabItem.PROFILE -> ProfileScreen(navController)
                         TabItem.EDIT -> { /* 中央编辑按钮不是真实Tab */ }

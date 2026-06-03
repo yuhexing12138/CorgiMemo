@@ -12,6 +12,11 @@ sealed class Screen(val route: String) {
     object Achievement : Screen("achievement")
     object CorgiDetail : Screen("corgi_detail")
     object OperationHistory : Screen("operation_history")
+    /** V2.6: 编辑历史时间线（支持 todoId 参数） */
+    object EditHistory : Screen("edit_history?todoId={todoId}") {
+        /** 带参数的导航路径 */
+        fun createRoute(todoId: Long) = "edit_history?todoId=$todoId"
+    }
 
     // 新增：底部导航栏页面
     object Inspire : Screen("inspire")           // 灵感记录
@@ -27,6 +32,9 @@ sealed class Screen(val route: String) {
 
     // 图片全屏预览页面
     object ImagePreview : Screen("image_preview")                          // 图片预览（参数通过 NavBackStackEntry 传递）
+
+    /** 智能分类设置页面 */
+    object SmartCategorySettings : Screen("smart_category_settings")
 
     fun withArgs(vararg args: String): String {
         return buildString {

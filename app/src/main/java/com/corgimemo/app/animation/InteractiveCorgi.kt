@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import android.widget.Toast
 import kotlin.random.Random
 
 /**
@@ -282,6 +283,41 @@ private val INTERACTION_ANIMATIONS = listOf(
 )
 
 /**
+ * 单击时的随机温馨提示语列表
+ * 让用户每次点击柯基都能看到不同的暖心消息
+ */
+private val SINGLE_CLICK_TOASTS = listOf(
+    "小柯很开心！",
+    "谢谢你摸摸我～",
+    "汪！今天也要加油哦！",
+    "被你发现了，嘿嘿～",
+    "小柯在等你完成今天的任务呢！",
+    "摸摸头，一切都会好起来的！",
+    "小柯觉得你很棒！",
+    "今天辛苦啦，休息一下吧～"
+)
+
+/**
+ * 双击时的随机提示语列表
+ */
+private val DOUBLE_CLICK_TOASTS = listOf(
+    "哇！双击宠爱！小柯太幸福了！",
+    "两次！你是真的很喜欢小柯呢～",
+    "汪汪！收到双倍爱心！",
+    "小柯开心得摇起了尾巴！"
+)
+
+/**
+ * 长按时的随机提示语列表
+ */
+private val LONG_PRESS_TOASTS = listOf(
+    "别按了，小柯快晕啦～",
+    "再按小柯就要打滚啦！",
+    "长按是藏不住小柯的！",
+    "小柯：你这是要把我揉圆吗？"
+)
+
+/**
  * 随机选择一个动画类型
  */
 private fun getRandomAnimation(): AnimationType {
@@ -483,6 +519,10 @@ fun InteractiveCorgi(
                         // 音效反馈：播放汪音效
                         triggerSound()
 
+                        /** 显示随机温馨提示 Toast */
+                        val toastMsg = SINGLE_CLICK_TOASTS.random()
+                        Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
+
                         // 单击：随机播放一种动画
                         val randomAnim = getRandomAnimation()
                         singleAnimationType = randomAnim
@@ -498,6 +538,10 @@ fun InteractiveCorgi(
 
                         // 音效反馈：播放汪音效
                         triggerSound()
+
+                        /** 显示双击专属提示 Toast */
+                        val toastMsg = DOUBLE_CLICK_TOASTS.random()
+                        Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
 
                         // 双击：随机播放两种动画组合
                         val (anim1, anim2) = getTwoRandomAnimations()
@@ -516,6 +560,10 @@ fun InteractiveCorgi(
 
                         // 音效反馈：播放汪音效
                         triggerSound()
+
+                        /** 显示长按专属提示 Toast */
+                        val toastMsg = LONG_PRESS_TOASTS.random()
+                        Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
 
                         // 长按：打滚动画循环 + 位置随机变动
                         isLongPressing = true

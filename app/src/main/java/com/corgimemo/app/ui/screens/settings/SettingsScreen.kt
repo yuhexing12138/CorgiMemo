@@ -32,7 +32,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -787,7 +787,7 @@ fun ExportFormatDialog(
                     }
                     if (usePassword) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        TextField(
+                        OutlinedTextField(
                             value = password,
                             onValueChange = { password = it },
                             label = { Text("输入密码") },
@@ -795,7 +795,7 @@ fun ExportFormatDialog(
                             singleLine = true
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        TextField(
+                        OutlinedTextField(
                             value = confirmPassword,
                             onValueChange = { confirmPassword = it },
                             label = { Text("确认密码") },

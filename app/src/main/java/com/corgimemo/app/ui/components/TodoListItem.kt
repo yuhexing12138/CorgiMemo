@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
@@ -70,6 +71,9 @@ import java.util.concurrent.TimeUnit
  * @param isExpanded 是否展开显示子任务
  * @param isBatchMode 是否处于批量选择模式
  * @param isSelected 是否已选中（批量模式下）
+ * @param isDragging 是否正在被拖拽（用于调整 DragHandle 等子组件样式）
+ * @param categoryName 分类名称
+ * @param categoryIcon 分类图标（emoji）
  * @param onToggleComplete 切换完成状态回调
  * @param onDelete 删除回调
  * @param onClick 点击回调（普通模式）
@@ -78,6 +82,9 @@ import java.util.concurrent.TimeUnit
  * @param onShareAsImage 分享为图片回调
  * @param onToggleExpand 切换展开状态回调
  * @param onToggleSubTask 切换子任务完成状态回调
+ * @param start 前置内容槽位（用于放置 DragHandle 等拖拽相关 UI）
+ * @param relationHint 关联提示文字
+ * @param searchQuery 搜索关键词（非空时对标题和内容进行高亮显示）
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +95,7 @@ fun TodoListItem(
     isExpanded: Boolean = false,
     isBatchMode: Boolean = false,
     isSelected: Boolean = false,
+    isDragging: Boolean = false,
     categoryName: String? = null,
     categoryIcon: String? = null,
     onToggleComplete: (Long, Boolean) -> Unit,
@@ -98,10 +106,31 @@ fun TodoListItem(
     onShareAsImage: () -> Unit = {},
     onToggleExpand: () -> Unit = {},
     onToggleSubTask: (Long) -> Unit = {},
-    relationHint: String? = null
+    start: @Composable () -> Unit = {},
+    relationHint: String? = null,
+    /** 搜索关键词（非空时对标题和内容进行高亮显示） */
+    searchQuery: String = ""
 ) {
     val deleteWidth = 80.dp
     var offsetX by remember { mutableStateOf(0f) }
+
+    /**
+     * V2.5 逐区间交错淡入动画控制标志
+     *
+     * 当 searchQuery 从空变为非空（搜索结果首次出现）时设为 true，
+     * 触发所有高亮区间的交错淡入动画序列。
+     * 每个区间的延迟由其在原文中的位置决定（startIndex * 2ms），
+     * 形成「从左到右波浪扫描」的视觉效果。
+     *
+     * 相比 V2.4 的整体 alpha 模式，逐区间独立动画提供更精细的视觉反馈：
+     * - 用户可直观看到每个匹配位置的出现顺序
+     * - 多关键词搜索时，不同关键词的高亮依次亮起，层次分明
+     */
+    val isHighlightActive = searchQuery.isNotBlank()
+
+    /** 逐区间动画参数：每字符延迟 2ms，最大延迟上限 300ms */
+    val STAGGER_DELAY_PER_CHAR = 2
+    val STAGGER_MAX_DELAY = 300
 
     val cardBackground by animateColorAsState(
         targetValue = if (isSelected) {
@@ -217,19 +246,73 @@ fun TodoListItem(
                         )
                     }
 
+                    /**
+                     * 前置内容槽位（start slot）
+                     *
+                     * 用于放置 DragHandle 等拖拽相关的 UI 组件。
+                     * 默认为空（不渲染任何内容），
+                     * 当与 ReorderableLazyColumn 配合使用时，
+                     * 可在此处插入 VerticalDragIndicator。
+                     */
+                    start()
+
                     Column(
                         modifier = Modifier.weight(1f)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = todo.title,
-                                fontSize = 16.sp,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-                                textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
-                                color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-                            )
+                            /**
+                             * 标题文本（支持逐区间交错淡入高亮）
+                             *
+                             * V2.5 改造：使用 buildHighlightRanges() 拆分为独立区间列表，
+                             * 每个高亮区间拥有独立的 animateFloatAsState + 延迟，
+                             * 实现从左到右的波浪式淡入效果。
+                             */
+                            if (isHighlightActive) {
+                                val (titleRanges, titleHighlightColor) =
+                                    com.corgimemo.app.util.HighlightUtil.buildHighlightRanges(
+                                        text = todo.title,
+                                        searchQuery = searchQuery,
+                                        containerBgColor = if (todo.backgroundColor != 0)
+                                            androidx.compose.ui.graphics.Color(todo.backgroundColor) else null
+                                    )
+                                /** 逐区间渲染：每个 HighlightRange 独立动画 */
+                                androidx.compose.foundation.layout.Row {
+                                    titleRanges.forEach { range ->
+                                        val rangeAlpha by androidx.compose.animation.core.animateFloatAsState(
+                                            targetValue = 1f,
+                                            animationSpec = androidx.compose.animation.core.tween(
+                                                durationMillis = 300,
+                                                delayMillis = (range.startIndex * STAGGER_DELAY_PER_CHAR)
+                                                    .coerceAtMost(STAGGER_MAX_DELAY)
+                                            ),
+                                            label = "titleRangeAlpha_${range.startIndex}"
+                                        )
+                                        Text(
+                                            text = range.text,
+                                            fontSize = 16.sp,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                            textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
+                                            color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
+                                                    else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.graphicsLayer { alpha = rangeAlpha },
+                                            style = if (range.isHighlight) androidx.compose.ui.text.TextStyle(
+                                                background = titleHighlightColor
+                                            ) else androidx.compose.ui.text.TextStyle.Default
+                                        )
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    text = todo.title,
+                                    fontSize = 16.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                    textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
+                                    color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
+                                            else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                             subTaskProgress?.let { progress ->
                                 Text(
                                     text = " ($progress)",
@@ -246,13 +329,127 @@ fun TodoListItem(
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(top = 2.dp)
                             )
-                        } else if (!todo.content.isNullOrBlank()) {
-                            Text(
-                                text = todo.content,
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
-                            )
+                        } else if (!todo.content.isNullOrBlank() || todo.contentFormat.isNotBlank()) {
+                            /**
+                             * 条件渲染：优先使用富文本格式预览
+                             *
+                             * 当 contentFormat 不为空时，使用 MarkdownInlineText 渲染格式化内容
+                             * （保留粗体/斜体/删除线样式），否则回退到纯文本显示。
+                             */
+                            if (todo.contentFormat.isNotBlank()) {
+                                /**
+                                 * 富文本内容（支持逐区间交错淡入高亮 + Markdown样式保留）
+                                 *
+                                 * V2.6 改造：搜索激活时使用 buildStyledHighlightRanges() 逐区间渲染，
+                                 * 保留粗体/斜体/删除线等 Markdown 行内样式，每个区间独立淡入动画。
+                                 * 非搜索时使用 MarkdownInlineText。
+                                 */
+                                if (isHighlightActive) {
+                                    /** V2.6: 使用带样式的搜索高亮（保留Markdown格式） */
+                                    val (styledMdRanges, styledMdColor) =
+                                        com.corgimemo.app.util.HighlightUtil.buildStyledHighlightRanges(
+                                            markdown = todo.contentFormat,
+                                            searchQuery = searchQuery,
+                                            containerBgColor = if (todo.backgroundColor != 0)
+                                                androidx.compose.ui.graphics.Color(todo.backgroundColor) else null
+                                        )
+                                    androidx.compose.foundation.layout.Row {
+                                        styledMdRanges.forEach { range ->
+                                            val rangeAlpha by androidx.compose.animation.core.animateFloatAsState(
+                                                targetValue = 1f,
+                                                animationSpec = androidx.compose.animation.core.tween(
+                                                    durationMillis = 300,
+                                                    delayMillis = (range.startIndex * STAGGER_DELAY_PER_CHAR)
+                                                        .coerceAtMost(STAGGER_MAX_DELAY)
+                                                ),
+                                                label = "styledMdAlpha_${range.startIndex}"
+                                            )
+                                            /** 构建基础 TextStyle：颜色 + 字号 + 高亮背景 */
+                                            val baseStyle = androidx.compose.ui.text.TextStyle(
+                                                fontSize = 14.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                background = if (range.isHighlight) styledMdColor else androidx.compose.ui.graphics.Color.Unspecified
+                                            )
+                                            /** 合并 Markdown 样式（粗体/斜体等） */
+                                            val finalStyle = if (range.spanStyle != null) {
+                                                baseStyle.merge(
+                                                    androidx.compose.ui.text.TextStyle(
+                                                        fontWeight = range.spanStyle.fontWeight.takeIf { it != androidx.compose.ui.text.font.FontWeight.Normal },
+                                                        fontStyle = range.spanStyle.fontStyle.takeIf { it != androidx.compose.ui.text.font.FontStyle.Normal },
+                                                        textDecoration = range.spanStyle.textDecoration.takeIf { it != TextDecoration.None }
+                                                    )
+                                                )
+                                            } else {
+                                                baseStyle
+                                            }
+
+                                            Text(
+                                                text = range.text,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.graphicsLayer { alpha = rangeAlpha },
+                                                style = finalStyle
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    MarkdownInlineText(
+                                        markdown = todo.contentFormat,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = androidx.compose.ui.text.TextStyle(
+                                            fontSize = 14.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    )
+                                }
+                            } else {
+                                /**
+                                 * 纯文本内容（支持逐区间交错淡入高亮）
+                                 *
+                                 * V2.5 改造：使用 buildHighlightRanges() 逐区间独立动画渲染
+                                 */
+                                if (isHighlightActive) {
+                                    val (contentRanges, contentHighlightColor) =
+                                        com.corgimemo.app.util.HighlightUtil.buildHighlightRanges(
+                                            text = todo.content ?: "",
+                                            searchQuery = searchQuery,
+                                            containerBgColor = if (todo.backgroundColor != 0)
+                                                androidx.compose.ui.graphics.Color(todo.backgroundColor) else null
+                                        )
+                                    androidx.compose.foundation.layout.Row {
+                                        contentRanges.forEach { range ->
+                                            val rangeAlpha by androidx.compose.animation.core.animateFloatAsState(
+                                                targetValue = 1f,
+                                                animationSpec = androidx.compose.animation.core.tween(
+                                                    durationMillis = 300,
+                                                    delayMillis = (range.startIndex * STAGGER_DELAY_PER_CHAR)
+                                                        .coerceAtMost(STAGGER_MAX_DELAY)
+                                                ),
+                                                label = "contentRangeAlpha_${range.startIndex}"
+                                            )
+                                            Text(
+                                                text = range.text,
+                                                fontSize = 14.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.graphicsLayer { alpha = rangeAlpha },
+                                                style = if (range.isHighlight) androidx.compose.ui.text.TextStyle(
+                                                    background = contentHighlightColor
+                                                ) else androidx.compose.ui.text.TextStyle.Default
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Text(
+                                        text = todo.content ?: "",
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
                         }
 
                         if (categoryName != null) {
@@ -328,6 +525,7 @@ fun TodoListItem(
                             )
                         }
 
+                        // 开始时间显示
                         if (todo.startDate != null) {
                             Column(modifier = Modifier.padding(top = 4.dp)) {
                                 val timeDisplayText = todo.estimatedDurationMinutes?.let { duration ->
@@ -345,6 +543,19 @@ fun TodoListItem(
                                     Spacer(modifier = Modifier.height(2.dp))
                                     CountdownDisplay(startDate = todo.startDate)
                                 }
+                            }
+                        }
+
+                        /** 截止时间（dueDate）显示 */
+                        if (todo.dueDate != null) {
+                            val isOverdue = todo.status != 1 && todo.dueDate!! < System.currentTimeMillis()
+                            Column(modifier = Modifier.padding(top = 4.dp)) {
+                                Text(
+                                    text = "\u23F0 ${formatDateTime(todo.dueDate!!)}${if (isOverdue) " (已过期)" else ""}",
+                                    fontSize = 12.sp,
+                                    color = if (isOverdue) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = if (isOverdue) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
+                                )
                             }
                         }
 

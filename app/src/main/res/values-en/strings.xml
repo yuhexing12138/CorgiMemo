@@ -1,0 +1,304 @@
+<resources>
+    <!-- ==================== App Basics ==================== -->
+    <string name="app_name">CorgiMemo</string>
+    <string name="app_description">Corgi Todo - Your Helpful Assistant</string>
+
+    <!-- ==================== Common Actions ==================== -->
+    <string name="common_save">Save</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_confirm">Confirm</string>
+    <string name="common_delete">Delete</string>
+    <string name="common_edit">Edit</string>
+    <string name="common_copy">Copy</string>
+    <string name="common_share">Share</string>
+    <string name="common_search">Search</string>
+    <string name="common_filter">Filter</string>
+    <string name="common_sort">Sort</string>
+    <string name="common_refresh">Refresh</string>
+    <string name="common_loading">Loading…</string>
+    <string name="common_done">Done</string>
+    <string name="common_next">Next</string>
+    <string name="common_back">Back</string>
+    <string name="common_close">Close</string>
+    <string name="common_retry">Retry</string>
+    <string name="common_reset">Reset</string>
+    <string name="common_apply">Apply</string>
+    <string name="common_select_all">Select All</string>
+    <string name="common_deselect_all">Deselect All</string>
+    <string name="common_more">More</string>
+    <string name="common_less">Less</string>
+    <string name="common_hint">Hint</string>
+    <string name="common_warning">Warning</string>
+    <string name="common_error">Error</string>
+    <string name="common_success">Success</string>
+    <string name="common_failed">Failed</string>
+
+    <!-- ==================== Navigation ==================== -->
+    <string name="nav_home">Home</string>
+    <string name="nav_todo">Todo</string>
+    <string name="nav_inspiration">Inspiration</string>
+    <string name="nav_date">Date</string>
+    <string name="nav_stats">Stats</string>
+    <string name="nav_profile">Profile</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- ==================== Home Screen ==================== -->
+    <string name="home_greeting_morning">Good morning! Have a great day! 🌅</string>
+    <string name="home_greeting_afternoon">Good afternoon! Take a break ☀️</string>
+    <string name="home_greeting_evening">Good evening! You\'ve worked hard today 🌙</string>
+    <string name="home_empty_state_title">No todos yet</string>
+    <string name="home_empty_state_subtitle">Tap the button below to add your first task!</string>
+    <string name="home_search_placeholder">Search todos…</string>
+    <string name="home_today_tasks">Today\'s Todos</string>
+    <string name="home_upcoming">Upcoming</string>
+    <string name="home_overdue">Overdue</string>
+    <string name="home_completed">Completed</string>
+
+    <!-- ==================== Todo Related (80 items) ==================== -->
+    <string name="todo_new">New Todo</string>
+    <string name="todo_edit">Edit Todo</string>
+    <string name="todo_delete">Delete Todo</string>
+    <string name="todo_title_hint">Enter todo title…</string>
+    <string name="todo_content_hint">Enter description (optional)</string>
+    <string name="todo_save_success">Todo saved successfully</string>
+    <string name="todo_save_failed">Save failed, please try again</string>
+    <string name="todo_delete_confirm_title">Delete this todo?</string>
+    <string name="todo_delete_confirm_message">This cannot be undone. Are you sure?</string>
+    <string name="todo_delete_success">Todo deleted</string>
+    <string name="todo_batch_delete_confirm">Delete %d todo items?</string>
+    <string name="todo_mark_complete">Mark as complete</string>
+    <string name="todo_mark_incomplete">Mark as incomplete</string>
+    <string name="todo_completed_at">Completed at %s</string>
+    <string name="todo_created_at">Created at %s</string>
+    <string name="todo_updated_at">Updated at %s</string>
+    <string name="todo_word_count">%d chars</string>
+
+    <!-- Priority -->
+    <string name="priority_low">Low Priority</string>
+    <string name="priority_medium">Medium Priority</string>
+    <string name="priority_high">High Priority</string>
+    <string name="priority_urgent">Urgent</string>
+
+    <!-- Status -->
+    <string name="status_pending">Pending</string>
+    <string name="status_in_progress">In Progress</string>
+    <string name="status_completed">Completed</string>
+    <string name="status_cancelled">Cancelled</string>
+
+    <!-- Subtasks -->
+    <string name="subtask_add">Add Subtask</string>
+    <string name="subtask_new">New Subtask</string>
+    <string name="subtask_toggle_complete">Toggle subtask completion</string>
+    <string name="subtask_delete">Delete subtask</string>
+    <string name="subtask_progress">%d/%d completed</string>
+
+    <!-- Categories -->
+    <string name="category_all">All Categories</string>
+    <string name="category_uncategorized">Uncategorized</string>
+    <string name="category_work">Work</string>
+    <string name="category_study">Study</string>
+    <string name="category_life">Life</string>
+    <string name="category_health">Health</string>
+    <string name="category_entertainment">Entertainment</string>
+    <string name="category_other">Other</string>
+    <string name="category_select">Select Category</string>
+    <string name="category_recommendation">Recommended: %s</string>
+    <string name="category_need_classification">Needs Category</string>
+    <string name="category_need_classification_desc">Please select a category for this todo</string>
+
+    <!-- Time Settings -->
+    <string name="time_start_date">Start Date/Time (Optional)</string>
+    <string name="time_due_date">Due Date</string>
+    <string name="time_due_date_hint">Tap to select due date (optional)</string>
+    <string name="time_reminder">Reminder</string>
+    <string name="time_reminder_hint">Tap to select reminder time</string>
+    <string name="time_reminder_recommend">Suggested: %s</string>
+    <string name="time_estimated_duration">Estimated Duration</string>
+    <string name="time_hours">Hours</string>
+    <string name="time_minutes">Minutes</string>
+
+    <!-- Repeat Types -->
+    <string name="repeat_none">No Repeat</string>
+    <string name="repeat_daily">Daily</string>
+    <string name="repeat_weekly">Weekly</string>
+    <string name="repeat_monthly">Monthly</string>
+    <string name="repeat_yearly">Yearly</string>
+    <string name="repeat_custom">Custom</string>
+
+    <!-- Sort Options -->
+    <string name="sort_by_updated_desc">By Update Time (Desc)</string>
+    <string name="sort_by_updated_asc">By Update Time (Asc)</string>
+    <string name="sort_by_created_asc">By Create Time (Asc)</string>
+    <string name="sort_by_priority">By Priority</string>
+    <string name="sort_by_due_date">By Due Date</string>
+    <string name="sort_by_manual">Manual Sort</string>
+    <string name="sort_multi_level">Multi-level Sort</string>
+    <string name="sort_primary">Primary (Main Sort)</string>
+    <string name="sort_secondary">Secondary</string>
+    <string name="sort_tertiary">Tertiary</string>
+    <string name="sort_add_secondary">+ Add secondary sort condition</string>
+    <string name="sort_add_tertiary">+ Add tertiary sort condition</string>
+    <string name="sort_reset_default">Reset to Default</string>
+    <string name="sort_current_preview">Current: %s</string>
+
+    <!-- Action Menu -->
+    <string name="action_edit">✏️ Edit</string>
+    <string name="action_duplicate">📋 Duplicate</string>
+    <string name="action_share">📤 Share</string>
+    <string name="action_move_category">📂 Move to Category</string>
+    <string name="action_set_reminder">⏰ Set Reminder</string>
+    <string name="action_mark_important">⭐ Mark Important</string>
+    <string name="action_delete">🗑️ Delete</string>
+
+    <!-- ==================== Rich Text Editor (40 items) ==================== -->
+    <string name="editor_placeholder">Enter content…</string>
+    <string name="editor_bold">Bold</string>
+    <string name="editor_italic">Italic</string>
+    <string name="editor_underline">Underline</string>
+    <string name="editor_strikethrough">Strikethrough</string>
+    <string name="editor_unordered_list">Bullet List</string>
+    <string name="editor_ordered_list">Numbered List</string>
+    <string name="editor_todo_item">Todo Item</string>
+    <string name="editor_align_left">Align Left</string>
+    <string name="editor_align_center">Center</string>
+    <string name="editor_align_right">Align Right</string>
+    <string name="editor_text_color">Text Color</string>
+    <string name="editor_insert_image">Insert Image</string>
+    <string name="editor_background_color">Background Color</string>
+    <string name="editor_clear_format">Clear Format</string>
+
+    <!-- Image Related -->
+    <string name="image_picker_title">Select Image Source</string>
+    <string name="image_camera">Camera</string>
+    <string name="image_gallery">From Gallery</string>
+    <string name="image_camera_desc">Take a new photo with camera</string>
+    <string name="image_gallery_desc">Choose from existing photos</string>
+    <string name="image_load_failed">Failed to load image</string>
+    <string name="image_delete">Delete Image</string>
+    <string name="image_preview">Preview Image</string>
+
+    <!-- Color Picker -->
+    <string name="color_picker_title">Select Background Color</string>
+    <string name="color_white">White</string>
+    <string name="color_warm_white">Warm White</string>
+    <string name="color_light_orange">Light Orange</string>
+    <string name="color_light_blue">Light Blue</string>
+    <string name="color_light_green">Light Green</string>
+    <string name="color_warm_yellow">Warm Yellow</string>
+    <string name="color_light_pink">Light Pink</string>
+    <string name="color_light_purple">Light Purple</string>
+    <string name="color_light_cyan">Light Cyan</string>
+    <string name="color_light_yellow_green">Yellow Green</string>
+    <string name="color_dark_gray">Dark Gray</string>
+    <string name="color_near_black">Near Black</string>
+    <string name="color_custom">Custom Color…</string>
+
+    <!-- Markdown Parser -->
+    <string name="markdown_parse_error">Markdown parse error</string>
+    <string name="markdown_export_error">Failed to export Markdown</string>
+
+    <!-- ==================== Drag & Drop Sorting ==================== -->
+    <string name="drag_handle_description">Drag to reorder</string>
+    <string name="drag_handle_active">Dragging</string>
+    <string name="drag_reorder_complete">Reorder successful</string>
+    <string name="drag_reorder_failed">Reorder failed</string>
+
+    <!-- ==================== Animations ==================== -->
+    <string name="animation_entering">Enter Animation</string>
+    <string name="animation_exiting">Exit Animation</string>
+    <string name="animation_reordering">Reorder Animation</string>
+
+    <!-- ==================== Voice Features ==================== -->
+    <string name="voice_record_start">Start Recording</string>
+    <string name="voice_record_stop">Stop Recording</string>
+    <string name="voice_record_playing">Playing</string>
+    <string name="voice_record_paused">Paused</string>
+    <string name="voice_permission_denied">Please enable microphone in settings</string>
+    <string name="voice_listening">Listening…</string>
+    <string name="voice_recognizing">Recognizing…</string>
+    <string name="voice_input_hint">Voice Input</string>
+    <string name="voice_permission_needed">Microphone permission required</string>
+    <string name="voice_note">Voice Note</string>
+    <string name="voice_rerecord">Re-record Voice Note</string>
+    <string name="voice_add">Add Voice Note</string>
+
+    <!-- ==================== Location ==================== -->
+    <string name="location_picker">Location Picker</string>
+    <string name="location_current">Current Location</string>
+    <string name="location_custom">Custom Location</string>
+    <string name="location_radius">Radius (meters)</string>
+    <string name="location_geofence_enter">Remind on Enter</string>
+    <string name="location_geofence_leave">Remind on Leave</string>
+
+    <!-- ==================== Card Relations (@Mentions) ==================== -->
+    <string name="mention_trigger_hint">@ Mention related card…</string>
+    <string name="mention_search_results">Search Results</string>
+    <string name="mention_no_results">No matching cards found</string>
+    <string name="relation_selector">Relation Selector</string>
+    <string name="relation_add">Add Relation</string>
+    <string name="relation_remove">Remove Relation</string>
+
+    <!-- ==================== Error Messages (30 items) ==================== -->
+    <string name="error_network">Network error, please check connection and retry</string>
+    <string name="error_save_failed">Save failed, please try again later</string>
+    <string name="error_load_failed">Load failed, pull down to refresh</string>
+    <string name="error_permission_denied">Permission denied, please grant in settings</string>
+    <string name="error_camera_permission">Camera permission needed to take photos</string>
+    <string name="error_storage_permission">Storage permission needed to save images</string>
+    <string name="error_microphone_permission">Microphone permission needed to record</string>
+    <string name="error_location_permission">Location permission needed for geofencing</string>
+    <string name="error_file_not_found">File not found</string>
+    <string name="error_invalid_data">Invalid data format</string>
+    <string name="error_unknown">An unknown error occurred</string>
+    <string name="error_timeout">Request timed out, please retry</string>
+    <string name="error_server">Server error, please try again later</string>
+    <string name="error_auth_expired">Session expired, please login again</string>
+    <string name="error_no_data">No data available</string>
+    <string name="error_duplicate">Item already exists</string>
+    <string name="error_limit_exceeded">Operation limit reached</string>
+    <string name="error_not_supported">Not supported on this device</string>
+    <string name="error_disk_space">Insufficient storage space</string>
+    <string name="error_image_too_large">Image too large, choose under 10MB</string>
+    <string name="error_unsupported_format">Unsupported file format</string>
+    <string name="error_backup_failed">Backup failed</string>
+    <string name="error_restore_failed">Restore failed</string>
+    <string name="error_sync_failed">Sync failed</string>
+    <string name="error_export_failed">Export failed</string>
+    <string name="error_import_failed">Import failed</string>
+
+    <!-- ==================== Accessibility Descriptions ==================== -->
+    <string name="a11y_open_drawer">Open navigation drawer</string>
+    <string name="a11y_close_drawer">Close navigation drawer</string>
+    <string name="a11y_scroll_to_top">Scroll to top</string>
+    <string name="a11y_expand">Expand</string>
+    <string name="a11y_collapse">Collapse</string>
+    <string name="a11y_play">Play</string>
+    <string name="a11y_pause">Pause</string>
+    <string name="a11y_skip_next">Skip Next</string>
+    <string name="a11y_skip_previous">Skip Previous</string>
+
+    <!-- ==================== Settings Page ==================== -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_account">Account &amp; Security</string>
+    <string name="settings_appearance">Appearance &amp; Display</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_backup">Backup &amp; Restore</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_theme">Theme Mode</string>
+    <string name="settings_theme_light">Light Mode</string>
+    <string name="settings_theme_dark">Dark Mode</string>
+    <string name="settings_theme_system">System Default</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_feedback">Feedback</string>
+    <string name="settings_rate_us">Rate Us</string>
+    <string name="settings_privacy_policy">Privacy Policy</string>
+    <string name="settings_terms_of_service">Terms of Service</string>
+    <string name="settings_open_source_license">Open Source Licenses</string>
+
+    <!-- Language Options -->
+    <string name="language_zh_cn">简体中文</string>
+    <string name="language_en">English</string>
+    <string name="language_ja">日本語</string>
+    <string name="language_system_default">Follow System</string>
+</resources>

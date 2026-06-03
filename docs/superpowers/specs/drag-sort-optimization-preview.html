@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CorgiMemo 拖拽排序优化 - 设计原型</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+        body { font-family: 'Noto Sans SC', sans-serif; }
+        
+        /* 拖拽手柄 6 点图案 */
+        .drag-handle {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 8px;
+            cursor: grab;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+        .drag-handle:hover { background: rgba(255,154,92,0.1); }
+        .drag-handle.active { background: rgba(255,154,92,0.2); }
+        .drag-handle .row { display: flex; gap: 4px; }
+        .drag-handle .dot {
+            width: 5px; height: 5px; border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+        .drag-handle .dot.inactive { background: #9E9E9E; opacity: 0.6; }
+        .drag-handle .dot.active { background: #FF9A5C; }
+
+        /* 竖向拖拽指示器 */
+        .vertical-drag {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            padding: 6px 4px;
+            align-items: center;
+        }
+        .vertical-drag .dot { width: 4px; height: 4px; border-radius: 50%; background: #9E9E9E; opacity: 0.6; }
+
+        /* Todo 卡片 */
+        .todo-card {
+            background: white;
+            border-radius: 12px;
+            padding: 14px 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        .todo-card.dragging {
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            transform: scale(0.95);
+            z-index: 10;
+        }
+        .todo-card.drag-released {
+            animation: bounce 0.4s ease;
+        }
+        @keyframes bounce {
+            0% { transform: scale(0.95); }
+            50% { transform: scale(1.03); }
+            100% { transform: scale(1); }
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .todo-card.entry-anim { animation: fadeInUp 0.3s ease forwards; }
+
+        /* 暗色模式 */
+        .dark .todo-card {
+            background: #1E1E2E;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            color: #E4E4E7;
+        }
+        .dark .todo-card.dragging {
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,154,92,0.3);
+        }
+        .dark .drag-handle .dot.inactive { background: #71717A; }
+        .dark { background: #11111B; color: #E4E4E7; }
+
+        /* Checkbox 样式 */
+        .checkbox {
+            width: 22px; height: 22px; border-radius: 6px;
+            border: 2px solid #D1D5DB; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            margin-top: 2px;
+        }
+        .dark .checkbox { border-color: #52525B; }
+
+        /* Snackbar */
+        .snackbar {
+            position: fixed; bottom: 24px;
+            left: 50%; transform: translateX(-50%);
+            background: #323232; color: white;
+            padding: 14px 20px; border-radius: 8px;
+            display: flex; align-items: center; gap: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 100;
+        }
+        .snackbar-action {
+            color: #FF9A5C; font-weight: 600;
+            cursor: pointer; border: none; background: none;
+            font-size: 14px; padding: 4px 8px;
+        }
+
+        /* Tab 切换 */
+        .tab-btn {
+            padding: 8px 18px; border-radius: 20px; font-size: 14px;
+            cursor: pointer; border: none; font-weight: 500;
+            transition: all 0.2s;
+        }
+        .tab-btn.active { background: #FF9A5C; color: white; }
+        .tab-btn:not(.active) { background: #F3F4F6; color: #6B7280; }
+        .dark .tab-btn:not(.active) { background: #27272A; color: #9CA3AF; }
+
+        .section-title {
+            font-size: 18px; font-weight: 700; color: #1F2937;
+            margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+        }
+        .dark .section-title { color: #F3F4F6; }
+        
+        .feature-tag {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 3px 10px; border-radius: 12px; font-size: 12px;
+            font-weight: 500;
+        }
+        .tag-new { background: #DCFCE7; color: #166534; }
+        .tag-enhance { background: #DBEAFE; color: #1E40AF; }
+        .tag-fix { background: #FEF3C7; color: #92400E; }
+
+        .phone-frame {
+            width: 380px; border-radius: 32px; overflow: hidden;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+            border: 8px solid #333;
+        }
+        .dark .phone-frame { border-color: #444; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+<div id="app" class="max-w-6xl mx-auto p-6">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-2xl font-bold text-gray-800 mb-2">🎯 CorgiMemo 拖拽排序优化方案</h1>
+        <p class="text-gray-500">5 项增强功能的设计原型与交互演示</p>
+        <div class="flex gap-2 mt-4">
+            <span class="feature-tag tag-new">✨ 新功能</span>
+            <span class="feature-tag tag-enhance">🔧 增强</span>
+            <span class="feature-tag tag-fix">🐛 修复</span>
+        </div>
+    </div>
+
+    <!-- Feature Tabs -->
+    <div class="flex gap-2 mb-8 flex-wrap" id="tabs">
+        <button class="tab-btn active" onclick="showTab('handle')">1. 拖拽手柄图标</button>
+        <button class="tab-btn" onclick="showTab('precision')">2. 精确索引算法</button>
+        <button class="tab-btn" onclick="showTab('undo')">3. 多级撤销历史</button>
+        <button class="tab-btn" onclick="showTab('haptic')">4. 触觉/音效反馈</button>
+        <button class="tab-btn" onclick="showTab('darkmode')">5. 暗色模式验证</button>
+    </div>
+
+    <!-- Tab 1: Drag Handle -->
+    <div id="tab-handle" class="tab-content">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- 左：设计说明 -->
+            <div>
+                <h2 class="section-title">📍 方案 A：DragHandle 集成到 TodoListItem</h2>
+                <div class="bg-white rounded-xl p-5 shadow-sm mb-4">
+                    <p class="text-gray-600 text-sm leading-relaxed mb-4">
+                        当前 <code class="bg-gray-100 px-2 py-0.5 rounded">TodoListItem</code> 
+                        无 <code class="bg-gray-100 px-2 py-0.5 rounded">start</code> slot 参数。
+                        已有 <code class="bg-green-100 px-2 py-0.5 rounded text-green-700">DragHandle.kt</code> 
+                        组件（3 个变体），需要集成。
+                    </p>
+                    <table class="w-full text-sm">
+                        <tr class="border-b"><td class="py-2 font-medium">新增参数</td><td><code>start: @Composable () -> Unit = {}</code></td></tr>
+                        <tr class="border-b"><td class="py-2 font-medium">新增参数</td><td><code>isDragging: Boolean = false</code></td></tr>
+                        <tr class="border-b"><td class="py-2 font-medium">使用组件</td><td><code>DragHandle(isActive=isDragging)</code></td></tr>
+                        <tr><td class="py-2 font-medium">放置位置</td><td>Checkbox 右侧，标题左侧</td></tr>
+                    </table>
+                </div>
+
+                <h3 class="font-semibold text-gray-700 mb-3">已有的 3 种 DragHandle 变体：</h3>
+                <div class="flex gap-6 items-start">
+                    <div class="text-center">
+                        <div class="bg-white p-3 rounded-lg shadow-sm inline-block mb-2">
+                            <div class="drag-handle">
+                                <div class="row"><div class="dot inactive"></div><div class="dot inactive"></div><div class="dot inactive"></div></div>
+                                <div class="row"><div class="dot inactive"></div><div class="dot inactive"></div><div class="dot inactive"></div></div>
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500">DragHandle<br/>2×3 网格</p>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-white p-3 rounded-lg shadow-sm inline-block mb-2">
+                            <div class="vertical-drag">
+                                <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                                <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500">VerticalDragIndicator<br/>竖向 6 点</p>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-white p-3 rounded-lg shadow-sm inline-block mb-2">
+                            <div class="flex gap-1 items-center py-2 px-1">
+                                <div class="w-1 h-1 rounded-full bg-gray-400"></div>
+                                <div class="w-1 h-1 rounded-full bg-gray-400"></div>
+                                <div class="w-1 h-1 rounded-full bg-gray-400"></div>
+                                <div class="w-1 h-1 rounded-full bg-gray-400"></div>
+                                <div class="w-1 h-1 rounded-full bg-gray-400"></div>
+                                <div class="w-1 h-1 rounded-full bg-gray-400"></div>
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500">HorizontalDragHandle<br/>横向 6 点</p>
+                    </div>
+                </div>
+                
+                <div class="mt-4 p-3 bg-orange-50 rounded-lg text-sm text-orange-800">
+                    <strong>推荐：</strong>使用 <code>VerticalDragIndicator</code>，更符合垂直列表的视觉语言，
+                    占用水平空间最小。
+                </div>
+            </div>
+
+            <!-- 右：手机预览 -->
+            <div>
+                <h2 class="section-title">📱 效果预览（亮色模式）</h2>
+                <div class="phone-frame bg-gray-100 mx-auto" style="height: 520px;">
+                    <div class="p-4 h-full overflow-y-auto">
+                        <!-- 顶部搜索栏模拟 -->
+                        <div class="bg-white rounded-xl px-4 py-3 mb-3 shadow-sm flex items-center gap-3">
+                            <span class="text-gray-300">🔍</span>
+                            <span class="text-gray-400 text-sm">搜索待办...</span>
+                        </div>
+                        
+                        <!-- Todo Item 1 - 带手柄 -->
+                        <div class="todo-card entry-anim mb-3" style="animation-delay: 0ms;">
+                            <div class="checkbox"></div>
+                            <div class="vertical-drag mt-0.5">
+                                <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                                <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-medium text-gray-800 text-sm leading-snug">完成 CorgiMemo 拖拽排序功能开发</p>
+                                <div class="flex items-center gap-2 mt-1.5">
+                                    <span class="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded">📚 学习</span>
+                                    <span class="text-xs text-gray-400">今天 14:30</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Todo Item 2 -->
+                        <div class="todo-card entry-anim mb-3" style="animation-delay: 80ms;">
+                            <div class="checkbox"></div>
+                            <div class="vertical-drag mt-0.5">
+                                <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                                <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-medium text-gray-800 text-sm leading-snug">复习 Kotlin 协程原理</p>
+                                <div class="flex items-center gap-2 mt-1.5">
+                                    <span class="text-xs text-purple-500 bg-purple-50 px-2 py-0.5 rounded">💼 工作</span>
+                                    <span class="text-xs text-gray-400">明天 09:00</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Todo Item 3 - 拖拽中状态 -->
+                        <div class="todo-card dragging mb-3">
+                            <div class="checkbox" style="border-color: #FF9A5C;"></div>
+                            <div class="mt-0.5" style="padding: 6px 4px;">
+                                <div style="display:flex;flex-direction:column;gap:3px;align-items:center;">
+                                    <div class="dot active" style="width:4px;height:4px;border-radius:50%;background:#FF9A5C;"></div>
+                                    <div class="dot active" style="width:4px;height:4px;border-radius:50%;background:#FF9A5C;"></div>
+                                    <div class="dot active" style="width:4px;height:4px;border-radius:50%;background:#FF9A5C;"></div>
+                                    <div class="dot active" style="width:4px;height:4px;border-radius:50%;background:#FF9A5C;"></div>
+                                    <div class="dot active" style="width:4px;height:4px;border-radius:50%;background:#FF9A5C;"></div>
+                                    <div class="dot active" style="width:4px;height:4px;border-radius:50%;background:#FF9A5C;"></div>
+                                </div>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-medium text-gray-800 text-sm leading-snug">购买生日蛋糕 🎂</p>
+                                <div class="flex items-center gap-2 mt-1.5">
+                                    <span class="text-xs text-green-500 bg-green-50 px-2 py-0.5 rounded">🏠 生活</span>
+                                    <span class="text-xs text-orange-500 font-medium">← 拖拽中</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Todo Item 4 -->
+                        <div class="todo-card entry-anim" style="animation-delay: 160ms;">
+                            <div class="checkbox"></div>
+                            <div class="vertical-drag mt-0.5">
+                                <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                                <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-medium text-gray-800 text-sm leading-snug">健身房锻炼 30 分钟</p>
+                                <div class="flex items-center gap-2 mt-1.5">
+                                    <span class="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded">🏃 运动</span>
+                                    <span class="text-xs text-gray-400">周五 18:00</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 2: Precision Index Algorithm -->
+    <div id="tab-precision" class="tab-content hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div>
+                <h2 class="section-title">🎯 精确位置映射算法</h2>
+                <div class="bg-white rounded-xl p-5 shadow-sm mb-4">
+                    <h3 class="font-semibold text-red-600 mb-2">❌ 当前问题</h3>
+                    <pre class="bg-red-50 p-3 rounded text-xs overflow-x-auto text-red-800">// ReorderableLazyColumn.kt L197
+val approximateTargetIndex =
+    ((dragOffsetY / 100.dp.value) + draggedIndex).toInt()
+//     ^^^^^^^^^^^^
+//   硬编码 100dp！实际项高度可能为 72~140dp 不等</pre>
+                    
+                    <h3 class="font-semibold text-green-600 mt-4 mb-2">✅ 改进方案</h3>
+                    <pre class="bg-green-50 p-3 rounded text-xs overflow-x-auto text-green-800">// 使用 LazyListState 的 visibleItemInfo 获取真实高度
+fun findTargetIndex(
+    listState: LazyListState,
+    dragOffsetY: Float,
+    draggedIndex: Int
+): Int {
+    // 1. 获取所有可见项的真实布局信息
+    val layoutInfo = listState.layoutInfo
+    // 2. 计算拖拽项当前屏幕位置
+    // 3. 遍历可见项找到 Y 坐标匹配的目标项
+    // 4. 返回精确的 targetIndex
+}</pre>
+                </div>
+
+                <div class="bg-blue-50 rounded-xl p-5">
+                    <h3 class="font-semibold text-blue-700 mb-2">核心 API：LazyListLayoutInfo</h3>
+                    <ul class="text-sm text-blue-800 space-y-2">
+                        <li><code>listState.layoutInfo.visibleItemsInfo</code> — 所有可见项信息列表</li>
+                        <li><code>itemInfo.offset</code> — 项相对于容器顶部的偏移量</li>
+                        <li><code>itemInfo.size</code> — 项的实际高度（像素）</li>
+                        <li><code>itemInfo.index</code> — 项在数据源中的索引</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div>
+                <h2 class="section-title">📐 算法流程图</h2>
+                <div class="bg-white rounded-xl p-6 shadow-sm">
+                    <svg viewBox="0 0 360 340" xmlns="http://www.w3.org/2000/svg">
+                        <!-- 流程框 -->
+                        <rect x="100" y="10" width="160" height="40" rx="8" fill="#EEF2FF" stroke="#6366F1" stroke-width="1.5"/>
+                        <text x="180" y="35" text-anchor="middle" fill="#3730A3" font-size="12" font-weight="600">onDragStart(offset)</text>
+                        
+                        <path d="M180,50 L180,70" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#arrow)"/>
+                        
+                        <rect x="85" y="75" width="190" height="45" rx="8" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5"/>
+                        <text x="180" y="95" text-anchor="middle" fill="#92400E" font-size="11" font-weight="600">遍历 visibleItemsInfo</text>
+                        <text x="180" y="110" text-anchor="middle" fill="#92400E" font-size="10">找 offset.y 在点击范围内的项</text>
+                        
+                        <path d="M180,120 L180,140" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#arrow)"/>
+                        
+                        <rect x="90" y="145" width="180" height="40" rx="8" fill="#DCFCE7" stroke="#16A34A" stroke-width="1.5"/>
+                        <text x="180" y="170" text-anchor="middle" fill="#166534" font-size="12" font-weight="600">设置 draggedIndex = index</text>
+                        
+                        <path d="M180,185 L180,205" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#arrow)"/>
+                        
+                        <rect x="60" y="210" width="240" height="45" rx="8" fill="#EEF2FF" stroke="#6366F1" stroke-width="1.5"/>
+                        <text x="180" y="232" text-anchor="middle" fill="#3730A3" font-size="11" font-weight="600">onDrag → 实时计算目标位置</text>
+                        <text x="180" y="247" text-anchor="middle" fill="#4338CA" font-size="10">dragOffsetY / avgItemHeight + draggedIndex</text>
+                        
+                        <path d="M180,255 L180,275" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#arrow)"/>
+                        
+                        <rect x="75" y="280" width="210" height="45" rx="8" fill="#FCE7F3" stroke="#DB2777" stroke-width="1.5"/>
+                        <text x="180" y="302" text-anchor="middle" fill="#9D174D" font-size="12" font-weight="600">onDragEnd → onReorder(from, to)</text>
+                        
+                        <defs>
+                            <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                                <path d="M0,0 L0,6 L9,3 z" fill="#9CA3AF"/>
+                            </marker>
+                        </defs>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 3: Multi-level Undo -->
+    <div id="tab-undo" class="tab-content hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div>
+                <h2 class="section-title">📚 多级撤销历史栈</h2>
+                <div class="bg-white rounded-xl p-5 shadow-sm mb-4">
+                    <h3 class="font-semibold text-gray-700 mb-3">❌ 当前限制</h3>
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800 mb-4">
+                        <code>_pendingReorderUndo: MutableStateFlow&lt;ReorderUndoData?&gt;</code><br/>
+                        <span class="text-xs">→ 只能保存 1 次操作，新操作覆盖旧操作</span>
+                    </div>
+
+                    <h3 class="font-semibold text-green-700 mb-3">✅ 改进方案：Stack 结构</h3>
+                    <pre class="bg-gray-900 text-green-400 p-4 rounded-lg text-xs overflow-x-auto">// 数据结构变更
+private val _reorderUndoStack = MutableStateFlow(
+    ArrayDeque&lt;ReorderUndoData&gt;()  // 支持多级
+)
+val maxUndoStackSize = 10  // 上限 10 次
+
+// 操作：推入栈顶
+_reorderUndoStack.value.addFirst(newData)
+if (size > maxUndoStackSize) removeLast()
+
+// 撤销：弹出栈顶
+fun undoReorder() {
+    val data = _reorderUndoStack.value.removeFirst()
+    // 恢复 oldPositions...
+}</pre>
+                </div>
+
+                <div class="bg-blue-50 rounded-xl p-4 text-sm text-blue-800">
+                    <strong>💡 设计决策：</strong>上限设为 10 次足够日常使用，
+                    避免内存无限增长。每次 undo 后重新 loadTodos() 确保一致性。
+                </div>
+            </div>
+
+            <div>
+                <h2 class="section-title">🔄 Undo 历史栈可视化</h2>
+                <div class="bg-white rounded-xl p-5 shadow-sm">
+                    <p class="text-sm text-gray-500 mb-4">用户连续拖拽 3 次后的撤销栈状态：</p>
+                    
+                    <!-- Stack visualization -->
+                    <div class="space-y-2">
+                        <div class="flex items-center gap-3 p-3 bg-orange-50 border-l-4 border-orange-400 rounded-r-lg">
+                            <span class="text-xs font-mono text-gray-400 w-8">#1</span>
+                            <div class="flex-1">
+                                <p class="text-sm font-medium text-gray-800">移动 "购买蛋糕" → 位置 2</p>
+                                <p class="text-xs text-gray-400">oldPositions: {5→4, 4→5} · 最新</p>
+                            </div>
+                            <span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded">← 下次撤销</span>
+                        </div>
+                        <div class="flex items-center gap-3 p-3 bg-gray-50 border-l-4 border-gray-300 rounded-r-lg">
+                            <span class="text-xs font-mono text-gray-400 w-8">#2</span>
+                            <div class="flex-1">
+                                <p class="text-sm font-medium text-gray-700">移动 "复习Kotlin" → 位置 0</p>
+                                <p class="text-xs text-gray-400">oldPositions: {1→0, 0→1}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3 p-3 bg-gray-50 border-l-4 border-gray-300 rounded-r-lg">
+                            <span class="text-xs font-mono text-gray-400 w-8">#3</span>
+                            <div class="flex-1">
+                                <p class="text-sm font-medium text-gray-700">移动 "健身锻炼" → 位置 3</p>
+                                <p class="text-xs text-gray-400">oldPositions: {3→5, 5→3}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-4 border-t">
+                        <p class="text-xs text-gray-400 text-center">栈深度: 3 / 10 · 点击"撤销"弹出 #1</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 4: Haptic Feedback -->
+    <div id="tab-haptic" class="tab-content hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div>
+                <h2 class="section-title">📳 触觉反馈 & 音效</h2>
+                <div class="bg-white rounded-xl p-5 shadow-sm mb-4">
+                    <h3 class="font-semibold text-gray-700 mb-3">现有基础设施</h3>
+                    <pre class="bg-gray-100 p-3 rounded text-xs overflow-x-auto">// InteractiveCorgi.kt - 已有
+object HapticFeedbackManager {
+    fun performHapticFeedback(
+        context: Context,
+        type: InteractionType,
+        enabled: Boolean = true
+    )
+}
+
+// HomeViewModel 已有状态
+val hapticEnabled: StateFlow<Boolean> = corgiPreferences.hapticEnabled
+val soundEnabled: StateFlow<Boolean> = corgiPreferences.soundEnabled</pre>
+                </div>
+
+                <div class="bg-green-50 rounded-xl p-4">
+                    <h3 class="font-semibold text-green-800 mb-2">🎯 触发时机设计</h3>
+                    <table class="w-full text-sm">
+                        <tr class="border-b border-green-200"><td class="py-2 font-medium text-green-700">事件</td><td class="text-green-700">反馈类型</td><td class="text-green-700">InteractionType</td></tr>
+                        <tr class="border-b border-green-100"><td class="py-2">长按开始拖拽</td><td>轻震 + 低音效</td><td><code class="bg-green-100 px-1 rounded">DRAG_START</code></td></tr>
+                        <tr class="border-b border-green-100"><td class="py-2">经过其他项时</td><td>微震（节流 200ms）</td><td><code class="bg-green-100 px-1 rounded">TEXT_MOVE</code></td></tr>
+                        <tr><td class="py-2">释放完成排序</td><td>确认震 + 成功音效</td><td><code class="bg-green-100 px-1 rounded">CONFIRM</code></td></tr>
+                    </table>
+                </div>
+            </div>
+
+            <div>
+                <h2 class="section-title">🔊 反馈时机示意图</h2>
+                <div class="bg-white rounded-xl p-5 shadow-sm">
+                    <div class="relative h-64">
+                        <!-- Timeline -->
+                        <div class="absolute left-0 right-0 top-1/2 h-0.5 bg-gray-200"></div>
+                        
+                        <!-- Events -->
+                        <div class="absolute" style="left: 5%; top: 35%;">
+                            <div class="w-4 h-4 rounded-full bg-blue-500 animate-pulse"></div>
+                            <p class="text-xs text-center mt-1 whitespace-nowrap">长按<br/><span class="text-blue-500 font-medium">📳 轻震</span></p>
+                        </div>
+                        <div class="absolute" style="left: 25%; top: 55%;">
+                            <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
+                            <p class="text-xs text-center mt-1 whitespace-nowrap">滑过<br/><span class="text-yellow-600">微震</span></p>
+                        </div>
+                        <div class="absolute" style="left: 45%; top: 55%;">
+                            <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
+                            <p class="text-xs text-center mt-1 whitespace-nowrap">滑过<br/><span class="text-yellow-600">微震</span></p>
+                        </div>
+                        <div class="absolute" style="left: 65%; top: 55%;">
+                            <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
+                            <p class="text-xs text-center mt-1 whitespace-nowrap">滑过<br/><span class="text-yellow-600">微震</span></p>
+                        </div>
+                        <div class="absolute" style="left: 85%; top: 35%;">
+                            <div class="w-5 h-5 rounded-full bg-green-500"></div>
+                            <p class="text-xs text-center mt-1 whitespace-nowrap">释放<br/><span class="text-green-600 font-medium">✅ 确认震</span></p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 p-3 bg-yellow-50 rounded-lg text-sm text-yellow-800">
+                        <strong>⚠️ 性能注意：</strong>拖拽过程中每帧都会触发 onDrag 回调，
+                        触觉反馈必须<strong>节流处理</strong>（建议 200ms 间隔），避免过度震动。
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 5: Dark Mode -->
+    <div id="tab-darkmode" class="tab-content hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div>
+                <h2 class="section-title">🌙 暗色模式验证清单</h2>
+                <div class="bg-white rounded-xl p-5 shadow-sm space-y-3">
+                    <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                        <span class="text-green-500 font-bold">✓</span>
+                        <div>
+                            <p class="font-medium text-sm">拖拽阴影</p>
+                            <p class="text-xs text-gray-500">elevation 使用 MaterialTheme 动态颜色 + 橙色边框高亮</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                        <span class="text-yellow-500 font-bold">⚠</span>
+                        <div>
+                            <p class="font-medium text-sm">弹性缩放动画</p>
+                            <p class="text-xs text-gray-500">scale 动画不受主题影响，但需验证 overlay 层级正确</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                        <span class="text-green-500 font-bold">✓</span>
+                        <div>
+                            <p class="font-medium text-sm">DragHandle 图标颜色</p>
+                            <p class="text-xs text-gray-500">已使用 onSurfaceVariant 自适应暗色</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                        <span class="text-yellow-500 font-bold">⚠</span>
+                        <div>
+                            <p class="font-medium text-sm">入场动画 alpha</p>
+                            <p class="text-xs text-gray-500">深色背景上 fade-in 可能不够明显，考虑增加初始位移</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                        <span class="text-green-500 font-bold">✓</span>
+                        <div>
+                            <p class="font-medium text-sm">Snackbar 对比度</p>
+                            <p class="text-xs text-gray-500">Material3 Snackbar 自动适配暗色</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <h2 class="section-title">📱 暗色模式效果预览</h2>
+                <div class="phone-frame dark mx-auto" style="height: 480px;">
+                    <div class="p-4 h-full overflow-y-auto">
+                        <!-- 顶部搜索栏 -->
+                        <div class="rounded-xl px-4 py-3 mb-3" style="background: #27272A;">
+                            <span class="opacity-30">🔍</span>
+                            <span class="opacity-40 text-sm ml-2">搜索待办...</span>
+                        </div>
+                        
+                        <!-- 拖拽中的卡片 - 暗色 -->
+                        <div class="todo-card dragging mb-3" style="margin-top: 8px;">
+                            <div class="checkbox" style="border-color: #FF9A5C;"></div>
+                            <div class="vertical-drag mt-0.5">
+                                <div class="dot" style="background:#FF9A5C;opacity:1;"></div>
+                                <div class="dot" style="background:#FF9A5C;opacity:1;"></div>
+                                <div class="dot" style="background:#FF9A5C;opacity:1;"></div>
+                                <div class="dot" style="background:#FF9A5C;opacity:1;"></div>
+                                <div class="dot" style="background:#FF9A5C;opacity:1;"></div>
+                                <div class="dot" style="background:#FF9A5C;opacity:1;"></div>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-medium text-sm leading-snug" style="color: #E4E4E7;">完成 CorgiMemo 拖拽排序开发</p>
+                                <div class="flex items-center gap-2 mt-1.5">
+                                    <span class="text-xs px-2 py-0.5 rounded" style="color: #60A5FA; background: rgba(96,165,250,0.15);">📚 学习</span>
+                                    <span class="text-xs" style="color: #71717A;">拖拽中 ↑</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 普通卡片 - 暗色 -->
+                        <div class="todo-card entry-anim mb-3" style="animation-delay: 80ms;">
+                            <div class="checkbox"></div>
+                            <div class="vertical-drag mt-0.5">
+                                <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                                <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-medium text-sm leading-snug" style="color: #E4E4E7;">复习 Kotlin 协程原理</p>
+                                <div class="flex items-center gap-2 mt-1.5">
+                                    <span class="text-xs px-2 py-0.5 rounded" style="color: #C084FC; background: rgba(192,132,252,0.15);">💼 工作</span>
+                                    <span class="text-xs" style="color: #71717A;">明天 09:00</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Snackbar - 暗色适配 -->
+                        <div class="mt-4 rounded-xl px-4 py-3 flex items-center justify-between" style="background: #27272A;">
+                            <span class="text-sm" style="color: #E4E4E7;">已调整排序顺序</span>
+                            <span class="text-sm font-semibold cursor-pointer" style="color: #FF9A5C;">撤销</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer Summary -->
+    <div class="mt-8 bg-gradient-to-r from-orange-50 to-blue-50 rounded-2xl p-6">
+        <h2 class="font-bold text-lg text-gray-800 mb-3">📋 优化总览</h2>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div class="bg-white rounded-xl p-4 text-center shadow-sm">
+                <div class="text-2xl mb-1">📍</div>
+                <p class="text-xs font-semibold text-gray-700">DragHandle</p>
+                <p class="text-xs text-gray-400">集成到 TodoListItem</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 text-center shadow-sm">
+                <div class="text-2xl mb-1">🎯</div>
+                <p class="text-xs font-semibold text-gray-700">精确索引</p>
+                <p class="text-xs text-gray-400">LazyListLayoutInfo</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 text-center shadow-sm">
+                <div class="text-2xl mb-1">📚</div>
+                <p class="text-xs font-semibold text-gray-700">多级撤销</p>
+                <p class="text-xs text-gray-400">ArrayDeque 栈</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 text-center shadow-sm">
+                <div class="text-2xl mb-1">📳</div>
+                <p class="text-xs font-semibold text-gray-700">触觉反馈</p>
+                <p class="text-xs text-gray-400">HapticManager</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 text-center shadow-sm">
+                <div class="text-2xl mb-1">🌙</div>
+                <p class="text-xs font-semibold text-gray-700">暗色模式</p>
+                <p class="text-xs text-gray-400">视觉效果验证</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showTab(tabId) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + tabId).classList.remove('hidden');
+    event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

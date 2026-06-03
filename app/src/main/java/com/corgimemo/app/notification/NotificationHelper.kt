@@ -16,7 +16,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.data.local.db.CorgiMemoDatabase
 import com.corgimemo.app.receiver.ReminderActionReceiver
+import kotlinx.coroutines.runBlocking
 import java.util.Calendar
 
 /**
@@ -256,7 +258,8 @@ object NotificationHelper {
     fun buildTodoNotification(
         context: Context,
         todo: TodoItem,
-        categoryName: String? = null
+        categoryName: String? = null,
+        corgiName: String = "柯基"
     ): NotificationCompat.Builder {
         val channelId = getChannelIdForPriority(todo.priority)
         val notificationId = todo.id.toInt()
@@ -278,9 +281,12 @@ object NotificationHelper {
 
         val contentText = buildContentText(todo, categoryName)
 
+        /** 使用「[柯基名]提醒你：该做[任务名]啦！」格式作为通知标题 */
+        val notificationTitle = "${corgiName}提醒你：该做${todo.title}啦！"
+
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(getAppIconResId(context))
-            .setContentTitle(todo.title)
+            .setContentTitle(notificationTitle)
             .setContentText(contentText)
             .setStyle(
                 NotificationCompat.BigTextStyle()
@@ -535,6 +541,9 @@ object NotificationHelper {
             }
         }
 
+        /** 从数据库获取柯基名称，用于通知标题格式化 */
+        val corgiName = getCorgiName(context)
+
         val notificationManager = NotificationManagerCompat.from(context)
         val notificationId = todo.id.toInt()
 
@@ -551,7 +560,7 @@ object NotificationHelper {
         } else {
             notificationManager.notify(
                 notificationId,
-                buildTodoNotification(context, todo, categoryName).build()
+                buildTodoNotification(context, todo, categoryName, corgiName).build()
             )
         }
     }
@@ -723,5 +732,25 @@ object NotificationHelper {
         }
 
         notificationManager.notify(notificationId, builder.build())
+    }
+
+    /**
+     * 获取柯基名称
+     * 从 CorgiData 数据库中查询柯基的名字，
+     * 用于通知标题格式化（如"小柯提醒你：该做xxx啦！"）
+     *
+     * @param context 应用上下文
+     * @return 柯基名称，查询失败时返回默认值 "柯基"
+     */
+    private fun getCorgiName(context: Context): String {
+        return try {
+            val database = CorgiMemoDatabase.getDatabase(context)
+            val corgiDao = database.corgiDao()
+            /** 使用 runBlocking 调用 suspend 函数获取柯基数据 */
+            val corgiData = runBlocking { corgiDao.getCorgiData() }
+            corgiData?.name ?: "柯基"
+        } catch (e: Exception) {
+            "柯基"
+        }
     }
 }

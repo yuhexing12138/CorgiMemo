@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
@@ -81,6 +82,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.GreetingManager
@@ -100,9 +102,10 @@ import com.corgimemo.app.ui.components.FirstTimeGuideOverlay
 import com.corgimemo.app.ui.components.SolarTermCard
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.ui.components.SearchBar
-import com.corgimemo.app.ui.components.AnimatedFAB
 import com.corgimemo.app.ui.components.CorgiPullToRefreshIndicator
-import com.corgimemo.app.ui.components.animatedItems
+import com.corgimemo.app.ui.components.SortBottomSheet
+import com.corgimemo.app.ui.components.ReorderableLazyColumn
+import com.corgimemo.app.ui.components.VerticalDragIndicator
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.corgimemo.app.viewmodel.CelebrationLevel
@@ -149,6 +152,8 @@ fun HomeScreen(
     val pendingDeletedTodo by viewModel.pendingDeletedTodo.collectAsState()
     val pendingBatchDeletes by viewModel.pendingBatchDeletes.collectAsState()
     val pendingCompleteTodo by viewModel.pendingCompleteTodo.collectAsState()
+    /** 拖拽排序多级撤销历史栈 */
+    val reorderUndoStack by viewModel.reorderUndoStack.collectAsState()
 
     // 子任务进度映射
     val subTaskProgressMap by viewModel.subTaskProgressMap.collectAsState()
@@ -166,11 +171,18 @@ fun HomeScreen(
 
     val selectedCategoryId by viewModel.selectedCategoryId.collectAsState()
 
+    /** 排序方式状态 */
+    val sortType by viewModel.sortType.collectAsState()
+
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var showBatchMoveDialog by remember { mutableStateOf(false) }
 
     /** 快速添加待办 BottomSheet 状态 */
     var showQuickAddSheet by remember { mutableStateOf(false) }
+
+    /** 排序弹窗 BottomSheet 状态 */
+    var showSortSheet by remember { mutableStateOf(false) }
+    val sortSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     /** 首次引导状态 */
     var showFirstTimeGuide by remember { mutableStateOf(false) }
@@ -278,6 +290,20 @@ fun HomeScreen(
         }
     }
 
+    /** 监听拖拽排序事件，显示 Snackbar（支持多级撤销）*/
+    LaunchedEffect(reorderUndoStack.size) {
+        if (reorderUndoStack.isNotEmpty()) {
+            val result = snackbarHostState.showSnackbar(
+                message = "已调整排序顺序 (${reorderUndoStack.size} 层可撤销)",
+                actionLabel = "撤销",
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.undoReorder()
+            }
+        }
+    }
+
     // 批量模式下拦截返回键
     if (isBatchMode) {
         BackHandler {
@@ -287,6 +313,28 @@ fun HomeScreen(
 
     // 使用 Box 作为根容器，确保所有子元素正确堆叠
     Box(modifier = Modifier.fillMaxSize()) {
+        // 浮动操作按钮（FAB）—— 与灵感/日期页统一
+        if (!isBatchMode) {
+            FloatingActionButton(
+                onClick = {
+                    viewModel.onUserInteraction()
+                    viewModel.setPoseForCreating()
+                    onFabClick()
+                },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 20.dp, bottom = 16.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "添加待办",
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+
             // 主内容区域使用 Column 垂直排列
             Column(modifier = Modifier.fillMaxSize()) {
                 // 顶部栏区域
@@ -363,7 +411,20 @@ fun HomeScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 8.dp)
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
+                        trailingIcon = {
+                            /** 排序按钮（与清空按钮互斥显示） */
+                            IconButton(
+                                onClick = { showSortSheet = true },
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Text(
+                                    text = "📊",
+                                    fontSize = 20.sp,
+                                    color = Color(0xFFFF9A5C) // 暖橙色
+                                )
+                            }
+                        }
                     )
 
                     // 柯基陪伴区已分离为悬浮按钮，此处不再显示
@@ -411,9 +472,6 @@ fun HomeScreen(
                                 viewModel.setPoseForCreating()
                                 onFabClick()
                             },
-                            corgiData = corgiData,
-                            currentPose = _currentPose,
-                            currentMood = currentMood,
                             modifier = Modifier.fillMaxSize()
                         )
                     } else {
@@ -430,11 +488,37 @@ fun HomeScreen(
                                 )
                             }
                         ) {
-                            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                                animatedItems(
-                                    items = filteredTodos,
-                                    key = { it.id }
-                                ) { todo, _ ->
+                            /**
+                             * 使用增强版 ReorderableLazyColumn 替代原 LazyColumn + animatedItems
+                             *
+                             * **集成特性**:
+                             * - ✅ 内置入场动画（fade+slideIn，与原 AnimatedLazyColumn 效果一致）
+                             * - ✅ 长按触发拖拽排序
+                             * - ✅ 精确索引算法（LazyListLayoutInfo 替代硬编码估算）
+                             * - ✅ 拖拽释放弹性缩放动画（0.95→1.05→1.0）
+                             * - ✅ 触觉反馈（节流 200ms，混合模式）
+                             * - ✅ 帧率监控（TrackedAnimateFloatAsState 超阈值输出 Logcat）
+                             * - ✅ 自动连接 viewModel.reorderTodos() 持久化新顺序
+                             * - ✅ 多级 Undo 支持（ArrayDeque 栈，最多 10 层）
+                             */
+                            /** 使用项目自有的 HapticFeedbackManager 替代 Compose LocalHapticFeedback（避免版本兼容问题） */
+
+                            ReorderableLazyColumn(
+                                items = filteredTodos,
+                                onReorder = { fromIndex, toIndex ->
+                                    /** 用户拖拽完成后，调用 ViewModel 执行数据库更新 */
+                                    viewModel.reorderTodos(fromIndex, toIndex)
+                                },
+                                key = { _, todo -> todo.id },  // 使用待办 ID 作为稳定键
+                                onHapticFeedback = {
+                                    /** 拖拽过程中使用项目自有的 HapticFeedbackManager 触发轻微震动 */
+                                    com.corgimemo.app.animation.HapticFeedbackManager.performHapticFeedback(
+                                        context = context,
+                                        type = com.corgimemo.app.animation.InteractionType.LONG_CLICK,
+                                        enabled = hapticEnabled
+                                    )
+                                }
+                            ) { index, todo, isDragging ->
                                 val category = categories.find { it.id == todo.categoryId }
                                 val categoryIcon = category?.let { c ->
                                     when(c.type) {
@@ -447,6 +531,11 @@ fun HomeScreen(
                                 }
                                 TodoListItem(
                                     todo = todo,
+                                    isDragging = isDragging,  // 传递拖拽状态给 DragHandle
+                                    start = {
+                                        /** 竖向拖拽指示器（6 点圆点，激活时变暖橙色）*/
+                                        VerticalDragIndicator(isActive = isDragging)
+                                    },
                                     subTaskProgress = subTaskProgressMap[todo.id],
                                     subTasks = subTasksMap[todo.id] ?: emptyList(),
                                     isExpanded = expandedTodos.contains(todo.id),
@@ -464,7 +553,7 @@ fun HomeScreen(
                                     },
                                     onClick = {
                                         viewModel.onUserInteraction()
-                                        navController.navigate("todo_edit/${todo.id}")
+                                        navController.navigate(Screen.TodoEditWithId.withArgs(todo.id.toString()))
                                     },
                                     onLongClick = {
                                         viewModel.enterBatchMode(todo.id)
@@ -482,10 +571,12 @@ fun HomeScreen(
                                         viewModel.onUserInteraction()
                                         viewModel.toggleSubTaskCompletion(subTaskId)
                                     },
-                                    relationHint = null
+                                    relationHint = null,
+                                    /** 传递搜索关键词用于结果高亮显示 */
+                                    searchQuery = searchQuery
                                 )
                             }
-                            }
+                        }
                         }
                     }
                 }
@@ -562,18 +653,6 @@ fun HomeScreen(
                 hostState = snackbarHostState,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
-
-            // 浮动操作按钮（FAB）
-            if (!isBatchMode) {
-                AnimatedFAB(
-                    onClick = {
-                        viewModel.onUserInteraction()
-                        viewModel.setPoseForCreating()
-                        onFabClick()
-                    },
-                    modifier = Modifier.align(Alignment.BottomEnd)
-                )
-            }
 
             // 批量操作栏（底部）
             AnimatedVisibility(
@@ -767,7 +846,7 @@ fun HomeScreen(
                 }
                 viewModel.onUserInteraction()
                 viewModel.setPoseForCreating()
-                navController.navigate("todo_edit")
+                navController.navigate(Screen.TodoEdit.route)
             },
             onTemplateSelected = { template ->
                 showFirstTimeGuide = false
@@ -800,6 +879,17 @@ fun HomeScreen(
             )
         }
     }
+
+    /** 排序弹窗 */
+    if (showSortSheet) {
+        SortBottomSheet(
+            sheetState = sortSheetState,
+            currentSortOrder = sortType,
+            onDismiss = { showSortSheet = false },
+            onSortOrderSelected = { order ->
+                viewModel.updateSortOrder(order)
+            }
+        )
     }
 }
 

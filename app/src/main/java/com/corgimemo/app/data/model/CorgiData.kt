@@ -1,6 +1,8 @@
 package com.corgimemo.app.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -22,7 +24,19 @@ import androidx.room.PrimaryKey
  * @property consecutiveEarlyDays 连续早起天数
  * @property lastEarlyDate 最后一次早起日期（格式：yyyy-MM-dd）
  */
-@Entity(tableName = "corgi_data")
+@Entity(
+    tableName = "corgi_data",
+    indices = [
+        /** 索引：按等级查询，用于筛选不同等级的柯基 */
+        Index(value = ["level"]),
+        /** 索引：按情绪值查询，用于情绪相关的统计和展示 */
+        Index(value = ["moodValue"]),
+        /** 索引：按最后活跃日期查询，用于活跃度统计和排序 */
+        Index(value = ["lastActiveDate"]),
+        /** 复合索引：按等级和经验值联合查询，用于排行榜功能 */
+        Index(value = ["level", "experience"])
+    ]
+)
 data class CorgiData(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
@@ -32,7 +46,11 @@ data class CorgiData(
     val currentOutfit: String? = null,
     val unlockedOutfits: String = "[]",
     val unlockedAchievements: String = "[]",
+
+    /** 情绪值（0-100），数据合法性由业务层保证 */
+    @ColumnInfo
     val moodValue: Int = 50,
+
     val lastActiveDate: String,
     val totalCompleted: Int = 0,
     val consecutiveDays: Int = 0,

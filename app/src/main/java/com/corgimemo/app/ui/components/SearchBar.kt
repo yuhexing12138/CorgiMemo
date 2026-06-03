@@ -47,9 +47,9 @@ import com.corgimemo.app.ui.theme.UiColors
 import kotlinx.coroutines.delay
 
 /**
- * 搜索栏组件
+ * 搜索栏组件（增强版）
  *
- * 圆角搜索输入框，支持实时搜索、清空、聚焦/失焦动画。
+ * 圆角搜索输入框，支持实时搜索、清空、聚焦/失焦动画、自定义尾部图标。
  * 背景色为暖橙色浅色 (#FFF3E8)，符合设计规范。
  *
  * @param query 当前搜索关键词
@@ -58,6 +58,12 @@ import kotlinx.coroutines.delay
  * @param modifier 修饰符
  * @param placeholder 占位文字（默认："输入要搜索的内容..."）
  * @param enabled 是否启用（默认 true）
+ * @param trailingIcon 尾部图标内容 Composable lambda（可选）
+ *                   - 与清空按钮互斥显示（当 showTrailingIconAlways = false 时）
+ *                   - 支持任意 Composable 内容（IconButton、Icon、Text 等）
+ * @param showTrailingIconAlways 是否始终显示 trailingIcon（默认 false）
+ *                             - true: 忽略清空按钮，始终显示 trailingIcon
+ *                             - false: 当有输入内容时显示清空按钮，否则显示 trailingIcon
  */
 @Composable
 fun SearchBar(
@@ -66,7 +72,9 @@ fun SearchBar(
     onClear: () -> Unit = {},
     modifier: Modifier = Modifier,
     placeholder: String = "输入要搜索的内容...",
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    trailingIcon: @Composable (() -> Unit)? = null,
+    showTrailingIconAlways: Boolean = false
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
@@ -151,22 +159,38 @@ fun SearchBar(
             }
         )
 
-        // 清空按钮
-        if (localQuery.isNotEmpty()) {
-            IconButton(
-                onClick = {
-                    localQuery = ""
-                    onClear()
-                },
-                modifier = Modifier.size(20.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "清空",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
+        /** 尾部区域：清空按钮 / trailingIcon 智能切换 */
+        when {
+            // 场景 A：始终显示模式（忽略输入状态）
+            showTrailingIconAlways && trailingIcon != null -> {
+                trailingIcon()
             }
+
+            // 场景 B：有输入内容 → 显示清空按钮
+            localQuery.isNotEmpty() -> {
+                IconButton(
+                    onClick = {
+                        localQuery = ""
+                        onClear()
+                    },
+                    modifier = Modifier.size(20.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "清空",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            // 场景 C：无输入 + 有自定义图标 → 显示 trailingIcon
+            trailingIcon != null -> {
+                trailingIcon()
+            }
+
+            // 场景 D：无输入 + 无自定义图标 → 不显示任何内容
+            else -> { /* 不渲染 */ }
         }
     }
 }

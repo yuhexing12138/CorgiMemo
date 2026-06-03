@@ -28,7 +28,7 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class],
-    version = 21,
+    version = 25,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -86,7 +86,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
                     .build()
                 INSTANCE = instance
                 instance
@@ -594,5 +594,81 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             """.trimIndent())
         }
     }
+
+    /**
+     * 版本 21 → 22 迁移：添加 dueDate 截止时间字段
+     * 支持同时保留 startDate（开始时间）和 dueDate（截止时间）
+     * 提供更灵活的时间管理能力
+     */
+    private val MIGRATION_21_22 = object : Migration(21, 22) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            /** 添加 dueDate 字段，用于存储截止时间戳（毫秒） */
+            database.execSQL("ALTER TABLE todo_items ADD COLUMN dueDate INTEGER")
+
+            /** 为 dueDate 创建复合索引，优化按截止时间和状态查询的性能 */
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_dueDate_status ON todo_items(dueDate, status)")
+        }
+    }
+
+    /**
+     * 版本 22 → 23 迁移：添加背景颜色字段
+     * 支持待办事项自定义背景色功能（12 种预设色 + 自定义）
+     *
+     * 使用 ARGB 整数存储颜色值：
+     * - 默认值：16777215 (0xFFFFFFFF = 白色)
+     * - 存储方式：Color.toArgb() → Int → 数据库
+     * - 读取方式：数据库 Int → Color(Int) → Compose Color
+     */
+    private val MIGRATION_22_23 = object : Migration(22, 23) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            /** 添加 backgroundColor 字段（ARGB 整数值），默认为白色 */
+            database.execSQL(
+                "ALTER TABLE todo_items ADD COLUMN backgroundColor INTEGER NOT NULL DEFAULT 16777215"
+            )
+        }
+    }
+
+    /**
+     * 版本 23 → 24 迁移：添加富文本格式化内容字段
+     *
+     * 支持持久化存储 Markdown 格式的富文本内容，
+     * 用于在编辑页恢复完整的格式化显示（粗体/斜体/删除线/列表等）。
+     *
+     * **数据结构**:
+     * - `content`: 纯文本（用于搜索、统计）
+     * - `content_format`: Markdown 格式文本（用于编辑器显示）
+     */
+    private val MIGRATION_23_24 = object : Migration(23, 24) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            /** 添加 contentFormat 字段（TEXT 类型，默认空字符串） */
+            database.execSQL(
+                "ALTER TABLE todo_items ADD COLUMN contentFormat TEXT NOT NULL DEFAULT ''"
+            )
+        }
+    }
+
+    /**
+     * 版本 24 → 25 迁移：添加手动排序位置字段
+     *
+     * 支持待办事项拖拽排序功能，通过 position 字段记录每项的排序位置。
+     *
+     * **数据结构**:
+     * - `position`: INTEGER 类型，默认值为 0
+     * - 排序规则：position ASC, createdAt DESC（未设置 position 的项排在最后）
+     */
+    private val MIGRATION_24_25 = object : Migration(24, 25) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            /** 添加 position 字段（INTEGER 类型，默认值为 0） */
+            database.execSQL(
+                "ALTER TABLE todo_items ADD COLUMN position INTEGER NOT NULL DEFAULT 0"
+            )
+
+            /** 为 position 创建索引，优化排序查询性能 */
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_todo_items_position ON todo_items(position)"
+            )
+        }
+    }
+    // companion object 闭合
 }
 }
