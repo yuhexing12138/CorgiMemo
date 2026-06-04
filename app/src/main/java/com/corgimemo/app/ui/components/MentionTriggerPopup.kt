@@ -62,23 +62,30 @@ fun MentionTriggerPopup(
     offsetY: Int = 0
 ) {
     var searchResults by remember { mutableStateOf<List<CardSearchResult>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(false) }
 
-    LaunchedEffect(searchQuery) {
+    /** 同时监听 visible 和 searchQuery 变化 */
+    LaunchedEffect(visible, searchQuery) {
         if (visible) {
+            isSearching = true
             searchCards(searchQuery) { results ->
                 searchResults = results.filterNot { result ->
                     (result.cardType == sourceType && result.cardId == sourceId) ||
                     excludeIds.contains(result.cardType to result.cardId)
                 }.take(5)
+                isSearching = false
             }
+        } else {
+            searchResults = emptyList()
+            isSearching = false
         }
     }
 
-    if (visible && searchResults.isNotEmpty()) {
+    if (visible) {
         Popup(
-            alignment = Alignment.BottomStart,
+            alignment = Alignment.TopStart,
             properties = PopupProperties(
-                focusable = false,
+                focusable = true,
                 dismissOnBackPress = true,
                 dismissOnClickOutside = true
             ),
@@ -108,27 +115,50 @@ fun MentionTriggerPopup(
                             modifier = Modifier.padding(end = 6.dp)
                         )
                         Text(
-                            text = if (searchQuery.isBlank()) "搜索关联卡片..." else searchQuery,
+                            text = when {
+                                isSearching -> "搜索中..."
+                                searchQuery.isBlank() -> "搜索关联卡片..."
+                                else -> searchQuery
+                            },
                             fontSize = 13.sp,
-                            color = if (searchQuery.isBlank()) Color(0xFF999999) else MaterialTheme.colorScheme.onSurface,
+                            color = when {
+                                isSearching || searchQuery.isBlank() -> Color(0xFF999999)
+                                else -> MaterialTheme.colorScheme.onSurface
+                            },
                             maxLines = 1
                         )
                     }
 
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        items(
-                            items = searchResults,
-                            key = { "${it.cardType}_${it.cardId}" }
-                        ) { card ->
-                            MentionSearchItem(
-                                card = card,
-                                onClick = {
-                                    onCardSelected(card.cardType, card.cardId, card.title)
-                                }
-                            )
+                    if (isSearching && searchResults.isEmpty()) {
+                        Text(
+                            text = "搜索中...",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            fontSize = 13.sp,
+                            color = Color(0xFF999999)
+                        )
+                    } else if (searchResults.isEmpty()) {
+                        Text(
+                            text = "无匹配结果",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            fontSize = 13.sp,
+                            color = Color(0xFF999999)
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            items(
+                                items = searchResults,
+                                key = { "${it.cardType}_${it.cardId}" }
+                            ) { card ->
+                                MentionSearchItem(
+                                    card = card,
+                                    onClick = {
+                                        onCardSelected(card.cardType, card.cardId, card.title)
+                                    }
+                                )
+                            }
                         }
                     }
                 }

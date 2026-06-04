@@ -7,24 +7,18 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.ExperimentalAnimationApi
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,14 +30,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,8 +57,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
@@ -77,29 +76,24 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.repository.RepeatTaskManager
-import com.corgimemo.app.ui.components.CategorySelector
 import com.corgimemo.app.ui.components.KeywordSelectionDialog
 import com.corgimemo.app.ui.components.LocationPicker
 import com.corgimemo.app.ui.components.MentionTriggerPopup
 import com.corgimemo.app.ui.components.RecommendationChip
-import com.corgimemo.app.ui.components.SubTaskList
 import com.corgimemo.app.ui.components.VoicePlayerComponent
 import com.corgimemo.app.ui.components.VoiceRecordBottomSheet
-import com.corgimemo.app.ui.components.CornerDecoration
-import com.corgimemo.app.ui.components.DecoratedContentBox
 import com.corgimemo.app.ui.components.EditToolbar
 import com.corgimemo.app.ui.components.ImagePickerDialog /** 图片选择对话框 */
 import com.corgimemo.app.ui.components.checkAndRequestCameraPermission /** 检查并请求相机权限 */
@@ -112,8 +106,6 @@ import com.corgimemo.app.ui.components.TextFormatToolbar /** 格式化工具栏 
 import com.corgimemo.app.ui.components.RecordAudioPermissionChecker
 import com.corgimemo.app.ui.components.RecordAudioPermissionState
 import com.corgimemo.app.ui.components.openAppSettingsIntent
-import com.corgimemo.app.ui.screens.inspiration.components.ImagePicker
-import com.corgimemo.app.ui.screens.inspiration.components.RelationSelector
 import com.corgimemo.app.util.VoiceRecorder
 import com.corgimemo.app.util.VoicePlayer
 import com.corgimemo.app.viewmodel.HomeViewModel
@@ -126,9 +118,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-private const val LAZY_MENU_THRESHOLD = 15
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TodoEditScreen(
     navController: NavController,
@@ -201,6 +191,9 @@ fun TodoEditScreen(
     val coroutineScope = rememberCoroutineScope() /** 协程作用域（用于 launcher 回调中的 suspend 调用） */
     var pendingPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) } /** 临时保存相机拍照的输出 URI（TakePicture 回调只返回 Boolean，不返回 URI） */
 
+    /** 锁定编辑状态 */
+    var isLocked by remember { mutableStateOf(false) }
+
     /**
      * 相机拍照 Launcher
      *
@@ -268,7 +261,18 @@ fun TodoEditScreen(
 
     /** 背景颜色：从 ViewModel 获取持久化的 ARGB 整数值，转换为 Compose Color */
     val backgroundColorInt by viewModel.backgroundColor.collectAsState()
-    val backgroundColor = Color(backgroundColorInt) /** 从数据库加载或使用默认白色 */
+    val rawBackgroundColor = Color(backgroundColorInt) /** 从数据库加载或使用默认白色 */
+
+    /**
+     * 内容区实际背景色：
+     * - 默认白色时 → 使用主题背景色（暖米色），与新建日期/新建灵感页一致
+     * - 用户主动选择颜色后 → 使用用户选择的颜色
+     */
+    val contentBackgroundColor = if (backgroundColorInt == -1 || rawBackgroundColor == Color.White) {
+        MaterialTheme.colorScheme.background
+    } else {
+        rawBackgroundColor
+    }
 
     /**
      * 富文本编辑器状态
@@ -291,18 +295,32 @@ fun TodoEditScreen(
      * 此逻辑确保用户之前保存的富文本格式在重新打开待办时能正确恢复，
      * 即使数据库中存储了损坏的 Markdown 数据也不会崩溃。
      */
-    androidx.compose.runtime.LaunchedEffect(content, contentFormat) {
-        /** 避免在用户正在编辑时被外部状态覆盖（仅当编辑器内容与预期不符时才同步） */
-        val targetText = if (contentFormat.isNotBlank()) {
-            /** 使用安全解析（含校验+异常容错），防止损坏数据导致崩溃 */
-            com.corgimemo.app.util.MarkdownParser.safeParse(contentFormat)
-        } else {
-            /** 回退：使用纯文本内容 */
-            androidx.compose.ui.text.AnnotatedString(content)
-        }
+    /**
+     * 编辑器一次性初始化：仅在首次组合时从数据库恢复富文本格式。
+     *
+     * 使用 LaunchedEffect(Unit) + hasInitialized 标志，确保：
+     * - 只在页面首次加载时同步一次
+     * - 用户后续输入不会触发重新同步（解决光标跳转/输入延迟问题）
+     * - scheduleFormatExport 每300ms更新 contentFormat 不会再干扰编辑器状态
+     */
+    var hasInitialized by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (!hasInitialized) {
+            val targetText = if (contentFormat.isNotBlank()) {
+                com.corgimemo.app.util.MarkdownParser.safeParse(contentFormat)
+            } else {
+                androidx.compose.ui.text.AnnotatedString(content)
+            }
 
-        if (editorState.textFieldValue.annotatedString != targetText) {
-            editorState.textFieldValue = androidx.compose.ui.text.input.TextFieldValue(targetText)
+            if (editorState.textFieldValue.value.annotatedString != targetText) {
+                /** 初始加载：同步文本内容到 MutableState，光标置于文本末尾 */
+                val textEndPosition = targetText.length
+                editorState.textFieldValue.value = androidx.compose.ui.text.input.TextFieldValue(
+                    annotatedString = targetText,
+                    selection = androidx.compose.ui.text.TextRange(textEndPosition)
+                )
+            }
+            hasInitialized = true
         }
     }
 
@@ -315,8 +333,6 @@ fun TodoEditScreen(
         initialMinute = 0,
         is24Hour = true
     )
-    var estimatedHours by remember { mutableStateOf("") }
-    var estimatedMinutes by remember { mutableStateOf("") }
     var showTimePicker by remember { mutableStateOf(false) }
     val timePickerState = rememberTimePickerState(
         initialHour = 9,
@@ -336,18 +352,16 @@ fun TodoEditScreen(
     )
     val snackbarHostState = remember { SnackbarHostState() }
 
-    /** @触发弹窗状态 */
+    /** @触发关联弹窗状态 */
     var showMentionPopup by remember { mutableStateOf(false) }
     /** @搜索关键词状态 */
     var mentionQuery by remember { mutableStateOf("") }
-    /** @Undo历史菜单显示状态（长按撤销按钮触发） */
-    var showUndoHistoryMenu by remember { mutableStateOf(false) }
-    /** @Redo历史菜单显示状态（长按重做按钮触发） */
-    var showRedoHistoryMenu by remember { mutableStateOf(false) }
-    /** @Undo FAB 长按缩放状态（用于脉冲动画反馈） */
-    var isUndoPressing by remember { mutableStateOf(false) }
-    /** @Redo FAB 长按缩放状态（用于脉冲动画反馈） */
-    var isRedoPressing by remember { mutableStateOf(false) }
+    /** #触发位置提醒弹窗状态 */
+    var showLocationPopup by remember { mutableStateOf(false) }
+    /** #搜索关键词状态 */
+    var locationQuery by remember { mutableStateOf("") }
+    /** 添加子任务弹窗状态 */
+    var showAddSubtaskDialog by remember { mutableStateOf(false) }
 
     val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -381,13 +395,11 @@ fun TodoEditScreen(
         }
     }
 
-    LaunchedEffect(estimatedDurationMinutes) {
-        val duration = estimatedDurationMinutes
-        if (duration != null) {
-            val hours = duration / 60
-            val minutes = duration % 60
-            estimatedHours = if (hours > 0) hours.toString() else ""
-            estimatedMinutes = minutes.toString()
+    /** 自动计算预计时长（当开始日期和截止时间都设置后） */
+    LaunchedEffect(startDate, dueDate) {
+        if (startDate != null && dueDate != null && dueDate!! > startDate!!) {
+            val totalMinutes = (dueDate!! - startDate!!) / 1000 / 60
+            viewModel.setEstimatedDurationMinutes(totalMinutes.toInt())
         }
     }
 
@@ -435,8 +447,8 @@ fun TodoEditScreen(
                 androidx.compose.ui.text.AnnotatedString(data)
             }
 
-            /** 将目标历史状态填充到编辑器 */
-            editorState.textFieldValue = androidx.compose.ui.text.input.TextFieldValue(
+            /** 将目标历史状态填充到 MutableState */
+            editorState.textFieldValue.value = androidx.compose.ui.text.input.TextFieldValue(
                 restoredAnnotatedString
             )
             /** 一次性消费：清除 savedStateHandle 中的值，避免重复触发 */
@@ -460,587 +472,432 @@ fun TodoEditScreen(
     }
 
     Scaffold(
+        /** 初始背景使用 background 暖米色，与新建日期/新建灵感页保持一致 */
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Column {
-                /** 增强的标题栏 */
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            /** 顶部工具栏：返回 | 撤销/重做 | 通知/锁定 | 完成 */
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                /** 返回按钮 */
+                IconButton(
+                    onClick = { navController.popBackStack() },
+                    modifier = Modifier.size(40.dp)
                 ) {
-                    /** 返回按钮 */
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "返回",
-                            tint = Color(0xFFFF9A5C) // 暖橙色
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    /** 可编辑标题输入框 */
-                    OutlinedTextField(
-                        value = title,
-                        onValueChange = { viewModel.setTitleWithRecommendation(it) },
-                        placeholder = { Text("输入待办标题...") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFFFF9A5C), // 暖橙色聚焦边框
-                            unfocusedBorderColor = Color.Transparent, // 未聚焦时无边框
-                            cursorColor = Color(0xFFFF9A5C)
-                        ),
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "返回",
+                        tint = Color(0xFFFF9A5C),
+                        modifier = Modifier.size(20.dp)
                     )
+                }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(4.dp))
 
-                    /** 完成按钮 */
-                    Button(
-                        onClick = {
-                            if (viewModel.saveTodo()) {
-                                homeViewModel.setPoseForLoading()
-                                homeViewModel.refreshSubTaskProgress()
-                                navController.popBackStack()
-                            }
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFF9A5C) // 暖橙色
-                        ),
-                        modifier = Modifier.height(40.dp)
-                    ) {
-                        Text(
-                            text = "完成",
-                            color = Color.White,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    /**
-                     * 编辑历史时间线入口按钮（V2.5 新增）
-                     *
-                     * 时钟图标按钮，点击跳转到编辑历史时间线页面。
-                     * 提供当前 Todo 的完整编辑历史可视化视图。
-                     */
+                /** 撤销 + 重做（紧凑组） */
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = {
-                            /** V2.6: 传递当前 todoId 到编辑历史页面（按 TodoId 隔离加载） */
-                            if (todoId != null && todoId > 0) {
-                                navController.navigate(
-                                    com.corgimemo.app.ui.navigation.Screen.EditHistory.createRoute(todoId)
-                                )
+                            val previousState = viewModel.undo()
+                            if (previousState != null) {
+                                viewModel.pushToRedo(editorState.textFieldValue.value.annotatedString)
+                                editorState.textFieldValue.value = androidx.compose.ui.text.input.TextFieldValue(previousState)
                             }
-                        }
+                        },
+                        enabled = canUndo && !isLocked,
+                        modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.AccessTime,
-                            contentDescription = "编辑历史",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            imageVector = Icons.Default.Undo,
+                            contentDescription = "撤销",
+                            tint = if (canUndo && !isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            val restoredState = viewModel.redo()
+                            if (restoredState != null) {
+                                viewModel.pushSnapshot(editorState.textFieldValue.value.annotatedString)
+                                editorState.textFieldValue.value = androidx.compose.ui.text.input.TextFieldValue(restoredState)
+                            }
+                        },
+                        enabled = canRedo && !isLocked,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Redo,
+                            contentDescription = "重做",
+                            tint = if (canRedo && !isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
 
-                /** 元信息行：时间戳 + 字数统计 */
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.Start,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    /** 创建时间显示 */
-                    todoId?.let { id ->
-                        if (id > 0) {
-                            val createdAtText = remember(id) {
-                                val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                                // 从 ViewModel 获取创建时间（如果可用）
-                                "🕐 创建于 ${sdf.format(Date())}"
-                            }
-                            Text(
-                                text = createdAtText,
-                                fontSize = 12.sp,
-                                color = Color(0xFF999999)
-                            )
+                Spacer(modifier = Modifier.weight(1f))
 
-                            Spacer(modifier = Modifier.width(16.dp))
+                /** 通知 + 锁定（紧凑组） */
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                /** 通知/时间设置（下拉菜单：开始日期 | 截止时间 | 提醒时间） */
+                var showTimeMenu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(
+                        onClick = { showTimeMenu = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = "时间设置",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = showTimeMenu,
+                        onDismissRequest = { showTimeMenu = false }
+                    ) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("开始日期") },
+                            onClick = {
+                                showTimeMenu = false
+                                showDatePicker = true
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
+                            }
+                        )
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("截止时间") },
+                            onClick = {
+                                showTimeMenu = false
+                                showDueDatePicker = true
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                            }
+                        )
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("提醒时间") },
+                            onClick = {
+                                showTimeMenu = false
+                                showTimePicker = true
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(18.dp))
+                            }
+                        )
+
+                        // 分隔线
+                        androidx.compose.material3.HorizontalDivider()
+
+                        /** 重复类型选项 */
+                        val repeatOptions = RepeatTaskManager.getRepeatTypeOptions()
+                        repeatOptions.forEach { (type, name) ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(name)
+                                        if (repeatType == type) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                            Text(
+                                                "✓",
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontSize = 14.sp
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setRepeatType(type)
+                                    showTimeMenu = false
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.DateRange,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            )
                         }
                     }
-
-                    /** 字数统计 */
-                    Text(
-                        text = "📝 ${content.length} 字",
-                        fontSize = 12.sp,
-                        color = Color(0xFF999999)
-                    )
+                }
+                    IconButton(
+                        onClick = { isLocked = !isLocked },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                            contentDescription = if (isLocked) "解锁" else "锁定",
+                            tint = if (isLocked) Color(0xFFFF9A5C) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
 
-                /** 分割线 */
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                )
+                Spacer(modifier = Modifier.width(8.dp))
+
+                /** 完成按钮 */
+                Button(
+                    onClick = {
+                        if (viewModel.saveTodo()) {
+                            homeViewModel.setPoseForLoading()
+                            homeViewModel.refreshSubTaskProgress()
+                            navController.popBackStack()
+                        }
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFFF9A5C)
+                    ),
+                    modifier = Modifier.height(32.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 0.dp)
+                ) {
+                    Text(
+                        text = "完成",
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
+                    )
+                }
             }
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
-            /** 编辑页底部工具栏（含 Undo/Redo 支持） */
+            /** 编辑页底部工具栏（横排图标版）- 添加imePadding自适应软键盘高度 */
             EditToolbar(
+                onFontClick = {
+                    /** 切换格式工具栏的显示/隐藏（A/A） */
+                    showFormatToolbar = !showFormatToolbar
+                },
+                onListClick = {
+                    /** 插入无序列表 */
+                    viewModel.pushSnapshot(editorState.textFieldValue.value.annotatedString)
+                    com.corgimemo.app.ui.components.insertUnorderedList(editorState)
+                },
                 onPhotoClick = {
                     /** 触发图片选择对话框 */
                     showImagePicker = true
                 },
-                onTextFormatClick = {
-                    /** 切换格式工具栏的显示/隐藏 */
-                    showFormatToolbar = !showFormatToolbar
+                onVoiceClick = {
+                    /** 打开语音录制面板 */
+                    showVoiceRecordSheet = true
                 },
-                onBoldClick = {
-                    /** 推送快照后应用加粗格式（支持撤销） */
-                    viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
-                    com.corgimemo.app.ui.components.applyBoldFormat(editorState)
-                },
-                onListClick = {
-                    /** 推送快照后插入无序列表（支持撤销） */
-                    viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
-                    com.corgimemo.app.ui.components.insertUnorderedList(editorState)
-                },
-                onTodoClick = {
-                    viewModel.addSubTask("新子任务")
+                onAddSubtaskClick = {
+                    /** 弹出添加子任务对话框 */
+                    showAddSubtaskDialog = true
                 },
                 onBackgroundClick = {
                     /** 触发背景色选择器 */
                     showColorPicker = true
                 },
-                /** Undo/Redo 按钮回调 */
-                onUndoClick = {
-                    /** 执行撤销：从 Undo 栈恢复上一状态 */
-                    val previousState = viewModel.undo()
-                    if (previousState != null) {
-                        /** 将当前状态推入 Redo 栈（支持重做） */
-                        viewModel.pushToRedo(editorState.textFieldValue.annotatedString)
-                        /** 恢复编辑器到上一状态 */
-                        editorState.textFieldValue = androidx.compose.ui.text.input.TextFieldValue(previousState)
+                onShareClick = {
+                    /** 添加子待办（复用分享图标位） */
+                    viewModel.addSubTask("新子任务")
+                },
+                onDeleteClick = {
+                    /** 删除当前待办并返回 */
+                    if (todoId != null && todoId > 0) {
+                        homeViewModel.deleteTodo(todoId)
+                        navController.popBackStack()
                     }
                 },
-                onRedoClick = {
-                    /** 执行重做：从 Redo 栈恢复被撤销的状态 */
-                    val restoredState = viewModel.redo()
-                    if (restoredState != null) {
-                        /** 将当前状态推回 Undo 栈（支持再次撤销） */
-                        viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
-                        /** 恢复编辑器到被撤销的状态 */
-                        editorState.textFieldValue = androidx.compose.ui.text.input.TextFieldValue(restoredState)
-                    }
-                },
-                canUndo = canUndo,
-                canRedo = canRedo
+                wordCount = content.length,
+                modifier = Modifier.imePadding()
             )
         }
     ) { innerPadding ->
+        /**
+         * 内容区布局：单层Column，Modifier顺序决定背景范围。
+         * - background 在 horizontal padding 之前 → 背景铺满全宽无空隙
+         * - 不使用 Box 包裹 → 避免触摸事件被外层拦截导致编辑器无法输入
+         */
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp)
+                /** 背景色铺满全宽（在内容padding之前设置） */
+                .background(contentBackgroundColor)
+                /** 内容区内边距在背景之后，不影响背景范围 */
+                .padding(horizontal = 8.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.Top
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            /** 带装饰角标的内容区域 */
-            DecoratedContentBox(
+            /** ===== 标题区（独立大标题）===== */
+            OutlinedTextField(
+                value = title,
+                onValueChange = { if (!isLocked) viewModel.setTitleWithRecommendation(it) },
+                placeholder = {
+                    Text(
+                        "标题",
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                },
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFFF97316), // 暖橙色
-                size = 24.dp,
-                strokeWidth = 3.dp,
-                backgroundColor = backgroundColor /** 应用用户选择的背景色 */
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    cursorColor = Color(0xFFFF9A5C)
+                ),
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+                enabled = !isLocked
+            )
+
+            /** ===== 分类 + 优先级行（标题下方紧凑排列）===== */
+            val selectedCategory = categories.find { it.id == categoryId }
+            Row(
+                modifier = Modifier.padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                /**
-                 * 内联图片预览组件
-                 * 显示已选择的图片缩略图，支持删除操作
-                 * 使用新建的 InlineImagePreview 组件替代原有的 ImagePicker
-                 */
-                if (selectedImageUris.isNotEmpty()) {
-                    ImagePreviewCarousel(
-                        imageUris = selectedImageUris,
-                        onDelete = { index ->
-                            /** 从 ViewModel 移除指定索引的图片 */
-                            val updatedList = selectedImageUris.toMutableList()
-                            updatedList.removeAt(index)
-                            viewModel.reorderImagePaths(updatedList)
+                var showCategoryPicker by remember { mutableStateOf(false) }
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    onClick = { showCategoryPicker = true }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = selectedCategory?.name ?: "备忘录",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                /** 优先级内联选择 */
+                listOf(Pair(0, "低"), Pair(1, "中"), Pair(2, "高")).forEach { (value, label) ->
+                    Text(
+                        text = label,
+                        modifier = Modifier
+                            .clickable(enabled = !isLocked) { viewModel.setPriority(value) }
+                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                        color = if (priority == value) Color(0xFFFF9A5C) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (priority == value) FontWeight.Bold else FontWeight.Normal,
+                        fontSize = 12.sp
+                    )
+                    if (value < 2) Spacer(modifier = Modifier.width(2.dp))
+                }
+
+                /** 分类选择弹窗 */
+                if (showCategoryPicker && categories.isNotEmpty()) {
+                    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                    com.corgimemo.app.ui.components.CategoryPickerSheet(
+                        sheetState = sheetState,
+                        categories = categories,
+                        currentCategoryId = categoryId,
+                        onDismiss = { showCategoryPicker = false },
+                        onCategorySelected = { newId ->
+                            viewModel.setCategoryId(newId)
+                            showCategoryPicker = false
+                        }
+                    )
+                }
+            }
+
+            /** ===== 编辑器区域（直接融入外层Box背景，无额外Surface层干扰触摸事件）===== */
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .padding(4.dp)
+            ) {
+                /** 内联图片预览 */
+                    if (selectedImageUris.isNotEmpty()) {
+                        ImagePreviewCarousel(
+                            imageUris = selectedImageUris,
+                            onDelete = { index ->
+                                val updatedList = selectedImageUris.toMutableList()
+                                updatedList.removeAt(index)
+                                viewModel.reorderImagePaths(updatedList)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                        )
+                    }
+
+                    /** 富文本编辑器 */
+                    com.corgimemo.app.ui.components.RichTextEditor(
+                        state = editorState,
+                        onValueChange = { newValue ->
+                            if (!isLocked) {
+                                viewModel.setContent(newValue.text)
+                                /** 更新 MutableState 的值（触发 Compose 重组，修复输入不显示问题） */
+                                editorState.textFieldValue.value = newValue
+                                viewModel.scheduleFormatExport(newValue.annotatedString)
+
+                                /** @触发关联选择弹窗 */
+                                val atIndex = newValue.text.lastIndexOf('@')
+                                if (atIndex >= 0) {
+                                    val afterAt = newValue.text.substring(atIndex + 1)
+                                    // @后面没有空格或换行才触发
+                                    if (!afterAt.contains(' ') && !afterAt.contains('\n')) {
+                                        if (!showMentionPopup) showMentionPopup = true
+                                        mentionQuery = afterAt
+                                    } else {
+                                        showMentionPopup = false
+                                    }
+                                } else {
+                                    showMentionPopup = false
+                                }
+
+                                /** #触发位置提醒弹窗（支持中文井号＃和英文#） */
+                                val hashIndex = maxOf(
+                                    newValue.text.lastIndexOf('#'),
+                                    newValue.text.lastIndexOf('＃')
+                                )
+                                if (hashIndex >= 0) {
+                                    val afterHash = newValue.text.substring(hashIndex + 1)
+                                    if (!afterHash.contains(' ') && !afterHash.contains('\n')) {
+                                        if (!showLocationPopup) showLocationPopup = true
+                                        locationQuery = afterHash
+                                    } else {
+                                        showLocationPopup = false
+                                    }
+                                } else {
+                                    showLocationPopup = false
+                                }
+                            }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                    )
-                }
-
-                /**
-                 * 富文本编辑器区域
-                 * 支持 Markdown 格式编辑（粗体、斜体、删除线等）
-                 */
-                com.corgimemo.app.ui.components.RichTextEditor(
-                    state = editorState,
-                    onValueChange = { newValue ->
-                        /** 同步纯文本内容到 ViewModel（立即，用于实时显示和保存兜底） */
-                        viewModel.setContent(newValue.text)
-                        editorState.textFieldValue = newValue
-
-                        /**
-                         * 防抖同步富文本格式内容到 ViewModel（Markdown 格式）
-                         *
-                         * 使用 300ms 防抖策略：每次按键取消上一次未完成的导出任务，
-                         * 仅在用户停止输入 300ms 后才执行 MarkdownParser.export()，
-                         * 显著减少高频编辑时的正则解析开销。
-                         */
-                        viewModel.scheduleFormatExport(newValue.annotatedString)
-
-                        /** 检测 @ 字符输入，触发关联选择弹窗（保留原有逻辑） */
-                        if ("@" in newValue.text && !showMentionPopup) {
-                            showMentionPopup = true
-                            mentionQuery = ""
-                        }
-                        if (showMentionPopup) {
-                            val atIndex = newValue.text.lastIndexOf("@")
-                            if (atIndex >= 0) {
-                                mentionQuery = newValue.text.substring(atIndex + 1)
-                            } else {
-                                showMentionPopup = false
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp), /** 固定高度，避免高度跳动 */
-                    placeholder = "输入详细描述（支持 **粗体**、*斜体*、~~删除线~~ 等格式）",
-                    enabled = true,
-                    /** 键盘快捷键绑定：Ctrl+Z 撤销 / Ctrl+Y 重做 */
-                    onUndo = {
-                        val previousState = viewModel.undo()
-                        if (previousState != null) {
-                            viewModel.pushToRedo(editorState.textFieldValue.annotatedString)
-                            editorState.textFieldValue = androidx.compose.ui.text.input.TextFieldValue(previousState)
-                        }
-                    },
-                    onRedo = {
-                        val restoredState = viewModel.redo()
-                        if (restoredState != null) {
-                            viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
-                            editorState.textFieldValue = androidx.compose.ui.text.input.TextFieldValue(restoredState)
-                        }
-                    }
-                )
-            }
-
-            /**
-             * 浮动 Undo/Redo 快捷按钮区域
-             * 位于编辑器上方，方便用户在编辑过程中快速撤销/重做
-             */
-            if (canUndo || canRedo) {
-                /** FAB 缩放脉冲动画状态（长按时 1.0x → 1.15x 弹性缩放） */
-                val undoFabScale by animateFloatAsState(
-                    targetValue = if (isUndoPressing) 1.15f else 1f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMedium
-                    ),
-                    label = "undoFabScale"
-                )
-                val redoFabScale by animateFloatAsState(
-                    targetValue = if (isRedoPressing) 1.15f else 1f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMedium
-                    ),
-                    label = "redoFabScale"
-                )
-
-                /** 下拉菜单虚拟化阈值：超过此条目数时使用 LazyColumn */
-                val LAZY_MENU_THRESHOLD = 15
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    /** ↩️ 撤销浮动按钮（支持长按显示历史菜单 + 缩放脉冲动画） */
-                    androidx.compose.material3.FloatingActionButton(
-                        onClick = {
-                            /** 单击：执行一次撤销操作 */
+                            .heightIn(min = 200.dp),
+                        placeholder = "请在这里输入内容...",
+                        enabled = !isLocked,
+                        onUndo = {
                             val previousState = viewModel.undo()
                             if (previousState != null) {
-                                viewModel.pushToRedo(editorState.textFieldValue.annotatedString)
-                                editorState.textFieldValue = androidx.compose.ui.text.input.TextFieldValue(previousState)
+                                viewModel.pushToRedo(editorState.textFieldValue.value.annotatedString)
+                                editorState.textFieldValue.value = androidx.compose.ui.text.input.TextFieldValue(previousState)
                             }
                         },
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                        contentColor = if (canUndo) MaterialTheme.colorScheme.primary
-                                      else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                        modifier = Modifier
-                            .size(32.dp)
-                            .graphicsLayer {
-                                scaleX = undoFabScale
-                                scaleY = undoFabScale
-                            }
-                            .pointerInput(Unit) {
-                                detectTapGestures(
-                                    onPress = {
-                                        /** 按下：开始缩放动画 */
-                                        isUndoPressing = true
-                                        /** 等待释放或长按触发 */
-                                        val success = tryAwaitRelease()
-                                        isUndoPressing = false
-                                        if (!success) {
-                                            /** 长按成功：显示撤销历史菜单 */
-                                            showUndoHistoryMenu = true
-                                        }
-                                    }
-                                )
-                            },
-                        content = {
-                            androidx.compose.material3.Text(
-                                text = "↩",
-                                fontSize = 14.sp,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                            )
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    /** ↪️ 重做浮动按钮（支持长按显示历史菜单 + 缩放脉冲动画，与Undo对称） */
-                    androidx.compose.material3.FloatingActionButton(
-                        onClick = {
-                            /** 单击：执行一次重做操作 */
+                        onRedo = {
                             val restoredState = viewModel.redo()
                             if (restoredState != null) {
-                                viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
-                                editorState.textFieldValue = androidx.compose.ui.text.input.TextFieldValue(restoredState)
+                                viewModel.pushSnapshot(editorState.textFieldValue.value.annotatedString)
+                                editorState.textFieldValue.value = androidx.compose.ui.text.input.TextFieldValue(restoredState)
                             }
-                        },
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                        contentColor = if (canRedo) MaterialTheme.colorScheme.primary
-                                      else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                        modifier = Modifier
-                            .size(32.dp)
-                            .graphicsLayer {
-                                scaleX = redoFabScale
-                                scaleY = redoFabScale
-                            }
-                            .pointerInput(Unit) {
-                                detectTapGestures(
-                                    onPress = {
-                                        /** 按下：开始缩放动画 */
-                                        isRedoPressing = true
-                                        /** 等待释放或长按触发 */
-                                        val success = tryAwaitRelease()
-                                        isRedoPressing = false
-                                        if (!success) {
-                                            /** 长按成功：显示重做历史菜单 */
-                                            showRedoHistoryMenu = true
-                                        }
-                                    }
-                                )
-                            },
-                        content = {
-                            androidx.compose.material3.Text(
-                                text = "↪",
-                                fontSize = 14.sp,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                            )
                         }
                     )
-                }
-            }
-
-            /**
-             * Undo 历史下拉菜单（支持 LazyColumn 虚拟化）
-             * 长按撤销按钮时弹出，显示最近的撤销历史条目
-             */
-            DropdownMenu(
-                expanded = showUndoHistoryMenu,
-                onDismissRequest = { showUndoHistoryMenu = false }
-            ) {
-                /** 获取撤销历史描述列表（倒序：最新的在前） */
-                val undoHistory = viewModel.getUndoHistoryDescriptions()
-                if (undoHistory.isEmpty()) {
-                    /** 空状态提示 */
-                    DropdownMenuItem(
-                        text = { Text("暂无撤销历史", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        onClick = { showUndoHistoryMenu = false },
-                        enabled = false
-                    )
-                } else if (undoHistory.size <= LAZY_MENU_THRESHOLD) {
-                    /** 小数据量：直接遍历渲染（性能足够） */
-                    undoHistory.forEachIndexed { index, (stepCount, preview) ->
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(
-                                        text = "撤回 ${stepCount + 1} 步",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = preview.ifEmpty { "(空内容)" },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                    )
-                                }
-                            },
-                            onClick = {
-                                val targetState = viewModel.undoToHistoryStep(index + 1)
-                                if (targetState != null) {
-                                    viewModel.pushToRedo(editorState.textFieldValue.annotatedString)
-                                    editorState.textFieldValue = androidx.compose.ui.text.input.TextFieldValue(targetState)
-                                }
-                                showUndoHistoryMenu = false
-                            }
-                        )
-                        if (index < undoHistory.lastIndex) {
-                            androidx.compose.material3.HorizontalDivider()
-                        }
-                    }
-                } else {
-                    /** 大数据量：使用 LazyColumn 虚拟化渲染 */
-                    LazyColumn(
-                        modifier = Modifier.heightIn(max = 300.dp)
-                    ) {
-                        items(
-                            count = undoHistory.size,
-                            key = { index -> "undo_$index" }
-                        ) { index ->
-                            val (stepCount, preview) = undoHistory[index]
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(
-                                            text = "撤回 ${stepCount + 1} 步",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = preview.ifEmpty { "(空内容)" },
-                                            style = MaterialTheme.typography.bodySmall,
-                                            maxLines = 1,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    val targetState = viewModel.undoToHistoryStep(index + 1)
-                                    if (targetState != null) {
-                                        viewModel.pushToRedo(editorState.textFieldValue.annotatedString)
-                                        editorState.textFieldValue = androidx.compose.ui.text.input.TextFieldValue(targetState)
-                                    }
-                                    showUndoHistoryMenu = false
-                                }
-                            )
-                            if (index < undoHistory.lastIndex) {
-                                androidx.compose.material3.HorizontalDivider()
-                            }
-                        }
-                    }
-                }
-            }
-
-            /**
-             * Redo 历史下拉菜单（支持 LazyColumn 虚拟化，与 Undo 对称）
-             * 长按重做按钮时弹出，显示可重做的历史条目
-             */
-            DropdownMenu(
-                expanded = showRedoHistoryMenu,
-                onDismissRequest = { showRedoHistoryMenu = false }
-            ) {
-                /** 获取重做历史描述列表（正序：最早重做的在前） */
-                val redoHistory = viewModel.getRedoHistoryDescriptions()
-                if (redoHistory.isEmpty()) {
-                    /** 空状态提示 */
-                    DropdownMenuItem(
-                        text = { Text("暂无重做历史", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        onClick = { showRedoHistoryMenu = false },
-                        enabled = false
-                    )
-                } else if (redoHistory.size <= LAZY_MENU_THRESHOLD) {
-                    /** 小数据量：直接遍历渲染 */
-                    redoHistory.forEachIndexed { index, (stepCount, preview) ->
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(
-                                        text = "重做 ${stepCount + 1} 步",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = preview.ifEmpty { "(空内容)" },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                    )
-                                }
-                            },
-                            onClick = {
-                                val targetState = viewModel.redoToHistoryStep(index + 1)
-                                if (targetState != null) {
-                                    viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
-                                    editorState.textFieldValue = androidx.compose.ui.text.input.TextFieldValue(targetState)
-                                }
-                                showRedoHistoryMenu = false
-                            }
-                        )
-                        if (index < redoHistory.lastIndex) {
-                            androidx.compose.material3.HorizontalDivider()
-                        }
-                    }
-                } else {
-                    /** 大数据量：使用 LazyColumn 虚拟化渲染 */
-                    LazyColumn(
-                        modifier = Modifier.heightIn(max = 300.dp)
-                    ) {
-                        items(
-                            count = redoHistory.size,
-                            key = { index -> "redo_$index" }
-                        ) { index ->
-                            val (stepCount, preview) = redoHistory[index]
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(
-                                            text = "重做 ${stepCount + 1} 步",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = preview.ifEmpty { "(空内容)" },
-                                            style = MaterialTheme.typography.bodySmall,
-                                            maxLines = 1,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    val targetState = viewModel.redoToHistoryStep(index + 1)
-                                    if (targetState != null) {
-                                        viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
-                                        editorState.textFieldValue = androidx.compose.ui.text.input.TextFieldValue(targetState)
-                                    }
-                                    showRedoHistoryMenu = false
-                                }
-                            )
-                            if (index < redoHistory.lastIndex) {
-                                androidx.compose.material3.HorizontalDivider()
-                            }
-                        }
-                    }
                 }
             }
 
@@ -1055,32 +912,32 @@ fun TodoEditScreen(
                     modifier = Modifier.padding(top = 8.dp),
                     onToggleBold = {
                         /** 推送快照后应用加粗格式（支持撤销） */
-                        viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
+                        viewModel.pushSnapshot(editorState.textFieldValue.value.annotatedString)
                         com.corgimemo.app.ui.components.applyBoldFormat(editorState)
                     },
                     onToggleItalic = {
                         /** 推送快照后应用斜体格式（支持撤销） */
-                        viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
+                        viewModel.pushSnapshot(editorState.textFieldValue.value.annotatedString)
                         com.corgimemo.app.ui.components.applyItalicFormat(editorState)
                     },
                     onToggleUnderline = {
                         /** 推送快照后应用下划线格式（支持撤销） */
-                        viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
+                        viewModel.pushSnapshot(editorState.textFieldValue.value.annotatedString)
                         com.corgimemo.app.ui.components.applyUnderlineFormat(editorState)
                     },
                     onToggleStrikethrough = {
                         /** 推送快照后应用删除线格式（支持撤销） */
-                        viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
+                        viewModel.pushSnapshot(editorState.textFieldValue.value.annotatedString)
                         com.corgimemo.app.ui.components.applyStrikethroughFormat(editorState)
                     },
                     onInsertUnorderedList = {
                         /** 推送快照后插入无序列表（支持撤销） */
-                        viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
+                        viewModel.pushSnapshot(editorState.textFieldValue.value.annotatedString)
                         com.corgimemo.app.ui.components.insertUnorderedList(editorState)
                     },
                     onInsertOrderedList = {
                         /** 推送快照后插入有序列表（支持撤销） */
-                        viewModel.pushSnapshot(editorState.textFieldValue.annotatedString)
+                        viewModel.pushSnapshot(editorState.textFieldValue.value.annotatedString)
                         com.corgimemo.app.ui.components.insertOrderedList(editorState)
                     },
                     onInsertTodoItem = { viewModel.addSubTask("新子任务") }
@@ -1101,36 +958,90 @@ fun TodoEditScreen(
                 sourceId = todoId ?: 0L
             )
 
-            Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
-                Text(
-                    text = "优先级",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            /** #触发位置提醒弹窗 */
+            if (showLocationPopup) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showLocationPopup = false },
+                    title = { Text("位置提醒") },
+                    text = {
+                        Column {
+                            Text(
+                                text = "输入 # 后可搜索地点设置提醒",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            LocationPicker(
+                                lat = geofenceLat,
+                                lng = geofenceLng,
+                                radius = geofenceRadius,
+                                type = geofenceType,
+                                address = geofenceAddress,
+                                enabled = geofenceEnabled,
+                                onLocationChange = { lat, lng, address ->
+                                    viewModel.setGeofenceLat(lat)
+                                    viewModel.setGeofenceLng(lng)
+                                    viewModel.setGeofenceAddress(address)
+                                },
+                                onRadiusChange = { radius ->
+                                    viewModel.setGeofenceRadius(radius)
+                                },
+                                onTypeChange = { type ->
+                                    viewModel.setGeofenceType(type)
+                                },
+                                onEnabledChange = { enabled ->
+                                    viewModel.setGeofenceEnabled(enabled)
+                                }
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showLocationPopup = false }) {
+                            Text("确定")
+                        }
+                    }
                 )
-                Row(modifier = Modifier.padding(top = 8.dp)) {
-                    PriorityChip(
-                        text = "低",
-                        priority = 0,
-                        isSelected = priority == 0,
-                        onClick = { viewModel.setPriority(0) }
-                    )
-                    PriorityChip(
-                        text = "中",
-                        priority = 1,
-                        isSelected = priority == 1,
-                        onClick = { viewModel.setPriority(1) }
-                    )
-                    PriorityChip(
-                        text = "高",
-                        priority = 2,
-                        isSelected = priority == 2,
-                        onClick = { viewModel.setPriority(2) }
-                    )
-                }
+            }
+
+            /** 添加子任务弹窗 */
+            if (showAddSubtaskDialog) {
+                var newSubtaskText by remember { mutableStateOf("") }
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showAddSubtaskDialog = false },
+                    title = { Text("添加子任务") },
+                    text = {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = newSubtaskText,
+                            onValueChange = { newSubtaskText = it },
+                            placeholder = { Text("输入子任务内容...") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val text = newSubtaskText.trim()
+                                if (text.isNotEmpty()) {
+                                    viewModel.addSubTask(text)
+                                }
+                                showAddSubtaskDialog = false
+                            },
+                            enabled = newSubtaskText.trim().isNotEmpty()
+                        ) {
+                            Text("添加")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showAddSubtaskDialog = false }) {
+                            Text("取消")
+                        }
+                    }
+                )
             }
 
             AnimatedVisibility(visible = recommendedCategory != null) {
-                Column(modifier = Modifier.padding(top = 16.dp)) {
+                Column(modifier = Modifier.padding(top = 8.dp)) {
                     recommendedCategory?.let { category ->
                         RecommendationChip(
                             category = category,
@@ -1171,193 +1082,63 @@ fun TodoEditScreen(
                             }
                         }
                     }
-                }
             }
 
-            CategorySelector(
-                categories = categories,
-                selectedCategoryId = categoryId,
-                onCategorySelected = { viewModel.setCategoryId(it) },
-                modifier = Modifier.padding(top = 8.dp)
-            )
-
-            Button(
-                onClick = { showDatePicker = true },
-                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
-            ) {
-                val dateText = if (startDate != null) {
-                    val format = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                    format.format(Date(startDate!!))
-                } else {
-                    "选择开始日期时间（可选）"
-                }
-                Text(text = dateText)
+            /** 自动计算时长显示（根据开始日期和截止时间自动计算） */
+            val autoDuration = remember(startDate, dueDate) {
+                if (startDate != null && dueDate != null && dueDate!! > startDate!!) {
+                    val diffMs = dueDate!! - startDate!!
+                    val totalMinutes = diffMs / 1000 / 60
+                    val hours = totalMinutes / 60
+                    val minutes = totalMinutes % 60
+                    when {
+                        hours > 24 -> "${hours / 24}天${hours % 24}小时"
+                        hours > 0 -> "${hours}小时${if (minutes > 0) "${minutes}分" else ""}"
+                        minutes > 0 -> "${minutes}分钟"
+                        else -> null
+                    }
+                } else null
             }
 
-            // 预计完成时长选择
-            Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
-                Text(
-                    text = "预计完成时长",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            AnimatedVisibility(visible = autoDuration != null) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedTextField(
-                        value = estimatedHours,
-                        onValueChange = {
-                            estimatedHours = it.filter { char -> char.isDigit() }.take(3)
-                            val hours = estimatedHours.toIntOrNull() ?: 0
-                            val minutes = estimatedMinutes.toIntOrNull() ?: 0
-                            val totalMinutes = hours * 60 + minutes
-                            viewModel.setEstimatedDurationMinutes(if (totalMinutes > 0) totalMinutes else null)
-                        },
-                        label = { Text("小时") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = estimatedMinutes,
-                        onValueChange = {
-                            val newMinutes = it.filter { char -> char.isDigit() }.take(2)
-                            val minutes = newMinutes.toIntOrNull() ?: 0
-                            estimatedMinutes = if (minutes < 60) newMinutes else estimatedMinutes
-                            val hours = estimatedHours.toIntOrNull() ?: 0
-                            val finalMinutes = estimatedMinutes.toIntOrNull() ?: 0
-                            val totalMinutes = hours * 60 + finalMinutes
-                            viewModel.setEstimatedDurationMinutes(if (totalMinutes > 0) totalMinutes else null)
-                        },
-                        label = { Text("分钟") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
+                    Text(
+                        text = "⏱️ 预计时长: $autoDuration",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            // 截止时间选择区域
-            Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
-                Text(
-                    text = "截止时间",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Button(
-                    onClick = { showDueDatePicker = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                ) {
-                    val dueDateText = if (dueDate != null) {
-                        val format = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                        format.format(Date(dueDate ?: 0L))
-                    } else {
-                        "点击选择截止时间（可选）"
-                    }
-                    Text(text = dueDateText)
-                }
-            }
+            // 推荐提醒时间标签
+            AnimatedVisibility(visible = showReminderRecommendation) {
+                recommendedReminderTime?.let { time ->
+                    val format = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+                    val recTimeText = format.format(Date(time))
 
-            // 提醒时间选择区域
-            Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
-                Text(
-                    text = "提醒时间",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Button(
-                    onClick = { showTimePicker = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                ) {
-                    val timeText = if (reminderTime != null) {
-                        val format = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                        format.format(Date(reminderTime ?: 0L))
-                    } else {
-                        "点击选择提醒时间（可选）"
-                    }
-                    Text(text = timeText)
-                }
-
-                // 推荐提醒时间标签
-                AnimatedVisibility(visible = showReminderRecommendation) {
-                    recommendedReminderTime?.let { time ->
-                        val format = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
-                        val timeText = format.format(Date(time))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 4.dp)
-                                .background(Color(0xFFE3F2FD), RoundedCornerShape(8.dp))
-                                .clickable { viewModel.acceptReminderRecommendation() }
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "\uD83D\uDCA1 推荐提醒：$timeText",
-                                fontSize = 14.sp,
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                            .background(Color(0xFFE3F2FD), RoundedCornerShape(8.dp))
+                            .clickable { viewModel.acceptReminderRecommendation() }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "\uD83D\uDCA1 推荐提醒：$recTimeText",
+                            fontSize = 14.sp,
                                 color = Color(0xFF1565C0)
                             )
                         }
                     }
                 }
             }
-
-            // 重复类型选择
-            Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
-                Text(
-                    text = "重复",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(modifier = Modifier.padding(top = 8.dp)) {
-                    val repeatOptions = RepeatTaskManager.getRepeatTypeOptions()
-                    repeatOptions.forEach { (type, name) ->
-                        RepeatTypeChip(
-                            text = name,
-                            type = type,
-                            isSelected = repeatType == type,
-                            onClick = { viewModel.setRepeatType(type) }
-                        )
-                    }
-                }
-            }
-
-            LocationPicker(
-                lat = geofenceLat,
-                lng = geofenceLng,
-                radius = geofenceRadius,
-                type = geofenceType,
-                address = geofenceAddress,
-                enabled = geofenceEnabled,
-                onLocationChange = { lat, lng, address ->
-                    viewModel.setGeofenceLat(lat)
-                    viewModel.setGeofenceLng(lng)
-                    viewModel.setGeofenceAddress(address)
-                },
-                onRadiusChange = { radius ->
-                    viewModel.setGeofenceRadius(radius)
-                },
-                onTypeChange = { type ->
-                    viewModel.setGeofenceType(type)
-                },
-                onEnabledChange = { enabled ->
-                    viewModel.setGeofenceEnabled(enabled)
-                }
-            )
-
-            // 子任务列表
-            SubTaskList(
-                subTasks = subTasks,
-                onAddSubTask = { viewModel.addSubTask(it) },
-                onToggleSubTask = { viewModel.toggleSubTaskCompletion(it) },
-                onDeleteSubTask = { viewModel.deleteSubTask(it) },
-                modifier = Modifier.padding(top = 16.dp)
-            )
 
             // 语音备注区域
             voiceNotePath?.let { path ->
@@ -1375,79 +1156,7 @@ fun TodoEditScreen(
                         .padding(top = 16.dp)
                 )
             }
-
-            /**
-             * 图片选择器组件
-             * 用于在待办事项中添加和管理图片
-             * 支持拍照、相册选择、点击预览、删除等操作
-             */
-            com.corgimemo.app.ui.screens.inspiration.components.ImagePicker(
-                imagePaths = imagePaths,
-                onImagesChange = { newPaths ->
-                    /** 图片列表变更时同步到 ViewModel */
-                    viewModel.reorderImagePaths(newPaths)
-                },
-                onImageClick = { index ->
-                    /** 点击图片打开全屏预览（TODO: 导航到 ImagePreviewScreen）*/
-                    // TODO: 实现导航到图片预览页面
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            )
-
-            /** 关联选择器组件 */
-            RelationSelector(
-                relations = viewModel.relations.collectAsState().value,
-                onRelationAdd = { targetType, targetId -> viewModel.addRelation(targetType, targetId) },
-                onRelationDelete = { relationId -> viewModel.deleteRelation(relationId) },
-                searchCards = { query, callback -> viewModel.searchCards(query, callback) },
-                sourceType = "todo",
-                sourceId = todoId ?: 0L,
-                cardRelationRepository = null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            )
-
-            // 语音备注按钮
-            OutlinedButton(
-                onClick = { showVoiceRecordSheet = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp),
-                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Mic,
-                    contentDescription = "语音备注",
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (voiceNotePath != null) "重新录制语音备注" else "添加语音备注"
-                )
-            }
-
-            Button(
-                onClick = {
-                    if (viewModel.saveTodo()) {
-                        homeViewModel.setPoseForLoading()
-                        homeViewModel.refreshSubTaskProgress()
-                        navController.popBackStack()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Text(text = "保存")
-            }
-        }
-    }
+            } /** 主内容 Column 结束 */
 
     /**
      * 图片选择对话框
@@ -1497,7 +1206,7 @@ fun TodoEditScreen(
     if (showColorPicker) {
         ColorPickerBottomSheet(
             sheetState = rememberModalBottomSheetState(),
-            selectedColor = backgroundColor,
+            selectedColor = rawBackgroundColor,
             onColorSelected = { color ->
                 /** 转换为 ARGB Int 并保存到 ViewModel（持久化到数据库） */
                 viewModel.setBackgroundColor(color.toArgb())
@@ -1795,55 +1504,6 @@ fun PriorityChip(text: String, priority: Int, isSelected: Boolean, onClick: () -
         else -> Pair(
             androidx.compose.ui.graphics.Color(0xFF16A34A),
             androidx.compose.ui.graphics.Color(0xFFECFDF5)
-        )
-    }
-
-    Button(
-        onClick = onClick,
-        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-            containerColor = if (isSelected) bgColor else MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = if (isSelected) color else MaterialTheme.colorScheme.onSurfaceVariant
-        ),
-        modifier = Modifier.padding(end = 8.dp)
-    ) {
-        Text(text = text)
-    }
-}
-
-/**
- * 重复类型选择芯片组件
- *
- * @param text 显示文本
- * @param type 重复类型值
- * @param isSelected 是否选中
- * @param onClick 点击回调
- */
-@Composable
-fun RepeatTypeChip(text: String, type: Int, isSelected: Boolean, onClick: () -> Unit) {
-    val (color, bgColor) = when (type) {
-        com.corgimemo.app.data.repository.RepeatType.DAILY -> Pair(
-            androidx.compose.ui.graphics.Color(0xFF2563EB),
-            androidx.compose.ui.graphics.Color(0xFFDBEAFE)
-        )
-        com.corgimemo.app.data.repository.RepeatType.WEEKLY -> Pair(
-            androidx.compose.ui.graphics.Color(0xFF7C3AED),
-            androidx.compose.ui.graphics.Color(0xFFEDE9FE)
-        )
-        com.corgimemo.app.data.repository.RepeatType.MONTHLY -> Pair(
-            androidx.compose.ui.graphics.Color(0xFFDB2777),
-            androidx.compose.ui.graphics.Color(0xFFFCE7F3)
-        )
-        com.corgimemo.app.data.repository.RepeatType.WEEKDAYS -> Pair(
-            androidx.compose.ui.graphics.Color(0xFF0891B2),
-            androidx.compose.ui.graphics.Color(0xFFCFFAFE)
-        )
-        com.corgimemo.app.data.repository.RepeatType.WEEKENDS -> Pair(
-            androidx.compose.ui.graphics.Color(0xFF65A30D),
-            androidx.compose.ui.graphics.Color(0xFFECFCCB)
-        )
-        else -> Pair(
-            androidx.compose.ui.graphics.Color(0xFF6B7280),
-            androidx.compose.ui.graphics.Color(0xFFF3F4F6)
         )
     }
 

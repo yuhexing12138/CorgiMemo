@@ -49,14 +49,18 @@ import androidx.compose.ui.text.withStyle
  * 管理编辑器的所有状态信息，包括文本内容、光标位置和格式化状态。
  * 用于在 TextFormatToolbar 和 RichTextEditor 之间共享状态。
  *
- * @param textFieldValue TextField 的值对象（包含 AnnotatedString 和选择范围）
+ * **重要**: textFieldValue 使用 MutableState 包装，确保 Compose 能正确追踪状态变化，
+ * 解决普通 var 无法触发重组导致输入文字不显示、光标重置的问题。
+ *
+ * @param textFieldValue TextField 的值对象（MutableState 包装，包含 AnnotatedString 和选择范围）
  * @param isBold 当前是否为加粗状态
  * @param isItalic 当前是否为斜体状态
  * @param isUnderline 当前是否有下划线
  * @param isStrikethrough 当前是否有删除线
  */
 data class RichTextEditorState(
-    var textFieldValue: TextFieldValue = TextFieldValue(AnnotatedString("")),
+    /** 使用 MutableState 包装，使 Compose 能感知文本变化并触发重组 */
+    var textFieldValue: androidx.compose.runtime.MutableState<TextFieldValue> = mutableStateOf(TextFieldValue(AnnotatedString(""))),
     var isBold: Boolean = false,
     var isItalic: Boolean = false,
     var isUnderline: Boolean = false,
@@ -142,7 +146,8 @@ fun RichTextEditor(
 
     Box(modifier = modifier) {
         BasicTextField(
-            value = state.textFieldValue,
+            /** 读取 MutableState 的 value，Compose 会订阅此状态变化 */
+            value = state.textFieldValue.value,
             onValueChange = onValueChange,
             enabled = enabled,
             modifier = Modifier
@@ -211,8 +216,8 @@ fun RichTextEditor(
             maxLines = maxLines,
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             decorationBox = { innerTextField ->
-                /** 当文本为空且未聚焦时显示占位符 */
-                if (state.textFieldValue.annotatedString.isEmpty() && !isFocused) {
+                /** 当文本为空且未聚焦时显示占位符（读取 MutableState 的 value） */
+                if (state.textFieldValue.value.annotatedString.isEmpty() && !isFocused) {
                     Box {
                         Text(
                             text = placeholder,
@@ -306,7 +311,8 @@ private fun applySpanStyleToSelection(
     spanStyle: SpanStyle,
     isActive: Boolean
 ) {
-    val currentText = state.textFieldValue
+    /** 读取 MutableState 的当前值 */
+    val currentText = state.textFieldValue.value
     val selection = currentText.selection
     
     /** 如果没有选中文本，直接返回（仅切换状态） */
@@ -343,8 +349,8 @@ private fun applySpanStyleToSelection(
         }
     }
 
-    /** 更新 TextFieldValue，保持光标位置不变 */
-    state.textFieldValue = currentText.copy(annotatedString = newAnnotatedString)
+    /** 更新 MutableState 的值，保持光标位置不变（触发 Compose 重组） */
+    state.textFieldValue.value = currentText.copy(annotatedString = newAnnotatedString)
 }
 
 /**
@@ -394,7 +400,8 @@ fun insertTodoItem(state: RichTextEditorState) {
  * @param text 要插入的文本
  */
 private fun insertTextAtCursor(state: RichTextEditorState, text: String) {
-    val currentText = state.textFieldValue
+    /** 读取 MutableState 的当前值 */
+    val currentText = state.textFieldValue.value
     val position = currentText.selection.start
     
     val annotatedString = currentText.annotatedString
@@ -404,9 +411,9 @@ private fun insertTextAtCursor(state: RichTextEditorState, text: String) {
         append(annotatedString.subSequence(position, annotatedString.length).toString())
     }
     
-    /** 更新值并将光标移动到插入文本之后 */
+    /** 更新 MutableState 的值并将光标移动到插入文本之后（触发 Compose 重组） */
     val newPosition = position + text.length
-    state.textFieldValue = TextFieldValue(
+    state.textFieldValue.value = TextFieldValue(
         annotatedString = newString,
         selection = TextRange(newPosition, newPosition)
     )
@@ -421,9 +428,10 @@ private fun insertTextAtCursor(state: RichTextEditorState, text: String) {
  * @param state 编辑器状态对象
  */
 fun clearAllFormats(state: RichTextEditorState) {
-    /** 转换为纯文本（移除所有样式） */
-    val plainText = state.textFieldValue.annotatedString.toString()
-    state.textFieldValue = TextFieldValue(
+    /** 转换为纯文本（移除所有样式），读取 MutableState 的当前值 */
+    val plainText = state.textFieldValue.value.annotatedString.toString()
+    /** 更新 MutableState 的值（触发 Compose 重组） */
+    state.textFieldValue.value = TextFieldValue(
         annotatedString = AnnotatedString(plainText),
         selection = TextRange(plainText.length)
     )
