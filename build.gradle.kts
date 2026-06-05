@@ -1,7 +1,7 @@
 buildscript {
     dependencies {
-        classpath("com.google.devtools.ksp:com.google.devtools.ksp.gradle.plugin:1.9.20-1.0.14")
-        classpath("com.google.dagger:hilt-android-gradle-plugin:2.49")
+        classpath("com.google.devtools.ksp:com.google.devtools.ksp.gradle.plugin:2.1.0-1.0.29")
+        classpath("com.google.dagger:hilt-android-gradle-plugin:2.57")
     }
 }
 

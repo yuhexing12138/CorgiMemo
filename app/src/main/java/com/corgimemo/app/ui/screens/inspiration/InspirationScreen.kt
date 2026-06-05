@@ -55,6 +55,8 @@ fun InspirationScreen(
     val groupedInspirations by viewModel.groupedInspirations.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    /** 数据是否已完成首次加载（用于区分"正在加载"和"确实为空"） */
+    val isDataInitialized by viewModel.isDataInitialized.collectAsState()
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -74,7 +76,16 @@ fun InspirationScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (groupedInspirations.isEmpty()) {
+            /**
+             * 内容区域显示逻辑：
+             * 1. 数据未初始化 → 显示加载指示器（避免闪烁）
+             * 2. 数据已初始化 + 列表为空 → 显示空状态
+             * 3. 数据已初始化 + 列表有内容 → 显示列表
+             */
+            if (!isDataInitialized) {
+                // 数据未初始化：显示页面专属骨架屏，避免从空列表闪烁到有数据
+                InspirationSkeleton(groupCount = 1, itemsPerGroup = 2)
+            } else if (groupedInspirations.isEmpty()) {
                 UnifiedEmptyState(
                     icon = "💡",
                     title = "还没有灵感记录~",

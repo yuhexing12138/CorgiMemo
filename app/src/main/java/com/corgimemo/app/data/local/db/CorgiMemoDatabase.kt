@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.corgimemo.app.data.local.db.ContentBlockEntity
 import com.corgimemo.app.data.local.db.AchievementEntity
 import com.corgimemo.app.data.local.db.CategoryKeywordEntity
 import com.corgimemo.app.data.local.db.OperationLogEntity
@@ -27,8 +28,8 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  * 管理待办事项、柯基数据、任务分类、成就和用户模板
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class],
-    version = 25,
+    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class],
+    version = 26,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -73,6 +74,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     /** 统一卡片关联关系 DAO */
     abstract fun cardRelationDao(): CardRelationDao
 
+    /** 内容块 DAO（待办事项的混合内容：图片/语音等） */
+    abstract fun contentBlockDao(): ContentBlockDao
+
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
 
@@ -86,7 +90,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
                     .build()
                 INSTANCE = instance
                 instance
@@ -667,6 +671,65 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             database.execSQL(
                 "CREATE INDEX IF NOT EXISTS index_todo_items_position ON todo_items(position)"
             )
+        }
+    }
+
+    /**
+     * 版本 25 → 26 迁移：创建内容块独立表
+     *
+     * 支持待办事项的混合内容流（图片、语音等）独立持久化，
+     * 替代原有的 imagePaths JSON 字段和 voiceNotePath 单字段方案。
+     *
+     * **新表结构**:
+     * - content_blocks: id, todoId, type, filePath, duration, orderIndex
+     */
+    private val MIGRATION_25_26 = object : Migration(25, 26) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            /** 创建内容块表 */
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS content_blocks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    todoId INTEGER NOT NULL,
+                    type TEXT NOT NULL,
+                    filePath TEXT NOT NULL,
+                    duration INTEGER,
+                    orderIndex INTEGER NOT NULL DEFAULT 0
+                )
+            """.trimIndent())
+
+            /** 为 todoId 创建索引，优化按待办查询性能 */
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_content_blocks_todoId ON content_blocks(todoId)"
+            )
+
+            /**
+             * 数据迁移：将现有数据从旧字段迁移到新表
+             * - imagePaths (JSON数组) → ContentBlockEntity(type="image")
+             * - voiceNotePath + voiceDuration → ContentBlockEntity(type="voice")
+             */
+            database.execSQL("""
+                INSERT OR IGNORE INTO content_blocks (todoId, type, filePath, duration, orderIndex)
+                SELECT
+                    id,
+                    'image',
+                    json_extract(value, '$[0]'),
+                    NULL,
+                    json_each.key
+                FROM todo_items, json_each(todo_items.imagePaths)
+                WHERE todo_items.imagePaths != '' AND todo_items.imagePaths != '[]'
+            """.trimIndent())
+
+            database.execSQL("""
+                INSERT OR IGNORE INTO content_blocks (todoId, type, filePath, duration, orderIndex)
+                SELECT
+                    id,
+                    'voice',
+                    voiceNotePath,
+                    voiceDuration,
+                    (SELECT COALESCE(MAX(cb2.orderIndex), -1) + 1 FROM content_blocks cb2 WHERE cb2.todoId = todo_items.id)
+                FROM todo_items
+                WHERE todo_items.voiceNotePath IS NOT NULL AND todo_items.voiceNotePath != ''
+            """.trimIndent())
         }
     }
     // companion object 闭合

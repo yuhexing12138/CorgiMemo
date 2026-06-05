@@ -37,11 +37,16 @@ sealed class Screen(val route: String) {
     object SmartCategorySettings : Screen("smart_category_settings")
 
     fun withArgs(vararg args: String): String {
-        return buildString {
-            append(route)
-            args.forEach { arg ->
-                append("/$arg")
+        var result = route
+        args.forEach { arg ->
+            val start = result.indexOf('{')
+            val end = result.indexOf('}')
+            if (start != -1 && end > start) {
+                result = result.replaceRange(start..end, arg)
+            } else {
+                result = "$result/$arg"
             }
         }
+        return result
     }
 }

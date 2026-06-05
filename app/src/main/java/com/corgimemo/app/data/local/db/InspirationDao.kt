@@ -114,4 +114,18 @@ interface InspirationDao {
      */
     @Query("UPDATE inspirations SET isArchived = :isArchived WHERE id = :id")
     suspend fun toggleArchive(id: Long, isArchived: Boolean)
+
+    // ==================== 分页查询方法（Paging 3 集成）====================
+
+    /**
+     * 分页获取所有灵感（按置顶+创建时间降序）
+     *
+     * 用于 Paging 3 分页加载，支持大数据量场景。
+     *
+     * @param limit 每页数据量（如 20 条）
+     * @param offset 偏移量（页码 × 每页大小）
+     * @return 当前页的灵感列表
+     */
+    @Query("SELECT * FROM inspirations ORDER BY isPinned DESC, createdAt DESC LIMIT :limit OFFSET :offset")
+    suspend fun getInspirationsPaging(limit: Int, offset: Int): List<Inspiration>
 }

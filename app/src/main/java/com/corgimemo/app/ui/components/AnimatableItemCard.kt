@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -141,10 +140,9 @@ fun AnimatableItemCard(
             .background(finalBackgroundColor)
             .then(
                 if (onClick != null || onLongClick != null && enabled) {
-                    /** 启用交互：添加点击手势检测 + 涟漪效果 */
                     Modifier
                         .indication(
-                            indication = rememberRipple(),
+                            indication = androidx.compose.material3.ripple(),
                             interactionSource = remember { MutableInteractionSource() }
                         )
                         .pointerInput(onClick, onLongClick) {

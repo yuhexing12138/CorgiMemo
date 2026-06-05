@@ -820,8 +820,47 @@ class CorgiPreferences(
         esp.getString("redo_log_$todoId", null) ?: "[]"
 
     suspend fun clearUndoRedoLogs(todoId: Long) = withContext(Dispatchers.IO) {
-        esp.edit().remove("undo_log_$todoId").remove("redo_log_$todoId").apply()
+        esp.edit()
+            .remove("undo_log_$todoId")
+            .remove("redo_log_$todoId")
+            .remove("ext_undo_log_$todoId")
+            .remove("ext_redo_log_$todoId")
+            .apply()
     }
+
+    // ==================== 扩展撤销日志（内容块操作） ====================
+
+    /**
+     * 追加扩展 Undo 日志（内容块操作）
+     *
+     * 与纯文本日志使用不同的 key 前缀（ext_undo_log_），
+     * 存储 EditOperation 的完整 JSON 数组。
+     *
+     * @param todoId 目标 Todo 的 ID
+     * @param operationsJson EditOperation 列表的 JSON 序列化字符串
+     */
+    suspend fun appendExtendedUndoLog(todoId: Long, operationsJson: String) =
+        withContext(Dispatchers.IO) {
+            val logKey = "ext_undo_log_$todoId"
+            esp.edit().putString(logKey, operationsJson).apply()
+        }
+
+    /**
+     * 追加扩展 Redo 日志（内容块操作）
+     */
+    suspend fun appendExtendedRedoLog(todoId: Long, operationsJson: String) =
+        withContext(Dispatchers.IO) {
+            val logKey = "ext_redo_log_$todoId"
+            esp.edit().putString(logKey, operationsJson).apply()
+        }
+
+    /** 获取扩展 Undo 日志（内容块操作） */
+    suspend fun getExtendedUndoLog(todoId: Long): String =
+        esp.getString("ext_undo_log_$todoId", null) ?: "[]"
+
+    /** 获取扩展 Redo 日志（内容块操作） */
+    suspend fun getExtendedRedoLog(todoId: Long): String =
+        esp.getString("ext_redo_log_$todoId", null) ?: "[]"
 
     /**
      * 向后兼容迁移：将旧的全局格式 UNDO_LOG 迁移到新格式
@@ -845,5 +884,47 @@ class CorgiPreferences(
         } else {
             false
         }
+    }
+
+    // ==================== 通用偏好设置方法（用于动态键名）====================
+
+    /**
+     * 直接从 ESP 读取 Long 值（用于动态生成的键名）
+     * @param key 键名
+     * @param defaultValue 默认值
+     */
+    fun getLongDirect(key: String, defaultValue: Long): Long = esp.getLong(key, defaultValue)
+
+    /**
+     * 直接写入 Long 值到 ESP（用于动态生成的键名）
+     * @param key 键名
+     * @param value 值
+     */
+    suspend fun setLongDirect(key: String, value: Long) = withContext(Dispatchers.IO) {
+        esp.edit().putLong(key, value).apply()
+    }
+
+    /**
+     * 直接从 ESP 读取 String? 值（用于动态生成的键名）
+     * @param key 键名
+     * @param defaultValue 默认值
+     */
+    fun getStringDirect(key: String, defaultValue: String?): String? = esp.getString(key, defaultValue)
+
+    /**
+     * 直接写入 String 值到 ESP（用于动态生成的键名）
+     * @param key 键名
+     * @param value 值
+     */
+    suspend fun setStringDirect(key: String, value: String) = withContext(Dispatchers.IO) {
+        esp.edit().putString(key, value).apply()
+    }
+
+    /**
+     * 直接移除 ESP 中的指定键（用于动态生成的键名）
+     * @param key 键名
+     */
+    suspend fun removeKeyDirect(key: String) = withContext(Dispatchers.IO) {
+        esp.edit().remove(key).apply()
     }
 }

@@ -39,9 +39,24 @@ class SpecialDateViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
 
+    /** 数据是否已初始化完成（用于避免冷启动时从空列表闪烁到有数据） */
+    private val _isDataInitialized = MutableStateFlow(false)
+    val isDataInitialized: StateFlow<Boolean> = _isDataInitialized
+
     /** 原始数据流 */
     val specialDates: StateFlow<List<SpecialDate>> = repository.allDates
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 监听数据初始化状态（首次发射非空数据时标记为已初始化） */
+    init {
+        viewModelScope.launch {
+            specialDates.collect { dates ->
+                if (dates.isNotEmpty() && !_isDataInitialized.value) {
+                    _isDataInitialized.value = true
+                }
+            }
+        }
+    }
 
     /** 三组分类后的展示数据 */
     val groupedDates: StateFlow<Map<GroupType, List<DisplayDate>>> =

@@ -90,7 +90,7 @@
     <string name="subtask_new">新子任务</string>
     <string name="subtask_toggle_complete">切换子任务完成状态</string>
     <string name="subtask_delete">删除子任务</string>
-    <string name="subtask_progress">%d/%d 已完成</string>
+    <string name="subtask_progress" formatted="false">%d/%d 已完成</string>
 
     <!-- 分类 -->
     <string name="category_all">全部分类</string>

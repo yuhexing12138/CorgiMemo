@@ -34,6 +34,10 @@ class InspirationViewModel @Inject constructor(
 
     // ========== 状态定义 ==========
 
+    /** 数据是否已初始化完成（用于避免冷启动时从空列表闪烁到有数据） */
+    private val _isDataInitialized = MutableStateFlow(false)
+    val isDataInitialized: StateFlow<Boolean> = _isDataInitialized.asStateFlow()
+
     /** 所有灵感列表（按置顶+时间排序） */
     private val _inspirations = MutableStateFlow<List<Inspiration>>(emptyList())
     val inspirations: StateFlow<List<Inspiration>> = _inspirations.asStateFlow()
@@ -83,6 +87,11 @@ class InspirationViewModel @Inject constructor(
             inspirationRepository.getAllInspirations().collect { list ->
                 _inspirations.value = list
                 _isLoading.value = false
+
+                // 标记数据已初始化完成（首次加载后不再重置，避免闪烁）
+                if (!_isDataInitialized.value) {
+                    _isDataInitialized.value = true
+                }
             }
         }
     }

@@ -126,6 +126,10 @@ class HomeViewModel @Inject constructor(
 
     // ========== 待办列表相关 ==========
 
+    /** 数据是否已初始化完成（用于避免冷启动时从空列表闪烁到有数据） */
+    private val _isDataInitialized = MutableStateFlow(false)
+    val isDataInitialized: StateFlow<Boolean> = _isDataInitialized.asStateFlow()
+
     private val _todos = MutableStateFlow<List<TodoItem>>(emptyList())
     val todos: StateFlow<List<TodoItem>> = _todos.asStateFlow()
 
@@ -811,12 +815,17 @@ class HomeViewModel @Inject constructor(
                     FilterStatus.PENDING -> allTodos.filter { it.status == 0 }
                     FilterStatus.COMPLETED -> {
                         val thirtyDaysAgo = System.currentTimeMillis() - 30 * 24 * 60 * 60 * 1000L
-                        allTodos.filter { 
-                            it.status == 1 && 
-                            it.completedAt != null && 
-                            it.completedAt >= thirtyDaysAgo 
+                        allTodos.filter {
+                            it.status == 1 &&
+                            it.completedAt != null &&
+                            it.completedAt >= thirtyDaysAgo
                         }
                     }
+                }
+
+                // 标记数据已初始化完成（首次加载后不再重置，避免闪烁）
+                if (!_isDataInitialized.value) {
+                    _isDataInitialized.value = true
                 }
 
                 // 加载所有待办的子任务进度和子任务列表

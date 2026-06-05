@@ -140,6 +140,34 @@ object HapticFeedbackManager {
                         vibrator.vibrate(200)
                     }
                 }
+                /** 轻微短震动（30ms）：拖拽过程中跨项移动时的轻微反馈 */
+                InteractionType.TEXT_MOVE -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(
+                            VibrationEffect.createOneShot(
+                                30,
+                                VibrationEffect.DEFAULT_AMPLITUDE
+                            )
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(30)
+                    }
+                }
+                /** 中等确认震动（80ms）：操作完成确认（如排序落地、删除确认等） */
+                InteractionType.CONFIRM -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(
+                            VibrationEffect.createOneShot(
+                                80,
+                                VibrationEffect.DEFAULT_AMPLITUDE
+                            )
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(80)
+                    }
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -234,7 +262,11 @@ enum class InteractionType {
     /** 任务完成 */
     TASK_COMPLETE,
     /** 成就解锁 */
-    ACHIEVEMENT_UNLOCK
+    ACHIEVEMENT_UNLOCK,
+    /** 文本/元素移动（轻微短震动，用于拖拽过程中的跨项反馈） */
+    TEXT_MOVE,
+    /** 操作确认（中等震动，用于拖拽释放、排序完成等确认场景） */
+    CONFIRM
 }
 
 /**

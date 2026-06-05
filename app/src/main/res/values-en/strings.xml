@@ -90,7 +90,7 @@
     <string name="subtask_new">New Subtask</string>
     <string name="subtask_toggle_complete">Toggle subtask completion</string>
     <string name="subtask_delete">Delete subtask</string>
-    <string name="subtask_progress">%d/%d completed</string>
+    <string name="subtask_progress" formatted="false">%d/%d completed</string>
 
     <!-- Categories -->
     <string name="category_all">All Categories</string>

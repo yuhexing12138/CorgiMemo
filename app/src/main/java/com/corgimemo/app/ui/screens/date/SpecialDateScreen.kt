@@ -55,6 +55,7 @@ fun SpecialDateScreen(
 ) {
     val groupedDates by viewModel.groupedDates.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val isDataInitialized by viewModel.isDataInitialized.collectAsState()
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -70,7 +71,16 @@ fun SpecialDateScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (groupedDates.isEmpty()) {
+            /**
+             * 内容区域显示逻辑：
+             * 1. 数据未初始化 → 显示加载指示器（避免闪烁）
+             * 2. 数据已初始化 + 列表为空 → 显示空状态
+             * 3. 数据已初始化 + 列表有内容 → 显示列表
+             */
+            if (!isDataInitialized) {
+                // 数据未初始化：显示页面专属骨架屏，避免从空列表闪烁到有数据
+                SpecialDateSkeleton()
+            } else if (groupedDates.isEmpty()) {
                 UnifiedEmptyState(
                     icon = "📅",
                     title = "还没有特殊日期~",

@@ -3,6 +3,9 @@ package com.corgimemo.app.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.corgimemo.app.data.local.db.ContentBlockDao
+import com.corgimemo.app.data.local.db.ContentBlockEntity
+import com.corgimemo.app.data.local.db.CorgiMemoDatabase
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CardSearchResult
@@ -41,6 +44,7 @@ class TodoEditViewModel @Inject constructor(
     private val categoryMatcher: CategoryMatcher,
     private val corgiPreferences: CorgiPreferences,
     private val cardRelationRepository: CardRelationRepository,
+    private val contentBlockDao: ContentBlockDao,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -136,6 +140,75 @@ class TodoEditViewModel @Inject constructor(
     /** 图片路径列表状态（存储内部存储中的绝对路径） */
     private val _imagePaths = MutableStateFlow<List<String>>(emptyList())
     val imagePaths: StateFlow<List<String>> = _imagePaths.asStateFlow()
+
+    // ==================== 内容块统一管理（ContentBlock 系统） ====================
+
+    /**
+     * 统一编辑操作类型
+     *
+     * 封装所有可撤销的编辑操作，扩展原有的纯文本 Undo/Redo 栈，
+     * 支持内容块级别的撤销/重做。
+     */
+    sealed class EditOperation {
+        /** 文本变更（格式化、输入等）- 保留原有 AnnotatedString 快照 */
+        data class TextChange(val before: androidx.compose.ui.text.AnnotatedString) : EditOperation()
+        /** 内容块被删除 - 记录被删块列表和原始位置，撤销时可恢复 */
+        data class BlockDeleted(val blocks: List<com.corgimemo.app.ui.screens.todo.ContentBlock>, val index: Int) : EditOperation()
+        /** 内容块被插入 - 记录插入位置，撤销时移除 */
+        data class BlockInserted(val index: Int) : EditOperation()
+        /** 内容块排序变更 - 记录旧顺序，撤销时恢复 */
+        data class BlocksReordered(val oldOrder: List<com.corgimemo.app.ui.screens.todo.ContentBlock>) : EditOperation()
+    }
+
+    /** 扩展后的 Undo 栈：支持文本和内容块操作 */
+    private val _undoStackExtended = ArrayDeque<EditOperation>()
+
+    /** 扩展后的 Redo 栈 */
+    private val _redoStackExtended = ArrayDeque<EditOperation>()
+
+    // ==================== 批量操作合并机制 ====================
+
+    /**
+     * 合并窗口期（毫秒）：在此时间窗口内的连续同类型操作自动合并为一条
+     *
+     * 例如：用户从相册选择3张图片，每张间隔 < 500ms，
+     * 则只产生1条 BlockInserted 记录（记录最后插入位置），而非3条。
+     */
+    private val MERGE_WINDOW_MS = 500L
+
+    /** 上一次操作的时间戳（用于判断是否在合并窗口内） */
+    private var lastOperationTime = 0L
+
+    /** 待合并的暂存操作（窗口期内缓存，超时或类型变化时提交） */
+    private var pendingMergeOp: EditOperation? = null
+
+    // ==================== 扩展撤销栈大小限制 ====================
+
+    /**
+     * 扩展撤销栈最大序列化大小（字节）
+     *
+     * EditOperation（含完整 ContentBlock 列表）比纯 AnnotatedString 大很多，
+     * 单条 BlockDeleted 操作可能包含多张图片路径（每条约 200-500 字节）。
+     * 设置 5MB 上限防止内存膨胀。
+     */
+    private val EXTENDED_STACK_MAX_SIZE_BYTES = 5L * 1024L * 1024L // 5MB
+
+    /**
+     * 当前内容块列表（由 UI 层同步）
+     *
+     * UI 层在 contentBlocks 变化时调用 syncContentBlocks() 更新此状态，
+     * performSave() 时读取此状态持久化到数据库。
+     */
+    private val _currentContentBlocks = MutableStateFlow<List<com.corgimemo.app.ui.screens.todo.ContentBlock>>(emptyList())
+
+    /**
+     * 同步当前内容块列表（UI 层调用）
+     *
+     * @param blocks 当前 Composable 中的 contentBlocks 列表
+     */
+    fun syncContentBlocks(blocks: List<com.corgimemo.app.ui.screens.todo.ContentBlock>) {
+        _currentContentBlocks.value = blocks
+    }
 
     /**
      * 背景颜色状态（ARGB 整数值）
@@ -484,6 +557,11 @@ class TodoEditViewModel @Inject constructor(
 
             saveSubTasks(todoId)
 
+            /** 保存内容块到独立表（图片/语音等混合内容） */
+            if (_currentContentBlocks.value.isNotEmpty()) {
+                saveContentBlocks(todoId, _currentContentBlocks.value)
+            }
+
             // 保存关联关系（新建时将临时关联绑定到新ID）
             if (existingTodo == null) {
                 _relations.value.forEach { relation ->
@@ -779,6 +857,293 @@ class TodoEditViewModel @Inject constructor(
         viewModelScope.launch {
             com.corgimemo.app.util.ImageUtils.batchDeleteImages(context, pathsToRemove)
         }
+    }
+
+    // ==================== 内容块 CRUD 方法（ContentBlock 系统） ====================
+
+    /**
+     * 从数据库加载某待办的所有内容块
+     *
+     * 在编辑页初始化时调用，将持久化的内容块恢复到内存列表。
+     *
+     * @param todoId 待办事项 ID
+     * @return ContentBlock 列表（按 orderIndex 排序）
+     */
+    suspend fun loadContentBlocks(todoId: Long): List<com.corgimemo.app.ui.screens.todo.ContentBlock> {
+        val entities = contentBlockDao.getBlocksByTodoId(todoId)
+        return entities.map { entity ->
+            when (entity.type) {
+                "image" -> com.corgimemo.app.ui.screens.todo.ContentBlock.Image(entity.filePath)
+                "voice" -> com.corgimemo.app.ui.screens.todo.ContentBlock.Voice(entity.filePath, entity.duration)
+                else -> com.corgimemo.app.ui.screens.todo.ContentBlock.Text("") // 兜底
+            }
+        }
+    }
+
+    /**
+     * 保存内容块列表到数据库（原子操作：先删后写）
+     *
+     * 在 performSave() 时调用，确保数据一致性。
+     *
+     * @param todoId 待办事项 ID
+     * @param blocks 当前内存中的 ContentBlock 列表
+     */
+    suspend fun saveContentBlocks(todoId: Long, blocks: List<com.corgimemo.app.ui.screens.todo.ContentBlock>) {
+        val entities = blocks.mapIndexed { index, block ->
+            when (block) {
+                is com.corgimemo.app.ui.screens.todo.ContentBlock.Image -> ContentBlockEntity(
+                    todoId = todoId, type = "image", filePath = block.path, orderIndex = index
+                )
+                is com.corgimemo.app.ui.screens.todo.ContentBlock.Voice -> ContentBlockEntity(
+                    todoId = todoId, type = "voice", filePath = block.path,
+                    duration = block.duration, orderIndex = index
+                )
+                is com.corgimemo.app.ui.screens.todo.ContentBlock.Text -> null // 文本块不持久化到独立表
+            }
+        }.filterNotNull()
+
+        contentBlockDao.replaceBlocksForTodo(todoId, entities)
+    }
+
+    /**
+     * 删除待办的所有内容块（从数据库和物理存储）
+     *
+     * 在删除待办时调用，清理关联的文件资源。
+     *
+     * @param todoId 待办事项 ID
+     */
+    suspend fun deleteAllContentBlocks(todoId: Long) {
+        val entities = contentBlockDao.getBlocksByTodoId(todoId)
+        contentBlockDao.deleteByTodoId(todoId)
+
+        /** 异步删除物理文件 */
+        entities.forEach { entity ->
+            val file = java.io.File(entity.filePath)
+            if (file.exists()) file.delete()
+        }
+    }
+
+    // ==================== 扩展撤销/重做方法（支持内容块操作 + 批量合并） ====================
+
+    /**
+     * 提交待合并的暂存操作到撤销栈
+     *
+     * 在以下时机调用：
+     * - 窗口期内出现不同类型的操作
+     * - 超过合并窗口期（> 500ms）
+     * - undo/redo 操作前（确保所有暂存操作已提交）
+     */
+    private fun commitPendingMerge() {
+        pendingMergeOp?.let { op ->
+            _undoStackExtended.addLast(op)
+            /** 数量限制：超过最大深度时移除最旧记录 */
+            if (_undoStackExtended.size > MAX_UNDO_DEPTH) _undoStackExtended.removeFirst()
+            _redoStackExtended.clear()
+            _canUndo.value = true
+            _canRedo.value = false
+            /** 大小限制：序列化后超过 5MB 时从栈底裁剪 */
+            trimExtendedStackIfNeeded()
+            /** 持久化扩展栈 */
+            persistUndoRedoStacksAsync()
+        }
+        pendingMergeOp = null
+    }
+
+    /**
+     * 检查并裁剪扩展撤销栈大小
+     *
+     * 当扩展栈的序列化 JSON 大小超过 EXTENDED_STACK_MAX_SIZE_BYTES（5MB）时，
+     * 从栈底（最旧记录）逐条移除直到总大小在限制内。
+     *
+     * **触发时机**: 每次 commitPendingMerge() 提交新操作后自动调用。
+     */
+    private fun trimExtendedStackIfNeeded() {
+        if (_undoStackExtended.isEmpty()) return
+
+        try {
+            val currentSize = serializeEditOperations(_undoStackExtended.toList())
+                .toByteArray(Charsets.UTF_8).size.toLong()
+
+            if (currentSize <= EXTENDED_STACK_MAX_SIZE_BYTES) return
+
+            /** 逐步从栈底移除旧记录，直到总大小降至限制内 */
+            while (_undoStackExtended.isNotEmpty()) {
+                /** 移除栈底最旧的一条记录 */
+                val removed = _undoStackExtended.removeFirst()
+                if (_undoStackExtended.isEmpty()) break
+
+                /** 重新计算剩余栈的大小 */
+                val newSize = serializeEditOperations(_undoStackExtended.toList())
+                    .toByteArray(Charsets.UTF_8).size.toLong()
+                if (newSize <= EXTENDED_STACK_MAX_SIZE_BYTES) {
+                    android.util.Log.d("TodoEditViewModel",
+                        "扩展撤销栈已裁剪：移除 ${removed::class.simpleName}，" +
+                        "当前大小 ${newSize / 1024}KB / ${(EXTENDED_STACK_MAX_SIZE_BYTES / 1024)}KB")
+                    break
+                }
+            }
+        } catch (e: Exception) {
+            /** 序列化失败时仅依赖数量限制（MAX_UNDO_DEPTH），不强制裁剪 */
+            android.util.Log.w("TodoEditViewModel", "扩展撤销栈大小检查失败", e)
+        }
+    }
+
+    /**
+     * 推送内容块删除操作到扩展撤销栈（支持批量合并）
+     *
+     * 连续删除操作在窗口期内会自动合并。
+     */
+    fun pushBlockDeletedOperation(
+        blocks: List<com.corgimemo.app.ui.screens.todo.ContentBlock>,
+        index: Int
+    ) {
+        val newOp = EditOperation.BlockDeleted(blocks, index)
+        val now = System.currentTimeMillis()
+
+        if (pendingMergeOp is EditOperation.BlockDeleted
+            && now - lastOperationTime < MERGE_WINDOW_MS
+        ) {
+            /** 窗口内同类型 → 合并（用新的替换旧的） */
+            pendingMergeOp = newOp
+        } else {
+            /** 窗口外或类型不同 → 先提交旧缓存，再缓存新操作 */
+            commitPendingMerge()
+            pendingMergeOp = newOp
+        }
+        lastOperationTime = now
+    }
+
+    /**
+     * 推送内容块插入操作到扩展撤销栈（支持批量合并）
+     *
+     * 连续插入（如相册选多张图）在窗口期内合并为一条记录。
+     */
+    fun pushBlockInsertedOperation(index: Int) {
+        val newOp = EditOperation.BlockInserted(index)
+        val now = System.currentTimeMillis()
+
+        if (pendingMergeOp is EditOperation.BlockInserted
+            && now - lastOperationTime < MERGE_WINDOW_MS
+        ) {
+            /** 窗口内同类型 → 合并（记录最后一次插入位置） */
+            pendingMergeOp = newOp
+        } else {
+            commitPendingMerge()
+            pendingMergeOp = newOp
+        }
+        lastOperationTime = now
+    }
+
+    /**
+     * 推送内容块排序操作到扩展撤销栈
+     *
+     * 排序操作不参与合并（每次排序都是独立的用户意图），
+     * 但需要先提交任何待合并的暂存操作。
+     */
+    fun pushBlocksReorderedOperation(oldOrder: List<com.corgimemo.app.ui.screens.todo.ContentBlock>) {
+        /** 先提交可能存在的暂存操作 */
+        commitPendingMerge()
+        lastOperationTime = System.currentTimeMillis()
+
+        _undoStackExtended.addLast(EditOperation.BlocksReordered(oldOrder))
+        if (_undoStackExtended.size > MAX_UNDO_DEPTH) _undoStackExtended.removeFirst()
+        _redoStackExtended.clear()
+        _canUndo.value = true
+        _canRedo.value = false
+        persistUndoRedoStacksAsync()
+    }
+
+    /**
+     * 执行扩展撤销（支持文本和内容块操作）
+     *
+     * 优先检查扩展栈，为空时回退到原有纯文本栈。
+     *
+     * @return 撤销结果：
+     *   - TextChange → 返回 AnnotatedString（UI 恢复编辑器文本）
+     *   - BlockDeleted → 返回 Pair(被删块列表, 位置)（UI 重新插入被删块）
+     *   - BlockInserted → 返回 Int 位置（UI 移除该位置的块）
+     *   - BlocksReordered → 返回旧顺序列表（UI 恢复原排列）
+     *   - null → 无可撤销操作
+     */
+    fun undoExtended(): Any? {
+        /** 先提交任何待合并的暂存操作 */
+        commitPendingMerge()
+
+        /** 优先使用扩展撤销栈 */
+        if (_undoStackExtended.isNotEmpty()) {
+            val operation = _undoStackExtended.removeLast()
+            _canUndo.value = _undoStackExtended.isNotEmpty()
+
+            /** 将当前操作推入 Redo 栈 */
+            _redoStackExtended.addLast(operation)
+            _canRedo.value = true
+
+            /** 持久化扩展栈状态变更 */
+            persistUndoRedoStacksAsync()
+
+            /** 根据操作类型返回对应数据供 UI 处理 */
+            return when (operation) {
+                is EditOperation.TextChange -> operation.before
+                is EditOperation.BlockDeleted -> Pair(operation.blocks, operation.index)
+                is EditOperation.BlockInserted -> operation.index
+                is EditOperation.BlocksReordered -> operation.oldOrder
+            }
+        }
+
+        /** 回退到原有的纯文本撤销栈 */
+        if (_undoStack.isNotEmpty()) {
+            val previous = _undoStack.removeLast()
+            _canUndo.value = _undoStack.isNotEmpty()
+            _redoStack.addLast(previous as androidx.compose.ui.text.AnnotatedString)
+            _canRedo.value = true
+            persistUndoRedoStacksAsync()
+            return previous
+        }
+
+        return null
+    }
+
+    /**
+     * 执行扩展重做（支持文本和内容块操作）
+     *
+     * @return 重做结果，格式同 undoExtended()
+     */
+    fun redoExtended(): Any? {
+        /** 先提交任何待合并的暂存操作 */
+        commitPendingMerge()
+
+        /** 优先使用扩展 Redo 栈 */
+        if (_redoStackExtended.isNotEmpty()) {
+            val operation = _redoStackExtended.removeLast()
+            _canRedo.value = _redoStackExtended.isNotEmpty()
+
+            /** 将操作推回 Undo 栈 */
+            _undoStackExtended.addLast(operation)
+            _canUndo.value = true
+
+            /** 持久化扩展栈状态变更 */
+            persistUndoRedoStacksAsync()
+
+            /** Redo 需要返回"反向"操作的数据 */
+            return when (operation) {
+                is EditOperation.TextChange -> operation.before
+                is EditOperation.BlockDeleted -> Pair(operation.blocks, operation.index)
+                is EditOperation.BlockInserted -> operation.index
+                is EditOperation.BlocksReordered -> operation.oldOrder
+            }
+        }
+
+        /** 回退到原有的纯文本 Redo 栈 */
+        if (_redoStack.isNotEmpty()) {
+            val restored = _redoStack.removeLast()
+            _canRedo.value = _redoStack.isNotEmpty()
+            _undoStack.addLast(restored as androidx.compose.ui.text.AnnotatedString)
+            _canUndo.value = true
+            persistUndoRedoStacksAsync()
+            return restored
+        }
+
+        return null
     }
 
     /**
@@ -1131,21 +1496,167 @@ class TodoEditViewModel @Inject constructor(
                  * 每个 Todo 独立存储编辑历史，避免多 Todo 并发时数据混淆
                  */
                 if (_undoStack.isNotEmpty()) {
-                    /** 序列化 undoStack 栈顶的最新一条记录 */
+                    /** 序列化 undoStack 栈顶的最新一条记录（纯文本操作） */
                     val latestUndoJson = com.corgimemo.app.util.AnnotatedStringSerializer
                         .serialize(_undoStack.last())
                     corgiPreferences.appendUndoLogEntry(currentTodoId, latestUndoJson)
                 }
 
                 if (_redoStack.isNotEmpty()) {
-                    /** 序列化 redoStack 栈顶的最新一条记录 */
+                    /** 序列化 redoStack 栈顶的最新一条记录（纯文本操作） */
                     val latestRedoJson = com.corgimemo.app.util.AnnotatedStringSerializer
                         .serialize(_redoStack.last())
                     corgiPreferences.appendRedoLogEntry(currentTodoId, latestRedoJson)
                 }
+
+                /**
+                 * 扩展栈持久化（内容块操作）
+                 * 使用独立的 key 前缀区分于纯文本栈
+                 * 序列化格式：JSON 数组，每项为 EditOperation 的 JSON 表示
+                 */
+                if (_undoStackExtended.isNotEmpty()) {
+                    val extendedUndoJson = serializeEditOperations(_undoStackExtended.toList())
+                    corgiPreferences.appendExtendedUndoLog(currentTodoId, extendedUndoJson)
+                }
+
+                if (_redoStackExtended.isNotEmpty()) {
+                    val extendedRedoJson = serializeEditOperations(_redoStackExtended.toList())
+                    corgiPreferences.appendExtendedRedoLog(currentTodoId, extendedRedoJson)
+                }
             } catch (e: Exception) {
                 android.util.Log.w("TodoEditViewModel", "Undo 栈增量持久化失败", e)
             }
+        }
+    }
+
+    /**
+     * 将 EditOperation 列表序列化为 JSON 字符串
+     *
+     * 每个操作序列化为一个 JSON 对象，包含类型标识和具体数据：
+     * - TextChange: {"t":"tx","d":"<AnnotatedString JSON>"}
+     * - BlockDeleted: {"t":"bd","i":<index>,"b":[<blocks JSON>]}
+     * - BlockInserted: {"t":"bi","i":<index>}
+     * - BlocksReordered: {"t":"br","o":[<order JSON>]}
+     */
+    private fun serializeEditOperations(operations: List<EditOperation>): String {
+        val jsonArray = org.json.JSONArray()
+        operations.forEach { op ->
+            val json = org.json.JSONObject()
+            when (op) {
+                is EditOperation.TextChange -> {
+                    json.put("t", "tx")
+                    json.put("d", com.corgimemo.app.util.AnnotatedStringSerializer.serialize(op.before))
+                }
+                is EditOperation.BlockDeleted -> {
+                    json.put("t", "bd")
+                    json.put("i", op.index)
+                    val blocksArray = org.json.JSONArray()
+                    op.blocks.forEach { block ->
+                        blocksArray.put(serializeContentBlock(block))
+                    }
+                    json.put("b", blocksArray)
+                }
+                is EditOperation.BlockInserted -> {
+                    json.put("t", "bi")
+                    json.put("i", op.index)
+                }
+                is EditOperation.BlocksReordered -> {
+                    json.put("t", "br")
+                    val orderArray = org.json.JSONArray()
+                    op.oldOrder.forEach { block ->
+                        orderArray.put(serializeContentBlock(block))
+                    }
+                    json.put("o", orderArray)
+                }
+            }
+            jsonArray.put(json)
+        }
+        return jsonArray.toString()
+    }
+
+    /**
+     * 将单个 ContentBlock 序列化为 JSON 对象
+     */
+    private fun serializeContentBlock(block: com.corgimemo.app.ui.screens.todo.ContentBlock): org.json.JSONObject {
+        return when (block) {
+            is com.corgimemo.app.ui.screens.todo.ContentBlock.Image -> {
+                org.json.JSONObject().apply {
+                    put("type", "image")
+                    put("path", block.path)
+                }
+            }
+            is com.corgimemo.app.ui.screens.todo.ContentBlock.Voice -> {
+                org.json.JSONObject().apply {
+                    put("type", "voice")
+                    put("path", block.path)
+                    put("duration", block.duration ?: 0)
+                }
+            }
+            is com.corgimemo.app.ui.screens.todo.ContentBlock.Text -> {
+                org.json.JSONObject().apply {
+                    put("type", "text")
+                    put("content", block.content)
+                }
+            }
+        }
+    }
+
+    /**
+     * 从 JSON 字符串反序列化 EditOperation 列表
+     */
+    private fun deserializeEditOperations(json: String): List<EditOperation> {
+        val operations = mutableListOf<EditOperation>()
+        try {
+            val jsonArray = org.json.JSONArray(json)
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                val type = obj.getString("t")
+                when (type) {
+                    "tx" -> {
+                        val data = obj.getString("d")
+                        val annotatedStr = com.corgimemo.app.util.AnnotatedStringSerializer.deserialize(data)
+                        operations.add(EditOperation.TextChange(annotatedStr))
+                    }
+                    "bd" -> {
+                        val index = obj.getInt("i")
+                        val blocksArray = obj.getJSONArray("b")
+                        val blocks = mutableListOf<com.corgimemo.app.ui.screens.todo.ContentBlock>()
+                        for (j in 0 until blocksArray.length()) {
+                            blocks.add(deserializeContentBlock(blocksArray.getJSONObject(j)))
+                        }
+                        operations.add(EditOperation.BlockDeleted(blocks, index))
+                    }
+                    "bi" -> {
+                        val index = obj.getInt("i")
+                        operations.add(EditOperation.BlockInserted(index))
+                    }
+                    "br" -> {
+                        val orderArray = obj.getJSONArray("o")
+                        val order = mutableListOf<com.corgimemo.app.ui.screens.todo.ContentBlock>()
+                        for (j in 0 until orderArray.length()) {
+                            order.add(deserializeContentBlock(orderArray.getJSONObject(j)))
+                        }
+                        operations.add(EditOperation.BlocksReordered(order))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("TodoEditViewModel", "扩展撤销栈反序列化失败", e)
+        }
+        return operations
+    }
+
+    /**
+     * 从 JSON 对象反序列化为 ContentBlock
+     */
+    private fun deserializeContentBlock(obj: org.json.JSONObject): com.corgimemo.app.ui.screens.todo.ContentBlock {
+        return when (obj.getString("type")) {
+            "image" -> com.corgimemo.app.ui.screens.todo.ContentBlock.Image(obj.getString("path"))
+            "voice" -> com.corgimemo.app.ui.screens.todo.ContentBlock.Voice(
+                obj.getString("path"),
+                if (obj.has("duration") && !obj.isNull("duration")) obj.getInt("duration") else null
+            )
+            else -> com.corgimemo.app.ui.screens.todo.ContentBlock.Text(obj.optString("content", ""))
         }
     }
 
@@ -1166,7 +1677,7 @@ class TodoEditViewModel @Inject constructor(
             /** V2.6: 向后兼容迁移 — 检测旧全局格式数据 */
             corgiPreferences.migrateLegacyUndoLogIfPresent(todoId)
 
-            /** 从按 TodoId 隔离的增量日志读取并反序列化 */
+            /** 从按 TodoId 隔离的增量日志读取并反序列化（纯文本操作） */
             val undoLogJson = corgiPreferences.getUndoLog(todoId)
             val redoLogJson = corgiPreferences.getRedoLog(todoId)
 
@@ -1186,13 +1697,36 @@ class TodoEditViewModel @Inject constructor(
                 _canRedo.value = _redoStack.isNotEmpty()
             }
 
+            /**
+             * 恢复扩展撤销栈（内容块操作）
+             * 使用独立的 key 前缀，与纯文本栈分开存储
+             */
+            val extendedUndoJson = corgiPreferences.getExtendedUndoLog(todoId)
+            if (!extendedUndoJson.isNullOrBlank() && extendedUndoJson != "[]") {
+                val restoredExtendedUndo = deserializeEditOperations(extendedUndoJson)
+                _undoStackExtended.clear()
+                _undoStackExtended.addAll(restoredExtendedUndo)
+                if (_undoStackExtended.isNotEmpty()) _canUndo.value = true
+            }
+
+            val extendedRedoJson = corgiPreferences.getExtendedRedoLog(todoId)
+            if (!extendedRedoJson.isNullOrBlank() && extendedRedoJson != "[]") {
+                val restoredExtendedRedo = deserializeEditOperations(extendedRedoJson)
+                _redoStackExtended.clear()
+                _redoStackExtended.addAll(restoredExtendedRedo)
+                if (_redoStackExtended.isNotEmpty()) _canRedo.value = true
+            }
+
             android.util.Log.d("TodoEditViewModel",
-                "从增量日志恢复 Undo 栈: ${_undoStack.size} 条, Redo 栈: ${_redoStack.size} 条 (todoId=$todoId)")
+                "从增量日志恢复 Undo 栈: ${_undoStack.size} 条, Redo 栈: ${_redoStack.size} 条, " +
+                "扩展 Undo: ${_undoStackExtended.size} 条, 扩展 Redo: ${_redoStackExtended.size} 条 (todoId=$todoId)")
         } catch (e: Exception) {
             android.util.Log.w("TodoEditViewModel", "Undo 栈增量日志恢复失败，使用空栈", e)
             /** 恢复失败时清空，确保一致性 */
             _undoStack.clear()
             _redoStack.clear()
+            _undoStackExtended.clear()
+            _redoStackExtended.clear()
             _canUndo.value = false
             _canRedo.value = false
         }

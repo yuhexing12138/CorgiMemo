@@ -79,6 +79,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -123,6 +124,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val filteredTodos by viewModel.filteredTodos.collectAsState()
+    val isDataInitialized by viewModel.isDataInitialized.collectAsState()
     val filterStatus by viewModel.filterStatus.collectAsState()
     val corgiData by viewModel.corgiData.collectAsState()
     val showNamerDialog by viewModel.showNamerDialog.collectAsState()
@@ -314,6 +316,8 @@ fun HomeScreen(
     // 使用 Box 作为根容器，确保所有子元素正确堆叠
     Box(modifier = Modifier.fillMaxSize()) {
         // 浮动操作按钮（FAB）—— 与灵感/日期页统一
+        // ⚠️ 必须使用 zIndex 确保 FAB 在 Column 内容区之上，
+        //    否则 SwipeRefresh/ReorderableLazyColumn(fillMaxSize) 会拦截 FAB 的触摸事件
         if (!isBatchMode) {
             FloatingActionButton(
                 onClick = {
@@ -326,6 +330,8 @@ fun HomeScreen(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = 20.dp, bottom = 16.dp)
+                    /** 提升 z-index 到最上层，避免被 fillMaxSize() 的内容列遮挡 */
+                    .zIndex(10f)
             ) {
                 Icon(
                     imageVector = Icons.Default.Edit,
@@ -461,7 +467,16 @@ fun HomeScreen(
                         )
                     }
 
-                    if (filteredTodos.isEmpty()) {
+                    /**
+                     * 内容区域显示逻辑：
+                     * 1. 数据未初始化 → 显示加载指示器（避免闪烁）
+                     * 2. 数据已初始化 + 列表为空 → 显示空状态
+                     * 3. 数据已初始化 + 列表有内容 → 显示列表
+                     */
+                    if (!isDataInitialized) {
+                        // 数据未初始化：显示页面专属骨架屏，避免从空列表闪烁到有数据
+                        TodoSkeleton(itemCount = 4)
+                    } else if (filteredTodos.isEmpty()) {
                         UnifiedEmptyState(
                             icon = "📝",
                             title = "还没有待办~",

@@ -4,6 +4,7 @@ import android.net.Uri
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -26,6 +27,8 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
@@ -68,7 +71,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -77,9 +83,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import com.corgimemo.app.util.toPxFloat
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.WindowInsets
@@ -92,13 +101,10 @@ import com.corgimemo.app.ui.components.KeywordSelectionDialog
 import com.corgimemo.app.ui.components.LocationPicker
 import com.corgimemo.app.ui.components.MentionTriggerPopup
 import com.corgimemo.app.ui.components.RecommendationChip
-import com.corgimemo.app.ui.components.VoicePlayerComponent
 import com.corgimemo.app.ui.components.VoiceRecordBottomSheet
 import com.corgimemo.app.ui.components.EditToolbar
 import com.corgimemo.app.ui.components.ImagePickerDialog /** 图片选择对话框 */
 import com.corgimemo.app.ui.components.checkAndRequestCameraPermission /** 检查并请求相机权限 */
-import com.corgimemo.app.ui.components.InlineImagePreview /** 内联图片预览 */
-import com.corgimemo.app.ui.components.ImagePreviewCarousel /** 多图轮播组件 */
 import com.corgimemo.app.ui.components.ColorPickerBottomSheet /** 背景色选择器 */
 import com.corgimemo.app.util.ImageUtils /** 图片工具类（相机 URI + 复制到内部存储）*/
 import com.corgimemo.app.ui.components.RichTextEditor /** 富文本编辑器 */
@@ -117,6 +123,15 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+
+/**
+ * 内容块：编辑器中的动态内容单元（文本 / 图片 / 语音）
+ */
+sealed class ContentBlock {
+    data class Text(val content: String) : ContentBlock()
+    data class Image(val path: String) : ContentBlock()
+    data class Voice(val path: String, val duration: Int?) : ContentBlock()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -170,7 +185,17 @@ fun TodoEditScreen(
     val imagePaths by viewModel.imagePaths.collectAsState()
 
     val context = LocalContext.current
-    val speechViewModel = remember { SpeechViewModel(context) }
+    /** 屏幕密度实例，用于 dp→px 精确转换 */
+    val density = LocalDensity.current
+    /**
+     * 语音识别 ViewModel（延迟初始化）
+     *
+     * 使用 Lazy 避免在组合阶段直接构造 SpeechViewModel，
+     * 因为其内部会创建 SpeechRecognizer，在某些设备上可能因
+     * 语音识别服务不可用而抛出异常导致闪退。
+     * 仅在用户实际触发语音输入时才创建实例。
+     */
+    val speechViewModel by remember { lazy { com.corgimemo.app.viewmodel.SpeechViewModel(context) } }
     val isListening by speechViewModel.isListening.collectAsState()
     val isProcessing by speechViewModel.isProcessing.collectAsState()
     val speechResult by speechViewModel.resultText.collectAsState()
@@ -186,10 +211,27 @@ fun TodoEditScreen(
     var hasRecordPermission by remember { mutableStateOf(false) }
 
     /** 图片选择相关状态 */
-    var showImagePicker by remember { mutableStateOf(false) } /** 控制图片选择对话框显示 */
-    val selectedImageUris by viewModel.imagePaths.collectAsState() /** 从 ViewModel 获取已选图片列表 */
-    val coroutineScope = rememberCoroutineScope() /** 协程作用域（用于 launcher 回调中的 suspend 调用） */
-    var pendingPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) } /** 临时保存相机拍照的输出 URI（TakePicture 回调只返回 Boolean，不返回 URI） */
+    var showImagePicker by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    var pendingPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    /** 动态内容块列表（文本/图片/语音混合流） */
+    val contentBlocks = remember { androidx.compose.runtime.mutableStateListOf<ContentBlock>() }
+
+    /** 两步删除：高亮索引 (-1=无高亮, >=0=对应块高亮待删除) */
+    var highlightedIndex by remember { mutableIntStateOf(-1) }
+
+    /**
+     * 内容块可见性追踪（Compose 1.9 onVisibilityChanged 懒加载）
+     *
+     * key = 非Text内容块在 contentBlocks 中的全局索引
+     * value = 是否当前在屏幕可见区域内
+     *
+     * 用途：
+     * - 图片块：仅在可见时渲染 AsyncImage（离开视口时显示占位符，减少内存）
+     * - 语音块：进入视口时预初始化播放器，离开时暂停释放资源
+     */
+    val blockVisibilityStates = remember { mutableStateMapOf<Int, Boolean>() }
 
     /** 锁定编辑状态 */
     var isLocked by remember { mutableStateOf(false) }
@@ -209,10 +251,16 @@ fun TodoEditScreen(
     ) { isSuccess: Boolean ->
         if (isSuccess) {
             pendingPhotoUri?.let { uri ->
-                /** 将拍摄的照片复制到内部存储（压缩+持久化） */
                 coroutineScope.launch {
                     val savedPath = com.corgimemo.app.util.ImageUtils.copyUriToInternalStorage(context, uri)
-                    savedPath?.let { path -> viewModel.addImagePath(path) }
+                    savedPath?.let { path ->
+                        viewModel.addImagePath(path)
+                        val insertIndex = contentBlocks.size
+                        contentBlocks.add(ContentBlock.Image(path))
+                        /** 推送插入操作到撤销栈 + 同步 ViewModel */
+                        viewModel.pushBlockInsertedOperation(insertIndex)
+                        viewModel.syncContentBlocks(contentBlocks.toList())
+                    }
                 }
             }
         }
@@ -227,11 +275,17 @@ fun TodoEditScreen(
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
-        /** 异步处理所有选中图片 */
         coroutineScope.launch {
             uris.forEach { uri ->
                 val savedPath = ImageUtils.copyUriToInternalStorage(context, uri)
-                savedPath?.let { path -> viewModel.addImagePath(path) }
+                savedPath?.let { path ->
+                    viewModel.addImagePath(path)
+                    val insertIndex = contentBlocks.size
+                    contentBlocks.add(ContentBlock.Image(path))
+                    /** 推送插入操作到撤销栈 + 同步 ViewModel */
+                    viewModel.pushBlockInsertedOperation(insertIndex)
+                    viewModel.syncContentBlocks(contentBlocks.toList())
+                }
             }
         }
     }
@@ -296,31 +350,66 @@ fun TodoEditScreen(
      * 即使数据库中存储了损坏的 Markdown 数据也不会崩溃。
      */
     /**
-     * 编辑器一次性初始化：仅在首次组合时从数据库恢复富文本格式。
+     * 编辑器内容初始化：监听 contentFormat 变化，在数据到达时同步到编辑器
      *
-     * 使用 LaunchedEffect(Unit) + hasInitialized 标志，确保：
-     * - 只在页面首次加载时同步一次
-     * - 用户后续输入不会触发重新同步（解决光标跳转/输入延迟问题）
-     * - scheduleFormatExport 每300ms更新 contentFormat 不会再干扰编辑器状态
+     * 使用 LaunchedEffect(contentFormat) 替代 LaunchedEffect(Unit)，
+     * 解决编辑已有待办时的竞态条件问题：
+     *
+     * **旧逻辑（有 Bug）**：
+     *   LaunchedEffect(Unit) 在页面首次组合时立即执行，
+     *   此时 loadTodo() 尚未完成，contentFormat 仍为空字符串 ""。
+     *   编辑器被初始化为空，hasInitialized 被永久锁定为 true。
+     *   之后 loadTodo 完成并更新 contentFormat，但 LaunchedEffect 不再触发，
+     *   导致编辑器永远为空！
+     *
+     * **新逻辑（修复后）**：
+     *   LaunchedEffect(contentFormat) 在 contentFormat 值变化时重新执行。
+     *   - 新建待办：contentFormat 始终为 ""，只初始化一次空编辑器
+     *   - 编辑待办：contentFormat 从 "" 变为实际 Markdown 数据时触发初始化
+     *   - 通过 hasInitializedWithData 标志确保只同步一次数据库内容
      */
-    var hasInitialized by remember { mutableStateOf(false) }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        if (!hasInitialized) {
-            val targetText = if (contentFormat.isNotBlank()) {
-                com.corgimemo.app.util.MarkdownParser.safeParse(contentFormat)
-            } else {
-                androidx.compose.ui.text.AnnotatedString(content)
-            }
+    var hasInitializedWithData by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(contentFormat) {
+        try {
+            /** 编辑已有待办：等待 contentFormat 数据到达后再初始化编辑器 */
+            if (contentFormat.isNotBlank()) {
+                if (!hasInitializedWithData) {
+                    val targetText = com.corgimemo.app.util.MarkdownParser.safeParse(contentFormat)
 
-            if (editorState.textFieldValue.value.annotatedString != targetText) {
-                /** 初始加载：同步文本内容到 MutableState，光标置于文本末尾 */
-                val textEndPosition = targetText.length
-                editorState.textFieldValue.value = androidx.compose.ui.text.input.TextFieldValue(
-                    annotatedString = targetText,
-                    selection = androidx.compose.ui.text.TextRange(textEndPosition)
-                )
+                    /** 防御性检查：确保 editorState.textFieldValue 已正确初始化 */
+                    val currentValue = editorState.textFieldValue.value
+                    if (currentValue.annotatedString != targetText) {
+                        /** 数据库内容加载完毕：同步富文本到 MutableState，光标置于文本末尾 */
+                        val textEndPosition = targetText.length
+                        editorState.textFieldValue.value = androidx.compose.ui.text.input.TextFieldValue(
+                            annotatedString = targetText,
+                            selection = androidx.compose.ui.text.TextRange(textEndPosition)
+                        )
+                    }
+                    /** 标记已完成数据初始化（防止用户输入后被数据库旧数据覆盖） */
+                    hasInitializedWithData = true
+                }
+            } else {
+                /**
+                 * 新建待办（contentFormat 为空）或数据尚未加载：
+                 * 仅在尚未用任何数据初始化过时，使用纯文本 content 初始化空编辑器
+                 */
+                if (!hasInitializedWithData) {
+                    val currentValue = editorState.textFieldValue.value
+                    if (currentValue.annotatedString.isEmpty()) {
+                        val plainText = androidx.compose.ui.text.AnnotatedString(content)
+                        editorState.textFieldValue.value = androidx.compose.ui.text.input.TextFieldValue(
+                            annotatedString = plainText,
+                            selection = androidx.compose.ui.text.TextRange(plainText.length)
+                        )
+                    }
+                }
             }
-            hasInitialized = true
+        } catch (e: Exception) {
+            /** 捕获所有异常，防止编辑器初始化失败导致页面闪退 */
+            Log.e("TodoEditScreen", "编辑器初始化异常（已捕获）", e)
+            /** 降级为空编辑器，确保页面可正常显示 */
+            hasInitializedWithData = true
         }
     }
 
@@ -389,9 +478,33 @@ fun TodoEditScreen(
     DisposableEffect(Unit) {
         onDispose {
             homeViewModel.resetPoseToDefault()
-            // 释放语音录制器和播放器资源
             voiceRecorder.release()
             voicePlayer.release()
+        }
+    }
+
+    /** 初始化已有内容块（优先从 content_blocks 表加载，回退到旧字段） */
+    var hasInitializedBlocks by remember { mutableStateOf(false) }
+    LaunchedEffect(todoId) {
+        if (!hasInitializedBlocks && todoId != null) {
+            /** 优先从独立表加载内容块（新方案） */
+            val dbBlocks = viewModel.loadContentBlocks(todoId)
+            if (dbBlocks.isNotEmpty()) {
+                contentBlocks.clear()
+                contentBlocks.addAll(dbBlocks)
+            } else {
+                /** 回退：从旧字段加载（向后兼容） */
+                contentBlocks.clear()
+                imagePaths.forEach { path ->
+                    contentBlocks.add(ContentBlock.Image(path))
+                }
+                voiceNotePath?.let { path ->
+                    contentBlocks.add(ContentBlock.Voice(path, voiceDuration))
+                }
+            }
+            /** 同步到 ViewModel */
+            viewModel.syncContentBlocks(contentBlocks.toList())
+            hasInitializedBlocks = true
         }
     }
 
@@ -813,96 +926,312 @@ fun TodoEditScreen(
                 }
             }
 
-            /** ===== 编辑器区域（直接融入外层Box背景，无额外Surface层干扰触摸事件）===== */
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-                    .padding(4.dp)
-            ) {
-                /** 内联图片预览 */
-                    if (selectedImageUris.isNotEmpty()) {
-                        ImagePreviewCarousel(
-                            imageUris = selectedImageUris,
-                            onDelete = { index ->
-                                val updatedList = selectedImageUris.toMutableList()
-                                updatedList.removeAt(index)
-                                viewModel.reorderImagePaths(updatedList)
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 8.dp)
-                        )
+            /** ===== 动态内容流编辑器区域（支持拖拽排序 + 两步删除） ===== */
+
+            /**
+             * 使用 ReorderableColumn 包裹内容块列表
+             * 支持长按拖拽排序（无可见 DragHandle 图标）
+             */
+            com.corgimemo.app.ui.components.ReorderableColumn(
+                items = contentBlocks.filter { it !is ContentBlock.Text },
+                onReorder = { fromIndex, toIndex ->
+                    /**
+                     * 拖拽排序回调：
+                     * 1. 推送旧顺序到撤销栈（支持 Ctrl+Z 恢复）
+                     * 2. 更新 contentBlocks 列表顺序
+                     * 3. 同步到 ViewModel
+                     */
+                    val nonTextBlocks = contentBlocks.filter { it !is ContentBlock.Text }.toMutableList()
+                    viewModel.pushBlocksReorderedOperation(nonTextBlocks.toList())
+                    val moved = nonTextBlocks.removeAt(fromIndex)
+                    nonTextBlocks.add(toIndex, moved)
+
+                    /** 重建完整列表（保持 Text 块位置不变） */
+                    val textBlocks = contentBlocks.filter { it is ContentBlock.Text }
+                    val newOrder = mutableListOf<ContentBlock>()
+                    var nonTextIdx = 0
+                    contentBlocks.forEach { block ->
+                        if (block is ContentBlock.Text) {
+                            newOrder.add(block)
+                        } else {
+                            newOrder.add(nonTextBlocks[nonTextIdx++])
+                        }
                     }
+                    contentBlocks.clear()
+                    contentBlocks.addAll(newOrder)
+                    highlightedIndex = -1
+                    viewModel.syncContentBlocks(contentBlocks.toList())
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { index, block, isDragging ->
+                /**
+                 * Compose 1.9 onVisibilityChanged 懒加载：
+                 * 追踪每个非Text块是否在屏幕可见区域内。
+                 *
+                 * 可见性变化时更新 blockVisibilityStates，
+                 * 子组件根据 isVisible 决定是否加载实际资源。
+                 */
+                val globalBlockIndex = contentBlocks.indexOf(block)
+                val isBlockVisible = blockVisibilityStates.getOrDefault(globalBlockIndex, false)
 
-                    /** 富文本编辑器 */
-                    com.corgimemo.app.ui.components.RichTextEditor(
-                        state = editorState,
-                        onValueChange = { newValue ->
-                            if (!isLocked) {
-                                viewModel.setContent(newValue.text)
-                                /** 更新 MutableState 的值（触发 Compose 重组，修复输入不显示问题） */
-                                editorState.textFieldValue.value = newValue
-                                viewModel.scheduleFormatExport(newValue.annotatedString)
-
-                                /** @触发关联选择弹窗 */
-                                val atIndex = newValue.text.lastIndexOf('@')
-                                if (atIndex >= 0) {
-                                    val afterAt = newValue.text.substring(atIndex + 1)
-                                    // @后面没有空格或换行才触发
-                                    if (!afterAt.contains(' ') && !afterAt.contains('\n')) {
-                                        if (!showMentionPopup) showMentionPopup = true
-                                        mentionQuery = afterAt
-                                    } else {
-                                        showMentionPopup = false
-                                    }
-                                } else {
-                                    showMentionPopup = false
-                                }
-
-                                /** #触发位置提醒弹窗（支持中文井号＃和英文#） */
-                                val hashIndex = maxOf(
-                                    newValue.text.lastIndexOf('#'),
-                                    newValue.text.lastIndexOf('＃')
-                                )
-                                if (hashIndex >= 0) {
-                                    val afterHash = newValue.text.substring(hashIndex + 1)
-                                    if (!afterHash.contains(' ') && !afterHash.contains('\n')) {
-                                        if (!showLocationPopup) showLocationPopup = true
-                                        locationQuery = afterHash
-                                    } else {
-                                        showLocationPopup = false
-                                    }
-                                } else {
-                                    showLocationPopup = false
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 200.dp),
-                        placeholder = "请在这里输入内容...",
-                        enabled = !isLocked,
-                        onUndo = {
-                            val previousState = viewModel.undo()
-                            if (previousState != null) {
-                                viewModel.pushToRedo(editorState.textFieldValue.value.annotatedString)
-                                editorState.textFieldValue.value = androidx.compose.ui.text.input.TextFieldValue(previousState)
-                            }
-                        },
-                        onRedo = {
-                            val restoredState = viewModel.redo()
-                            if (restoredState != null) {
-                                viewModel.pushSnapshot(editorState.textFieldValue.value.annotatedString)
-                                editorState.textFieldValue.value = androidx.compose.ui.text.input.TextFieldValue(restoredState)
-                            }
+                /** 基础 Modifier：包含可见性追踪 + 拖拽效果 */
+                val baseModifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .onVisibilityChanged { visibleInfo ->
+                        /** 更新可见性状态（仅在状态真正改变时触发重组） */
+                        val currentlyVisible = visibleInfo.visibleAreaFraction > 0f
+                        if (blockVisibilityStates[globalBlockIndex] != currentlyVisible) {
+                            blockVisibilityStates[globalBlockIndex] = currentlyVisible
+                        }
+                    }
+                    .then(
+                        if (isDragging) {
+                            Modifier.graphicsLayer(
+                                scaleX = 1.05f,
+                                scaleY = 1.05f,
+                                shadowElevation = 8f,
+                                translationY = (-4).dp.toPxFloat(density)
+                            )
+                        } else {
+                            Modifier
                         }
                     )
+
+                when (block) {
+                    is ContentBlock.Image -> {
+                        com.corgimemo.app.ui.components.InlineImagePreview(
+                            imageUri = block.path,
+                            modifier = baseModifier,
+                            isHighlighted = index == highlightedIndex,
+                            /** 仅在可见时加载图片资源；不可见时显示轻量占位符 */
+                            isVisible = isBlockVisible
+                        )
+                    }
+                    is ContentBlock.Voice -> {
+                        com.corgimemo.app.ui.components.VoicePlayerComponent(
+                            voicePlayer = voicePlayer,
+                            filePath = block.path,
+                            totalDuration = block.duration,
+                            onDelete = {
+                                /** 通过删除按钮删除时也推入撤销栈 */
+                                val deleteIdx = contentBlocks.indexOf(block)
+                                if (deleteIdx >= 0) {
+                                    viewModel.pushBlockDeletedOperation(listOf(block), deleteIdx)
+                                    contentBlocks.removeAt(deleteIdx)
+                                    if (highlightedIndex == deleteIdx) highlightedIndex = -1
+                                    else if (highlightedIndex > deleteIdx) highlightedIndex--
+                                    viewModel.syncContentBlocks(contentBlocks.toList())
+                                }
+                            },
+                            isHighlighted = index == highlightedIndex,
+                            modifier = baseModifier,
+                            /** 语音块：进入视口时允许播放，离开视口时自动暂停释放资源 */
+                            isVisible = isBlockVisible
+                        )
+                    }
+                    is ContentBlock.Text -> { /* 不应进入此分支 */ }
                 }
             }
 
-            /**
-             * 格式化工具栏（条件显示）
+            /** 富文本编辑器（增强版：光标位置感知两步删除 + 扩展撤销） */
+            com.corgimemo.app.ui.components.RichTextEditor(
+                state = editorState,
+                onValueChange = { newValue ->
+                    if (!isLocked) {
+                        viewModel.setContent(newValue.text)
+                        editorState.textFieldValue.value = newValue
+                        viewModel.scheduleFormatExport(newValue.annotatedString)
+
+                        /** 任何文本输入都清除高亮状态 */
+                        if (highlightedIndex >= 0) {
+                            highlightedIndex = -1
+                        }
+
+                        /** @触发关联选择弹窗 */
+                        val atIndex = newValue.text.lastIndexOf('@')
+                        if (atIndex >= 0) {
+                            val afterAt = newValue.text.substring(atIndex + 1)
+                            if (!afterAt.contains(' ') && !afterAt.contains('\n')) {
+                                if (!showMentionPopup) showMentionPopup = true
+                                mentionQuery = afterAt
+                            } else {
+                                showMentionPopup = false
+                            }
+                        } else {
+                            showMentionPopup = false
+                        }
+
+                        /** #触发位置提醒弹窗 */
+                        val hashIndex = maxOf(
+                            newValue.text.lastIndexOf('#'),
+                            newValue.text.lastIndexOf('＃')
+                        )
+                        if (hashIndex >= 0) {
+                            val afterHash = newValue.text.substring(hashIndex + 1)
+                            if (!afterHash.contains(' ') && !afterHash.contains('\n')) {
+                                if (!showLocationPopup) showLocationPopup = true
+                                locationQuery = afterHash
+                            } else {
+                                showLocationPopup = false
+                            }
+                        } else {
+                            showLocationPopup = false
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 200.dp)
+                    .onPreviewKeyEvent { keyEvent ->
+                        /** 仅处理按下事件，避免重复触发 */
+                        if (keyEvent.nativeKeyEvent.action != AndroidKeyEvent.ACTION_DOWN) {
+                            return@onPreviewKeyEvent false
+                        }
+
+                        /** 检测键盘删除键（Backspace / Delete） */
+                        val isBackspace = keyEvent.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DEL
+                        val isDeleteKey = keyEvent.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_FORWARD_DEL
+
+                        if (!isBackspace && !isDeleteKey) {
+                            return@onPreviewKeyEvent false
+                        }
+
+                        /**
+                         * 增强两步删除逻辑（光标位置感知）：
+                         *
+                         * ┌──────────────────────────────────────────────────────┐
+                         * │ 条件                      │ 行为                      │
+                         * ├──────────────────────────────────────────────────────┤
+                         * │ 光标在开头 + Backspace    │ 高亮/删除最后一个非Text块 │
+                         * │ 光标在末尾 + Delete      │ 高亮/删除第一个非Text块   │
+                         * │ 编辑器为空 + 有块        │ 忽略光标位置直接走删除    │
+                         * │ 已高亮 + 再次按键        │ 确认删除                  │
+                         * └──────────────────────────────────────────────────────┘
+                         */
+                        val selection = editorState.textFieldValue.value.selection
+                        val textLength = editorState.textFieldValue.value.text.length
+                        val cursorAtStart = selection.start == 0 && selection.end == 0
+                        val cursorAtEnd = selection.start == textLength && selection.end == textLength
+                        val editorEmpty = textLength == 0
+                        val hasNonTextBlocks = contentBlocks.any { it !is ContentBlock.Text }
+
+                        /** 无内容块或不符合触发条件时不拦截 */
+                        if (!hasNonTextBlocks) {
+                            return@onPreviewKeyEvent false
+                        }
+
+                        /** 判断是否应该触发删除逻辑 */
+                        val shouldTrigger = editorEmpty ||
+                            (cursorAtStart && isBackspace) ||
+                            (cursorAtEnd && isDeleteKey)
+
+                        if (!shouldTrigger) {
+                            return@onPreviewKeyEvent false
+                        }
+
+                        /** 已有高亮项 → 第二次按键：确认删除并推入撤销栈 */
+                        if (highlightedIndex >= 0) {
+                            val deletedBlock = contentBlocks[highlightedIndex]
+                            viewModel.pushBlockDeletedOperation(listOf(deletedBlock), highlightedIndex)
+                            contentBlocks.removeAt(highlightedIndex)
+                            highlightedIndex = -1
+                            viewModel.syncContentBlocks(contentBlocks.toList())
+                            return@onPreviewKeyEvent true
+                        }
+
+                        /** 无高亮项 → 第一次按键：根据按键方向选择目标块 */
+                        val targetIndex = when {
+                            isBackspace -> {
+                                /** Backspace: 从后往前找最后一个非 Text 块 */
+                                contentBlocks.indexOfLast { it !is ContentBlock.Text }
+                            }
+                            isDeleteKey -> {
+                                /** Delete: 从前往后找第一个非 Text 块 */
+                                contentBlocks.indexOfFirst { it !is ContentBlock.Text }
+                            }
+                            else -> -1
+                        }
+
+                        if (targetIndex >= 0) {
+                            highlightedIndex = targetIndex
+                            return@onPreviewKeyEvent true
+                        }
+
+                        false
+                    },
+                placeholder = "请在这里输入内容...",
+                enabled = !isLocked,
+                onUndo = {
+                    /** 使用扩展撤销方法（优先处理内容块操作） */
+                    val result = viewModel.undoExtended()
+                    when (result) {
+                        is androidx.compose.ui.text.AnnotatedString -> {
+                            /** 文本撤销：恢复编辑器文本 */
+                            viewModel.pushToRedo(editorState.textFieldValue.value.annotatedString)
+                            editorState.textFieldValue.value =
+                                androidx.compose.ui.text.input.TextFieldValue(result)
+                        }
+                        is Pair<*, *> -> {
+                            /** 内容块撤销：重新插入被删的块 */
+                            @Suppress("UNCHECKED_CAST") val (blocks, idx) =
+                                result as Pair<List<ContentBlock>, Int>
+                            blocks.forEachIndexed { i, block ->
+                                contentBlocks.add(idx + i, block)
+                            }
+                            viewModel.syncContentBlocks(contentBlocks.toList())
+                        }
+                        is Int -> {
+                            /** 插入撤销：移除该位置的块 */
+                            val idx = result as Int
+                            if (idx in contentBlocks.indices) {
+                                contentBlocks.removeAt(idx)
+                                viewModel.syncContentBlocks(contentBlocks.toList())
+                            }
+                        }
+                        is List<*> -> {
+                            /** 排序撤销：恢复原排列顺序 */
+                            @Suppress("UNCHECKED_CAST")
+                            val oldOrder = result as List<ContentBlock>
+                            contentBlocks.clear()
+                            contentBlocks.addAll(oldOrder)
+                            highlightedIndex = -1
+                            viewModel.syncContentBlocks(contentBlocks.toList())
+                        }
+                    }
+                },
+                onRedo = {
+                    /** 使用扩展重做方法 */
+                    val result = viewModel.redoExtended()
+                    when (result) {
+                        is androidx.compose.ui.text.AnnotatedString -> {
+                            viewModel.pushSnapshot(editorState.textFieldValue.value.annotatedString)
+                            editorState.textFieldValue.value =
+                                androidx.compose.ui.text.input.TextFieldValue(result)
+                        }
+                        is Pair<*, *> -> {
+                            /** 重做删除：再次删除该块 */
+                            @Suppress("UNCHECKED_CAST") val (blocks, idx) =
+                                result as Pair<List<ContentBlock>, Int>
+                            blocks.forEach { block ->
+                                val currentIdx = contentBlocks.indexOf(block)
+                                if (currentIdx >= 0) contentBlocks.removeAt(currentIdx)
+                            }
+                            viewModel.syncContentBlocks(contentBlocks.toList())
+                        }
+                        is Int -> {
+                            /** 重做插入：需要从 redo 栈获取被插入的块信息 */
+                            // 此处由 pushBlockInsertedOperation 记录的位置辅助处理
+                        }
+                        is List<*> -> {
+                            /** 重做排序：应用新顺序 */
+                            // 由 BlocksReordered 的 oldOrder 辅助处理
+                        }
+                    }
+                }
+            )
+
+            /** 格式化工具栏（条件显示）
              * 当用户点击 EditToolbar 的"📝文本"按钮时切换显示/隐藏
              * 提供完整的富文本格式控制：字体样式、列表、对齐、插入等
              */
@@ -1140,22 +1469,6 @@ fun TodoEditScreen(
                 }
             }
 
-            // 语音备注区域
-            voiceNotePath?.let { path ->
-                VoicePlayerComponent(
-                    voicePlayer = voicePlayer,
-                    filePath = path,
-                    totalDuration = voiceDuration,
-                    onDelete = {
-                        // 删除语音文件
-                        File(path).delete()
-                        viewModel.clearVoiceNote()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp)
-                )
-            }
             } /** 主内容 Column 结束 */
 
     /**
@@ -1405,6 +1718,11 @@ fun TodoEditScreen(
                     voiceRecorder = voiceRecorder,
                     onSaved = { path, duration ->
                         viewModel.setVoiceNote(path, duration)
+                        val insertIndex = contentBlocks.size
+                        contentBlocks.add(ContentBlock.Voice(path, duration))
+                        /** 推送插入操作到撤销栈 + 同步 ViewModel */
+                        viewModel.pushBlockInsertedOperation(insertIndex)
+                        viewModel.syncContentBlocks(contentBlocks.toList())
                         showVoiceRecordSheet = false
                     },
                     onDismiss = {
@@ -1439,8 +1757,9 @@ fun TodoEditScreen(
                 // 正在请求权限或显示说明，不显示录制面板
             }
         }
-    }
-}
+    } // showVoiceRecordSheet
+} // main content Column
+} // TodoEditScreen
 
 private fun hasRecordAudioPermission(context: Context): Boolean {
     return ContextCompat.checkSelfPermission(

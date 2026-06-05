@@ -304,4 +304,38 @@ interface TodoDao {
         ) - 1
     """)
     suspend fun resetAllPositions()
+
+    // ==================== 分页查询方法（Paging 3 集成）====================
+
+    /**
+     * 分页获取所有待办（按创建时间降序）
+     *
+     * 用于 Paging 3 分页加载，支持大数据量场景。
+     *
+     * @param limit 每页数据量（如 20 条）
+     * @param offset 偏移量（页码 × 每页大小）
+     * @return 当前页的待办列表
+     */
+    @Query("SELECT * FROM todo_items ORDER BY createdAt DESC LIMIT :limit OFFSET :offset")
+    suspend fun getTodosPaging(limit: Int, offset: Int): List<TodoItem>
+
+    /**
+     * 分页获取待办状态为"待处理"的项（status = 0）
+     *
+     * @param limit 每页数据量
+     * @param offset 偏移量
+     * @return 当前页的待处理待办列表
+     */
+    @Query("SELECT * FROM todo_items WHERE status = 0 ORDER BY createdAt DESC LIMIT :limit OFFSET :offset")
+    suspend fun getPendingTodosPaging(limit: Int, offset: Int): List<TodoItem>
+
+    /**
+     * 分页获取待办状态为"已完成"的项（status = 1）
+     *
+     * @param limit 每页数据量
+     * @param offset 偏移量
+     * @return 当前页的已完成待办列表
+     */
+    @Query("SELECT * FROM todo_items WHERE status = 1 ORDER BY createdAt DESC LIMIT :limit OFFSET :offset")
+    suspend fun getCompletedTodosPaging(limit: Int, offset: Int): List<TodoItem>
 }

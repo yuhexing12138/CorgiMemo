@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.corgimemo.app"
-    compileSdk = 34
+    compileSdk = 35
 
     signingConfigs {
         create("release") {
@@ -22,7 +22,7 @@ android {
     defaultConfig {
         applicationId = "com.corgimemo.app"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
@@ -65,6 +65,17 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    /**
+     * Hilt / Dagger 编译器选项
+     *
+     * useBindingGraphFix: 启用绑定图修复（Dagger 2.58 默认开启）。
+     * 确保所有 @Provides 方法安装在正确的 Component 中，
+     * 提前发现潜在的依赖注入错误，为升级到 Dagger 2.58+ 做好准备。
+     */
+    ksp {
+        arg("dagger.useBindingGraphFix", "enabled")
+    }
 }
 
 dependencies {
@@ -73,7 +84,10 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.process)  // ProcessLifecycleOwner 支持
+    implementation(libs.androidx.paging.runtime)     // Paging 3 核心库
+    implementation(libs.androidx.paging.compose)    // Paging 3 Compose 集成
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)

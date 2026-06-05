@@ -1,56 +1,46 @@
 package com.corgimemo.app.ui.components
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.innerShadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.painter.BitmapPainter
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.size.Scale
-import com.corgimemo.app.R
 
 /**
  * 内联图片预览组件
  *
  * 在富文本编辑器中显示插入的图片缩略图，
- * 支持异步加载、删除操作和点击放大查看功能。
+ * 支持异步加载和点击放大查看功能。
  *
  * **功能特性**:
  * - ✅ 异步加载（使用 Coil 库，避免主线程阻塞）
  * - ✅ 自适应高度（保持原始宽高比）
- * - ✅ 删除按钮（右上角 × 图标）
- * - ✅ 加载状态指示器（圆形进度条）
- * - ✅ 错误状态占位图（加载失败时显示默认图片）
  * - ✅ 圆角边框（符合项目 UI 设计规范 16dp）
  *
  * **UI 布局结构**:
  * ```
  * ┌─────────────────────────────┐
- * │  ┌─────────────────────┐ × │  ← 删除按钮
+ * │  ┌─────────────────────┐    │
  * │  │                     │    │
  * │  │     图片预览区域      │    │
  * │  │   (maxWidth=300dp)  │    │
@@ -59,22 +49,8 @@ import com.corgimemo.app.R
  * └─────────────────────────────┘
  * ```
  *
- * **使用示例**:
- * ```kotlin
- * InlineImagePreview(
- *     imageUri = selectedUri,
- *     modifier = Modifier.padding(8.dp),
- *     onDelete = {
- *         // 从图片列表中移除该 URI
- *         imageUris = imageUris.filter { it != selectedUri }
- *     },
- *     maxWidth = 300.dp
- * )
- * ```
- *
  * @param imageUri 图片的 Uri 地址（支持本地文件、网络 URL、Content URI）
  * @param modifier Modifier（可选）
- * @param onDelete 删除按钮点击回调（从编辑器移除该图片）
  * @param maxWidth 图片最大宽度限制（默认 300.dp，防止大图撑开布局）
  * @param onClick 图片点击回调（可选，用于实现全屏预览功能）
  */
@@ -82,8 +58,9 @@ import com.corgimemo.app.R
 fun InlineImagePreview(
     imageUri: String,
     modifier: Modifier = Modifier,
-    onDelete: () -> Unit,
     maxWidth: Dp = 300.dp,
+    isHighlighted: Boolean = false,
+    isVisible: Boolean = true, /** Compose 1.9 onVisibilityChanged：是否在视口内 */
     onClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -91,22 +68,32 @@ fun InlineImagePreview(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp, horizontal = 4.dp),
-        contentAlignment = Alignment.TopEnd
+            .padding(vertical = 8.dp, horizontal = 4.dp)
+            .then(
+                if (isHighlighted) {
+                    /** Compose 1.9 内阴影：替代硬边框，提供柔和的暖色发光高亮效果 */
+                    Modifier
+                        .innerShadow(
+                            shape = RoundedCornerShape(16.dp),
+                            color = Color(0xFFFFB74D).copy(alpha = 0.6f),
+                            blur = 6.dp,
+                            offsetY = 2.dp
+                        )
+                        /** 保留细边框作为视觉锚点 */
+                        .border(1.dp, Color(0xFFFFB74D).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                } else {
+                    Modifier
+                }
+            )
     ) {
-        /** 图片容器：带圆角的卡片样式 */
+        /** 图片容器 */
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(
-                    if (maxWidth.value < Float.MAX_VALUE) {
-                        Modifier.padding(end = 32.dp) // 为删除按钮留出空间
-                    } else {
-                        Modifier
-                    }
+                .clip(RoundedCornerShape(16.dp))
+                .background(
+                    if (isHighlighted) Color(0xFFFFF8E1) else Color.Transparent
                 )
-                .clip(RoundedCornerShape(16.dp)) /** 符合设计规范：圆角16dp */
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                 .then(
                     if (onClick != null) {
                         Modifier.clickable(onClick = onClick)
@@ -117,59 +104,60 @@ fun InlineImagePreview(
             contentAlignment = Alignment.Center
         ) {
             /**
-             * 使用 Coil AsyncImage 异步加载图片
+             * Compose 1.9 onVisibilityChanged 懒加载策略：
              *
-             * Coil 特性：
-             * - 自动内存和磁盘缓存
-             * - 支持图片变换（圆角、模糊等）
-             * - 自动取消（离开组合时释放资源）
-             * - 支持跨淡入淡出动画
+             * isVisible=true  → 渲染 AsyncImage（Coil 异步加载 + 内存/磁盘缓存）
+             * isVisible=false → 显示轻量占位符（避免 Coil 预加载屏幕外图片占用内存）
+             *
+             * 性能收益：
+             * - 用户插入10张图片但只看到前2张时，仅加载2张
+             * - 滚动离开视口的图片自动释放内存（Coil 自动取消请求）
              */
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(imageUri)
-                    .crossfade(true) /** 开启交叉淡入效果 */
-                    .scale(Scale.FILL) /** 填充模式（保持比例） */
-                    .build(),
-                contentDescription = "插入的图片",
-                contentScale = ContentScale.Fit, /** 保持宽高比，不裁剪 */
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f) /** 默认 16:9 宽高比 */
-                    .then(
-                        if (maxWidth.value < Float.MAX_VALUE) {
-                            Modifier.padding(8.dp)
-                        } else {
-                            Modifier
-                        }
-                    ),
-                /** 加载中状态回调（Coil AsyncImage 非 @Composable 回调，暂不处理） */
-                onLoading = { _ -> },
-                /** 加载失败状态回调（Coil AsyncImage 非 @Composable 回调，暂不处理） */
-                onError = { _ -> }
-            )
-        }
-
-        /**
-         * 删除按钮
-         *
-         * 位于右上角，使用半透明深色背景，
-         * 悬浮在图片上方，点击后触发回调移除图片。
-         */
-        IconButton(
-            onClick = onDelete,
-            modifier = Modifier
-                .size(28.dp)
-                .padding(2.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color.Black.copy(alpha = 0.5f)) /** 半透明黑色背景 */
-        ) {
-            Icon(
-                painter = painterResource(id = android.R.drawable.ic_menu_close_clear_cancel),
-                contentDescription = "删除图片",
-                tint = Color.White,
-                modifier = Modifier.size(16.dp)
-            )
+            if (isVisible) {
+                /** 使用 Coil AsyncImage 异步加载图片 */
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(imageUri)
+                        .crossfade(true) /** 开启交叉淡入效果 */
+                        .scale(Scale.FILL) /** 填充模式（保持比例） */
+                        .build(),
+                    contentDescription = "插入的图片",
+                    contentScale = ContentScale.Fit, /** 保持宽高比，不裁剪 */
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f) /** 默认 16:9 宽高比 */
+                        .then(
+                            if (maxWidth.value < Float.MAX_VALUE) {
+                                Modifier.padding(8.dp)
+                            } else {
+                                Modifier
+                            }
+                        ),
+                    onLoading = { _ -> },
+                    onError = { _ -> }
+                )
+            } else {
+                /**
+                 * 不可见时的轻量占位符：
+                 * 保持与可见时相同的尺寸（避免布局跳动），
+                 * 但不加载任何图片资源。
+                 */
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp))
+                        .padding(8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    /** 图片图标占位提示 */
+                    Text(
+                        text = "📷",
+                        style = TextStyle(fontSize = 24.sp),
+                        color = Color.Gray.copy(alpha = 0.4f)
+                    )
+                }
+            }
         }
     }
 }
@@ -187,14 +175,12 @@ fun InlineImagePreview(
  *
  * @param imageUris 图片 Uri 列表
  * @param modifier Modifier（可选）
- * @param onDelete 单张图片删除回调（参数为被删除图片的索引位置）
  * @param maxVisibleCount 最大可见数量（超出部分需滑动查看，默认 3）
  */
 @Composable
 fun ImagePreviewCarousel(
     imageUris: List<String>,
     modifier: Modifier = Modifier,
-    onDelete: (Int) -> Unit,
     maxVisibleCount: Int = 3
 ) {
     if (imageUris.isEmpty()) return
@@ -217,8 +203,7 @@ fun ImagePreviewCarousel(
         ) { index ->
             InlineImagePreview(
                 imageUri = imageUris[index],
-                modifier = Modifier.width((itemWidth * 300).dp), /** 动态宽度计算：先乘 Float 再转 Dp */
-                onDelete = { onDelete(index) }
+                modifier = Modifier.width((itemWidth * 300).dp)
             )
         }
     }

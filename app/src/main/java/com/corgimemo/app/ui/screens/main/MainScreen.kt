@@ -51,6 +51,10 @@ import com.corgimemo.app.ui.screens.home.HomeScreen
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
 import com.corgimemo.app.viewmodel.HomeViewModel
+import com.corgimemo.app.analytics.UserBehaviorAnalyzer
+import com.corgimemo.app.analytics.UserBehaviorAnalyzerEntryPoint
+import androidx.hilt.navigation.compose.hiltViewModel
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.launch
 
 /**
@@ -87,6 +91,10 @@ fun MainScreen(navController: NavController) {
     val context = LocalContext.current
 
     val homeViewModel: HomeViewModel = hiltViewModel()
+    /** 用户行为分析器（通过 Hilt 入口点获取 @Singleton 实例，用于记录页面访问） */
+    val userBehaviorAnalyzer: UserBehaviorAnalyzer = remember {
+        EntryPointAccessors.fromApplication(context, UserBehaviorAnalyzerEntryPoint::class.java).analyzer()
+    }
     val corgiData by homeViewModel.corgiData.collectAsState()
     val categories by homeViewModel.categories.collectAsState()
     val todoCountByCategory by homeViewModel.todoCountByCategory.collectAsState()
@@ -264,6 +272,18 @@ fun MainScreen(navController: NavController) {
                             isFastCollapse = true
                             isBubbleExpanded = false
                         }
+
+                        // 记录页面访问（用于智能预加载策略优化）
+                        val pageType = when (tab) {
+                            TabItem.TODO -> UserBehaviorAnalyzer.PageType.HOME
+                            TabItem.INSPIRE -> UserBehaviorAnalyzer.PageType.INSPIRATION
+                            TabItem.DATE -> UserBehaviorAnalyzer.PageType.SPECIAL_DATE
+                            else -> null
+                        }
+                        pageType?.let { type ->
+                            coroutineScope.launch { userBehaviorAnalyzer.recordPageVisit(type) }
+                        }
+
                         selectedTab = tab
                     },
                     modifier = Modifier.align(Alignment.BottomCenter)
