@@ -71,14 +71,14 @@ fun InlineImagePreview(
             .padding(vertical = 8.dp, horizontal = 4.dp)
             .then(
                 if (isHighlighted) {
-                    /** Compose 1.9 内阴影：替代硬边框，提供柔和的暖色发光高亮效果 */
+                    /** Compose 1.9 内阴影：使用 DSL 块语法替代旧版命名参数 */
                     Modifier
                         .innerShadow(
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color(0xFFFFB74D).copy(alpha = 0.6f),
-                            blur = 6.dp,
-                            offsetY = 2.dp
-                        )
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            color = Color(0xFFFFB74D).copy(alpha = 0.6f)
+                            radius = 6f
+                        }
                         /** 保留细边框作为视觉锚点 */
                         .border(1.dp, Color(0xFFFFB74D).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
                 } else {

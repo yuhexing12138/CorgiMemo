@@ -24,7 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableIntStateMapOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -475,7 +475,7 @@ fun <T> ReorderableColumn(
      *
      * 使用 Compose 原生 StateMap（Compose 1.9+ 支持 mutableIntStateMapOf）
      */
-    val itemHeightsPx = remember { mutableIntStateMapOf() }
+    val itemHeightsPx = remember { mutableStateMapOf<Int, Int>() }
 
     /**
      * 获取用于拖拽索引计算的预估行高（像素）
@@ -518,13 +518,13 @@ fun <T> ReorderableColumn(
                                     scaleY = 1.05f,
                                     translationY = (-4).dp.toPxFloat(density)
                                 )
-                                /** Compose 1.9 原生投影：替代旧版 shadow+shadowElevation 组合，
-                                 *  提供更自然的方向性投影效果 */
+                                /** Compose 1.9 原生投影：使用 DSL 块语法 */
                                 .dropShadow(
-                                    elevation = 8.dp,
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
                                     color = Color.Black.copy(alpha = 0.25f)
-                                )
+                                    radius = 8f
+                                }
                         } else {
                             Modifier
                                 .padding(8.dp)
@@ -558,7 +558,7 @@ fun <T> ReorderableColumn(
                                  * 计算目标索引：从被拖项出发，
                                  * 根据偏移量逐项累加实际高度判断越过了哪些项
                                  */
-                                val effectiveItemHeight = itemHeightsPx[index]
+                                val effectiveItemHeight: Float = itemHeightsPx[index]
                                     ?.toFloat() ?: defaultHeightPx
                                 val indexDelta = (dragOffset / effectiveItemHeight).toInt()
                                 val newTargetIndex = (index + indexDelta)

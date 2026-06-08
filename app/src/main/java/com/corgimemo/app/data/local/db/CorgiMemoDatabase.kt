@@ -29,7 +29,7 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class],
-    version = 26,
+    version = 27,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -90,7 +90,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
                     .build()
                 INSTANCE = instance
                 instance
@@ -710,7 +710,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             database.execSQL("""
                 INSERT OR IGNORE INTO content_blocks (todoId, type, filePath, duration, orderIndex)
                 SELECT
-                    id,
+                    todo_items.id,
                     'image',
                     json_extract(value, '$[0]'),
                     NULL,
@@ -730,6 +730,51 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 FROM todo_items
                 WHERE todo_items.voiceNotePath IS NOT NULL AND todo_items.voiceNotePath != ''
             """.trimIndent())
+        }
+    }
+
+    /**
+     * v26 → v27: 为 inspirations 表新增 20 个字段（从 TodoEditScreen 迁移）
+     *
+     * 新增字段涵盖：分类、优先级、状态、时间管理(5)、地理围栏(6)、
+     * 子任务/语音备注(3)、背景色、排序位置、富文本格式
+     */
+    private val MIGRATION_26_27 = object : Migration(26, 27) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // --- 基础字段 ---
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN categoryId INTEGER NOT NULL DEFAULT 0")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN status INTEGER NOT NULL DEFAULT 0")
+
+            // --- 时间管理 (5 字段) ---
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN startDate INTEGER")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN dueDate INTEGER")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN estimatedDurationMinutes INTEGER")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN reminderTime INTEGER")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN repeatType INTEGER NOT NULL DEFAULT 0")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN completedAt INTEGER")
+
+            // --- 地理围栏 (6 字段) ---
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceLat REAL")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceLng REAL")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceRadius REAL")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceType INTEGER")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceEnabled INTEGER NOT NULL DEFAULT 0")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceAddress TEXT")
+
+            // --- 子任务 / 语音 / 样式 (5 字段) ---
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN hasSubTasks INTEGER NOT NULL DEFAULT 0")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN voiceNotePath TEXT")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN voiceDuration INTEGER")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN backgroundColor INTEGER NOT NULL DEFAULT -1")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN contentFormat TEXT NOT NULL DEFAULT ''")
+
+            // --- 新增索引 ---
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_categoryId ON inspirations(categoryId)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_priority ON inspirations(priority)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_status_createdAt ON inspirations(status, createdAt)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_dueDate_status ON inspirations(dueDate, status)")
         }
     }
     // companion object 闭合

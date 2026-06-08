@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -592,6 +594,7 @@ fun TodoEditScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .statusBarPadding()
                     .padding(horizontal = 4.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -819,7 +822,7 @@ fun TodoEditScreen(
                     }
                 },
                 wordCount = content.length,
-                modifier = Modifier.imePadding()
+                modifier = Modifier.imePadding().navigationBarsPadding()
             )
         }
     ) { innerPadding ->
@@ -978,11 +981,10 @@ fun TodoEditScreen(
                 val baseModifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
-                    .onVisibilityChanged { visibleInfo ->
-                        /** 更新可见性状态（仅在状态真正改变时触发重组） */
-                        val currentlyVisible = visibleInfo.visibleAreaFraction > 0f
-                        if (blockVisibilityStates[globalBlockIndex] != currentlyVisible) {
-                            blockVisibilityStates[globalBlockIndex] = currentlyVisible
+                    /** Compose 1.9 onVisibilityChanged：回调直接返回 Boolean（非 VisibilityInfo 对象） */
+                    .onVisibilityChanged { isVisible ->
+                        if (blockVisibilityStates[globalBlockIndex] != isVisible) {
+                            blockVisibilityStates[globalBlockIndex] = isVisible
                         }
                     }
                     .then(
@@ -1174,8 +1176,9 @@ fun TodoEditScreen(
                         }
                         is Pair<*, *> -> {
                             /** 内容块撤销：重新插入被删的块 */
-                            @Suppress("UNCHECKED_CAST") val (blocks, idx) =
-                                result as Pair<List<ContentBlock>, Int>
+                            @Suppress("UNCHECKED_CAST")
+                            val castResult = result as Pair<List<ContentBlock>, Int>
+                            val (blocks, idx) = castResult
                             blocks.forEachIndexed { i, block ->
                                 contentBlocks.add(idx + i, block)
                             }
@@ -1211,8 +1214,9 @@ fun TodoEditScreen(
                         }
                         is Pair<*, *> -> {
                             /** 重做删除：再次删除该块 */
-                            @Suppress("UNCHECKED_CAST") val (blocks, idx) =
-                                result as Pair<List<ContentBlock>, Int>
+                            @Suppress("UNCHECKED_CAST")
+                            val castResult = result as Pair<List<ContentBlock>, Int>
+                            val (blocks, idx) = castResult
                             blocks.forEach { block ->
                                 val currentIdx = contentBlocks.indexOf(block)
                                 if (currentIdx >= 0) contentBlocks.removeAt(currentIdx)

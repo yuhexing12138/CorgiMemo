@@ -13,7 +13,11 @@ import androidx.room.PrimaryKey
     tableName = "inspirations",
     indices = [
         Index(value = ["createdAt"]),
-        Index(value = ["isPinned"])
+        Index(value = ["isPinned"]),
+        Index(value = ["categoryId"]),
+        Index(value = ["priority"]),
+        Index(value = ["status", "createdAt"]),
+        Index(value = ["dueDate", "status"])
     ]
 )
 data class Inspiration(
@@ -23,7 +27,7 @@ data class Inspiration(
     /** 标题（必填） */
     val title: String,
 
-    /** 富文本内容 (HTML格式) */
+    /** 纯文本内容 */
     @ColumnInfo(defaultValue = "")
     val content: String = "",
 
@@ -51,5 +55,73 @@ data class Inspiration(
 
     /** 是否归档 */
     @ColumnInfo(defaultValue = "0")
-    val isArchived: Boolean = false
+    val isArchived: Boolean = false,
+
+    // ========== 以下为从 TodoEditScreen 迁移的字段 (v27 新增) ==========
+
+    /** 分类ID */
+    val categoryId: Long = 0,
+
+    /** 优先级: 0=低, 1=中, 2=高 */
+    val priority: Int = 0,
+
+    /** 状态: 0=进行中, 1=已完成, 2=归档 */
+    val status: Int = 0,
+
+    /** 开始时间（时间戳毫秒） */
+    val startDate: Long? = null,
+
+    /** 截止时间（时间戳毫秒） */
+    val dueDate: Long? = null,
+
+    /** 预估时长（分钟） */
+    val estimatedDurationMinutes: Int? = null,
+
+    /** 提醒时间（时间戳毫秒） */
+    val reminderTime: Long? = null,
+
+    /** 重复类型: 0=不重复, 1=每天, 2=每周, 3=每月, 4=每年 */
+    val repeatType: Int = 0,
+
+    /** 完成时间（时间戳毫秒） */
+    val completedAt: Long? = null,
+
+    // --- 地理围栏 (6 字段) ---
+    /** 地理围栏纬度 */
+    val geofenceLat: Double? = null,
+    /** 地理围栏经度 */
+    val geofenceLng: Double? = null,
+    /** 地理围栏半径(米) */
+    val geofenceRadius: Float? = null,
+    /** 地理围栏类型: 0=到达提醒, 1=离开提醒 */
+    val geofenceType: Int? = null,
+    /** 地理围栏是否启用 */
+    val geofenceEnabled: Boolean = false,
+    /** 地理围栏地址描述 */
+    val geofenceAddress: String? = null,
+
+    // --- 子任务 / 语音 / 样式 ---
+    /** 是否有子任务 */
+    val hasSubTasks: Boolean = false,
+    /** 语音备注文件路径 */
+    val voiceNotePath: String? = null,
+    /** 语音备注时长(秒) */
+    val voiceDuration: Int? = null,
+
+    /**
+     * 背景颜色值（ARGB 整数）
+     * 默认 -1 = 0xFFFFFFFF（白色/透明背景）
+     */
+    @ColumnInfo(defaultValue = "16777215")
+    val backgroundColor: Int = -1,
+
+    /** 手动排序位置索引（从 0 开始，用于拖拽排序功能） */
+    val position: Int = 0,
+
+    /**
+     * 富文本格式化内容（Markdown 格式）
+     * 存储完整的 Markdown 格式文本，保留粗体/斜体/删除线/列表等格式信息
+     */
+    @ColumnInfo(defaultValue = "")
+    val contentFormat: String = ""
 )

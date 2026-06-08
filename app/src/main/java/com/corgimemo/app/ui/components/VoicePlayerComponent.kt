@@ -3,6 +3,7 @@ package com.corgimemo.app.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
@@ -86,14 +87,14 @@ fun VoicePlayerComponent(
             )
             .then(
                 if (isHighlighted) {
-                    /** Compose 1.9 内阴影：替代硬边框，提供柔和的暖色发光高亮效果 */
+                    /** Compose 1.9 内阴影：使用 DSL 块语法 */
                     Modifier
                         .innerShadow(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFFFB74D).copy(alpha = 0.6f),
-                            blur = 4.dp,
-                            offsetY = 1.dp
-                        )
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            color = Color(0xFFFFB74D).copy(alpha = 0.6f)
+                            radius = 4f
+                        }
                         /** 保留细边框作为视觉锚点 */
                         .border(1.dp, Color(0xFFFFB74D).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                 } else {
@@ -174,7 +175,8 @@ fun VoicePlayerComponent(
                 onDismiss = { showDeleteConfirm = false }
             )
         }
-    } /** ===== 结束 if (isVisible) 完整播放器 UI ===== */
+    } /** 结束 Row lambda */
+    } /** 结束 if (isVisible) 完整播放器 UI */
     else {
         /**
          * 不可见状态：轻量占位符
@@ -198,11 +200,11 @@ fun VoicePlayerComponent(
                     if (isHighlighted) {
                         Modifier
                             .innerShadow(
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFFFFB74D).copy(alpha = 0.6f),
-                                blur = 4.dp,
-                                offsetY = 1.dp
-                            )
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                color = Color(0xFFFFB74D).copy(alpha = 0.6f)
+                                radius = 4f
+                            }
                             .border(1.dp, Color(0xFFFFB74D).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                     } else {
                         Modifier

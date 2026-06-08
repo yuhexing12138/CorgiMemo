@@ -2,6 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
+    /** Kotlin 2.0+ 必须显式应用 Compose Compiler 插件 */
+    alias(libs.plugins.kotlin.compose)
     id("com.google.devtools.ksp")
     id("dagger.hilt.android.plugin")
 }
@@ -56,9 +58,7 @@ android {
         compose = true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
-    }
+    /** composeOptions 块已移除：Kotlin 2.0+ 使用 kotlin-compose 插件自动管理 Compose Compiler 版本 */
 
     packaging {
         resources {
