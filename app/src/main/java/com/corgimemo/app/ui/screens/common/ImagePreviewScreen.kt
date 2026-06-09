@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.screens.common
 
+import android.app.Activity
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -9,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import com.corgimemo.app.ui.components.safeAreaForTopBar /** 安全区域内边距：顶栏状态栏*/
+import com.corgimemo.app.ui.components.safeAreaForBottomBar /** 安全区域内边距：底栏导航栏*/
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -21,6 +24,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -35,8 +39,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
 import com.corgimemo.app.util.ImageUtils
 
@@ -71,6 +79,42 @@ fun ImagePreviewScreen(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
+
+    /**
+     * 沉浸式全屏模式生命周期管理
+     *
+     * 技术原理：
+     * 1. setDecorFitsSystemWindows(false) → 启用 edge-to-edge，内容可延伸到系统栏下方
+     * 2. hide(systemBars()) → 隐藏状态栏 + 导航栏，实现纯黑全屏
+     * 3. BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE → 用户从边缘滑动时可临时唤出系统栏
+     * 4. onDispose → 退出预览时自动恢复系统栏和正常布局（防止泄漏到其他页面）
+     */
+    DisposableEffect(Unit) {
+        val window = (context as Activity).window
+
+        /** 启用 edge-to-edge 模式：让内容绘制区域延伸到状态栏/导航栏下方 */
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        /** 获取系统栏控制器 */
+        val controller = WindowCompat.getInsetsController(window, view)
+
+        /** 隐藏状态栏和导航栏（进入纯沉浸模式） */
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        /**
+         * 设置系统栏交互行为：
+         * BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE - 用户从屏幕边缘滑动时临时显示系统栏，
+         *   短暂显示后自动再次隐藏（类似微信相册/Google Photos 的体验）
+         */
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        onDispose {
+            /** 退出预览时恢复系统栏显示 */
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            /** 恢复正常布局模式（内容不再延伸到系统栏下方） */
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+        }
+    }
 
     /**
      * HorizontalPager 状态管理
@@ -117,11 +161,12 @@ fun ImagePreviewScreen(
         /**
          * 顶部操作栏
          * 包含：左侧关闭按钮 | 右侧删除按钮（可选）
+         * 使用 safeAreaForTopBar 动态适配刘海屏/挖孔屏等异形屏幕
          */
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 48.dp)
+                .safeAreaForTopBar()
                 .padding(horizontal = 16.dp)
         ) {
             /** 关闭按钮（左上角） */
@@ -164,11 +209,12 @@ fun ImagePreviewScreen(
         /**
          * 底部页码指示器
          * 显示格式："当前页 / 总数"（如 "2 / 5"）
+         * 使用 safeAreaForBottomBar 动态适配不同导航模式（手势导航/三键导航）
          */
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 48.dp),
+                .safeAreaForBottomBar(),
             contentAlignment = Alignment.BottomCenter
         ) {
             Text(

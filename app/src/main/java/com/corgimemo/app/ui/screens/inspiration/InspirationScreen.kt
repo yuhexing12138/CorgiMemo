@@ -146,6 +146,7 @@ fun InspirationScreen(
             contentColor = MaterialTheme.colorScheme.onPrimary,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
+                /** 小间距即可：父容器 Column 已通过 paddingValues 避开导航栏区域 */
                 .padding(end = 20.dp, bottom = 16.dp)
         ) {
             Icon(

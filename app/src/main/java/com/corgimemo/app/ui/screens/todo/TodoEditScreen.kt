@@ -19,9 +19,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -93,7 +90,6 @@ import androidx.compose.ui.platform.LocalDensity
 import com.corgimemo.app.util.toPxFloat
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -104,6 +100,8 @@ import com.corgimemo.app.ui.components.LocationPicker
 import com.corgimemo.app.ui.components.MentionTriggerPopup
 import com.corgimemo.app.ui.components.RecommendationChip
 import com.corgimemo.app.ui.components.VoiceRecordBottomSheet
+import com.corgimemo.app.ui.components.safeAreaForTopBar /** 安全区域内边距：顶栏状态栏*/
+import com.corgimemo.app.ui.components.safeAreaForEditBar /** 安全区域内边距：编辑栏导航栏+软键盘*/
 import com.corgimemo.app.ui.components.EditToolbar
 import com.corgimemo.app.ui.components.ImagePickerDialog /** 图片选择对话框 */
 import com.corgimemo.app.ui.components.checkAndRequestCameraPermission /** 检查并请求相机权限 */
@@ -119,6 +117,7 @@ import com.corgimemo.app.util.VoicePlayer
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.TodoEditViewModel
+import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -126,14 +125,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-/**
- * 内容块：编辑器中的动态内容单元（文本 / 图片 / 语音）
- */
-sealed class ContentBlock {
-    data class Text(val content: String) : ContentBlock()
-    data class Image(val path: String) : ContentBlock()
-    data class Voice(val path: String, val duration: Int?) : ContentBlock()
-}
+/** 内容块定义已提取至 com.corgimemo.app.ui.model.ContentBlock，通过 import 复用 */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -594,7 +586,7 @@ fun TodoEditScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarPadding()
+                    .safeAreaForTopBar()
                     .padding(horizontal = 4.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -783,7 +775,7 @@ fun TodoEditScreen(
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
-            /** 编辑页底部工具栏（横排图标版）- 添加imePadding自适应软键盘高度 */
+            /** 编辑页底部工具栏（横排图标版）- 使用 safeAreaForEditBar 适配导航栏+软键盘 */
             EditToolbar(
                 onFontClick = {
                     /** 切换格式工具栏的显示/隐藏（A/A） */
@@ -822,7 +814,8 @@ fun TodoEditScreen(
                     }
                 },
                 wordCount = content.length,
-                modifier = Modifier.imePadding().navigationBarsPadding()
+                /** 使用 navigationBarsPadding() 适配不同导航模式（手势导航/三键导航） */
+                modifier = Modifier.safeAreaForEditBar()
             )
         }
     ) { innerPadding ->

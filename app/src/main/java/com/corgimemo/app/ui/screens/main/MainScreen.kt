@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,7 +42,6 @@ import com.corgimemo.app.ui.components.FloatingCorgiButton
 import com.corgimemo.app.ui.components.navigation.BubbleMenuOverlay
 import com.corgimemo.app.ui.components.navigation.BubbleType
 import com.corgimemo.app.ui.components.navigation.CorgiBottomNavigationBar
-import com.corgimemo.app.ui.components.navigation.CenterEditButton
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.screens.date.SpecialDateScreen
@@ -102,6 +100,7 @@ fun MainScreen(navController: NavController) {
     val selectedCategoryId by homeViewModel.selectedCategoryId.collectAsState()
     val currentMood by homeViewModel.currentMood.collectAsState()
     val currentPose by homeViewModel.currentPose.collectAsState()
+    val hapticEnabled by homeViewModel.hapticEnabled.collectAsState()
 
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var showRenameCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
@@ -220,14 +219,58 @@ fun MainScreen(navController: NavController) {
                         actionButtons = topBarActionButtons
                     )
                 }
+            },
+            bottomBar = {
+                /**
+                 * 底部导航栏（集成中央编辑按钮）
+                 *
+                 * 架构变更：CenterEditButton 已从独立 overlay 移入 CorgiBottomNavigationBar 内部
+                 * 优势：无层级遮挡、按钮完整可见、统一管理安全区域
+                 */
+                CorgiBottomNavigationBar(
+                    selectedTab = selectedTab,
+                    isExpanded = isBubbleExpanded,
+                    onCenterButtonClick = {
+                        val now = System.currentTimeMillis()
+                        if (now - lastClickTime > 300) {
+                            lastClickTime = now
+                            isBubbleExpanded = !isBubbleExpanded
+                        }
+                    },
+                    onTabSelected = { tab ->
+                        if (isBubbleExpanded) {
+                            isFastCollapse = true
+                            isBubbleExpanded = false
+                        }
+
+                        // 记录页面访问（用于智能预加载策略优化）
+                        val pageType = when (tab) {
+                            TabItem.TODO -> UserBehaviorAnalyzer.PageType.HOME
+                            TabItem.INSPIRE -> UserBehaviorAnalyzer.PageType.INSPIRATION
+                            TabItem.DATE -> UserBehaviorAnalyzer.PageType.SPECIAL_DATE
+                            else -> null
+                        }
+                        pageType?.let { type ->
+                            coroutineScope.launch { userBehaviorAnalyzer.recordPageVisit(type) }
+                        }
+
+                        selectedTab = tab
+                    }
+                )
             }
         ) { paddingValues ->
+            /**
+             * 动态计算导航栏总高度（含安全区域）
+             * = Scaffold 底部内边距(含系统导航栏) + 中央按钮凸起量(36dp)
+             * 传递给气泡菜单，确保气泡不遮挡导航栏
+             */
+            val dynamicNavBarHeight = paddingValues.calculateBottomPadding() + 36.dp
+
             Box(modifier = Modifier.fillMaxSize()) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues)
-                        .padding(bottom = 72.dp)
                 ) {
                     when (selectedTab) {
                         TabItem.TODO -> HomeScreen(
@@ -265,48 +308,7 @@ fun MainScreen(navController: NavController) {
                     modifier = Modifier.padding(paddingValues)
                 )
 
-                CorgiBottomNavigationBar(
-                    selectedTab = selectedTab,
-                    onTabSelected = { tab ->
-                        if (isBubbleExpanded) {
-                            isFastCollapse = true
-                            isBubbleExpanded = false
-                        }
-
-                        // 记录页面访问（用于智能预加载策略优化）
-                        val pageType = when (tab) {
-                            TabItem.TODO -> UserBehaviorAnalyzer.PageType.HOME
-                            TabItem.INSPIRE -> UserBehaviorAnalyzer.PageType.INSPIRATION
-                            TabItem.DATE -> UserBehaviorAnalyzer.PageType.SPECIAL_DATE
-                            else -> null
-                        }
-                        pageType?.let { type ->
-                            coroutineScope.launch { userBehaviorAnalyzer.recordPageVisit(type) }
-                        }
-
-                        selectedTab = tab
-                    },
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
-
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .align(Alignment.BottomCenter)
-                        .offset(y = (-28).dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CenterEditButton(
-                        isExpanded = isBubbleExpanded,
-                        onClick = {
-                            val now = System.currentTimeMillis()
-                            if (now - lastClickTime > 300) {
-                                lastClickTime = now
-                                isBubbleExpanded = !isBubbleExpanded
-                            }
-                        }
-                    )
-                }
+                /** 中央编辑按钮已移入 CorgiBottomNavigationBar 内部，无需在此处单独渲染 */
 
                 if (isBubbleExpanded) {
                     BubbleMenuOverlay(
@@ -324,7 +326,10 @@ fun MainScreen(navController: NavController) {
                                 BubbleType.RECORD_INSPIRE -> navController.navigate("inspiration_edit")
                                 BubbleType.SPECIAL_DATE -> navController.navigate("date_edit")
                             }
-                        }
+                        },
+                        navBarHeight = dynamicNavBarHeight,  // 动态值：Scaffold底部内边距 + 按钮凸起量
+                        context = context,
+                        hapticEnabled = hapticEnabled
                     )
                 }
             }

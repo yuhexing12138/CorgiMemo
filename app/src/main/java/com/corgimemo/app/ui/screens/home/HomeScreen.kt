@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import com.corgimemo.app.ui.components.safeAreaForBottomBar /** 安全区域内边距：底栏导航栏*/
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -329,6 +330,7 @@ fun HomeScreen(
                 contentColor = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
+                    /** 小间距即可：父容器 Column 已通过 paddingValues 避开导航栏区域 */
                     .padding(end = 20.dp, bottom = 16.dp)
                     /** 提升 z-index 到最上层，避免被 fillMaxSize() 的内容列遮挡 */
                     .zIndex(10f)
@@ -669,7 +671,7 @@ fun HomeScreen(
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
 
-            // 批量操作栏（底部）
+            /** 批量操作栏（底部）- 添加系统导航栏边距，避免三键导航模式下被遮挡 */
             AnimatedVisibility(
                 visible = isBatchMode,
                 enter = slideInVertically(initialOffsetY = { it }),
@@ -678,7 +680,9 @@ fun HomeScreen(
             ) {
                 Surface(
                     shadowElevation = 8.dp,
-                    color = MaterialTheme.colorScheme.surface
+                    color = MaterialTheme.colorScheme.surface,
+                    /** 使用 safeAreaForBottomBar 动态适配不同导航模式（手势导航/三键导航） */
+                    modifier = Modifier.safeAreaForBottomBar()
                 ) {
                     Row(
                         modifier = Modifier

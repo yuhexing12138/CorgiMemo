@@ -20,8 +20,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -93,7 +91,6 @@ import androidx.compose.ui.platform.LocalDensity
 import com.corgimemo.app.util.toPxFloat
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -104,6 +101,9 @@ import com.corgimemo.app.ui.components.LocationPicker
 import com.corgimemo.app.ui.components.MentionTriggerPopup
 import com.corgimemo.app.ui.components.RecommendationChip
 import com.corgimemo.app.ui.components.VoiceRecordBottomSheet
+import com.corgimemo.app.ui.components.DeleteConfirmDialog /** 删除确认对话框（防误触）*/
+import com.corgimemo.app.ui.components.safeAreaForTopBar /** 安全区域内边距：顶栏状态栏*/
+import com.corgimemo.app.ui.components.safeAreaForEditBar /** 安全区域内边距：编辑栏导航栏+软键盘*/
 import com.corgimemo.app.ui.components.EditToolbar
 import com.corgimemo.app.ui.components.ImagePickerDialog /** 图片选择对话框 */
 import com.corgimemo.app.ui.components.checkAndRequestCameraPermission /** 检查并请求相机权限 */
@@ -120,7 +120,7 @@ import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.InspirationEditViewModel
 import com.corgimemo.app.ui.screens.inspiration.components.TagInputField /** 标签输入组件（灵感独有功能）*/
-import com.corgimemo.app.ui.screens.todo.ContentBlock /** 内容块：复用 TodoEditScreen 的定义（文本/图片/语音）*/
+import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -128,7 +128,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-/** 内容块定义已移至 com.corgimemo.app.ui.screens.todo.ContentBlock，通过 import 复用 */
+/** 内容块定义已提取至 com.corgimemo.app.ui.model.ContentBlock（公共模块），通过 import 复用 */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -235,6 +235,9 @@ fun InspirationEditScreen(
 
     /** 锁定编辑状态 */
     var isLocked by remember { mutableStateOf(false) }
+
+    /** 删除确认对话框显示状态（防止误触删除灵感） */
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     /**
      * 相机拍照 Launcher
@@ -592,7 +595,7 @@ fun InspirationEditScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarPadding()
+                    .safeAreaForTopBar()
                     .padding(horizontal = 4.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -813,14 +816,14 @@ fun InspirationEditScreen(
                     viewModel.addSubTask("新子任务")
                 },
                 onDeleteClick = {
-                    /** 删除当前灵感并返回 */
+                    /** 弹出删除确认对话框（防止误触） */
                     if (inspirationId != null && inspirationId > 0) {
-                        viewModel.deleteInspiration(inspirationId)
-                        navController.popBackStack()
+                        showDeleteConfirmDialog = true
                     }
                 },
                 wordCount = content.length,
-                modifier = Modifier.imePadding().navigationBarsPadding()
+                /** 使用 safeAreaForEditBar 适配不同导航模式（手势导航/三键导航）+ 软键盘 */
+                modifier = Modifier.safeAreaForEditBar()
             )
         }
     ) { innerPadding ->
@@ -1313,7 +1316,7 @@ fun InspirationEditScreen(
                                 lat = geofenceLat,
                                 lng = geofenceLng,
                                 radius = geofenceRadius,
-                                type = geofenceType,
+                                type = geofenceType ?: 0,
                                 address = geofenceAddress,
                                 enabled = geofenceEnabled,
                                 onLocationChange = { lat, lng, address ->
@@ -1767,6 +1770,25 @@ fun InspirationEditScreen(
             }
         }
     } // showVoiceRecordSheet
+
+    /**
+     * 删除灵感确认对话框
+     *
+     * 使用已有的 DeleteConfirmDialog 组件，
+     * 用户确认后才执行删除操作并返回上一页。
+     */
+    DeleteConfirmDialog(
+        showDialog = showDeleteConfirmDialog,
+        itemTitle = title.ifBlank { "无标题灵感" },
+        onConfirm = {
+            /** 用户确认删除：执行删除并返回 */
+            if (inspirationId != null && inspirationId > 0) {
+                viewModel.deleteInspiration(inspirationId)
+                navController.popBackStack()
+            }
+        },
+        onDismiss = { showDeleteConfirmDialog = false }
+    )
 } // main content Column
 } // InspirationEditScreen
 

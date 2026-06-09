@@ -60,12 +60,15 @@ data class Inspiration(
     // ========== 以下为从 TodoEditScreen 迁移的字段 (v27 新增) ==========
 
     /** 分类ID */
+    @ColumnInfo(defaultValue = "0")
     val categoryId: Long = 0,
 
     /** 优先级: 0=低, 1=中, 2=高 */
+    @ColumnInfo(defaultValue = "0")
     val priority: Int = 0,
 
     /** 状态: 0=进行中, 1=已完成, 2=归档 */
+    @ColumnInfo(defaultValue = "0")
     val status: Int = 0,
 
     /** 开始时间（时间戳毫秒） */
@@ -81,6 +84,7 @@ data class Inspiration(
     val reminderTime: Long? = null,
 
     /** 重复类型: 0=不重复, 1=每天, 2=每周, 3=每月, 4=每年 */
+    @ColumnInfo(defaultValue = "0")
     val repeatType: Int = 0,
 
     /** 完成时间（时间戳毫秒） */
@@ -96,12 +100,14 @@ data class Inspiration(
     /** 地理围栏类型: 0=到达提醒, 1=离开提醒 */
     val geofenceType: Int? = null,
     /** 地理围栏是否启用 */
+    @ColumnInfo(defaultValue = "0")
     val geofenceEnabled: Boolean = false,
     /** 地理围栏地址描述 */
     val geofenceAddress: String? = null,
 
     // --- 子任务 / 语音 / 样式 ---
     /** 是否有子任务 */
+    @ColumnInfo(defaultValue = "0")
     val hasSubTasks: Boolean = false,
     /** 语音备注文件路径 */
     val voiceNotePath: String? = null,
@@ -112,10 +118,11 @@ data class Inspiration(
      * 背景颜色值（ARGB 整数）
      * 默认 -1 = 0xFFFFFFFF（白色/透明背景）
      */
-    @ColumnInfo(defaultValue = "16777215")
+    @ColumnInfo(defaultValue = "-1")
     val backgroundColor: Int = -1,
 
     /** 手动排序位置索引（从 0 开始，用于拖拽排序功能） */
+    @ColumnInfo(defaultValue = "0")
     val position: Int = 0,
 
     /**

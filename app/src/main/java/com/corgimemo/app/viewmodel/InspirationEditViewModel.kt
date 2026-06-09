@@ -20,6 +20,7 @@ import com.corgimemo.app.data.repository.InspirationRepository
 import com.corgimemo.app.data.repository.SubTaskManager
 import com.corgimemo.app.domain.ReminderRecommender
 import com.corgimemo.app.model.UserType
+import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -90,8 +91,8 @@ class InspirationEditViewModel @Inject constructor(
     private val _geofenceRadius = MutableStateFlow<Float?>(100f)
     val geofenceRadius: StateFlow<Float?> = _geofenceRadius.asStateFlow()
 
-    private val _geofenceType = MutableStateFlow(0)
-    val geofenceType: StateFlow<Int> = _geofenceType.asStateFlow()
+    private val _geofenceType = MutableStateFlow<Int?>(null)
+    val geofenceType: StateFlow<Int?> = _geofenceType.asStateFlow()
 
     private val _geofenceEnabled = MutableStateFlow(false)
     val geofenceEnabled: StateFlow<Boolean> = _geofenceEnabled.asStateFlow()
@@ -165,11 +166,11 @@ class InspirationEditViewModel @Inject constructor(
         /** 文本变更（格式化、输入等）- 保留原有 AnnotatedString 快照 */
         data class TextChange(val before: androidx.compose.ui.text.AnnotatedString) : EditOperation()
         /** 内容块被删除 - 记录被删块列表和原始位置，撤销时可恢复 */
-        data class BlockDeleted(val blocks: List<com.corgimemo.app.ui.screens.todo.ContentBlock>, val index: Int) : EditOperation()
+        data class BlockDeleted(val blocks: List<ContentBlock>, val index: Int) : EditOperation()
         /** 内容块被插入 - 记录插入位置，撤销时移除 */
         data class BlockInserted(val index: Int) : EditOperation()
         /** 内容块排序变更 - 记录旧顺序，撤销时恢复 */
-        data class BlocksReordered(val oldOrder: List<com.corgimemo.app.ui.screens.todo.ContentBlock>) : EditOperation()
+        data class BlocksReordered(val oldOrder: List<ContentBlock>) : EditOperation()
     }
 
     /** 扩展后的 Undo 栈：支持文本和内容块操作 */
@@ -211,14 +212,14 @@ class InspirationEditViewModel @Inject constructor(
      * UI 层在 contentBlocks 变化时调用 syncContentBlocks() 更新此状态，
      * performSave() 时读取此状态持久化到数据库。
      */
-    private val _currentContentBlocks = MutableStateFlow<List<com.corgimemo.app.ui.screens.todo.ContentBlock>>(emptyList())
+    private val _currentContentBlocks = MutableStateFlow<List<ContentBlock>>(emptyList())
 
     /**
      * 同步当前内容块列表（UI 层调用）
      *
      * @param blocks 当前 Composable 中的 contentBlocks 列表
      */
-    fun syncContentBlocks(blocks: List<com.corgimemo.app.ui.screens.todo.ContentBlock>) {
+    fun syncContentBlocks(blocks: List<ContentBlock>) {
         _currentContentBlocks.value = blocks
     }
 
@@ -518,7 +519,7 @@ class InspirationEditViewModel @Inject constructor(
                 _geofenceLat.value = inspiration.geofenceLat
                 _geofenceLng.value = inspiration.geofenceLng
                 _geofenceRadius.value = inspiration.geofenceRadius
-                _geofenceType.value = inspiration.geofenceType ?: 0
+                _geofenceType.value = inspiration.geofenceType
                 _geofenceEnabled.value = inspiration.geofenceEnabled
                 _geofenceAddress.value = inspiration.geofenceAddress
 
@@ -992,13 +993,13 @@ class InspirationEditViewModel @Inject constructor(
      * @param inspirationId 灵感事项 ID
      * @return ContentBlock 列表（按 orderIndex 排序）
      */
-    suspend fun loadContentBlocks(inspirationId: Long): List<com.corgimemo.app.ui.screens.todo.ContentBlock> {
+    suspend fun loadContentBlocks(inspirationId: Long): List<ContentBlock> {
         val entities = contentBlockDao.getBlocksByTodoId(inspirationId)
         return entities.map { entity ->
             when (entity.type) {
-                "image" -> com.corgimemo.app.ui.screens.todo.ContentBlock.Image(entity.filePath)
-                "voice" -> com.corgimemo.app.ui.screens.todo.ContentBlock.Voice(entity.filePath, entity.duration)
-                else -> com.corgimemo.app.ui.screens.todo.ContentBlock.Text("") // 兜底
+                "image" -> ContentBlock.Image(entity.filePath)
+                "voice" -> ContentBlock.Voice(entity.filePath, entity.duration)
+                else -> ContentBlock.Text("") // 兜底
             }
         }
     }
@@ -1012,17 +1013,17 @@ class InspirationEditViewModel @Inject constructor(
      * @param inspirationId 灵感事项 ID
      * @param blocks 当前内存中的 ContentBlock 列表
      */
-    suspend fun saveContentBlocks(inspirationId: Long, blocks: List<com.corgimemo.app.ui.screens.todo.ContentBlock>) {
+    suspend fun saveContentBlocks(inspirationId: Long, blocks: List<ContentBlock>) {
         val entities = blocks.mapIndexed { index, block ->
             when (block) {
-                is com.corgimemo.app.ui.screens.todo.ContentBlock.Image -> ContentBlockEntity(
+                is ContentBlock.Image -> ContentBlockEntity(
                     todoId = inspirationId, type = "image", filePath = block.path, orderIndex = index
                 )
-                is com.corgimemo.app.ui.screens.todo.ContentBlock.Voice -> ContentBlockEntity(
+                is ContentBlock.Voice -> ContentBlockEntity(
                     todoId = inspirationId, type = "voice", filePath = block.path,
                     duration = block.duration, orderIndex = index
                 )
-                is com.corgimemo.app.ui.screens.todo.ContentBlock.Text -> null // 文本块不持久化到独立表
+                is ContentBlock.Text -> null // 文本块不持久化到独立表
             }
         }.filterNotNull()
 
@@ -1119,7 +1120,7 @@ class InspirationEditViewModel @Inject constructor(
      * 连续删除操作在窗口期内会自动合并。
      */
     fun pushBlockDeletedOperation(
-        blocks: List<com.corgimemo.app.ui.screens.todo.ContentBlock>,
+        blocks: List<ContentBlock>,
         index: Int
     ) {
         val newOp = EditOperation.BlockDeleted(blocks, index)
@@ -1165,7 +1166,7 @@ class InspirationEditViewModel @Inject constructor(
      * 排序操作不参与合并（每次排序都是独立的用户意图），
      * 但需要先提交任何待合并的暂存操作。
      */
-    fun pushBlocksReorderedOperation(oldOrder: List<com.corgimemo.app.ui.screens.todo.ContentBlock>) {
+    fun pushBlocksReorderedOperation(oldOrder: List<ContentBlock>) {
         /** 先提交可能存在的暂存操作 */
         commitPendingMerge()
         lastOperationTime = System.currentTimeMillis()
@@ -1702,22 +1703,22 @@ class InspirationEditViewModel @Inject constructor(
     /**
      * 将单个 ContentBlock 序列化为 JSON 对象
      */
-    private fun serializeContentBlock(block: com.corgimemo.app.ui.screens.todo.ContentBlock): org.json.JSONObject {
+    private fun serializeContentBlock(block: ContentBlock): org.json.JSONObject {
         return when (block) {
-            is com.corgimemo.app.ui.screens.todo.ContentBlock.Image -> {
+            is ContentBlock.Image -> {
                 org.json.JSONObject().apply {
                     put("type", "image")
                     put("path", block.path)
                 }
             }
-            is com.corgimemo.app.ui.screens.todo.ContentBlock.Voice -> {
+            is ContentBlock.Voice -> {
                 org.json.JSONObject().apply {
                     put("type", "voice")
                     put("path", block.path)
                     put("duration", block.duration ?: 0)
                 }
             }
-            is com.corgimemo.app.ui.screens.todo.ContentBlock.Text -> {
+            is ContentBlock.Text -> {
                 org.json.JSONObject().apply {
                     put("type", "text")
                     put("content", block.content)
@@ -1745,7 +1746,7 @@ class InspirationEditViewModel @Inject constructor(
                     "bd" -> {
                         val index = obj.getInt("i")
                         val blocksArray = obj.getJSONArray("b")
-                        val blocks = mutableListOf<com.corgimemo.app.ui.screens.todo.ContentBlock>()
+                        val blocks = mutableListOf<ContentBlock>()
                         for (j in 0 until blocksArray.length()) {
                             blocks.add(deserializeContentBlock(blocksArray.getJSONObject(j)))
                         }
@@ -1757,7 +1758,7 @@ class InspirationEditViewModel @Inject constructor(
                     }
                     "br" -> {
                         val orderArray = obj.getJSONArray("o")
-                        val order = mutableListOf<com.corgimemo.app.ui.screens.todo.ContentBlock>()
+                        val order = mutableListOf<ContentBlock>()
                         for (j in 0 until orderArray.length()) {
                             order.add(deserializeContentBlock(orderArray.getJSONObject(j)))
                         }
@@ -1774,14 +1775,14 @@ class InspirationEditViewModel @Inject constructor(
     /**
      * 从 JSON 对象反序列化为 ContentBlock
      */
-    private fun deserializeContentBlock(obj: org.json.JSONObject): com.corgimemo.app.ui.screens.todo.ContentBlock {
+    private fun deserializeContentBlock(obj: org.json.JSONObject): ContentBlock {
         return when (obj.getString("type")) {
-            "image" -> com.corgimemo.app.ui.screens.todo.ContentBlock.Image(obj.getString("path"))
-            "voice" -> com.corgimemo.app.ui.screens.todo.ContentBlock.Voice(
+            "image" -> ContentBlock.Image(obj.getString("path"))
+            "voice" -> ContentBlock.Voice(
                 obj.getString("path"),
                 if (obj.has("duration") && !obj.isNull("duration")) obj.getInt("duration") else null
             )
-            else -> com.corgimemo.app.ui.screens.todo.ContentBlock.Text(obj.optString("content", ""))
+            else -> ContentBlock.Text(obj.optString("content", ""))
         }
     }
 
