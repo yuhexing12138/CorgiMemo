@@ -803,10 +803,6 @@ fun InspirationEditScreen(
                     /** 打开语音录制面板 */
                     showVoiceRecordSheet = true
                 },
-                onAddSubtaskClick = {
-                    /** 弹出添加子任务对话框 */
-                    showAddSubtaskDialog = true
-                },
                 onBackgroundClick = {
                     /** 触发背景色选择器 */
                     showColorPicker = true

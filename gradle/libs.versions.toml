@@ -24,7 +24,7 @@ androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.1
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version = "1.8.2" }
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
-androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3", version = "1.4.0" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 # material-icons-extended 由 compose-bom 统一管理版本，不再单独指定 version.ref
 androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
@@ -39,9 +39,9 @@ androidx-room-runtime = { group = "androidx.room", name = "room-runtime", versio
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 # Compose BOM（Bill of Materials）：统一管理所有 Compose 库版本
-# 版本: 2025.09.01 | 对应: Foundation 1.9.x / Material3 1.7.x / UI 1.9.x / Animation 1.9.x
+# 版本: 2026.04.01 | 对应: Foundation 1.11.x / Material3 1.9.x / UI 1.11.x / Animation 1.11.x
 # 升级指南: 仅修改此版本号即可全局升级所有 Compose 库，无需逐个修改
-androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version = "2025.09.01" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version = "2026.04.01" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version = "1.6.1" }
 google-dagger-hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 google-dagger-hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }

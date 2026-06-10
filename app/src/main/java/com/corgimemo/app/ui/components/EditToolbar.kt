@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -29,13 +28,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 编辑页底部工具栏组件（对标参考图重构版）
+ * 编辑页底部工具栏组件
  *
  * 横排图标布局：
- *   左侧：字体格式 | 列表 | 相机 | 麦克风 | 添加子任务 | 背景 | 分享
+ *   左侧：字体格式 | 列表 | 相机 | 麦克风 | 背景 | 分享
  *   右侧：删除 | 字数统计
  *
- * Undo/Redo 已移至顶部栏，本工具栏不再包含撤销/重做功能。
+ * 子任务添加功能已移至复选框编辑器的 "/" 命令和回车新建行，
+ * 本工具栏不再包含独立的"添加子任务"按钮。
  *
  * @param backgroundColor 工具栏背景色，跟随页面整体背景色变化
  */
@@ -45,7 +45,6 @@ fun EditToolbar(
     onListClick: () -> Unit,
     onPhotoClick: () -> Unit,
     onVoiceClick: () -> Unit,
-    onAddSubtaskClick: () -> Unit,
     onBackgroundClick: () -> Unit,
     onShareClick: () -> Unit,
     onDeleteClick: () -> Unit,
@@ -79,7 +78,6 @@ fun EditToolbar(
                     ToolbarIconBtn(imageVector = Icons.Default.FormatListBulleted, contentDescription = "列表", onClick = onListClick)
                     ToolbarIconBtn(imageVector = Icons.Default.PhotoCamera, contentDescription = "照片", onClick = onPhotoClick)
                     ToolbarIconBtn(imageVector = Icons.Default.Mic, contentDescription = "语音", onClick = onVoiceClick)
-                    ToolbarIconBtn(imageVector = Icons.Default.Add, contentDescription = "添加子任务", onClick = onAddSubtaskClick)
                     ToolbarIconBtn(imageVector = Icons.Default.Palette, contentDescription = "背景色", onClick = onBackgroundClick)
                     ToolbarIconBtn(imageVector = Icons.Default.Share, contentDescription = "分享", onClick = onShareClick)
                 }

@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CorgiMemo - 提醒设置弹窗原型</title>
+    <style>
+        /* 全局重置 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background-color: #F8F6F3;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 16px;
+        }
+
+        /* 手机模拟容器 */
+        .phone-container {
+            width: 400px;
+            height: 85vh;
+            max-height: 800px;
+            position: relative;
+            background-color: #F8F6F3;
+            border-radius: 40px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+        }
+
+        /* 全屏遮罩背景 - 覆盖整个手机屏幕（包括状态栏和导航栏区域） */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+            z-index: 10; /* 确保遮罩在最上层 */
+        }
+
+        /* 弹窗主体 - 使用 flexbox 实现弹性布局 */
+        .dialog {
+            width: 100%;
+            height: calc(100% - 32px);
+            max-height: calc(85vh - 32px);
+            background-color: #FFFFFF;
+            border-radius: 24px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 44px 24px 34px; /* 顶部状态栏空间 + 底部导航栏空间 */
+        }
+
+        /* 标题栏 - 压缩间距 */
+        .dialog-title {
+            text-align: center;
+            font-size: 17px;
+            font-weight: 600;
+            color: #2D2D2D;
+            padding: 18px 0 14px; /* top=18dp, bottom=14dp */
+            flex-shrink: 0;
+        }
+
+        /* 设置行通用样式 - 压缩间距 */
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0; /* 16dp → 12px */
+            flex-shrink: 0;
+        }
+
+        .setting-label {
+            font-size: 15px;
+            color: #2D2D2D;
+            font-weight: 500;
+        }
+
+        /* 提醒时间行的右侧内容 */
+        .time-chips {
+            display: flex;
+            gap: 8px;
+        }
+
+        .chip {
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        .chip-date {
+            background-color: #FF9A5C;
+            color: #FFFFFF;
+        }
+
+        .chip-time {
+            background-color: #FFE4CC;
+            color: #666666;
+        }
+
+        /* 右侧带箭头的值显示 */
+        .value-with-arrow {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            color: #666666;
+            font-size: 15px;
+        }
+
+        .arrow {
+            width: 16px;
+            height: 16px;
+            fill: #CCCCCC;
+        }
+
+        /* Switch 开关样式（CSS 模拟） */
+        .switch-container {
+            width: 48px;
+            height: 28px;
+            background-color: #E0E0E0;
+            border-radius: 14px;
+            position: relative;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .switch-container.active {
+            background-color: #FF9A5C;
+        }
+
+        .switch-thumb {
+            width: 24px;
+            height: 24px;
+            background-color: #FFFFFF;
+            border-radius: 50%;
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+        }
+
+        .switch-container.active .switch-thumb {
+            transform: translateX(20px);
+        }
+
+        /* 分割线 - 压缩间距 */
+        .divider {
+            height: 1px;
+            background-color: #EEEEEE;
+            margin: 8px 0; /* 12dp → 8px */
+            flex-shrink: 0;
+        }
+
+        /* 日历区域 - 弹性填充核心 + 压缩间距 */
+        .calendar-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            margin-top: 16px; /* 20dp → 16px */
+            min-height: 200px;
+            overflow-y: auto;
+        }
+
+        /* 月份导航 - 压缩间距 */
+        .month-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0; /* 12dp → 8px */
+            flex-shrink: 0;
+        }
+
+        .nav-arrow {
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            fill: #666666;
+            transition: fill 0.2s ease;
+        }
+
+        .nav-arrow:hover {
+            fill: #FF9A5C;
+        }
+
+        .month-text {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2D2D2D;
+        }
+
+        /* 星期标题行 - 压缩间距 */
+        .weekdays {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 0;
+            padding: 6px 0; /* 保持紧凑 */
+            flex-shrink: 0;
+        }
+
+        .weekday {
+            text-align: center;
+            font-size: 13px;
+            color: #999999;
+            font-weight: 500;
+            height: 30px;
+            line-height: 30px;
+        }
+
+        /* 日期网格 - 使用 space-evenly 实现均匀分布 */
+        .date-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            flex: 1;
+            align-content: space-evenly; /* 从固定间距改为均匀分布 */
+        }
+
+        .date-cell {
+            width: 40px;
+            height: 40px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 14px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #2D2D2D;
+        }
+
+        .date-cell:hover:not(.selected):not(.other-month) {
+            background-color: #F5F5F5;
+        }
+
+        /* 上月/下月日期 - 灰色 */
+        .date-cell.other-month {
+            color: #CCCCCC;
+            cursor: default;
+        }
+
+        /* 选中的日期 */
+        .date-cell.selected {
+            background-color: #FF9A5C;
+            color: #FFFFFF;
+            font-weight: 600;
+        }
+
+        /* 底部按钮行 - 贴底显示 + 压缩间距 */
+        .button-row {
+            display: flex;
+            gap: 16px;
+            margin-top: 16px; /* 20dp → 16px */
+            padding-bottom: 20px; /* 24dp → 20px */
+            flex-shrink: 0;
+        }
+
+        .btn {
+            flex: 1;
+            height: 44px;
+            border-radius: 22px;
+            border: none;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .btn-cancel {
+            background-color: #F8F6F3;
+            color: #666666;
+        }
+
+        .btn-cancel:hover {
+            background-color: #EDEAE5;
+        }
+
+        .btn-confirm {
+            background-color: #FF9A5C;
+            color: #FFFFFF;
+        }
+
+        .btn-confirm:hover {
+            background-color: #FF8840;
+        }
+    </style>
+</head>
+<body>
+    <!-- 手机模拟容器 -->
+    <div class="phone-container">
+        <!-- 遮罩层 -->
+        <div class="overlay">
+            <!-- 弹窗主体 -->
+            <div class="dialog">
+                <!-- 标题栏 -->
+                <div class="dialog-title">设置提醒时间</div>
+
+                <!-- 提醒时间行 -->
+                <div class="setting-row">
+                    <span class="setting-label">提醒时间</span>
+                    <div class="time-chips">
+                        <span class="chip chip-date">2026/06/10</span>
+                        <span class="chip chip-time">13:35</span>
+                    </div>
+                </div>
+
+                <!-- 重复提醒行 -->
+                <div class="setting-row">
+                    <span class="setting-label">重复提醒</span>
+                    <div class="value-with-arrow">
+                        <span>不重复</span>
+                        <svg class="arrow" viewBox="0 0 24 24">
+                            <path d="M8.59 16.59L13.17 12L8.59 7.41L10 6l6 6l-6 6z"/>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- 农历行 -->
+                <div class="setting-row">
+                    <span class="setting-label">农历</span>
+                    <div class="switch-container" onclick="toggleSwitch(this)">
+                        <div class="switch-thumb"></div>
+                    </div>
+                </div>
+
+                <!-- 分割线 -->
+                <div class="divider"></div>
+
+                <!-- 日历区域（弹性填充） -->
+                <div class="calendar-section">
+                    <!-- 月份导航 -->
+                    <div class="month-nav">
+                        <svg class="nav-arrow" viewBox="0 0 24 24">
+                            <path d="M15.41 7.41L14 6l-6 6l6 6l1.41-1.41L10.83 12z"/>
+                        </svg>
+                        <span class="month-text">2026/06</span>
+                        <svg class="nav-arrow" viewBox="0 0 24 24">
+                            <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+                        </svg>
+                    </div>
+
+                    <!-- 星期标题行 -->
+                    <div class="weekdays">
+                        <div class="weekday">一</div>
+                        <div class="weekday">二</div>
+                        <div class="weekday">三</div>
+                        <div class="weekday">四</div>
+                        <div class="weekday">五</div>
+                        <div class="weekday">六</div>
+                        <div class="weekday">日</div>
+                    </div>
+
+                    <!-- 日期网格（2026年6月：周一为第一天，共30天）-->
+                    <div class="date-grid">
+                        <!-- 上月日期（灰色） -->
+                        <div class="date-cell other-month">31</div>
+                        <div class="date-cell other-month">1</div>
+                        <div class="date-cell other-month">2</div>
+                        <div class="date-cell other-month">3</div>
+                        <div class="date-cell other-month">4</div>
+                        <div class="date-cell other-month">5</div>
+                        <div class="date-cell other-month">6</div>
+
+                        <!-- 本月日期 -->
+                        <div class="date-cell">1</div>
+                        <div class="date-cell">2</div>
+                        <div class="date-cell">3</div>
+                        <div class="date-cell">4</div>
+                        <div class="date-cell">5</div>
+                        <div class="date-cell">6</div>
+                        <div class="date-cell">7</div>
+
+                        <div class="date-cell">8</div>
+                        <div class="date-cell">9</div>
+                        <div class="date-cell selected">10</div> <!-- 选中日期 -->
+                        <div class="date-cell">11</div>
+                        <div class="date-cell">12</div>
+                        <div class="date-cell">13</div>
+                        <div class="date-cell">14</div>
+
+                        <div class="date-cell">15</div>
+                        <div class="date-cell">16</div>
+                        <div class="date-cell">17</div>
+                        <div class="date-cell">18</div>
+                        <div class="date-cell">19</div>
+                        <div class="date-cell">20</div>
+                        <div class="date-cell">21</div>
+
+                        <div class="date-cell">22</div>
+                        <div class="date-cell">23</div>
+                        <div class="date-cell">24</div>
+                        <div class="date-cell">25</div>
+                        <div class="date-cell">26</div>
+                        <div class="date-cell">27</div>
+                        <div class="date-cell">28</div>
+
+                        <div class="date-cell">29</div>
+                        <div class="date-cell">30</div>
+
+                        <!-- 下月日期（灰色） -->
+                        <div class="date-cell other-month">1</div>
+                        <div class="date-cell other-month">2</div>
+                        <div class="date-cell other-month">3</div>
+                        <div class="date-cell other-month">4</div>
+                        <div class="date-cell other-month">5</div>
+                    </div>
+                </div>
+
+                <!-- 底部按钮行（贴底） -->
+                <div class="button-row">
+                    <button class="btn btn-cancel">取消</button>
+                    <button class="btn btn-confirm">确定</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * 切换 Switch 开关状态
+         * @param {HTMLElement} switchElement - Switch 开关元素
+         */
+        function toggleSwitch(switchElement) {
+            switchElement.classList.toggle('active');
+        }
+
+        /**
+         * 为日期格子添加点击事件
+         * 实现日期选择交互效果
+         */
+        document.querySelectorAll('.date-cell:not(.other-month)').forEach(cell => {
+            cell.addEventListener('click', function() {
+                // 移除其他选中状态
+                document.querySelectorAll('.date-cell.selected').forEach(selected => {
+                    selected.classList.remove('selected');
+                });
+                // 添加当前选中状态
+                this.classList.add('selected');
+            });
+        });
+
+        /**
+         * 取消按钮点击事件
+         */
+        document.querySelector('.btn-cancel').addEventListener('click', function() {
+            alert('点击了取消按钮');
+        });
+
+        /**
+         * 确定按钮点击事件
+         */
+        document.querySelector('.btn-confirm').addEventListener('click', function() {
+            const selectedDate = document.querySelector('.date-cell.selected');
+            if (selectedDate) {
+                alert(`已确认选择的日期：2026年6月${selectedDate.textContent}日`);
+            } else {
+                alert('请先选择一个日期');
+            }
+        });
+    </script>
+</body>
+</html>
