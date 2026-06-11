@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>弹窗布局效果对比</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 30px 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 2.2em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+
+        @media (max-width: 1200px) {
+            .comparison-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .phone-frame {
+            background: #1a1a1a;
+            border-radius: 36px;
+            padding: 10px;
+            box-shadow: 0 15px 50px rgba(0,0,0,0.4);
+            position: relative;
+        }
+
+        .phone-screen {
+            background: #000;
+            border-radius: 28px;
+            overflow: hidden;
+            position: relative;
+            height: 580px;
+        }
+
+        .phone-notch {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 140px;
+            height: 26px;
+            background: #1a1a1a;
+            border-radius: 0 0 18px 18px;
+            z-index: 10;
+        }
+
+        .status-bar {
+            height: 42px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 18px;
+            color: white;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        /* 参考图样式 - 正确的4:1比例 */
+        .dialog-ref {
+            position: absolute;
+            left: 14px;
+            right: 14px;
+            background: white;
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+
+        /* 日历模式 - 高度约80% */
+        .dialog-calendar {
+            top: 55px;    /* 上方留白 ~9.5% */
+            bottom: 23px; /* 下方留白 ~4% */
+        }
+
+        /* 日期滚轮模式 - 高度约65% */
+        .dialog-datewheel {
+            top: 140px;   /* 上方留白 ~24% */
+            bottom: 35px;  /* 下方留白 ~6% */
+        }
+
+        /* 时间滚轮模式 - 高度约55% */
+        .dialog-timewheel {
+            top: 185px;   /* 上方留白 ~32% */
+            bottom: 46px;  /* 下方留白 ~8% */
+        }
+
+        .dialog-header {
+            padding: 20px 20px 16px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: 600;
+            color: #2D2D2D;
+        }
+
+        .dialog-body {
+            flex: 1;
+            padding: 12px 20px;
+            overflow: hidden;
+        }
+
+        .form-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            font-size: 14px;
+            color: #2D2D2D;
+        }
+
+        .chip {
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .chip-primary {
+            background: #4A90E2;
+            color: white;
+        }
+
+        .chip-secondary {
+            background: #FFE4CC;
+            color: #666;
+        }
+
+        .switch {
+            width: 44px;
+            height: 24px;
+            background: #E0E0E0;
+            border-radius: 12px;
+            position: relative;
+        }
+
+        .switch::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+        }
+
+        .divider {
+            height: 1px;
+            background: #EEE;
+            margin: 12px 0;
+        }
+
+        .calendar-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            font-size: 14px;
+            color: #999;
+        }
+
+        .weekdays {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            font-size: 11px;
+            color: #999;
+            text-align: center;
+            padding: 8px 0;
+        }
+
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 6px;
+            font-size: 13px;
+            text-align: center;
+            padding: 8px 0;
+        }
+
+        .calendar-day {
+            width: 32px;
+            height: 32px;
+            line-height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .calendar-day.selected {
+            background: #4A90E2;
+            color: white;
+            font-weight: 600;
+        }
+
+        .wheel-container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            padding: 15px 0;
+        }
+
+        .wheel-column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .wheel-label {
+            font-size: 11px;
+            color: #999;
+        }
+
+        .wheel-item {
+            font-size: 17px;
+            color: #CCC;
+            padding: 4px 12px;
+        }
+
+        .wheel-item.selected {
+            color: #4A90E2;
+            font-weight: 700;
+            font-size: 20px;
+        }
+
+        .dialog-footer {
+            padding: 14px 20px 18px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            flex: 1;
+            height: 40px;
+            border-radius: 20px;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .btn-cancel {
+            background: #F8F6F3;
+            color: #666;
+        }
+
+        .btn-confirm {
+            background: #4A90E2;
+            color: white;
+        }
+
+        .label {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 15px;
+            font-weight: 600;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+        }
+
+        .label-ref {
+            color: #51cf66;
+        }
+
+        .info-section {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+
+        h2 {
+            color: #2D2D2D;
+            margin-bottom: 20px;
+            font-size: 1.6em;
+        }
+
+        .specs-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: center;
+            border-bottom: 1px solid #E9ECEF;
+        }
+
+        th {
+            background: #F8F9FA;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        tr:hover {
+            background: #F8F9FA;
+        }
+
+        .ratio-visual {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin: 15px 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 12px;
+        }
+
+        .ratio-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .ratio-bar {
+            width: 50px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .bar-top { height: 100px; background: #4dabf7; }
+        .bar-dialog { height: 70px; background: #FF9F5A; }
+        .bar-bottom { height: 25px; background: #69db7c; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 提醒弹窗 - 三种模式的正确比例（参考图标准）</h1>
+
+        <!-- 三种模式对比 -->
+        <div class="comparison-grid">
+            <!-- 模式1：日历视图 -->
+            <div>
+                <div class="phone-frame">
+                    <div class="phone-screen">
+                        <div class="phone-notch"></div>
+                        <div class="status-bar">
+                            <span>14:08</span>
+                            <span>100%</span>
+                        </div>
+                        <div class="overlay"></div>
+
+                        <div class="dialog-ref dialog-calendar">
+                            <div class="dialog-header">设置提醒时间</div>
+                            <div class="dialog-body">
+                                <div class="form-row">
+                                    <span>提醒时间</span>
+                                    <div style="display:flex; gap:6px;">
+                                        <span class="chip chip-primary">2026/06/11</span>
+                                        <span class="chip chip-secondary">14:09</span>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <span>重复提醒</span>
+                                    <span style="color:#999; font-size:13px;">不重复 ↕</span>
+                                </div>
+                                <div class="form-row">
+                                    <span>农历</span>
+                                    <div class="switch"></div>
+                                </div>
+                                <div class="divider"></div>
+                                <div class="calendar-nav">
+                                    <span>&lt;</span>
+                                    <span style="color:#333; font-weight:600;">2026/06 ▼</span>
+                                    <span>&gt;</span>
+                                </div>
+                                <div class="weekdays">
+                                    <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+                                </div>
+                                <div class="calendar-grid">
+                                    <span class="calendar-day">1</span><span class="calendar-day">2</span><span class="calendar-day">3</span><span class="calendar-day">4</span><span class="calendar-day">5</span><span class="calendar-day">6</span><span class="calendar-day">7</span>
+                                    <span class="calendar-day">8</span><span class="calendar-day">9</span><span class="calendar-day">10</span><span class="calendar-day selected">11</span><span class="calendar-day">12</span><span class="calendar-day">13</span><span class="calendar-day">14</span>
+                                    <span class="calendar-day">15</span><span class="calendar-day">16</span><span class="calendar-day">17</span><span class="calendar-day">18</span><span class="calendar-day">19</span><span class="calendar-day">20</span><span class="calendar-day">21</span>
+                                    <span class="calendar-day">22</span><span class="calendar-day">23</span><span class="calendar-day">24</span><span class="calendar-day">25</span><span class="calendar-day">26</span><span class="calendar-day">27</span><span class="calendar-day">28</span>
+                                    <span class="calendar-day">29</span><span class="calendar-day">30</span>
+                                </div>
+                            </div>
+                            <div class="dialog-footer">
+                                <button class="btn btn-cancel">取消</button>
+                                <button class="btn btn-confirm">确定</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <p class="label label-ref">✅ 日历模式 | 高度 ~80% | 比例 4:1</p>
+            </div>
+
+            <!-- 模式2：日期滚轮 -->
+            <div>
+                <div class="phone-frame">
+                    <div class="phone-screen">
+                        <div class="phone-notch"></div>
+                        <div class="status-bar">
+                            <span>14:14</span>
+                            <span>100%</span>
+                        </div>
+                        <div class="overlay"></div>
+
+                        <div class="dialog-ref dialog-datewheel">
+                            <div class="dialog-header">设置提醒时间</div>
+                            <div class="dialog-body">
+                                <div class="form-row">
+                                    <span>提醒时间</span>
+                                    <div style="display:flex; gap:6px;">
+                                        <span class="chip chip-primary">2026/06/11</span>
+                                        <span class="chip chip-secondary">14:09</span>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <span>重复提醒</span>
+                                    <span style="color:#999; font-size:13px;">不重复 ↕</span>
+                                </div>
+                                <div class="form-row">
+                                    <span>农历</span>
+                                    <div class="switch"></div>
+                                </div>
+                                <div class="divider"></div>
+                                <div style="text-align:center; padding: 15px 0;">
+                                    <div style="font-size:14px; color:#333; font-weight:600; margin-bottom:20px;">2026/06 ▲</div>
+                                    <div class="wheel-container">
+                                        <div class="wheel-column">
+                                            <span class="wheel-label">年</span>
+                                            <span class="wheel-item">2025</span>
+                                            <span class="wheel-item selected">2026</span>
+                                            <span class="wheel-item">2027</span>
+                                        </div>
+                                        <div class="wheel-column">
+                                            <span class="wheel-label">月</span>
+                                            <span class="wheel-item">05</span>
+                                            <span class="wheel-item selected">06</span>
+                                            <span class="wheel-item">07</span>
+                                        </div>
+                                        <div class="wheel-column">
+                                            <span class="wheel-label">日</span>
+                                            <span class="wheel-item">10</span>
+                                            <span class="wheel-item selected">11</span>
+                                            <span class="wheel-item">12</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="dialog-footer">
+                                <button class="btn btn-cancel">取消</button>
+                                <button class="btn btn-confirm">确定</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <p class="label label-ref">✅ 日期滚轮 | 高度 ~65% | 比例 4:1</p>
+            </div>
+
+            <!-- 模式3：时间滚轮 -->
+            <div>
+                <div class="phone-frame">
+                    <div class="phone-screen">
+                        <div class="phone-notch"></div>
+                        <div class="status-bar">
+                            <span>14:14</span>
+                            <span>100%</span>
+                        </div>
+                        <div class="overlay"></div>
+
+                        <div class="dialog-ref dialog-timewheel">
+                            <div class="dialog-header">设置提醒时间</div>
+                            <div class="dialog-body">
+                                <div class="form-row">
+                                    <span>提醒时间</span>
+                                    <div style="display:flex; gap:6px;">
+                                        <span class="chip chip-secondary">2026/06/11</span>
+                                        <span class="chip chip-primary">14:09</span>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <span>重复提醒</span>
+                                    <span style="color:#999; font-size:13px;">不重复 ↕</span>
+                                </div>
+                                <div class="form-row">
+                                    <span>农历</span>
+                                    <div class="switch"></div>
+                                </div>
+                                <div class="divider"></div>
+                                <div class="wheel-container">
+                                    <div class="wheel-column">
+                                        <span class="wheel-label">时</span>
+                                        <span class="wheel-item">上午</span>
+                                        <span class="wheel-item selected">下午</span>
+                                        <span class="wheel-item"></span>
+                                    </div>
+                                    <div class="wheel-column">
+                                        <span class="wheel-label"></span>
+                                        <span class="wheel-item">1</span>
+                                        <span class="wheel-item selected">2</span>
+                                        <span class="wheel-item">3</span>
+                                    </div>
+                                    <div class="wheel-column">
+                                        <span class="wheel-label">分</span>
+                                        <span class="wheel-item">08</span>
+                                        <span class="wheel-item selected">09</span>
+                                        <span class="wheel-item">10</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="dialog-footer">
+                                <button class="btn btn-cancel">取消</button>
+                                <button class="btn btn-confirm">确定</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <p class="label label-ref">✅ 时间滚轮 | 高度 ~55% | 比例 4:1</p>
+            </div>
+        </div>
+
+        <!-- 技术规格 -->
+        <div class="info-section">
+            <h2>📐 布局技术规格（参考图标准）</h2>
+
+            <table class="specs-table">
+                <thead>
+                    <tr>
+                        <th>模式</th>
+                        <th>弹窗占屏幕</th>
+                        <th>上方留白</th>
+                        <th>下方留白</th>
+                        <th>比例 T:B</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>日历视图</strong></td>
+                        <td>~80%</td>
+                        <td>~16%</td>
+                        <td>~4%</td>
+                        <td style="color:#2b8a3e; font-weight:bold;">4 : 1 ✓</td>
+                    </tr>
+                    <tr>
+                        <td><strong>日期滚轮</strong></td>
+                        <td>~65%</td>
+                        <td>~28%</td>
+                        <td>~7%</td>
+                        <td style="color:#2b8a3e; font-weight:bold;">4 : 1 ✓</td>
+                    </tr>
+                    <tr>
+                        <td><strong>时间滚轮</strong></td>
+                        <td>~55%</td>
+                        <td>~36%</td>
+                        <td>~9%</td>
+                        <td style="color:#2b8a3e; font-weight:bold;">4 : 1 ✓</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3 style="margin-top:30px;">🎯 关键原则</h3>
+            <ul style="line-height:2; color:#495057; font-size:15px;">
+                <li><strong>自适应高度：</strong>弹窗高度由内容决定，三种模式高度不同</li>
+                <li><strong>固定比例：</strong>无论弹窗多高，上下留白始终保持 4:1</li>
+                <li><strong>视觉平衡：</strong>弹窗垂直居中偏下，符合 Material Design 规范</li>
+                <li><strong>响应式设计：</strong>在不同屏幕尺寸上自动适配</li>
+            </ul>
+
+            <div class="ratio-visual">
+                <div class="ratio-box">
+                    <div class="ratio-bar bar-top">Top<br>(4)</div>
+                    <span style="color:#4dabf7;">上方</span>
+                </div>
+                <div class="ratio-box">
+                    <div class="ratio-bar bar-dialog">Dialog</div>
+                    <span style="color:#FF9F5A;">弹窗</span>
+                </div>
+                <div class="ratio-box">
+                    <div class="ratio-bar bar-bottom">(1)</div>
+                    <span style="color:#69db7c;">下方</span>
+                </div>
+                <span style="font-size:20px; font-weight:bold; color:#333;">= 4 : 1 ✓</span>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

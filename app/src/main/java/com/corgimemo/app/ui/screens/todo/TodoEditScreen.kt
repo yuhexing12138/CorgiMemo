@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -66,6 +67,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.layout.onVisibilityChanged
+import androidx.compose.ui.layout.layout
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -946,23 +948,60 @@ fun TodoEditScreen(
         androidx.compose.ui.platform.LocalFocusManager.current.clearFocus()
 
         // 全屏半透明遮罩（无动画），点击任意位置关闭
+        // 使用 LocalConfiguration 获取屏幕高度 + 自定义 Layout 动态计算弹窗位置，保证 上边缘:下边缘 = 4:1
+        // 数学原理：
+        //   设屏幕高度=H, 弹窗高度=h, 上方空白=T, 下方空白=B
+        //   T/B = 4/1, T + h + B = H → B=(H-h)/5, T=4(H-h)/5
+        //   弹窗 y 坐标 = T = 4(H-h)/5
+        val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+        val screenDensity = androidx.compose.ui.platform.LocalDensity.current
+        val screenHeightPx = remember(configuration) {
+            with(screenDensity) { configuration.screenHeightDp.dp.toPx().toInt() }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // 延伸到系统导航栏区域，确保遮罩层完全覆盖底部白条
+                .navigationBarsPadding()
                 .background(Color(0x99000000))
-                .clickable(onClick = { showReminderPicker = false }),
-            contentAlignment = Alignment.Center
+                .clickable(onClick = { showReminderPicker = false })
         ) {
-            // 安全区域适配 + 16dp 遮罩边距
+            // 弹窗容器：使用固定高度 + 自定义 layout 按 4:1 比例定位
+            // 关键：弹窗总高度固定为屏幕高度的 80%，三种模式保持一致
             Box(
                 modifier = Modifier
-                    .padding(16.dp)
-                    .safeAreaForContent()
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
                     .clickable(
                         interactionSource = androidx.compose.foundation.interaction.MutableInteractionSource(),
                         indication = null,
                         onClick = {}
                     )
+                    // 自定义布局：固定弹窗高度为屏幕90%，按4:1比例定位
+                    .layout { measurable, constraints ->
+                        val screenH = screenHeightPx
+
+                        // 固定弹窗高度：屏幕高度的 90%（与参考图一致）
+                        val dialogHeight = if (screenH > 0) (screenH * 0.9).toInt() else 900
+
+                        // 按 4:1 比例分配上下空白
+                        // T/B = 4/1, T + h + B = H → B=(H-h)/5, T=4(H-h)/5
+                        val bottomSpace = (screenH - dialogHeight) / 5
+                        val topSpace = bottomSpace * 4
+
+                        // 创建固定高度的约束，让子元素填满这个固定空间
+                        val fixedConstraints = constraints.copy(
+                            minHeight = dialogHeight,
+                            maxHeight = dialogHeight
+                        )
+
+                        val placeable = measurable.measure(fixedConstraints)
+
+                        layout(placeable.width, dialogHeight) {
+                            placeable.placeRelative(0, topSpace.coerceAtLeast(0))
+                        }
+                    }
             ) {
                 // 弹窗内容：带淡入+缩放动画
                 androidx.compose.animation.AnimatedVisibility(
