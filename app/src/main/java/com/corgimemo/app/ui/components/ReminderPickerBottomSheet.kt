@@ -45,6 +45,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -318,6 +320,7 @@ fun ReminderPickerBottomSheet(
                 },
                 isExpanded = isCalendarExpanded,
                 onToggleExpand = { isCalendarExpanded = !isCalendarExpanded },
+                calendarEnabled = calendarEnabled,  // ✅ 传递农历开关状态
                 modifier = Modifier.weight(1f)
             )
             "time" -> TimeWheelView(
@@ -402,6 +405,7 @@ private fun DateWheelPickerView(
     onDateChange: (LocalDate) -> Unit,
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
+    calendarEnabled: Boolean = false,  // ✅ 新增：农历开关状态
     modifier: Modifier = Modifier
 ) {
     // 视图模式："calendar" 网格日历 / "wheel" 滚轮选择器
@@ -529,6 +533,7 @@ private fun DateWheelPickerView(
                     navMonth = navMonth,
                     onDateSelect = onDateChange,
                     onMonthChange = { navMonth = it },
+                    calendarEnabled = calendarEnabled,  // ✅ 传递农历开关状态
                     modifier = Modifier.fillMaxSize()
                 )
                 "wheel" -> DateWheelContent(
@@ -561,6 +566,10 @@ private fun DateWheelPickerView(
  * 使用 Column + SpaceEvenly 实现所有行等间距分布
  * 导航栏（< YYYY/MM ▼ >）已提升至 DateWheelPickerView 统一管理
  * 支持左右滑动手势切换月份
+ * 支持农历模式：当 calendarEnabled=true 时显示农历日期和节日
+ *
+ * ✅ 性能优化：使用月份级缓存预计算整月农历数据，
+ *    避免每个日期格子独立调用 tyme4kt（从 ~42次调用降为1次批量计算）
  */
 @Composable
 private fun CalendarGridView(
@@ -568,6 +577,7 @@ private fun CalendarGridView(
     navMonth: YearMonth,
     onDateSelect: (LocalDate) -> Unit,
     onMonthChange: (YearMonth) -> Unit = {},
+    calendarEnabled: Boolean = false,  // ✅ 新增：是否启用农历显示
     modifier: Modifier = Modifier
 ) {
     val daysOfWeek = DayOfWeek.entries.take(7)
@@ -579,6 +589,14 @@ private fun CalendarGridView(
 
     // 滑动手势累积偏移量（必须在 @Composable 上下文中声明）
     var totalDragX by remember { mutableFloatStateOf(0f) }
+
+    // ========== ✅ 性能优化：月份级农历缓存 ==========
+    // 当月份变化时才重新计算，避免每个日期格子独立调用 tyme4kt
+    val lunarTextCache: Map<LocalDate, String?> = if (calendarEnabled) {
+        remember(navMonth) { buildMonthLunarCache(navMonth) }
+    } else {
+        emptyMap()
+    }
 
     // 构建完整的5行×7列网格数据（固定5行以保持布局稳定）
     val gridItems = mutableListOf<Triple<Int, Boolean, Boolean>>()
@@ -648,7 +666,7 @@ private fun CalendarGridView(
                     },
                     fontSize = 13.sp,
                     color = Color(0xFF999999),
-                    modifier = Modifier.width(36.dp),  // ✅ 与日期单元格宽度一致
+                    modifier = Modifier.width(40.dp),  // ✅ 与日期单元格宽度一致
                     textAlign = TextAlign.Center
                 )
             }
@@ -665,6 +683,16 @@ private fun CalendarGridView(
                     val itemIndex = weekIndex * 7 + dayIndex
                     val (day, isPrevOrNextMonth, isSelected) = gridItems[itemIndex]
 
+                    // ✅ 计算该日期对应的公历日期（用于农历转换和点击事件）
+                    val solarDate: LocalDate = when {
+                        itemIndex < firstDayOfMonth -> navMonth.minusMonths(1).atDay(day)
+                        itemIndex >= firstDayOfMonth + daysInMonth -> navMonth.plusMonths(1).atDay(day)
+                        else -> navMonth.atDay(day)
+                    }
+
+                    // ✅ 性能优化：直接从月份级缓存查表（O(1)），而非每个格子独立计算
+                    val lunarText = lunarTextCache[solarDate]
+
                     val textColor = when {
                         isPrevOrNextMonth -> Color(0xFFCCCCCC)
                         isSelected -> Color.White
@@ -672,28 +700,126 @@ private fun CalendarGridView(
                     }
                     val bgColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
 
+                    // ✅ 触觉反馈实例
+                    val hapticFeedback = LocalHapticFeedback.current
+
+                    // ✅ 正方形圆角盒子：宽度=高度，容纳数字+农历两行内容
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(8.dp))  // ✅ 方形 + 小圆角
+                            .size(40.dp)  // 正方形：足够容纳14sp数字 + 9-10sp农历 + 间距
+                            .clip(RoundedCornerShape(8.dp))  // 方形 + 圆角
                             .background(bgColor)
-                            .clickable(enabled = !isPrevOrNextMonth) {
-                                if (!isPrevOrNextMonth) {
-                                    onDateSelect(navMonth.atDay(day))
-                                }
+                            .clickable {
+                                // ✅ 震动反馈
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+
+                                // 允许点击所有日期（包括上月/下月灰色日期）
+                                onDateSelect(solarDate)
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "$day",
-                            fontSize = 14.sp,
-                            color = textColor,
-                            textAlign = TextAlign.Center
-                        )
+                        // ✅ 统一使用 Column 垂直布局：数字在上，农历在下（参考图二样式）
+                        // ✅ 使用 spacedBy 控制行间距，配合 Box 的 Center 对齐实现上下边距相等
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy((-6).dp)  // 负值让农历更靠近阳历数字
+                        ) {
+                            Text(
+                                text = "$day",
+                                fontSize = 14.sp,
+                                color = textColor,
+                                textAlign = TextAlign.Center
+                            )
+                            // ✅ 农历模式：在数字下方显示农历
+                            if (calendarEnabled && lunarText != null) {
+                                Text(
+                                    text = lunarText,
+                                    fontSize = if (isSelected) 10.sp else 9.sp,  // 选中时稍大
+                                    color = if (isSelected) textColor.copy(alpha = 0.9f) else Color(0xFF999999),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * 批量构建整月的农历文本缓存
+ *
+ * 性能优化核心：将原来每个日期格子独立调用 tyme4kt（~42次），
+ * 改为一次性批量计算整月数据（1次），然后通过 Map 查表（O(1)）。
+ *
+ * @param navMonth 目标月份
+ * @return 日期→农历文本的映射表（null 表示无农历信息）
+ */
+private fun buildMonthLunarCache(navMonth: YearMonth): Map<LocalDate, String?> {
+    val cache = mutableMapOf<LocalDate, String?>()
+
+    // 计算上月、当月、下月的日期范围（覆盖日历网格显示的所有日期）
+    val prevMonth = navMonth.minusMonths(1)
+    val nextMonth = navMonth.plusMonths(1)
+
+    // 上月填充日期
+    val firstDayOfWeek = (navMonth.atDay(1).dayOfWeek.value - 1 + 7) % 7
+    val prevMonthDays = prevMonth.lengthOfMonth()
+    for (i in firstDayOfWeek downTo 1) {
+        val date = prevMonth.atDay(prevMonthDays - i + 1)
+        cache[date] = computeLunarText(date)
+    }
+
+    // 当月日期
+    for (day in 1..navMonth.lengthOfMonth()) {
+        val date = navMonth.atDay(day)
+        cache[date] = computeLunarText(date)
+    }
+
+    // 下月填充日期（补齐到35项）
+    var nextDay = 1
+    while (cache.size < 35) {
+        val date = nextMonth.atDay(nextDay++)
+        cache[date] = computeLunarText(date)
+    }
+
+    return cache
+}
+
+/**
+ * 计算单个日期的农历显示文本
+ *
+ * 优先级：农历节日 > 公历节日 > 农历日期（如"初四"、"廿七"）
+ *
+ * @param date 公历日期
+ * @return 农历显示文本，如果转换失败返回 null
+ */
+private fun computeLunarText(date: LocalDate): String? {
+    return try {
+        val lunarDate = com.corgimemo.app.animation.LunarCalendar.solarToLunar(
+            date.year,
+            date.monthValue,
+            date.dayOfMonth
+        )
+        if (lunarDate != null) {
+            // 优先检查节日（农历节日 > 公历节日 > 农历日期）
+            val holiday = com.corgimemo.app.animation.HolidayManager.getLunarHoliday(
+                date.year,
+                date.monthValue,
+                date.dayOfMonth
+            ) ?: com.corgimemo.app.animation.HolidayManager.getSolarHoliday(
+                date.monthValue,
+                date.dayOfMonth
+            )
+            holiday?.displayName ?: lunarDate.dayDisplayName
+        } else {
+            null
+        }
+    } catch (e: Exception) {
+        null
     }
 }
 
@@ -730,8 +856,8 @@ private fun DateWheelContent(
                 Text(text = "日", fontSize = 13.sp, color = Color(0xFF999999), textAlign = TextAlign.Center, modifier = Modifier.width(56.dp))
             }
 
-            // 标题行到滚轮间距：精确 48dp（与滚轮 itemHeight 一致）
-            Spacer(modifier = Modifier.height(48.dp))
+            // 标题行到滚轮间距：精确 24dp
+            Spacer(modifier = Modifier.height(24.dp))
 
             // 三列滚轮（紧凑排列，不再 fillMaxSize）
             Row(

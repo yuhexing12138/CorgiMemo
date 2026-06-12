@@ -65,6 +65,14 @@ object HolidayId {
     const val MID_AUTUMN = "holiday_mid_autumn"         // 中秋节
     const val WINTER_SOLSTICE = "holiday_winter_solstice" // 冬至
     const val CHRISTMAS = "holiday_christmas"          // 圣诞节
+
+    // ========== 新增中国传统节日 ==========
+    const val DRAGON_HEAD = "holiday_dragon_head"      // 龙抬头（春龙节，农历二月初二）
+    const val COLD_FOOD = "holiday_cold_food"          // 寒食节（清明前一日）
+    const val GHOST = "holiday_ghost"                  // 中元节（农历七月十五）
+    const val LABA = "holiday_laba"                    // 腊八节（农历十二月初八）
+    const val LITTLE_NEW_YEAR = "holiday_little_new_year" // 小年（农历腊月廿三）
+    const val LOWER_YUAN = "holiday_lower_yuan"        // 下元节（农历十月十五）
 }
 
 /**
@@ -239,6 +247,101 @@ object HolidayManager {
             ),
             outfitId = HolidayOutfitId.MOON_DECOR,
             emoji = "🥮"
+        ),
+
+        // ========== 新增中国传统节日 ==========
+
+        // 龙抬头 / 春龙节（农历二月初二）
+        // 传说中龙抬头的日子，民间有剃龙头、吃龙须面等习俗
+        Holiday(
+            id = HolidayId.DRAGON_HEAD,
+            name = "DragonHeadFestival",
+            displayName = "龙抬头",
+            date = HolidayDate(2, 2, isLunar = true),
+            greetingMessages = listOf(
+                "二月二，龙抬头！理发去！💇‍♂️",
+                "龙抬头大吉！好运从“头”开始 🐉",
+                "春龙节快乐！万物复苏，生机勃勃 🌱",
+                "二月二龙抬头！柯基祝你鸿运当头 ✨"
+            ),
+            emoji = "🐉"
+        ),
+
+        // 寒食节（清明节前一天）
+        // 传统习俗：禁火冷食、祭祖扫墓
+        Holiday(
+            id = HolidayId.COLD_FOOD,
+            name = "ColdFoodFestival",
+            displayName = "寒食",
+            date = HolidayDate(0, 0, isLunar = true), // 特殊处理：清明前一日
+            greetingMessages = listOf(
+                "寒食节到啦！禁火冷食，怀念先人 🕯️",
+                "寒食清明，春暖花开 🌸",
+                "寒食节安康！踏青赏花好时节 🌿"
+            ),
+            emoji = "🕯️"
+        ),
+
+        // 中元节（农历七月十五）
+        // 又称鬼节、盂兰盆节，传统习俗：祭祖、放河灯
+        Holiday(
+            id = HolidayId.GHOST,
+            name = "GhostFestival",
+            displayName = "中元",
+            date = HolidayDate(7, 15, isLunar = true),
+            greetingMessages = listOf(
+                "中元节安康！祭祖思亲 🏮",
+                "盂兰盆节！祈福平安 🙏",
+                "七月半中元！缅怀故人，珍惜当下 💫"
+            ),
+            emoji = "🏮"
+        ),
+
+        // 腊八节（农历十二月初八）
+        // 传统习俗：喝腊八粥、腌腊八蒜
+        Holiday(
+            id = HolidayId.LABA,
+            name = "LabaFestival",
+            displayName = "腊八",
+            date = HolidayDate(12, 8, isLunar = true),
+            greetingMessages = listOf(
+                "腊八快乐！记得喝腊八粥哦 🥣",
+                "过了腊八就是年！年味渐浓 🧧",
+                "腊八粥香！温暖整个冬天 ❄️",
+                "腊八节到！柯基给你送温暖 🐕"
+            ),
+            emoji = "🥣"
+        ),
+
+        // 小年（农历腊月二十三）
+        // 北方小年，传统习俗：祭灶王爷、吃糖瓜
+        Holiday(
+            id = HolidayId.LITTLE_NEW_YEAR,
+            name = "LittleNewYear",
+            displayName = "小年",
+            date = HolidayDate(12, 23, isLunar = true),
+            greetingMessages = listOf(
+                "小年快乐！祭灶迎新年 🍬",
+                "小年到！春节倒计时开始 ⏰",
+                "糖瓜粘嘴甜！小年吉祥 🎊",
+                "小年纳福！准备过年啦 🧨"
+            ),
+            emoji = "🍬"
+        ),
+
+        // 下元节（农历十月十五）
+        // 道教节日，传统习俗：祭祀祖先、祈求消灾
+        Holiday(
+            id = HolidayId.LOWER_YUAN,
+            name = "LowerYuanFestival",
+            displayName = "下元",
+            date = HolidayDate(10, 15, isLunar = true),
+            greetingMessages = listOf(
+                "下元节安康！祈福消灾 🙏",
+                "十月十五下元！冬日静好 ❄️",
+                "下元佳节！平安喜乐 ✨"
+            ),
+            emoji = "🌙"
         )
     )
 
@@ -321,7 +424,22 @@ object HolidayManager {
         val lunarHolidays = allHolidays.filter { it.date.isLunar }
 
         for (holiday in lunarHolidays) {
-            // 使用农历算法判断
+            // ✅ 寒食节特殊处理：清明节前一天
+            // 清明节的公历日期不固定（4月4-6日），寒食节 = 清明 - 1天
+            if (holiday.id == HolidayId.COLD_FOOD) {
+                val qingmingDate = getSolarDateForLunarQingming(year)
+                if (qingmingDate != null) {
+                    val prevDay = java.time.LocalDate.of(
+                        year, qingmingDate.first, qingmingDate.second
+                    ).minusDays(1)
+                    if (month == prevDay.monthValue && day == prevDay.dayOfMonth) {
+                        return holiday
+                    }
+                }
+                continue
+            }
+
+            // 普通农历节日：使用农历算法判断
             val isMatch = LunarCalendar.isLunarMonthDay(
                 year, month, day,
                 holiday.date.month, holiday.date.day
@@ -332,6 +450,25 @@ object HolidayManager {
         }
 
         return null
+    }
+
+    /**
+     * 获取清明节的公历日期（用于计算寒食节）
+     *
+     * @param year 公历年份
+     * @return 清明节的公历月日 Pair（月, 日），如果失败返回 null
+     */
+    private fun getSolarDateForLunarQingming(year: Int): Pair<Int, Int>? {
+        // 清明是节气之一，使用 SolarTermManager 精确获取
+        // 清明通常在 4 月 4-6 日之间
+        for (day in 4..6) {
+            val term = SolarTermManager.getSolarTermForDate(year, 4, day)
+            if (term != null && term.id == SolarTermId.QINGMING) {
+                return Pair(4, day)
+            }
+        }
+        // Fallback：返回 4 月 5 日（最常见的清明日期）
+        return Pair(4, 5)
     }
 
     /**

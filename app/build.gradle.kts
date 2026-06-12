@@ -123,6 +123,9 @@ dependencies {
 
     implementation(libs.androidx.appcompat)
 
+    /** 农历库：tyme4kt（基于 6tail/lunar 升级的 KMP 版本） */
+    implementation("cn.6tail:tyme4kt:1.4.5")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

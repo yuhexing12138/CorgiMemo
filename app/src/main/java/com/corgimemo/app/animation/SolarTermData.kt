@@ -17,8 +17,8 @@ data class SolarTermDate(
  *
  * @property id 唯一ID
  * @property name 英文标识
- * @property displayName 中文名称
- * @property date 节气日期范围
+ * @property displayName 中文名称（用于与 tyme4kt 返回值匹配）
+ * @property date 节气日期范围（保留作为 fallback，主判断由 tyme4kt 负责）
  * @property proverb 节气谚语
  * @property knowledge 科普知识（100字以内）
  * @property corgiSays 柯基的温馨话语
