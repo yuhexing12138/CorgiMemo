@@ -158,6 +158,66 @@ fun TodoEditScreen(
     /** 复选框编辑器的行数据列表 */
     var todoLines by remember { mutableStateOf(listOf(TodoLine())) }
 
+    /** 当前聚焦的行索引（用于确定附件插入目标） */
+    var focusedLineIndex by remember { mutableIntStateOf(0) }
+
+    /**
+     * 跨行拖拽状态管理器实例
+     *
+     * 协调管理图片/语音附件的拖拽操作，
+     * 支持行内排序和跨行移动两种模式。
+     * 整个编辑页面共享同一个实例。
+     */
+    val crossLineDragManager = remember { com.corgimemo.app.ui.components.CrossLineDragManager() }
+
+    /**
+     * 行边界矩形缓存（用于精确的目标行检测）
+     *
+     * key = 行索引 (Int)
+     * value = 该行在屏幕上的边界矩形 (Rect: left, top, right, bottom)
+     *
+     * 由 CheckboxEditText 内部的 onGloballyPositioned 回调更新，
+     * 用于 CrossLineDragManager.detectTargetRow() 精确计算目标行。
+     */
+    val rowBoundsMap = remember { mutableMapOf<Int, androidx.compose.ui.geometry.Rect>() }
+
+    /**
+     * 向当前聚焦行添加图片附件
+     *
+     * @param imagePath 图片的本地存储路径
+     */
+    fun addImageToFocusedLine(imagePath: String) {
+        val updatedLines = todoLines.toMutableList()
+        if (focusedLineIndex in updatedLines.indices) {
+            val currentLine = updatedLines[focusedLineIndex]
+            updatedLines[focusedLineIndex] = currentLine.copy(
+                imagePaths = currentLine.imagePaths + imagePath
+            )
+            todoLines = updatedLines
+        }
+    }
+
+    /**
+     * 向当前聚焦行添加语音附件
+     *
+     * @param voicePath 语音文件的本地存储路径
+     * @param duration 语音时长（秒）
+     */
+    fun addVoiceToFocusedLine(voicePath: String, duration: Int?) {
+        val updatedLines = todoLines.toMutableList()
+        if (focusedLineIndex in updatedLines.indices) {
+            val currentLine = updatedLines[focusedLineIndex]
+            val newVoiceAttachment = com.corgimemo.app.ui.model.VoiceAttachment(
+                path = voicePath,
+                duration = duration
+            )
+            updatedLines[focusedLineIndex] = currentLine.copy(
+                voiceAttachments = currentLine.voiceAttachments + newVoiceAttachment
+            )
+            todoLines = updatedLines
+        }
+    }
+
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { isSuccess: Boolean ->
@@ -167,10 +227,8 @@ fun TodoEditScreen(
                     val savedPath = com.corgimemo.app.util.ImageUtils.copyUriToInternalStorage(context, uri)
                     savedPath?.let { path ->
                         viewModel.addImagePath(path)
-                        val insertIndex = contentBlocks.size
-                        contentBlocks.add(ContentBlock.Image(path))
-                        viewModel.pushBlockInsertedOperation(insertIndex)
-                        viewModel.syncContentBlocks(contentBlocks.toList())
+                        // 将图片添加到当前聚焦行，而非全局 contentBlocks
+                        addImageToFocusedLine(path)
                     }
                 }
             }
@@ -185,10 +243,8 @@ fun TodoEditScreen(
                 val savedPath = ImageUtils.copyUriToInternalStorage(context, uri)
                 savedPath?.let { path ->
                     viewModel.addImagePath(path)
-                    val insertIndex = contentBlocks.size
-                    contentBlocks.add(ContentBlock.Image(path))
-                    viewModel.pushBlockInsertedOperation(insertIndex)
-                    viewModel.syncContentBlocks(contentBlocks.toList())
+                    // 将图片添加到当前聚焦行，而非全局 contentBlocks
+                    addImageToFocusedLine(path)
                 }
             }
         }
@@ -409,8 +465,6 @@ fun TodoEditScreen(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
             EditToolbar(
-                onFontClick = {},
-                onListClick = {},
                 onPhotoClick = {
                     showImagePicker = true
                 },
@@ -427,7 +481,6 @@ fun TodoEditScreen(
                         navController.popBackStack()
                     }
                 },
-                wordCount = todoLines.sumOf { it.text.length },
                 modifier = Modifier.safeAreaForEditBar()
             )
         }
@@ -442,6 +495,10 @@ fun TodoEditScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
 
+            // 【已废弃】全局 contentBlocks 渲染区域
+            // 附件现在改为行级存储，在每个 CheckboxEditRow 内部渲染（支持子任务缩进）
+            // 以下 ReorderableColumn 已被替换为 TodoLine.imagePaths / voiceAttachments 字段
+            /*
             com.corgimemo.app.ui.components.ReorderableColumn(
                 items = contentBlocks.filter { it !is ContentBlock.Text },
                 onReorder = { fromIndex, toIndex ->
@@ -523,6 +580,7 @@ fun TodoEditScreen(
                     is ContentBlock.Text -> {}
                 }
             }
+            */
 
             /** 复选框文本编辑器（替代原 OutlinedTextField，支持逐行复选框编辑） */
             CheckboxEditText(
@@ -575,6 +633,10 @@ fun TodoEditScreen(
                 onReminderClick = { groupId ->
                     showReminderPicker = true
                 },
+                /** 当前聚焦行索引变化回调：更新 focusedLineIndex 状态 */
+                onFocusedLineChange = { newIndex ->
+                    focusedLineIndex = newIndex
+                },
                 priority = priority,
                 onPriorityChange = { _, newPriority ->
                     viewModel.setPriority(newPriority)
@@ -585,6 +647,123 @@ fun TodoEditScreen(
                         homeViewModel.refreshSubTaskProgress()
                         navController.popBackStack()
                     }
+                },
+                /** 图片点击回调（查看大图） */
+                onImageClick = { lineIndex, imagePath ->
+                    // TODO: 实现图片大图预览功能
+                },
+                /** 删除某行某张图片的回调 */
+                onDeleteImage = { lineIndex, imagePath ->
+                    val updatedLines = todoLines.toMutableList()
+                    if (lineIndex in updatedLines.indices) {
+                        val currentLine = updatedLines[lineIndex]
+                        updatedLines[lineIndex] = currentLine.copy(
+                            imagePaths = currentLine.imagePaths.filter { it != imagePath }
+                        )
+                        todoLines = updatedLines
+                    }
+                },
+                /** 删除某行某条语音的回调 */
+                onDeleteVoice = { lineIndex, voicePath ->
+                    val updatedLines = todoLines.toMutableList()
+                    if (lineIndex in updatedLines.indices) {
+                        val currentLine = updatedLines[lineIndex]
+                        updatedLines[lineIndex] = currentLine.copy(
+                            voiceAttachments = currentLine.voiceAttachments.filter { it.path != voicePath }
+                        )
+                        todoLines = updatedLines
+                    }
+                },
+                /**
+                 * 🆕 拖拽状态：传递 CrossLineDragManager 的当前状态给子组件
+                 *
+                 * 子组件（CheckboxEditRow → DraggableImageAttachment）通过此状态：
+                 * - 判断当前图片是否正在被拖拽 (isDragging)
+                 * - 判断当前行是否为跨行目标位置 (isDropTarget)
+                 * - 渲染对应的视觉反馈（浮层、高亮等）
+                 */
+                dragState = crossLineDragManager.state,
+                /**
+                 * 🆕 附件拖拽开始回调
+                 *
+                 * 当用户长按某张图片触发拖拽时调用，
+                 * 通知 CrossLineDragManager 进入拖拽模式。
+                 *
+                 * @param sourceLineIdx 被拖拽图片所属的行索引
+                 * @param sourceImgIdx 被拖拽图片在该行列表中的位置索引
+                 */
+                onAttachmentDragStart = { sourceLineIdx, sourceImgIdx ->
+                    crossLineDragManager.startDrag(sourceLineIdx, sourceImgIdx)
+                },
+                /**
+                 * 🆕 附件拖拽过程中更新回调
+                 *
+                 * 当用户拖动手指时持续调用，
+                 * 将偏移量同步给 CrossLineDragManager 用于：
+                 * 1. 更新拖拽模式（INLINE_SORT ↔ CROSS_LINE）
+                 * 2. 计算当前悬停的目标行
+                 * 3. 驱动 UI 的视觉反馈（目标行高亮等）
+                 *
+                 * @param dragOffset 当前累积的拖拽偏移量（相对于起始点）
+                 * @param fingerY 手指当前 Y 坐标（用于检测目标行）
+                 */
+                onAttachmentDragUpdate = { dragOffset, fingerY ->
+                    /** 调用 CrossLineDragManager.updateDrag() 同步状态 */
+                    crossLineDragManager.updateDrag(
+                        currentOffset = dragOffset,
+                        density = context.resources.displayMetrics.density,
+                        rowBounds = rowBoundsMap.values.toList(),  // 传递所有行的边界信息
+                        fingerY = fingerY
+                    )
+                },
+                /**
+                 * 🆕 附件拖拽结束回调
+                 *
+                 * 当用户释放手指时调用，
+                 * 执行以下操作序列：
+                 * 1. 调用 CrossLineDragManager.endDrag() 获取拖拽结果
+                 * 2. 如果结果有效，调用 applyDragResult() 更新 todoLines 数据
+                 * 3. 清理行边界缓存（因为行高可能变化）
+                 *
+                 * @param sourceLineIdx 源行索引
+                 * @param sourceImgIdx 源图片位置索引
+                 * @param targetLineIdx 目标行索引（由 DraggableImageAttachment 估算）
+                 * @param targetImgIdx 目标图片位置索引（null=追加到末尾）
+                 */
+                onAttachmentDragEnd = { sourceLineIdx, sourceImgIdx, targetLineIdx, targetImgIdx ->
+                    /** 1. 结束拖拽并获取结果 */
+                    val result = crossLineDragManager.endDrag()
+
+                    /** 2. 如果拖拽结果有效，执行数据更新 */
+                    if (result.isSuccess) {
+                        /** 获取被拖拽的图片路径 */
+                        val sourceLine = todoLines.getOrNull(sourceLineIdx)
+                        val imagePath = sourceLine?.imagePaths?.getOrNull(sourceImgIdx)
+
+                        if (imagePath != null) {
+                            /** 使用 CrossLineDragManager 的 applyDragResult 方法更新列表 */
+                            todoLines = crossLineDragManager.applyDragResult(
+                                lines = todoLines,
+                                result = result,
+                                imagePath = imagePath
+                            )
+                        }
+                    }
+
+                    /** 3. 清理行边界缓存（布局可能已变化）*/
+                    rowBoundsMap.clear()
+                },
+                /**
+                 * 🆕 行边界更新回调
+                 *
+                 * CheckboxEditText 内部通过 onGloballyPositioned 捕获每行的 Rect 后，
+                 * 通过此回调将边界信息传递给外部，用于精确的目标行检测。
+                 *
+                 * @param lineIndex 行索引
+                 * @param rect 该行在屏幕上的边界矩形
+                 */
+                onRowBoundsChanged = { lineIndex, rect ->
+                    rowBoundsMap[lineIndex] = rect
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -903,10 +1082,8 @@ fun TodoEditScreen(
                         voiceRecorder = voiceRecorder,
                         onSaved = { path, duration ->
                             viewModel.setVoiceNote(path, duration)
-                            val insertIndex = contentBlocks.size
-                            contentBlocks.add(ContentBlock.Voice(path, duration))
-                            viewModel.pushBlockInsertedOperation(insertIndex)
-                            viewModel.syncContentBlocks(contentBlocks.toList())
+                            // 将语音添加到当前聚焦行，而非全局 contentBlocks
+                            addVoiceToFocusedLine(path, duration)
                             showVoiceRecordSheet = false
                         },
                         onDismiss = {

@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>待办编辑页 - 底部工具栏优化 UI 原型</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        /* 页面标题 */
+        .page-header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .page-header h1 {
+            font-size: 36px;
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 15px;
+            letter-spacing: -0.5px;
+        }
+
+        .page-header p {
+            font-size: 16px;
+            color: #718096;
+            line-height: 1.6;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* 对比区域 */
+        .comparison-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 50px;
+        }
+
+        @media (max-width: 768px) {
+            .comparison-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* 卡片样式 */
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-subtitle {
+            font-size: 14px;
+            color: #a0aec0;
+            margin-bottom: 25px;
+        }
+
+        /* 手机模拟框 */
+        .phone-frame {
+            background: #1a202c;
+            border-radius: 35px;
+            padding: 12px;
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        .phone-screen {
+            background: #FFF8F0;
+            border-radius: 25px;
+            overflow: hidden;
+            min-height: 400px;
+            position: relative;
+        }
+
+        .phone-notch {
+            width: 120px;
+            height: 25px;
+            background: #1a202c;
+            border-radius: 0 0 15px 15px;
+            margin: 0 auto;
+            position: relative;
+            top: 0;
+        }
+
+        /* 编辑区域模拟 */
+        .edit-area {
+            padding: 60px 20px 120px;
+            min-height: 280px;
+        }
+
+        .edit-placeholder {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            min-height: 150px;
+            border: 2px dashed #e2e8f0;
+            color: #cbd5e0;
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        /* 底部工具栏 */
+        .toolbar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 56px;
+            background: white;
+            border-top-left-radius: 12dp;
+            border-top-right-radius: 12dp;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .toolbar-before {
+            justify-content: space-between;
+        }
+
+        .toolbar-after {
+            justify-content: space-evenly;
+        }
+
+        .tool-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .tool-btn {
+            width: 40px;
+            height: 40px;
+            border: none;
+            background: transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .tool-btn:hover {
+            background: rgba(255, 154, 92, 0.1);
+        }
+
+        .tool-btn svg {
+            width: 22px;
+            height: 22px;
+            fill: #6B7280; /* onSurfaceVariant 灰色 */
+        }
+
+        .word-count {
+            font-size: 13px;
+            color: #9CA3AF;
+            margin-left: 8px;
+            white-space: nowrap;
+        }
+
+        /* 删除标记 */
+        .deleted {
+            position: relative;
+        }
+
+        .deleted::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: -5%;
+            right: -5%;
+            height: 3px;
+            background: #EF4444;
+            transform: rotate(-45deg);
+            z-index: 10;
+            animation: strikeThrough 0.5s ease-out forwards;
+        }
+
+        @keyframes strikeThrough {
+            from { width: 0; }
+            to { width: 110%; }
+        }
+
+        /* 保留标记 */
+        .kept {
+            position: relative;
+        }
+
+        .kept::before {
+            content: '✓';
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            width: 18px;
+            height: 18px;
+            background: #10B981;
+            color: white;
+            border-radius: 50%;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            z-index: 10;
+            animation: popIn 0.3s ease-out 0.5s both;
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0); }
+            100% { transform: scale(1); }
+        }
+
+        /* 说明标签 */
+        .label-tag {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .label-before {
+            background: #FEE2E2;
+            color: #DC2626;
+        }
+
+        .label-after {
+            background: #D1FAE5;
+            color: #059669;
+        }
+
+        /* 变更说明列表 */
+        .change-list {
+            background: #FEF3C7;
+            border-radius: 16px;
+            padding: 25px 30px;
+            margin-top: 40px;
+            border-left: 4px solid #F59E0B;
+        }
+
+        .change-list h3 {
+            font-size: 20px;
+            font-weight: 700;
+            color: #92400E;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .change-list ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .change-list li {
+            padding: 10px 0;
+            color: #78350F;
+            font-size: 15px;
+            line-height: 1.6;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .change-list li::before {
+            content: '→';
+            font-weight: bold;
+            color: #F59E0B;
+            flex-shrink: 0;
+        }
+
+        .removed-item {
+            color: #DC2626;
+            text-decoration: line-through;
+            opacity: 0.7;
+        }
+
+        .added-item {
+            color: #059669;
+            font-weight: 600;
+        }
+
+        /* 设计规格说明 */
+        .specs-section {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            margin-top: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+        }
+
+        .specs-section h3 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .specs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .spec-item {
+            background: #F9FAFB;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .spec-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #FF9A5C;
+            margin-bottom: 8px;
+        }
+
+        .spec-label {
+            font-size: 14px;
+            color: #6B7280;
+        }
+
+        /* 底部信息 */
+        .footer-info {
+            text-align: center;
+            margin-top: 50px;
+            padding: 30px;
+            color: #9CA3AF;
+            font-size: 14px;
+        }
+
+        /* 动画延迟工具类 */
+        .delay-1 { animation-delay: 0.1s; }
+        .delay-2 { animation-delay: 0.2s; }
+        .delay-3 { animation-delay: 0.3s; }
+        .delay-4 { animation-delay: 0.4s; }
+        .delay-5 { animation-delay: 0.5s; }
+
+        /* 图标 SVG 定义 */
+        .icon-svg {
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 页面标题 -->
+        <div class="page-header">
+            <h1>📝 待办编辑页 - 底部工具栏优化</h1>
+            <p>通过精简功能按钮，提升界面简洁度与用户体验，让操作更加聚焦高效</p>
+        </div>
+
+        <!-- 对比展示区 -->
+        <div class="comparison-section">
+            <!-- 优化前 -->
+            <div class="card">
+                <span class="label-tag label-before">❌ 优化前</span>
+                <h2 class="card-title">当前布局（8个元素）</h2>
+                <p class="card-subtitle">元素过多，视觉拥挤，用户认知负担重</p>
+
+                <div class="phone-frame">
+                    <div class="phone-screen">
+                        <div class="phone-notch"></div>
+                        <div class="edit-area">
+                            <div class="edit-placeholder">
+                                在这里输入待办内容...<br><br>
+                                支持添加图片、录音、<br>手绘等多种形式
+                            </div>
+                        </div>
+                        <div class="toolbar toolbar-before">
+                            <div class="tool-group">
+                                <button class="tool-btn deleted" title="字体设置（删除）">
+                                    <svg viewBox="0 0 24 24"><path d="M9.93 13.5h4.14L12 7.98zM5.69 19h2.06l1.26-3h6.04l1.26 3h2.06L13 5h-2L5.69 19zM20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+                                </button>
+                                <button class="tool-btn deleted delay-1" title="列表格式（删除）">
+                                    <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+                                </button>
+                                <button class="tool-btn kept" title="相机（保留）">
+                                    <svg viewBox="0 0 24 24"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                                </button>
+                                <button class="tool-btn kept delay-1" title="麦克风（保留）">
+                                    <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+                                </button>
+                                <button class="tool-btn kept delay-2" title="画笔（保留）">
+                                    <svg viewBox="0 0 24 24"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3zm13.71-9.37l-1.34-1.34a.996.996 0 00-1.41 0L9 12.25 11.75 15l8.96-8.96a.996.996 0 000-1.41z"/></svg>
+                                </button>
+                                <button class="tool-btn kept delay-3" title="分享（保留）">
+                                    <svg viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
+                                </button>
+                            </div>
+                            <div class="tool-group">
+                                <button class="tool-btn kept delay-4" title="删除（保留）">
+                                    <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                                </button>
+                                <span class="word-count deleted delay-5">共0字</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 优化后 -->
+            <div class="card">
+                <span class="label-tag label-after">✅ 优化后</span>
+                <h2 class="card-title">新布局（5个按钮）</h2>
+                <p class="card-subtitle">均匀分布，简洁清爽，操作更直观</p>
+
+                <div class="phone-frame">
+                    <div class="phone-screen">
+                        <div class="phone-notch"></div>
+                        <div class="edit-area">
+                            <div class="edit-placeholder">
+                                在这里输入待办内容...<br><br>
+                                支持添加图片、录音、<br>手绘等多种形式
+                            </div>
+                        </div>
+                        <div class="toolbar toolbar-after">
+                            <button class="tool-btn kept" title="相机">
+                                <svg viewBox="0 0 24 24"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                            </button>
+                            <button class="tool-btn kept delay-1" title="麦克风">
+                                <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+                            </button>
+                            <button class="tool-btn kept delay-2" title="画笔">
+                                <svg viewBox="0 0 24 24"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3zm13.71-9.37l-1.34-1.34a.996.996 0 00-1.41 0L9 12.25 11.75 15l8.96-8.96a.996.996 0 000-1.41z"/></svg>
+                            </button>
+                            <button class="tool-btn kept delay-3" title="分享">
+                                <svg viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
+                            </button>
+                            <button class="tool-btn kept delay-4" title="删除">
+                                <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 变更说明 -->
+        <div class="change-list">
+            <h3>📋 优化变更清单</h3>
+            <ul>
+                <li>
+                    <strong>删除 A/A 字体按钮：</strong>
+                    <span class="removed-item">字体设置功能移至顶部菜单或长按文本弹出</span>
+                </li>
+                <li>
+                    <strong>删除列表按钮：</strong>
+                    <span class="removed-item">列表格式功能整合到输入框工具栏或自动识别</span>
+                </li>
+                <li>
+                    <strong>删除字数统计文本：</strong>
+                    <span class="removed-item">"共X字" 文本占用空间且非核心功能，可移至详情页显示</span>
+                </li>
+                <li>
+                    <strong>保留 5 个核心按钮：</strong>
+                    <span class="added-item">相机、麦克风、画笔、分享、删除均匀分布</span>
+                </li>
+                <li>
+                    <strong>布局方式调整：</strong>
+                    从 <code>space-between</code> 改为 <code>space-evenly</code> 实现完美均匀分布
+                </li>
+            </ul>
+        </div>
+
+        <!-- 设计规格 -->
+        <div class="specs-section">
+            <h3>📐 设计规格参数</h3>
+            <div class="specs-grid">
+                <div class="spec-item">
+                    <div class="spec-value">56dp</div>
+                    <div class="spec-label">工具栏高度</div>
+                </div>
+                <div class="spec-item">
+                    <div class="spec-value">40x40dp</div>
+                    <div class="spec-label">按钮尺寸</div>
+                </div>
+                <div class="spec-item">
+                    <div class="spec-value">20-22dp</div>
+                    <div class="spec-label">图标尺寸</div>
+                </div>
+                <div class="spec-item">
+                    <div class="spec-value">12dp</div>
+                    <div class="spec-label">顶部圆角</div>
+                </div>
+                <div class="spec-item">
+                    <div class="spec-value">#FFF8F0</div>
+                    <div class="spec-label">背景色（暖米色）</div>
+                </div>
+                <div class="spec-item">
+                    <div class="spec-value">#FF9A5C</div>
+                    <div class="spec-label">主色调（橙色）</div>
+                </div>
+                <div class="spec-item">
+                    <div class="spec-value">#6B7280</div>
+                    <div class="spec-label">图标色（灰色系）</div>
+                </div>
+                <div class="spec-item">
+                    <div class="spec-value">SpaceEvenly</div>
+                    <div class="spec-label">分布方式</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部信息 -->
+        <div class="footer-info">
+            <p>Android Jetpack Compose | Material3 Design | 待办编辑页底部工具栏优化方案</p>
+            <p style="margin-top: 8px;">生成时间：2026年6月12日 | UI 原型展示 v1.0</p>
+        </div>
+    </div>
+
+    <script>
+        // 添加交互效果
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.addEventListener('mouseenter', function() {
+                if (!this.classList.contains('deleted')) {
+                    this.style.transform = 'scale(1.1)';
+                }
+            });
+            btn.addEventListener('mouseleave', function() {
+                this.style.transform = 'scale(1)';
+            });
+        });
+
+        // 点击提示
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const title = this.getAttribute('title');
+                if (!this.classList.contains('deleted')) {
+                    alert(`✅ 功能按钮：${title}`);
+                } else {
+                    alert(`❌ 已删除：${title}`);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

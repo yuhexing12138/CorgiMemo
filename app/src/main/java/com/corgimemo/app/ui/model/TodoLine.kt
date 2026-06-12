@@ -10,6 +10,7 @@ package com.corgimemo.app.ui.model
  * 混合存储策略：
  * - 文本内容拼接后存入 TodoItem.content 字段（用于显示和搜索）
  * - 勾选状态和结构信息同步到 sub_tasks 表（用于结构化查询）
+ * - 图片和语音附件与行关联，支持每行独立管理附件
  */
 data class TodoLine(
     /** 行文本内容 */
@@ -23,10 +24,14 @@ data class TodoLine(
     /** 所属容器分组 ID，同一组的行渲染在同一个圆角容器内 */
     val groupId: Int = 0,
     /** 行在列表中的排序索引 */
-    val order: Int = 0
+    val order: Int = 0,
+    /** 该行的图片附件路径列表（支持多张图片） */
+    val imagePaths: List<String> = emptyList(),
+    /** 该行的语音附件列表（支持多条语音） */
+    val voiceAttachments: List<VoiceAttachment> = emptyList()
 ) {
-    /** 判断该行是否为空行（无实质内容） */
-    fun isEmpty(): Boolean = text.isBlank()
+    /** 判断该行是否为空行（无实质内容且无附件） */
+    fun isEmpty(): Boolean = text.isBlank() && imagePaths.isEmpty() && voiceAttachments.isEmpty()
 
     /** 将本行序列化为纯文本格式（用于写入 content 字段） */
     fun toPlainText(): String {
@@ -68,3 +73,17 @@ data class TodoLine(
         }
     }
 }
+
+/**
+ * 语音附件数据类
+ *
+ * 存储语音文件的路径和时长信息，
+ * 与 TodoLine 关联，支持每行独立管理语音附件。
+ *
+ * @param path 语音文件本地存储路径
+ * @param duration 语音时长（单位：秒），null 表示未知时长
+ */
+data class VoiceAttachment(
+    val path: String,
+    val duration: Int? = null
+)

@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.innerShadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.corgimemo.app.util.VoicePlayer
 
@@ -44,7 +45,7 @@ import com.corgimemo.app.util.VoicePlayer
  */
 @Composable
 fun VoicePlayerComponent(
-    voicePlayer: VoicePlayer,
+    voicePlayer: VoicePlayer? = null,  // 支持外部不提供播放器实例的情况（如拖拽模式）
     filePath: String,
     totalDuration: Int? = null,
     onDelete: () -> Unit,
@@ -62,7 +63,46 @@ fun VoicePlayerComponent(
      * - 屏幕外语音块不占用 MediaPlayer 实例（每个约 1-5MB 内存）
      * - 10条语音备注仅准备可见的 2-3 条
      */
-    if (isVisible) {
+    if (voicePlayer == null) {
+        /** ===== voicePlayer 为 null 时：显示简化版 UI（无播放控制）===== */
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .background(
+                    color = if (isHighlighted) Color(0xFFFFF8E1) else MaterialTheme.colorScheme.surfaceContainerLowest,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // 麦克风图标
+            Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = "语音",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+
+            // 时长文本
+            Text(
+                text = formatDuration(totalDuration ?: 0),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium
+            )
+
+            // 删除按钮
+            IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "删除语音",
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    } else if (isVisible) {
         /** ===== 可见状态：完整播放器 UI ===== */
         // 收集播放状态
         val playbackState by voicePlayer.playbackState.collectAsState()

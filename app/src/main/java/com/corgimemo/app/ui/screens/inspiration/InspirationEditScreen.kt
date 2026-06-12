@@ -784,17 +784,8 @@ fun InspirationEditScreen(
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
-            /** 编辑页底部工具栏（横排图标版）- 添加imePadding自适应软键盘高度 */
+            /** 编辑页底部工具栏（均匀分布图标版）- 添加imePadding自适应软键盘高度 */
             EditToolbar(
-                onFontClick = {
-                    /** 切换格式工具栏的显示/隐藏（A/A） */
-                    showFormatToolbar = !showFormatToolbar
-                },
-                onListClick = {
-                    /** 插入无序列表 */
-                    viewModel.pushSnapshot(editorState.textFieldValue.value.annotatedString)
-                    com.corgimemo.app.ui.components.insertUnorderedList(editorState)
-                },
                 onPhotoClick = {
                     /** 触发图片选择对话框 */
                     showImagePicker = true
@@ -817,7 +808,6 @@ fun InspirationEditScreen(
                         showDeleteConfirmDialog = true
                     }
                 },
-                wordCount = content.length,
                 /** 使用 safeAreaForEditBar 适配不同导航模式（手势导航/三键导航）+ 软键盘 */
                 modifier = Modifier.safeAreaForEditBar()
             )
