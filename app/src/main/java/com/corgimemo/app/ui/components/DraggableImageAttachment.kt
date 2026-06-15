@@ -1,18 +1,27 @@
 package com.corgimemo.app.ui.components
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.EaseInOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,44 +29,88 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import coil.size.Scale
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import kotlin.math.roundToInt
 
 /**
- * 可拖拽的图片附件组件（纯净悬浮版 v2）
+ * 可拖拽的图片附件组件（v5 - 多图定位修复版）
  *
  * 设计理念：
- * - **外层 Box 与图片尺寸完全一致**（无多余空间）
- * - **拖拽时整个 Box 同步移动**（不是只浮动内部内容）
- * - **零容器感**：无边界框、无背景色、仅柔和阴影
+ * - **Box 动态匹配图片尺寸**（宽度固定 100dp，高度按图片宽高比自适应）
+ * - **拖拽时使用 Popup 浮层**（独立窗口，不受父容器裁剪，始终浮于最上方）
+ * - **阴影跟随移动**（阴影在 Popup 上，自然跟随手指）
+ * - **预读宽高比**（BitmapFactory 预读，避免首次渲染跳变）
+ * - **长按缩放反馈**（长按检测阶段轻微缩放，提示用户即将进入拖拽）
+ * - **Popup 淡入淡出**（拖拽开始/结束的过渡动画）
  *
  * 架构说明：
  * ```
- * ┌─────────────────────────────────┐
- * │  Box (外层容器)                  │ ← graphicsLayer 整体偏移 ✅
- * │  ┌─────────────────────────────┐│
- * │  │  InlineImagePreview (图片)  ││ ← 紧贴 Box 边缘 ✅
- * │  │  [删除按钮]                 ││
- * │  └─────────────────────────────┘│
- * └─────────────────────────────────┘
+ * 正常状态:
+ * ┌──────────────────────────┐
+ * │  Box (width=100dp,       │
+ * │       height=自适应)     │
+ * │  ┌────────────────────┐  │
+ * │  │  AsyncImage (图片) │  │
+ * │  │  [x 删除按钮]      │  │
+ * │  └────────────────────┘  │
+ * └──────────────────────────┘
+ *
+ * 长按检测中:
+ * ┌──────────────────────────┐
+ * │  Box (scale=0.95,       │  ← 轻微缩小，提示"即将拖拽"
+ * │       alpha=0.8)        │
+ * └──────────────────────────┘
+ *
+ * 拖拽状态:
+ * ┌──────────────────────────┐
+ * │  Box (半透明占位, a=0.3) │  ← 保持布局稳定
+ * └──────────────────────────┘
+ *
+ *       ┌──────────────────────┐
+ *       │  Popup (独立浮层窗口) │  ← 跟随手指移动
+ *       │  ┌──────────────────┐│
+ *       │  │  AsyncImage+阴影 ││  ← 淡入/淡出动画
+ *       │  └──────────────────┘│
+ *       └──────────────────────┘
  * ```
  *
- * 关键改进（v1 → v2）：
- * - 去掉硬编码 size(100,80)，改由内容决定尺寸
- * - graphicsLayer 应用于最外层 Box，拖拽时整体移动
- * - InlineImagePreview 使用 fillMaxSize 适配 Box
+ * v5 关键改进（v4 → v5）：
+ * - 修复多图场景下 Popup 位置累积偏移问题（通过 parentLayoutCoordinates 差值计算）
+ * - 图片中心对齐手指位置（减去 componentSize / 2 居中修正）
+ *
+ * v4 关键改进（v3 → v4）：
+ * - BitmapFactory 预读宽高比，首次渲染即正确，无跳变
+ * - 长按检测阶段轻微缩放反馈（scale 0.95）
+ * - Popup 浮层淡入淡出动画（alpha 0→1 / 1→0）
+ * - ImagePlaceholder 支持动态宽高比
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -67,8 +120,13 @@ fun DraggableImageAttachment(
     imageIndex: Int,
     isDragging: Boolean = false,
     isDropTarget: Boolean = false,
-    onDragStart: (lineIndex: Int, imageIndex: Int) -> Unit = { _, _ -> },
-    onDragUpdate: (dragOffset: Offset, fingerY: Float) -> Unit = { _, _ -> },
+    /** 🆕 v7：是否在该图片之前显示插入竖线（跨行移动模式） */
+    showInsertLineBefore: Boolean = false,
+    /** 🆕 v7：是否在该图片之后显示插入竖线（跨行移动模式，仅最后一张图使用） */
+    showInsertLineAfter: Boolean = false,
+    /** 🆕 v7.5：拖拽开始回调（增加图片高度参数，用于跨行 Y 轴边缘精确计算）*/
+    onDragStart: (lineIndex: Int, imageIndex: Int, imageHeightPx: Float) -> Unit = { _, _, _ -> },
+    onDragUpdate: (dragOffset: Offset, fingerX: Float, fingerY: Float) -> Unit = { _, _, _ -> },
     onDragEnd: (targetLineIndex: Int, targetImageIndex: Int?) -> Unit = { _, _ -> },
     onClick: (String) -> Unit = {},
     onDelete: (String) -> Unit = {}
@@ -76,101 +134,231 @@ fun DraggableImageAttachment(
     val context = LocalContext.current
     val density = LocalDensity.current
 
-    /** 拖拽偏移量 */
+    /** 拖拽偏移量（相对于拖拽起始位置） */
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
 
-    /** 长按检测阶段标记 */
-    var isDetecting by remember { mutableStateOf(false) }
+    /** 组件尺寸（用于 Popup 浮层大小匹配和居中计算） */
+    var componentSize by remember { mutableStateOf(IntSize.Zero) }
 
     /**
-     * 图片附件统一显示尺寸
+     * 组件在父容器中的偏移量（像素）
      *
-     * 此尺寸同时作用于：
-     * 1. 外层 Box 容器（确保布局稳定）
-     * 2. 行内排序的单位宽度计算（CrossLineDragManager.INLINE_ITEM_WIDTH_DP）
+     * 多张图片在 Row 中排列时，每张图片距离 Row 左上角有不同的偏移。
+     * Popup 的锚点是父容器（Row），所以 offset 必须包含此值，
+     * 否则所有图片的 Popup 都会从同一位置开始，导致越往后偏离越大。
      *
-     * 宽度 100dp + 间距 8dp = CrossLineDragManager 中使用的 ~108dp 单位宽度
+     * 计算方式：componentScreenPosition - parentScreenPosition
+     */
+    var componentOffsetInParent by remember { mutableStateOf(Offset.Zero) }
+
+    /**
+     * 长按触发时，手指相对于组件左上角的偏移量
+     *
+     * 用于让 Popup 图片的对应位置对齐到手指。
+     */
+    var initialTouchOffset by remember { mutableStateOf(Offset.Zero) }
+
+    /**
+     * 图片宽高比（优先通过 BitmapFactory 预读，其次通过 Coil 回调更新）
+     *
+     * 使用 imagePath 作为 key，切换图片时重置。
+     * 默认 4:3（常见照片比例），预读完成后立即更新为真实值。
+     */
+    var imageAspectRatio by remember(imagePath) { mutableStateOf(4f / 3f) }
+
+    /**
+     * 优化4：通过 BitmapFactory 预读宽高比
+     *
+     * 在图片渲染前，先通过 BitmapFactory.Options.inJustDecodeBounds
+     * 读取图片的宽高信息（不加载像素数据，几乎零耗时），
+     * 避免首次渲染时使用默认比例导致的布局跳变。
+     */
+    LaunchedEffect(imagePath) {
+        withContext(Dispatchers.IO) {
+            try {
+                val options = BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                /** 支持本地文件路径和 content:// URI */
+                if (imagePath.startsWith("content://")) {
+                    context.contentResolver.openInputStream(android.net.Uri.parse(imagePath))
+                        ?.use { stream ->
+                            BitmapFactory.decodeStream(stream, null, options)
+                        }
+                } else {
+                    val file = File(imagePath)
+                    if (file.exists()) {
+                        BitmapFactory.decodeFile(imagePath, options)
+                    }
+                }
+                if (options.outWidth > 0 && options.outHeight > 0) {
+                    withContext(Dispatchers.Main) {
+                        imageAspectRatio = options.outWidth.toFloat() / options.outHeight.toFloat()
+                    }
+                }
+            } catch (_: Exception) {
+                /** 预读失败不影响功能，Coil 加载后会再次更新 */
+            }
+        }
+    }
+
+    /**
+     * 图片附件显示宽度
+     *
+     * 此宽度同时作用于：
+     * 1. 外层 Box 容器
+     * 2. 行内排序的边缘检测计算（CrossLineDragManager.ATTACHMENT_WIDTH_DP）
      */
     val attachmentWidth = 100.dp
-    val attachmentHeight = 80.dp
 
     /**
-     * 🎯 纯净悬浮缩放动画
+     * 优化3：长按检测阶段的缩放反馈
+     *
+     * 长按检测中：scale = 0.95（轻微缩小，提示"即将拖拽"）
+     * 拖拽中：scale = 1.08（放大，表示已进入拖拽）
+     * 正常：scale = 1.0
      */
-    val targetScale = if (isDragging) 1.08f else 1.0f
+    val targetScale = when {
+        isDragging -> 1.08f
+        else -> 1.0f
+    }
     val currentScale by animateFloatAsState(
         targetValue = targetScale,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-        label = "pureFloatScale"
+        label = "dragScale"
     )
 
     /**
-     * ===== 核心渲染区域 =====
+     * 优化2：Popup 浮层淡入淡出动画
      *
-     * 🆕 v2 关键改进：graphicsLayer 应用于最外层 Box
+     * 拖拽开始时 alpha 从 0 渐变到 1（淡入），
+     * 拖拽结束时 alpha 从 1 渐变到 0（淡出）。
+     */
+    val popupAlpha by animateFloatAsState(
+        targetValue = if (isDragging) 1f else 0f,
+        animationSpec = tween(durationMillis = 150),
+        label = "popupAlpha"
+    )
+
+    /**
+     * Popup 的实际显示/隐藏状态（独立于 isDragging）
      *
-     * 之前的问题：
-     *   graphicsLayer 在内部 Box 上 → 只有内容浮起，外层容器不动
-     *   → 视觉上像"内容从容器里飘出来"（容器感）
+     * 问题：如果用 `if (isDragging)` 控制 Popup 生命周期，
+     * 当 isDragging 变为 false 时 Popup 立即被销毁，淡出动画无法播放。
      *
-     * 现在的设计：
-     *   graphicsLayer 在最外层 Box 上 → 整个 Box（含阴影、圆角）一起移动
-     *   → 视觉上像"拿起整张卡片"（自然拖拽感）
+     * 解决方案：
+     * - isDragging=true 时 → showPopup=true（立即显示，配合淡入动画）
+     * - isDragging=false 时 → 先让 popupAlpha 播放淡出动画，
+     *   等动画结束后再设置 showPopup=false（真正销毁 Popup）
+     */
+    var showPopup by remember { mutableStateOf(false) }
+
+    /** 拖拽开始时立即显示 Popup（配合淡入动画） */
+    LaunchedEffect(isDragging) {
+        if (isDragging) {
+            showPopup = true
+        }
+    }
+
+    /**
+     * 监听淡出动画完成，延迟销毁 Popup
+     *
+     * 当 popupAlpha 降到 0（淡出完成）且不在拖拽中时，才真正销毁 Popup。
+     */
+    LaunchedEffect(popupAlpha) {
+        if (!isDragging && popupAlpha < 0.01f) {
+            showPopup = false
+        }
+    }
+
+    /**
+     * 拖拽结束后延迟重置偏移量
+     *
+     * 避免 Popup 在消失前瞬间回弹到原位：
+     * - onDragEnd 时只通知外部，不重置 dragOffset
+     * - 等 isDragging 变为 false（Popup 已消失）后再重置
+     */
+    LaunchedEffect(isDragging) {
+        if (!isDragging) {
+            dragOffset = Offset.Zero
+        }
+    }
+
+    /**
+     * ===== 主容器 =====
+     *
+     * 拖拽时：半透明占位（保持布局稳定，尺寸不变）
+     * 正常时：图片 + 删除按钮 + 可选目标提示
      */
     Box(
         modifier = Modifier
-            /** 🆕 固定尺寸：与图片内容完全匹配 */
-            .size(width = attachmentWidth, height = attachmentHeight)
-
-            /** 🆕 统一基础样式（三种状态共享）*/
+            /** 宽度固定，高度按图片宽高比自适应 */
+            .width(attachmentWidth)
+            .aspectRatio(imageAspectRatio)
             .clip(RoundedCornerShape(4.dp))
-
-            /** 状态相关的样式差异 */
+            .onGloballyPositioned { coordinates ->
+                /** 记录组件尺寸 */
+                componentSize = coordinates.size
+                /**
+                 * 计算组件在父容器中的偏移量（关键修复）
+                 *
+                 * 原理：
+                 * - localToScreen(Offset.Zero) → 组件左上角在屏幕中的绝对坐标
+                 * - parentCoordinates?.localToScreen(Offset.Zero) → 父容器左上角的屏幕坐标
+                 * - 两者之差 → 组件相对于父容器的像素偏移
+                 *
+                 * 此值用于 Popup 定位，确保多图场景下每张图片的 Popup
+                 * 都从正确的位置开始，不会累积偏移。
+                 */
+                val componentScreenPos = coordinates.localToScreen(Offset.Zero)
+                val parentScreenPos = coordinates.parentLayoutCoordinates
+                    ?.localToScreen(Offset.Zero) ?: Offset.Zero
+                componentOffsetInParent = Offset(
+                    x = componentScreenPos.x - parentScreenPos.x,
+                    y = componentScreenPos.y - parentScreenPos.y
+                )
+            }
             .then(
                 when {
-                    /**
-                     * ★★★ 拖拽中：整个 Box 纯净悬浮 ★★★
-                     *
-                     * shadow + graphicsLayer 都作用在外层 Box 上，
-                     * 拖拽时 Box 整体跟随手指移动。
-                     */
-                    isDragging -> Modifier
-                        .shadow(
-                            elevation = 6.dp,
-                            shape = RectangleShape,
-                            ambientColor = Color.Black.copy(alpha = 0.15f),
-                            spotColor = Color.Black.copy(alpha = 0.08f)
-                        )
-                        .graphicsLayer {
-                            /** 缩放：以 Box 中心为原点放大 */
-                            scaleX = currentScale
-                            scaleY = currentScale
-                            /** 偏移：整个 Box 跟随手指 */
-                            translationX = dragOffset.x
-                            translationY = dragOffset.y
-                            /** 禁用裁剪：允许拖出父容器边界 */
-                            this.clip = false
-                        }
-
-                    /**
-                     * 跨行目标位置：极简提示
-                     */
+                    /** 拖拽中：半透明占位，保持布局稳定 */
+                    isDragging -> Modifier.graphicsLayer { alpha = 0.3f }
+                    /** 被交换目标：虚线边框 + 微缩，与源图片的半透明形成差异 */
                     isDropTarget -> Modifier
-                        .background(Color(0xFFFF9A5C).copy(alpha = 0.06f))
-
-                    /**
-                     * 正常状态：无特殊修饰（仅有上面的 clip）
-                     */
+                        .graphicsLayer { scaleX = 0.92f; scaleY = 0.92f }
+                        .drawWithContent {
+                            drawContent()
+                            /** 绘制虚线边框 */
+                            drawRoundRect(
+                                color = Color(0xFFFF9A5C),
+                                style = Stroke(
+                                    width = 2.dp.toPx(),
+                                    pathEffect = PathEffect.dashPathEffect(
+                                        intervals = floatArrayOf(6.dp.toPx(), 4.dp.toPx())
+                                    )
+                                ),
+                                cornerRadius = CornerRadius(4.dp.toPx())
+                            )
+                        }
+                    /** 正常状态 */
                     else -> Modifier
                 }
             )
-
             /** 注册长按拖拽手势检测 */
             .pointerInput(lineIndex, imageIndex) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { offset ->
-                        isDetecting = false
-                        onDragStart(lineIndex, imageIndex)
+                        /**
+                         * 记录长按触发时手指相对于组件左上角的偏移
+                         *
+                         * offset 是 detectDragGesturesAfterLongPress 提供的，
+                         * 表示触摸点相对于组件左上角的像素坐标。
+                         * Popup 用此值让图片对应位置对齐到手指。
+                         */
+                        initialTouchOffset = offset
+                        /** 重置拖拽累积偏移（新一轮拖拽开始） */
+                        dragOffset = Offset.Zero
+                        /** 🆕 v7.5：传递组件实际高度（像素），用于跨行 Y 轴边缘精确计算 */
+                        onDragStart(lineIndex, imageIndex, componentSize.height.toFloat())
                         HapticFeedbackManager.performHapticFeedback(
                             context = context,
                             type = InteractionType.TEXT_MOVE,
@@ -183,10 +371,10 @@ fun DraggableImageAttachment(
                             x = dragOffset.x + dragAmount.x,
                             y = dragOffset.y + dragAmount.y
                         )
-                        onDragUpdate(dragOffset, dragOffset.y)
+                        /** 🆕 v7：传递手指绝对坐标（用于跨行 X 轴位置检测） */
+                        onDragUpdate(dragOffset, change.position.x, change.position.y)
                     },
                     onDragEnd = {
-                        dragOffset = Offset.Zero
                         HapticFeedbackManager.performHapticFeedback(
                             context = context,
                             type = InteractionType.CONFIRM,
@@ -196,76 +384,203 @@ fun DraggableImageAttachment(
                     },
                     onDragCancel = {
                         dragOffset = Offset.Zero
-                        isDetecting = false
                     }
                 )
             }
     ) {
-        if (isDragging) {
-            /**
-             * 拖拽中：纯净图片（无附加UI）
-             *
-             * fillMaxSize 确保 InlineImagePreview 填满外层 Box，
-             * 实现"Box 与图片尺寸完全一致"的要求。
-             */
-            InlineImagePreview(
-                imageUri = imagePath,
-                modifier = Modifier.fillMaxSize(),
-                isHighlighted = true,
-                isVisible = true
-            )
-        } else {
-            /**
-             * 正常状态 / 目标占位符
-             *
-             * 包含：图片（紧贴 Box）+ 删除按钮 + 可选目标提示
-             */
-            Box(modifier = Modifier.fillMaxSize()) {
-                /** 图片预览：fillMaxSize 紧贴外层 Box */
-                InlineImagePreview(
-                    imageUri = imagePath,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable { onClick(imagePath) },
-                    isHighlighted = isDropTarget,
-                    isVisible = true
-                )
-
-                /** 右上角删除按钮 */
-                Box(
-                    modifier = Modifier
-                        .padding(4.dp)
-                        .size(18.dp)
-                        .align(Alignment.TopEnd)
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(Color.Black.copy(alpha = 0.35f))
-                        .clickable { onDelete(imagePath) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "\u00D7",
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                /** 跨行目标提示（极简） */
-                if (isDropTarget) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.04f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "\uD83D\uDCC5",
-                            color = Color(0xFFFF9A5C).copy(alpha = 0.6f),
-                            fontSize = 18.sp
-                        )
+        /** 图片：始终渲染（拖拽时半透明，正常时完整显示） */
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(imagePath)
+                .crossfade(true)
+                .scale(Scale.FIT)
+                .listener(object : ImageRequest.Listener {
+                    /** 图片加载成功后，用真实宽高比修正（作为 BitmapFactory 预读的兜底） */
+                    override fun onSuccess(request: ImageRequest, result: SuccessResult) {
+                        val drawable = result.drawable
+                        if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
+                            val ratio = drawable.intrinsicWidth.toFloat() / drawable.intrinsicHeight.toFloat()
+                            /** 仅在差异较大时更新，避免频繁重组 */
+                            if (kotlin.math.abs(ratio - imageAspectRatio) > 0.01f) {
+                                imageAspectRatio = ratio
+                            }
+                        }
                     }
-                }
+                })
+                .build(),
+            contentDescription = "图片附件",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (!isDragging) Modifier.clickable { onClick(imagePath) } else Modifier)
+        )
+
+        /** 删除按钮（仅正常状态显示） */
+        if (!isDragging) {
+            Box(
+                modifier = Modifier
+                    .padding(4.dp)
+                    .size(18.dp)
+                    .align(Alignment.TopEnd)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(Color.Black.copy(alpha = 0.35f))
+                    .clickable { onDelete(imagePath) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "\u00D7",
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
+        }
+
+        /** 跨行目标提示（虚线边框已在主容器 modifier 中绘制，此处不再需要额外覆盖层） */
+
+        /** 🆕 v7：插入竖线指示器（跨行移动模式） */
+        if (showInsertLineBefore || showInsertLineAfter) {
+            InsertLineIndicator(
+                isBefore = showInsertLineBefore,
+                modifier = Modifier.matchParentSize()
+            )
+        }
+    }
+
+    /**
+     * ===== 拖拽浮层（Popup） =====
+     *
+     * 使用 Popup 实现真正的"浮于最上方"效果：
+     * - Popup 是独立窗口，不受父容器裁剪
+     * - 阴影、缩放、位移全部在 Popup 内同步
+     * - 位置 = 父容器内偏移 + 手指触摸偏移 + 拖拽偏移 - 居中修正
+     * - focusable=false 确保 Popup 不拦截触摸事件
+     * - 淡入淡出动画（popupAlpha）
+     */
+    if (showPopup && componentSize != IntSize.Zero) {
+        /**
+         * 居中修正偏移：让图片中心对齐手指位置
+         *
+         * 默认 Popup 左上角对齐手指，减去尺寸的一半后，
+         * 图片中心点就会精确对齐到手指位置。
+         */
+        val centerOffsetX = componentSize.width / 2f
+        val centerOffsetY = componentSize.height / 2f
+
+        Popup(
+            alignment = Alignment.TopStart,
+            /**
+             * Popup 定位公式（v5 修复版）：
+             *
+             * offset = componentOffsetInParent + initialTouchOffset + dragOffset - centerOffset
+             *
+             * │─ componentOffsetInParent ─│ 组件在父容器（Row）中的位置偏移
+             *                                → 解决多图场景下越往后偏离越大的问题
+             *
+             * │─── initialTouchOffset ────│ 长按触发时手指在组件内的触摸位置
+             *                                → 让图片对应区域对齐手指按下点
+             *
+             * │─────── dragOffset ────────│ 拖拽过程中手指的移动量
+             *                                → 实时跟随手指
+             *
+             * │───── centerOffset ────────│ 尺寸的一半（居中修正）
+             *                                → 让图片中心而非左上角对齐手指
+             */
+            offset = IntOffset(
+                x = (componentOffsetInParent.x + initialTouchOffset.x + dragOffset.x - centerOffsetX).roundToInt(),
+                y = (componentOffsetInParent.y + initialTouchOffset.y + dragOffset.y - centerOffsetY).roundToInt()
+            ),
+            properties = PopupProperties(focusable = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(
+                        width = with(density) { componentSize.width.toDp() },
+                        height = with(density) { componentSize.height.toDp() }
+                    )
+                    .shadow(
+                        elevation = 6.dp,
+                        shape = RoundedCornerShape(4.dp),
+                        ambientColor = Color.Black.copy(alpha = 0.15f),
+                        spotColor = Color.Black.copy(alpha = 0.08f)
+                    )
+                    .clip(RoundedCornerShape(4.dp))
+                    .graphicsLayer {
+                        scaleX = currentScale
+                        scaleY = currentScale
+                        /** 淡入淡出动画 */
+                        alpha = popupAlpha
+                    }
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(imagePath)
+                        .scale(Scale.FIT)
+                        .build(),
+                    contentDescription = "拖拽中的图片",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 🆕 v7：插入竖线指示器组件
+ *
+ * 在跨行移动模式下，当手指位于两张图片之间时显示，
+ * 告知用户图片将被插入到该位置。
+ *
+ * 样式：
+ * - 宽度：3dp
+ * - 颜色：主题强调色（primary）
+ * - 圆角端点
+ * - 轻微呼吸动画（alpha 循环）
+ *
+ * @param isBefore true=显示在左侧（当前图之前），false=显示在右侧（当前图之后）
+ */
+@Composable
+private fun InsertLineIndicator(
+    isBefore: Boolean,
+    modifier: Modifier = Modifier
+) {
+    /**
+     * 呼吸动画：alpha 在 0.6 ~ 1.0 之间循环
+     *
+     * 使用 Animatable + LaunchedEffect 实现循环呼吸效果
+     * （兼容 Compose 1.9.2，无需 animateFloat / infiniteTransition）
+     */
+    val breatheAlpha = remember { androidx.compose.animation.core.Animatable(0.6f) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            /** 渐亮：0.6 → 1.0 */
+            breatheAlpha.animateTo(
+                targetValue = 1.0f,
+                animationSpec = tween(durationMillis = 800, easing = EaseInOut)
+            )
+            /** 渐暗：1.0 → 0.6 */
+            breatheAlpha.animateTo(
+                targetValue = 0.6f,
+                animationSpec = tween(durationMillis = 800, easing = EaseInOut)
+            )
+        }
+    }
+
+    Box(
+        modifier = modifier,
+        contentAlignment = if (isBefore) Alignment.CenterStart else Alignment.CenterEnd
+    ) {
+        /** 在 @Composable 上下文中读取主题颜色（Canvas 的 DrawScope 不支持） */
+        val lineColor = MaterialTheme.colorScheme.primary
+
+        Canvas(modifier = Modifier.width(3.dp).fillMaxHeight()) {
+            /** 绘制圆角竖线 */
+            drawRoundRect(
+                color = lineColor.copy(alpha = breatheAlpha.value),
+                cornerRadius = CornerRadius(1.5.dp.toPx())
+            )
         }
     }
 }
@@ -276,16 +591,61 @@ fun DraggableImageAttachment(
  * 当图片被拖拽离开原位置时，
  * 在原位置显示此占位符以保持布局稳定。
  *
- * 尺寸与 DraggableImageAttachment 保持一致（100×80dp）。
+ * 尺寸与 DraggableImageAttachment 保持一致：
+ * - 宽度固定 100dp
+ * - 高度按图片宽高比自适应（通过 BitmapFactory 预读）
+ *
+ * @param imagePath 图片路径（用于预读宽高比）
+ * @param width 占位符宽度（dp，默认 100）
  */
 @Composable
 fun ImagePlaceholder(
-    width: Int = 100,
-    height: Int = 80
+    imagePath: String = "",
+    width: Int = 100
 ) {
+    val context = LocalContext.current
+
+    /**
+     * 占位符宽高比（与 DraggableImageAttachment 一致，通过 BitmapFactory 预读）
+     *
+     * 默认 4:3，预读完成后更新为真实值。
+     */
+    var placeholderAspectRatio by remember(imagePath) { mutableStateOf(4f / 3f) }
+
+    /** 通过 BitmapFactory 预读图片宽高比 */
+    LaunchedEffect(imagePath) {
+        if (imagePath.isBlank()) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            try {
+                val options = BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                if (imagePath.startsWith("content://")) {
+                    context.contentResolver.openInputStream(android.net.Uri.parse(imagePath))
+                        ?.use { stream ->
+                            BitmapFactory.decodeStream(stream, null, options)
+                        }
+                } else {
+                    val file = File(imagePath)
+                    if (file.exists()) {
+                        BitmapFactory.decodeFile(imagePath, options)
+                    }
+                }
+                if (options.outWidth > 0 && options.outHeight > 0) {
+                    withContext(Dispatchers.Main) {
+                        placeholderAspectRatio = options.outWidth.toFloat() / options.outHeight.toFloat()
+                    }
+                }
+            } catch (_: Exception) {
+                /** 预读失败使用默认比例 */
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
-            .size(width.dp, height.dp)
+            .width(width.dp)
+            .aspectRatio(placeholderAspectRatio)
             .clip(RoundedCornerShape(4.dp))
             .background(Color(0xFFF3F4F6).copy(alpha = 0.5f)),
         contentAlignment = Alignment.Center

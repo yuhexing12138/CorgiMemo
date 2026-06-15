@@ -103,15 +103,23 @@ fun CheckboxEditText(
     onDeleteVoice: ((Int, String) -> Unit)? = null,
     /** 🆕 拖拽状态：来自 CrossLineDragManager，驱动子组件的视觉反馈 */
     dragState: com.corgimemo.app.ui.components.DragState = com.corgimemo.app.ui.components.DragState(),
-    /** 🆕 附件拖拽开始回调（源行索引, 源图片/语音位置索引）*/
-    onAttachmentDragStart: ((Int, Int) -> Unit)? = null,
-    /** 🆕 附件拖拽过程中更新回调（当前偏移量, 手指Y坐标）
-     *  用于同步 CrossLineDragManager 状态和计算目标行 */
-    onAttachmentDragUpdate: ((androidx.compose.ui.geometry.Offset, Float) -> Unit)? = null,
+    /** 🆕 附件拖拽开始回调（源行索引, 源图片/语音位置索引, 图片高度px[语音传0]）*/
+    onAttachmentDragStart: ((Int, Int, Float) -> Unit)? = null,
+    /** 🆕 附件拖拽过程中更新回调（当前偏移量, 手指X坐标, 手指Y坐标）
+     *  用于同步 CrossLineDragManager 状态和计算目标行/放置类型 */
+    onAttachmentDragUpdate: ((androidx.compose.ui.geometry.Offset, Float, Float) -> Unit)? = null,
     /** 🆕 附件拖拽结束回调（源行, 源位置, 目标行, 目标位置[null=追加末尾]）*/
     onAttachmentDragEnd: ((Int, Int, Int, Int?) -> Unit)? = null,
     /** 🆕 行边界更新回调（用于精确的目标行检测，参数：行索引, Rect边界矩形）*/
     onRowBoundsChanged: ((Int, androidx.compose.ui.geometry.Rect) -> Unit)? = null,
+    /** 🆕 v7.2：图片行边界更新回调（用于跨行拖拽时精确的 X 轴位置检测）
+     *  与 onRowBoundsChanged 不同，此回调采集的是图片 Row（而非整行文本 Row）的屏幕坐标，
+     *  确保跨行模式下 fingerX 的坐标转换基准点准确对齐图片区域。
+     *
+     * @param lineIndex 行索引
+     * @param rect 图片 Row 的屏幕边界矩形
+     * @param scrollOffsetPx 图片 Row 当前的水平滚动偏移量（像素），用于 X 轴坐标修正 */
+    onImageRowBoundsChanged: ((Int, androidx.compose.ui.geometry.Rect, Float) -> Unit)? = null,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     placeholder: String = "回车可连续添加子待办，输入 / 可新建待办"
@@ -191,7 +199,8 @@ fun CheckboxEditText(
                     onRegisterFocusRequester = { idx, fr -> focusRequesters[idx] = fr },
                     onImageClick = { },
                     onDeleteImage = { },
-                    onDeleteVoice = { }
+                    onDeleteVoice = { },
+                    onImageRowBoundsChanged = null  // 空状态无需采集图片行坐标
                 )
             }
         } else {
@@ -304,19 +313,21 @@ fun CheckboxEditText(
                             onDeleteVoice = { voicePath -> onDeleteVoice?.invoke(currentIndex, voicePath) },
                             /** 🆕 传递拖拽状态给子组件（用于判断 isDragging / isDropTarget）*/
                             dragState = dragState,
-                            /** 🆕 附件拖拽回调 */
-                            onAttachmentDragStart = { srcLineIdx, srcImgIdx ->
-                                onAttachmentDragStart?.invoke(srcLineIdx, srcImgIdx)
+                            /** 🆕 附件拖拽回调（v7.5：增加高度参数）*/
+                            onAttachmentDragStart = { srcLineIdx, srcImgIdx, heightPx ->
+                                onAttachmentDragStart?.invoke(srcLineIdx, srcImgIdx, heightPx)
                             },
                             /** 🆕 附件拖拽过程中更新回调 */
-                            onAttachmentDragUpdate = { dragOffset, fingerY ->
-                                onAttachmentDragUpdate?.invoke(dragOffset, fingerY)
+                            onAttachmentDragUpdate = { dragOffset, fingerX, fingerY ->
+                                onAttachmentDragUpdate?.invoke(dragOffset, fingerX, fingerY)
                             },
                             onAttachmentDragEnd = { srcLineIdx, srcImgIdx, targetLineIdx, targetImgIdx ->
                                 onAttachmentDragEnd?.invoke(srcLineIdx, srcImgIdx, targetLineIdx, targetImgIdx)
                             },
                             /** 🆕 应用行边界捕获修饰符 */
-                            modifier = rowModifier
+                            modifier = rowModifier,
+                            /** 🆕 v7.2：传递图片行边界回调（透传外层参数）*/
+                            onImageRowBoundsChanged = onImageRowBoundsChanged
                         )
                     }
                 }
@@ -443,14 +454,19 @@ private fun CheckboxEditRow(
     onDeleteVoice: (String) -> Unit = {},
     /** 🆕 拖拽状态（来自 CrossLineDragManager）*/
     dragState: com.corgimemo.app.ui.components.DragState = com.corgimemo.app.ui.components.DragState(),
-    /** 🆕 附件拖拽开始回调 */
-    onAttachmentDragStart: ((Int, Int) -> Unit)? = null,
+    /** 🆕 附件拖拽开始回调（v7.5：增加图片高度参数）*/
+    onAttachmentDragStart: ((Int, Int, Float) -> Unit)? = null,
     /** 🆕 附件拖拽过程中更新回调（同步 CrossLineDragManager 状态）*/
-    onAttachmentDragUpdate: ((androidx.compose.ui.geometry.Offset, Float) -> Unit)? = null,
+    onAttachmentDragUpdate: ((androidx.compose.ui.geometry.Offset, Float, Float) -> Unit)? = null,
     /** 🆕 附件拖拽结束回调 */
     onAttachmentDragEnd: ((Int, Int, Int, Int?) -> Unit)? = null,
     /** 🆕 行修饰符（用于 onGloballyPositioned 行边界捕获）*/
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 🆕 v7.2：图片行边界更新回调（用于跨行拖拽时精确的 X 轴位置检测）
+     *  @param lineIndex 行索引
+     *  @param rect 图片 Row 的屏幕边界矩形
+     *  @param scrollOffsetPx 图片 Row 当前的水平滚动偏移量（像素） */
+    onImageRowBoundsChanged: ((Int, androidx.compose.ui.geometry.Rect, Float) -> Unit)? = null
 ) {
     /** 复选框颜色动画 */
     val checkboxColor by animateColorAsState(
@@ -591,10 +607,45 @@ private fun CheckboxEditRow(
         ) {
             /** 图片附件列表（支持拖拽排序） */
             if (line.imagePaths.isNotEmpty()) {
+                /**
+                 * 🆕 v7.4：图片行滚动状态（在 Composable 作用域内创建）
+                 *
+                 * rememberScrollState 必须在 @Composable 作用域中调用。
+                 * 其 value 将在 onGloballyPositioned 中读取并传给回调。
+                 */
+                val imageScrollState = rememberScrollState()
+
+                /**
+                 * 🆕 v7.4：显式捕获所有需要在 onGloballyPositioned lambda 中使用的变量
+                 *
+                 * onGloballyPositioned 的 (LayoutCoordinates) -> Unit lambda
+                 * 在深层嵌套作用域中可能出现变量解析失败的问题，
+                 * 因此在 Composable 层面提前捕获并标注类型。
+                 */
+                val capturedCallback: ((Int, androidx.compose.ui.geometry.Rect, Float) -> Unit)? =
+                    onImageRowBoundsChanged
+                val capturedLineIndex: Int = lineIndex  // 使用函数参数 lineIndex
+
+                /**
+                 * 🆕 v7.4：构建带坐标采集的 Modifier
+                 */
+                val imageRowModifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(imageScrollState)
+                    .onGloballyPositioned { coords ->
+                        val screenPos = coords.localToScreen(androidx.compose.ui.geometry.Offset.Zero)
+                        val sz = coords.size
+                        val rect = androidx.compose.ui.geometry.Rect(
+                            left = screenPos.x,
+                            top = screenPos.y,
+                            right = screenPos.x + sz.width,
+                            bottom = screenPos.y + sz.height
+                        )
+                        capturedCallback?.invoke(capturedLineIndex, rect, imageScrollState.value.toFloat())
+                    }
+
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
+                    modifier = imageRowModifier,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     line.imagePaths.forEachIndexed { imageIndex, imagePath ->
@@ -611,16 +662,49 @@ private fun CheckboxEditRow(
                                 dragState.sourceImageIndex == imageIndex
 
                         /**
-                         * 判断当前行是否为跨行拖拽的目标位置
+                         * 判断当前图片是否为拖拽目标（跨行 + 行内两种模式）
                          *
-                         * 条件：
-                         * - dragMode == CROSS_LINE（处于跨行移动模式）
-                         * - currentTargetLine == lineIndex（当前悬停目标为此行）
-                         * - 且不是源行本身（避免自己高亮自己）
+                         * 🆕 v7 修复：跨行模式现在精确到单张图片
+                         *
+                         * 跨行模式（CROSS_LINE）：
+                         * - dropType == SWAP_TO_IMAGE 且 currentTargetImage 匹配当前图片索引
+                         * - 不再整行高亮，只有被悬停的具体图片显示虚线框
+                         *
+                         * 行内排序模式（INLINE_SORT）：
+                         * - 当前图片索引与目标图片索引匹配
+                         * - 且不是源图片本身（避免自己高亮自己）
                          */
                         val isDropTargetForCrossLine = dragState.dragMode == com.corgimemo.app.ui.components.DragMode.CROSS_LINE &&
                                 dragState.currentTargetLine == lineIndex &&
-                                dragState.sourceLineIndex != lineIndex
+                                dragState.sourceLineIndex != lineIndex &&
+                                dragState.dropType == com.corgimemo.app.ui.components.DropType.SWAP_TO_IMAGE &&
+                                dragState.currentTargetImage == imageIndex
+
+                        /** 行内排序模式：同一行内交换时的目标图片 */
+                        val isDropTargetInline = dragState.dragMode == com.corgimemo.app.ui.components.DragMode.INLINE_SORT &&
+                                dragState.currentTargetImage == imageIndex &&
+                                dragState.sourceImageIndex != imageIndex
+
+                        /**
+                         * 🆕 v7：插入竖线显示判定（跨行移动模式）
+                         *
+                         * INSERT_BEFORE：在当前图片之前显示竖线
+                         *   → dropType == INSERT_BEFORE 且 currentTargetImage == 当前索引
+                         *
+                         * INSERT_AFTER：在最后一张图片之后显示竖线
+                         *   → dropType == INSERT_AFTER 且当前是最后一张图
+                         */
+                        val showInsertLineBefore = dragState.dragMode == com.corgimemo.app.ui.components.DragMode.CROSS_LINE &&
+                                dragState.currentTargetLine == lineIndex &&
+                                dragState.sourceLineIndex != lineIndex &&
+                                dragState.dropType == com.corgimemo.app.ui.components.DropType.INSERT_BEFORE &&
+                                dragState.currentTargetImage == imageIndex
+
+                        val showInsertLineAfter = dragState.dragMode == com.corgimemo.app.ui.components.DragMode.CROSS_LINE &&
+                                dragState.currentTargetLine == lineIndex &&
+                                dragState.sourceLineIndex != lineIndex &&
+                                dragState.dropType == com.corgimemo.app.ui.components.DropType.INSERT_AFTER &&
+                                imageIndex == line.imagePaths.lastIndex
 
                         /**
                          * 使用可拖拽的图片附件组件
@@ -633,14 +717,17 @@ private fun CheckboxEditRow(
                             lineIndex = lineIndex,
                             imageIndex = imageIndex,
                             isDragging = isThisImageDragging,
-                            isDropTarget = isDropTargetForCrossLine,
-                            onDragStart = { sourceLineIdx, sourceImgIdx ->
-                                /** 通知外部开始拖拽：更新 CrossLineDragManager 状态 */
-                                onAttachmentDragStart?.invoke(sourceLineIdx, sourceImgIdx)
+                            isDropTarget = isDropTargetForCrossLine || isDropTargetInline,
+                            /** 🆕 v7：插入竖线参数 */
+                            showInsertLineBefore = showInsertLineBefore,
+                            showInsertLineAfter = showInsertLineAfter,
+                            onDragStart = { sourceLineIdx, sourceImgIdx, imageHeightPx ->
+                                /** 🆕 v7.5：透传图片高度到外部回调 */
+                                onAttachmentDragStart?.invoke(sourceLineIdx, sourceImgIdx, imageHeightPx)
                             },
-                            /** 🆕 关键：传递拖拽更新回调，同步 CrossLineDragManager 状态 */
-                            onDragUpdate = { dragOffset, fingerY ->
-                                onAttachmentDragUpdate?.invoke(dragOffset, fingerY)
+                            /** 🆕 关键：传递拖拽更新回调（含 fingerX），同步 CrossLineDragManager 状态 */
+                            onDragUpdate = { dragOffset, fingerX, fingerY ->
+                                onAttachmentDragUpdate?.invoke(dragOffset, fingerX, fingerY)
                             },
                             onDragEnd = { targetLineIdx, targetImgIdx ->
                                 /** 通知外部结束拖拽：执行实际的数据移动操作 */
@@ -688,12 +775,12 @@ private fun CheckboxEditRow(
                     isDropTarget = isVoiceDropTarget,
                     isPlaying = false, // TODO: 从外部获取实际播放状态
                     onDragStart = { sourceLineIdx, sourceVoiceIdx ->
-                        /** 通知外部开始拖拽：更新 CrossLineDragManager 状态 */
-                        onAttachmentDragStart?.invoke(sourceLineIdx, sourceVoiceIdx)
+                        /** 🆕 v7.5：语音附件无高度概念，传 0f（回退使用固定常量） */
+                        onAttachmentDragStart?.invoke(sourceLineIdx, sourceVoiceIdx, 0f)
                     },
                     /** 🆕 关键：传递拖拽更新回调，同步 CrossLineDragManager 状态 */
-                    onDragUpdate = { dragOffset, fingerY ->
-                        onAttachmentDragUpdate?.invoke(dragOffset, fingerY)
+                    onDragUpdate = { dragOffset, fingerX, fingerY ->
+                        onAttachmentDragUpdate?.invoke(dragOffset, fingerX, fingerY)
                     },
                     onDragEnd = { targetLineIdx, targetVoiceIdx ->
                         /** 通知外部结束拖拽：执行实际的数据移动操作 */

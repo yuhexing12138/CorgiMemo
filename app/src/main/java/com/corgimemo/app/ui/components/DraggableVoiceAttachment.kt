@@ -59,7 +59,7 @@ fun DraggableVoiceAttachment(
     isDropTarget: Boolean = false,
     isPlaying: Boolean = false,
     onDragStart: (lineIndex: Int, voiceIndex: Int) -> Unit = { _, _ -> },
-    onDragUpdate: (dragOffset: Offset, fingerY: Float) -> Unit = { _, _ -> },
+    onDragUpdate: (dragOffset: Offset, fingerX: Float, fingerY: Float) -> Unit = { _, _, _ -> },
     onDragEnd: (targetLineIndex: Int, targetVoiceIndex: Int?) -> Unit = { _, _ -> },
     onPauseRequest: () -> Unit = {},
     onResumeRequest: () -> Unit = {},
@@ -138,7 +138,8 @@ fun DraggableVoiceAttachment(
                             x = dragOffset.x + dragAmount.x,
                             y = dragOffset.y + dragAmount.y
                         )
-                        onDragUpdate(dragOffset, dragOffset.y)
+                        /** 🆕 v7：传递手指绝对坐标（用于跨行 X 轴位置检测） */
+                        onDragUpdate(dragOffset, change.position.x, change.position.y)
                     },
                     onDragEnd = {
                         dragOffset = Offset.Zero

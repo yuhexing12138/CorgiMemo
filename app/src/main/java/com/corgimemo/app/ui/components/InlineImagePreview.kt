@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.components
 
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +11,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,7 +30,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.request.SuccessResult
 import coil.size.Scale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * 内联图片预览组件
@@ -34,7 +44,7 @@ import coil.size.Scale
  *
  * **功能特性**:
  * - ✅ 异步加载（使用 Coil 库，避免主线程阻塞）
- * - ✅ 自适应高度（保持原始宽高比）
+ * - ✅ 自适应高度（保持原始宽高比，动态获取图片真实比例）
  * - ✅ 圆角边框（符合项目 UI 设计规范 16dp）
  *
  * **UI 布局结构**:
@@ -60,10 +70,54 @@ fun InlineImagePreview(
     modifier: Modifier = Modifier,
     maxWidth: Dp = 300.dp,
     isHighlighted: Boolean = false,
-    isVisible: Boolean = true, /** Compose 1.9 onVisibilityChanged：是否在视口内 */
+    isVisible: Boolean = true,
     onClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+
+    /**
+     * 图片真实宽高比（从加载的图片中动态获取）
+     *
+     * 默认 4:3（常见照片比例），图片加载完成后更新为真实宽高比。
+     * 使用 imageUri 作为 key，切换图片时重置。
+     *
+     * 之前硬编码 16:9 导致非 16:9 的图片被压缩/拉伸。
+     */
+    var imageAspectRatio by remember(imageUri) { mutableStateOf(4f / 3f) }
+
+    /**
+     * 通过 BitmapFactory 预读图片宽高比
+     *
+     * 在 Coil 异步加载前，先通过 inJustDecodeBounds 读取图片宽高
+     * （不加载像素数据，几乎零耗时），避免首次渲染时的比例跳变。
+     */
+    LaunchedEffect(imageUri) {
+        withContext(Dispatchers.IO) {
+            try {
+                val options = BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                if (imageUri.startsWith("content://")) {
+                    context.contentResolver.openInputStream(android.net.Uri.parse(imageUri))
+                        ?.use { stream ->
+                            BitmapFactory.decodeStream(stream, null, options)
+                        }
+                } else {
+                    val file = File(imageUri)
+                    if (file.exists()) {
+                        BitmapFactory.decodeFile(imageUri, options)
+                    }
+                }
+                if (options.outWidth > 0 && options.outHeight > 0) {
+                    withContext(Dispatchers.Main) {
+                        imageAspectRatio = options.outWidth.toFloat() / options.outHeight.toFloat()
+                    }
+                }
+            } catch (_: Exception) {
+                /** 预读失败不影响功能，Coil 加载后会再次更新 */
+            }
+        }
+    }
 
     Box(
         modifier = modifier
@@ -118,14 +172,23 @@ fun InlineImagePreview(
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(imageUri)
-                        .crossfade(true) /** 开启交叉淡入效果 */
-                        .scale(Scale.FILL) /** 填充模式（保持比例） */
+                        .crossfade(true)
+                        .scale(Scale.FIT)
+                        .listener(object : ImageRequest.Listener {
+                            /** 图片加载成功后，获取真实宽高比并更新容器尺寸 */
+                            override fun onSuccess(request: ImageRequest, result: SuccessResult) {
+                                val drawable = result.drawable
+                                if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
+                                    imageAspectRatio = drawable.intrinsicWidth.toFloat() / drawable.intrinsicHeight.toFloat()
+                                }
+                            }
+                        })
                         .build(),
                     contentDescription = "插入的图片",
-                    contentScale = ContentScale.Fit, /** 保持宽高比，不裁剪 */
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(16f / 9f) /** 默认 16:9 宽高比 */
+                        .aspectRatio(imageAspectRatio)
                         .then(
                             if (maxWidth.value < Float.MAX_VALUE) {
                                 Modifier.padding(8.dp)
@@ -145,7 +208,7 @@ fun InlineImagePreview(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(16f / 9f)
+                        .aspectRatio(imageAspectRatio)
                         .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp))
                         .padding(8.dp),
                     contentAlignment = Alignment.Center

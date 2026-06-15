@@ -182,6 +182,24 @@ fun TodoEditScreen(
     val rowBoundsMap = remember { mutableMapOf<Int, androidx.compose.ui.geometry.Rect>() }
 
     /**
+     * 🆕 v7.2：图片行边界映射表
+     *
+     * 与 rowBoundsMap 不同，此 Map 存储的是每行**图片 Row**（而非整行文本 Row）的屏幕坐标。
+     * 用于跨行拖拽时精确计算 fingerX 的相对坐标：
+     * - rowBoundsMap 包含 checkbox + 文字区域，左边界偏左
+     * - imageRowBoundsMap 精确对齐图片区域的起始位置
+     */
+    val imageRowBoundsMap = remember { mutableMapOf<Int, androidx.compose.ui.geometry.Rect>() }
+
+    /**
+     * 🆕 v7.3：图片行水平滚动偏移映射表
+     *
+     * 存储每行图片 Row 当前的 horizontalScroll 偏移量（像素）。
+     * 用于修正 localToScreen 返回的视觉坐标与手指绝对坐标之间的偏差。
+     */
+    val imageRowScrollOffsetMap = remember { mutableMapOf<Int, Float>() }
+
+    /**
      * 向当前聚焦行添加图片附件
      *
      * @param imagePath 图片的本地存储路径
@@ -692,8 +710,9 @@ fun TodoEditScreen(
                  * @param sourceLineIdx 被拖拽图片所属的行索引
                  * @param sourceImgIdx 被拖拽图片在该行列表中的位置索引
                  */
-                onAttachmentDragStart = { sourceLineIdx, sourceImgIdx ->
-                    crossLineDragManager.startDrag(sourceLineIdx, sourceImgIdx)
+                onAttachmentDragStart = { sourceLineIdx, sourceImgIdx, imageHeightPx ->
+                    /** 🆕 v7.5：传递实际图片高度（像素）到 CrossLineDragManager */
+                    crossLineDragManager.startDrag(sourceLineIdx, sourceImgIdx, imageHeightPx)
                 },
                 /**
                  * 🆕 附件拖拽过程中更新回调
@@ -705,15 +724,47 @@ fun TodoEditScreen(
                  * 3. 驱动 UI 的视觉反馈（目标行高亮等）
                  *
                  * @param dragOffset 当前累积的拖拽偏移量（相对于起始点）
+                 * @param fingerX 手指当前 X 坐标（用于跨行模式下交换/插入判定）
                  * @param fingerY 手指当前 Y 坐标（用于检测目标行）
                  */
-                onAttachmentDragUpdate = { dragOffset, fingerY ->
+                onAttachmentDragUpdate = { dragOffset, fingerX, fingerY ->
+                    /** 🆕 v7：获取目标行的图片数量（用于 X 轴位置计算） */
+                    val targetLineIdx = crossLineDragManager.state.currentTargetLine
+                    val targetImageCount = if (targetLineIdx in todoLines.indices) {
+                        todoLines[targetLineIdx].imagePaths.size
+                    } else {
+                        0
+                    }
+                    /**
+                     * 🆕 v7.2 修复：使用图片行边界（而非整行文本边界）作为 X 坐标转换基准
+                     *
+                     * 之前的问题：rowBoundsMap 包含 checkbox + 文字区域，左边界远偏于图片实际位置，
+                     * 导致 relativeFingerXDp 计算值偏大，第3、4张图位置被判定为"超出范围"。
+                     */
+                    val targetRowLeftX = if (targetLineIdx in imageRowBoundsMap) {
+                        imageRowBoundsMap[targetLineIdx]!!.left
+                    } else {
+                        0f
+                    }
+                    /**
+                     * 🆕 v7.3 优化1：获取目标行的水平滚动偏移量
+                     */
+                    val targetScrollOffset = if (targetLineIdx in imageRowScrollOffsetMap) {
+                        imageRowScrollOffsetMap[targetLineIdx]!!
+                    } else {
+                        0f
+                    }
                     /** 调用 CrossLineDragManager.updateDrag() 同步状态 */
                     crossLineDragManager.updateDrag(
                         currentOffset = dragOffset,
                         density = context.resources.displayMetrics.density,
-                        rowBounds = rowBoundsMap.values.toList(),  // 传递所有行的边界信息
-                        fingerY = fingerY
+                        rowBounds = rowBoundsMap.values.toList(),  // 传递所有行的边界信息（INLINE_SORT 和回退使用）
+                        fingerY = fingerY,
+                        fingerX = fingerX,                       // 🆕 v7：手指 X 坐标
+                        targetLineImageCount = targetImageCount,   // 🆕 v7：目标行图片数量
+                        targetRowLeftX = targetRowLeftX,           // 🆕 v7.2：目标行左边界（用于 X 坐标转换）
+                        imageRowScrollOffsetPx = targetScrollOffset,  // 🆕 v7.3：滚动偏移补偿
+                        imageRowBounds = imageRowBoundsMap.values.toList()  // 🆕 v7.3：图片行边界（精确 Y 检测）
                     )
                 },
                 /**
@@ -752,6 +803,8 @@ fun TodoEditScreen(
 
                     /** 3. 清理行边界缓存（布局可能已变化）*/
                     rowBoundsMap.clear()
+                    imageRowBoundsMap.clear()  // 🆕 v7.2：同步清理图片行边界
+                    imageRowScrollOffsetMap.clear()  // 🆕 v7.3：同步清理滚动偏移
                 },
                 /**
                  * 🆕 行边界更新回调
@@ -764,6 +817,20 @@ fun TodoEditScreen(
                  */
                 onRowBoundsChanged = { lineIndex, rect ->
                     rowBoundsMap[lineIndex] = rect
+                },
+                /**
+                 * 🆕 v7.3：图片行边界 + 滚动偏移更新回调
+                 *
+                 * 由 CheckboxEditText 中图片 Row 的 onGloballyPositioned 触发，
+                 * 存储每行图片区域的精确屏幕坐标和水平滚动偏移量。
+                 *
+                 * @param lineIndex 行索引
+                 * @param rect 图片 Row 的屏幕边界矩形
+                 * @param scrollOffsetPx 水平滚动偏移量（像素）
+                 */
+                onImageRowBoundsChanged = { lineIndex, rect, scrollOffsetPx ->
+                    imageRowBoundsMap[lineIndex] = rect
+                    imageRowScrollOffsetMap[lineIndex] = scrollOffsetPx
                 },
                 modifier = Modifier
                     .fillMaxWidth()
