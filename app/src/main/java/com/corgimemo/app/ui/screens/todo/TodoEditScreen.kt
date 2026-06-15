@@ -728,43 +728,26 @@ fun TodoEditScreen(
                  * @param fingerY 手指当前 Y 坐标（用于检测目标行）
                  */
                 onAttachmentDragUpdate = { dragOffset, fingerX, fingerY ->
-                    /** 🆕 v7：获取目标行的图片数量（用于 X 轴位置计算） */
-                    val targetLineIdx = crossLineDragManager.state.currentTargetLine
-                    val targetImageCount = if (targetLineIdx in todoLines.indices) {
-                        todoLines[targetLineIdx].imagePaths.size
-                    } else {
-                        0
-                    }
                     /**
-                     * 🆕 v7.2 修复：使用图片行边界（而非整行文本边界）作为 X 坐标转换基准
+                     * 🆕 v7.6 修复：构建各行的图片数量 Map
                      *
-                     * 之前的问题：rowBoundsMap 包含 checkbox + 文字区域，左边界远偏于图片实际位置，
-                     * 导致 relativeFingerXDp 计算值偏大，第3、4张图位置被判定为"超出范围"。
+                     * 不再预计算单个 targetLine 的数据（因为 updateDrag() 内部会检测到新的目标行），
+                     * 而是构建完整的 Map 让内部按需查找。
                      */
-                    val targetRowLeftX = if (targetLineIdx in imageRowBoundsMap) {
-                        imageRowBoundsMap[targetLineIdx]!!.left
-                    } else {
-                        0f
-                    }
-                    /**
-                     * 🆕 v7.3 优化1：获取目标行的水平滚动偏移量
-                     */
-                    val targetScrollOffset = if (targetLineIdx in imageRowScrollOffsetMap) {
-                        imageRowScrollOffsetMap[targetLineIdx]!!
-                    } else {
-                        0f
-                    }
-                    /** 调用 CrossLineDragManager.updateDrag() 同步状态 */
+                    val imageCountMap = todoLines.mapIndexed { idx, line ->
+                        idx to line.imagePaths.size
+                    }.toMap()
+
                     crossLineDragManager.updateDrag(
                         currentOffset = dragOffset,
                         density = context.resources.displayMetrics.density,
-                        rowBounds = rowBoundsMap.values.toList(),  // 传递所有行的边界信息（INLINE_SORT 和回退使用）
+                        rowBounds = rowBoundsMap.values.toList(),
                         fingerY = fingerY,
-                        fingerX = fingerX,                       // 🆕 v7：手指 X 坐标
-                        targetLineImageCount = targetImageCount,   // 🆕 v7：目标行图片数量
-                        targetRowLeftX = targetRowLeftX,           // 🆕 v7.2：目标行左边界（用于 X 坐标转换）
-                        imageRowScrollOffsetPx = targetScrollOffset,  // 🆕 v7.3：滚动偏移补偿
-                        imageRowBounds = imageRowBoundsMap.values.toList()  // 🆕 v7.3：图片行边界（精确 Y 检测）
+                        fingerX = fingerX,
+                        imageCountMap = imageCountMap,        // 🆕 v7.6：所有行的图片数量
+                        imageRowBoundsMap = imageRowBoundsMap,  // 🆕 v7.6：所有行的图片边界
+                        imageRowScrollOffsetMap = imageRowScrollOffsetMap,  // 🆕 v7.6：所有行的滚动偏移
+                        imageRowBounds = imageRowBoundsMap.values.toList()
                     )
                 },
                 /**

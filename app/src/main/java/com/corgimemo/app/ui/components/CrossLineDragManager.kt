@@ -139,9 +139,9 @@ class CrossLineDragManager {
      * @param fingerY 手指当前 Y 坐标（用于跨行目标行检测）
      * @param fingerX 手指当前 X 坐标（屏幕绝对坐标，用于跨行模式下交换/插入判定）
      * @param targetLineImageCount 目标行中的图片数量（用于 X 轴位置计算）
-     * @param targetRowLeftX 目标行的左边界 X 坐标（用于将 fingerX 从绝对坐标转为行内相对坐标）
-     * @param imageRowScrollOffsetPx 🆕 v7.3：图片 Row 的水平滚动偏移量（像素），用于修正 localToScreen 的视觉坐标偏差
-     * @param imageRowBounds 🆕 v7.3：各图片行的边界矩形（用于 CROSS_LINE 模式下更精确的 Y 轴边缘判定）
+     * @param imageRowBoundsMap 🆕 v7.6：各图片行的边界矩形映射（行索引→Rect），用于检测目标行后精确查找该行的 X 坐标基准
+     * @param imageRowScrollOffsetMap 🆕 v7.6：各图片行滚动偏移映射（行索引→像素），用于检测目标行后查找该行的滚动补偿值
+     * @param imageRowBounds 🆕 v7.3：各图片行的边界矩形列表（用于 CROSS_LINE 模式下 Y 轴边缘判定，按索引顺序）
      */
     fun updateDrag(
         currentOffset: Offset,
@@ -149,9 +149,10 @@ class CrossLineDragManager {
         rowBounds: List<androidx.compose.ui.geometry.Rect>? = null,
         fingerY: Float? = null,
         fingerX: Float? = null,
-        targetLineImageCount: Int = 0,
-        targetRowLeftX: Float = 0f,
-        imageRowScrollOffsetPx: Float = 0f,
+        /** 🆕 v7.6：各行的图片数量映射（行索引→数量），用于检测目标行后精确查找 */
+        imageCountMap: Map<Int, Int>? = null,
+        imageRowBoundsMap: Map<Int, androidx.compose.ui.geometry.Rect>? = null,
+        imageRowScrollOffsetMap: Map<Int, Float>? = null,
         imageRowBounds: List<androidx.compose.ui.geometry.Rect>? = null
     ) {
         if (!state.isDragging) return
@@ -210,18 +211,24 @@ class CrossLineDragManager {
             /**
              * 🆕 v7：跨行模式下的 X 轴位置检测
              *
-             * 根据手指在目标行中的 X 坐标，判断是"交换"还是"插入"：
+             * 🆕 v7.6 关键修复：必须在 detectTargetRow() 确定 targetLine 之后，
+             * 再从 Map 中查找该目标行的坐标基准和滚动偏移。
              *
-             * 目标行布局示意（假设 3 张图）：
-             *   |← 图0(100dp) →| 8dp |← 图1(100dp) →| 8dp |← 图2(100dp) →|
-             *   0              108    208             316    416
+             * 之前的 Bug：调用方在 updateDrag() 之前用旧的 targetLineIdx（通常是源行）
+             * 预计算了 targetRowLeftX 和 scrollOffset，传入后即使内部检测到新目标行，
+             * X 轴计算仍然使用旧行的数据 → 目标图片索引完全偏错。
              *
-             * 判定规则：
-             * - fingerX 落在某张图片的 [left, right] 范围内 → SWAP_TO_IMAGE(该图索引)
-             * - fingerX 落在两张图片之间的间隙内       → INSERT_BEFORE(下一张图索引)
-             * - fingerX 超出最后一张图的右边界          → INSERT_AFTER
+             * 修复方式：传入所有行的 Map，内部在知道目标行后再精确查找。
              */
-            if (fingerX != null && targetLineImageCount > 0) {
+            if (fingerX != null) {
+                /** 🆕 v7.6：用检测后的 targetLine 从 Map 中查找该行的正确图片数量 */
+                val actualImageCount = imageCountMap?.get(targetLine) ?: 0
+                if (actualImageCount > 0) {
+                /** 🆕 v7.6：用检测后的 targetLine 从 Map 中查找正确的坐标基准 */
+                val actualTargetLeftX = imageRowBoundsMap?.get(targetLine)?.left ?: 0f
+                /** 🆕 v7.6：用检测后的 targetLine 从 Map 中查找正确的滚动偏移 */
+                val actualScrollOffset = imageRowScrollOffsetMap?.get(targetLine) ?: 0f
+
                 /**
                  * 🆕 v7.3 优化1：水平滚动偏移补偿
                  *
@@ -236,16 +243,17 @@ class CrossLineDragManager {
                  * - scrollOffset 可能为负值（理论上不应，但做防御性处理）
                  * - relativeFingerXDp 做 clamp 防止极端值导致越界判定异常
                  */
-                val clampedScrollOffset = imageRowScrollOffsetPx.coerceAtLeast(0f)
-                val relativeFingerXDp = (fingerX - targetRowLeftX + clampedScrollOffset) / density
+                val clampedScrollOffset = actualScrollOffset.coerceAtLeast(0f)
+                val relativeFingerXDp = (fingerX - actualTargetLeftX + clampedScrollOffset) / density
                     .coerceIn(-1000f, 1000f)  // 防止极端值（正常范围：-500~+600dp）
                 /**
                  * 🆕 v7.1 修复：detectDropPosition 现在同时返回放置类型和目标图片索引
                  */
-                val result = detectDropPositionWithIndex(relativeFingerXDp, targetLineImageCount)
+                val result = detectDropPositionWithIndex(relativeFingerXDp, actualImageCount)
                 dropType = result.first
                 /** 所有模式都设置 currentTargetImage（INSERT_BEFORE=下一张图索引, INSERT_AFTER=null） */
                 targetImage = result.second
+                }  // 🆕 v7.6：闭合 actualImageCount > 0 判断
             } else {
                 targetImage = null
             }
