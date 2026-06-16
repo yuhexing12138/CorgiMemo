@@ -120,11 +120,11 @@ fun DraggableImageAttachment(
     imageIndex: Int,
     isDragging: Boolean = false,
     isDropTarget: Boolean = false,
-    /** 🆕 v7：是否在该图片之前显示插入竖线（跨行移动模式） */
-    showInsertLineBefore: Boolean = false,
-    /** 🆕 v7：是否在该图片之后显示插入竖线（跨行移动模式，仅最后一张图使用） */
-    showInsertLineAfter: Boolean = false,
-    /** 🆕 v7.5：拖拽开始回调（增加图片高度参数，用于跨行 Y 轴边缘精确计算）*/
+    /** 🆕 是否在该图片之前显示移动光标（同行移动模式） */
+    showCursorBefore: Boolean = false,
+    /** 🆕 是否在该图片之后显示移动光标（同行移动模式，仅最后一张图使用） */
+    showCursorAfter: Boolean = false,
+    /** 拖拽开始回调（行索引, 图片索引, 图片高度px）*/
     onDragStart: (lineIndex: Int, imageIndex: Int, imageHeightPx: Float) -> Unit = { _, _, _ -> },
     onDragUpdate: (dragOffset: Offset, fingerX: Float, fingerY: Float) -> Unit = { _, _, _ -> },
     onDragEnd: (targetLineIndex: Int, targetImageIndex: Int?) -> Unit = { _, _ -> },
@@ -357,7 +357,7 @@ fun DraggableImageAttachment(
                         initialTouchOffset = offset
                         /** 重置拖拽累积偏移（新一轮拖拽开始） */
                         dragOffset = Offset.Zero
-                        /** 🆕 v7.5：传递组件实际高度（像素），用于跨行 Y 轴边缘精确计算 */
+                        /** 传递组件实际高度（像素） */
                         onDragStart(lineIndex, imageIndex, componentSize.height.toFloat())
                         HapticFeedbackManager.performHapticFeedback(
                             context = context,
@@ -371,7 +371,7 @@ fun DraggableImageAttachment(
                             x = dragOffset.x + dragAmount.x,
                             y = dragOffset.y + dragAmount.y
                         )
-                        /** 🆕 v7：传递手指绝对坐标（用于跨行 X 轴位置检测） */
+                        /** 传递拖拽偏移量和手指绝对坐标 */
                         onDragUpdate(dragOffset, change.position.x, change.position.y)
                     },
                     onDragEnd = {
@@ -436,12 +436,10 @@ fun DraggableImageAttachment(
             }
         }
 
-        /** 跨行目标提示（虚线边框已在主容器 modifier 中绘制，此处不再需要额外覆盖层） */
-
-        /** 🆕 v7：插入竖线指示器（跨行移动模式） */
-        if (showInsertLineBefore || showInsertLineAfter) {
-            InsertLineIndicator(
-                isBefore = showInsertLineBefore,
+        /** 🆕 同行移动光标指示器 */
+        if (showCursorBefore || showCursorAfter) {
+            CursorIndicator(
+                isBefore = showCursorBefore,
                 modifier = Modifier.matchParentSize()
             )
         }
@@ -527,43 +525,43 @@ fun DraggableImageAttachment(
 }
 
 /**
- * 🆕 v7：插入竖线指示器组件
+ * 同行移动光标指示器组件
  *
- * 在跨行移动模式下，当手指位于两张图片之间时显示，
+ * 在同行移动模式下，当手指位于两张图片之间时显示闪烁光标，
  * 告知用户图片将被插入到该位置。
  *
  * 样式：
- * - 宽度：3dp
- * - 颜色：主题强调色（primary）
- * - 圆角端点
- * - 轻微呼吸动画（alpha 循环）
+ * - 宽度：2dp
+ * - 颜色：橙色
+ * - 高度：与图片同高
+ * - 动画：alpha 在 0.3~1.0 之间循环闪烁，周期约 1 秒（530ms 亮 + 530ms 暗）
  *
  * @param isBefore true=显示在左侧（当前图之前），false=显示在右侧（当前图之后）
  */
 @Composable
-private fun InsertLineIndicator(
+private fun CursorIndicator(
     isBefore: Boolean,
     modifier: Modifier = Modifier
 ) {
     /**
-     * 呼吸动画：alpha 在 0.6 ~ 1.0 之间循环
+     * 文字光标风格闪烁动画：alpha 在 0.3 ~ 1.0 之间循环
      *
-     * 使用 Animatable + LaunchedEffect 实现循环呼吸效果
+     * 使用 Animatable + LaunchedEffect 实现循环效果
      * （兼容 Compose 1.9.2，无需 animateFloat / infiniteTransition）
      */
-    val breatheAlpha = remember { androidx.compose.animation.core.Animatable(0.6f) }
+    val blinkAlpha = remember { androidx.compose.animation.core.Animatable(1.0f) }
 
     LaunchedEffect(Unit) {
         while (true) {
-            /** 渐亮：0.6 → 1.0 */
-            breatheAlpha.animateTo(
-                targetValue = 1.0f,
-                animationSpec = tween(durationMillis = 800, easing = EaseInOut)
+            /** 渐暗：1.0 → 0.3 */
+            blinkAlpha.animateTo(
+                targetValue = 0.3f,
+                animationSpec = tween(durationMillis = 530, easing = EaseInOut)
             )
-            /** 渐暗：1.0 → 0.6 */
-            breatheAlpha.animateTo(
-                targetValue = 0.6f,
-                animationSpec = tween(durationMillis = 800, easing = EaseInOut)
+            /** 渐亮：0.3 → 1.0 */
+            blinkAlpha.animateTo(
+                targetValue = 1.0f,
+                animationSpec = tween(durationMillis = 530, easing = EaseInOut)
             )
         }
     }
@@ -572,14 +570,11 @@ private fun InsertLineIndicator(
         modifier = modifier,
         contentAlignment = if (isBefore) Alignment.CenterStart else Alignment.CenterEnd
     ) {
-        /** 在 @Composable 上下文中读取主题颜色（Canvas 的 DrawScope 不支持） */
-        val lineColor = MaterialTheme.colorScheme.primary
-
-        Canvas(modifier = Modifier.width(3.dp).fillMaxHeight()) {
-            /** 绘制圆角竖线 */
+        /** 橙色光标竖线 */
+        Canvas(modifier = Modifier.width(2.dp).fillMaxHeight()) {
             drawRoundRect(
-                color = lineColor.copy(alpha = breatheAlpha.value),
-                cornerRadius = CornerRadius(1.5.dp.toPx())
+                color = Color(0xFFFF9A5C).copy(alpha = blinkAlpha.value),
+                cornerRadius = CornerRadius(1.dp.toPx())
             )
         }
     }

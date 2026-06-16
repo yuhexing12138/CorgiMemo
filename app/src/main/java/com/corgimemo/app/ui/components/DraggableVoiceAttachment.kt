@@ -58,8 +58,10 @@ fun DraggableVoiceAttachment(
     isDragging: Boolean = false,
     isDropTarget: Boolean = false,
     isPlaying: Boolean = false,
+    /** 🆕 语音播放器实例，传入后显示完整播放器 UI（波形图 + 播放控制）*/
+    voicePlayer: com.corgimemo.app.util.VoicePlayer? = null,
     onDragStart: (lineIndex: Int, voiceIndex: Int) -> Unit = { _, _ -> },
-    onDragUpdate: (dragOffset: Offset, fingerX: Float, fingerY: Float) -> Unit = { _, _, _ -> },
+    onDragUpdate: (dragOffset: Offset, fingerX: Float, fingerY: Float, scrollOffsetPx: Float) -> Unit = { _, _, _, _ -> },
     onDragEnd: (targetLineIndex: Int, targetVoiceIndex: Int?) -> Unit = { _, _ -> },
     onPauseRequest: () -> Unit = {},
     onResumeRequest: () -> Unit = {},
@@ -138,8 +140,8 @@ fun DraggableVoiceAttachment(
                             x = dragOffset.x + dragAmount.x,
                             y = dragOffset.y + dragAmount.y
                         )
-                        /** 🆕 v7：传递手指绝对坐标（用于跨行 X 轴位置检测） */
-                        onDragUpdate(dragOffset, change.position.x, change.position.y)
+                        /** 🆕 v7：传递手指绝对坐标（用于跨行 X 轴位置检测），语音附件无水平滚动传 0f */
+                        onDragUpdate(dragOffset, change.position.x, change.position.y, 0f)
                     },
                     onDragEnd = {
                         dragOffset = Offset.Zero
@@ -192,7 +194,9 @@ fun DraggableVoiceAttachment(
              */
             Box(modifier = Modifier.fillMaxWidth()) {
                 VoicePlayerComponent(
-                    voicePlayer = null,
+                    /** 🆕 传入外部 VoicePlayer 实例，启用完整播放器 UI（波形图 + 播放控制）
+                     *  注意：CheckboxEditText 通过 getOrPut 保证此值始终非空 */
+                    voicePlayer = voicePlayer!!,
                     filePath = voiceAttachment.path,
                     totalDuration = voiceAttachment.duration,
                     onDelete = { onDelete() },

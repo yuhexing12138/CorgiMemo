@@ -2,6 +2,7 @@ package com.corgimemo.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.width
@@ -45,7 +46,8 @@ import com.corgimemo.app.util.VoicePlayer
  */
 @Composable
 fun VoicePlayerComponent(
-    voicePlayer: VoicePlayer? = null,  // 支持外部不提供播放器实例的情况（如拖拽模式）
+    /** 🆕 VoicePlayer 实例（不再支持 null，始终由 CheckboxEditText 传入）*/
+    voicePlayer: com.corgimemo.app.util.VoicePlayer,
     filePath: String,
     totalDuration: Int? = null,
     onDelete: () -> Unit,
@@ -62,48 +64,12 @@ fun VoicePlayerComponent(
      * 性能收益：
      * - 屏幕外语音块不占用 MediaPlayer 实例（每个约 1-5MB 内存）
      * - 10条语音备注仅准备可见的 2-3 条
+     *
+     * 🆕 注意：voicePlayer 始终由 CheckboxEditText 传入（不再支持 null），
+     * 因此移除了 voicePlayer == null 的简化版 UI 分支。
      */
-    if (voicePlayer == null) {
-        /** ===== voicePlayer 为 null 时：显示简化版 UI（无播放控制）===== */
-        Row(
-            modifier = modifier
-                .fillMaxWidth()
-                .background(
-                    color = if (isHighlighted) Color(0xFFFFF8E1) else MaterialTheme.colorScheme.surfaceContainerLowest,
-                    shape = RoundedCornerShape(8.dp)
-                )
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // 麦克风图标
-            Icon(
-                imageVector = Icons.Default.Mic,
-                contentDescription = "语音",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
-            )
-
-            // 时长文本
-            Text(
-                text = formatDuration(totalDuration ?: 0),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium
-            )
-
-            // 删除按钮
-            IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "删除语音",
-                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-    } else if (isVisible) {
-        /** ===== 可见状态：完整播放器 UI ===== */
+    if (isVisible) {
+        /** ===== 可见状态：完整播放器 UI（波形图 + 进度高亮 + 递增时间）===== */
         // 收集播放状态
         val playbackState by voicePlayer.playbackState.collectAsState()
         val currentPosition by voicePlayer.currentPosition.collectAsState()
@@ -118,6 +84,53 @@ fun VoicePlayerComponent(
             voicePlayer.prepare(filePath)
         }
 
+        /**
+         * 🆕 预生成静态波形振幅数组
+         *
+         * 使用固定波形分布（中间高、两边低），模拟真实音频波形视觉效果。
+         * 振幅值范围 0.0~1.0，barCount=35 与 StaticWaveform 一致。
+         *
+         * 波形公式：基于正弦函数 + 位置因子，产生自然的"鼓包"形状。
+         */
+        val waveformAmplitudes = remember(filePath) {
+            val count = 35
+            (0 until count).map { i ->
+                /** 位置归一化：0(左) → 0.5(中) → 1(右) */
+                val pos = i.toFloat() / (count - 1)
+                /** 中间高两边低的包络线 */
+                val envelope = 1.0f - kotlin.math.abs(pos - 0.5f) * 2.0f
+                /** 基础高度 + 正弦波动 + 随机微扰 */
+                val base = 0.15f + envelope * 0.7f
+                val wave = kotlin.math.sin(pos * Math.PI.toFloat() * 3) * 0.15f
+                (base + wave).coerceIn(0.1f, 1.0f)
+            }
+        }
+
+        /**
+         * 🆕 当前播放进度（0.0 ~ 1.0）
+         *
+         * 用于 StaticWaveform 的进度高亮显示：
+         * - 已播部分使用 activeColor（主题色）
+         * - 未播部分使用 inactiveColor（灰色）
+         */
+        val progress = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f
+
+        /**
+         * 🆕 播放/暂停切换处理函数
+         *
+         * 统一管理播放状态切换逻辑，供按钮点击和整行点击复用。
+         */
+        fun togglePlayPause() {
+            when (playbackState) {
+                VoicePlayer.PlaybackState.PLAYING -> voicePlayer.pause()
+                VoicePlayer.PlaybackState.PAUSED -> voicePlayer.resume()
+                VoicePlayer.PlaybackState.PREPARED,
+                VoicePlayer.PlaybackState.STOPPED,
+                VoicePlayer.PlaybackState.COMPLETED -> voicePlayer.play()
+                else -> {}
+            }
+        }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -127,62 +140,66 @@ fun VoicePlayerComponent(
             )
             .then(
                 if (isHighlighted) {
-                    /** Compose 1.9 内阴影：使用 DSL 块语法 */
                     Modifier
-                        .innerShadow(
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
+                        .innerShadow(shape = RoundedCornerShape(8.dp)) {
                             color = Color(0xFFFFB74D).copy(alpha = 0.6f)
                             radius = 4f
                         }
-                        /** 保留细边框作为视觉锚点 */
                         .border(1.dp, Color(0xFFFFB74D).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                 } else {
                     Modifier
                 }
             )
+            /**
+             * 🆕 整行可点击：点击切换播放/暂停
+             *
+             * 使用默认 clickable（含系统波纹效果），确保与 IconButton 的点击事件不冲突。
+             */
+            .clickable(onClick = ::togglePlayPause)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // 播放/暂停按钮（紧凑尺寸）
-        IconButton(
-            onClick = {
-                when (playbackState) {
-                    VoicePlayer.PlaybackState.PLAYING -> voicePlayer.pause()
-                    VoicePlayer.PlaybackState.PAUSED -> voicePlayer.resume()
-                    VoicePlayer.PlaybackState.PREPARED,
-                    VoicePlayer.PlaybackState.STOPPED,
-                    VoicePlayer.PlaybackState.COMPLETED -> voicePlayer.play()
-                    else -> {}
-                }
-            },
-            modifier = Modifier.size(32.dp)
-        ) {
-            Icon(
-                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = if (isPlaying) "暂停" else "播放",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-
-        // 进度条（占据剩余空间）
-        Slider(
-            value = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f,
-            onValueChange = { position ->
-                if (duration > 0) voicePlayer.seekTo((position * duration).toInt())
-            },
-            enabled = playbackState != VoicePlayer.PlaybackState.IDLE && duration > 0,
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-            ),
-            modifier = Modifier.weight(1f)
+        // 播放/暂停按钮（紧凑尺寸，点击事件由外层 Row 统一处理）
+        Icon(
+            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+            contentDescription = if (isPlaying) "暂停" else "播放",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
         )
 
-        // 删除按钮（小图标）
+        // 🆕 静态波形图（替代 AudioWaveform，支持进度高亮）
+        /**
+         * 使用 StaticWaveform 显示预生成的波形 + 实时播放进度：
+         * - 已播部分（progress 以左）：activeColor 主题色
+         * - 未播部分（progress 以右）：inactiveColor 灰色
+         * - 播放时波形静止，通过进度高亮表达播放状态
+         */
+        StaticWaveform(
+            amplitudes = waveformAmplitudes,
+            progress = progress,
+            modifier = Modifier.weight(1f),
+            activeColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+            inactiveColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            waveHeight = 32.dp
+        )
+
+        // 🆕 时间显示：递增模式（已播 / 总时长）
+        Text(
+            text = buildString {
+                if (isPlaying || playbackState == VoicePlayer.PlaybackState.PAUSED) {
+                    /** 播放中或暂停时显示已播时间 / 总时长 */
+                    append(formatDuration(currentPosition))
+                    append(" / ")
+                }
+                append(formatDuration(if (duration > 0) duration else (totalDuration?.times(1000) ?: 0)))
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.widthIn(min = 36.dp)
+        )
+
+        // 删除按钮（小图标，阻止点击冒泡到整行的 play/pause）
         IconButton(
             onClick = { showDeleteConfirm = true },
             modifier = Modifier.size(28.dp)
@@ -194,14 +211,6 @@ fun VoicePlayerComponent(
                 modifier = Modifier.size(16.dp)
             )
         }
-
-        // 时长显示
-        Text(
-            text = formatDuration(if (duration > 0) duration else (totalDuration?.times(1000) ?: 0)),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.widthIn(min = 36.dp)
-        )
 
         // 删除确认对话框
         if (showDeleteConfirm) {

@@ -177,27 +177,9 @@ fun TodoEditScreen(
      * value = 该行在屏幕上的边界矩形 (Rect: left, top, right, bottom)
      *
      * 由 CheckboxEditText 内部的 onGloballyPositioned 回调更新，
-     * 用于 CrossLineDragManager.detectTargetRow() 精确计算目标行。
+     * 用于 CrossLineDragManager 行边界检测。
      */
     val rowBoundsMap = remember { mutableMapOf<Int, androidx.compose.ui.geometry.Rect>() }
-
-    /**
-     * 🆕 v7.2：图片行边界映射表
-     *
-     * 与 rowBoundsMap 不同，此 Map 存储的是每行**图片 Row**（而非整行文本 Row）的屏幕坐标。
-     * 用于跨行拖拽时精确计算 fingerX 的相对坐标：
-     * - rowBoundsMap 包含 checkbox + 文字区域，左边界偏左
-     * - imageRowBoundsMap 精确对齐图片区域的起始位置
-     */
-    val imageRowBoundsMap = remember { mutableMapOf<Int, androidx.compose.ui.geometry.Rect>() }
-
-    /**
-     * 🆕 v7.3：图片行水平滚动偏移映射表
-     *
-     * 存储每行图片 Row 当前的 horizontalScroll 偏移量（像素）。
-     * 用于修正 localToScreen 返回的视觉坐标与手指绝对坐标之间的偏差。
-     */
-    val imageRowScrollOffsetMap = remember { mutableMapOf<Int, Float>() }
 
     /**
      * 向当前聚焦行添加图片附件
@@ -711,43 +693,32 @@ fun TodoEditScreen(
                  * @param sourceImgIdx 被拖拽图片在该行列表中的位置索引
                  */
                 onAttachmentDragStart = { sourceLineIdx, sourceImgIdx, imageHeightPx ->
-                    /** 🆕 v7.5：传递实际图片高度（像素）到 CrossLineDragManager */
+                    /** 传递源行和图片索引到拖拽管理器 */
                     crossLineDragManager.startDrag(sourceLineIdx, sourceImgIdx, imageHeightPx)
                 },
                 /**
-                 * 🆕 附件拖拽过程中更新回调
+                 * 附件拖拽过程中更新回调
                  *
                  * 当用户拖动手指时持续调用，
                  * 将偏移量同步给 CrossLineDragManager 用于：
-                 * 1. 更新拖拽模式（INLINE_SORT ↔ CROSS_LINE）
-                 * 2. 计算当前悬停的目标行
-                 * 3. 驱动 UI 的视觉反馈（目标行高亮等）
-                 *
-                 * @param dragOffset 当前累积的拖拽偏移量（相对于起始点）
-                 * @param fingerX 手指当前 X 坐标（用于跨行模式下交换/插入判定）
-                 * @param fingerY 手指当前 Y 坐标（用于检测目标行）
+                 * 1. 计算当前悬停的目标图片
+                 * 2. 判断交换/移动模式
+                 * 3. 驱动 UI 的视觉反馈（虚线框/光标）
                  */
-                onAttachmentDragUpdate = { dragOffset, fingerX, fingerY ->
-                    /**
-                     * 🆕 v7.6 修复：构建各行的图片数量 Map
-                     *
-                     * 不再预计算单个 targetLine 的数据（因为 updateDrag() 内部会检测到新的目标行），
-                     * 而是构建完整的 Map 让内部按需查找。
-                     */
-                    val imageCountMap = todoLines.mapIndexed { idx, line ->
-                        idx to line.imagePaths.size
-                    }.toMap()
+                onAttachmentDragUpdate = { dragOffset, fingerX, fingerY, scrollOffsetPx ->
+                    /** 获取源行的图片数量 */
+                    val sourceLineIdx = crossLineDragManager.state.sourceLineIndex
+                    val imageCount = if (sourceLineIdx in todoLines.indices) {
+                        todoLines[sourceLineIdx].imagePaths.size
+                    } else {
+                        0
+                    }
 
                     crossLineDragManager.updateDrag(
                         currentOffset = dragOffset,
                         density = context.resources.displayMetrics.density,
-                        rowBounds = rowBoundsMap.values.toList(),
-                        fingerY = fingerY,
-                        fingerX = fingerX,
-                        imageCountMap = imageCountMap,        // 🆕 v7.6：所有行的图片数量
-                        imageRowBoundsMap = imageRowBoundsMap,  // 🆕 v7.6：所有行的图片边界
-                        imageRowScrollOffsetMap = imageRowScrollOffsetMap,  // 🆕 v7.6：所有行的滚动偏移
-                        imageRowBounds = imageRowBoundsMap.values.toList()
+                        imageCount = imageCount,
+                        scrollOffsetPx = scrollOffsetPx  // 🆕 滚动偏移补偿
                     )
                 },
                 /**
@@ -770,12 +741,10 @@ fun TodoEditScreen(
 
                     /** 2. 如果拖拽结果有效，执行数据更新 */
                     if (result.isSuccess) {
-                        /** 获取被拖拽的图片路径 */
                         val sourceLine = todoLines.getOrNull(sourceLineIdx)
                         val imagePath = sourceLine?.imagePaths?.getOrNull(sourceImgIdx)
 
                         if (imagePath != null) {
-                            /** 使用 CrossLineDragManager 的 applyDragResult 方法更新列表 */
                             todoLines = crossLineDragManager.applyDragResult(
                                 lines = todoLines,
                                 result = result,
@@ -784,10 +753,8 @@ fun TodoEditScreen(
                         }
                     }
 
-                    /** 3. 清理行边界缓存（布局可能已变化）*/
+                    /** 3. 清理行边界缓存 */
                     rowBoundsMap.clear()
-                    imageRowBoundsMap.clear()  // 🆕 v7.2：同步清理图片行边界
-                    imageRowScrollOffsetMap.clear()  // 🆕 v7.3：同步清理滚动偏移
                 },
                 /**
                  * 🆕 行边界更新回调
@@ -800,20 +767,6 @@ fun TodoEditScreen(
                  */
                 onRowBoundsChanged = { lineIndex, rect ->
                     rowBoundsMap[lineIndex] = rect
-                },
-                /**
-                 * 🆕 v7.3：图片行边界 + 滚动偏移更新回调
-                 *
-                 * 由 CheckboxEditText 中图片 Row 的 onGloballyPositioned 触发，
-                 * 存储每行图片区域的精确屏幕坐标和水平滚动偏移量。
-                 *
-                 * @param lineIndex 行索引
-                 * @param rect 图片 Row 的屏幕边界矩形
-                 * @param scrollOffsetPx 水平滚动偏移量（像素）
-                 */
-                onImageRowBoundsChanged = { lineIndex, rect, scrollOffsetPx ->
-                    imageRowBoundsMap[lineIndex] = rect
-                    imageRowScrollOffsetMap[lineIndex] = scrollOffsetPx
                 },
                 modifier = Modifier
                     .fillMaxWidth()

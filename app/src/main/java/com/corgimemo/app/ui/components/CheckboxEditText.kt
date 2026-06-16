@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,7 +52,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.ui.platform.LocalContext
 import com.corgimemo.app.ui.model.TodoLine
+import com.corgimemo.app.util.VoicePlayer
 
 /**
  * 复选框文本编辑器组件（多容器分组版）
@@ -105,21 +109,13 @@ fun CheckboxEditText(
     dragState: com.corgimemo.app.ui.components.DragState = com.corgimemo.app.ui.components.DragState(),
     /** 🆕 附件拖拽开始回调（源行索引, 源图片/语音位置索引, 图片高度px[语音传0]）*/
     onAttachmentDragStart: ((Int, Int, Float) -> Unit)? = null,
-    /** 🆕 附件拖拽过程中更新回调（当前偏移量, 手指X坐标, 手指Y坐标）
-     *  用于同步 CrossLineDragManager 状态和计算目标行/放置类型 */
-    onAttachmentDragUpdate: ((androidx.compose.ui.geometry.Offset, Float, Float) -> Unit)? = null,
+    /** 🆕 附件拖拽过程中更新回调（当前偏移量, 手指X坐标, 手指Y坐标, 滚动偏移px）
+     *  用于同步 CrossLineDragManager 状态和计算目标位置 */
+    onAttachmentDragUpdate: ((androidx.compose.ui.geometry.Offset, Float, Float, Float) -> Unit)? = null,
     /** 🆕 附件拖拽结束回调（源行, 源位置, 目标行, 目标位置[null=追加末尾]）*/
     onAttachmentDragEnd: ((Int, Int, Int, Int?) -> Unit)? = null,
     /** 🆕 行边界更新回调（用于精确的目标行检测，参数：行索引, Rect边界矩形）*/
     onRowBoundsChanged: ((Int, androidx.compose.ui.geometry.Rect) -> Unit)? = null,
-    /** 🆕 v7.2：图片行边界更新回调（用于跨行拖拽时精确的 X 轴位置检测）
-     *  与 onRowBoundsChanged 不同，此回调采集的是图片 Row（而非整行文本 Row）的屏幕坐标，
-     *  确保跨行模式下 fingerX 的坐标转换基准点准确对齐图片区域。
-     *
-     * @param lineIndex 行索引
-     * @param rect 图片 Row 的屏幕边界矩形
-     * @param scrollOffsetPx 图片 Row 当前的水平滚动偏移量（像素），用于 X 轴坐标修正 */
-    onImageRowBoundsChanged: ((Int, androidx.compose.ui.geometry.Rect, Float) -> Unit)? = null,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     placeholder: String = "回车可连续添加子待办，输入 / 可新建待办"
@@ -134,6 +130,58 @@ fun CheckboxEditText(
 
     /** 收集每行的 FocusRequester，用于 "/" 新建后转移焦点 */
     val focusRequesters = remember { mutableStateMapOf<Int, FocusRequester>() }
+
+    /**
+     * 🆕 语音播放器实例管理
+     *
+     * 以 "行索引_语音索引" 为 key，为每个语音附件创建独立的 VoicePlayer 实例。
+     * 使用 remember 保持实例稳定（不会因重组而重建）。
+     *
+     * 数据结构：key = "${lineIndex}_${voiceIndex}", value = VoicePlayer 实例
+     */
+    val context = LocalContext.current
+    val voicePlayerMap = remember { mutableStateMapOf<String, com.corgimemo.app.util.VoicePlayer>() }
+
+    /**
+     * 🆕 多语音互斥播放控制
+     *
+     * 播放指定语音时，自动暂停所有其他正在播放的语音。
+     * 确保同一时间只有一条语音在播放，避免音频重叠干扰。
+     *
+     * @param targetKey 目标语音的 key（"${lineIndex}_${voiceIndex}"），该语音不会被暂停
+     */
+    fun pauseAllOtherVoices(targetKey: String) {
+        voicePlayerMap.forEach { (key, player) ->
+            if (key != targetKey && player.isPlaying.value) {
+                player.pause()
+            }
+        }
+    }
+
+    /**
+     * 🆕 行数据变化时清理过期的 VoicePlayer 实例
+     *
+     * 当行被删除或语音附件被移除时，对应的 VoicePlayer 需要释放资源：
+     * - stop()：停止播放
+     * - release()：释放 MediaPlayer 资源
+     * - 从 map 中移除引用
+     */
+    LaunchedEffect(lines) {
+        /** 构建当前所有有效语音的 key 集合 */
+        val validKeys = mutableSetOf<String>()
+        lines.forEachIndexed { lineIdx, line ->
+            line.voiceAttachments.forEachIndexed { voiceIdx, _ ->
+                validKeys.add("${lineIdx}_${voiceIdx}")
+            }
+        }
+        /** 找出需要清理的过期 key */
+        val keysToRemove = voicePlayerMap.keys - validKeys
+        keysToRemove.forEach { key ->
+            voicePlayerMap[key]?.stop()
+            voicePlayerMap[key]?.release()
+            voicePlayerMap.remove(key)
+        }
+    }
 
     // 每次 lines 变化时重建焦点映射，避免索引漂移导致的过期条目
     focusRequesters.clear()
@@ -200,7 +248,10 @@ fun CheckboxEditText(
                     onImageClick = { },
                     onDeleteImage = { },
                     onDeleteVoice = { },
-                    onImageRowBoundsChanged = null  // 空状态无需采集图片行坐标
+                    /** 🆕 空状态占位行也需要传入语音播放器参数（虽然不会有语音附件）*/
+                    voicePlayerMap = voicePlayerMap,
+                    context = context,
+                    pauseAllOtherVoices = ::pauseAllOtherVoices
                 )
             }
         } else {
@@ -318,16 +369,18 @@ fun CheckboxEditText(
                                 onAttachmentDragStart?.invoke(srcLineIdx, srcImgIdx, heightPx)
                             },
                             /** 🆕 附件拖拽过程中更新回调 */
-                            onAttachmentDragUpdate = { dragOffset, fingerX, fingerY ->
-                                onAttachmentDragUpdate?.invoke(dragOffset, fingerX, fingerY)
+                            onAttachmentDragUpdate = { dragOffset, fingerX, fingerY, scrollOffsetPx ->
+                                onAttachmentDragUpdate?.invoke(dragOffset, fingerX, fingerY, scrollOffsetPx)
                             },
                             onAttachmentDragEnd = { srcLineIdx, srcImgIdx, targetLineIdx, targetImgIdx ->
                                 onAttachmentDragEnd?.invoke(srcLineIdx, srcImgIdx, targetLineIdx, targetImgIdx)
                             },
                             /** 🆕 应用行边界捕获修饰符 */
                             modifier = rowModifier,
-                            /** 🆕 v7.2：传递图片行边界回调（透传外层参数）*/
-                            onImageRowBoundsChanged = onImageRowBoundsChanged
+                            /** 🆕 传入语音播放器相关参数 */
+                            voicePlayerMap = voicePlayerMap,
+                            context = context,
+                            pauseAllOtherVoices = ::pauseAllOtherVoices
                         )
                     }
                 }
@@ -457,16 +510,17 @@ private fun CheckboxEditRow(
     /** 🆕 附件拖拽开始回调（v7.5：增加图片高度参数）*/
     onAttachmentDragStart: ((Int, Int, Float) -> Unit)? = null,
     /** 🆕 附件拖拽过程中更新回调（同步 CrossLineDragManager 状态）*/
-    onAttachmentDragUpdate: ((androidx.compose.ui.geometry.Offset, Float, Float) -> Unit)? = null,
+    onAttachmentDragUpdate: ((androidx.compose.ui.geometry.Offset, Float, Float, Float) -> Unit)? = null,
     /** 🆕 附件拖拽结束回调 */
     onAttachmentDragEnd: ((Int, Int, Int, Int?) -> Unit)? = null,
     /** 🆕 行修饰符（用于 onGloballyPositioned 行边界捕获）*/
     modifier: Modifier = Modifier,
-    /** 🆕 v7.2：图片行边界更新回调（用于跨行拖拽时精确的 X 轴位置检测）
-     *  @param lineIndex 行索引
-     *  @param rect 图片 Row 的屏幕边界矩形
-     *  @param scrollOffsetPx 图片 Row 当前的水平滚动偏移量（像素） */
-    onImageRowBoundsChanged: ((Int, androidx.compose.ui.geometry.Rect, Float) -> Unit)? = null
+    /** 🆕 语音播放器实例管理 Map（由外层 CheckboxEditText 传入）*/
+    voicePlayerMap: kotlin.collections.MutableMap<String, com.corgimemo.app.util.VoicePlayer>,
+    /** 🆕 Android Context（用于创建 VoicePlayer 实例）*/
+    context: android.content.Context,
+    /** 🆕 多语音互斥播放控制函数*/
+    pauseAllOtherVoices: (String) -> Unit
 ) {
     /** 复选框颜色动画 */
     val checkboxColor by animateColorAsState(
@@ -616,36 +670,112 @@ private fun CheckboxEditRow(
                 val imageScrollState = rememberScrollState()
 
                 /**
-                 * 🆕 v7.4：显式捕获所有需要在 onGloballyPositioned lambda 中使用的变量
-                 *
-                 * onGloballyPositioned 的 (LayoutCoordinates) -> Unit lambda
-                 * 在深层嵌套作用域中可能出现变量解析失败的问题，
-                 * 因此在 Composable 层面提前捕获并标注类型。
+                 * 🆕 边缘自动滚动速度和方向
+                 * 正值=向右滚动，负值=向左滚动，0=不滚动
                  */
-                val capturedCallback: ((Int, androidx.compose.ui.geometry.Rect, Float) -> Unit)? =
-                    onImageRowBoundsChanged
-                val capturedLineIndex: Int = lineIndex  // 使用函数参数 lineIndex
+                var edgeScrollSpeed by remember { mutableStateOf(0f) }
 
                 /**
-                 * 🆕 v7.4：构建带坐标采集的 Modifier
+                 * 🆕 边缘自动滚动驱动
+                 *
+                 * 当 edgeScrollSpeed != 0 时，使用 LaunchedEffect + animate 循环
+                 * 每帧调用 imageScrollState.dispatchRawDelta() 实现平滑自动滚动。
                  */
-                val imageRowModifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(imageScrollState)
-                    .onGloballyPositioned { coords ->
-                        val screenPos = coords.localToScreen(androidx.compose.ui.geometry.Offset.Zero)
-                        val sz = coords.size
-                        val rect = androidx.compose.ui.geometry.Rect(
-                            left = screenPos.x,
-                            top = screenPos.y,
-                            right = screenPos.x + sz.width,
-                            bottom = screenPos.y + sz.height
-                        )
-                        capturedCallback?.invoke(capturedLineIndex, rect, imageScrollState.value.toFloat())
+                if (edgeScrollSpeed != 0f) {
+                    LaunchedEffect(edgeScrollSpeed) {
+                        while (edgeScrollSpeed != 0f) {
+                            /** 每帧滚动 = 速度 * 帧间隔（约16ms） */
+                            val delta = edgeScrollSpeed * 16f / 1000f
+                            imageScrollState.dispatchRawDelta(delta)
+                            /** 等待下一帧 */
+                            kotlinx.coroutines.delay(16)
+                        }
                     }
+                }
 
                 Row(
-                    modifier = imageRowModifier,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(imageScrollState)
+                        /**
+                         * 🆕 多指手势处理：第二指滚动 + 边缘自动滚动
+                         *
+                         * 仅在当前行是拖拽源行时激活。
+                         * 第一指：拖拽图片（由 DraggableImageAttachment 的 detectDragGesturesAfterLongPress 处理）
+                         * 第二指：水平滑动 → 驱动 imageScrollState 滚动
+                         * 单指边缘：靠近左/右边缘 → 自动滚动
+                         */
+                        .pointerInput(dragState.isDragging, dragState.sourceLineIndex, lineIndex) {
+                            if (!dragState.isDragging || dragState.sourceLineIndex != lineIndex) {
+                                return@pointerInput
+                            }
+
+                            val density = density
+
+                            awaitPointerEventScope {
+                                var secondPointerId: Long = -1L
+                                var secondPointerLastX = 0f
+
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val changes = event.changes
+
+                                    when (changes.size) {
+                                        /** 多指（≥2根手指）：第二指驱动水平滚动 */
+                                        0 -> { /* 无指针事件 */ }
+                                        in 1..1 -> {
+                                            /** 单指：检测边缘自动滚动 */
+                                            secondPointerId = -1L
+                                            val change = changes.first()
+                                            val fingerX = change.position.x
+                                            val rowWidth = size.width.toFloat()
+                                            val edgeThreshold = 40f * density
+
+                                            edgeScrollSpeed = when {
+                                                fingerX < edgeThreshold -> {
+                                                    /** 左边缘：向左滚动，越近越快 */
+                                                    val ratio = 1f - (fingerX / edgeThreshold)
+                                                    -150f * density * ratio
+                                                }
+                                                fingerX > rowWidth - edgeThreshold -> {
+                                                    /** 右边缘：向右滚动，越近越快 */
+                                                    val ratio = 1f - ((rowWidth - fingerX) / edgeThreshold)
+                                                    150f * density * ratio
+                                                }
+                                                else -> 0f
+                                            }
+                                        }
+                                        else -> {
+                                            /** 多指：找到第二根手指并追踪其水平滑动 */
+                                            edgeScrollSpeed = 0f
+
+                                            for (change in changes) {
+                                                val pointerId = change.id.value
+                                                if (pointerId != secondPointerId) {
+                                                    /** 新手指按下（或切换手指），记录初始位置 */
+                                                    secondPointerId = pointerId
+                                                    secondPointerLastX = change.position.x
+                                                }
+                                            }
+
+                                            /** 找到第二指并计算滑动增量 */
+                                            val secondFinger = changes.find {
+                                                it.id.value == secondPointerId && it.pressed
+                                            }
+                                            if (secondFinger != null) {
+                                                val deltaX = secondFinger.position.x - secondPointerLastX
+                                                if (kotlin.math.abs(deltaX) > 0.5f) {
+                                                    /** 反向滚动：手指向右滑 → 内容向左移动 */
+                                                    imageScrollState.dispatchRawDelta(-deltaX)
+                                                    secondPointerLastX = secondFinger.position.x
+                                                }
+                                                secondFinger.consume()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     line.imagePaths.forEachIndexed { imageIndex, imagePath ->
@@ -662,75 +792,58 @@ private fun CheckboxEditRow(
                                 dragState.sourceImageIndex == imageIndex
 
                         /**
-                         * 判断当前图片是否为拖拽目标（跨行 + 行内两种模式）
-                         *
-                         * 🆕 v7 修复：跨行模式现在精确到单张图片
-                         *
-                         * 跨行模式（CROSS_LINE）：
-                         * - dropType == SWAP_TO_IMAGE 且 currentTargetImage 匹配当前图片索引
-                         * - 不再整行高亮，只有被悬停的具体图片显示虚线框
+                         * 判断当前图片是否为拖拽目标（同行交换模式）
                          *
                          * 行内排序模式（INLINE_SORT）：
                          * - 当前图片索引与目标图片索引匹配
                          * - 且不是源图片本身（避免自己高亮自己）
+                         * - 且放置类型为 SWAP（交换模式才显示虚线框）
                          */
-                        val isDropTargetForCrossLine = dragState.dragMode == com.corgimemo.app.ui.components.DragMode.CROSS_LINE &&
-                                dragState.currentTargetLine == lineIndex &&
-                                dragState.sourceLineIndex != lineIndex &&
-                                dragState.dropType == com.corgimemo.app.ui.components.DropType.SWAP_TO_IMAGE &&
-                                dragState.currentTargetImage == imageIndex
-
-                        /** 行内排序模式：同一行内交换时的目标图片 */
                         val isDropTargetInline = dragState.dragMode == com.corgimemo.app.ui.components.DragMode.INLINE_SORT &&
+                                dragState.sourceLineIndex == lineIndex &&
                                 dragState.currentTargetImage == imageIndex &&
-                                dragState.sourceImageIndex != imageIndex
+                                dragState.sourceImageIndex != imageIndex &&
+                                dragState.inlineDropType == com.corgimemo.app.ui.components.InlineDropType.SWAP
 
                         /**
-                         * 🆕 v7：插入竖线显示判定（跨行移动模式）
+                         * 🆕 同行移动光标显示判定
                          *
-                         * INSERT_BEFORE：在当前图片之前显示竖线
-                         *   → dropType == INSERT_BEFORE 且 currentTargetImage == 当前索引
+                         * INSERT_BEFORE：在当前图片之前显示光标
+                         *   → inlineDropType == INSERT_BEFORE 且 currentTargetImage == 当前索引
                          *
-                         * INSERT_AFTER：在最后一张图片之后显示竖线
-                         *   → dropType == INSERT_AFTER 且当前是最后一张图
+                         * INSERT_AFTER：在最后一张图片之后显示光标
+                         *   → inlineDropType == INSERT_AFTER 且当前是最后一张图
                          */
-                        val showInsertLineBefore = dragState.dragMode == com.corgimemo.app.ui.components.DragMode.CROSS_LINE &&
-                                dragState.currentTargetLine == lineIndex &&
-                                dragState.sourceLineIndex != lineIndex &&
-                                dragState.dropType == com.corgimemo.app.ui.components.DropType.INSERT_BEFORE &&
+                        val showCursorBefore = dragState.dragMode == com.corgimemo.app.ui.components.DragMode.INLINE_SORT &&
+                                dragState.sourceLineIndex == lineIndex &&
+                                dragState.inlineDropType == com.corgimemo.app.ui.components.InlineDropType.INSERT_BEFORE &&
                                 dragState.currentTargetImage == imageIndex
 
-                        val showInsertLineAfter = dragState.dragMode == com.corgimemo.app.ui.components.DragMode.CROSS_LINE &&
-                                dragState.currentTargetLine == lineIndex &&
-                                dragState.sourceLineIndex != lineIndex &&
-                                dragState.dropType == com.corgimemo.app.ui.components.DropType.INSERT_AFTER &&
+                        val showCursorAfter = dragState.dragMode == com.corgimemo.app.ui.components.DragMode.INLINE_SORT &&
+                                dragState.sourceLineIndex == lineIndex &&
+                                dragState.inlineDropType == com.corgimemo.app.ui.components.InlineDropType.INSERT_AFTER &&
                                 imageIndex == line.imagePaths.lastIndex
 
                         /**
                          * 使用可拖拽的图片附件组件
-                         *
-                         * 替代原有的静态 Box + InlineImagePreview 组合，
-                         * 新增长按拖拽、浮层效果、目标高亮等交互能力。
                          */
                         DraggableImageAttachment(
                             imagePath = imagePath,
                             lineIndex = lineIndex,
                             imageIndex = imageIndex,
                             isDragging = isThisImageDragging,
-                            isDropTarget = isDropTargetForCrossLine || isDropTargetInline,
-                            /** 🆕 v7：插入竖线参数 */
-                            showInsertLineBefore = showInsertLineBefore,
-                            showInsertLineAfter = showInsertLineAfter,
+                            isDropTarget = isDropTargetInline,
+                            /** 🆕 同行移动光标参数 */
+                            showCursorBefore = showCursorBefore,
+                            showCursorAfter = showCursorAfter,
                             onDragStart = { sourceLineIdx, sourceImgIdx, imageHeightPx ->
-                                /** 🆕 v7.5：透传图片高度到外部回调 */
                                 onAttachmentDragStart?.invoke(sourceLineIdx, sourceImgIdx, imageHeightPx)
                             },
-                            /** 🆕 关键：传递拖拽更新回调（含 fingerX），同步 CrossLineDragManager 状态 */
                             onDragUpdate = { dragOffset, fingerX, fingerY ->
-                                onAttachmentDragUpdate?.invoke(dragOffset, fingerX, fingerY)
+                                /** 🆕 透传滚动偏移量，用于 CrossLineDragManager 的 X 轴补偿 */
+                                onAttachmentDragUpdate?.invoke(dragOffset, fingerX, fingerY, imageScrollState.value.toFloat())
                             },
                             onDragEnd = { targetLineIdx, targetImgIdx ->
-                                /** 通知外部结束拖拽：执行实际的数据移动操作 */
                                 onAttachmentDragEnd?.invoke(lineIndex, imageIndex, targetLineIdx, targetImgIdx)
                             },
                             onClick = { imgPath -> onImageClick(imgPath) },
@@ -757,45 +870,69 @@ private fun CheckboxEditRow(
                 /**
                  * 判断当前行是否为跨行语音拖拽的目标位置
                  */
-                val isVoiceDropTarget = dragState.dragMode == com.corgimemo.app.ui.components.DragMode.CROSS_LINE &&
-                        dragState.currentTargetLine == lineIndex &&
-                        dragState.sourceLineIndex != lineIndex
+                val isVoiceDropTarget = false  // 语音附件暂不支持拖拽目标判定
 
                 /**
                  * 使用可拖拽的语音附件组件
                  *
-                 * 替代原有的静态 VoicePlayerComponent，
-                 * 新增长按拖拽、浮层效果、自动暂停播放等交互能力。
+                 * 🆕 传入 VoicePlayer 实例，启用完整播放器 UI：
+                 * - 波形图替代进度条
+                 * - 点击整行播放/暂停
+                 * - 递增时间显示
                  */
+
+                /**
+                 * 🆕 获取或创建当前语音附件的 VoicePlayer 实例
+                 *
+                 * 使用 "行索引_语音索引" 作为唯一 key，
+                 * 确保每个语音附件有独立的播放器实例。
+                 */
+                val voiceKey = "${lineIndex}_${voiceIndex}"
+                val voicePlayer = voicePlayerMap.getOrPut(voiceKey) {
+                    com.corgimemo.app.util.VoicePlayer(context)
+                }
+
                 DraggableVoiceAttachment(
                     voiceAttachment = voice,
                     lineIndex = lineIndex,
                     voiceIndex = voiceIndex,
                     isDragging = isThisVoiceDragging,
                     isDropTarget = isVoiceDropTarget,
-                    isPlaying = false, // TODO: 从外部获取实际播放状态
+                    /** 🆕 传入 VoicePlayer 实例，显示完整播放器 UI */
+                    voicePlayer = voicePlayer,
                     onDragStart = { sourceLineIdx, sourceVoiceIdx ->
-                        /** 🆕 v7.5：语音附件无高度概念，传 0f（回退使用固定常量） */
+                        /** 语音附件无高度概念，传 0f */
                         onAttachmentDragStart?.invoke(sourceLineIdx, sourceVoiceIdx, 0f)
                     },
-                    /** 🆕 关键：传递拖拽更新回调，同步 CrossLineDragManager 状态 */
-                    onDragUpdate = { dragOffset, fingerX, fingerY ->
-                        onAttachmentDragUpdate?.invoke(dragOffset, fingerX, fingerY)
+                    onDragUpdate = { dragOffset, fingerX, fingerY, _ ->
+                        /** 语音附件无水平滚动，忽略 scrollOffsetPx 参数 */
+                        onAttachmentDragUpdate?.invoke(dragOffset, fingerX, fingerY, 0f)
                     },
                     onDragEnd = { targetLineIdx, targetVoiceIdx ->
-                        /** 通知外部结束拖拽：执行实际的数据移动操作 */
                         onAttachmentDragEnd?.invoke(lineIndex, voiceIndex, targetLineIdx, targetVoiceIdx)
                     },
                     onPauseRequest = {
-                        // TODO: 暂停该语音的播放器实例
+                        /** 🆕 暂停播放（拖拽开始时自动调用）*/
+                        if (voicePlayer.isPlaying.value) {
+                            voicePlayer.pause()
+                        }
                     },
                     onResumeRequest = {
-                        // TODO: 恢复该语音的播放器实例
+                        /** 🆕 恢复播放（拖拽结束时自动调用）*/
+                        // 拖拽结束后不自动恢复，由用户手动点击播放
                     },
                     onClick = {
-                        // TODO: 切换播放/暂停状态
+                        /** 🆕 点击时先暂停其他正在播放的语音（互斥播放）*/
+                        pauseAllOtherVoices(voiceKey)
+                        /** 播放/暂停切换由 VoicePlayerComponent 内部处理 */
                     },
-                    onDelete = { onDeleteVoice(voice.path) }
+                    onDelete = {
+                        /** 🆕 删除前释放播放器资源 */
+                        voicePlayer.stop()
+                        voicePlayer.release()
+                        voicePlayerMap.remove(voiceKey)
+                        onDeleteVoice(voice.path)
+                    }
                 )
             }
         }
