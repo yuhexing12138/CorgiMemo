@@ -1,0 +1,2495 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>刻记+ CORGIMEMO+ — 创意展示</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;600;700&family=Varela+Round&display=swap" rel="stylesheet">
+    <style>
+        /* ============================================
+           全局重置与基础样式
+           ============================================ */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            /* 配色方案 */
+            --color-primary: #FF9A5C;
+            --color-primary-light: #FFB380;
+            --color-success: #7EC8A0;
+            --color-warning: #FFB74D;
+            --color-high: #FF8A80;
+            --color-bg-start: #1a1a2e;
+            --color-bg-mid: #16213e;
+            --color-bg-end: #0f3460;
+            --color-card-bg: rgba(255, 255, 255, 0.06);
+            --color-card-border: rgba(255, 255, 255, 0.1);
+            --color-text-main: #E8E6E3;
+            --color-text-sub: rgba(255, 255, 255, 0.5);
+            --color-text-hint: rgba(255, 255, 255, 0.3);
+            /* 圆角 */
+            --radius-card: 20px;
+            --radius-btn: 16px;
+            --radius-pill: 40px;
+            --radius-tag: 20px;
+            --radius-modal: 24px;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Nunito Sans', sans-serif;
+            background: linear-gradient(135deg, var(--color-bg-start) 0%, var(--color-bg-mid) 50%, var(--color-bg-end) 100%);
+            color: var(--color-text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* ============================================
+           粒子飘动动画 - 星星/爱心/雪花
+           ============================================ */
+        .particles-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .particle {
+            position: absolute;
+            opacity: 0;
+            animation: particleFloat linear infinite;
+        }
+
+        /* 粒子飘动关键帧 */
+        @keyframes particleFloat {
+            0% {
+                opacity: 0;
+                transform: translateY(100vh) rotate(0deg);
+            }
+            10% {
+                opacity: 0.8;
+            }
+            90% {
+                opacity: 0.6;
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-10vh) rotate(360deg);
+            }
+        }
+
+        /* ============================================
+           Hero 区域 - 固定顶部
+           ============================================ */
+        .hero {
+            position: relative;
+            z-index: 10;
+            text-align: center;
+            padding: 48px 24px 32px;
+            background: linear-gradient(180deg, rgba(15, 52, 96, 0.9) 0%, rgba(22, 33, 62, 0.7) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 154, 92, 0.15);
+        }
+
+        /* 柯基emoji光晕动画 */
+        .corgi-emoji {
+            font-size: 64px;
+            display: inline-block;
+            animation: corgiGlow 2.5s ease-in-out infinite;
+            filter: drop-shadow(0 0 20px rgba(255, 154, 92, 0.6));
+            margin-bottom: 12px;
+        }
+
+        @keyframes corgiGlow {
+            0%, 100% {
+                filter: drop-shadow(0 0 20px rgba(255, 154, 92, 0.4));
+                transform: scale(1);
+            }
+            50% {
+                filter: drop-shadow(0 0 40px rgba(255, 154, 92, 0.8));
+                transform: scale(1.05);
+            }
+        }
+
+        .hero-title {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 48px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--color-primary) 0%, #FFD4A8 50%, var(--color-primary-light) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 4px;
+            letter-spacing: 2px;
+        }
+
+        .hero-subtitle {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 18px;
+            color: var(--color-text-sub);
+            letter-spacing: 4px;
+            margin-bottom: 16px;
+        }
+
+        .hero-slogan {
+            font-size: 16px;
+            color: var(--color-text-sub);
+            font-style: italic;
+            max-width: 500px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        /* ============================================
+           页签导航
+           ============================================ */
+        .tab-nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            padding: 16px 24px;
+            background: rgba(22, 33, 62, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .tab-btn {
+            font-family: 'Nunito Sans', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 10px 20px;
+            border-radius: var(--radius-pill);
+            border: 2px solid rgba(255, 154, 92, 0.4);
+            background: transparent;
+            color: rgba(255, 154, 92, 0.7);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            user-select: none;
+        }
+
+        .tab-btn:hover {
+            border-color: var(--color-primary);
+            color: var(--color-primary);
+            background: rgba(255, 154, 92, 0.08);
+        }
+
+        /* 选中页签样式 */
+        .tab-btn.active {
+            background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+            border-color: transparent;
+            color: #1a1a2e;
+            box-shadow: 0 4px 20px rgba(255, 154, 92, 0.4);
+        }
+
+        .tab-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* ============================================
+           内容区域
+           ============================================ */
+        .content-wrapper {
+            position: relative;
+            z-index: 5;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 32px 24px 80px;
+        }
+
+        .tab-content {
+            display: none;
+            opacity: 0;
+            animation: fadeInUp 0.4s ease-in-out forwards;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* 内容淡入动画 */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* ============================================
+           通用卡片样式 - 毛玻璃 + Claymorphism
+           ============================================ */
+        .glass-card {
+            background: var(--color-card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--color-card-border);
+            border-radius: var(--radius-card);
+            padding: 24px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Claymorphism 内阴影 */
+        .glass-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+        }
+
+        .glass-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(255, 154, 92, 0.15), 0 0 0 1px rgba(255, 154, 92, 0.1);
+            border-color: rgba(255, 154, 92, 0.2);
+        }
+
+        /* 章节标题 */
+        .section-title {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 28px;
+            color: var(--color-primary);
+            margin-bottom: 24px;
+            position: relative;
+            padding-left: 16px;
+        }
+
+        .section-title::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 4px;
+            bottom: 4px;
+            width: 4px;
+            border-radius: 2px;
+            background: linear-gradient(180deg, var(--color-primary), var(--color-primary-light));
+        }
+
+        /* 子标题 */
+        .sub-title {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 20px;
+            color: var(--color-text-main);
+            margin-bottom: 16px;
+        }
+
+        /* 网格布局 */
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        /* ============================================
+           引用卡片
+           ============================================ */
+        .quote-card {
+            background: linear-gradient(135deg, rgba(255, 154, 92, 0.08), rgba(255, 154, 92, 0.02));
+            border: 1px solid rgba(255, 154, 92, 0.15);
+            border-radius: var(--radius-card);
+            padding: 32px;
+            margin: 24px 0;
+            position: relative;
+        }
+
+        .quote-card::before {
+            content: '"';
+            position: absolute;
+            top: 8px;
+            left: 20px;
+            font-size: 60px;
+            color: rgba(255, 154, 92, 0.2);
+            font-family: Georgia, serif;
+            line-height: 1;
+        }
+
+        .quote-card p {
+            font-size: 18px;
+            line-height: 1.8;
+            color: var(--color-text-main);
+            font-style: italic;
+            padding-left: 20px;
+        }
+
+        .quote-card .quote-author {
+            margin-top: 12px;
+            font-size: 14px;
+            color: var(--color-text-sub);
+            padding-left: 20px;
+        }
+
+        /* ============================================
+           标签样式
+           ============================================ */
+        .tag {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: var(--radius-tag);
+            font-size: 13px;
+            font-weight: 600;
+            background: rgba(255, 154, 92, 0.12);
+            color: var(--color-primary-light);
+            border: 1px solid rgba(255, 154, 92, 0.2);
+            margin: 4px;
+        }
+
+        .tag-success {
+            background: rgba(126, 200, 160, 0.12);
+            color: var(--color-success);
+            border-color: rgba(126, 200, 160, 0.2);
+        }
+
+        .tag-warning {
+            background: rgba(255, 183, 77, 0.12);
+            color: var(--color-warning);
+            border-color: rgba(255, 183, 77, 0.2);
+        }
+
+        .tag-high {
+            background: rgba(255, 138, 128, 0.12);
+            color: var(--color-high);
+            border-color: rgba(255, 138, 128, 0.2);
+        }
+
+        /* ============================================
+           Tab1: 概览 - 核心价值卡片
+           ============================================ */
+        .value-card {
+            text-align: center;
+            padding: 32px 24px;
+        }
+
+        .value-card .value-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            display: block;
+        }
+
+        .value-card .value-title {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 20px;
+            color: var(--color-primary);
+            margin-bottom: 12px;
+        }
+
+        .value-card .value-desc {
+            font-size: 14px;
+            color: var(--color-text-sub);
+            line-height: 1.6;
+        }
+
+        /* 用户群体卡片 */
+        .user-card {
+            padding: 28px 20px;
+        }
+
+        .user-card .user-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        .user-card .user-title {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 18px;
+            color: var(--color-primary);
+            margin-bottom: 4px;
+        }
+
+        .user-card .user-age {
+            font-size: 13px;
+            color: var(--color-text-hint);
+            margin-bottom: 12px;
+        }
+
+        .user-card .user-desc {
+            font-size: 14px;
+            color: var(--color-text-sub);
+            line-height: 1.6;
+        }
+
+        /* 产品愿景引言 */
+        .vision-quote {
+            text-align: center;
+            padding: 48px 32px;
+            margin: 32px 0;
+        }
+
+        .vision-quote p {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 24px;
+            color: var(--color-primary-light);
+            line-height: 1.6;
+        }
+
+        /* 差异化标签区 */
+        .diff-tags {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .diff-tag {
+            padding: 10px 24px;
+            border-radius: var(--radius-pill);
+            font-size: 15px;
+            font-weight: 700;
+            background: linear-gradient(135deg, rgba(255, 154, 92, 0.15), rgba(255, 154, 92, 0.05));
+            color: var(--color-primary-light);
+            border: 1px solid rgba(255, 154, 92, 0.25);
+        }
+
+        /* ============================================
+           Tab2: 柯基陪伴系统
+           ============================================ */
+        /* 姿态/表情小卡片 */
+        .pose-card, .expression-card {
+            padding: 20px 16px;
+            text-align: center;
+        }
+
+        .pose-card .pose-emoji, .expression-card .expr-emoji {
+            font-size: 36px;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .pose-card .pose-name, .expression-card .expr-name {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 15px;
+            color: var(--color-primary);
+            margin-bottom: 6px;
+        }
+
+        .pose-card .pose-scene, .expression-card .expr-scene {
+            font-size: 12px;
+            color: var(--color-text-sub);
+            line-height: 1.5;
+        }
+
+        /* 情绪系统 */
+        .emotion-formula {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 20px 24px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            color: var(--color-success);
+            margin: 16px 0;
+            overflow-x: auto;
+            border: 1px solid rgba(126, 200, 160, 0.15);
+        }
+
+        .emotion-formula .keyword {
+            color: var(--color-primary);
+        }
+
+        .emotion-formula .number {
+            color: var(--color-warning);
+        }
+
+        .emotion-formula .operator {
+            color: var(--color-text-sub);
+        }
+
+        /* 情绪范围条 */
+        .emotion-bar {
+            display: flex;
+            border-radius: 12px;
+            overflow: hidden;
+            height: 40px;
+            margin: 16px 0;
+        }
+
+        .emotion-bar-segment {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: #1a1a2e;
+            flex: 1;
+            transition: flex 0.3s ease;
+        }
+
+        .emotion-bar-segment:hover {
+            flex: 1.5;
+        }
+
+        .emotion-bar-segment.sad { background: #FF8A80; }
+        .emotion-bar-segment.worried { background: #FFB74D; }
+        .emotion-bar-segment.normal { background: #FFD54F; }
+        .emotion-bar-segment.expect { background: #7EC8A0; }
+        .emotion-bar-segment.happy { background: #69F0AE; }
+
+        /* 当前情绪演示 */
+        .emotion-demo {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 24px;
+            margin-top: 16px;
+        }
+
+        .emotion-demo .demo-emoji {
+            font-size: 56px;
+            animation: corgiGlow 2s ease-in-out infinite;
+        }
+
+        .emotion-demo .demo-value {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 48px;
+            color: var(--color-success);
+        }
+
+        .emotion-demo .demo-label {
+            font-size: 16px;
+            color: var(--color-text-sub);
+        }
+
+        /* 触摸互动卡片 */
+        .interact-card {
+            padding: 20px 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .interact-card:active {
+            transform: scale(0.95);
+        }
+
+        .interact-card .interact-action {
+            font-size: 28px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .interact-card .interact-name {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 14px;
+            color: var(--color-primary);
+            margin-bottom: 6px;
+        }
+
+        .interact-card .interact-result {
+            font-size: 12px;
+            color: var(--color-text-sub);
+            min-height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .interact-card .interact-feedback {
+            font-size: 20px;
+            animation: feedbackPop 0.6s ease-out;
+        }
+
+        @keyframes feedbackPop {
+            0% { transform: scale(0); opacity: 0; }
+            50% { transform: scale(1.3); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* 装扮系统 - 横向滚动 */
+        .outfit-scroll {
+            display: flex;
+            gap: 16px;
+            overflow-x: auto;
+            padding: 8px 4px 16px;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 154, 92, 0.3) transparent;
+        }
+
+        .outfit-scroll::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        .outfit-scroll::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .outfit-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255, 154, 92, 0.3);
+            border-radius: 2px;
+        }
+
+        .outfit-card {
+            min-width: 140px;
+            padding: 20px 16px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .outfit-card .outfit-emoji {
+            font-size: 40px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .outfit-card .outfit-name {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 14px;
+            color: var(--color-primary);
+            margin-bottom: 4px;
+        }
+
+        .outfit-card .outfit-desc {
+            font-size: 12px;
+            color: var(--color-text-sub);
+        }
+
+        /* 成长系统 */
+        .growth-track {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            margin: 16px 0;
+        }
+
+        .growth-stage {
+            flex: 1;
+            text-align: center;
+            padding: 16px 8px;
+            position: relative;
+        }
+
+        .growth-stage .stage-emoji {
+            font-size: 32px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .growth-stage .stage-name {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 14px;
+            color: var(--color-primary);
+            margin-bottom: 4px;
+        }
+
+        .growth-stage .stage-level {
+            font-size: 12px;
+            color: var(--color-text-hint);
+        }
+
+        .growth-stage .stage-bar {
+            height: 6px;
+            background: rgba(255, 154, 92, 0.2);
+            border-radius: 3px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .growth-stage .stage-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));
+            transition: width 1s ease;
+        }
+
+        /* 成长阶段之间的连接箭头 */
+        .growth-arrow {
+            font-size: 20px;
+            color: var(--color-text-hint);
+            flex-shrink: 0;
+        }
+
+        /* ============================================
+           Tab3: 身份自适应
+           ============================================ */
+        /* 身份对比卡片 */
+        .identity-card {
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .identity-card .identity-header {
+            padding: 16px 20px;
+            font-family: 'Varela Round', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            color: #1a1a2e;
+            text-align: center;
+        }
+
+        .identity-card.worker .identity-header { background: linear-gradient(135deg, #A1887F, #8D6E63); }
+        .identity-card.student .identity-header { background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light)); }
+        .identity-card.elder .identity-header { background: linear-gradient(135deg, var(--color-success), #5DBEA3); }
+
+        .identity-card .identity-body {
+            padding: 20px;
+        }
+
+        /* 模拟界面 */
+        .mock-screen {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 16px;
+            min-height: 120px;
+        }
+
+        .mock-screen .mock-bar {
+            height: 4px;
+            border-radius: 2px;
+            margin-bottom: 8px;
+        }
+
+        .worker .mock-bar { background: #A1887F; }
+        .student .mock-bar { background: var(--color-primary); }
+        .elder .mock-bar { background: var(--color-success); }
+
+        .mock-screen .mock-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+            font-size: 12px;
+            color: var(--color-text-sub);
+        }
+
+        .mock-screen .mock-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .identity-card .identity-features {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .identity-card .identity-features .tag {
+            font-size: 11px;
+            padding: 4px 10px;
+        }
+
+        /* 对话气泡 */
+        .chat-bubble {
+            background: rgba(255, 154, 92, 0.08);
+            border: 1px solid rgba(255, 154, 92, 0.15);
+            border-radius: 16px 16px 16px 4px;
+            padding: 16px 20px;
+            margin: 12px 0;
+            position: relative;
+        }
+
+        .chat-bubble .bubble-label {
+            font-size: 12px;
+            color: var(--color-primary);
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .chat-bubble .bubble-text {
+            font-size: 14px;
+            color: var(--color-text-main);
+            line-height: 1.6;
+        }
+
+        /* 实时切换演示 */
+        .switch-demo {
+            text-align: center;
+            padding: 32px 24px;
+        }
+
+        .switch-phone {
+            width: 220px;
+            height: 400px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 28px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            margin: 0 auto 24px;
+            padding: 16px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.5s ease;
+        }
+
+        .switch-phone .phone-notch {
+            width: 60px;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 3px;
+            margin: 0 auto 12px;
+        }
+
+        .switch-phone .phone-content {
+            transition: all 0.4s ease;
+        }
+
+        .switch-phone .phone-greeting {
+            font-size: 12px;
+            color: var(--color-text-main);
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+
+        .switch-phone .phone-task {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 0;
+            font-size: 11px;
+            color: var(--color-text-sub);
+        }
+
+        .switch-phone .phone-task .task-check {
+            width: 14px;
+            height: 14px;
+            border-radius: 4px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            flex-shrink: 0;
+        }
+
+        .switch-phone .phone-corgi {
+            font-size: 36px;
+            text-align: center;
+            margin-top: 16px;
+        }
+
+        .switch-btns {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .switch-btn {
+            font-family: 'Nunito Sans', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 10px 20px;
+            border-radius: var(--radius-pill);
+            border: 2px solid rgba(255, 255, 255, 0.15);
+            background: transparent;
+            color: var(--color-text-sub);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .switch-btn:hover {
+            border-color: var(--color-primary);
+            color: var(--color-primary);
+        }
+
+        .switch-btn.active {
+            background: var(--color-primary);
+            border-color: var(--color-primary);
+            color: #1a1a2e;
+        }
+
+        .switch-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* ============================================
+           Tab4: 三位一体
+           ============================================ */
+        /* 三角关系图 */
+        .triangle-diagram {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: 24px auto;
+            aspect-ratio: 1 / 0.9;
+        }
+
+        .triangle-node {
+            position: absolute;
+            padding: 16px 24px;
+            border-radius: var(--radius-card);
+            text-align: center;
+            font-family: 'Varela Round', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            z-index: 2;
+        }
+
+        .triangle-node.node-top {
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 154, 92, 0.15);
+            border: 1px solid rgba(255, 154, 92, 0.3);
+            color: var(--color-primary);
+        }
+
+        .triangle-node.node-left {
+            bottom: 0;
+            left: 0;
+            background: rgba(126, 200, 160, 0.15);
+            border: 1px solid rgba(126, 200, 160, 0.3);
+            color: var(--color-success);
+        }
+
+        .triangle-node.node-right {
+            bottom: 0;
+            right: 0;
+            background: rgba(255, 183, 77, 0.15);
+            border: 1px solid rgba(255, 183, 77, 0.3);
+            color: var(--color-warning);
+        }
+
+        .triangle-line {
+            position: absolute;
+            z-index: 1;
+        }
+
+        .triangle-label {
+            position: absolute;
+            font-size: 11px;
+            color: var(--color-text-hint);
+            z-index: 3;
+            white-space: nowrap;
+        }
+
+        /* 待办管理 */
+        .todo-item-demo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .todo-checkbox {
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .todo-checkbox.checked {
+            background: var(--color-success);
+            border-color: var(--color-success);
+        }
+
+        .todo-checkbox.checked::after {
+            content: '✓';
+            color: #1a1a2e;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .todo-text {
+            font-size: 14px;
+            color: var(--color-text-main);
+        }
+
+        .todo-text.done {
+            text-decoration: line-through;
+            color: var(--color-text-hint);
+        }
+
+        .priority-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .priority-dot.high { background: var(--color-high); }
+        .priority-dot.medium { background: var(--color-warning); }
+        .priority-dot.low { background: var(--color-success); }
+
+        /* 子任务进度条 */
+        .subtask-progress {
+            margin-top: 12px;
+        }
+
+        .subtask-progress .progress-bar {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .subtask-progress .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));
+            border-radius: 4px;
+            transition: width 1s ease;
+        }
+
+        .subtask-progress .progress-text {
+            font-size: 13px;
+            color: var(--color-text-sub);
+        }
+
+        /* 时间线 */
+        .timeline {
+            position: relative;
+            padding-left: 32px;
+            margin: 16px 0;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 12px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, var(--color-primary), rgba(255, 154, 92, 0.1));
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -24px;
+            top: 8px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--color-primary);
+            box-shadow: 0 0 10px rgba(255, 154, 92, 0.4);
+        }
+
+        .timeline-item .tl-title {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 16px;
+            color: var(--color-primary);
+            margin-bottom: 4px;
+        }
+
+        .timeline-item .tl-content {
+            font-size: 13px;
+            color: var(--color-text-sub);
+            line-height: 1.5;
+            margin-bottom: 6px;
+        }
+
+        .timeline-item .tl-tags {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .timeline-item .tl-time {
+            font-size: 11px;
+            color: var(--color-text-hint);
+            margin-top: 4px;
+        }
+
+        /* 日期卡片 */
+        .date-card {
+            padding: 24px;
+        }
+
+        .date-card .date-number {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 42px;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+
+        .date-card .date-label {
+            font-size: 14px;
+            color: var(--color-text-sub);
+            margin-bottom: 8px;
+        }
+
+        .date-card .date-title {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 18px;
+            color: var(--color-text-main);
+            margin-bottom: 4px;
+        }
+
+        .date-card .date-target {
+            font-size: 12px;
+            color: var(--color-text-hint);
+        }
+
+        .date-card.countdown .date-number { color: var(--color-primary); }
+        .date-card.countup .date-number { color: var(--color-success); }
+        .date-card.urgent .date-number { color: var(--color-high); }
+
+        /* 关联演示 */
+        .relation-demo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding: 24px;
+            margin-top: 16px;
+        }
+
+        .relation-card {
+            padding: 16px 20px;
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .relation-card .rel-type {
+            font-size: 11px;
+            color: var(--color-text-hint);
+            margin-bottom: 4px;
+        }
+
+        .relation-card .rel-name {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 15px;
+            color: var(--color-primary);
+        }
+
+        .relation-arrow {
+            font-size: 20px;
+            color: var(--color-text-hint);
+        }
+
+        /* ============================================
+           Tab5: 节日节气关怀
+           ============================================ */
+        /* 节日分组 */
+        .festival-group {
+            margin-bottom: 24px;
+        }
+
+        .festival-group .group-title {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 16px;
+            color: var(--color-primary);
+            margin-bottom: 12px;
+        }
+
+        .festival-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .festival-tag {
+            padding: 8px 16px;
+            border-radius: var(--radius-tag);
+            font-size: 13px;
+            background: rgba(255, 154, 92, 0.08);
+            color: var(--color-text-main);
+            border: 1px solid rgba(255, 154, 92, 0.12);
+            transition: all 0.3s ease;
+        }
+
+        .festival-tag:hover {
+            background: rgba(255, 154, 92, 0.15);
+            border-color: rgba(255, 154, 92, 0.3);
+        }
+
+        /* 换装卡片 */
+        .costume-card {
+            padding: 20px;
+            text-align: center;
+        }
+
+        .costume-card .costume-emoji {
+            font-size: 44px;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .costume-card .costume-name {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 16px;
+            color: var(--color-primary);
+            margin-bottom: 6px;
+        }
+
+        .costume-card .costume-desc {
+            font-size: 12px;
+            color: var(--color-text-sub);
+            line-height: 1.5;
+            margin-bottom: 8px;
+        }
+
+        .costume-card .costume-trigger {
+            font-size: 11px;
+            color: var(--color-text-hint);
+            padding: 4px 10px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 10px;
+            display: inline-block;
+        }
+
+        /* 冬至场景卡片 */
+        .winter-solstice-card {
+            padding: 32px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .winter-solstice-card .ws-corgi {
+            font-size: 72px;
+            margin-bottom: 16px;
+            display: block;
+            animation: corgiGlow 2s ease-in-out infinite;
+        }
+
+        .winter-solstice-card .ws-greeting {
+            font-size: 16px;
+            color: var(--color-text-main);
+            line-height: 1.8;
+            margin-bottom: 16px;
+        }
+
+        /* 雪花飘动 */
+        .snowflake {
+            position: absolute;
+            color: rgba(255, 255, 255, 0.3);
+            animation: snowfall linear infinite;
+            pointer-events: none;
+        }
+
+        @keyframes snowfall {
+            0% {
+                opacity: 0;
+                transform: translateY(-20px) rotate(0deg);
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 0.5;
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(300px) rotate(360deg);
+            }
+        }
+
+        /* 公益价值卡片 */
+        .value-prop-card {
+            padding: 28px 24px;
+            text-align: center;
+        }
+
+        .value-prop-card .vp-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        .value-prop-card .vp-title {
+            font-family: 'Varela Round', sans-serif;
+            font-size: 16px;
+            color: var(--color-primary);
+            margin-bottom: 8px;
+        }
+
+        .value-prop-card .vp-desc {
+            font-size: 14px;
+            color: var(--color-text-sub);
+            line-height: 1.5;
+        }
+
+        /* ============================================
+           响应式设计
+           ============================================ */
+        @media (max-width: 1199px) {
+            .grid-3 {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .grid-4 {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .hero-title {
+                font-size: 40px;
+            }
+
+            .triangle-diagram {
+                max-width: 400px;
+            }
+        }
+
+        @media (max-width: 767px) {
+            .grid-3, .grid-4, .grid-2 {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-title {
+                font-size: 32px;
+            }
+
+            .hero-slogan {
+                font-size: 14px;
+            }
+
+            .tab-nav {
+                justify-content: flex-start;
+                padding: 12px 16px;
+                gap: 6px;
+            }
+
+            .tab-btn {
+                font-size: 13px;
+                padding: 8px 14px;
+            }
+
+            .content-wrapper {
+                padding: 20px 16px 60px;
+            }
+
+            .section-title {
+                font-size: 22px;
+            }
+
+            .vision-quote p {
+                font-size: 18px;
+            }
+
+            .growth-track {
+                flex-direction: column;
+            }
+
+            .growth-arrow {
+                transform: rotate(90deg);
+            }
+
+            .relation-demo {
+                flex-direction: column;
+            }
+
+            .relation-arrow {
+                transform: rotate(90deg);
+            }
+
+            .triangle-diagram {
+                max-width: 300px;
+            }
+
+            .switch-phone {
+                width: 180px;
+                height: 340px;
+            }
+        }
+
+        /* ============================================
+           卡片入场动画（staggered delay）
+           ============================================ */
+        .stagger-item {
+            opacity: 0;
+            animation: staggerFadeIn 0.5s ease-out forwards;
+        }
+
+        @keyframes staggerFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(24px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* ============================================
+           辅助类
+           ============================================ */
+        .mt-8 { margin-top: 8px; }
+        .mt-16 { margin-top: 16px; }
+        .mt-24 { margin-top: 24px; }
+        .mt-32 { margin-top: 32px; }
+        .mb-8 { margin-bottom: 8px; }
+        .mb-16 { margin-bottom: 16px; }
+        .mb-24 { margin-bottom: 24px; }
+        .text-center { text-align: center; }
+        .text-sub { color: var(--color-text-sub); }
+        .text-hint { color: var(--color-text-hint); }
+
+        /* 分隔线 */
+        .divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 154, 92, 0.15), transparent);
+            margin: 32px 0;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ============================================
+         粒子飘动容器
+         ============================================ -->
+    <div class="particles-container" id="particles"></div>
+
+    <!-- ============================================
+         Hero 区域
+         ============================================ -->
+    <header class="hero">
+        <div class="corgi-emoji">🐕</div>
+        <h1 class="hero-title">刻记+</h1>
+        <p class="hero-subtitle">CORGIMEMO+</p>
+        <p class="hero-slogan">「不会忘记的，是每一天陪你完成的小短腿」</p>
+    </header>
+
+    <!-- ============================================
+         页签导航
+         ============================================ -->
+    <nav class="tab-nav" id="tabNav">
+        <button class="tab-btn active" data-tab="tab1">✨ 概览</button>
+        <button class="tab-btn" data-tab="tab2">🐕 柯基陪伴</button>
+        <button class="tab-btn" data-tab="tab3">👤 身份自适应</button>
+        <button class="tab-btn" data-tab="tab4">📋 三位一体</button>
+        <button class="tab-btn" data-tab="tab5">🎉 节日关怀</button>
+    </nav>
+
+    <!-- ============================================
+         内容区域
+         ============================================ -->
+    <main class="content-wrapper">
+
+        <!-- ============================
+             Tab 1: ✨ 概览
+             ============================ -->
+        <section class="tab-content active" id="tab1">
+
+            <!-- 三大核心价值 -->
+            <h2 class="section-title">三大核心价值</h2>
+            <div class="grid-3 mb-24">
+                <div class="glass-card value-card stagger-item" style="animation-delay: 0.1s;">
+                    <span class="value-icon">🐕</span>
+                    <div class="value-title">陪伴感</div>
+                    <div class="value-desc">柯基犬全程陪伴，从晨间问候到任务完成，让每一天都不再孤单</div>
+                </div>
+                <div class="glass-card value-card stagger-item" style="animation-delay: 0.2s;">
+                    <span class="value-icon">🎯</span>
+                    <div class="value-title">高效性</div>
+                    <div class="value-desc">快速记录、智能分类、准时提醒，让待办管理变得简单高效</div>
+                </div>
+                <div class="glass-card value-card stagger-item" style="animation-delay: 0.3s;">
+                    <span class="value-icon">💝</span>
+                    <div class="value-title">温暖感</div>
+                    <div class="value-desc">治愈系设计、贴心问候、节日关怀，让忙碌的人也能感受温暖</div>
+                </div>
+            </div>
+
+            <!-- 目标用户群体 -->
+            <h2 class="section-title">目标用户群体</h2>
+            <div class="grid-3 mb-24">
+                <div class="glass-card user-card stagger-item" style="animation-delay: 0.1s;">
+                    <span class="user-icon">💼</span>
+                    <div class="user-title">上班族</div>
+                    <div class="user-age">25-35岁</div>
+                    <div class="user-desc">高效管理待办事项，缓解工作压力，柯基陪伴让加班不再孤独</div>
+                </div>
+                <div class="glass-card user-card stagger-item" style="animation-delay: 0.2s;">
+                    <span class="user-icon">📚</span>
+                    <div class="user-title">学生群体</div>
+                    <div class="user-age">18-25岁</div>
+                    <div class="user-desc">课程管理与学习动力，考试倒计时与专注模式，柯基陪你一起进步</div>
+                </div>
+                <div class="glass-card user-card stagger-item" style="animation-delay: 0.3s;">
+                    <span class="user-icon">🧓</span>
+                    <div class="user-title">老年群体</div>
+                    <div class="user-age">55岁+</div>
+                    <div class="user-desc">简单易用的界面，语音输入为主，用药提醒与情感陪伴，温暖每一天</div>
+                </div>
+            </div>
+
+            <!-- 产品愿景引言 -->
+            <div class="quote-card vision-quote stagger-item" style="animation-delay: 0.1s;">
+                <p>"让待办变得不再枯燥，让忙碌的人也能感受到温暖。"</p>
+            </div>
+
+            <!-- 差异化优势 -->
+            <h2 class="section-title">差异化优势</h2>
+            <div class="diff-tags stagger-item" style="animation-delay: 0.1s;">
+                <span class="diff-tag">✨ 原创陪伴系统</span>
+                <span class="diff-tag">🎯 身份自适应</span>
+                <span class="diff-tag">🎉 节日节气关怀</span>
+                <span class="diff-tag">💡 完全原创</span>
+            </div>
+        </section>
+
+        <!-- ============================
+             Tab 2: 🐕 柯基陪伴系统
+             ============================ -->
+        <section class="tab-content" id="tab2">
+
+            <!-- 柯基形象体系 -->
+            <h2 class="section-title">柯基形象体系 — 8种姿态</h2>
+            <div class="grid-4 mb-24">
+                <div class="glass-card pose-card stagger-item" style="animation-delay: 0.05s;">
+                    <span class="pose-emoji">🦮</span>
+                    <div class="pose-name">趴卧</div>
+                    <div class="pose-scene">默认状态，安静等待</div>
+                </div>
+                <div class="glass-card pose-card stagger-item" style="animation-delay: 0.1s;">
+                    <span class="pose-emoji">🐕‍🦺</span>
+                    <div class="pose-name">坐立</div>
+                    <div class="pose-scene">创建待办时，专注状态</div>
+                </div>
+                <div class="glass-card pose-card stagger-item" style="animation-delay: 0.15s;">
+                    <span class="pose-emoji">🐕</span>
+                    <div class="pose-name">站立</div>
+                    <div class="pose-scene">任务完成，骄傲展示</div>
+                </div>
+                <div class="glass-card pose-card stagger-item" style="animation-delay: 0.2s;">
+                    <span class="pose-emoji">🏃</span>
+                    <div class="pose-name">奔跑</div>
+                    <div class="pose-scene">加载中，活力满满</div>
+                </div>
+                <div class="glass-card pose-card stagger-item" style="animation-delay: 0.25s;">
+                    <span class="pose-emoji">🤸</span>
+                    <div class="pose-name">打滚</div>
+                    <div class="pose-scene">长按互动，卖萌撒娇</div>
+                </div>
+                <div class="glass-card pose-card stagger-item" style="animation-delay: 0.3s;">
+                    <span class="pose-emoji">😴</span>
+                    <div class="pose-name">睡觉</div>
+                    <div class="pose-scene">深夜时段，安静休息</div>
+                </div>
+                <div class="glass-card pose-card stagger-item" style="animation-delay: 0.35s;">
+                    <span class="pose-emoji">🤔</span>
+                    <div class="pose-name">歪头</div>
+                    <div class="pose-scene">期待状态，好奇张望</div>
+                </div>
+                <div class="glass-card pose-card stagger-item" style="animation-delay: 0.4s;">
+                    <span class="pose-emoji">🐾</span>
+                    <div class="pose-name">摇尾巴</div>
+                    <div class="pose-scene">开心时刻，欢快摇摆</div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 表情系统 -->
+            <h2 class="section-title">表情系统 — 8种表情</h2>
+            <div class="grid-4 mb-24">
+                <div class="glass-card expression-card stagger-item" style="animation-delay: 0.05s;">
+                    <span class="expr-emoji">😄</span>
+                    <div class="expr-name">开心</div>
+                    <div class="expr-scene">弯弯笑眼，任务完成时</div>
+                </div>
+                <div class="glass-card expression-card stagger-item" style="animation-delay: 0.1s;">
+                    <span class="expr-emoji">😐</span>
+                    <div class="expr-name">普通</div>
+                    <div class="expr-scene">圆圆眼睛，日常状态</div>
+                </div>
+                <div class="glass-card expression-card stagger-item" style="animation-delay: 0.15s;">
+                    <span class="expr-emoji">🤩</span>
+                    <div class="expr-name">期待</div>
+                    <div class="expr-scene">闪亮眼睛，等待互动</div>
+                </div>
+                <div class="glass-card expression-card stagger-item" style="animation-delay: 0.2s;">
+                    <span class="expr-emoji">😪</span>
+                    <div class="expr-name">困倦</div>
+                    <div class="expr-scene">半闭眼睛，深夜时段</div>
+                </div>
+                <div class="glass-card expression-card stagger-item" style="animation-delay: 0.25s;">
+                    <span class="expr-emoji">😟</span>
+                    <div class="expr-name">担心</div>
+                    <div class="expr-scene">眉毛下垂，任务超期时</div>
+                </div>
+                <div class="glass-card expression-card stagger-item" style="animation-delay: 0.3s;">
+                    <span class="expr-emoji">😲</span>
+                    <div class="expr-name">惊讶</div>
+                    <div class="expr-scene">眼睛睁大，特殊事件</div>
+                </div>
+                <div class="glass-card expression-card stagger-item" style="animation-delay: 0.35s;">
+                    <span class="expr-emoji">😏</span>
+                    <div class="expr-name">得意</div>
+                    <div class="expr-scene">眯一只眼，达成成就</div>
+                </div>
+                <div class="glass-card expression-card stagger-item" style="animation-delay: 0.4s;">
+                    <span class="expr-emoji">😊</span>
+                    <div class="expr-name">害羞</div>
+                    <div class="expr-scene">看向旁边，被连点时</div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 情绪系统 -->
+            <h2 class="section-title">情绪系统</h2>
+            <div class="glass-card mb-24">
+                <div class="sub-title">情绪值计算公式</div>
+                <div class="emotion-formula">
+                    <span class="keyword">情绪值</span> <span class="operator">=</span>
+                    <span class="keyword">基础值</span><span class="operator">(</span><span class="number">50</span><span class="operator">)</span>
+                    <span class="operator">+</span> <span class="keyword">今日完成率</span> <span class="operator">×</span> <span class="number">30</span>
+                    <span class="operator">+</span> <span class="keyword">连续活跃天数</span> <span class="operator">×</span> <span class="number">5</span>
+                    <span class="operator">-</span> <span class="keyword">超期任务数</span> <span class="operator">×</span> <span class="number">10</span>
+                    <span class="operator">+</span> <span class="keyword">特殊事件加成</span>
+                </div>
+
+                <div class="sub-title mt-16">情绪值范围</div>
+                <div class="emotion-bar">
+                    <div class="emotion-bar-segment sad">0-19 失落</div>
+                    <div class="emotion-bar-segment worried">20-39 担心</div>
+                    <div class="emotion-bar-segment normal">40-59 普通</div>
+                    <div class="emotion-bar-segment expect">60-79 期待</div>
+                    <div class="emotion-bar-segment happy">80-100 开心</div>
+                </div>
+
+                <div class="sub-title mt-16">当前情绪演示</div>
+                <div class="emotion-demo">
+                    <span class="demo-emoji">😄</span>
+                    <div>
+                        <div class="demo-value">82</div>
+                        <div class="demo-label">开心 / 兴奋状态</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 触摸互动 -->
+            <h2 class="section-title">触摸互动</h2>
+            <div class="grid-4 mb-24">
+                <div class="glass-card interact-card stagger-item" style="animation-delay: 0.05s;" onclick="showInteractFeedback(this, '😉✨')">
+                    <span class="interact-action">👆</span>
+                    <div class="interact-name">单击</div>
+                    <div class="interact-result">眨眼 + 摇尾巴</div>
+                </div>
+                <div class="glass-card interact-card stagger-item" style="animation-delay: 0.1s;" onclick="showInteractFeedback(this, '🤸💕')">
+                    <span class="interact-action">👆👆</span>
+                    <div class="interact-name">双击</div>
+                    <div class="interact-result">打滚卖萌</div>
+                </div>
+                <div class="glass-card interact-card stagger-item" style="animation-delay: 0.15s;" onclick="showInteractFeedback(this, '😌💛')">
+                    <span class="interact-action">✊</span>
+                    <div class="interact-name">长按</div>
+                    <div class="interact-result">享受表情</div>
+                </div>
+                <div class="glass-card interact-card stagger-item" style="animation-delay: 0.2s;" onclick="showInteractFeedback(this, '🙈💨')">
+                    <span class="interact-action">👆👆👆</span>
+                    <div class="interact-name">快速连点</div>
+                    <div class="interact-result">害羞躲避</div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 装扮系统 -->
+            <h2 class="section-title">装扮系统 — 节日装扮</h2>
+            <div class="outfit-scroll mb-24">
+                <div class="glass-card outfit-card">
+                    <span class="outfit-emoji">🧧</span>
+                    <div class="outfit-name">春节</div>
+                    <div class="outfit-desc">红色围巾 + 小红包</div>
+                </div>
+                <div class="glass-card outfit-card">
+                    <span class="outfit-emoji">🏮</span>
+                    <div class="outfit-name">元宵</div>
+                    <div class="outfit-desc">小灯笼挂饰</div>
+                </div>
+                <div class="glass-card outfit-card">
+                    <span class="outfit-emoji">🎋</span>
+                    <div class="outfit-name">端午</div>
+                    <div class="outfit-desc">五彩绳手链</div>
+                </div>
+                <div class="glass-card outfit-card">
+                    <span class="outfit-emoji">🌕</span>
+                    <div class="outfit-name">中秋</div>
+                    <div class="outfit-desc">玉兔耳朵发箍</div>
+                </div>
+                <div class="glass-card outfit-card">
+                    <span class="outfit-emoji">❄️</span>
+                    <div class="outfit-name">冬至</div>
+                    <div class="outfit-desc">暖和围巾 + 耳罩</div>
+                </div>
+                <div class="glass-card outfit-card">
+                    <span class="outfit-emoji">🕶️</span>
+                    <div class="outfit-name">夏季</div>
+                    <div class="outfit-desc">墨镜 + 小扇子</div>
+                </div>
+            </div>
+
+            <h2 class="section-title">装扮系统 — 成就装扮</h2>
+            <div class="outfit-scroll mb-24">
+                <div class="glass-card outfit-card">
+                    <span class="outfit-emoji">🎓</span>
+                    <div class="outfit-name">学士帽</div>
+                    <div class="outfit-desc">完成学习目标</div>
+                </div>
+                <div class="glass-card outfit-card">
+                    <span class="outfit-emoji">👔</span>
+                    <div class="outfit-name">领带</div>
+                    <div class="outfit-desc">连续7天打卡</div>
+                </div>
+                <div class="glass-card outfit-card">
+                    <span class="outfit-emoji">👑</span>
+                    <div class="outfit-name">皇冠</div>
+                    <div class="outfit-desc">达成所有成就</div>
+                </div>
+                <div class="glass-card outfit-card">
+                    <span class="outfit-emoji">🦸</span>
+                    <div class="outfit-name">披风</div>
+                    <div class="outfit-desc">完成100个任务</div>
+                </div>
+                <div class="glass-card outfit-card">
+                    <span class="outfit-emoji">👼</span>
+                    <div class="outfit-name">天使翅膀</div>
+                    <div class="outfit-desc">帮助他人完成</div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 成长系统 -->
+            <h2 class="section-title">成长系统</h2>
+            <div class="glass-card mb-24">
+                <div class="growth-track">
+                    <div class="growth-stage">
+                        <span class="stage-emoji">🐶</span>
+                        <div class="stage-name">柯基宝宝</div>
+                        <div class="stage-level">Lv.1-3</div>
+                        <div class="stage-bar"><div class="stage-bar-fill" style="width: 100%;"></div></div>
+                    </div>
+                    <div class="growth-arrow">→</div>
+                    <div class="growth-stage">
+                        <span class="stage-emoji">🐕</span>
+                        <div class="stage-name">柯基少年</div>
+                        <div class="stage-level">Lv.4-6</div>
+                        <div class="stage-bar"><div class="stage-bar-fill" style="width: 75%;"></div></div>
+                    </div>
+                    <div class="growth-arrow">→</div>
+                    <div class="growth-stage">
+                        <span class="stage-emoji">🦮</span>
+                        <div class="stage-name">柯基青年</div>
+                        <div class="stage-level">Lv.7-9</div>
+                        <div class="stage-bar"><div class="stage-bar-fill" style="width: 40%;"></div></div>
+                    </div>
+                    <div class="growth-arrow">→</div>
+                    <div class="growth-stage">
+                        <span class="stage-emoji">👑🐕</span>
+                        <div class="stage-name">柯基大师</div>
+                        <div class="stage-level">Lv.10+</div>
+                        <div class="stage-bar"><div class="stage-bar-fill" style="width: 10%;"></div></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 用户故事 -->
+            <h2 class="section-title">用户故事</h2>
+            <div class="quote-card stagger-item" style="animation-delay: 0.1s;">
+                <p>"早上7:30，柯基摇着尾巴对我说：早安小林！新的一天，柯基陪你一起加油！今天有3个任务等你完成~"</p>
+                <div class="quote-author">—— 小林的晨间问候</div>
+            </div>
+        </section>
+
+        <!-- ============================
+             Tab 3: 👤 身份自适应设计
+             ============================ -->
+        <section class="tab-content" id="tab3">
+
+            <!-- 三种身份对比 -->
+            <h2 class="section-title">三种身份对比</h2>
+            <div class="grid-3 mb-24">
+                <!-- 上班族 -->
+                <div class="glass-card identity-card worker stagger-item" style="animation-delay: 0.1s;">
+                    <div class="identity-header">💼 上班族模式</div>
+                    <div class="identity-body">
+                        <div class="mock-screen">
+                            <div class="mock-bar"></div>
+                            <div class="mock-item"><div class="mock-dot" style="background: #A1887F;"></div> 提交周报</div>
+                            <div class="mock-item"><div class="mock-dot" style="background: #A1887F;"></div> 10:00 团队会议</div>
+                            <div class="mock-item"><div class="mock-dot" style="background: #A1887F;"></div> 项目报告</div>
+                            <div class="mock-item"><div class="mock-dot" style="background: #8D6E63;"></div> 健身计划</div>
+                        </div>
+                        <div class="identity-features">
+                            <span class="tag">奶茶棕色调</span>
+                            <span class="tag">简洁高效</span>
+                            <span class="tag">线性图标</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- 学生 -->
+                <div class="glass-card identity-card student stagger-item" style="animation-delay: 0.2s;">
+                    <div class="identity-header">📚 学生模式</div>
+                    <div class="identity-body">
+                        <div class="mock-screen">
+                            <div class="mock-bar"></div>
+                            <div class="mock-item"><div class="mock-dot" style="background: var(--color-primary);"></div> 高数作业</div>
+                            <div class="mock-item"><div class="mock-dot" style="background: var(--color-primary);"></div> 英语听力</div>
+                            <div class="mock-item"><div class="mock-dot" style="background: var(--color-primary-light);"></div> 社团活动</div>
+                            <div class="mock-item"><div class="mock-dot" style="background: var(--color-primary-light);"></div> 读书笔记</div>
+                        </div>
+                        <div class="identity-features">
+                            <span class="tag">暖阳橙色调</span>
+                            <span class="tag">宽松活泼</span>
+                            <span class="tag">圆润图标</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- 老年 -->
+                <div class="glass-card identity-card elder stagger-item" style="animation-delay: 0.3s;">
+                    <div class="identity-header">🧓 老年模式</div>
+                    <div class="identity-body">
+                        <div class="mock-screen">
+                            <div class="mock-bar"></div>
+                            <div class="mock-item" style="font-size: 16px;"><div class="mock-dot" style="background: var(--color-success); width: 12px; height: 12px;"></div> 吃降压药</div>
+                            <div class="mock-item" style="font-size: 16px;"><div class="mock-dot" style="background: var(--color-success); width: 12px; height: 12px;"></div> 去公园散步</div>
+                            <div class="mock-item" style="font-size: 16px;"><div class="mock-dot" style="background: #5DBEA3; width: 12px; height: 12px;"></div> 给女儿打电话</div>
+                        </div>
+                        <div class="identity-features">
+                            <span class="tag">大字体</span>
+                            <span class="tag">语音输入</span>
+                            <span class="tag">简化界面</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 问候语差异 -->
+            <h2 class="section-title">问候语差异</h2>
+            <div class="grid-3 mb-24">
+                <div class="chat-bubble stagger-item" style="animation-delay: 0.1s;">
+                    <div class="bubble-label">💼 上班族</div>
+                    <div class="bubble-text">早安！今天有3个任务，最紧急的是「提交周报」，加油搞定它！</div>
+                </div>
+                <div class="chat-bubble stagger-item" style="animation-delay: 0.2s;">
+                    <div class="bubble-label">📚 学生</div>
+                    <div class="bubble-text">早安呀！📚 今天有2个作业要交，「高数作业」明天就截止啦，要抓紧哦~</div>
+                </div>
+                <div class="chat-bubble stagger-item" style="animation-delay: 0.3s;">
+                    <div class="bubble-label">🧓 老年</div>
+                    <div class="bubble-text">王阿姨，早上好呀！今天天气不错，记得吃早饭哦~ 柯基等您一起开始新的一天！</div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 专属功能 -->
+            <h2 class="section-title">专属功能</h2>
+            <div class="grid-3 mb-24">
+                <div class="glass-card stagger-item" style="animation-delay: 0.1s;">
+                    <div class="sub-title">💼 上班族专属</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        <span class="tag">工作番茄钟</span>
+                        <span class="tag">会议提醒</span>
+                        <span class="tag">下班仪式</span>
+                        <span class="tag">压力释放</span>
+                    </div>
+                </div>
+                <div class="glass-card stagger-item" style="animation-delay: 0.2s;">
+                    <div class="sub-title">📚 学生专属</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        <span class="tag">学习专注模式</span>
+                        <span class="tag">考试倒计时</span>
+                        <span class="tag">成绩记录</span>
+                        <span class="tag">励志语录</span>
+                    </div>
+                </div>
+                <div class="glass-card stagger-item" style="animation-delay: 0.3s;">
+                    <div class="sub-title">🧓 老年专属</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        <span class="tag">用药提醒</span>
+                        <span class="tag">紧急联系</span>
+                        <span class="tag">大字体模式</span>
+                        <span class="tag">语音交互</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 实时切换演示 -->
+            <h2 class="section-title">实时切换演示</h2>
+            <div class="glass-card switch-demo">
+                <div class="switch-phone" id="switchPhone">
+                    <div class="phone-notch"></div>
+                    <div class="phone-content" id="phoneContent">
+                        <div class="phone-greeting" id="phoneGreeting">早安！今天有3个任务，最紧急的是「提交周报」</div>
+                        <div class="phone-task"><div class="task-check"></div> 提交周报</div>
+                        <div class="phone-task"><div class="task-check"></div> 10:00 团队会议</div>
+                        <div class="phone-task"><div class="task-check"></div> 项目报告</div>
+                        <div class="phone-corgi">🐕</div>
+                    </div>
+                </div>
+                <div class="switch-btns">
+                    <button class="switch-btn active" onclick="switchIdentity('worker', this)">💼 上班族</button>
+                    <button class="switch-btn" onclick="switchIdentity('student', this)">📚 学生</button>
+                    <button class="switch-btn" onclick="switchIdentity('elder', this)">🧓 老年</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================
+             Tab 4: 📋 三位一体记录系统
+             ============================ -->
+        <section class="tab-content" id="tab4">
+
+            <!-- 三大功能关系图 -->
+            <h2 class="section-title">三大功能关系图</h2>
+            <div class="glass-card mb-24" style="padding: 40px 24px;">
+                <div class="triangle-diagram">
+                    <!-- 三角形连线 - 使用SVG -->
+                    <svg width="100%" height="100%" viewBox="0 0 500 450" style="position: absolute; top: 0; left: 0;">
+                        <!-- 连线 -->
+                        <line x1="250" y1="60" x2="80" y2="380" stroke="rgba(255,154,92,0.3)" stroke-width="2" stroke-dasharray="6,4"/>
+                        <line x1="250" y1="60" x2="420" y2="380" stroke="rgba(126,200,160,0.3)" stroke-width="2" stroke-dasharray="6,4"/>
+                        <line x1="80" y1="380" x2="420" y2="380" stroke="rgba(255,183,77,0.3)" stroke-width="2" stroke-dasharray="6,4"/>
+                        <!-- 连线标注 -->
+                        <text x="140" y="200" fill="rgba(255,255,255,0.4)" font-size="11" text-anchor="middle" transform="rotate(-30, 140, 200)">想法变行动</text>
+                        <text x="360" y="200" fill="rgba(255,255,255,0.4)" font-size="11" text-anchor="middle" transform="rotate(30, 360, 200)">任务关联日期</text>
+                        <text x="250" y="410" fill="rgba(255,255,255,0.4)" font-size="11" text-anchor="middle">纪念激发灵感</text>
+                    </svg>
+                    <!-- 节点 -->
+                    <div class="triangle-node node-top" style="top: 20px;">📋 待办管理</div>
+                    <div class="triangle-node node-left" style="bottom: 20px; left: 10px;">💡 灵感记录</div>
+                    <div class="triangle-node node-right" style="bottom: 20px; right: 10px;">📅 特殊日期</div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 待办管理 -->
+            <h2 class="section-title">待办管理</h2>
+            <div class="glass-card mb-24">
+                <div class="sub-title">创建待办</div>
+                <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+                    <span style="color: var(--color-text-hint);">✏️</span>
+                    <span style="color: var(--color-text-hint); font-size: 14px;">输入新的待办事项...</span>
+                </div>
+
+                <div class="sub-title">完成任务</div>
+                <div class="todo-item-demo">
+                    <div class="todo-checkbox checked"></div>
+                    <span class="todo-text done">提交项目报告</span>
+                    <span style="font-size: 12px; margin-left: auto;">🎉 柯基庆祝！</span>
+                </div>
+                <div class="todo-item-demo">
+                    <div class="todo-checkbox"></div>
+                    <span class="todo-text">准备会议材料</span>
+                    <div class="priority-dot high" style="margin-left: auto;"></div>
+                </div>
+                <div class="todo-item-demo">
+                    <div class="todo-checkbox"></div>
+                    <span class="todo-text">回复客户邮件</span>
+                    <div class="priority-dot medium" style="margin-left: auto;"></div>
+                </div>
+
+                <div class="sub-title mt-16">子任务拆分</div>
+                <div class="subtask-progress">
+                    <div class="progress-text">项目报告 <span style="color: var(--color-primary);">2/5</span> 完成</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 40%;"></div>
+                    </div>
+                </div>
+
+                <div class="sub-title mt-16">优先级标识</div>
+                <div style="display: flex; gap: 16px; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <div class="priority-dot high"></div>
+                        <span style="font-size: 13px; color: var(--color-high);">高优先级</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <div class="priority-dot medium"></div>
+                        <span style="font-size: 13px; color: var(--color-warning);">中优先级</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <div class="priority-dot low"></div>
+                        <span style="font-size: 13px; color: var(--color-success);">低优先级</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 灵感记录 -->
+            <h2 class="section-title">灵感记录</h2>
+            <div class="glass-card mb-24">
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="tl-title">💡 旅行计划</div>
+                        <div class="tl-content">想去云南大理，看看洱海日出，体验白族扎染工艺...</div>
+                        <div class="tl-tags">
+                            <span class="tag" style="font-size: 11px; padding: 3px 8px;">#旅行</span>
+                            <span class="tag" style="font-size: 11px; padding: 3px 8px;">#生活</span>
+                        </div>
+                        <div class="tl-time">今天 14:30</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="tl-title">🎨 产品设计灵感</div>
+                        <div class="tl-content">看到一款很棒的毛玻璃效果，可以用在首页卡片上...</div>
+                        <div class="tl-tags">
+                            <span class="tag" style="font-size: 11px; padding: 3px 8px;">#产品</span>
+                            <span class="tag" style="font-size: 11px; padding: 3px 8px;">#设计</span>
+                        </div>
+                        <div class="tl-time">昨天 20:15</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="tl-title">📖 读书笔记</div>
+                        <div class="tl-content">《被讨厌的勇气》—— 课题分离的概念很有启发...</div>
+                        <div class="tl-tags">
+                            <span class="tag" style="font-size: 11px; padding: 3px 8px;">#读书</span>
+                            <span class="tag" style="font-size: 11px; padding: 3px 8px;">#成长</span>
+                        </div>
+                        <div class="tl-time">3天前</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 特殊日期 -->
+            <h2 class="section-title">特殊日期</h2>
+            <div class="grid-2 mb-24">
+                <div class="glass-card date-card countdown stagger-item" style="animation-delay: 0.1s;">
+                    <div class="date-label">倒计时</div>
+                    <div class="date-number">15</div>
+                    <div class="date-title">期末考试</div>
+                    <div class="date-target">2026年7月1日</div>
+                </div>
+                <div class="glass-card date-card countup stagger-item" style="animation-delay: 0.2s;">
+                    <div class="date-label">正计时</div>
+                    <div class="date-number">365</div>
+                    <div class="date-title">在一起纪念日</div>
+                    <div class="date-target">2025年6月16日</div>
+                </div>
+                <div class="glass-card date-card urgent stagger-item" style="animation-delay: 0.3s;">
+                    <div class="date-label">即将到来</div>
+                    <div class="date-number">2</div>
+                    <div class="date-title">妈妈生日</div>
+                    <div class="date-target">2026年6月18日</div>
+                </div>
+                <div class="glass-card date-card countdown stagger-item" style="animation-delay: 0.4s;">
+                    <div class="date-label">倒计时</div>
+                    <div class="date-number">45</div>
+                    <div class="date-title">出发旅行</div>
+                    <div class="date-target">2026年7月31日</div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 跨功能关联 -->
+            <h2 class="section-title">跨功能关联</h2>
+            <div class="glass-card">
+                <div class="relation-demo">
+                    <div class="glass-card relation-card">
+                        <div class="rel-type">灵感</div>
+                        <div class="rel-name">💡 旅行计划</div>
+                    </div>
+                    <div class="relation-arrow">→</div>
+                    <div class="glass-card relation-card">
+                        <div class="rel-type">待办</div>
+                        <div class="rel-name">✈️ 订机票</div>
+                    </div>
+                    <div class="relation-arrow">→</div>
+                    <div class="glass-card relation-card">
+                        <div class="rel-type">日期</div>
+                        <div class="rel-name">📅 出发日</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================
+             Tab 5: 🎉 节日节气关怀
+             ============================ -->
+        <section class="tab-content" id="tab5">
+
+            <!-- 节日列表 -->
+            <h2 class="section-title">节日列表</h2>
+            <div class="glass-card mb-24">
+                <div class="festival-group">
+                    <div class="group-title">🏮 传统节日</div>
+                    <div class="festival-tags">
+                        <span class="festival-tag">🧧 春节</span>
+                        <span class="festival-tag">🏮 元宵</span>
+                        <span class="festival-tag">🎋 端午</span>
+                        <span class="festival-tag">🌕 中秋</span>
+                        <span class="festival-tag">🏔️ 重阳</span>
+                    </div>
+                </div>
+                <div class="festival-group">
+                    <div class="group-title">🌿 二十四节气（代表性）</div>
+                    <div class="festival-tags">
+                        <span class="festival-tag">🌱 立春</span>
+                        <span class="festival-tag">🌸 惊蛰</span>
+                        <span class="festival-tag"> Qingming 清明</span>
+                        <span class="festival-tag">☀️ 夏至</span>
+                        <span class="festival-tag">🌾 白露</span>
+                        <span class="festival-tag">🍂 秋分</span>
+                        <span class="festival-tag">❄️ 冬至</span>
+                        <span class="festival-tag">🧊 大寒</span>
+                    </div>
+                </div>
+                <div class="festival-group">
+                    <div class="group-title">🎊 现代节日</div>
+                    <div class="festival-tags">
+                        <span class="festival-tag">🎉 元旦</span>
+                        <span class="festival-tag">👷 劳动节</span>
+                        <span class="festival-tag">🇨🇳 国庆节</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 柯基换装展示 -->
+            <h2 class="section-title">柯基换装展示</h2>
+            <div class="grid-3 mb-24">
+                <div class="glass-card costume-card stagger-item" style="animation-delay: 0.05s;">
+                    <span class="costume-emoji">🧧🐕</span>
+                    <div class="costume-name">春节</div>
+                    <div class="costume-desc">红色围巾 + 小红包 + 灯笼</div>
+                    <div class="costume-trigger">触发：春节期间</div>
+                </div>
+                <div class="glass-card costume-card stagger-item" style="animation-delay: 0.1s;">
+                    <span class="costume-emoji">🎋🐕</span>
+                    <div class="costume-name">端午</div>
+                    <div class="costume-desc">五彩绳手链</div>
+                    <div class="costume-trigger">触发：端午期间</div>
+                </div>
+                <div class="glass-card costume-card stagger-item" style="animation-delay: 0.15s;">
+                    <span class="costume-emoji">🌕🐕</span>
+                    <div class="costume-name">中秋</div>
+                    <div class="costume-desc">玉兔耳朵发箍</div>
+                    <div class="costume-trigger">触发：中秋期间</div>
+                </div>
+                <div class="glass-card costume-card stagger-item" style="animation-delay: 0.2s;">
+                    <span class="costume-emoji">❄️🐕</span>
+                    <div class="costume-name">冬至</div>
+                    <div class="costume-desc">暖和围巾 + 耳罩</div>
+                    <div class="costume-trigger">触发：冬至期间</div>
+                </div>
+                <div class="glass-card costume-card stagger-item" style="animation-delay: 0.25s;">
+                    <span class="costume-emoji">🕶️🐕</span>
+                    <div class="costume-name">夏季</div>
+                    <div class="costume-desc">墨镜 + 小扇子</div>
+                    <div class="costume-trigger">触发：夏季节日</div>
+                </div>
+                <div class="glass-card costume-card stagger-item" style="animation-delay: 0.3s;">
+                    <span class="costume-emoji">🌧️🐕</span>
+                    <div class="costume-name">雨天</div>
+                    <div class="costume-desc">黄色小雨衣</div>
+                    <div class="costume-trigger">触发：下雨天气</div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 冬至场景完整演示 -->
+            <h2 class="section-title">专属问候语 — 冬至场景</h2>
+            <div class="glass-card winter-solstice-card mb-24" id="winterCard">
+                <!-- 雪花飘动效果由JS生成 -->
+                <span class="ws-corgi">🐕🧣</span>
+                <div class="ws-greeting">
+                    冬至到啦！小林记得吃饺子哦~ 🥟<br>
+                    柯基希望你今天暖暖的，工作再忙也要照顾好自己！
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 用户故事 -->
+            <h2 class="section-title">用户故事</h2>
+            <div class="quote-card stagger-item" style="animation-delay: 0.1s;">
+                <p>"今天是冬至。说实话，我差点忘了这个节气——毕竟一个人在外打拼，传统节日往往被忽略。但早上打开APP时，柯基穿着小小的围巾，界面变成了暖色调...那一刻，我觉得这个冬天没那么冷了。"</p>
+                <div class="quote-author">—— 小林的冬至关怀</div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 公益价值 -->
+            <h2 class="section-title">公益价值</h2>
+            <div class="grid-3 mb-24">
+                <div class="glass-card value-prop-card stagger-item" style="animation-delay: 0.1s;">
+                    <span class="vp-icon">🌱</span>
+                    <div class="vp-title">习惯培养</div>
+                    <div class="vp-desc">从自律到自信，柯基陪伴你养成好习惯</div>
+                </div>
+                <div class="glass-card value-prop-card stagger-item" style="animation-delay: 0.2s;">
+                    <span class="vp-icon">💝</span>
+                    <div class="vp-title">心灵陪伴</div>
+                    <div class="vp-desc">从孤独到温暖，让每一天都有小短腿的陪伴</div>
+                </div>
+                <div class="glass-card value-prop-card stagger-item" style="animation-delay: 0.3s;">
+                    <span class="vp-icon">🧘</span>
+                    <div class="vp-title">心理疗愈</div>
+                    <div class="vp-desc">从焦虑到平静，治愈系设计抚慰心灵</div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ============================================
+         页脚
+         ============================================ -->
+    <footer style="text-align: center; padding: 32px 24px; color: var(--color-text-hint); font-size: 13px; position: relative; z-index: 5;">
+        <p>刻记+ CORGIMEMO+ — Trae AI 创意大赛参赛作品</p>
+        <p style="margin-top: 8px;">🐕 用小短腿的温暖，陪你完成每一天</p>
+    </footer>
+
+    <!-- ============================================
+         JavaScript
+         ============================================ -->
+    <script>
+        /**
+         * 页签切换功能
+         * 点击页签按钮时，切换对应的内容区域
+         */
+        function initTabs() {
+            const tabBtns = document.querySelectorAll('.tab-btn');
+            const tabContents = document.querySelectorAll('.tab-content');
+
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const targetTab = btn.getAttribute('data-tab');
+
+                    // 移除所有页签的激活状态
+                    tabBtns.forEach(b => b.classList.remove('active'));
+                    // 激活当前页签
+                    btn.classList.add('active');
+
+                    // 隐藏所有内容区域
+                    tabContents.forEach(content => {
+                        content.classList.remove('active');
+                        content.style.animation = 'none';
+                    });
+
+                    // 显示目标内容区域，并重新触发入场动画
+                    const targetContent = document.getElementById(targetTab);
+                    targetContent.classList.add('active');
+                    // 强制重绘以重新触发动画
+                    void targetContent.offsetWidth;
+                    targetContent.style.animation = 'fadeInUp 0.4s ease-in-out forwards';
+
+                    // 重新触发stagger动画
+                    triggerStaggerAnimation(targetContent);
+                });
+            });
+        }
+
+        /**
+         * 触发卡片入场stagger动画
+         * 为内容区域内的stagger-item元素依次添加动画延迟
+         * @param {HTMLElement} container - 包含stagger-item的容器元素
+         */
+        function triggerStaggerAnimation(container) {
+            const items = container.querySelectorAll('.stagger-item');
+            items.forEach((item, index) => {
+                item.style.animation = 'none';
+                void item.offsetWidth;
+                item.style.animation = `staggerFadeIn 0.5s ease-out ${index * 0.08}s forwards`;
+            });
+        }
+
+        /**
+         * 触摸互动反馈
+         * 点击互动卡片时显示动画反馈emoji
+         * @param {HTMLElement} card - 被点击的互动卡片元素
+         * @param {string} feedback - 反馈emoji字符串
+         */
+        function showInteractFeedback(card, feedback) {
+            const resultEl = card.querySelector('.interact-result');
+            const originalText = resultEl.textContent;
+            resultEl.innerHTML = `<span class="interact-feedback">${feedback}</span>`;
+
+            // 1.5秒后恢复原始文字
+            setTimeout(() => {
+                resultEl.textContent = originalText;
+            }, 1500);
+        }
+
+        /**
+         * 身份切换演示
+         * 切换模拟手机屏幕中的内容，展示不同身份的界面差异
+         * @param {string} identity - 身份类型：worker/student/elder
+         * @param {HTMLElement} btn - 被点击的切换按钮元素
+         */
+        function switchIdentity(identity, btn) {
+            // 更新按钮状态
+            document.querySelectorAll('.switch-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            const phone = document.getElementById('switchPhone');
+            const greeting = document.getElementById('phoneGreeting');
+            const content = document.getElementById('phoneContent');
+
+            // 定义不同身份的内容数据
+            const identityData = {
+                worker: {
+                    greeting: '早安！今天有3个任务，最紧急的是「提交周报」',
+                    tasks: [
+                        { text: '提交周报', checked: false },
+                        { text: '10:00 团队会议', checked: false },
+                        { text: '项目报告', checked: false }
+                    ],
+                    borderColor: '#A1887F'
+                },
+                student: {
+                    greeting: '早安呀！📚 今天有2个作业要交哦~',
+                    tasks: [
+                        { text: '高数作业 ⚠️', checked: false },
+                        { text: '英语听力', checked: false },
+                        { text: '社团活动', checked: false }
+                    ],
+                    borderColor: '#FF9A5C'
+                },
+                elder: {
+                    greeting: '王阿姨，早上好呀！记得吃早饭哦~',
+                    tasks: [
+                        { text: '吃降压药 💊', checked: false },
+                        { text: '去公园散步', checked: false },
+                        { text: '给女儿打电话', checked: false }
+                    ],
+                    borderColor: '#7EC8A0'
+                }
+            };
+
+            const data = identityData[identity];
+
+            // 更新手机边框颜色
+            phone.style.borderColor = data.borderColor;
+
+            // 更新问候语
+            greeting.textContent = data.greeting;
+
+            // 更新任务列表
+            const taskElements = content.querySelectorAll('.phone-task');
+            taskElements.forEach((el, i) => {
+                if (data.tasks[i]) {
+                    el.innerHTML = `<div class="task-check"></div> ${data.tasks[i].text}`;
+                }
+            });
+        }
+
+        /**
+         * 生成粒子飘动效果
+         * 在背景中创建随机位置的星星/爱心/雪花粒子
+         */
+        function createParticles() {
+            const container = document.getElementById('particles');
+            const particleChars = ['✦', '♡', '❄', '✧', '⋆', '❋', '✶'];
+            const particleCount = 25;
+
+            for (let i = 0; i < particleCount; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.textContent = particleChars[Math.floor(Math.random() * particleChars.length)];
+
+                // 随机位置和动画参数
+                const left = Math.random() * 100;
+                const size = 10 + Math.random() * 16;
+                const duration = 15 + Math.random() * 25;
+                const delay = Math.random() * 20;
+
+                particle.style.left = `${left}%`;
+                particle.style.fontSize = `${size}px`;
+                particle.style.animationDuration = `${duration}s`;
+                particle.style.animationDelay = `${delay}s`;
+                particle.style.color = `rgba(255, ${150 + Math.floor(Math.random() * 80)}, ${80 + Math.floor(Math.random() * 60)}, ${0.2 + Math.random() * 0.3})`;
+
+                container.appendChild(particle);
+            }
+        }
+
+        /**
+         * 生成冬至卡片雪花效果
+         * 在冬至场景卡片内添加飘动的雪花元素
+         */
+        function createSnowflakes() {
+            const winterCard = document.getElementById('winterCard');
+            if (!winterCard) return;
+
+            const snowflakeCount = 12;
+            for (let i = 0; i < snowflakeCount; i++) {
+                const snowflake = document.createElement('div');
+                snowflake.className = 'snowflake';
+                snowflake.textContent = '❄';
+
+                const left = Math.random() * 100;
+                const size = 10 + Math.random() * 14;
+                const duration = 4 + Math.random() * 6;
+                const delay = Math.random() * 8;
+
+                snowflake.style.left = `${left}%`;
+                snowflake.style.top = '0';
+                snowflake.style.fontSize = `${size}px`;
+                snowflake.style.animationDuration = `${duration}s`;
+                snowflake.style.animationDelay = `${delay}s`;
+
+                winterCard.appendChild(snowflake);
+            }
+        }
+
+        /**
+         * 初始化所有功能
+         * 页面加载完成后执行
+         */
+        function init() {
+            initTabs();
+            createParticles();
+            createSnowflakes();
+
+            // 初始化第一个tab的stagger动画
+            const firstTab = document.getElementById('tab1');
+            if (firstTab) {
+                triggerStaggerAnimation(firstTab);
+            }
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

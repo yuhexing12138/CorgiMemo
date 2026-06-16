@@ -1,0 +1,130 @@
+<h2>方案 C 详细设计 — 沉浸式故事 + 页签导航</h2>
+<p class="subtitle">深色沉浸背景 · 故事叙述 · 暖色光晕 · 情感共鸣</p>
+
+<div class="section" style="margin-top: 1.5rem;">
+  <h3>整体架构</h3>
+  <div class="mockup">
+    <div class="mockup-header">页面结构全景</div>
+    <div class="mockup-body" style="background: #1a1a2e; color: white; padding: 0; overflow: hidden;">
+      <!-- Hero 区域 -->
+      <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); padding: 32px 24px; text-align: center; position: relative;">
+        <div style="position: absolute; top: 10px; right: 20px; font-size: 60px; opacity: 0.15;">🐕</div>
+        <div style="font-size: 14px; color: #FF9A5C; letter-spacing: 4px; margin-bottom: 8px;">CORGIMEMO+</div>
+        <h1 style="font-size: 28px; margin: 8px 0; background: linear-gradient(90deg, #FF9A5C, #FFB380); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">刻记+</h1>
+        <p style="color: rgba(255,255,255,0.5); font-size: 12px;">不会忘记的，是每一天陪你完成的小短腿</p>
+      </div>
+      <!-- 页签导航 -->
+      <div style="display: flex; gap: 6px; padding: 12px 16px; background: rgba(255,255,255,0.03); overflow-x: auto;">
+        <div style="padding: 6px 14px; background: #FF9A5C; border-radius: 20px; font-size: 11px; color: white; white-space: nowrap;">✨ 概览</div>
+        <div style="padding: 6px 14px; background: rgba(255,154,92,0.15); border-radius: 20px; font-size: 11px; color: #FF9A5C; white-space: nowrap;">🐕 柯基陪伴</div>
+        <div style="padding: 6px 14px; background: rgba(255,154,92,0.15); border-radius: 20px; font-size: 11px; color: #FF9A5C; white-space: nowrap;">👤 身份自适应</div>
+        <div style="padding: 6px 14px; background: rgba(255,154,92,0.15); border-radius: 20px; font-size: 11px; color: #FF9A5C; white-space: nowrap;">📋 三位一体</div>
+        <div style="padding: 6px 14px; background: rgba(255,154,92,0.15); border-radius: 20px; font-size: 11px; color: #FF9A5C; white-space: nowrap;">🎉 节日关怀</div>
+      </div>
+      <!-- 内容区示例 -->
+      <div style="padding: 20px 16px;">
+        <div style="background: rgba(255,255,255,0.06); border-radius: 16px; padding: 20px; border: 1px solid rgba(255,154,92,0.1);">
+          <div style="font-size: 36px; text-align: center; filter: drop-shadow(0 0 15px rgba(255,154,92,0.4));">🐕</div>
+          <h3 style="text-align: center; margin: 12px 0 6px; font-size: 16px;">柯基陪伴系统</h3>
+          <p style="text-align: center; color: rgba(255,255,255,0.5); font-size: 12px;">有情绪、会成长、可装扮的柯基伙伴</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 1.5rem;">
+  <h3>5个页签内容规划</h3>
+  
+  <div style="background: rgba(255,154,92,0.08); border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 3px solid #FF9A5C;">
+    <h4 style="margin: 0 0 6px; color: #FF9A5C; font-size: 14px;">Tab 1: ✨ 概览</h4>
+    <ul style="margin: 0; padding-left: 16px; font-size: 13px; color: #ccc; line-height: 1.8;">
+      <li>产品Slogan + 柯基光晕动画</li>
+      <li>三大核心价值：陪伴感 / 高效性 / 温暖感</li>
+      <li>目标用户群体卡片（上班族/学生/老年）</li>
+      <li>产品愿景引言</li>
+    </ul>
+  </div>
+
+  <div style="background: rgba(255,154,92,0.08); border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 3px solid #FF9A5C;">
+    <h4 style="margin: 0 0 6px; color: #FF9A5C; font-size: 14px;">Tab 2: 🐕 柯基陪伴系统（重点展示）</h4>
+    <ul style="margin: 0; padding-left: 16px; font-size: 13px; color: #ccc; line-height: 1.8;">
+      <li>柯基形象体系：8种姿态展示（趴卧/坐立/站立/奔跑/打滚/睡觉/歪头/摇尾巴）</li>
+      <li>表情系统：8种表情切换演示（开心/普通/期待/困倦/担心/惊讶/得意/害羞）</li>
+      <li>情绪系统：情绪值计算公式 + 状态变化动画</li>
+      <li>触摸互动演示：单击/双击/长按的不同反应</li>
+      <li>装扮系统：节日装扮 + 成就装扮展示</li>
+      <li>成长系统：4个等级形态变化</li>
+      <li>用户故事：小林的晨间问候场景</li>
+    </ul>
+  </div>
+
+  <div style="background: rgba(255,154,92,0.08); border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 3px solid #FF9A5C;">
+    <h4 style="margin: 0 0 6px; color: #FF9A5C; font-size: 14px;">Tab 3: 👤 身份自适应设计</h4>
+    <ul style="margin: 0; padding-left: 16px; font-size: 13px; color: #ccc; line-height: 1.8;">
+      <li>三种身份对比：上班族/学生/老年模式并排展示</li>
+      <li>界面风格差异：色调/布局/图标/分类对比</li>
+      <li>问候语差异：不同身份的晨间问候示例</li>
+      <li>专属功能：番茄钟/学习专注/用药提醒</li>
+      <li>实时切换演示：点击切换身份看界面变化</li>
+    </ul>
+  </div>
+
+  <div style="background: rgba(255,154,92,0.08); border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 3px solid #FF9A5C;">
+    <h4 style="margin: 0 0 6px; color: #FF9A5C; font-size: 14px;">Tab 4: 📋 三位一体记录系统</h4>
+    <ul style="margin: 0; padding-left: 16px; font-size: 13px; color: #ccc; line-height: 1.8;">
+      <li>三大功能关系图：待办 ↔ 灵感 ↔ 日期的关联可视化</li>
+      <li>待办管理：创建/完成/子任务拆分演示</li>
+      <li>灵感记录：时间线展示 + 标签系统 + 富文本</li>
+      <li>特殊日期：天数卡片 + 倒计时/正计时</li>
+      <li>跨功能关联：灵感→待办、日期→待办的转化演示</li>
+    </ul>
+  </div>
+
+  <div style="background: rgba(255,154,92,0.08); border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 3px solid #FF9A5C;">
+    <h4 style="margin: 0 0 6px; color: #FF9A5C; font-size: 14px;">Tab 5: 🎉 节日节气关怀</h4>
+    <ul style="margin: 0; padding-left: 16px; font-size: 13px; color: #ccc; line-height: 1.8;">
+      <li>节日列表：传统节日/二十四节气/现代节日</li>
+      <li>柯基换装展示：春节/端午/中秋/冬至装扮</li>
+      <li>专属问候语示例：冬至场景完整演示</li>
+      <li>用户故事：小林的冬至关怀场景</li>
+      <li>公益价值：从孤独到温暖的情感连接</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 1.5rem;">
+  <h3>视觉与交互增强</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+    <div style="background: rgba(255,154,92,0.08); border-radius: 12px; padding: 14px;">
+      <div style="font-size: 20px; margin-bottom: 6px;">🌌</div>
+      <h4 style="margin: 0 0 4px; font-size: 13px;">深色沉浸背景</h4>
+      <p style="margin: 0; font-size: 11px; color: #999;">深蓝渐变 + 柯基暖色光晕</p>
+    </div>
+    <div style="background: rgba(255,154,92,0.08); border-radius: 12px; padding: 14px;">
+      <div style="font-size: 20px; margin-bottom: 6px;">✨</div>
+      <h4 style="margin: 0 0 4px; font-size: 13px;">粒子特效</h4>
+      <p style="margin: 0; font-size: 11px; color: #999;">星星/爱心/雪花飘动动画</p>
+    </div>
+    <div style="background: rgba(255,154,92,0.08); border-radius: 12px; padding: 14px;">
+      <div style="font-size: 20px; margin-bottom: 6px;">💬</div>
+      <h4 style="margin: 0 0 4px; font-size: 13px;">故事叙述</h4>
+      <p style="margin: 0; font-size: 11px; color: #999;">用户场景故事穿插展示</p>
+    </div>
+    <div style="background: rgba(255,154,92,0.08); border-radius: 12px; padding: 14px;">
+      <div style="font-size: 20px; margin-bottom: 6px;">🎨</div>
+      <h4 style="margin: 0 0 4px; font-size: 13px;">毛玻璃卡片</h4>
+      <p style="margin: 0; font-size: 11px; color: #999;">backdrop-filter模糊效果</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 1.5rem;">
+  <h3>技术方案</h3>
+  <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 16px; font-size: 13px; color: #ccc; line-height: 1.8;">
+    <p><strong style="color: #FF9A5C;">单文件HTML</strong>：所有CSS/JS内联，无需额外依赖</p>
+    <p><strong style="color: #FF9A5C;">CSS动画</strong>：柯基光晕、粒子飘动、卡片入场、页签切换</p>
+    <p><strong style="color: #FF9A5C;">响应式</strong>：适配桌面(1200px+)/平板(768px+)/手机(375px+)</p>
+    <p><strong style="color: #FF9A5C;">无外部依赖</strong>：纯HTML+CSS+JS，离线可运行</p>
+  </div>
+</div>
