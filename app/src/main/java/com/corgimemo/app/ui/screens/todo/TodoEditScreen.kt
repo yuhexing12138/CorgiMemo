@@ -109,6 +109,7 @@ fun TodoEditScreen(
     viewModel: TodoEditViewModel = hiltViewModel(),
     homeViewModel: HomeViewModel = hiltViewModel()
 ) {
+    val title by viewModel.title.collectAsState()
     val content by viewModel.content.collectAsState()
     val priority by viewModel.priority.collectAsState()
     val startDate by viewModel.startDate.collectAsState()
@@ -343,8 +344,8 @@ fun TodoEditScreen(
     LaunchedEffect(content, subTasks, hasInitializedLines) {
         if (!hasInitializedLines) {
             todoLines = if (subTasks.isNotEmpty()) {
-                // 优先从子任务表恢复结构化数据
-                listOf(TodoLine()) + TodoLine.fromSubTasks(subTasks)
+                // 优先从子任务表恢复结构化数据，第一行用已加载的标题填充
+                listOf(TodoLine(text = title)) + TodoLine.fromSubTasks(subTasks)
             } else if (content.isNotBlank()) {
                 // 从纯文本解析
                 TodoLine.parseFromText(content).ifEmpty { listOf(TodoLine()) }
@@ -355,13 +356,17 @@ fun TodoEditScreen(
         }
     }
 
-    /** 行数据变更时同步到 ViewModel 的 content 字段（混合存储） */
+    /** 行数据变更时同步到 ViewModel 的 content 和 title 字段（混合存储） */
     LaunchedEffect(todoLines) {
         if (hasInitializedLines) {
             val plainText = todoLines
                 .filter { it.text.isNotBlank() || todoLines.size == 1 }
                 .joinToString("\n") { it.toPlainText() }
             viewModel.setContent(plainText)
+
+            /** 将第一行（主任务行）的文本同步为标题，确保 saveTodo() 校验通过 */
+            val firstLineText = todoLines.firstOrNull()?.text ?: ""
+            viewModel.setTitleWithRecommendation(firstLineText)
 
             // 同步子任务数据到 ViewModel（仅同步有实质内容的行）
             val subTaskLines = todoLines.filter { it.text.isNotBlank() && it.isSubTask }
