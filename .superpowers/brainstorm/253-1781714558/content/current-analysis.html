@@ -1,0 +1,107 @@
+<h2>当前页面同质化问题诊断</h2>
+<p class="subtitle">刻记⁺ CORGIMEMO⁺ 展示页 — 居中布局导致的 AI 同质化分析</p>
+
+<div class="section">
+    <h3>🔍 问题热力图：当前布局结构</h3>
+    <div class="mockup">
+        <div class="mockup-header">当前页面结构 — 全居中对称布局</div>
+        <div class="mockup-body" style="background: #1a1a2e; padding: 16px;">
+            <!-- Hero -->
+            <div style="text-align: center; padding: 20px; background: rgba(255,154,92,0.1); border-radius: 8px; margin-bottom: 12px; border: 2px dashed #FF9A5C;">
+                <div style="color: #FF9A5C; font-weight: bold;">Hero 区域（居中）</div>
+                <div style="color: #888; font-size: 12px;">标题 + 副标题 + 标语 全部居中</div>
+            </div>
+            <!-- Tab Nav -->
+            <div style="display: flex; justify-content: center; gap: 4px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; margin-bottom: 12px; border: 2px dashed #FF9A5C;">
+                <div style="color: #FF9A5C; font-size: 11px;">页签（居中）</div>
+            </div>
+            <!-- Content -->
+            <div style="max-width: 80%; margin: 0 auto;">
+                <div style="color: #FF9A5C; font-size: 12px; margin-bottom: 8px;">┃ 章节标题</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                    <div style="height: 50px; background: rgba(255,255,255,0.06); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);"></div>
+                    <div style="height: 50px; background: rgba(255,255,255,0.06); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);"></div>
+                    <div style="height: 50px; background: rgba(255,255,255,0.06); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);"></div>
+                </div>
+                <div style="color: #FF9A5C; font-size: 12px; margin-bottom: 8px;">┃ 章节标题</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                    <div style="height: 50px; background: rgba(255,255,255,0.06); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);"></div>
+                    <div style="height: 50px; background: rgba(255,255,255,0.06); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);"></div>
+                    <div style="height: 50px; background: rgba(255,255,255,0.06); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);"></div>
+                </div>
+                <div style="color: #FF9A5C; font-size: 12px; margin-bottom: 8px;">┃ 章节标题</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                    <div style="height: 50px; background: rgba(255,255,255,0.06); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);"></div>
+                    <div style="height: 50px; background: rgba(255,255,255,0.06); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);"></div>
+                    <div style="height: 50px; background: rgba(255,255,255,0.06); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);"></div>
+                </div>
+            </div>
+            <div style="text-align: center; color: #ff6b6b; font-size: 11px; margin-top: 8px;">⚠ 重复模式：标题 + 3列等高卡片 × N 次</div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h3>⚠️ 三大同质化问题</h3>
+    <div class="pros-cons">
+        <div class="pros">
+            <h4 style="color: #ff6b6b;">问题清单</h4>
+            <ul>
+                <li><strong>对称疲劳</strong>：所有元素水平居中，缺乏视觉张力</li>
+                <li><strong>节奏单一</strong>：每个 section 都是"标题+3列网格"重复</li>
+                <li><strong>卡片同质</strong>：所有 glass-card 样式完全一致</li>
+                <li><strong>缺乏焦点</strong>：没有视觉引导线和层次变化</li>
+                <li><strong>AI 痕迹明显</strong>：典型的 ChatGPT/Claude 生成布局</li>
+            </ul>
+        </div>
+        <div class="cons">
+            <h4 style="color: #7EC8A0;">评委视角</h4>
+            <ul>
+                <li>第一眼即识别为 AI 生成</li>
+                <li>滚动 2 屏后产生审美疲劳</li>
+                <li>无法记住任何独特视觉元素</li>
+                <li>缺乏"设计感"和"匠心"</li>
+                <li>创意方案可信度降低</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h3>📊 7个 Tab 的布局重复度分析</h3>
+    <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 16px 0;">
+        <div style="text-align: center; padding: 8px 4px; background: rgba(255,107,107,0.2); border-radius: 6px; border: 1px solid #ff6b6b;">
+            <div style="font-size: 10px; color: #ff6b6b;">Tab1</div>
+            <div style="font-size: 9px; color: #888;">概览</div>
+        </div>
+        <div style="text-align: center; padding: 8px 4px; background: rgba(255,107,107,0.2); border-radius: 6px; border: 1px solid #ff6b6b;">
+            <div style="font-size: 10px; color: #ff6b6b;">Tab2</div>
+            <div style="font-size: 9px; color: #888;">柯基</div>
+        </div>
+        <div style="text-align: center; padding: 8px 4px; background: rgba(255,107,107,0.2); border-radius: 6px; border: 1px solid #ff6b6b;">
+            <div style="font-size: 10px; color: #ff6b6b;">Tab3</div>
+            <div style="font-size: 9px; color: #888;">身份</div>
+        </div>
+        <div style="text-align: center; padding: 8px 4px; background: rgba(255,107,107,0.2); border-radius: 6px; border: 1px solid #ff6b6b;">
+            <div style="font-size: 10px; color: #ff6b6b;">Tab4</div>
+            <div style="font-size: 9px; color: #888;">功能</div>
+        </div>
+        <div style="text-align: center; padding: 8px 4px; background: rgba(255,107,107,0.2); border-radius: 6px; border: 1px solid #ff6b6b;">
+            <div style="font-size: 10px; color: #ff6b6b;">Tab5</div>
+            <div style="font-size: 9px; color: #888;">节日</div>
+        </div>
+        <div style="text-align: center; padding: 8px 4px; background: rgba(255,107,107,0.2); border-radius: 6px; border: 1px solid #ff6b6b;">
+            <div style="font-size: 10px; color: #ff6b6b;">Tab6</div>
+            <div style="font-size: 9px; color: #888;">故事</div>
+        </div>
+        <div style="text-align: center; padding: 8px 4px; background: rgba(255,107,107,0.2); border-radius: 6px; border: 1px solid #ff6b6b;">
+            <div style="font-size: 10px; color: #ff6b6b;">Tab7</div>
+            <div style="font-size: 9px; color: #888;">原型</div>
+        </div>
+    </div>
+    <p style="text-align: center; color: #ff6b6b; font-size: 13px;">重复度：95% — 所有 Tab 采用相同的"标题+网格"模式</p>
+</div>
+
+<div style="text-align: center; padding: 16px; background: rgba(126,200,160,0.1); border-radius: 8px; border: 1px solid #7EC8A0; margin-top: 16px;">
+    <p style="color: #7EC8A0; margin: 0;">✅ 诊断完成 — 接下来将在终端提出 3 套差异化布局方案</p>
+</div>

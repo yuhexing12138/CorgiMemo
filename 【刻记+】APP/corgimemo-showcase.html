@@ -19,7 +19,31 @@
         }
 
         :root {
-            /* 配色方案 */
+            /* ============================================
+               配色方案 — 混合风格设计系统
+               杂志风为体（70%）+ 野兽派点缀（15%）+ 故障艺术点缀（15%）
+               ============================================ */
+
+            /* 主色调 — 杂志风米白纸张感 */
+            --color-bg-paper: #f5f0e8;          /* 米白主背景 */
+            --color-primary-bold: #FF6B35;       /* 橙红（柯基色，比原色更饱和有力） */
+            --color-text-ink: #1a1a1a;           /* 深黑文字 */
+            --color-accent-mint: #7EC8A0;        /* 薄荷绿辅助色 */
+            --color-text-secondary: #666666;     /* 中灰次要文字 */
+            --color-divider: #1a1a1a;            /* 深黑分割线 */
+
+            /* 故障艺术点缀色 — 用于 Tab7 原型展示等科技感 section */
+            --color-neon-green: #00ff9f;         /* 霓虹绿 */
+            --color-neon-pink: #ff006e;          /* 霓虹粉 */
+            --color-electric-blue: #0095ff;      /* 电光蓝 */
+            --color-glitch-bg: #0a0a0f;          /* 故障深背景 */
+
+            /* 字体系统 — 三字体混排打破 AI 痕迹 */
+            --font-serif: Georgia, 'Times New Roman', serif;        /* 标题衬线 */
+            --font-sans: 'Nunito Sans', sans-serif;                 /* 正文无衬线 */
+            --font-mono: 'Courier New', monospace;                  /* 代码等宽 */
+
+            /* 兼容原有变量 — 保持向后兼容 */
             --color-primary: #FF9A5C;
             --color-primary-light: #FFB380;
             --color-success: #7EC8A0;
@@ -33,6 +57,7 @@
             --color-text-main: #E8E6E3;
             --color-text-sub: rgba(255, 255, 255, 0.5);
             --color-text-hint: rgba(255, 255, 255, 0.3);
+
             /* 圆角 */
             --radius-card: 20px;
             --radius-btn: 16px;
@@ -92,6 +117,44 @@
             }
         }
 
+        /* 增强版粒子动画 — 流场动力学：水平漂移 + 旋转 + 色彩变化 */
+        @keyframes particleFloatEnhanced {
+            0% {
+                opacity: 0;
+                transform: translateY(100vh) translateX(0) rotate(0deg) scale(0.8);
+            }
+            10% {
+                opacity: 0.8;
+                transform: translateY(80vh) translateX(calc(var(--drift-range, 40px) * 0.3)) rotate(calc(var(--rotate-end, 360deg) * 0.1)) scale(1);
+            }
+            30% {
+                opacity: 0.9;
+                transform: translateY(60vh) translateX(calc(var(--drift-range, 40px) * -0.5)) rotate(calc(var(--rotate-end, 360deg) * 0.3)) scale(1.1);
+            }
+            50% {
+                opacity: 0.7;
+                transform: translateY(40vh) translateX(calc(var(--drift-range, 40px) * 0.7)) rotate(calc(var(--rotate-end, 360deg) * 0.5)) scale(0.95);
+            }
+            70% {
+                opacity: 0.6;
+                transform: translateY(20vh) translateX(calc(var(--drift-range, 40px) * -0.3)) rotate(calc(var(--rotate-end, 360deg) * 0.7)) scale(1.05);
+            }
+            90% {
+                opacity: 0.4;
+                transform: translateY(5vh) translateX(calc(var(--drift-range, 40px) * 0.4)) rotate(calc(var(--rotate-end, 360deg) * 0.9)) scale(0.9);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-10vh) translateX(0) rotate(var(--rotate-end, 360deg)) scale(0.8);
+            }
+        }
+
+        /* 增强版粒子样式 — 使用流场动力学动画 */
+        .particle-enhanced {
+            animation: particleFloatEnhanced linear infinite;
+            will-change: transform, opacity;
+        }
+
         /* ============================================
            Hero 区域 - 固定顶部
            ============================================ */
@@ -104,6 +167,19 @@
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
             border-bottom: 1px solid rgba(255, 154, 92, 0.15);
+        }
+
+        /* ============================================
+           Hero 杂志风样式 — 覆盖默认深色背景
+           ============================================ */
+        .hero-magazine {
+            text-align: left;
+            padding: 32px 48px 24px;
+            background: var(--color-bg-paper);
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+            border-bottom: 3px solid var(--color-text-ink);
+            color: var(--color-text-ink);
         }
 
         /* 柯基光晕动画（用于帧动画容器） */
@@ -262,6 +338,341 @@
             transform: translateY(-4px);
             box-shadow: 0 12px 40px rgba(255, 154, 92, 0.15), 0 0 0 1px rgba(255, 154, 92, 0.1);
             border-color: rgba(255, 154, 92, 0.2);
+        }
+
+        /* ============================================
+           新增组件 — 混合风格设计系统
+           杂志风章节号 + 野兽派卡片 + 故障艺术边框
+           ============================================ */
+
+        /* 杂志风章节号 — 大数字视觉锚点 */
+        .chapter-number {
+            font-family: var(--font-sans);
+            font-size: 64px;
+            font-weight: 900;
+            line-height: 0.85;
+            color: var(--color-primary-bold);
+            letter-spacing: -2px;
+        }
+
+        /* 左侧章节号 — 右边框分隔 */
+        .chapter-number.left {
+            border-right: 3px solid var(--color-text-ink);
+            padding-right: 12px;
+        }
+
+        /* 右侧章节号 — 左边框分隔（交替布局） */
+        .chapter-number.right {
+            border-left: 3px solid var(--color-text-ink);
+            padding-left: 12px;
+            text-align: right;
+        }
+
+        /* 故障艺术章节号 — Tab7 专用 RGB 分离效果 */
+        .chapter-number.glitch {
+            color: var(--color-neon-green);
+            text-shadow: 2px 0 var(--color-neon-pink), -2px 0 var(--color-electric-blue);
+            animation: glitchShift 3s infinite;
+        }
+
+        /* 故障艺术 RGB 分离动画 */
+        @keyframes glitchShift {
+            0%, 100% {
+                text-shadow: 2px 0 var(--color-neon-pink), -2px 0 var(--color-electric-blue);
+            }
+            50% {
+                text-shadow: -2px 0 var(--color-neon-pink), 2px 0 var(--color-electric-blue);
+            }
+        }
+
+        /* 章节号+内容布局容器 */
+        .chapter-section {
+            display: grid;
+            grid-template-columns: 100px 1fr;
+            gap: 16px;
+            margin-bottom: 32px;
+            align-items: start;
+        }
+
+        /* 章节号+内容布局容器 — 右侧交替版 */
+        .chapter-section.reverse {
+            grid-template-columns: 1fr 100px;
+        }
+
+        .chapter-section.reverse .chapter-number {
+            order: 2;
+        }
+
+        .chapter-section.reverse .chapter-content {
+            order: 1;
+        }
+
+        /* 章节标签 — 小字间距字母 */
+        .chapter-label {
+            font-size: 10px;
+            letter-spacing: 3px;
+            color: var(--color-text-secondary);
+            font-weight: 700;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        /* 野兽派卡片 — 粗黑边框 + 硬阴影 */
+        .brutal-card {
+            border: 3px solid var(--color-text-ink);
+            padding: 16px;
+            background: #fff;
+            box-shadow: 5px 5px 0 var(--color-primary-bold);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            position: relative;
+        }
+
+        /* 野兽派卡片 hover — 阴影偏移增大 */
+        .brutal-card:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 7px 7px 0 var(--color-primary-bold);
+        }
+
+        /* 野兽派强调卡片 — 主色背景 */
+        .brutal-card.accent {
+            background: var(--color-primary-bold);
+            color: #fff;
+            box-shadow: 5px 5px 0 var(--color-text-ink);
+        }
+
+        .brutal-card.accent:hover {
+            box-shadow: 7px 7px 0 var(--color-text-ink);
+        }
+
+        /* 野兽派卡片网格 */
+        .brutal-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        /* 故障艺术边框 — Tab7 专用 */
+        .glitch-border {
+            border: 2px solid var(--color-neon-green);
+            box-shadow: 6px 6px 0 var(--color-neon-pink);
+            background: var(--color-glitch-bg);
+            color: var(--color-neon-green);
+            font-family: var(--font-mono);
+            padding: 16px;
+            position: relative;
+        }
+
+        /* 故障艺术文字 — RGB 分离效果 */
+        .glitch-text {
+            color: var(--color-neon-green);
+            text-shadow: 2px 0 var(--color-neon-pink), -2px 0 var(--color-electric-blue);
+            font-family: var(--font-mono);
+        }
+
+        /* 故障艺术扫描线效果 */
+        .glitch-border::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(
+                to bottom,
+                transparent 50%,
+                rgba(0, 255, 159, 0.03) 50%
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+            animation: scanline 8s linear infinite;
+        }
+
+        @keyframes scanline {
+            0% { background-position: 0 0; }
+            100% { background-position: 0 100%; }
+        }
+
+        /* 杂志式引言 — 上下双横线 */
+        .editorial-quote {
+            margin: 32px 40px;
+            padding: 20px;
+            border-top: 2px solid var(--color-text-ink);
+            border-bottom: 2px solid var(--color-text-ink);
+            text-align: center;
+            font-family: var(--font-serif);
+            font-style: italic;
+            font-size: 18px;
+            color: var(--color-text-ink);
+            line-height: 1.6;
+        }
+
+        /* 杂志式引言来源 */
+        .editorial-quote .quote-source {
+            font-family: var(--font-sans);
+            font-size: 11px;
+            color: var(--color-text-secondary);
+            margin-top: 8px;
+            letter-spacing: 2px;
+            font-style: normal;
+        }
+
+        /* 杂志刊头 — Hero 区顶部 */
+        .magazine-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--color-text-ink);
+            padding-bottom: 8px;
+            margin-bottom: 20px;
+            font-size: 11px;
+            letter-spacing: 4px;
+            color: var(--color-primary-bold);
+            font-weight: 700;
+        }
+
+        .magazine-header .header-center {
+            color: var(--color-text-secondary);
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+
+        /* 杂志式分栏布局 — Hero 区不对称 */
+        .magazine-split {
+            display: grid;
+            grid-template-columns: 3fr 2fr;
+            gap: 24px;
+            align-items: end;
+        }
+
+        /* 杂志式大标题 — 衬线粗体 */
+        .magazine-title {
+            font-family: var(--font-serif);
+            font-size: 56px;
+            font-weight: 900;
+            line-height: 0.9;
+            letter-spacing: -2px;
+            color: var(--color-text-ink);
+            margin: 0;
+        }
+
+        /* 杂志式副标题 — 大字间距 */
+        .magazine-subtitle {
+            font-size: 18px;
+            font-weight: 300;
+            color: var(--color-text-secondary);
+            margin-top: 4px;
+            letter-spacing: 6px;
+        }
+
+        /* 杂志式标语 — 斜体 */
+        .magazine-tagline {
+            font-size: 14px;
+            color: var(--color-text-secondary);
+            margin-top: 12px;
+            font-style: italic;
+            max-width: 320px;
+            line-height: 1.6;
+        }
+
+        /* 杂志式底部导航 — 文字横排 */
+        .magazine-nav {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+            padding-top: 12px;
+            border-top: 1px solid var(--color-text-ink);
+            font-size: 11px;
+            flex-wrap: wrap;
+        }
+
+        .magazine-nav .nav-item {
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+
+        .magazine-nav .nav-item:hover {
+            color: var(--color-primary-bold);
+        }
+
+        .magazine-nav .nav-item.active {
+            color: var(--color-primary-bold);
+            font-weight: 900;
+        }
+
+        .magazine-nav .nav-item.active::before {
+            content: '▌ ';
+        }
+
+        /* 错落网格 — 非等高布局 */
+        .stagger-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 12px;
+            align-items: start;
+        }
+
+        .stagger-grid .stagger-item:first-child {
+            grid-row: span 2;
+        }
+
+        /* 响应式适配 — 新增组件 */
+        @media (max-width: 1199px) {
+            .chapter-number {
+                font-size: 48px;
+            }
+
+            .magazine-title {
+                font-size: 42px;
+            }
+
+            .magazine-split {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+
+            .stagger-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .stagger-grid .stagger-item:first-child {
+                grid-row: span 1;
+            }
+        }
+
+        @media (max-width: 767px) {
+            .chapter-number {
+                font-size: 36px;
+            }
+
+            .chapter-section,
+            .chapter-section.reverse {
+                grid-template-columns: 60px 1fr;
+                gap: 12px;
+            }
+
+            .magazine-title {
+                font-size: 32px;
+            }
+
+            .brutal-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stagger-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .editorial-quote {
+                margin: 20px 16px;
+                padding: 16px;
+                font-size: 15px;
+            }
+
+            .magazine-nav {
+                gap: 12px;
+                font-size: 10px;
+            }
         }
 
         /* 章节标题 */
@@ -1981,6 +2392,16 @@
             .corgi-anim.ws-corgi {
                 animation: none !important;
             }
+            /* 新增组件 — 禁用所有装饰性动画 */
+            .particle-enhanced,
+            .chapter-number.glitch,
+            .glitch-border::before {
+                animation: none !important;
+            }
+            .brutal-card,
+            .brutal-card.accent {
+                transition: none !important;
+            }
         }
 
         /* ============================================
@@ -3250,20 +3671,51 @@
     <div class="particles-container" id="particles"></div>
 
     <!-- ============================================
-         Hero 区域
+         Hero 区域 — 杂志封面式不对称布局
          ============================================ -->
-    <header class="hero">
-        <!-- Hero区域柯基 - 摇尾巴4帧动画 -->
-        <div class="corgi-anim hero-corgi corgi-4frames">
-            <img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" class="corgi-frame" alt="柯基摇尾巴">
-            <img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" class="corgi-frame" alt="柯基摇尾巴">
-            <img src="../app/src/main/res/drawable/corgi_wag_4frames_03.png" class="corgi-frame" alt="柯基摇尾巴">
-            <img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" class="corgi-frame" alt="柯基摇尾巴">
+    <header class="hero hero-magazine">
+        <!-- 顶部刊头 -->
+        <div class="magazine-header">
+            <span>ISSUE 01 · 2026·06</span>
+            <span class="header-center">刻记⁺ 创意展示 · 柯基陪伴系列</span>
+            <span>№ 001</span>
         </div>
-        <h1 class="hero-title">刻记<sup class="brand-sup">+</sup></h1>
-        <p class="hero-subtitle">CORGIMEMO<sup class="brand-sup">+</sup></p>
-        <p class="hero-slogan">「一个会陪伴你的治愈系记录应用」</p>
-        <p class="hero-sub-slogan">小柯基陪你记录每一刻</p>
+
+        <!-- 不对称分栏主体 -->
+        <div class="magazine-split">
+            <!-- 左侧：大标题区 -->
+            <div>
+                <div style="font-size: 11px; color: var(--color-primary-bold); font-weight: 700; margin-bottom: 8px;">— 治愈系记录应用</div>
+                <h1 class="magazine-title">刻记<sup style="font-size: 20px; color: var(--color-primary-bold);">+</sup></h1>
+                <div class="magazine-subtitle">CORGIMEMO<sup style="font-size: 12px;">+</sup></div>
+                <p class="magazine-tagline">「一个会陪伴你的治愈系记录应用」— 小柯基陪你记录每一刻</p>
+            </div>
+
+            <!-- 右侧：柯基野兽派框 -->
+            <div style="text-align: right;">
+                <div class="brutal-card" style="display: inline-block; padding: 12px; background: #fff;">
+                    <!-- Hero区域柯基 - 摇尾巴4帧动画 -->
+                    <div class="corgi-anim hero-corgi corgi-4frames" style="position: relative; width: 80px; height: 80px;">
+                        <img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="../app/src/main/res/drawable/corgi_wag_4frames_03.png" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
+                    </div>
+                    <div style="font-size: 9px; color: var(--color-text-secondary); margin-top: 4px; font-family: var(--font-mono);">[柯基摇尾中...]</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部导航条 — 文字横排 -->
+        <div class="magazine-nav">
+            <span class="nav-item active" data-tab="tab1">概览</span>
+            <span class="nav-item" data-tab="tab2">柯基陪伴</span>
+            <span class="nav-item" data-tab="tab3">身份自适应</span>
+            <span class="nav-item" data-tab="tab4">三位一体</span>
+            <span class="nav-item" data-tab="tab5">节日关怀</span>
+            <span class="nav-item" data-tab="tab6">用户故事</span>
+            <span class="nav-item" data-tab="tab7">原型展示</span>
+        </div>
     </header>
 
     <!-- ============================================
@@ -3285,65 +3737,84 @@
     <main class="content-wrapper">
 
         <!-- ============================
-             Tab 1: ✨ 概览
+             Tab 1: ✨ 概览 — 杂志风+野兽派混合
              ============================ -->
         <section class="tab-content active" id="tab1">
 
-            <!-- 三大核心价值 -->
-            <h2 class="section-title">三大核心价值</h2>
-            <div class="grid-3 mb-24">
-                <div class="glass-card value-card stagger-item" style="animation-delay: 0.1s;">
-                    <span class="value-icon">💕</span>
-                    <div class="value-title">陪伴感</div>
-                    <div class="value-desc">柯基犬全程陪伴，从晨间问候到任务完成，让每一天都不再孤单</div>
-                </div>
-                <div class="glass-card value-card stagger-item" style="animation-delay: 0.2s;">
-                    <span class="value-icon">🎯</span>
-                    <div class="value-title">高效性</div>
-                    <div class="value-desc">快速记录、智能分类、准时提醒，让待办管理变得简单高效</div>
-                </div>
-                <div class="glass-card value-card stagger-item" style="animation-delay: 0.3s;">
-                    <span class="value-icon">💝</span>
-                    <div class="value-title">温暖感</div>
-                    <div class="value-desc">治愈系设计、贴心问候、节日关怀，让忙碌的人也能感受温暖</div>
-                </div>
-            </div>
-
-            <!-- 目标用户群体 -->
-            <h2 class="section-title">目标用户群体</h2>
-            <div class="grid-3 mb-24">
-                <div class="glass-card user-card stagger-item" style="animation-delay: 0.1s;">
-                    <span class="user-icon">📚</span>
-                    <div class="user-title">学生群体</div>
-                    <div class="user-age">18-25岁</div>
-                    <div class="user-desc">课程管理与学习动力，考试倒计时与专注模式，柯基陪你一起进步</div>
-                </div>
-                <div class="glass-card user-card stagger-item" style="animation-delay: 0.2s;">
-                    <span class="user-icon">💼</span>
-                    <div class="user-title">上班族</div>
-                    <div class="user-age">25-35岁</div>
-                    <div class="user-desc">高效管理待办事项，缓解工作压力，柯基陪伴让加班不再孤独</div>
-                </div>
-                <div class="glass-card user-card stagger-item" style="animation-delay: 0.3s;">
-                    <span class="user-icon">🧓</span>
-                    <div class="user-title">老年群体</div>
-                    <div class="user-age">55岁+</div>
-                    <div class="user-desc">简单易用的界面，语音输入为主，用药提醒与情感陪伴，温暖每一天</div>
+            <!-- 章节01：三大核心价值 — 大数字章节号 + 野兽派卡片 -->
+            <div class="chapter-section">
+                <div class="chapter-number left">01</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">CORE VALUES</div>
+                    <h2 class="section-title" style="margin-bottom: 16px;">三大核心价值</h2>
+                    <div class="brutal-grid">
+                        <div class="brutal-card stagger-item" style="animation-delay: 0.1s;">
+                            <span class="value-icon" style="font-size: 28px;">💕</span>
+                            <div class="value-title" style="font-size: 15px; font-weight: 900; margin-top: 8px; color: var(--color-text-ink);">陪伴感</div>
+                            <div class="value-desc" style="font-size: 12px; color: var(--color-text-secondary); margin-top: 4px; line-height: 1.5;">柯基犬全程陪伴，从晨间问候到任务完成，让每一天都不再孤单</div>
+                        </div>
+                        <div class="brutal-card accent stagger-item" style="animation-delay: 0.2s;">
+                            <span class="value-icon" style="font-size: 28px;">🎯</span>
+                            <div class="value-title" style="font-size: 15px; font-weight: 900; margin-top: 8px;">高效性</div>
+                            <div class="value-desc" style="font-size: 12px; margin-top: 4px; line-height: 1.5; opacity: 0.9;">快速记录、智能分类、准时提醒，让待办管理变得简单高效</div>
+                        </div>
+                        <div class="brutal-card stagger-item" style="animation-delay: 0.3s; box-shadow: 5px 5px 0 var(--color-accent-mint);">
+                            <span class="value-icon" style="font-size: 28px;">💝</span>
+                            <div class="value-title" style="font-size: 15px; font-weight: 900; margin-top: 8px; color: var(--color-text-ink);">温暖感</div>
+                            <div class="value-desc" style="font-size: 12px; color: var(--color-text-secondary); margin-top: 4px; line-height: 1.5;">治愈系设计、贴心问候、节日关怀，让忙碌的人也能感受温暖</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- 产品愿景引言 -->
-            <div class="quote-card vision-quote stagger-item" style="animation-delay: 0.1s;">
+            <!-- 章节02：目标用户群体 — 右侧交替章节号 + 错落网格 -->
+            <div class="chapter-section reverse">
+                <div class="chapter-number right" style="color: var(--color-accent-mint);">02</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">TARGET USERS</div>
+                    <h2 class="section-title" style="margin-bottom: 16px;">目标用户群体</h2>
+                    <div class="stagger-grid">
+                        <div class="glass-card user-card stagger-item" style="animation-delay: 0.1s; border-left: 4px solid var(--color-primary-bold);">
+                            <span class="user-icon">📚</span>
+                            <div class="user-title">学生群体</div>
+                            <div class="user-age">18-25岁</div>
+                            <div class="user-desc">课程管理与学习动力，考试倒计时与专注模式，柯基陪你一起进步</div>
+                        </div>
+                        <div class="glass-card user-card stagger-item" style="animation-delay: 0.2s; border-left: 4px solid var(--color-accent-mint);">
+                            <span class="user-icon">💼</span>
+                            <div class="user-title">上班族</div>
+                            <div class="user-age">25-35岁</div>
+                            <div class="user-desc">高效管理待办事项，缓解工作压力</div>
+                        </div>
+                        <div class="glass-card user-card stagger-item" style="animation-delay: 0.3s; border-left: 4px solid var(--color-primary-bold);">
+                            <span class="user-icon">🧓</span>
+                            <div class="user-title">老年群体</div>
+                            <div class="user-age">55岁+</div>
+                            <div class="user-desc">简单易用，语音输入为主</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 产品愿景引言 — 杂志式双横线引言 -->
+            <div class="editorial-quote stagger-item" style="animation-delay: 0.1s;">
                 <p>"让记录变得不再枯燥，让忙碌的人也能感受到温暖。"</p>
+                <div class="quote-source">— 产品愿景</div>
             </div>
 
-            <!-- 差异化优势 -->
-            <h2 class="section-title">差异化优势</h2>
-            <div class="diff-tags stagger-item" style="animation-delay: 0.1s;">
-                <span class="diff-tag">✨ 原创陪伴系统</span>
-                <span class="diff-tag">🎯 身份自适应</span>
-                <span class="diff-tag">🎉 节日节气关怀</span>
-                <span class="diff-tag">💡 完全原创</span>
+            <!-- 章节03：差异化优势 — 野兽派标签 -->
+            <div class="chapter-section">
+                <div class="chapter-number left" style="color: var(--color-primary-bold);">03</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">DIFFERENTIATION</div>
+                    <h2 class="section-title" style="margin-bottom: 16px;">差异化优势</h2>
+                    <div class="diff-tags stagger-item" style="animation-delay: 0.1s;">
+                        <span class="diff-tag" style="border: 2px solid var(--color-text-ink); background: var(--color-primary-bold); color: #fff; font-weight: 900; box-shadow: 3px 3px 0 var(--color-text-ink);">✨ 原创陪伴系统</span>
+                        <span class="diff-tag" style="border: 2px solid var(--color-text-ink); background: #fff; color: var(--color-text-ink); font-weight: 900; box-shadow: 3px 3px 0 var(--color-accent-mint);">🎯 身份自适应</span>
+                        <span class="diff-tag" style="border: 2px solid var(--color-text-ink); background: var(--color-accent-mint); color: var(--color-text-ink); font-weight: 900; box-shadow: 3px 3px 0 var(--color-text-ink);">🎉 节日节气关怀</span>
+                        <span class="diff-tag" style="border: 2px solid var(--color-text-ink); background: #fff; color: var(--color-text-ink); font-weight: 900; box-shadow: 3px 3px 0 var(--color-primary-bold);">💡 完全原创</span>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -3353,8 +3824,12 @@
         <section class="tab-content" id="tab2">
 
             <!-- 柯基形象体系 -->
-            <h2 class="section-title">柯基形象体系 — 8种姿态</h2>
-            <div class="grid-4 mb-24">
+            <div class="chapter-section">
+                <div class="chapter-number left">04</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">POSTURE SYSTEM</div>
+                    <h2 class="section-title">柯基形象体系 — 8种姿态</h2>
+                    <div class="grid-4 mb-24">
                 <div class="glass-card pose-card stagger-item" style="animation-delay: 0.05s;">
                     <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-3frames"><img src="../app/src/main/res/drawable/corgi_lie_3frames_01.png" class="corgi-frame" alt="趴卧"><img src="../app/src/main/res/drawable/corgi_lie_3frames_02.png" class="corgi-frame" alt="趴卧"><img src="../app/src/main/res/drawable/corgi_lie_3frames_03.png" class="corgi-frame" alt="趴卧"></div></span>
                     <div class="pose-name">趴卧</div>
@@ -3396,12 +3871,18 @@
                     <div class="pose-scene">开心时刻，欢快摇摆</div>
                 </div>
             </div>
+                </div>
+            </div>
 
             <div class="divider"></div>
 
             <!-- 表情系统 -->
-            <h2 class="section-title">表情系统 — 8种表情</h2>
-            <div class="grid-4 mb-24">
+            <div class="chapter-section reverse">
+                <div class="chapter-number right">05</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">EXPRESSION SYSTEM</div>
+                    <h2 class="section-title">表情系统 — 8种表情</h2>
+                    <div class="grid-4 mb-24">
                 <div class="glass-card expression-card stagger-item" style="animation-delay: 0.05s;">
                     <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_03.png" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" class="corgi-frame" alt="开心"></div></span>
                     <div class="expr-name">开心</div>
@@ -3441,6 +3922,8 @@
                     <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_shy_2frames_01.png" class="corgi-frame" alt="害羞"><img src="../app/src/main/res/drawable/corgi_shy_2frames_02.png" class="corgi-frame" alt="害羞"></div></span>
                     <div class="expr-name">害羞</div>
                     <div class="expr-scene">看向旁边，被连点时</div>
+                </div>
+            </div>
                 </div>
             </div>
 
@@ -3693,8 +4176,12 @@
         <section class="tab-content" id="tab3">
 
             <!-- 三种身份对比 -->
-            <h2 class="section-title">三种身份对比</h2>
-            <div class="grid-3 mb-24">
+            <div class="chapter-section">
+                <div class="chapter-number left">06</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">IDENTITY COMPARISON</div>
+                    <h2 class="section-title">三种身份对比</h2>
+                    <div class="grid-3 mb-24">
                 <!-- 学生 -->
                 <div class="glass-card identity-card student stagger-item" style="animation-delay: 0.1s;">
                     <div class="identity-header">📚 学生模式</div>
@@ -3749,12 +4236,18 @@
                     </div>
                 </div>
             </div>
+                </div>
+            </div>
 
             <div class="divider"></div>
 
             <!-- 问候语差异 -->
-            <h2 class="section-title">问候语差异</h2>
-            <div class="grid-3 mb-24">
+            <div class="chapter-section reverse">
+                <div class="chapter-number right">07</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">GREETING DIFFERENCES</div>
+                    <h2 class="section-title">问候语差异</h2>
+                    <div class="grid-3 mb-24">
                 <div class="chat-bubble stagger-item" style="animation-delay: 0.1s;">
                     <div class="bubble-label">📚 学生</div>
                     <div class="bubble-text">早安呀！📚 今天有2个作业要交，「高数作业」明天就截止啦，要抓紧哦~</div>
@@ -3766,6 +4259,8 @@
                 <div class="chat-bubble stagger-item" style="animation-delay: 0.3s;">
                     <div class="bubble-label">🧓 老年</div>
                     <div class="bubble-text">王阿姨，早上好呀！今天天气不错，记得吃早饭哦~ 柯基等您一起开始新的一天！</div>
+                </div>
+            </div>
                 </div>
             </div>
 
@@ -3838,8 +4333,12 @@
         <section class="tab-content" id="tab4">
 
             <!-- 三大功能关系图 -->
-            <h2 class="section-title">三大功能关系图</h2>
-            <div class="glass-card mb-24" style="padding: 40px 24px;">
+            <div class="chapter-section">
+                <div class="chapter-number left">08</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">FUNCTION DIAGRAM</div>
+                    <h2 class="section-title">三大功能关系图</h2>
+                    <div class="glass-card mb-24" style="padding: 40px 24px;">
                 <div class="triangle-diagram">
                     <!-- 三角形连线 - 使用SVG -->
                     <svg width="100%" height="100%" viewBox="0 0 500 450" style="position: absolute; top: 0; left: 0;">
@@ -3858,12 +4357,18 @@
                     <div class="triangle-node node-right" style="bottom: 20px; right: 10px;">📅 特殊日期</div>
                 </div>
             </div>
+                </div>
+            </div>
 
             <div class="divider"></div>
 
             <!-- 待办管理 -->
-            <h2 class="section-title">待办管理</h2>
-            <div class="glass-card mb-24">
+            <div class="chapter-section reverse">
+                <div class="chapter-number right">09</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">TODO MANAGEMENT</div>
+                    <h2 class="section-title">待办管理</h2>
+                    <div class="glass-card mb-24">
                 <div class="sub-title">创建待办</div>
                 <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
                     <span style="color: var(--color-text-hint);">✏️</span>
@@ -3909,6 +4414,8 @@
                         <div class="priority-dot low"></div>
                         <span style="font-size: 13px; color: var(--color-success);">低优先级</span>
                     </div>
+                </div>
+            </div>
                 </div>
             </div>
 
@@ -4009,8 +4516,12 @@
         <section class="tab-content" id="tab5">
 
             <!-- 节日列表 -->
-            <h2 class="section-title">节日列表</h2>
-            <div class="glass-card mb-24">
+            <div class="chapter-section">
+                <div class="chapter-number left">10</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">FESTIVAL LIST</div>
+                    <h2 class="section-title">节日列表</h2>
+                    <div class="glass-card mb-24">
                 <div class="festival-group">
                     <div class="group-title">🏮 传统节日</div>
                     <div class="festival-tags">
@@ -4067,12 +4578,18 @@
                     </div>
                 </div>
             </div>
+                </div>
+            </div>
 
             <div class="divider"></div>
 
             <!-- 柯基换装展示 -->
-            <h2 class="section-title">柯基换装展示</h2>
-            <div class="grid-3 mb-24">
+            <div class="chapter-section reverse">
+                <div class="chapter-number right">11</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">DRESSUP SHOWCASE</div>
+                    <h2 class="section-title">柯基换装展示</h2>
+                    <div class="grid-3 mb-24">
                 <div class="glass-card costume-card stagger-item" style="animation-delay: 0.05s;">
                     <span class="costume-emoji">🧧<div class="corgi-anim costume-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" class="corgi-frame" alt="春节柯基"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" class="corgi-frame" alt="春节柯基"></div></span>
                     <div class="costume-name">春节</div>
@@ -4108,6 +4625,8 @@
                     <div class="costume-name">雨天</div>
                     <div class="costume-desc">黄色小雨衣</div>
                     <div class="costume-trigger">触发：下雨天气</div>
+                </div>
+            </div>
                 </div>
             </div>
 
@@ -4173,8 +4692,12 @@
         <section class="tab-content" id="tab6">
 
             <!-- 用户画像 -->
-            <h2 class="section-title">用户画像</h2>
-            <div class="grid-3 mb-24">
+            <div class="chapter-section">
+                <div class="chapter-number left">12</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">USER PERSONAS</div>
+                    <h2 class="section-title">用户画像</h2>
+                    <div class="grid-3 mb-24">
                 <!-- 小雨 - 学生 -->
                 <div class="glass-card persona-card student stagger-item" style="animation-delay: 0.05s;">
                     <div class="persona-header">📚 学生</div>
@@ -4218,12 +4741,18 @@
                     </div>
                 </div>
             </div>
+                </div>
+            </div>
 
             <div class="divider"></div>
 
             <!-- 一天的故事 -->
-            <h2 class="section-title">他们的一天 — 场景故事</h2>
-            <div class="glass-card mb-24">
+            <div class="chapter-section reverse">
+                <div class="chapter-number right">13</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">DAILY STORIES</div>
+                    <h2 class="section-title">他们的一天 — 场景故事</h2>
+                    <div class="glass-card mb-24">
                 <div class="scene-timeline">
 
                     <!-- 场景一：晨间问候 -->
@@ -4314,6 +4843,8 @@
 
                 </div>
             </div>
+                </div>
+            </div>
 
             <div class="divider"></div>
 
@@ -4370,9 +4901,15 @@
              ============================================ -->
         <section class="tab-content" id="tab7">
             <!-- 页面标题区 -->
-            <div class="prototype-hero">
-                <h2>📱 原型展示</h2>
-                <p>以真实手机尺寸呈现刻记<sup class="brand-sup">+</sup> 全部功能模块，以学生模式为原型。金色徽章标注创新功能，点击手机可体验轻量交互演示。</p>
+            <div class="chapter-section">
+                <div class="chapter-number left glitch">14</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">PROTOTYPE DEMO</div>
+                    <div class="prototype-hero">
+                        <h2>📱 原型展示</h2>
+                        <p>以真实手机尺寸呈现刻记<sup class="brand-sup">+</sup> 全部功能模块，以学生模式为原型。金色徽章标注创新功能，点击手机可体验轻量交互演示。</p>
+                    </div>
+                </div>
             </div>
 
             <!-- 功能分类筛选器 -->
@@ -5720,35 +6257,56 @@
         /**
          * 页签切换功能
          * 点击页签按钮时，切换对应的内容区域
+         * 支持原有 .tab-btn 和新增 .nav-item 杂志风导航
          */
         function initTabs() {
             const tabBtns = document.querySelectorAll('.tab-btn');
+            const navItems = document.querySelectorAll('.magazine-nav .nav-item');
             const tabContents = document.querySelectorAll('.tab-content');
 
+            /**
+             * 执行 Tab 切换逻辑
+             * @param {string} targetTab - 目标 Tab ID
+             */
+            function switchTab(targetTab) {
+                // 移除所有页签的激活状态
+                tabBtns.forEach(b => b.classList.remove('active'));
+                navItems.forEach(n => n.classList.remove('active'));
+
+                // 激活当前页签（两种导航同步）
+                const activeBtn = document.querySelector(`.tab-btn[data-tab="${targetTab}"]`);
+                const activeNav = document.querySelector(`.magazine-nav .nav-item[data-tab="${targetTab}"]`);
+                if (activeBtn) activeBtn.classList.add('active');
+                if (activeNav) activeNav.classList.add('active');
+
+                // 隐藏所有内容区域
+                tabContents.forEach(content => {
+                    content.classList.remove('active');
+                    content.style.animation = 'none';
+                });
+
+                // 显示目标内容区域，并重新触发入场动画
+                const targetContent = document.getElementById(targetTab);
+                targetContent.classList.add('active');
+                // 强制重绘以重新触发动画
+                void targetContent.offsetWidth;
+                targetContent.style.animation = 'fadeInUp 0.4s ease-in-out forwards';
+
+                // 重新触发stagger动画
+                triggerStaggerAnimation(targetContent);
+            }
+
+            // 原有页签按钮事件
             tabBtns.forEach(btn => {
                 btn.addEventListener('click', () => {
-                    const targetTab = btn.getAttribute('data-tab');
+                    switchTab(btn.getAttribute('data-tab'));
+                });
+            });
 
-                    // 移除所有页签的激活状态
-                    tabBtns.forEach(b => b.classList.remove('active'));
-                    // 激活当前页签
-                    btn.classList.add('active');
-
-                    // 隐藏所有内容区域
-                    tabContents.forEach(content => {
-                        content.classList.remove('active');
-                        content.style.animation = 'none';
-                    });
-
-                    // 显示目标内容区域，并重新触发入场动画
-                    const targetContent = document.getElementById(targetTab);
-                    targetContent.classList.add('active');
-                    // 强制重绘以重新触发动画
-                    void targetContent.offsetWidth;
-                    targetContent.style.animation = 'fadeInUp 0.4s ease-in-out forwards';
-
-                    // 重新触发stagger动画
-                    triggerStaggerAnimation(targetContent);
+            // 新增杂志风导航项事件
+            navItems.forEach(item => {
+                item.addEventListener('click', () => {
+                    switchTab(item.getAttribute('data-tab'));
                 });
             });
         }
@@ -5909,30 +6467,55 @@
         })();
 
         /**
-         * 生成粒子飘动效果
-         * 在背景中创建随机位置的星星/爱心/雪花粒子
+         * 生成粒子飘动效果 — 流场动力学增强版
+         * 借鉴 algorithmic-art 理念：种子随机性 + 流场动力学 + 色彩涌现
+         * 在背景中创建跟随向量场流动的星星/爱心/雪花粒子
          */
         function createParticles() {
             const container = document.getElementById('particles');
             const particleChars = ['✦', '♡', '❄', '✧', '⋆', '❋', '✶'];
-            const particleCount = 25;
+            const particleCount = 30; // 增加粒子数量增强氛围
+
+            // 种子随机性 — 基于时间种子生成不同粒子模式
+            const seed = Math.floor(Date.now() / 60000); // 每分钟变化一次
+            const seededRandom = (max) => {
+                const x = Math.sin(seed + max * 9999) * 10000;
+                return x - Math.floor(x);
+            };
 
             for (let i = 0; i < particleCount; i++) {
                 const particle = document.createElement('div');
-                particle.className = 'particle';
+                particle.className = 'particle particle-enhanced';
                 particle.textContent = particleChars[Math.floor(Math.random() * particleChars.length)];
 
-                // 随机位置和动画参数
+                // 随机位置和动画参数 — 流场动力学
                 const left = Math.random() * 100;
-                const size = 10 + Math.random() * 16;
-                const duration = 15 + Math.random() * 25;
-                const delay = Math.random() * 20;
+                const size = 8 + Math.random() * 18;
+                const duration = 18 + Math.random() * 30;
+                const delay = Math.random() * 25;
+                const driftRange = 30 + Math.random() * 60; // 水平漂移范围
+
+                // 色彩涌现 — 根据位置和速度变化颜色
+                const colorPhase = seededRandom(i);
+                let particleColor;
+                if (colorPhase < 0.4) {
+                    // 暖色调 — 柯基橙红
+                    particleColor = `rgba(255, ${107 + Math.floor(Math.random() * 50)}, ${53 + Math.floor(Math.random() * 40)}, ${0.15 + Math.random() * 0.25})`;
+                } else if (colorPhase < 0.7) {
+                    // 冷色调 — 薄荷绿
+                    particleColor = `rgba(${126 + Math.floor(Math.random() * 40)}, ${200 + Math.floor(Math.random() * 30)}, ${160 + Math.floor(Math.random() * 30)}, ${0.15 + Math.random() * 0.25})`;
+                } else {
+                    // 中性色调 — 暖白
+                    particleColor = `rgba(${230 + Math.floor(Math.random() * 25)}, ${230 + Math.floor(Math.random() * 25)}, ${227 + Math.floor(Math.random() * 25)}, ${0.2 + Math.random() * 0.3})`;
+                }
 
                 particle.style.left = `${left}%`;
                 particle.style.fontSize = `${size}px`;
                 particle.style.animationDuration = `${duration}s`;
                 particle.style.animationDelay = `${delay}s`;
-                particle.style.color = `rgba(255, ${150 + Math.floor(Math.random() * 80)}, ${80 + Math.floor(Math.random() * 60)}, ${0.2 + Math.random() * 0.3})`;
+                particle.style.color = particleColor;
+                particle.style.setProperty('--drift-range', `${driftRange}px`);
+                particle.style.setProperty('--rotate-end', `${360 + Math.random() * 360}deg`);
 
                 container.appendChild(particle);
             }
