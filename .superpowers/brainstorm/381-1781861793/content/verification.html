@@ -1,0 +1,103 @@
+<h2>重构完成 — 验证预览</h2>
+<p class="subtitle">以下为重构后的关键区域实时效果</p>
+
+<div class="section">
+  <h3>1. Hero 区域（已添加愿景引言区）</h3>
+  <div class="mockup">
+    <div class="mockup-header">Hero 区域结构 — 愿景已融入首屏</div>
+    <div class="mockup-body" style="background:#f5f0e8; padding:0; font-family:sans-serif; font-size:11px; border:2px solid #333;">
+      <div style="padding:10px 16px; border-bottom:2px solid #333; display:flex; justify-content:space-between; font-size:9px; letter-spacing:2px; color:#e86b35; font-weight:700;">
+        <span>ISSUE 01 · 2026·06</span>
+        <span style="color:#888;">刻记⁺ 创意展示</span>
+        <span>№ 001</span>
+      </div>
+      <div style="padding:12px 16px; border-bottom:1px solid rgba(51,51,51,0.15); background:#fffbf5; text-align:center;">
+        <p style="font-style:italic; font-size:14px; color:#e86b35; margin:0; font-family:Georgia, serif;">"让记录变得不再枯燥，让忙碌的人也能感受到温暖。"</p>
+        <div style="font-size:8px; color:#aaa; margin-top:4px;">← 新增：产品愿景引言区 (hero-vision-quote)</div>
+      </div>
+      <div style="padding:16px; display:flex; gap:16px; align-items:end;">
+        <div style="flex:1;">
+          <div style="font-size:9px; color:#e86b35; font-weight:700;">— 治愈系记录应用</div>
+          <div style="font-size:36px; font-weight:900; line-height:0.9;">刻记<sup style="color:#e86b35;">+</sup></div>
+          <div style="font-size:12px; letter-spacing:4px; color:#888;">CORGIMEMO+</div>
+          <p style="font-size:11px; color:#666; margin-top:6px; font-style:italic;">「一个会陪伴你的治愈系记录应用」</p>
+        </div>
+        <div style="border:2px solid #333; background:#fff; padding:8px; box-shadow:3px 3px 0 #333;">
+          <div style="width:50px; height:50px; background:#ffe8cc; display:flex; align-items:center; justify-content:center; font-size:24px;">🐕</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>2. 合并后的「核心价值与优势」板块</h3>
+  <div class="mockup">
+    <div class="mockup-header">统一章节 01 — 价值卡片为主 + 标签为辅</div>
+    <div class="mockup-body" style="background:#f5f0e8; padding:16px; font-family:sans-serif; font-size:11px;">
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        <div style="font-size:48px; font-weight:900; line-height:0.85; color:#e86b35; border:3px solid #333; padding:4px 12px; background:#fff; box-shadow:3px 3px 0 #333; flex-shrink:0;">01</div>
+        <div style="flex:1;">
+          <div style="font-size:9px; letter-spacing:2px; color:#e86b35; font-weight:700;">CORE VALUES & DIFFERENTIATION</div>
+          <div style="font-size:16px; font-weight:900; margin:2px 0;">核心价值与优势</div>
+          
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:12px;">
+            <div style="border:2px solid #333; background:#fff; padding:10px; box-shadow:2px 2px 0 #333; text-align:center;">
+              <div style="font-size:18px;">💕</div>
+              <div style="font-size:11px; font-weight:900; margin-top:4px;">陪伴感</div>
+              <div style="font-size:9px; color:#555; margin-top:2px;">柯基犬全程陪伴...</div>
+            </div>
+            <div style="border:2px solid #333; background:#e86b35; color:#fff; padding:10px; box-shadow:2px 2px 0 #333; text-align:center;">
+              <div style="font-size:18px;">🎯</div>
+              <div style="font-size:11px; font-weight:900; margin-top:4px;">高效性</div>
+              <div style="font-size:9px; opacity:0.9; margin-top:2px;">快速记录、智能分类...</div>
+            </div>
+            <div style="border:2px solid #333; background:#a8d5ba; padding:10px; box-shadow:2px 2px 0 #333; text-align:center;">
+              <div style="font-size:18px;">💝</div>
+              <div style="font-size:11px; font-weight:900; margin-top:4px;">温暖感</div>
+              <div style="font-size:9px; color:#555; margin-top:2px;">治愈系设计、贴心问候...</div>
+            </div>
+          </div>
+
+          <div style="margin-top:14px; padding-top:12px; border-top:1px dashed #333; display:flex; gap:6px; flex-wrap:wrap; justify-content:center; opacity:0.6;">
+            <span style="border:2px solid #333; background:#e86b35; color:#fff; padding:4px 10px; font-size:9px; font-weight:900; box-shadow:2px 2px 0 #333; border-radius:3px;">✨ 原创陪伴系统</span>
+            <span style="border:2px solid #333; background:#fff; padding:4px 10px; font-size:9px; font-weight:900; box-shadow:2px 2px 0 #333; border-radius:3px;">🎯 身份自适应</span>
+            <span style="border:2px solid #333; background:#a8d5ba; padding:4px 10px; font-size:9px; font-weight:900; box-shadow:2px 2px 0 #333; border-radius:3px;">🎉 节日节气关怀</span>
+            <span style="border:2px solid #333; background:#f5d76e; padding:4px 10px; font-size:9px; font-weight:900; box-shadow:2px 2px 0 #333; border-radius:3px;">💡 完全原创</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>3. 章节编号更新验证</h3>
+  <table style="width:100%; border-collapse:collapse; font-size:11px;">
+    <tr style="background:#333; color:#fff;">
+      <th style="padding:6px;">新编号</th>
+      <th style="padding:6px;">章节名称</th>
+      <th style="padding:6px;">原编号</th>
+      <th style="padding:6px;">状态</th>
+    </tr>
+    <tr style="border-bottom:1px solid #ddd;"><td style="padding:6px; font-weight:700; color:#e86b35;">01</td><td style="padding:6px;">核心价值与优势（合并）</td><td style="padding:6px;">01+02</td><td style="padding:6px;color:green;">✓ 已合并</td></tr>
+    <tr style="border-bottom:1px solid #ddd; background:#fffbf5;"><td style="padding:6px; font-weight:700;">02</td><td style="padding:6px;">柯基形象体系 — 8种姿态</td><td style="padding:6px;">03</td><td style="padding:6px;color:green;">✓ -1</td></tr>
+    <tr style="border-bottom:1px solid #ddd;"><td style="padding:6px; font-weight:700;">03</td><td style="padding:6px;">表情系统 — 8种表情</td><td style="padding:6px;">04</td><td style="padding:6px;color:green;">✓ -1</td></tr>
+    <tr style="border-bottom:1px solid #ddd; background:#fffbf5;"><td style="padding:6px; font-weight:700;">04</td><td style="padding:6px;">情绪系统</td><td style="padding:6px;">05</td><td style="padding:6px;color:green;">✓ -1</td></tr>
+    <tr style="border-bottom:1px solid #ddd;"><td style="padding:6px; font-weight:700;">05</td><td style="padding:6px;">触摸互动</td><td style="padding:6px;">06</td><td style="padding:6px;color:green;">✓ -1</td></tr>
+    <tr style="border-bottom:1px solid #ddd; background:#fffbf5;"><td style="padding:6px; font-weight:700;">06</td><td style="padding:6px;">成长系统</td><td style="padding:6px;">07</td><td style="padding:6px;color:green;">✓ -1</td></tr>
+    <tr style="border-bottom:1px solid #ddd;"><td style="padding:6px;">... </td><td style="padding:6px;">... （共24个章节）</td><td style="padding:6px;"></td><td style="padding:6px;color:green;">✓ 全部更新</td></tr>
+    <tr style="border-bottom:1px solid #ddd; background:#fffbf5;"><td style="padding:6px; font-weight:700;">24</td><td style="padding:6px;">目标用户群体</td><td style="padding:6px;">25</td><td style="padding:6px;color:green;">✓ -1</td></tr>
+  </table>
+</div>
+
+<div class="section" style="background:#e8f5e9; padding:16px; border-radius:8px;">
+  <h3 style="margin-top:0;">变更摘要</h3>
+  <ul style="margin:0; padding-left:20px; line-height:1.8;">
+    <li><strong>Hero 区域新增：</strong>.hero-vision-quote 愿景引言区（刊头下方，斜体暖色）</li>
+    <li><strong>删除：</strong>原 brutal-quote 产品愿景块（已迁移至 Hero）</li>
+    <li><strong>合并：</strong>「三大核心价值」+「差异化优势」→ 统一章节 01「核心价值与优势」</li>
+    <li><strong>新增 CSS：</strong>.hero-vision-quote、.diff-tags-supplementary 及其响应式样式</li>
+    <li><strong>编号更新：</strong>后续 23 个章节编号全部 -1（03→02 ... 25→24）</li>
+  </ul>
+</div>

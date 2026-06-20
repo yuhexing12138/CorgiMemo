@@ -1,0 +1,140 @@
+<h2>三大功能关系图 — 修正设计方案（平级互依赖）</h2>
+<p class="subtitle">三大功能地位平等、相互依赖、循环驱动</p>
+
+<div class="section">
+  <h3>修正：等边三角 + 双向流动</h3>
+  <div class="mockup">
+    <div class="mockup-header">✅ 平级互依赖关系布局</div>
+    <div class="mockup-body" style="padding:24px; background:#f5f0e8;">
+      <div style="position:relative; width:100%; height:260px; display:flex; align-items:center; justify-content:center;">
+        <!-- SVG connection layer (behind nodes) -->
+        <svg width="340" height="240" viewBox="0 0 340 240" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);">
+          <defs>
+            <!-- Gradient for each connection -->
+            <linearGradient id="line-todo-insp" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#e86b35"/><stop offset="100%" stop-color="#4ade80"/>
+            </linearGradient>
+            <linearGradient id="line-todo-date" x1="100%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#e86b35"/><stop offset="100%" stop-color="#f5d76e"/>
+            </linearGradient>
+            <linearGradient id="line-insp-date" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#4ade80"/><stop offset="100%" stop-color="#f5d76e"/>
+            </linearGradient>
+            <!-- Arrow markers -->
+            <marker id="arrow-orange" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#e86b35"/>
+            </marker>
+            <marker id="arrow-green" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#4ade80"/>
+            </marker>
+            <marker id="arrow-yellow" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#f5d76e"/>
+            </marker>
+          </defs>
+
+          <!-- Curved connections (bidirectional arcs) -->
+          <!-- Todo <-> Inspiration (left arc) -->
+          <path d="M170,45 Q90,120 65,185" fill="none" stroke="url(#line-todo-insp)" stroke-width="2.5" stroke-linecap="round"/>
+
+          <!-- Todo <-> Date (right arc) -->
+          <path d="M170,45 Q250,120 275,185" fill="none" stroke="url(#line-todo-date)" stroke-width="2.5" stroke-linecap="round"/>
+
+          <!-- Inspiration <-> Date (bottom arc) -->
+          <path d="M75,200 Q170,235 265,200" fill="none" stroke="url(#line-insp-date)" stroke-width="2.5" stroke-linecap="round"/>
+
+          <!-- Flow particles on each path -->
+          <circle r="3.5" fill="#e86b35" opacity="0.9"><animateMotion dur="2s" repeatCount="indefinite" path="M170,45 Q90,120 65,185"/></circle>
+          <circle r="3.5" fill="#4ade80" opacity="0.9"><animateMotion dur="2.2s" repeatCount="indefinite" path="M65,185 Q90,120 170,45"/></circle>
+
+          <circle r="3.5" fill="#e86b35" opacity="0.9"><animateMotion dur="2.1s" repeatCount="indefinite" path="M170,45 Q250,120 275,185"/></circle>
+          <circle r="3.5" fill="#f5d76e" opacity="0.9"><animateMotion dur="2.3s" repeatCount="indefinite" path="M275,185 Q250,120 170,45"/></circle>
+
+          <circle r="3.5" fill="#4ade80" opacity="0.9"><animateMotion dur="2.4s" repeatCount="indefinite" path="M75,200 Q170,235 265,200"/></circle>
+          <circle r="3.5" fill="#f5d76e" opacity="0.9"><animateMotion dur="2.0s" repeatCount="indefinite" path="M265,200 Q170,235 75,200"/></circle>
+
+          <!-- Center label -->
+          <text x="170" y="130" text-anchor="middle" font-size="11" fill="#999" font-style="italic">相互依赖 · 循环驱动</text>
+        </svg>
+
+        <!-- Node: 待办管理 (top) -->
+        <div style="position:absolute; top:10px; left:50%; transform:translateX(-50%);
+          border:3px solid #333; background:#fff; border-radius:14px; padding:12px 22px;
+          text-align:center; box-shadow:5px 5px 0 #e86b35; z-index:2;
+          font-family:sans-serif;">
+          <div style="font-size:22px;">📋</div>
+          <div style="font-size:13px; font-weight:900; color:#e86b35; margin-top:4px;">待办管理</div>
+          <div style="font-size:9px; color:#888; margin-top:2px;">行动执行</div>
+        </div>
+
+        <!-- Node: 灵感记录 (bottom-left) -->
+        <div style="position:absolute; bottom:10px; left:20px;
+          border:3px solid #333; background:#fff; border-radius:14px; padding:12px 18px;
+          text-align:center; box-shadow:5px 5px 0 #4ade80; z-index:2;
+          font-family:sans-serif;">
+          <div style="font-size:22px;">💡</div>
+          <div style="font-size:13px; font-weight:900; color:#4ade80; margin-top:4px;">灵感记录</div>
+          <div style="font-size:9px; color:#888; margin-top:2px;">创意输入</div>
+        </div>
+
+        <!-- Node: 特殊日期 (bottom-right) -->
+        <div style="position:absolute; bottom:10px; right:20px;
+          border:3px solid #333; background:#fff; border-radius:14px; padding:12px 18px;
+          text-align:center; box-shadow:5px 5px 0 #f5d76e; z-index:2;
+          font-family:sans-serif;">
+          <div style="font-size:22px;">📅</div>
+          <div style="font-size:13px; font-weight:900; color:#d4a017; margin-top:4px;">特殊日期</div>
+          <div style="font-size:9px; color:#888; margin-top:2px;">时间锚点</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>修正后的设计要点</h3>
+  <table style="width:100%; border-collapse:collapse; font-size:12px;">
+    <tr style="background:#333;color:#fff;"><th>维度</th><th>原方案</th><th>✅ 修正后</th></tr>
+    <tr style="border-bottom:1px solid #ddd;">
+      <td style="padding:8px;font-weight:700;">节点关系</td>
+      <td style="padding:8px;">中心辐射（待办为核心）</td>
+      <td style="padding:8px;background:#e8f5e9;"><strong>等边三角平级排列</strong></td>
+    </tr>
+    <tr style="border-bottom:1px solid #ddd;background:#fffbf5;">
+      <td style="padding:8px;font-weight:700;">连线方式</td>
+      <td style="padding:8px;">从中心向外辐射</td>
+      <td style="padding:8px;background:#e8f5e9;"><strong>双向曲线弧（每对间2条方向）</strong></td>
+    </tr>
+    <tr style="border-bottom:1px solid #ddd;">
+      <td style="padding:8px;font-weight:700;">数据流动画</td>
+      <td style="padding:8px;">从中心向卫星单向</td>
+      <td style="padding:8px;background:#e8f5e9;"><strong>双向粒子沿曲线循环流动</strong></td>
+    </tr>
+    <tr style="border-bottom:1px solid #ddd;background:#fffbf5;">
+      <td style="padding:8px;font-weight:700;">中心区域</td>
+      <td style="padding:8px;">核心节点占据</td>
+      <td style="padding:8px;background:#e8f5e9;"><strong>「相互依赖·循环驱动」文字标识</strong></td>
+    </tr>
+    <tr>
+      <td style="padding:8px;font-weight:700;">视觉权重</td>
+      <td style="padding:8px;">核心 > 卫星</td>
+      <td style="padding:8px;background:#e8f5e9;"><strong>三节点完全平等（同尺寸/阴影/描边）</strong></td>
+    </tr>
+  </table>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="approve-v2" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>批准修正方案</h3>
+      <p>按平级互依赖关系实施重构</p>
+    </div>
+  </div>
+  <div class="option" data-choice="modify-v2" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content">
+      <h3>还需调整</h3>
+      <p>继续修改细节</p>
+    </div>
+  </div>
+</div>

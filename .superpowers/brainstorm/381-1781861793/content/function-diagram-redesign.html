@@ -1,0 +1,122 @@
+<h2>三大功能关系图 — 重构设计方案</h2>
+<p class="subtitle">基于 chart-visualization + hyperframes 动画设计</p>
+
+<div class="section">
+  <h3>当前问题 vs 重构目标</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">❌ 当前：静态三角形</div>
+      <div class="mockup-body" style="padding:20px; background:#f5f0e8;">
+        <div style="position:relative; width:100%; height:200px; border:2px solid #333;">
+          <svg width="100%" height="100%" style="position:absolute;">
+            <line x1="50%" y1="30" x2="20%" y2="170" stroke="rgba(255,154,92,0.3)" stroke-dasharray="6,4"/>
+            <line x1="50%" y1="30" x2="80%" y2="170" stroke="rgba(126,200,160,0.3)" stroke-dasharray="6,4"/>
+            <line x1="20%" y1="170" x2="80%" y2="170" stroke="rgba(255,183,77,0.3)" stroke-dasharray="6,4"/>
+          </svg>
+          <div style="position:absolute; top:10px; left:50%; transform:translateX(-50%); border:2px solid #e86b35; border-radius:8px; padding:6px 16px; background:#fff; font-size:11px;">📋 待办管理</div>
+          <div style="position:absolute; bottom:10px; left:10px; border:2px solid #4ade80; border-radius:8px; padding:6px 16px; background:#fff; font-size:11px;">💡 灵感记录</div>
+          <div style="position:absolute; bottom:10px; right:10px; border:2px solid #fbbf24; border-radius:8px; padding:6px 16px; background:#fff; font-size:11px;">📅 特殊日期</div>
+        </div>
+        <ul style="font-size:11px; margin-top:8px; color:#666;">
+          <li>静态虚线连接，无方向感</li>
+          <li>节点无层次/依赖信息</li>
+          <li>无动画，缺乏交互表达</li>
+        </ul>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">✅ 重构目标：动态关系网络</div>
+      <div class="mockup-body" style="padding:20px; background:#1a1a2e;">
+        <div style="position:relative; width:100%; height:200px;">
+          <!-- Center hub node -->
+          <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:70px; height:70px; background:linear-gradient(135deg,#e86b35,#ff9a5c); border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 0 30px rgba(232,107,53,0.5); font-size:18px;">📋</div>
+          <!-- Orbiting nodes with glow -->
+          <div style="position:absolute; top:5%; left:50%; transform:translateX(-50%); background:#fff; border:2px solid #e86b35; border-radius:12px; padding:8px 14px; font-size:10px; box-shadow:0 0 15px rgba(232,107,53,0.3);">待办管理<br><span style="color:#888;font-size:8px;">核心功能</span></div>
+          <div style="position:absolute; top:55%; left:5%; background:#fff; border:2px solid #4ade80; border-radius:12px; padding:8px 14px; font-size:10px; box-shadow:0 0 15px rgba(74,222,128,0.3);">灵感记录<br><span style="color:#888;font-size:8px;">创意输入</span></div>
+          <div style="position:absolute; top:55%; right:5%; background:#fff; border:2px solid #fbbf24; border-radius:12px; padding:8px 14px; font-size:10px; box-shadow:0 0 15px rgba(251,191,36,0.3);">特殊日期<br><span style="color:#888;font-size:8px;">时间锚点</span></div>
+          <!-- Animated connection arcs -->
+          <svg width="100%" height="100%" style="position:absolute;" viewBox="0 0 300 200">
+            <defs>
+              <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#e86b33"/><stop offset="100%" stop-color="#4ade80"/>
+              </linearGradient>
+            </defs>
+            <path d="M150 100 Q80 60 55 40" fill="none" stroke="url(#g1)" stroke-width="2" opacity="0.8"/>
+            <path d="M150 100 Q220 60 245 40" fill="none" stroke="#e86b33" stroke-width="2" opacity="0.6"/>
+            <path d="M55 120 Q100 140 150 100" fill="none" stroke="#4ade80" stroke-width="2" opacity="0.6"/>
+            <path d="M245 120 Q200 140 150 100" fill="none" stroke="#fbbf24" stroke-width="2" opacity="0.6"/>
+            <!-- Flow particles -->
+            <circle r="3" fill="#e86b33"><animateMotion dur="2s" repeatCount="indefinite" path="M150 100 Q80 60 55 40"/></circle>
+            <circle r="3" fill="#4ade80"><animateMotion dur="2.5s" repeatCount="indefinite" path="M55 120 Q100 140 150 100"/></circle>
+          </svg>
+        </div>
+        <ul style="font-size:11px; margin-top:8px; color:#aaa;">
+          <li>✓ 有向连线 + 数据流粒子动画</li>
+          <li>✓ 层级标签（核心/输入/锚点）</li>
+          <li>✓ GSAP 入场动画 + hover 交互</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>设计细节</h3>
+  
+  <div class="cards">
+    <div class="card" data-choice="design-a" onclick="toggleSelect(this)">
+      <div class="card-body">
+        <h3>布局方案：中心辐射式</h3>
+        <p><strong>推荐。</strong>待办管理作为中心枢纽节点，灵感记录和特殊日期环绕分布。体现「待办管理是核心」的产品定位。使用曲线连接替代直线，更优雅地展示双向关系。</p>
+        <table style="width:100%; font-size:11px; margin-top:8px; border-collapse:collapse;">
+          <tr style="background:#eee;"><th>节点</th><th>角色</th><th>颜色</th></tr>
+          <tr><td>📋 待办管理</td><td>核心枢纽</td><td style="color:#e86b35;">橙色</td></tr>
+          <tr><td>💡 灵感记录</td><td>创意输入层</td><td style="color:#4ade80;">绿色</td></tr>
+          <tr><td>📅 特殊日期</td><td>时间锚点层</td><td style="color:#fbbf24;">黄色</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" data-choice="design-b" onclick="toggleSelect(this)">
+      <div class="card-body">
+        <h3>动画方案：GSAP 三阶段</h3>
+        <p>分三个阶段动态展示功能间关系：</p>
+        <ol style="font-size:11px; padding-left:18px; line-height:1.8;">
+          <li><strong>入场阶段</strong>（0-1.5s）：中心节点 scale+fadeIn → 卫星节点依次 stagger 弹入</li>
+          <li><strong>连线阶段</strong>（1.5-2.5s）：SVG path strokeDashoffset 动画绘制曲线连线</li>
+          <li><strong>流动阶段</strong>（循环）：沿路径流动的小圆点粒子表示数据流向，hover 节点时加速</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="card" data-choice="design-c" onclick="toggleSelect(this)">
+      <div class="card-body">
+        <h3>交互与响应式</h3>
+        <p>增强信息传达效率：</p>
+        <ul style="font-size:11px; padding-left:16px; line-height:1.8;">
+          <li><strong>Hover 节点</strong>：高亮该节点所有连线，显示关系说明 tooltip</li>
+          <li><strong>点击节点</strong>：脉冲扩散效果，展示该功能的详细描述</li>
+          <li><strong>移动端适配</strong>：≤768px 时改为垂直链式布局，保持动画效果</li>
+          <li><strong>prefers-reduced-motion</strong>：禁用粒子动画，保留静态连线</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="approve" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>批准此方案，开始实施</h3>
+      <p>按上述设计重构 HTML/CSS/JS</p>
+    </div>
+  </div>
+  <div class="option" data-choice="modify" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content">
+      <h3>需要调整</h3>
+      <p>对某些细节有修改意见</p>
+    </div>
+  </div>
+</div>

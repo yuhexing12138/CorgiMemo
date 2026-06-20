@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
+﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -5183,32 +5183,16 @@
                             <div class="value-title" style="font-size: 15px; font-weight: 900; margin-top: 8px;">温暖感</div>
                             <div class="value-desc" style="font-size: 12px; margin-top: 4px; line-height: 1.5;">治愈系设计、贴心问候、节日关怀，让忙碌的人也能感受温暖</div>
                         </div>
-                        <!-- 公益价值卡片 -->
-                        <div class="brutal-card-dominant bg-orange stagger-item" style="animation-delay: 0.4s;">
-                            <span class="value-icon" style="font-size: 28px;">🌱</span>
-                            <div class="value-title" style="font-size: 15px; font-weight: 900; margin-top: 8px;">习惯培养</div>
-                            <div class="value-desc" style="font-size: 12px; margin-top: 4px; line-height: 1.5;">从自律到自信，柯基陪伴你养成好习惯</div>
-                        </div>
-                        <div class="brutal-card-dominant bg-mint stagger-item" style="animation-delay: 0.5s;">
-                            <span class="value-icon" style="font-size: 28px;">💝</span>
-                            <div class="value-title" style="font-size: 15px; font-weight: 900; margin-top: 8px;">心灵陪伴</div>
-                            <div class="value-desc" style="font-size: 12px; margin-top: 4px; line-height: 1.5;">从孤独到温暖，让每一天都有小短腿的陪伴</div>
-                        </div>
-                        <div class="brutal-card-dominant bg-yellow stagger-item" style="animation-delay: 0.6s;">
-                            <span class="value-icon" style="font-size: 28px;">🧘</span>
-                            <div class="value-title" style="font-size: 15px; font-weight: 900; margin-top: 8px;">心理疗愈</div>
-                            <div class="value-desc" style="font-size: 12px; margin-top: 4px; line-height: 1.5;">从焦虑到平静，治愈系设计抚慰心灵</div>
-                        </div>
                     </div>
-                </div>
-            </div>
+                    <!-- 辅助：差异化优势标签（虚线分隔 + 居中排列，降低视觉权重体现辅助定位） -->
+                    <div class="diff-tags-supplementary">
+                        <span class="brutal-tag">✨ 原创陪伴系统</span>
+                        <span class="brutal-tag bg-white">🎯 身份自适应</span>
+                        <span class="brutal-tag bg-mint">🎉 节日节气关怀</span>
+                        <span class="brutal-tag bg-yellow">💡 完全原创</span>
+                    </div>
 
-            <!-- 章节02：目标用户群体 -->
-            <div class="chapter-section">
-                <div class="chapter-number-brutal bg-orange">02</div>
-                <div class="chapter-content">
-                    <div class="chapter-label">TARGET USERS</div>
-<!-- 目标用户群体与身份自适应 — 野兽派色块卡片 -->
+                    <!-- 目标用户群体与身份自适应 — 野兽派色块卡片 -->
                     <h2 class="section-title-brutal" style="margin-top: 32px;">目标用户群体</h2>
                     <div class="brutal-stagger-grid">
                         <div class="brutal-card-dominant bg-orange user-card stagger-item" style="animation-delay: 0.15s;">
@@ -5248,133 +5232,39 @@
                             <div class="ifc-greeting" style="margin-top: 6px; font-size: 12px;">早上好呀！记得吃早饭哦~ 柯基等您一起开始新的一天！</div>
                         </div>
                     </div>
+
+                    <!-- 公益价值 — 野兽派色块卡片 -->
+                    <h2 class="section-title-brutal" style="margin-top: 32px;">公益价值</h2>
+                    <div class="grid-3 mb-24">
+                        <div class="brutal-card-dominant bg-orange stagger-item" style="animation-delay: 0.1s;">
+                            <span class="vp-icon">🌱</span>
+                            <div class="vp-title">习惯培养</div>
+                            <div class="vp-desc">从自律到自信，柯基陪伴你养成好习惯</div>
+                        </div>
+                        <div class="brutal-card-dominant bg-mint stagger-item" style="animation-delay: 0.2s;">
+                            <span class="vp-icon">💝</span>
+                            <div class="vp-title">心灵陪伴</div>
+                            <div class="vp-desc">从孤独到温暖，让每一天都有小短腿的陪伴</div>
+                        </div>
+                        <div class="brutal-card-dominant bg-yellow stagger-item" style="animation-delay: 0.3s;">
+                            <span class="vp-icon">🧘</span>
+                            <div class="vp-title">心理疗愈</div>
+                            <div class="vp-desc">从焦虑到平静，治愈系设计抚慰心灵</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
         </section>
 
         <!-- ============================
-             Tab 2: 📋 三位一体记录系统
-             ============================ -->
-        <section id="sec-trinity" class="tab-content" data-section="trinity">
-
-            <!-- 三大功能关系图 — 野兽派卡片 -->
-            <div class="chapter-section">
-                <div class="chapter-number-brutal bg-orange">03</div>
-                <div class="chapter-content">
-                    <div class="chapter-label">FUNCTION DIAGRAM</div>
-                    <h2 class="section-title-brutal">三大功能关系图</h2>
-                <div class="triangle-diagram" id="functionDiagram">
-                    <!-- SVG 连线层：曲线 + 渐变 + 关系标签 + 双向流动粒子 -->
-                    <svg width="100%" height="100%" viewBox="0 0 520 440" preserveAspectRatio="xMidYMid meet"
-                         style="position: absolute; top: 0; left: 0; z-index: 1;" aria-label="三大功能关系连线图">
-                        <defs>
-                            <!-- 连线渐变：待办↔灵感（橙→绿） -->
-                            <linearGradient id="grad-todo-insp" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#e86b35"/>
-                                <stop offset="100%" stop-color="#4ade80"/>
-                            </linearGradient>
-                            <!-- 连线渐变：待办↔日期（橙→黄） -->
-                            <linearGradient id="grad-todo-date" x1="100%" y1="0%" x2="0%" y2="100%">
-                                <stop offset="0%" stop-color="#e86b35"/>
-                                <stop offset="100%" stop-color="#f5d76e"/>
-                            </linearGradient>
-                            <!-- 连线渐变：灵感↔日期（绿→黄） -->
-                            <linearGradient id="grad-insp-date" x1="0%" y1="100%" x2="100%" y2="0%">
-                                <stop offset="0%" stop-color="#4ade80"/>
-                                <stop offset="100%" stop-color="#f5d76e"/>
-                            </linearGradient>
-                        </defs>
-
-                        <!-- 曲线连接1：待办管理 ↔ 灵感记录（左侧弧） -->
-                        <path class="diagram-path path-left" d="M260,55 Q120,170 70,340"
-                              fill="none" stroke="url(#grad-todo-insp)" stroke-width="2.5" stroke-linecap="round"/>
-
-                        <!-- 曲线连接2：待办管理 ↔ 特殊日期（右侧弧） -->
-                        <path class="diagram-path path-right" d="M260,55 Q400,170 450,340"
-                              fill="none" stroke="url(#grad-todo-date)" stroke-width="2.5" stroke-linecap="round"/>
-
-                        <!-- 曲线连接3：灵感记录 ↔ 特殊日期（底部弧） -->
-                        <path class="diagram-path path-bottom" d="M82,355 Q260,420 438,355"
-                              fill="none" stroke="url(#grad-insp-date)" stroke-width="2.5" stroke-linecap="round"/>
-
-                        <!-- 中心区域交互提示文字 -->
-                        <text x="260" y="230" text-anchor="middle" font-size="11" font-style="italic"
-                              fill="#bbb" letter-spacing="0.5" opacity="0.8">👆 点击节点查看详情</text>
-                        <text x="260" y="246" text-anchor="middle" font-size="10" font-style="italic"
-                              fill="#ccc" letter-spacing="0.3" opacity="0.7">三大功能可相互关联</text>
-
-                        <!-- 关系标签1：想法变行动（左弧中段） -->
-                        <foreignObject x="105" y="165" width="90" height="24">
-                            <div class="relation-label" style="border: 1.5px solid #e86b35; color: #e86b35;">💡 想法变行动</div>
-                        </foreignObject>
-
-                        <!-- 关系标签2：任务关联日期（右弧中段） -->
-                        <foreignObject x="325" y="165" width="100" height="24">
-                            <div class="relation-label" style="border: 1.5px solid #d4a017; color: #d4a017;">📎 任务关联日期</div>
-                        </foreignObject>
-
-                        <!-- 关系标签3：纪念激发灵感（底弧中段） -->
-                        <foreignObject x="210" y="378" width="100" height="24">
-                            <div class="relation-label" style="border: 1.5px solid #4ade80; color: #4ade80;">🌸 纪念激发灵感</div>
-                        </foreignObject>
-
-                        <!-- 双向流动粒子 — 待办→灵感 / 灵感→待办 -->
-                        <circle class="flow-particle" r="4" fill="#e86b35" opacity="0.85">
-                            <animateMotion dur="2s" repeatCount="indefinite" path="M260,55 Q120,170 70,340"/>
-                        </circle>
-                        <circle class="flow-particle" r="4" fill="#4ade80" opacity="0.85">
-                            <animateMotion dur="2.2s" repeatCount="indefinite" path="M70,340 Q120,170 260,55"/>
-                        </circle>
-
-                        <!-- 双向流动粒子 — 待办→日期 / 日期→待办 -->
-                        <circle class="flow-particle" r="4" fill="#e86b35" opacity="0.85">
-                            <animateMotion dur="2.1s" repeatCount="indefinite" path="M260,55 Q400,170 450,340"/>
-                        </circle>
-                        <circle class="flow-particle" r="4" fill="#f5d76e" opacity="0.85">
-                            <animateMotion dur="2.3s" repeatCount="indefinite" path="M450,340 Q400,170 260,55"/>
-                        </circle>
-
-                        <!-- 双向流动粒子 — 灵感→日期 / 日期→灵感 -->
-                        <circle class="flow-particle" r="4" fill="#4ade80" opacity="0.85">
-                            <animateMotion dur="2.4s" repeatCount="indefinite" path="M82,355 Q260,420 438,355"/>
-                        </circle>
-                        <circle class="flow-particle" r="4" fill="#f5d76e" opacity="0.85">
-                            <animateMotion dur="2.0s" repeatCount="indefinite" path="M438,355 Q260,420 82,355"/>
-                        </circle>
-                    </svg>
-
-                    <!-- 节点1：待办管理（顶部，平级节点） -->
-                    <div class="triangle-node node-top diagram-node" data-func="todo">
-                        <div style="font-size: 20px;">📋</div>
-                        <div>待办管理</div>
-                    </div>
-
-                    <!-- 节点2：灵感记录（左下，平级节点） -->
-                    <div class="triangle-node node-left diagram-node" data-func="inspiration">
-                        <div style="font-size: 20px;">💡</div>
-                        <div>灵感记录</div>
-                    </div>
-
-                    <!-- 节点3：特殊日期（右下，平级节点） -->
-                    <div class="triangle-node node-right diagram-node" data-func="date">
-                        <div style="font-size: 20px;">📅</div>
-                        <div>特殊日期</div>
-                    </div>
-                </div>
-                </div><!-- /chapter-content -->
-            </div><!-- /chapter-section -->
-
-        </section>
-
-        <!-- ============================
-             Tab 3: 🐕 柯基陪伴系统（含节日关怀）
+             Tab 2: 🐕 柯基陪伴系统（含节日关怀）
              ============================ -->
         <section id="sec-corgi" class="tab-content" data-section="corgi">
 
             <!-- 柯基形象与情感系统 — 合并章节 -->
             <div class="chapter-section">
-                <div class="chapter-number-brutal">04</div>
+                <div class="chapter-number-brutal">02</div>
                 <div class="chapter-content">
                     <div class="chapter-label">CORGI PERSONALITY</div>
                     <h2 class="section-title-brutal">柯基形象与情感系统</h2>
@@ -5842,10 +5732,121 @@
                 </div><!-- /chapter-content -->
             </div><!-- /chapter-section -->
 
+        </section>
+
+        <!-- ============================
+             Tab 3: 📋 三位一体记录系统
+             ============================ -->
+        <section id="sec-trinity" class="tab-content" data-section="trinity">
+
+            <!-- 三大功能关系图 — 野兽派卡片 -->
+            <div class="chapter-section">
+                <div class="chapter-number-brutal bg-orange">03</div>
+                <div class="chapter-content">
+                    <div class="chapter-label">FUNCTION DIAGRAM</div>
+                    <h2 class="section-title-brutal">三大功能关系图</h2>
+                <div class="triangle-diagram" id="functionDiagram">
+                    <!-- SVG 连线层：曲线 + 渐变 + 关系标签 + 双向流动粒子 -->
+                    <svg width="100%" height="100%" viewBox="0 0 520 440" preserveAspectRatio="xMidYMid meet"
+                         style="position: absolute; top: 0; left: 0; z-index: 1;" aria-label="三大功能关系连线图">
+                        <defs>
+                            <!-- 连线渐变：待办↔灵感（橙→绿） -->
+                            <linearGradient id="grad-todo-insp" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#e86b35"/>
+                                <stop offset="100%" stop-color="#4ade80"/>
+                            </linearGradient>
+                            <!-- 连线渐变：待办↔日期（橙→黄） -->
+                            <linearGradient id="grad-todo-date" x1="100%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stop-color="#e86b35"/>
+                                <stop offset="100%" stop-color="#f5d76e"/>
+                            </linearGradient>
+                            <!-- 连线渐变：灵感↔日期（绿→黄） -->
+                            <linearGradient id="grad-insp-date" x1="0%" y1="100%" x2="100%" y2="0%">
+                                <stop offset="0%" stop-color="#4ade80"/>
+                                <stop offset="100%" stop-color="#f5d76e"/>
+                            </linearGradient>
+                        </defs>
+
+                        <!-- 曲线连接1：待办管理 ↔ 灵感记录（左侧弧） -->
+                        <path class="diagram-path path-left" d="M260,55 Q120,170 70,340"
+                              fill="none" stroke="url(#grad-todo-insp)" stroke-width="2.5" stroke-linecap="round"/>
+
+                        <!-- 曲线连接2：待办管理 ↔ 特殊日期（右侧弧） -->
+                        <path class="diagram-path path-right" d="M260,55 Q400,170 450,340"
+                              fill="none" stroke="url(#grad-todo-date)" stroke-width="2.5" stroke-linecap="round"/>
+
+                        <!-- 曲线连接3：灵感记录 ↔ 特殊日期（底部弧） -->
+                        <path class="diagram-path path-bottom" d="M82,355 Q260,420 438,355"
+                              fill="none" stroke="url(#grad-insp-date)" stroke-width="2.5" stroke-linecap="round"/>
+
+                        <!-- 中心区域交互提示文字 -->
+                        <text x="260" y="230" text-anchor="middle" font-size="11" font-style="italic"
+                              fill="#bbb" letter-spacing="0.5" opacity="0.8">👆 点击节点查看详情</text>
+                        <text x="260" y="246" text-anchor="middle" font-size="10" font-style="italic"
+                              fill="#ccc" letter-spacing="0.3" opacity="0.7">三大功能可相互关联</text>
+
+                        <!-- 关系标签1：想法变行动（左弧中段） -->
+                        <foreignObject x="105" y="165" width="90" height="24">
+                            <div class="relation-label" style="border: 1.5px solid #e86b35; color: #e86b35;">💡 想法变行动</div>
+                        </foreignObject>
+
+                        <!-- 关系标签2：任务关联日期（右弧中段） -->
+                        <foreignObject x="325" y="165" width="100" height="24">
+                            <div class="relation-label" style="border: 1.5px solid #d4a017; color: #d4a017;">📎 任务关联日期</div>
+                        </foreignObject>
+
+                        <!-- 关系标签3：纪念激发灵感（底弧中段） -->
+                        <foreignObject x="210" y="378" width="100" height="24">
+                            <div class="relation-label" style="border: 1.5px solid #4ade80; color: #4ade80;">🌸 纪念激发灵感</div>
+                        </foreignObject>
+
+                        <!-- 双向流动粒子 — 待办→灵感 / 灵感→待办 -->
+                        <circle class="flow-particle" r="4" fill="#e86b35" opacity="0.85">
+                            <animateMotion dur="2s" repeatCount="indefinite" path="M260,55 Q120,170 70,340"/>
+                        </circle>
+                        <circle class="flow-particle" r="4" fill="#4ade80" opacity="0.85">
+                            <animateMotion dur="2.2s" repeatCount="indefinite" path="M70,340 Q120,170 260,55"/>
+                        </circle>
+
+                        <!-- 双向流动粒子 — 待办→日期 / 日期→待办 -->
+                        <circle class="flow-particle" r="4" fill="#e86b35" opacity="0.85">
+                            <animateMotion dur="2.1s" repeatCount="indefinite" path="M260,55 Q400,170 450,340"/>
+                        </circle>
+                        <circle class="flow-particle" r="4" fill="#f5d76e" opacity="0.85">
+                            <animateMotion dur="2.3s" repeatCount="indefinite" path="M450,340 Q400,170 260,55"/>
+                        </circle>
+
+                        <!-- 双向流动粒子 — 灵感→日期 / 日期→灵感 -->
+                        <circle class="flow-particle" r="4" fill="#4ade80" opacity="0.85">
+                            <animateMotion dur="2.4s" repeatCount="indefinite" path="M82,355 Q260,420 438,355"/>
+                        </circle>
+                        <circle class="flow-particle" r="4" fill="#f5d76e" opacity="0.85">
+                            <animateMotion dur="2.0s" repeatCount="indefinite" path="M438,355 Q260,420 82,355"/>
+                        </circle>
+                    </svg>
+
+                    <!-- 节点1：待办管理（顶部，平级节点） -->
+                    <div class="triangle-node node-top diagram-node" data-func="todo">
+                        <div style="font-size: 20px;">📋</div>
+                        <div>待办管理</div>
+                    </div>
+
+                    <!-- 节点2：灵感记录（左下，平级节点） -->
+                    <div class="triangle-node node-left diagram-node" data-func="inspiration">
+                        <div style="font-size: 20px;">💡</div>
+                        <div>灵感记录</div>
+                    </div>
+
+                    <!-- 节点3：特殊日期（右下，平级节点） -->
+                    <div class="triangle-node node-right diagram-node" data-func="date">
+                        <div style="font-size: 20px;">📅</div>
+                        <div>特殊日期</div>
+                    </div>
+                </div>
 
             <!-- 柯基的节日装扮与问候 — Tab切换式（装扮+问候合并） -->
-            <div class="chapter-section">
-                <div class="chapter-number-brutal bg-mint">05</div>
+            <div class="chapter-section reverse">
+                <div class="chapter-number-brutal bg-mint">04</div>
                 <div class="chapter-content">
                     <div class="chapter-label">DRESSUP & GREETINGS</div>
                     <h2 class="section-title-brutal">柯基的节日装扮与问候</h2>
@@ -7277,7 +7278,7 @@
 
             <!-- 用户画像 — 野兽派色块卡片 -->
             <div class="chapter-section">
-                <div class="chapter-number-brutal bg-mint">06</div>
+                <div class="chapter-number-brutal bg-mint">05</div>
                 <div class="chapter-content">
                     <div class="chapter-label">USER PERSONAS</div>
                     <h2 class="section-title-brutal">用户画像</h2>
@@ -7325,12 +7326,12 @@
                     </div>
                 </div>
             </div>
-                </div>
-            </div>
+
+            <div class="divider"></div>
 
             <!-- 一天的故事 — 野兽派卡片 -->
-            <div class="chapter-section">
-                <div class="chapter-number-brutal bg-yellow">07</div>
+            <div class="chapter-section reverse">
+                <div class="chapter-number-brutal bg-yellow">06</div>
                 <div class="chapter-content">
                     <div class="chapter-label">DAILY STORIES</div>
                     <h2 class="section-title-brutal">他们的一天 — 场景故事</h2>
@@ -7437,7 +7438,7 @@
         <section id="sec-prototype" class="tab-content" data-section="prototype">
             <!-- 页面标题区 -->
             <div class="chapter-section">
-                <div class="chapter-number-brutal bg-orange">08</div>
+                <div class="chapter-number-brutal bg-orange">07</div>
                 <div class="chapter-content">
                     <div class="chapter-label">PROTOTYPE DEMO</div>
                     <h2 class="section-title-brutal">原型展示</h2>

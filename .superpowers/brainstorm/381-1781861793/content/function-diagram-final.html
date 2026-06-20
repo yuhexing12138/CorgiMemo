@@ -1,0 +1,100 @@
+<h2>三大功能关系图 — 最终设计方案</h2>
+<p class="subtitle">平级互依赖 + 关系标签 + 双向流动动画</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">最终版：等边三角 + 关系标签 + 流动粒子</div>
+    <div class="mockup-body" style="padding:24px; background:#f5f0e8;">
+      <div style="position:relative; width:100%; height:280px; display:flex; align-items:center; justify-content:center;">
+        <svg width="360" height="260" viewBox="0 0 360 260" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);">
+          <defs>
+            <linearGradient id="v2-todo-insp" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#e86b35"/><stop offset="100%" stop-color="#4ade80"/>
+            </linearGradient>
+            <linearGradient id="v2-todo-date" x1="100%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#e86b35"/><stop offset="100%" stop-color="#f5d76e"/>
+            </linearGradient>
+            <linearGradient id="v2-insp-date" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#4ade80"/><stop offset="100%" stop-color="#f5d76e"/>
+            </linearGradient>
+          </defs>
+
+          <!-- Connection 1: 待办 <-> 灵感 (left arc) -->
+          <path d="M180,48 Q85,130 58,202" fill="none" stroke="url(#v2-todo-insp)" stroke-width="2.5" stroke-linecap="round"/>
+          <!-- Label 1 -->
+          <rect x="78" y="108" width="72" height="20" rx="10" fill="#fff" stroke="#e86b35" stroke-width="1" opacity="0.95"/>
+          <text x="114" y="122" text-anchor="middle" font-size="10" font-weight="700" fill="#e86b35">想法变行动</text>
+
+          <!-- Connection 2: 待办 <-> 日期 (right arc) -->
+          <path d="M180,48 Q275,130 302,202" fill="none" stroke="url(#v2-todo-date)" stroke-width="2.5" stroke-linecap="round"/>
+          <!-- Label 2 -->
+          <rect x="218" y="108" width="80" height="20" rx="10" fill="#fff" stroke="#d4a017" stroke-width="1" opacity="0.95"/>
+          <text x="258" y="122" text-anchor="middle" font-size="10" font-weight="700" fill="#d4a017">任务关联日期</text>
+
+          <!-- Connection 3: 灵感 <-> 日期 (bottom arc) -->
+          <path d="M68,210 Q180,255 292,210" fill="none" stroke="url(#v2-insp-date)" stroke-width="2.5" stroke-linecap="round"/>
+          <!-- Label 3 -->
+          <rect x="140" y="236" width="80" height="20" rx="10" fill="#fff" stroke="#4ade80" stroke-width="1" opacity="0.95"/>
+          <text x="180" y="250" text-anchor="middle" font-size="10" font-weight="700" fill="#4ade80">纪念激发灵感</text>
+
+          <!-- Bidirectional flow particles -->
+          <circle r="3" fill="#e86b35" opacity="0.85"><animateMotion dur="2s" repeatCount="indefinite" path="M180,48 Q85,130 58,202"/></circle>
+          <circle r="3" fill="#4ade80" opacity="0.85"><animateMotion dur="2.2s" repeatCount="indefinite" path="M58,202 Q85,130 180,48"/></circle>
+
+          <circle r="3" fill="#e86b35" opacity="0.85"><animateMotion dur="2.1s" repeatCount="indefinite" path="M180,48 Q275,130 302,202"/></circle>
+          <circle r="3" fill="#f5d76e" opacity="0.85"><animateMotion dur="2.3s" repeatCount="indefinite" path="M302,202 Q275,130 180,48"/></circle>
+
+          <circle r="3" fill="#4ade80" opacity="0.85"><animateMotion dur="2.4s" repeatCount="indefinite" path="M68,210 Q180,255 292,210"/></circle>
+          <circle r="3" fill="#f5d76e" opacity="0.85"><animateMotion dur="2.0s" repeatCount="indefinite" path="M292,210 Q180,255 68,210"/></circle>
+        </svg>
+
+        <!-- Node: 待办管理 (top) -->
+        <div style="position:absolute; top:12px; left:50%; transform:translateX(-50%);
+          border:3px solid #333; background:#fff; border-radius:14px; padding:12px 22px;
+          text-align:center; box-shadow:5px 5px 0 #e86b35; z-index:2;">
+          <div style="font-size:22px;">📋</div>
+          <div style="font-size:13px; font-weight:900; color:#e86b35; margin-top:4px;">待办管理</div>
+        </div>
+
+        <!-- Node: 灵感记录 (bottom-left) -->
+        <div style="position:absolute; bottom:16px; left:18px;
+          border:3px solid #333; background:#fff; border-radius:14px; padding:12px 18px;
+          text-align:center; box-shadow:5px 5px 0 #4ade80; z-index:2;">
+          <div style="font-size:22px;">💡</div>
+          <div style="font-size:13px; font-weight:900; color:#4ade80; margin-top:4px;">灵感记录</div>
+        </div>
+
+        <!-- Node: 特殊日期 (bottom-right) -->
+        <div style="position:absolute; bottom:16px; right:18px;
+          border:3px solid #333; background:#fff; border-radius:14px; padding:12px 18px;
+          text-align:center; box-shadow:5px 5px 0 #f5d76e; z-index:2;">
+          <div style="font-size:22px;">📅</div>
+          <div style="font-size:13px; font-weight:900; color:#d4a017; margin-top:4px;">特殊日期</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>最终设计规格确认</h3>
+  <table style="width:100%; border-collapse:collapse; font-size:11px;">
+    <tr style="background:#333;color:#fff;"><th style="padding:8px;">元素</th><th style="padding:8px;">内容</th></tr>
+    <tr style="border-bottom:1px solid #ddd;"><td style="padding:8px;font-weight:700;">布局</td><td style="padding:8px;">等边三角形，三节点平级排列</td></tr>
+    <tr style="border-bottom:1px solid #ddd;background:#fffbf5;"><td style="padding:8px;font-weight:700;">连线1（左弧）</td><td style="padding:8px;">待办 ↔ 灵感 · 标签：<strong style="color:#e86b35;">「想法变行动」</strong></td></tr>
+    <tr style="border-bottom:1px solid #ddd;"><td style="padding:8px;font-weight:700;">连线2（右弧）</td><td style="padding:8px;">待办 ↔ 日期 · 标签：<strong style="color:#d4a017;">「任务关联日期」</strong></td></tr>
+    <tr style="border-bottom:1px solid #ddd;background:#fffbf5;"><td style="padding:8px;font-weight:700;">连线3（底弧）</td><td style="padding:8px;">灵感 ↔ 日期 · 标签：<strong style="color:#4ade80;">「纪念激发灵感」</strong></td></tr>
+    <tr style="border-bottom:1px solid #ddd;"><td style="padding:8px;font-weight:700;">动画</td><td style="padding:8px;">双向粒子沿曲线循环流动（SMIL animateMotion）+ GSAP 入场动画</td></tr>
+    <tr><td style="padding:8px;font-weight:700;">风格</td><td style="padding:8px;">野兽派卡片节点 + 渐变曲线连线 + 圆角标签胶囊</td></tr>
+  </table>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="approve-final" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>批准最终方案，开始实施</h3>
+      <p>替换原 triangle-diagram 为新设计</p>
+    </div>
+  </div>
+</div>
