@@ -10,6 +10,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;600;700&family=Varela+Round&display=swap" rel="stylesheet">
+    <!-- p5.js — 野兽派柯基流场粒子系统 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
     <style>
         /* Skip link for keyboard navigation */
         .skip-link {
@@ -123,9 +125,9 @@
         }
 
         /* ============================================
-           粒子飘动动画 - 星星/爱心/雪花
+           野兽派柯基流场粒子系统 — p5.js Canvas
            ============================================ */
-        .particles-container {
+        #brutal-corgi-canvas {
             position: fixed;
             top: 0;
             left: 0;
@@ -133,69 +135,6 @@
             height: 100%;
             pointer-events: none;
             z-index: 0;
-            overflow: hidden;
-        }
-
-        .particle {
-            position: absolute;
-            opacity: 0;
-            animation: particleFloat linear infinite;
-        }
-
-        /* 粒子飘动关键帧 */
-        @keyframes particleFloat {
-            0% {
-                opacity: 0;
-                transform: translateY(100vh) rotate(0deg);
-            }
-            10% {
-                opacity: 0.8;
-            }
-            90% {
-                opacity: 0.6;
-            }
-            100% {
-                opacity: 0;
-                transform: translateY(-10vh) rotate(360deg);
-            }
-        }
-
-        /* 增强版粒子动画 — 流场动力学：水平漂移 + 旋转 + 色彩变化 */
-        @keyframes particleFloatEnhanced {
-            0% {
-                opacity: 0;
-                transform: translateY(100vh) translateX(0) rotate(0deg) scale(0.8);
-            }
-            10% {
-                opacity: 0.8;
-                transform: translateY(80vh) translateX(calc(var(--drift-range, 40px) * 0.3)) rotate(calc(var(--rotate-end, 360deg) * 0.1)) scale(1);
-            }
-            30% {
-                opacity: 0.9;
-                transform: translateY(60vh) translateX(calc(var(--drift-range, 40px) * -0.5)) rotate(calc(var(--rotate-end, 360deg) * 0.3)) scale(1.1);
-            }
-            50% {
-                opacity: 0.7;
-                transform: translateY(40vh) translateX(calc(var(--drift-range, 40px) * 0.7)) rotate(calc(var(--rotate-end, 360deg) * 0.5)) scale(0.95);
-            }
-            70% {
-                opacity: 0.6;
-                transform: translateY(20vh) translateX(calc(var(--drift-range, 40px) * -0.3)) rotate(calc(var(--rotate-end, 360deg) * 0.7)) scale(1.05);
-            }
-            90% {
-                opacity: 0.4;
-                transform: translateY(5vh) translateX(calc(var(--drift-range, 40px) * 0.4)) rotate(calc(var(--rotate-end, 360deg) * 0.9)) scale(0.9);
-            }
-            100% {
-                opacity: 0;
-                transform: translateY(-10vh) translateX(0) rotate(var(--rotate-end, 360deg)) scale(0.8);
-            }
-        }
-
-        /* 增强版粒子样式 — 使用流场动力学动画 */
-        .particle-enhanced {
-            animation: particleFloatEnhanced linear infinite;
-            will-change: transform, opacity;
         }
 
         /* ============================================
@@ -2194,24 +2133,28 @@
             transform: rotate(90deg);
         }
 
-        /* 场景装饰粒子 */
-        .scene-particle {
+        /* 场景装饰粒子 — p5.js Canvas 容器 */
+        .scene-p5-container {
             position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             pointer-events: none;
-            animation: sceneParticleFloat linear infinite;
+            z-index: 1;
+            overflow: hidden;
+            border-radius: inherit;
+            /* 确保 canvas 容器有明确尺寸 */
+            min-height: 200px;
         }
 
-        @keyframes sceneParticleFloat {
-            0% {
-                opacity: 0;
-                transform: translateY(-20px) rotate(0deg);
-            }
-            10% { opacity: 1; }
-            90% { opacity: 0.6; }
-            100% {
-                opacity: 0;
-                transform: translateY(400px) rotate(360deg);
-            }
+        .scene-p5-container canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100% !important;
+            height: 100% !important;
         }
 
         /* 场景柯基区域 */
@@ -2235,6 +2178,8 @@
 
         /* 场景标题 */
         .scene-title {
+            position: relative;
+            z-index: 2;
             font-family: 'Varela Round', 'Noto Sans SC', sans-serif;
             font-size: 22px;
             font-weight: 800;
@@ -2244,6 +2189,8 @@
 
         /* 场景问候语区域 */
         .scene-greeting-tabs {
+            position: relative;
+            z-index: 2;
             display: flex;
             gap: 6px;
             justify-content: center;
@@ -2276,11 +2223,13 @@
 
         .scene-greeting-content {
             display: none;
+            position: relative;
+            z-index: 2;
             font-size: 15px;
             line-height: 1.8;
             color: #555;
             padding: 12px 16px;
-            background: #FFF8F3;
+            background: rgba(255, 248, 243, 0.92);
             border: 2px dashed #FF6B35;
         }
 
@@ -3978,8 +3927,8 @@
                 animation: none !important;
             }
             /* 新增组件 — 禁用所有装饰性动画 */
-            .particle-enhanced {
-                animation: none !important;
+            #brutal-corgi-canvas {
+                display: none !important;
             }
             .brutal-card,
             .brutal-card.accent {
@@ -5393,10 +5342,8 @@
 <body>
     <a href="#mainContent" class="skip-link">跳过导航，直接跳到主要内容</a>
 
-    <!-- ============================================
-         粒子飘动容器
-         ============================================ -->
-    <div class="particles-container" id="particles"></div>
+    <!-- 野兽派柯基流场粒子系统 — p5.js Canvas 容器 -->
+    <div id="brutal-corgi-canvas"></div>
 
     <!-- ============================================
          Hero 区域 — 杂志封面式不对称布局
@@ -10114,60 +10061,6 @@
             });
         })();
 
-        /**
-         * 生成粒子飘动效果 — 流场动力学增强版
-         * 借鉴 algorithmic-art 理念：种子随机性 + 流场动力学 + 色彩涌现
-         * 在背景中创建跟随向量场流动的星星/爱心/雪花粒子
-         */
-        function createParticles() {
-            const container = document.getElementById('particles');
-            const particleChars = ['✦', '♡', '❄', '✧', '⋆', '❋', '✶'];
-            const particleCount = 30; // 增加粒子数量增强氛围
-
-            // 种子随机性 — 基于时间种子生成不同粒子模式
-            const seed = Math.floor(Date.now() / 60000); // 每分钟变化一次
-            const seededRandom = (max) => {
-                const x = Math.sin(seed + max * 9999) * 10000;
-                return x - Math.floor(x);
-            };
-
-            for (let i = 0; i < particleCount; i++) {
-                const particle = document.createElement('div');
-                particle.className = 'particle particle-enhanced';
-                particle.textContent = particleChars[Math.floor(Math.random() * particleChars.length)];
-
-                // 随机位置和动画参数 — 流场动力学
-                const left = Math.random() * 100;
-                const size = 8 + Math.random() * 18;
-                const duration = 18 + Math.random() * 30;
-                const delay = Math.random() * 25;
-                const driftRange = 30 + Math.random() * 60; // 水平漂移范围
-
-                // 色彩涌现 — 根据位置和速度变化颜色
-                const colorPhase = seededRandom(i);
-                let particleColor;
-                if (colorPhase < 0.4) {
-                    // 暖色调 — 柯基橙红（浅底适配）
-                    particleColor = `rgba(255, ${107 + Math.floor(Math.random() * 50)}, ${53 + Math.floor(Math.random() * 40)}, ${0.08 + Math.random() * 0.12})`;
-                } else if (colorPhase < 0.7) {
-                    // 冷色调 — 薄荷绿（浅底适配）
-                    particleColor = `rgba(${126 + Math.floor(Math.random() * 40)}, ${200 + Math.floor(Math.random() * 30)}, ${160 + Math.floor(Math.random() * 30)}, ${0.08 + Math.random() * 0.12})`;
-                } else {
-                    // 中性色调 — 深灰（浅底适配）
-                    particleColor = `rgba(26, 26, 26, ${0.04 + Math.random() * 0.08})`;
-                }
-
-                particle.style.left = `${left}%`;
-                particle.style.fontSize = `${size}px`;
-                particle.style.animationDuration = `${duration}s`;
-                particle.style.animationDelay = `${delay}s`;
-                particle.style.color = particleColor;
-                particle.style.setProperty('--drift-range', `${driftRange}px`);
-                particle.style.setProperty('--rotate-end', `${360 + Math.random() * 360}deg`);
-
-                container.appendChild(particle);
-            }
-        }
 
         /**
          * 初始化情绪轮播
@@ -10251,7 +10144,7 @@
          * 页面加载完成后执行
          */
         function init() {
-            createParticles();
+            // 野兽派柯基流场粒子由 p5.js 自动初始化
             initEmotionCarousel();
             initPrototypeShowcase();
             initUserCardAnimations();
@@ -11454,7 +11347,8 @@
 <div class="scene-modal-overlay" id="sceneModalOverlay">
     <div class="scene-modal" id="sceneModal">
         <button class="scene-modal-close" id="sceneModalClose" aria-label="关闭">✕</button>
-        <!-- 装饰粒子由JS动态生成 -->
+        <!-- p5.js 粒子 Canvas 容器 -->
+        <div class="scene-p5-container" id="sceneP5Container"></div>
         <div class="scene-corgi-area">
             <span class="scene-corgi-emoji" id="sceneCorgiEmoji">🐕</span>
             <span class="scene-corgi-outfit" id="sceneCorgiOutfit"></span>
@@ -11750,11 +11644,12 @@
     });
 })();
 
-/* 场景演示弹窗 — 点击combo-card触发 */
+/* 场景演示弹窗 — 点击combo-card触发，p5.js 流场有机粒子 */
 (function() {
     var overlay = document.getElementById('sceneModalOverlay');
     var modal = document.getElementById('sceneModal');
     var closeBtn = document.getElementById('sceneModalClose');
+    var p5Container = document.getElementById('sceneP5Container');
     var corgiEmoji = document.getElementById('sceneCorgiEmoji');
     var corgiOutfit = document.getElementById('sceneCorgiOutfit');
     var titleEl = document.getElementById('sceneTitle');
@@ -11764,46 +11659,383 @@
     var sceneTabs = document.querySelectorAll('.scene-greeting-tab');
     var sceneContents = [studentEl, workerEl, elderEl];
 
-    /* 粒子配置 — 按Tab分类 */
-    var PARTICLE_CONFIG = {
-        'outfit-traditional': { emojis: ['🧨', '🏮', '🎆', '🎇'], count: 10 },
-        'outfit-modern':      { emojis: ['🎉', '🎁', '🎈', '🎊'], count: 10 },
-        'outfit-solar':       { emojis: ['🌸', '🍃', '🌾', '🌷'], count: 12 },
-        'outfit-season':      { emojis: ['🌻', '☀️', '🍂', '⛄'], count: 10 },
-        'outfit-weather':     { emojis: ['☀️', '🌧️', '⚡', '❄️'], count: 12 },
-        'outfit-daily':       { emojis: ['☀️', '🍱', '🌆', '🌙'], count: 10 }
+    /* 当前 p5 实例引用，用于关闭时销毁 */
+    var activeP5 = null;
+
+    /* ================================================================
+     * 6种面板主题配置 — 流场有机粒子
+     * 每种主题有独立的色板、粒子形态、流场参数
+     * ================================================================ */
+    var THEME_CONFIGS = {
+        'outfit-traditional': {
+            name: '传统节日',
+            colors: [[255,107,53],[255,212,168],[255,68,68]],
+            noiseScale: 0.008,
+            speed: 0.6,
+            count: 60,
+            sizeRange: [8, 20],
+            trailAlpha: 40,
+            /* 粒子形态：发光球体（灯笼光晕） */
+            shape: 'glow',
+            /* 流场偏移：上浮为主 */
+            flowBias: { x: 0, y: -0.3 }
+        },
+        'outfit-modern': {
+            name: '现代节日',
+            colors: [[255,107,157],[192,132,252],[96,165,250]],
+            noiseScale: 0.012,
+            speed: 1.0,
+            count: 80,
+            sizeRange: [4, 10],
+            trailAlpha: 50,
+            /* 粒子形态：纸屑几何 */
+            shape: 'confetti',
+            /* 流场偏移：中心爆散 */
+            flowBias: { x: 0, y: 0.2 }
+        },
+        'outfit-solar': {
+            name: '节气',
+            colors: [[126,200,160],[168,230,207],[255,224,130]],
+            noiseScale: 0.005,
+            speed: 0.3,
+            count: 50,
+            sizeRange: [6, 14],
+            trailAlpha: 30,
+            /* 粒子形态：花瓣有机形态 */
+            shape: 'petal',
+            /* 流场偏移：螺旋下降 */
+            flowBias: { x: 0.1, y: 0.15 }
+        },
+        'outfit-season': {
+            name: '季节',
+            colors: [[255,183,197],[255,215,0],[210,105,30],[176,224,230]],
+            noiseScale: 0.006,
+            speed: 0.5,
+            count: 55,
+            sizeRange: [5, 12],
+            trailAlpha: 35,
+            /* 粒子形态：季节变形 */
+            shape: 'seasonal',
+            /* 流场偏移：水平漂移 */
+            flowBias: { x: 0.2, y: 0 }
+        },
+        'outfit-weather': {
+            name: '天气',
+            colors: [[135,206,235],[112,128,144],[255,215,0]],
+            noiseScale: 0.01,
+            speed: 0.8,
+            count: 70,
+            sizeRange: [3, 8],
+            trailAlpha: 45,
+            /* 粒子形态：水滴形 */
+            shape: 'droplet',
+            /* 流场偏移：对角下降 */
+            flowBias: { x: 0.15, y: 0.3 }
+        },
+        'outfit-daily': {
+            name: '日常',
+            colors: [[255,160,122],[255,215,0],[147,112,219],[65,105,225]],
+            noiseScale: 0.004,
+            speed: 0.25,
+            count: 40,
+            sizeRange: [10, 25],
+            trailAlpha: 25,
+            /* 粒子形态：散景圆 */
+            shape: 'bokeh',
+            /* 流场偏移：缓慢上升 */
+            flowBias: { x: 0, y: -0.15 }
+        }
     };
 
-    /* 生成装饰粒子 */
-    function createParticles(panelType) {
-        var config = PARTICLE_CONFIG[panelType];
-        if (!config) return;
-
-        /* 清除旧粒子 */
-        modal.querySelectorAll('.scene-particle').forEach(function(p) { p.remove(); });
-
-        /* 生成新粒子 */
-        for (var i = 0; i < config.count; i++) {
-            var particle = document.createElement('div');
-            particle.className = 'scene-particle';
-            particle.textContent = config.emojis[Math.floor(Math.random() * config.emojis.length)];
-
-            var left = Math.random() * 90 + 5;
-            var size = 14 + Math.random() * 16;
-            var duration = 4 + Math.random() * 6;
-            var delay = Math.random() * 6;
-
-            particle.style.left = left + '%';
-            particle.style.top = '0';
-            particle.style.fontSize = size + 'px';
-            particle.style.animationDuration = duration + 's';
-            particle.style.animationDelay = delay + 's';
-
-            modal.appendChild(particle);
+    /* ================================================================
+     * 从卡片 emoji 推导种子值
+     * ================================================================ */
+    function emojiToSeed(emojiStr) {
+        var seed = 0;
+        for (var i = 0; i < emojiStr.length; i++) {
+            seed = ((seed << 5) - seed) + emojiStr.charCodeAt(i);
+            seed = seed & seed; // 转32位整数
         }
+        return Math.abs(seed) % 100000 + 1;
     }
 
-    /* 打开弹窗 */
+    /* ================================================================
+     * 从基础配置 + 种子推导变体配置
+     * ================================================================ */
+    function deriveVariant(base, seed) {
+        /* 使用简单伪随机生成器（基于种子） */
+        var s = seed;
+        function seededRandom() {
+            s = (s * 16807 + 0) % 2147483647;
+            return (s - 1) / 2147483646;
+        }
+
+        return {
+            name: base.name,
+            colors: base.colors.map(function(c) {
+                /* 色板微调：±15 RGB偏移 */
+                return c.map(function(v) {
+                    return Math.max(0, Math.min(255, v + Math.floor((seededRandom() - 0.5) * 30)));
+                });
+            }),
+            noiseScale: base.noiseScale * (0.8 + seededRandom() * 0.4),
+            speed: base.speed * (0.85 + seededRandom() * 0.3),
+            count: Math.floor(base.count * (0.9 + seededRandom() * 0.2)),
+            sizeRange: [
+                base.sizeRange[0] * (0.9 + seededRandom() * 0.2),
+                base.sizeRange[1] * (0.9 + seededRandom() * 0.2)
+            ],
+            trailAlpha: base.trailAlpha,
+            shape: base.shape,
+            flowBias: base.flowBias,
+            seed: seed
+        };
+    }
+
+    /* ================================================================
+     * 创建 p5.js 实例模式粒子动画
+     * @param {Object} config — 主题变体配置
+     * ================================================================ */
+    function createP5Sketch(config) {
+        var sketch = function(p) {
+            var particles = [];
+            var zOff = 0;
+            var scl = 15; /* 流场分辨率 */
+            var cols, rows;
+            var flowField = [];
+
+            /* ---- 粒子类 ---- */
+            function Particle() {
+                this.pos = p.createVector(p.random(p.width), p.random(p.height));
+                this.vel = p.createVector(0, 0);
+                this.acc = p.createVector(0, 0);
+                this.maxSpeed = config.speed;
+                this.size = p.random(config.sizeRange[0], config.sizeRange[1]);
+                this.colorIdx = p.floor(p.random(config.colors.length));
+                this.alpha = p.random(0.4, 0.9);
+                this.angle = p.random(p.TWO_PI);
+                this.rotSpeed = p.random(-0.03, 0.03);
+                this.life = p.random(0.5, 1.0);
+            }
+
+            /** 根据流场方向施加力 */
+            Particle.prototype.follow = function(zOffset) {
+                var x = p.floor(this.pos.x / scl);
+                var y = p.floor(this.pos.y / scl);
+                x = p.constrain(x, 0, cols - 1);
+                y = p.constrain(y, 0, rows - 1);
+
+                var index = x + y * cols;
+                if (flowField[index]) {
+                    var force = flowField[index].copy();
+                    force.mult(0.3);
+                    /* 叠加流场偏移 */
+                    force.x += config.flowBias.x;
+                    force.y += config.flowBias.y;
+                    this.acc.add(force);
+                }
+            };
+
+            /** 更新位置和速度 */
+            Particle.prototype.update = function() {
+                this.vel.add(this.acc);
+                this.vel.limit(this.maxSpeed);
+                this.pos.add(this.vel);
+                this.acc.mult(0);
+                this.angle += this.rotSpeed;
+
+                /* 边界循环 */
+                if (this.pos.x > p.width + this.size) this.pos.x = -this.size;
+                if (this.pos.x < -this.size) this.pos.x = p.width + this.size;
+                if (this.pos.y > p.height + this.size) this.pos.y = -this.size;
+                if (this.pos.y < -this.size) this.pos.y = p.height + this.size;
+            };
+
+            /** 根据主题形态绘制粒子 */
+            Particle.prototype.display = function() {
+                var c = config.colors[this.colorIdx];
+                /* alpha 转为 0-255 范围，p5.js fill() 第4参数期望 0-255 */
+                var a = this.alpha * 255;
+                p.push();
+                p.translate(this.pos.x, this.pos.y);
+                p.rotate(this.angle);
+
+                switch (config.shape) {
+                    case 'glow':
+                        /* 发光球体 — 灯笼光晕效果 */
+                        p.noStroke();
+                        /* 外层光晕 */
+                        p.fill(c[0], c[1], c[2], a * 0.15);
+                        p.ellipse(0, 0, this.size * 2.5, this.size * 2.5);
+                        /* 中层 */
+                        p.fill(c[0], c[1], c[2], a * 0.4);
+                        p.ellipse(0, 0, this.size * 1.5, this.size * 1.5);
+                        /* 核心 */
+                        p.fill(c[0], c[1], c[2], a * 0.8);
+                        p.ellipse(0, 0, this.size, this.size);
+                        break;
+
+                    case 'confetti':
+                        /* 纸屑几何 — 三角/方形翻滚 */
+                        p.noStroke();
+                        p.fill(c[0], c[1], c[2], a * 0.85);
+                        if (this.colorIdx % 2 === 0) {
+                            /* 三角形 */
+                            p.triangle(-this.size/2, this.size/3, this.size/2, this.size/3, 0, -this.size/2);
+                        } else {
+                            /* 方形 */
+                            p.rectMode(p.CENTER);
+                            p.rect(0, 0, this.size, this.size * 0.6);
+                        }
+                        break;
+
+                    case 'petal':
+                        /* 花瓣有机形态 — 旋转飘落 */
+                        p.noStroke();
+                        p.fill(c[0], c[1], c[2], a * 0.7);
+                        p.beginShape();
+                        for (var a2 = 0; a2 < p.TWO_PI; a2 += 0.3) {
+                            var r = this.size * 0.5 * (1 + 0.3 * p.sin(a2 * 2 + this.angle));
+                            p.vertex(r * p.cos(a2), r * p.sin(a2));
+                        }
+                        p.endShape(p.CLOSE);
+                        break;
+
+                    case 'seasonal':
+                        /* 季节变形 — 圆/星/叶/雪花 */
+                        p.noStroke();
+                        p.fill(c[0], c[1], c[2], a * 0.75);
+                        var phase = (this.colorIdx % 4);
+                        if (phase === 0) {
+                            /* 春：圆 */
+                            p.ellipse(0, 0, this.size, this.size);
+                        } else if (phase === 1) {
+                            /* 夏：星 */
+                            p.beginShape();
+                            for (var i = 0; i < 5; i++) {
+                                var a1 = p.TWO_PI / 5 * i - p.HALF_PI;
+                                p.vertex(this.size * 0.5 * p.cos(a1), this.size * 0.5 * p.sin(a1));
+                                var a1b = a1 + p.TWO_PI / 10;
+                                p.vertex(this.size * 0.2 * p.cos(a1b), this.size * 0.2 * p.sin(a1b));
+                            }
+                            p.endShape(p.CLOSE);
+                        } else if (phase === 2) {
+                            /* 秋：叶 */
+                            p.beginShape();
+                            p.vertex(0, -this.size * 0.5);
+                            p.bezierVertex(this.size * 0.4, -this.size * 0.2, this.size * 0.3, this.size * 0.2, 0, this.size * 0.5);
+                            p.bezierVertex(-this.size * 0.3, this.size * 0.2, -this.size * 0.4, -this.size * 0.2, 0, -this.size * 0.5);
+                            p.endShape(p.CLOSE);
+                        } else {
+                            /* 冬：雪花（六角） */
+                            p.strokeWeight(1.5);
+                            p.stroke(c[0], c[1], c[2], a * 0.8);
+                            for (var j = 0; j < 6; j++) {
+                                var a3 = p.TWO_PI / 6 * j;
+                                p.line(0, 0, this.size * 0.4 * p.cos(a3), this.size * 0.4 * p.sin(a3));
+                            }
+                        }
+                        break;
+
+                    case 'droplet':
+                        /* 水滴形 — 速度拉伸 */
+                        p.noStroke();
+                        p.fill(c[0], c[1], c[2], a * 0.8);
+                        var spd = this.vel.mag();
+                        var stretch = p.map(spd, 0, this.maxSpeed, 1, 2.5);
+                        p.ellipse(0, 0, this.size * 0.7, this.size * stretch);
+                        break;
+
+                    case 'bokeh':
+                        /* 散景圆 — 不同透明度 */
+                        p.noStroke();
+                        /* 外圈 */
+                        p.fill(c[0], c[1], c[2], a * 0.12);
+                        p.ellipse(0, 0, this.size * 2, this.size * 2);
+                        /* 中圈 */
+                        p.fill(c[0], c[1], c[2], a * 0.25);
+                        p.ellipse(0, 0, this.size * 1.2, this.size * 1.2);
+                        /* 内圈 */
+                        p.fill(c[0], c[1], c[2], a * 0.5);
+                        p.ellipse(0, 0, this.size * 0.6, this.size * 0.6);
+                        /* 边框 */
+                        p.noFill();
+                        p.stroke(c[0], c[1], c[2], a * 0.4);
+                        p.strokeWeight(1);
+                        p.ellipse(0, 0, this.size * 1.8, this.size * 1.8);
+                        break;
+
+                    default:
+                        p.noStroke();
+                        p.fill(c[0], c[1], c[2], a * 0.7);
+                        p.ellipse(0, 0, this.size, this.size);
+                }
+
+                p.pop();
+            };
+
+            /* ---- p5.js 生命周期 ---- */
+
+            p.setup = function() {
+                /* 使用 modal 元素的实际尺寸，确保 canvas 不为 0 */
+                var w = modal.offsetWidth || 480;
+                var h = modal.offsetHeight || 400;
+                var canvas = p.createCanvas(w, h);
+                canvas.parent(p5Container);
+                canvas.style('display', 'block');
+
+                p.randomSeed(config.seed);
+                p.noiseSeed(config.seed);
+
+                cols = p.floor(p.width / scl);
+                rows = p.floor(p.height / scl);
+
+                /* 初始化粒子 */
+                for (var i = 0; i < config.count; i++) {
+                    particles.push(new Particle());
+                }
+            };
+
+            p.draw = function() {
+                /* 清除画布 — 弹窗背景为白色，粒子直接绘制无需拖尾 */
+                p.clear();
+
+                /* 更新流场 */
+                zOff += 0.003;
+                flowField = [];
+                for (var y = 0; y < rows; y++) {
+                    for (var x = 0; x < cols; x++) {
+                        var angle = p.noise(x * config.noiseScale, y * config.noiseScale, zOff) * p.TWO_PI * 2;
+                        var v = p5.Vector.fromAngle(angle);
+                        v.setMag(1);
+                        flowField[x + y * cols] = v;
+                    }
+                }
+
+                /* 更新并绘制粒子 */
+                for (var i = 0; i < particles.length; i++) {
+                    particles[i].follow(zOff);
+                    particles[i].update();
+                    particles[i].display();
+                }
+            };
+
+            /** 窗口大小变化时重设 Canvas */
+            p.windowResized = function() {
+                if (p5Container.offsetWidth > 0 && p5Container.offsetHeight > 0) {
+                    p.resizeCanvas(p5Container.offsetWidth, p5Container.offsetHeight);
+                    cols = p.floor(p.width / scl);
+                    rows = p.floor(p.height / scl);
+                }
+            };
+        };
+
+        return new p5(sketch);
+    }
+
+    /* ================================================================
+     * 打开弹窗
+     * ================================================================ */
     function openSceneModal(card) {
         /* 读取卡片数据 */
         var emoji = card.querySelector('.combo-card-emoji');
@@ -11815,7 +12047,7 @@
 
         /* 填充弹窗内容 */
         corgiEmoji.textContent = emoji ? emoji.textContent : '🐕';
-        corgiOutfit.textContent = emoji ? emoji.textContent : '';
+        corgiOutfit.textContent = outfit ? outfit.textContent : '';
         titleEl.textContent = name ? name.textContent : '';
 
         studentEl.textContent = studentContent ? studentContent.textContent : '';
@@ -11828,24 +12060,47 @@
         sceneTabs[0].classList.add('active');
         studentEl.classList.add('active');
 
-        /* 确定粒子类型 */
+        /* 确定面板类型 */
         var panel = card.closest('.greeting-tab-panel');
         var panelType = panel ? panel.getAttribute('data-greeting-panel') : 'outfit-traditional';
+
+        /* 获取基础主题配置 */
+        var baseConfig = THEME_CONFIGS[panelType] || THEME_CONFIGS['outfit-traditional'];
+
+        /* 从卡片 emoji 推导种子，生成变体配置 */
+        var emojiText = emoji ? emoji.textContent : '🐕';
+        var seed = emojiToSeed(emojiText);
+        var variantConfig = deriveVariant(baseConfig, seed);
 
         /* 显示弹窗 */
         overlay.classList.add('active');
         document.body.style.overflow = 'hidden';
 
-        /* 生成装饰粒子 */
-        setTimeout(function() { createParticles(panelType); }, 100);
+        /* 延迟创建 p5 实例（等待弹窗动画完成，确保尺寸正确） */
+        setTimeout(function() {
+            if (activeP5) {
+                activeP5.remove();
+                activeP5 = null;
+            }
+            /* 清空容器 */
+            p5Container.innerHTML = '';
+            activeP5 = createP5Sketch(variantConfig);
+        }, 450);
     }
 
-    /* 关闭弹窗 */
+    /* ================================================================
+     * 关闭弹窗
+     * ================================================================ */
     function closeSceneModal() {
         overlay.classList.remove('active');
         document.body.style.overflow = '';
-        /* 清除粒子 */
-        modal.querySelectorAll('.scene-particle').forEach(function(p) { p.remove(); });
+
+        /* 销毁 p5 实例 */
+        if (activeP5) {
+            activeP5.remove();
+            activeP5 = null;
+        }
+        p5Container.innerHTML = '';
     }
 
     /* 为每个combo-card添加点击事件 */
@@ -11889,6 +12144,296 @@
     });
 })();
 </script>
+
+    <!-- ============================================
+         野兽派柯基流场粒子系统 — p5.js
+         ============================================ -->
+    <script>
+    /* ============================================
+       野兽派柯基流场粒子系统 — p5.js Instance 模式
+       ============================================ */
+    new p5(function(p) {
+        'use strict';
+
+        /* ============================================
+           配置参数
+           ============================================ */
+        var CONFIG = {
+            particleCount: 20,       // 柯基粒子数量
+            noiseScale: 0.003,       // Perlin 噪声缩放
+            flowSpeed: 0.8,          // 流动速度
+            brutalBorder: 2,         // 野兽派粗边框宽度
+            brutalShadow: 5,         // 硬阴影偏移量
+            opacity: 0.25,           // 粒子透明度
+            minSize: 20,             // 最小粒子尺寸
+            maxSize: 50,             // 最大粒子尺寸
+            rotationQuantize: 45,    // 旋转量化角度（度）
+            minDist: 120,            // 粒子最小间距（像素）
+            repulseStrength: 0.15,   // 排斥力强度
+            zOffSpeed: 0.002         // 噪声时间演进速度
+        };
+
+        /* 野兽派色板 — 与页面 CSS 变量一致 */
+        var BRUTAL_COLORS = [
+            [255, 107, 53],   // --color-brutal-orange
+            [255, 212, 168],  // --color-brutal-cream
+            [255, 183, 77],   // --color-brutal-yellow
+            [232, 116, 60],   // --color-brutal-deep
+            [126, 200, 160],  // --color-brutal-mint
+            [26, 26, 26]      // --color-brutal-ink
+        ];
+
+        /* 柯基图片路径 — 11种姿态的第一帧 */
+        var CORGI_PATHS = [
+            '../app/src/main/res/drawable/corgi_tilt_2frames_01.png',
+            '../app/src/main/res/drawable/corgi_stand_2frames_01.png',
+            '../app/src/main/res/drawable/corgi_sleep_2frames_01.png',
+            '../app/src/main/res/drawable/corgi_sit_2frames_01.png',
+            '../app/src/main/res/drawable/corgi_shy_2frames_01.png',
+            '../app/src/main/res/drawable/corgi_sad_2frames_01.png',
+            '../app/src/main/res/drawable/corgi_run_4frames_01.png',
+            '../app/src/main/res/drawable/corgi_roll_4framesl_01.png',
+            '../app/src/main/res/drawable/corgi_proud_2frames_01.png',
+            '../app/src/main/res/drawable/corgi_lie_3frames_01.png',
+            '../app/src/main/res/drawable/corgi_wag_4frames_01.png'
+        ];
+
+        var corgiImages = [];  // 预加载的柯基图片（HTMLImageElement）
+        var corgiImagesLoaded = false;  // 图片是否全部加载完成
+        var particles = [];    // 粒子数组
+        var zOff = 0;          // 噪声时间偏移
+
+        /* ============================================
+           p5.js 生命周期 — Instance 模式
+           ============================================ */
+
+        /** 不使用 preload，在 setup 中用 <img> 标签加载图片（兼容 file://） */
+        p.preload = function() {
+            // 留空，避免 preload 阻塞 setup
+        };
+
+        /** 初始化 Canvas 和粒子系统 */
+        p.setup = function() {
+            var canvas = p.createCanvas(p.windowWidth, p.windowHeight);
+            canvas.parent('brutal-corgi-canvas');
+            canvas.style('display', 'block');
+
+            // 用原生 <img> 标签加载柯基图片 — 绕过 CORS 限制
+            loadCorgiImagesNative();
+
+            // 初始化粒子（图片可能还未加载，display 中会判断）
+            for (var i = 0; i < CONFIG.particleCount; i++) {
+                particles.push(new CorgiParticle());
+            }
+
+            // 透明背景
+            p.clear();
+        };
+
+        /**
+         * 用原生 <img> 标签加载柯基图片
+         * <img> 标签不受 CORS 限制，file:// 和 http:// 均可正常加载
+         * 加载完成后将 HTMLImageElement 转换为 p5.Image 存入 corgiImages 数组
+         */
+        function loadCorgiImagesNative() {
+            var loaded = 0;
+            var total = CORGI_PATHS.length;
+
+            for (var i = 0; i < total; i++) {
+                (function(idx) {
+                    var img = new Image();
+                    img.onload = function() {
+                        /* 加载成功 — 将 HTMLImageElement 转为 p5.Image */
+                        try {
+                            var p5Img = convertToP5Image(img);
+                            corgiImages[idx] = p5Img;
+                        } catch (e) {
+                            /* 转换失败 — 用占位图 */
+                            corgiImages[idx] = createPlaceholderImage(idx);
+                        }
+                        loaded++;
+                        if (loaded >= total) corgiImagesLoaded = true;
+                    };
+                    img.onerror = function() {
+                        /* 加载失败 — 用 p5.Graphics 创建 emoji 占位图 */
+                        corgiImages[idx] = createPlaceholderImage(idx);
+                        loaded++;
+                        if (loaded >= total) corgiImagesLoaded = true;
+                    };
+                    img.src = CORGI_PATHS[idx];
+                })(i);
+            }
+        }
+
+        /**
+         * 将原生 HTMLImageElement 转换为 p5.Image
+         * 先绘制到临时 canvas，再用 p.createImage 读取像素
+         */
+        function convertToP5Image(htmlImg) {
+            var w = htmlImg.naturalWidth || htmlImg.width;
+            var h = htmlImg.naturalHeight || htmlImg.height;
+            var p5Img = p.createImage(w, h);
+            p5Img.drawingContext.drawImage(htmlImg, 0, 0);
+            p5Img.updatePixels();
+            return p5Img;
+        }
+
+        /**
+         * 角度线性插值 — 走最短弧路径，避免 350°→10° 走远路
+         * @param {number} a 当前角度
+         * @param {number} b 目标角度
+         * @param {number} t 插值系数 (0~1)
+         */
+        function lerpAngle(a, b, t) {
+            var diff = b - a;
+            // 将差值归到 [-PI, PI] 范围，走最短弧
+            while (diff > p.PI) diff -= p.TWO_PI;
+            while (diff < -p.PI) diff += p.TWO_PI;
+            return a + diff * t;
+        }
+
+        /** 创建占位图 — 图片加载失败时用柯基 emoji 代替 */
+        function createPlaceholderImage(idx) {
+            var emojiList = ['🐕', '🐶', '🐾', '🦴', '❤️', '✦', '♡', '✧', '⋆', '❋', '✶'];
+            var emoji = emojiList[idx % emojiList.length];
+            var gfx = p.createGraphics(64, 64);
+            gfx.textAlign(p.CENTER, p.CENTER);
+            gfx.textSize(40);
+            gfx.text(emoji, 32, 32);
+            return gfx;
+        }
+
+        /** 每帧更新流场并绘制粒子 */
+        p.draw = function() {
+            p.clear(); // 保持透明背景
+
+            zOff += CONFIG.zOffSpeed;
+
+            // 更新并绘制每个粒子
+            for (var i = 0; i < particles.length; i++) {
+                particles[i].follow(zOff);
+                particles[i].update();
+                particles[i].display();
+            }
+        };
+
+        /** 窗口大小变化时重设 Canvas */
+        p.windowResized = function() {
+            p.resizeCanvas(p.windowWidth, p.windowHeight);
+        };
+
+        /* ============================================
+           柯基粒子类 — 野兽派流场粒子
+           ============================================ */
+
+        /**
+         * 野兽派柯基粒子
+         * 在 Perlin 噪声流场中飘动，带有粗边框和硬阴影
+         */
+        function CorgiParticle() {
+            // 随机初始位置
+            this.pos = p.createVector(p.random(p.width), p.random(p.height));
+            this.vel = p.createVector(0, 0);
+            this.acc = p.createVector(0, 0);
+
+            // 随机选取柯基图片索引（图片异步加载，display 中按索引取用）
+            this.imgIndex = p.floor(p.random(CORGI_PATHS.length));
+
+            // 随机大小 — 野兽派不追求均匀
+            this.size = p.random(CONFIG.minSize, CONFIG.maxSize);
+
+            // 随机透明度
+            this.alpha = p.random(CONFIG.opacity * 0.6, CONFIG.opacity * 1.4);
+            this.alpha = p.constrain(this.alpha, 0.1, 0.4);
+
+            // 随机野兽派色块（阴影色）
+            this.shadowColor = BRUTAL_COLORS[p.floor(p.random(BRUTAL_COLORS.length))];
+
+            // 随机野兽派色块（背景色）— 预选避免每帧闪烁
+            this.bgColor = BRUTAL_COLORS[p.floor(p.random(BRUTAL_COLORS.length))];
+
+            // 最大速度
+            this.maxSpeed = CONFIG.flowSpeed;
+
+            // 当前旋转角度（弧度）
+            this.angle = 0;
+        }
+
+        /** 根据流场方向施加力，并排斥过近的粒子 */
+        CorgiParticle.prototype.follow = function(zOffset) {
+            var x = p.floor(this.pos.x);
+            var y = p.floor(this.pos.y);
+
+            // Perlin 噪声流场角度
+            var angle = p.noise(x * CONFIG.noiseScale, y * CONFIG.noiseScale, zOffset) * p.TWO_PI * 2;
+
+            // 量化旋转角度到 45° 倍数 — 野兽派网格感
+            var quantizedAngle = p.round(angle / p.radians(CONFIG.rotationQuantize)) * p.radians(CONFIG.rotationQuantize);
+
+            // 平滑过渡到目标角度，避免抖动
+            this.angle = lerpAngle(this.angle, quantizedAngle, 0.08);
+
+            // 流场力 — 使用原始噪声角度（非量化），运动更流畅
+            var force = p5.Vector.fromAngle(angle);
+            force.setMag(0.3);
+            this.acc.add(force);
+
+            // 粒子间排斥力 — 距离过近时互相推开
+            for (var i = 0; i < particles.length; i++) {
+                if (particles[i] === this) continue;
+                var d = p.dist(this.pos.x, this.pos.y, particles[i].pos.x, particles[i].pos.y);
+                if (d < CONFIG.minDist && d > 0) {
+                    var repulse = p5.Vector.sub(this.pos, particles[i].pos);
+                    repulse.normalize();
+                    // 距离越近排斥越强
+                    var strength = CONFIG.repulseStrength * (1 - d / CONFIG.minDist);
+                    repulse.setMag(strength);
+                    this.acc.add(repulse);
+                }
+            }
+        };
+
+        /** 更新位置和速度 */
+        CorgiParticle.prototype.update = function() {
+            this.vel.add(this.acc);
+            this.vel.limit(this.maxSpeed);
+            this.pos.add(this.vel);
+            this.acc.mult(0); // 重置加速度
+
+            // 边界循环 — 从一侧消失后从对侧出现
+            if (this.pos.x > p.width + this.size) this.pos.x = -this.size;
+            if (this.pos.x < -this.size) this.pos.x = p.width + this.size;
+            if (this.pos.y > p.height + this.size) this.pos.y = -this.size;
+            if (this.pos.y < -this.size) this.pos.y = p.height + this.size;
+        };
+
+        /** 绘制野兽派柯基粒子 */
+        CorgiParticle.prototype.display = function() {
+            p.push();
+            p.translate(this.pos.x, this.pos.y);
+            p.rotate(this.angle);
+
+            // 1. 硬偏移阴影 — 野兽派特征：无模糊，纯色偏移
+            p.noStroke();
+            p.fill(this.shadowColor[0], this.shadowColor[1], this.shadowColor[2], this.alpha * 0.5);
+            p.rect(CONFIG.brutalShadow, CONFIG.brutalShadow, this.size, this.size, 2);
+
+            // 2. 色块背景 — 野兽派色板（预选，不每帧随机）
+            p.fill(this.bgColor[0], this.bgColor[1], this.bgColor[2], this.alpha * 0.6);
+            p.noStroke();
+            p.rect(0, 0, this.size, this.size, 2);
+
+            // 4. 柯基图片（异步加载，可能尚未就绪）
+            var img = corgiImages[this.imgIndex];
+            if (img) {
+                p.tint(255, this.alpha * 255);
+                p.image(img, 1, 1, this.size - 2, this.size - 2);
+            }
+
+            p.pop();
+        };
+    }, 'brutal-corgi-canvas');
+    </script>
 
 </body>
 </html>
