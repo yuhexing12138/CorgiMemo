@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -5344,6 +5344,21 @@
 
     <!-- 野兽派柯基流场粒子系统 — p5.js Canvas 容器 -->
     <div id="brutal-corgi-canvas"></div>
+    
+    <!-- 柯基图片预加载容器 — 解决 file:// 协议下的安全限制 -->
+    <div id="corgi-preload" style="position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none;" aria-hidden="true">
+        <img src="assets/corgi/corgi_tilt_2frames_01.png" alt="" id="preload-corgi-tilt">
+        <img src="assets/corgi/corgi_stand_2frames_01.png" alt="" id="preload-corgi-stand">
+        <img src="assets/corgi/corgi_sleep_2frames_01.png" alt="" id="preload-corgi-sleep">
+        <img src="assets/corgi/corgi_sit_2frames_01.png" alt="" id="preload-corgi-sit">
+        <img src="assets/corgi/corgi_shy_2frames_01.png" alt="" id="preload-corgi-shy">
+        <img src="assets/corgi/corgi_sad_2frames_01.png" alt="" id="preload-corgi-sad">
+        <img src="assets/corgi/corgi_run_4frames_01.png" alt="" id="preload-corgi-run">
+        <img src="assets/corgi/corgi_roll_4framesl_01.png" alt="" id="preload-corgi-roll">
+        <img src="assets/corgi/corgi_proud_2frames_01.png" alt="" id="preload-corgi-proud">
+        <img src="assets/corgi/corgi_lie_3frames_01.png" alt="" id="preload-corgi-lie">
+        <img src="assets/corgi/corgi_wag_4frames_01.png" alt="" id="preload-corgi-wag">
+    </div>
 
     <!-- ============================================
          Hero 区域 — 杂志封面式不对称布局
@@ -5369,54 +5384,54 @@
                 <!-- 卡片1：歪头（低） -->
                 <div class="brutal-card hero-corgi-card" style="margin-top: 6px; animation-delay: 0s;">
                     <div class="corgi-anim hero-pose-corgi corgi-2frames" style="position: relative; width: 56px; height: 56px;">
-                        <img src="../app/src/main/res/drawable/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="歪头" style="width: 100%; height: 100%; object-fit: contain;">
-                        <img src="../app/src/main/res/drawable/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="歪头" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="歪头" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="歪头" style="width: 100%; height: 100%; object-fit: contain;">
                     </div>
                     <div class="hero-corgi-label">[歪头ing...]</div>
                 </div>
                 <!-- 卡片2：站立（高） -->
                 <div class="brutal-card hero-corgi-card" style="margin-top: -8px; animation-delay: 0.5s;">
                     <div class="corgi-anim hero-pose-corgi corgi-2frames" style="position: relative; width: 56px; height: 56px;">
-                        <img src="../app/src/main/res/drawable/corgi_stand_2frames_01.png" loading="lazy" class="corgi-frame" alt="站立" style="width: 100%; height: 100%; object-fit: contain;">
-                        <img src="../app/src/main/res/drawable/corgi_stand_2frames_02.png" loading="lazy" class="corgi-frame" alt="站立" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_stand_2frames_01.png" loading="lazy" class="corgi-frame" alt="站立" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_stand_2frames_02.png" loading="lazy" class="corgi-frame" alt="站立" style="width: 100%; height: 100%; object-fit: contain;">
                     </div>
                     <div class="hero-corgi-label">[站立ing...]</div>
                 </div>
                 <!-- 卡片3：奔跑（低） -->
                 <div class="brutal-card hero-corgi-card" style="margin-top: 4px; animation-delay: 1s;">
                     <div class="corgi-anim hero-pose-corgi corgi-4frames" style="position: relative; width: 56px; height: 56px;">
-                        <img src="../app/src/main/res/drawable/corgi_run_4frames_01.png" loading="lazy" class="corgi-frame" alt="奔跑" style="width: 100%; height: 100%; object-fit: contain;">
-                        <img src="../app/src/main/res/drawable/corgi_run_4frames_02.png" loading="lazy" class="corgi-frame" alt="奔跑" style="width: 100%; height: 100%; object-fit: contain;">
-                        <img src="../app/src/main/res/drawable/corgi_run_4frames_02.png" loading="lazy" class="corgi-frame" alt="奔跑" style="width: 100%; height: 100%; object-fit: contain;">
-                        <img src="../app/src/main/res/drawable/corgi_run_4frames_04.png" loading="lazy" class="corgi-frame" alt="奔跑" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_run_4frames_01.png" loading="lazy" class="corgi-frame" alt="奔跑" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_run_4frames_02.png" loading="lazy" class="corgi-frame" alt="奔跑" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_run_4frames_02.png" loading="lazy" class="corgi-frame" alt="奔跑" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_run_4frames_04.png" loading="lazy" class="corgi-frame" alt="奔跑" style="width: 100%; height: 100%; object-fit: contain;">
                     </div>
                     <div class="hero-corgi-label">[奔跑ing...]</div>
                 </div>
                 <!-- 卡片4：打滚（高） -->
                 <div class="brutal-card hero-corgi-card" style="margin-top: -10px; animation-delay: 1.5s;">
                     <div class="corgi-anim hero-pose-corgi corgi-4frames" style="position: relative; width: 56px; height: 56px;">
-                        <img src="../app/src/main/res/drawable/corgi_roll_4framesl_01.png" loading="lazy" class="corgi-frame" alt="打滚" style="width: 100%; height: 100%; object-fit: contain;">
-                        <img src="../app/src/main/res/drawable/corgi_roll_4framesl_02.png" loading="lazy" class="corgi-frame" alt="打滚" style="width: 100%; height: 100%; object-fit: contain;">
-                        <img src="../app/src/main/res/drawable/corgi_roll_4framesl_02.png" loading="lazy" class="corgi-frame" alt="打滚" style="width: 100%; height: 100%; object-fit: contain;">
-                        <img src="../app/src/main/res/drawable/corgi_roll_4framesl_04.png" loading="lazy" class="corgi-frame" alt="打滚" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_roll_4framesl_01.png" loading="lazy" class="corgi-frame" alt="打滚" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_roll_4framesl_02.png" loading="lazy" class="corgi-frame" alt="打滚" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_roll_4framesl_02.png" loading="lazy" class="corgi-frame" alt="打滚" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_roll_4framesl_04.png" loading="lazy" class="corgi-frame" alt="打滚" style="width: 100%; height: 100%; object-fit: contain;">
                     </div>
                     <div class="hero-corgi-label">[打滚ing...]</div>
                 </div>
                 <!-- 卡片5：害羞（低） -->
                 <div class="brutal-card hero-corgi-card" style="margin-top: 6px; animation-delay: 2s;">
                     <div class="corgi-anim hero-pose-corgi corgi-2frames" style="position: relative; width: 56px; height: 56px;">
-                        <img src="../app/src/main/res/drawable/corgi_shy_2frames_01.png" loading="lazy" class="corgi-frame" alt="害羞" style="width: 100%; height: 100%; object-fit: contain;">
-                        <img src="../app/src/main/res/drawable/corgi_shy_2frames_02.png" loading="lazy" class="corgi-frame" alt="害羞" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_shy_2frames_01.png" loading="lazy" class="corgi-frame" alt="害羞" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_shy_2frames_02.png" loading="lazy" class="corgi-frame" alt="害羞" style="width: 100%; height: 100%; object-fit: contain;">
                     </div>
                     <div class="hero-corgi-label">[害羞ing...]</div>
                 </div>
                 <!-- 卡片6：摇尾巴（高）— 原有Hero柯基 -->
                 <div class="brutal-card hero-corgi-card hero-corgi-main" style="margin-top: -8px; animation-delay: 2.5s;">
                     <div class="corgi-anim hero-corgi corgi-4frames" style="position: relative; width: 80px; height: 80px;">
-                        <img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
-                        <img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
-                        <img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
-                        <img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="assets/corgi/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
                     </div>
                     <div class="hero-corgi-label">[柯基摇尾中...]</div>
                 </div>
@@ -5698,42 +5713,42 @@
                     <div class="greeting-tab-panel active" data-greeting-panel="corgi-posture">
                     <div class="grid-4 mb-24">
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-3frames"><img src="../app/src/main/res/drawable/corgi_lie_3frames_01.png" loading="lazy" class="corgi-frame" alt="趴卧"><img src="../app/src/main/res/drawable/corgi_lie_3frames_02.png" loading="lazy" class="corgi-frame" alt="趴卧"><img src="../app/src/main/res/drawable/corgi_lie_3frames_02.png" loading="lazy" class="corgi-frame" alt="趴卧"></div></span>
+                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-3frames"><img src="assets/corgi/corgi_lie_3frames_01.png" loading="lazy" class="corgi-frame" alt="趴卧"><img src="assets/corgi/corgi_lie_3frames_02.png" loading="lazy" class="corgi-frame" alt="趴卧"><img src="assets/corgi/corgi_lie_3frames_02.png" loading="lazy" class="corgi-frame" alt="趴卧"></div></span>
                     <div class="pose-name">趴卧</div>
                     <div class="pose-scene">默认状态，安静等待</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="坐立"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="坐立"></div></span>
+                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="坐立"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="坐立"></div></span>
                     <div class="pose-name">坐立</div>
                     <div class="pose-scene">创建待办时，专注状态</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_stand_2frames_01.png" loading="lazy" class="corgi-frame" alt="站立"><img src="../app/src/main/res/drawable/corgi_stand_2frames_02.png" loading="lazy" class="corgi-frame" alt="站立"></div></span>
+                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="assets/corgi/corgi_stand_2frames_01.png" loading="lazy" class="corgi-frame" alt="站立"><img src="assets/corgi/corgi_stand_2frames_02.png" loading="lazy" class="corgi-frame" alt="站立"></div></span>
                     <div class="pose-name">站立</div>
                     <div class="pose-scene">任务完成，骄傲展示</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="../app/src/main/res/drawable/corgi_run_4frames_01.png" loading="lazy" class="corgi-frame" alt="奔跑"><img src="../app/src/main/res/drawable/corgi_run_4frames_02.png" loading="lazy" class="corgi-frame" alt="奔跑"><img src="../app/src/main/res/drawable/corgi_run_4frames_02.png" loading="lazy" class="corgi-frame" alt="奔跑"><img src="../app/src/main/res/drawable/corgi_run_4frames_04.png" loading="lazy" class="corgi-frame" alt="奔跑"></div></span>
+                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="assets/corgi/corgi_run_4frames_01.png" loading="lazy" class="corgi-frame" alt="奔跑"><img src="assets/corgi/corgi_run_4frames_02.png" loading="lazy" class="corgi-frame" alt="奔跑"><img src="assets/corgi/corgi_run_4frames_02.png" loading="lazy" class="corgi-frame" alt="奔跑"><img src="assets/corgi/corgi_run_4frames_04.png" loading="lazy" class="corgi-frame" alt="奔跑"></div></span>
                     <div class="pose-name">奔跑</div>
                     <div class="pose-scene">加载中，活力满满</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="../app/src/main/res/drawable/corgi_roll_4framesl_01.png" loading="lazy" class="corgi-frame" alt="打滚"><img src="../app/src/main/res/drawable/corgi_roll_4framesl_02.png" loading="lazy" class="corgi-frame" alt="打滚"><img src="../app/src/main/res/drawable/corgi_roll_4framesl_02.png" loading="lazy" class="corgi-frame" alt="打滚"><img src="../app/src/main/res/drawable/corgi_roll_4framesl_04.png" loading="lazy" class="corgi-frame" alt="打滚"></div></span>
+                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="assets/corgi/corgi_roll_4framesl_01.png" loading="lazy" class="corgi-frame" alt="打滚"><img src="assets/corgi/corgi_roll_4framesl_02.png" loading="lazy" class="corgi-frame" alt="打滚"><img src="assets/corgi/corgi_roll_4framesl_02.png" loading="lazy" class="corgi-frame" alt="打滚"><img src="assets/corgi/corgi_roll_4framesl_04.png" loading="lazy" class="corgi-frame" alt="打滚"></div></span>
                     <div class="pose-name">打滚</div>
                     <div class="pose-scene">长按互动，卖萌撒娇</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sleep_2frames_01.png" loading="lazy" class="corgi-frame" alt="睡觉"><img src="../app/src/main/res/drawable/corgi_sleep_2frames_02.png" loading="lazy" class="corgi-frame" alt="睡觉"></div></span>
+                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="assets/corgi/corgi_sleep_2frames_01.png" loading="lazy" class="corgi-frame" alt="睡觉"><img src="assets/corgi/corgi_sleep_2frames_02.png" loading="lazy" class="corgi-frame" alt="睡觉"></div></span>
                     <div class="pose-name">睡觉</div>
                     <div class="pose-scene">深夜时段，安静休息</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="歪头"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="歪头"></div></span>
+                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="assets/corgi/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="歪头"><img src="assets/corgi/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="歪头"></div></span>
                     <div class="pose-name">歪头</div>
                     <div class="pose-scene">期待状态，好奇张望</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="摇尾巴"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="摇尾巴"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="摇尾巴"><img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="摇尾巴"></div></span>
+                    <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="assets/corgi/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="摇尾巴"><img src="assets/corgi/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="摇尾巴"><img src="assets/corgi/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="摇尾巴"><img src="assets/corgi/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="摇尾巴"></div></span>
                     <div class="pose-name">摇尾巴</div>
                     <div class="pose-scene">开心时刻，欢快摇摆</div>
                 </div>
@@ -5746,42 +5761,42 @@
             <!-- 表情系统 — 野兽派色块卡片 -->
                     <div class="grid-4 mb-24">
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="开心"></div></span>
+                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="assets/corgi/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="开心"><img src="assets/corgi/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="开心"><img src="assets/corgi/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="开心"><img src="assets/corgi/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="开心"></div></span>
                     <div class="expr-name">开心</div>
                     <div class="expr-scene">弯弯笑眼，任务完成时</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="普通"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="普通"></div></span>
+                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="普通"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="普通"></div></span>
                     <div class="expr-name">普通</div>
                     <div class="expr-scene">圆圆眼睛，日常状态</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="期待"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="期待"></div></span>
+                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="assets/corgi/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="期待"><img src="assets/corgi/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="期待"></div></span>
                     <div class="expr-name">期待</div>
                     <div class="expr-scene">闪亮眼睛，等待互动</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sleep_2frames_01.png" loading="lazy" class="corgi-frame" alt="困倦"><img src="../app/src/main/res/drawable/corgi_sleep_2frames_02.png" loading="lazy" class="corgi-frame" alt="困倦"></div></span>
+                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="assets/corgi/corgi_sleep_2frames_01.png" loading="lazy" class="corgi-frame" alt="困倦"><img src="assets/corgi/corgi_sleep_2frames_02.png" loading="lazy" class="corgi-frame" alt="困倦"></div></span>
                     <div class="expr-name">困倦</div>
                     <div class="expr-scene">半闭眼睛，深夜时段</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_worry_2frames_01.png" loading="lazy" class="corgi-frame" alt="担心"><img src="../app/src/main/res/drawable/corgi_worry_2frames_02.png" loading="lazy" class="corgi-frame" alt="担心"></div></span>
+                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="assets/corgi/corgi_worry_2frames_01.png" loading="lazy" class="corgi-frame" alt="担心"><img src="assets/corgi/corgi_worry_2frames_02.png" loading="lazy" class="corgi-frame" alt="担心"></div></span>
                     <div class="expr-name">担心</div>
                     <div class="expr-scene">眉毛下垂，任务超期时</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_stand_2frames_01.png" loading="lazy" class="corgi-frame" alt="惊讶"><img src="../app/src/main/res/drawable/corgi_stand_2frames_02.png" loading="lazy" class="corgi-frame" alt="惊讶"></div></span>
+                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="assets/corgi/corgi_stand_2frames_01.png" loading="lazy" class="corgi-frame" alt="惊讶"><img src="assets/corgi/corgi_stand_2frames_02.png" loading="lazy" class="corgi-frame" alt="惊讶"></div></span>
                     <div class="expr-name">惊讶</div>
                     <div class="expr-scene">眼睛睁大，特殊事件</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_proud_2frames_01.png" loading="lazy" class="corgi-frame" alt="得意"><img src="../app/src/main/res/drawable/corgi_proud_2frames_02.png" loading="lazy" class="corgi-frame" alt="得意"></div></span>
+                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="assets/corgi/corgi_proud_2frames_01.png" loading="lazy" class="corgi-frame" alt="得意"><img src="assets/corgi/corgi_proud_2frames_02.png" loading="lazy" class="corgi-frame" alt="得意"></div></span>
                     <div class="expr-name">得意</div>
                     <div class="expr-scene">眯一只眼，达成成就</div>
                 </div>
                 <div class="brutal-card-dominant corgi-card-anim">
-                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_shy_2frames_01.png" loading="lazy" class="corgi-frame" alt="害羞"><img src="../app/src/main/res/drawable/corgi_shy_2frames_02.png" loading="lazy" class="corgi-frame" alt="害羞"></div></span>
+                    <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="assets/corgi/corgi_shy_2frames_01.png" loading="lazy" class="corgi-frame" alt="害羞"><img src="assets/corgi/corgi_shy_2frames_02.png" loading="lazy" class="corgi-frame" alt="害羞"></div></span>
                     <div class="expr-name">害羞</div>
                     <div class="expr-scene">看向旁边，被连点时</div>
                 </div>
@@ -5807,7 +5822,7 @@
                     <div class="emotion-carousel-track" id="emotionCarouselTrack">
                         <!-- 失落 -->
                         <div class="emotion-carousel-item corgi-item-anim" data-emotion="sad">
-                            <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sad_2frames_01.png" loading="lazy" class="corgi-frame" alt="失落"><img src="../app/src/main/res/drawable/corgi_sad_2frames_02.png" loading="lazy" class="corgi-frame" alt="失落"></div></span>
+                            <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-2frames"><img src="assets/corgi/corgi_sad_2frames_01.png" loading="lazy" class="corgi-frame" alt="失落"><img src="assets/corgi/corgi_sad_2frames_02.png" loading="lazy" class="corgi-frame" alt="失落"></div></span>
                             <div>
                                 <div class="demo-value" style="color: #FF8A80;">12</div>
                                 <div class="demo-label">失落 / 低落状态</div>
@@ -5816,7 +5831,7 @@
                         </div>
                         <!-- 担心 -->
                         <div class="emotion-carousel-item corgi-item-anim" data-emotion="worried">
-                            <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_worry_2frames_01.png" loading="lazy" class="corgi-frame" alt="担心"><img src="../app/src/main/res/drawable/corgi_worry_2frames_02.png" loading="lazy" class="corgi-frame" alt="担心"></div></span>
+                            <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-2frames"><img src="assets/corgi/corgi_worry_2frames_01.png" loading="lazy" class="corgi-frame" alt="担心"><img src="assets/corgi/corgi_worry_2frames_02.png" loading="lazy" class="corgi-frame" alt="担心"></div></span>
                             <div>
                                 <div class="demo-value" style="color: #FFB74D;">28</div>
                                 <div class="demo-label">担心 / 焦虑状态</div>
@@ -5825,7 +5840,7 @@
                         </div>
                         <!-- 普通 -->
                         <div class="emotion-carousel-item corgi-item-anim" data-emotion="normal">
-                            <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="普通"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="普通"></div></span>
+                            <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="普通"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="普通"></div></span>
                             <div>
                                 <div class="demo-value" style="color: #FFD54F;">52</div>
                                 <div class="demo-label">普通 / 平静状态</div>
@@ -5834,7 +5849,7 @@
                         </div>
                         <!-- 期待 -->
                         <div class="emotion-carousel-item corgi-item-anim" data-emotion="expect">
-                            <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="期待"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="期待"></div></span>
+                            <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-2frames"><img src="assets/corgi/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="期待"><img src="assets/corgi/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="期待"></div></span>
                             <div>
                                 <div class="demo-value" style="color: #7EC8A0;">68</div>
                                 <div class="demo-label">期待 / 好奇状态</div>
@@ -5843,7 +5858,7 @@
                         </div>
                         <!-- 开心 -->
                         <div class="emotion-carousel-item corgi-item-anim" data-emotion="happy">
-                            <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-4frames"><img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="开心"></div></span>
+                            <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-4frames"><img src="assets/corgi/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="开心"><img src="assets/corgi/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="开心"><img src="assets/corgi/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="开心"><img src="assets/corgi/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="开心"></div></span>
                             <div>
                                 <div class="demo-value" style="color: #69F0AE;">85</div>
                                 <div class="demo-label">开心 / 兴奋状态</div>
@@ -5868,28 +5883,28 @@
                     <div class="brutal-card-dominant mb-24 corgi-card-anim-no-color">
                 <div class="growth-track">
                     <div class="growth-stage corgi-item-anim">
-                        <span class="stage-emoji"><div class="corgi-anim growth-corgi corgi-3frames"><img src="../app/src/main/res/drawable/corgi_lie_3frames_01.png" loading="lazy" class="corgi-frame" alt="柯基宝宝"><img src="../app/src/main/res/drawable/corgi_lie_3frames_02.png" loading="lazy" class="corgi-frame" alt="柯基宝宝"><img src="../app/src/main/res/drawable/corgi_lie_3frames_02.png" loading="lazy" class="corgi-frame" alt="柯基宝宝"></div></span>
+                        <span class="stage-emoji"><div class="corgi-anim growth-corgi corgi-3frames"><img src="assets/corgi/corgi_lie_3frames_01.png" loading="lazy" class="corgi-frame" alt="柯基宝宝"><img src="assets/corgi/corgi_lie_3frames_02.png" loading="lazy" class="corgi-frame" alt="柯基宝宝"><img src="assets/corgi/corgi_lie_3frames_02.png" loading="lazy" class="corgi-frame" alt="柯基宝宝"></div></span>
                         <div class="stage-name">柯基宝宝</div>
                         <div class="stage-level">Lv.1-3</div>
                         <div class="stage-bar"><div class="stage-bar-fill" style="width: 100%;"></div></div>
                     </div>
                     <div class="growth-arrow corgi-item-anim">→</div>
                     <div class="growth-stage corgi-item-anim">
-                        <span class="stage-emoji"><div class="corgi-anim growth-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基少年"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基少年"></div></span>
+                        <span class="stage-emoji"><div class="corgi-anim growth-corgi corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基少年"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基少年"></div></span>
                         <div class="stage-name">柯基少年</div>
                         <div class="stage-level">Lv.4-6</div>
                         <div class="stage-bar"><div class="stage-bar-fill" style="width: 75%;"></div></div>
                     </div>
                     <div class="growth-arrow corgi-item-anim">→</div>
                     <div class="growth-stage corgi-item-anim">
-                        <span class="stage-emoji"><div class="corgi-anim growth-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_stand_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基青年"><img src="../app/src/main/res/drawable/corgi_stand_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基青年"></div></span>
+                        <span class="stage-emoji"><div class="corgi-anim growth-corgi corgi-2frames"><img src="assets/corgi/corgi_stand_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基青年"><img src="assets/corgi/corgi_stand_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基青年"></div></span>
                         <div class="stage-name">柯基青年</div>
                         <div class="stage-level">Lv.7-9</div>
                         <div class="stage-bar"><div class="stage-bar-fill" style="width: 40%;"></div></div>
                     </div>
                     <div class="growth-arrow corgi-item-anim">→</div>
                     <div class="growth-stage corgi-item-anim">
-                        <span class="stage-emoji"><div class="corgi-anim growth-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_proud_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基大师"><img src="../app/src/main/res/drawable/corgi_proud_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基大师"></div></span>
+                        <span class="stage-emoji"><div class="corgi-anim growth-corgi corgi-2frames"><img src="assets/corgi/corgi_proud_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基大师"><img src="assets/corgi/corgi_proud_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基大师"></div></span>
                         <div class="stage-name">柯基大师</div>
                         <div class="stage-level">Lv.10+</div>
                         <div class="stage-bar"><div class="stage-bar-fill" style="width: 10%;"></div></div>
@@ -7807,7 +7822,7 @@
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item active"><span class="nav-icon">📋</span>待办</div>
@@ -7871,7 +7886,7 @@
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item active"><span class="nav-icon">📋</span>待办</div>
@@ -7996,7 +8011,7 @@
                             <div class="drawer-toast">功能演示中</div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item active"><span class="nav-icon">📋</span>待办</div>
@@ -8059,7 +8074,7 @@
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item"><span class="nav-icon">📋</span>待办</div>
@@ -8126,7 +8141,7 @@
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item"><span class="nav-icon">📋</span>待办</div>
@@ -8242,7 +8257,7 @@
                             <div class="drawer-toast">功能演示中</div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item"><span class="nav-icon">📋</span>待办</div>
@@ -8322,7 +8337,7 @@
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item"><span class="nav-icon">📋</span>待办</div>
@@ -8438,7 +8453,7 @@
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item"><span class="nav-icon">📋</span>待办</div>
@@ -8556,7 +8571,7 @@
                             <div class="drawer-toast">功能演示中</div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item"><span class="nav-icon">📋</span>待办</div>
@@ -8595,42 +8610,42 @@
                                 <div class="phone-greeting" id="emojiMoodText">当前情绪：<strong>开心</strong> · 完成率 80%</div>
                                 <div class="phone-emoji-grid">
                                     <button class="phone-emoji-btn active" data-emoji="happy" onclick="switchEmoji(this, 'happy')" aria-label="开心表情">
-                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_wink_2frames_01.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wink_2frames_02.png" loading="lazy" class="corgi-frame" alt="开心"></div></div>
+                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_wink_2frames_01.png" loading="lazy" class="corgi-frame" alt="开心"><img src="assets/corgi/corgi_wink_2frames_02.png" loading="lazy" class="corgi-frame" alt="开心"></div></div>
                                         <div class="emoji-name">开心</div>
                                     </button>
                                     <button class="phone-emoji-btn" data-emoji="normal" onclick="switchEmoji(this, 'normal')" aria-label="普通表情">
-                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="普通"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="普通"></div></div>
+                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="普通"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="普通"></div></div>
                                         <div class="emoji-name">普通</div>
                                     </button>
                                     <button class="phone-emoji-btn" data-emoji="expecting" onclick="switchEmoji(this, 'expecting')" aria-label="期待表情">
-                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="期待"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="期待"></div></div>
+                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="期待"><img src="assets/corgi/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="期待"></div></div>
                                         <div class="emoji-name">期待</div>
                                     </button>
                                     <button class="phone-emoji-btn" data-emoji="sleepy" onclick="switchEmoji(this, 'sleepy')" aria-label="困倦表情">
-                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sleep_2frames_01.png" loading="lazy" class="corgi-frame" alt="困倦"><img src="../app/src/main/res/drawable/corgi_sleep_2frames_02.png" loading="lazy" class="corgi-frame" alt="困倦"></div></div>
+                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sleep_2frames_01.png" loading="lazy" class="corgi-frame" alt="困倦"><img src="assets/corgi/corgi_sleep_2frames_02.png" loading="lazy" class="corgi-frame" alt="困倦"></div></div>
                                         <div class="emoji-name">困倦</div>
                                     </button>
                                     <button class="phone-emoji-btn" data-emoji="worried" onclick="switchEmoji(this, 'worried')" aria-label="担心表情">
-                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_worry_2frames_01.png" loading="lazy" class="corgi-frame" alt="担心"><img src="../app/src/main/res/drawable/corgi_worry_2frames_02.png" loading="lazy" class="corgi-frame" alt="担心"></div></div>
+                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_worry_2frames_01.png" loading="lazy" class="corgi-frame" alt="担心"><img src="assets/corgi/corgi_worry_2frames_02.png" loading="lazy" class="corgi-frame" alt="担心"></div></div>
                                         <div class="emoji-name">担心</div>
                                     </button>
                                     <button class="phone-emoji-btn" data-emoji="proud" onclick="switchEmoji(this, 'proud')" aria-label="得意表情">
-                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_proud_2frames_01.png" loading="lazy" class="corgi-frame" alt="得意"><img src="../app/src/main/res/drawable/corgi_proud_2frames_02.png" loading="lazy" class="corgi-frame" alt="得意"></div></div>
+                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_proud_2frames_01.png" loading="lazy" class="corgi-frame" alt="得意"><img src="assets/corgi/corgi_proud_2frames_02.png" loading="lazy" class="corgi-frame" alt="得意"></div></div>
                                         <div class="emoji-name">得意</div>
                                     </button>
                                     <button class="phone-emoji-btn" data-emoji="shy" onclick="switchEmoji(this, 'shy')" aria-label="害羞表情">
-                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_shy_2frames_01.png" loading="lazy" class="corgi-frame" alt="害羞"><img src="../app/src/main/res/drawable/corgi_shy_2frames_02.png" loading="lazy" class="corgi-frame" alt="害羞"></div></div>
+                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_shy_2frames_01.png" loading="lazy" class="corgi-frame" alt="害羞"><img src="assets/corgi/corgi_shy_2frames_02.png" loading="lazy" class="corgi-frame" alt="害羞"></div></div>
                                         <div class="emoji-name">害羞</div>
                                     </button>
                                     <button class="phone-emoji-btn" data-emoji="sad" onclick="switchEmoji(this, 'sad')" aria-label="失落表情">
-                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sad_2frames_01.png" loading="lazy" class="corgi-frame" alt="失落"><img src="../app/src/main/res/drawable/corgi_sad_2frames_02.png" loading="lazy" class="corgi-frame" alt="失落"></div></div>
+                                        <div class="emoji-corgi"><div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sad_2frames_01.png" loading="lazy" class="corgi-frame" alt="失落"><img src="assets/corgi/corgi_sad_2frames_02.png" loading="lazy" class="corgi-frame" alt="失落"></div></div>
                                         <div class="emoji-name">失落</div>
                                     </button>
                                 </div>
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item"><span class="nav-icon">📋</span>待办</div>
@@ -8689,8 +8704,8 @@
                                 <div class="phone-growth-stage current">
                                     <div class="stage-corgi">
                                         <div class="corgi-anim corgi-2frames" style="width: 24px; height: 24px;">
-                                            <img src="../app/src/main/res/drawable/corgi_proud_2frames_01.png" loading="lazy" class="corgi-frame" alt="青年">
-                                            <img src="../app/src/main/res/drawable/corgi_proud_2frames_02.png" loading="lazy" class="corgi-frame" alt="青年">
+                                            <img src="assets/corgi/corgi_proud_2frames_01.png" loading="lazy" class="corgi-frame" alt="青年">
+                                            <img src="assets/corgi/corgi_proud_2frames_02.png" loading="lazy" class="corgi-frame" alt="青年">
                                         </div>
                                     </div>
                                     <div class="stage-info">
@@ -8710,7 +8725,7 @@
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item"><span class="nav-icon">📋</span>待办</div>
@@ -8781,7 +8796,7 @@
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item"><span class="nav-icon">📋</span>待办</div>
@@ -8843,7 +8858,7 @@
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item active"><span class="nav-icon">📋</span>待办</div>
@@ -8891,10 +8906,10 @@
                                     </div>
                                     <div class="holiday-corgi" id="holidayCorgi">
                                         <div class="corgi-anim corgi-4frames">
-                                            <img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="春节">
-                                            <img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="春节">
-                                            <img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="春节">
-                                            <img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="春节">
+                                            <img src="assets/corgi/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="春节">
+                                            <img src="assets/corgi/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="春节">
+                                            <img src="assets/corgi/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="春节">
+                                            <img src="assets/corgi/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="春节">
                                         </div>
                                     </div>
                                     <div class="holiday-greeting" id="holidayGreeting">新年快乐！柯基穿上了红色唐装，陪你辞旧迎新 🎆</div>
@@ -8913,7 +8928,7 @@
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item"><span class="nav-icon">📋</span>待办</div>
@@ -8978,7 +8993,7 @@
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item"><span class="nav-icon">📋</span>待办</div>
@@ -9074,7 +9089,7 @@
                             </div>
                             <!-- 柯基悬浮球 -->
                             <div class="floating-corgi" style="bottom: 80px; left: 12px;">
-                                <div class="corgi-anim corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
+                                <div class="corgi-anim corgi-2frames"><img src="assets/corgi/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"><img src="assets/corgi/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基悬浮球"></div>
                             </div>
                             <div class="phone-bottomnav">
                                 <div class="phone-nav-item"><span class="nav-icon">📋</span>待办</div>
@@ -9109,7 +9124,7 @@
          ============================================ -->
     <footer style="text-align: center; padding: 32px 24px; color: var(--color-text-hint); font-size: 13px; position: relative; z-index: 5;">
         <p>刻记<sup class="brand-sup">+</sup> CORGIMEMO<sup class="brand-sup">+</sup></p>
-        <div style="margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 4px;"><div class="corgi-anim footer-corgi corgi-4frames"><img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="柯基"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="柯基"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="柯基"><img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="柯基"></div> <span>用小短腿的温暖，陪你完成每一天</span></div>
+        <div style="margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 4px;"><div class="corgi-anim footer-corgi corgi-4frames"><img src="assets/corgi/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="柯基"><img src="assets/corgi/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="柯基"><img src="assets/corgi/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="柯基"><img src="assets/corgi/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="柯基"></div> <span>用小短腿的温暖，陪你完成每一天</span></div>
     </footer>
 
     <!-- ============================================
@@ -12170,6 +12185,8 @@
             rotationQuantize: 45,    // 旋转量化角度（度）
             minDist: 120,            // 粒子最小间距（像素）
             repulseStrength: 0.15,   // 排斥力强度
+            mouseRadius: 150,        // 鼠标影响半径（像素）
+            mouseRepulse: 0.5,       // 鼠标排斥力强度
             zOffSpeed: 0.002         // 噪声时间演进速度
         };
 
@@ -12185,17 +12202,32 @@
 
         /* 柯基图片路径 — 11种姿态的第一帧 */
         var CORGI_PATHS = [
-            '../app/src/main/res/drawable/corgi_tilt_2frames_01.png',
-            '../app/src/main/res/drawable/corgi_stand_2frames_01.png',
-            '../app/src/main/res/drawable/corgi_sleep_2frames_01.png',
-            '../app/src/main/res/drawable/corgi_sit_2frames_01.png',
-            '../app/src/main/res/drawable/corgi_shy_2frames_01.png',
-            '../app/src/main/res/drawable/corgi_sad_2frames_01.png',
-            '../app/src/main/res/drawable/corgi_run_4frames_01.png',
-            '../app/src/main/res/drawable/corgi_roll_4framesl_01.png',
-            '../app/src/main/res/drawable/corgi_proud_2frames_01.png',
-            '../app/src/main/res/drawable/corgi_lie_3frames_01.png',
-            '../app/src/main/res/drawable/corgi_wag_4frames_01.png'
+            'assets/corgi/corgi_tilt_2frames_01.png',
+            'assets/corgi/corgi_stand_2frames_01.png',
+            'assets/corgi/corgi_sleep_2frames_01.png',
+            'assets/corgi/corgi_sit_2frames_01.png',
+            'assets/corgi/corgi_shy_2frames_01.png',
+            'assets/corgi/corgi_sad_2frames_01.png',
+            'assets/corgi/corgi_run_4frames_01.png',
+            'assets/corgi/corgi_roll_4framesl_01.png',
+            'assets/corgi/corgi_proud_2frames_01.png',
+            'assets/corgi/corgi_lie_3frames_01.png',
+            'assets/corgi/corgi_wag_4frames_01.png'
+        ];
+
+        /* 预加载图片元素 ID — 与 HTML 中的预加载容器对应 */
+        var PRELOAD_IDS = [
+            'preload-corgi-tilt',
+            'preload-corgi-stand',
+            'preload-corgi-sleep',
+            'preload-corgi-sit',
+            'preload-corgi-shy',
+            'preload-corgi-sad',
+            'preload-corgi-run',
+            'preload-corgi-roll',
+            'preload-corgi-proud',
+            'preload-corgi-lie',
+            'preload-corgi-wag'
         ];
 
         var corgiImages = [];  // 预加载的柯基图片（HTMLImageElement）
@@ -12231,50 +12263,78 @@
         };
 
         /**
-         * 用原生 <img> 标签加载柯基图片
-         * <img> 标签不受 CORS 限制，file:// 和 http:// 均可正常加载
-         * 加载完成后将 HTMLImageElement 转换为 p5.Image 存入 corgiImages 数组
+         * 从预加载容器获取柯基图片
+         * 预加载容器中的图片在页面加载时已由浏览器加载，避免 file:// 安全限制
          */
         function loadCorgiImagesNative() {
             var loaded = 0;
-            var total = CORGI_PATHS.length;
+            var total = PRELOAD_IDS.length;
 
             for (var i = 0; i < total; i++) {
                 (function(idx) {
-                    var img = new Image();
-                    img.onload = function() {
-                        /* 加载成功 — 将 HTMLImageElement 转为 p5.Image */
-                        try {
-                            var p5Img = convertToP5Image(img);
-                            corgiImages[idx] = p5Img;
-                        } catch (e) {
-                            /* 转换失败 — 用占位图 */
-                            corgiImages[idx] = createPlaceholderImage(idx);
+                    var preloadId = PRELOAD_IDS[idx];
+                    var imgEl = document.getElementById(preloadId);
+                    
+                    if (imgEl) {
+                        if (imgEl.complete && imgEl.naturalHeight > 0) {
+                            // 图片已加载完成
+                            tryConvertImage(imgEl, idx);
+                        } else {
+                            // 等待图片加载
+                            imgEl.onload = function() {
+                                tryConvertImage(imgEl, idx);
+                            };
+                            imgEl.onerror = function() {
+                                corgiImages[idx] = createPlaceholderImage(idx);
+                                loaded++;
+                                if (loaded >= total) corgiImagesLoaded = true;
+                            };
                         }
-                        loaded++;
-                        if (loaded >= total) corgiImagesLoaded = true;
-                    };
-                    img.onerror = function() {
-                        /* 加载失败 — 用 p5.Graphics 创建 emoji 占位图 */
+                    } else {
+                        // 预加载元素不存在，使用占位图
                         corgiImages[idx] = createPlaceholderImage(idx);
                         loaded++;
                         if (loaded >= total) corgiImagesLoaded = true;
-                    };
-                    img.src = CORGI_PATHS[idx];
+                    }
+                    
+                    function tryConvertImage(img, index) {
+                        try {
+                            var p5Img = convertToP5Image(img);
+                            corgiImages[index] = p5Img;
+                        } catch (e) {
+                            corgiImages[index] = createPlaceholderImage(index);
+                        }
+                        loaded++;
+                        if (loaded >= total) corgiImagesLoaded = true;
+                    }
                 })(i);
             }
         }
 
         /**
          * 将原生 HTMLImageElement 转换为 p5.Image
-         * 先绘制到临时 canvas，再用 p.createImage 读取像素
+         * 创建临时 canvas 绘制图片，再读取像素到 p5.Image
          */
         function convertToP5Image(htmlImg) {
             var w = htmlImg.naturalWidth || htmlImg.width;
             var h = htmlImg.naturalHeight || htmlImg.height;
+            
+            // 创建临时 canvas
+            var tempCanvas = document.createElement('canvas');
+            tempCanvas.width = w;
+            tempCanvas.height = h;
+            var ctx = tempCanvas.getContext('2d');
+            ctx.drawImage(htmlImg, 0, 0);
+            
+            // 获取像素数据
+            var imageData = ctx.getImageData(0, 0, w, h);
+            
+            // 创建 p5.Image 并复制像素
             var p5Img = p.createImage(w, h);
-            p5Img.drawingContext.drawImage(htmlImg, 0, 0);
+            p5Img.loadPixels();  // 必须先调用 loadPixels 初始化 pixels 数组
+            p5Img.pixels.set(imageData.data);
             p5Img.updatePixels();
+            
             return p5Img;
         }
 
@@ -12292,10 +12352,24 @@
             return a + diff * t;
         }
 
-        /** 创建占位图 — 图片加载失败时用柯基 emoji 代替 */
+        /** 创建占位图 — 图片加载失败时用 emoji 代替 */
         function createPlaceholderImage(idx) {
-            var emojiList = ['🐕', '🐶', '🐾', '🦴', '❤️', '✦', '♡', '✧', '⋆', '❋', '✶'];
-            var emoji = emojiList[idx % emojiList.length];
+            // 加权 emoji 池 — 柯基和治愈类权重高，其他类权重低
+            var weightedEmoji = [
+                // 柯基主题 ×3 权重
+                '🐕', '🐕', '🐕', '🐶', '🐶', '🐶', '🐾', '🐾', '🐾', '🦴', '🦴', '🦴',
+                '🦮', '🦮', '🐕‍🦺', '🎾', '🛏️', '🦶',
+                // 治愈主题 ×2 权重
+                '❤️', '❤️', '✦', '✦', '♡', '♡', '✧', '✧', '⋆', '⋆',
+                '❋', '✶', '🌟', '🌟', '💫', '💫', '🌈', '🌈',
+                // 学生主题 ×1 权重
+                '📚', '✏️', '🎒', '🎓',
+                // 上班族主题 ×1 权重
+                '☕', '💼', '📋', '⏰',
+                // 老人主题 ×1 权重
+                '🍵', '🌳', '🐦', '🌅'
+            ];
+            var emoji = weightedEmoji[p.floor(p.random(weightedEmoji.length))];
             var gfx = p.createGraphics(64, 64);
             gfx.textAlign(p.CENTER, p.CENTER);
             gfx.textSize(40);
@@ -12389,6 +12463,19 @@
                     var strength = CONFIG.repulseStrength * (1 - d / CONFIG.minDist);
                     repulse.setMag(strength);
                     this.acc.add(repulse);
+                }
+            }
+
+            // 鼠标排斥力 — 鼠标靠近时粒子被推开
+            if (p.mouseX > 0 && p.mouseY > 0) {
+                var md = p.dist(this.pos.x, this.pos.y, p.mouseX, p.mouseY);
+                if (md < CONFIG.mouseRadius && md > 0) {
+                    var mouseRepulse = p5.Vector.sub(this.pos, p.createVector(p.mouseX, p.mouseY));
+                    mouseRepulse.normalize();
+                    // 距离越近排斥越强，平滑衰减
+                    var mouseStrength = CONFIG.mouseRepulse * (1 - md / CONFIG.mouseRadius);
+                    mouseRepulse.setMag(mouseStrength);
+                    this.acc.add(mouseRepulse);
                 }
             }
         };
