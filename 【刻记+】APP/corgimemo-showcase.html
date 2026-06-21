@@ -765,20 +765,21 @@
 
         /* 野兽派主导卡片 — 移除圆角,强化粗框硬阴影 */
         .brutal-card-dominant {
+            --shadow-color: var(--color-brutal-ink);
             border: var(--brutal-border) solid var(--color-brutal-ink);
             border-radius: var(--brutal-radius);
             padding: 18px;
             background: #ffffff;
             color: var(--color-brutal-ink);
-            box-shadow: var(--brutal-shadow) var(--brutal-shadow) 0 var(--color-brutal-ink);
+            box-shadow: var(--brutal-shadow) var(--brutal-shadow) 0 var(--shadow-color);
             transition: transform 0.2s ease, box-shadow 0.2s ease;
             position: relative;
         }
 
-        /* hover — 阴影增大,位移偏移,保持边框完整可见 */
+        /* hover — 阴影增大,位移偏移,阴影颜色由 JS 随机设置 */
         .brutal-card-dominant:hover {
             transform: translate(-2px, -2px);
-            box-shadow: var(--brutal-shadow-lg) var(--brutal-shadow-lg) 0 var(--color-brutal-ink);
+            box-shadow: var(--brutal-shadow-lg) var(--brutal-shadow-lg) 0 var(--shadow-color);
             border-color: var(--color-brutal-ink);
         }
 
@@ -990,8 +991,6 @@
         .hero-vision-quote {
             text-align: center;
             padding: 16px 20px;
-            border-top: 1px solid rgba(51, 51, 51, 0.15);
-            border-bottom: 1px solid rgba(51, 51, 51, 0.15);
             margin: 0;
         }
 
@@ -1435,6 +1434,244 @@
             }
         }
 
+        /* ============================================
+           柯基形象与情感系统卡片出入场动画
+           ============================================ */
+
+        /* 带随机颜色刷新的动画类（姿态、表情面板） */
+        .corgi-card-anim {
+            /* CSS 自定义属性：由 JS 设置随机颜色与透明度 */
+            --anim-bg-color: 255, 107, 53;      /* 默认柯基橙 RGB */
+            --anim-bg-opacity: 0.2;             /* 默认 20% 透明度 */
+
+            /* 出场状态（默认） */
+            opacity: 0;
+            transform: translateY(24px) scale(0.9);
+            background-color: rgba(var(--anim-bg-color), 0);
+
+            /* 过渡动画：入场用弹性缓动，出场用 ease-in */
+            transition:
+                opacity 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+                transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+                background-color 0.6s ease-out;
+
+            /* 性能优化：提示浏览器预先创建合成层 */
+            will-change: transform, opacity, background-color;
+        }
+
+        /* 入场状态 */
+        .corgi-card-anim.is-visible {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            background-color: rgba(var(--anim-bg-color), var(--anim-bg-opacity));
+        }
+
+        /* 不刷新颜色的动画类（成就面板，保留原有背景色） */
+        .corgi-card-anim-no-color {
+            /* 出场状态（默认） */
+            opacity: 0;
+            transform: translateY(24px) scale(0.9);
+
+            /* 过渡动画：入场用弹性缓动，出场用 ease-in */
+            transition:
+                opacity 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+                transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+            /* 性能优化 */
+            will-change: transform, opacity;
+        }
+
+        /* 入场状态 */
+        .corgi-card-anim-no-color.is-visible {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+
+        /* 错落延迟：卡片依次入场,每张间隔0.08s（覆盖前8张） */
+        .corgi-card-anim:nth-child(1),
+        .corgi-card-anim-no-color:nth-child(1) {
+            transition-delay: 0s, 0s, 0s;
+        }
+        .corgi-card-anim:nth-child(2),
+        .corgi-card-anim-no-color:nth-child(2) {
+            transition-delay: 0.08s, 0.08s, 0.08s;
+        }
+        .corgi-card-anim:nth-child(3),
+        .corgi-card-anim-no-color:nth-child(3) {
+            transition-delay: 0.16s, 0.16s, 0.16s;
+        }
+        .corgi-card-anim:nth-child(4),
+        .corgi-card-anim-no-color:nth-child(4) {
+            transition-delay: 0.24s, 0.24s, 0.24s;
+        }
+        .corgi-card-anim:nth-child(5),
+        .corgi-card-anim-no-color:nth-child(5) {
+            transition-delay: 0.32s, 0.32s, 0.32s;
+        }
+        .corgi-card-anim:nth-child(6),
+        .corgi-card-anim-no-color:nth-child(6) {
+            transition-delay: 0.40s, 0.40s, 0.40s;
+        }
+        .corgi-card-anim:nth-child(7),
+        .corgi-card-anim-no-color:nth-child(7) {
+            transition-delay: 0.48s, 0.48s, 0.48s;
+        }
+        .corgi-card-anim:nth-child(8),
+        .corgi-card-anim-no-color:nth-child(8) {
+            transition-delay: 0.56s, 0.56s, 0.56s;
+        }
+        /* 超过8张的卡片统一使用0.56s延迟 */
+        .corgi-card-anim:nth-child(n+9),
+        .corgi-card-anim-no-color:nth-child(n+9) {
+            transition-delay: 0.56s, 0.56s, 0.56s;
+        }
+
+        /* 无障碍降级：尊重用户减少动画偏好 */
+        @media (prefers-reduced-motion: reduce) {
+            .corgi-card-anim,
+            .corgi-card-anim-no-color {
+                opacity: 1;
+                transform: none;
+                transition: none;
+                will-change: auto;
+            }
+            .corgi-card-anim {
+                background-color: rgba(var(--anim-bg-color), var(--anim-bg-opacity));
+            }
+            .corgi-item-anim {
+                opacity: 1;
+                transform: none;
+                transition: none;
+                will-change: auto;
+            }
+        }
+
+        /* ============================================
+           柯基情绪轮播项与成长时间轴阶段入场动画
+           ============================================ */
+        .corgi-item-anim {
+            /* 出场状态（默认） */
+            opacity: 0;
+            transform: translateX(24px) scale(0.9);
+
+            /* 过渡动画：入场用弹性缓动 */
+            transition:
+                opacity 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+                transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+            /* 性能优化 */
+            will-change: transform, opacity;
+        }
+
+        /* 入场状态 */
+        .corgi-item-anim.is-visible {
+            opacity: 1;
+            transform: translateX(0) scale(1);
+        }
+
+        /* 错落延迟：前8项依次入场，每项间隔0.08s */
+        .corgi-item-anim:nth-child(1) { transition-delay: 0s; }
+        .corgi-item-anim:nth-child(2) { transition-delay: 0.08s; }
+        .corgi-item-anim:nth-child(3) { transition-delay: 0.16s; }
+        .corgi-item-anim:nth-child(4) { transition-delay: 0.24s; }
+        .corgi-item-anim:nth-child(5) { transition-delay: 0.32s; }
+        .corgi-item-anim:nth-child(6) { transition-delay: 0.40s; }
+        .corgi-item-anim:nth-child(7) { transition-delay: 0.48s; }
+        .corgi-item-anim:nth-child(8) { transition-delay: 0.56s; }
+        .corgi-item-anim:nth-child(n+9) { transition-delay: 0.56s; }
+
+        /* ============================================
+           用户画像卡片出入场动画
+           ============================================ */
+        .persona-card-anim {
+            /* CSS 自定义属性：由 JS 设置随机颜色与透明度 */
+            --anim-bg-color: 255, 107, 53;      /* 默认柯基橙 RGB */
+            --anim-bg-opacity: 0.2;             /* 默认 20% 透明度 */
+
+            /* 出场状态（默认） */
+            opacity: 0;
+            transform: translateY(24px) scale(0.9);
+            background-color: rgba(var(--anim-bg-color), 0);
+
+            /* 过渡动画：入场用弹性缓动，出场用 ease-in */
+            transition:
+                opacity 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+                transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+                background-color 0.6s ease-out;
+
+            /* 性能优化：提示浏览器预先创建合成层 */
+            will-change: transform, opacity, background-color;
+        }
+
+        /* 入场状态 */
+        .persona-card-anim.is-visible {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            background-color: rgba(var(--anim-bg-color), var(--anim-bg-opacity));
+        }
+
+        /* 错落延迟：3张卡片依次入场,每张间隔0.08s */
+        .persona-card-anim:nth-child(1) {
+            transition-delay: 0s, 0s, 0s;
+        }
+        .persona-card-anim:nth-child(2) {
+            transition-delay: 0.08s, 0.08s, 0.08s;
+        }
+        .persona-card-anim:nth-child(3) {
+            transition-delay: 0.16s, 0.16s, 0.16s;
+        }
+
+        /* 无障碍降级：尊重用户减少动画偏好 */
+        @media (prefers-reduced-motion: reduce) {
+            .persona-card-anim {
+                opacity: 1;
+                transform: none;
+                background-color: rgba(var(--anim-bg-color), var(--anim-bg-opacity));
+                transition: none;
+                will-change: auto;
+            }
+        }
+
+        /* ============================================
+           场景故事卡片入场动画
+           从右滑入，营造"时间推进"感
+           ============================================ */
+        .scene-card-anim {
+            /* 出场状态（默认） */
+            opacity: 0;
+            transform: translateX(24px) scale(0.9);
+
+            /* 过渡动画：入场用弹性缓动 */
+            transition:
+                opacity 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+                transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+            /* 性能优化 */
+            will-change: transform, opacity;
+        }
+
+        /* 入场状态 */
+        .scene-card-anim.is-visible {
+            opacity: 1;
+            transform: translateX(0) scale(1);
+        }
+
+        /* 错落延迟：4个场景项依次入场，每项间隔0.1s */
+        .scene-card-anim:nth-child(1) { transition-delay: 0s; }
+        .scene-card-anim:nth-child(2) { transition-delay: 0.1s; }
+        .scene-card-anim:nth-child(3) { transition-delay: 0.2s; }
+        .scene-card-anim:nth-child(4) { transition-delay: 0.3s; }
+
+        /* 无障碍降级：尊重用户减少动画偏好 */
+        @media (prefers-reduced-motion: reduce) {
+            .scene-card-anim {
+                opacity: 1;
+                transform: none;
+                transition: none;
+                will-change: auto;
+            }
+        }
+
         /* 产品愿景引言 */
         .vision-quote {
             text-align: center;
@@ -1793,13 +2030,13 @@
         .combo-card {
             padding: 16px;
             border: 3px solid #333;
-            box-shadow: 5px 5px 0 #333;
+            box-shadow: 5px 5px 0 var(--shadow-color, #333);
             transition: transform 0.2s, box-shadow 0.2s;
         }
 
         .combo-card:hover {
             transform: translateY(-3px);
-            box-shadow: 7px 7px 0 #333;
+            box-shadow: 7px 7px 0 var(--shadow-color, #333);
         }
 
         .combo-card-header {
@@ -1871,6 +2108,7 @@
         .combo-card-greeting-tab.active {
             background: #FF6B35;
             color: #fff;
+            box-shadow: 2px 2px 0 #333;
         }
 
         .combo-card-greeting-content {
@@ -3108,6 +3346,19 @@
             .triangle-diagram {
                 max-width: 400px;
             }
+
+            /* Hero姿态卡片行 — 平板端缩小间距和尺寸 */
+            .hero-corgi-row {
+                gap: 10px;
+            }
+            .hero-corgi-card {
+                padding: 8px;
+            }
+            .hero-corgi-card .corgi-anim.hero-pose-corgi,
+            .hero-corgi-card .corgi-anim.hero-corgi {
+                width: 64px !important;
+                height: 64px !important;
+            }
         }
 
         @media (max-width: 767px) {
@@ -3201,6 +3452,16 @@
             .switch-phone {
                 width: 180px;
                 height: 340px;
+            }
+
+            /* Hero姿态卡片行 — 移动端换行显示 */
+            .hero-corgi-row {
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 8px;
+            }
+            .hero-corgi-card {
+                transform: none !important;
             }
         }
 
@@ -3315,6 +3576,21 @@
             font-size: 14px;
             color: var(--color-primary-bold);
             line-height: 1.7;
+            /* 初始状态：透明 + 轻微下移 */
+            opacity: 0;
+            transform: translateY(8px);
+            /* 过渡动画：淡入 + 上移 */
+            transition:
+                opacity 0.6s ease-out,
+                transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            /* 性能优化 */
+            will-change: transform, opacity;
+        }
+
+        /* 对话气泡淡入完成状态 */
+        .story-corgi-quote.is-visible {
+            opacity: 1;
+            transform: translateY(0);
         }
 
         .story-corgi-quote .quote-prefix {
@@ -3417,6 +3693,12 @@
             width: 3px;
             background: linear-gradient(180deg, var(--color-primary), var(--color-success), var(--color-warning), var(--color-high));
             border-radius: 2px;
+            /* 初始状态：垂直方向缩放为0，原点在顶部 */
+            /* 通过 CSS 变量 --line-progress 控制绘制进度（0-1） */
+            transform: scaleY(var(--line-progress, 0));
+            transform-origin: top center;
+            /* 连接线绘制动画：0.5s 缓出，分段绘制时每段都有过渡 */
+            transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
         }
 
         .scene-timeline-item {
@@ -3574,7 +3856,59 @@
             height: 80px;
             animation: corgiGlow 2.5s ease-in-out infinite;
             filter: drop-shadow(0 0 20px rgba(255, 107, 53, 0.6));
-            margin-bottom: 12px;
+            margin-bottom: 0;
+        }
+
+        /* Hero区域姿态卡片行 — 横向排列 + 有序高低错落（作为magazine-split右侧） */
+        .hero-corgi-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 16px;
+            flex-wrap: nowrap;
+        }
+
+        /* Hero区域单个姿态卡片 — 轻微浮动动画 */
+        .hero-corgi-card {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 12px;
+            background: #fff;
+            flex-shrink: 0;
+            animation: heroCardFloat 3s ease-in-out infinite;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        /* Hero姿态卡片浮动动画 — 轻微上下浮动增强生动感 */
+        @keyframes heroCardFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-4px); }
+        }
+
+        /* Hero姿态卡片悬浮效果 — 暂停浮动+阴影变柔和 */
+        .hero-corgi-card:hover {
+            animation-play-state: paused;
+            transform: translateY(-6px) !important;
+            box-shadow: 4px 4px 12px rgba(255, 107, 53, 0.35);
+        }
+
+        /* Hero姿态卡片底部标签 — 与摇尾巴卡片一致 */
+        .hero-corgi-label {
+            font-size: 9px;
+            color: var(--color-text-secondary);
+            margin-top: 4px;
+            font-family: var(--font-mono);
+            white-space: nowrap;
+        }
+
+        /* Hero姿态卡片内柯基动画 — 统一80px尺寸+光晕效果（与摇尾巴一致） */
+        .corgi-anim.hero-pose-corgi {
+            width: 80px !important;
+            height: 80px !important;
+            margin-bottom: 0;
+            animation: corgiGlow 2.5s ease-in-out infinite;
+            filter: drop-shadow(0 0 20px rgba(255, 107, 53, 0.6));
         }
 
         /* 姿态/表情卡片中的柯基动画 - 64x64 */
@@ -3636,7 +3970,11 @@
                 opacity: 1;
             }
             .corgi-anim.hero-corgi,
-            .corgi-anim.demo-corgi {
+            .corgi-anim.demo-corgi,
+            .corgi-anim.hero-pose-corgi {
+                animation: none !important;
+            }
+            .hero-corgi-card {
                 animation: none !important;
             }
             /* 新增组件 — 禁用所有装饰性动画 */
@@ -3700,6 +4038,7 @@
             background: var(--color-brutal-orange);
             color: #fff;
             border-color: var(--color-brutal-ink);
+            box-shadow: 3px 3px 0 #333;
         }
 
         /* 分区标题 */
@@ -5075,20 +5414,64 @@
                 <div style="font-size: 11px; color: var(--color-primary-bold); font-weight: 700; margin-bottom: 8px;">— 治愈系记录应用</div>
                 <h1 class="magazine-title">刻记<sup style="font-size: 20px; color: var(--color-primary-bold);">+</sup></h1>
                 <div class="magazine-subtitle">CORGIMEMO<sup style="font-size: 12px;">+</sup></div>
-                <p class="magazine-tagline">「一个会陪伴你的治愈系记录应用」— 小柯基陪你记录每一刻</p>
+                <p class="magazine-tagline">「一个会陪伴你的治愈系记录应用<br>　 小柯基陪你记录每一刻」</p>
             </div>
 
-            <!-- 右侧：柯基野兽派框 -->
-            <div style="text-align: right;">
-                <div class="brutal-card" style="display: inline-block; padding: 12px; background: #fff;">
-                    <!-- Hero区域柯基 - 摇尾巴4帧动画 -->
+            <!-- 右侧：柯基姿态卡片群 — 6卡片横向排列+有序高低错落（低-高-低-高-低-高）+波浪浮动 -->
+            <div class="hero-corgi-row">
+                <!-- 卡片1：歪头（低） -->
+                <div class="brutal-card hero-corgi-card" style="margin-top: 6px; animation-delay: 0s;">
+                    <div class="corgi-anim hero-pose-corgi corgi-2frames" style="position: relative; width: 56px; height: 56px;">
+                        <img src="../app/src/main/res/drawable/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="歪头" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="../app/src/main/res/drawable/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="歪头" style="width: 100%; height: 100%; object-fit: contain;">
+                    </div>
+                    <div class="hero-corgi-label">[歪头ing...]</div>
+                </div>
+                <!-- 卡片2：站立（高） -->
+                <div class="brutal-card hero-corgi-card" style="margin-top: -8px; animation-delay: 0.5s;">
+                    <div class="corgi-anim hero-pose-corgi corgi-2frames" style="position: relative; width: 56px; height: 56px;">
+                        <img src="../app/src/main/res/drawable/corgi_stand_2frames_01.png" loading="lazy" class="corgi-frame" alt="站立" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="../app/src/main/res/drawable/corgi_stand_2frames_02.png" loading="lazy" class="corgi-frame" alt="站立" style="width: 100%; height: 100%; object-fit: contain;">
+                    </div>
+                    <div class="hero-corgi-label">[站立ing...]</div>
+                </div>
+                <!-- 卡片3：奔跑（低） -->
+                <div class="brutal-card hero-corgi-card" style="margin-top: 4px; animation-delay: 1s;">
+                    <div class="corgi-anim hero-pose-corgi corgi-4frames" style="position: relative; width: 56px; height: 56px;">
+                        <img src="../app/src/main/res/drawable/corgi_run_4frames_01.png" loading="lazy" class="corgi-frame" alt="奔跑" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="../app/src/main/res/drawable/corgi_run_4frames_02.png" loading="lazy" class="corgi-frame" alt="奔跑" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="../app/src/main/res/drawable/corgi_run_4frames_02.png" loading="lazy" class="corgi-frame" alt="奔跑" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="../app/src/main/res/drawable/corgi_run_4frames_04.png" loading="lazy" class="corgi-frame" alt="奔跑" style="width: 100%; height: 100%; object-fit: contain;">
+                    </div>
+                    <div class="hero-corgi-label">[奔跑ing...]</div>
+                </div>
+                <!-- 卡片4：打滚（高） -->
+                <div class="brutal-card hero-corgi-card" style="margin-top: -10px; animation-delay: 1.5s;">
+                    <div class="corgi-anim hero-pose-corgi corgi-4frames" style="position: relative; width: 56px; height: 56px;">
+                        <img src="../app/src/main/res/drawable/corgi_roll_4framesl_01.png" loading="lazy" class="corgi-frame" alt="打滚" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="../app/src/main/res/drawable/corgi_roll_4framesl_02.png" loading="lazy" class="corgi-frame" alt="打滚" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="../app/src/main/res/drawable/corgi_roll_4framesl_02.png" loading="lazy" class="corgi-frame" alt="打滚" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="../app/src/main/res/drawable/corgi_roll_4framesl_04.png" loading="lazy" class="corgi-frame" alt="打滚" style="width: 100%; height: 100%; object-fit: contain;">
+                    </div>
+                    <div class="hero-corgi-label">[打滚ing...]</div>
+                </div>
+                <!-- 卡片5：害羞（低） -->
+                <div class="brutal-card hero-corgi-card" style="margin-top: 6px; animation-delay: 2s;">
+                    <div class="corgi-anim hero-pose-corgi corgi-2frames" style="position: relative; width: 56px; height: 56px;">
+                        <img src="../app/src/main/res/drawable/corgi_shy_2frames_01.png" loading="lazy" class="corgi-frame" alt="害羞" style="width: 100%; height: 100%; object-fit: contain;">
+                        <img src="../app/src/main/res/drawable/corgi_shy_2frames_02.png" loading="lazy" class="corgi-frame" alt="害羞" style="width: 100%; height: 100%; object-fit: contain;">
+                    </div>
+                    <div class="hero-corgi-label">[害羞ing...]</div>
+                </div>
+                <!-- 卡片6：摇尾巴（高）— 原有Hero柯基 -->
+                <div class="brutal-card hero-corgi-card hero-corgi-main" style="margin-top: -8px; animation-delay: 2.5s;">
                     <div class="corgi-anim hero-corgi corgi-4frames" style="position: relative; width: 80px; height: 80px;">
                         <img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
                         <img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
                         <img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
                         <img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="柯基摇尾巴" style="width: 100%; height: 100%; object-fit: contain;">
                     </div>
-                    <div style="font-size: 9px; color: var(--color-text-secondary); margin-top: 4px; font-family: var(--font-mono);">[柯基摇尾中...]</div>
+                    <div class="hero-corgi-label">[柯基摇尾中...]</div>
                 </div>
             </div>
         </div>
@@ -5245,6 +5628,7 @@
                 <div class="chapter-content">
                     <div class="chapter-label">FUNCTION DIAGRAM</div>
                     <h2 class="section-title-brutal">三大功能关系图</h2>
+                    <p style="color: var(--color-brutal-ink);">点击节点查看详情，三大功能可相互关联。</p>
                 <div class="triangle-diagram" id="functionDiagram">
                     <!-- SVG 连线层：曲线 + 渐变 + 关系标签 + 双向流动粒子 -->
                     <svg width="100%" height="100%" viewBox="0 0 520 440" preserveAspectRatio="xMidYMid meet"
@@ -5278,12 +5662,6 @@
                         <!-- 曲线连接3：灵感记录 ↔ 特殊日期（底部弧） -->
                         <path class="diagram-path path-bottom" d="M82,355 Q260,420 438,355"
                               fill="none" stroke="url(#grad-insp-date)" stroke-width="2.5" stroke-linecap="round"/>
-
-                        <!-- 中心区域交互提示文字 -->
-                        <text x="260" y="230" text-anchor="middle" font-size="11" font-style="italic"
-                              fill="#bbb" letter-spacing="0.5" opacity="0.8">👆 点击节点查看详情</text>
-                        <text x="260" y="246" text-anchor="middle" font-size="10" font-style="italic"
-                              fill="#ccc" letter-spacing="0.3" opacity="0.7">三大功能可相互关联</text>
 
                         <!-- 关系标签1：想法变行动（左弧中段） -->
                         <foreignObject x="105" y="165" width="90" height="24">
@@ -5372,42 +5750,42 @@
                     <!-- 面板1：8种姿态 -->
                     <div class="greeting-tab-panel active" data-greeting-panel="corgi-posture">
                     <div class="grid-4 mb-24">
-                <div class="brutal-card-dominant stagger-item" style="animation-delay: 0.05s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-3frames"><img src="../app/src/main/res/drawable/corgi_lie_3frames_01.png" loading="lazy" class="corgi-frame" alt="趴卧"><img src="../app/src/main/res/drawable/corgi_lie_3frames_02.png" loading="lazy" class="corgi-frame" alt="趴卧"><img src="../app/src/main/res/drawable/corgi_lie_3frames_02.png" loading="lazy" class="corgi-frame" alt="趴卧"></div></span>
                     <div class="pose-name">趴卧</div>
                     <div class="pose-scene">默认状态，安静等待</div>
                 </div>
-                <div class="brutal-card-dominant bg-orange stagger-item" style="animation-delay: 0.1s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="坐立"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="坐立"></div></span>
                     <div class="pose-name">坐立</div>
                     <div class="pose-scene">创建待办时，专注状态</div>
                 </div>
-                <div class="brutal-card-dominant bg-mint stagger-item" style="animation-delay: 0.15s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_stand_2frames_01.png" loading="lazy" class="corgi-frame" alt="站立"><img src="../app/src/main/res/drawable/corgi_stand_2frames_02.png" loading="lazy" class="corgi-frame" alt="站立"></div></span>
                     <div class="pose-name">站立</div>
                     <div class="pose-scene">任务完成，骄傲展示</div>
                 </div>
-                <div class="brutal-card-dominant bg-yellow stagger-item" style="animation-delay: 0.2s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="../app/src/main/res/drawable/corgi_run_4frames_01.png" loading="lazy" class="corgi-frame" alt="奔跑"><img src="../app/src/main/res/drawable/corgi_run_4frames_02.png" loading="lazy" class="corgi-frame" alt="奔跑"><img src="../app/src/main/res/drawable/corgi_run_4frames_02.png" loading="lazy" class="corgi-frame" alt="奔跑"><img src="../app/src/main/res/drawable/corgi_run_4frames_04.png" loading="lazy" class="corgi-frame" alt="奔跑"></div></span>
                     <div class="pose-name">奔跑</div>
                     <div class="pose-scene">加载中，活力满满</div>
                 </div>
-                <div class="brutal-card-dominant stagger-item" style="animation-delay: 0.25s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="../app/src/main/res/drawable/corgi_roll_4framesl_01.png" loading="lazy" class="corgi-frame" alt="打滚"><img src="../app/src/main/res/drawable/corgi_roll_4framesl_02.png" loading="lazy" class="corgi-frame" alt="打滚"><img src="../app/src/main/res/drawable/corgi_roll_4framesl_02.png" loading="lazy" class="corgi-frame" alt="打滚"><img src="../app/src/main/res/drawable/corgi_roll_4framesl_04.png" loading="lazy" class="corgi-frame" alt="打滚"></div></span>
                     <div class="pose-name">打滚</div>
                     <div class="pose-scene">长按互动，卖萌撒娇</div>
                 </div>
-                <div class="brutal-card-dominant bg-orange stagger-item" style="animation-delay: 0.3s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sleep_2frames_01.png" loading="lazy" class="corgi-frame" alt="睡觉"><img src="../app/src/main/res/drawable/corgi_sleep_2frames_02.png" loading="lazy" class="corgi-frame" alt="睡觉"></div></span>
                     <div class="pose-name">睡觉</div>
                     <div class="pose-scene">深夜时段，安静休息</div>
                 </div>
-                <div class="brutal-card-dominant bg-mint stagger-item" style="animation-delay: 0.35s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="歪头"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="歪头"></div></span>
                     <div class="pose-name">歪头</div>
                     <div class="pose-scene">期待状态，好奇张望</div>
                 </div>
-                <div class="brutal-card-dominant bg-yellow stagger-item" style="animation-delay: 0.4s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="pose-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="摇尾巴"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="摇尾巴"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="摇尾巴"><img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="摇尾巴"></div></span>
                     <div class="pose-name">摇尾巴</div>
                     <div class="pose-scene">开心时刻，欢快摇摆</div>
@@ -5420,42 +5798,42 @@
 
             <!-- 表情系统 — 野兽派色块卡片 -->
                     <div class="grid-4 mb-24">
-                <div class="brutal-card-dominant stagger-item" style="animation-delay: 0.05s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-4frames"><img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="开心"></div></span>
                     <div class="expr-name">开心</div>
                     <div class="expr-scene">弯弯笑眼，任务完成时</div>
                 </div>
-                <div class="brutal-card-dominant bg-orange stagger-item" style="animation-delay: 0.1s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="普通"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="普通"></div></span>
                     <div class="expr-name">普通</div>
                     <div class="expr-scene">圆圆眼睛，日常状态</div>
                 </div>
-                <div class="brutal-card-dominant bg-mint stagger-item" style="animation-delay: 0.15s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="期待"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="期待"></div></span>
                     <div class="expr-name">期待</div>
                     <div class="expr-scene">闪亮眼睛，等待互动</div>
                 </div>
-                <div class="brutal-card-dominant bg-yellow stagger-item" style="animation-delay: 0.2s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sleep_2frames_01.png" loading="lazy" class="corgi-frame" alt="困倦"><img src="../app/src/main/res/drawable/corgi_sleep_2frames_02.png" loading="lazy" class="corgi-frame" alt="困倦"></div></span>
                     <div class="expr-name">困倦</div>
                     <div class="expr-scene">半闭眼睛，深夜时段</div>
                 </div>
-                <div class="brutal-card-dominant stagger-item" style="animation-delay: 0.25s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_worry_2frames_01.png" loading="lazy" class="corgi-frame" alt="担心"><img src="../app/src/main/res/drawable/corgi_worry_2frames_02.png" loading="lazy" class="corgi-frame" alt="担心"></div></span>
                     <div class="expr-name">担心</div>
                     <div class="expr-scene">眉毛下垂，任务超期时</div>
                 </div>
-                <div class="brutal-card-dominant bg-orange stagger-item" style="animation-delay: 0.3s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_stand_2frames_01.png" loading="lazy" class="corgi-frame" alt="惊讶"><img src="../app/src/main/res/drawable/corgi_stand_2frames_02.png" loading="lazy" class="corgi-frame" alt="惊讶"></div></span>
                     <div class="expr-name">惊讶</div>
                     <div class="expr-scene">眼睛睁大，特殊事件</div>
                 </div>
-                <div class="brutal-card-dominant bg-mint stagger-item" style="animation-delay: 0.35s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_proud_2frames_01.png" loading="lazy" class="corgi-frame" alt="得意"><img src="../app/src/main/res/drawable/corgi_proud_2frames_02.png" loading="lazy" class="corgi-frame" alt="得意"></div></span>
                     <div class="expr-name">得意</div>
                     <div class="expr-scene">眯一只眼，达成成就</div>
                 </div>
-                <div class="brutal-card-dominant bg-yellow stagger-item" style="animation-delay: 0.4s;">
+                <div class="brutal-card-dominant corgi-card-anim">
                     <span class="expr-emoji"><div class="corgi-anim card-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_shy_2frames_01.png" loading="lazy" class="corgi-frame" alt="害羞"><img src="../app/src/main/res/drawable/corgi_shy_2frames_02.png" loading="lazy" class="corgi-frame" alt="害羞"></div></span>
                     <div class="expr-name">害羞</div>
                     <div class="expr-scene">看向旁边，被连点时</div>
@@ -5467,7 +5845,7 @@
                     <div class="greeting-tab-panel" data-greeting-panel="corgi-emotion">
 
             <!-- 情绪系统 — 野兽派色块卡片 -->
-                    <div class="brutal-card-dominant mb-24">
+                    <div class="brutal-card-dominant mb-24 corgi-card-anim-no-color">
                 <div class="sub-title">情绪值范围</div>
                 <div class="emotion-bar">
                     <div class="emotion-bar-segment sad">0-19 失落</div>
@@ -5481,7 +5859,7 @@
                 <div class="emotion-carousel" id="emotionCarousel">
                     <div class="emotion-carousel-track" id="emotionCarouselTrack">
                         <!-- 失落 -->
-                        <div class="emotion-carousel-item" data-emotion="sad">
+                        <div class="emotion-carousel-item corgi-item-anim" data-emotion="sad">
                             <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sad_2frames_01.png" loading="lazy" class="corgi-frame" alt="失落"><img src="../app/src/main/res/drawable/corgi_sad_2frames_02.png" loading="lazy" class="corgi-frame" alt="失落"></div></span>
                             <div>
                                 <div class="demo-value" style="color: #FF8A80;">12</div>
@@ -5490,7 +5868,7 @@
                             </div>
                         </div>
                         <!-- 担心 -->
-                        <div class="emotion-carousel-item" data-emotion="worried">
+                        <div class="emotion-carousel-item corgi-item-anim" data-emotion="worried">
                             <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_worry_2frames_01.png" loading="lazy" class="corgi-frame" alt="担心"><img src="../app/src/main/res/drawable/corgi_worry_2frames_02.png" loading="lazy" class="corgi-frame" alt="担心"></div></span>
                             <div>
                                 <div class="demo-value" style="color: #FFB74D;">28</div>
@@ -5499,7 +5877,7 @@
                             </div>
                         </div>
                         <!-- 普通 -->
-                        <div class="emotion-carousel-item" data-emotion="normal">
+                        <div class="emotion-carousel-item corgi-item-anim" data-emotion="normal">
                             <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="普通"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="普通"></div></span>
                             <div>
                                 <div class="demo-value" style="color: #FFD54F;">52</div>
@@ -5508,7 +5886,7 @@
                             </div>
                         </div>
                         <!-- 期待 -->
-                        <div class="emotion-carousel-item" data-emotion="expect">
+                        <div class="emotion-carousel-item corgi-item-anim" data-emotion="expect">
                             <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_01.png" loading="lazy" class="corgi-frame" alt="期待"><img src="../app/src/main/res/drawable/corgi_tilt_2frames_02.png" loading="lazy" class="corgi-frame" alt="期待"></div></span>
                             <div>
                                 <div class="demo-value" style="color: #7EC8A0;">68</div>
@@ -5517,7 +5895,7 @@
                             </div>
                         </div>
                         <!-- 开心 -->
-                        <div class="emotion-carousel-item" data-emotion="happy">
+                        <div class="emotion-carousel-item corgi-item-anim" data-emotion="happy">
                             <span class="demo-emoji"><div class="corgi-anim demo-corgi corgi-4frames"><img src="../app/src/main/res/drawable/corgi_wag_4frames_01.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_02.png" loading="lazy" class="corgi-frame" alt="开心"><img src="../app/src/main/res/drawable/corgi_wag_4frames_04.png" loading="lazy" class="corgi-frame" alt="开心"></div></span>
                             <div>
                                 <div class="demo-value" style="color: #69F0AE;">85</div>
@@ -5540,30 +5918,30 @@
             <!-- 成长系统 — 野兽派色块卡片 -->
                     <!-- 面板4：成长系统 -->
                     <div class="greeting-tab-panel" data-greeting-panel="corgi-growth">
-                    <div class="brutal-card-dominant mb-24">
+                    <div class="brutal-card-dominant mb-24 corgi-card-anim-no-color">
                 <div class="growth-track">
-                    <div class="growth-stage">
+                    <div class="growth-stage corgi-item-anim">
                         <span class="stage-emoji"><div class="corgi-anim growth-corgi corgi-3frames"><img src="../app/src/main/res/drawable/corgi_lie_3frames_01.png" loading="lazy" class="corgi-frame" alt="柯基宝宝"><img src="../app/src/main/res/drawable/corgi_lie_3frames_02.png" loading="lazy" class="corgi-frame" alt="柯基宝宝"><img src="../app/src/main/res/drawable/corgi_lie_3frames_02.png" loading="lazy" class="corgi-frame" alt="柯基宝宝"></div></span>
                         <div class="stage-name">柯基宝宝</div>
                         <div class="stage-level">Lv.1-3</div>
                         <div class="stage-bar"><div class="stage-bar-fill" style="width: 100%;"></div></div>
                     </div>
-                    <div class="growth-arrow">→</div>
-                    <div class="growth-stage">
+                    <div class="growth-arrow corgi-item-anim">→</div>
+                    <div class="growth-stage corgi-item-anim">
                         <span class="stage-emoji"><div class="corgi-anim growth-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_sit_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基少年"><img src="../app/src/main/res/drawable/corgi_sit_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基少年"></div></span>
                         <div class="stage-name">柯基少年</div>
                         <div class="stage-level">Lv.4-6</div>
                         <div class="stage-bar"><div class="stage-bar-fill" style="width: 75%;"></div></div>
                     </div>
-                    <div class="growth-arrow">→</div>
-                    <div class="growth-stage">
+                    <div class="growth-arrow corgi-item-anim">→</div>
+                    <div class="growth-stage corgi-item-anim">
                         <span class="stage-emoji"><div class="corgi-anim growth-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_stand_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基青年"><img src="../app/src/main/res/drawable/corgi_stand_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基青年"></div></span>
                         <div class="stage-name">柯基青年</div>
                         <div class="stage-level">Lv.7-9</div>
                         <div class="stage-bar"><div class="stage-bar-fill" style="width: 40%;"></div></div>
                     </div>
-                    <div class="growth-arrow">→</div>
-                    <div class="growth-stage">
+                    <div class="growth-arrow corgi-item-anim">→</div>
+                    <div class="growth-stage corgi-item-anim">
                         <span class="stage-emoji"><div class="corgi-anim growth-corgi corgi-2frames"><img src="../app/src/main/res/drawable/corgi_proud_2frames_01.png" loading="lazy" class="corgi-frame" alt="柯基大师"><img src="../app/src/main/res/drawable/corgi_proud_2frames_02.png" loading="lazy" class="corgi-frame" alt="柯基大师"></div></span>
                         <div class="stage-name">柯基大师</div>
                         <div class="stage-level">Lv.10+</div>
@@ -5579,57 +5957,57 @@
                             <h3 class="achievement-category-title">🌟 通用成就（9个）</h3>
                             <p class="achievement-category-desc">所有用户均可解锁的基础成就</p>
                             <div class="grid-3 mb-24">
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🌱</span>
                                     <div class="achievement-name">初次见面</div>
                                     <div class="achievement-desc">完成第 1 个任务</div>
                                     <div class="achievement-cond">累计完成 1</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🔥</span>
                                     <div class="achievement-name">坚持不懈</div>
                                     <div class="achievement-desc">连续 7 天每天至少完成 1 个任务</div>
                                     <div class="achievement-cond">连续 7 天</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">⚡</span>
                                     <div class="achievement-name">效率达人</div>
                                     <div class="achievement-desc">单天完成 10 个任务</div>
                                     <div class="achievement-cond">单天 10</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🐾</span>
                                     <div class="achievement-name">柯基成长</div>
                                     <div class="achievement-desc">柯基等级达到 5 级</div>
                                     <div class="achievement-cond">等级 5</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🎯</span>
                                     <div class="achievement-name">目标达成</div>
                                     <div class="achievement-desc">累计完成 100 个任务</div>
                                     <div class="achievement-cond">累计 100</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">👑</span>
                                     <div class="achievement-name">柯基大师</div>
                                     <div class="achievement-desc">柯基等级达到 10 级</div>
                                     <div class="achievement-cond">等级 10</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card achievement-major stagger-item">
+                                <div class="brutal-card-dominant achievement-card achievement-major corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🏆</span>
                                     <div class="achievement-name">坚持不懈 Pro</div>
                                     <div class="achievement-desc">连续 30 天完成任务</div>
                                     <div class="achievement-cond">连续 30 天</div>
                                     <div class="achievement-outfit">🎁 皇冠</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card achievement-major stagger-item">
+                                <div class="brutal-card-dominant achievement-card achievement-major corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🪽</span>
                                     <div class="achievement-name">勤劳天使</div>
                                     <div class="achievement-desc">累计完成 500 个任务</div>
                                     <div class="achievement-cond">累计 500</div>
                                     <div class="achievement-outfit">🎁 天使翅膀</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card achievement-major stagger-item">
+                                <div class="brutal-card-dominant achievement-card achievement-major corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🧥</span>
                                     <div class="achievement-name">全成就大师</div>
                                     <div class="achievement-desc">解锁其他所有成就</div>
@@ -5643,44 +6021,44 @@
                             <h3 class="achievement-category-title">💼 上班族专属（7个）</h3>
                             <p class="achievement-category-desc">针对职场人士的工作类成就</p>
                             <div class="grid-3 mb-24">
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🎉</span>
                                     <div class="achievement-name">职场新人</div>
                                     <div class="achievement-desc">首次完成工作类任务</div>
                                     <div class="achievement-cond">累计工作 1</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">💼</span>
                                     <div class="achievement-name">项目达人</div>
                                     <div class="achievement-desc">累计完成 20 个工作类任务</div>
                                     <div class="achievement-cond">累计工作 20</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">📋</span>
                                     <div class="achievement-name">工作能手</div>
                                     <div class="achievement-desc">累计完成 50 个工作类任务</div>
                                     <div class="achievement-cond">累计工作 50</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🌙</span>
                                     <div class="achievement-name">加班终结者</div>
                                     <div class="achievement-desc">连续 3 天在 22:00 前完成任务</div>
                                     <div class="achievement-cond">22:00 前 3 天</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card achievement-major stagger-item">
+                                <div class="brutal-card-dominant achievement-card achievement-major corgi-card-anim-no-color">
                                     <span class="achievement-emoji">👔</span>
                                     <div class="achievement-name">职场精英</div>
                                     <div class="achievement-desc">完成 100 个工作类任务</div>
                                     <div class="achievement-cond">累计工作 100</div>
                                     <div class="achievement-outfit">🎁 领带</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">📊</span>
                                     <div class="achievement-name">KPI 达成</div>
                                     <div class="achievement-desc">累计完成 30 个工作类任务</div>
                                     <div class="achievement-cond">累计工作 30</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🚀</span>
                                     <div class="achievement-name">晋升之路</div>
                                     <div class="achievement-desc">连续 30 天每天至少完成 1 个工作类任务</div>
@@ -5693,56 +6071,56 @@
                             <h3 class="achievement-category-title">📚 学生专属（9个）</h3>
                             <p class="achievement-category-desc">针对学生群体的学习类成就</p>
                             <div class="grid-3 mb-24">
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">✍️</span>
                                     <div class="achievement-name">笔记达人</div>
                                     <div class="achievement-desc">累计完成 30 个学习类任务</div>
                                     <div class="achievement-cond">累计学习 30</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🏃</span>
                                     <div class="achievement-name">运动达人</div>
                                     <div class="achievement-desc">累计完成 30 个运动/健身类任务</div>
                                     <div class="achievement-cond">累计生活 30</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">⭐</span>
                                     <div class="achievement-name">早起达人</div>
                                     <div class="achievement-desc">连续 7 天在早上 8 点前完成至少 1 个任务</div>
                                     <div class="achievement-cond">早起 7 天</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">📚</span>
                                     <div class="achievement-name">学习之星</div>
                                     <div class="achievement-desc">累计完成 50 个学习类任务</div>
                                     <div class="achievement-cond">累计学习 50</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🎮</span>
                                     <div class="achievement-name">娱乐达人</div>
                                     <div class="achievement-desc">累计完成 20 个娱乐类任务</div>
                                     <div class="achievement-cond">累计娱乐 20</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card achievement-major stagger-item">
+                                <div class="brutal-card-dominant achievement-card achievement-major corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🎓</span>
                                     <div class="achievement-name">学霸</div>
                                     <div class="achievement-desc">完成 100 个学习类任务</div>
                                     <div class="achievement-cond">累计学习 100</div>
                                     <div class="achievement-outfit">🎁 学士帽</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🎓</span>
                                     <div class="achievement-name">毕业在望</div>
                                     <div class="achievement-desc">累计完成 200 个学习类任务</div>
                                     <div class="achievement-cond">累计学习 200</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🏆</span>
                                     <div class="achievement-name">奖学金候选人</div>
                                     <div class="achievement-desc">本学期累计完成 100 个学习类任务</div>
                                     <div class="achievement-cond">学期学习 100</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">📝</span>
                                     <div class="achievement-name">考试战神</div>
                                     <div class="achievement-desc">连续 7 天完成学习类任务</div>
@@ -5755,62 +6133,62 @@
                             <h3 class="achievement-category-title">🧓 老年人专属（10个）</h3>
                             <p class="achievement-category-desc">针对老年群体的健康养生类成就</p>
                             <div class="grid-3 mb-24">
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🌿</span>
                                     <div class="achievement-name">健康起步</div>
                                     <div class="achievement-desc">首次完成健康类任务</div>
                                     <div class="achievement-cond">累计健康 1</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">💊</span>
                                     <div class="achievement-name">用药不忘</div>
                                     <div class="achievement-desc">连续 7 天完成健康类任务</div>
                                     <div class="achievement-cond">连续健康 7 天</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🚶</span>
                                     <div class="achievement-name">晨练达人</div>
                                     <div class="achievement-desc">累计完成 20 个健康类任务</div>
                                     <div class="achievement-cond">累计健康 20</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">📱</span>
                                     <div class="achievement-name">语音能手</div>
                                     <div class="achievement-desc">使用语音完成 10 个任务</div>
                                     <div class="achievement-cond">语音完成 10</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🌳</span>
                                     <div class="achievement-name">养生专家</div>
                                     <div class="achievement-desc">累计完成 50 个健康类任务</div>
                                     <div class="achievement-cond">累计健康 50</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">☀️</span>
                                     <div class="achievement-name">早起晨练</div>
                                     <div class="achievement-desc">连续 14 天 8 点前完成健康类任务</div>
                                     <div class="achievement-cond">早起健康 14 天</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🧘</span>
                                     <div class="achievement-name">身心合一</div>
                                     <div class="achievement-desc">累计完成 30 个生活类任务</div>
                                     <div class="achievement-cond">累计生活 30</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card achievement-major stagger-item">
+                                <div class="brutal-card-dominant achievement-card achievement-major corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🏃</span>
                                     <div class="achievement-name">健康卫士</div>
                                     <div class="achievement-desc">累计完成 100 个健康类任务</div>
                                     <div class="achievement-cond">累计健康 100</div>
                                     <div class="achievement-outfit">🎁 老花镜</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card stagger-item">
+                                <div class="brutal-card-dominant achievement-card corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🌅</span>
                                     <div class="achievement-name">晨练坚持者</div>
                                     <div class="achievement-desc">连续 30 天完成健康类任务</div>
                                     <div class="achievement-cond">连续健康 30 天</div>
                                 </div>
-                                <div class="brutal-card-dominant achievement-card achievement-major stagger-item">
+                                <div class="brutal-card-dominant achievement-card achievement-major corgi-card-anim-no-color">
                                     <span class="achievement-emoji">🎯</span>
                                     <div class="achievement-name">养生大师</div>
                                     <div class="achievement-desc">累计完成 200 个健康类任务</div>
@@ -5844,7 +6222,7 @@
                     <!-- 面板1：传统节日（10个） -->
                     <div class="greeting-tab-panel active" data-greeting-panel="outfit-traditional">
                         <div class="grid-3 mb-24">
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🧧</span>
                                     <div class="combo-card-name">春节</div>
@@ -5865,7 +6243,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">新年好啊老朋友！柯基给您拜年啦，愿您身体健康万事如意，阖家团圆福寿安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🏮</span>
                                     <div class="combo-card-name">元宵节</div>
@@ -5886,7 +6264,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">元宵节好啊！柯基提着灯笼来给您照亮，记得吃碗热汤圆，愿您阖家团圆甜甜蜜蜜~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🐉</span>
                                     <div class="combo-card-name">龙抬头</div>
@@ -5907,7 +6285,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">龙抬头好日子！柯基今天精神抖擞，愿您抬起头迎接好运，龙马精神身体棒~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌿</span>
                                     <div class="combo-card-name">清明节</div>
@@ -5928,7 +6306,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">清明时节雨纷纷，柯基陪您忆故人。愿您珍惜眼前人，带着温暖继续前行，保重身体~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🎋</span>
                                     <div class="combo-card-name">端午节</div>
@@ -5949,7 +6327,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">端午安康！柯基闻到粽香就来啦，记得吃粽子戴五彩绳，愿您百毒不侵身体棒棒的~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">💕</span>
                                     <div class="combo-card-name">七夕节</div>
@@ -5970,7 +6348,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">七夕快乐~ 柯基偷偷帮您搭了鹊桥，愿您和老伴恩恩爱爱，白头偕老幸福美满~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌕</span>
                                     <div class="combo-card-name">中秋节</div>
@@ -5991,7 +6369,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">中秋月圆人团圆！柯基仰头望月想着您，记得吃月饼赏明月，愿您阖家幸福福寿安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🏔️</span>
                                     <div class="combo-card-name">重阳节</div>
@@ -6012,7 +6390,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">重阳登高望远！柯基陪您爬山坡，愿您健康长寿，岁月静好安享晚年~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🧨</span>
                                     <div class="combo-card-name">小年</div>
@@ -6033,7 +6411,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">小年到啦！柯基帮您祭灶神，记得吃糖瓜甜甜嘴，愿您新的一年甜甜蜜蜜身体安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🎆</span>
                                     <div class="combo-card-name">除夕</div>
@@ -6060,7 +6438,7 @@
                     <!-- 面板2：现代节日（15个） -->
                     <div class="greeting-tab-panel" data-greeting-panel="outfit-modern">
                         <div class="grid-3 mb-24">
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🎉</span>
                                     <div class="combo-card-name">元旦</div>
@@ -6081,7 +6459,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">元旦快乐！新的一年新的开始，柯基祝您元气满满，身体健康万事如意~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">💝</span>
                                     <div class="combo-card-name">情人节</div>
@@ -6102,7 +6480,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">情人节快乐~ 柯基偷偷送您一朵玫瑰，愿您和老伴恩恩爱爱，白头偕老~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌹</span>
                                     <div class="combo-card-name">妇女节</div>
@@ -6123,7 +6501,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">妇女节快乐！柯基向所有了不起的女性致敬，愿您健康美丽，幸福安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌳</span>
                                     <div class="combo-card-name">植树节</div>
@@ -6144,7 +6522,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">植树节到啦！柯基和您一起种下小树苗，愿您如树木般健康长寿，绿意盎然~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🤡</span>
                                     <div class="combo-card-name">愚人节</div>
@@ -6165,7 +6543,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">愚人节快乐~ 柯基今天不会骗您啦，但可以和孙辈一起开个无伤大雅的小玩笑吗？</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">👷</span>
                                     <div class="combo-card-name">劳动节</div>
@@ -6186,7 +6564,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">劳动节快乐！柯基给您捶捶背，辛苦了一辈子，好好休息，享享清福吧~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🎓</span>
                                     <div class="combo-card-name">青年节</div>
@@ -6207,7 +6585,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">青年节快乐！柯基为青春喝彩，愿您永葆青春心态，活力满满健康长寿~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">💊</span>
                                     <div class="combo-card-name">护士节</div>
@@ -6228,7 +6606,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">护士节快乐！柯基向白衣天使致敬，感谢她们的守护，愿您也被温柔以待，健康平安~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🎈</span>
                                     <div class="combo-card-name">儿童节</div>
@@ -6249,7 +6627,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">儿童节快乐！柯基陪您一起回忆童年，愿您永葆童心，快乐每一天~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🚩</span>
                                     <div class="combo-card-name">建党节</div>
@@ -6270,7 +6648,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">建党节快乐！柯基和您一起忆初心，愿信仰如磐，岁月安好国泰民安~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🎖️</span>
                                     <div class="combo-card-name">建军节</div>
@@ -6291,7 +6669,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">建军节快乐！柯基向最可爱的人敬礼，愿山河无恙岁月安好，致敬英雄~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">⚔️</span>
                                     <div class="combo-card-name">抗战胜利纪念日</div>
@@ -6312,7 +6690,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">铭记历史吾辈自强！柯基和您一起缅怀先烈，愿和平永驻，珍爱当下安享太平~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">📚</span>
                                     <div class="combo-card-name">教师节</div>
@@ -6333,7 +6711,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">教师节快乐！柯基帮您递上感谢卡，愿天下老师桃李满天下，春晖遍四方~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🇨🇳</span>
                                     <div class="combo-card-name">国庆节</div>
@@ -6354,7 +6732,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">国庆快乐！柯基挥舞小红旗为您庆祝，愿祖国繁荣昌盛，您享盛世安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🎄</span>
                                     <div class="combo-card-name">圣诞节</div>
@@ -6381,7 +6759,7 @@
                     <!-- 面板3：二十四节气（24个） -->
                     <div class="greeting-tab-panel" data-greeting-panel="outfit-solar">
                         <div class="grid-3 mb-24">
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌱</span>
                                     <div class="combo-card-name">立春</div>
@@ -6402,7 +6780,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">立春到啦！柯基感受到春风的气息，万物复苏的季节，愿您身体如春日般焕发活力~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌧️</span>
                                     <div class="combo-card-name">雨水</div>
@@ -6423,7 +6801,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">雨水节气！柯基提醒您带伞出门，愿您如春雨般温柔有力，身体安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌸</span>
                                     <div class="combo-card-name">惊蛰</div>
@@ -6444,7 +6822,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">惊蛰春雷响！柯基被雷声吓了一跳，万物复苏啦，愿您精神饱满健康平安~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌷</span>
                                     <div class="combo-card-name">春分</div>
@@ -6465,7 +6843,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">春分昼夜平！柯基和您一起竖鸡蛋，愿您的生活如春分般平衡美好，健康安宁~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌿</span>
                                     <div class="combo-card-name">清明</div>
@@ -6486,7 +6864,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">清明节气到！柯基陪您踏青去，春风拂面花香浓，愿您心情如春日般明媚，保重身体~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌾</span>
                                     <div class="combo-card-name">谷雨</div>
@@ -6507,7 +6885,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">谷雨润万物！柯基看到农民伯伯播种啦，愿您播下的种子都能结出硕果，福寿安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">☀️</span>
                                     <div class="combo-card-name">立夏</div>
@@ -6528,7 +6906,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">立夏啦！柯基换上了短袖，夏天正式来了，愿您清凉一夏，身体健康心情舒畅~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌻</span>
                                     <div class="combo-card-name">小满</div>
@@ -6549,7 +6927,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">小满节气到！柯基觉得一切都刚刚好，愿您的生活小满即安，健康知足常乐~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌾</span>
                                     <div class="combo-card-name">芒种</div>
@@ -6570,7 +6948,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">芒种忙忙碌碌！柯基帮您擦擦汗，播种与收获的时节，愿您身体安康，收获满满~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🔥</span>
                                     <div class="combo-card-name">夏至</div>
@@ -6591,7 +6969,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">夏至白昼最长！柯基热得伸舌头，今天有最多的阳光陪您，愿您健康长寿光芒万丈~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌡️</span>
                                     <div class="combo-card-name">小暑</div>
@@ -6612,7 +6990,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">小暑热起来啦！柯基帮您扇扇风，记得防暑降温多喝水，清凉度夏身体安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🥵</span>
                                     <div class="combo-card-name">大暑</div>
@@ -6633,7 +7011,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">大暑酷热难耐！柯基趴在阴凉处不想动，记得开空调避暑，保重身体最重要~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🍃</span>
                                     <div class="combo-card-name">立秋</div>
@@ -6654,7 +7032,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">立秋啦！柯基感受到第一缕秋风，虽然还热但秋天已在路上，愿您健康收获满满~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">💦</span>
                                     <div class="combo-card-name">处暑</div>
@@ -6675,7 +7053,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">处暑暑气消！柯基终于凉快些了，秋高气爽的日子要来啦，出去走走保重身体~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">💧</span>
                                     <div class="combo-card-name">白露</div>
@@ -6696,7 +7074,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">白露秋渐凉！柯基看到草尖上的露珠，记得早晚添衣，愿您温暖如初身体安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🍂</span>
                                     <div class="combo-card-name">秋分</div>
@@ -6717,7 +7095,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">秋分昼夜均！柯基踩着落叶散步，秋色正浓愿您生活如画，健康长寿岁月静好~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">❄️</span>
                                     <div class="combo-card-name">寒露</div>
@@ -6738,7 +7116,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">寒露气温降！柯基缩了缩脖子，记得穿厚一点别感冒了，保重身体最重要~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🧊</span>
                                     <div class="combo-card-name">霜降</div>
@@ -6759,7 +7137,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">霜降见霜花！柯基好奇地舔了舔白霜，深秋已至，愿您心中有暖阳身体安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🧥</span>
                                     <div class="combo-card-name">立冬</div>
@@ -6780,7 +7158,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">立冬啦！柯基裹紧了小被子，冬天正式来了，记得吃顿好的暖暖身子，保重身体~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌨️</span>
                                     <div class="combo-card-name">小雪</div>
@@ -6801,7 +7179,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">小雪纷飞！柯基伸出爪子接雪花，初雪如约而至，愿您心中有诗和远方身体安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">⛄</span>
                                     <div class="combo-card-name">大雪</div>
@@ -6822,7 +7200,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">大雪封门！柯基帮您堆了个小雪人，记得保暖，愿您冬日有暖阳相伴身体安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🥟</span>
                                     <div class="combo-card-name">冬至</div>
@@ -6843,7 +7221,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">冬至到啦！柯基捧着热腾腾的饺子，记得吃饺子或汤圆，愿您团圆美满福寿安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🥶</span>
                                     <div class="combo-card-name">小寒</div>
@@ -6864,7 +7242,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">小寒真冷啊！柯基跺脚取暖，记得戴帽围巾，愿您三冬暖春不寒身体安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🧊</span>
                                     <div class="combo-card-name">大寒</div>
@@ -6891,7 +7269,7 @@
                     <!-- 面板4：四季（4个） -->
                     <div class="greeting-tab-panel" data-greeting-panel="outfit-season">
                         <div class="grid-3 mb-24">
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌸</span>
                                     <div class="combo-card-name">春</div>
@@ -6912,7 +7290,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">春暖花开！柯基在花丛中打滚，愿您如春天般充满生机，身体健康每一天都花开满路~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🕶️</span>
                                     <div class="combo-card-name">夏</div>
@@ -6933,7 +7311,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">夏日炎炎！柯基戴着墨镜超酷的，愿您如夏天般热情似火，健康长寿活出精彩~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🍂</span>
                                     <div class="combo-card-name">秋</div>
@@ -6954,7 +7332,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">秋高气爽！柯基在落叶中翻滚，愿您如秋天般丰盈充实，健康长寿收获满满~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">❄️</span>
                                     <div class="combo-card-name">冬</div>
@@ -6981,7 +7359,7 @@
                     <!-- 面板5：天气（8个） -->
                     <div class="greeting-tab-panel" data-greeting-panel="outfit-weather">
                         <div class="grid-3 mb-24">
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">☀️</span>
                                     <div class="combo-card-name">晴天</div>
@@ -7002,7 +7380,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">阳光明媚！柯基仰头晒太阳，好天气好心情，愿您今天闪闪发光身体安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">⛅</span>
                                     <div class="combo-card-name">多云</div>
@@ -7023,7 +7401,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">云朵悠悠！柯基抬头看云变幻，偶尔阴天也没关系，愿您心中有光身体安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">☁️</span>
                                     <div class="combo-card-name">阴天</div>
@@ -7044,7 +7422,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">天色阴沉... 柯基耷拉着耳朵陪您，没关系，阴天过后总会有阳光的，保重身体~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌧️</span>
                                     <div class="combo-card-name">雨天</div>
@@ -7065,7 +7443,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">下雨啦！柯基穿着小雨衣踩水坑，记得带伞出门，愿您雨天也有好心情身体安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">⛈️</span>
                                     <div class="combo-card-name">雷雨</div>
@@ -7086,7 +7464,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">打雷啦！柯基害怕地缩成一团，别怕别怕，柯基陪着您呢，轰隆隆很快就过去~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">❄️</span>
                                     <div class="combo-card-name">雪天</div>
@@ -7107,7 +7485,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">下雪啦！柯基兴奋地堆雪人，记得保暖，愿您享受这银装素裹的世界身体安康~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌫️</span>
                                     <div class="combo-card-name">雾天</div>
@@ -7128,7 +7506,7 @@
                                     <div class="combo-card-greeting-content" data-greeting-content="elder">雾蒙蒙的... 柯基迷茫地摸索着，慢点走注意安全，雾散了就是晴天保重身体~</div>
                                 </div>
                             </div>
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">💨</span>
                                     <div class="combo-card-name">大风</div>
@@ -7156,7 +7534,7 @@
                     <div class="greeting-tab-panel" data-greeting-panel="outfit-daily">
                         <div class="grid-3">
                             <!-- 早晨 -->
-                            <div class="brutal-card-dominant bg-orange combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">☀️</span>
                                     <div class="combo-card-name">早晨</div>
@@ -7178,7 +7556,7 @@
                                 </div>
                             </div>
                             <!-- 中午 -->
-                            <div class="brutal-card-dominant bg-mint combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🍱</span>
                                     <div class="combo-card-name">中午</div>
@@ -7200,7 +7578,7 @@
                                 </div>
                             </div>
                             <!-- 傍晚 -->
-                            <div class="brutal-card-dominant bg-yellow combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌆</span>
                                     <div class="combo-card-name">傍晚</div>
@@ -7222,7 +7600,7 @@
                                 </div>
                             </div>
                             <!-- 夜间 -->
-                            <div class="brutal-card-dominant combo-card">
+                            <div class="brutal-card-dominant combo-card corgi-card-anim">
                                 <div class="combo-card-header">
                                     <span class="combo-card-emoji">🌙</span>
                                     <div class="combo-card-name">夜间</div>
@@ -7264,7 +7642,7 @@
                     <h2 class="section-title-brutal">用户画像</h2>
                     <div class="grid-3 mb-24">
                 <!-- 小雨 - 学生 -->
-                <div class="brutal-card-dominant bg-orange persona-card student stagger-item" style="animation-delay: 0.05s;">
+                <div class="brutal-card-dominant persona-card student persona-card-anim">
                     <div class="persona-header">📚 学生</div>
                     <div class="persona-body">
                         <span class="persona-avatar">👩‍🎓</span>
@@ -7278,7 +7656,7 @@
                     </div>
                 </div>
                 <!-- 小林 - 上班族 -->
-                <div class="brutal-card-dominant bg-mint persona-card worker stagger-item" style="animation-delay: 0.1s;">
+                <div class="brutal-card-dominant persona-card worker persona-card-anim">
                     <div class="persona-header">💼 上班族</div>
                     <div class="persona-body">
                         <span class="persona-avatar">👨‍💻</span>
@@ -7292,7 +7670,7 @@
                     </div>
                 </div>
                 <!-- 王阿姨 - 老年 -->
-                <div class="brutal-card-dominant bg-yellow persona-card elder stagger-item" style="animation-delay: 0.15s;">
+                <div class="brutal-card-dominant persona-card elder persona-card-anim">
                     <div class="persona-header">🧓 老年群体</div>
                     <div class="persona-body">
                         <span class="persona-avatar">👵</span>
@@ -7319,7 +7697,7 @@
                 <div class="scene-timeline">
 
                     <!-- 场景一：晨间问候 -->
-                    <div class="scene-timeline-item scene-morning stagger-item" style="animation-delay: 0.05s;">
+                    <div class="scene-timeline-item scene-morning scene-card-anim">
                         <div class="scene-time-badge">☀️ 早上 7:30 · 小林的故事</div>
                         <div class="story-card">
                             <div class="story-header">
@@ -7339,7 +7717,7 @@
                     </div>
 
                     <!-- 场景二：任务完成 -->
-                    <div class="scene-timeline-item scene-task stagger-item" style="animation-delay: 0.1s;">
+                    <div class="scene-timeline-item scene-task scene-card-anim">
                         <div class="scene-time-badge">✅ 下午 4:00 · 小雨的故事</div>
                         <div class="story-card">
                             <div class="story-header">
@@ -7359,7 +7737,7 @@
                     </div>
 
                     <!-- 场景三：节日关怀 -->
-                    <div class="scene-timeline-item scene-festival stagger-item" style="animation-delay: 0.15s;">
+                    <div class="scene-timeline-item scene-festival scene-card-anim">
                         <div class="scene-time-badge">🎉 冬至清晨 · 小林的故事</div>
                         <div class="story-card">
                             <div class="story-header">
@@ -7380,7 +7758,7 @@
                     </div>
 
                     <!-- 场景四：用药提醒 -->
-                    <div class="scene-timeline-item scene-medical stagger-item" style="animation-delay: 0.2s;">
+                    <div class="scene-timeline-item scene-medical scene-card-anim">
                         <div class="scene-time-badge">💊 下午 3:00 · 王阿姨的故事</div>
                         <div class="story-card">
                             <div class="story-header">
@@ -8841,15 +9219,14 @@
         }
 
         /**
-         * 为卡片随机分配错落偏移量（margin-top）
-         * 按 .brutal-stagger-grid 容器分组,通过 computedStyle 检测当前列数
-         * 每行第一张卡片固定为0(基准线),其余卡片随机0-30px
-         * 1列布局下所有卡片归零(移动端无错落)
-         * 每次调用都会重新随机,实现滚动出入视口时错落感随机刷新
+         * 为卡片随机分配错落偏移量（上下 + 左右）
+         * 上下错落：每行第一张 marginTop=0，其余随机0-30px
+         * 左右错落：每行第一张 width=100%，其余随机80%-100%，margin-left随机分配左侧间隙
+         * 1列布局下所有卡片归零（移动端无错落）
+         * 每次调用都会重新随机，实现滚动出入视口时错落感随机刷新
          * @param {HTMLElement|null} targetGrid - 指定容器时只刷新该容器,为null时刷新所有容器
          */
         function assignRandomStaggerOffsets(targetGrid) {
-            // 优化3：支持只刷新指定容器，避免不必要的全量刷新
             const grids = targetGrid ? [targetGrid] : document.querySelectorAll('#sec-overview .brutal-stagger-grid');
             grids.forEach(grid => {
                 const cards = grid.querySelectorAll('.user-card-anim');
@@ -8858,22 +9235,26 @@
                 // 通过 computedStyle 检测当前实际渲染列数
                 const columnCount = getComputedStyle(grid).gridTemplateColumns.split(' ').length;
 
-                // 优化1：记录上一张卡片的偏移量，避免相邻卡片偏移相近
+                // 记录上一张卡片的偏移量，避免相邻卡片偏移相近
                 let prevOffset = 0;
 
                 cards.forEach((card, i) => {
                     if (columnCount === 1) {
                         // 1列布局：所有归零（移动端无错落）
                         card.style.marginTop = '0px';
+                        card.style.width = '';
+                        card.style.marginLeft = '';
                         prevOffset = 0;
                     } else {
-                        // 多列布局：每行第一张固定为0,其余随机0-30px
+                        // 多列布局：每行第一张固定为基准，其余随机错落
                         const isFirstInRow = (i % columnCount === 0);
                         if (isFirstInRow) {
                             card.style.marginTop = '0px';
+                            card.style.width = '';
+                            card.style.marginLeft = '';
                             prevOffset = 0;
                         } else {
-                            // 生成随机偏移，确保与上一张差值>=5px（最多尝试10次）
+                            // 上下错落：随机0-30px，确保与上一张差值>=5px
                             let offset;
                             let attempts = 0;
                             do {
@@ -8882,6 +9263,13 @@
                             } while (Math.abs(offset - prevOffset) < 5 && attempts < 10);
                             card.style.marginTop = offset + 'px';
                             prevOffset = offset;
+
+                            // 左右错落：宽度80%-100%，左侧间隙随机分配
+                            const widthPercent = 80 + Math.floor(Math.random() * 21); // 80-100
+                            const maxLeftPercent = 100 - widthPercent;
+                            const leftPercent = Math.floor(Math.random() * (maxLeftPercent + 1));
+                            card.style.width = widthPercent + '%';
+                            card.style.marginLeft = leftPercent + '%';
                         }
                     }
                 });
@@ -8936,41 +9324,653 @@
 
         /**
          * 设置目标用户群体卡片的滚动触发动画
-         * 进入视口播放入场，离开视口播放出场
+         * 双阈值磁滞 + 无出场动画：
+         * - 入场：intersectionRatio >= 0.2 时播放入场动画
+         * - 保持：0 < ratio < 0.2 时什么都不做，卡片保持可见
+         * - 重置：完全离开视口时禁用过渡瞬间重置（用户不可见）
+         * 彻底杜绝阈值边界处的闪烁问题
          */
         function setupUserCardScrollTrigger() {
-            // 直接观察每张目标用户群体卡片本身
-            // 避免因 #sec-overview 下存在多个 .brutal-stagger-grid 而选错容器
             const cards = document.querySelectorAll('#sec-overview .user-card-anim');
             if (!cards.length) return;
 
-            // 优化2：节流控制，避免多张卡片快速连续进入视口时频繁刷新
-            // 100ms内只执行一次颜色和偏移刷新，期间后续卡片直接使用最近值入场
+            // 节流控制，避免多张卡片快速连续进入视口时频繁刷新
             let lastRefreshTime = 0;
             const REFRESH_THROTTLE_MS = 100;
 
             const observer = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        // 卡片进入视口：先随机刷新颜色和错落偏移，再播放入场动画
-                        const grid = entry.target.closest('.brutal-stagger-grid');
-                        const now = Date.now();
-                        if (now - lastRefreshTime >= REFRESH_THROTTLE_MS) {
-                            // 超过节流间隔：刷新颜色和错落偏移（只刷新当前容器）
-                            lastRefreshTime = now;
-                            assignRandomCardColors(grid);
-                            assignRandomStaggerOffsets(grid);
+                    const card = entry.target;
+
+                    if (entry.isIntersecting && entry.intersectionRatio >= 0.2) {
+                        // 入场：卡片至少 20% 可见，播放入场动画
+                        if (!card.classList.contains('is-visible')) {
+                            const grid = card.closest('.brutal-stagger-grid');
+                            const now = Date.now();
+                            if (now - lastRefreshTime >= REFRESH_THROTTLE_MS) {
+                                lastRefreshTime = now;
+                                assignRandomCardColors(grid);
+                                assignRandomStaggerOffsets(grid);
+                            }
+                            card.classList.add('is-visible');
                         }
-                        entry.target.classList.add('is-visible');
+                    } else if (!entry.isIntersecting) {
+                        // 重置：卡片完全离开视口，禁用过渡瞬间重置（用户看不到）
+                        card.style.transition = 'none';
+                        card.classList.remove('is-visible');
+                        card.style.width = '';
+                        card.style.marginLeft = '';
+                        // 强制重排，确保无过渡生效
+                        card.offsetHeight;
+                        card.style.transition = '';
+                    }
+                    // 0 < intersectionRatio < 0.2：什么都不做，卡片保持当前状态
+                });
+            }, { threshold: [0, 0.2] });
+
+            cards.forEach(card => observer.observe(card));
+        }
+
+        /* ============================================
+           柯基形象与情感系统卡片动画
+           ============================================ */
+
+        /**
+         * 为柯基卡片随机分配颜色与透明度
+         * 处理 .corgi-card-anim 类的卡片（姿态、表情、节日装扮面板）
+         * 成就面板使用 .corgi-card-anim-no-color，不刷新颜色
+         * @param {HTMLElement|null} targetGrid - 指定容器时只刷新该容器,为null时刷新所有容器
+         */
+        function assignCorgiCardColors(targetGrid) {
+            // 三种颜色 RGB 三元组（柯基橙/薄荷绿/暖黄）
+            const colors = [
+                [255, 107, 53],   // #FF6B35 柯基橙
+                [126, 200, 160],  // #7EC8A0 薄荷绿
+                [255, 183, 77]    // #FFB74D 暖黄
+            ];
+
+            // 获取姿态、表情面板的 grid-4 和节日装扮面板的 grid-3 容器
+            const allGrids = document.querySelectorAll(
+                '[data-greeting-panel="corgi-posture"] .grid-4, ' +
+                '[data-greeting-panel="corgi-expression"] .grid-4, ' +
+                '[data-greeting-panel^="outfit-"] .grid-3'
+            );
+            const grids = targetGrid ? [targetGrid] : allGrids;
+
+            grids.forEach(grid => {
+                const cards = grid.querySelectorAll('.corgi-card-anim');
+                if (!cards.length) return;
+
+                // 每3张卡片一组独立洗牌
+                for (let i = 0; i < cards.length; i += 3) {
+                    const shuffled = [...colors].sort(() => Math.random() - 0.5);
+                    for (let j = 0; j < 3 && i + j < cards.length; j++) {
+                        const card = cards[i + j];
+                        const opacity = 0.15 + Math.random() * 0.15;
+                        card.style.setProperty('--anim-bg-color', shuffled[j].join(', '));
+                        card.style.setProperty('--anim-bg-opacity', opacity.toFixed(2));
+                    }
+                }
+            });
+        }
+
+        /**
+         * 为柯基卡片随机分配错落偏移量（上下 + 左右）
+         * 上下错落：每行第一张 marginTop=0，其余随机0-30px
+         * 左右错落：每行第一张 width=100%，其余随机80%-100%，margin-left随机分配左侧间隙
+         * 1列布局下所有卡片归零（移动端无错落）
+         * @param {HTMLElement|null} targetGrid - 指定容器时只刷新该容器,为null时刷新所有容器
+         */
+        function assignCorgiStaggerOffsets(targetGrid) {
+            const allGrids = document.querySelectorAll(
+                '[data-greeting-panel="corgi-posture"] .grid-4, ' +
+                '[data-greeting-panel="corgi-expression"] .grid-4, ' +
+                '[data-greeting-panel="corgi-achievement"] .grid-3, ' +
+                '[data-greeting-panel^="outfit-"] .grid-3'
+            );
+            const grids = targetGrid ? [targetGrid] : allGrids;
+
+            grids.forEach(grid => {
+                const cards = grid.querySelectorAll('.corgi-card-anim, .corgi-card-anim-no-color');
+                if (!cards.length) return;
+
+                const columnCount = getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+
+                let prevOffset = 0;
+
+                cards.forEach((card, i) => {
+                    if (columnCount === 1) {
+                        card.style.marginTop = '0px';
+                        card.style.width = '';
+                        card.style.marginLeft = '';
+                        prevOffset = 0;
                     } else {
-                        // 卡片离开视口：播放出场动画（重置状态）
-                        entry.target.classList.remove('is-visible');
+                        const isFirstInRow = (i % columnCount === 0);
+                        if (isFirstInRow) {
+                            card.style.marginTop = '0px';
+                            card.style.width = '';
+                            card.style.marginLeft = '';
+                            prevOffset = 0;
+                        } else {
+                            // 上下错落
+                            let offset;
+                            let attempts = 0;
+                            do {
+                                offset = Math.floor(Math.random() * 31);
+                                attempts++;
+                            } while (Math.abs(offset - prevOffset) < 5 && attempts < 10);
+                            card.style.marginTop = offset + 'px';
+                            prevOffset = offset;
+
+                            // 左右错落：宽度80%-100%，左侧间隙随机分配
+                            const widthPercent = 80 + Math.floor(Math.random() * 21);
+                            const maxLeftPercent = 100 - widthPercent;
+                            const leftPercent = Math.floor(Math.random() * (maxLeftPercent + 1));
+                            card.style.width = widthPercent + '%';
+                            card.style.marginLeft = leftPercent + '%';
+                        }
                     }
                 });
-            }, { threshold: 0.2 });
+            });
+        }
 
-            // 逐张观察，确保每张卡片独立触发动画
+        /**
+         * 滚动触发柯基卡片入场动画
+         * 双阈值磁滞 + 无出场动画：
+         * - 入场：intersectionRatio >= 0.2 时播放入场动画
+         * - 保持：0 < ratio < 0.2 时什么都不做，卡片保持可见
+         * - 重置：完全离开视口时禁用过渡瞬间重置（用户不可见）
+         */
+        function setupCorgiCardScrollTrigger() {
+            const cards = document.querySelectorAll('.corgi-card-anim, .corgi-card-anim-no-color, .corgi-item-anim');
+            if (!cards.length) return;
+
+            // 节流控制：100ms内只执行一次颜色和偏移刷新
+            let lastRefreshTime = 0;
+            const REFRESH_THROTTLE_MS = 100;
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    const card = entry.target;
+
+                    if (entry.isIntersecting && entry.intersectionRatio >= 0.2) {
+                        // 入场：卡片至少 20% 可见
+                        if (!card.classList.contains('is-visible')) {
+                            const grid = card.closest('.grid-4, .grid-3');
+                            const now = Date.now();
+                            if (now - lastRefreshTime >= REFRESH_THROTTLE_MS) {
+                                lastRefreshTime = now;
+                                if (card.classList.contains('corgi-card-anim')) {
+                                    assignCorgiCardColors(grid);
+                                }
+                                if (grid) {
+                                    assignCorgiStaggerOffsets(grid);
+                                }
+                            }
+                            card.classList.add('is-visible');
+                        }
+                    } else if (!entry.isIntersecting) {
+                        // 重置：卡片完全离开视口，禁用过渡瞬间重置
+                        card.style.transition = 'none';
+                        card.classList.remove('is-visible');
+                        card.style.width = '';
+                        card.style.marginLeft = '';
+                        card.offsetHeight;
+                        card.style.transition = '';
+                    }
+                });
+            }, { threshold: [0, 0.2] });
+
             cards.forEach(card => observer.observe(card));
+        }
+
+        /**
+         * 初始化柯基卡片动画
+         * 首次分配颜色与错落偏移，设置滚动触发和resize监听
+         */
+        function initCorgiCardAnimations() {
+            const cards = document.querySelectorAll('.corgi-card-anim, .corgi-card-anim-no-color, .corgi-item-anim');
+            if (!cards.length) return;
+
+            // 首次分配随机颜色与透明度（只对 .corgi-card-anim）
+            assignCorgiCardColors();
+
+            // 首次分配随机错落偏移量
+            assignCorgiStaggerOffsets();
+
+            // 降级：用户偏好减少动画时直接显示
+            const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (prefersReducedMotion) {
+                cards.forEach(card => card.classList.add('is-visible'));
+                return;
+            }
+
+            // 滚动触发：IntersectionObserver 双向观察
+            setupCorgiCardScrollTrigger();
+
+            // 窗口尺寸变化时仅在断点切换时重新分配错落偏移
+            const getBreakpoint = () => {
+                const width = window.innerWidth;
+                if (width <= 767) return 'mobile';
+                if (width <= 1024) return 'tablet';
+                return 'desktop';
+            };
+            let currentBreakpoint = getBreakpoint();
+            let resizeTimer = null;
+            window.addEventListener('resize', () => {
+                if (resizeTimer) clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    const newBreakpoint = getBreakpoint();
+                    if (newBreakpoint !== currentBreakpoint) {
+                        currentBreakpoint = newBreakpoint;
+                        assignCorgiStaggerOffsets();
+                    }
+                }, 200);
+            });
+        }
+
+        /**
+         * Tab切换时触发柯基卡片入场动画
+         * 切换到新面板时，重置卡片状态并重新播放入场动画
+         * 按行依次入场：先重置所有卡片，再按行延迟添加 is-visible
+         * @param {HTMLElement} newPanel - 新激活的面板元素
+         */
+        function triggerCorgiCardAnimation(newPanel) {
+            if (!newPanel) return;
+
+            // 获取新面板内的所有柯基卡片（包括 .corgi-item-anim）
+            const cards = newPanel.querySelectorAll('.corgi-card-anim, .corgi-card-anim-no-color, .corgi-item-anim');
+            if (!cards.length) return;
+
+            // 重置所有卡片状态（移除 is-visible，触发出场状态）
+            cards.forEach(card => card.classList.remove('is-visible'));
+
+            // 重新分配颜色和错落偏移（只对 grid 容器内的卡片）
+            const grids = newPanel.querySelectorAll('.grid-4, .grid-3');
+            grids.forEach(grid => {
+                if (grid.querySelector('.corgi-card-anim')) {
+                    assignCorgiCardColors(grid);
+                }
+                assignCorgiStaggerOffsets(grid);
+            });
+
+            // 按行依次入场：先按容器分组，再按行延迟添加 is-visible
+            // 第一行立即入场，后续行依次延迟 0.08s
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    // 对每个 grid 容器内的卡片按行分组入场
+                    grids.forEach(grid => {
+                        const gridCards = grid.querySelectorAll('.corgi-card-anim, .corgi-card-anim-no-color');
+                        if (!gridCards.length) return;
+
+                        // 检测列数以确定行分组
+                        const columnCount = getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+                        const rowDelay = 0.08; // 每行延迟 0.08s
+
+                        gridCards.forEach((card, i) => {
+                            const rowIndex = Math.floor(i / columnCount);
+                            card.style.transitionDelay = (rowIndex * rowDelay) + 's, ' + (rowIndex * rowDelay) + 's, ' + (rowIndex * rowDelay) + 's';
+                            card.classList.add('is-visible');
+                        });
+                    });
+
+                    // 对 .corgi-item-anim 元素（情绪轮播项、成长阶段）依次入场
+                    const items = newPanel.querySelectorAll('.corgi-item-anim');
+                    items.forEach(item => {
+                        item.classList.add('is-visible');
+                    });
+                });
+            });
+        }
+
+        /* ============================================
+           用户画像卡片动画
+           ============================================ */
+
+        /**
+         * 为用户画像卡片随机分配颜色与透明度
+         * 3张卡片独立洗牌三种颜色（柯基橙/薄荷绿/暖黄）
+         * 每次调用都会重新洗牌，实现滚动出入视口时颜色随机刷新
+         */
+        function assignPersonaCardColors() {
+            const cards = document.querySelectorAll('#sec-story .persona-card-anim');
+            if (!cards.length) return;
+
+            // 三种颜色 RGB 三元组（柯基橙/薄荷绿/暖黄）
+            const colors = [
+                [255, 107, 53],   // #FF6B35 柯基橙
+                [126, 200, 160],  // #7EC8A0 薄荷绿
+                [255, 183, 77]    // #FFB74D 暖黄
+            ];
+
+            // 洗牌后分配给3张卡片
+            const shuffled = [...colors].sort(() => Math.random() - 0.5);
+            cards.forEach((card, i) => {
+                if (i < shuffled.length) {
+                    // 随机透明度 0.15 - 0.30
+                    const opacity = 0.15 + Math.random() * 0.15;
+                    card.style.setProperty('--anim-bg-color', shuffled[i].join(', '));
+                    card.style.setProperty('--anim-bg-opacity', opacity.toFixed(2));
+                }
+            });
+        }
+
+        /**
+         * 为用户画像卡片随机分配错落偏移量（上下 + 左右）
+         * 上下错落：每行第一张 marginTop=0，其余随机0-30px
+         * 左右错落：每行第一张 width=100%，其余随机80%-100%，margin-left随机分配左侧间隙
+         * 1列布局下所有卡片归零（移动端无错落）
+         */
+        function assignPersonaStaggerOffsets() {
+            const grid = document.querySelector('#sec-story .grid-3');
+            if (!grid) return;
+
+            const cards = grid.querySelectorAll('.persona-card-anim');
+            if (!cards.length) return;
+
+            const columnCount = getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+
+            let prevOffset = 0;
+
+            cards.forEach((card, i) => {
+                if (columnCount === 1) {
+                    card.style.marginTop = '0px';
+                    card.style.width = '';
+                    card.style.marginLeft = '';
+                    prevOffset = 0;
+                } else {
+                    const isFirstInRow = (i % columnCount === 0);
+                    if (isFirstInRow) {
+                        card.style.marginTop = '0px';
+                        card.style.width = '';
+                        card.style.marginLeft = '';
+                        prevOffset = 0;
+                    } else {
+                        // 上下错落
+                        let offset;
+                        let attempts = 0;
+                        do {
+                            offset = Math.floor(Math.random() * 31);
+                            attempts++;
+                        } while (Math.abs(offset - prevOffset) < 5 && attempts < 10);
+                        card.style.marginTop = offset + 'px';
+                        prevOffset = offset;
+
+                        // 左右错落：宽度80%-100%，左侧间隙随机分配
+                        const widthPercent = 80 + Math.floor(Math.random() * 21);
+                        const maxLeftPercent = 100 - widthPercent;
+                        const leftPercent = Math.floor(Math.random() * (maxLeftPercent + 1));
+                        card.style.width = widthPercent + '%';
+                        card.style.marginLeft = leftPercent + '%';
+                    }
+                }
+            });
+        }
+
+        /**
+         * 滚动触发用户画像卡片入场动画
+         * 双阈值磁滞 + 无出场动画：
+         * - 入场：intersectionRatio >= 0.2 时播放入场动画
+         * - 保持：0 < ratio < 0.2 时什么都不做，卡片保持可见
+         * - 重置：完全离开视口时禁用过渡瞬间重置（用户不可见）
+         */
+        function setupPersonaCardScrollTrigger() {
+            const cards = document.querySelectorAll('#sec-story .persona-card-anim');
+            if (!cards.length) return;
+
+            // 节流控制：100ms内只执行一次颜色和偏移刷新
+            let lastRefreshTime = 0;
+            const REFRESH_THROTTLE_MS = 100;
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    const card = entry.target;
+
+                    if (entry.isIntersecting && entry.intersectionRatio >= 0.2) {
+                        // 入场：卡片至少 20% 可见
+                        if (!card.classList.contains('is-visible')) {
+                            const now = Date.now();
+                            if (now - lastRefreshTime >= REFRESH_THROTTLE_MS) {
+                                lastRefreshTime = now;
+                                assignPersonaCardColors();
+                                assignPersonaStaggerOffsets();
+                            }
+                            card.classList.add('is-visible');
+                        }
+                    } else if (!entry.isIntersecting) {
+                        // 重置：卡片完全离开视口，禁用过渡瞬间重置
+                        card.style.transition = 'none';
+                        card.classList.remove('is-visible');
+                        card.style.width = '';
+                        card.style.marginLeft = '';
+                        card.offsetHeight;
+                        card.style.transition = '';
+                    }
+                });
+            }, { threshold: [0, 0.2] });
+
+            cards.forEach(card => observer.observe(card));
+        }
+
+        /**
+         * 初始化用户画像卡片动画
+         * 首次分配颜色与错落偏移，设置滚动触发和resize监听
+         */
+        function initPersonaCardAnimations() {
+            const cards = document.querySelectorAll('#sec-story .persona-card-anim');
+            if (!cards.length) return;
+
+            // 首次分配随机颜色与透明度
+            assignPersonaCardColors();
+
+            // 首次分配随机错落偏移量
+            assignPersonaStaggerOffsets();
+
+            // 降级：用户偏好减少动画时直接显示
+            const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (prefersReducedMotion) {
+                cards.forEach(card => card.classList.add('is-visible'));
+                return;
+            }
+
+            // 滚动触发：IntersectionObserver 双向观察
+            setupPersonaCardScrollTrigger();
+
+            // 窗口尺寸变化时仅在断点切换时重新分配错落偏移
+            const getBreakpoint = () => {
+                const width = window.innerWidth;
+                if (width <= 767) return 'mobile';
+                if (width <= 1024) return 'tablet';
+                return 'desktop';
+            };
+            let currentBreakpoint = getBreakpoint();
+            let resizeTimer = null;
+            window.addEventListener('resize', () => {
+                if (resizeTimer) clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    const newBreakpoint = getBreakpoint();
+                    if (newBreakpoint !== currentBreakpoint) {
+                        currentBreakpoint = newBreakpoint;
+                        assignPersonaStaggerOffsets();
+                    }
+                }, 200);
+            });
+        }
+
+        /* ============================================
+           场景故事卡片动画
+           ============================================ */
+
+        /**
+         * 滚动触发场景故事卡片入场动画
+         * 双阈值磁滞 + 无出场动画：
+         * - 入场：intersectionRatio >= 0.2 时播放入场动画
+         * - 保持：0 < ratio < 0.2 时什么都不做，卡片保持可见
+         * - 重置：完全离开视口时禁用过渡瞬间重置（用户不可见）
+         * - 滚动方向感知：向下滚动从右入，向上滚动从左入
+         * - 滚动方向防抖：100ms内方向不变才更新，避免抖动
+         * - 时间轴连接线分段绘制：随每个场景项入场分段绘制
+         * - 连接线重置：所有场景项完全离开视口时重置进度
+         * - 对话气泡淡入：场景项入场后延迟播放
+         */
+        function setupSceneCardScrollTrigger() {
+            const cards = document.querySelectorAll('#sec-story .scene-card-anim');
+            if (!cards.length) return;
+
+            // 滚动方向感知：记录上次滚动位置
+            let lastScrollY = window.scrollY;
+            // 当前滚动方向：'down'（向下）或 'up'（向上）
+            let scrollDirection = 'down';
+            // 防抖：方向变化后100ms内不变才确认更新
+            let pendingDirection = null;
+            let directionDebounceTimer = null;
+            const DIRECTION_DEBOUNCE_MS = 100;
+
+            // 监听滚动事件更新方向（带防抖）
+            window.addEventListener('scroll', () => {
+                const currentScrollY = window.scrollY;
+                const newDirection = currentScrollY > lastScrollY ? 'down' : 'up';
+                lastScrollY = currentScrollY;
+
+                // 方向未变化：清除待确认方向
+                if (newDirection === scrollDirection) {
+                    if (directionDebounceTimer) {
+                        clearTimeout(directionDebounceTimer);
+                        directionDebounceTimer = null;
+                    }
+                    pendingDirection = null;
+                    return;
+                }
+
+                // 方向变化：记录待确认方向，启动防抖计时器
+                pendingDirection = newDirection;
+                if (directionDebounceTimer) clearTimeout(directionDebounceTimer);
+                directionDebounceTimer = setTimeout(() => {
+                    // 100ms内方向未再变化，确认更新
+                    if (pendingDirection === newDirection) {
+                        scrollDirection = newDirection;
+                        pendingDirection = null;
+                    }
+                    directionDebounceTimer = null;
+                }, DIRECTION_DEBOUNCE_MS);
+            }, { passive: true });
+
+            // 跟踪每个场景项的可见状态（用于连接线重置）
+            const cardVisibleState = new Array(cards.length).fill(false);
+            // 跟踪历史上进入过视口的场景项的最大索引（用于连接线分段绘制）
+            let maxEnteredIndex = -1;
+
+            /**
+             * 更新时间轴连接线绘制进度
+             * 基于历史最大入场索引计算进度，连接线只会增长不会缩短
+             * @param {HTMLElement} timeline - 时间轴容器元素
+             */
+            function updateLineProgress(timeline) {
+                if (!timeline) return;
+                // 基于历史最大入场索引+1 计算进度（保证单调递增）
+                const progress = (maxEnteredIndex + 1) / cards.length;
+                timeline.style.setProperty('--line-progress', progress.toFixed(2));
+            }
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    // 获取场景项在卡片列表中的索引
+                    const cardIndex = Array.from(cards).indexOf(entry.target);
+                    const card = entry.target;
+
+                    if (entry.isIntersecting && entry.intersectionRatio >= 0.2) {
+                        // 入场：卡片至少 20% 可见，且当前不可见时才播放入场动画
+                        if (!card.classList.contains('is-visible')) {
+                            // 根据滚动方向设置 transform 起始位置
+                            if (scrollDirection === 'up') {
+                                card.style.transform = 'translateX(-24px) scale(0.9)';
+                            } else {
+                                card.style.transform = 'translateX(24px) scale(0.9)';
+                            }
+
+                            // 触发重排后再设置入场状态，确保 transform 变化生效
+                            requestAnimationFrame(() => {
+                                requestAnimationFrame(() => {
+                                    card.classList.add('is-visible');
+                                    // 清除内联 transform，让 CSS 的 is-visible 状态接管
+                                    card.style.transform = '';
+                                });
+                            });
+
+                            // 标记当前场景项为可见
+                            cardVisibleState[cardIndex] = true;
+                            // 更新历史最大入场索引（保证单调递增）
+                            if (cardIndex > maxEnteredIndex) {
+                                maxEnteredIndex = cardIndex;
+                            }
+
+                            // 时间轴连接线分段绘制：随场景项入场更新进度
+                            const timeline = card.closest('.scene-timeline');
+                            updateLineProgress(timeline);
+
+                            // 对话气泡淡入：场景项入场后延迟播放
+                            const quotes = card.querySelectorAll('.story-corgi-quote');
+                            quotes.forEach((quote, index) => {
+                                setTimeout(() => {
+                                    quote.classList.add('is-visible');
+                                }, 400 + index * 200);
+                            });
+                        }
+                    } else if (!entry.isIntersecting) {
+                        // 重置：卡片完全离开视口，禁用过渡瞬间重置（用户看不到）
+                        card.style.transition = 'none';
+                        card.classList.remove('is-visible');
+                        card.style.width = '';
+                        card.style.marginLeft = '';
+                        card.offsetHeight;
+                        card.style.transition = '';
+
+                        // 重置对话气泡状态（同样禁用过渡）
+                        const quotes = card.querySelectorAll('.story-corgi-quote');
+                        quotes.forEach(quote => {
+                            quote.style.transition = 'none';
+                            quote.classList.remove('is-visible');
+                            quote.offsetHeight;
+                            quote.style.transition = '';
+                        });
+
+                        // 标记当前场景项为不可见
+                        cardVisibleState[cardIndex] = false;
+
+                        // 连接线重置：所有场景项完全离开视口时重置进度为0
+                        const timeline = card.closest('.scene-timeline');
+                        const anyVisible = cardVisibleState.some(Boolean);
+                        if (!anyVisible) {
+                            maxEnteredIndex = -1;
+                            if (timeline) {
+                                timeline.style.setProperty('--line-progress', '0');
+                            }
+                        }
+                    }
+                    // 0 < intersectionRatio < 0.2：什么都不做，卡片保持当前状态
+                });
+            }, { threshold: [0, 0.2] });
+
+            cards.forEach(card => observer.observe(card));
+        }
+
+        /**
+         * 初始化场景故事卡片动画
+         * 设置滚动触发，无颜色刷新和错落偏移
+         */
+        function initSceneCardAnimations() {
+            const cards = document.querySelectorAll('#sec-story .scene-card-anim');
+            if (!cards.length) return;
+
+            // 降级：用户偏好减少动画时直接显示
+            const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (prefersReducedMotion) {
+                cards.forEach(card => card.classList.add('is-visible'));
+                return;
+            }
+
+            // 滚动触发：IntersectionObserver 双向观察
+            setupSceneCardScrollTrigger();
         }
 
         /**
@@ -9228,6 +10228,25 @@
         }
 
         /**
+         * 初始化卡片悬浮随机阴影色
+         * 鼠标进入 .brutal-card-dominant 时，阴影随机变为柯基橙/薄荷绿/暖黄
+         * 鼠标离开时恢复默认深黑色
+         */
+        function initRandomShadowColor() {
+            const shadowColors = ['#FF6B35', '#7EC8A0', '#FFB74D'];
+            const cards = document.querySelectorAll('.brutal-card-dominant');
+            cards.forEach(card => {
+                card.addEventListener('mouseenter', () => {
+                    const color = shadowColors[Math.floor(Math.random() * shadowColors.length)];
+                    card.style.setProperty('--shadow-color', color);
+                });
+                card.addEventListener('mouseleave', () => {
+                    card.style.setProperty('--shadow-color', '');
+                });
+            });
+        }
+
+        /**
          * 初始化所有功能
          * 页面加载完成后执行
          */
@@ -9236,6 +10255,10 @@
             initEmotionCarousel();
             initPrototypeShowcase();
             initUserCardAnimations();
+            initCorgiCardAnimations();
+            initPersonaCardAnimations();
+            initSceneCardAnimations();
+            initRandomShadowColor();
         }
 
         /* ============================================
@@ -10096,17 +11119,61 @@
         return;
     }
 
-    /* 使用 IntersectionObserver 触发动画（滚动到可视区域时启动） */
+    /* 使用 IntersectionObserver 触发动画（双阈值磁滞 + 无出场动画） */
     var observer = new IntersectionObserver(function(entries) {
         entries.forEach(function(entry) {
-            if (entry.isIntersecting) {
-                observer.unobserve(entry.target);
-                playEntranceAnimation();
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.3) {
+                /* 入场：图表至少 30% 可见，且当前未播放入场时才触发 */
+                if (!diagram.classList.contains('diagram-visible')) {
+                    diagram.classList.add('diagram-visible');
+                    playEntranceAnimation();
+                }
+            } else if (!entry.isIntersecting) {
+                /* 重置：图表完全离开视口，瞬间重置所有动画状态（用户看不到） */
+                resetDiagramState();
+                diagram.classList.remove('diagram-visible');
             }
+            /* 0 < intersectionRatio < 0.3：什么都不做，保持当前状态 */
         });
-    }, { threshold: 0.3 });
+    }, { threshold: [0, 0.3] });
 
     observer.observe(diagram);
+
+    /**
+     * 重置图表动画状态（禁用过渡，瞬间归位）
+     * 在图表完全离开视口时调用，用户看不到重置过程
+     */
+    function resetDiagramState() {
+        /* 重置节点：禁用过渡 → 归位 → 强制重排 → 恢复过渡 */
+        nodes.forEach(function(node) {
+            node.style.transition = 'none';
+            node.style.opacity = '0';
+            node.style.transform = (node.classList.contains('node-top')
+                ? 'translateX(-50%) scale(0.3)'
+                : 'scale(0.3)') + ' translateY(20px)';
+            node.offsetHeight;
+            node.style.transition = '';
+        });
+
+        /* 重置连线：禁用过渡 → 归位 → 强制重排 → 恢复过渡 */
+        paths.forEach(function(path) {
+            var length = path.getTotalLength ? path.getTotalLength() : 500;
+            path.style.transition = 'none';
+            path.style.strokeDasharray = length;
+            path.style.strokeDashoffset = length;
+            path.offsetHeight;
+            path.style.transition = '';
+        });
+
+        /* 重置标签：禁用过渡 → 归位 → 强制重排 → 恢复过渡 */
+        labels.forEach(function(label) {
+            label.style.transition = 'none';
+            label.style.opacity = '0';
+            label.style.transform = 'translateY(8px)';
+            label.offsetHeight;
+            label.style.transition = '';
+        });
+    }
 
     function playEntranceAnimation() {
         /* 阶段1：节点依次弹入（从缩放0 + 透明 → 正常） */
@@ -10159,24 +11226,21 @@
             }, 1000 + i * 150);
         });
 
-        /* 节点 hover 时暂停对应方向的粒子，增加交互感 */
-        nodes.forEach(function(node) {
-            node.addEventListener('mouseenter', function() {
-                particles.forEach(function(p) {
-                    p.style.animationPlayState = 'paused';
-                    /* 获取 SVG 内的 animateMotion 元素 */
-                    var am = p.querySelector('animateMotion');
-                    if (am) { am.setAttribute('dur', '6s'); } /* 减速 */
-                });
-            });
-            node.addEventListener('mouseleave', function() {
-                particles.forEach(function(p) {
-                    p.style.animationPlayState = 'running';
-                    var am = p.querySelector('animateMotion');
-                    if (am) { /* 恢复原始速度 */ }
-                });
+    /* 节点 hover 时暂停对应方向的粒子，增加交互感（只绑定一次） */
+    nodes.forEach(function(node) {
+        node.addEventListener('mouseenter', function() {
+            particles.forEach(function(p) {
+                p.style.animationPlayState = 'paused';
+                var am = p.querySelector('animateMotion');
+                if (am) { am.setAttribute('dur', '6s'); }
             });
         });
+        node.addEventListener('mouseleave', function() {
+            particles.forEach(function(p) {
+                p.style.animationPlayState = 'running';
+            });
+        });
+    });
     }
 })();
 </script>
@@ -10657,7 +11721,13 @@
                 /* 激活当前按钮和对应面板 */
                 btn.classList.add('active');
                 var panel = parent.querySelector('[data-greeting-panel="' + target + '"]');
-                if (panel) panel.classList.add('active');
+                if (panel) {
+                    panel.classList.add('active');
+                    /* 柯基形象章节Tab切换时触发卡片入场动画 */
+                    if (typeof triggerCorgiCardAnimation === 'function') {
+                        triggerCorgiCardAnimation(panel);
+                    }
+                }
             });
         });
     });
