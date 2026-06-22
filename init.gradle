@@ -1,0 +1,27 @@
+def javaHomePaths = [
+    "C:/JDK17",
+    "C:/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot"
+]
+
+def findValidJavaHome() {
+    for (path in javaHomePaths) {
+        def dir = new File(path)
+        if (dir.exists() && dir.isDirectory()) {
+            def javaExe = new File(dir, "bin/java.exe")
+            if (javaExe.exists()) {
+                return path
+            }
+        }
+    }
+    return null
+}
+
+def validJavaHome = findValidJavaHome()
+if (validJavaHome) {
+    println "Using Java home: ${validJavaHome}"
+    System.setProperty("org.gradle.java.home", validJavaHome)
+} else {
+    println "WARNING: None of the configured Java home paths exist!"
+    println "Configured paths:"
+    javaHomePaths.each { println "  - ${it}" }
+}
