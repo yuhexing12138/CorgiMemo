@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<!-- saved from url=(0023)http://localhost:61310/ -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><style data-merge-styles="true"></style>
+  
+  <title>Superpowers Brainstorming</title>
+  <style>
+    /*
+     * BRAINSTORM COMPANION FRAME TEMPLATE
+     *
+     * This template provides a consistent frame with:
+     * - OS-aware light/dark theming
+     * - Fixed header and selection indicator bar
+     * - Scrollable main content area
+     * - CSS helpers for common UI patterns
+     *
+     * Content is injected via placeholder comment in #claude-content.
+     */
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+
+    /* ===== THEME VARIABLES ===== */
+    :root {
+      --bg-primary: #f5f5f7;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #e5e5e7;
+      --border: #d1d1d6;
+      --text-primary: #1d1d1f;
+      --text-secondary: #86868b;
+      --text-tertiary: #aeaeb2;
+      --accent: #0071e3;
+      --accent-hover: #0077ed;
+      --success: #34c759;
+      --warning: #ff9f0a;
+      --error: #ff3b30;
+      --selected-bg: #e8f4fd;
+      --selected-border: #0071e3;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-primary: #1d1d1f;
+        --bg-secondary: #2d2d2f;
+        --bg-tertiary: #3d3d3f;
+        --border: #424245;
+        --text-primary: #f5f5f7;
+        --text-secondary: #86868b;
+        --text-tertiary: #636366;
+        --accent: #0a84ff;
+        --accent-hover: #409cff;
+        --selected-bg: rgba(10, 132, 255, 0.15);
+        --selected-border: #0a84ff;
+      }
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      line-height: 1.5;
+    }
+
+    /* ===== FRAME STRUCTURE ===== */
+    .header {
+      background: var(--bg-secondary);
+      padding: 0.5rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .header h1 { font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); }
+    .header .status { font-size: 0.7rem; color: var(--success); display: flex; align-items: center; gap: 0.4rem; }
+    .header .status::before { content: ''; width: 6px; height: 6px; background: var(--success); border-radius: 50%; }
+
+    .main { flex: 1; overflow-y: auto; }
+    #claude-content { padding: 2rem; min-height: 100%; }
+
+    .indicator-bar {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 0.5rem 1.5rem;
+      flex-shrink: 0;
+      text-align: center;
+    }
+    .indicator-bar span {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+    .indicator-bar .selected-text {
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    /* ===== TYPOGRAPHY ===== */
+    h2 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; }
+    h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem; }
+    .subtitle { color: var(--text-secondary); margin-bottom: 1.5rem; }
+    .section { margin-bottom: 2rem; }
+    .label { font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+
+    /* ===== OPTIONS (for A/B/C choices) ===== */
+    .options { display: flex; flex-direction: column; gap: 0.75rem; }
+    .option {
+      background: var(--bg-secondary);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    .option:hover { border-color: var(--accent); }
+    .option.selected { background: var(--selected-bg); border-color: var(--selected-border); }
+    .option .letter {
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      width: 1.75rem; height: 1.75rem;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 600; font-size: 0.85rem; flex-shrink: 0;
+    }
+    .option.selected .letter { background: var(--accent); color: white; }
+    .option .content { flex: 1; }
+    .option .content h3 { font-size: 0.95rem; margin-bottom: 0.15rem; }
+    .option .content p { color: var(--text-secondary); font-size: 0.85rem; margin: 0; }
+
+    /* ===== CARDS (for showing designs/mockups) ===== */
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .card.selected { border-color: var(--selected-border); border-width: 2px; }
+    .card-image { background: var(--bg-tertiary); aspect-ratio: 16/10; display: flex; align-items: center; justify-content: center; }
+    .card-body { padding: 1rem; }
+    .card-body h3 { margin-bottom: 0.25rem; }
+    .card-body p { color: var(--text-secondary); font-size: 0.85rem; }
+
+    /* ===== MOCKUP CONTAINER ===== */
+    .mockup {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+    .mockup-header {
+      background: var(--bg-tertiary);
+      padding: 0.5rem 1rem;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border);
+    }
+    .mockup-body { padding: 1.5rem; }
+
+    /* ===== SPLIT VIEW (side-by-side comparison) ===== */
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 700px) { .split { grid-template-columns: 1fr; } }
+
+    /* ===== PROS/CONS ===== */
+    .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+    .pros, .cons { background: var(--bg-secondary); border-radius: 8px; padding: 1rem; }
+    .pros h4 { color: var(--success); font-size: 0.85rem; margin-bottom: 0.5rem; }
+    .cons h4 { color: var(--error); font-size: 0.85rem; margin-bottom: 0.5rem; }
+    .pros ul, .cons ul { margin-left: 1.25rem; font-size: 0.85rem; color: var(--text-secondary); }
+    .pros li, .cons li { margin-bottom: 0.25rem; }
+
+    /* ===== PLACEHOLDER (for mockup areas) ===== */
+    .placeholder {
+      background: var(--bg-tertiary);
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-tertiary);
+    }
+
+    /* ===== INLINE MOCKUP ELEMENTS ===== */
+    .mock-nav { background: var(--accent); color: white; padding: 0.75rem 1rem; display: flex; gap: 1.5rem; font-size: 0.9rem; }
+    .mock-sidebar { background: var(--bg-tertiary); padding: 1rem; min-width: 180px; }
+    .mock-content { padding: 1.5rem; flex: 1; }
+    .mock-button { background: var(--accent); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.85rem; }
+    .mock-input { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; width: 100%; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1><a href="https://github.com/obra/superpowers" style="color: inherit; text-decoration: none;">Superpowers Brainstorming</a></h1>
+    <div class="status">Connected</div>
+  </div>
+
+  <div class="main">
+    <div id="claude-content">
+      <h2>混合方案详细设计 — 杂志风为体，野兽派+故障艺术为用</h2>
+<p class="subtitle">主基调 A + 点缀 B/C，兼顾主题契合度与视觉冲击力</p>
+
+<div class="section">
+    <h3>🎨 混合策略总览</h3>
+    <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; margin: 16px 0;">
+        <div style="padding: 16px; background: rgba(255,154,92,0.15); border: 2px solid #FF9A5C; border-radius: 8px;">
+            <div style="font-size: 11px; color: #FF9A5C; font-weight: 900; margin-bottom: 4px;">主基调 70%</div>
+            <div style="font-size: 16px; font-weight: 900; color: #FF9A5C;">A 杂志编辑风</div>
+            <div style="font-size: 11px; color: #888; margin-top: 6px;">整体布局骨架、配色、字体、章节结构</div>
+            <div style="font-size: 10px; color: #aaa; margin-top: 4px;">应用于：Hero、Tab1-6 主体、页脚</div>
+        </div>
+        <div style="padding: 16px; background: rgba(126,200,160,0.15); border: 2px solid #7EC8A0; border-radius: 8px;">
+            <div style="font-size: 11px; color: #7EC8A0; font-weight: 900; margin-bottom: 4px;">点缀 15%</div>
+            <div style="font-size: 14px; font-weight: 900; color: #7EC8A0;">B 野兽派</div>
+            <div style="font-size: 10px; color: #888; margin-top: 6px;">强调卡片、CTA按钮</div>
+            <div style="font-size: 10px; color: #aaa; margin-top: 4px;">用于：核心价值、差异化优势</div>
+        </div>
+        <div style="padding: 16px; background: rgba(0,255,159,0.1); border: 2px solid #00ff9f; border-radius: 8px;">
+            <div style="font-size: 11px; color: #00ff9f; font-weight: 900; margin-bottom: 4px;">点缀 15%</div>
+            <div style="font-size: 14px; font-weight: 900; color: #00ff9f;">C 故障艺术</div>
+            <div style="font-size: 10px; color: #888; margin-top: 6px;">科技感 section</div>
+            <div style="font-size: 10px; color: #aaa; margin-top: 4px;">用于：原型展示、成长系统</div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h3>📐 设计语言规范</h3>
+    <div class="split">
+        <div class="mockup">
+            <div class="mockup-header">配色系统（暖色为体，霓虹为点缀）</div>
+            <div class="mockup-body" style="background: #1a1a2e; padding: 16px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 10px;">
+                    <div style="padding: 8px; background: #f5f0e8; color: #1a1a1a; border-radius: 4px;">
+                        <div style="font-weight: 900;">主背景 #f5f0e8</div>
+                        <div style="font-size: 9px;">米白纸张感</div>
+                    </div>
+                    <div style="padding: 8px; background: #FF6B35; color: #fff; border-radius: 4px;">
+                        <div style="font-weight: 900;">主色 #FF6B35</div>
+                        <div style="font-size: 9px;">橙红（柯基色）</div>
+                    </div>
+                    <div style="padding: 8px; background: #1a1a1a; color: #f5f0e8; border-radius: 4px;">
+                        <div style="font-weight: 900;">文字 #1a1a1a</div>
+                        <div style="font-size: 9px;">深黑</div>
+                    </div>
+                    <div style="padding: 8px; background: #7EC8A0; color: #1a1a1a; border-radius: 4px;">
+                        <div style="font-weight: 900;">辅助 #7EC8A0</div>
+                        <div style="font-size: 9px;">薄荷绿</div>
+                    </div>
+                    <div style="padding: 8px; background: #00ff9f; color: #1a1a1a; border-radius: 4px;">
+                        <div style="font-weight: 900;">点缀 #00ff9f</div>
+                        <div style="font-size: 9px;">霓虹绿（故障）</div>
+                    </div>
+                    <div style="padding: 8px; background: #ff006e; color: #fff; border-radius: 4px;">
+                        <div style="font-weight: 900;">点缀 #ff006e</div>
+                        <div style="font-size: 9px;">霓虹粉（故障）</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="mockup">
+            <div class="mockup-header">字体系统（衬线+无衬线+等宽混排）</div>
+            <div class="mockup-body" style="background: #f5f0e8; padding: 16px; color: #1a1a1a;">
+                <div style="margin-bottom: 12px;">
+                    <div style="font-size: 9px; color: #666;">大标题（衬线粗体）</div>
+                    <div style="font-family: Georgia, serif; font-size: 24px; font-weight: 900;">刻记⁺ CORGIMEMO</div>
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <div style="font-size: 9px; color: #666;">章节号（超大数字）</div>
+                    <div style="font-size: 32px; font-weight: 900; color: #FF6B35; line-height: 1;">01</div>
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <div style="font-size: 9px; color: #666;">正文（无衬线）</div>
+                    <div style="font-size: 12px;">柯基犬全程陪伴，从晨间问候到任务完成</div>
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <div style="font-size: 9px; color: #666;">代码/数据（等宽）</div>
+                    <div style="font-family: monospace; font-size: 11px; color: #00ff9f; background: #1a1a1a; padding: 4px 8px;">$ corgi --status=active</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h3>🏗️ 各 Tab 布局策略分配</h3>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+            <thead>
+                <tr style="background: rgba(255,154,92,0.2);">
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #FF9A5C;">Tab</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #FF9A5C;">内容</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #FF9A5C;">风格</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #FF9A5C;">布局策略</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #FF9A5C; font-weight: 900;">Hero</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">首屏</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #FF9A5C;">A 杂志</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">不对称分栏，左大标题右柯基，顶部 ISSUE 编号</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #FF9A5C; font-weight: 900;">Tab1</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">概览</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #7EC8A0;">A+B</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">大数字章节号，核心价值用粗边框卡片强调</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #FF9A5C; font-weight: 900;">Tab2</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">柯基陪伴</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #FF9A5C;">A 杂志</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">8姿态用错落网格（非等高），表情系统用横向滚动条</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #FF9A5C; font-weight: 900;">Tab3</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">身份自适应</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #FF9A5C;">A 杂志</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">三栏对比用纵向时间轴布局，非对称排列</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #FF9A5C; font-weight: 900;">Tab4</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">三位一体</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #7EC8A0;">A+B</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">功能关系图用粗边框流程图，跨功能关联用连线</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #FF9A5C; font-weight: 900;">Tab5</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">节日关怀</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #FF9A5C;">A 杂志</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">节日列表用日历式网格，换装展示用卡片堆叠</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #FF9A5C; font-weight: 900;">Tab6</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">用户故事</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333; color: #FF9A5C;">A 杂志</td>
+                    <td style="padding: 6px 8px; border-bottom: 1px solid #333;">用户画像用大引言式，场景故事用时间轴叙事</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 8px; color: #FF9A5C; font-weight: 900;">Tab7</td>
+                    <td style="padding: 6px 8px;">原型展示</td>
+                    <td style="padding: 6px 8px; color: #00ff9f;">A+C</td>
+                    <td style="padding: 6px 8px;">手机模拟器用故障艺术边框，终端式操作提示</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="section">
+    <h3>🎬 关键页面详细 Mockup — Hero 区不对称布局</h3>
+    <div class="mockup">
+        <div class="mockup-header">Hero 区 — 杂志封面式不对称布局</div>
+        <div class="mockup-body" style="background: #f5f0e8; padding: 24px; color: #1a1a1a; min-height: 200px;">
+            <!-- 顶部刊头 -->
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1a1a1a; padding-bottom: 8px; margin-bottom: 16px;">
+                <div style="font-size: 10px; letter-spacing: 4px; color: #FF6B35; font-weight: 900;">ISSUE 01 · 2026·06</div>
+                <div style="font-size: 9px; color: #666;">刻记⁺ 创意展示 · 柯基陪伴系列</div>
+                <div style="font-size: 9px; color: #666;">№ 001</div>
+            </div>
+            <!-- 不对称主体 -->
+            <div style="display: grid; grid-template-columns: 3fr 2fr; gap: 24px; align-items: end;">
+                <div>
+                    <div style="font-size: 11px; color: #FF6B35; font-weight: 700; margin-bottom: 8px;">— 治愈系记录应用</div>
+                    <h1 style="font-family: Georgia, serif; font-size: 56px; font-weight: 900; line-height: 0.9; margin: 0; letter-spacing: -2px;">
+                        刻记<sup style="font-size: 20px; color: #FF6B35;">+</sup>
+                    </h1>
+                    <div style="font-size: 18px; font-weight: 300; color: #666; margin-top: 4px; letter-spacing: 6px;">CORGIMEMO⁺</div>
+                    <p style="font-size: 13px; color: #444; margin-top: 12px; font-style: italic; max-width: 320px;">「一个会陪伴你的治愈系记录应用」— 小柯基陪你记录每一刻</p>
+                </div>
+                <div style="text-align: right;">
+                    <div style="display: inline-block; padding: 12px; border: 2px solid #1a1a1a; background: #fff; box-shadow: 6px 6px 0 #FF6B35;">
+                        <div style="font-size: 32px;">🐕</div>
+                        <div style="font-size: 9px; color: #666; margin-top: 4px;">柯基摇尾中...</div>
+                    </div>
+                </div>
+            </div>
+            <!-- 底部导航条 -->
+            <div style="display: flex; gap: 16px; margin-top: 20px; padding-top: 12px; border-top: 1px solid #1a1a1a; font-size: 10px;">
+                <span style="color: #FF6B35; font-weight: 900;">▌ 概览</span>
+                <span style="color: #666;">柯基陪伴</span>
+                <span style="color: #666;">身份自适应</span>
+                <span style="color: #666;">三位一体</span>
+                <span style="color: #666;">节日关怀</span>
+                <span style="color: #666;">用户故事</span>
+                <span style="color: #666;">原型展示</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h3>🎬 关键页面详细 Mockup — Tab1 概览（A+B 混合）</h3>
+    <div class="mockup">
+        <div class="mockup-header">Tab1 概览 — 大数字章节号 + 野兽派强调卡片</div>
+        <div class="mockup-body" style="background: #f5f0e8; padding: 20px; color: #1a1a1a;">
+            <!-- 章节01 -->
+            <div style="display: grid; grid-template-columns: 100px 1fr; gap: 16px; margin-bottom: 24px;">
+                <div style="font-size: 64px; font-weight: 900; color: #FF6B35; line-height: 0.85; border-right: 3px solid #1a1a1a; padding-right: 12px;">01</div>
+                <div>
+                    <div style="font-size: 9px; letter-spacing: 3px; color: #666; margin-bottom: 4px;">CORE VALUES</div>
+                    <div style="font-size: 20px; font-weight: 900; margin-bottom: 12px;">三大核心价值</div>
+                    <!-- 野兽派卡片 -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                        <div style="border: 3px solid #1a1a1a; padding: 12px; background: #fff; box-shadow: 5px 5px 0 #FF6B35;">
+                            <div style="font-size: 24px;">💕</div>
+                            <div style="font-size: 13px; font-weight: 900; margin-top: 6px;">陪伴感</div>
+                            <div style="font-size: 9px; color: #666; margin-top: 3px;">柯基全程陪伴</div>
+                        </div>
+                        <div style="border: 3px solid #1a1a1a; padding: 12px; background: #FF6B35; color: #fff; box-shadow: 5px 5px 0 #1a1a1a;">
+                            <div style="font-size: 24px;">🎯</div>
+                            <div style="font-size: 13px; font-weight: 900; margin-top: 6px;">高效性</div>
+                            <div style="font-size: 9px; margin-top: 3px; opacity: 0.9;">快速记录</div>
+                        </div>
+                        <div style="border: 3px solid #1a1a1a; padding: 12px; background: #fff; box-shadow: 5px 5px 0 #7EC8A0;">
+                            <div style="font-size: 24px;">💝</div>
+                            <div style="font-size: 13px; font-weight: 900; margin-top: 6px;">温暖感</div>
+                            <div style="font-size: 9px; color: #666; margin-top: 3px;">治愈设计</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- 章节02 错落布局 -->
+            <div style="display: grid; grid-template-columns: 1fr 100px; gap: 16px; margin-bottom: 20px;">
+                <div>
+                    <div style="font-size: 9px; letter-spacing: 3px; color: #666; margin-bottom: 4px;">TARGET USERS</div>
+                    <div style="font-size: 20px; font-weight: 900; margin-bottom: 12px;">目标用户群体</div>
+                    <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px;">
+                        <div style="padding: 12px; background: #fff; border-left: 4px solid #FF6B35;">
+                            <div style="font-size: 11px; font-weight: 900;">📚 学生群体</div>
+                            <div style="font-size: 8px; color: #999;">18-25岁</div>
+                            <div style="font-size: 9px; color: #666; margin-top: 4px;">课程管理与学习动力</div>
+                        </div>
+                        <div style="padding: 12px; background: #fff; border-left: 4px solid #7EC8A0;">
+                            <div style="font-size: 11px; font-weight: 900;">💼 上班族</div>
+                            <div style="font-size: 8px; color: #999;">25-35岁</div>
+                        </div>
+                        <div style="padding: 12px; background: #fff; border-left: 4px solid #FF6B35;">
+                            <div style="font-size: 11px; font-weight: 900;">🧓 老年群体</div>
+                            <div style="font-size: 8px; color: #999;">55岁+</div>
+                        </div>
+                    </div>
+                </div>
+                <div style="font-size: 64px; font-weight: 900; color: #7EC8A0; line-height: 0.85; border-left: 3px solid #1a1a1a; padding-left: 12px; text-align: right;">02</div>
+            </div>
+            <!-- 大引言 -->
+            <div style="margin: 24px 40px; padding: 16px; border-top: 2px solid #1a1a1a; border-bottom: 2px solid #1a1a1a; text-align: center;">
+                <div style="font-family: Georgia, serif; font-size: 16px; font-style: italic; color: #1a1a1a;">"让记录变得不再枯燥，让忙碌的人也能感受到温暖。"</div>
+                <div style="font-size: 9px; color: #999; margin-top: 6px; letter-spacing: 2px;">— 产品愿景</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h3>🎬 关键页面详细 Mockup — Tab7 原型展示（A+C 混合）</h3>
+    <div class="mockup">
+        <div class="mockup-header">Tab7 原型展示 — 杂志骨架 + 故障艺术边框</div>
+        <div class="mockup-body" style="background: #f5f0e8; padding: 20px; color: #1a1a1a;">
+            <div style="display: grid; grid-template-columns: 80px 1fr; gap: 16px; margin-bottom: 16px;">
+                <div style="font-size: 56px; font-weight: 900; color: #00ff9f; line-height: 0.85; text-shadow: 2px 0 #ff006e, -2px 0 #0095ff;">07</div>
+                <div>
+                    <div style="font-size: 9px; letter-spacing: 3px; color: #ff006e; font-family: monospace;">// PROTOTYPE_DEMO</div>
+                    <div style="font-size: 20px; font-weight: 900;">原型展示</div>
+                </div>
+            </div>
+            <!-- 故障艺术手机框 -->
+            <div style="display: flex; gap: 16px; justify-content: center; padding: 20px; background: #0a0a0f; border: 2px solid #00ff9f; box-shadow: 6px 6px 0 #ff006e;">
+                <div style="width: 80px; height: 140px; border: 2px solid #00ff9f; background: rgba(0,255,159,0.05); padding: 6px; position: relative;">
+                    <div style="font-size: 7px; color: #00ff9f; font-family: monospace;">[HOME]</div>
+                    <div style="margin-top: 4px; height: 8px; background: rgba(0,255,159,0.3); border-radius: 2px;"></div>
+                    <div style="margin-top: 3px; height: 8px; background: rgba(255,0,110,0.3); border-radius: 2px;"></div>
+                    <div style="margin-top: 3px; height: 8px; background: rgba(0,149,255,0.3); border-radius: 2px;"></div>
+                    <div style="position: absolute; bottom: 4px; right: 4px; font-size: 6px; color: #ff006e;">●REC</div>
+                </div>
+                <div style="color: #00ff9f; font-family: monospace; font-size: 10px; align-self: center;">
+                    <div>&gt; corgi_ui --render</div>
+                    <div style="color: #888; font-size: 8px;">[████████░░] 80%</div>
+                    <div style="color: #ff006e; margin-top: 4px;">STATUS: ACTIVE</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h3>📊 视觉节奏对比 — 改造前 vs 改造后</h3>
+    <div class="split">
+        <div class="mockup">
+            <div class="mockup-header">改造前 — 单调重复</div>
+            <div class="mockup-body" style="background: #1a1a2e; padding: 12px;">
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <div style="height: 16px; background: rgba(255,154,92,0.3); border-radius: 2px;"></div>
+                    <div style="height: 24px; background: rgba(255,255,255,0.1); border-radius: 2px;"></div>
+                    <div style="height: 16px; background: rgba(255,154,92,0.3); border-radius: 2px;"></div>
+                    <div style="height: 24px; background: rgba(255,255,255,0.1); border-radius: 2px;"></div>
+                    <div style="height: 16px; background: rgba(255,154,92,0.3); border-radius: 2px;"></div>
+                    <div style="height: 24px; background: rgba(255,255,255,0.1); border-radius: 2px;"></div>
+                </div>
+                <div style="text-align: center; color: #ff6b6b; font-size: 9px; margin-top: 8px;">⚠ 节奏单一，无层次</div>
+            </div>
+        </div>
+        <div class="mockup">
+            <div class="mockup-header">改造后 — 错落有致</div>
+            <div class="mockup-body" style="background: #f5f0e8; padding: 12px;">
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <div style="height: 28px; background: #FF6B35; border-radius: 2px; width: 70%;"></div>
+                    <div style="height: 12px; background: #1a1a1a; border-radius: 2px; width: 90%;"></div>
+                    <div style="height: 40px; background: #fff; border: 2px solid #1a1a1a; border-radius: 2px; margin-left: 20%;"></div>
+                    <div style="height: 16px; background: #7EC8A0; border-radius: 2px; width: 60%;"></div>
+                    <div style="height: 32px; background: #fff; border-left: 4px solid #FF6B35; border-radius: 2px; width: 80%;"></div>
+                    <div style="height: 12px; background: #1a1a1a; border-radius: 2px; width: 50%;"></div>
+                </div>
+                <div style="text-align: center; color: #7EC8A0; font-size: 9px; margin-top: 8px;">✓ 节奏丰富，层次分明</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div style="text-align: center; padding: 16px; background: rgba(255,154,92,0.15); border-radius: 8px; border: 2px solid #FF9A5C; margin-top: 16px;">
+    <p style="color: #FF9A5C; margin: 0; font-weight: 900;">✦ 混合方案设计完成 — 请确认是否进入详细设计文档编写阶段</p>
+</div>
+
+    </div>
+  </div>
+
+  <div class="indicator-bar">
+    <span id="indicator-text">Click an option above, then return to the terminal</span>
+  </div>
+
+<script>
+(function() {
+  const WS_URL = 'ws://' + window.location.host;
+  let ws = null;
+  let eventQueue = [];
+
+  function connect() {
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      eventQueue.forEach(e => ws.send(JSON.stringify(e)));
+      eventQueue = [];
+    };
+
+    ws.onmessage = (msg) => {
+      const data = JSON.parse(msg.data);
+      if (data.type === 'reload') {
+        window.location.reload();
+      }
+    };
+
+    ws.onclose = () => {
+      setTimeout(connect, 1000);
+    };
+  }
+
+  function sendEvent(event) {
+    event.timestamp = Date.now();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(event));
+    } else {
+      eventQueue.push(event);
+    }
+  }
+
+  // Capture clicks on choice elements
+  document.addEventListener('click', (e) => {
+    const target = e.target.closest('[data-choice]');
+    if (!target) return;
+
+    sendEvent({
+      type: 'click',
+      text: target.textContent.trim(),
+      choice: target.dataset.choice,
+      id: target.id || null
+    });
+
+    // Update indicator bar (defer so toggleSelect runs first)
+    setTimeout(() => {
+      const indicator = document.getElementById('indicator-text');
+      if (!indicator) return;
+      const container = target.closest('.options') || target.closest('.cards');
+      const selected = container ? container.querySelectorAll('.selected') : [];
+      if (selected.length === 0) {
+        indicator.textContent = 'Click an option above, then return to the terminal';
+      } else if (selected.length === 1) {
+        const label = selected[0].querySelector('h3, .content h3, .card-body h3')?.textContent?.trim() || selected[0].dataset.choice;
+        indicator.innerHTML = '<span class="selected-text">' + label + ' selected</span> — return to terminal to continue';
+      } else {
+        indicator.innerHTML = '<span class="selected-text">' + selected.length + ' selected</span> — return to terminal to continue';
+      }
+    }, 0);
+  });
+
+  // Frame UI: selection tracking
+  window.selectedChoice = null;
+
+  window.toggleSelect = function(el) {
+    const container = el.closest('.options') || el.closest('.cards');
+    const multi = container && container.dataset.multiselect !== undefined;
+    if (container && !multi) {
+      container.querySelectorAll('.option, .card').forEach(o => o.classList.remove('selected'));
+    }
+    if (multi) {
+      el.classList.toggle('selected');
+    } else {
+      el.classList.add('selected');
+    }
+    window.selectedChoice = el.dataset.choice;
+  };
+
+  // Expose API for explicit use
+  window.brainstorm = {
+    send: sendEvent,
+    choice: (value, metadata = {}) => sendEvent({ type: 'choice', value, ...metadata })
+  };
+
+  connect();
+})();
+
+</script>
+
+
+<div id="buttonsDiv-QN0627" class="buttonsDiv-QN0627" style="z-index: 999;"><img src="chrome-extension://jlbgepighhjoecmhighepkgaeajgkbci/images/close.png" id="delete-button-QN0627" class="delete-button-QN0627" style="z-index: 999;"><div id="floating-button-QN0627" class="floating-button-QN0627" style="z-index: 999; font-size: 12px;"><img src="chrome-extension://jlbgepighhjoecmhighepkgaeajgkbci/images/iconblack.png" alt="image icon" id="qnAiImg-QN0627" class="qnAiImg-QN0627" style="width: 25px; height: 25px; margin-left: 10px;"><span id="spanTextQN0627" style="font-size: 10px; font-weight: 700; color: rgb(0, 0, 0); margin-right: 10px; white-space: nowrap;">ChatGPT</span></div></div></body></html>
