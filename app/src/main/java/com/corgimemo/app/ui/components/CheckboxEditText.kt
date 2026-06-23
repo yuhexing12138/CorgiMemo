@@ -8,8 +8,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -480,15 +478,11 @@ private fun TodoGroupContainer(
 
         // 底部操作栏：[提醒按钮] [优先级按钮] ... [完成]
         if (showBottomBar) {
-            // 底部操作栏用 FlowRow：当提醒按钮文本过长（如跨年格式 "2025年6月23日 23:06 已过期"），
-            // 自动换行到第二行，避免优先级按钮被挤成"高优先/级"换行、完成按钮被裁掉。
-            @OptIn(ExperimentalLayoutApi::class)
-            FlowRow(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 // 左侧：提醒按钮
                 // 实时刷新当前时间：进入页面时取一次，对齐到下一个 30s 整数倍开始轮询，
