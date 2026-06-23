@@ -2,6 +2,7 @@ package com.corgimemo.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -116,6 +117,12 @@ fun CheckboxEditText(
     onAttachmentDragEnd: ((Int, Int, Int, Int?) -> Unit)? = null,
     /** 🆕 行边界更新回调（用于精确的目标行检测，参数：行索引, Rect边界矩形）*/
     onRowBoundsChanged: ((Int, androidx.compose.ui.geometry.Rect) -> Unit)? = null,
+    /** 各分组的保存状态（key=groupId, value=保存状态） */
+    groupSaveStates: Map<Int, com.corgimemo.app.viewmodel.GroupSaveState> = emptyMap(),
+    /** 各分组的优先级（key=groupId, value=优先级 0=无,1=低,2=中,3=高） */
+    groupPriorities: Map<Int, Int> = emptyMap(),
+    /** 优先级按钮点击回调（参数=groupId） */
+    onPriorityButtonClick: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     placeholder: String = "回车可连续添加子待办，输入 / 可新建待办"
@@ -212,7 +219,7 @@ fun CheckboxEditText(
                 showBottomBar = true,
                 onReminderClick = { onReminderClick?.invoke(0) },
                 priority = priority,
-                onPriorityChange = { onPriorityChange?.invoke(0, it) },
+                onPriorityClick = { onPriorityButtonClick?.invoke(0) },
                 onSaveClick = { onSaveClick?.invoke(0) }
             ) {
                 CheckboxEditRow(
@@ -259,12 +266,18 @@ fun CheckboxEditText(
             for ((groupId, groupLines) in groups) {
                 val groupFirstIndex = globalIndex
 
+                // 计算当前容器是否已保存
+                val isGroupSaved = groupSaveStates[groupId]?.isSaved == true
+                /** 获取当前分组的优先级（0=无,1=低,2=中,3=高） */
+                val groupPriority = groupPriorities[groupId] ?: 0
+
                 TodoGroupContainer(
                     groupId = groupId,
                     showBottomBar = true,
+                    isSaved = isGroupSaved,
+                    priority = groupPriority,  // 传递分组独立优先级
                     onReminderClick = { onReminderClick?.invoke(groupId) },
-                    priority = priority,
-                    onPriorityChange = { onPriorityChange?.invoke(groupId, it) },
+                    onPriorityClick = { onPriorityButtonClick?.invoke(groupId) },
                     onSaveClick = { onSaveClick?.invoke(groupId) }
                 ) {
                     groupLines.forEachIndexed { localIndex, line ->
@@ -391,28 +404,66 @@ fun CheckboxEditText(
 
 /**
  * 单个待办组的圆角容器（含底部操作栏）
+ *
+ * @param priority 优先级 (0=无, 1=低, 2=中, 3=高)
+ * @param onPriorityClick 优先级按钮点击回调（触发弹窗）
  */
 @Composable
 private fun TodoGroupContainer(
     groupId: Int,
     showBottomBar: Boolean,
+    isSaved: Boolean = false,
     onReminderClick: (() -> Unit)? = null,
-    priority: Int = 1,
-    onPriorityChange: ((Int) -> Unit)? = null,
+    priority: Int = 0,
+    onPriorityClick: (() -> Unit)? = null,
     onSaveClick: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
+    /**
+     * 根据优先级计算边框颜色
+     * - 3=高 → 红色
+     * - 2=中 → 黄色
+     * - 1=低 → 绿色
+     * - 0=无 → 无边框
+     */
+    val borderColor = when (priority) {
+        3 -> Color(0xFFF44336)  // 高优先级：红色
+        2 -> Color(0xFFFF9800)  // 中优先级：黄色
+        1 -> Color(0xFF4CAF50)  // 低优先级：绿色
+        else -> null             // 无优先级：无边框
+    }
+
+    /** 优先级按钮显示文字 */
+    val priorityLabel = when (priority) {
+        3 -> "高优先级"
+        2 -> "中优先级"
+        1 -> "低优先级"
+        else -> "优先级"
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surface)
+            .then(
+                // 优先级边框颜色
+                if (borderColor != null) {
+                    Modifier.border(
+                        width = 1.5.dp,
+                        color = borderColor.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         content()
 
-        // 底部操作栏：[提醒按钮] [优先级] ... [完成]
+        // 底部操作栏：[提醒按钮] [优先级按钮] ... [完成]
         if (showBottomBar) {
             Row(
                 modifier = Modifier
@@ -449,29 +500,47 @@ private fun TodoGroupContainer(
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // 中间：优先级选择
-                listOf(Pair(0, "低"), Pair(1, "中"), Pair(2, "高")).forEach { (value, label) ->
-                    Text(
-                        text = label,
-                        modifier = Modifier
-                            .clickable(enabled = onPriorityChange != null) { onPriorityChange?.invoke(value) }
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        color = if (priority == value) Color(0xFFFF9A5C) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = if (priority == value) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
-                        fontSize = 12.sp
-                    )
-                    if (value < 2) Spacer(modifier = Modifier.width(2.dp))
+                // 中间：优先级按钮（点击弹出选择弹窗）
+                Box(
+                    modifier = Modifier
+                        .clickable(enabled = onPriorityClick != null) { onPriorityClick?.invoke() }
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFF5F5F5))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // 优先级颜色圆点
+                        if (borderColor != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(borderColor)
+                            )
+                        }
+                        Text(
+                            text = priorityLabel,
+                            fontSize = 13.sp,
+                            color = borderColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (priority > 0) androidx.compose.ui.text.font.FontWeight.SemiBold
+                                         else androidx.compose.ui.text.font.FontWeight.Normal
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // 右侧：完成按钮
+                // 右侧：完成 / 已保存 按钮
                 Text(
-                    text = "完成",
+                    text = if (isSaved) "已保存 ✓" else "完成",
                     modifier = Modifier
-                        .clickable(enabled = onSaveClick != null) { onSaveClick?.invoke() }
+                        .clickable(enabled = onSaveClick != null && !isSaved) { onSaveClick?.invoke() }
                         .padding(horizontal = 4.dp, vertical = 2.dp),
-                    color = Color(0xFFFF9A5C),
+                    color = if (isSaved) androidx.compose.ui.graphics.Color(0xFF4CAF50) else Color(0xFFFF9A5C),
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                     fontSize = 14.sp
                 )

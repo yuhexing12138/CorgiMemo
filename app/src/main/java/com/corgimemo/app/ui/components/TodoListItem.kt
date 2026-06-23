@@ -335,8 +335,12 @@ fun TodoListItem(
                              *
                              * 当 contentFormat 不为空时，使用 MarkdownInlineText 渲染格式化内容
                              * （保留粗体/斜体/删除线样式），否则回退到纯文本显示。
+                             *
+                             * 注意：contentFormat 可能包含行级附件快照数据（格式为 "{Markdown}|||LINE_ATTACHMENTS|||[{JSON}]"），
+                             * 需要先提取纯净的 Markdown 部分用于显示。
                              */
-                            if (todo.contentFormat.isNotBlank()) {
+                            val displayContentFormat = com.corgimemo.app.ui.model.LineSnapshotUtils.extractDisplayContent(todo.contentFormat)
+                            if (displayContentFormat.isNotBlank()) {
                                 /**
                                  * 富文本内容（支持逐区间交错淡入高亮 + Markdown样式保留）
                                  *
@@ -348,7 +352,7 @@ fun TodoListItem(
                                     /** V2.6: 使用带样式的搜索高亮（保留Markdown格式） */
                                     val (styledMdRanges, styledMdColor) =
                                         com.corgimemo.app.util.HighlightUtil.buildStyledHighlightRanges(
-                                            markdown = todo.contentFormat,
+                                            markdown = displayContentFormat,
                                             searchQuery = searchQuery,
                                             containerBgColor = if (todo.backgroundColor != 0)
                                                 androidx.compose.ui.graphics.Color(todo.backgroundColor) else null
@@ -394,7 +398,7 @@ fun TodoListItem(
                                     }
                                 } else {
                                     MarkdownInlineText(
-                                        markdown = todo.contentFormat,
+                                        markdown = displayContentFormat,
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis,
                                         style = androidx.compose.ui.text.TextStyle(

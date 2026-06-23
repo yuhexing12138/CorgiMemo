@@ -35,6 +35,27 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
+ * 分组保存状态
+ *
+ * 跟踪编辑页内每个 groupId 的保存状态，
+ * 用于控制 UI 显示（按钮文字/颜色）和决定是 insert 还是 update。
+ *
+ * @property groupId 分组 ID（对应 TodoLine.groupId）
+ * @property isSaved 是否已保存到数据库
+ * @property savedTodoId 已保存的 TodoItem 数据库 ID（isSaved=true 时有效）
+ * @property savedAt 最后保存时间戳
+ * @property contentSnapshot 保存时的内容快照（用于检测是否真正被编辑）
+ */
+data class GroupSaveState(
+    val groupId: Int,
+    val isSaved: Boolean = false,
+    val savedTodoId: Long? = null,
+    val savedAt: Long? = null,
+    /** 保存时该组所有行的文本拼接（用于比较是否发生变化） */
+    val contentSnapshot: String = ""
+)
+
+/**
  * 待办编辑 ViewModel
  */
 @HiltViewModel
@@ -212,6 +233,83 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
+     * 行级附件快照数据（JSON 序列化字符串）
+     *
+     * 存储每行的图片和录音附件信息，用于在重新打开待办时精确恢复到对应行。
+     *
+     * 数据格式：由 LineSnapshotUtils 序列化的 JSON 字符串，
+     * 带有 #LINE_ATTACHMENTS# 前缀标识。
+     *
+     * 生命周期：
+     * - 保存时：从 UI 层的 todoLines 构建快照并序列化存储
+     * - 加载时：从数据库读取并反序列化，供 UI 层恢复附件
+     */
+    private val _lineAttachmentsSnapshot = MutableStateFlow<String?>(null)
+
+    /** 暴露行级附件快照供外部读取 */
+    val lineAttachmentsSnapshot: kotlinx.coroutines.flow.StateFlow<String?> = _lineAttachmentsSnapshot.asStateFlow()
+
+    /**
+     * 各分组的保存状态映射
+     *
+     * key = groupId (Int), value = 该组的保存状态
+     */
+    private val _groupSaveStates = MutableStateFlow<Map<Int, GroupSaveState>>(emptyMap())
+
+    /** 暴露分组保存状态供 UI 层收集 */
+    val groupSaveStates: kotlinx.coroutines.flow.StateFlow<Map<Int, GroupSaveState>> = _groupSaveStates.asStateFlow()
+
+    /**
+     * 各分组的优先级状态
+     *
+     * key = groupId (Int), value = 优先级 (0=无, 1=低, 2=中, 3=高)
+     * 每个编辑容器拥有独立的优先级，保存时写入 TodoItem.priority
+     */
+    private val _groupPriorities = MutableStateFlow<Map<Int, Int>>(emptyMap())
+
+    /** 暴露分组优先级供 UI 层收集 */
+    val groupPriorities: kotlinx.coroutines.flow.StateFlow<Map<Int, Int>> = _groupPriorities.asStateFlow()
+
+    /**
+     * 保存行级附件快照（UI 层调用）
+     *
+     * 在用户点击保存前，UI 层应调用此方法将当前 todoLines 的完整状态（包括每行附件）序列化。
+     * performSave() 会将此数据持久化到数据库的 contentFormat 字段中。
+     *
+     * @param snapshotJson 序列化后的 JSON 字符串（由 LineSnapshotUtils.serialize() 生成）
+     */
+    fun saveLineAttachmentsSnapshot(snapshotJson: String) {
+        _lineAttachmentsSnapshot.value = snapshotJson
+    }
+
+    /**
+     * 加载行级附件快照（内部使用）
+     *
+     * 从 TodoItem 的 contentFormat 字段中提取行级附件快照数据。
+     * contentFormat 字段的格式为："{Markdown内容}|||LINE_ATTACHMENTS|||[{JSON}]"
+     *
+     * @param todo 从数据库加载的 TodoItem 对象
+     */
+    private fun loadLineAttachmentsSnapshot(todo: TodoItem) {
+        val format = todo.contentFormat
+        if (!format.isNullOrBlank() && format.contains(com.corgimemo.app.ui.model.LineSnapshotUtils.SEPARATOR)) {
+            _lineAttachmentsSnapshot.value = format
+            android.util.Log.w("TodoEditVM", "加载行级附件快照成功, 长度=${format.length}")
+            // 同时提取纯净的 Markdown 内容用于显示
+            _contentFormat.value = com.corgimemo.app.ui.model.LineSnapshotUtils.extractDisplayContent(format)
+        } else if (!format.isNullOrBlank() && format.contains("LINE_ATTACHMENTS")) {
+            // 兼容旧格式（#LINE_ATTACHMENTS# 前缀）
+            _lineAttachmentsSnapshot.value = format
+            _contentFormat.value = ""  // 旧格式没有 Markdown 内容
+            android.util.Log.w("TodoEditVM", "加载旧格式行级附件快照, 长度=${format.length}")
+        } else {
+            _lineAttachmentsSnapshot.value = null
+            // 正常情况：contentFormat 就是纯 Markdown 内容
+            _contentFormat.value = format ?: ""
+        }
+    }
+
+    /**
      * 背景颜色状态（ARGB 整数值）
      *
      * 用于持久化用户在编辑页选择的卡片背景色。
@@ -263,6 +361,18 @@ class TodoEditViewModel @Inject constructor(
     /** 关联列表 */
     private val _relations = MutableStateFlow<List<CardRelation>>(emptyList())
     val relations: StateFlow<List<CardRelation>> = _relations.asStateFlow()
+
+    /**
+     * 数据加载完成标志
+     *
+     * 用于解决 UI 层初始化竞态条件：
+     * - false：数据尚未从数据库加载（ViewModel 中的字段为初始空值）
+     * - true：loadTodo() 已完成，title/content/subTasks 等字段已填充实际数据
+     *
+     * UI 层应等待此标志为 true 后再初始化 todoLines 等依赖这些数据的组件。
+     */
+    private val _isLoaded = MutableStateFlow(false)
+    val isLoaded: StateFlow<Boolean> = _isLoaded.asStateFlow()
 
     private var existingTodo: TodoItem? = null
 
@@ -371,6 +481,37 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
+     * 整体替换子任务列表（用于 UI 层实时同步）
+     *
+     * 【关键方法】解决用户输入时子任务重复累积问题
+     *
+     * 与 addSubTask()（增量添加）不同，此方法是整体替换：
+     * - 每次调用都会完全替换 _subTasks 列表
+     * - 适用于 LaunchedEffect(todoLines) 中的实时同步场景
+     * - 确保 ViewModel 中的子任务列表与 UI 层的 todoLines 保持一致
+     *
+     * 使用场景：
+     * - 用户编辑子任务文本时（从 "测试" 改为 "测试2"）
+     * - 用户添加/删除子任务行时
+     * - 任何导致 todoLines 变化的操作
+     *
+     * @param newSubTasks 新的子任务列表（通常从 todoLines 构建）
+     */
+    fun replaceSubTasks(newSubTasks: List<SubTask>) {
+        _subTasks.value = newSubTasks
+    }
+
+    /**
+     * 获取当前待办的 ID（用于 UI 层构建子任务对象）
+     *
+     * @return 当前待办 ID，如果新建模式则返回 0
+     */
+    fun getCurrentTodoId(): Long = existingTodo?.id ?: 0L
+
+    /** 暴露 existingTodo 供外部访问（用于获取 todoId） */
+    val currentTodo get() = existingTodo
+
+    /**
      * 删除子任务
      *
      * @param subTask 要删除的子任务
@@ -446,6 +587,9 @@ class TodoEditViewModel @Inject constructor(
                 /** 加载富文本格式化内容（Markdown 字符串） */
                 _contentFormat.value = todo.contentFormat ?: ""
 
+                /** 加载行级附件快照（从 contentFormat 中提取） */
+                loadLineAttachmentsSnapshot(todo)
+
                 /** 从 DataStore 恢复跨会话的 Undo/Redo 栈（如有） */
                 restoreUndoStacks(todoId)
 
@@ -454,6 +598,46 @@ class TodoEditViewModel @Inject constructor(
 
                 val subTasks = SubTaskManager.getSubTasks(context, todoId)
                 _subTasks.value = subTasks
+
+                /** 诊断日志：追踪 loadTodo 数据加载 */
+            android.util.Log.w(
+                "TodoEditLoad",
+                "loadTodo 完成: id=$todoId, title='${todo.title}', " +
+                "content='${todo.content}', subTasks=${subTasks.map { it.title }}, " +
+                "imagePaths='${todo.imagePaths}', voiceNotePath='${todo.voiceNotePath}', " +
+                "_imagePaths=${_imagePaths.value}, _voiceNotePath=${_voiceNotePath.value}"
+            )
+
+                /** 标记数据加载完成，通知 UI 层可以开始初始化 */
+                _isLoaded.value = true
+
+                /**
+                 * 【多卡片修复】初始化 groupId=0 的保存状态
+                 *
+                 * 从列表点击卡片进入编辑页时，existingTodo 已有数据库 ID。
+                 * 必须将此 ID 记录到 _groupSaveStates 中，
+                 * 这样后续 saveGroup() 才能执行 UPDATE 而非 INSERT，
+                 * 避免创建重复卡片。
+                 */
+                val contentSnapshot = buildString {
+                    appendLine(todo.title ?: "")
+                    subTasks.forEach { appendLine(it.title) }
+                }.trim()
+
+                _groupSaveStates.value = mapOf(
+                    0 to GroupSaveState(
+                        groupId = 0,
+                        isSaved = true,
+                        savedTodoId = todo.id,  // 关键：记录已有 ID
+                        savedAt = System.currentTimeMillis(),
+                        contentSnapshot = contentSnapshot
+                    )
+                )
+
+                /** 初始化 groupId=0 的优先级 */
+                _groupPriorities.value = mapOf(0 to todo.priority)
+
+                android.util.Log.w("TodoEditVM", "从列表加载: 初始化 groupSaveStates[0], savedTodoId=${todo.id}, priority=${todo.priority}")
             }
         }
     }
@@ -499,10 +683,51 @@ class TodoEditViewModel @Inject constructor(
             /** 保存前对 contentFormat 进行校验和修复（防止损坏数据） */
             val safeContentFormat = com.corgimemo.app.util.MarkdownParser.validateAndSanitize(_contentFormat.value)
 
+            /**
+             * 统一生成 content 字段（从权威数据源派生）
+             *
+             * 关键修复：确保 content 与 title + subTasks 严格一致
+             *
+             * 数据层次定义：
+             * - Layer 1（权威）：title + subTasks → 用户实际输入的数据
+             * - Layer 2（派生）：content ← 由 Layer 1 在保存时一次性生成
+             *
+             * 优势：
+             * 1. 消除编辑过程中的中间态不一致
+             * 2. content 始终是 title + subTasks 的准确快照
+             * 3. 下次打开时，parseFromText(content) 与 fromSubTasks() 结果一致
+             */
+            val derivedContent = buildContentFromTitleAndSubTasks(
+                title = _title.value,
+                subTasks = _subTasks.value
+            )
+
+            /**
+             * 构建最终的 contentFormat 字段值
+             *
+             * 格式："{Markdown内容}|||LINE_ATTACHMENTS|||[{JSON}]"
+             *
+             * - 前半部分：原始的富文本格式内容（用于 HomeScreen 显示）
+             * - 后半部分：行级附件快照 JSON（用于编辑页恢复附件）
+             * - 分隔符：|||LINE_ATTACHMENTS|||
+             */
+            val lineSnapshot = _lineAttachmentsSnapshot.value
+            val finalContentFormat = if (!lineSnapshot.isNullOrBlank()) {
+                // 有行级快照数据：直接使用（已包含分隔符和 JSON）
+                lineSnapshot
+            } else if (safeContentFormat.isNotBlank()) {
+                // 无快照但有 Markdown 内容
+                safeContentFormat
+            } else {
+                // 两者都为空
+                ""
+            }
+
             val todoId: Long = if (existingTodo != null) {
                 val todo = existingTodo!!.copy(
                     title = _title.value,
-                    content = if (_content.value.isBlank()) null else _content.value,
+                    /** 使用派生的 content，确保与 subTasks 一致 */
+                    content = derivedContent.ifBlank { null },
                     categoryId = _categoryId.value,
                     priority = _priority.value,
                     startDate = _startDate.value,
@@ -522,14 +747,15 @@ class TodoEditViewModel @Inject constructor(
                     voiceDuration = _voiceDuration.value,
                     imagePaths = encodePaths(_imagePaths.value),
                     backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
-                    contentFormat = safeContentFormat /** 持久化校验后的富文本格式内容（Markdown）*/
+                    contentFormat = finalContentFormat /** 持久化：行级快照或富文本内容*/
                 )
                 todoRepository.updateTodo(todo)
                 existingTodo!!.id
             } else {
                 val todo = TodoItem(
                     title = _title.value,
-                    content = if (_content.value.isBlank()) null else _content.value,
+                    /** 使用派生的 content，确保与 subTasks 一致 */
+                    content = derivedContent.ifBlank { null },
                     categoryId = _categoryId.value,
                     priority = _priority.value,
                     status = 0,
@@ -551,7 +777,7 @@ class TodoEditViewModel @Inject constructor(
                     voiceDuration = _voiceDuration.value,
                     imagePaths = encodePaths(_imagePaths.value),
                     backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
-                    contentFormat = safeContentFormat /** 持久化校验后的富文本格式内容（Markdown）*/
+                    contentFormat = finalContentFormat /** 持久化：行级快照或富文本内容*/
                 )
                 todoRepository.insertTodo(todo)
             }
@@ -572,6 +798,287 @@ class TodoEditViewModel @Inject constructor(
 
             /** 保存成功后清除当前 Todo 的持久化 Undo 栈（V2.6: 按todoId隔离清除） */
             corgiPreferences.clearUndoRedoStacks(existingTodo?.id ?: -1L)
+        }
+    }
+
+    /**
+     * 为单个分组构建 TodoItem 对象（简化版，用于新建插入）
+     *
+     * @param targetGroupId 目标分组 ID（用于读取该组的优先级）
+     */
+    private fun buildTodoItemForGroup(
+        targetGroupId: Int,
+        title: String,
+        content: String,
+        hasSubTasks: Boolean,
+        imagePaths: List<String>,
+        voiceNotePath: String?,
+        voiceDuration: Int?,
+        lineSnapshotJson: String?,
+        safeContentFormat: String
+    ): TodoItem {
+        val currentTime = System.currentTimeMillis()
+
+        val finalContentFormat = if (!lineSnapshotJson.isNullOrBlank()) {
+            lineSnapshotJson
+        } else if (safeContentFormat.isNotBlank()) {
+            safeContentFormat
+        } else {
+            ""
+        }
+
+        return TodoItem(
+            title = title,
+            content = content.ifBlank { null },
+            categoryId = _categoryId.value,
+            priority = _groupPriorities.value[targetGroupId] ?: 0,  // 使用分组独立优先级
+            status = 0,
+            startDate = _startDate.value,
+            dueDate = _dueDate.value,
+            estimatedDurationMinutes = _estimatedDurationMinutes.value,
+            reminderTime = _reminderTime.value,
+            repeatType = _repeatType.value,
+            createdAt = currentTime,
+            updatedAt = currentTime,
+            geofenceLat = _geofenceLat.value,
+            geofenceLng = _geofenceLng.value,
+            geofenceRadius = if (_geofenceEnabled.value) _geofenceRadius.value else null,
+            geofenceType = _geofenceType.value,
+            geofenceEnabled = _geofenceEnabled.value,
+            geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
+            hasSubTasks = hasSubTasks,
+            voiceNotePath = voiceNotePath,
+            voiceDuration = voiceDuration,
+            imagePaths = encodePaths(imagePaths),
+            backgroundColor = _backgroundColor.value,
+            contentFormat = finalContentFormat
+        )
+    }
+
+    /**
+     * 保存单个分组为独立的 TodoItem
+     *
+     * 从 todoLines 中提取指定 groupId 的所有行，
+     * 构建为独立的 TodoItem 并插入数据库。
+     * 更新该分组的保存状态。
+     *
+     * @param targetGroupId 要保存的分组 ID
+     * @param allLines 当前的完整 todoLines 列表
+     * @return 保存成功返回 true，失败返回 false
+     */
+    fun saveGroup(targetGroupId: Int, allLines: List<com.corgimemo.app.ui.model.TodoLine>): Boolean {
+        // 1. 提取目标分组的所有行
+        val groupLines = allLines.filter { it.groupId == targetGroupId }
+        if (groupLines.isEmpty()) return false
+
+        // 2. 获取首行文本作为标题（过滤空文本）
+        val title = groupLines.firstOrNull { it.text.isNotBlank() }?.text?.trim()
+            ?: return false  // 标题为空则不保存
+
+        // 3. 构建子任务列表（仅子任务行）
+        val subTaskLines = groupLines.filter { it.isSubTask && it.text.isNotBlank() }
+        val subTasks = subTaskLines.map { line ->
+            SubTask(
+                id = if (line.subTaskId > 0L) line.subTaskId else 0L,
+                todoId = 0L, // 新建的待办，暂时无 ID
+                title = line.text.trim(),
+                isCompleted = line.isChecked,
+                order = line.order
+            )
+        }
+        val hasSubTasks = subTasks.isNotEmpty()
+
+        // 4. 收集附件
+        val allImagePaths = groupLines.flatMap { it.imagePaths }.distinct()
+        val firstVoice = groupLines.flatMap { it.voiceAttachments }.firstOrNull()
+        val voicePath = firstVoice?.path
+        val voiceDuration = firstVoice?.duration
+
+        // 5. 派生 content 文本（直接使用已构建的 subTasks 列表）
+        val derivedContent = buildContentFromTitleAndSubTasks(
+            title = title,
+            subTasks = subTasks  // subTasks 已经是 List<SubTask> 类型
+        )
+
+        // 6. 校验 contentFormat
+        val safeContentFormat = com.corgimemo.app.util.MarkdownParser.validateAndSanitize(_contentFormat.value)
+
+        // 7. 构建行级快照（仅目标分组的行）
+        val snapshots = com.corgimemo.app.ui.model.LineSnapshotUtils.fromTodoLines(groupLines)
+        val snapshotJson = com.corgimemo.app.ui.model.LineSnapshotUtils.serialize(
+            snapshots = snapshots,
+            originalContent = derivedContent
+        )
+
+        // 8. 执行异步保存
+        viewModelScope.launch {
+            try {
+                val todoItem = buildTodoItemForGroup(
+                    targetGroupId = targetGroupId,
+                    title = title,
+                    content = derivedContent,
+                    hasSubTasks = hasSubTasks,
+                    imagePaths = allImagePaths,
+                    voiceNotePath = voicePath,
+                    voiceDuration = voiceDuration,
+                    lineSnapshotJson = snapshotJson.ifBlank { null },
+                    safeContentFormat = safeContentFormat
+                )
+
+                // 8.1 根据是否已有 savedTodoId 决定插入或更新
+                // 【关键逻辑】每个编辑容器只对应一个待办卡片：
+                // - 首次保存 → insertTodo() 创建新记录
+                // - 再次保存 → updateTodo() 更新已有记录（避免重复创建）
+                val existingSavedId = _groupSaveStates.value[targetGroupId]?.savedTodoId
+
+                val newTodoId: Long = if (existingSavedId != null && existingSavedId > 0) {
+                    // ✅ 已有记录：执行 UPDATE（更新内容，ID保持不变）
+                    val existingTodo = todoRepository.getTodoById(existingSavedId)
+                    if (existingTodo != null) {
+                        val updatedTodo = existingTodo.copy(
+                            title = todoItem.title,
+                            content = todoItem.content,
+                            categoryId = todoItem.categoryId,
+                            priority = todoItem.priority,
+                            startDate = todoItem.startDate,
+                            dueDate = todoItem.dueDate,
+                            estimatedDurationMinutes = todoItem.estimatedDurationMinutes,
+                            reminderTime = todoItem.reminderTime,
+                            repeatType = todoItem.repeatType,
+                            updatedAt = System.currentTimeMillis(),
+                            hasSubTasks = todoItem.hasSubTasks,
+                            voiceNotePath = todoItem.voiceNotePath,
+                            voiceDuration = todoItem.voiceDuration,
+                            imagePaths = todoItem.imagePaths,
+                            backgroundColor = todoItem.backgroundColor,
+                            contentFormat = todoItem.contentFormat
+                        )
+                        todoRepository.updateTodo(updatedTodo)
+                        existingSavedId  // ID 不变！
+                    } else {
+                        // 记录被外部删除，回退到 INSERT
+                        android.util.Log.w("TodoEditVM", "分组 $targetGroupId 的已保存记录($existingSavedId)不存在，重新创建")
+                        todoRepository.insertTodo(todoItem)
+                    }
+                } else {
+                    // ✅ 首次保存：执行 INSERT
+                    todoRepository.insertTodo(todoItem)
+                }
+
+                // 保存子任务（如果有）
+                if (subTasks.isNotEmpty()) {
+                    val titles = subTasks.map { it.title }
+                    // UPDATE 模式：先删除旧子任务再添加新的，避免重复
+                    if (existingSavedId != null && existingSavedId > 0) {
+                        SubTaskManager.deleteAllSubTasks(context, newTodoId)
+                    }
+                    SubTaskManager.addSubTasks(context, newTodoId, titles)
+                }
+
+                // 保存内容块（如果有全局附件）
+                if (_currentContentBlocks.value.isNotEmpty()) {
+                    saveContentBlocks(newTodoId, _currentContentBlocks.value)
+                }
+
+                // 设置提醒（如果有）
+                if (todoItem.reminderTime != null) {
+                    com.corgimemo.app.notification.AlarmScheduler.scheduleReminder(context, todoItem.copy(id = newTodoId))
+                }
+
+                // 9. 更新保存状态（包含内容快照，用于后续变化检测）
+                val contentSnapshot = groupLines.joinToString("\n") { it.text }
+                val newState = GroupSaveState(
+                    groupId = targetGroupId,
+                    isSaved = true,
+                    savedTodoId = newTodoId,
+                    savedAt = System.currentTimeMillis(),
+                    contentSnapshot = contentSnapshot  // 记录保存时的内容
+                )
+                _groupSaveStates.value = _groupSaveStates.value + (targetGroupId to newState)
+
+                android.util.Log.w("TodoEditVM", "分组 $targetGroupId 保存成功, todoId=$newTodoId")
+            } catch (e: Exception) {
+                android.util.Log.e("TodoEditVM", "分组 $targetGroupId 保存失败", e)
+            }
+        }
+
+        return true
+    }
+
+    /**
+     * 保存所有未保存的分组
+     *
+     * 遍历所有 groupId，对未保存的分组逐一调用 saveGroup()。
+     * 用于右上角"全部完成"按钮的点击事件。
+     *
+     * @param allLines 当前的完整 todoLines 列表
+     * @return 成功保存的分组数量
+     */
+    fun saveAllGroups(allLines: List<com.corgimemo.app.ui.model.TodoLine>): Int {
+        val allGroupIds = allLines.map { it.groupId }.distinct()
+        var savedCount = 0
+
+        for (groupId in allGroupIds) {
+            val result = saveGroup(groupId, allLines)
+            if (result) savedCount++
+        }
+
+        android.util.Log.w("TodoEditVM", "saveAllGroups 完成, 共保存 $savedCount 个分组")
+        return savedCount
+    }
+
+    /**
+     * 设置指定分组的优先级
+     *
+     * @param groupId 分组 ID
+     * @param priority 优先级 (0=无, 1=低, 2=中, 3=高)
+     */
+    fun setGroupPriority(groupId: Int, priority: Int) {
+        _groupPriorities.value = _groupPriorities.value + (groupId to priority)
+    }
+
+    /**
+     * 获取指定分组的优先级
+     *
+     * @param groupId 分组 ID
+     * @return 优先级值，默认为 0（无优先级）
+     */
+    fun getGroupPriority(groupId: Int): Int {
+        return _groupPriorities.value[groupId] ?: 0
+    }
+
+    /**
+     * 检查并重置指定分组的保存状态（仅当内容确实发生变化时）
+     *
+     * 比较当前内容与保存时的快照：
+     * - 内容相同 → 不重置（如只是添加了新容器/新行）
+     * - 内容不同 → 重置为未保存（用户编辑了该容器的内容）
+     *
+     * @param groupId 要检查的分组 ID
+     * @param currentContent 当前该组的文本内容
+     */
+    fun checkAndResetGroupSavedState(groupId: Int, currentContent: String) {
+        val current = _groupSaveStates.value[groupId]
+        if (current != null && current.isSaved) {
+            // 只有当内容真正发生变化时才重置
+            if (current.contentSnapshot != currentContent) {
+                val newState = current.copy(isSaved = false)
+                _groupSaveStates.value = _groupSaveStates.value + (groupId to newState)
+                android.util.Log.w("TodoEditVM", "分组 $groupId 内容已变化，重置为未保存状态")
+            }
+            // 内容未变化则保持 isSaved=true
+        }
+    }
+
+    /**
+     * 重置所有分组的保存状态为"未保存"
+     */
+    fun resetAllGroupSavedStates() {
+        val currentStates = _groupSaveStates.value
+        if (currentStates.any { it.value.isSaved }) {
+            val resetStates = currentStates.mapValues { it.value.copy(isSaved = false) }
+            _groupSaveStates.value = resetStates
+            android.util.Log.w("TodoEditVM", "重置所有分组为未保存状态")
         }
     }
 
@@ -669,7 +1176,7 @@ class TodoEditViewModel @Inject constructor(
     fun loadCategories() {
         viewModelScope.launch {
             try {
-                android.util.Log.d("TodoEditVM", "开始加载分类...")
+                android.util.Log.w("TodoEditVM", "开始加载分类...")
                 categoryRepository.initDefaultCategories()
 
                 /** V2.7: 记录最后编辑的 Todo ID（用于设置页入口传递） */
@@ -678,7 +1185,7 @@ class TodoEditViewModel @Inject constructor(
                 }
 
                 val allCategories = categoryRepository.getAllCategoriesList()
-                android.util.Log.d("TodoEditVM", "加载到 ${allCategories.size} 个分类: $allCategories")
+                android.util.Log.w("TodoEditVM", "加载到 ${allCategories.size} 个分类: $allCategories")
                 _categories.value = allCategories
 
                 if (existingTodo == null && _categoryId.value == 0L) {
@@ -691,7 +1198,7 @@ class TodoEditViewModel @Inject constructor(
                     }
                     defaultCategory?.let {
                         _categoryId.value = it.id
-                        android.util.Log.d("TodoEditVM", "设置默认分类: ${it.name} (ID=${it.id})")
+                        android.util.Log.w("TodoEditVM", "设置默认分类: ${it.name} (ID=${it.id})")
                     }
                 }
             } catch (e: Exception) {
@@ -699,7 +1206,7 @@ class TodoEditViewModel @Inject constructor(
                 e.printStackTrace()
             } finally {
                 _isCategoriesLoaded.value = true
-                android.util.Log.d("TodoEditVM", "分类加载完成, isCategoriesLoaded=true, categories数量=${_categories.value.size}")
+                android.util.Log.w("TodoEditVM", "分类加载完成, isCategoriesLoaded=true, categories数量=${_categories.value.size}")
             }
         }
     }
@@ -709,22 +1216,22 @@ class TodoEditViewModel @Inject constructor(
      */
     fun triggerRecommendation() {
         viewModelScope.launch {
-            android.util.Log.d("TodoEditVM", "触发推荐, title='${_title.value}', hasManuallySelectedCategory=${_hasManuallySelectedCategory.value}")
+            android.util.Log.w("TodoEditVM", "触发推荐, title='${_title.value}', hasManuallySelectedCategory=${_hasManuallySelectedCategory.value}")
             
             val recommendation = categoryMatcher.recommendCategory(
                 title = _title.value,
                 content = _content.value.takeIf { it.isNotBlank() }
             )
 
-            android.util.Log.d("TodoEditVM", "推荐结果: $recommendation")
+            android.util.Log.w("TodoEditVM", "推荐结果: $recommendation")
 
             if (recommendation != null) {
                 val category = _categories.value.find { it.type == recommendation.categoryType }
-                android.util.Log.d("TodoEditVM", "匹配到分类: $category")
+                android.util.Log.w("TodoEditVM", "匹配到分类: $category")
                 _recommendedCategory.value = category
             } else {
                 _recommendedCategory.value = null
-                android.util.Log.d("TodoEditVM", "无匹配推荐, title=${_title.value}, recommendedCategory=null, hasManuallySelected=${_hasManuallySelectedCategory.value}")
+                android.util.Log.w("TodoEditVM", "无匹配推荐, title=${_title.value}, recommendedCategory=null, hasManuallySelected=${_hasManuallySelectedCategory.value}")
             }
         }
     }
@@ -847,6 +1354,32 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
+     * 设置完整的图片路径列表（用于 UI 层同步行级附件）
+     *
+     * 【关键方法】解决行级图片无法保存的问题
+     *
+     * 使用场景：
+     * - LaunchedEffect(todoLines) 同步时，从 todoLines 收集所有图片路径后调用
+     * - 确保 viewModel._imagePaths 与 UI 层的 todoLines[].imagePaths 保持一致
+     *
+     * @param paths 完整的图片路径列表
+     */
+    fun setImagePaths(paths: List<String>) {
+        _imagePaths.value = paths
+    }
+
+    /**
+     * 设置语音备注路径（用于 UI 层同步行级录音附件）
+     *
+     * 【关键方法】解决行级录音无法保存的问题
+     *
+     * @param path 录音文件路径
+     */
+    fun setVoiceNotePath(path: String) {
+        _voiceNotePath.value = path
+    }
+
+    /**
      * 清空所有图片路径
      * 同时清理内部存储中的所有对应文件
      */
@@ -879,6 +1412,50 @@ class TodoEditViewModel @Inject constructor(
                 else -> ContentBlock.Text("") // 兜底
             }
         }
+    }
+
+    /**
+     * 从权威数据源（title + subTasks）派生 content 字段
+     *
+     * 此方法确保 content 字段始终与 title 和 subTasks 严格一致，
+     * 消除编辑过程中可能产生的中间态不一致问题。
+     *
+     * 数据格式规范：
+     * - 第一行：父任务（☐ 标题）
+     * - 后续行：子任务（  ☐ 标题，带2空格缩进）
+     * - 行间用换行符 \n 分隔
+     *
+     * @param title 父任务标题（来自 _title StateFlow）
+     * @param subTasks 子任务列表（来自 _subTasks StateFlow）
+     * @return 格式化的纯文本字符串，用于存储到 content 字段
+     *
+     * 示例：
+     * 输入: title="测试1", subTasks=[SubTask("测试2"), SubTask("测试3")]
+     * 输出: "☐ 测试1\n  ☐ 测试2\n  ☐ 测试3"
+     */
+    private fun buildContentFromTitleAndSubTasks(
+        title: String,
+        subTasks: List<com.corgimemo.app.data.model.SubTask>
+    ): String {
+        /** 构建父任务行 */
+        val lines = mutableListOf("☐ $title")
+
+        /** 追加所有子任务行（带缩进） */
+        subTasks.forEach { subTask ->
+            lines.add("  ☐ ${subTask.title}")
+        }
+
+        val result = lines.joinToString("\n")
+
+        /** 诊断日志：追踪 content 派生过程 */
+        android.util.Log.w(
+            "TodoEditSave",
+            "派生 content: title='$title', subTasks=${subTasks.map { it.title }}, result='$result', " +
+            "_imagePaths=${_imagePaths.value}, _voiceNotePath=${_voiceNotePath.value}, " +
+            "_currentContentBlocks=${_currentContentBlocks.value.size}个"
+        )
+
+        return result
     }
 
     /**
@@ -977,7 +1554,7 @@ class TodoEditViewModel @Inject constructor(
                 val newSize = serializeEditOperations(_undoStackExtended.toList())
                     .toByteArray(Charsets.UTF_8).size.toLong()
                 if (newSize <= EXTENDED_STACK_MAX_SIZE_BYTES) {
-                    android.util.Log.d("TodoEditViewModel",
+                    android.util.Log.w("TodoEditViewModel",
                         "扩展撤销栈已裁剪：移除 ${removed::class.simpleName}，" +
                         "当前大小 ${newSize / 1024}KB / ${(EXTENDED_STACK_MAX_SIZE_BYTES / 1024)}KB")
                     break
@@ -1718,7 +2295,7 @@ class TodoEditViewModel @Inject constructor(
                 if (_redoStackExtended.isNotEmpty()) _canRedo.value = true
             }
 
-            android.util.Log.d("TodoEditViewModel",
+            android.util.Log.w("TodoEditViewModel",
                 "从增量日志恢复 Undo 栈: ${_undoStack.size} 条, Redo 栈: ${_redoStack.size} 条, " +
                 "扩展 Undo: ${_undoStackExtended.size} 条, 扩展 Redo: ${_redoStackExtended.size} 条 (todoId=$todoId)")
         } catch (e: Exception) {

@@ -11,6 +11,9 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
@@ -131,7 +135,19 @@ fun TodoEditScreen(
     val voiceNotePath by viewModel.voiceNotePath.collectAsState()
     val voiceDuration by viewModel.voiceDuration.collectAsState()
 
+    /** 各分组的保存状态（用于控制容器视觉反馈） */
+    val groupSaveStates by viewModel.groupSaveStates.collectAsState()
+
+    /** 各分组的优先级状态 */
+    val groupPriorities by viewModel.groupPriorities.collectAsState()
+
+    /** 优先级弹窗状态：null=关闭，Int=当前编辑的 groupId */
+    var showPriorityDialog by remember { mutableStateOf<Int?>(null) }
+
     val imagePaths by viewModel.imagePaths.collectAsState()
+
+    /** 行级附件快照数据（从数据库加载，用于恢复每行的附件） */
+    val lineAttachmentsSnapshot by viewModel.lineAttachmentsSnapshot.collectAsState()
 
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -320,8 +336,16 @@ fun TodoEditScreen(
         }
     )
 
-    if (todoId != null && todoId > 0) {
-        viewModel.loadTodo(todoId)
+    /**
+     * 加载待办数据（带 ID 时为编辑模式）
+     *
+     * 使用 LaunchedEffect(todoId) 确保仅在 todoId 变化时触发一次加载，
+     * 避免在每次重组时重复调用导致的数据异常。
+     */
+    LaunchedEffect(todoId) {
+        if (todoId != null && todoId > 0) {
+            viewModel.loadTodo(todoId)
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -339,19 +363,143 @@ fun TodoEditScreen(
     var hasInitializedBlocks by remember { mutableStateOf(false) }
     var hasInitializedLines by remember { mutableStateOf(false) }
 
+    /** 从 ViewModel 获取数据加载完成标志 */
+    val isLoaded by viewModel.isLoaded.collectAsState()
+
     /** 从 content 文本和 subTasks 初始化复选框行数据 */
     val subTasks by viewModel.subTasks.collectAsState()
-    LaunchedEffect(content, subTasks, hasInitializedLines) {
-        if (!hasInitializedLines) {
+
+    /**
+     * 初始化复选框行数据（todoLines）
+     *
+     * 关键修复：使用 isLoaded 标志解决竞态条件
+     *
+     * 问题背景：
+     * - loadTodo() 是异步操作，需要时间从数据库读取
+     * - 如果在 loadTodo 完成前就初始化 todoLines，会用空数据（title="", content=""）初始化
+     * - 之后 hasInitializedLines=true 会阻止重新初始化，导致内容丢失
+     *
+     * 解决方案：
+     * - 新增 key: isLoaded（ViewModel 中的数据加载完成标志）
+     * - 仅当 isLoaded=true 且尚未初始化时才执行初始化逻辑
+     * - 编辑模式：isLoaded 在 loadTodo 完成后变为 true → 用实际数据初始化
+     * - 新建模式：isLoaded 始终为 false（无 todoId）→ 直接用空数据初始化
+     */
+    LaunchedEffect(isLoaded, todoId, subTasks, hasInitializedLines) {
+        /**
+         * 初始化条件判断：
+         * 1. 编辑模式（todoId != null）：必须等 isLoaded=true 才能确保数据已填充
+         * 2. 新建模式（todoId == null）：isLoaded 永远为 false，直接初始化空行
+         */
+        val shouldInit = if (todoId != null) {
+            isLoaded && !hasInitializedLines  // 编辑模式：等加载完成
+        } else {
+            !hasInitializedLines  // 新建模式：立即初始化
+        }
+
+        if (shouldInit) {
+            /**
+             * 数据源优先级策略：
+             * 1. 优先从 subTasks 表恢复结构化数据（最可靠，有独立 ID）
+             * 2. 回退到 content 字段纯文本解析（兼容旧数据）
+             * 3. 最后使用空行（新建模式）
+             *
+             * 注意：第一行统一使用 title 字段，而非从 content 解析，
+             * 避免 content 中可能存在的陈旧/不一致数据导致显示错误。
+             *
+             * 添加诊断日志以便追踪数据不一致问题
+             */
+            android.util.Log.w(
+                "TodoEditInit",
+                "初始化 todoLines: todoId=$todoId, title='$title', " +
+                "content='$content', subTasks.size=${subTasks.size}, " +
+                "subTasks=${subTasks.map { it.title }}"
+            )
+
             todoLines = if (subTasks.isNotEmpty()) {
                 // 优先从子任务表恢复结构化数据，第一行用已加载的标题填充
-                listOf(TodoLine(text = title)) + TodoLine.fromSubTasks(subTasks)
+                val result = listOf(TodoLine(text = title)) + TodoLine.fromSubTasks(subTasks)
+                android.util.Log.w("TodoEditInit", "使用 fromSubTasks: $result")
+                result
             } else if (content.isNotBlank()) {
-                // 从纯文本解析
-                TodoLine.parseFromText(content).ifEmpty { listOf(TodoLine()) }
+                // 从纯文本解析（回退方案，用于无子任务的旧数据）
+                val parsedLines = TodoLine.parseFromText(content)
+
+                /**
+                 * 关键修复：确保第一行与 title 字段一致
+                 *
+                 * 问题背景：
+                 * - content 字段可能包含陈旧或不一致的文本
+                 * - 例如：title 已被更新为 "测试1"，但 content 还是旧的 "☐ 测试\n  ☐ 测试2"
+                 * - 如果直接使用 parseFromText 结果，第一行会是 "测试" 而非 "测试1"
+                 * - 这会导致用户看到被截断或过时的标题
+                 *
+                 * 解决方案：
+                 * - 如果解析结果有多行，且第一行文本与当前 title 不一致，
+                 *   则用 title 替换第一行的文本，确保显示最新数据
+                 */
+                if (parsedLines.isNotEmpty() && parsedLines[0].text != title) {
+                    listOf(parsedLines[0].copy(text = title)) + parsedLines.drop(1)
+                } else {
+                    parsedLines
+                }.ifEmpty { listOf(TodoLine()) }
             } else {
                 listOf(TodoLine())
             }
+
+            /**
+             * 【关键修复】恢复行内附件（支持多行）
+             *
+             * 优先级策略：
+             * 1. 行级快照（lineAttachmentsSnapshot）：最精确，记录了每行的完整附件信息
+             * 2. 全局回退（imagePaths/voiceNotePath）：兼容旧数据，将所有附件放到第一行
+             *
+             * 问题背景：
+             * - fromSubTasks() 和 parseFromText() 都不恢复 imagePaths/voiceAttachments
+             * - 导致重新打开待办时，虽然 _imagePaths/_voiceNotePath 有数据，
+             *   但 todoLines 中没有附件数据，UI 显示空白
+             *
+             * 解决方案（多行支持）：
+             * - 如果有行级快照数据，使用 LineSnapshotUtils 精确恢复到对应行
+             * - 否则回退到旧逻辑，将全局附件放到第一行
+             */
+            if (todoLines.isNotEmpty()) {
+                // 尝试从行级快照恢复（新方式：支持多行）
+                val snapshots = com.corgimemo.app.ui.model.LineSnapshotUtils.deserialize(lineAttachmentsSnapshot)
+                if (snapshots.isNotEmpty()) {
+                    // 使用行级快照精确恢复每行的附件
+                    todoLines = com.corgimemo.app.ui.model.LineSnapshotUtils.restoreAttachmentsToLines(todoLines, snapshots)
+                    android.util.Log.w("TodoEditInit", "使用行级快照恢复附件: ${snapshots.size}个行快照")
+                } else {
+                    // 回退到旧逻辑：将全局附件放到第一行（兼容无快照的旧数据）
+                    val firstLine = todoLines[0]
+                    var updatedLine = firstLine
+
+                    // 恢复图片到第一行
+                    if (imagePaths.isNotEmpty() && firstLine.imagePaths.isEmpty()) {
+                        updatedLine = updatedLine.copy(imagePaths = imagePaths.toList())
+                        android.util.Log.w("TodoEditInit", "恢复图片到第一行: ${imagePaths}")
+                    }
+
+                    // 恢复录音到第一行
+                    val voicePath = voiceNotePath
+                    if (voicePath != null && firstLine.voiceAttachments.isEmpty()) {
+                        val voiceAttachment = com.corgimemo.app.ui.model.VoiceAttachment(
+                            path = voicePath,
+                            duration = voiceDuration
+                        )
+                        updatedLine = updatedLine.copy(voiceAttachments = listOf(voiceAttachment))
+                        android.util.Log.w("TodoEditInit", "恢复录音到第一行: $voicePath")
+                    }
+
+                    // 如果有更新，替换第一行
+                    if (updatedLine != firstLine) {
+                        todoLines = todoLines.toMutableList().also { it[0] = updatedLine }
+                        android.util.Log.w("TodoEditInit", "附件恢复完成: 第一行=$updatedLine")
+                    }
+                }
+            }
+
             hasInitializedLines = true
         }
     }
@@ -362,29 +510,195 @@ fun TodoEditScreen(
             val plainText = todoLines
                 .filter { it.text.isNotBlank() || todoLines.size == 1 }
                 .joinToString("\n") { it.toPlainText() }
+
+            /** 诊断日志：追踪同步过程 */
+            android.util.Log.w(
+                "TodoEditSync",
+                "todoLines 变化触发同步: lines=$todoLines, plainText='$plainText'"
+            )
+
             viewModel.setContent(plainText)
 
             /** 将第一行（主任务行）的文本同步为标题，确保 saveTodo() 校验通过 */
             val firstLineText = todoLines.firstOrNull()?.text ?: ""
             viewModel.setTitleWithRecommendation(firstLineText)
 
-            // 同步子任务数据到 ViewModel（仅同步有实质内容的行）
-            val subTaskLines = todoLines.filter { it.text.isNotBlank() && it.isSubTask }
-            subTaskLines.forEach { line ->
-                if (line.subTaskId == 0L && line.text.isNotBlank()) {
-                    viewModel.addSubTask(line.text)
+            /**
+             * 同步子任务数据到 ViewModel（整体替换策略）
+             *
+             * 【关键 Bug 修复】解决用户输入时子任务重复累积问题
+             *
+             * 问题背景（已通过日志验证）：
+             * - 用户输入 "测试2" 时，会经过 "2" → "23" → "237" → ... → "测试" → "测试2"
+             * - 旧逻辑（增量添加）：每个中间状态都调用 addSubTask()，导致累积大量无效子任务
+             * - 结果：_subTasks = ["2", "23", "237", ..., "测试", "测试2"] （应该只有 ["测试2"]）
+             *
+             * 新策略（整体替换）：
+             * - 每次 todoLines 变化时，从 UI 层的行数据重新构建完整的子任务列表
+             * - 调用 viewModel.replaceSubTasks() 整体替换，而非逐个增量添加
+             * - 这样无论用户如何修改文本，最终只保留当前可见的子任务
+             */
+            val currentSubTaskLines = todoLines.filter { it.isSubTask && it.text.isNotBlank() }
+
+            /**
+             * 构建新的子任务列表
+             *
+             * 策略：
+             * - 如果行有 subTaskId > 0（来自数据库），保留其 ID 以便后续更新
+             * - 如果行是新建的 (subTaskId == 0)，生成临时子任务对象
+             */
+            val newSubTasks = currentSubTaskLines.map { line ->
+                if (line.subTaskId > 0L) {
+                    // 已有数据库 ID 的子任务：保留 ID，更新文本
+                    com.corgimemo.app.data.model.SubTask(
+                        id = line.subTaskId,
+                        todoId = viewModel.currentTodo?.id ?: 0,
+                        title = line.text,
+                        isCompleted = line.isChecked,
+                        order = line.order
+                    )
+                } else {
+                    // 新建子任务：ID 为 0
+                    com.corgimemo.app.data.model.SubTask(
+                        id = 0,
+                        todoId = viewModel.currentTodo?.id ?: 0,
+                        title = line.text,
+                        isCompleted = line.isChecked,
+                        order = line.order
+                    )
+                }
+            }
+
+            /** 整体替换 ViewModel 中的子任务列表 */
+            android.util.Log.w(
+                "TodoEditSync",
+                "整体替换子任务: ${newSubTasks.map { it.title }}"
+            )
+            viewModel.replaceSubTasks(newSubTasks)
+
+            /**
+             * 【多卡片】检测内容变化，智能重置已保存分组的编辑状态
+             *
+             * 比较每个已保存分组的当前内容与保存时的快照：
+             * - 内容相同 → 不重置（如只是添加了新容器"/"或新行）
+             * - 内容不同 → 重置为未保存（用户真正编辑了该容器的内容）
+             */
+            if (groupSaveStates.isNotEmpty()) {
+                // 按分组聚合当前行
+                val currentGroupContents = todoLines
+                    .groupBy { it.groupId }
+                    .mapValues { (_, lines) ->
+                        lines.joinToString("\n") { it.text }
+                    }
+
+                // 只检查已保存的分组
+                groupSaveStates.forEach { (groupId, state) ->
+                    if (state.isSaved) {
+                        val currentContent = currentGroupContents[groupId] ?: ""
+                        viewModel.checkAndResetGroupSavedState(groupId, currentContent)
+                    }
+                }
+            }
+
+            /**
+             * 【多行附件支持】序列化当前 todoLines 的完整状态（包括每行附件）
+             *
+             * 将当前的 todoLines 列表（包含每行的 imagePaths/voiceAttachments）
+             * 与原始的 Markdown 富文本内容合并序列化。
+             *
+             * 存储格式："{Markdown内容}|||LINE_ATTACHMENTS|||[{JSON}]"
+             *
+             * 数据流：
+             * todoLines → LineSnapshotUtils.fromTodoLines() → LineSnapshot 列表
+             *           + _contentFormat (原始 Markdown)
+             *           → LineSnapshotUtils.serialize(snapshots, originalContent) → 合并字符串
+             *           → viewModel.saveLineAttachmentsSnapshot() → 存入 StateFlow
+             *           → performSave() 读取 → 写入 DB.contentFormat 字段
+             */
+            val snapshots = com.corgimemo.app.ui.model.LineSnapshotUtils.fromTodoLines(todoLines)
+            val snapshotJson = com.corgimemo.app.ui.model.LineSnapshotUtils.serialize(
+                snapshots = snapshots,
+                originalContent = content  // 使用当前 ViewModel 中的 content 值作为原始内容
+            )
+            if (snapshotJson.isNotBlank()) {
+                viewModel.saveLineAttachmentsSnapshot(snapshotJson)
+                android.util.Log.w("TodoEditSync", "序列化行级快照: ${snapshots.size}个行, 长度=${snapshotJson.length}")
+            }
+
+            /**
+             * 【关键修复】同步行级附件到 ViewModel
+             *
+             * 问题背景：
+             * - 用户通过 addImageToFocusedLine() 添加的图片存储在 todoLines[].imagePaths（行级）
+             * - 但保存时使用的是 viewModel._imagePaths（全局）
+             * - 如果不同步，行级附件不会被持久化，导致重新打开时丢失
+             *
+             * 解决方案：
+             * - 从所有 todoLines 中收集图片路径和录音附件
+             * - 调用 viewModel 的 setImagePaths/setVoiceNotePath 方法更新全局状态
+             */
+            val allImagePaths = todoLines.flatMap { it.imagePaths }.distinct()
+            if (allImagePaths != imagePaths) {
+                android.util.Log.w("TodoEditSync", "同步图片: $allImagePaths")
+                viewModel.setImagePaths(allImagePaths)
+            }
+
+            // 同步行级录音附件（取第一个非空的录音）
+            val allVoiceAttachments = todoLines.flatMap { it.voiceAttachments }.distinct()
+            if (allVoiceAttachments.isNotEmpty()) {
+                val firstVoice = allVoiceAttachments.first()
+                if (firstVoice.path != voiceNotePath) {
+                    android.util.Log.w("TodoEditSync", "同步录音: ${firstVoice.path}")
+                    viewModel.setVoiceNotePath(firstVoice.path)
                 }
             }
         }
     }
 
-    LaunchedEffect(todoId) {
-        if (!hasInitializedBlocks && todoId != null) {
+    /**
+     * 初始化内容块列表（contentBlocks）
+     *
+     * 关键修复：使用 isLoaded 标志解决竞态条件
+     *
+     * 问题背景：
+     * - loadTodo() 是异步操作，imagePaths/voiceNotePath 需要时间从数据库加载
+     * - 如果在 loadTodo 完成前就初始化 contentBlocks，会用空的 imagePaths/voiceNotePath
+     * - 之后 hasInitializedBlocks=true 会阻止重新初始化，导致附件丢失
+     *
+     * 解决方案：
+     * - 新增 key: isLoaded（ViewModel 中的数据加载完成标志）
+     * - 仅当 isLoaded=true 且尚未初始化时才执行初始化逻辑
+     * - 编辑模式：isLoaded 在 loadTodo 完成后变为 true → 用实际数据初始化
+     */
+    LaunchedEffect(isLoaded, todoId, hasInitializedBlocks) {
+        /** 判断是否应该初始化：编辑模式必须等 isLoaded=true */
+        val shouldInit = if (todoId != null) {
+            isLoaded && !hasInitializedBlocks
+        } else {
+            !hasInitializedBlocks
+        }
+
+        if (shouldInit && todoId != null) {
             val dbBlocks = viewModel.loadContentBlocks(todoId)
+
+            /** 诊断日志：追踪 contentBlocks 初始化 */
+            android.util.Log.w(
+                "TodoEditInit",
+                "初始化 contentBlocks: todoId=$todoId, dbBlocks.size=${dbBlocks.size}, " +
+                "imagePaths=$imagePaths, voiceNotePath=$voiceNotePath"
+            )
+
             if (dbBlocks.isNotEmpty()) {
+                /** 从 ContentBlock 表加载到持久化的内容块 */
                 contentBlocks.clear()
                 contentBlocks.addAll(dbBlocks)
             } else {
+                /**
+                 * 回退逻辑：从 ViewModel 的 imagePaths/voiceNotePath 恢复
+                 *
+                 * 此时 isLoaded=true，确保这些字段已填充实际数据，
+                 * 避免用空值初始化导致附件丢失。
+                 */
                 contentBlocks.clear()
                 imagePaths.forEach { path ->
                     contentBlocks.add(ContentBlock.Image(path))
@@ -445,11 +759,11 @@ fun TodoEditScreen(
 
                 Button(
                     onClick = {
-                        if (viewModel.saveTodo()) {
-                            homeViewModel.setPoseForLoading()
-                            homeViewModel.refreshSubTaskProgress()
-                            navController.popBackStack()
-                        }
+                        /** 全部完成：保存所有分组 + 返回列表页 */
+                        val savedCount = viewModel.saveAllGroups(todoLines)
+                        homeViewModel.setPoseForLoading()
+                        homeViewModel.refreshSubTaskProgress()
+                        navController.popBackStack()
                     },
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -459,7 +773,7 @@ fun TodoEditScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 0.dp)
                 ) {
                     Text(
-                        text = "完成",
+                        text = "全部完成",
                         color = Color.White,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp
@@ -590,6 +904,13 @@ fun TodoEditScreen(
             /** 复选框文本编辑器（替代原 OutlinedTextField，支持逐行复选框编辑） */
             CheckboxEditText(
                 lines = todoLines,
+                /** 各分组的保存状态（用于控制容器视觉反馈） */
+                groupSaveStates = groupSaveStates,
+                groupPriorities = groupPriorities,
+                onPriorityButtonClick = { groupId ->
+                    /** 打开优先级选择弹窗 */
+                    showPriorityDialog = groupId
+                },
                 onLinesChange = { newLines -> todoLines = newLines },
                 onLineCheckToggle = { index, isChecked ->
                     val line = todoLines.getOrNull(index) ?: return@CheckboxEditText
@@ -646,12 +967,9 @@ fun TodoEditScreen(
                 onPriorityChange = { _, newPriority ->
                     viewModel.setPriority(newPriority)
                 },
-                onSaveClick = {
-                    if (viewModel.saveTodo()) {
-                        homeViewModel.setPoseForLoading()
-                        homeViewModel.refreshSubTaskProgress()
-                        navController.popBackStack()
-                    }
+                onSaveClick = { groupId ->
+                    /** 单独保存当前分组（不返回列表页） */
+                    viewModel.saveGroup(groupId, todoLines)
                 },
                 /** 图片点击回调（查看大图） */
                 onImageClick = { lineIndex, imagePath ->
@@ -1217,6 +1535,89 @@ fun TodoEditScreen(
     }
 
     }  // end outer Box (ensures overlay covers Scaffold topBar/bottomBar)
+
+    /**
+     * 优先级选择弹窗
+     *
+     * 当用户点击容器内的"优先级"按钮时弹出，
+     * 提供"无优先级"、"低优先级"、"中优先级"、"高优先级"四个选项。
+     * 选择后立即更新对应分组的优先级并关闭弹窗。
+     */
+    showPriorityDialog?.let { targetGroupId ->
+        AlertDialog(
+            onDismissRequest = { showPriorityDialog = null },
+            title = { Text("选择优先级") },
+            text = {
+                Column {
+                    /** 优先级选项列表 */
+                    val options = listOf(
+                        Triple(0, "无优先级", androidx.compose.ui.graphics.Color.Gray),
+                        Triple(1, "低优先级", androidx.compose.ui.graphics.Color(0xFF4CAF50)),
+                        Triple(2, "中优先级", androidx.compose.ui.graphics.Color(0xFFFF9800)),
+                        Triple(3, "高优先级", androidx.compose.ui.graphics.Color(0xFFF44336))
+                    )
+
+                    val currentPriority = groupPriorities[targetGroupId] ?: 0
+
+                    options.forEach { (value, label, color) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.setGroupPriority(targetGroupId, value)
+                                    showPriorityDialog = null
+                                }
+                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // 优先级颜色圆点
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(if (value == 0) androidx.compose.ui.graphics.Color.Transparent else color)
+                                    .then(
+                                        if (value == 0) {
+                                            Modifier.border(
+                                                width = 1.dp,
+                                                color = androidx.compose.ui.graphics.Color.Gray,
+                                                shape = androidx.compose.foundation.shape.CircleShape
+                                            )
+                                        } else Modifier
+                                    )
+                            )
+                            Text(
+                                text = label,
+                                fontSize = 16.sp,
+                                color = if (currentPriority == value) color
+                                        else MaterialTheme.colorScheme.onSurface,
+                                fontWeight = if (currentPriority == value)
+                                    androidx.compose.ui.text.font.FontWeight.SemiBold
+                                else androidx.compose.ui.text.font.FontWeight.Normal
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            // 选中标记
+                            if (currentPriority == value) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "已选择",
+                                    tint = color,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showPriorityDialog = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
 }
 
 private fun hasRecordAudioPermission(context: Context): Boolean {
