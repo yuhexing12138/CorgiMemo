@@ -42,14 +42,22 @@
 | 设置时间在今天（未来） | `今天HH:MM` | `onSurfaceVariant` |
 | 设置时间在今天（过去） | `今天HH:MM 已过期` | `#DC2626`（红） |
 | 设置时间在昨天（任何时刻） | `昨天HH:MM 已过期` | `#DC2626`（红） |
-| 设置时间在前天及更早 | 当前年：`M月D日HH:MM 已过期`；非当前年：`yyyy年M月D日HH:MM 已过期` | `#DC2626`（红） |
+| 设置时间在前天及更早（同年） | `M月D日 HH:MM 已过期` | `#DC2626`（红） |
 | 设置时间在明天 | `明天HH:MM` | `onSurfaceVariant` |
-| 设置时间在 2 天及之后 | 当前年：`M月D日HH:MM`；非当前年：`yyyy年M月D日HH:MM` | `onSurfaceVariant` |
+| 设置时间在 2 天及之后（同年） | `M月D日 HH:MM` | `onSurfaceVariant` |
+| **设置时间跨年（去年/前年... 过去）** | `yyyy年M月D日 HH:MM 已过期` | `#DC2626`（红） |
+| **设置时间跨年（明年/后年... 未来）** | `yyyy年M月D日 HH:MM` | `onSurfaceVariant` |
+
+> **格式细节**：
+> - 日月**不补 0**：`6月25日` 而非 `06月25日`
+> - 日期与时间之间**有 1 个空格**：`6月25日 21:34`
+> - 时分**保持两位**：`HH:MM`（如 `08:05`、`21:34`）
+> - 今天/昨天/明天**无空格无日期**：`今天 21:31`（保持现状）
 
 > **年份规则示例**（以当前年=2026 为例）：
-> - 2025/6/25 10:00（已过期） → `2025年6月25日10:00 已过期`（红）
-> - 2027/6/25 10:00（未来）  → `2027年6月25日10:00`（主题色）
-> - 2026/6/25 10:00（同年）   → `6月25日10:00`（不写"2026年"）
+> - 2025/6/25 10:00（已过期） → `2025年6月25日 10:00 已过期`（红）
+> - 2027/6/25 10:00（未来）  → `2027年6月25日 10:00`（主题色）
+> - 2026/6/25 10:00（同年）   → `6月25日 10:00`（不写"2026年"）
 >
 > 年份仅在 `reminderTime` 与 `now` 不在同一日历年时出现；今天/昨天/明天天然同一年，**不写年份**。
 
@@ -151,7 +159,19 @@ onReminderDelete: (() -> Unit)? = null,
 在"提醒按钮"渲染分支里：
 
 ```kotlin
-val now = remember { System.currentTimeMillis() }
+// 实时刷新当前时间：进入页面时取一次，对齐到下一个 30s 整数倍开始轮询，
+// 最迟 30s 内必然跨分钟，"已过期/未过期"自动切换。
+// reminderTime 变化时（用户改时间 / × 删除）LaunchedEffect 重启，立刻按新值重算。
+var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+LaunchedEffect(reminderTime) {
+    now = System.currentTimeMillis()
+    while (true) {
+        val nextTick = ((System.currentTimeMillis() / 30_000L) + 1L) * 30_000L
+        kotlinx.coroutines.delay(nextTick - System.currentTimeMillis())
+        now = System.currentTimeMillis()
+    }
+}
+
 val isOverdue = reminderTime != null && reminderTime < now
 val displayText = reminderTime?.let { formatReminderDisplay(it, now).text } ?: "设置提醒"
 val iconTint: Color = if (isOverdue) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurfaceVariant
@@ -299,7 +319,8 @@ data class ReminderDisplay(
  * - 与当前时间同一天：今天HH:MM
  * - 早一天：昨天HH:MM
  * - 晚一天：明天HH:MM
- * - 2 天及之后或 2 天及之前：M月D日HH:MM
+ * - 同年但跨日：M月D日 HH:MM（月日不补 0，日期与时间中间有 1 个空格）
+ * - 跨年：yyyy年M月D日 HH:MM（月日不补 0，日期与时间中间有 1 个空格）
  * - 若时间 < now，追加 " 已过期" 后缀并标记 isOverdue=true
  *
  * @param reminderTime 用户设置的提醒时间（毫秒）
@@ -320,20 +341,36 @@ fun formatReminderDisplay(
     val mm = "%02d".format(target.get(Calendar.MINUTE))
     val timePart = "$hh:$mm"
 
+    val month = target.get(Calendar.MONTH) + 1
+    val day = target.get(Calendar.DAY_OF_MONTH)
+
     val prefix = when {
         isSameDay(target, today)   -> "今天"
         isSameDay(target, yesterday) -> "昨天"
         isSameDay(target, tomorrow)  -> "明天"
-        else -> "${target.get(Calendar.MONTH) + 1}月${target.get(Calendar.DAY_OF_MONTH)}日"
+        isSameYear(target, today) -> {
+            // 同年但跨日：M月D日（月日不补 0）
+            "${month}月${day}日"
+        }
+        else -> {
+            // 跨年：yyyy年M月D日（月日不补 0）
+            "${target.get(Calendar.YEAR)}年${month}月${day}日"
+        }
     }
 
-    val text = if (isOverdue) "$prefix$timePart 已过期" else "$prefix$timePart"
+    // 今天/昨天/明天 与时间无空格；M月D日 / yyyy年M月D日 与时间中间有 1 个空格
+    val separator = if (prefix.startsWith("今天") || prefix.startsWith("昨天") || prefix.startsWith("明天")) "" else " "
+    val text = if (isOverdue) "$prefix$separator$timePart 已过期" else "$prefix$separator$timePart"
     return ReminderDisplay(text, isOverdue)
 }
 
 private fun isSameDay(a: Calendar, b: Calendar): Boolean {
     return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
             a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+}
+
+private fun isSameYear(a: Calendar, b: Calendar): Boolean {
+    return a.get(Calendar.YEAR) == b.get(Calendar.YEAR)
 }
 ```
 
@@ -417,6 +454,6 @@ private fun isSameDay(a: Calendar, b: Calendar): Boolean {
 
 - 首页 [TodoListItem.kt](file:///c:/Users/Lenovo/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/TodoListItem.kt) 展示样式调整
 - 提醒推荐逻辑（[ReminderRecommender](file:///c:/Users/Lenovo/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/domain/ReminderRecommender.kt)）按分组接入
-- 实时"已过期"颜色切换（仅在每次进入页面或修改提醒时刷新）
 - 提醒删除的撤销（Snackbar 撤销 × 误操作）
 - × 按钮的长按菜单（编辑/清空 选项）
+- 时间格式按"用户 locale"本地化（本期固定中文/24 小时制）
