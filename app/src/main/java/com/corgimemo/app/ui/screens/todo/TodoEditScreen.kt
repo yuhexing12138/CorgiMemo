@@ -119,7 +119,6 @@ fun TodoEditScreen(
     val startDate by viewModel.startDate.collectAsState()
     val dueDate by viewModel.dueDate.collectAsState()
     val estimatedDurationMinutes by viewModel.estimatedDurationMinutes.collectAsState()
-    val repeatType by viewModel.repeatType.collectAsState()
 
     val geofenceLat by viewModel.geofenceLat.collectAsState()
     val geofenceLng by viewModel.geofenceLng.collectAsState()
@@ -128,9 +127,25 @@ fun TodoEditScreen(
     val geofenceEnabled by viewModel.geofenceEnabled.collectAsState()
     val geofenceAddress by viewModel.geofenceAddress.collectAsState()
 
-    val reminderTime by viewModel.reminderTime.collectAsState()
-    val recommendedReminderTime by viewModel.recommendedReminderTime.collectAsState()
-    val showReminderRecommendation by viewModel.showReminderRecommendation.collectAsState()
+    /**
+     * 各分组的提醒时间映射表
+     *
+     * - key = 分组 id（groupId）
+     * - value = 提醒时间戳（毫秒），null 表示该分组未设置提醒
+     *
+     * 替代旧的单一 reminderTime（整个 todo 共用一个提醒时间）。
+     * 提醒 picker 打开时，按 editingReminderGroupId 取对应分组的时间作为初值。
+     */
+    val groupReminders by viewModel.groupReminders.collectAsState()
+    /**
+     * 各分组的重复类型映射表
+     *
+     * - key = 分组 id（groupId）
+     * - value = 重复类型枚举（0=不重复, 1=每天, 2=每周, …）
+     *
+     * 替代旧的单一 repeatType。
+     */
+    val groupRepeatTypes by viewModel.groupRepeatTypes.collectAsState()
 
     val voiceNotePath by viewModel.voiceNotePath.collectAsState()
     val voiceDuration by viewModel.voiceDuration.collectAsState()
@@ -295,13 +310,18 @@ fun TodoEditScreen(
         initialMinute = 0,
         is24Hour = true
     )
-    var showTimePicker by remember { mutableStateOf(false) }
-    val timePickerState = rememberTimePickerState(
-        initialHour = 9,
-        initialMinute = 0,
-        is24Hour = true
-    )
-    var showReminderPicker by remember { mutableStateOf(false) }
+    /**
+     * 当前正在编辑哪个分组的提醒
+     *
+     * - null：picker 未打开
+     * - 非 null：picker 打开，正在编辑该 groupId 对应分组的提醒
+     *
+     * 由 CheckboxEditText 的 onReminderClick(groupId) 回调赋值，
+     * 关闭 picker 时（onDismiss / onConfirm）置为 null。
+     */
+    var editingReminderGroupId by remember { mutableStateOf<Int?>(null) }
+    /** picker 是否打开：editingReminderGroupId != null 即展示 */
+    val showReminderPicker = editingReminderGroupId != null
 
     var showDueDatePicker by remember { mutableStateOf(false) }
     val dueDatePickerState = rememberDatePickerState()
@@ -957,7 +977,24 @@ fun TodoEditScreen(
                     todoLines = updatedLines
                 },
                 onReminderClick = { groupId ->
-                    showReminderPicker = true
+                    /**
+                     * 记录当前正在编辑提醒的分组
+                     * showReminderPicker = editingReminderGroupId != null，
+                     * 因此赋值即等于"打开 picker"，关闭时（onDismiss / onConfirm）置 null。
+                     */
+                    editingReminderGroupId = groupId
+                },
+                /**
+                 * 各分组的提醒时间映射：用于 CheckboxEditText 内部渲染提醒徽章/删除按钮
+                 * （key=groupId, value=提醒时间戳，null=未设置）
+                 */
+                groupReminders = groupReminders,
+                /**
+                 * 删除某分组提醒的回调：直接清空该 groupId 对应的提醒时间
+                 * 等价于"清除分组提醒"，与 picker 中"不设置重复"语义不同
+                 */
+                onReminderDelete = { groupId ->
+                    viewModel.clearGroupReminder(groupId)
                 },
                 /** 当前聚焦行索引变化回调：更新 focusedLineIndex 状态 */
                 onFocusedLineChange = { newIndex ->
@@ -1187,27 +1224,25 @@ fun TodoEditScreen(
                 }
             }
 
-            AnimatedVisibility(visible = showReminderRecommendation) {
-                recommendedReminderTime?.let { time ->
-                    val format = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
-                    val recTimeText = format.format(Date(time))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp)
-                            .background(Color(0xFFE3F2FD), RoundedCornerShape(8.dp))
-                            .clickable { viewModel.acceptReminderRecommendation() }
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "\uD83D\uDCA1 推荐提醒：$recTimeText",
-                            fontSize = 14.sp,
-                            color = Color(0xFF1565C0)
-                        )
-                    }
-                }
+            /**
+             * 推荐提醒时间提示条
+             *
+             * 【本期禁用】visible 固定为 false，块体不渲染
+             *
+             * 历史背景：
+             * - 旧设计：根据待办标题/截止时间智能推荐提醒时间，显示一个可点击的"接受推荐"横条
+             * - 弃用原因：多分组（多卡片）架构下，每个分组独立维护提醒，全局推荐语义不再适用
+             *
+             * 后续处理：
+             * - 如未来重新启用推荐功能，应在分组级 ViewModel 中实现 _recommendedReminderTimes: Map<Int, Long?>
+             * - 并在每个 CheckboxEditRow 容器内单独渲染，不再使用全局横条
+             * - 本占位块可直接删除，但暂保留以便回退参考
+             */
+            AnimatedVisibility(visible = false) {
+                // 原推荐提示条代码保留作占位，本期不渲染
+                // 后续 Task 取消时再删除该区块
+                // （原代码引用了 recommendedReminderTime / acceptReminderRecommendation，
+                //   因 ViewModel 已移除这些 API，UI 层必须禁用以保持编译通过）
             }
         }
 
@@ -1305,36 +1340,19 @@ fun TodoEditScreen(
             )
         }
 
-        if (showTimePicker) {
-            AlertDialog(
-                onDismissRequest = { showTimePicker = false },
-                title = { Text("选择提醒时间") },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            val cal = Calendar.getInstance()
-                            cal.timeInMillis = startDate ?: System.currentTimeMillis()
-                            cal.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                            cal.set(Calendar.MINUTE, timePickerState.minute)
-                            cal.set(Calendar.SECOND, 0)
-                            cal.set(Calendar.MILLISECOND, 0)
-                            viewModel.setReminderTime(cal.timeInMillis)
-                            showTimePicker = false
-                        }
-                    ) {
-                        Text("确定")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showTimePicker = false }) {
-                        Text("取消")
-                    }
-                },
-                text = {
-                    TimePicker(state = timePickerState)
-                }
-            )
-        }
+        /**
+         * 旧"快速设置提醒时间"弹窗（showTimePicker）已整体移除
+         *
+         * 移除原因：
+         * - 该弹窗基于旧"全局 reminderTime"语义（todo 整单只有一个提醒时间），
+         *   与多分组（多卡片）架构不兼容
+         * - 业务上已经被新的 ReminderPickerBottomSheet（按 groupId 路由）取代
+         * - 本文件中没有任何调用点把 showTimePicker 置为 true，整段为死代码
+         *
+         * 替代入口：
+         * - 每个分组的容器内点击"提醒"按钮 → CheckboxEditText.onReminderClick(groupId)
+         *   → editingReminderGroupId = groupId → ReminderPickerBottomSheet 自动打开
+         */
 
         if (showDueDatePicker) {
             DatePickerDialog(
@@ -1517,16 +1535,50 @@ fun TodoEditScreen(
                     )
                 ) {
                     com.corgimemo.app.ui.components.ReminderPickerBottomSheet(
-                        initialDateMillis = reminderTime,
-                        // 默认使用当前时间
-                        initialHour = java.time.LocalTime.now().hour,
-                        initialMinute = java.time.LocalTime.now().minute,
-                        initialRepeatType = repeatType,
-                        onDismiss = { showReminderPicker = false },
+                        /**
+                         * 初始日期：取当前正在编辑分组已有的提醒时间戳
+                         *  - 已设置：groupReminders[gid] 是该分组的提醒时间
+                         *  - 未设置 / 无该 group：fallback 为 null（picker 用今天作为默认日期）
+                         */
+                        initialDateMillis = editingReminderGroupId?.let { groupReminders[it] },
+                        /**
+                         * 初始小时：优先取已有提醒的小时部分，没有则用系统当前小时
+                         * 用 Calendar 解析时间戳，避免依赖时区敏感的 java.time 转换
+                         */
+                        initialHour = editingReminderGroupId?.let { gid ->
+                            groupReminders[gid]?.let { ts ->
+                                Calendar.getInstance().apply { timeInMillis = ts }.get(Calendar.HOUR_OF_DAY)
+                            }
+                        } ?: java.time.LocalTime.now().hour,
+                        /**
+                         * 初始分钟：同上，优先取已有提醒的分钟部分
+                         */
+                        initialMinute = editingReminderGroupId?.let { gid ->
+                            groupReminders[gid]?.let { ts ->
+                                Calendar.getInstance().apply { timeInMillis = ts }.get(Calendar.MINUTE)
+                            }
+                        } ?: java.time.LocalTime.now().minute,
+                        /**
+                         * 初始重复类型：从 groupRepeatTypes 取当前分组的值
+                         * 没有则 fallback 为 0（不重复）
+                         */
+                        initialRepeatType = editingReminderGroupId?.let { groupRepeatTypes[it] } ?: 0,
+                        /**
+                         * 关闭 picker：清空 editingReminderGroupId，
+                         * 下游 showReminderPicker 自动变 false
+                         */
+                        onDismiss = { editingReminderGroupId = null },
+                        /**
+                         * 确认回调：把 picker 选中的 (date, hour, minute, repeatType) 路由回指定分组
+                         *  - gid 来自当前编辑态：picker 打开期间不应被外部改写，但为防御性仍做 null 检查
+                         *  - 调用新 API：setGroupReminder / setGroupRepeatType（按 groupId 维度）
+                         *  - calendarEnabled 暂不处理（与日历功能相关，本期未接入）
+                         */
                         onConfirm = { dateMillis, hour, minute, repeatTypeNew, calendarEnabled ->
-                            viewModel.setReminderTime(dateMillis ?: System.currentTimeMillis())
-                            viewModel.setRepeatType(repeatTypeNew)
-                            showReminderPicker = false
+                            val gid = editingReminderGroupId ?: return@ReminderPickerBottomSheet
+                            viewModel.setGroupReminder(gid, dateMillis ?: System.currentTimeMillis())
+                            viewModel.setGroupRepeatType(gid, repeatTypeNew)
+                            editingReminderGroupId = null
                         }
                     )
                 }
