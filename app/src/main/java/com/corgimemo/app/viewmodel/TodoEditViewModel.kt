@@ -97,9 +97,6 @@ class TodoEditViewModel @Inject constructor(
     private val _estimatedDurationMinutes = MutableStateFlow<Int?>(null)
     val estimatedDurationMinutes: StateFlow<Int?> = _estimatedDurationMinutes.asStateFlow()
 
-    private val _repeatType = MutableStateFlow(0)
-    val repeatType: StateFlow<Int> = _repeatType.asStateFlow()
-
     // 地理围栏相关字段
     private val _geofenceLat = MutableStateFlow<Double?>(null)
     val geofenceLat: StateFlow<Double?> = _geofenceLat.asStateFlow()
@@ -142,15 +139,28 @@ class TodoEditViewModel @Inject constructor(
     private val _isCategoriesLoaded = MutableStateFlow(false)
     val isCategoriesLoaded: StateFlow<Boolean> = _isCategoriesLoaded.asStateFlow()
 
-    // 提醒时间相关状态
-    private val _reminderTime = MutableStateFlow<Long?>(null)
-    val reminderTime: StateFlow<Long?> = _reminderTime.asStateFlow()
+    // 提醒时间相关状态（按 groupId 索引：每个编辑容器拥有独立提醒时间）
+    /**
+     * 各分组的提醒时间状态
+     *
+     * key = groupId (Int), value = 提醒时间戳（毫秒，null 表示未设置）
+     * 每个编辑容器拥有独立的提醒时间，保存时写入对应 TodoItem.reminderTime
+     */
+    private val _groupReminders = MutableStateFlow<Map<Int, Long?>>(emptyMap())
 
-    private val _recommendedReminderTime = MutableStateFlow<Long?>(null)
-    val recommendedReminderTime: StateFlow<Long?> = _recommendedReminderTime.asStateFlow()
+    /** 暴露分组提醒时间供 UI 层收集 */
+    val groupReminders: kotlinx.coroutines.flow.StateFlow<Map<Int, Long?>> = _groupReminders.asStateFlow()
 
-    private val _showReminderRecommendation = MutableStateFlow(false)
-    val showReminderRecommendation: StateFlow<Boolean> = _showReminderRecommendation.asStateFlow()
+    /**
+     * 各分组的重复类型状态
+     *
+     * key = groupId (Int), value = 重复类型（0=不重复, 1=每天, 2=每周, 3=每月, 4=周一至周五, 5=每年）
+     * 每个编辑容器拥有独立的重复类型，保存时写入对应 TodoItem.repeatType
+     */
+    private val _groupRepeatTypes = MutableStateFlow<Map<Int, Int>>(emptyMap())
+
+    /** 暴露分组重复类型供 UI 层收集 */
+    val groupRepeatTypes: kotlinx.coroutines.flow.StateFlow<Map<Int, Int>> = _groupRepeatTypes.asStateFlow()
 
     // 语音备注相关状态
     private val _voiceNotePath = MutableStateFlow<String?>(null)
@@ -399,7 +409,6 @@ class TodoEditViewModel @Inject constructor(
     fun setCategoryId(categoryId: Long) {
         _categoryId.value = categoryId
         _hasManuallySelectedCategory.value = true
-        updateReminderRecommendation()
     }
 
     fun setPriority(priority: Int) {
@@ -408,31 +417,80 @@ class TodoEditViewModel @Inject constructor(
 
     fun setStartDate(startDate: Long?) {
         _startDate.value = startDate
-        updateReminderRecommendation()
     }
 
     /**
      * 设置截止时间
      * 用户在时间选择器中确认后调用
-     * 同时自动将提醒时间关联为截止时间（若用户未手动设置过提醒时间）
      *
      * @param dueDate 截止时间（毫秒时间戳）
      */
     fun setDueDate(dueDate: Long?) {
         _dueDate.value = dueDate
-        /** 联动逻辑：若提醒时间为空，自动将提醒时间设为截止时间 */
-        if (dueDate != null && _reminderTime.value == null) {
-            _reminderTime.value = dueDate
-        }
+        // 注：旧实现里"联动设置 _reminderTime"逻辑已移除，reminderTime 由各分组独立管理
     }
 
     fun setEstimatedDurationMinutes(minutes: Int?) {
         _estimatedDurationMinutes.value = minutes
-        updateReminderRecommendation()
     }
 
+    /** 旧 setRepeatType 已废弃，重复类型由各分组独立管理。UI 层应改用 setGroupRepeatType(groupId, type) */
+    @Suppress("UnusedParameter")
     fun setRepeatType(repeatType: Int) {
-        _repeatType.value = repeatType
+        // 留空：Task 4 会把所有 UI 调用点切到 setGroupRepeatType
+    }
+
+    /**
+     * 设置指定分组的提醒时间
+     *
+     * 用户在时间选择器中确认后调用。
+     *
+     * @param groupId 分组 ID
+     * @param time 提醒时间（毫秒时间戳）
+     */
+    fun setGroupReminder(groupId: Int, time: Long) {
+        _groupReminders.value = _groupReminders.value + (groupId to time)
+    }
+
+    /**
+     * 清除指定分组的提醒时间
+     *
+     * 用户点击 × 按钮时调用。幂等：groupId 不存在时无副作用。
+     *
+     * @param groupId 分组 ID
+     */
+    fun clearGroupReminder(groupId: Int) {
+        _groupReminders.value = _groupReminders.value - groupId
+    }
+
+    /**
+     * 获取指定分组的提醒时间
+     *
+     * @param groupId 分组 ID
+     * @return 提醒时间戳；未设置返回 null
+     */
+    fun getGroupReminder(groupId: Int): Long? {
+        return _groupReminders.value[groupId]
+    }
+
+    /**
+     * 设置指定分组的重复类型
+     *
+     * @param groupId 分组 ID
+     * @param type 重复类型（0=不重复, 1=每天, 2=每周, 3=每月, 4=周一至周五, 5=每年）
+     */
+    fun setGroupRepeatType(groupId: Int, type: Int) {
+        _groupRepeatTypes.value = _groupRepeatTypes.value + (groupId to type)
+    }
+
+    /**
+     * 获取指定分组的重复类型
+     *
+     * @param groupId 分组 ID
+     * @return 重复类型；未设置返回 0（不重复）
+     */
+    fun getGroupRepeatType(groupId: Int): Int {
+        return _groupRepeatTypes.value[groupId] ?: 0
     }
 
     // 地理围栏相关方法
@@ -562,7 +620,9 @@ class TodoEditViewModel @Inject constructor(
                 _startDate.value = todo.startDate
                 _dueDate.value = todo.dueDate
                 _estimatedDurationMinutes.value = todo.estimatedDurationMinutes
-                _repeatType.value = todo.repeatType
+                // 把"全局 reminderTime/repeatType"映射到"分组 0"，实现向后兼容
+                // 历史 todo 在旧实现里 reminderTime/repeatType 只有一份，对应第一个分组
+                _groupRepeatTypes.value = mapOf(0 to todo.repeatType)
                 _geofenceLat.value = todo.geofenceLat
                 _geofenceLng.value = todo.geofenceLng
                 _geofenceRadius.value = todo.geofenceRadius
@@ -570,7 +630,7 @@ class TodoEditViewModel @Inject constructor(
                 _geofenceEnabled.value = todo.geofenceEnabled
                 _geofenceAddress.value = todo.geofenceAddress
 
-                _reminderTime.value = todo.reminderTime
+                _groupReminders.value = mapOf(0 to todo.reminderTime)
 
                 // 加载语音备注
                 _voiceNotePath.value = todo.voiceNotePath
@@ -733,8 +793,8 @@ class TodoEditViewModel @Inject constructor(
                     startDate = _startDate.value,
                     dueDate = _dueDate.value,
                     estimatedDurationMinutes = _estimatedDurationMinutes.value,
-                    reminderTime = _reminderTime.value,
-                    repeatType = _repeatType.value,
+                    reminderTime = _groupReminders.value[0],
+                    repeatType = _groupRepeatTypes.value[0] ?: 0,
                     updatedAt = currentTime,
                     geofenceLat = _geofenceLat.value,
                     geofenceLng = _geofenceLng.value,
@@ -762,8 +822,8 @@ class TodoEditViewModel @Inject constructor(
                     startDate = _startDate.value,
                     dueDate = _dueDate.value,
                     estimatedDurationMinutes = _estimatedDurationMinutes.value,
-                    reminderTime = _reminderTime.value,
-                    repeatType = _repeatType.value,
+                    reminderTime = _groupReminders.value[0],
+                    repeatType = _groupRepeatTypes.value[0] ?: 0,
                     createdAt = currentTime,
                     updatedAt = currentTime,
                     geofenceLat = _geofenceLat.value,
@@ -836,8 +896,8 @@ class TodoEditViewModel @Inject constructor(
             startDate = _startDate.value,
             dueDate = _dueDate.value,
             estimatedDurationMinutes = _estimatedDurationMinutes.value,
-            reminderTime = _reminderTime.value,
-            repeatType = _repeatType.value,
+            reminderTime = _groupReminders.value[targetGroupId],
+            repeatType = _groupRepeatTypes.value[targetGroupId] ?: 0,
             createdAt = currentTime,
             updatedAt = currentTime,
             geofenceLat = _geofenceLat.value,
@@ -1245,50 +1305,6 @@ class TodoEditViewModel @Inject constructor(
             _hasManuallySelectedCategory.value = true
             _recommendedCategory.value = null
         }
-    }
-
-    // ==================== 提醒时间推荐相关方法 ====================
-
-    /**
-     * 设置提醒时间
-     * 用户在 TimePicker 中手动确认时间后调用
-     *
-     * @param time 用户选择的提醒时间（毫秒时间戳）
-     */
-    fun setReminderTime(time: Long) {
-        _reminderTime.value = time
-        _showReminderRecommendation.value = false
-    }
-
-    /**
-     * 接受推荐的提醒时间
-     * 用户点击推荐标签后调用
-     */
-    fun acceptReminderRecommendation() {
-        val recommended = _recommendedReminderTime.value ?: return
-        _reminderTime.value = recommended
-        _showReminderRecommendation.value = false
-    }
-
-    /**
-     * 更新提醒时间推荐
-     * 当开始时间或分类变化时自动触发
-     */
-    private fun updateReminderRecommendation() {
-        val startDate = _startDate.value
-        val categoryId = _categoryId.value
-        val category = _categories.value.find { it.id == categoryId }
-
-        val recommended = reminderRecommender.recommend(
-            categoryType = category?.type,
-            startDate = startDate
-        )
-
-        _recommendedReminderTime.value = recommended
-
-        val isShow = recommended != null &&
-                (_reminderTime.value == null || _reminderTime.value != recommended)
-        _showReminderRecommendation.value = isShow
     }
 
     // ==================== 语音备注相关方法 ====================
