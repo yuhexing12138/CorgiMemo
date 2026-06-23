@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
@@ -44,6 +45,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -55,6 +57,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.ui.platform.LocalContext
 import com.corgimemo.app.ui.model.TodoLine
+import com.corgimemo.app.ui.util.formatReminderDisplay
 import com.corgimemo.app.util.VoicePlayer
 
 /**
@@ -99,6 +102,10 @@ fun CheckboxEditText(
     onSpecialCharDetected: ((String, String?) -> Unit)? = null,
     onNewGroupRequested: ((index: Int, currentText: String) -> Unit)? = null,
     onReminderClick: ((Int) -> Unit)? = null,
+    /** 各分组的提醒时间映射（key=groupId, value=提醒时间戳或 null） */
+    groupReminders: Map<Int, Long?> = emptyMap(),
+    /** × 按钮点击回调，参数是 groupId */
+    onReminderDelete: ((Int) -> Unit)? = null,
     onFocusedLineChange: ((Int) -> Unit)? = null,
     priority: Int = 1,
     onPriorityChange: ((Int, Int) -> Unit)? = null,
@@ -218,6 +225,8 @@ fun CheckboxEditText(
                 groupId = 0,
                 showBottomBar = true,
                 onReminderClick = { onReminderClick?.invoke(0) },
+                reminderTime = groupReminders[0],
+                onReminderDelete = { onReminderDelete?.invoke(0) },
                 priority = priority,
                 onPriorityClick = { onPriorityButtonClick?.invoke(0) },
                 onSaveClick = { onSaveClick?.invoke(0) }
@@ -277,6 +286,8 @@ fun CheckboxEditText(
                     isSaved = isGroupSaved,
                     priority = groupPriority,  // 传递分组独立优先级
                     onReminderClick = { onReminderClick?.invoke(groupId) },
+                    reminderTime = groupReminders[groupId],
+                    onReminderDelete = { onReminderDelete?.invoke(groupId) },
                     onPriorityClick = { onPriorityButtonClick?.invoke(groupId) },
                     onSaveClick = { onSaveClick?.invoke(groupId) }
                 ) {
@@ -414,6 +425,8 @@ private fun TodoGroupContainer(
     showBottomBar: Boolean,
     isSaved: Boolean = false,
     onReminderClick: (() -> Unit)? = null,
+    reminderTime: Long? = null,
+    onReminderDelete: (() -> Unit)? = null,
     priority: Int = 0,
     onPriorityClick: (() -> Unit)? = null,
     onSaveClick: (() -> Unit)? = null,
@@ -472,29 +485,74 @@ private fun TodoGroupContainer(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // 左侧：提醒按钮
-                Box(
+                // 实时刷新当前时间：进入页面时取一次，对齐到下一个 30s 整数倍开始轮询，
+                // 最迟 30s 内必然跨分钟，"已过期/未过期"自动切换。
+                // reminderTime 变化时（用户改时间 / × 删除）LaunchedEffect 重启，立刻按新值重算。
+                var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+                LaunchedEffect(reminderTime) {
+                    now = System.currentTimeMillis()
+                    while (true) {
+                        // 对齐到下一个 30s 整数倍边界，最大漂移 30s
+                        val nextTick = ((System.currentTimeMillis() / 30_000L) + 1L) * 30_000L
+                        kotlinx.coroutines.delay(nextTick - System.currentTimeMillis())
+                        now = System.currentTimeMillis()
+                    }
+                }
+
+                // 已过期判定：reminderTime 严格小于 now（等于当前时刻视为未过期）
+                val isOverdue = reminderTime != null && reminderTime < now
+                val displayText = reminderTime?.let { formatReminderDisplay(it, now).text } ?: "设置提醒"
+                val iconTint: Color = if (isOverdue) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurfaceVariant
+                val textColor: Color = if (isOverdue) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurfaceVariant
+
+                Row(
                     modifier = Modifier
                         .clickable(enabled = onReminderClick != null) { onReminderClick?.invoke() }
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color(0xFFF5F5F5))
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center
+                        .padding(
+                            start = 10.dp,
+                            top = 6.dp,
+                            end = if (reminderTime != null) 6.dp else 10.dp,
+                            bottom = 6.dp
+                        ),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = "设置提醒",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = if (reminderTime != null) "已设置提醒" else "设置提醒",
+                        tint = iconTint,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = displayText,
+                        fontSize = 13.sp,
+                        color = textColor,
+                        fontWeight = if (isOverdue) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                    if (reminderTime != null) {
+                        Spacer(Modifier.width(6.dp))
+                        // 1px 垂直分割线
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .height(14.dp)
+                                .background(Color(0xFFCCCCCC))
                         )
-                        Text(
-                            text = "设置提醒",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Spacer(Modifier.width(6.dp))
+                        // × 按钮：独立点击区域，不冒泡到 onReminderClick
+                        Box(
+                            modifier = Modifier
+                                .clickable(enabled = onReminderDelete != null) { onReminderDelete?.invoke() }
+                                .padding(4.dp)
+                        ) {
+                            Text(
+                                text = "×",
+                                fontSize = 16.sp,
+                                color = Color(0xFF666666)
+                            )
+                        }
                     }
                 }
 
