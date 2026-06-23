@@ -2,7 +2,7 @@
 compileSdk = "35"
 minSdk = "26"
 targetSdk = "35"
-kotlin = "2.1.0"
+kotlin = "2.2.10"
 compose = "1.9.2"
 composeCompiler = "2.1.0"
 hilt = "2.57"
@@ -63,7 +63,7 @@ androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-toolin
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 
 [plugins]
-android-application = { id = "com.android.application", version = "8.13.2" }
+android-application = { id = "com.android.application", version = "9.2.1" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 # Kotlin 2.0+ 必须显式声明 Compose Compiler 插件（替代旧版 composeCompilerExtension）
