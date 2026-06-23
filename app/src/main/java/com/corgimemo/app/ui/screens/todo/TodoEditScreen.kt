@@ -1486,7 +1486,8 @@ fun TodoEditScreen(
                 // 延伸到系统导航栏区域，确保遮罩层完全覆盖底部白条
                 .navigationBarsPadding()
                 .background(Color(0x99000000))
-                .clickable(onClick = { showReminderPicker = false })
+                // 点击遮罩关闭 picker：清空 editingReminderGroupId，下游 showReminderPicker 自动变 false
+                .clickable(onClick = { editingReminderGroupId = null })
         ) {
             // 弹窗容器：使用固定高度 + 自定义 layout 按 4:1 比例定位
             // 关键：弹窗总高度固定为屏幕高度的 80%，三种模式保持一致
