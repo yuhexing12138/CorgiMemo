@@ -943,14 +943,19 @@ class TodoEditViewModel @Inject constructor(
                 todoId = 0L, // 新建的待办，暂时无 ID
                 title = line.text.trim(),
                 isCompleted = line.isChecked,
-                order = line.order
+                order = line.order,
+                // 附件按行分摊到对应 SubTask（每张图/每条语音独立计数）
+                imagePaths = encodePaths(line.imagePaths),
+                voicePaths = encodePaths(line.voiceAttachments.map { it.path })
             )
         }
         val hasSubTasks = subTasks.isNotEmpty()
 
-        // 4. 收集附件
-        val allImagePaths = groupLines.flatMap { it.imagePaths }.distinct()
-        val firstVoice = groupLines.flatMap { it.voiceAttachments }.firstOrNull()
+        // 4. 收集附件（父行 → TodoItem；子任务行 → 对应 SubTask）
+        //    注意：附件不再汇总到父，父只取自身首行的附件
+        val firstLine = groupLines.firstOrNull { !it.isSubTask && it.text.isNotBlank() }
+        val allImagePaths = firstLine?.imagePaths ?: emptyList()
+        val firstVoice = firstLine?.voiceAttachments?.firstOrNull()
         val voicePath = firstVoice?.path
         val voiceDuration = firstVoice?.duration
 
