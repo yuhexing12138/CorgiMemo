@@ -91,6 +91,28 @@ object SubTaskManager {
     }
 
     /**
+     * 批量添加子任务（含完整数据，含附件字段）
+     *
+     * 编辑器按行分摊附件到 SubTask 时调用，与 [addSubTasks] 的 title-only 重载并存。
+     *
+     * @param context 上下文
+     * @param todoId 父待办 ID（会覆盖 subTask.todoId）
+     * @param subTasks 子任务完整数据（含 imagePaths / voicePaths / isCompleted / order 等）
+     */
+    suspend fun addSubTasks(context: Context, todoId: Long, subTasks: List<SubTask>) {
+        val database = CorgiMemoDatabase.getDatabase(context)
+        val maxOrder = database.subTaskDao().getMaxOrder(todoId) ?: 0
+        val toInsert = subTasks.mapIndexed { index, st ->
+            st.copy(
+                todoId = todoId,
+                order = if (st.order > 0) st.order else maxOrder + index + 1,
+                createdAt = if (st.createdAt > 0L) st.createdAt else System.currentTimeMillis()
+            )
+        }
+        database.subTaskDao().insertAll(toInsert)
+    }
+
+    /**
      * 更新子任务标题
      *
      * @param context 上下文

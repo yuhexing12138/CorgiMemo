@@ -1032,12 +1032,12 @@ class TodoEditViewModel @Inject constructor(
 
                 // 保存子任务（如果有）
                 if (subTasks.isNotEmpty()) {
-                    val titles = subTasks.map { it.title }
                     // UPDATE 模式：先删除旧子任务再添加新的，避免重复
                     if (existingSavedId != null && existingSavedId > 0) {
                         SubTaskManager.deleteAllSubTasks(context, newTodoId)
                     }
-                    SubTaskManager.addSubTasks(context, newTodoId, titles)
+                    // 使用含完整数据（含附件）的 addSubTasks 重载，保留 imagePaths/voicePaths
+                    SubTaskManager.addSubTasks(context, newTodoId, subTasks)
                 }
 
                 // 保存内容块（如果有全局附件）
