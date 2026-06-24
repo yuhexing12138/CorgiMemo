@@ -336,29 +336,47 @@ fun TodoListItem(
                                 )
                             }
 
-                            // 提醒时间（与编辑页 formatReminderDisplay 渲染规则一致）
-                            if (todo.reminderTime != null) {
-                                val reminder = formatReminderDisplay(todo.reminderTime)
+                            // 提醒时间 + 附件数量（聚合：父 + 所有子任务）
+                            val aggregateCounts = aggregateAttachmentCounts(todo, subTasks)
+                            if (todo.reminderTime != null || aggregateCounts.first > 0 || aggregateCounts.second > 0) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(top = 2.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Alarm,
-                                        contentDescription = if (reminder.isOverdue) "已过期提醒" else "提醒",
-                                        tint = if (reminder.isOverdue) Color(0xFFDC2626)
-                                               else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = reminder.text,
-                                        fontSize = 12.sp,
-                                        color = if (reminder.isOverdue) Color(0xFFDC2626)
-                                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontWeight = if (reminder.isOverdue)
-                                            androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
-                                    )
+                                    if (todo.reminderTime != null) {
+                                        val reminder = formatReminderDisplay(todo.reminderTime)
+                                        Icon(
+                                            imageVector = Icons.Default.Alarm,
+                                            contentDescription = if (reminder.isOverdue) "已过期提醒" else "提醒",
+                                            tint = if (reminder.isOverdue) Color(0xFFDC2626)
+                                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = reminder.text,
+                                            fontSize = 12.sp,
+                                            color = if (reminder.isOverdue) Color(0xFFDC2626)
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (reminder.isOverdue)
+                                                androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))   // 提醒与附件间 1 个空格的间距
+                                    }
+
+                                    // 附件计数（图片 + 语音）
+                                    if (aggregateCounts.first > 0 || aggregateCounts.second > 0) {
+                                        val attachmentText = buildString {
+                                            if (aggregateCounts.second > 0) append("🎤×${aggregateCounts.second}")
+                                            if (aggregateCounts.first > 0 && aggregateCounts.second > 0) append(" ")  // 两种附件间 1 个空格
+                                            if (aggregateCounts.first > 0) append("🖼×${aggregateCounts.first}")
+                                        }
+                                        Text(
+                                            text = attachmentText,
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
 
