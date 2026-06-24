@@ -158,8 +158,13 @@ fun TodoEditScreen(
 
     /** 优先级弹窗状态：null=关闭，Int=当前编辑的 groupId */
     var showPriorityDialog by remember { mutableStateOf<Int?>(null) }
+    /** 分类选择弹窗状态 */
+    var showCategoryDialog by remember { mutableStateOf(false) }
 
     val imagePaths by viewModel.imagePaths.collectAsState()
+    val categories by viewModel.categories.collectAsState()
+    val categoryId by viewModel.categoryId.collectAsState()
+    val currentCategory = categories.find { it.id == categoryId }
 
     /** 行级附件快照数据（从数据库加载，用于恢复每行的附件） */
     val lineAttachmentsSnapshot by viewModel.lineAttachmentsSnapshot.collectAsState()
@@ -370,6 +375,8 @@ fun TodoEditScreen(
 
     LaunchedEffect(Unit) {
         homeViewModel.setPoseForCreating()
+        /** 确保默认分类已初始化（DB 无分类时插入 5 个默认）；然后加载到内存列表 */
+        viewModel.loadCategories()
     }
 
     DisposableEffect(Unit) {
@@ -1002,6 +1009,10 @@ fun TodoEditScreen(
                 onFocusedLineChange = { newIndex ->
                     focusedLineIndex = newIndex
                 },
+                categoryId = categoryId,
+                categoryName = currentCategory?.name,
+                onCategoryClick = { showCategoryDialog = true },
+                onCategoryClear = { viewModel.clearCategory() },
                 priority = priority,
                 onPriorityChange = { _, newPriority ->
                     viewModel.setPriority(newPriority)
@@ -1670,6 +1681,27 @@ fun TodoEditScreen(
                 TextButton(onClick = { showPriorityDialog = null }) {
                     Text("取消")
                 }
+            }
+        )
+    }
+
+    /** 分类选择弹窗 */
+    if (showCategoryDialog) {
+        CategorySelectorDialog(
+            categories = categories,
+            currentCategoryId = categoryId,
+            onDismiss = { showCategoryDialog = false },
+            onCategorySelected = { id, name ->
+                if (id > 0L) {
+                    // 默认/已存在分类
+                    viewModel.setCategoryId(id)
+                } else {
+                    // 自定义分类：异步创建
+                    viewModel.createCustomCategory(name) { newId ->
+                        viewModel.setCategoryId(newId)
+                    }
+                }
+                showCategoryDialog = false
             }
         )
     }
