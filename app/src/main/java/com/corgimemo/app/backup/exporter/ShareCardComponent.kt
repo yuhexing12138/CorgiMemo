@@ -359,10 +359,10 @@ object ShareCardComponent {
 @Composable
 private fun PriorityBadgeShare(priority: Int) {
     val (text, color, backgroundColor) = when (priority) {
-        2 -> Triple("高", Color(0xFFDC2626), Color(0xFFFFE4E6))
-        1 -> Triple("中", Color(0xFFD97706), Color(0xFFFFF3E0))
-        else -> Triple("低", Color(0xFF16A34A), Color(0xFFECFDF5))
-    }
+            2 -> Triple("高", com.corgimemo.app.ui.components.PriorityColors.High, Color(0xFFFFE4E6))
+            1 -> Triple("中", com.corgimemo.app.ui.components.PriorityColors.Medium, Color(0xFFFFF3E0))
+            else -> Triple("低", com.corgimemo.app.ui.components.PriorityColors.Low, Color(0xFFECFDF5))
+        }
 
     Surface(
         shape = RoundedCornerShape(8.dp),

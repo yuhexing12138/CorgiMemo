@@ -107,7 +107,6 @@ import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.CorgiPullToRefreshIndicator
 import com.corgimemo.app.ui.components.SortBottomSheet
 import com.corgimemo.app.ui.components.ReorderableLazyColumn
-import com.corgimemo.app.ui.components.VerticalDragIndicator
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.corgimemo.app.viewmodel.CelebrationLevel
@@ -548,11 +547,6 @@ fun HomeScreen(
                                 }
                                 TodoListItem(
                                     todo = todo,
-                                    isDragging = isDragging,  // 传递拖拽状态给 DragHandle
-                                    start = {
-                                        /** 竖向拖拽指示器（6 点圆点，激活时变暖橙色）*/
-                                        VerticalDragIndicator(isActive = isDragging)
-                                    },
                                     subTaskProgress = subTaskProgressMap[todo.id],
                                     subTasks = subTasksMap[todo.id] ?: emptyList(),
                                     isExpanded = expandedTodos.contains(todo.id),

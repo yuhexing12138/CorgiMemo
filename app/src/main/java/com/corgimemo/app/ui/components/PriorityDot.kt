@@ -20,14 +20,14 @@ import com.corgimemo.app.ui.theme.UiColors
  * 定义待办事项的三个优先级级别及其对应的颜色
  */
 enum class TodoPriority(val color: Color, val displayName: String) {
-    /** 高优先级 - 红色 */
-    HIGH(Color(0xFFEF4444), "高"),
+    /** 高优先级 - 柔红（与 UI 设计规范对齐） */
+    HIGH(PriorityColors.High, "高"),
 
-    /** 中优先级 - 黄色/橙色 */
-    MEDIUM(Color(0xFFF59E0B), "中"),
+    /** 中优先级 - 柔橙（与 UI 设计规范对齐） */
+    MEDIUM(PriorityColors.Medium, "中"),
 
-    /** 低优先级 - 绿色 */
-    LOW(Color(0xFF10B981), "低")
+    /** 低优先级 - 柔蓝（与 UI 设计规范对齐） */
+    LOW(PriorityColors.Low, "低")
 }
 
 /**

@@ -3,7 +3,9 @@ package com.corgimemo.app.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -11,8 +13,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -35,7 +39,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,15 +51,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
-import com.corgimemo.app.ui.components.CircularCheckbox
-import com.corgimemo.app.ui.components.PriorityDot
-import com.corgimemo.app.ui.components.TodoActionSheet
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -86,7 +83,10 @@ import java.util.concurrent.TimeUnit
  * @param relationHint 关联提示文字
  * @param searchQuery 搜索关键词（非空时对标题和内容进行高亮显示）
  */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+    androidx.compose.material3.ExperimentalMaterial3Api::class
+)
 @Composable
 fun TodoListItem(
     todo: TodoItem,
@@ -114,24 +114,18 @@ fun TodoListItem(
     val deleteWidth = 80.dp
     var offsetX by remember { mutableStateOf(0f) }
 
-    /**
-     * V2.5 逐区间交错淡入动画控制标志
-     *
-     * 当 searchQuery 从空变为非空（搜索结果首次出现）时设为 true，
-     * 触发所有高亮区间的交错淡入动画序列。
-     * 每个区间的延迟由其在原文中的位置决定（startIndex * 2ms），
-     * 形成「从左到右波浪扫描」的视觉效果。
-     *
-     * 相比 V2.4 的整体 alpha 模式，逐区间独立动画提供更精细的视觉反馈：
-     * - 用户可直观看到每个匹配位置的出现顺序
-     * - 多关键词搜索时，不同关键词的高亮依次亮起，层次分明
-     */
-    val isHighlightActive = searchQuery.isNotBlank()
-
     /** 逐区间动画参数：每字符延迟 2ms，最大延迟上限 300ms */
     val STAGGER_DELAY_PER_CHAR = 2
     val STAGGER_MAX_DELAY = 300
 
+    /**
+     * V2.5 逐区间交错淡入动画控制标志
+     *
+     * 当 searchQuery 非空时启用，所有高亮区间以「从左到右波浪扫描」方式依次淡入。
+     */
+    val isHighlightActive = searchQuery.isNotBlank()
+
+    /** 卡片背景色：选中时使用 primaryContainer 半透明，否则使用 surface */
     val cardBackground by animateColorAsState(
         targetValue = if (isSelected) {
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
@@ -142,6 +136,7 @@ fun TodoListItem(
         label = "cardBackground"
     )
 
+    /** 复选框左侧间距：批量模式下空出 8dp 让位给 Checkbox */
     val checkboxStartPadding by animateDpAsState(
         targetValue = if (isBatchMode) 8.dp else 0.dp,
         animationSpec = tween(durationMillis = 200),
@@ -155,6 +150,7 @@ fun TodoListItem(
     )
 
     Box(modifier = Modifier.fillMaxWidth()) {
+        // 非批量模式下，渲染右滑删除时的红色背景
         if (!isBatchMode) {
             Row(
                 modifier = Modifier
@@ -180,6 +176,7 @@ fun TodoListItem(
             }
         }
 
+        // 卡片主体
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -220,209 +217,77 @@ fun TodoListItem(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = cardBackground)
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (isBatchMode) {
-                        Checkbox(
-                            checked = isSelected,
-                            onCheckedChange = { onSelectClick() },
-                            modifier = Modifier.padding(end = 12.dp)
-                        )
-                    } else {
-                        if (checkboxStartPadding > 0.dp) {
-                            Spacer(modifier = Modifier.width(checkboxStartPadding))
-                        }
-                        CircularCheckbox(
-                            checked = todo.status == 1,
-                            onCheckedChange = { isChecked ->
-                                onToggleComplete(todo.id, isChecked)
-                            },
-                            modifier = Modifier.padding(end = 12.dp)
-                        )
-                    }
+            // 卡片内部：左侧 4dp 优先级竖条 + 右侧内容
+            // 使用 IntrinsicSize.Max 让 PriorityBar.fillMaxHeight() 能正确撑满卡片高度
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Max)
+            ) {
+                /** 左侧 4dp 优先级竖条（无优先级时透明，不占视觉空间） */
+                PriorityBar(priority = todo.priority)
 
-                    /**
-                     * 前置内容槽位（start slot）
-                     *
-                     * 用于放置 DragHandle 等拖拽相关的 UI 组件。
-                     * 默认为空（不渲染任何内容），
-                     * 当与 ReorderableLazyColumn 配合使用时，
-                     * 可在此处插入 VerticalDragIndicator。
-                     */
-                    start()
-
-                    Column(
-                        modifier = Modifier.weight(1f)
+                /** 内容区域，占满除竖条外的宽度 */
+                Column(modifier = Modifier.weight(1f)) {
+                    // 顶部 Row：复选框 + start 槽位 + 内容 + 展开按钮
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            /**
-                             * 标题文本（支持逐区间交错淡入高亮）
-                             *
-                             * V2.5 改造：使用 buildHighlightRanges() 拆分为独立区间列表，
-                             * 每个高亮区间拥有独立的 animateFloatAsState + 延迟，
-                             * 实现从左到右的波浪式淡入效果。
-                             */
-                            if (isHighlightActive) {
-                                val (titleRanges, titleHighlightColor) =
-                                    com.corgimemo.app.util.HighlightUtil.buildHighlightRanges(
-                                        text = todo.title,
-                                        searchQuery = searchQuery,
-                                        containerBgColor = if (todo.backgroundColor != 0)
-                                            androidx.compose.ui.graphics.Color(todo.backgroundColor) else null
-                                    )
-                                /** 逐区间渲染：每个 HighlightRange 独立动画 */
-                                androidx.compose.foundation.layout.Row {
-                                    titleRanges.forEach { range ->
-                                        val rangeAlpha by androidx.compose.animation.core.animateFloatAsState(
-                                            targetValue = 1f,
-                                            animationSpec = androidx.compose.animation.core.tween(
-                                                durationMillis = 300,
-                                                delayMillis = (range.startIndex * STAGGER_DELAY_PER_CHAR)
-                                                    .coerceAtMost(STAGGER_MAX_DELAY)
-                                            ),
-                                            label = "titleRangeAlpha_${range.startIndex}"
-                                        )
-                                        Text(
-                                            text = range.text,
-                                            fontSize = 16.sp,
-                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-                                            textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
-                                            color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
-                                                    else MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.graphicsLayer { alpha = rangeAlpha },
-                                            style = if (range.isHighlight) androidx.compose.ui.text.TextStyle(
-                                                background = titleHighlightColor
-                                            ) else androidx.compose.ui.text.TextStyle.Default
-                                        )
-                                    }
-                                }
-                            } else {
-                                Text(
-                                    text = todo.title,
-                                    fontSize = 16.sp,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-                                    textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
-                                    color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
-                                            else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            subTaskProgress?.let { progress ->
-                                Text(
-                                    text = " ($progress)",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
-                                )
-                            }
-                        }
-                        if (todo.status == 1 && todo.completedAt != null) {
-                            Text(
-                                text = formatCompletedTime(todo.completedAt),
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(top = 2.dp)
+                        // 复选框区域
+                        if (isBatchMode) {
+                            Checkbox(
+                                checked = isSelected,
+                                onCheckedChange = { onSelectClick() },
+                                modifier = Modifier.padding(end = 12.dp)
                             )
-                        } else if (!todo.content.isNullOrBlank() || todo.contentFormat.isNotBlank()) {
-                            /**
-                             * 条件渲染：优先使用富文本格式预览
-                             *
-                             * 当 contentFormat 不为空时，使用 MarkdownInlineText 渲染格式化内容
-                             * （保留粗体/斜体/删除线样式），否则回退到纯文本显示。
-                             *
-                             * 注意：contentFormat 可能包含行级附件快照数据（格式为 "{Markdown}|||LINE_ATTACHMENTS|||[{JSON}]"），
-                             * 需要先提取纯净的 Markdown 部分用于显示。
-                             */
-                            val displayContentFormat = com.corgimemo.app.ui.model.LineSnapshotUtils.extractDisplayContent(todo.contentFormat)
-                            if (displayContentFormat.isNotBlank()) {
-                                /**
-                                 * 富文本内容（支持逐区间交错淡入高亮 + Markdown样式保留）
-                                 *
-                                 * V2.6 改造：搜索激活时使用 buildStyledHighlightRanges() 逐区间渲染，
-                                 * 保留粗体/斜体/删除线等 Markdown 行内样式，每个区间独立淡入动画。
-                                 * 非搜索时使用 MarkdownInlineText。
-                                 */
-                                if (isHighlightActive) {
-                                    /** V2.6: 使用带样式的搜索高亮（保留Markdown格式） */
-                                    val (styledMdRanges, styledMdColor) =
-                                        com.corgimemo.app.util.HighlightUtil.buildStyledHighlightRanges(
-                                            markdown = displayContentFormat,
-                                            searchQuery = searchQuery,
-                                            containerBgColor = if (todo.backgroundColor != 0)
-                                                androidx.compose.ui.graphics.Color(todo.backgroundColor) else null
-                                        )
-                                    androidx.compose.foundation.layout.Row {
-                                        styledMdRanges.forEach { range ->
-                                            val rangeAlpha by androidx.compose.animation.core.animateFloatAsState(
-                                                targetValue = 1f,
-                                                animationSpec = androidx.compose.animation.core.tween(
-                                                    durationMillis = 300,
-                                                    delayMillis = (range.startIndex * STAGGER_DELAY_PER_CHAR)
-                                                        .coerceAtMost(STAGGER_MAX_DELAY)
-                                                ),
-                                                label = "styledMdAlpha_${range.startIndex}"
-                                            )
-                                            /** 构建基础 TextStyle：颜色 + 字号 + 高亮背景 */
-                                            val baseStyle = androidx.compose.ui.text.TextStyle(
-                                                fontSize = 14.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                background = if (range.isHighlight) styledMdColor else androidx.compose.ui.graphics.Color.Unspecified
-                                            )
-                                            /** 合并 Markdown 样式（粗体/斜体等） */
-                                            val finalStyle = if (range.spanStyle != null) {
-                                                baseStyle.merge(
-                                                    androidx.compose.ui.text.TextStyle(
-                                                        fontWeight = range.spanStyle.fontWeight.takeIf { it != androidx.compose.ui.text.font.FontWeight.Normal },
-                                                        fontStyle = range.spanStyle.fontStyle.takeIf { it != androidx.compose.ui.text.font.FontStyle.Normal },
-                                                        textDecoration = range.spanStyle.textDecoration.takeIf { it != TextDecoration.None }
-                                                    )
-                                                )
-                                            } else {
-                                                baseStyle
-                                            }
+                        } else {
+                            if (checkboxStartPadding > 0.dp) {
+                                Spacer(modifier = Modifier.width(checkboxStartPadding))
+                            }
+                            CircularCheckbox(
+                                checked = todo.status == 1,
+                                onCheckedChange = { isChecked ->
+                                    onToggleComplete(todo.id, isChecked)
+                                },
+                                modifier = Modifier.padding(end = 12.dp)
+                            )
+                        }
 
-                                            Text(
-                                                text = range.text,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.graphicsLayer { alpha = rangeAlpha },
-                                                style = finalStyle
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    MarkdownInlineText(
-                                        markdown = displayContentFormat,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = androidx.compose.ui.text.TextStyle(
-                                            fontSize = 14.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    )
-                                }
-                            } else {
+                        /**
+                         * 前置内容槽位（start slot）
+                         *
+                         * 用于放置 DragHandle 等拖拽相关的 UI 组件。
+                         * 默认为空（不渲染任何内容），
+                         * 当与 ReorderableLazyColumn 配合使用时，
+                         * 可在此处插入 VerticalDragIndicator。
+                         */
+                        start()
+
+                        // 标题 + 分类 + 时间等内容 Column
+                        Column(modifier = Modifier.weight(1f)) {
+                            // 标题行
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 /**
-                                 * 纯文本内容（支持逐区间交错淡入高亮）
+                                 * 标题文本（支持逐区间交错淡入高亮）
                                  *
-                                 * V2.5 改造：使用 buildHighlightRanges() 逐区间独立动画渲染
+                                 * V2.5 改造：使用 buildHighlightRanges() 拆分为独立区间列表，
+                                 * 每个高亮区间拥有独立的 animateFloatAsState + 延迟，
+                                 * 实现从左到右的波浪式淡入效果。
                                  */
                                 if (isHighlightActive) {
-                                    val (contentRanges, contentHighlightColor) =
+                                    val (titleRanges, titleHighlightColor) =
                                         com.corgimemo.app.util.HighlightUtil.buildHighlightRanges(
-                                            text = todo.content ?: "",
+                                            text = todo.title,
                                             searchQuery = searchQuery,
                                             containerBgColor = if (todo.backgroundColor != 0)
-                                                androidx.compose.ui.graphics.Color(todo.backgroundColor) else null
+                                                Color(todo.backgroundColor) else null
                                         )
+                                    /** 逐区间渲染：每个 HighlightRange 独立动画 */
                                     androidx.compose.foundation.layout.Row {
-                                        contentRanges.forEach { range ->
+                                        titleRanges.forEach { range ->
                                             val rangeAlpha by androidx.compose.animation.core.animateFloatAsState(
                                                 targetValue = 1f,
                                                 animationSpec = androidx.compose.animation.core.tween(
@@ -430,58 +295,99 @@ fun TodoListItem(
                                                     delayMillis = (range.startIndex * STAGGER_DELAY_PER_CHAR)
                                                         .coerceAtMost(STAGGER_MAX_DELAY)
                                                 ),
-                                                label = "contentRangeAlpha_${range.startIndex}"
+                                                label = "titleRangeAlpha_${range.startIndex}"
                                             )
                                             Text(
                                                 text = range.text,
-                                                fontSize = 14.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
+                                                fontSize = 16.sp,
+                                                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                                textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
+                                                color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
+                                                else MaterialTheme.colorScheme.onSurface,
                                                 modifier = Modifier.graphicsLayer { alpha = rangeAlpha },
                                                 style = if (range.isHighlight) androidx.compose.ui.text.TextStyle(
-                                                    background = contentHighlightColor
+                                                    background = titleHighlightColor
                                                 ) else androidx.compose.ui.text.TextStyle.Default
                                             )
                                         }
                                     }
                                 } else {
                                     Text(
-                                        text = todo.content ?: "",
-                                        fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1
+                                        text = todo.title,
+                                        fontSize = 16.sp,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                        textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
+                                        color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
+                                        else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                subTaskProgress?.let { progress ->
+                                    Text(
+                                        text = " ($progress)",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
                                     )
                                 }
                             }
-                        }
 
-                        if (categoryName != null) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(top = 4.dp)
-                            ) {
+                            // 完成时间
+                            if (todo.status == 1 && todo.completedAt != null) {
                                 Text(
-                                    text = categoryIcon ?: "📋",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = categoryName,
+                                    text = formatCompletedTime(todo.completedAt),
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier
-                                        .background(
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            shape = RoundedCornerShape(4.dp)
-                                        )
-                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(top = 2.dp)
                                 )
+                            }
 
-                                // 语音备注图标
-                                if (todo.voiceNotePath != null) {
-                                    Spacer(modifier = Modifier.width(8.dp))
+                            // 分类行
+                            if (categoryName != null) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                ) {
+                                    Text(
+                                        text = categoryIcon ?: "📋",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = categoryName,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier
+                                            .background(
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                shape = RoundedCornerShape(4.dp)
+                                            )
+                                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                                    )
+
+                                    // 语音备注图标
+                                    if (todo.voiceNotePath != null) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "🎤",
+                                            fontSize = 12.sp
+                                        )
+                                        todo.voiceDuration?.let { duration ->
+                                            Spacer(modifier = Modifier.width(2.dp))
+                                            Text(
+                                                text = "${duration}s",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            } else if (todo.voiceNotePath != null) {
+                                // 无分类但有语音备注时单独显示
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                ) {
                                     Text(
                                         text = "🎤",
                                         fontSize = 12.sp
@@ -489,123 +395,103 @@ fun TodoListItem(
                                     todo.voiceDuration?.let { duration ->
                                         Spacer(modifier = Modifier.width(2.dp))
                                         Text(
-                                            text = "${duration}s",
-                                            fontSize = 10.sp,
+                                            text = "语音备注 ${duration}s",
+                                            fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
                             }
-                        } else if (todo.voiceNotePath != null) {
-                            // 无分类但有语音备注时单独显示
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(top = 4.dp)
-                            ) {
+
+                            // 关联提示
+                            if (relationHint != null) {
                                 Text(
-                                    text = "🎤",
-                                    fontSize = 12.sp
+                                    text = relationHint,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF999999),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = 4.dp)
                                 )
-                                todo.voiceDuration?.let { duration ->
-                                    Spacer(modifier = Modifier.width(2.dp))
+                            }
+
+                            // 开始时间显示
+                            if (todo.startDate != null) {
+                                Column(modifier = Modifier.padding(top = 4.dp)) {
+                                    val timeDisplayText = todo.estimatedDurationMinutes?.let { duration ->
+                                        val endTime = todo.startDate + duration * 60 * 1000
+                                        formatTimeRange(todo.startDate, endTime)
+                                    } ?: formatDateTime(todo.startDate)
+
                                     Text(
-                                        text = "语音备注 ${duration}s",
-                                        fontSize = 11.sp,
+                                        text = "\uD83D\uDD51 $timeDisplayText",
+                                        fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    if (todo.status != 1 && System.currentTimeMillis() < todo.startDate) {
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        CountdownDisplay(startDate = todo.startDate)
+                                    }
+                                }
+                            }
+
+                            /** 截止时间（dueDate）显示 */
+                            if (todo.dueDate != null) {
+                                val isOverdue = todo.status != 1 && todo.dueDate!! < System.currentTimeMillis()
+                                Column(modifier = Modifier.padding(top = 4.dp)) {
+                                    Text(
+                                        text = "\u23F0 ${formatDateTime(todo.dueDate!!)}${if (isOverdue) " (已过期)" else ""}",
+                                        fontSize = 12.sp,
+                                        color = if (isOverdue) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = if (isOverdue) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
                                     )
                                 }
                             }
-                        }
 
-                        // 关联提示
-                        if (relationHint != null) {
-                            Text(
-                                text = relationHint,
-                                fontSize = 12.sp,
-                                color = Color(0xFF999999),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-
-                        // 开始时间显示
-                        if (todo.startDate != null) {
-                            Column(modifier = Modifier.padding(top = 4.dp)) {
-                                val timeDisplayText = todo.estimatedDurationMinutes?.let { duration ->
-                                    val endTime = todo.startDate + duration * 60 * 1000
-                                    formatTimeRange(todo.startDate, endTime)
-                                } ?: formatDateTime(todo.startDate)
-
-                                Text(
-                                    text = "\uD83D\uDD51 $timeDisplayText",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                if (todo.status != 1 && System.currentTimeMillis() < todo.startDate) {
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    CountdownDisplay(startDate = todo.startDate)
-                                }
-                            }
-                        }
-
-                        /** 截止时间（dueDate）显示 */
-                        if (todo.dueDate != null) {
-                            val isOverdue = todo.status != 1 && todo.dueDate!! < System.currentTimeMillis()
-                            Column(modifier = Modifier.padding(top = 4.dp)) {
-                                Text(
-                                    text = "\u23F0 ${formatDateTime(todo.dueDate!!)}${if (isOverdue) " (已过期)" else ""}",
-                                    fontSize = 12.sp,
-                                    color = if (isOverdue) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = if (isOverdue) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
+                            // 进度条
+                            if (todo.status != 1 && todo.content.isNullOrBlank() && subTaskProgress != null) {
+                                SubTaskProgressBar(
+                                    progress = parseProgress(subTaskProgress),
+                                    modifier = Modifier.padding(top = 6.dp)
                                 )
                             }
                         }
 
-                        if (todo.status != 1 && todo.content.isNullOrBlank() && subTaskProgress != null) {
-                            SubTaskProgressBar(
-                                progress = parseProgress(subTaskProgress),
-                                modifier = Modifier.padding(top = 6.dp)
-                            )
+                        // 展开/收起按钮（仅在有子任务且非批量模式时显示）
+                        if (subTaskProgress != null && !isBatchMode) {
+                            IconButton(
+                                onClick = onToggleExpand,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isExpanded) {
+                                        Icons.Default.ExpandLess
+                                    } else {
+                                        Icons.Default.ExpandMore
+                                    },
+                                    contentDescription = if (isExpanded) "收起" else "展开",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
 
-                    // 展开/收起按钮（仅在有子任务且非批量模式时显示）
-                    if (subTaskProgress != null && !isBatchMode) {
-                        IconButton(
-                            onClick = onToggleExpand,
-                            modifier = Modifier.size(32.dp)
+                    // 展开时显示子任务列表
+                    if (isExpanded && subTasks.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 60.dp, end = 16.dp, bottom = 16.dp)
                         ) {
-                            Icon(
-                                imageVector = if (isExpanded) {
-                                    Icons.Default.ExpandLess
-                                } else {
-                                    Icons.Default.ExpandMore
-                                },
-                                contentDescription = if (isExpanded) "收起" else "展开",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else {
-                        PriorityDot(priority = todo.priority.toTodoPriority())
-                    }
-                }
-
-                // 展开时显示子任务列表
-                if (isExpanded && subTasks.isNotEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 64.dp, end = 16.dp, bottom = 16.dp)
-                    ) {
-                        subTasks.forEach { subTask ->
-                            SubTaskInTodoListItem(
-                                subTask = subTask,
-                                onToggleComplete = { onToggleSubTask(subTask.id) }
-                            )
-                            if (subTask != subTasks.last()) {
-                                Spacer(modifier = Modifier.height(4.dp))
+                            subTasks.forEach { subTask ->
+                                SubTaskInTodoListItem(
+                                    subTask = subTask,
+                                    onToggleComplete = { onToggleSubTask(subTask.id) }
+                                )
+                                if (subTask != subTasks.last()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                }
                             }
                         }
                     }
@@ -832,7 +718,7 @@ private fun formatTimeRange(startTime: Long, endTime: Long): String {
     val cal2 = java.util.Calendar.getInstance().apply { time = endDate }
 
     val isSameDay = cal1.get(java.util.Calendar.YEAR) == cal2.get(java.util.Calendar.YEAR) &&
-                    cal1.get(java.util.Calendar.DAY_OF_YEAR) == cal2.get(java.util.Calendar.DAY_OF_YEAR)
+            cal1.get(java.util.Calendar.DAY_OF_YEAR) == cal2.get(java.util.Calendar.DAY_OF_YEAR)
 
     return if (isSameDay) {
         "${sdfDate.format(startDate)} ${sdfTime.format(startDate)} 至 ${sdfTime.format(endDate)}"
@@ -866,6 +752,44 @@ private fun formatCountdown(startDate: Long, currentTime: Long): String {
     } else {
         "还剩 ${diffMinutes}分${diffSeconds % 60}秒"
     }
+}
+
+/**
+ * 优先级竖条 - 显示在待办卡片左侧 4dp 宽的彩色线条
+ *
+ * 颜色根据 todo.priority 动态变化：
+ * - 0 (无优先级) → 透明
+ * - 1 (低) → PriorityColors.Low（柔蓝）
+ * - 2 (中) → PriorityColors.Medium（柔橙）
+ * - 3 (高) → PriorityColors.High（柔红）
+ *
+ * 通过 animateColorAsState 实现 200ms 颜色平滑过渡。
+ * 高度通过 fillMaxHeight() 自适应父容器（Card），无需硬编码。
+ *
+ * @param priority 优先级数值
+ * @param modifier Modifier
+ */
+@Composable
+private fun PriorityBar(
+    priority: Int,
+    modifier: Modifier = Modifier
+) {
+    /** 目标颜色：根据 priority 数值获取 */
+    val targetColor = PriorityColors.colorOf(priority)
+
+    /** 颜色过渡动画：与卡片其他动画保持 200ms 节奏一致 */
+    val animatedColor by animateColorAsState(
+        targetValue = targetColor,
+        animationSpec = tween(durationMillis = 200),
+        label = "PriorityBarColor"
+    )
+
+    Box(
+        modifier = modifier
+            .width(4.dp)
+            .fillMaxHeight()
+            .background(animatedColor)
+    )
 }
 
 /**

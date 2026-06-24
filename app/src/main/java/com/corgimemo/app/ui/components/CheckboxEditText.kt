@@ -440,10 +440,10 @@ private fun TodoGroupContainer(
      * - 0=无 → 无边框
      */
     val borderColor = when (priority) {
-        3 -> Color(0xFFF44336)  // 高优先级：红色
-        2 -> Color(0xFFFF9800)  // 中优先级：黄色
-        1 -> Color(0xFF4CAF50)  // 低优先级：绿色
-        else -> null             // 无优先级：无边框
+        3 -> PriorityColors.colorOf(3)  // 高优先级
+        2 -> PriorityColors.colorOf(2)  // 中优先级
+        1 -> PriorityColors.colorOf(1)  // 低优先级
+        else -> null                     // 无优先级：无边框
     }
 
     /** 优先级按钮显示文字 */

@@ -13,6 +13,8 @@ import android.text.TextPaint
 import android.util.TypedValue
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.ui.components.PriorityColors
+import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -372,9 +374,9 @@ object ImageExporter {
      */
     private fun getPriorityBadge(priority: Int): BadgeConfig {
         return when (priority) {
-            2 -> BadgeConfig("高", Color.parseColor("#DC2626"), Color.parseColor("#FFE4E6"))
-            1 -> BadgeConfig("中", Color.parseColor("#D97706"), Color.parseColor("#FFF3E0"))
-            else -> BadgeConfig("低", Color.parseColor("#16A34A"), Color.parseColor("#ECFDF5"))
+            2 -> BadgeConfig("高", PriorityColors.High.toArgb(), Color.parseColor("#FFE4E6"))
+            1 -> BadgeConfig("中", PriorityColors.Medium.toArgb(), Color.parseColor("#FFF3E0"))
+            else -> BadgeConfig("低", PriorityColors.Low.toArgb(), Color.parseColor("#ECFDF5"))
         }
     }
 

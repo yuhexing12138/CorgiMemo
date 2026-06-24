@@ -1605,9 +1605,9 @@ fun TodoEditScreen(
                     /** 优先级选项列表 */
                     val options = listOf(
                         Triple(0, "无优先级", androidx.compose.ui.graphics.Color.Gray),
-                        Triple(1, "低优先级", androidx.compose.ui.graphics.Color(0xFF4CAF50)),
-                        Triple(2, "中优先级", androidx.compose.ui.graphics.Color(0xFFFF9800)),
-                        Triple(3, "高优先级", androidx.compose.ui.graphics.Color(0xFFF44336))
+                        Triple(1, "低优先级", com.corgimemo.app.ui.components.PriorityColors.Low),
+                        Triple(2, "中优先级", com.corgimemo.app.ui.components.PriorityColors.Medium),
+                        Triple(3, "高优先级", com.corgimemo.app.ui.components.PriorityColors.High)
                     )
 
                     val currentPriority = groupPriorities[targetGroupId] ?: 0
