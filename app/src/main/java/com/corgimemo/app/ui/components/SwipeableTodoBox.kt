@@ -89,6 +89,26 @@ fun SwipeableTodoBox(
     /** 动作区宽度的 px 值，用于 coerce 卡片位移 */
     val actionsWidthPx = with(density) { actionsWidthDp.toPx() }
 
+    /**
+     * 监听外部 isExpanded 变化：
+     * - 外部要求展开但当前未完全展开 → 动画到 -actionsWidthPx
+     * - 外部要求收起但当前处于展开 → 动画到 0
+     * 实现"互斥展开"控制
+     */
+    LaunchedEffect(isExpanded) {
+        if (isExpanded && cardOffsetX.value > -actionsWidthPx) {
+            cardOffsetX.animateTo(
+                -actionsWidthPx,
+                spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+        } else if (!isExpanded && cardOffsetX.value < 0f) {
+            cardOffsetX.animateTo(0f, spring())
+        }
+    }
+
     Layout(
         modifier = modifier.fillMaxWidth(),
         content = {
@@ -100,8 +120,41 @@ fun SwipeableTodoBox(
                     .pointerInput(isEnabled, isExpanded) {
                         if (!isEnabled) return@pointerInput
                         detectHorizontalDragGestures(
-                            onDragEnd = { /* Task 3 填充阈值判断 */ },
-                            onDragCancel = { /* Task 3 填充阈值判断 */ }
+                            onDragEnd = {
+                                // 拖动结束：根据最终位移判定"完全展开 / 收回"
+                                val final = cardOffsetX.value
+                                val triggerThresholdPx = with(density) { buttonWidthDp.toPx() }
+                                val target = when {
+                                    // 左滑 ≥ 单按钮宽（72dp） → 完全展开
+                                    final <= -triggerThresholdPx -> -actionsWidthPx
+                                    // 右滑 > 30px → 收回
+                                    final >= 30f -> 0f
+                                    // 处于展开状态且轻微抖动 → 保持展开
+                                    isExpanded -> -actionsWidthPx
+                                    // 其他 → 收回
+                                    else -> 0f
+                                }
+                                onExpandChange(target < 0f)
+                                coroutineScope.launch {
+                                    cardOffsetX.animateTo(
+                                        target,
+                                        spring(
+                                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                                            stiffness = Spring.StiffnessMediumLow
+                                        )
+                                    )
+                                }
+                            },
+                            onDragCancel = {
+                                // 拖动被取消（如被父布局拦截）：与 onDragEnd 行为一致
+                                val final = cardOffsetX.value
+                                val triggerThresholdPx = with(density) { buttonWidthDp.toPx() }
+                                val target = if (final <= -triggerThresholdPx) -actionsWidthPx else 0f
+                                onExpandChange(target < 0f)
+                                coroutineScope.launch {
+                                    cardOffsetX.animateTo(target, spring())
+                                }
+                            }
                         ) { _, dragAmount ->
                             coroutineScope.launch {
                                 val newOffset = (cardOffsetX.value + dragAmount)
