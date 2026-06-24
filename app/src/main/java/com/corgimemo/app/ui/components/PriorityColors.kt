@@ -41,4 +41,33 @@ object PriorityColors {
         1 -> Low
         else -> None
     }
+
+    /**
+     * 已完成态浅色版（Material Design 200 色调色板）
+     *
+     * 应用于已完成（status=1）待办的优先级竖线。
+     * 在原 priority 色基础上大幅降低饱和度、提亮，
+     * 保留原色色相但视觉上"淡化"，建立"完成项更弱"层级。
+     *
+     * 颜色来源：[UI 设计规范] §12.1.2.4 状态色 - 已完成
+     *   - 高优先级淡化：#FFCDD2（Material Red 200）
+     *   - 中优先级淡化：#FFE0B2（Material Orange 200）
+     *   - 低优先级淡化：#BBDEFB（Material Blue 200）
+     */
+    val HighDim = Color(0xFFFFCDD2)
+    val MediumDim = Color(0xFFFFE0B2)
+    val LowDim = Color(0xFFBBDEFB)
+
+    /**
+     * 数值 → 已完成态浅色版颜色
+     *
+     * @param priority 优先级数值（0=无、1=低、2=中、3=高）
+     * @return 对应浅色；0 或其他非法值返回 None（透明，与未完成态一致）
+     */
+    fun dimColorOf(priority: Int): Color = when (priority) {
+        3 -> HighDim
+        2 -> MediumDim
+        1 -> LowDim
+        else -> None
+    }
 }
