@@ -21,6 +21,8 @@ import com.corgimemo.app.animation.MoodManager
 import com.corgimemo.app.animation.OutfitManager
 import com.corgimemo.app.animation.PoseManager
 import com.corgimemo.app.animation.PoseScene
+import com.corgimemo.app.data.event.TodoEvent
+import com.corgimemo.app.data.event.TodoEventBus
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
@@ -541,6 +543,18 @@ class HomeViewModel @Inject constructor(
         checkSolarTerm()
         initAchievements()
         observeRecentlyDeleted()
+
+        // 订阅全局待办事件：编辑页保存/删除后自动刷新首页数据
+        // （编辑器的 HomeViewModel 是 editor 自己的 NavBackStackEntry 实例，
+        //  它调用的 refreshSubTaskProgress() 无法影响首页实例，因此需要事件总线）
+        viewModelScope.launch {
+            TodoEventBus.events.collect { event ->
+                when (event) {
+                    is TodoEvent.TodoSaved -> refreshAllData()
+                    is TodoEvent.TodoDeleted -> refreshAllData()
+                }
+            }
+        }
     }
 
     /**
@@ -1359,6 +1373,54 @@ class HomeViewModel @Inject constructor(
                     val subTasks = SubTaskManager.getSubTasks(context, todo.id)
                     subTasksMap[todo.id] = subTasks
                 }
+            }
+            _subTaskProgressMap.value = progressMap
+            _subTasksMap.value = subTasksMap
+        }
+    }
+
+    /**
+     * 全量刷新首页数据
+     *
+     * 触发场景：
+     * 1. 编辑页保存/删除后通过 [TodoEventBus] 触发
+     * 2. 下拉刷新兜底
+     *
+     * 包含：
+     * - `_todos`（按当前过滤器重算）
+     * - `_subTaskProgressMap`（子任务进度文本）
+     * - `_subTasksMap`（子任务列表，含 imagePaths/voicePaths）
+     *
+     * 与旧版 [refreshSubTaskProgress] 的区别：
+     * - 同时刷新 _todos（避免父待办的 imagePaths/voiceNotePath 等字段不更新）
+     * - 总是加载子任务列表（无 `if (progress != null)` 守卫，
+     *   确保新建子任务后第一次进入首页就能看到附件计数）
+     */
+    fun refreshAllData() {
+        viewModelScope.launch {
+            val allTodos = todoRepository.getAllTodos().first()
+            _todos.value = when (_filterStatus.value) {
+                FilterStatus.ALL -> allTodos
+                FilterStatus.PENDING -> allTodos.filter { it.status == 0 }
+                FilterStatus.COMPLETED -> {
+                    val thirtyDaysAgo = System.currentTimeMillis() - 30 * 24 * 60 * 60 * 1000L
+                    allTodos.filter {
+                        it.status == 1 &&
+                                it.completedAt != null &&
+                                it.completedAt >= thirtyDaysAgo
+                    }
+                }
+            }
+            val progressMap = mutableMapOf<Long, String>()
+            val subTasksMap = mutableMapOf<Long, List<SubTask>>()
+            for (todo in allTodos) {
+                // 修复守卫：解耦 progress 和 subTasks 加载
+                SubTaskManager.getProgressText(context, todo.id)?.let { progress ->
+                    progressMap[todo.id] = progress
+                }
+                // 总是加载子任务列表（无论是否有 progress text）
+                val subTasks = SubTaskManager.getSubTasks(context, todo.id)
+                subTasksMap[todo.id] = subTasks
             }
             _subTaskProgressMap.value = progressMap
             _subTasksMap.value = subTasksMap

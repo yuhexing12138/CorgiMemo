@@ -782,7 +782,9 @@ fun TodoEditScreen(
                         /** 全部完成：保存所有分组 + 返回列表页 */
                         val savedCount = viewModel.saveAllGroups(todoLines)
                         homeViewModel.setPoseForLoading()
-                        homeViewModel.refreshSubTaskProgress()
+                        // 注意：homeViewModel.refreshSubTaskProgress() 已被删除
+                        // 刷新由 TodoEventBus 在 HomeViewModel.init 订阅中自动完成
+                        // （避免 editor 实例调用影响不到 home 实例的问题）
                         navController.popBackStack()
                     },
                     shape = RoundedCornerShape(14.dp),

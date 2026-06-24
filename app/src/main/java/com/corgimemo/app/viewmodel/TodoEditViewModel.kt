@@ -3,6 +3,8 @@ package com.corgimemo.app.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.corgimemo.app.data.event.TodoEvent
+import com.corgimemo.app.data.event.TodoEventBus
 import com.corgimemo.app.data.local.db.ContentBlockDao
 import com.corgimemo.app.data.local.db.ContentBlockEntity
 import com.corgimemo.app.data.local.db.CorgiMemoDatabase
@@ -1089,6 +1091,12 @@ class TodoEditViewModel @Inject constructor(
         }
 
         android.util.Log.w("TodoEditVM", "saveAllGroups 完成, 共保存 $savedCount 个分组")
+
+        // 通知首页 HomeViewModel 刷新数据（通过事件总线，避免实例作用域错位）
+        if (savedCount > 0) {
+            TodoEventBus.emit(TodoEvent.TodoSaved)
+        }
+
         return savedCount
     }
 
