@@ -336,6 +336,32 @@ fun TodoListItem(
                                 )
                             }
 
+                            // 提醒时间（与编辑页 formatReminderDisplay 渲染规则一致）
+                            if (todo.reminderTime != null) {
+                                val reminder = formatReminderDisplay(todo.reminderTime)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Alarm,
+                                        contentDescription = if (reminder.isOverdue) "已过期提醒" else "提醒",
+                                        tint = if (reminder.isOverdue) Color(0xFFDC2626)
+                                               else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = reminder.text,
+                                        fontSize = 12.sp,
+                                        color = if (reminder.isOverdue) Color(0xFFDC2626)
+                                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = if (reminder.isOverdue)
+                                            androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
+                                    )
+                                }
+                            }
+
                             // 分类行
                             if (categoryName != null) {
                                 Row(
