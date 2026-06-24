@@ -114,7 +114,7 @@ fun SwipeableTodoBox(
                 content()
             }
 
-            // ActionsLayer（Task 2 实现）
+            // ActionsLayer：3 按钮堆叠操作区（飞书风格）
             if (isEnabled) {
                 Box(
                     modifier = Modifier
@@ -125,7 +125,67 @@ fun SwipeableTodoBox(
                             )
                         )
                 ) {
-                    // Task 2: Row + 3 SwipeActionButton
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        // 按钮 1：置顶（暖阳橙 #FF9A5C）
+                        SwipeActionButton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            icon = Icons.Filled.VerticalAlignTop,
+                            label = "置顶",
+                            backgroundColor = Color(0xFFFF9A5C),
+                            alpha = 0f,  // Task 5: 由 revealProgress 驱动
+                            scaleX = 0.7f,
+                            translateX = 24f,
+                            onClick = {
+                                coroutineScope.launch {
+                                    cardOffsetX.animateTo(0f, spring())
+                                }
+                                onExpandChange(false)
+                                onPinClick()
+                            }
+                        )
+
+                        // 按钮 2：分享（柔和蓝 #90CAF9）
+                        SwipeActionButton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            icon = Icons.Filled.IosShare,
+                            label = "分享",
+                            backgroundColor = Color(0xFF90CAF9),
+                            alpha = 0f,
+                            scaleX = 0.7f,
+                            translateX = 24f,
+                            onClick = {
+                                coroutineScope.launch {
+                                    cardOffsetX.animateTo(0f, spring())
+                                }
+                                onExpandChange(false)
+                                onShareClick()
+                            }
+                        )
+
+                        // 按钮 3：删除（柔和红 #FF8A80）
+                        SwipeActionButton(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            icon = Icons.Filled.Delete,
+                            label = "删除",
+                            backgroundColor = Color(0xFFFF8A80),
+                            alpha = 0f,
+                            scaleX = 0.7f,
+                            translateX = 24f,
+                            onClick = {
+                                coroutineScope.launch {
+                                    cardOffsetX.animateTo(0f, spring())
+                                }
+                                onExpandChange(false)
+                                onDeleteClick()
+                            }
+                        )
+                    }
                 }
             }
         },
@@ -155,4 +215,64 @@ fun SwipeableTodoBox(
             }
         }
     )
+}
+
+/**
+ * 3 按钮左滑操作按钮（飞书风格）
+ *
+ * alpha/scaleX/translateX 均应用于外层 Box（不是内部 Column），
+ * 实现"按钮整体渐入"而非仅图标文字渐入。
+ *
+ * @param icon 图标
+ * @param label 文字标签
+ * @param backgroundColor 按钮背景色
+ * @param alpha 整体透明度（0f..1f），由外层 Animatable 驱动
+ * @param scaleX 水平缩放（0.7f..1.0f），形成"展开"层次感
+ * @param translateX 水平位移（px，正值=向右偏移），形成"滑入"效果
+ * @param onClick 点击回调
+ * @param modifier 外部修饰符（用于 weight/align）
+ */
+@Composable
+private fun SwipeActionButton(
+    icon: ImageVector,
+    label: String,
+    backgroundColor: Color,
+    alpha: Float,
+    scaleX: Float,
+    translateX: Float,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .graphicsLayer {
+                this.alpha = alpha
+                this.scaleX = scaleX
+                this.translationX = translateX
+            }
+            .background(backgroundColor)
+            .clickable(onClick = onClick)
+    ) {
+        Column(
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+            // 固定 4dp 间距（在 alpha=0 时不影响视觉）
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = label,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
 }
