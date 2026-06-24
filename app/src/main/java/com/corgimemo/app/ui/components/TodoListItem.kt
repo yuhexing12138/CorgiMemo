@@ -479,21 +479,38 @@ fun TodoListItem(
                             }
                         }
 
-                        // 展开/收起按钮（仅在有子任务且非批量模式时显示）
+                        // 子任务进度（移至展开按钮左侧）+ 展开/收起按钮（带阴影）
                         if (subTaskProgress != null && !isBatchMode) {
-                            IconButton(
-                                onClick = onToggleExpand,
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isExpanded) {
-                                        Icons.Default.ExpandLess
-                                    } else {
-                                        Icons.Default.ExpandMore
-                                    },
-                                    contentDescription = if (isExpanded) "收起" else "展开",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // 子任务进度文本：紧贴展开按钮左侧
+                                Text(
+                                    text = "($subTaskProgress)",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                // 展开/收起按钮：Surface 圆形阴影 2dp
+                                Surface(
+                                    onClick = onToggleExpand,
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shadowElevation = 2.dp,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = if (isExpanded) {
+                                                Icons.Default.ExpandLess
+                                            } else {
+                                                Icons.Default.ExpandMore
+                                            },
+                                            contentDescription = if (isExpanded) "收起" else "展开",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
