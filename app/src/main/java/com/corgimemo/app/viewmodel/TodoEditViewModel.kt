@@ -1215,8 +1215,7 @@ class TodoEditViewModel @Inject constructor(
         }
 
         if (currentSubTasks.isNotEmpty()) {
-            val titles = currentSubTasks.map { it.title }
-            SubTaskManager.addSubTasks(context, todoId, titles)
+            SubTaskManager.addSubTasks(context, todoId, currentSubTasks)
         }
     }
 

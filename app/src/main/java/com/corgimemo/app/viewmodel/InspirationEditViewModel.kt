@@ -765,8 +765,7 @@ class InspirationEditViewModel @Inject constructor(
         }
 
         if (currentSubTasks.isNotEmpty()) {
-            val titles = currentSubTasks.map { it.title }
-            SubTaskManager.addSubTasks(context, inspirationId, titles)
+            SubTaskManager.addSubTasks(context, inspirationId, currentSubTasks)
         }
     }
 

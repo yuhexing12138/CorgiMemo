@@ -69,31 +69,10 @@ object SubTaskManager {
     }
 
     /**
-     * 批量添加子任务
+     * 批量添加子任务（含完整数据，含附件字段 imagePaths / voicePaths）
      *
-     * @param context 上下文
-     * @param todoId 待办 ID
-     * @param titles 子任务标题列表
-     */
-    suspend fun addSubTasks(context: Context, todoId: Long, titles: List<String>) {
-        val database = CorgiMemoDatabase.getDatabase(context)
-        val maxOrder = database.subTaskDao().getMaxOrder(todoId) ?: 0
-
-        val subTasks = titles.mapIndexed { index, title ->
-            SubTask(
-                todoId = todoId,
-                title = title,
-                order = maxOrder + index + 1,
-                createdAt = System.currentTimeMillis()
-            )
-        }
-        database.subTaskDao().insertAll(subTasks)
-    }
-
-    /**
-     * 批量添加子任务（含完整数据，含附件字段）
-     *
-     * 编辑器按行分摊附件到 SubTask 时调用，与 [addSubTasks] 的 title-only 重载并存。
+     * 取代旧版仅接受标题列表的重载，避免按行分摊附件时丢失 imagePaths/voicePaths。
+     * 编辑器按行分摊附件到 SubTask 时调用。
      *
      * @param context 上下文
      * @param todoId 父待办 ID（会覆盖 subTask.todoId）
