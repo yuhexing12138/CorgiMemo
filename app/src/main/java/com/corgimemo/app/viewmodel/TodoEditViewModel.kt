@@ -1064,6 +1064,10 @@ class TodoEditViewModel @Inject constructor(
                 _groupSaveStates.value = _groupSaveStates.value + (targetGroupId to newState)
 
                 android.util.Log.w("TodoEditVM", "分组 $targetGroupId 保存成功, todoId=$newTodoId")
+
+                // ✅ 保存真正完成后才 emit 事件（确保首页刷新时 DB 已写入）
+                // 注意：必须放在 viewModelScope.launch 内、try 末尾，不能放在 saveAllGroups 循环里
+                TodoEventBus.emit(TodoEvent.TodoSaved)
             } catch (e: Exception) {
                 android.util.Log.e("TodoEditVM", "分组 $targetGroupId 保存失败", e)
             }
@@ -1092,10 +1096,9 @@ class TodoEditViewModel @Inject constructor(
 
         android.util.Log.w("TodoEditVM", "saveAllGroups 完成, 共保存 $savedCount 个分组")
 
-        // 通知首页 HomeViewModel 刷新数据（通过事件总线，避免实例作用域错位）
-        if (savedCount > 0) {
-            TodoEventBus.emit(TodoEvent.TodoSaved)
-        }
+        // 不再在这里 emit TodoSaved
+        // 事件已移到 saveGroup() 的 viewModelScope.launch 内、try 末尾
+        // 确保每个分组 DB 写入完成后再 emit，避免首页读到旧数据
 
         return savedCount
     }
