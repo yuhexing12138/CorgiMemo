@@ -704,6 +704,23 @@ private fun SubTaskInTodoListItem(
             },
             modifier = Modifier.weight(1f)
         )
+
+        // 子任务自身附件计数（独立于父卡聚合）
+        val subImageCount = parseImagePathsCount(subTask.imagePaths)
+        val subVoiceCount = parseVoicePathsCount(subTask.voicePaths)
+        if (subImageCount > 0 || subVoiceCount > 0) {
+            Spacer(modifier = Modifier.width(8.dp))
+            val text = buildString {
+                if (subVoiceCount > 0) append("🎤×$subVoiceCount")
+                if (subImageCount > 0 && subVoiceCount > 0) append(" ")
+                if (subImageCount > 0) append("🖼×$subImageCount")
+            }
+            Text(
+                text = text,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
