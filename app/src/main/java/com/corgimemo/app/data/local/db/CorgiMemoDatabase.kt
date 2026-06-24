@@ -29,7 +29,7 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class],
-    version = 27,
+    version = 28,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -90,7 +90,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
                     .build()
                 INSTANCE = instance
                 instance
@@ -775,6 +775,21 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_priority ON inspirations(priority)")
             database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_status_createdAt ON inspirations(status, createdAt)")
             database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_dueDate_status ON inspirations(dueDate, status)")
+        }
+    }
+
+    /**
+     * v27 → v28: 为 sub_tasks 表新增附件字段
+     *
+     * 新增字段：
+     * - imagePaths: JSON 数组字符串，默认 ''，与 TodoItem.imagePaths 编码规则一致
+     * - voicePaths: JSON 数组字符串，默认 ''，支持多语音
+     */
+    private val MIGRATION_27_28 = object : Migration(27, 28) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // 为 sub_tasks 添加附件字段（默认空字符串，向后兼容旧数据）
+            database.execSQL("ALTER TABLE sub_tasks ADD COLUMN imagePaths TEXT NOT NULL DEFAULT ''")
+            database.execSQL("ALTER TABLE sub_tasks ADD COLUMN voicePaths TEXT NOT NULL DEFAULT ''")
         }
     }
     // companion object 闭合
