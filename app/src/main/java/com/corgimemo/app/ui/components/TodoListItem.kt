@@ -873,3 +873,51 @@ private fun CountdownDisplay(
         color = MaterialTheme.colorScheme.primary
     )
 }
+
+/**
+ * 解析 JSON 数组格式的图片路径字符串，返回图片数量
+ *
+ * @param imagePathsJson org.json.JSONArray 序列化的字符串
+ * @return 图片数量（解析失败或为空返回 0）
+ */
+private fun parseImagePathsCount(imagePathsJson: String): Int {
+    if (imagePathsJson.isBlank()) return 0
+    return try {
+        org.json.JSONArray(imagePathsJson).length()
+    } catch (e: Exception) {
+        0
+    }
+}
+
+/**
+ * 解析 JSON 数组格式的语音路径字符串，返回语音数量
+ *
+ * @param voicePathsJson org.json.JSONArray 序列化的字符串
+ * @return 语音数量（解析失败或为空返回 0）
+ */
+private fun parseVoicePathsCount(voicePathsJson: String): Int {
+    if (voicePathsJson.isBlank()) return 0
+    return try {
+        org.json.JSONArray(voicePathsJson).length()
+    } catch (e: Exception) {
+        0
+    }
+}
+
+/**
+ * 聚合待办卡片附件数量（父自身 + 所有子任务）
+ *
+ * @param todo 父待办
+ * @param subTasks 子任务列表
+ * @return Pair(图片总数, 语音总数)
+ */
+private fun aggregateAttachmentCounts(
+    todo: TodoItem,
+    subTasks: List<SubTask>
+): Pair<Int, Int> {
+    val imageCount = parseImagePathsCount(todo.imagePaths) +
+            subTasks.sumOf { parseImagePathsCount(it.imagePaths) }
+    val voiceCount = (if (todo.voiceNotePath != null) 1 else 0) +
+            subTasks.sumOf { parseVoicePathsCount(it.voicePaths) }
+    return imageCount to voiceCount
+}
