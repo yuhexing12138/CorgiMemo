@@ -142,6 +142,77 @@ fun SwipeableTodoBox(
      */
     val revealProgressDp = (-cardOffsetX.value / density.density).coerceIn(0f, 216f)
 
+    /**
+     * 飞书式按钮入场动画（核心）
+     *
+     * 思路：根据 revealProgressDp 自动将每个按钮的 alpha/scaleX/translateX
+     * animateTo 到对应阶段的目标值，形成"依次滑入 + 渐入"效果。
+     */
+    LaunchedEffect(revealProgressDp) {
+        // 按钮 1 动画（阶段 1: 30~78dp）
+        when {
+            revealProgressDp >= stage2ThresholdDp -> {
+                // 阶段 2+：按钮 1 已完全显示
+                btn1Alpha.animateTo(1f, tween(80, easing = FastOutSlowInEasing))
+                btn1ScaleX.animateTo(1f, tween(80, easing = FastOutSlowInEasing))
+                btn1TranslateX.animateTo(0f, tween(80, easing = FastOutSlowInEasing))
+            }
+            revealProgressDp >= stage1ThresholdDp -> {
+                // 阶段 1：按钮 1 渐入中
+                val progress = ((revealProgressDp - stage1ThresholdDp) / 48f).coerceIn(0f, 1f)
+                btn1Alpha.animateTo(progress, tween(80, easing = FastOutSlowInEasing))
+                btn1ScaleX.animateTo(0.7f + 0.3f * progress, tween(80, easing = FastOutSlowInEasing))
+                btn1TranslateX.animateTo(24f * (1f - progress), tween(80, easing = FastOutSlowInEasing))
+            }
+            else -> {
+                // 阶段 0：按钮 1 隐藏
+                btn1Alpha.animateTo(0f, tween(80, easing = FastOutSlowInEasing))
+                btn1ScaleX.animateTo(0.7f, tween(80, easing = FastOutSlowInEasing))
+                btn1TranslateX.animateTo(24f, tween(80, easing = FastOutSlowInEasing))
+            }
+        }
+
+        // 按钮 2 动画（阶段 2: 78~126dp）
+        when {
+            revealProgressDp >= stage3ThresholdDp -> {
+                btn2Alpha.animateTo(1f, tween(80, easing = FastOutSlowInEasing))
+                btn2ScaleX.animateTo(1f, tween(80, easing = FastOutSlowInEasing))
+                btn2TranslateX.animateTo(0f, tween(80, easing = FastOutSlowInEasing))
+            }
+            revealProgressDp >= stage2ThresholdDp -> {
+                val progress = ((revealProgressDp - stage2ThresholdDp) / 48f).coerceIn(0f, 1f)
+                btn2Alpha.animateTo(progress, tween(80, easing = FastOutSlowInEasing))
+                btn2ScaleX.animateTo(0.7f + 0.3f * progress, tween(80, easing = FastOutSlowInEasing))
+                btn2TranslateX.animateTo(24f * (1f - progress), tween(80, easing = FastOutSlowInEasing))
+            }
+            else -> {
+                btn2Alpha.animateTo(0f, tween(80, easing = FastOutSlowInEasing))
+                btn2ScaleX.animateTo(0.7f, tween(80, easing = FastOutSlowInEasing))
+                btn2TranslateX.animateTo(24f, tween(80, easing = FastOutSlowInEasing))
+            }
+        }
+
+        // 按钮 3 动画（阶段 3: 126~174dp）
+        when {
+            revealProgressDp >= stage4ThresholdDp -> {
+                btn3Alpha.animateTo(1f, tween(80, easing = FastOutSlowInEasing))
+                btn3ScaleX.animateTo(1f, tween(80, easing = FastOutSlowInEasing))
+                btn3TranslateX.animateTo(0f, tween(80, easing = FastOutSlowInEasing))
+            }
+            revealProgressDp >= stage3ThresholdDp -> {
+                val progress = ((revealProgressDp - stage3ThresholdDp) / 48f).coerceIn(0f, 1f)
+                btn3Alpha.animateTo(progress, tween(80, easing = FastOutSlowInEasing))
+                btn3ScaleX.animateTo(0.7f + 0.3f * progress, tween(80, easing = FastOutSlowInEasing))
+                btn3TranslateX.animateTo(24f * (1f - progress), tween(80, easing = FastOutSlowInEasing))
+            }
+            else -> {
+                btn3Alpha.animateTo(0f, tween(80, easing = FastOutSlowInEasing))
+                btn3ScaleX.animateTo(0.7f, tween(80, easing = FastOutSlowInEasing))
+                btn3TranslateX.animateTo(24f, tween(80, easing = FastOutSlowInEasing))
+            }
+        }
+    }
+
     Layout(
         modifier = modifier.fillMaxWidth(),
         content = {
@@ -220,9 +291,9 @@ fun SwipeableTodoBox(
                             icon = Icons.Filled.VerticalAlignTop,
                             label = "置顶",
                             backgroundColor = Color(0xFFFF9A5C),
-                            alpha = 0f,  // Task 5: 由 revealProgress 驱动
-                            scaleX = 0.7f,
-                            translateX = 24f,
+                            alpha = btn1Alpha.value,
+                            scaleX = btn1ScaleX.value,
+                            translateX = btn1TranslateX.value,
                             onClick = {
                                 coroutineScope.launch {
                                     cardOffsetX.animateTo(0f, spring())
@@ -240,9 +311,9 @@ fun SwipeableTodoBox(
                             icon = Icons.Filled.IosShare,
                             label = "分享",
                             backgroundColor = Color(0xFF90CAF9),
-                            alpha = 0f,
-                            scaleX = 0.7f,
-                            translateX = 24f,
+                            alpha = btn2Alpha.value,
+                            scaleX = btn2ScaleX.value,
+                            translateX = btn2TranslateX.value,
                             onClick = {
                                 coroutineScope.launch {
                                     cardOffsetX.animateTo(0f, spring())
@@ -260,9 +331,9 @@ fun SwipeableTodoBox(
                             icon = Icons.Filled.Delete,
                             label = "删除",
                             backgroundColor = Color(0xFFFF8A80),
-                            alpha = 0f,
-                            scaleX = 0.7f,
-                            translateX = 24f,
+                            alpha = btn3Alpha.value,
+                            scaleX = btn3ScaleX.value,
+                            translateX = btn3TranslateX.value,
                             onClick = {
                                 coroutineScope.launch {
                                     cardOffsetX.animateTo(0f, spring())
