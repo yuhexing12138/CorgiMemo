@@ -30,6 +30,7 @@ object CategoryType {
     const val LIFE = 2
     const val SPORT = 3
     const val CUSTOM = 4
+    const val ENTERTAINMENT = 5
 }
 
 /**
@@ -40,4 +41,5 @@ object DefaultCategoryName {
     const val WORK = "工作"
     const val LIFE = "生活"
     const val SPORT = "运动"
+    const val ENTERTAINMENT = "娱乐"
 }
