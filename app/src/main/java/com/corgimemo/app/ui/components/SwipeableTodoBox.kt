@@ -109,6 +109,39 @@ fun SwipeableTodoBox(
         }
     }
 
+    /** 按钮 1（置顶）的 alpha/scaleX/translateX Animatable */
+    val btn1Alpha = remember { Animatable(0f) }
+    val btn1ScaleX = remember { Animatable(0.7f) }
+    val btn1TranslateX = remember { Animatable(24f) }
+
+    /** 按钮 2（分享）的 alpha/scaleX/translateX Animatable */
+    val btn2Alpha = remember { Animatable(0f) }
+    val btn2ScaleX = remember { Animatable(0.7f) }
+    val btn2TranslateX = remember { Animatable(24f) }
+
+    /** 按钮 3（删除）的 alpha/scaleX/translateX Animatable */
+    val btn3Alpha = remember { Animatable(0f) }
+    val btn3ScaleX = remember { Animatable(0.7f) }
+    val btn3TranslateX = remember { Animatable(24f) }
+
+    /**
+     * 阶段边界常量（dp）
+     * - 阶段 0 → 1 边界：30dp（按钮 1 开始）
+     * - 阶段 1 → 2 边界：30 + 48 = 78dp（按钮 2 开始）
+     * - 阶段 2 → 3 边界：78 + 48 = 126dp（按钮 3 开始）
+     * - 阶段 3 → 4 边界：126 + 48 = 174dp（按钮 3 完全显示）
+     */
+    val stage1ThresholdDp = 30f
+    val stage2ThresholdDp = 78f
+    val stage3ThresholdDp = 126f
+    val stage4ThresholdDp = 174f
+
+    /**
+     * 实时计算 revealProgress（基于 cardOffsetX.value）
+     * 单位：dp，范围 0f..216f
+     */
+    val revealProgressDp = (-cardOffsetX.value / density.density).coerceIn(0f, 216f)
+
     Layout(
         modifier = modifier.fillMaxWidth(),
         content = {
