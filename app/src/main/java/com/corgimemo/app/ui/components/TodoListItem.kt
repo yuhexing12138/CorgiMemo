@@ -403,42 +403,8 @@ fun TodoListItem(
                                             )
                                             .padding(horizontal = 8.dp, vertical = 2.dp)
                                     )
-
-                                    // 语音备注图标
-                                    if (todo.voiceNotePath != null) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "🎤",
-                                            fontSize = 12.sp
-                                        )
-                                        todo.voiceDuration?.let { duration ->
-                                            Spacer(modifier = Modifier.width(2.dp))
-                                            Text(
-                                                text = "${duration}s",
-                                                fontSize = 10.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-                            } else if (todo.voiceNotePath != null) {
-                                // 无分类但有语音备注时单独显示
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                ) {
-                                    Text(
-                                        text = "🎤",
-                                        fontSize = 12.sp
-                                    )
-                                    todo.voiceDuration?.let { duration ->
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                        Text(
-                                            text = "语音备注 ${duration}s",
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                                    // 注意：原"🎤 3s"语音备注内联显示已删除
+                                    // 语音附件数量现在通过附件聚合计数（🎤×N）显示
                                 }
                             }
 
