@@ -652,8 +652,6 @@ fun HomeScreen(
                                         onShareAsImage = {
                                             shareTodoAsImage(context, todo, categories)
                                         },
-                                        onPinClick = {},
-                                        onShare = {},
                                         onToggleExpand = {
                                             viewModel.toggleExpand(todo.id)
                                         },

@@ -7,7 +7,6 @@ import com.corgimemo.app.data.event.TodoEvent
 import com.corgimemo.app.data.event.TodoEventBus
 import com.corgimemo.app.data.local.db.ContentBlockDao
 import com.corgimemo.app.data.local.db.ContentBlockEntity
-import com.corgimemo.app.data.local.db.CorgiMemoDatabase
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CardSearchResult
@@ -16,14 +15,11 @@ import com.corgimemo.app.data.model.CategoryType
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.data.repository.CardRelationRepository
-import com.corgimemo.app.data.repository.CategoryKeywordRepository
-import com.corgimemo.app.data.repository.CategoryMatcher
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.data.repository.SubTaskManager
 import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.domain.ReminderRecommender
-import com.corgimemo.app.model.UserType
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -32,7 +28,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -64,15 +59,12 @@ data class GroupSaveState(
 class TodoEditViewModel @Inject constructor(
     private val todoRepository: TodoRepository,
     private val categoryRepository: CategoryRepository,
-    private val categoryKeywordRepository: CategoryKeywordRepository,
-    private val categoryMatcher: CategoryMatcher,
     private val corgiPreferences: CorgiPreferences,
     private val cardRelationRepository: CardRelationRepository,
     private val contentBlockDao: ContentBlockDao,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
-    private var recommendationJob: Job? = null
     /** 防抖导出任务引用：用于延迟执行 MarkdownParser.export() */
     private var _debounceJob: Job? = null
     private val reminderRecommender = ReminderRecommender()
@@ -126,18 +118,11 @@ class TodoEditViewModel @Inject constructor(
     private val _categories = MutableStateFlow<List<Category>>(emptyList())
     val categories: StateFlow<List<Category>> = _categories.asStateFlow()
 
-    private val _recommendedCategory = MutableStateFlow<Category?>(null)
-    val recommendedCategory: StateFlow<Category?> = _recommendedCategory.asStateFlow()
-
-    private val _hasManuallySelectedCategory = MutableStateFlow(false)
-    val hasManuallySelectedCategory: StateFlow<Boolean> = _hasManuallySelectedCategory.asStateFlow()
-
-    private val _showKeywordSelection = MutableStateFlow(false)
-    val showKeywordSelection: StateFlow<Boolean> = _showKeywordSelection.asStateFlow()
-
-    private val _extractedKeywords = MutableStateFlow<List<String>>(emptyList())
-    val extractedKeywords: StateFlow<List<String>> = _extractedKeywords.asStateFlow()
-
+    /**
+     * 注：原"推荐分类 / 关键词选择 / 是否手动选择"等状态已移除。
+     * 待办编辑页不再做关键词推荐分类（功能仅在灵感编辑页保留）。
+     * 新建模式下 _categoryId.value 保持 0L，分类按钮显示"分类"占位符。
+     */
     private val _isCategoriesLoaded = MutableStateFlow(false)
     val isCategoriesLoaded: StateFlow<Boolean> = _isCategoriesLoaded.asStateFlow()
 
@@ -393,16 +378,10 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
-     * 设置标题并触发智能分类推荐（带防抖）
+     * 注：原 setTitleWithRecommendation（设置标题并触发分类推荐）已移除。
+     * 待办编辑页不再做关键词推荐分类，UI 层应改用 setTitle()。
+     * 该功能仅在灵感编辑页（InspirationEditViewModel）保留。
      */
-    fun setTitleWithRecommendation(title: String) {
-        _title.value = title
-        recommendationJob?.cancel()
-        recommendationJob = viewModelScope.launch {
-            delay(300)
-            triggerRecommendation()
-        }
-    }
 
     fun setContent(content: String) {
         _content.value = content
@@ -410,7 +389,6 @@ class TodoEditViewModel @Inject constructor(
 
     fun setCategoryId(categoryId: Long) {
         _categoryId.value = categoryId
-        _hasManuallySelectedCategory.value = true
     }
 
     /**
@@ -421,7 +399,6 @@ class TodoEditViewModel @Inject constructor(
      */
     fun clearCategory() {
         _categoryId.value = 0L
-        _hasManuallySelectedCategory.value = false
     }
 
     fun setPriority(priority: Int) {
@@ -628,7 +605,6 @@ class TodoEditViewModel @Inject constructor(
                 _title.value = todo.title
                 _content.value = todo.content ?: ""
                 _categoryId.value = todo.categoryId
-                _hasManuallySelectedCategory.value = todo.categoryId > 0
                 _priority.value = todo.priority
                 _startDate.value = todo.startDate
                 _dueDate.value = todo.dueDate
@@ -723,22 +699,6 @@ class TodoEditViewModel @Inject constructor(
     fun saveTodo(): Boolean {
         if (_title.value.isBlank()) {
             return false
-        }
-
-        if (!_hasManuallySelectedCategory.value) {
-            val categoriesList = _categories.value
-            
-            if (categoriesList.isEmpty()) {
-                performSave()
-                return true
-            }
-
-            val keywords = com.corgimemo.app.data.util.KeywordExtractor.extractKeywords(_title.value)
-            if (keywords.isNotEmpty()) {
-                _extractedKeywords.value = keywords
-                _showKeywordSelection.value = true
-                return false
-            }
         }
 
         performSave()
@@ -1170,58 +1130,13 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
-     * 确认关键词选择并保存
+     * 确认关键词选择并保存（待办编辑页不再需要此功能，仅在灵感编辑页保留）
      *
-     * @param selectedKeyword 用户选择的关键词
-     * @param selectedCategoryId 用户选择的分类 ID
-     * @return 是否成功
+     * 注：以下 4 个方法（confirmKeywordSelection / skipKeywordSelection /
+     *     cancelKeywordSelection / dismissKeywordSelection）已整体移除。
+     *     关键词推荐分类功能仅在灵感编辑页（InspirationEditViewModel）保留。
      */
-    fun confirmKeywordSelection(selectedKeyword: String, selectedCategoryId: Long): Boolean {
-        if (selectedKeyword.isBlank() || selectedCategoryId <= 0) {
-            return false
-        }
-
-        viewModelScope.launch {
-            val selectedCategory = _categories.value.find { it.id == selectedCategoryId }
-            selectedCategory?.let { category ->
-                categoryKeywordRepository.addUserKeyword(
-                    keyword = selectedKeyword,
-                    categoryType = category.type
-                )
-            }
-
-            _categoryId.value = selectedCategoryId
-            _hasManuallySelectedCategory.value = true
-            _showKeywordSelection.value = false
-
-            performSave()
-        }
-
-        return true
-    }
-
-    /**
-     * 跳过关键词添加，直接保存
-     */
-    fun skipKeywordSelection() {
-        _showKeywordSelection.value = false
-        _hasManuallySelectedCategory.value = true
-        performSave()
-    }
-
-    /**
-     * 取消关键词选择
-     */
-    fun cancelKeywordSelection() {
-        _showKeywordSelection.value = false
-    }
-
-    /**
-     * 关闭关键词选择对话框
-     */
-    fun dismissKeywordSelection() {
-        _showKeywordSelection.value = false
-    }
+    // 占位：原方法体已删除
 
     /**
      * 保存子任务（编辑模式下先删除旧子任务再添加新的）
@@ -1274,19 +1189,16 @@ class TodoEditViewModel @Inject constructor(
                 android.util.Log.w("TodoEditVM", "加载到 ${allCategories.size} 个分类: $allCategories")
                 _categories.value = allCategories
 
-                if (existingTodo == null && _categoryId.value == 0L) {
-                    val userTypeValue = corgiPreferences.userType.first()
-                    val userType = UserType.fromValue(userTypeValue)
-                    val defaultCategory = when (userType) {
-                        UserType.WORKER -> allCategories.find { it.type == CategoryType.WORK }
-                        UserType.STUDENT -> allCategories.find { it.type == CategoryType.STUDY }
-                        else -> allCategories.firstOrNull()
-                    }
-                    defaultCategory?.let {
-                        _categoryId.value = it.id
-                        android.util.Log.w("TodoEditVM", "设置默认分类: ${it.name} (ID=${it.id})")
-                    }
-                }
+                /**
+                 * 新建模式下不自动设置默认分类
+                 *
+                 * 历史实现：根据用户身份（打工人/学生）自动选中"工作/学习"作为默认分类。
+                 * 问题：用户进入新建待办页时还未编辑，分类按钮就显示了具体分类名（如"学习"），
+                 *       与"用户主动选择"的语义不符，干扰用户预期。
+                 *
+                 * 当前策略：保持 _categoryId.value = 0L，分类按钮显示"分类"占位符，
+                 *           由用户主动点击按钮选择分类。关键词推荐分类功能仅在灵感编辑页保留。
+                 */
             } catch (e: Exception) {
                 android.util.Log.e("TodoEditVM", "加载分类失败", e)
                 e.printStackTrace()
@@ -1328,40 +1240,10 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
-     * 触发分类推荐
+     * 注：原 triggerRecommendation() / acceptRecommendation() 方法已整体移除。
+     * 分类推荐（基于关键词匹配）功能仅在灵感编辑页（InspirationEditViewModel）保留。
+     * 待办编辑页不再做自动推荐，由用户主动选择分类。
      */
-    fun triggerRecommendation() {
-        viewModelScope.launch {
-            android.util.Log.w("TodoEditVM", "触发推荐, title='${_title.value}', hasManuallySelectedCategory=${_hasManuallySelectedCategory.value}")
-            
-            val recommendation = categoryMatcher.recommendCategory(
-                title = _title.value,
-                content = _content.value.takeIf { it.isNotBlank() }
-            )
-
-            android.util.Log.w("TodoEditVM", "推荐结果: $recommendation")
-
-            if (recommendation != null) {
-                val category = _categories.value.find { it.type == recommendation.categoryType }
-                android.util.Log.w("TodoEditVM", "匹配到分类: $category")
-                _recommendedCategory.value = category
-            } else {
-                _recommendedCategory.value = null
-                android.util.Log.w("TodoEditVM", "无匹配推荐, title=${_title.value}, recommendedCategory=null, hasManuallySelected=${_hasManuallySelectedCategory.value}")
-            }
-        }
-    }
-
-    /**
-     * 接受推荐的分类
-     */
-    fun acceptRecommendation() {
-        _recommendedCategory.value?.let { category ->
-            _categoryId.value = category.id
-            _hasManuallySelectedCategory.value = true
-            _recommendedCategory.value = null
-        }
-    }
 
     // ==================== 语音备注相关方法 ====================
 

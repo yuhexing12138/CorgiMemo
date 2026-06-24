@@ -548,7 +548,13 @@ fun TodoEditScreen(
 
             /** 将第一行（主任务行）的文本同步为标题，确保 saveTodo() 校验通过 */
             val firstLineText = todoLines.firstOrNull()?.text ?: ""
-            viewModel.setTitleWithRecommendation(firstLineText)
+            /**
+             * 同步标题到 ViewModel
+             *
+             * 注：原 setTitleWithRecommendation()（含分类推荐）已被替换为 setTitle()。
+             * 待办编辑页不再做关键词推荐分类，分类推荐仅在灵感编辑页保留。
+             */
+            viewModel.setTitle(firstLineText)
 
             /**
              * 同步子任务数据到 ViewModel（整体替换策略）

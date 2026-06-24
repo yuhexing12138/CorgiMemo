@@ -1,0 +1,181 @@
+<!-- 设计稿：待办卡片左滑交互 -->
+<style>
+  .phone {
+    width: 360px;
+    height: 720px;
+    margin: 24px auto;
+    background: #F8F6F3;
+    border-radius: 32px;
+    padding: 20px 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  .phone-title {
+    font-size: 16px;
+    color: #999;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .card {
+    position: relative;
+    background: #FFFFFF;
+    border-radius: 20px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-left: 3px solid #FF9A5C;
+    min-height: 72px;
+  }
+  .card-thumb {
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg,#FF9A5C,#FFE4CC);
+    border-radius: 12px;
+    flex-shrink: 0;
+  }
+  .card-body { flex: 1; }
+  .card-title { font-size: 16px; font-weight: 600; color: #2D2D2D; margin-bottom: 6px; }
+  .card-meta { font-size: 12px; color: #999; }
+  .actions {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    border-radius: 0 20px 20px 0;
+    overflow: hidden;
+  }
+  .action-btn {
+    width: 72px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 12px;
+    gap: 4px;
+  }
+  .action-btn .icon {
+    font-size: 20px;
+  }
+  .btn-pinned { background: #FF9A5C; }     /* 主题橙（UI 规范） */
+  .btn-share  { background: #90CAF9; }     /* 柔和蓝（UI 规范 低优先级） */
+  .btn-delete { background: #FF8A80; }     /* 柔和红（UI 规范 高优先级） */
+  .stage {
+    text-align: center;
+    margin: 32px 0 12px;
+    color: #666;
+    font-size: 14px;
+  }
+  .stage-title { color: #2D2D2D; font-weight: 600; margin-bottom: 6px; font-size: 15px; }
+  .row { display:flex; gap: 12px; align-items: flex-start; }
+</style>
+
+<h2>待办卡片左滑交互 · 设计稿</h2>
+<p class="subtitle">参考图2→图3 的飞书风格，3 个按钮依次堆叠出现</p>
+
+<div class="row">
+  <!-- 阶段 1：未滑动 -->
+  <div>
+    <div class="stage">
+      <div class="stage-title">阶段 1 · 初始</div>
+      <div>卡片完整显示</div>
+    </div>
+    <div class="phone">
+      <div class="card">
+        <div class="card-thumb"></div>
+        <div class="card-body">
+          <div class="card-title">媒体文件</div>
+          <div class="card-meta">工作 · 2026/06/04</div>
+        </div>
+      </div>
+      <div class="card" style="border-left-color:#FFB74D">
+        <div class="card-body">
+          <div class="card-title">可以</div>
+          <div class="card-meta">工作 · 2026/06/24</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 阶段 2：开始滑动（按钮 1 出现） -->
+  <div>
+    <div class="stage">
+      <div class="stage-title">阶段 2 · 滑过 ~20% 阈值</div>
+      <div>置顶按钮先出现</div>
+    </div>
+    <div class="phone">
+      <div class="card" style="margin-left:-30px; transition:none;">
+        <div class="card-thumb"></div>
+        <div class="card-body">
+          <div class="card-title">媒体文件</div>
+          <div class="card-meta">工作 · 2026/06/04</div>
+        </div>
+        <div class="actions" style="right:0; width:72px;">
+          <div class="action-btn btn-pinned">
+            <span class="icon">📌</span>
+            <span>置顶</span>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="border-left-color:#FFB74D">
+        <div class="card-body">
+          <div class="card-title">可以</div>
+          <div class="card-meta">工作 · 2026/06/24</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 阶段 3：完全展开（3 按钮） -->
+  <div>
+    <div class="stage">
+      <div class="stage-title">阶段 3 · 完全展开</div>
+      <div>3 个按钮依次出现 · 共 4 个圆角</div>
+    </div>
+    <div class="phone">
+      <div class="card" style="margin-left:-216px; transition:none;">
+        <div class="card-thumb"></div>
+        <div class="card-body">
+          <div class="card-title">媒体文件</div>
+          <div class="card-meta">工作 · 2026/06/04</div>
+        </div>
+        <div class="actions" style="right:0; width:216px;">
+          <div class="action-btn btn-pinned">
+            <span class="icon">📌</span>
+            <span>置顶</span>
+          </div>
+          <div class="action-btn btn-share">
+            <span class="icon">↗</span>
+            <span>分享</span>
+          </div>
+          <div class="action-btn btn-delete">
+            <span class="icon">🗑</span>
+            <span>删除</span>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="border-left-color:#FFB74D">
+        <div class="card-body">
+          <div class="card-title">可以</div>
+          <div class="card-meta">工作 · 2026/06/24</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top: 24px;">关键设计决策</h3>
+<ul>
+  <li><b>按钮组宽度：</b>每个按钮 72dp，3 个共 216dp（≈60% 屏幕宽）</li>
+  <li><b>颜色（取自规范）：</b>置顶 = <code>#FF9A5C</code> 主题橙、分享 = <code>#90CAF9</code> 柔和蓝、删除 = <code>#FF8A80</code> 柔和红</li>
+  <li><b>圆角：</b>按钮组 <code>border-radius: 0 20px 20px 0</code>，与卡片左半部分的 20dp 圆角形成连贯的"卡片+操作区"整体</li>
+  <li><b>动画时序：</b>卡片位移 0→100% (250ms) → 按钮 1 透明度 0→1 (50ms) → 按钮 2 透明度 0→1 (50ms) → 按钮 3 透明度 0→1 (50ms)，总 300ms</li>
+  <li><b>按钮区域高度：</b>绝对定位 <code>top:0; bottom:0</code>，与卡片等高，按钮内容 <code>justify-content:center</code> 垂直居中</li>
+  <li><b>分享：</b>复用现有 <code>shareTodoAsImage(context, todo, categories)</code>（与长按菜单的"分享"入口行为一致：渲染为图片并调起系统分享面板）</li>
+  <li><b>不实现后端置顶：</b>点击置顶按钮仅打印日志（<code>Log.w("TodoCardSwipe", "置顶：todoId=$id")</code>），可后续接入</li>
+</ul>
