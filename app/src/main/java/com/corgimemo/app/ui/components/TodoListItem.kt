@@ -324,14 +324,6 @@ fun TodoListItem(
                                         else MaterialTheme.colorScheme.onSurface
                                     )
                                 }
-                                subTaskProgress?.let { progress ->
-                                    Text(
-                                        text = " ($progress)",
-                                        fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
-                                    )
-                                }
                             }
 
                             // 完成时间
