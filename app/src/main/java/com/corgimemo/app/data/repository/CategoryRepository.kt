@@ -23,7 +23,9 @@ class CategoryRepository @Inject constructor(
 
     /**
      * 初始化默认分类
-     * 如果数据库中没有分类，则创建学习、工作、生活、运动四个默认分类
+     * 如果数据库中没有分类，则创建学习、工作、生活、娱乐、运动五个默认分类
+     *
+     * 幂等性：使用"不存在则插入"模式，多次调用安全
      */
     suspend fun initDefaultCategories() = withContext(ioDispatcher) {
         val existingCategories = categoryDao.getAllCategoriesList()
@@ -32,13 +34,19 @@ class CategoryRepository @Inject constructor(
                 Category(name = DefaultCategoryName.STUDY, type = CategoryType.STUDY, isDefault = true),
                 Category(name = DefaultCategoryName.WORK, type = CategoryType.WORK, isDefault = true),
                 Category(name = DefaultCategoryName.LIFE, type = CategoryType.LIFE, isDefault = true),
-                Category(name = DefaultCategoryName.SPORT, type = CategoryType.SPORT, isDefault = true)
+                Category(name = DefaultCategoryName.SPORT, type = CategoryType.SPORT, isDefault = true),
+                Category(name = DefaultCategoryName.ENTERTAINMENT, type = CategoryType.ENTERTAINMENT, isDefault = true)
             )
             categoryDao.insertAll(defaultCategories)
         } else {
             val hasSport = existingCategories.any { it.type == CategoryType.SPORT }
             if (!hasSport) {
                 categoryDao.insert(Category(name = DefaultCategoryName.SPORT, type = CategoryType.SPORT, isDefault = true))
+            }
+            // 兼容老用户：补齐"娱乐"分类
+            val hasEntertainment = existingCategories.any { it.type == CategoryType.ENTERTAINMENT }
+            if (!hasEntertainment) {
+                categoryDao.insert(Category(name = DefaultCategoryName.ENTERTAINMENT, type = CategoryType.ENTERTAINMENT, isDefault = true))
             }
         }
     }
