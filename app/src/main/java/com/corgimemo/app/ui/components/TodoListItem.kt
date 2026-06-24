@@ -1,13 +1,13 @@
-package com.corgimemo.app.ui.components
+﻿package com.corgimemo.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,14 +24,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -47,11 +45,10 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.corgimemo.app.data.model.SubTask
@@ -64,28 +61,30 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * 待办列表项组件
+ * 寰呭姙鍒楄〃椤圭粍浠?
  *
- * @param todo 待办数据
- * @param subTaskProgress 子任务进度（如 "2/5"，无子任务时为 null）
- * @param subTasks 子任务列表
- * @param isExpanded 是否展开显示子任务
- * @param isBatchMode 是否处于批量选择模式
- * @param isSelected 是否已选中（批量模式下）
- * @param isDragging 是否正在被拖拽（用于调整 DragHandle 等子组件样式）
- * @param categoryName 分类名称
- * @param categoryIcon 分类图标（emoji）
- * @param onToggleComplete 切换完成状态回调
- * @param onDelete 删除回调
- * @param onClick 点击回调（普通模式）
- * @param onLongClick 长按回调（进入批量模式）
- * @param onSelectClick 选择回调（批量模式下点击）
- * @param onShareAsImage 分享为图片回调
- * @param onToggleExpand 切换展开状态回调
- * @param onToggleSubTask 切换子任务完成状态回调
- * @param start 前置内容槽位（用于放置 DragHandle 等拖拽相关 UI）
- * @param relationHint 关联提示文字
- * @param searchQuery 搜索关键词（非空时对标题和内容进行高亮显示）
+ * @param todo 寰呭姙鏁版嵁
+ * @param subTaskProgress 瀛愪换鍔¤繘搴︼紙濡?"2/5"锛屾棤瀛愪换鍔℃椂涓?null锛?
+ * @param subTasks 瀛愪换鍔″垪琛?
+ * @param isExpanded 鏄惁灞曞紑鏄剧ず瀛愪换鍔?
+ * @param isBatchMode 鏄惁澶勪簬鎵归噺閫夋嫨妯″紡
+ * @param isSelected 鏄惁宸查€変腑锛堟壒閲忔ā寮忎笅锛?
+ * @param isDragging 鏄惁姝ｅ湪琚嫋鎷斤紙鐢ㄤ簬璋冩暣 DragHandle 绛夊瓙缁勪欢鏍峰紡锛?
+ * @param categoryName 鍒嗙被鍚嶇О
+ * @param categoryIcon 鍒嗙被鍥炬爣锛坋moji锛?
+ * @param onToggleComplete 鍒囨崲瀹屾垚鐘舵€佸洖璋?
+ * @param onDelete 鍒犻櫎鍥炶皟
+ * @param onClick 鐐瑰嚮鍥炶皟锛堟櫘閫氭ā寮忥級
+ * @param onLongClick 闀挎寜鍥炶皟锛堣繘鍏ユ壒閲忔ā寮忥級
+ * @param onSelectClick 閫夋嫨鍥炶皟锛堟壒閲忔ā寮忎笅鐐瑰嚮锛?
+ * @param onShareAsImage 鍒嗕韩涓哄浘鐗囧洖璋?
+ * @param onPinClick 缃《鍥炶皟锛堝乏婊戝悗鐐瑰嚮缃《鎸夐挳瑙﹀彂锛?
+ * @param onShare 鍒嗕韩鍥炶皟锛堝乏婊戝悗鐐瑰嚮鍒嗕韩鎸夐挳瑙﹀彂锛屼笌 onShareAsImage 璇箟涓€鑷达紝缁熶竴鍒嗕韩涓哄浘鐗囷級
+ * @param onToggleExpand 鍒囨崲灞曞紑鐘舵€佸洖璋?
+ * @param onToggleSubTask 鍒囨崲瀛愪换鍔″畬鎴愮姸鎬佸洖璋?
+ * @param start 鍓嶇疆鍐呭妲戒綅锛堢敤浜庢斁缃?DragHandle 绛夋嫋鎷界浉鍏?UI锛?
+ * @param relationHint 鍏宠仈鎻愮ず鏂囧瓧
+ * @param searchQuery 鎼滅储鍏抽敭璇嶏紙闈炵┖鏃跺鏍囬鍜屽唴瀹硅繘琛岄珮浜樉绀猴級
  */
 @OptIn(
     androidx.compose.foundation.ExperimentalFoundationApi::class,
@@ -108,28 +107,27 @@ fun TodoListItem(
     onLongClick: () -> Unit = {},
     onSelectClick: () -> Unit = {},
     onShareAsImage: () -> Unit = {},
+    onPinClick: () -> Unit = {},
+    onShare: () -> Unit = {},
     onToggleExpand: () -> Unit = {},
     onToggleSubTask: (Long) -> Unit = {},
     start: @Composable () -> Unit = {},
     relationHint: String? = null,
-    /** 搜索关键词（非空时对标题和内容进行高亮显示） */
+    /** 鎼滅储鍏抽敭璇嶏紙闈炵┖鏃跺鏍囬鍜屽唴瀹硅繘琛岄珮浜樉绀猴級 */
     searchQuery: String = ""
 ) {
-    val deleteWidth = 80.dp
-    var offsetX by remember { mutableStateOf(0f) }
-
-    /** 逐区间动画参数：每字符延迟 2ms，最大延迟上限 300ms */
+    /** 閫愬尯闂村姩鐢诲弬鏁帮細姣忓瓧绗﹀欢杩?2ms锛屾渶澶у欢杩熶笂闄?300ms */
     val STAGGER_DELAY_PER_CHAR = 2
     val STAGGER_MAX_DELAY = 300
 
     /**
-     * V2.5 逐区间交错淡入动画控制标志
+     * V2.5 閫愬尯闂翠氦閿欐贰鍏ュ姩鐢绘帶鍒舵爣蹇?
      *
-     * 当 searchQuery 非空时启用，所有高亮区间以「从左到右波浪扫描」方式依次淡入。
+     * 褰?searchQuery 闈炵┖鏃跺惎鐢紝鎵€鏈夐珮浜尯闂翠互銆屼粠宸﹀埌鍙虫尝娴壂鎻忋€嶆柟寮忎緷娆℃贰鍏ャ€?
      */
     val isHighlightActive = searchQuery.isNotBlank()
 
-    /** 卡片背景色：选中时使用 primaryContainer 半透明，否则使用 surface */
+    /** 鍗＄墖鑳屾櫙鑹诧細閫変腑鏃朵娇鐢?primaryContainer 鍗婇€忔槑锛屽惁鍒欎娇鐢?surface */
     val cardBackground by animateColorAsState(
         targetValue = if (isSelected) {
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
@@ -140,7 +138,7 @@ fun TodoListItem(
         label = "cardBackground"
     )
 
-    /** 复选框左侧间距：批量模式下空出 8dp 让位给 Checkbox */
+    /** 澶嶉€夋宸︿晶闂磋窛锛氭壒閲忔ā寮忎笅绌哄嚭 8dp 璁╀綅缁?Checkbox */
     val checkboxStartPadding by animateDpAsState(
         targetValue = if (isBatchMode) 8.dp else 0.dp,
         animationSpec = tween(durationMillis = 200),
@@ -153,402 +151,359 @@ fun TodoListItem(
         skipPartiallyExpanded = true
     )
 
-    Box(modifier = Modifier.fillMaxWidth()) {
-        // 非批量模式下，渲染右滑删除时的红色背景
-        if (!isBatchMode) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.End
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(deleteWidth)
-                        .height(68.dp)
-                        .background(Color(0xFFEF4444))
-                        .clip(RoundedCornerShape(16.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "删除",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-        }
-
-        // 卡片主体
-        Card(
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+            .combinedClickable(
+                onClick = {
+                    if (isBatchMode) {
+                        onSelectClick()
+                    } else {
+                        onClick()
+                    }
+                },
+                onLongClick = {
+                    if (isBatchMode) {
+                        onLongClick()
+                    } else {
+                        showLongPressMenu = true
+                    }
+                },
+                role = Role.Tab
+            ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBackground)
+) {
+        // 鍗＄墖鍐呴儴锛氬乏渚?4dp 浼樺厛绾х珫鏉?+ 鍙充晶鍐呭
+        // 浣跨敤 IntrinsicSize.Max 璁?PriorityBar.fillMaxHeight() 鑳芥纭拺婊″崱鐗囬珮搴?
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp)
-                .offset(x = Dp(offsetX))
-                .pointerInput(isBatchMode) {
-                    if (!isBatchMode) {
-                        detectHorizontalDragGestures(
-                            onDragEnd = {
-                                if (offsetX < -deleteWidth.value / 2) {
-                                    onDelete(todo.id)
+                .height(IntrinsicSize.Max)
+        ) {
+            /** 宸︿晶 4dp 浼樺厛绾х珫鏉★紙鏃犱紭鍏堢骇鏃堕€忔槑锛屼笉鍗犺瑙夌┖闂达級 */
+            PriorityBar(priority = todo.priority, isCompleted = todo.status == 1)
+
+            /** 鍐呭鍖哄煙锛屽崰婊￠櫎绔栨潯澶栫殑瀹藉害 */
+            Column(modifier = Modifier.weight(1f)) {
+                // 椤堕儴 Row锛氬閫夋 + start 妲戒綅 + 鍐呭 + 灞曞紑鎸夐挳
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 澶嶉€夋鍖哄煙
+                    if (isBatchMode) {
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = { onSelectClick() },
+                            modifier = Modifier.padding(end = 12.dp)
+                        )
+                    } else {
+                        if (checkboxStartPadding > 0.dp) {
+                            Spacer(modifier = Modifier.width(checkboxStartPadding))
+                        }
+                        CircularCheckbox(
+                            checked = todo.status == 1,
+                            onCheckedChange = { isChecked ->
+                                onToggleComplete(todo.id, isChecked)
+                            },
+                            // 宸插畬鎴愭€佽瑙夐檷鏉冿細鍕鹃€夋鍙樻贰锛堜繚鎸佹鑹茬郴浠呴檷娣卞害锛?
+                            dimmed = todo.status == 1,
+                            modifier = Modifier.padding(end = 12.dp)
+                        )
+                    }
+
+                    /**
+                     * 鍓嶇疆鍐呭妲戒綅锛坰tart slot锛?
+                     *
+                     * 鐢ㄤ簬鏀剧疆 DragHandle 绛夋嫋鎷界浉鍏崇殑 UI 缁勪欢銆?
+                     * 榛樿涓虹┖锛堜笉娓叉煋浠讳綍鍐呭锛夛紝
+                     * 褰撲笌 ReorderableLazyColumn 閰嶅悎浣跨敤鏃讹紝
+                     * 鍙湪姝ゅ鎻掑叆 VerticalDragIndicator銆?
+                     */
+                    start()
+
+                    // 鏍囬 + 鍒嗙被 + 鏃堕棿绛夊唴瀹?Column
+                    Column(modifier = Modifier.weight(1f)) {
+                        // 鏍囬琛?
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            /**
+                             * 鏍囬鏂囨湰锛堟敮鎸侀€愬尯闂翠氦閿欐贰鍏ラ珮浜級
+                             *
+                             * V2.5 鏀归€狅細浣跨敤 buildHighlightRanges() 鎷嗗垎涓虹嫭绔嬪尯闂村垪琛紝
+                             * 姣忎釜楂樹寒鍖洪棿鎷ユ湁鐙珛鐨?animateFloatAsState + 寤惰繜锛?
+                             * 瀹炵幇浠庡乏鍒板彸鐨勬尝娴紡娣″叆鏁堟灉銆?
+                             */
+                            if (isHighlightActive) {
+                                val (titleRanges, titleHighlightColor) =
+                                    com.corgimemo.app.util.HighlightUtil.buildHighlightRanges(
+                                        text = todo.title,
+                                        searchQuery = searchQuery,
+                                        containerBgColor = if (todo.backgroundColor != 0)
+                                            Color(todo.backgroundColor) else null
+                                    )
+                                /** 閫愬尯闂存覆鏌擄細姣忎釜 HighlightRange 鐙珛鍔ㄧ敾 */
+                                androidx.compose.foundation.layout.Row {
+                                    titleRanges.forEach { range ->
+                                        val rangeAlpha by androidx.compose.animation.core.animateFloatAsState(
+                                            targetValue = 1f,
+                                            animationSpec = androidx.compose.animation.core.tween(
+                                                durationMillis = 300,
+                                                delayMillis = (range.startIndex * STAGGER_DELAY_PER_CHAR)
+                                                    .coerceAtMost(STAGGER_MAX_DELAY)
+                                            ),
+                                            label = "titleRangeAlpha_${range.startIndex}"
+                                        )
+                                        Text(
+                                            text = range.text,
+                                            fontSize = 16.sp,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                            textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
+                                            color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
+                                            else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.graphicsLayer { alpha = rangeAlpha },
+                                            style = if (range.isHighlight) androidx.compose.ui.text.TextStyle(
+                                                background = titleHighlightColor
+                                            ) else androidx.compose.ui.text.TextStyle.Default
+                                        )
+                                    }
                                 }
-                                offsetX = 0f
+                            } else {
+                                Text(
+                                    text = todo.title,
+                                    fontSize = 16.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                    textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
+                                    color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
+                                    else MaterialTheme.colorScheme.onSurface
+                                )
                             }
-                        ) { _, dragAmount ->
-                            offsetX = (offsetX + dragAmount).coerceIn(-deleteWidth.value, 0f)
+                        }
+
+                        // 瀹屾垚鏃堕棿
+                        if (todo.status == 1 && todo.completedAt != null) {
+                            Text(
+                                text = formatCompletedTime(todo.completedAt),
+                                fontSize = 12.sp,
+                                // 宸插畬鎴愭€佽瑙夐檷鏉冿細浣跨敤 CompletedColors.Text 鑰岄潪 primary 姗欒壊
+                                color = CompletedColors.Text,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+
+                        // 鎻愰啋鏃堕棿 + 闄勪欢鏁伴噺锛堣仛鍚堬細鐖?+ 鎵€鏈夊瓙浠诲姟锛?
+                        val aggregateCounts = aggregateAttachmentCounts(todo, subTasks)
+                        if (todo.reminderTime != null || aggregateCounts.first > 0 || aggregateCounts.second > 0 || categoryName != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(top = 2.dp)
+                            ) {
+                                // 鍒嗙被锛堝唴鑱斿睍绀猴紝甯﹂槾褰辨晥鏋滐級
+                                if (categoryName != null) {
+                                    CategoryTagWithShadow(
+                                        categoryName = categoryName!!,
+                                        categoryIcon = categoryIcon,
+                                        isCompleted = todo.status == 1
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+
+                                if (todo.reminderTime != null) {
+                                    val reminder = formatReminderDisplay(todo.reminderTime)
+                                    // 宸插畬鎴愭€佽瑙夐檷鏉冿細寮哄埗浣跨敤 CompletedColors.Text 鐏拌壊锛?
+                                    // 瑕嗙洊"宸茶繃鏈?鍦烘櫙涓嬬殑绾㈣壊锛圕olor(0xFFDC2626)锛?
+                                    val reminderColor = if (todo.status == 1) {
+                                        CompletedColors.Text
+                                    } else if (reminder.isOverdue) {
+                                        Color(0xFFDC2626)
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.Alarm,
+                                        contentDescription = if (reminder.isOverdue) "宸茶繃鏈熸彁閱? else "鎻愰啋",
+                                        tint = reminderColor,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = reminder.text,
+                                        fontSize = 12.sp,
+                                        color = reminderColor,
+                                        fontWeight = if (reminder.isOverdue && todo.status != 1)
+                                            androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))   // 鎻愰啋涓庨檮浠堕棿 1 涓┖鏍肩殑闂磋窛
+                                }
+
+                                // 闄勪欢璁℃暟锛堝浘鐗?+ 璇煶锛?
+                                if (aggregateCounts.first > 0 || aggregateCounts.second > 0) {
+                                    val attachmentText = buildString {
+                                        if (aggregateCounts.second > 0) append("馃帳脳${aggregateCounts.second}")
+                                        if (aggregateCounts.first > 0 && aggregateCounts.second > 0) append(" ")  // 涓ょ闄勪欢闂?1 涓┖鏍?
+                                        if (aggregateCounts.first > 0) append("馃柤脳${aggregateCounts.first}")
+                                    }
+                                    Text(
+                                        text = attachmentText,
+                                        fontSize = 12.sp,
+                                        // 宸插畬鎴愭€佽瑙夐檷鏉冿細浣跨敤 CompletedColors.Text 鑰岄潪 onSurfaceVariant
+                                        color = if (todo.status == 1) CompletedColors.Text
+                                                else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        // 鍒嗙被琛屽凡鍒犻櫎锛堣縼绉诲埌鎻愰啋琛屽乏渚э紝璇﹁涓嬫柟 CategoryTagWithShadow锛?
+
+                        // 鍏宠仈鎻愮ず
+                        if (relationHint != null) {
+                            Text(
+                                text = relationHint,
+                                fontSize = 12.sp,
+                                color = Color(0xFF999999),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+
+                        // 寮€濮嬫椂闂存樉绀?
+                        if (todo.startDate != null) {
+                            Column(modifier = Modifier.padding(top = 4.dp)) {
+                                val timeDisplayText = todo.estimatedDurationMinutes?.let { duration ->
+                                    val endTime = todo.startDate + duration * 60 * 1000
+                                    formatTimeRange(todo.startDate, endTime)
+                                } ?: formatDateTime(todo.startDate)
+
+                                Text(
+                                    text = "\uD83D\uDD51 $timeDisplayText",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                if (todo.status != 1 && System.currentTimeMillis() < todo.startDate) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    CountdownDisplay(startDate = todo.startDate)
+                                }
+                            }
+                        }
+
+                        /** 鎴鏃堕棿锛坉ueDate锛夋樉绀?*/
+                        if (todo.dueDate != null) {
+                            val isOverdue = todo.status != 1 && todo.dueDate!! < System.currentTimeMillis()
+                            Column(modifier = Modifier.padding(top = 4.dp)) {
+                                Text(
+                                    text = "\u23F0 ${formatDateTime(todo.dueDate!!)}${if (isOverdue) " (宸茶繃鏈?" else ""}",
+                                    fontSize = 12.sp,
+                                    color = if (isOverdue) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = if (isOverdue) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
+                                )
+                            }
+                        }
+
+                        // 杩涘害鏉?
+                        if (todo.status != 1 && todo.content.isNullOrBlank() && subTaskProgress != null) {
+                            SubTaskProgressBar(
+                                progress = parseProgress(subTaskProgress),
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
+                        }
+                    }
+
+                    // 瀛愪换鍔¤繘搴︼紙绉昏嚦灞曞紑鎸夐挳宸︿晶锛? 灞曞紑/鏀惰捣鎸夐挳锛堝甫闃村奖锛?
+                    if (subTaskProgress != null && !isBatchMode) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // 瀛愪换鍔¤繘搴︽枃鏈細绱ц创灞曞紑鎸夐挳宸︿晶
+                            Text(
+                                text = "($subTaskProgress)",
+                                fontSize = 13.sp,
+                                // 宸插畬鎴愭€佽瑙夐檷鏉冿細浣跨敤 CompletedColors.Text 鑰岄潪 primary 姗欒壊
+                                color = if (todo.status == 1) CompletedColors.Text
+                                        else MaterialTheme.colorScheme.primary,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // 灞曞紑/鏀惰捣鎸夐挳锛歋urface 鍦嗗舰闃村奖 2dp
+                            Surface(
+                                onClick = onToggleExpand,
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                color = MaterialTheme.colorScheme.surface,
+                                shadowElevation = 2.dp,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = if (isExpanded) {
+                                            Icons.Default.ExpandLess
+                                        } else {
+                                            Icons.Default.ExpandMore
+                                        },
+                                        contentDescription = if (isExpanded) "鏀惰捣" else "灞曞紑",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-                .combinedClickable(
-                    onClick = {
-                        if (isBatchMode) {
-                            onSelectClick()
-                        } else {
-                            onClick()
-                        }
-                    },
-                    onLongClick = {
-                        if (isBatchMode) {
-                            onLongClick()
-                        } else {
-                            showLongPressMenu = true
-                        }
-                    },
-                    role = Role.Tab
-                ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = cardBackground)
-        ) {
-            // 卡片内部：左侧 4dp 优先级竖条 + 右侧内容
-            // 使用 IntrinsicSize.Max 让 PriorityBar.fillMaxHeight() 能正确撑满卡片高度
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Max)
-            ) {
-                /** 左侧 4dp 优先级竖条（无优先级时透明，不占视觉空间） */
-                PriorityBar(priority = todo.priority, isCompleted = todo.status == 1)
 
-                /** 内容区域，占满除竖条外的宽度 */
-                Column(modifier = Modifier.weight(1f)) {
-                    // 顶部 Row：复选框 + start 槽位 + 内容 + 展开按钮
-                    Row(
+                // 灞曞紑鏃舵樉绀哄瓙浠诲姟鍒楄〃
+                if (isExpanded && subTasks.isNotEmpty()) {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(start = 60.dp, end = 16.dp, bottom = 16.dp)
                     ) {
-                        // 复选框区域
-                        if (isBatchMode) {
-                            Checkbox(
-                                checked = isSelected,
-                                onCheckedChange = { onSelectClick() },
-                                modifier = Modifier.padding(end = 12.dp)
+                        subTasks.forEach { subTask ->
+                            SubTaskInTodoListItem(
+                                subTask = subTask,
+                                isParentCompleted = todo.status == 1,
+                                onToggleComplete = { onToggleSubTask(subTask.id) }
                             )
-                        } else {
-                            if (checkboxStartPadding > 0.dp) {
-                                Spacer(modifier = Modifier.width(checkboxStartPadding))
-                            }
-                            CircularCheckbox(
-                                checked = todo.status == 1,
-                                onCheckedChange = { isChecked ->
-                                    onToggleComplete(todo.id, isChecked)
-                                },
-                                // 已完成态视觉降权：勾选框变淡（保持橙色系仅降深度）
-                                dimmed = todo.status == 1,
-                                modifier = Modifier.padding(end = 12.dp)
-                            )
-                        }
-
-                        /**
-                         * 前置内容槽位（start slot）
-                         *
-                         * 用于放置 DragHandle 等拖拽相关的 UI 组件。
-                         * 默认为空（不渲染任何内容），
-                         * 当与 ReorderableLazyColumn 配合使用时，
-                         * 可在此处插入 VerticalDragIndicator。
-                         */
-                        start()
-
-                        // 标题 + 分类 + 时间等内容 Column
-                        Column(modifier = Modifier.weight(1f)) {
-                            // 标题行
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                /**
-                                 * 标题文本（支持逐区间交错淡入高亮）
-                                 *
-                                 * V2.5 改造：使用 buildHighlightRanges() 拆分为独立区间列表，
-                                 * 每个高亮区间拥有独立的 animateFloatAsState + 延迟，
-                                 * 实现从左到右的波浪式淡入效果。
-                                 */
-                                if (isHighlightActive) {
-                                    val (titleRanges, titleHighlightColor) =
-                                        com.corgimemo.app.util.HighlightUtil.buildHighlightRanges(
-                                            text = todo.title,
-                                            searchQuery = searchQuery,
-                                            containerBgColor = if (todo.backgroundColor != 0)
-                                                Color(todo.backgroundColor) else null
-                                        )
-                                    /** 逐区间渲染：每个 HighlightRange 独立动画 */
-                                    androidx.compose.foundation.layout.Row {
-                                        titleRanges.forEach { range ->
-                                            val rangeAlpha by androidx.compose.animation.core.animateFloatAsState(
-                                                targetValue = 1f,
-                                                animationSpec = androidx.compose.animation.core.tween(
-                                                    durationMillis = 300,
-                                                    delayMillis = (range.startIndex * STAGGER_DELAY_PER_CHAR)
-                                                        .coerceAtMost(STAGGER_MAX_DELAY)
-                                                ),
-                                                label = "titleRangeAlpha_${range.startIndex}"
-                                            )
-                                            Text(
-                                                text = range.text,
-                                                fontSize = 16.sp,
-                                                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-                                                textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
-                                                color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
-                                                else MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.graphicsLayer { alpha = rangeAlpha },
-                                                style = if (range.isHighlight) androidx.compose.ui.text.TextStyle(
-                                                    background = titleHighlightColor
-                                                ) else androidx.compose.ui.text.TextStyle.Default
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    Text(
-                                        text = todo.title,
-                                        fontSize = 16.sp,
-                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-                                        textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
-                                        color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
-                                        else MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-
-                            // 完成时间
-                            if (todo.status == 1 && todo.completedAt != null) {
-                                Text(
-                                    text = formatCompletedTime(todo.completedAt),
-                                    fontSize = 12.sp,
-                                    // 已完成态视觉降权：使用 CompletedColors.Text 而非 primary 橙色
-                                    color = CompletedColors.Text,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                            }
-
-                            // 提醒时间 + 附件数量（聚合：父 + 所有子任务）
-                            val aggregateCounts = aggregateAttachmentCounts(todo, subTasks)
-                            if (todo.reminderTime != null || aggregateCounts.first > 0 || aggregateCounts.second > 0 || categoryName != null) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                ) {
-                                    // 分类（内联展示，带阴影效果）
-                                    if (categoryName != null) {
-                                        CategoryTagWithShadow(
-                                            categoryName = categoryName!!,
-                                            categoryIcon = categoryIcon,
-                                            isCompleted = todo.status == 1
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                    }
-
-                                    if (todo.reminderTime != null) {
-                                        val reminder = formatReminderDisplay(todo.reminderTime)
-                                        // 已完成态视觉降权：强制使用 CompletedColors.Text 灰色，
-                                        // 覆盖"已过期"场景下的红色（Color(0xFFDC2626)）
-                                        val reminderColor = if (todo.status == 1) {
-                                            CompletedColors.Text
-                                        } else if (reminder.isOverdue) {
-                                            Color(0xFFDC2626)
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        }
-                                        Icon(
-                                            imageVector = Icons.Default.Alarm,
-                                            contentDescription = if (reminder.isOverdue) "已过期提醒" else "提醒",
-                                            tint = reminderColor,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = reminder.text,
-                                            fontSize = 12.sp,
-                                            color = reminderColor,
-                                            fontWeight = if (reminder.isOverdue && todo.status != 1)
-                                                androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))   // 提醒与附件间 1 个空格的间距
-                                    }
-
-                                    // 附件计数（图片 + 语音）
-                                    if (aggregateCounts.first > 0 || aggregateCounts.second > 0) {
-                                        val attachmentText = buildString {
-                                            if (aggregateCounts.second > 0) append("🎤×${aggregateCounts.second}")
-                                            if (aggregateCounts.first > 0 && aggregateCounts.second > 0) append(" ")  // 两种附件间 1 个空格
-                                            if (aggregateCounts.first > 0) append("🖼×${aggregateCounts.first}")
-                                        }
-                                        Text(
-                                            text = attachmentText,
-                                            fontSize = 12.sp,
-                                            // 已完成态视觉降权：使用 CompletedColors.Text 而非 onSurfaceVariant
-                                            color = if (todo.status == 1) CompletedColors.Text
-                                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-
-                            // 分类行已删除（迁移到提醒行左侧，详见下方 CategoryTagWithShadow）
-
-                            // 关联提示
-                            if (relationHint != null) {
-                                Text(
-                                    text = relationHint,
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF999999),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
-
-                            // 开始时间显示
-                            if (todo.startDate != null) {
-                                Column(modifier = Modifier.padding(top = 4.dp)) {
-                                    val timeDisplayText = todo.estimatedDurationMinutes?.let { duration ->
-                                        val endTime = todo.startDate + duration * 60 * 1000
-                                        formatTimeRange(todo.startDate, endTime)
-                                    } ?: formatDateTime(todo.startDate)
-
-                                    Text(
-                                        text = "\uD83D\uDD51 $timeDisplayText",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-
-                                    if (todo.status != 1 && System.currentTimeMillis() < todo.startDate) {
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        CountdownDisplay(startDate = todo.startDate)
-                                    }
-                                }
-                            }
-
-                            /** 截止时间（dueDate）显示 */
-                            if (todo.dueDate != null) {
-                                val isOverdue = todo.status != 1 && todo.dueDate!! < System.currentTimeMillis()
-                                Column(modifier = Modifier.padding(top = 4.dp)) {
-                                    Text(
-                                        text = "\u23F0 ${formatDateTime(todo.dueDate!!)}${if (isOverdue) " (已过期)" else ""}",
-                                        fontSize = 12.sp,
-                                        color = if (isOverdue) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontWeight = if (isOverdue) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
-                                    )
-                                }
-                            }
-
-                            // 进度条
-                            if (todo.status != 1 && todo.content.isNullOrBlank() && subTaskProgress != null) {
-                                SubTaskProgressBar(
-                                    progress = parseProgress(subTaskProgress),
-                                    modifier = Modifier.padding(top = 6.dp)
-                                )
-                            }
-                        }
-
-                        // 子任务进度（移至展开按钮左侧）+ 展开/收起按钮（带阴影）
-                        if (subTaskProgress != null && !isBatchMode) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                // 子任务进度文本：紧贴展开按钮左侧
-                                Text(
-                                    text = "($subTaskProgress)",
-                                    fontSize = 13.sp,
-                                    // 已完成态视觉降权：使用 CompletedColors.Text 而非 primary 橙色
-                                    color = if (todo.status == 1) CompletedColors.Text
-                                            else MaterialTheme.colorScheme.primary,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                // 展开/收起按钮：Surface 圆形阴影 2dp
-                                Surface(
-                                    onClick = onToggleExpand,
-                                    shape = androidx.compose.foundation.shape.CircleShape,
-                                    color = MaterialTheme.colorScheme.surface,
-                                    shadowElevation = 2.dp,
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = if (isExpanded) {
-                                                Icons.Default.ExpandLess
-                                            } else {
-                                                Icons.Default.ExpandMore
-                                            },
-                                            contentDescription = if (isExpanded) "收起" else "展开",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // 展开时显示子任务列表
-                    if (isExpanded && subTasks.isNotEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 60.dp, end = 16.dp, bottom = 16.dp)
-                        ) {
-                            subTasks.forEach { subTask ->
-                                SubTaskInTodoListItem(
-                                    subTask = subTask,
-                                    isParentCompleted = todo.status == 1,
-                                    onToggleComplete = { onToggleSubTask(subTask.id) }
-                                )
-                                if (subTask != subTasks.last()) {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                }
+                            if (subTask != subTasks.last()) {
+                                Spacer(modifier = Modifier.height(4.dp))
                             }
                         }
                     }
                 }
             }
         }
+}   // 鍏抽棴 Card
 
-        if (showLongPressMenu) {
-            TodoActionSheet(
-                sheetState = actionSheetState,
-                onDismiss = {
-                    showLongPressMenu = false
-                },
-                onEdit = {
-                    onClick()
-                },
-                onShare = {
-                    onShareAsImage()
-                },
-                onBatchSelect = {
-                    onLongClick()
-                },
-                onDelete = {
-                    onDelete(todo.id)
-                }
-            )
+// ModalBottomSheet 绫诲瀷鐨勯暱鎸夎彍鍗曚负椤跺眰寮瑰眰锛岀嫭绔嬩簬鍗＄墖涓讳綋娓叉煋
+if (showLongPressMenu) {
+    TodoActionSheet(
+        sheetState = actionSheetState,
+        onDismiss = {
+            showLongPressMenu = false
+        },
+        onEdit = {
+            onClick()
+        },
+        onShare = {
+            onShareAsImage()
+        },
+        onBatchSelect = {
+            onLongClick()
+        },
+        onDelete = {
+            onDelete(todo.id)
         }
-    }
+    )
 }
+}   // 鍏抽棴 TodoListItem 鍑芥暟
 
 /**
- * 格式化完成时间为友好的显示文本
+ * 鏍煎紡鍖栧畬鎴愭椂闂翠负鍙嬪ソ鐨勬樉绀烘枃鏈?
  *
- * @param completedAt 完成时间戳（毫秒）
- * @return 格式化后的时间文本，如 "3 分钟前完成"、"2 小时前完成"、"5 天前完成"
+ * @param completedAt 瀹屾垚鏃堕棿鎴筹紙姣锛?
+ * @return 鏍煎紡鍖栧悗鐨勬椂闂存枃鏈紝濡?"3 鍒嗛挓鍓嶅畬鎴?銆?2 灏忔椂鍓嶅畬鎴?銆?5 澶╁墠瀹屾垚"
  */
 private fun formatCompletedTime(completedAt: Long): String {
     val diffMillis = System.currentTimeMillis() - completedAt
@@ -557,17 +512,17 @@ private fun formatCompletedTime(completedAt: Long): String {
     val diffDays = TimeUnit.MILLISECONDS.toDays(diffMillis)
 
     return when {
-        diffMinutes < 1 -> "刚刚完成"
-        diffMinutes < 60 -> "$diffMinutes 分钟前完成"
-        diffHours < 24 -> "$diffHours 小时前完成"
-        else -> "$diffDays 天前完成"
+        diffMinutes < 1 -> "鍒氬垰瀹屾垚"
+        diffMinutes < 60 -> "$diffMinutes 鍒嗛挓鍓嶅畬鎴?
+        diffHours < 24 -> "$diffHours 灏忔椂鍓嶅畬鎴?
+        else -> "$diffDays 澶╁墠瀹屾垚"
     }
 }
 
 /**
- * 子任务进度条组件
+ * 瀛愪换鍔¤繘搴︽潯缁勪欢
  *
- * @param progress 进度值 (0.0-1.0)
+ * @param progress 杩涘害鍊?(0.0-1.0)
  * @param modifier Modifier
  */
 @Composable
@@ -594,7 +549,7 @@ private fun SubTaskProgressBar(
             val progressWidth = trackWidth * progress.coerceIn(0f, 1f)
             val height = size.height
 
-            // 绘制进度条（暖橙色）
+            // 缁樺埗杩涘害鏉★紙鏆栨鑹诧級
             if (progressWidth > 0f) {
                 drawRoundRect(
                     color = warmOrange,
@@ -608,10 +563,10 @@ private fun SubTaskProgressBar(
 }
 
 /**
- * 解析进度文本为浮点值
+ * 瑙ｆ瀽杩涘害鏂囨湰涓烘诞鐐瑰€?
  *
- * @param progressText 进度文本，如 "2/5"
- * @return 进度值 (0.0-1.0)，解析失败返回 0f
+ * @param progressText 杩涘害鏂囨湰锛屽 "2/5"
+ * @return 杩涘害鍊?(0.0-1.0)锛岃В鏋愬け璐ヨ繑鍥?0f
  */
 private fun parseProgress(progressText: String): Float {
     return try {
@@ -629,11 +584,11 @@ private fun parseProgress(progressText: String): Float {
 }
 
 /**
- * 待办列表中的子任务项组件
- * 用于展开待办后显示的子任务列表
+ * 寰呭姙鍒楄〃涓殑瀛愪换鍔￠」缁勪欢
+ * 鐢ㄤ簬灞曞紑寰呭姙鍚庢樉绀虹殑瀛愪换鍔″垪琛?
  *
- * @param subTask 子任务
- * @param onToggleComplete 切换完成状态回调
+ * @param subTask 瀛愪换鍔?
+ * @param onToggleComplete 鍒囨崲瀹屾垚鐘舵€佸洖璋?
  * @param modifier Modifier
  */
 @Composable
@@ -647,7 +602,7 @@ private fun SubTaskInTodoListItem(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 圆形复选框
+        // 鍦嗗舰澶嶉€夋
         SubTaskCheckbox(
             isCompleted = subTask.isCompleted,
             isParentCompleted = isParentCompleted,
@@ -656,7 +611,7 @@ private fun SubTaskInTodoListItem(
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        // 子任务标题
+        // 瀛愪换鍔℃爣棰?
         Text(
             text = subTask.title,
             fontSize = 14.sp,
@@ -673,15 +628,15 @@ private fun SubTaskInTodoListItem(
             modifier = Modifier.weight(1f)
         )
 
-        // 子任务自身附件计数（独立于父卡聚合）
+        // 瀛愪换鍔¤嚜韬檮浠惰鏁帮紙鐙珛浜庣埗鍗¤仛鍚堬級
         val subImageCount = parseImagePathsCount(subTask.imagePaths)
         val subVoiceCount = parseVoicePathsCount(subTask.voicePaths)
         if (subImageCount > 0 || subVoiceCount > 0) {
             Spacer(modifier = Modifier.width(8.dp))
             val text = buildString {
-                if (subVoiceCount > 0) append("🎤×$subVoiceCount")
+                if (subVoiceCount > 0) append("馃帳脳$subVoiceCount")
                 if (subImageCount > 0 && subVoiceCount > 0) append(" ")
-                if (subImageCount > 0) append("🖼×$subImageCount")
+                if (subImageCount > 0) append("馃柤脳$subImageCount")
             }
             Text(
                 text = text,
@@ -693,10 +648,10 @@ private fun SubTaskInTodoListItem(
 }
 
 /**
- * 子任务复选框组件（与SubTaskListItem一致）
+ * 瀛愪换鍔″閫夋缁勪欢锛堜笌SubTaskListItem涓€鑷达級
  *
- * @param isCompleted 是否已完成
- * @param onClick 点击回调
+ * @param isCompleted 鏄惁宸插畬鎴?
+ * @param onClick 鐐瑰嚮鍥炶皟
  */
 @Composable
 private fun SubTaskCheckbox(
@@ -705,13 +660,13 @@ private fun SubTaskCheckbox(
     onClick: () -> Unit
 ) {
     /**
-     * 勾选框背景色：
-     * - 子任务未完成 → 浅灰描边
-     * - 子任务完成 + 父待办未完成 → primary 橙色（部分完成的视觉强调）
-     * - 子任务完成 + 父待办已完成 → CompletedColors.CheckboxBgDim 浅橙（保持橙色系，仅降深度）
+     * 鍕鹃€夋鑳屾櫙鑹诧細
+     * - 瀛愪换鍔℃湭瀹屾垚 鈫?娴呯伆鎻忚竟
+     * - 瀛愪换鍔″畬鎴?+ 鐖跺緟鍔炴湭瀹屾垚 鈫?primary 姗欒壊锛堥儴鍒嗗畬鎴愮殑瑙嗚寮鸿皟锛?
+     * - 瀛愪换鍔″畬鎴?+ 鐖跺緟鍔炲凡瀹屾垚 鈫?CompletedColors.CheckboxBgDim 娴呮锛堜繚鎸佹鑹茬郴锛屼粎闄嶆繁搴︼級
      *
-     * 注意：用户要求"保持橙色系配色方案，不得更改为灰色，实现颜色深度降低效果"
-     * 因此父待办完成时也用浅橙（#FFCCAB），而非 CheckboxBg 的灰色。
+     * 娉ㄦ剰锛氱敤鎴疯姹?淇濇寔姗欒壊绯婚厤鑹叉柟妗堬紝涓嶅緱鏇存敼涓虹伆鑹诧紝瀹炵幇棰滆壊娣卞害闄嶄綆鏁堟灉"
+     * 鍥犳鐖跺緟鍔炲畬鎴愭椂涔熺敤娴呮锛?FFCCAB锛夛紝鑰岄潪 CheckboxBg 鐨勭伆鑹层€?
      */
     val bgColor = when {
         !isCompleted -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -729,7 +684,7 @@ private fun SubTaskCheckbox(
     ) {
         if (isCompleted) {
             Text(
-                text = "✓",
+                text = "鉁?,
                 color = MaterialTheme.colorScheme.onPrimary,
                 fontSize = 11.sp
             )
@@ -738,10 +693,10 @@ private fun SubTaskCheckbox(
 }
 
 /**
- * 格式化日期时间为显示文本
+ * 鏍煎紡鍖栨棩鏈熸椂闂翠负鏄剧ず鏂囨湰
  *
- * @param timestamp 时间戳（毫秒）
- * @return 格式化后的日期时间文本，如 "05-15 14:30"
+ * @param timestamp 鏃堕棿鎴筹紙姣锛?
+ * @return 鏍煎紡鍖栧悗鐨勬棩鏈熸椂闂存枃鏈紝濡?"05-15 14:30"
  */
 private fun formatDateTime(timestamp: Long): String {
     val sdf = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
@@ -749,13 +704,13 @@ private fun formatDateTime(timestamp: Long): String {
 }
 
 /**
- * 格式化时间范围为显示文本
+ * 鏍煎紡鍖栨椂闂磋寖鍥翠负鏄剧ず鏂囨湰
  *
- * @param startTime 开始时间戳（毫秒）
- * @param endTime 结束时间戳（毫秒）
- * @return 格式化后的时间范围文本
- *         同一天：05-22 15:00 至 17:30
- *         隔天：05-22 15:00 至 05-23 17:30
+ * @param startTime 寮€濮嬫椂闂存埑锛堟绉掞級
+ * @param endTime 缁撴潫鏃堕棿鎴筹紙姣锛?
+ * @return 鏍煎紡鍖栧悗鐨勬椂闂磋寖鍥存枃鏈?
+ *         鍚屼竴澶╋細05-22 15:00 鑷?17:30
+ *         闅斿ぉ锛?5-22 15:00 鑷?05-23 17:30
  */
 private fun formatTimeRange(startTime: Long, endTime: Long): String {
     val sdfDate = SimpleDateFormat("MM-dd", Locale.getDefault())
@@ -772,23 +727,23 @@ private fun formatTimeRange(startTime: Long, endTime: Long): String {
             cal1.get(java.util.Calendar.DAY_OF_YEAR) == cal2.get(java.util.Calendar.DAY_OF_YEAR)
 
     return if (isSameDay) {
-        "${sdfDate.format(startDate)} ${sdfTime.format(startDate)} 至 ${sdfTime.format(endDate)}"
+        "${sdfDate.format(startDate)} ${sdfTime.format(startDate)} 鑷?${sdfTime.format(endDate)}"
     } else {
-        "${sdfDateTime.format(startDate)} 至 ${sdfDateTime.format(endDate)}"
+        "${sdfDateTime.format(startDate)} 鑷?${sdfDateTime.format(endDate)}"
     }
 }
 
 /**
- * 计算并格式化距离开始时间的剩余时间
+ * 璁＄畻骞舵牸寮忓寲璺濈寮€濮嬫椂闂寸殑鍓╀綑鏃堕棿
  *
- * @param startDate 开始时间戳（毫秒）
- * @param currentTime 当前时间戳（毫秒）
- * @return 格式化后的剩余时间文本，大于1小时显示到分钟，小于等于1小时显示到秒
+ * @param startDate 寮€濮嬫椂闂存埑锛堟绉掞級
+ * @param currentTime 褰撳墠鏃堕棿鎴筹紙姣锛?
+ * @return 鏍煎紡鍖栧悗鐨勫墿浣欐椂闂存枃鏈紝澶т簬1灏忔椂鏄剧ず鍒板垎閽燂紝灏忎簬绛変簬1灏忔椂鏄剧ず鍒扮
  */
 private fun formatCountdown(startDate: Long, currentTime: Long): String {
     val diffMillis = startDate - currentTime
 
-    if (diffMillis <= 0) return "已开始"
+    if (diffMillis <= 0) return "宸插紑濮?
 
     val diffSeconds = TimeUnit.MILLISECONDS.toSeconds(diffMillis)
     val diffMinutes = TimeUnit.MILLISECONDS.toMinutes(diffMillis)
@@ -797,27 +752,27 @@ private fun formatCountdown(startDate: Long, currentTime: Long): String {
 
     return if (diffHours > 0) {
         when {
-            diffDays > 0 -> "还剩 ${diffDays}天 ${diffHours % 24}时${diffMinutes % 60}分"
-            else -> "还剩 ${diffHours}时${diffMinutes % 60}分"
+            diffDays > 0 -> "杩樺墿 ${diffDays}澶?${diffHours % 24}鏃?{diffMinutes % 60}鍒?
+            else -> "杩樺墿 ${diffHours}鏃?{diffMinutes % 60}鍒?
         }
     } else {
-        "还剩 ${diffMinutes}分${diffSeconds % 60}秒"
+        "杩樺墿 ${diffMinutes}鍒?{diffSeconds % 60}绉?
     }
 }
 
 /**
- * 优先级竖条 - 显示在待办卡片左侧 4dp 宽的彩色线条
+ * 浼樺厛绾х珫鏉?- 鏄剧ず鍦ㄥ緟鍔炲崱鐗囧乏渚?4dp 瀹界殑褰╄壊绾挎潯
  *
- * 颜色根据 todo.priority 动态变化：
- * - 0 (无优先级) → 透明
- * - 1 (低) → PriorityColors.Low（柔蓝）
- * - 2 (中) → PriorityColors.Medium（柔橙）
- * - 3 (高) → PriorityColors.High（柔红）
+ * 棰滆壊鏍规嵁 todo.priority 鍔ㄦ€佸彉鍖栵細
+ * - 0 (鏃犱紭鍏堢骇) 鈫?閫忔槑
+ * - 1 (浣? 鈫?PriorityColors.Low锛堟煍钃濓級
+ * - 2 (涓? 鈫?PriorityColors.Medium锛堟煍姗欙級
+ * - 3 (楂? 鈫?PriorityColors.High锛堟煍绾級
  *
- * 通过 animateColorAsState 实现 200ms 颜色平滑过渡。
- * 高度通过 fillMaxHeight() 自适应父容器（Card），无需硬编码。
+ * 閫氳繃 animateColorAsState 瀹炵幇 200ms 棰滆壊骞虫粦杩囨浮銆?
+ * 楂樺害閫氳繃 fillMaxHeight() 鑷€傚簲鐖跺鍣紙Card锛夛紝鏃犻渶纭紪鐮併€?
  *
- * @param priority 优先级数值
+ * @param priority 浼樺厛绾ф暟鍊?
  * @param modifier Modifier
  */
 @Composable
@@ -826,14 +781,14 @@ private fun PriorityBar(
     isCompleted: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    /** 目标颜色：未完成用原色，已完成用浅色版（保留色相但降饱和） */
+    /** 鐩爣棰滆壊锛氭湭瀹屾垚鐢ㄥ師鑹诧紝宸插畬鎴愮敤娴呰壊鐗堬紙淇濈暀鑹茬浉浣嗛檷楗卞拰锛?*/
     val targetColor = if (isCompleted) {
         PriorityColors.dimColorOf(priority)
     } else {
         PriorityColors.colorOf(priority)
     }
 
-    /** 颜色过渡动画：与卡片其他动画保持 200ms 节奏一致 */
+    /** 棰滆壊杩囨浮鍔ㄧ敾锛氫笌鍗＄墖鍏朵粬鍔ㄧ敾淇濇寔 200ms 鑺傚涓€鑷?*/
     val animatedColor by animateColorAsState(
         targetValue = targetColor,
         animationSpec = tween(durationMillis = 200),
@@ -849,11 +804,11 @@ private fun PriorityBar(
 }
 
 /**
- * 倒计时显示组件
- * 实时显示距离开始时间的剩余时间
+ * 鍊掕鏃舵樉绀虹粍浠?
+ * 瀹炴椂鏄剧ず璺濈寮€濮嬫椂闂寸殑鍓╀綑鏃堕棿
  *
- * @param startDate 开始时间戳（毫秒）
- * @param onExpired 倒计时结束时的回调
+ * @param startDate 寮€濮嬫椂闂存埑锛堟绉掞級
+ * @param onExpired 鍊掕鏃剁粨鏉熸椂鐨勫洖璋?
  */
 @Composable
 private fun CountdownDisplay(
@@ -886,17 +841,17 @@ private fun CountdownDisplay(
     val countdownText = formatCountdown(startDate, currentTime)
 
     Text(
-        text = "⏳ $countdownText",
+        text = "鈴?$countdownText",
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.primary
     )
 }
 
 /**
- * 解析 JSON 数组格式的图片路径字符串，返回图片数量
+ * 瑙ｆ瀽 JSON 鏁扮粍鏍煎紡鐨勫浘鐗囪矾寰勫瓧绗︿覆锛岃繑鍥炲浘鐗囨暟閲?
  *
- * @param imagePathsJson org.json.JSONArray 序列化的字符串
- * @return 图片数量（解析失败或为空返回 0）
+ * @param imagePathsJson org.json.JSONArray 搴忓垪鍖栫殑瀛楃涓?
+ * @return 鍥剧墖鏁伴噺锛堣В鏋愬け璐ユ垨涓虹┖杩斿洖 0锛?
  */
 private fun parseImagePathsCount(imagePathsJson: String): Int {
     if (imagePathsJson.isBlank()) return 0
@@ -908,10 +863,10 @@ private fun parseImagePathsCount(imagePathsJson: String): Int {
 }
 
 /**
- * 解析 JSON 数组格式的语音路径字符串，返回语音数量
+ * 瑙ｆ瀽 JSON 鏁扮粍鏍煎紡鐨勮闊宠矾寰勫瓧绗︿覆锛岃繑鍥炶闊虫暟閲?
  *
- * @param voicePathsJson org.json.JSONArray 序列化的字符串
- * @return 语音数量（解析失败或为空返回 0）
+ * @param voicePathsJson org.json.JSONArray 搴忓垪鍖栫殑瀛楃涓?
+ * @return 璇煶鏁伴噺锛堣В鏋愬け璐ユ垨涓虹┖杩斿洖 0锛?
  */
 private fun parseVoicePathsCount(voicePathsJson: String): Int {
     if (voicePathsJson.isBlank()) return 0
@@ -923,11 +878,11 @@ private fun parseVoicePathsCount(voicePathsJson: String): Int {
 }
 
 /**
- * 聚合待办卡片附件数量（父自身 + 所有子任务）
+ * 鑱氬悎寰呭姙鍗＄墖闄勪欢鏁伴噺锛堢埗鑷韩 + 鎵€鏈夊瓙浠诲姟锛?
  *
- * @param todo 父待办
- * @param subTasks 子任务列表
- * @return Pair(图片总数, 语音总数)
+ * @param todo 鐖跺緟鍔?
+ * @param subTasks 瀛愪换鍔″垪琛?
+ * @return Pair(鍥剧墖鎬绘暟, 璇煶鎬绘暟)
  */
 private fun aggregateAttachmentCounts(
     todo: TodoItem,
@@ -941,16 +896,16 @@ private fun aggregateAttachmentCounts(
 }
 
 /**
- * 带阴影效果的分类标签
+ * 甯﹂槾褰辨晥鏋滅殑鍒嗙被鏍囩
  *
- * 用于 TodoListItem 卡片提醒行左侧：
- * - 阴影：水平偏移 2px，垂直偏移 2px，模糊半径 4px，颜色 rgba(0,0,0,0.1)
- * - 字号 12sp
- * - 已完成态使用 CompletedColors.Text 降权
+ * 鐢ㄤ簬 TodoListItem 鍗＄墖鎻愰啋琛屽乏渚э細
+ * - 闃村奖锛氭按骞冲亸绉?2px锛屽瀭鐩村亸绉?2px锛屾ā绯婂崐寰?4px锛岄鑹?rgba(0,0,0,0.1)
+ * - 瀛楀彿 12sp
+ * - 宸插畬鎴愭€佷娇鐢?CompletedColors.Text 闄嶆潈
  *
- * 实现：双层 Box
- * - 外层 Box：matchParentSize + offset(2.dp, 2.dp) + 半透明黑背景 + blur(4.dp) 模拟阴影
- * - 内层 Row：实际内容（背景色 + 图标 + 名称）
+ * 瀹炵幇锛氬弻灞?Box
+ * - 澶栧眰 Box锛歮atchParentSize + offset(2.dp, 2.dp) + 鍗婇€忔槑榛戣儗鏅?+ blur(4.dp) 妯℃嫙闃村奖
+ * - 鍐呭眰 Row锛氬疄闄呭唴瀹癸紙鑳屾櫙鑹?+ 鍥炬爣 + 鍚嶇О锛?
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
@@ -965,7 +920,7 @@ private fun CategoryTagWithShadow(
                   else MaterialTheme.colorScheme.primaryContainer
 
     Box(contentAlignment = Alignment.Center) {
-        // 外层：阴影（偏移 2dp 半透明黑 + 4dp 模糊）
+        // 澶栧眰锛氶槾褰憋紙鍋忕Щ 2dp 鍗婇€忔槑榛?+ 4dp 妯＄硦锛?
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -976,7 +931,7 @@ private fun CategoryTagWithShadow(
                 )
                 .blur(radius = 4.dp)
         )
-        // 内层：实际内容
+        // 鍐呭眰锛氬疄闄呭唴瀹?
         Row(
             modifier = Modifier
                 .background(color = bgColor, shape = RoundedCornerShape(4.dp))
@@ -984,7 +939,7 @@ private fun CategoryTagWithShadow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = categoryIcon ?: "📋",
+                text = categoryIcon ?: "馃搵",
                 fontSize = 12.sp,
                 color = textColor
             )
