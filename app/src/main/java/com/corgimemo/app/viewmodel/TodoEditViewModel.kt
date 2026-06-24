@@ -413,6 +413,17 @@ class TodoEditViewModel @Inject constructor(
         _hasManuallySelectedCategory.value = true
     }
 
+    /**
+     * 清除当前分类
+     *
+     * 复刻"设置提醒"×按钮的交互：用户清除后回到未分类状态
+     * 调用方传入 -1L 作为"未设置"的标记，避免修改 _categoryId 的类型为 Long?
+     */
+    fun clearCategory() {
+        _categoryId.value = 0L
+        _hasManuallySelectedCategory.value = false
+    }
+
     fun setPriority(priority: Int) {
         _priority.value = priority
     }
@@ -1282,6 +1293,36 @@ class TodoEditViewModel @Inject constructor(
             } finally {
                 _isCategoriesLoaded.value = true
                 android.util.Log.w("TodoEditVM", "分类加载完成, isCategoriesLoaded=true, categories数量=${_categories.value.size}")
+            }
+        }
+    }
+
+    /**
+     * 创建自定义分类
+     *
+     * 用于"分类"选择弹窗的"自定义"按钮：用户输入名称后异步写入数据库。
+     * 写入成功后通过 [onCreated] 回调返回新分类的 ID，
+     * 调用方应立即调用 [setCategoryId] 切换当前 todo 到新分类。
+     *
+     * @param name 自定义分类名称（已 trim 且非空）
+     * @param onCreated 创建成功回调，参数为新分类的数据库 ID
+     */
+    fun createCustomCategory(name: String, onCreated: (Long) -> Unit) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val newCategory = Category(
+                    name = name.trim(),
+                    type = CategoryType.CUSTOM,
+                    isDefault = false
+                )
+                val newId = categoryRepository.insertCategory(newCategory)
+                // 刷新内存中的分类列表
+                _categories.value = categoryRepository.getAllCategoriesList()
+                onCreated(newId)
+                android.util.Log.w("TodoEditVM", "创建自定义分类成功: name='$name', id=$newId")
+            } catch (e: Exception) {
+                android.util.Log.e("TodoEditVM", "创建自定义分类失败", e)
             }
         }
     }
