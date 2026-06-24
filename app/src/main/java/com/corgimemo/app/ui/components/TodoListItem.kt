@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -228,7 +229,7 @@ fun TodoListItem(
                     .height(IntrinsicSize.Max)
             ) {
                 /** 左侧 4dp 优先级竖条（无优先级时透明，不占视觉空间） */
-                PriorityBar(priority = todo.priority)
+                PriorityBar(priority = todo.priority, isCompleted = todo.status == 1)
 
                 /** 内容区域，占满除竖条外的宽度 */
                 Column(modifier = Modifier.weight(1f)) {
@@ -255,6 +256,8 @@ fun TodoListItem(
                                 onCheckedChange = { isChecked ->
                                     onToggleComplete(todo.id, isChecked)
                                 },
+                                // 已完成态视觉降权：勾选框变淡（保持橙色系仅降深度）
+                                dimmed = todo.status == 1,
                                 modifier = Modifier.padding(end = 12.dp)
                             )
                         }
@@ -331,34 +334,52 @@ fun TodoListItem(
                                 Text(
                                     text = formatCompletedTime(todo.completedAt),
                                     fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    // 已完成态视觉降权：使用 CompletedColors.Text 而非 primary 橙色
+                                    color = CompletedColors.Text,
                                     modifier = Modifier.padding(top = 2.dp)
                                 )
                             }
 
                             // 提醒时间 + 附件数量（聚合：父 + 所有子任务）
                             val aggregateCounts = aggregateAttachmentCounts(todo, subTasks)
-                            if (todo.reminderTime != null || aggregateCounts.first > 0 || aggregateCounts.second > 0) {
+                            if (todo.reminderTime != null || aggregateCounts.first > 0 || aggregateCounts.second > 0 || categoryName != null) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(top = 2.dp)
                                 ) {
+                                    // 分类（内联展示，带阴影效果）
+                                    if (categoryName != null) {
+                                        CategoryTagWithShadow(
+                                            categoryName = categoryName!!,
+                                            categoryIcon = categoryIcon,
+                                            isCompleted = todo.status == 1
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+
                                     if (todo.reminderTime != null) {
                                         val reminder = formatReminderDisplay(todo.reminderTime)
+                                        // 已完成态视觉降权：强制使用 CompletedColors.Text 灰色，
+                                        // 覆盖"已过期"场景下的红色（Color(0xFFDC2626)）
+                                        val reminderColor = if (todo.status == 1) {
+                                            CompletedColors.Text
+                                        } else if (reminder.isOverdue) {
+                                            Color(0xFFDC2626)
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
                                         Icon(
                                             imageVector = Icons.Default.Alarm,
                                             contentDescription = if (reminder.isOverdue) "已过期提醒" else "提醒",
-                                            tint = if (reminder.isOverdue) Color(0xFFDC2626)
-                                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            tint = reminderColor,
                                             modifier = Modifier.size(14.dp)
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
                                             text = reminder.text,
                                             fontSize = 12.sp,
-                                            color = if (reminder.isOverdue) Color(0xFFDC2626)
-                                                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontWeight = if (reminder.isOverdue)
+                                            color = reminderColor,
+                                            fontWeight = if (reminder.isOverdue && todo.status != 1)
                                                 androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))   // 提醒与附件间 1 个空格的间距
@@ -374,39 +395,15 @@ fun TodoListItem(
                                         Text(
                                             text = attachmentText,
                                             fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            // 已完成态视觉降权：使用 CompletedColors.Text 而非 onSurfaceVariant
+                                            color = if (todo.status == 1) CompletedColors.Text
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
                             }
 
-                            // 分类行
-                            if (categoryName != null) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                ) {
-                                    Text(
-                                        text = categoryIcon ?: "📋",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = categoryName,
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier
-                                            .background(
-                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                                shape = RoundedCornerShape(4.dp)
-                                            )
-                                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                                    )
-                                    // 注意：原"🎤 3s"语音备注内联显示已删除
-                                    // 语音附件数量现在通过附件聚合计数（🎤×N）显示
-                                }
-                            }
+                            // 分类行已删除（迁移到提醒行左侧，详见下方 CategoryTagWithShadow）
 
                             // 关联提示
                             if (relationHint != null) {
@@ -470,7 +467,9 @@ fun TodoListItem(
                                 Text(
                                     text = "($subTaskProgress)",
                                     fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    // 已完成态视觉降权：使用 CompletedColors.Text 而非 primary 橙色
+                                    color = if (todo.status == 1) CompletedColors.Text
+                                            else MaterialTheme.colorScheme.primary,
                                     fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -509,6 +508,7 @@ fun TodoListItem(
                             subTasks.forEach { subTask ->
                                 SubTaskInTodoListItem(
                                     subTask = subTask,
+                                    isParentCompleted = todo.status == 1,
                                     onToggleComplete = { onToggleSubTask(subTask.id) }
                                 )
                                 if (subTask != subTasks.last()) {
@@ -639,6 +639,7 @@ private fun parseProgress(progressText: String): Float {
 @Composable
 private fun SubTaskInTodoListItem(
     subTask: SubTask,
+    isParentCompleted: Boolean = false,
     onToggleComplete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -649,6 +650,7 @@ private fun SubTaskInTodoListItem(
         // 圆形复选框
         SubTaskCheckbox(
             isCompleted = subTask.isCompleted,
+            isParentCompleted = isParentCompleted,
             onClick = onToggleComplete
         )
 
@@ -699,19 +701,29 @@ private fun SubTaskInTodoListItem(
 @Composable
 private fun SubTaskCheckbox(
     isCompleted: Boolean,
+    isParentCompleted: Boolean = false,
     onClick: () -> Unit
 ) {
+    /**
+     * 勾选框背景色：
+     * - 子任务未完成 → 浅灰描边
+     * - 子任务完成 + 父待办未完成 → primary 橙色（部分完成的视觉强调）
+     * - 子任务完成 + 父待办已完成 → CompletedColors.CheckboxBgDim 浅橙（保持橙色系，仅降深度）
+     *
+     * 注意：用户要求"保持橙色系配色方案，不得更改为灰色，实现颜色深度降低效果"
+     * 因此父待办完成时也用浅橙（#FFCCAB），而非 CheckboxBg 的灰色。
+     */
+    val bgColor = when {
+        !isCompleted -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        isParentCompleted -> CompletedColors.CheckboxBgDim
+        else -> MaterialTheme.colorScheme.primary
+    }
+
     Box(
         modifier = Modifier
             .size(18.dp)
             .clip(RoundedCornerShape(50))
-            .background(
-                if (isCompleted) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                }
-            )
+            .background(bgColor)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
@@ -811,10 +823,15 @@ private fun formatCountdown(startDate: Long, currentTime: Long): String {
 @Composable
 private fun PriorityBar(
     priority: Int,
+    isCompleted: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    /** 目标颜色：根据 priority 数值获取 */
-    val targetColor = PriorityColors.colorOf(priority)
+    /** 目标颜色：未完成用原色，已完成用浅色版（保留色相但降饱和） */
+    val targetColor = if (isCompleted) {
+        PriorityColors.dimColorOf(priority)
+    } else {
+        PriorityColors.colorOf(priority)
+    }
 
     /** 颜色过渡动画：与卡片其他动画保持 200ms 节奏一致 */
     val animatedColor by animateColorAsState(
@@ -921,4 +938,64 @@ private fun aggregateAttachmentCounts(
     val voiceCount = (if (todo.voiceNotePath != null) 1 else 0) +
             subTasks.sumOf { parseVoicePathsCount(it.voicePaths) }
     return imageCount to voiceCount
+}
+
+/**
+ * 带阴影效果的分类标签
+ *
+ * 用于 TodoListItem 卡片提醒行左侧：
+ * - 阴影：水平偏移 2px，垂直偏移 2px，模糊半径 4px，颜色 rgba(0,0,0,0.1)
+ * - 字号 12sp
+ * - 已完成态使用 CompletedColors.Text 降权
+ *
+ * 实现：双层 Box
+ * - 外层 Box：matchParentSize + offset(2.dp, 2.dp) + 半透明黑背景 + blur(4.dp) 模拟阴影
+ * - 内层 Row：实际内容（背景色 + 图标 + 名称）
+ */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+private fun CategoryTagWithShadow(
+    categoryName: String,
+    categoryIcon: String?,
+    isCompleted: Boolean
+) {
+    val textColor = if (isCompleted) CompletedColors.Text
+                    else MaterialTheme.colorScheme.primary
+    val bgColor = if (isCompleted) CompletedColors.Text.copy(alpha = 0.12f)
+                  else MaterialTheme.colorScheme.primaryContainer
+
+    Box(contentAlignment = Alignment.Center) {
+        // 外层：阴影（偏移 2dp 半透明黑 + 4dp 模糊）
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .offset(x = 2.dp, y = 2.dp)
+                .background(
+                    color = Color(0x1A000000),  // rgba(0, 0, 0, 0.1)
+                    shape = RoundedCornerShape(4.dp)
+                )
+                .blur(radius = 4.dp)
+        )
+        // 内层：实际内容
+        Row(
+            modifier = Modifier
+                .background(color = bgColor, shape = RoundedCornerShape(4.dp))
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = categoryIcon ?: "📋",
+                fontSize = 12.sp,
+                color = textColor
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = categoryName,
+                fontSize = 12.sp,
+                color = textColor,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        }
+    }
 }
