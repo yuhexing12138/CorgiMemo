@@ -161,7 +161,9 @@ fun SwipeableTodoBox(
             // === 内容层（measurables[0]）===
             Box(
                 modifier = Modifier
-                    .pointerInput(isEnabled) {
+                    .pointerInput(isEnabled, isExpanded) {
+                        // 关键：key 加入 isExpanded，使得完全展开 ↔ 收起时手势检测器重启，
+                        // 避免旧协程与新手势的 snapTo 冲突，解决"完全展开后右滑卡住"问题
                         if (!isEnabled) return@pointerInput
                         detectHorizontalDragGestures(
                             onDragStart = { },
@@ -203,10 +205,26 @@ fun SwipeableTodoBox(
                                 }
                             }
                         ) { _, dragAmount ->
-                            coroutineScope.launch {
-                                val newOffset = (cardOffsetX.value + dragAmount)
-                                    .coerceIn(-actionsWidthPx, 0f)
-                                cardOffsetX.snapTo(newOffset)
+                            // 关键：完全展开时右滑直接 animateTo(0f) 动画收起，
+                            // 不走 snapTo 跟手逻辑，避免与刚结束的吸附动画冲突
+                            if (cardOffsetX.value <= -actionsWidthPx && dragAmount > 0f) {
+                                onExpandChange(false)
+                                coroutineScope.launch {
+                                    cardOffsetX.animateTo(
+                                        targetValue = 0f,
+                                        animationSpec = tween(
+                                            durationMillis = durationMs,
+                                            easing = easing
+                                        )
+                                    )
+                                }
+                            } else {
+                                // 未完全展开：正常 snapTo 跟手
+                                coroutineScope.launch {
+                                    val newOffset = (cardOffsetX.value + dragAmount)
+                                        .coerceIn(-actionsWidthPx, 0f)
+                                    cardOffsetX.snapTo(newOffset)
+                                }
                             }
                         }
                     }
