@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>飞书风格左滑操作组件 v3 - 级联重叠堆叠展开</title>
+<style>
+/* ========== 全局重置 ========== */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: #F8F6F3;
+  color: #2D2D2D;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ========== 演示页样式 ========== */
+.page-header {
+  padding: 24px 16px 12px;
+  text-align: center;
+}
+.page-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #2D2D2D;
+}
+.page-header p {
+  font-size: 13px;
+  color: #999;
+  margin-top: 6px;
+}
+.demo-list {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 8px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.demo-label {
+  font-size: 12px;
+  color: #999;
+  font-weight: 600;
+  padding: 8px 4px 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ========== 左滑组件核心样式 ========== */
+.swipe-container {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #FFFFFF;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-y;
+}
+
+/* 操作层：固定右侧 */
+.swipe-actions {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  z-index: 1;
+  will-change: transform;
+}
+
+/* 操作按钮：等宽 72px，从左到右 z-index 递增 */
+.swipe-btn {
+  width: 72px;
+  height: 100%;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-family: inherit;
+  position: relative;
+  will-change: transform, opacity;
+  flex-shrink: 0;
+}
+.swipe-btn svg {
+  width: 24px;
+  height: 24px;
+  fill: #FFFFFF;
+  flex-shrink: 0;
+}
+.swipe-btn span {
+  font-size: 12px;
+  color: #FFFFFF;
+  font-weight: 500;
+  white-space: nowrap;
+  letter-spacing: 0.5px;
+}
+.swipe-btn:last-child {
+  border-radius: 0 16px 16px 0;
+}
+
+/* 内容层：最上层，默认覆盖操作层 */
+.swipe-content {
+  position: relative;
+  z-index: 10;
+  background: #FFFFFF;
+  width: 100%;
+  will-change: transform;
+  cursor: grab;
+}
+.swipe-content:active {
+  cursor: grabbing;
+}
+.swipe-container.expanded .swipe-content {
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.08);
+}
+
+/* ========== 待办卡片内容样式（演示用） ========== */
+.todo-card {
+  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.todo-checkbox {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #FF9A5C;
+  border-radius: 6px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.todo-body {
+  flex: 1;
+  min-width: 0;
+}
+.todo-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #2D2D2D;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+.todo-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.todo-time {
+  font-size: 12px;
+  color: #999;
+}
+.priority-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+.priority-high { background: #FFE4CC; color: #E88A4D; }
+.priority-medium { background: #FFF3E0; color: #FF9A5C; }
+.priority-low { background: #E3F2FD; color: #64B5F6; }
+
+.text-card {
+  padding: 20px 16px;
+}
+.text-card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.text-card p {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.image-card {
+  padding: 0;
+}
+.image-card img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  display: block;
+}
+.image-card .image-info {
+  padding: 12px 16px;
+}
+.image-card .image-info h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.image-card .image-info p {
+  font-size: 12px;
+  color: #999;
+}
+
+/* 长内容卡片 */
+.long-card {
+  padding: 16px;
+}
+.long-card h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.long-card p {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.6;
+}
+
+/* ========== 子待办样式（验证操作按钮与内容层高度同步） ========== */
+.subtask-card {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.subtask-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.subtask-header .todo-checkbox {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #FF9A5C;
+  border-radius: 6px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.subtask-main {
+  flex: 1;
+  min-width: 0;
+}
+.subtask-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #2D2D2D;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+.subtask-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.subtask-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #FF9A5C;
+  background: #FFF3E0;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 500;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 200ms ease-out;
+}
+.subtask-toggle:hover {
+  background: #FFE4CC;
+}
+.subtask-toggle .arrow {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 250ms ease-out;
+}
+.subtask-toggle.expanded .arrow {
+  transform: rotate(90deg);
+}
+.subtask-list {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #FAF8F5;
+  border-radius: 10px;
+  border-left: 2px solid #FF9A5C;
+  margin-left: 32px;
+  /* 高度过渡：通过 max-height + transition 实现平滑展开 */
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 300ms ease-out, opacity 250ms ease-out, padding 250ms ease-out;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.subtask-list.show {
+  display: flex;
+  max-height: 600px;
+  opacity: 1;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.subtask-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #555;
+  line-height: 1.4;
+}
+.subtask-item .sub-checkbox {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #CFCFCF;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.subtask-item.done {
+  color: #BDBDBD;
+  text-decoration: line-through;
+}
+.subtask-item.done .sub-checkbox {
+  background: #FF9A5C;
+  border-color: #FF9A5C;
+}
+.subtask-counter {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: #999;
+  margin-left: 2px;
+}
+
+/* ========== 参数控制面板 ========== */
+.control-panel {
+  position: fixed;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 240px;
+  background: #FFFFFF;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+  z-index: 1000;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.control-panel h3 {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: #2D2D2D;
+}
+.control-group {
+  margin-bottom: 14px;
+}
+.control-group label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.control-group .value {
+  float: right;
+  color: #FF9A5C;
+  font-weight: 600;
+}
+.control-group input[type="range"] {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: #FFE4CC;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.control-group input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #FF9A5C;
+  cursor: pointer;
+}
+.control-group select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #EEEEEE;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: inherit;
+  background: #FFFFFF;
+  cursor: pointer;
+}
+.control-panel-toggle {
+  display: none;
+  position: fixed;
+  right: 16px;
+  bottom: 80px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #FF9A5C;
+  color: #FFFFFF;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(255, 154, 92, 0.4);
+  z-index: 1001;
+}
+
+@media (max-width: 720px) {
+  .control-panel {
+    right: 8px;
+    width: 200px;
+    padding: 12px;
+  }
+}
+
+/* ========== Toast 提示 ========== */
+.toast {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(45, 45, 45, 0.92);
+  color: #FFFFFF;
+  padding: 10px 20px;
+  border-radius: 24px;
+  font-size: 13px;
+  opacity: 0;
+  transition: all 250ms ease-out;
+  pointer-events: none;
+  z-index: 9999;
+  white-space: nowrap;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.hint {
+  text-align: center;
+  padding: 16px;
+  font-size: 12px;
+  color: #BDBDBD;
+}
+
+/* ========== 对比区 ========== */
+.compare-section {
+  max-width: 880px;
+  margin: 24px auto 0;
+  padding: 0 16px;
+}
+.compare-section h2 {
+  font-size: 16px;
+  text-align: center;
+  margin-bottom: 12px;
+  color: #2D2D2D;
+}
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.compare-grid .demo-list {
+  max-width: none;
+  padding: 0;
+}
+@media (max-width: 720px) {
+  .compare-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>飞书风格左滑操作组件 v3</h1>
+  <p>3 按钮按 分享 → 置顶 → 删除 顺序从右向左级联重叠堆叠展开 · 无间隙 · 紧密相邻</p>
+</div>
+
+<!-- 参数控制面板 -->
+<div class="control-panel" id="controlPanel">
+  <h3>动画参数控制</h3>
+  <div class="control-group">
+    <label>
+      动画时长
+      <span class="value" id="durationValue">350ms</span>
+    </label>
+    <input type="range" id="durationSlider" min="0" max="500" step="10" value="350">
+  </div>
+  <div class="control-group">
+    <label>
+      级联延迟比例
+      <span class="value" id="staggerValue">0.00</span>
+    </label>
+    <input type="range" id="staggerSlider" min="0" max="0.5" step="0.05" value="0">
+  </div>
+  <div class="control-group">
+    <label>
+      吸附比例
+      <span class="value" id="thresholdValue">0.33</span>
+    </label>
+    <input type="range" id="thresholdSlider" min="0" max="1" step="0.05" value="0.33">
+  </div>
+  <div class="control-group">
+    <label>缓动函数</label>
+    <select id="easingSelect">
+      <option value="cubic-bezier(0.25, 0.46, 0.45, 0.94)">标准 ease-out</option>
+      <option value="cubic-bezier(0.16, 1, 0.3, 1)">强缓出</option>
+      <option value="cubic-bezier(0.34, 1.56, 0.64, 1)">弹性</option>
+    </select>
+  </div>
+</div>
+
+<button class="control-panel-toggle" id="controlPanelToggle">⚙</button>
+
+<div class="demo-list">
+  <!-- 示例 1：3 按钮标准 -->
+  <div>
+    <div class="demo-label">示例 1 · 3 按钮标准（分享/置顶/删除）</div>
+    <div id="card1"></div>
+  </div>
+
+  <!-- 示例 2：2 按钮简化 -->
+  <div>
+    <div class="demo-label">示例 2 · 2 按钮简化（置顶/删除）</div>
+    <div id="card2"></div>
+  </div>
+
+  <!-- 示例 3：4 按钮扩展 -->
+  <div>
+    <div class="demo-label">示例 3 · 4 按钮扩展（标记/置顶/编辑/删除）</div>
+    <div id="card3"></div>
+  </div>
+
+  <!-- 示例 4：长内容卡片 -->
+  <div>
+    <div class="demo-label">示例 4 · 长内容卡片</div>
+    <div id="card4"></div>
+  </div>
+
+  <!-- 示例 5：带图片卡片 -->
+  <div>
+    <div class="demo-label">示例 5 · 带图片卡片</div>
+    <div id="card5"></div>
+  </div>
+
+  <!-- 示例 6：子待办展开卡片（验证操作按钮与内容层高度同步） -->
+  <div>
+    <div class="demo-label">示例 6 · 子待办展开卡片（点击 "▸ 3 个子任务" 展开/收起，验证按钮高度跟随）</div>
+    <div id="card6"></div>
+  </div>
+
+  <div class="hint">提示：左滑卡片查看级联重叠堆叠展开效果（分享→置顶→删除），右侧控制面板可实时调整参数</div>
+</div>
+
+<!-- 效果对比区 -->
+<div class="compare-section">
+  <h2>v1 旧版 vs v3 新版 对比</h2>
+  <div class="compare-grid">
+    <div>
+      <div class="demo-label" style="text-align:center;">v1 · 依次挤出</div>
+      <div id="compareV1"></div>
+    </div>
+    <div>
+      <div class="demo-label" style="text-align:center;">v3 · 级联重叠堆叠展开</div>
+      <div id="compareV3"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast 提示元素 -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+ * 飞书风格左滑操作组件 v3 - 级联重叠堆叠展开
+ *
+ * 核心算法 (v3):
+ *   - 内容层 translateX 跟手 (-216 ~ 0)
+ *   - 按钮 transform 由 revealProgress + staggerRatio 共同驱动（级联）
+ *   - 3 按钮按 分享 → 置顶 → 删除 顺序从右向左级联滑出
+ *   - 初始全部堆叠在 Delete 槽位 (144px) 完全重叠
+ *   - 最终完全展开，按钮紧密相邻 (间距 0px) 无间隙
+ *   - opacity 二元化：收起态=0，滑动/展开态=1（无淡入淡出）
+ *
+ * 公式:
+ *   revealProgress = revealPx / actionsWidth  (0→1)
+ *   localStart = index * staggerRatio          (0, 0.2, 0.4)
+ *   localProgress = clamp((revealProgress - localStart) / (1 - localStart), 0, 1)
+ *
+ *   关键：translateX 是相对按钮在 flex 布局中原始位置的偏移
+ *   offset = (n-1-i) * buttonWidth   分享=144, 置顶=72, 删除=0
+ *   button[i].translateX = offset * (1 - localProgress)
+ *   button[i].opacity    = (revealPx > 0) ? 1 : 0
+ *
+ * z-index (v3 倒置): 分享=3, 置顶=2, 删除=1 (从左到右递减)
+ * ============================================================ */
+
+/* ========== 全局参数（控制面板可调） ========== */
+const globalParams = {
+  duration: 350,
+  staggerRatio: 0,                                    // v3: 级联延迟比例 (0~0.5, 0=同步)
+  thresholdRatio: 1 / 3,                              // v3+: 吸附比例（松手后展开/回弹的距离阈值比例，0~1）
+  easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+};
+
+/* ========== 内置 SVG 图标库 ========== */
+const ICONS = {
+  share:  '<svg viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>',
+  pin:    '<svg viewBox="0 0 24 24"><path d="M14 4v5l2 3v2h-5v6h-2v-6H4v-2l2-3V4h-1V2h10v2h-1zm-7 0v5.2L5.2 12h7.6L12 9.2V4H7z"/></svg>',
+  delete: '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>',
+  read:   '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>',
+  edit:   '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>'
+};
+
+/* ========== 组件核心 ========== */
+const SwipeActions = (function () {
+  const BUTTON_WIDTH = 72; // 单按钮宽度
+
+  /**
+   * 创建左滑操作组件实例
+   * @param {Object} options
+   * @param {HTMLElement} options.container
+   * @param {HTMLElement|String} options.content
+   * @param {Array} options.buttons
+   * @param {string} [options.mode] 'cascade' (v3) | 'sequential' (v1 兼容)
+   * @param {Object} [options.params] 覆盖全局参数
+   */
+  function create(options) {
+    const params = Object.assign({}, globalParams, options.params || {});
+    // 关键：thresholdRatio 同时支持 全局参数(params) 与 实例选项(options) 两种来源
+    //   - 优先 options.thresholdRatio（实例级覆盖）
+    //   - 其次 params.thresholdRatio（控制面板可调）
+    //   - 最后 fallback 到 1/3（飞书原版默认）
+    const config = {
+      buttons: options.buttons,
+      mode: options.mode || 'cascade',
+      thresholdRatio: options.thresholdRatio != null
+        ? options.thresholdRatio
+        : (params.thresholdRatio != null ? params.thresholdRatio : 1 / 3),
+      ...options
+    };
+    const buttons = config.buttons;
+    const actionsWidth = buttons.length * BUTTON_WIDTH;
+    const threshold = actionsWidth * config.thresholdRatio;
+    const staggerRatio = params.staggerRatio;
+
+    /* === 构建 DOM === */
+    const container = options.container;
+    container.innerHTML = ''; // 清空容器
+    container.classList.add('swipe-container');
+
+    // 操作层
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'swipe-actions';
+    actionsEl.style.width = actionsWidth + 'px';
+
+    // 渲染按钮（v3: z-index 从左到右 倒置 3→2→1）
+    const btnElements = [];
+    buttons.forEach((btn, index) => {
+      const btnEl = document.createElement('button');
+      btnEl.className = 'swipe-btn';
+      btnEl.style.backgroundColor = btn.color;
+      // v3 倒置：分享(i=0) z-index=3，置顶(i=1)=2，删除(i=2)=1
+      btnEl.style.zIndex = String(buttons.length - index);
+      btnEl.dataset.action = btn.action || btn.label;
+      btnEl.dataset.index = String(index);
+      btnEl.innerHTML = (ICONS[btn.icon] || ICONS.share) + '<span>' + btn.label + '</span>';
+      actionsEl.appendChild(btnEl);
+      btnElements.push(btnEl);
+    });
+
+    // 内容层
+    const contentEl = document.createElement('div');
+    contentEl.className = 'swipe-content';
+    if (typeof options.content === 'string') {
+      contentEl.innerHTML = options.content;
+    } else if (options.content instanceof HTMLElement) {
+      contentEl.appendChild(options.content);
+    }
+
+    container.appendChild(actionsEl);
+    container.appendChild(contentEl);
+
+    /* === 状态变量 === */
+    let startX = 0;
+    let startY = 0;
+    let currentTranslateX = 0;
+    let directionLocked = false;
+    let isHorizontal = false;
+    let isDragging = false;
+    let rafId = null;
+    let isAnimating = false;
+    let suppressClick = false;
+
+    /* === 工具函数 === */
+
+    function getRevealPx() {
+      return Math.max(0, -currentTranslateX);
+    }
+
+    /**
+     * v3 级联重叠堆叠动画核心算法
+     * 按钮全部从 Delete 槽位 (144px) 重叠堆叠状态开始
+     * 按 分享 → 置顶 → 删除 顺序从右向左级联滑出
+     * 最终完全展开，按钮紧密相邻 (间距 0px)
+     *
+     * 注意：
+     *   1. translateX 是相对于按钮在 flex 布局中原始位置的偏移
+     *      - 按钮[i] 原始位置 = i * BUTTON_WIDTH (0, 72, 144)
+     *      - 初始偏移 (堆叠到 Delete 槽位) = (n-1-i) * BUTTON_WIDTH (144, 72, 0)
+     *      - 终态偏移 (回到原始位置) = 0
+     *   2. opacity 为二元状态：无淡入淡出动画
+     *      - revealPx == 0: opacity = 0 (收起态，按钮不可见)
+     *      - revealPx > 0: opacity = 1 (滑动/展开态，按钮立即可见)
+     * @param {number} revealPx 内容层左滑距离 0~actionsWidth
+     */
+    function updateButtonsCascade(revealPx) {
+      const revealProgress = revealPx / actionsWidth;
+      const staggerStep = staggerRatio;
+      // opacity 二元化：避免滑动过程中的淡入淡出动画
+      const opacity = revealPx > 0 ? 1 : 0;
+      btnElements.forEach((btnEl, index) => {
+        const localStart = index * staggerStep;
+        const denom = 1 - localStart;
+        // 计算本地进度：考虑 localStart=1 的边界情况
+        const localProgress = denom > 0
+          ? Math.max(0, Math.min(1, (revealProgress - localStart) / denom))
+          : (revealProgress >= localStart ? 1 : 0);
+        // 偏移量 = 堆叠偏移 * (1 - localProgress)
+        // 分享(i=0) 初始偏移 144 → 终态 0
+        // 置顶(i=1) 初始偏移 72  → 终态 0
+        // 删除(i=2) 初始偏移 0   → 终态 0 (始终在原位)
+        const offset = (buttons.length - 1 - index) * BUTTON_WIDTH;
+        const translateX = offset * (1 - localProgress);
+        btnEl.style.transform = 'translateX(' + translateX + 'px)';
+        btnEl.style.opacity = String(opacity);
+      });
+    }
+
+    /**
+     * v1 依次挤出算法（兼容模式，仅用于对比展示）
+     */
+    function updateButtonsSequential(revealPx) {
+      btnElements.forEach((btnEl, index) => {
+        // 从右向左编号：最右按钮 segIndex=0
+        const segIndex = buttons.length - 1 - index;
+        const segStart = segIndex * BUTTON_WIDTH;
+        const segEnd = (segIndex + 1) * BUTTON_WIDTH;
+        const progress = Math.max(0, Math.min(1, (revealPx - segStart) / BUTTON_WIDTH));
+        const translateX = BUTTON_WIDTH * (1 - progress);
+        btnEl.style.transform = 'translateX(' + translateX + 'px)';
+        btnEl.style.opacity = String(progress);
+      });
+    }
+
+    function updateButtons(revealPx) {
+      if (config.mode === 'sequential') {
+        updateButtonsSequential(revealPx);
+      } else {
+        updateButtonsCascade(revealPx);
+      }
+    }
+
+    function resetButtons() {
+      updateButtonsCascade(0);
+    }
+
+    function setContentTransform(tx) {
+      currentTranslateX = tx;
+      contentEl.style.transition = 'none';
+      contentEl.style.transform = 'translateX(' + tx + 'px)';
+    }
+
+    function animateTo(target) {
+      isAnimating = true;
+      contentEl.style.transition = 'transform ' + params.duration + 'ms ' + params.easing;
+      contentEl.style.transform = 'translateX(' + target + 'px)';
+
+      if (target < 0) {
+        container.classList.add('expanded');
+      } else {
+        container.classList.remove('expanded');
+      }
+
+      function tick() {
+        const matrix = new DOMMatrix(getComputedStyle(contentEl).transform);
+        const liveTx = matrix.m41;
+        currentTranslateX = liveTx;
+        const revealPx = Math.max(0, -liveTx);
+        updateButtons(revealPx);
+        if (isAnimating) {
+          rafId = requestAnimationFrame(tick);
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+
+      const onEnd = function () {
+        isAnimating = false;
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        currentTranslateX = target;
+        updateButtons(Math.max(0, -target));
+        contentEl.removeEventListener('transitionend', onEnd);
+      };
+      contentEl.addEventListener('transitionend', onEnd);
+    }
+
+    function open() {
+      if (isAnimating || currentTranslateX <= -actionsWidth + 1) return;
+      animateTo(-actionsWidth);
+    }
+
+    function close() {
+      if (isAnimating || currentTranslateX >= -1) return;
+      animateTo(0);
+    }
+
+    function toggle() {
+      if (currentTranslateX < -threshold) {
+        close();
+      } else {
+        open();
+      }
+    }
+
+    function setContent(content) {
+      if (typeof content === 'string') {
+        contentEl.innerHTML = content;
+      } else if (content instanceof HTMLElement) {
+        contentEl.innerHTML = '';
+        contentEl.appendChild(content);
+      }
+    }
+
+    function destroy() {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      contentEl.removeEventListener('touchstart', onTouchStart);
+      contentEl.removeEventListener('touchmove', onTouchMove);
+      contentEl.removeEventListener('touchend', onTouchEnd);
+      contentEl.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      contentEl.removeEventListener('click', onContentClick);
+      btnElements.forEach((btnEl) => {
+        btnEl.removeEventListener('click', onButtonClick);
+      });
+      container.innerHTML = '';
+      container.classList.remove('swipe-container', 'expanded');
+    }
+
+    /* === 手势处理 === */
+    function onTouchStart(e) {
+      if (isAnimating) return;
+      const touch = e.touches[0];
+      startX = touch.clientX;
+      startY = touch.clientY;
+      directionLocked = false;
+      isHorizontal = false;
+      isDragging = false;
+    }
+
+    function onTouchMove(e) {
+      if (isAnimating) return;
+      const touch = e.touches[0];
+      const moveX = touch.clientX;
+      const moveY = touch.clientY;
+      const dx = Math.abs(moveX - startX);
+      const dy = Math.abs(moveY - startY);
+
+      if (!directionLocked) {
+        if (dx > dy && dx > 5) {
+          isHorizontal = true;
+          directionLocked = true;
+          isDragging = true;
+        } else if (dy >= dx && dy > 5) {
+          isHorizontal = false;
+          directionLocked = true;
+          return;
+        } else {
+          return;
+        }
+      }
+
+      if (!isHorizontal) return;
+      e.preventDefault();
+
+      const deltaX = moveX - startX;
+      const rawTx = currentTranslateX + deltaX;
+      const clampedTx = Math.max(-actionsWidth, Math.min(0, rawTx));
+      startX = moveX;
+      setContentTransform(clampedTx);
+      updateButtons(getRevealPx());
+    }
+
+    function onTouchEnd(e) {
+      if (!isHorizontal || !isDragging) return;
+      isDragging = false;
+      suppressClick = true;
+      setTimeout(function () { suppressClick = false; }, 300);
+      const revealPx = getRevealPx();
+      const target = revealPx >= threshold ? -actionsWidth : 0;
+      animateTo(target);
+    }
+
+    /* === 鼠标事件（桌面端测试） === */
+    let mouseDown = false;
+
+    function onMouseDown(e) {
+      if (isAnimating) return;
+      mouseDown = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      directionLocked = false;
+      isHorizontal = false;
+      isDragging = false;
+      e.preventDefault();
+    }
+
+    function onMouseMove(e) {
+      if (!mouseDown || isAnimating) return;
+      const moveX = e.clientX;
+      const moveY = e.clientY;
+      const dx = Math.abs(moveX - startX);
+      const dy = Math.abs(moveY - startY);
+
+      if (!directionLocked) {
+        if (dx > dy && dx > 5) {
+          isHorizontal = true;
+          directionLocked = true;
+          isDragging = true;
+        } else if (dy >= dx && dy > 5) {
+          isHorizontal = false;
+          directionLocked = true;
+          mouseDown = false;
+          return;
+        } else {
+          return;
+        }
+      }
+
+      if (!isHorizontal) return;
+
+      const deltaX = moveX - startX;
+      const rawTx = currentTranslateX + deltaX;
+      const clampedTx = Math.max(-actionsWidth, Math.min(0, rawTx));
+      startX = moveX;
+      setContentTransform(clampedTx);
+      updateButtons(getRevealPx());
+    }
+
+    function onMouseUp(e) {
+      if (!mouseDown) return;
+      mouseDown = false;
+      if (!isHorizontal || !isDragging) return;
+      isDragging = false;
+      suppressClick = true;
+      setTimeout(function () { suppressClick = false; }, 300);
+      const revealPx = getRevealPx();
+      const target = revealPx >= threshold ? -actionsWidth : 0;
+      animateTo(target);
+    }
+
+    /* === 点击处理 === */
+    function onContentClick(e) {
+      if (isDragging || suppressClick) return;
+      if (currentTranslateX < 0) {
+        close();
+      }
+    }
+
+    function onButtonClick(e) {
+      const btnEl = e.currentTarget;
+      const action = btnEl.dataset.action;
+      const index = parseInt(btnEl.dataset.index, 10);
+      const btnConfig = buttons[index];
+      if (btnConfig && typeof btnConfig.onClick === 'function') {
+        btnConfig.onClick({ action: action, index: index });
+      }
+      close();
+    }
+
+    /* === 绑定事件 === */
+    contentEl.addEventListener('touchstart', onTouchStart, { passive: true });
+    contentEl.addEventListener('touchmove', onTouchMove, { passive: false });
+    contentEl.addEventListener('touchend', onTouchEnd);
+    contentEl.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    contentEl.addEventListener('click', onContentClick);
+    btnElements.forEach((btnEl) => {
+      btnEl.addEventListener('click', onButtonClick);
+    });
+
+    // 初始化按钮状态
+    resetButtons();
+
+    return {
+      open: open,
+      close: close,
+      toggle: toggle,
+      destroy: destroy,
+      setContent: setContent
+    };
+  }
+
+  return { create: create };
+})();
+
+/* ========== Toast ========== */
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(function () {
+    toast.classList.remove('show');
+  }, 1800);
+}
+
+/* ========== 演示页 - 通用按钮配置 ========== */
+const defaultButtons3 = [
+  { label: '分享', color: '#FFD54F', icon: 'share',  action: 'share',  onClick: function () { showToast('已点击 · 分享'); } },
+  { label: '置顶', color: '#FF9A5C', icon: 'pin',    action: 'pin',    onClick: function () { showToast('已点击 · 置顶'); } },
+  { label: '删除', color: '#FF5252', icon: 'delete', action: 'delete', onClick: function () { showToast('已点击 · 删除'); } }
+];
+
+const buttons2 = [
+  { label: '置顶', color: '#FF9A5C', icon: 'pin',    action: 'pin',    onClick: function () { showToast('已点击 · 置顶'); } },
+  { label: '删除', color: '#FF5252', icon: 'delete', action: 'delete', onClick: function () { showToast('已点击 · 删除'); } }
+];
+
+const buttons4 = [
+  { label: '标记', color: '#90CAF9', icon: 'read',   action: 'read',   onClick: function () { showToast('已点击 · 标记已读'); } },
+  { label: '置顶', color: '#FF9A5C', icon: 'pin',    action: 'pin',    onClick: function () { showToast('已点击 · 置顶'); } },
+  { label: '编辑', color: '#7EC8A0', icon: 'edit',   action: 'edit',   onClick: function () { showToast('已点击 · 编辑'); } },
+  { label: '删除', color: '#FF5252', icon: 'delete', action: 'delete', onClick: function () { showToast('已点击 · 删除'); } }
+];
+
+/* ========== 全局实例管理（用于参数重建） ========== */
+const allInstances = [];
+
+function rebuildAllInstances() {
+  allInstances.forEach(function (entry) {
+    entry.instance.destroy();
+    entry.instance = SwipeActions.create({
+      container: entry.container,
+      content: entry.content,
+      buttons: entry.buttons,
+      mode: entry.mode
+    });
+  });
+}
+
+/* ========== 创建演示卡片 ========== */
+function createCard(containerId, content, buttons, mode) {
+  const container = document.getElementById(containerId);
+  const instance = SwipeActions.create({
+    container: container,
+    content: content,
+    buttons: buttons,
+    mode: mode || 'cascade'
+  });
+  allInstances.push({
+    container: container,
+    content: content,
+    buttons: buttons,
+    mode: mode || 'cascade',
+    instance: instance
+  });
+}
+
+// 示例 1: 3 按钮标准
+createCard('card1',
+  '<div class="todo-card">' +
+    '<div class="todo-checkbox"></div>' +
+    '<div class="todo-body">' +
+      '<div class="todo-title">完成飞书风格左滑组件 v3 设计</div>' +
+      '<div class="todo-meta">' +
+        '<span class="todo-time">今天 18:00</span>' +
+        '<span class="priority-tag priority-high">高优先级</span>' +
+      '</div>' +
+    '</div>' +
+  '</div>',
+  defaultButtons3
+);
+
+// 示例 2: 2 按钮简化
+createCard('card2',
+  '<div class="todo-card">' +
+    '<div class="todo-checkbox"></div>' +
+    '<div class="todo-body">' +
+      '<div class="todo-title">2 按钮简化版（置顶+删除）</div>' +
+      '<div class="todo-meta">' +
+        '<span class="todo-time">明天 10:00</span>' +
+        '<span class="priority-tag priority-low">低优先级</span>' +
+      '</div>' +
+    '</div>' +
+  '</div>',
+  buttons2
+);
+
+// 示例 3: 4 按钮扩展
+createCard('card3',
+  '<div class="todo-card">' +
+    '<div class="todo-checkbox"></div>' +
+    '<div class="todo-body">' +
+      '<div class="todo-title">4 按钮扩展版（标记+置顶+编辑+删除）</div>' +
+      '<div class="todo-meta">' +
+        '<span class="todo-time">本周内</span>' +
+        '<span class="priority-tag priority-medium">中优先级</span>' +
+      '</div>' +
+    '</div>' +
+  '</div>',
+  buttons4
+);
+
+// 示例 4: 长内容卡片
+createCard('card4',
+  '<div class="long-card">' +
+    '<h3>长内容卡片测试</h3>' +
+    '<p>这是一段较长的待办描述，用于验证当内容层高度增加时，操作层和按钮的高度会跟随容器自动调整。每个按钮的高度始终与组件整体高度保持动态一致。</p>' +
+    '<p style="margin-top:8px;">第二段文字继续填充，验证多行文本场景下的布局稳定性。</p>' +
+  '</div>',
+  defaultButtons3
+);
+
+// 示例 5: 带图片卡片
+createCard('card5',
+  '<div class="image-card">' +
+    '<img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=corgi%20dog%20working%20on%20laptop%20cute%20illustration%20flat%20design%20warm%20colors&image_size=landscape_4_3" alt="柯基工作">' +
+    '<div class="image-info">' +
+      '<h3>柯基待办提醒</h3>' +
+      '<p>带图片的卡片同样支持级联重叠堆叠展开</p>' +
+    '</div>' +
+  '</div>',
+  defaultButtons3
+);
+
+// 示例 6：子待办展开卡片
+// 验证要点：点击"▸ N 个子任务"展开/收起子待办列表，列表高度变化时
+// 操作层和按钮应通过 height: 100% 跟随内容层高度自适应同步变化
+createCard('card6',
+  '<div class="subtask-card">' +
+    '<div class="subtask-header">' +
+      '<div class="todo-checkbox"></div>' +
+      '<div class="subtask-main">' +
+        '<div class="subtask-title">完成 v3 飞书风格左滑组件</div>' +
+        '<div class="subtask-meta">' +
+          '<span class="todo-time">今天 18:00</span>' +
+          '<span class="priority-tag priority-high">高优先级</span>' +
+          '<button type="button" class="subtask-toggle" data-card="card6" id="subtaskToggle6">' +
+            '<span class="arrow">▸</span>' +
+            '<span class="subtask-counter">3 个子任务（已完成 1）</span>' +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="subtask-list" id="subtaskList6">' +
+      '<div class="subtask-item done">' +
+        '<div class="sub-checkbox"></div>' +
+        '<span>设计文档定稿</span>' +
+      '</div>' +
+      '<div class="subtask-item">' +
+        '<div class="sub-checkbox"></div>' +
+        '<span>实现级联重叠堆叠动画算法</span>' +
+      '</div>' +
+      '<div class="subtask-item">' +
+        '<div class="sub-checkbox"></div>' +
+        '<span>编写演示页与参数控制面板</span>' +
+      '</div>' +
+    '</div>' +
+  '</div>',
+  defaultButtons3
+);
+
+/* ========== 子待办展开/收起交互（示例 6） ==========
+ * 关键：展开/收起只操作 .subtask-list 的 .show 类和 .subtask-toggle 的 .expanded 类
+ * 内容层 .subtask-card 高度由内容自然撑开，.swipe-actions 与 .swipe-btn 的 height: 100%
+ * 会自动跟随，无需任何额外 JS 同步逻辑
+ */
+function initSubtaskToggle(toggleId, listId) {
+  const toggleBtn = document.getElementById(toggleId);
+  const listEl = document.getElementById(listId);
+  if (!toggleBtn || !listEl) return;
+  toggleBtn.addEventListener('click', function (e) {
+    // 阻止冒泡，避免触发 swipe-content 的点击收起逻辑
+    e.stopPropagation();
+    const isExpanded = listEl.classList.toggle('show');
+    toggleBtn.classList.toggle('expanded', isExpanded);
+    // 收起时同步关闭左滑操作层（避免高度抖动）
+    if (!isExpanded) {
+      const cardEl = toggleBtn.closest('.swipe-container');
+      if (cardEl && cardEl.classList.contains('expanded')) {
+        const instEntry = allInstances.find(function (entry) { return entry.container === cardEl; });
+        if (instEntry && instEntry.instance) {
+          instEntry.instance.close();
+        }
+      }
+    }
+  });
+  // 同步子任务勾选状态（演示用）
+  listEl.querySelectorAll('.subtask-item').forEach(function (item) {
+    const cb = item.querySelector('.sub-checkbox');
+    if (cb) {
+      cb.style.cursor = 'pointer';
+      cb.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        item.classList.toggle('done');
+        updateSubtaskCounter(toggleBtn, listEl);
+      });
+    }
+  });
+}
+
+function updateSubtaskCounter(toggleBtn, listEl) {
+  const total = listEl.querySelectorAll('.subtask-item').length;
+  const done = listEl.querySelectorAll('.subtask-item.done').length;
+  const counter = toggleBtn.querySelector('.subtask-counter');
+  if (counter) {
+    counter.textContent = total + ' 个子任务（已完成 ' + done + '）';
+  }
+}
+
+initSubtaskToggle('subtaskToggle6', 'subtaskList6');
+
+// 对比区 v1（旧版依次挤出）
+createCard('compareV1',
+  '<div class="todo-card">' +
+    '<div class="todo-checkbox"></div>' +
+    '<div class="todo-body">' +
+      '<div class="todo-title">v1 旧版依次挤出</div>' +
+      '<div class="todo-meta">' +
+        '<span class="todo-time">保留作对比</span>' +
+      '</div>' +
+    '</div>' +
+  '</div>',
+  defaultButtons3,
+  'sequential'
+);
+
+// 对比区 v3（新版级联重叠堆叠展开）
+createCard('compareV3',
+  '<div class="todo-card">' +
+    '<div class="todo-checkbox"></div>' +
+    '<div class="todo-body">' +
+      '<div class="todo-title">v3 新版级联重叠堆叠</div>' +
+      '<div class="todo-meta">' +
+        '<span class="todo-time">推荐使用</span>' +
+      '</div>' +
+    '</div>' +
+  '</div>',
+  defaultButtons3,
+  'cascade'
+);
+
+/* ========== 控制面板交互 ========== */
+const durationSlider = document.getElementById('durationSlider');
+const durationValue = document.getElementById('durationValue');
+const staggerSlider = document.getElementById('staggerSlider');
+const staggerValue = document.getElementById('staggerValue');
+const thresholdSlider = document.getElementById('thresholdSlider');
+const thresholdValue = document.getElementById('thresholdValue');
+const easingSelect = document.getElementById('easingSelect');
+
+durationSlider.addEventListener('input', function () {
+  globalParams.duration = parseInt(this.value);
+  durationValue.textContent = globalParams.duration + 'ms';
+  rebuildAllInstances();
+});
+
+staggerSlider.addEventListener('input', function () {
+  globalParams.staggerRatio = parseFloat(this.value);
+  staggerValue.textContent = globalParams.staggerRatio.toFixed(2);
+  rebuildAllInstances();
+});
+
+// 吸附比例：松手后展开/回弹的临界距离比例
+//   - 0.0：只要滑动过任意距离就吸附展开（极易触发）
+//   - 0.5：滑动距离超过操作层一半才吸附展开
+//   - 1.0：必须完全展开（极难触发）
+thresholdSlider.addEventListener('input', function () {
+  globalParams.thresholdRatio = parseFloat(this.value);
+  thresholdValue.textContent = globalParams.thresholdRatio.toFixed(2);
+  rebuildAllInstances();
+});
+
+easingSelect.addEventListener('change', function () {
+  globalParams.easing = this.value;
+  rebuildAllInstances();
+});
+
+/* ========== 移动端控制面板切换 ========== */
+const controlPanel = document.getElementById('controlPanel');
+const controlPanelToggle = document.getElementById('controlPanelToggle');
+
+if (window.innerWidth <= 720) {
+  controlPanelToggle.style.display = 'block';
+  controlPanel.style.display = 'none';
+}
+
+controlPanelToggle.addEventListener('click', function () {
+  const isVisible = controlPanel.style.display === 'block';
+  controlPanel.style.display = isVisible ? 'none' : 'block';
+});
+</script>
+</body>
+</html>

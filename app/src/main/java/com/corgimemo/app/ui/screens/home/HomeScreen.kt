@@ -102,7 +102,6 @@ import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.ui.components.UnifiedEmptyState
 import com.corgimemo.app.ui.components.FirstTimeGuideOverlay
 import com.corgimemo.app.ui.components.SolarTermCard
-import com.corgimemo.app.ui.components.SwipeableTodoBox
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.CorgiPullToRefreshIndicator
@@ -116,7 +115,6 @@ import com.corgimemo.app.ui.theme.UiColors
 import kotlinx.coroutines.launch
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -182,28 +180,14 @@ fun HomeScreen(
     var showBatchMoveDialog by remember { mutableStateOf(false) }
 
     /**
-     * Swipe 左滑触发的待办删除二次确认状态
+     * 单个待办删除二次确认状态（长按菜单删除走此流程）
      *
      * 区别于批量删除的 AlertDialog（showBatchDeleteDialog），这是单个待办
-     * 通过左滑手势触发"删除"按钮后的二次确认，符合 spec 中"删除需二次确认"的要求。
+     * 通过长按菜单触发"删除"后的二次确认，符合 spec 中"删除需二次确认"的要求。
      *
      * 状态：null = 不显示；非 null = 显示弹窗并传入要删除的 todoId
      */
-    var pendingSwipeDeleteId by remember { mutableStateOf<Long?>(null) }
-
-    /**
-     * 当前 swipe 展开的卡片 ID（互斥展开控制，single source of truth）
-     *
-     * null = 没有卡片处于 swipe 展开状态；非 null = 该 ID 的卡片保持展开
-     *
-     * 流程：
-     * 1. 用户左滑卡片 A → onSwipeExpandChange(true) → swipeExpandedTodoId = A.id
-     * 2. 用户左滑卡片 B → onSwipeExpandChange(true) → swipeExpandedTodoId = B.id
-     *    （A 的 LaunchedEffect 监听到 expandedTodoId 变化，自动收起）
-     * 3. 用户点击 A 的"删除" → onDelete(A.id) + onSwipeExpandChange(false)
-     *    → swipeExpandedTodoId = null（A 弹起二次确认弹窗）
-     */
-    var swipeExpandedTodoId by remember { mutableStateOf<Long?>(null) }
+    var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
 
     /** 快速添加待办 BottomSheet 状态 */
     var showQuickAddSheet by remember { mutableStateOf(false) }
@@ -571,56 +555,8 @@ fun HomeScreen(
                                         else -> "📋"
                                     }
                                 }
-                                SwipeableTodoBox(
-                                    modifier = Modifier.testTag("swipeableTodoBox_${todo.id}"),
-                                    isEnabled = !isBatchMode,
-                                    isExpanded = swipeExpandedTodoId == todo.id,
-                                    onExpandChange = { isExpanded ->
-                                        /**
-                                         * Swipe 展开状态变化：维护 swipeExpandedTodoId
-                                         * 实现"同一时间仅一张卡片展开"的互斥控制
-                                         *
-                                         * isExpanded = true  → 标记本卡为展开（其他卡自动收起）
-                                         * isExpanded = false → 清空展开状态（允许其他卡展开）
-                                         */
-                                        swipeExpandedTodoId = if (isExpanded) todo.id else null
-                                    },
-                                    onPinClick = {
-                                        /**
-                                         * 置顶功能：暂不实现后端（无 pinned 字段），
-                                         * 当前仅记录日志并提示用户，后续接入 TodoItem.pinned 字段后
-                                         * 改为 viewModel.togglePin(todo.id) + 列表重新排序
-                                         */
-                                        android.util.Log.w(
-                                            "TodoCardSwipe",
-                                            "置顶：todoId=${todo.id}, title=${todo.title}"
-                                        )
-                                        Toast.makeText(
-                                            context,
-                                            "已置顶（功能开发中）",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    },
-                                    onShareClick = {
-                                        /**
-                                         * 左滑分享：与 onShareAsImage 语义一致，
-                                         * 复用 shareTodoAsImage 实现图片分享（保持产品一致性）
-                                         */
-                                        shareTodoAsImage(context, todo, categories)
-                                    },
-                                    onDeleteClick = {
-                                        /**
-                                         * 左滑删除：先弹二次确认弹窗，弹窗确认后才真正删除
-                                         *
-                                         * 区别于批量删除（showBatchDeleteDialog），
-                                         * 此处仅删除单个待办，符合 spec 中"删除需二次确认"要求
-                                         */
-                                        viewModel.onUserInteraction()
-                                        pendingSwipeDeleteId = todo.id
-                                    }
-                                ) {
-                                    TodoListItem(
-                                        todo = todo,
+                                TodoListItem(
+                                    todo = todo,
                                         subTaskProgress = subTaskProgressMap[todo.id],
                                         subTasks = subTasksMap[todo.id] ?: emptyList(),
                                         isExpanded = expandedTodos.contains(todo.id),
@@ -634,10 +570,10 @@ fun HomeScreen(
                                         },
                                         onDelete = {
                                             /**
-                                             * 长按菜单触发的删除：与左滑删除走同一确认弹窗
+                                             * 长按菜单触发的删除：弹出二次确认弹窗
                                              */
                                             viewModel.onUserInteraction()
-                                            pendingSwipeDeleteId = it
+                                            pendingDeleteId = it
                                         },
                                         onClick = {
                                             viewModel.onUserInteraction()
@@ -663,7 +599,6 @@ fun HomeScreen(
                                         /** 传递搜索关键词用于结果高亮显示 */
                                         searchQuery = searchQuery
                                     )
-                                }
                             }
                         }
                         }
@@ -853,11 +788,11 @@ fun HomeScreen(
         )
     }
 
-    // 单个待办 swipe 删除二次确认弹窗
+    // 单个待办删除二次确认弹窗
     // 区别于批量删除弹窗（showBatchDeleteDialog），本弹窗仅针对单个待办
-    pendingSwipeDeleteId?.let { targetId ->
+    pendingDeleteId?.let { targetId ->
         AlertDialog(
-            onDismissRequest = { pendingSwipeDeleteId = null },
+            onDismissRequest = { pendingDeleteId = null },
             title = { Text("删除待办") },
             text = {
                 Text(
@@ -867,7 +802,7 @@ fun HomeScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        pendingSwipeDeleteId = null
+                        pendingDeleteId = null
                         viewModel.deleteTodo(targetId)
                         coroutineScope.launch {
                             snackbarHostState.showSnackbar("已删除")
@@ -878,7 +813,7 @@ fun HomeScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingSwipeDeleteId = null }) {
+                TextButton(onClick = { pendingDeleteId = null }) {
                     Text("取消")
                 }
             }
