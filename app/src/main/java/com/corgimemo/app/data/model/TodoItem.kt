@@ -12,7 +12,8 @@ import androidx.room.PrimaryKey
         Index(value = ["categoryId", "status"]),
         Index(value = ["priority", "startDate"]),
         Index(value = ["hasSubTasks"]),
-        Index(value = ["dueDate", "status"])
+        Index(value = ["dueDate", "status"]),
+        Index(value = ["isPinned"])
     ]
 )
 data class TodoItem(

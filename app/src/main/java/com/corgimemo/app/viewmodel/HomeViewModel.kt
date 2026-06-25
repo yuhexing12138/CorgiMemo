@@ -229,6 +229,35 @@ class HomeViewModel @Inject constructor(
     private val _expandedTodos = MutableStateFlow<Set<Long>>(emptySet())
     val expandedTodos: StateFlow<Set<Long>> = _expandedTodos.asStateFlow()
 
+    // ========== 左滑操作区展开状态（用于控制 ModalNavigationDrawer 手势） ==========
+
+    /**
+     * 是否有任一待办卡片的左滑操作区处于展开状态
+     *
+     * 用途：当任何待办卡片左滑展开时，让 MainScreen 临时禁用
+     * ModalNavigationDrawer 的 gesturesEnabled，避免用户右滑关闭
+     * 操作区时把侧边导航栏也带出来。
+     *
+     * - true：至少一个 SwipeableTodoBox 处于展开状态
+     * - false：所有 SwipeableTodoBox 都已收起
+     */
+    private val _swipeActionExpanded = MutableStateFlow(false)
+    val swipeActionExpanded: StateFlow<Boolean> = _swipeActionExpanded.asStateFlow()
+
+    /**
+     * 设置左滑操作区展开状态
+     *
+     * 由 HomeScreen 在 SwipeableTodoBox 的 onExpandChange 回调中调用，
+     * 同步当前是否有卡片处于展开状态到 ViewModel。
+     *
+     * @param expanded true = 有卡片展开，false = 全部收起
+     */
+    fun setSwipeActionExpanded(expanded: Boolean) {
+        if (_swipeActionExpanded.value != expanded) {
+            _swipeActionExpanded.value = expanded
+        }
+    }
+
     // ========== 柯基数据相关 ==========
 
     private val _corgiData = MutableStateFlow<CorgiData?>(null)

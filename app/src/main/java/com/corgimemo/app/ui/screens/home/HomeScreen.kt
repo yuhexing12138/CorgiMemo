@@ -564,6 +564,9 @@ fun HomeScreen(
                                     isExpanded = swipeExpandedTodoId == todo.id,
                                     onExpandChange = { expanded ->
                                         swipeExpandedTodoId = if (expanded) todo.id else null
+                                        // 同步展开状态到 ViewModel，
+                                        // 让 MainScreen 控制 ModalNavigationDrawer 手势
+                                        viewModel.setSwipeActionExpanded(expanded)
                                     },
                                     onShareClick = {
                                         shareTodoAsImage(context, todo, categories)

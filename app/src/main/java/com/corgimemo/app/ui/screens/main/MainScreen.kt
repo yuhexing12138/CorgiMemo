@@ -101,6 +101,8 @@ fun MainScreen(navController: NavController) {
     val currentMood by homeViewModel.currentMood.collectAsState()
     val currentPose by homeViewModel.currentPose.collectAsState()
     val hapticEnabled by homeViewModel.hapticEnabled.collectAsState()
+    /** 是否有待办卡片的左滑操作区处于展开状态 */
+    val swipeActionExpanded by homeViewModel.swipeActionExpanded.collectAsState()
 
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var showRenameCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }

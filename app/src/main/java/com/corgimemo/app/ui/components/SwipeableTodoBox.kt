@@ -5,6 +5,8 @@ import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.colorResource
@@ -120,6 +123,11 @@ fun SwipeableTodoBox(
     // 卡片位移状态（px，范围 -actionsWidthPx..0）
     val cardOffsetX = remember { Animatable(0f) }
 
+    // 速度跟踪器：用于检测"快速右滑"（fling right）手势以关闭已展开的卡片
+    val velocityTracker = remember { VelocityTracker() }
+    // 快速右滑速度阈值：x 方向 > 800 px/s 视为 fling
+    val flingVelocityThresholdPx = with(density) { 800.dp.toPx() }
+
     // 按钮配置（顺序固定：分享→置顶→删除）
     val buttons = remember {
         listOf(
@@ -145,18 +153,33 @@ fun SwipeableTodoBox(
 
     // 按钮点击后收起的公共逻辑
     val onButtonClicked: () -> Unit = {
-        onExpandChange(false)
+        // 关键：onExpandChange(false) 延后到 animateTo 之后，
+        // 避免动画期间 swipeActionExpanded 提前变 false 导致 Drawer 手势恢复
         coroutineScope.launch {
             cardOffsetX.animateTo(
                 targetValue = 0f,
                 animationSpec = tween(durationMillis = durationMs, easing = easing)
             )
+            onExpandChange(false)
         }
     }
 
     // 双层叠加 Layout：内容层(z=10) + 操作层(z=1)
     Layout(
-        modifier = modifier.clip(RoundedCornerShape(16.dp)),
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            // 第一层防护：在外层拦截 down 事件，阻止父级 ModalNavigationDrawer
+            // 看到 down 后启动 Drawer 打开手势
+            // （解决"卡片展开后右滑关闭时带出侧边栏"问题）
+            // 仅在卡片展开期间激活，避免影响其他区域
+            .pointerInput(isEnabled, isExpanded) {
+                if (!isEnabled || !isExpanded) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    // 消费 down 事件的所有分量
+                    down.consume()
+                }
+            },
         content = {
             // === 内容层（measurables[0]）===
             Box(
@@ -166,49 +189,95 @@ fun SwipeableTodoBox(
                         // 避免旧协程与新手势的 snapTo 冲突，解决"完全展开后右滑卡住"问题
                         if (!isEnabled) return@pointerInput
                         detectHorizontalDragGestures(
-                            onDragStart = { },
+                            onDragStart = {
+                                // 开始新一轮拖动：重置速度跟踪器
+                                velocityTracker.resetTracking()
+                            },
                             onDragEnd = {
-                                // 阈值吸附
-                                val currentReveal = -cardOffsetX.value
-                                val target = if (currentReveal >= thresholdPx) {
-                                    -actionsWidthPx
-                                } else {
-                                    0f
-                                }
-                                onExpandChange(target < 0f)
-                                coroutineScope.launch {
-                                    cardOffsetX.animateTo(
-                                        targetValue = target,
-                                        animationSpec = tween(
-                                            durationMillis = durationMs,
-                                            easing = easing
+                                // 计算抬手时的 x 方向速度（px/s）
+                                val velocity = velocityTracker.calculateVelocity()
+                                // 关键：fling right（快速右滑）时，立即关闭卡片
+                                // 速度为正表示向右滑动，超过阈值即视为快速右滑
+                                if (velocity.x > flingVelocityThresholdPx) {
+                                    coroutineScope.launch {
+                                        cardOffsetX.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = tween(
+                                                durationMillis = durationMs,
+                                                easing = easing
+                                            )
                                         )
-                                    )
+                                        onExpandChange(false)
+                                    }
+                                } else {
+                                    // 普通抬手：按阈值吸附
+                                    val currentReveal = -cardOffsetX.value
+                                    val target = if (currentReveal >= thresholdPx) {
+                                        -actionsWidthPx
+                                    } else {
+                                        0f
+                                    }
+                                    // 关键：onExpandChange 延后到 animateTo 之后调用，
+                                    // 避免动画期间 swipeActionExpanded 被错误置为 false，
+                                    // 导致 MainScreen 的 gesturesEnabled 提前恢复 true，
+                                    // 让右滑事件被父级 ModalNavigationDrawer 识别为打开 Drawer
+                                    coroutineScope.launch {
+                                        cardOffsetX.animateTo(
+                                            targetValue = target,
+                                            animationSpec = tween(
+                                                durationMillis = durationMs,
+                                                easing = easing
+                                            )
+                                        )
+                                        onExpandChange(target < 0f)
+                                    }
                                 }
                             },
                             onDragCancel = {
-                                val currentReveal = -cardOffsetX.value
-                                val target = if (currentReveal >= thresholdPx) {
-                                    -actionsWidthPx
-                                } else {
-                                    0f
-                                }
-                                onExpandChange(target < 0f)
-                                coroutineScope.launch {
-                                    cardOffsetX.animateTo(
-                                        targetValue = target,
-                                        animationSpec = tween(
-                                            durationMillis = durationMs,
-                                            easing = easing
+                                // 取消手势时同样按速度判断（极少见，但保持一致）
+                                val velocity = velocityTracker.calculateVelocity()
+                                if (velocity.x > flingVelocityThresholdPx) {
+                                    coroutineScope.launch {
+                                        cardOffsetX.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = tween(
+                                                durationMillis = durationMs,
+                                                easing = easing
+                                            )
                                         )
-                                    )
+                                        onExpandChange(false)
+                                    }
+                                } else {
+                                    val currentReveal = -cardOffsetX.value
+                                    val target = if (currentReveal >= thresholdPx) {
+                                        -actionsWidthPx
+                                    } else {
+                                        0f
+                                    }
+                                    // 关键：onExpandChange 延后到 animateTo 之后
+                                    coroutineScope.launch {
+                                        cardOffsetX.animateTo(
+                                            targetValue = target,
+                                            animationSpec = tween(
+                                                durationMillis = durationMs,
+                                                easing = easing
+                                            )
+                                        )
+                                        onExpandChange(target < 0f)
+                                    }
                                 }
                             }
-                        ) { _, dragAmount ->
+                        ) { change, dragAmount ->
+                            // 记录每个 pointer 事件的位置和时间，用于计算抬手时的速度
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+
                             // 关键：完全展开时右滑直接 animateTo(0f) 动画收起，
                             // 不走 snapTo 跟手逻辑，避免与刚结束的吸附动画冲突
                             if (cardOffsetX.value <= -actionsWidthPx && dragAmount > 0f) {
-                                onExpandChange(false)
+                                // 关键：onExpandChange(false) 延后到 animateTo 完成后调用，
+                                // 保证整个关闭动画期间 swipeActionExpanded 仍为 true，
+                                // MainScreen 的 gesturesEnabled 保持 false，
+                                // 父级 ModalNavigationDrawer 不会响应右滑事件
                                 coroutineScope.launch {
                                     cardOffsetX.animateTo(
                                         targetValue = 0f,
@@ -217,6 +286,7 @@ fun SwipeableTodoBox(
                                             easing = easing
                                         )
                                     )
+                                    onExpandChange(false)
                                 }
                             } else {
                                 // 未完全展开：正常 snapTo 跟手
