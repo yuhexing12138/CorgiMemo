@@ -1443,6 +1443,20 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 切换待办置顶状态
+     *
+     * 用于左滑操作"置顶"按钮。
+     * 置顶后该待办在列表中始终排在最前面（按 isPinned DESC 排序）。
+     *
+     * @param todoId 待办 ID
+     */
+    fun togglePin(todoId: Long) {
+        viewModelScope.launch {
+            todoRepository.togglePin(todoId)
+        }
+    }
+
+    /**
      * 切换子任务完成状态
      * 如果所有子任务完成，会自动完成父任务
      *

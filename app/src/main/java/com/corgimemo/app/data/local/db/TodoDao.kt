@@ -37,6 +37,22 @@ interface TodoDao {
     @Query("SELECT * FROM todo_items WHERE id = :todoId")
     suspend fun getTodoById(todoId: Long): TodoItem?
 
+    /**
+     * 切换待办置顶状态
+     *
+     * 使用 SQL CASE WHEN 单次往返完成切换，无需先查询再更新。
+     * 旧值 0 → 新值 1（置顶），旧值 1 → 新值 0（取消置顶）。
+     *
+     * @param todoId 待办 ID
+     */
+    @Query("""
+        UPDATE todo_items
+        SET isPinned = CASE isPinned WHEN 1 THEN 0 ELSE 1 END,
+            updatedAt = :updatedAt
+        WHERE id = :todoId
+    """)
+    suspend fun togglePin(todoId: Long, updatedAt: Long)
+
     @Query("SELECT * FROM todo_items ORDER BY createdAt DESC")
     fun getAllTodos(): Flow<List<TodoItem>>
 

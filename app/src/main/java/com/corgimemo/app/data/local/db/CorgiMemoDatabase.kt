@@ -29,7 +29,7 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class],
-    version = 28,
+    version = 29,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -90,7 +90,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
                     .build()
                 INSTANCE = instance
                 instance
@@ -790,6 +790,21 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             // 为 sub_tasks 添加附件字段（默认空字符串，向后兼容旧数据）
             database.execSQL("ALTER TABLE sub_tasks ADD COLUMN imagePaths TEXT NOT NULL DEFAULT ''")
             database.execSQL("ALTER TABLE sub_tasks ADD COLUMN voicePaths TEXT NOT NULL DEFAULT ''")
+        }
+    }
+
+    /**
+     * 版本 28 → 29 迁移：为 todo_items 表添加 isPinned 置顶字段
+     *
+     * 用于左滑操作"置顶"按钮的持久化状态。
+     * 旧数据默认 0（未置顶），向后兼容。
+     */
+    private val MIGRATION_28_29 = object : Migration(28, 29) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // 添加 isPinned 字段，默认 0（未置顶）
+            database.execSQL("ALTER TABLE todo_items ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
+            // 创建 isPinned 索引（与 Entity 的 @Index 注解保持一致）
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_isPinned ON todo_items(isPinned)")
         }
     }
     // companion object 闭合

@@ -83,5 +83,14 @@ data class TodoItem(
      * 默认值为空字符串（无格式化内容时等同于纯文本 content）
      */
     @ColumnInfo(defaultValue = "")
-    val contentFormat: String = ""
+    val contentFormat: String = "",
+
+    /**
+     * 是否置顶
+     *
+     * 置顶的待办在列表中始终排在最前面（按 isPinned DESC 排序）。
+     * 用于左滑"置顶"按钮的持久化状态。
+     */
+    @ColumnInfo(defaultValue = "0")
+    val isPinned: Boolean = false
 )

@@ -569,7 +569,7 @@ fun HomeScreen(
                                         shareTodoAsImage(context, todo, categories)
                                     },
                                     onPinClick = {
-                                        // 置顶功能后端待实现，暂留空
+                                        viewModel.togglePin(todo.id)
                                     },
                                     onDeleteClick = {
                                         pendingDeleteId = todo.id

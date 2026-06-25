@@ -167,6 +167,19 @@ class TodoRepository @Inject constructor(
         todoDao.getTodosByStatusPriorityDueDate(status)
 
     /**
+     * 切换待办置顶状态
+     *
+     * 持久化 isPinned 字段，并通过 WidgetUpdateReceiver 触发桌面小部件刷新。
+     * 完成后数据通过 Flow 自动推送到 UI，无需手动通知。
+     *
+     * @param todoId 待办 ID
+     */
+    suspend fun togglePin(todoId: Long) = withContext(ioDispatcher) {
+        todoDao.togglePin(todoId, System.currentTimeMillis())
+        WidgetUpdateReceiver.sendRefreshBroadcast(context)
+    }
+
+    /**
      * 获取指定分类已完成任务数
      *
      * @param categoryId 分类 ID
