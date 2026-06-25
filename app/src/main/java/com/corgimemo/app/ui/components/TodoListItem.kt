@@ -1,4 +1,4 @@
-﻿package com.corgimemo.app.ui.components
+package com.corgimemo.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -48,6 +47,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.corgimemo.app.data.model.SubTask
@@ -173,17 +174,16 @@ fun TodoListItem(
         colors = CardDefaults.cardColors(containerColor = cardBackground)
     ) {
         // 卡片内部：左侧 4dp 优先级竖条 + 右侧内容
-        // 使用 IntrinsicSize.Max 让 PriorityBar.fillMaxHeight() 能正确撑满卡片高度
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Max)
-        ) {
-            /** 左侧 4dp 优先级竖条（无优先级时透明，不占视觉空间） */
-            PriorityBar(priority = todo.priority, isCompleted = todo.status == 1)
+        // 使用自定义 Layout 强制 PriorityBar 高度 = Column 实际内容总高度，
+        // 避免 Row.height(IntrinsicSize.Max) 的 max 取值（max 子项 intrinsic）远小于
+        // Column 实际内容总高度（sum）导致 Card 高度被低估、内容被裁剪的问题
+        Layout(
+            content = {
+                /** 左侧 4dp 优先级竖条（无优先级时透明，不占视觉空间） */
+                PriorityBar(priority = todo.priority, isCompleted = todo.status == 1)
 
-            /** 内容区域，占满除竖条外的宽度 */
-            Column(modifier = Modifier.weight(1f)) {
+                /** 内容区域，占满除竖条外的宽度 */
+                Column(modifier = Modifier.fillMaxWidth()) {
                 // 顶部 Row：复选框 + start 槽位 + 内容 + 展开按钮
                 Row(
                     modifier = Modifier
@@ -469,7 +469,37 @@ fun TodoListItem(
                     }
                 }
             }
-        }
+            },
+            // 关键 measurePolicy：先测量 Column 拿到实际渲染高度，
+            // 再用 Constraints.fixed(width=4dp, height=columnHeight) 测量 PriorityBar，
+            // 保证 PriorityBar 高度严格 = Column 实际内容总高度（与 Card 一致），
+            // 与 SwipeableTodoBox 的 actions 层形成精确对齐
+            measurePolicy = { measurables, constraints ->
+                // PriorityBar 宽度固定 4dp
+                val barWidthPx = 4.dp.toPx().toInt()
+                // 先 measure Column，宽度 = 父级宽度 - 4dp
+                val columnPlaceable = measurables[1].measure(
+                    constraints.copy(
+                        minWidth = 0,
+                        maxWidth = (constraints.maxWidth - barWidthPx).coerceAtLeast(0)
+                    )
+                )
+                // 再 measure PriorityBar，固定 width=4dp, height=column 实际高度
+                val barPlaceable = measurables[0].measure(
+                    Constraints.fixed(width = barWidthPx, height = columnPlaceable.height)
+                )
+                // 整体尺寸 = 4dp + Column 实际宽度
+                layout(
+                    width = barWidthPx + columnPlaceable.width,
+                    height = columnPlaceable.height
+                ) {
+                    // 左侧 PriorityBar 占满整个高度（贴左）
+                    barPlaceable.placeRelative(x = 0, y = 0)
+                    // 右侧 Column 内容
+                    columnPlaceable.placeRelative(x = barWidthPx, y = 0)
+                }
+            }
+        )
     }
 
     if (showLongPressMenu) {
