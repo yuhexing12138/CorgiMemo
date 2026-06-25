@@ -560,6 +560,7 @@ fun HomeScreen(
                                     }
                                 }
                                 SwipeableTodoBox(
+                                    modifier = Modifier.padding(8.dp),
                                     isEnabled = !isBatchMode,
                                     isExpanded = swipeExpandedTodoId == todo.id,
                                     onExpandChange = { expanded ->
@@ -620,7 +621,9 @@ fun HomeScreen(
                                         },
                                         relationHint = null,
                                         /** 传递搜索关键词用于结果高亮显示 */
-                                        searchQuery = searchQuery
+                                        searchQuery = searchQuery,
+                                        /** 传递触觉反馈开关设置 */
+                                        hapticEnabled = hapticEnabled
                                     )
                                 }
                             }

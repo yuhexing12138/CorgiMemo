@@ -31,7 +31,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.dropShadow
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.onSizeChanged
@@ -355,10 +354,9 @@ fun <T> ReorderableLazyColumn(
                     modifier = Modifier
                         .then(
                             if (isCurrentItemDragging) {
-                                /** 拖拽项样式：提升层级、添加阴影 */
+                                /** 拖拽项样式：应用缩放动画，移除额外阴影避免长按弹窗时出现白色边框 */
                                 Modifier
                                     .padding(vertical = 4.dp)
-                                    .shadow(8.dp)
                             } else {
                                 /** 非拖拽项：根据目标位置决定是否偏移 */
                                 val offset = when {

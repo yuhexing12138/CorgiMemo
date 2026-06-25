@@ -6,7 +6,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,13 +48,16 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corgimemo.app.animation.HapticFeedbackManager
+import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.ui.util.formatReminderDisplay
@@ -110,7 +117,9 @@ fun TodoListItem(
     start: @Composable () -> Unit = {},
     relationHint: String? = null,
     /** 搜索关键词（非空时对标题和内容进行高亮显示） */
-    searchQuery: String = ""
+    searchQuery: String = "",
+    /** 是否启用触觉震动反馈 */
+    hapticEnabled: Boolean = true
 ) {
 
     /** 逐区间动画参数：每字符延迟 2ms，最大延迟上限 300ms */
@@ -144,6 +153,15 @@ fun TodoListItem(
 
     var showLongPressMenu by remember { mutableStateOf(false) }
 
+    /** 长按已激活但手指还未松开的标记：松手时才弹出弹窗 */
+    var longPressActivated by remember { mutableStateOf(false) }
+
+    /** 获取 Android Context，用于震动反馈 */
+    val context = LocalContext.current
+
+    /** 用于管理水波纹按压交互状态 */
+    val interactionSource = remember { MutableInteractionSource() }
+
     val actionSheetState = androidx.compose.material3.rememberModalBottomSheetState(
         skipPartiallyExpanded = true
     )
@@ -151,24 +169,54 @@ fun TodoListItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp)
-            .combinedClickable(
-                onClick = {
-                    if (isBatchMode) {
-                        onSelectClick()
-                    } else {
-                        onClick()
+            .indication(interactionSource, androidx.compose.material3.ripple())
+            .pointerInput(isBatchMode, onClick, onLongClick, onSelectClick) {
+                detectTapGestures(
+                    onTap = {
+                        if (isBatchMode) {
+                            onSelectClick()
+                        } else {
+                            onClick()
+                        }
+                    },
+                    onLongPress = {
+                        // 长按触发时执行震动反馈（脉冲式长震动）
+                        HapticFeedbackManager.performHapticFeedback(
+                            context = context,
+                            type = InteractionType.LONG_CLICK,
+                            enabled = hapticEnabled
+                        )
+                        if (isBatchMode) {
+                            onLongClick()
+                        } else {
+                            // 长按时只标记激活，不立即弹窗，等手指松开后才显示
+                            longPressActivated = true
+                        }
+                    },
+                    onPress = { pressOffset ->
+                        // 按下时发射 Press 事件，触发水波纹效果
+                        val pressInteraction = PressInteraction.Press(pressOffset)
+                        interactionSource.emit(pressInteraction)
+
+                        // 等待手指释放：tryAwaitRelease() 返回 true 表示正常抬起，false 表示被取消（滑动/其他手势抢占）
+                        val released = tryAwaitRelease()
+
+                        if (released) {
+                            // 手指正常抬起：结束水波纹动画
+                            interactionSource.emit(PressInteraction.Release(pressInteraction))
+                            // 如果长按已激活，此时弹出弹窗
+                            if (longPressActivated) {
+                                showLongPressMenu = true
+                            }
+                        } else {
+                            // 手势被取消（滑动等）：发射取消事件，取消水波纹
+                            interactionSource.emit(PressInteraction.Cancel(pressInteraction))
+                        }
+                        // 无论是否弹窗，都重置长按标记
+                        longPressActivated = false
                     }
-                },
-                onLongClick = {
-                    if (isBatchMode) {
-                        onLongClick()
-                    } else {
-                        showLongPressMenu = true
-                    }
-                },
-                role = Role.Tab
-            ),
+                )
+            },
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = cardBackground)
@@ -507,6 +555,7 @@ fun TodoListItem(
             sheetState = actionSheetState,
             onDismiss = {
                 showLongPressMenu = false
+                longPressActivated = false
             },
             onEdit = {
                 onClick()

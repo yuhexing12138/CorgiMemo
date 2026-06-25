@@ -11,13 +11,10 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
@@ -67,12 +64,14 @@ val ElasticOutEasing: Easing = Easing { fraction ->
  * @param backgroundColorRes 背景色资源 ID
  * @param icon Material 图标
  * @param zIndex z-index 值（从左到右递减：分享=3, 置顶=2, 删除=1）
+ * @param shape 按钮的圆角形状
  */
 private data class SwipeButtonConfig(
     val label: String,
     val backgroundColorRes: Int,
     val icon: ImageVector,
-    val zIndex: Float
+    val zIndex: Float,
+    val shape: RoundedCornerShape
 )
 
 /**
@@ -119,6 +118,7 @@ fun SwipeableTodoBox(
     val buttonWidthPx = with(density) { buttonWidthDp.toPx() }
     val actionsWidthPx = with(density) { actionsWidthDp.toPx() }
     val thresholdPx = actionsWidthPx * thresholdRatio
+    val cornerRadiusDp = 16.dp
 
     // 卡片位移状态（px，范围 -actionsWidthPx..0）
     val cardOffsetX = remember { Animatable(0f) }
@@ -129,11 +129,21 @@ fun SwipeableTodoBox(
     val flingVelocityThresholdPx = with(density) { 800.dp.toPx() }
 
     // 按钮配置（顺序固定：分享→置顶→删除）
+    // 分享按钮（最左）：左上、左下圆角；置顶按钮（中间）：直角；删除按钮（最右）：右上、右下圆角
     val buttons = remember {
         listOf(
-            SwipeButtonConfig("分享", R.color.ui_swipe_share, Icons.Outlined.Share, 3f),
-            SwipeButtonConfig("置顶", R.color.ui_primary, Icons.Outlined.PushPin, 2f),
-            SwipeButtonConfig("删除", R.color.ui_swipe_delete, Icons.Outlined.Delete, 1f)
+            SwipeButtonConfig(
+                "分享", R.color.ui_swipe_share, Icons.Outlined.Share, 3f,
+                RoundedCornerShape(topStart = cornerRadiusDp, bottomStart = cornerRadiusDp)
+            ),
+            SwipeButtonConfig(
+                "置顶", R.color.ui_primary, Icons.Outlined.PushPin, 2f,
+                RoundedCornerShape(0.dp)
+            ),
+            SwipeButtonConfig(
+                "删除", R.color.ui_swipe_delete, Icons.Outlined.Delete, 1f,
+                RoundedCornerShape(topEnd = cornerRadiusDp, bottomEnd = cornerRadiusDp)
+            )
         )
     }
 
@@ -167,7 +177,7 @@ fun SwipeableTodoBox(
     // 双层叠加 Layout：内容层(z=10) + 操作层(z=1)
     Layout(
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(cornerRadiusDp))
             // 第一层防护：在外层拦截 down 事件，阻止父级 ModalNavigationDrawer
             // 看到 down 后启动 Drawer 打开手势
             // （解决"卡片展开后右滑关闭时带出侧边栏"问题）
@@ -304,46 +314,46 @@ fun SwipeableTodoBox(
                 content()
             }
 
-            // === 操作层（measurables[1]）===
+            // === 操作层（measurables[1..3]）===
+            // 不使用 Row 包裹，直接放置三个按钮，由自定义 Layout 分别强制固定宽高，
+            // 避免 Row 布局中子元素 fillMaxHeight() 不生效导致的高度不匹配问题
             if (isEnabled) {
-                Row(modifier = Modifier.fillMaxHeight()) {
-                    buttons.forEachIndexed { index, btnConfig ->
-                        // 级联算法：计算本地进度
-                        val localStart = index * staggerRatio
-                        val denom = 1f - localStart
-                        val localProgress = if (denom > 0f) {
-                            ((revealProgress - localStart) / denom).coerceIn(0f, 1f)
-                        } else {
-                            if (revealProgress >= localStart) 1f else 0f
-                        }
-                        // 偏移量：初始堆叠在 Delete 槽位 → 终态回到原始位置
-                        val offset = (buttons.size - 1 - index) * buttonWidthPx
-                        val translateX = offset * (1f - localProgress)
-                        // opacity 二元化：无淡入淡出
-                        val alpha = if (revealPx > 0f) 1f else 0f
-
-                        // 点击回调
-                        val clickAction: () -> Unit = when (btnConfig.label) {
-                            "分享" -> {
-                                { onShareClick(); onButtonClicked() }
-                            }
-                            "置顶" -> {
-                                { onPinClick(); onButtonClicked() }
-                            }
-                            "删除" -> {
-                                { onDeleteClick(); onButtonClicked() }
-                            }
-                            else -> ({})
-                        }
-
-                        SwipeActionButton(
-                            config = btnConfig,
-                            translateX = translateX,
-                            alpha = alpha,
-                            onClick = clickAction,
-                            modifier = Modifier.zIndex(btnConfig.zIndex)
-                        )
+                buttons.forEachIndexed { index, btnConfig ->
+                    // 级联算法：计算本地进度
+                    val localStart = index * staggerRatio
+                    val denom = 1f - localStart
+                    val localProgress = if (denom > 0f) {
+                        ((revealProgress - localStart) / denom).coerceIn(0f, 1f)
+                    } else {
+                        if (revealProgress >= localStart) 1f else 0f
                     }
+                    // 偏移量：初始堆叠在 Delete 槽位 → 终态回到原始位置
+                    val offset = (buttons.size - 1 - index) * buttonWidthPx
+                    val translateX = offset * (1f - localProgress)
+                    // opacity 二元化：无淡入淡出
+                    val alpha = if (revealPx > 0f) 1f else 0f
+
+                    // 点击回调
+                    val clickAction: () -> Unit = when (btnConfig.label) {
+                        "分享" -> {
+                            { onShareClick(); onButtonClicked() }
+                        }
+                        "置顶" -> {
+                            { onPinClick(); onButtonClicked() }
+                        }
+                        "删除" -> {
+                            { onDeleteClick(); onButtonClicked() }
+                        }
+                        else -> ({})
+                    }
+
+                    SwipeActionButton(
+                        config = btnConfig,
+                        translateX = translateX,
+                        alpha = alpha,
+                        onClick = clickAction,
+                        modifier = Modifier.zIndex(btnConfig.zIndex)
+                    )
                 }
             }
         },
@@ -351,21 +361,28 @@ fun SwipeableTodoBox(
             val contentPlaceable = measurables[0].measure(constraints)
             val cardWidth = contentPlaceable.width
             val cardHeight = contentPlaceable.height
-            val actionsPlaceable = if (measurables.size > 1 && isEnabled) {
-                measurables[1].measure(
-                    Constraints.fixed(
-                        width = with(density) { (72.dp * 3).roundToPx() },
-                        height = cardHeight
+            val singleButtonWidthPx = with(density) { buttonWidthDp.roundToPx() }
+
+            // 分别测量三个按钮，每个按钮强制固定宽度=72dp、高度=卡片实际高度
+            // 这样可以 100% 保证按钮高度与卡片高度一致
+            val actionPlaceables = if (isEnabled) {
+                List(buttons.size) { i ->
+                    measurables[1 + i].measure(
+                        Constraints.fixed(
+                            width = singleButtonWidthPx,
+                            height = cardHeight
+                        )
                     )
-                )
-            } else null
+                }
+            } else emptyList()
 
             layout(cardWidth, cardHeight) {
                 contentPlaceable.placeRelative(0, 0)
-                actionsPlaceable?.placeRelative(
-                    x = cardWidth - actionsPlaceable.width,
-                    y = 0
-                )
+                // 从右往左依次放置三个按钮（删除在最右，置顶在中间，分享在最左）
+                actionPlaceables.forEachIndexed { index, placeable ->
+                    val x = cardWidth - (buttons.size - index) * singleButtonWidthPx
+                    placeable.placeRelative(x = x, y = 0)
+                }
             }
         }
     )
@@ -374,7 +391,7 @@ fun SwipeableTodoBox(
 /**
  * 单个左滑操作按钮（图标在上，文字在下，纵向居中）
  *
- * @param config 按钮配置
+ * @param config 按钮配置（包含背景色、图标、文字、圆角形状等）
  * @param translateX 横向偏移量（级联堆叠动画）
  * @param alpha 透明度（二元化）
  * @param onClick 点击回调
@@ -392,13 +409,11 @@ private fun SwipeActionButton(
 
     Box(
         modifier = modifier
-            .width(72.dp)
-            .fillMaxHeight()
             .graphicsLayer {
                 this.translationX = translateX
                 this.alpha = alpha
             }
-            .background(backgroundColor)
+            .background(backgroundColor, shape = config.shape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
