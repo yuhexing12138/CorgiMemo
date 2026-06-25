@@ -44,4 +44,8 @@
     <color name="ui_days_soon">#FFCC80</color>
     <color name="ui_days_normal">#888888</color>
     <color name="ui_days_passed">#9AD8B8</color>
+
+    <!-- ========== 左滑操作按钮配色（深色模式）========== -->
+    <color name="ui_swipe_share">#FFC107</color>   <!-- 分享：深黄 -->
+    <color name="ui_swipe_delete">#D32F2F</color>  <!-- 删除：深红 -->
 </resources>

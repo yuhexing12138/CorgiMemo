@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import com.corgimemo.app.ui.components.safeAreaForBottomBar /** 安全区域内边距：底栏导航栏*/
+import com.corgimemo.app.ui.components.SwipeableTodoBox
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -188,6 +189,9 @@ fun HomeScreen(
      * 状态：null = 不显示；非 null = 显示弹窗并传入要删除的 todoId
      */
     var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
+
+    /** 左滑互斥展开状态：同时只允许一张卡片展开操作层 */
+    var swipeExpandedTodoId by remember { mutableStateOf<Long?>(null) }
 
     /** 快速添加待办 BottomSheet 状态 */
     var showQuickAddSheet by remember { mutableStateOf(false) }
@@ -555,8 +559,24 @@ fun HomeScreen(
                                         else -> "📋"
                                     }
                                 }
-                                TodoListItem(
-                                    todo = todo,
+                                SwipeableTodoBox(
+                                    isEnabled = !isBatchMode,
+                                    isExpanded = swipeExpandedTodoId == todo.id,
+                                    onExpandChange = { expanded ->
+                                        swipeExpandedTodoId = if (expanded) todo.id else null
+                                    },
+                                    onShareClick = {
+                                        shareTodoAsImage(context, todo, categories)
+                                    },
+                                    onPinClick = {
+                                        // 置顶功能后端待实现，暂留空
+                                    },
+                                    onDeleteClick = {
+                                        pendingDeleteId = todo.id
+                                    }
+                                ) {
+                                    TodoListItem(
+                                        todo = todo,
                                         subTaskProgress = subTaskProgressMap[todo.id],
                                         subTasks = subTasksMap[todo.id] ?: emptyList(),
                                         isExpanded = expandedTodos.contains(todo.id),
@@ -599,6 +619,7 @@ fun HomeScreen(
                                         /** 传递搜索关键词用于结果高亮显示 */
                                         searchQuery = searchQuery
                                     )
+                                }
                             }
                         }
                         }
