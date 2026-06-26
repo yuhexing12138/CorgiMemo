@@ -2374,6 +2374,109 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 批量置顶选中的待办（统一置顶）
+     *
+     * 仅对未置顶的待办更新（避免无谓的 updatedAt 变化）。
+     */
+    fun batchPin() {
+        val selectedIds = _selectedTodoIds.value
+        if (selectedIds.isEmpty()) return
+        viewModelScope.launch {
+            selectedIds.forEach { id ->
+                todoRepository.getTodoById(id)?.let { todo ->
+                    if (!todo.isPinned) {
+                        todoRepository.updateTodo(
+                            todo.copy(
+                                isPinned = true,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 批量设置优先级
+     *
+     * @param priority 0=无 1=低 2=中 3=高
+     */
+    fun batchUpdatePriority(priority: Int) {
+        val selectedIds = _selectedTodoIds.value
+        if (selectedIds.isEmpty()) return
+        viewModelScope.launch {
+            selectedIds.forEach { id ->
+                todoRepository.getTodoById(id)?.let { todo ->
+                    if (todo.priority != priority) {
+                        todoRepository.updateTodo(
+                            todo.copy(
+                                priority = priority,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 批量设置提醒时间
+     *
+     * @param reminderTime 提醒时间戳（null 表示清除提醒）
+     * @param repeatType 重复类型（0=不重复，1=每天，2=每周，3=每月，4=周一至周五，5=每年）
+     *
+     * 注意：ReminderPickerBottomSheet 的 `calendarEnabled` 参数仅是 UI 内部状态
+     * （用于切换农历显示），不持久化到 TodoItem 字段。本方法仅更新 reminderTime
+     * 与 repeatType。Alarm 调度由 TodoRepository.updateTodo 内部统一处理。
+     */
+    fun batchUpdateReminder(reminderTime: Long?, repeatType: Int) {
+        val selectedIds = _selectedTodoIds.value
+        if (selectedIds.isEmpty()) return
+        viewModelScope.launch {
+            selectedIds.forEach { id ->
+                todoRepository.getTodoById(id)?.let { todo ->
+                    todoRepository.updateTodo(
+                        todo.copy(
+                            reminderTime = reminderTime,
+                            repeatType = repeatType,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * 批量复制选中的待办
+     *
+     * 每条新待办使用 Room 自增 id（id=0），createdAt/updatedAt 重置为当前时间，
+     * 状态重置为未完成（status=0），completedAt 清空。
+     */
+    fun batchDuplicate() {
+        val selectedIds = _selectedTodoIds.value
+        if (selectedIds.isEmpty()) return
+        val currentTime = System.currentTimeMillis()
+        viewModelScope.launch {
+            selectedIds.forEach { id ->
+                todoRepository.getTodoById(id)?.let { todo ->
+                    todoRepository.insertTodo(
+                        todo.copy(
+                            id = 0,           // Room 自增
+                            status = 0,        // 复制为未完成
+                            completedAt = null,
+                            createdAt = currentTime,
+                            updatedAt = currentTime
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * 批量移动选中的待办到指定分类
      * @param categoryId 目标分类 ID
      */
