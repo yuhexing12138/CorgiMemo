@@ -32,6 +32,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SelectAll
@@ -345,40 +346,39 @@ fun HomeScreen(
             Column(modifier = Modifier.fillMaxSize()) {
                 // 顶部栏区域
                 if (isBatchMode) {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = "已选择 ${selectedTodoIds.size} 项",
-                                color = MaterialTheme.colorScheme.onSurface
+                    /**
+                     * 批量模式自定义顶部栏
+                     *
+                     * 高度 56dp，背景与原 TopAppBar 一致。
+                     * - 左侧：◀ 返回箭头（点击 → exitBatchMode）
+                     * - 中部："选中 X 项" 文本（X 实时同步 selectedTodoIds.size）
+                     */
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        /** 返回箭头（24dp 圆形可点击区域） */
+                        IconButton(onClick = { viewModel.exitBatchMode() }) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "退出批量模式",
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = { viewModel.exitBatchMode() }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "关闭批量模式",
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        },
-                        actions = {
-                            IconButton(
-                                onClick = {
-                                    if (selectedTodoIds.size == filteredTodos.size) {
-                                        viewModel.clearSelection()
-                                    } else {
-                                        viewModel.selectAll()
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SelectAll,
-                                    contentDescription = "全选",
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
                         }
-                    )
+
+                        /** 选中数量文本 */
+                        Text(
+                            text = "选中 ${selectedTodoIds.size} 项",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
                 }
 
                 // 主内容区域：使用 weight(1f) 填满剩余空间
