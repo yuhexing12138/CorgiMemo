@@ -83,6 +83,7 @@ object SubTaskManager {
         val maxOrder = database.subTaskDao().getMaxOrder(todoId) ?: 0
         val toInsert = subTasks.mapIndexed { index, st ->
             st.copy(
+                id = 0L,  // ★★★ 关键修复：让 Room 重新分配 id，避免主键冲突
                 todoId = todoId,
                 order = if (st.order > 0) st.order else maxOrder + index + 1,
                 createdAt = if (st.createdAt > 0L) st.createdAt else System.currentTimeMillis()
@@ -102,6 +103,23 @@ object SubTaskManager {
         val database = CorgiMemoDatabase.getDatabase(context)
         val subTask = database.subTaskDao().getSubTaskById(subTaskId) ?: return
         database.subTaskDao().update(subTask.copy(title = title))
+    }
+
+    /**
+     * 完整更新子任务（用于深复制场景下回写 imagePaths / voicePaths 等字段）
+     *
+     * 设计目的：
+     * 原 `addSubTasks` 在批量复制时插入新 SubTask 时保留原 imagePaths/voicePaths
+     * 字符串，导致副本子任务的附件路径仍指向源 todo。
+     * 调用方完成物理文件复制后，通过本方法把新 SubTask 的 imagePaths/voicePaths
+     * 更新为新副本路径，实现"完全深复制"。
+     *
+     * @param context 上下文
+     * @param subTask 完整子任务对象（覆盖式更新，主键匹配）
+     */
+    suspend fun updateSubTask(context: Context, subTask: SubTask) {
+        val database = CorgiMemoDatabase.getDatabase(context)
+        database.subTaskDao().update(subTask)
     }
 
     /**

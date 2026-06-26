@@ -45,10 +45,13 @@ import com.corgimemo.app.ui.components.navigation.CorgiBottomNavigationBar
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.screens.date.SpecialDateScreen
+import com.corgimemo.app.ui.screens.home.HomeBatchActionBar
 import com.corgimemo.app.ui.screens.home.HomeScreen
+import com.corgimemo.app.ui.screens.home.shareTodoAsImage
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
 import com.corgimemo.app.viewmodel.HomeViewModel
+import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.analytics.UserBehaviorAnalyzer
 import com.corgimemo.app.analytics.UserBehaviorAnalyzerEntryPoint
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -103,6 +106,19 @@ fun MainScreen(navController: NavController) {
     val hapticEnabled by homeViewModel.hapticEnabled.collectAsState()
     /** 是否有待办卡片的左滑操作区处于展开状态 */
     val swipeActionExpanded by homeViewModel.swipeActionExpanded.collectAsState()
+
+    /**
+     * 批量模式相关状态
+     *
+     * 用途：MainScreen 顶层监听 isBatchMode / selectedTodoIds / filteredTodos，
+     * 用于：
+     * 1. topBar 标题切换（"我的待办" ↔ "选中 X 项"）
+     * 2. bottomBar 槽位互斥（底部导航栏 ↔ 批量操作栏）
+     * 3. 批量模式时禁用侧滑菜单 / 隐藏右侧按钮
+     */
+    val isBatchMode by homeViewModel.isBatchMode.collectAsState()
+    val selectedTodoIds by homeViewModel.selectedTodoIds.collectAsState()
+    val filteredTodos by homeViewModel.filteredTodos.collectAsState()
 
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var showRenameCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
@@ -214,51 +230,113 @@ fun MainScreen(navController: NavController) {
         Scaffold(
             topBar = {
                 if (selectedTab != TabItem.EDIT) {
+                    /**
+                     * 批量模式时：title 切换为"选中 X 项"，隐藏菜单/柯基/统计按钮，
+                     * 避免与批量操作 UI 冲突。
+                     */
+                    val batchModeTitle = if (isBatchMode) "选中 ${selectedTodoIds.size} 项" else null
+                    val effectiveTitle = batchModeTitle ?: topBarTitle
+                    val effectiveActionButtons = if (isBatchMode) emptyList() else topBarActionButtons
+                    val effectiveMenuEnabled = !isBatchMode
+
                     EnhancedTopBar(
-                        title = topBarTitle,
-                        onMenuClick = { coroutineScope.launch { drawerState.open() } },
-                        onCorgiClick = { navController.navigate(Screen.CorgiDetail.route) },
-                        actionButtons = topBarActionButtons
+                        title = effectiveTitle,
+                        /**
+                         * 批量模式时禁用菜单按钮（点击不开抽屉），避免误操作。
+                         * 注意：EnhancedTopBar 的 onMenuClick 没有 enabled 参数，
+                         * 因此通过传入"空回调"实现禁用。
+                         */
+                        onMenuClick = {
+                            if (effectiveMenuEnabled) {
+                                coroutineScope.launch { drawerState.open() }
+                            }
+                        },
+                        onCorgiClick = {
+                            if (effectiveMenuEnabled) {
+                                navController.navigate(Screen.CorgiDetail.route)
+                            }
+                        },
+                        actionButtons = effectiveActionButtons
                     )
                 }
             },
             bottomBar = {
                 /**
-                 * 底部导航栏（集成中央编辑按钮）
-                 *
-                 * 架构变更：CenterEditButton 已从独立 overlay 移入 CorgiBottomNavigationBar 内部
-                 * 优势：无层级遮挡、按钮完整可见、统一管理安全区域
+                 * 底部槽位：批量模式时显示 HomeBatchActionBar（"全选+4图标"），
+                 * 普通模式时显示 CorgiBottomNavigationBar（底部导航栏）。
+                 * 两者互斥，避免遮挡问题。
                  */
-                CorgiBottomNavigationBar(
-                    selectedTab = selectedTab,
-                    isExpanded = isBubbleExpanded,
-                    onCenterButtonClick = {
-                        val now = System.currentTimeMillis()
-                        if (now - lastClickTime > 300) {
-                            lastClickTime = now
-                            isBubbleExpanded = !isBubbleExpanded
-                        }
-                    },
-                    onTabSelected = { tab ->
-                        if (isBubbleExpanded) {
-                            isFastCollapse = true
-                            isBubbleExpanded = false
-                        }
+                if (isBatchMode && selectedTab == TabItem.TODO) {
+                    /**
+                     * 批量操作栏（从 HomeScreen 提取）
+                     *
+                     * 只在 TODO tab 下显示，避免在灵感/日期/我的 tab 下误触发。
+                     * 回调：
+                     * - 全选/取消全选：viewModel 直接处理
+                     * - 分享：遍历 selectedTodoIds 调用本地 shareTodoAsImage
+                     * - 移动/删除/更多：触发 viewModel 中的对应 StateFlow，
+                     *   HomeScreen 内部 subscribe 并渲染弹窗
+                     */
+                    HomeBatchActionBar(
+                        isBatchMode = isBatchMode,
+                        selectedTodoIds = selectedTodoIds,
+                        filteredTodos = filteredTodos,
+                        onSelectAll = { homeViewModel.selectAll() },
+                        onClearSelection = { homeViewModel.clearSelection() },
+                        onShare = {
+                            /**
+                             * 遍历选中项，对每个待办生成图片并弹出系统分享面板。
+                             * 复用 HomeScreen 中提取的 shareTodoAsImage 函数。
+                             */
+                            selectedTodoIds.forEach { id ->
+                                val todo = filteredTodos.find { it.id == id }
+                                if (todo != null) {
+                                    shareTodoAsImage(context, todo, categories)
+                                }
+                            }
+                        },
+                        onMove = { homeViewModel.setShowBatchMoveDialog(true) },
+                        onDelete = { homeViewModel.setShowBatchDeleteDialog(true) },
+                        onMoreOptions = { homeViewModel.setShowMoreOptionsSheet(true) }
+                    )
+                } else {
+                    /**
+                     * 普通模式：底部导航栏（集成中央编辑按钮）
+                     *
+                     * 架构变更：CenterEditButton 已从独立 overlay 移入 CorgiBottomNavigationBar 内部
+                     * 优势：无层级遮挡、按钮完整可见、统一管理安全区域
+                     */
+                    CorgiBottomNavigationBar(
+                        selectedTab = selectedTab,
+                        isExpanded = isBubbleExpanded,
+                        onCenterButtonClick = {
+                            val now = System.currentTimeMillis()
+                            if (now - lastClickTime > 300) {
+                                lastClickTime = now
+                                isBubbleExpanded = !isBubbleExpanded
+                            }
+                        },
+                        onTabSelected = { tab ->
+                            if (isBubbleExpanded) {
+                                isFastCollapse = true
+                                isBubbleExpanded = false
+                            }
 
-                        // 记录页面访问（用于智能预加载策略优化）
-                        val pageType = when (tab) {
-                            TabItem.TODO -> UserBehaviorAnalyzer.PageType.HOME
-                            TabItem.INSPIRE -> UserBehaviorAnalyzer.PageType.INSPIRATION
-                            TabItem.DATE -> UserBehaviorAnalyzer.PageType.SPECIAL_DATE
-                            else -> null
-                        }
-                        pageType?.let { type ->
-                            coroutineScope.launch { userBehaviorAnalyzer.recordPageVisit(type) }
-                        }
+                            // 记录页面访问（用于智能预加载策略优化）
+                            val pageType = when (tab) {
+                                TabItem.TODO -> UserBehaviorAnalyzer.PageType.HOME
+                                TabItem.INSPIRE -> UserBehaviorAnalyzer.PageType.INSPIRATION
+                                TabItem.DATE -> UserBehaviorAnalyzer.PageType.SPECIAL_DATE
+                                else -> null
+                            }
+                            pageType?.let { type ->
+                                coroutineScope.launch { userBehaviorAnalyzer.recordPageVisit(type) }
+                            }
 
-                        selectedTab = tab
-                    }
-                )
+                            selectedTab = tab
+                        }
+                    )
+                }
             }
         ) { paddingValues ->
             /**

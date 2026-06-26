@@ -27,12 +27,16 @@ class TodoRepository @Inject constructor(
     /**
      * 插入单个待办
      *
+     * 当 todo.reminderTime 不为 null 时，自动调用 AlarmScheduler.scheduleReminder
+     * 为该待办设置提醒闹钟。
+     *
      * @param todo 待办项
      * @return 插入的 ID
      */
     suspend fun insertTodo(todo: TodoItem): Long = withContext(ioDispatcher) {
         val result = todoDao.insert(todo)
         val todoWithId = todo.copy(id = result)
+        // reminderTime 不为 null 时自动调度提醒闹钟
         if (todo.reminderTime != null) {
             AlarmScheduler.scheduleReminder(context, todoWithId)
         }
@@ -66,6 +70,32 @@ class TodoRepository @Inject constructor(
             AlarmScheduler.rescheduleReminder(context, todo)
         } else {
             AlarmScheduler.cancelReminder(context, todo.id)
+        }
+        WidgetUpdateReceiver.sendRefreshBroadcast(context)
+    }
+
+    /**
+     * 批量更新待办
+     *
+     * 用于多选模式下的批量操作（如 batchComplete）。
+     * 关键设计：
+     * - 一次性数据库事务，多条记录原子性更新（要么全成功要么全失败）
+     * - Room Flow 单次发射，UI 一次性重组 → 视觉上"同步完成"，无"逐条"感
+     * - 性能优于循环单条 update（减少数据库往返次数）
+     * - 提醒调度：每条独立处理（保留原行为）
+     *
+     * @param todos 待更新列表
+     */
+    suspend fun updateTodos(todos: List<TodoItem>) = withContext(ioDispatcher) {
+        if (todos.isEmpty()) return@withContext
+        todoDao.updateAll(todos)
+        // 每条独立调度提醒（与单条 updateTodo 行为一致）
+        todos.forEach { todo ->
+            if (todo.reminderTime != null) {
+                AlarmScheduler.rescheduleReminder(context, todo)
+            } else {
+                AlarmScheduler.cancelReminder(context, todo.id)
+            }
         }
         WidgetUpdateReceiver.sendRefreshBroadcast(context)
     }

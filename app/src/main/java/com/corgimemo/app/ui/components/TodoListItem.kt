@@ -60,7 +60,10 @@ import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.ui.util.formatReminderDisplay
+import com.corgimemo.app.R
 import kotlinx.coroutines.delay
+import android.widget.Toast
+import androidx.compose.ui.res.stringResource
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -128,16 +131,29 @@ fun TodoListItem(
      */
     val isHighlightActive = searchQuery.isNotBlank()
 
-    /** 卡片背景色：选中时使用 primaryContainer 半透明，否则使用 surface */
-    val cardBackground by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-        } else {
-            MaterialTheme.colorScheme.surface
-        },
-        animationSpec = tween(durationMillis = 200),
-        label = "cardBackground"
-    )
+    /**
+     * 卡片背景色：始终使用 surface，不随选中态变色
+     *
+     * 背景：早期版本选中时使用 primaryContainer 半透明作为视觉反馈，但实际效果是
+     * 整张卡片被橙色覆盖，视觉干扰过大，且与"已完成"待办的视觉降权（dimmed）混淆。
+     * 重构后：选中反馈完全交给左侧 CircularCheckbox（橙色填充√），
+     * 卡片本身保持 neutral 状态，与未选中态一致。
+     */
+    val cardBackground = MaterialTheme.colorScheme.surface
+
+    /**
+     * 读取内容区水波纹开关
+     *
+     * - 默认 true：显示水波纹
+     * - false：被 SwipeableTodoBox 在其 content() 外层通过
+     *   CompositionLocalProvider(LocalContentIndication provides false) 覆盖
+     *
+     * 设计意图：左滑时外层 detectHorizontalDragGestures 与内部 detectTapGestures
+     * 同时看到 down 事件，内部 onPress 会 emit Press → indication 渲染水波纹，
+     * 造成"左滑时卡片显示水波纹"的视觉干扰。SwipeableTodoBox 通过 LocalContentIndication
+     * 关闭水波纹，左滑过程视觉干净。
+     */
+    val contentIndicationEnabled = LocalContentIndication.current
 
     /** 复选框左侧间距：批量模式下空出 8dp 让位给 Checkbox */
     val checkboxStartPadding by animateDpAsState(
@@ -149,13 +165,31 @@ fun TodoListItem(
     /** 获取 Android Context，用于震动反馈 */
     val context = LocalContext.current
 
+    /**
+     * 多选模式退出提示文案（国际化）
+     *
+     * 从 strings.xml 读取，支持多语言切换。
+     * - 中文：请先退出多选模式
+     * - 英文：Please exit batch mode first
+     */
+    val exitBatchModeHint = stringResource(R.string.todo_batch_exit_hint)
+
     /** 用于管理水波纹按压交互状态 */
     val interactionSource = remember { MutableInteractionSource() }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .indication(interactionSource, androidx.compose.material3.ripple())
+            // 内容区水波纹开关：SwipeableTodoBox 在左滑时会将其设为 false，
+            // 避免左滑过程中内部 onPress 触发的 Press 事件渲染 indication 水波纹，
+            // 造成"左滑时卡片显示水波纹"的视觉干扰
+            .run {
+                if (contentIndicationEnabled) {
+                    this.indication(interactionSource, androidx.compose.material3.ripple())
+                } else {
+                    this
+                }
+            }
             .pointerInput(isBatchMode, onClick, onLongClick, onSelectClick) {
                 detectTapGestures(
                     onTap = {
@@ -181,15 +215,50 @@ fun TodoListItem(
                         val pressInteraction = PressInteraction.Press(pressOffset)
                         interactionSource.emit(pressInteraction)
 
-                        // 等待手指释放：tryAwaitRelease() 返回 true 表示正常抬起，false 表示被取消（滑动/其他手势抢占）
-                        val released = tryAwaitRelease()
+                        /**
+                         * 标记是否已发射终结事件（Release 或 Cancel）。
+                         *
+                         * 关键修复：原代码只在 else 分支发射 Cancel，但当协程被外部
+                         * 中断时（如 onLongPress 触发 → enterBatchMode 改变 _isBatchMode
+                         * → pointerInput key 变化 → gesture detector 重启），tryAwaitRelease()
+                         * 会抛 CancellationException，导致 else 分支不执行，Cancel 事件
+                         * 从未发射 → interactionSource 残留 Press 状态 → 水波纹持续渲染
+                         * （用户感知为"卡片变暗"）。
+                         *
+                         * 修复策略：用 try/finally 确保 Cancel 总是被发射。
+                         * 注：Compose 的 MutableInteractionSource 对重复 Cancel 事件是幂等的。
+                         */
+                        var terminalEmitted = false
 
-                        if (released) {
-                            // 手指正常抬起：结束水波纹动画
-                            interactionSource.emit(PressInteraction.Release(pressInteraction))
-                        } else {
-                            // 手势被取消（滑动等）：发射取消事件，取消水波纹
-                            interactionSource.emit(PressInteraction.Cancel(pressInteraction))
+                        try {
+                            // 等待手指释放：tryAwaitRelease() 返回 true 表示正常抬起，
+                            // false 表示被取消（滑动/其他手势抢占）
+                            val released = tryAwaitRelease()
+
+                            if (released) {
+                                // 手指正常抬起：结束水波纹动画
+                                interactionSource.emit(PressInteraction.Release(pressInteraction))
+                                terminalEmitted = true
+                            }
+                            // 释放被取消的情况由 finally 块统一发射 Cancel
+                        } finally {
+                            /**
+                             * 异常场景兜底：保证 Press 状态被正确清理
+                             *
+                             * 覆盖以下所有可能路径：
+                             * 1. 协程正常执行到 else 分支（已 emit Cancel，但 finally 中再 emit 一次是幂等的）
+                             * 2. 协程因 tryAwaitRelease 返回 false 而进入 else 分支（已 emit Cancel）
+                             * 3. 协程因重组/CancellationException 被中断（必须 emit Cancel）
+                             * 4. 任何其他异常（必须 emit Cancel）
+                             *
+                             * 为什么是"幂等"的：
+                             * - MutableInteractionSource 内部基于 Channel，重复 emit 同一 Press
+                             *   对应的 Cancel 不会引发问题（指示器仅在收到 Press 后未收到 Cancel
+                             *   时持续渲染，重复 Cancel 不会"重启"渲染）
+                             */
+                            if (!terminalEmitted) {
+                                interactionSource.emit(PressInteraction.Cancel(pressInteraction))
+                            }
                         }
                     }
                 )
@@ -319,7 +388,6 @@ fun TodoListItem(
                                 if (categoryName != null) {
                                     CategoryTagWithShadow(
                                         categoryName = categoryName!!,
-                                        categoryIcon = categoryIcon,
                                         isCompleted = todo.status == 1
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
@@ -429,7 +497,14 @@ fun TodoListItem(
                     }
 
                     // 子任务进度（移至展开按钮左侧）+ 展开/收起按钮（带阴影）
-                    if (subTaskProgress != null && !isBatchMode) {
+                    //
+                    // 多选模式保留显示的原因：
+                    // 1. 进度文本 "(0/1)" 是信息性 UI，不影响多选操作
+                    // 2. 展开/收起按钮是独立 Surface(onClick = onToggleExpand)，
+                    //    点击事件会被 Surface 消费，不会冒泡到外层 Card 的
+                    //    onTap（多选点击），所以两个操作互不干扰
+                    // 3. 保持 UI 一性：进入多选模式后所有 UI 元素不"凭空消失"
+                    if (subTaskProgress != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             // 子任务进度文本：紧贴展开按钮左侧
                             Text(
@@ -477,7 +552,20 @@ fun TodoListItem(
                             SubTaskInTodoListItem(
                                 subTask = subTask,
                                 isParentCompleted = todo.status == 1,
-                                onToggleComplete = { onToggleSubTask(subTask.id) }
+                                // 关键：多选模式下子任务勾选框不可点击
+                                // - 仅可查看，不可切换完成状态
+                                // - 视觉上 alpha 降低，提供 disabled 反馈
+                                isEnabled = !isBatchMode,
+                                onToggleComplete = { onToggleSubTask(subTask.id) },
+                                // 多选模式下长按子任务勾选框，弹 Toast 提示用户先退出多选模式
+                                // 文案来自 strings.xml，支持中英文等多语言
+                                onDisabledLongPress = {
+                                    Toast.makeText(
+                                        context,
+                                        exitBatchModeHint,
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             )
                             if (subTask != subTasks.last()) {
                                 Spacer(modifier = Modifier.height(4.dp))
@@ -616,7 +704,9 @@ private fun parseProgress(progressText: String): Float {
 private fun SubTaskInTodoListItem(
     subTask: SubTask,
     isParentCompleted: Boolean = false,
-    onToggleComplete: () -> Unit,
+    isEnabled: Boolean = true,
+    onToggleComplete: () -> Unit = {},
+    onDisabledLongPress: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -627,7 +717,11 @@ private fun SubTaskInTodoListItem(
         SubTaskCheckbox(
             isCompleted = subTask.isCompleted,
             isParentCompleted = isParentCompleted,
-            onClick = onToggleComplete
+            // 关键：批量模式下不可点击切换子任务状态
+            isEnabled = isEnabled,
+            onClick = onToggleComplete,
+            // 透传禁用态长按回调（多选模式弹"请先退出多选模式" Toast）
+            onDisabledLongPress = onDisabledLongPress
         )
 
         Spacer(modifier = Modifier.width(8.dp))
@@ -672,41 +766,104 @@ private fun SubTaskInTodoListItem(
  * 子任务复选框组件（与SubTaskListItem一致）
  *
  * @param isCompleted 是否已完成
- * @param onClick 点击回调
+ * @param isParentCompleted 父待办是否已完成（影响颜色）
+ * @param isEnabled 是否可点击（默认 true）。批量模式下设为 false：
+ *                   - 视觉上降低 alpha 表示不可点击
+ *                   - 短按不切换完成状态
+ *                   - 长按触发 [onDisabledLongPress]（用于显示"请先退出多选模式"等提示）
+ * @param onClick 短按回调（仅在 [isEnabled] = true 时触发）
+ * @param onDisabledLongPress 禁用态长按回调（仅在 [isEnabled] = false 时触发）
  */
 @Composable
 private fun SubTaskCheckbox(
     isCompleted: Boolean,
     isParentCompleted: Boolean = false,
-    onClick: () -> Unit
+    isEnabled: Boolean = true,
+    onClick: () -> Unit = {},
+    onDisabledLongPress: () -> Unit = {}
 ) {
     /**
      * 勾选框背景色：
      * - 子任务未完成 → 浅灰描边
-     * - 子任务完成 + 父待办未完成 → primary 橙色（部分完成的视觉强调）
-     * - 子任务完成 + 父待办已完成 → CompletedColors.CheckboxBgDim 浅橙（保持橙色系，仅降深度）
+     * - 子任务完成（无论父待办状态） → CheckboxBgDim 浅橙色
      *
-     * 注意：用户要求"保持橙色系配色方案，不得更改为灰色，实现颜色深度降低效果"
-     * 因此父待办完成时也用浅橙（#FFCCAB），而非 CheckboxBg 的灰色。
+     * 用户统一要求：父未完成+子完成、父完成+子完成 两种情况颜色一致：
+     * **浅橙色底 + 白色√**
+     *
+     * 这样与父待办 CircularCheckbox 在 dimmed=true 时的"浅橙底 + 白色√"完全统一，
+     * 实现"已完成态"的跨组件视觉一致性。
      */
     val bgColor = when {
         !isCompleted -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        isParentCompleted -> CompletedColors.CheckboxBgDim
-        else -> MaterialTheme.colorScheme.primary
+        else -> CompletedColors.CheckboxBgDim
     }
 
+    /**
+     * 不可用态视觉降权
+     *
+     * 批量模式下，子任务勾选框不可点击（避免与多选操作语义冲突）。
+     * 通过 Box 的 graphicsLayer 降低透明度，提供 disabled 视觉反馈。
+     */
+    val disabledAlpha = 0.4f
+
+    /**
+     * 关键：用 pointerInput + detectTapGestures 替代 clickable
+     *
+     * 原因：clickable 只支持"短按"，不支持"短按+长按"组合。combinedClickable
+     * 在 enabled=false 时会整体禁用，无法实现"长按仍然响应"的需求。
+     *
+     * 自定义手势分流：
+     * - 短按（onTap）：
+     *     - 启用态（isEnabled = true）→ 执行 onClick（切换完成状态）
+     *     - 禁用态（isEnabled = false）→ 执行 onDisabledLongPress（弹 Toast）
+     * - 长按（onLongPress）：
+     *     - 启用态（isEnabled = true）→ 无操作
+     *     - 禁用态（isEnabled = false）→ 执行 onDisabledLongPress（弹 Toast）
+     *
+     * 为什么禁用态下短按也要弹 Toast？
+     * 用户反馈：多选模式下点子待办勾选框无任何反馈，不知道发生了什么。
+     * 修复后：禁用态下任何点击操作都触发 onDisabledLongPress，统一反馈。
+     *
+     * key 包括 isEnabled、onClick、onDisabledLongPress：当任一变化时重启手势检测器，
+     * 避免长按协程引用旧的 lambda 闭包。
+     */
     Box(
         modifier = Modifier
             .size(18.dp)
             .clip(RoundedCornerShape(50))
             .background(bgColor)
-            .clickable { onClick() },
+            .pointerInput(isEnabled, onClick, onDisabledLongPress) {
+                detectTapGestures(
+                    onTap = {
+                        // 短按：
+                        // - 启用态 → 切换完成状态
+                        // - 禁用态 → 弹 Toast 提示（与长按统一反馈）
+                        if (isEnabled) onClick() else onDisabledLongPress()
+                    },
+                    onLongPress = {
+                        // 长按：仅在禁用态触发
+                        if (!isEnabled) onDisabledLongPress()
+                    }
+                )
+            }
+            .graphicsLayer {
+                this.alpha = if (isEnabled) 1f else disabledAlpha
+            },
         contentAlignment = Alignment.Center
     ) {
         if (isCompleted) {
+            /**
+             * 已完成态 √ 颜色：白色
+             *
+             * 用户统一要求：父未完成+子完成、父完成+子完成 两种情况下，
+             * √ 颜色统一为白色，与背景 CheckboxBgDim 浅橙形成清晰对比。
+             *
+             * 这样与父待办 CircularCheckbox 在 dimmed=true 时的
+             * "浅橙底 + 白色√" 完全一致，实现跨组件视觉统一。
+             */
             Text(
                 text = "✓",
-                color = MaterialTheme.colorScheme.onPrimary,
+                color = Color.White,
                 fontSize = 11.sp
             )
         }
@@ -932,7 +1089,6 @@ private fun aggregateAttachmentCounts(
 @Composable
 private fun CategoryTagWithShadow(
     categoryName: String,
-    categoryIcon: String?,
     isCompleted: Boolean
 ) {
     val textColor = if (isCompleted) CompletedColors.Text
@@ -952,26 +1108,20 @@ private fun CategoryTagWithShadow(
                 )
                 .blur(radius = 4.dp)
         )
-        // 内层：实际内容
-        Row(
+        // 内层：实际内容（仅文字，不再包含 emoji 图标）
+        //
+        // 用户要求："待办卡片上的类型组件不要emoji表情，只要文字"
+        // 原实现：Row { emoji Text + Spacer + name Text }
+        // 新实现：直接 Text(categoryName)，更紧凑
+        Text(
+            text = categoryName,
+            fontSize = 12.sp,
+            color = textColor,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier
                 .background(color = bgColor, shape = RoundedCornerShape(4.dp))
-                .padding(horizontal = 8.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = categoryIcon ?: "📋",
-                fontSize = 12.sp,
-                color = textColor
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = categoryName,
-                fontSize = 12.sp,
-                color = textColor,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-            )
-        }
+                .padding(horizontal = 8.dp, vertical = 2.dp)
+        )
     }
 }

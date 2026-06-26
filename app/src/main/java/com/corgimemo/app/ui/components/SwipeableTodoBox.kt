@@ -23,9 +23,14 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +50,18 @@ import androidx.compose.ui.zIndex
 import com.corgimemo.app.R
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+
+/**
+ * 内容区视觉指示器开关（默认 true = 显示水波纹）
+ *
+ * 用途：SwipeableTodoBox 内部用 CompositionLocalProvider 覆盖此值为 false，
+ * 使 TodoListItem 在左滑时不显示 indication 水波纹（避免与外层左滑手势
+ * 冲突造成的视觉干扰）。
+ *
+ * 注：此 Local 仅控制"是否使用默认 indication"，不影响操作层按钮的
+ * clickable 反馈（操作层使用自己的 indication）。
+ */
+val LocalContentIndication = staticCompositionLocalOf { true }
 
 /**
  * 弹性缓动函数（对应 Web 原型 cubic-bezier(0.34, 1.56, 0.64, 1)）
@@ -111,6 +128,21 @@ fun SwipeableTodoBox(
 ) {
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+
+    /**
+     * 是否处于手势进行中（含拖动 + 归位动画）
+     *
+     * 设计意图：仅在以下两个阶段禁用内容卡片的水波纹：
+     * 1. 拖动中：手指在屏幕上左右拖动
+     * 2. 归位动画中：onDragEnd/onDragCancel 后 animateTo 动画进行中
+     *
+     * 其他场景（点击进入编辑、多选模式下点击选择）保持显示水波纹。
+     *
+     * 状态机：
+     * - onDragStart → true
+     * - animateTo 协程结束（吸附/归位/快速右滑关闭）→ false
+     */
+    var isDragging by remember { mutableStateOf(false) }
 
     // 几何参数
     val buttonWidthDp = 72.dp
@@ -200,8 +232,11 @@ fun SwipeableTodoBox(
                         if (!isEnabled) return@pointerInput
                         detectHorizontalDragGestures(
                             onDragStart = {
-                                // 开始新一轮拖动：重置速度跟踪器
+                                // 开始新一轮拖动：
+                                // 1. 重置速度跟踪器
+                                // 2. 标记为手势进行中 → 禁用内容卡片的 indication 水波纹
                                 velocityTracker.resetTracking()
+                                isDragging = true
                             },
                             onDragEnd = {
                                 // 计算抬手时的 x 方向速度（px/s）
@@ -218,6 +253,8 @@ fun SwipeableTodoBox(
                                             )
                                         )
                                         onExpandChange(false)
+                                        // 归位动画结束：恢复 indication
+                                        isDragging = false
                                     }
                                 } else {
                                     // 普通抬手：按阈值吸附
@@ -240,6 +277,8 @@ fun SwipeableTodoBox(
                                             )
                                         )
                                         onExpandChange(target < 0f)
+                                        // 吸附/归位动画结束：恢复 indication
+                                        isDragging = false
                                     }
                                 }
                             },
@@ -256,6 +295,8 @@ fun SwipeableTodoBox(
                                             )
                                         )
                                         onExpandChange(false)
+                                        // 归位动画结束：恢复 indication
+                                        isDragging = false
                                     }
                                 } else {
                                     val currentReveal = -cardOffsetX.value
@@ -274,6 +315,8 @@ fun SwipeableTodoBox(
                                             )
                                         )
                                         onExpandChange(target < 0f)
+                                        // 吸附/归位动画结束：恢复 indication
+                                        isDragging = false
                                     }
                                 }
                             }
@@ -297,6 +340,8 @@ fun SwipeableTodoBox(
                                         )
                                     )
                                     onExpandChange(false)
+                                    // 关闭动画结束：恢复 indication
+                                    isDragging = false
                                 }
                             } else {
                                 // 未完全展开：正常 snapTo 跟手
@@ -311,7 +356,24 @@ fun SwipeableTodoBox(
                     .offset { IntOffset(cardOffsetX.value.roundToInt(), 0) }
                     .zIndex(10f)
             ) {
-                content()
+                /**
+                 * 内容卡片的 indication 水波纹开关（基于手势进行中状态）
+                 *
+                 * - isDragging = true（拖动中 或 归位/吸附动画中）→ LocalContentIndication = false
+                 * - isDragging = false（静止状态）→ LocalContentIndication = true（默认）
+                 *
+                 * 为什么需要在 content() 外层加 CompositionLocalProvider：
+                 * 左滑时外层 detectHorizontalDragGestures 与内部 TodoListItem 的
+                 * detectTapGestures.onPress 会同时响应 down 事件，onPress 会发射
+                 * Press.Interaction → indication 渲染水波纹。仅在拖动/归位阶段禁用，
+                 * 其他阶段（点击进入编辑、多选模式点击选择）保持显示水波纹。
+                 *
+                 * 注：操作层（分享/置顶/删除按钮）的 clickable 在 Box 外层，
+                 * 仍使用默认 indication，水波纹保留。
+                 */
+                CompositionLocalProvider(LocalContentIndication provides !isDragging) {
+                    content()
+                }
             }
 
             // === 操作层（measurables[1..3]）===

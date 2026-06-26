@@ -66,6 +66,7 @@
     <string name="todo_delete_confirm_message">删除后将无法恢复，确定要继续吗？</string>
     <string name="todo_delete_success">已删除待办</string>
     <string name="todo_batch_delete_confirm">确认删除 %d 个待办项？</string>
+    <string name="todo_batch_exit_hint">请先退出多选模式</string>
     <string name="todo_mark_complete">标记为已完成</string>
     <string name="todo_mark_incomplete">标记为未完成</string>
     <string name="todo_completed_at">完成于 %s</string>
@@ -301,4 +302,7 @@
     <string name="language_en">English</string>
     <string name="language_ja">日本語</string>
     <string name="language_system_default">跟随系统</string>
+
+    <!-- ==================== 批量复制附件（方案 B：仅失败 Snackbar） ==================== -->
+    <string name="batch_duplicate_failure_hint">⚠️ 部分文件复制失败，请手动检查</string>
 </resources>

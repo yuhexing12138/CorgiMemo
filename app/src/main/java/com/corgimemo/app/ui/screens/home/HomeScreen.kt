@@ -33,9 +33,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DriveFileMove
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -109,6 +112,9 @@ import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.CorgiPullToRefreshIndicator
 import com.corgimemo.app.ui.components.SortBottomSheet
+import com.corgimemo.app.ui.components.MoreOptionsSheet
+import com.corgimemo.app.ui.components.PriorityPickerSheet
+import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.corgimemo.app.viewmodel.CelebrationLevel
@@ -156,6 +162,9 @@ fun HomeScreen(
     val pendingDeletedTodo by viewModel.pendingDeletedTodo.collectAsState()
     val pendingBatchDeletes by viewModel.pendingBatchDeletes.collectAsState()
     val pendingCompleteTodo by viewModel.pendingCompleteTodo.collectAsState()
+    val pendingBatchCompleteCount by viewModel.pendingBatchCompleteCount.collectAsState()
+    // 方案 B：批量复制失败 Snackbar 标志
+    val pendingBatchDuplicateFailure by viewModel.pendingBatchDuplicateFailure.collectAsState()
 
     // 子任务进度映射
     val subTaskProgressMap by viewModel.subTaskProgressMap.collectAsState()
@@ -179,8 +188,24 @@ fun HomeScreen(
     /** 排序方式状态 */
     val sortType by viewModel.sortType.collectAsState()
 
-    var showBatchDeleteDialog by remember { mutableStateOf(false) }
-    var showBatchMoveDialog by remember { mutableStateOf(false) }
+    /**
+     * 批量操作弹窗显示状态（已提升到 ViewModel）
+     *
+     * 背景：批量操作栏已提取到 MainScreen 的 bottomBar 槽位（详见 HomeBatchActionBar），
+     * 但弹窗渲染仍需在 HomeScreen 内（因弹窗依赖 filteredTodos / categories 等）。
+     * 因此把这 3 个 boolean 状态从 HomeScreen 本地 state 提升为 ViewModel 级 StateFlow：
+     * - MainScreen 调用 viewModel.setShowBatchXxx(true) 触发显示
+     * - HomeScreen 通过 collectAsState() 订阅并渲染对应弹窗
+     */
+    val showBatchDeleteDialog by viewModel.showBatchDeleteDialog.collectAsState()
+    val showBatchMoveDialog by viewModel.showBatchMoveDialog.collectAsState()
+    val showMoreOptionsSheet by viewModel.showMoreOptionsSheet.collectAsState()
+
+    /** PriorityPicker 弹窗显示状态（MoreOptions → 优先级） */
+    var showPriorityPickerSheet by remember { mutableStateOf(false) }
+
+    /** ReminderPicker 弹窗显示状态（MoreOptions → 提醒时间） */
+    var showReminderPickerSheet by remember { mutableStateOf(false) }
 
     /**
      * 单个待办删除二次确认状态（长按菜单删除走此流程）
@@ -201,6 +226,15 @@ fun HomeScreen(
     /** 排序弹窗 BottomSheet 状态 */
     var showSortSheet by remember { mutableStateOf(false) }
     val sortSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    /** MoreOptions 弹窗状态对象（多选页 ⋮ 按钮触发） */
+    val moreOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    /** PriorityPicker 弹窗状态对象（MoreOptions → 优先级） */
+    val priorityPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    /** ReminderPicker 弹窗状态对象（MoreOptions → 提醒时间） */
+    val reminderPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     /** 首次引导状态 */
     var showFirstTimeGuide by remember { mutableStateOf(false) }
@@ -308,6 +342,78 @@ fun HomeScreen(
         }
     }
 
+    /**
+     * 监听批量完成事件，显示 Snackbar "已完成 N 项"
+     *
+     * 区别于单条完成（pendingCompleteTodo 带撤销）：
+     * - 批量完成 Snackbar 不带撤销按钮（避免与批量模式冲突）
+     * - 显示完成后立即清空状态，避免重复触发
+     *
+     * 关键设计：等待全屏弹窗关闭后再显示
+     *
+     * 用户反馈：当批量完成触发柯基升级时，只看到升级弹窗，看不到"已完成 N 项" Snackbar。
+     *
+     * 根因：
+     * - LevelUpDialog / AchievementUnlockDialog 是全屏 Dialog，会完全遮挡屏幕底部的 SnackbarHost
+     * - showSnackbar() 协程在 Dialog 显示期间正常执行完成（4s 后协程结束 + 状态清空）
+     * - 用户关闭 Dialog 后 Snackbar 已过期，无法显示
+     *
+     * 修复策略：LaunchedEffect 的 key 包含 showLevelUp / showAchievementUnlock。
+     * - 当弹窗未关闭时，return@LaunchedEffect 不显示 Snackbar
+     * - 当用户关闭弹窗，key 变化，协程自动重启
+     * - 弹窗已关闭，正常显示 Snackbar
+     */
+    LaunchedEffect(
+        pendingBatchCompleteCount,
+        showLevelUp,
+        showAchievementUnlock
+    ) {
+        val count = pendingBatchCompleteCount ?: return@LaunchedEffect
+
+        // 等待所有"抢占型"弹窗关闭（升级弹窗、成就弹窗）
+        // 这些全屏 Dialog 会完全遮挡 SnackbarHost
+        if (showLevelUp != null || showAchievementUnlock != null) {
+            return@LaunchedEffect
+        }
+
+        snackbarHostState.showSnackbar(
+            message = "✅ 已完成 $count 项",
+            duration = SnackbarDuration.Short
+        )
+        // 显示完成后立即清空，避免配置变化（如旋转）时重复触发
+        viewModel.clearPendingBatchComplete()
+    }
+
+    /**
+     * 方案 B：监听批量复制失败事件，显示 Snackbar "⚠️ 部分文件复制失败"
+     *
+     * 触发时机：HomeViewModel.batchDuplicate 文件复制过程中出现异常时
+     * 设置 _pendingBatchDuplicateFailure = true
+     *
+     * 等待策略：与 pendingBatchCompleteCount 相同，等待 showLevelUp / showAchievementUnlock 关闭
+     *
+     * 国际化：使用 R.string.batch_duplicate_failure_hint（zh / en 双语均已配置）
+     */
+    LaunchedEffect(
+        pendingBatchDuplicateFailure,
+        showLevelUp,
+        showAchievementUnlock
+    ) {
+        if (!pendingBatchDuplicateFailure) return@LaunchedEffect
+
+        // 等待所有"抢占型"弹窗关闭（升级弹窗、成就弹窗）
+        if (showLevelUp != null || showAchievementUnlock != null) {
+            return@LaunchedEffect
+        }
+
+        snackbarHostState.showSnackbar(
+            message = context.getString(com.corgimemo.app.R.string.batch_duplicate_failure_hint),
+            duration = SnackbarDuration.Short
+        )
+        // 显示完成后立即清空，避免配置变化（如旋转）时重复触发
+        viewModel.clearPendingBatchDuplicateFailure()
+    }
+
     // 批量模式下拦截返回键
     if (isBatchMode) {
         BackHandler {
@@ -345,41 +451,9 @@ fun HomeScreen(
             // 主内容区域使用 Column 垂直排列
             Column(modifier = Modifier.fillMaxSize()) {
                 // 顶部栏区域
-                if (isBatchMode) {
-                    /**
-                     * 批量模式自定义顶部栏
-                     *
-                     * 高度 56dp，背景与原 TopAppBar 一致。
-                     * - 左侧：◀ 返回箭头（点击 → exitBatchMode）
-                     * - 中部："选中 X 项" 文本（X 实时同步 selectedTodoIds.size）
-                     */
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .background(MaterialTheme.colorScheme.surface)
-                            .padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        /** 返回箭头（24dp 圆形可点击区域） */
-                        IconButton(onClick = { viewModel.exitBatchMode() }) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowBack,
-                                contentDescription = "退出批量模式",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        /** 选中数量文本 */
-                        Text(
-                            text = "选中 ${selectedTodoIds.size} 项",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
-                    }
-                }
+                // 批量模式的"◀ 返回 + 选中 X 项"已由 MainScreen 顶层 TopAppBar 接管
+                // （详见 MainScreen.kt 的 topBar 槽位：isBatchMode 时 title 切换为"选中 X 项"）
+                // 此处不再渲染任何顶部栏，避免与 MainScreen 的 EnhancedTopBar 重复显示
 
                 // 主内容区域：使用 weight(1f) 填满剩余空间
                 Box(
@@ -678,73 +752,13 @@ fun HomeScreen(
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
 
-            /** 批量操作栏（底部）- 添加系统导航栏边距，避免三键导航模式下被遮挡 */
-            AnimatedVisibility(
-                visible = isBatchMode,
-                enter = slideInVertically(initialOffsetY = { it }),
-                exit = slideOutVertically(targetOffsetY = { it }),
-                modifier = Modifier.align(Alignment.BottomCenter)
-            ) {
-                Surface(
-                    shadowElevation = 8.dp,
-                    color = MaterialTheme.colorScheme.surface,
-                    /** 使用 safeAreaForBottomBar 动态适配不同导航模式（手势导航/三键导航） */
-                    modifier = Modifier.safeAreaForBottomBar()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        val hasSelection = selectedTodoIds.isNotEmpty()
-
-                        // 全部完成按钮
-                        Button(
-                            onClick = {
-                                viewModel.batchComplete()
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("已完成 ${selectedTodoIds.size} 个待办")
-                                }
-                            },
-                            enabled = hasSelection,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(text = "✅ 全部完成")
-                        }
-
-                        // 移动按钮
-                        Button(
-                            onClick = { showBatchMoveDialog = true },
-                            enabled = hasSelection,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(text = "📂 移动")
-                        }
-
-                        // 删除按钮
-                        Button(
-                            onClick = { showBatchDeleteDialog = true },
-                            enabled = hasSelection,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = UiColors.Error,
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Text(text = "🗑️ 删除")
-                        }
-
-                        // 取消按钮
-                        TextButton(
-                            onClick = { viewModel.exitBatchMode() },
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(text = "✕ 取消")
-                        }
-                    }
-                }
-            }
+            /**
+             * 批量操作栏已提取为 HomeBatchActionBar，在 MainScreen 的 bottomBar 槽位渲染。
+             * 原因：原位置（HomeScreen 内部 Box.align(BottomCenter)）会被 MainScreen 的
+             * CorgiBottomNavigationBar 遮挡，导致"全选+4图标"完全不可见。
+             * 提取后批量操作栏直接占据 Scaffold 的 bottomBar 槽位，与 CorgiBottomNavigationBar
+             * 互斥显示（详见 MainScreen.kt）。
+             */
 
             // 覆盖层效果
             AnimatedVisibility(
@@ -759,7 +773,7 @@ fun HomeScreen(
         // 批量删除确认对话框
     if (showBatchDeleteDialog) {
         AlertDialog(
-            onDismissRequest = { showBatchDeleteDialog = false },
+            onDismissRequest = { viewModel.setShowBatchDeleteDialog(false) },
             title = { Text("删除选中项") },
             text = {
                 Text(
@@ -769,7 +783,7 @@ fun HomeScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        showBatchDeleteDialog = false
+                        viewModel.setShowBatchDeleteDialog(false)
                         val count = selectedTodoIds.size
                         viewModel.batchDelete()
                         coroutineScope.launch {
@@ -781,7 +795,7 @@ fun HomeScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showBatchDeleteDialog = false }) {
+                TextButton(onClick = { viewModel.setShowBatchDeleteDialog(false) }) {
                     Text("取消")
                 }
             }
@@ -824,7 +838,7 @@ fun HomeScreen(
     if (showBatchMoveDialog) {
         val categoryList = categories
         AlertDialog(
-            onDismissRequest = { showBatchMoveDialog = false },
+            onDismissRequest = { viewModel.setShowBatchMoveDialog(false) },
             title = { Text("移动到分类") },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -833,7 +847,7 @@ fun HomeScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    showBatchMoveDialog = false
+                                    viewModel.setShowBatchMoveDialog(false)
                                     viewModel.batchMove(category.id)
                                     coroutineScope.launch {
                                         snackbarHostState.showSnackbar("已移动到「${category.name}」")
@@ -852,7 +866,7 @@ fun HomeScreen(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { showBatchMoveDialog = false }) {
+                TextButton(onClick = { viewModel.setShowBatchMoveDialog(false) }) {
                     Text("取消")
                 }
             }
@@ -948,6 +962,377 @@ fun HomeScreen(
                 viewModel.updateSortOrder(order)
             }
         )
+    }
+
+    /**
+     * 多选页 ⋮ 按钮触发的"更多选项"弹窗
+     *
+     * 包含 6 个批量操作：完成 / 置顶 / 优先级 / 提醒时间 / 创建副本 / 转换为灵感
+     * - "完成"、"置顶"、"创建副本" 直接触发 ViewModel 对应批量方法，操作完成后退出多选
+     * - "优先级" 触发 PriorityPickerSheet
+     * - "提醒时间" 触发 ReminderPickerBottomSheet
+     * - "转换为灵感" 暂不实现，弹 Toast 提示
+     *
+     * 选中数量为 0 时禁用此弹窗（由 IconButton 的 enabled 控制），但弹窗打开后如
+     * 选中项变化，组件重组不会自动关闭——用户可主动点击完成/置顶等按钮继续。
+     */
+    if (showMoreOptionsSheet) {
+        MoreOptionsSheet(
+            sheetState = moreOptionsSheetState,
+            onDismiss = { viewModel.setShowMoreOptionsSheet(false) },
+            onComplete = {
+                /**
+                 * 批量完成选中的待办。
+                 * 已完成项会被 [batchComplete] 内部跳过，操作完成后调用
+                 * exitBatchMode() 退出多选。
+                 */
+                viewModel.setShowMoreOptionsSheet(false)
+                val count = selectedTodoIds.size
+                viewModel.batchComplete()
+                viewModel.exitBatchMode()
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("已完成 $count 个待办")
+                }
+            },
+            onPin = {
+                /**
+                 * 批量置顶选中的待办。
+                 * 已置顶项保持置顶状态，操作完成后退出多选。
+                 */
+                viewModel.setShowMoreOptionsSheet(false)
+                val count = selectedTodoIds.size
+                viewModel.batchPin()
+                viewModel.exitBatchMode()
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("已置顶 $count 个待办")
+                }
+            },
+            onPriority = {
+                /**
+                 * 关闭 MoreOptions，弹出 PriorityPicker。
+                 * 保持多选模式（selectedTodoIds 不变），用户选完优先级后由弹窗 onConfirm 触发批量更新。
+                 */
+                viewModel.setShowMoreOptionsSheet(false)
+                showPriorityPickerSheet = true
+            },
+            onReminder = {
+                /**
+                 * 关闭 MoreOptions，弹出 ReminderPicker。
+                 * 保持多选模式，用户选完提醒时间后由弹窗 onConfirm 触发批量更新。
+                 */
+                viewModel.setShowMoreOptionsSheet(false)
+                showReminderPickerSheet = true
+            },
+            onDuplicate = {
+                /**
+                 * 批量复制选中的待办。
+                 * [batchDuplicate] 在 ViewModel 中已实现：
+                 * 1. 数据库复制（主表 + SubTask）
+                 * 2. 后台深复制文件（fileCopyManager.copyAllAttachments，顺序 for 循环）
+                 * 3. 失败时设置 _pendingBatchDuplicateFailure
+                 *    → HomeScreen 监听后显示 Snackbar "⚠️ 部分文件复制失败"
+                 *
+                 * **方案 B 简化**：移除进度条 UI 反馈与"已创建 N 个副本" Snackbar，
+                 * 仅保留失败 Snackbar（仅在文件复制出现异常时弹）。
+                 */
+                viewModel.setShowMoreOptionsSheet(false)
+                viewModel.batchDuplicate()
+                viewModel.exitBatchMode()
+            },
+            onConvertToInspiration = {
+                /**
+                 * "转换为灵感"功能暂不实现，弹 Toast 提示并关闭弹窗，保持多选模式。
+                 */
+                viewModel.setShowMoreOptionsSheet(false)
+                Toast.makeText(context, "转换为灵感功能开发中...", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    /**
+     * 多选页"优先级"子菜单弹窗
+     *
+     * - 4 选 1 单选（无/低/中/高）
+     * - 初始选中值：取首个选中项的 priority，让用户看到当前选中项的优先级
+     * - 点击任一选项 → 触发 [batchUpdatePriority] 批量更新并退出多选
+     * - 点击空白区域或下滑 → 仅关闭弹窗，不更新
+     */
+    if (showPriorityPickerSheet) {
+        /**
+         * 首个选中的待办：用于读取初始优先级。
+         * 注意：批量场景下选中项的优先级可能不一致，但弹窗只能显示一个初值，
+         * 因此取首个选中项作为代表，行为与设计文档 Task 7 步骤 1 一致。
+         */
+        val firstSelected = filteredTodos
+            .firstOrNull { selectedTodoIds.contains(it.id) }
+
+        PriorityPickerSheet(
+            sheetState = priorityPickerSheetState,
+            initialPriority = firstSelected?.priority ?: 0,
+            onDismiss = { showPriorityPickerSheet = false },
+            onConfirm = { priority ->
+                /**
+                 * 批量设置选中的待办优先级。
+                 * 完成后退出多选模式。
+                 */
+                showPriorityPickerSheet = false
+                val count = selectedTodoIds.size
+                viewModel.batchUpdatePriority(priority)
+                viewModel.exitBatchMode()
+                val name = when (priority) {
+                    1 -> "低"
+                    2 -> "中"
+                    3 -> "高"
+                    else -> "无"
+                }
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("已设置 $count 个待办为「$name」优先级")
+                }
+            }
+        )
+    }
+
+    /**
+     * 多选页"提醒时间"子菜单弹窗
+     *
+     * 复用现有 [ReminderPickerBottomSheet]，参数语义：
+     * - dateMillis/hour/minute → 组合为最终的 reminderTime 时间戳
+     * - repeatType → 写入 TodoItem.repeatType
+     * - calendarEnabled → 仅 UI 状态，不持久化到 TodoItem（设计文档 Task 2 约定）
+     *
+     * 注意：[ReminderPickerBottomSheet] 本身不包含 ModalBottomSheet 容器，
+     * 需手动用 ModalBottomSheet 包裹以提供标准弹窗体验（圆角、滑入动画、点击外部关闭）。
+     *
+     * 初始值策略：取首个选中项的 reminderTime / repeatType，让用户看到当前选中项的
+     * 提醒配置。如首个选中项未设置提醒，则默认今天 13:35，与 ReminderPickerBottomSheet
+     * 默认值保持一致。
+     */
+    if (showReminderPickerSheet) {
+        /**
+         * 首个选中的待办：用于读取初始提醒时间。
+         * 与 PriorityPickerSheet 同样的策略：批量场景下选中项的提醒可能不一致，
+         * 取首个选中项作为代表。
+         */
+        val firstSelected = filteredTodos
+            .firstOrNull { selectedTodoIds.contains(it.id) }
+
+        /**
+         * 把首个选中项的 reminderTime 拆分为初始日期 + 初始时分。
+         * - 未设置提醒（reminderTime == null）→ 默认今天 13:35
+         * - 已设置提醒 → 从时间戳解析
+         */
+        val initCal = remember(firstSelected?.reminderTime) {
+            java.util.Calendar.getInstance().apply {
+                if (firstSelected?.reminderTime != null) {
+                    timeInMillis = firstSelected.reminderTime
+                }
+            }
+        }
+        val initHour = initCal.get(java.util.Calendar.HOUR_OF_DAY)
+        val initMinute = initCal.get(java.util.Calendar.MINUTE)
+
+        ModalBottomSheet(
+            onDismissRequest = { showReminderPickerSheet = false },
+            sheetState = reminderPickerSheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            ReminderPickerBottomSheet(
+                /**
+                 * 初始日期：首个选中项的 reminderTime，未设置时 ReminderPicker 会取今天
+                 */
+                initialDateMillis = firstSelected?.reminderTime,
+                initialHour = initHour,
+                initialMinute = initMinute,
+                initialRepeatType = firstSelected?.repeatType ?: 0,
+                onDismiss = { showReminderPickerSheet = false },
+                onConfirm = { dateMillis, hour, minute, repeatType, _ ->
+                    /**
+                     * 把日期 + 时分组合为完整时间戳。
+                     * 若未选择日期（dateMillis 为 null），使用当前时刻。
+                     */
+                    val calendar = java.util.Calendar.getInstance()
+                    if (dateMillis != null) {
+                        calendar.timeInMillis = dateMillis
+                    }
+                    calendar.set(java.util.Calendar.HOUR_OF_DAY, hour)
+                    calendar.set(java.util.Calendar.MINUTE, minute)
+                    calendar.set(java.util.Calendar.SECOND, 0)
+                    calendar.set(java.util.Calendar.MILLISECOND, 0)
+                    val reminderTime = calendar.timeInMillis
+
+                    showReminderPickerSheet = false
+                    val count = selectedTodoIds.size
+                    viewModel.batchUpdateReminder(reminderTime, repeatType)
+                    viewModel.exitBatchMode()
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("已为 $count 个待办设置提醒")
+                    }
+                }
+            )
+        }
+    }
+}
+
+/**
+ * 首页批量模式底部操作栏（提取版）
+ *
+ * 设计初衷：
+ * 原实现位于 HomeScreen 内部 Box.align(BottomCenter)，会被 MainScreen 的
+ * CorgiBottomNavigationBar 在 z 轴上完全遮挡，导致"全选+4图标"在用户设备上
+ * 不可见。本组件提取到 MainScreen 的 bottomBar 槽位中，与 CorgiBottomNavigationBar
+ * 互斥显示（详见 MainScreen.kt）。
+ *
+ * 布局：
+ * ```
+ * ┌─────────────────────────────────────┐
+ * │  全选/取消全选    🖼   ➡️   🗑   ⋮   │
+ * └─────────────────────────────────────┘
+ * ```
+ *
+ * @param isBatchMode 是否处于批量模式（控制整个栏的显隐动画）
+ * @param selectedTodoIds 当前选中的待办 ID 集合
+ * @param filteredTodos 当前过滤后的待办列表（用于判断"全选"状态）
+ * @param onSelectAll 全选回调
+ * @param onClearSelection 取消全选回调
+ * @param onShare 分享按钮回调
+ * @param onMove 移动按钮回调（触发批量移动分类弹窗）
+ * @param onDelete 删除按钮回调（触发批量删除确认弹窗）
+ * @param onMoreOptions 更多选项按钮回调（触发 MoreOptions 弹窗）
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeBatchActionBar(
+    isBatchMode: Boolean,
+    selectedTodoIds: Set<Long>,
+    filteredTodos: List<TodoItem>,
+    onSelectAll: () -> Unit,
+    onClearSelection: () -> Unit,
+    onShare: () -> Unit,
+    onMove: () -> Unit,
+    onDelete: () -> Unit,
+    onMoreOptions: () -> Unit
+) {
+    /**
+     * 整栏显隐动画：
+     * - 显示：从底部滑入（slideInVertically）
+     * - 隐藏：向底部滑出（slideOutVertically）
+     */
+    AnimatedVisibility(
+        visible = isBatchMode,
+        enter = slideInVertically(initialOffsetY = { it }),
+        exit = slideOutVertically(targetOffsetY = { it })
+    ) {
+        Surface(
+            shadowElevation = 8.dp,
+            color = MaterialTheme.colorScheme.surface,
+            /**
+             * 系统导航栏安全区域：避免三键导航模式下按钮被遮挡。
+             * 即使作为 Scaffold bottomBar 的子组件，仍保留此 padding 以兼容
+             * 未来可能的独立放置场景。
+             */
+            modifier = Modifier.safeAreaForBottomBar()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val hasSelection = selectedTodoIds.isNotEmpty()
+                val isAllSelected = filteredTodos.isNotEmpty() &&
+                    selectedTodoIds.size == filteredTodos.size
+
+                /** 左下：全选 / 取消全选 按钮 */
+                TextButton(
+                    onClick = {
+                        if (isAllSelected) onClearSelection() else onSelectAll()
+                    },
+                    enabled = filteredTodos.isNotEmpty()
+                ) {
+                    Text(
+                        text = if (isAllSelected) "取消全选" else "全选",
+                        color = UiColors.Primary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                /** 右下：4 个图标按钮（分享/移动/删除/更多） */
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    /** 1. 分享 */
+                    IconButton(
+                        onClick = onShare,
+                        enabled = hasSelection,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Share,
+                            contentDescription = "分享",
+                            tint = if (hasSelection) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            }
+                        )
+                    }
+
+                    /** 2. 移动到分组 */
+                    IconButton(
+                        onClick = onMove,
+                        enabled = hasSelection,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.DriveFileMove,
+                            contentDescription = "移动到分组",
+                            tint = if (hasSelection) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            }
+                        )
+                    }
+
+                    /** 3. 删除待办 */
+                    IconButton(
+                        onClick = onDelete,
+                        enabled = hasSelection,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Delete,
+                            contentDescription = "删除待办",
+                            tint = if (hasSelection) {
+                                UiColors.Error
+                            } else {
+                                UiColors.Error.copy(alpha = 0.38f)
+                            }
+                        )
+                    }
+
+                    /** 4. 更多选项（⋮） */
+                    IconButton(
+                        onClick = onMoreOptions,
+                        enabled = hasSelection,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "更多选项",
+                            tint = if (hasSelection) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            }
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -21,6 +21,19 @@ interface TodoDao {
     @Update
     suspend fun update(todo: TodoItem)
 
+    /**
+     * 批量更新待办
+     *
+     * 用于多选模式下的批量操作（如 batchComplete）：
+     * - 一次性事务，多条记录原子性更新
+     * - Room Flow 单次发射，UI 一次性重组（视觉上"同步完成"）
+     * - 性能优于循环单条 update（减少数据库往返）
+     *
+     * @param todos 待更新列表
+     */
+    @Update
+    suspend fun updateAll(todos: List<TodoItem>)
+
     @Delete
     suspend fun delete(todo: TodoItem)
 

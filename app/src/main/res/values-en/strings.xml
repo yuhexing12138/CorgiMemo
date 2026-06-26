@@ -66,6 +66,7 @@
     <string name="todo_delete_confirm_message">This cannot be undone. Are you sure?</string>
     <string name="todo_delete_success">Todo deleted</string>
     <string name="todo_batch_delete_confirm">Delete %d todo items?</string>
+    <string name="todo_batch_exit_hint">Please exit batch mode first</string>
     <string name="todo_mark_complete">Mark as complete</string>
     <string name="todo_mark_incomplete">Mark as incomplete</string>
     <string name="todo_completed_at">Completed at %s</string>
@@ -301,4 +302,7 @@
     <string name="language_en">English</string>
     <string name="language_ja">日本語</string>
     <string name="language_system_default">Follow System</string>
+
+    <!-- ==================== Batch Duplicate (Plan B: Failure Snackbar Only) ==================== -->
+    <string name="batch_duplicate_failure_hint">⚠️ Some files failed to copy, please check manually</string>
 </resources>

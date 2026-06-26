@@ -42,6 +42,7 @@ import com.corgimemo.app.data.local.db.OperationLogEntity
 import com.corgimemo.app.data.repository.OperationLogRepository
 import com.corgimemo.app.data.repository.TaskDailyStatsRepository
 import com.corgimemo.app.data.repository.TodoRepository
+import com.corgimemo.app.util.FileCopyManager
 import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiBehaviorManager
 import com.corgimemo.app.animation.DynamicGreetingManager
@@ -121,6 +122,7 @@ class HomeViewModel @Inject constructor(
     private val moodHistoryRepository: MoodHistoryRepository,
     private val operationLogRepository: OperationLogRepository,
     private val taskDailyStatsRepository: TaskDailyStatsRepository,
+    private val fileCopyManager: FileCopyManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -256,6 +258,54 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    // ========== 批量操作弹窗显示状态（提升到 ViewModel 以便 MainScreen 触发） ==========
+
+    /**
+     * 批量操作弹窗显示状态集合
+     *
+     * 背景：原 HomeScreen 中批量操作的弹窗（移动/删除确认/MoreOptions 等）状态
+     * 全部以 `remember { mutableStateOf(false) }` 形式存在于 HomeScreen 内部。
+     * 重构后，批量操作栏已提取到 MainScreen 的 bottomBar 槽位中（详见
+     * HomeBatchActionBar），但弹窗渲染仍需在 HomeScreen 内（因弹窗依赖
+     * filteredTodos / categories 等 HomeScreen 局部变量）。
+     *
+     * 因此把这 3 个 boolean 状态提升为 ViewModel 级 StateFlow：
+     * - MainScreen 通过调用 setShowBatchXxx(true) 触发显示
+     * - HomeScreen 通过 collectAsState() 订阅并渲染对应弹窗
+     *
+     * 此举保证"触发"和"渲染"两端在状态上的一致性，避免跨组件状态同步问题。
+     */
+    private val _showBatchDeleteDialog = MutableStateFlow(false)
+    val showBatchDeleteDialog: StateFlow<Boolean> = _showBatchDeleteDialog.asStateFlow()
+
+    private val _showBatchMoveDialog = MutableStateFlow(false)
+    val showBatchMoveDialog: StateFlow<Boolean> = _showBatchMoveDialog.asStateFlow()
+
+    private val _showMoreOptionsSheet = MutableStateFlow(false)
+    val showMoreOptionsSheet: StateFlow<Boolean> = _showMoreOptionsSheet.asStateFlow()
+
+    /** 关闭所有批量弹窗（批量操作完成后由调用方触发） */
+    fun dismissAllBatchDialogs() {
+        _showBatchDeleteDialog.value = false
+        _showBatchMoveDialog.value = false
+        _showMoreOptionsSheet.value = false
+    }
+
+    /** 设置批量删除确认弹窗显示状态 */
+    fun setShowBatchDeleteDialog(show: Boolean) {
+        _showBatchDeleteDialog.value = show
+    }
+
+    /** 设置批量移动分类选择弹窗显示状态 */
+    fun setShowBatchMoveDialog(show: Boolean) {
+        _showBatchMoveDialog.value = show
+    }
+
+    /** 设置 MoreOptions 菜单弹窗显示状态 */
+    fun setShowMoreOptionsSheet(show: Boolean) {
+        _showMoreOptionsSheet.value = show
+    }
+
     // ========== 柯基数据相关 ==========
 
     private val _corgiData = MutableStateFlow<CorgiData?>(null)
@@ -379,6 +429,42 @@ class HomeViewModel @Inject constructor(
     private val _pendingCompleteTodo = MutableStateFlow<Pair<TodoItem, Boolean>?>(null)
     val pendingCompleteTodo: StateFlow<Pair<TodoItem, Boolean>?> =
         _pendingCompleteTodo.asStateFlow()
+
+    /**
+     * 待显示 Snackbar 的批量完成数量
+     *
+     * 设计：
+     * - null = 不显示
+     * - 非 null（如 N）= Snackbar "已完成 N 项"
+     *
+     * 区别于 pendingCompleteTodo（单条），用于批量完成场景。
+     * 单条走 pendingCompleteTodo（带撤销），批量无撤销直接通知。
+     */
+    private val _pendingBatchCompleteCount = MutableStateFlow<Int?>(null)
+    val pendingBatchCompleteCount: StateFlow<Int?> =
+        _pendingBatchCompleteCount.asStateFlow()
+
+    /** 清除批量完成 Snackbar 状态（HomeScreen 显示完后调用） */
+    fun clearPendingBatchComplete() {
+        _pendingBatchCompleteCount.value = null
+    }
+
+    // ========== 批量复制失败状态（方案 B：删除进度条 UI，仅保留失败 Snackbar） ==========
+
+    /**
+     * 批量复制失败状态（非 null 时显示失败 Snackbar）
+     *
+     * 设计：失败时才反馈，避免进度条 UI 但保留用户感知
+     */
+    private val _pendingBatchDuplicateFailure = MutableStateFlow(false)
+    val pendingBatchDuplicateFailure: StateFlow<Boolean> = _pendingBatchDuplicateFailure.asStateFlow()
+
+    /**
+     * 清除"批量复制失败" Snackbar 状态（HomeScreen 显示完后调用）
+     */
+    fun clearPendingBatchDuplicateFailure() {
+        _pendingBatchDuplicateFailure.value = false
+    }
 
     /** 完成操作倒计时任务（可取消）*/
     private var completeTimerJob: Job? = null
@@ -2349,7 +2435,19 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * 批量完成选中的待办
+     * 批量完成选中的待办（多选模式"完成"按钮）
+     *
+     * 用户反馈：原实现串行 updateTodo + 每条 handleTaskCompleted，
+     * 导致：
+     * 1. 视觉上"逐条完成"（数据库多次更新，UI 多次重组）
+     * 2. 震动反馈多次触发（每条都震动）
+     *
+     * 修复策略：
+     * 1. 收集所有待更新的 todos → 一次性 todoRepository.updateTodos() 批量更新
+     * 2. 累计统计：经验、完成数、连续完成、心情重算等"全局"操作放在循环外只执行一次
+     * 3. 重复任务处理：每条独立处理（RepeatTaskManager 行为不同）
+     * 4. 震动反馈：循环外统一触发一次
+     * 5. 庆祝动画：循环外触发一次（取最高优先级待办的庆祝级别）
      */
     fun batchComplete() {
         val selectedIds = _selectedTodoIds.value
@@ -2357,20 +2455,113 @@ class HomeViewModel @Inject constructor(
 
         val currentTime = System.currentTimeMillis()
         viewModelScope.launch {
+            // 1. 收集待更新的 todos（仅未完成的）
+            val todosToUpdate = mutableListOf<TodoItem>()
+            val originalTodos = mutableListOf<TodoItem>()
             selectedIds.forEach { id ->
                 val todo = todoRepository.getTodoById(id)
                 if (todo != null && todo.status == 0) {
-                    val updatedTodo = todo.copy(
-                        status = 1,
-                        completedAt = currentTime,
-                        updatedAt = currentTime
+                    todosToUpdate.add(
+                        todo.copy(
+                            status = 1,
+                            completedAt = currentTime,
+                            updatedAt = currentTime
+                        )
                     )
-                    todoRepository.updateTodo(updatedTodo)
-                    handleTaskCompleted(todo)
+                    originalTodos.add(todo)
                 }
             }
+
+            if (todosToUpdate.isEmpty()) {
+                exitBatchMode()
+                return@launch
+            }
+
+            // 2. 一次性批量更新（数据库原子事务，UI 单次重组）
+            todoRepository.updateTodos(todosToUpdate)
+
+            // 3. 累计统计：每条都计入完成（不重复 addExperience/统计）
+            val completedCount = todosToUpdate.size
+            batchHandleCompletedTasks(todosToUpdate, completedCount)
+
+            // 4. 重复任务处理：每条独立（不同待办可能有不同 repeatType）
+            originalTodos.forEach { todo ->
+                RepeatTaskManager.handleRepeatTaskCompletion(context, todo)
+            }
+
+            // 5. 触发单次震动反馈（修复前是每条震动一次）
+            triggerHapticFeedback(InteractionType.TASK_COMPLETE)
+
+            // 6. 触发单次庆祝动画（取最高优先级待办的庆祝级别）
+            triggerBatchCelebration(originalTodos)
+
+            // 7. 通知 UI 显示批量完成 Snackbar "已完成 N 项"
+            _pendingBatchCompleteCount.value = completedCount
+
+            // 8. 退出批量模式
             exitBatchMode()
         }
+    }
+
+    /**
+     * 批量完成后的累计统计处理（一次性）
+     *
+     * 与单条 handleTaskCompleted 的区别：
+     * - 经验值累加：每条都加，但只调用一次 addExperience（传入总经验）
+     * - 完成数累加：每条都 +1，但只调用一次 incrementTotalCompleted
+     * - 成就检测：每条都检测，但只调用一次 checkAchievements
+     * - 心情重算：每条都参与，但只调用一次 recalculateMoodSuspend
+     *
+     * 这样避免"经验值 / 等级提升动画"被多次重复触发。
+     */
+    private suspend fun batchHandleCompletedTasks(
+        completedTodos: List<TodoItem>,
+        count: Int
+    ) {
+        val currentData = _corgiData.value ?: return
+
+        // 1. 记录任务完成时间（仅记录一次连续完成时间）
+        recordTaskCompletion()
+
+        // 2. 经验值累加：每条基础经验 × 数量，一次性加
+        val expGain = LevelManager.getExpOnTaskComplete() * count
+        addExperience(expGain)
+
+        // 3. 累计完成数（一次性 +count）
+        repeat(count) {
+            corgiRepository.incrementTotalCompleted()
+        }
+        _corgiData.value = currentData.copy(totalCompleted = currentData.totalCompleted + count)
+
+        // 4. 成就检测：每条独立检测
+        completedTodos.forEach { todo ->
+            achievementChecker.checkOnTaskComplete(todo)
+        }
+        checkAchievements()
+
+        // 5. 心情重算（一次性）
+        recalculateMoodSuspend()
+    }
+
+    /**
+     * 批量完成的庆祝动画（一次性，取最高级别）
+     *
+     * 修复前：每条 todo 都触发庆祝动画，多次触发造成 UI 卡顿
+     * 修复后：取所有完成项中优先级最高的（SUPER > HIGH > MEDIUM > LOW），
+     *        只触发一次庆祝动画
+     */
+    private fun triggerBatchCelebration(completedTodos: List<TodoItem>) {
+        if (completedTodos.isEmpty()) return
+        // 取最高优先级
+        val highestPriorityTodo = completedTodos.maxByOrNull { it.priority } ?: return
+        val level = calculateCelebrationLevel(highestPriorityTodo)
+        val message = getEncouragementMessage(level)
+        val duration = getCelebrationDuration(level)
+        _celebrationState.value = CelebrationState(
+            isShowing = true,
+            level = level,
+            message = message
+        )
     }
 
     /**
@@ -2454,23 +2645,114 @@ class HomeViewModel @Inject constructor(
      *
      * 每条新待办使用 Room 自增 id（id=0），createdAt/updatedAt 重置为当前时间，
      * 状态重置为未完成（status=0），completedAt 清空。
+     *
+     * **方案 B 简化（移除进度条 UI）**：
+     * - 删除所有进度条 UI 反馈（_duplicateProgress / dismissDuplicateProgress / cancelDuplicate）
+     * - 删除"已创建 N 个副本" Snackbar（_pendingBatchDuplicateCount）
+     * - 文件复制改为顺序 for 循环（无需原子计数器）
+     * - **保留**：失败 Snackbar（_pendingBatchDuplicateFailure，失败时弹 ⚠️ 提示）
+     * - **保留**：闪退修复（顶层 try/catch + CancellationException 透传）
+     * - **保留**：reminderTime / repeatType（不重置）
+     * - **保留**：scheduleAlarm = true（副本也调度闹钟，与原 todo 一起触发；与之前方案 A 相反）
+     * - **保留**：后台深复制（不阻塞 UI）
+     *
+     * @see FileCopyManager 附件复制工具
      */
     fun batchDuplicate() {
         val selectedIds = _selectedTodoIds.value
         if (selectedIds.isEmpty()) return
         val currentTime = System.currentTimeMillis()
+
         viewModelScope.launch {
-            selectedIds.forEach { id ->
-                todoRepository.getTodoById(id)?.let { todo ->
-                    todoRepository.insertTodo(
+            // ★★★ 关键修复：顶层 try/catch 防止 viewModelScope 因意外异常崩溃
+            var hasFailure = false
+            try {
+                // newSubTaskMaps 用于跨协程回传：originalSubTask.id -> newSubTask.id
+                val newSubTaskMaps = mutableMapOf<Long, Long>()  // oldSubTaskId -> newSubTaskId
+                // (originalId, newId) 用于后续文件复制
+                val duplicatePairs = mutableListOf<Pair<Long, Long>>()
+
+                // ========== 阶段 1：主表 + SubTask 数据库复制（同步） ==========
+                selectedIds.forEach { id ->
+                    val todo = todoRepository.getTodoById(id) ?: return@forEach
+                    val newId = todoRepository.insertTodo(
                         todo.copy(
                             id = 0,           // Room 自增
                             status = 0,        // 复制为未完成
                             completedAt = null,
                             createdAt = currentTime,
                             updatedAt = currentTime
+                            // ★ reminderTime/repeatType 保留
+                            // ★ scheduleAlarm 参数已删除（TodoRepository.insertTodo 默认行为：reminderTime != null 即调度）
                         )
                     )
+
+                    // 复制子任务：原 addSubTasks 内部用 insertAll（Room 自增 id）
+                    val subTasks = SubTaskManager.getSubTasks(context, id)
+                    if (subTasks.isNotEmpty()) {
+                        SubTaskManager.addSubTasks(context, newId, subTasks)
+                        val newSubTasks = SubTaskManager.getSubTasks(context, newId)
+                        for (original in subTasks) {
+                            val matched = newSubTasks.firstOrNull { it.order == original.order }
+                            if (matched != null) {
+                                newSubTaskMaps[original.id] = matched.id
+                            }
+                        }
+                    }
+
+                    duplicatePairs.add(id to newId)
+                }
+
+                // 刷新子任务进度 Map，让新副本的"(0/1)"和"下箭头"立即可见
+                if (newSubTaskMaps.isNotEmpty()) {
+                    val updatedProgressMap = _subTaskProgressMap.value.toMutableMap()
+                    val updatedSubTasksMap = _subTasksMap.value.toMutableMap()
+                    duplicatePairs.forEach { (_, newId) ->
+                        val progress = SubTaskManager.getProgressText(context, newId)
+                        if (progress != null) {
+                            updatedProgressMap[newId] = progress
+                        }
+                        val subTasks = SubTaskManager.getSubTasks(context, newId)
+                        updatedSubTasksMap[newId] = subTasks
+                    }
+                    _subTaskProgressMap.value = updatedProgressMap
+                    _subTasksMap.value = updatedSubTasksMap
+                }
+
+                // 退出批量模式（数据库操作已结束）
+                exitBatchMode()
+
+                // ========== 阶段 2：文件复制（后台异步，顺序 for 循环） ==========
+                // 方案 B：无需精确进度，改为简单 for 循环
+                // 每个 todo 的复制独立 try/catch，单 todo 失败不影响其他 todo
+                for ((originalId, newId) in duplicatePairs) {
+                    try {
+                        // 静默收集（不更新 UI 进度）
+                        fileCopyManager.copyAllAttachments(originalId, newId).collect { /* 静默 */ }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        // 透传取消异常
+                        throw e
+                    } catch (e: Exception) {
+                        // 单 todo 文件复制失败不影响其他 todo，仅记录
+                        android.util.Log.e(
+                            "HomeViewModel",
+                            "批量复制附件失败: originalId=$originalId, newId=$newId",
+                            e
+                        )
+                        hasFailure = true
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 协程取消时透传异常，不吞掉
+                throw e
+            } catch (e: Exception) {
+                // ★★★ 顶层异常捕获：避免 viewModelScope 因意外异常崩溃闪退
+                android.util.Log.e("HomeViewModel", "批量复制失败", e)
+                hasFailure = true
+            } finally {
+                // 失败时弹 Snackbar（成功时不弹任何 UI 反馈）
+                if (hasFailure) {
+                    _pendingBatchDuplicateFailure.value = true
                 }
             }
         }
