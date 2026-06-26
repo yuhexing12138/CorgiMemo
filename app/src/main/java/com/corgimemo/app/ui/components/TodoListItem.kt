@@ -76,7 +76,6 @@ import java.util.concurrent.TimeUnit
  * @param isExpanded 是否展开显示子任务
  * @param isBatchMode 是否处于批量选择模式
  * @param isSelected 是否已选中（批量模式下）
- * @param isDragging 是否正在被拖拽（用于调整 DragHandle 等子组件样式）
  * @param categoryName 分类名称
  * @param categoryIcon 分类图标（emoji）
  * @param onToggleComplete 切换完成状态回调
@@ -87,7 +86,6 @@ import java.util.concurrent.TimeUnit
  * @param onShareAsImage 分享为图片回调
  * @param onToggleExpand 切换展开状态回调
  * @param onToggleSubTask 切换子任务完成状态回调
- * @param start 前置内容槽位（用于放置 DragHandle 等拖拽相关 UI）
  * @param relationHint 关联提示文字
  * @param searchQuery 搜索关键词（非空时对标题和内容进行高亮显示）
  */
@@ -103,7 +101,6 @@ fun TodoListItem(
     isExpanded: Boolean = false,
     isBatchMode: Boolean = false,
     isSelected: Boolean = false,
-    isDragging: Boolean = false,
     categoryName: String? = null,
     categoryIcon: String? = null,
     onToggleComplete: (Long, Boolean) -> Unit,
@@ -114,7 +111,6 @@ fun TodoListItem(
     onShareAsImage: () -> Unit = {},
     onToggleExpand: () -> Unit = {},
     onToggleSubTask: (Long) -> Unit = {},
-    start: @Composable () -> Unit = {},
     relationHint: String? = null,
     /** 搜索关键词（非空时对标题和内容进行高亮显示） */
     searchQuery: String = "",
@@ -260,16 +256,6 @@ fun TodoListItem(
                             modifier = Modifier.padding(end = 12.dp)
                         )
                     }
-
-                    /**
-                     * 前置内容槽位（start slot）
-                     *
-                     * 用于放置 DragHandle 等拖拽相关的 UI 组件。
-                     * 默认为空（不渲染任何内容），
-                     * 当与 ReorderableLazyColumn 配合使用时，
-                     * 可在此处插入 VerticalDragIndicator。
-                     */
-                    start()
 
                     // 标题 + 分类 + 时间等内容 Column
                     Column(modifier = Modifier.weight(1f)) {

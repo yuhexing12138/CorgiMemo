@@ -152,8 +152,6 @@ class CorgiPreferences(
         /** 增量日志模式：追加式 Undo/Redo 日志（替代全量栈序列化） */
         const val UNDO_LOG = "undo_log"
         const val REDO_LOG = "redo_log"
-        /** 拖拽排序撤销栈（独立于文本编辑 Undo，使用 JSON 序列化） */
-        const val REORDER_UNDO_STACK = "reorder_undo_stack"
     }
 
     // ==================== 数据迁移（DataStore → ESP）====================
@@ -206,8 +204,7 @@ class CorgiPreferences(
                 Keys.THEME_MODE, Keys.THEME_COLOR, Keys.GUIDE_AB_GROUP,
                 Keys.GUIDE_COMPLETED_AT, Keys.FIRST_TODO_CREATED_AT,
                 Keys.FLOATING_CORGI_X, Keys.FLOATING_CORGI_Y, Keys.SORT_ORDER,
-                Keys.UNDO_STACK, Keys.REDO_STACK, Keys.UNDO_LOG, Keys.REDO_LOG,
-                Keys.REORDER_UNDO_STACK
+                Keys.UNDO_STACK, Keys.REDO_STACK, Keys.UNDO_LOG, Keys.REDO_LOG
             ).forEach { key ->
                 val value = legacyPrefs[stringPreferencesKey(key)]
                 if (value != null) {
@@ -749,22 +746,6 @@ class CorgiPreferences(
             editor.remove(Keys.REDO_LOG)
         }
         editor.apply()
-    }
-
-    // ==================== 拖拽排序撤销栈持久化 ====================
-
-    /**
-     * 保存拖拽排序撤销栈到 ESP（自动 AES-256-GCM 加密）
-     * @param stackJson 撤销栈的 JSON 序列化字符串
-     */
-    suspend fun saveReorderUndoStack(stackJson: String) = withContext(Dispatchers.IO) {
-        esp.edit().putString(Keys.REORDER_UNDO_STACK, stackJson).apply()
-    }
-
-    suspend fun getReorderUndoStack(): String? = esp.getString(Keys.REORDER_UNDO_STACK, null)
-
-    suspend fun clearReorderUndoStack() = withContext(Dispatchers.IO) {
-        esp.edit().remove(Keys.REORDER_UNDO_STACK).apply()
     }
 
     // ==================== Undo/Redo 增量日志持久化（V2.6 按TodoId隔离）====================

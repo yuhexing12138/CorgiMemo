@@ -64,9 +64,6 @@ data class TodoItem(
     @ColumnInfo(defaultValue = "16777215") // 0xFFFFFFFF = 白色
     val backgroundColor: Int = -1, // -1 = 0xFFFFFFFF（不透明白色）
 
-    /** 手动排序位置索引（从 0 开始，用于拖拽排序功能） */
-    val position: Int = 0,
-
     /**
      * 富文本格式化内容（Markdown 格式）
      *

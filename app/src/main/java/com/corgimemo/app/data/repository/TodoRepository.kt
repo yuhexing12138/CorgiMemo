@@ -71,28 +71,6 @@ class TodoRepository @Inject constructor(
     }
 
     /**
-     * 批量更新待办项的排序位置
-     *
-     * 封装 TodoDao.batchUpdatePositions（原生 SQL CASE WHEN 单次执行），
-     * 统一 IO 调度器切换和 Widget 刷新。
-     *
-     * **性能特点**:
-     * - 使用原生 SQL CASE WHEN，N 条数据仅 1 次数据库往返
-     * - 自动包含在 @Transaction 中保证原子性
-     * - 性能比逐条更新提升 10-20 倍
-     *
-     * @param positions Map<todoId, newPosition> 待办 ID 到新位置的映射
-     * @return 受影响的行数（0 表示无变更）
-     */
-    suspend fun batchUpdatePositions(positions: Map<Long, Int>): Int = withContext(ioDispatcher) {
-        val affectedRows = todoDao.batchUpdatePositions(positions)
-        if (affectedRows > 0) {
-            WidgetUpdateReceiver.sendRefreshBroadcast(context)
-        }
-        affectedRows
-    }
-
-    /**
      * 删除待办（软删除：先存入最近删除表，再物理删除）
      *
      * @param todo 待办项

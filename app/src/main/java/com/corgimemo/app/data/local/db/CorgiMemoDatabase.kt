@@ -29,7 +29,7 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class],
-    version = 29,
+    version = 30,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -90,7 +90,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30)
                     .build()
                 INSTANCE = instance
                 instance
@@ -805,6 +805,29 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             database.execSQL("ALTER TABLE todo_items ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
             // 创建 isPinned 索引（与 Entity 的 @Index 注解保持一致）
             database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_isPinned ON todo_items(isPinned)")
+        }
+    }
+
+    /**
+     * 版本 29 → 30 迁移：移除 todo_items 表的 position 字段与索引
+     *
+     * 项目移除「长按待办卡片拖拽排序」功能后，
+     * todo_items.position 字段与对应索引不再被任何写入路径使用，
+     * 列表默认按 createdAt DESC 排序。
+     *
+     * **依赖**:
+     * - SQLite 3.35.0+ 支持 `ALTER TABLE DROP COLUMN` 语法
+     *   （Android 12 / API 31 及以上内置 SQLite 版本满足要求）
+     *
+     * **用户影响**:
+     * - 此前通过长按拖拽保存的"手动排序位置"被丢弃，列表按创建/更新时间回退排序
+     * - 用户已有数据不丢失，只是顺序回到时间序
+     */
+    private val MIGRATION_29_30 = object : Migration(29, 30) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // 先删除关联索引（如果存在），再删除列
+            database.execSQL("DROP INDEX IF EXISTS index_todo_items_position")
+            database.execSQL("ALTER TABLE todo_items DROP COLUMN position")
         }
     }
     // companion object 闭合

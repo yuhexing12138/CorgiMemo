@@ -5,11 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.RawQuery
 import androidx.room.Update
-import androidx.room.Transaction
-import androidx.sqlite.db.SupportSQLiteQuery
-import androidx.sqlite.db.SimpleSQLiteQuery
 import com.corgimemo.app.data.model.TodoItem
 import kotlinx.coroutines.flow.Flow
 
@@ -204,122 +200,6 @@ interface TodoDao {
         ORDER BY dueDate ASC
     """)
     fun getUpcomingTodos(startTime: Long, endTime: Long): Flow<List<TodoItem>>
-
-    // ==================== 拖拽排序相关方法 ====================
-
-    /**
-     * 更新指定待办项的手动排序位置
-     *
-     * 用于拖拽排序功能，当用户手动调整列表顺序后，
-     * 更新该项在列表中的位置索引。
-     *
-     * @param todoId 待办项 ID
-     * @param newPosition 新的位置索引（从 0 开始）
-     */
-    @Query("UPDATE todo_items SET position = :newPosition WHERE id = :todoId")
-    suspend fun updateTodoPosition(todoId: Long, newPosition: Int)
-
-    /**
-     * 批量更新多个待办项的排序位置（原生SQL优化版）
-     *
-     * 使用 SimpleSQLiteQuery 构建动态 CASE WHEN SQL，
-     * 在单次数据库往返中完成所有位置的原子更新。
-     *
-     * **性能对比**:
-     * - 旧方案（循环）：N 条数据 → N 次 SQLite UPDATE 调用
-     * - 新方案（原生）：N 条数据 → 1 次 CASE WHEN UPDATE 调用
-     * - 性能提升约 10-20 倍
-     *
-     * **SQL 示例（3 条数据）**:
-     * ```sql
-     * UPDATE todo_items
-     * SET position = (CASE id WHEN 1 THEN 0 WHEN 2 THEN 1 WHEN 3 THEN 2 END)
-     * WHERE id IN (1, 2, 3)
-     * ```
-     *
-     * @param positions Map<todoId, newPosition> 待办 ID 到新位置的映射
-     * @return 受影响的行数
-     */
-    @Transaction
-    suspend fun batchUpdatePositions(positions: Map<Long, Int>): Int {
-        /** 空数据直接返回，避免构建无效 SQL */
-        if (positions.isEmpty()) return 0
-
-        /** 动态构建 CASE WHEN 子句 */
-        val caseWhen = positions.entries.joinToString(" ") { (id, pos) ->
-            "WHEN $id THEN $pos"
-        }
-
-        /** 构建 IN 子句中的 ID 列表 */
-        val ids = positions.keys.joinToString(",")
-
-        /** 组装完整 SQL 并通过 RawQuery 执行 */
-        val sql = """
-            UPDATE todo_items 
-            SET position = (CASE id $caseWhen END) 
-            WHERE id IN ($ids)
-        """.trimIndent()
-
-        return rawUpdate(SimpleSQLiteQuery(sql))
-    }
-
-    /**
-     * 执行原始 SQL 更新语句
-     *
-     * 用于需要动态构建 SQL 的场景（如批量 CASE WHEN 更新）。
-     * 建议在 @Transaction 注解的方法内调用以保证原子性。
-     *
-     * @param query 原始 SQL 查询对象（SimpleSQLiteQuery）
-     * @return 受影响的行数
-     */
-    @RawQuery
-    suspend fun rawUpdate(query: SupportSQLiteQuery): Int
-
-    /**
-     * 获取所有待办（按手动排序位置升序）
-     *
-     * 当用户启用手动排序模式时使用此查询。
-     * 未设置 position 的项（position = 0）排在最后，按创建时间排序。
-     *
-     * @return 按 position ASC, createdAt DESC 排序的待办列表 Flow
-     */
-    @Query("SELECT * FROM todo_items ORDER BY position ASC, createdAt DESC")
-    fun getAllTodosByPositionAsc(): Flow<List<TodoItem>>
-
-    /**
-     * 获取指定分类下的待办（按手动排序位置升序）
-     *
-     * @param categoryId 分类 ID
-     * @return 该分类下按 position ASC 排序的待办列表 Flow
-     */
-    @Query("SELECT * FROM todo_items WHERE categoryId = :categoryId ORDER BY position ASC, createdAt DESC")
-    fun getTodosByCategoryPositionAsc(categoryId: Long): Flow<List<TodoItem>>
-
-    /**
-     * 获取所有待办的最大位置值
-     *
-     * 用于初始化新待办项的位置值，
-     * 确保新添加的项排在列表末尾。
-     *
-     * @return 最大 position 值（如果没有数据则返回 -1）
-     */
-    @Query("SELECT MAX(position) FROM todo_items")
-    suspend fun getMaxPosition(): Int?
-
-    /**
-     * 重置所有待办项的位置为默认值（基于创建时间顺序）
-     *
-     * 数据库迁移或用户切换回自动排序时调用，
-     * 将 position 重置为基于 createdAt 的顺序。
-     */
-    @Query("""
-        UPDATE todo_items 
-        SET position = (
-            SELECT COUNT(*) FROM todo_items t2 
-            WHERE t2.createdAt <= todo_items.createdAt AND t2.id <= todo_items.id
-        ) - 1
-    """)
-    suspend fun resetAllPositions()
 
     // ==================== 分页查询方法（Paging 3 集成）====================
 

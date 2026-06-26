@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
@@ -107,7 +108,6 @@ import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.CorgiPullToRefreshIndicator
 import com.corgimemo.app.ui.components.SortBottomSheet
-import com.corgimemo.app.ui.components.ReorderableLazyColumn
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.corgimemo.app.viewmodel.CelebrationLevel
@@ -155,14 +155,15 @@ fun HomeScreen(
     val pendingDeletedTodo by viewModel.pendingDeletedTodo.collectAsState()
     val pendingBatchDeletes by viewModel.pendingBatchDeletes.collectAsState()
     val pendingCompleteTodo by viewModel.pendingCompleteTodo.collectAsState()
-    /** 拖拽排序多级撤销历史栈 */
-    val reorderUndoStack by viewModel.reorderUndoStack.collectAsState()
 
     // 子任务进度映射
     val subTaskProgressMap by viewModel.subTaskProgressMap.collectAsState()
 
     // 子任务列表映射
     val subTasksMap by viewModel.subTasksMap.collectAsState()
+
+    // 待办列表 LazyColumn 状态（用于滚动位置记忆与下拉刷新联动）
+    val listState = rememberLazyListState()
 
     // 展开状态
     val expandedTodos by viewModel.expandedTodos.collectAsState()
@@ -306,20 +307,6 @@ fun HomeScreen(
         }
     }
 
-    /** 监听拖拽排序事件，显示 Snackbar（支持多级撤销）*/
-    LaunchedEffect(reorderUndoStack.size) {
-        if (reorderUndoStack.isNotEmpty()) {
-            val result = snackbarHostState.showSnackbar(
-                message = "已调整排序顺序 (${reorderUndoStack.size} 层可撤销)",
-                actionLabel = "撤销",
-                duration = SnackbarDuration.Long
-            )
-            if (result == SnackbarResult.ActionPerformed) {
-                viewModel.undoReorder()
-            }
-        }
-    }
-
     // 批量模式下拦截返回键
     if (isBatchMode) {
         BackHandler {
@@ -330,8 +317,6 @@ fun HomeScreen(
     // 使用 Box 作为根容器，确保所有子元素正确堆叠
     Box(modifier = Modifier.fillMaxSize()) {
         // 浮动操作按钮（FAB）—— 与灵感/日期页统一
-        // ⚠️ 必须使用 zIndex 确保 FAB 在 Column 内容区之上，
-        //    否则 SwipeRefresh/ReorderableLazyColumn(fillMaxSize) 会拦截 FAB 的触摸事件
         if (!isBatchMode) {
             FloatingActionButton(
                 onClick = {
@@ -519,112 +504,100 @@ fun HomeScreen(
                             }
                         ) {
                             /**
-                             * 使用增强版 ReorderableLazyColumn 替代原 LazyColumn + animatedItems
+                             * 待办列表（普通 LazyColumn 渲染）
                              *
-                             * **集成特性**:
-                             * - ✅ 内置入场动画（fade+slideIn，与原 AnimatedLazyColumn 效果一致）
-                             * - ✅ 长按触发拖拽排序
-                             * - ✅ 精确索引算法（LazyListLayoutInfo 替代硬编码估算）
-                             * - ✅ 拖拽释放弹性缩放动画（0.95→1.05→1.0）
-                             * - ✅ 触觉反馈（节流 200ms，混合模式）
-                             * - ✅ 帧率监控（TrackedAnimateFloatAsState 超阈值输出 Logcat）
-                             * - ✅ 自动连接 viewModel.reorderTodos() 持久化新顺序
-                             * - ✅ 多级 Undo 支持（ArrayDeque 栈，最多 10 层）
+                             * 已移除原「长按拖拽排序」逻辑，长按卡片仅触发底部操作菜单
+                             * （编辑/分享/批量选择/删除），手势检测由 TodoListItem 内部的
+                             * detectTapGestures + tryAwaitRelease 承担。
                              */
-                            /** 使用项目自有的 HapticFeedbackManager 替代 Compose LocalHapticFeedback（避免版本兼容问题） */
-
-                            ReorderableLazyColumn(
-                                items = filteredTodos,
-                                onReorder = { fromIndex, toIndex ->
-                                    /** 用户拖拽完成后，调用 ViewModel 执行数据库更新 */
-                                    viewModel.reorderTodos(fromIndex, toIndex)
-                                },
-                                key = { _, todo -> todo.id },  // 使用待办 ID 作为稳定键
-                                onHapticFeedback = {
-                                    /** 拖拽过程中使用项目自有的 HapticFeedbackManager 触发轻微震动 */
-                                    com.corgimemo.app.animation.HapticFeedbackManager.performHapticFeedback(
-                                        context = context,
-                                        type = com.corgimemo.app.animation.InteractionType.LONG_CLICK,
-                                        enabled = hapticEnabled
-                                    )
-                                }
-                            ) { index, todo, isDragging ->
-                                val category = categories.find { it.id == todo.categoryId }
-                                val categoryIcon = category?.let { c ->
-                                    when(c.type) {
-                                        com.corgimemo.app.data.model.CategoryType.STUDY -> "📚"
-                                        com.corgimemo.app.data.model.CategoryType.WORK -> "💼"
-                                        com.corgimemo.app.data.model.CategoryType.LIFE -> "🏠"
-                                        com.corgimemo.app.data.model.CategoryType.SPORT -> "🏃"
-                                        else -> "📋"
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 8.dp)
+                            ) {
+                                items(
+                                    items = filteredTodos,
+                                    key = { todo -> todo.id }
+                                ) { todo ->
+                                    val category = categories.find { it.id == todo.categoryId }
+                                    val categoryIcon = category?.let { c ->
+                                        when(c.type) {
+                                            com.corgimemo.app.data.model.CategoryType.STUDY -> "📚"
+                                            com.corgimemo.app.data.model.CategoryType.WORK -> "💼"
+                                            com.corgimemo.app.data.model.CategoryType.LIFE -> "🏠"
+                                            com.corgimemo.app.data.model.CategoryType.SPORT -> "🏃"
+                                            else -> "📋"
+                                        }
                                     }
-                                }
-                                SwipeableTodoBox(
-                                    modifier = Modifier.padding(8.dp),
-                                    isEnabled = !isBatchMode,
-                                    isExpanded = swipeExpandedTodoId == todo.id,
-                                    onExpandChange = { expanded ->
-                                        swipeExpandedTodoId = if (expanded) todo.id else null
-                                        // 同步展开状态到 ViewModel，
-                                        // 让 MainScreen 控制 ModalNavigationDrawer 手势
-                                        viewModel.setSwipeActionExpanded(expanded)
-                                    },
-                                    onShareClick = {
-                                        shareTodoAsImage(context, todo, categories)
-                                    },
-                                    onPinClick = {
-                                        viewModel.togglePin(todo.id)
-                                    },
-                                    onDeleteClick = {
-                                        pendingDeleteId = todo.id
-                                    }
-                                ) {
-                                    TodoListItem(
-                                        todo = todo,
-                                        subTaskProgress = subTaskProgressMap[todo.id],
-                                        subTasks = subTasksMap[todo.id] ?: emptyList(),
-                                        isExpanded = expandedTodos.contains(todo.id),
-                                        isBatchMode = isBatchMode,
-                                        isSelected = selectedTodoIds.contains(todo.id),
-                                        categoryName = category?.name,
-                                        categoryIcon = categoryIcon,
-                                        onToggleComplete = { id, isChecked ->
-                                            viewModel.onUserInteraction()
-                                            viewModel.toggleTodoStatus(id, isChecked)
+                                    SwipeableTodoBox(
+                                        // 单卡上下各 1.dp 内边距 → 相邻卡片视觉间距 = 1 + 1 = 2.dp
+                                        modifier = Modifier.padding(1.dp),
+                                        isEnabled = !isBatchMode,
+                                        isExpanded = swipeExpandedTodoId == todo.id,
+                                        onExpandChange = { expanded ->
+                                            swipeExpandedTodoId = if (expanded) todo.id else null
+                                            // 同步展开状态到 ViewModel，
+                                            // 让 MainScreen 控制 ModalNavigationDrawer 手势
+                                            viewModel.setSwipeActionExpanded(expanded)
                                         },
-                                        onDelete = {
-                                            /**
-                                             * 长按菜单触发的删除：弹出二次确认弹窗
-                                             */
-                                            viewModel.onUserInteraction()
-                                            pendingDeleteId = it
-                                        },
-                                        onClick = {
-                                            viewModel.onUserInteraction()
-                                            navController.navigate(Screen.TodoEditWithId.withArgs(todo.id.toString()))
-                                        },
-                                        onLongClick = {
-                                            viewModel.enterBatchMode(todo.id)
-                                        },
-                                        onSelectClick = {
-                                            viewModel.toggleSelection(todo.id)
-                                        },
-                                        onShareAsImage = {
+                                        onShareClick = {
                                             shareTodoAsImage(context, todo, categories)
                                         },
-                                        onToggleExpand = {
-                                            viewModel.toggleExpand(todo.id)
+                                        onPinClick = {
+                                            viewModel.togglePin(todo.id)
                                         },
-                                        onToggleSubTask = { subTaskId ->
-                                            viewModel.onUserInteraction()
-                                            viewModel.toggleSubTaskCompletion(subTaskId)
-                                        },
-                                        relationHint = null,
-                                        /** 传递搜索关键词用于结果高亮显示 */
-                                        searchQuery = searchQuery,
-                                        /** 传递触觉反馈开关设置 */
-                                        hapticEnabled = hapticEnabled
-                                    )
+                                        onDeleteClick = {
+                                            pendingDeleteId = todo.id
+                                        }
+                                    ) {
+                                        TodoListItem(
+                                            todo = todo,
+                                            subTaskProgress = subTaskProgressMap[todo.id],
+                                            subTasks = subTasksMap[todo.id] ?: emptyList(),
+                                            isExpanded = expandedTodos.contains(todo.id),
+                                            isBatchMode = isBatchMode,
+                                            isSelected = selectedTodoIds.contains(todo.id),
+                                            categoryName = category?.name,
+                                            categoryIcon = categoryIcon,
+                                            onToggleComplete = { id, isChecked ->
+                                                viewModel.onUserInteraction()
+                                                viewModel.toggleTodoStatus(id, isChecked)
+                                            },
+                                            onDelete = {
+                                                /**
+                                                 * 长按菜单触发的删除：弹出二次确认弹窗
+                                                 */
+                                                viewModel.onUserInteraction()
+                                                pendingDeleteId = it
+                                            },
+                                            onClick = {
+                                                viewModel.onUserInteraction()
+                                                navController.navigate(Screen.TodoEditWithId.withArgs(todo.id.toString()))
+                                            },
+                                            onLongClick = {
+                                                viewModel.enterBatchMode(todo.id)
+                                            },
+                                            onSelectClick = {
+                                                viewModel.toggleSelection(todo.id)
+                                            },
+                                            onShareAsImage = {
+                                                shareTodoAsImage(context, todo, categories)
+                                            },
+                                            onToggleExpand = {
+                                                viewModel.toggleExpand(todo.id)
+                                            },
+                                            onToggleSubTask = { subTaskId ->
+                                                viewModel.onUserInteraction()
+                                                viewModel.toggleSubTaskCompletion(subTaskId)
+                                            },
+                                            relationHint = null,
+                                            /** 传递搜索关键词用于结果高亮显示 */
+                                            searchQuery = searchQuery,
+                                            /** 传递触觉反馈开关设置 */
+                                            hapticEnabled = hapticEnabled
+                                        )
+                                    }
                                 }
                             }
                         }

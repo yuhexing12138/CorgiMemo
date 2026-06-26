@@ -30,10 +30,7 @@ enum class SortField(val displayName: String, val columnName: String) {
     PRIORITY("优先级", "priority"),
 
     /** 标题（按字母顺序） */
-    TITLE("标题", "title"),
-
-    /** 手动排序位置（拖拽排序使用） */
-    POSITION("手动排序", "position")
+    TITLE("标题", "title")
 }
 
 /**

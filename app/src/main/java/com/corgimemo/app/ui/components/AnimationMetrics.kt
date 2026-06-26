@@ -17,8 +17,7 @@ import androidx.compose.runtime.remember
  * 超过阈值（默认 16ms = 60fps）时输出 Logcat 警告。
  *
  * **使用场景**:
- * - ReorderableLazyColumn 入场动画（entryAlpha / entrySlideIn）
- * - 拖拽释放缩放动画（dragScale）
+ * - 列表项入场动画（alpha / translationY）
  * - 任何需要性能监控的 Compose 动画
  *
  * **Logcat 过滤**:
