@@ -246,7 +246,7 @@ private fun NavItem(
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = ripple(  // 主题色涟漪效果（设计规范：点击视觉反馈）
-                    bounded = false,
+                    bounded = true,  // 涟漪限制在触摸目标48dp内（视觉更克制，不会扩散到图标/文字之外）
                     color = Color(0xFFFF9A5C).copy(alpha = 0.2f)  // 20%透明度主题色
                 ),
                 onClick = onClick
