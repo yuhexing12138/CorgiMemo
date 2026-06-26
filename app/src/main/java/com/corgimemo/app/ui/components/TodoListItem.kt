@@ -29,7 +29,6 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -147,20 +146,11 @@ fun TodoListItem(
         label = "checkboxStartPadding"
     )
 
-    var showLongPressMenu by remember { mutableStateOf(false) }
-
-    /** 长按已激活但手指还未松开的标记：松手时才弹出弹窗 */
-    var longPressActivated by remember { mutableStateOf(false) }
-
     /** 获取 Android Context，用于震动反馈 */
     val context = LocalContext.current
 
     /** 用于管理水波纹按压交互状态 */
     val interactionSource = remember { MutableInteractionSource() }
-
-    val actionSheetState = androidx.compose.material3.rememberModalBottomSheetState(
-        skipPartiallyExpanded = true
-    )
 
     Card(
         modifier = Modifier
@@ -182,12 +172,9 @@ fun TodoListItem(
                             type = InteractionType.LONG_CLICK,
                             enabled = hapticEnabled
                         )
-                        if (isBatchMode) {
-                            onLongClick()
-                        } else {
-                            // 长按时只标记激活，不立即弹窗，等手指松开后才显示
-                            longPressActivated = true
-                        }
+                        // 普通模式：进入批量模式并选中该条
+                        // 批量模式：切换该条选中状态（toggleSelection 语义）
+                        onLongClick()
                     },
                     onPress = { pressOffset ->
                         // 按下时发射 Press 事件，触发水波纹效果
@@ -200,16 +187,10 @@ fun TodoListItem(
                         if (released) {
                             // 手指正常抬起：结束水波纹动画
                             interactionSource.emit(PressInteraction.Release(pressInteraction))
-                            // 如果长按已激活，此时弹出弹窗
-                            if (longPressActivated) {
-                                showLongPressMenu = true
-                            }
                         } else {
                             // 手势被取消（滑动等）：发射取消事件，取消水波纹
                             interactionSource.emit(PressInteraction.Cancel(pressInteraction))
                         }
-                        // 无论是否弹窗，都重置长按标记
-                        longPressActivated = false
                     }
                 )
             },
@@ -237,9 +218,11 @@ fun TodoListItem(
                 ) {
                     // 复选框区域
                     if (isBatchMode) {
-                        Checkbox(
+                        CircularCheckbox(
                             checked = isSelected,
                             onCheckedChange = { onSelectClick() },
+                            // 已完成待办在批量模式下也保持橙色系降权（dimmed）
+                            dimmed = todo.status == 1,
                             modifier = Modifier.padding(end = 12.dp)
                         )
                     } else {
@@ -532,28 +515,6 @@ fun TodoListItem(
                     // 右侧 Column 内容
                     columnPlaceable.placeRelative(x = barWidthPx, y = 0)
                 }
-            }
-        )
-    }
-
-    if (showLongPressMenu) {
-        TodoActionSheet(
-            sheetState = actionSheetState,
-            onDismiss = {
-                showLongPressMenu = false
-                longPressActivated = false
-            },
-            onEdit = {
-                onClick()
-            },
-            onShare = {
-                onShareAsImage()
-            },
-            onBatchSelect = {
-                onLongClick()
-            },
-            onDelete = {
-                onDelete(todo.id)
             }
         )
     }
