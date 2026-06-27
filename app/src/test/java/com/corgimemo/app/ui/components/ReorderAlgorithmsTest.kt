@@ -63,16 +63,19 @@ class ReorderAlgorithmsTest {
     }
 
     /**
-     * 场景：变高项 - 被拖项 80px，其他项 200px，重叠 100%
-     * 预期：重叠比例 = 80 / min(80, 200) = 100% > 50% → 返回目标
+     * 场景：变高项 - 被拖项 80px，其他项 200px，重叠 80px
+     * 预期：重叠比例 = 80 / max(80, 200) = 40% < 50% → 返回 null
+     *
+     * 说明：修正后使用 maxSize 作为分母，使小卡片不再易触发交换。
+     * 此测试验证阈值算法变更后的正确行为。
      */
     @Test
-    fun `findSwapTarget 变高项重叠超过 50 percent 返回目标`() {
+    fun `findSwapTarget 变高项 80px 对 200px 重叠 40 percent 返回 null`() {
         val draggedKey = "A"
         val otherKey = "B"
         // 被拖项 80px，fingerY=140，区间 [100, 180]
         // 其他项 offset=80, size=200，区间 [80, 280]
-        // 重叠 [100, 180] = 80px → 80/min(80,200)=100% > 50%
+        // 重叠 [100, 180] = 80px → 80/max(80,200)=40% < 50%
         val visible = listOf(
             VisibleItemInfo(draggedKey, offset = 0, size = 80),
             VisibleItemInfo(otherKey, offset = 80, size = 200)
@@ -83,7 +86,7 @@ class ReorderAlgorithmsTest {
             draggedSize = 80,
             visibleItems = visible
         )
-        assertEquals(otherKey, target)
+        assertNull(target)
     }
 
     /**
@@ -101,6 +104,54 @@ class ReorderAlgorithmsTest {
             visibleItems = visible
         )
         assertNull(target)
+    }
+
+    /**
+     * 场景：80px vs 200px，重叠 60px
+     * 预期：60 / max(80, 200) = 30% < 50% → null
+     */
+    @Test
+    fun `findSwapTarget 高度差 60px 重叠 30 percent 返回 null`() {
+        val draggedKey = "A"
+        val otherKey = "B"
+        // 被拖项 80px，fingerY=150，区间 [110, 190]
+        // 其他项 offset=100, size=200，区间 [100, 300]
+        // 重叠 [110, 190] = 80px → 80/max(80,200)=40% < 50% → null
+        val visible = listOf(
+            VisibleItemInfo(draggedKey, offset = 0, size = 80),
+            VisibleItemInfo(otherKey, offset = 100, size = 200)
+        )
+        val target = ReorderAlgorithms.findSwapTarget(
+            draggedKey = draggedKey,
+            fingerY = 150f,
+            draggedSize = 80,
+            visibleItems = visible
+        )
+        assertNull(target)
+    }
+
+    /**
+     * 场景：150px vs 200px，重叠 150px
+     * 预期：150 / max(150, 200) = 75% > 50% → 返回目标
+     */
+    @Test
+    fun `findSwapTarget 高度差 110px 重叠 55 percent 返回目标`() {
+        val draggedKey = "A"
+        val otherKey = "B"
+        // 被拖项 150px，fingerY=200，区间 [125, 275]
+        // 其他项 offset=100, size=200，区间 [100, 300]
+        // 重叠 [125, 275] = 150px → 150/max(150,200)=150/200=75% > 50% → 返回目标
+        val visible = listOf(
+            VisibleItemInfo(draggedKey, offset = 0, size = 150),
+            VisibleItemInfo(otherKey, offset = 100, size = 200)
+        )
+        val target = ReorderAlgorithms.findSwapTarget(
+            draggedKey = draggedKey,
+            fingerY = 200f,
+            draggedSize = 150,
+            visibleItems = visible
+        )
+        assertEquals(otherKey, target)
     }
 
     // ==================== checkPinnedZoneCrossed 测试 ====================

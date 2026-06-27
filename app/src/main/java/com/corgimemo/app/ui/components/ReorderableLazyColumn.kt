@@ -237,8 +237,11 @@ object ReorderAlgorithms {
      * 算法：
      * - 被拖项中心 = fingerY（手指位置即卡片视觉中心）
      * - 计算与每个可见项的重叠高度
-     * - 重叠比例 = 重叠高度 / min(被拖项高, 其他项高)
+     * - 重叠比例 = 重叠高度 / max(被拖项高, 其他项高)
      * - 比例 > 0.5 时返回该其他项的 key
+     *
+     * 说明：使用 max 而非 min 作为分母，避免小卡片在高度差场景下
+     * 触发阈值过低导致交换震荡。
      *
      * @param draggedKey 被拖项 key（不与自身比较）
      * @param fingerY 手指 Y 坐标（视口坐标）
@@ -266,8 +269,8 @@ object ReorderAlgorithms {
             val overlapBottom = minOf(draggedBottom, otherBottom)
             val overlapHeight = maxOf(0f, overlapBottom - overlapTop)
 
-            val minSize = minOf(draggedSize, other.size).toFloat()
-            if (minSize > 0 && overlapHeight / minSize > 0.5f) {
+            val maxSize = maxOf(draggedSize, other.size).toFloat()
+            if (maxSize > 0 && overlapHeight / maxSize > 0.5f) {
                 return other.key
             }
         }
@@ -359,6 +362,12 @@ fun <T> ReorderableLazyColumn(
     var fingerY by remember { mutableFloatStateOf(0f) }
     var draggedBaseCenterY by remember { mutableFloatStateOf(0f) }
     var lastHapticTime by remember { mutableLongStateOf(0L) }
+
+    // ━━━ 反向交换锁定状态（修复点 3）━━━
+    // 交换后记录目标 key 和手指位置，防止下一帧立即反向交换导致震荡
+    // 清除条件：手指移动超过 draggedSize/2 后清除锁定
+    var lastSwapTargetKey by remember { mutableStateOf<Any?>(null) }
+    var lastSwapFingerY by remember { mutableFloatStateOf(0f) }
 
     // ━━━ 显示列表（拖拽中可重排，与 items 解耦）━━━
     var displayItems by remember { mutableStateOf(items) }
@@ -504,11 +513,22 @@ fun <T> ReorderableLazyColumn(
                                 val visibleInfos = listState.layoutInfo.visibleItemsInfo.map {
                                     VisibleItemInfo(it.key, it.offset, it.size)
                                 }
+
+                                // 反向交换锁定检查：手指离开上次交换位置超过 draggedSize/2 时清除锁定
+                                if (lastSwapTargetKey != null && draggedSize > 0 &&
+                                    abs(fingerY - lastSwapFingerY) > draggedSize / 2f) {
+                                    lastSwapTargetKey = null
+                                }
+
+                                // 排除刚交换过的目标项，防止立即反向交换
+                                val effectiveVisibleItems = visibleInfos.filter {
+                                    it.key != lastSwapTargetKey
+                                }
                                 val swapTargetKey = ReorderAlgorithms.findSwapTarget(
                                     draggedKey = draggedKey!!,
                                     fingerY = fingerY,
                                     draggedSize = draggedSize,
-                                    visibleItems = visibleInfos
+                                    visibleItems = effectiveVisibleItems
                                 )
 
                                 if (swapTargetKey != null && swapTargetKey != draggedKey) {
@@ -523,12 +543,19 @@ fun <T> ReorderableLazyColumn(
                                         displayItems = newDisplay
                                         draggedCurrentIndex = targetIndex
 
-                                        // 同步更新基线 = 被交换项的中心 Y
+                                        // 同步更新基线 = 被拖项在新位置的预期中心 Y
+                                        // 关键：必须用 draggedSize（被拖项高度）而非 otherInfo.size（目标项高度）
+                                        // 因为交换后被拖项占据目标项的旧 offset 位置，
+                                        // 其布局中心 = target.offset + draggedSize / 2
                                         val otherInfo = listState.layoutInfo.visibleItemsInfo
                                             .find { it.key == swapTargetKey }
                                         if (otherInfo != null) {
-                                            draggedBaseCenterY = (otherInfo.offset + otherInfo.size / 2f)
+                                            draggedBaseCenterY = (otherInfo.offset + draggedSize / 2f)
                                         }
+
+                                        // 记录本次交换信息，用于反向锁定（修复点 3）
+                                        lastSwapTargetKey = swapTargetKey
+                                        lastSwapFingerY = fingerY
 
                                         // 节流震动
                                         if (now - lastHapticTime > hapticThrottleMs) {
@@ -576,6 +603,8 @@ fun <T> ReorderableLazyColumn(
                         draggedCurrentIndex = -1
                         fingerY = 0f
                         draggedBaseCenterY = 0f
+                        lastSwapTargetKey = null
+                        lastSwapFingerY = 0f
                     }
                 }
             }
