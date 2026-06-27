@@ -1,11 +1,12 @@
 package com.corgimemo.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -27,6 +28,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -39,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
@@ -61,7 +66,9 @@ import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.ui.util.formatReminderDisplay
 import com.corgimemo.app.R
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import android.widget.Toast
 import androidx.compose.ui.res.stringResource
 import java.text.SimpleDateFormat
@@ -155,15 +162,11 @@ fun TodoListItem(
      */
     val contentIndicationEnabled = LocalContentIndication.current
 
-    /** 复选框左侧间距：批量模式下空出 8dp 让位给 Checkbox */
-    val checkboxStartPadding by animateDpAsState(
-        targetValue = if (isBatchMode) 8.dp else 0.dp,
-        animationSpec = tween(durationMillis = 200),
-        label = "checkboxStartPadding"
-    )
-
     /** 获取 Android Context，用于震动反馈 */
     val context = LocalContext.current
+
+    /** 获取协程作用域，用于在手势检测中启动长按定时器 */
+    val scope = rememberCoroutineScope()
 
     /**
      * 多选模式退出提示文案（国际化）
@@ -176,6 +179,23 @@ fun TodoListItem(
 
     /** 用于管理水波纹按压交互状态 */
     val interactionSource = remember { MutableInteractionSource() }
+
+    /**
+     * 水波纹事件队列：用 Channel 替代 scope.launch 包装 emit
+     *
+     * 原因：PointerInputScope 是受限挂起作用域，不能直接调用 emit。
+     * 之前用 scope.launch 异步包装导致 emit(Release) 可能在 onSelectClick()
+     * 触发重组后才执行，水波纹卡在 Press 状态。
+     *
+     * Channel.trySend 是同步非挂起函数，确保 Press/Release/Cancel 按序入队；
+     * LaunchedEffect 独立于 pointerInput 协程，不受 key 变化导致的手势重启影响。
+     */
+    val interactionChannel = remember { Channel<PressInteraction>(Channel.UNLIMITED) }
+    LaunchedEffect(Unit) {
+        for (interaction in interactionChannel) {
+            interactionSource.emit(interaction)
+        }
+    }
 
     Card(
         modifier = Modifier
@@ -191,77 +211,118 @@ fun TodoListItem(
                 }
             }
             .pointerInput(isBatchMode, onClick, onLongClick, onSelectClick) {
-                detectTapGestures(
-                    onTap = {
-                        if (isBatchMode) {
-                            onSelectClick()
-                        } else {
-                            onClick()
-                        }
-                    },
-                    onLongPress = {
-                        // 长按触发时执行震动反馈（脉冲式长震动）
-                        HapticFeedbackManager.performHapticFeedback(
-                            context = context,
-                            type = InteractionType.LONG_CLICK,
-                            enabled = hapticEnabled
-                        )
-                        // 普通模式：进入批量模式并选中该条
-                        // 批量模式：切换该条选中状态（toggleSelection 语义）
-                        onLongClick()
-                    },
-                    onPress = { pressOffset ->
-                        // 按下时发射 Press 事件，触发水波纹效果
-                        val pressInteraction = PressInteraction.Press(pressOffset)
-                        interactionSource.emit(pressInteraction)
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
 
-                        /**
-                         * 标记是否已发射终结事件（Release 或 Cancel）。
-                         *
-                         * 关键修复：原代码只在 else 分支发射 Cancel，但当协程被外部
-                         * 中断时（如 onLongPress 触发 → enterBatchMode 改变 _isBatchMode
-                         * → pointerInput key 变化 → gesture detector 重启），tryAwaitRelease()
-                         * 会抛 CancellationException，导致 else 分支不执行，Cancel 事件
-                         * 从未发射 → interactionSource 残留 Press 状态 → 水波纹持续渲染
-                         * （用户感知为"卡片变暗"）。
-                         *
-                         * 修复策略：用 try/finally 确保 Cancel 总是被发射。
-                         * 注：Compose 的 MutableInteractionSource 对重复 Cancel 事件是幂等的。
-                         */
-                        var terminalEmitted = false
+                    // 修复3：如果 down 事件已被内层组件（如展开按钮 Surface）消费，
+                    // 不触发外层手势（避免震动+水波纹）
+                    if (down.isConsumed) {
+                        return@awaitEachGesture
+                    }
 
-                        try {
-                            // 等待手指释放：tryAwaitRelease() 返回 true 表示正常抬起，
-                            // false 表示被取消（滑动/其他手势抢占）
-                            val released = tryAwaitRelease()
+                    val downPosition = down.position
 
-                            if (released) {
-                                // 手指正常抬起：结束水波纹动画
-                                interactionSource.emit(PressInteraction.Release(pressInteraction))
-                                terminalEmitted = true
-                            }
-                            // 释放被取消的情况由 finally 块统一发射 Cancel
-                        } finally {
-                            /**
-                             * 异常场景兜底：保证 Press 状态被正确清理
-                             *
-                             * 覆盖以下所有可能路径：
-                             * 1. 协程正常执行到 else 分支（已 emit Cancel，但 finally 中再 emit 一次是幂等的）
-                             * 2. 协程因 tryAwaitRelease 返回 false 而进入 else 分支（已 emit Cancel）
-                             * 3. 协程因重组/CancellationException 被中断（必须 emit Cancel）
-                             * 4. 任何其他异常（必须 emit Cancel）
-                             *
-                             * 为什么是"幂等"的：
-                             * - MutableInteractionSource 内部基于 Channel，重复 emit 同一 Press
-                             *   对应的 Cancel 不会引发问题（指示器仅在收到 Press 后未收到 Cancel
-                             *   时持续渲染，重复 Cancel 不会"重启"渲染）
-                             */
-                            if (!terminalEmitted) {
-                                interactionSource.emit(PressInteraction.Cancel(pressInteraction))
-                            }
+                    /**
+                     * 长按触发标志：500ms 定时器到期后置为 true
+                     *
+                     * 仅在主线程读写（scope.launch 默认 Main 调度器，
+                     * awaitEachGesture 也在主线程），无需同步原语。
+                     */
+                    var longPressTriggered = false
+
+                    // 发射 Press 事件，触发水波纹效果
+                    // 用 Channel.trySend 替代 scope.launch：同步入队，确保顺序正确
+                    val pressInteraction = PressInteraction.Press(downPosition)
+                    interactionChannel.trySend(pressInteraction)
+
+                    /**
+                     * 启动长按定时器（500ms）
+                     *
+                     * 到期后：标记 longPressTriggered + 触发触觉反馈（仅非批量模式）
+                     * 被取消时（手指提前抬起或移动）：不执行任何操作
+                     *
+                     * 修复1：仅非批量模式时触发震动，避免批量模式下选择卡片重复震动
+                     */
+                    val longPressJob = scope.launch {
+                        delay(500)
+                        longPressTriggered = true
+                        // 仅首次进入批量模式（非批量模式→批量模式）时触发震动
+                        if (!isBatchMode) {
+                            HapticFeedbackManager.performHapticFeedback(
+                                context = context,
+                                type = InteractionType.LONG_CLICK,
+                                enabled = hapticEnabled
+                            )
                         }
                     }
-                )
+
+                    /**
+                     * 标记是否已发射终结事件（Release 或 Cancel）
+                     *
+                     * 沿用原代码的兜底策略：try/finally 确保 Cancel 总是被发射，
+                     * 避免水波纹残留（用户感知为"卡片变暗"）。
+                     */
+                    var terminalEmitted = false
+
+                    try {
+                        /**
+                         * 主循环：等待手指抬起或移动
+                         *
+                         * - changedToUp() → 手指抬起，根据 longPressTriggered 执行 tap/longClick
+                         * - 移动 > touchSlop → 取消，不消费事件，交给左滑手势
+                         */
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.first()
+
+                            // 检测手指抬起
+                            if (change.changedToUp()) {
+                                longPressJob.cancel()
+
+                                // 结束水波纹动画
+                                interactionChannel.trySend(PressInteraction.Release(pressInteraction))
+                                terminalEmitted = true
+
+                                if (longPressTriggered) {
+                                    // 长按已触发（≥500ms），手指抬起 → 执行 onLongClick
+                                    // 普通模式：进入批量模式并选中该条
+                                    // 批量模式：切换该条选中状态（toggleSelection 语义）
+                                    onLongClick()
+                                } else {
+                                    // 短按（<500ms），手指抬起 → 执行 onTap
+                                    if (isBatchMode) {
+                                        onSelectClick()
+                                    } else {
+                                        onClick()
+                                    }
+                                }
+                                break
+                            }
+
+                            // 检测移动距离：超过 touchSlop 则取消长按
+                            val dragDistance = (change.position - downPosition).getDistance()
+                            if (dragDistance > viewConfiguration.touchSlop) {
+                                longPressJob.cancel()
+                                // 发射 Cancel，结束水波纹
+                                interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
+                                terminalEmitted = true
+                                // 不消费事件，break 退出，让 SwipeableTodoBox 的左滑手势接管
+                                break
+                            }
+                        }
+                    } finally {
+                        /**
+                         * 异常场景兜底：保证 Press 状态被正确清理
+                         *
+                         * 覆盖：协程因重组/CancellationException 被中断、
+                         * pointerInput key 变化导致手势重启等情况。
+                         * MutableInteractionSource 对重复 Cancel 是幂等的。
+                         */
+                        if (!terminalEmitted) {
+                            interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
+                        }
+                    }
+                }
             },
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp),
@@ -286,28 +347,21 @@ fun TodoListItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // 复选框区域
-                    if (isBatchMode) {
-                        CircularCheckbox(
-                            checked = isSelected,
-                            onCheckedChange = { onSelectClick() },
-                            // 已完成待办在批量模式下也保持橙色系降权（dimmed）
-                            dimmed = todo.status == 1,
-                            modifier = Modifier.padding(end = 12.dp)
-                        )
-                    } else {
-                        if (checkboxStartPadding > 0.dp) {
-                            Spacer(modifier = Modifier.width(checkboxStartPadding))
-                        }
-                        CircularCheckbox(
-                            checked = todo.status == 1,
-                            onCheckedChange = { isChecked ->
+                    // 统一渲染单个 CircularCheckbox，避免 if/else 分支切换导致
+                    // 节点重建（scale 动画重启→闪烁）和 Spacer 突然出现（跳跃）
+                    CircularCheckbox(
+                        checked = if (isBatchMode) isSelected else todo.status == 1,
+                        onCheckedChange = { isChecked ->
+                            if (isBatchMode) {
+                                onSelectClick()
+                            } else {
                                 onToggleComplete(todo.id, isChecked)
-                            },
-                            // 已完成态视觉降权：勾选框变淡（保持橙色系仅降深度）
-                            dimmed = todo.status == 1,
-                            modifier = Modifier.padding(end = 12.dp)
-                        )
-                    }
+                            }
+                        },
+                        // 已完成态视觉降权：勾选框变淡（保持橙色系仅降深度）
+                        dimmed = todo.status == 1,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
 
                     // 标题 + 分类 + 时间等内容 Column
                     Column(modifier = Modifier.weight(1f)) {
@@ -421,20 +475,47 @@ fun TodoListItem(
                                     Spacer(modifier = Modifier.width(8.dp))   // 提醒与附件间 1 个空格的间距
                                 }
 
-                                // 附件计数（图片 + 语音）
+                                // 附件计数（图片 + 语音）- 使用 Material Icons 图标
                                 if (aggregateCounts.first > 0 || aggregateCounts.second > 0) {
-                                    val attachmentText = buildString {
-                                        if (aggregateCounts.second > 0) append("🎤×${aggregateCounts.second}")
-                                        if (aggregateCounts.first > 0 && aggregateCounts.second > 0) append(" ")  // 两种附件间 1 个空格
-                                        if (aggregateCounts.first > 0) append("🖼×${aggregateCounts.first}")
+                                    // 附件图标颜色（已完成态视觉降权）
+                                    val attachmentColor = if (todo.status == 1) CompletedColors.Text
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+
+                                    // 语音附件
+                                    if (aggregateCounts.second > 0) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Mic,
+                                            contentDescription = "语音附件",
+                                            tint = attachmentColor,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text(
+                                            text = "×${aggregateCounts.second}",
+                                            fontSize = 12.sp,
+                                            color = attachmentColor
+                                        )
+                                        // 两种附件间 1 个空格的间距
+                                        if (aggregateCounts.first > 0) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                        }
                                     }
-                                    Text(
-                                        text = attachmentText,
-                                        fontSize = 12.sp,
-                                        // 已完成态视觉降权：使用 CompletedColors.Text 而非 onSurfaceVariant
-                                        color = if (todo.status == 1) CompletedColors.Text
-                                                else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+
+                                    // 图片附件
+                                    if (aggregateCounts.first > 0) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Image,
+                                            contentDescription = "图片附件",
+                                            tint = attachmentColor,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text(
+                                            text = "×${aggregateCounts.first}",
+                                            fontSize = 12.sp,
+                                            color = attachmentColor
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -743,21 +824,47 @@ private fun SubTaskInTodoListItem(
             modifier = Modifier.weight(1f)
         )
 
-        // 子任务自身附件计数（独立于父卡聚合）
+        // 子任务自身附件计数（独立于父卡聚合）- 使用 Material Icons 图标
         val subImageCount = parseImagePathsCount(subTask.imagePaths)
         val subVoiceCount = parseVoicePathsCount(subTask.voicePaths)
         if (subImageCount > 0 || subVoiceCount > 0) {
             Spacer(modifier = Modifier.width(8.dp))
-            val text = buildString {
-                if (subVoiceCount > 0) append("🎤×$subVoiceCount")
-                if (subImageCount > 0 && subVoiceCount > 0) append(" ")
-                if (subImageCount > 0) append("🖼×$subImageCount")
+            val attachmentColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+            // 语音附件
+            if (subVoiceCount > 0) {
+                Icon(
+                    imageVector = Icons.Outlined.Mic,
+                    contentDescription = "语音附件",
+                    tint = attachmentColor,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Text(
+                    text = "×$subVoiceCount",
+                    fontSize = 12.sp,
+                    color = attachmentColor
+                )
+                if (subImageCount > 0) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
             }
-            Text(
-                text = text,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+
+            // 图片附件
+            if (subImageCount > 0) {
+                Icon(
+                    imageVector = Icons.Outlined.Image,
+                    contentDescription = "图片附件",
+                    tint = attachmentColor,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Text(
+                    text = "×$subImageCount",
+                    fontSize = 12.sp,
+                    color = attachmentColor
+                )
+            }
         }
     }
 }
