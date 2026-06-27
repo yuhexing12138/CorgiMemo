@@ -124,7 +124,11 @@ fun TodoListItem(
     /** 搜索关键词（非空时对标题和内容进行高亮显示） */
     searchQuery: String = "",
     /** 是否启用触觉震动反馈 */
-    hapticEnabled: Boolean = true
+    hapticEnabled: Boolean = true,
+    /** 是否被拖拽中（视觉反馈用） */
+    isDragging: Boolean = false,
+    /** 容器拖拽是否激活（手势协调用，激活时子项不再消费长按后的移动） */
+    isDragActive: Boolean = false
 ) {
 
     /** 逐区间动画参数：每字符延迟 2ms，最大延迟上限 300ms */
@@ -210,7 +214,7 @@ fun TodoListItem(
                     this
                 }
             }
-            .pointerInput(isBatchMode, onClick, onLongClick, onSelectClick) {
+            .pointerInput(isBatchMode, onClick, onLongClick, onSelectClick, isDragActive) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
 
@@ -299,15 +303,27 @@ fun TodoListItem(
                                 break
                             }
 
-                            // 检测移动距离：超过 touchSlop 则取消长按
+                            // 检测移动距离：根据长按状态分支处理
                             val dragDistance = (change.position - downPosition).getDistance()
-                            if (dragDistance > viewConfiguration.touchSlop) {
-                                longPressJob.cancel()
-                                // 发射 Cancel，结束水波纹
-                                interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
-                                terminalEmitted = true
-                                // 不消费事件，break 退出，让 SwipeableTodoBox 的左滑手势接管
-                                break
+                            if (!longPressTriggered) {
+                                // 500ms 内：移动 > touchSlop → 让位左滑
+                                if (dragDistance > viewConfiguration.touchSlop) {
+                                    longPressJob.cancel()
+                                    // 发射 Cancel，结束水波纹
+                                    interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
+                                    terminalEmitted = true
+                                    // 不消费事件，break 退出，让 SwipeableTodoBox 的左滑手势接管
+                                    break
+                                }
+                            } else {
+                                // 500ms 后：仅当容器接管拖拽时 break 让位
+                                if (isDragActive) {
+                                    longPressJob.cancel()
+                                    interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
+                                    terminalEmitted = true
+                                    break
+                                }
+                                // 否则继续等待（手指静止 → 抬起时触发 longClick）
                             }
                         }
                     } finally {

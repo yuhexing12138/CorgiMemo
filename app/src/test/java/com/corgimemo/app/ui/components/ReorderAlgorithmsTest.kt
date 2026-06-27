@@ -1,0 +1,185 @@
+package com.corgimemo.app.ui.components
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+/**
+ * 拖拽排序算法纯函数单元测试
+ *
+ * 覆盖：
+ * - findSwapTarget：等高/变高/无重叠/自身排除
+ * - checkPinnedZoneCrossed：置顶→非置顶/非置顶→置顶/区内移动
+ */
+class ReorderAlgorithmsTest {
+
+    // ==================== findSwapTarget 测试 ====================
+
+    /**
+     * 场景：被拖项与下方项 70% 重叠（等高 100px）
+     * 预期：返回下方项 key
+     */
+    @Test
+    fun `findSwapTarget 等高 70 percent 重叠返回目标`() {
+        val draggedKey = "A"
+        val otherKey = "B"
+        // 被拖项中心 fingerY=220，区间 [170, 270]
+        // 下方项 offset=200, size=100，区间 [200, 300]
+        // 重叠 [200, 270] = 70px → 70%
+        val visible = listOf(
+            VisibleItemInfo(draggedKey, offset = 0, size = 100),
+            VisibleItemInfo(otherKey, offset = 200, size = 100)
+        )
+        val target = ReorderAlgorithms.findSwapTarget(
+            draggedKey = draggedKey,
+            fingerY = 220f,
+            draggedSize = 100,
+            visibleItems = visible
+        )
+        assertEquals(otherKey, target)
+    }
+
+    /**
+     * 场景：被拖项与下方项 10% 重叠
+     * 预期：返回 null（未达 50% 阈值）
+     */
+    @Test
+    fun `findSwapTarget 10 percent 重叠返回 null`() {
+        val draggedKey = "A"
+        val otherKey = "B"
+        // fingerY=160，区间 [110, 210]
+        // 下方项 [200, 300]，重叠 [200, 210] = 10px → 10%
+        val visible = listOf(
+            VisibleItemInfo(draggedKey, offset = 0, size = 100),
+            VisibleItemInfo(otherKey, offset = 200, size = 100)
+        )
+        val target = ReorderAlgorithms.findSwapTarget(
+            draggedKey = draggedKey,
+            fingerY = 160f,
+            draggedSize = 100,
+            visibleItems = visible
+        )
+        assertNull(target)
+    }
+
+    /**
+     * 场景：变高项 - 被拖项 80px，其他项 200px，重叠 100%
+     * 预期：重叠比例 = 80 / min(80, 200) = 100% > 50% → 返回目标
+     */
+    @Test
+    fun `findSwapTarget 变高项重叠超过 50 percent 返回目标`() {
+        val draggedKey = "A"
+        val otherKey = "B"
+        // 被拖项 80px，fingerY=140，区间 [100, 180]
+        // 其他项 offset=80, size=200，区间 [80, 280]
+        // 重叠 [100, 180] = 80px → 80/min(80,200)=100% > 50%
+        val visible = listOf(
+            VisibleItemInfo(draggedKey, offset = 0, size = 80),
+            VisibleItemInfo(otherKey, offset = 80, size = 200)
+        )
+        val target = ReorderAlgorithms.findSwapTarget(
+            draggedKey = draggedKey,
+            fingerY = 140f,
+            draggedSize = 80,
+            visibleItems = visible
+        )
+        assertEquals(otherKey, target)
+    }
+
+    /**
+     * 场景：仅自身可见
+     * 预期：返回 null（不与自身交换）
+     */
+    @Test
+    fun `findSwapTarget 仅自身可见返回 null`() {
+        val draggedKey = "A"
+        val visible = listOf(VisibleItemInfo(draggedKey, offset = 0, size = 100))
+        val target = ReorderAlgorithms.findSwapTarget(
+            draggedKey = draggedKey,
+            fingerY = 50f,
+            draggedSize = 100,
+            visibleItems = visible
+        )
+        assertNull(target)
+    }
+
+    // ==================== checkPinnedZoneCrossed 测试 ====================
+
+    /**
+     * 场景：原置顶，拖到非置顶区
+     * 预期：返回 true
+     */
+    @Test
+    fun `checkPinnedZoneCrossed 置顶到非置顶返回 true`() {
+        // 算法设计：传入的 displayItems 是被拖项已移除后的列表
+        val displayItems = listOf(false, false)
+        val result = ReorderAlgorithms.checkPinnedZoneCrossed(
+            displayItems = displayItems,
+            draggedOriginalIsPinned = true,
+            draggedCurrentIndex = 0 // 插入到位置 0，邻居为位置 1（false）
+        )
+        assertEquals(true, result)
+    }
+
+    /**
+     * 场景：原非置顶，拖到置顶区
+     * 预期：返回 true
+     */
+    @Test
+    fun `checkPinnedZoneCrossed 非置顶到置顶返回 true`() {
+        // 列表（被拖移除后）：[true, true]
+        // 被拖原始 isPinned=false，插入到位置 0
+        val displayItems = listOf(true, true)
+        val result = ReorderAlgorithms.checkPinnedZoneCrossed(
+            displayItems = displayItems,
+            draggedOriginalIsPinned = false,
+            draggedCurrentIndex = 0
+        )
+        assertEquals(true, result)
+    }
+
+    /**
+     * 场景：置顶区内移动
+     * 预期：返回 false（未跨越分界线）
+     */
+    @Test
+    fun `checkPinnedZoneCrossed 置顶区内移动返回 false`() {
+        val displayItems = listOf(true, true)
+        val result = ReorderAlgorithms.checkPinnedZoneCrossed(
+            displayItems = displayItems,
+            draggedOriginalIsPinned = true,
+            draggedCurrentIndex = 1
+        )
+        assertEquals(false, result)
+    }
+
+    /**
+     * 场景：非置顶区内移动
+     * 预期：返回 false
+     */
+    @Test
+    fun `checkPinnedZoneCrossed 非置顶区内移动返回 false`() {
+        val displayItems = listOf(false, false)
+        val result = ReorderAlgorithms.checkPinnedZoneCrossed(
+            displayItems = displayItems,
+            draggedOriginalIsPinned = false,
+            draggedCurrentIndex = 1
+        )
+        assertEquals(false, result)
+    }
+
+    /**
+     * 场景：index 越界
+     * 预期：返回 false（兜底）
+     */
+    @Test
+    fun `checkPinnedZoneCrossed index 越界返回 false`() {
+        val displayItems = listOf(true)
+        val result = ReorderAlgorithms.checkPinnedZoneCrossed(
+            displayItems = displayItems,
+            draggedOriginalIsPinned = true,
+            draggedCurrentIndex = 5
+        )
+        assertEquals(false, result)
+    }
+}

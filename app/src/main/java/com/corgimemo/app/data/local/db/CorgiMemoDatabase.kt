@@ -29,7 +29,7 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class],
-    version = 30,
+    version = 31,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -90,7 +90,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
                     .build()
                 INSTANCE = instance
                 instance
@@ -828,6 +828,41 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             // 先删除关联索引（如果存在），再删除列
             database.execSQL("DROP INDEX IF EXISTS index_todo_items_position")
             database.execSQL("ALTER TABLE todo_items DROP COLUMN position")
+        }
+    }
+
+    /**
+     * 版本 30 → 31 迁移：新增 todo_items.sortOrder 字段并按 createdAt DESC 回填
+     *
+     * 重新引入「长按拖拽排序」功能，sortOrder 作为同 isPinned 分区内的顺序来源。
+     *
+     * **回填策略**:
+     * - 同一 isPinned 分区内，按 createdAt DESC 顺序分配 0,1,2,...
+     * - 与 v30 升级前的列表视觉顺序完全一致
+     *
+     * **用户影响**:
+     * - 升级后列表顺序不变
+     * - 后续拖拽会更新 sortOrder
+     */
+    private val MIGRATION_30_31 = object : Migration(30, 31) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // 1. 新增 sortOrder 列，默认值 0（与 @ColumnInfo defaultValue 一致）
+            database.execSQL(
+                "ALTER TABLE todo_items ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0"
+            )
+
+            // 2. 按 createdAt DESC 回填 sortOrder（同一 isPinned 分区内）
+            //    并列 createdAt 时按 id DESC 兜底，保证回填顺序确定
+            database.execSQL("""
+                UPDATE todo_items
+                SET sortOrder = (
+                    SELECT COUNT(*) FROM todo_items AS t2
+                    WHERE t2.isPinned = todo_items.isPinned
+                      AND (t2.createdAt > todo_items.createdAt
+                           OR (t2.createdAt = todo_items.createdAt
+                               AND t2.id > todo_items.id))
+                )
+            """.trimIndent())
         }
     }
     // companion object 闭合

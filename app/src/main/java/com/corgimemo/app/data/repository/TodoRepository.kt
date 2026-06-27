@@ -154,6 +154,41 @@ class TodoRepository @Inject constructor(
 
     fun getAllTodos(): Flow<List<TodoItem>> = todoDao.getAllTodos()
 
+    /**
+     * 按拖拽排序规则观察所有待办（isPinned DESC, sortOrder ASC, createdAt DESC）
+     */
+    fun observeAllSorted(): Flow<List<TodoItem>> = todoDao.observeAllSorted()
+
+    /**
+     * 更新单个待办的 sortOrder（拖拽完成后调用）
+     *
+     * 在 IO 调度器执行数据库写入，避免阻塞主线程。
+     *
+     * @param todoId 待办 ID
+     * @param sortOrder 新的排序索引
+     */
+    suspend fun updateSortOrder(todoId: Long, sortOrder: Int) = withContext(ioDispatcher) {
+        todoDao.updateSortOrder(
+            todoId = todoId,
+            sortOrder = sortOrder,
+            updatedAt = System.currentTimeMillis()
+        )
+    }
+
+    /**
+     * 切换置顶状态（拖拽跨越分区时调用）
+     *
+     * @param todoId 待办 ID
+     * @param isPinned 目标置顶状态
+     */
+    suspend fun updatePinnedStatus(todoId: Long, isPinned: Boolean) = withContext(ioDispatcher) {
+        todoDao.updatePinnedStatus(
+            todoId = todoId,
+            isPinned = isPinned,
+            updatedAt = System.currentTimeMillis()
+        )
+    }
+
     fun getTodosByStatus(status: Int): Flow<List<TodoItem>> = 
         todoDao.getTodosByStatus(status)
 

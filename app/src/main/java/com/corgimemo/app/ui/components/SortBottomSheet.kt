@@ -73,7 +73,9 @@ fun SortBottomSheet(
     sheetState: SheetState,
     currentSortOrder: String,
     onDismiss: () -> Unit,
-    onSortOrderSelected: (String) -> Unit
+    onSortOrderSelected: (String) -> Unit,
+    /** 恢复默认排序回调（按当前 sortType 重算 sortOrder） */
+    onRestoreDefaultOrder: () -> Unit = {}
 ) {
     ModalBottomSheet(
         sheetState = sheetState,
@@ -160,6 +162,42 @@ fun SortBottomSheet(
                         }
                     )
                 }
+            }
+
+            /** 分割线 */
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 24.dp),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            /** 恢复默认排序按钮（独立于 SortOption 列表） */
+            TextButton(
+                onClick = {
+                    onRestoreDefaultOrder()
+                    onDismiss()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(
+                        width = 1.dp,
+                        color = Color(0xFFFF9A5C).copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+            ) {
+                Text(
+                    text = "恢复默认排序",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFFE88A4D),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }

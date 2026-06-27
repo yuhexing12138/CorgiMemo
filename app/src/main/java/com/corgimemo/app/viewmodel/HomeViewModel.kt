@@ -202,13 +202,21 @@ class HomeViewModel @Inject constructor(
             }
 
             /** 应用排序 */
-            result = when (sortType) {
-                "updated_desc" -> result.sortedByDescending { it.updatedAt }
-                "updated_asc" -> result.sortedBy { it.updatedAt }
-                "created_desc" -> result.sortedByDescending { it.createdAt }
-                "created_asc" -> result.sortedBy { it.createdAt }
-                else -> result.sortedByDescending { it.updatedAt }
-            }
+            /**
+             * 应用排序：sortOrder 为列表顺序唯一来源
+             *
+             * - isPinned DESC：置顶项始终在前（修复注释与实现不一致 bug）
+             * - sortOrder ASC：同分区内按拖拽顺序
+             * - createdAt DESC：兜底（sortOrder 并列时，理论上不发生）
+             *
+             * sortType 不直接参与显示排序，仅在切换排序模式时
+             * 由 onSortTypeChanged() 重算 sortOrder（见下方方法）
+             */
+            result = result.sortedWith(
+                compareByDescending<TodoItem> { it.isPinned }
+                    .thenBy { it.sortOrder }
+                    .thenByDescending { it.createdAt }
+            )
 
             result
         }.stateIn(
@@ -709,6 +717,90 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 拖拽完成后调用：更新被拖项及受影响项的 sortOrder
+     *
+     * 算法：
+     * 1. 从 filteredTodos 取出当前列表（已按 isPinned DESC, sortOrder ASC 排序）
+     * 2. 移除被拖项，插入到目标位置
+     * 3. 若跨越置顶区分界线，对称切换被拖项 isPinned
+     * 4. 重新分配 sortOrder（基于列表位置）
+     * 5. 持久化：批量更新 sortOrder + （可选）更新 isPinned
+     *
+     * @param fromIndex 被拖项原始位置（在 filteredTodos 中）
+     * @param toIndex 被拖项最终位置（在 filteredTodos 中）
+     * @param crossedPinnedZone 是否跨越置顶区分界线
+     */
+    fun reorderTodos(fromIndex: Int, toIndex: Int, crossedPinnedZone: Boolean) {
+        viewModelScope.launch {
+            val currentList = filteredTodos.value.toMutableList()
+            if (fromIndex !in currentList.indices || toIndex !in 0..currentList.size) return@launch
+
+            // 1. 移除被拖项
+            val draggedItem = currentList.removeAt(fromIndex)
+            // 2. 处理置顶区跨越（对称规则）
+            val finalDraggedItem = if (crossedPinnedZone) {
+                draggedItem.copy(isPinned = !draggedItem.isPinned)
+            } else {
+                draggedItem
+            }
+            // 3. 插入目标位置
+            val insertIndex = toIndex.coerceAtMost(currentList.size)
+            currentList.add(insertIndex, finalDraggedItem)
+
+            // 4. 重新分配 sortOrder（基于列表位置）
+            currentList.forEachIndexed { index, item ->
+                if (item.sortOrder != index || (item.id == finalDraggedItem.id && crossedPinnedZone)) {
+                    todoRepository.updateSortOrder(item.id, index)
+                    if (item.id == finalDraggedItem.id && crossedPinnedZone) {
+                        todoRepository.updatePinnedStatus(item.id, finalDraggedItem.isPinned)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 恢复默认排序：按当前 sortType 重算所有待办的 sortOrder
+     *
+     * 触发场景：用户在排序菜单点击"恢复默认排序"按钮
+     */
+    fun restoreDefaultOrder() {
+        viewModelScope.launch {
+            val currentList = _todos.value
+            val naturalOrder = when (_sortType.value) {
+                "updated_desc" -> currentList.sortedByDescending { it.updatedAt }
+                "updated_asc"  -> currentList.sortedBy { it.updatedAt }
+                "created_desc" -> currentList.sortedByDescending { it.createdAt }
+                "created_asc"  -> currentList.sortedBy { it.createdAt }
+                else -> currentList.sortedByDescending { it.updatedAt }
+            }
+            // 同 isPinned 分区内重新分配 sortOrder
+            naturalOrder.foldIndexed(mutableMapOf<Boolean, Int>()) { idx, acc, item ->
+                val next = (acc[item.isPinned] ?: -1) + 1
+                acc[item.isPinned] = next
+                todoRepository.updateSortOrder(item.id, next)
+                acc
+            }
+        }
+    }
+
+    /**
+     * 切换排序模式：保存偏好 + 重算 sortOrder
+     *
+     * 与原 updateSortOrder() 区别：此方法在切换后立即按新规则重算 sortOrder，
+     * 确保后续列表显示完全由 sortOrder 决定（sortType 不参与显示排序）。
+     *
+     * @param newSortType 新排序模式（"updated_desc" | "updated_asc" | "created_desc" | "created_asc"）
+     */
+    fun onSortTypeChanged(newSortType: String) {
+        viewModelScope.launch {
+            corgiPreferences.saveSortOrder(newSortType)
+            _sortType.value = newSortType
+            restoreDefaultOrder()
+        }
+    }
+
+    /**
      * 初始化排序方式（从 DataStore 读取保存的偏好）
      */
     private fun initSortOrder() {
@@ -846,7 +938,7 @@ class HomeViewModel @Inject constructor(
      */
     private fun loadTodos() {
         viewModelScope.launch {
-            todoRepository.getAllTodos().collect { allTodos ->
+            todoRepository.observeAllSorted().collect { allTodos ->
                 _todos.value = when (_filterStatus.value) {
                     FilterStatus.ALL -> allTodos
                     FilterStatus.PENDING -> allTodos.filter { it.status == 0 }
@@ -2846,5 +2938,26 @@ class HomeViewModel @Inject constructor(
             /** 日志记录失败不应影响主流程，仅打印日志 */
             android.util.Log.e("HomeViewModel", "Failed to record operation log", e)
         }
+    }
+
+    // ==================== 测试辅助方法（仅用于单元测试） ====================
+
+    /**
+     * 测试专用：直接设置 _todos 流的值
+     *
+     * 用于绕过 observeAllSorted() 的真实 DB 订阅，
+     * 在单元测试中直接注入测试数据。
+     */
+    @androidx.annotation.VisibleForTesting
+    fun refreshTodosForTest(todos: List<TodoItem>) {
+        _todos.value = todos
+    }
+
+    /**
+     * 测试专用：直接设置 _sortType
+     */
+    @androidx.annotation.VisibleForTesting
+    fun setSortTypeForTest(sortType: String) {
+        _sortType.value = sortType
     }
 }

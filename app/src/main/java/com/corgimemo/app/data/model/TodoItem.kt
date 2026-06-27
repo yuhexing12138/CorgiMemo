@@ -90,5 +90,17 @@ data class TodoItem(
      * 用于左滑"置顶"按钮的持久化状态。
      */
     @ColumnInfo(defaultValue = "0")
-    val isPinned: Boolean = false
+    val isPinned: Boolean = false,
+
+    /**
+     * 拖拽排序位置索引（仅在同一 isPinned 分区内有效）
+     *
+     * - 默认 0：未指定顺序，按 createdAt DESC 兜底
+     * - 拖拽后由 ViewModel.reorderTodos() 写入新值
+     * - 排序规则：isPinned DESC, sortOrder ASC, createdAt DESC
+     *
+     * Migration 30→31 按 createdAt DESC 回填，保证升级后列表顺序不变
+     */
+    @ColumnInfo(defaultValue = "0")
+    val sortOrder: Int = 0
 )

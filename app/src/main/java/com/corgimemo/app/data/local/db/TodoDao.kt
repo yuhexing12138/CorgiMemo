@@ -34,6 +34,29 @@ interface TodoDao {
     @Update
     suspend fun updateAll(todos: List<TodoItem>)
 
+    /**
+     * 更新单个待办的 sortOrder（拖拽完成后调用）
+     *
+     * @param todoId 待办 ID
+     * @param sortOrder 新的排序索引
+     * @param updatedAt 更新时间戳
+     */
+    @Query("UPDATE todo_items SET sortOrder = :sortOrder, updatedAt = :updatedAt WHERE id = :todoId")
+    suspend fun updateSortOrder(todoId: Long, sortOrder: Int, updatedAt: Long)
+
+    /**
+     * 切换置顶状态（拖拽跨越分区时调用）
+     *
+     * 与现有 togglePin 区别：此处显式指定目标状态（true/false），
+     * 用于拖拽跨越分区时的对称切换。
+     *
+     * @param todoId 待办 ID
+     * @param isPinned 目标置顶状态
+     * @param updatedAt 更新时间戳
+     */
+    @Query("UPDATE todo_items SET isPinned = :isPinned, updatedAt = :updatedAt WHERE id = :todoId")
+    suspend fun updatePinnedStatus(todoId: Long, isPinned: Boolean, updatedAt: Long)
+
     @Delete
     suspend fun delete(todo: TodoItem)
 
@@ -64,6 +87,19 @@ interface TodoDao {
 
     @Query("SELECT * FROM todo_items ORDER BY createdAt DESC")
     fun getAllTodos(): Flow<List<TodoItem>>
+
+    /**
+     * 按拖拽排序规则观察所有待办
+     *
+     * 排序规则：isPinned DESC, sortOrder ASC, createdAt DESC
+     * - isPinned DESC：置顶项始终在前
+     * - sortOrder ASC：同分区内按拖拽顺序
+     * - createdAt DESC：兜底（sortOrder 并列时）
+     *
+     * @return 按 sortOrder 排序的待办列表 Flow
+     */
+    @Query("SELECT * FROM todo_items ORDER BY isPinned DESC, sortOrder ASC, createdAt DESC")
+    fun observeAllSorted(): Flow<List<TodoItem>>
 
     @Query("SELECT * FROM todo_items ORDER BY createdAt DESC")
     suspend fun getAllTodosBlocking(): List<TodoItem>
