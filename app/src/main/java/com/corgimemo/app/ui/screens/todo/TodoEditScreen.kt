@@ -158,13 +158,28 @@ fun TodoEditScreen(
 
     /** 优先级弹窗状态：null=关闭，Int=当前编辑的 groupId */
     var showPriorityDialog by remember { mutableStateOf<Int?>(null) }
-    /** 分类选择弹窗状态 */
-    var showCategoryDialog by remember { mutableStateOf(false) }
+    /**
+     * 分类选择弹窗目标 groupId
+     *
+     * null = 弹窗关闭；非 null = 弹窗打开且为该 groupId 选分类
+     * 替代旧 showCategoryDialog: Boolean，携带目标分组上下文
+     */
+    var pendingCategoryGroupId by remember { mutableStateOf<Int?>(null) }
 
     val imagePaths by viewModel.imagePaths.collectAsState()
     val categories by viewModel.categories.collectAsState()
-    val categoryId by viewModel.categoryId.collectAsState()
-    val currentCategory = categories.find { it.id == categoryId }
+    val groupCategoryIds by viewModel.groupCategoryIds.collectAsState()
+
+    /**
+     * 派生：各 groupId 对应的分类名称映射
+     * key = groupId, value = categoryName（null = 未设置/未分类）
+     */
+    val groupCategoryNames = remember(groupCategoryIds, categories) {
+        groupCategoryIds.mapValues { (_, catId) ->
+            if (catId == 0L) null
+            else categories.find { it.id == catId }?.name
+        }
+    }
 
     /** 行级附件快照数据（从数据库加载，用于恢复每行的附件） */
     val lineAttachmentsSnapshot by viewModel.lineAttachmentsSnapshot.collectAsState()
@@ -1015,10 +1030,10 @@ fun TodoEditScreen(
                 onFocusedLineChange = { newIndex ->
                     focusedLineIndex = newIndex
                 },
-                categoryId = categoryId,
-                categoryName = currentCategory?.name,
-                onCategoryClick = { showCategoryDialog = true },
-                onCategoryClear = { viewModel.clearCategory() },
+                groupCategoryIds = groupCategoryIds,
+                groupCategoryNames = groupCategoryNames,
+                onCategoryClick = { groupId -> pendingCategoryGroupId = groupId },
+                onCategoryClear = { groupId -> viewModel.clearGroupCategory(groupId) },
                 priority = priority,
                 onPriorityChange = { _, newPriority ->
                     viewModel.setPriority(newPriority)
@@ -1691,23 +1706,21 @@ fun TodoEditScreen(
         )
     }
 
-    /** 分类选择弹窗 */
-    if (showCategoryDialog) {
+    pendingCategoryGroupId?.let { targetGroupId ->
         CategorySelectorDialog(
             categories = categories,
-            currentCategoryId = categoryId,
-            onDismiss = { showCategoryDialog = false },
+            currentCategoryId = groupCategoryIds[targetGroupId] ?: 0L,
+            onDismiss = { pendingCategoryGroupId = null },
             onCategorySelected = { id, name ->
                 if (id > 0L) {
-                    // 默认/已存在分类
-                    viewModel.setCategoryId(id)
+                    viewModel.setGroupCategory(targetGroupId, id)
                 } else {
-                    // 自定义分类：异步创建
+                    // 自定义分类：异步创建后写入对应 groupId
                     viewModel.createCustomCategory(name) { newId ->
-                        viewModel.setCategoryId(newId)
+                        viewModel.setGroupCategory(targetGroupId, newId)
                     }
                 }
-                showCategoryDialog = false
+                pendingCategoryGroupId = null
             }
         )
     }

@@ -108,14 +108,14 @@ fun CheckboxEditText(
     groupReminders: Map<Int, Long?> = emptyMap(),
     /** × 按钮点击回调，参数是 groupId */
     onReminderDelete: ((Int) -> Unit)? = null,
-    /** 各分组的分类 ID（null=未设置）；用于底部"分类"按钮显示 */
-    categoryId: Long? = null,
-    /** 各分组的分类名称（用于底部"分类"按钮显示） */
-    categoryName: String? = null,
-    /** "分类"按钮点击回调（无分组概念，整个容器共用） */
-    onCategoryClick: (() -> Unit)? = null,
-    /** "分类"×按钮点击回调：清除已设置的分类 */
-    onCategoryClear: (() -> Unit)? = null,
+    /** 各分组的分类 ID 映射（key=groupId, value=categoryId, 0L=未分类） */
+    groupCategoryIds: Map<Int, Long> = emptyMap(),
+    /** 各分组的分类名称映射（key=groupId, value=categoryName, null=未设置） */
+    groupCategoryNames: Map<Int, String?> = emptyMap(),
+    /** "分类"按钮点击回调（参数=groupId） */
+    onCategoryClick: ((Int) -> Unit)? = null,
+    /** "分类"×按钮点击回调：清除已设置的分类（参数=groupId） */
+    onCategoryClear: ((Int) -> Unit)? = null,
     onFocusedLineChange: ((Int) -> Unit)? = null,
     priority: Int = 1,
     onPriorityChange: ((Int, Int) -> Unit)? = null,
@@ -237,10 +237,10 @@ fun CheckboxEditText(
                 onReminderClick = { onReminderClick?.invoke(0) },
                 reminderTime = groupReminders[0],
                 onReminderDelete = { onReminderDelete?.invoke(0) },
-                categoryId = categoryId,
-                categoryName = categoryName,
-                onCategoryClick = { onCategoryClick?.invoke() },
-                onCategoryClear = { onCategoryClear?.invoke() },
+                categoryId = groupCategoryIds[0] ?: 0L,
+                categoryName = groupCategoryNames[0],
+                onCategoryClick = { onCategoryClick?.invoke(0) },
+                onCategoryClear = { onCategoryClear?.invoke(0) },
                 priority = priority,
                 onPriorityClick = { onPriorityButtonClick?.invoke(0) },
                 onSaveClick = { onSaveClick?.invoke(0) }
@@ -302,11 +302,11 @@ fun CheckboxEditText(
                     onReminderClick = { onReminderClick?.invoke(groupId) },
                     reminderTime = groupReminders[groupId],
                     onReminderDelete = { onReminderDelete?.invoke(groupId) },
-                    categoryId = categoryId,
-                    categoryName = categoryName,
-                    onCategoryClick = { onCategoryClick?.invoke() },
-                    onCategoryClear = { onCategoryClear?.invoke() },
-                    onPriorityClick = { onPriorityButtonClick?.invoke(groupId) },
+                categoryId = groupCategoryIds[groupId] ?: 0L,
+                categoryName = groupCategoryNames[groupId],
+                onCategoryClick = { onCategoryClick?.invoke(groupId) },
+                onCategoryClear = { onCategoryClear?.invoke(groupId) },
+                onPriorityClick = { onPriorityButtonClick?.invoke(groupId) },
                     onSaveClick = { onSaveClick?.invoke(groupId) }
                 ) {
                     groupLines.forEachIndexed { localIndex, line ->

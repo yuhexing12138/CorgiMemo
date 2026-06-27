@@ -75,8 +75,19 @@ class TodoEditViewModel @Inject constructor(
     private val _content = MutableStateFlow("")
     val content: StateFlow<String> = _content.asStateFlow()
 
-    private val _categoryId = MutableStateFlow(0L)
-    val categoryId: StateFlow<Long> = _categoryId.asStateFlow()
+    /**
+     * 各分组的分类 ID 状态
+     *
+     * key = groupId (Int), value = categoryId (Long, 0L = 未分类)
+     * 每个编辑容器拥有独立的分类，保存时写入对应 TodoItem.categoryId
+     *
+     * 设计与 _groupReminders / _groupPriorities / _groupRepeatTypes 完全一致，
+     * 保证多容器场景下分类状态互不影响。
+     */
+    private val _groupCategoryIds = MutableStateFlow<Map<Int, Long>>(emptyMap())
+
+    /** 暴露分组分类 ID 供 UI 层收集 */
+    val groupCategoryIds: StateFlow<Map<Int, Long>> = _groupCategoryIds.asStateFlow()
 
     private val _priority = MutableStateFlow(1)
     val priority: StateFlow<Int> = _priority.asStateFlow()
@@ -121,7 +132,7 @@ class TodoEditViewModel @Inject constructor(
     /**
      * 注：原"推荐分类 / 关键词选择 / 是否手动选择"等状态已移除。
      * 待办编辑页不再做关键词推荐分类（功能仅在灵感编辑页保留）。
-     * 新建模式下 _categoryId.value 保持 0L，分类按钮显示"分类"占位符。
+     * 新建模式下 _groupCategoryIds 保持空 map（groupId=0 对应 0L），分类按钮显示"分类"占位符。
      */
     private val _isCategoriesLoaded = MutableStateFlow(false)
     val isCategoriesLoaded: StateFlow<Boolean> = _isCategoriesLoaded.asStateFlow()
@@ -387,18 +398,23 @@ class TodoEditViewModel @Inject constructor(
         _content.value = content
     }
 
-    fun setCategoryId(categoryId: Long) {
-        _categoryId.value = categoryId
+    /**
+     * 设置指定分组的分类 ID
+     *
+     * @param groupId 分组 ID
+     * @param categoryId 分类 ID（0L = 未分类）
+     */
+    fun setGroupCategory(groupId: Int, categoryId: Long) {
+        _groupCategoryIds.value = _groupCategoryIds.value + (groupId to categoryId)
     }
 
     /**
-     * 清除当前分类
+     * 清除指定分组的分类（置为 0L 未分类）
      *
-     * 复刻"设置提醒"×按钮的交互：用户清除后回到未分类状态
-     * 调用方传入 -1L 作为"未设置"的标记，避免修改 _categoryId 的类型为 Long?
+     * @param groupId 分组 ID
      */
-    fun clearCategory() {
-        _categoryId.value = 0L
+    fun clearGroupCategory(groupId: Int) {
+        _groupCategoryIds.value = _groupCategoryIds.value + (groupId to 0L)
     }
 
     fun setPriority(priority: Int) {
@@ -604,7 +620,8 @@ class TodoEditViewModel @Inject constructor(
                 existingTodo = todo
                 _title.value = todo.title
                 _content.value = todo.content ?: ""
-                _categoryId.value = todo.categoryId
+                // 单容器场景：groupId=0 持有该 todo 的分类
+                _groupCategoryIds.value = mapOf(0 to todo.categoryId)
                 _priority.value = todo.priority
                 _startDate.value = todo.startDate
                 _dueDate.value = todo.dueDate
@@ -761,7 +778,7 @@ class TodoEditViewModel @Inject constructor(
                     title = _title.value,
                     /** 使用派生的 content，确保与 subTasks 一致 */
                     content = derivedContent.ifBlank { null },
-                    categoryId = _categoryId.value,
+                    categoryId = _groupCategoryIds.value[0] ?: 0L,
                     priority = _priority.value,
                     startDate = _startDate.value,
                     dueDate = _dueDate.value,
@@ -789,7 +806,7 @@ class TodoEditViewModel @Inject constructor(
                     title = _title.value,
                     /** 使用派生的 content，确保与 subTasks 一致 */
                     content = derivedContent.ifBlank { null },
-                    categoryId = _categoryId.value,
+                    categoryId = _groupCategoryIds.value[0] ?: 0L,
                     priority = _priority.value,
                     status = 0,
                     startDate = _startDate.value,
@@ -863,7 +880,7 @@ class TodoEditViewModel @Inject constructor(
         return TodoItem(
             title = title,
             content = content.ifBlank { null },
-            categoryId = _categoryId.value,
+            categoryId = _groupCategoryIds.value[targetGroupId] ?: 0L,
             priority = _groupPriorities.value[targetGroupId] ?: 0,  // 使用分组独立优先级
             status = 0,
             startDate = _startDate.value,
@@ -1196,7 +1213,7 @@ class TodoEditViewModel @Inject constructor(
                  * 问题：用户进入新建待办页时还未编辑，分类按钮就显示了具体分类名（如"学习"），
                  *       与"用户主动选择"的语义不符，干扰用户预期。
                  *
-                 * 当前策略：保持 _categoryId.value = 0L，分类按钮显示"分类"占位符，
+                 * 当前策略：保持 _groupCategoryIds 为空 map（groupId=0 → 0L），分类按钮显示"分类"占位符，
                  *           由用户主动点击按钮选择分类。关键词推荐分类功能仅在灵感编辑页保留。
                  */
             } catch (e: Exception) {
@@ -1214,7 +1231,7 @@ class TodoEditViewModel @Inject constructor(
      *
      * 用于"分类"选择弹窗的"自定义"按钮：用户输入名称后异步写入数据库。
      * 写入成功后通过 [onCreated] 回调返回新分类的 ID，
-     * 调用方应立即调用 [setCategoryId] 切换当前 todo 到新分类。
+     * 调用方应立即调用 [setGroupCategory] 切换对应分组到新分类。
      *
      * @param name 自定义分类名称（已 trim 且非空）
      * @param onCreated 创建成功回调，参数为新分类的数据库 ID
