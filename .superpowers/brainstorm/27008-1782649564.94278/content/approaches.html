@@ -1,0 +1,144 @@
+<h2>实现方案对比</h2>
+<p class="subtitle">三种技术实现方案的对比分析</p>
+
+<div class="cards">
+  <div class="card" data-choice="approach-a" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>方案A：双列表嵌套</h3>
+      <p><strong>思路：</strong>使用两个独立的ReorderableLazyColumn分别渲染未完成和已完成待办，外层用普通Column包裹，"已完成"按钮放在两列表之间。</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>✅ 优点</h4>
+          <ul>
+            <li>不需要修改ReorderableLazyColumn组件</li>
+            <li>两个区域独立，逻辑简单清晰</li>
+            <li>拖拽天然隔离，不会跨区域</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>❌ 缺点</h4>
+          <ul>
+            <li><strong style="color:#e53935;">两个LazyColumn嵌套在ScrollableColumn中会有滚动冲突</strong></li>
+            <li>整体滚动体验不连贯，分隔按钮无法自然"粘"在列表中</li>
+            <li>无法实现平滑的展开/折叠动画（animateItem不跨列表）</li>
+            <li>FAB、下拉刷新等需要额外处理嵌套滚动</li>
+          </ul>
+        </div>
+      </div>
+      <p style="margin-top:12px; padding:8px; background:#fff3e0; border-radius:8px; font-size:13px; color:#e65100;">
+        ⚠️ <strong>不推荐</strong>：嵌套滚动问题难以解决，用户体验差
+      </p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="approach-b" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>方案B：Sealed Class + 扩展ReorderableLazyColumn（推荐）</h3>
+      <p><strong>思路：</strong>定义DisplayItem密封类（Todo项/CompletedDivider分隔项），扩展ReorderableLazyColumn支持"不可拖拽、不可跨越"的固定项，单列表实现。</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>✅ 优点</h4>
+          <ul>
+            <li>单列表，滚动流畅自然</li>
+            <li>分隔按钮作为列表项，随列表滚动、参与动画</li>
+            <li>展开/折叠使用animateItem()实现平滑过渡</li>
+            <li>拖拽逻辑中分隔项像"墙"一样不可跨越，天然分区</li>
+            <li>与现有架构一致，下拉刷新、FAB等无需改动</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>❌ 缺点</h4>
+          <ul>
+            <li>需要修改ReorderableLazyColumn（添加isDraggable参数）</li>
+            <li>索引转换需要小心处理（divider占一个位置）</li>
+            <li>ViewModel排序逻辑需适配区域内排序</li>
+          </ul>
+        </div>
+      </div>
+      <p style="margin-top:12px; padding:8px; background:#e8f5e9; border-radius:8px; font-size:13px; color:#2e7d32;">
+        ✅ <strong>推荐</strong>：用户体验最佳，改动可控
+      </p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="approach-c" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>方案C：直接在LazyColumn中手写拖拽</h3>
+      <p><strong>思路：</strong>放弃ReorderableLazyColumn，直接使用LazyColumn的DSL（item+items），在待办项上各自实现拖拽手势。</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>✅ 优点</h4>
+          <ul>
+            <li>完全控制布局，可任意放置分隔item</li>
+            <li>不需要修改现有组件</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>❌ 缺点</h4>
+          <ul>
+            <li><strong style="color:#e53935;">重复造轮子</strong>：重写长按检测、50%重叠交换、边缘滚动、置顶区跨越、反向交换锁定等所有拖拽逻辑</li>
+            <li>工作量最大，风险最高</li>
+            <li>容易引入新的拖拽bug</li>
+          </ul>
+        </div>
+      </div>
+      <p style="margin-top:12px; padding:8px; background:#ffebee; border-radius:8px; font-size:13px; color:#c62828;">
+        ❌ <strong>不推荐</strong>：重复工作量大，风险高
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px; padding:20px; background:linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%); border-radius:12px; border-left:4px solid #FF9A5C;">
+  <h3 style="margin-top:0; color:#E65100;">🎯 推荐方案 B 详细设计</h3>
+  
+  <h4 style="margin-bottom:8px;">1. 数据层（ViewModel）</h4>
+  <ul style="line-height:1.8;">
+    <li>移除FilterStatus.ALL/PENDING/COMPLETED三态枚举</li>
+    <li>新增 <code>_showCompleted = MutableStateFlow(false)</code>，持久化到CorgiPreferences</li>
+    <li>分离待办为两个列表：<code>pendingTodos</code>（status=0）和 <code>completedTodos</code>（status=1），各自按 isPinned→sortOrder→createdAt 排序</li>
+    <li>新增 <code>completedCount</code> 统计流</li>
+    <li>修改排序逻辑：拖拽只在各自区域内重排sortOrder，不跨区域</li>
+  </ul>
+
+  <h4 style="margin:16px 0 8px;">2. UI层（HomeScreen）</h4>
+  <ul style="line-height:1.8;">
+    <li>移除三个FilterButton及对应Row</li>
+    <li>定义sealed interface <code>DisplayItem { data class Todo(val item: TodoItem); data object CompletedDivider }</code></li>
+    <li>组合displayList：pendingTodos.map(Todo) + (if(showCompleted) listOf(CompletedDivider) + completedTodos.map(Todo) else emptyList())</li>
+    <li>CompletedDivider渲染为"⌄/⌃ 已完成 N"按钮，点击切换showCompleted</li>
+    <li>使用Modifier.animateContentSize()或依赖LazyColumn.animateItem()实现展开/折叠动画</li>
+  </ul>
+
+  <h4 style="margin:16px 0 8px;">3. 组件层（ReorderableLazyColumn）</h4>
+  <ul style="line-height:1.8;">
+    <li>新增参数 <code>isDraggable: (T) -> Boolean = { true }</code></li>
+    <li>拖拽检测时跳过isDraggable=false的项（CompletedDivider）</li>
+    <li>findSwapTarget中过滤掉isDraggable=false的项（它们像墙一样不可跨越）</li>
+    <li>content lambda新增isDraggableItem参数，让调用方决定项样式</li>
+  </ul>
+
+  <h4 style="margin:16px 0 8px;">4. 视觉设计细节</h4>
+  <table style="width:100%; border-collapse:collapse; font-size:14px; margin-top:8px;">
+    <tr style="background:rgba(255,154,92,0.1);">
+      <th style="padding:8px; text-align:left; border-radius:8px 0 0 0;">元素</th>
+      <th style="padding:8px; text-align:left; border-radius:0 8px 0 0;">样式</th>
+    </tr>
+    <tr style="border-bottom:1px solid #eee;">
+      <td style="padding:8px;">折叠状态按钮</td>
+      <td style="padding:8px;">⌄ 已完成 N，颜色#999，字号15sp，左对齐，水平padding=20dp</td>
+    </tr>
+    <tr style="border-bottom:1px solid #eee;">
+      <td style="padding:8px;">展开状态按钮</td>
+      <td style="padding:8px;">⌃ 已完成 N，颜色#999，字号15sp</td>
+    </tr>
+    <tr style="border-bottom:1px solid #eee;">
+      <td style="padding:8px;">按钮点击区域</td>
+      <td style="padding:8px;">48dp高度，水平padding=16dp，增加触控面积</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;">展开/折叠动画</td>
+      <td style="padding:8px;">300ms ease-in-out，箭头旋转180度，列表项使用animateItem</td>
+    </tr>
+  </table>
+</div>

@@ -152,6 +152,8 @@ class CorgiPreferences(
         /** 增量日志模式：追加式 Undo/Redo 日志（替代全量栈序列化） */
         const val UNDO_LOG = "undo_log"
         const val REDO_LOG = "redo_log"
+        /** V2.8: 待办页"已完成"区域展开状态 */
+        const val SHOW_COMPLETED = "show_completed"
     }
 
     // ==================== 数据迁移（DataStore → ESP）====================
@@ -216,7 +218,8 @@ class CorgiPreferences(
             // 布尔类型键
             listOf(
                 Keys.IS_FIRST_LAUNCH, Keys.SOUND_ENABLED, Keys.HAPTIC_ENABLED,
-                Keys.IS_ONBOARDING_COMPLETED, Keys.AUTO_BACKUP_ENABLED, Keys.FIRST_GUIDE_SHOWN
+                Keys.IS_ONBOARDING_COMPLETED, Keys.AUTO_BACKUP_ENABLED,
+                Keys.SHOW_COMPLETED, Keys.FIRST_GUIDE_SHOWN
             ).forEach { key ->
                 val value = legacyPrefs[booleanPreferencesKey(key)]
                 if (value != null) {
@@ -392,6 +395,9 @@ class CorgiPreferences(
     /** 获取触觉反馈开关的Flow */
     val hapticEnabled: Flow<Boolean> = booleanFlow(Keys.HAPTIC_ENABLED, true)
 
+    /** 获取待办页"已完成"区域展开状态的Flow（默认折叠） */
+    val showCompleted: Flow<Boolean> = booleanFlow(Keys.SHOW_COMPLETED, false)
+
     /** 获取最后活跃时间戳的Flow */
     val lastActiveTimestamp: Flow<String?> = stringFlow(Keys.LAST_ACTIVE_TIMESTAMP)
 
@@ -422,6 +428,11 @@ class CorgiPreferences(
     /** 设置触觉反馈开关 */
     suspend fun setHapticEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
         esp.edit().putBoolean(Keys.HAPTIC_ENABLED, enabled).apply()
+    }
+
+    /** 设置待办页"已完成"区域展开状态 */
+    suspend fun setShowCompleted(show: Boolean) = withContext(Dispatchers.IO) {
+        esp.edit().putBoolean(Keys.SHOW_COMPLETED, show).apply()
     }
 
     /**

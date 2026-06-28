@@ -1,6 +1,10 @@
 package com.corgimemo.app.ui.screens.home
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -33,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SelectAll
@@ -71,17 +76,23 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -121,9 +132,13 @@ import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.ui.theme.UiColors
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -134,7 +149,10 @@ fun HomeScreen(
 ) {
     val filteredTodos by viewModel.filteredTodos.collectAsState()
     val isDataInitialized by viewModel.isDataInitialized.collectAsState()
-    val filterStatus by viewModel.filterStatus.collectAsState()
+    val showCompleted by viewModel.showCompleted.collectAsState()
+    val completedCount by viewModel.completedCount.collectAsState()
+    val pendingTodosAll by viewModel.pendingTodos.collectAsState()
+    val visibleCompletedTodosAll by viewModel.visibleCompletedTodos.collectAsState()
     val corgiData by viewModel.corgiData.collectAsState()
     val showNamerDialog by viewModel.showNamerDialog.collectAsState()
     val _currentPose by viewModel.currentPose.collectAsState()
@@ -174,7 +192,7 @@ fun HomeScreen(
     val subTasksMap by viewModel.subTasksMap.collectAsState()
 
     // 待办列表 LazyColumn 状态（用于滚动位置记忆与下拉刷新联动）
-    val listState = rememberLazyListState()
+    val lazyListState = rememberLazyListState()
 
     // 展开状态
     val expandedTodos by viewModel.expandedTodos.collectAsState()
@@ -485,76 +503,137 @@ fun HomeScreen(
 
                     val searchQuery by viewModel.searchQuery.collectAsState()
 
-                    SearchBar(
-                        query = searchQuery,
-                        onQueryChange = { newQuery ->
-                            viewModel.updateSearchQuery(newQuery)
-                        },
-                        onClear = {
-                            viewModel.clearSearch()
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 8.dp),
-                        trailingIcon = {
-                            /** 排序按钮（与清空按钮互斥显示） */
-                            IconButton(
-                                onClick = { showSortSheet = true },
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Text(
-                                    text = "📊",
-                                    fontSize = 20.sp,
-                                    color = Color(0xFFFF9A5C) // 暖橙色
-                                )
+                    /** 滚动驱动搜索框显隐进度：1f=完全显示，0f=完全隐藏，使用Animatable支持平滑动画 */
+                    val searchRevealProgress = remember { Animatable(1f) }
+
+                    /** 搜索框完整高度（含padding），作为滚动→进度映射的基准 */
+                    val searchBarFullHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
+
+                    /** 滚动驱动：向上滑时递减进度（snapTo保持与滚动同步），向下滑时不增加 */
+                    LaunchedEffect(lazyListState) {
+                        var prevIdx = 0
+                        var prevOff = 0
+
+                        snapshotFlow {
+                            lazyListState.firstVisibleItemIndex to lazyListState.firstVisibleItemScrollOffset
+                        }.distinctUntilChanged().collect { (currentIndex, currentOffset) ->
+                            if (searchQuery.isBlank()) {
+                                val isDown = if (currentIndex != prevIdx) {
+                                    currentIndex < prevIdx
+                                } else {
+                                    currentOffset < prevOff
+                                }
+                                val delta = if (currentIndex != prevIdx) {
+                                    (abs(currentIndex - prevIdx) * searchBarFullHeightPx).coerceAtMost(searchBarFullHeightPx * 2)
+                                } else {
+                                    abs(currentOffset - prevOff).toFloat()
+                                }
+                                // 向上滑（远离顶部）→进度减少（隐藏），向下滑（未到顶）→不增加进度
+                                if (!isDown && searchRevealProgress.value > 0f) {
+                                    val newProgress = (searchRevealProgress.value - delta / searchBarFullHeightPx).coerceIn(0f, 1f)
+                                    // 仅当进度实际变化时才更新，避免无效的 snapTo 调用
+                                    if (newProgress != searchRevealProgress.value) {
+                                        searchRevealProgress.snapTo(newProgress)
+                                    }
+                                }
                             }
+                            prevIdx = currentIndex
+                            prevOff = currentOffset
                         }
-                    )
+                    }
 
-                    // 柯基陪伴区已分离为悬浮按钮，此处不再显示
+                    val isAtTop by remember {
+                        derivedStateOf {
+                            lazyListState.firstVisibleItemIndex == 0 &&
+                                lazyListState.firstVisibleItemScrollOffset == 0
+                        }
+                    }
 
-                    Row(
+                    /** 到达列表顶部时，搜索框平滑展开显示（级联动画） */
+                    LaunchedEffect(isAtTop) {
+                        if (isAtTop && searchQuery.isBlank()) {
+                            searchRevealProgress.animateTo(
+                                1f,
+                                animationSpec = tween(250, easing = FastOutSlowInEasing)
+                            )
+                        }
+                    }
+
+                    /** 有搜索词时，搜索框平滑展开显示；清空搜索词且不在顶部时，平滑隐藏 */
+                    LaunchedEffect(searchQuery) {
+                        if (searchQuery.isNotBlank()) {
+                            searchRevealProgress.animateTo(
+                                1f,
+                                animationSpec = tween(250, easing = FastOutSlowInEasing)
+                            )
+                        } else if (!isAtTop) {
+                            searchRevealProgress.animateTo(
+                                0f,
+                                animationSpec = tween(200, easing = FastOutSlowInEasing)
+                            )
+                        }
+                    }
+
+                    /**
+                     * 搜索框容器：
+                     * - 上边缘固定，底部边缘根据 searchRevealProgress 收缩/展开
+                     * - 透明度与进度同步变化，实现淡入淡出
+                     * - clipToBounds 裁剪超出部分
+                     */
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                            .layout { measurable, constraints ->
+                                val placeable = measurable.measure(constraints)
+                                val targetHeight = (placeable.height * searchRevealProgress.value).roundToInt()
+                                layout(placeable.width, targetHeight) {
+                                    // place(0, 0) 保证上边缘固定
+                                    placeable.place(0, 0)
+                                }
+                            }
+                            .clipToBounds()
+                            .graphicsLayer { alpha = searchRevealProgress.value }
                     ) {
-                        FilterButton(
-                            text = "全部",
-                            isSelected = filterStatus == HomeViewModel.FilterStatus.ALL,
-                            onClick = {
-                                viewModel.onUserInteraction()
-                                viewModel.setFilterStatus(HomeViewModel.FilterStatus.ALL)
-                            }
-                        )
-                        FilterButton(
-                            text = "待办",
-                            isSelected = filterStatus == HomeViewModel.FilterStatus.PENDING,
-                            onClick = {
-                                viewModel.onUserInteraction()
-                                viewModel.setFilterStatus(HomeViewModel.FilterStatus.PENDING)
-                            }
-                        )
-                        FilterButton(
-                            text = "已完成",
-                            isSelected = filterStatus == HomeViewModel.FilterStatus.COMPLETED,
-                            onClick = {
-                                viewModel.onUserInteraction()
-                                viewModel.setFilterStatus(HomeViewModel.FilterStatus.COMPLETED)
+                        SearchBar(
+                            query = searchQuery,
+                            onQueryChange = { newQuery ->
+                                viewModel.updateSearchQuery(newQuery)
+                            },
+                            onClear = {
+                                viewModel.clearSearch()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 8.dp),
+                            trailingIcon = {
+                                /** 排序按钮（与清空按钮互斥显示） */
+                                IconButton(
+                                    onClick = { showSortSheet = true },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Text(
+                                        text = "📊",
+                                        fontSize = 20.sp,
+                                        color = Color(0xFFFF9A5C) // 暖橙色
+                                    )
+                                }
                             }
                         )
                     }
 
+                    // 柯基陪伴区已分离为悬浮按钮，此处不再显示
+
                     /**
                      * 内容区域显示逻辑：
                      * 1. 数据未初始化 → 显示加载指示器（避免闪烁）
-                     * 2. 数据已初始化 + 列表为空 → 显示空状态
-                     * 3. 数据已初始化 + 列表有内容 → 显示列表
+                     * 2. 无任何待办 → 显示空状态
+                     * 3. 所有待办已完成且折叠 → 只显示分隔按钮
+                     * 4. 其他 → 显示列表
                      */
                     if (!isDataInitialized) {
                         // 数据未初始化：显示页面专属骨架屏，避免从空列表闪烁到有数据
                         TodoSkeleton(itemCount = 4)
-                    } else if (filteredTodos.isEmpty()) {
+                    } else if (pendingTodosAll.isEmpty() && completedCount == 0) {
                         UnifiedEmptyState(
                             icon = "📝",
                             title = "还没有待办~",
@@ -567,9 +646,66 @@ fun HomeScreen(
                             },
                             modifier = Modifier.fillMaxSize()
                         )
+                    } else if (pendingTodosAll.isEmpty() && completedCount > 0 && !showCompleted) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.TopCenter
+                        ) {
+                            CompletedSectionHeader(
+                                count = completedCount,
+                                isExpanded = showCompleted,
+                                onClick = {
+                                    viewModel.onUserInteraction()
+                                    viewModel.toggleShowCompleted()
+                                }
+                            )
+                        }
                     } else {
                         val isRefreshing by viewModel.isRefreshing.collectAsState()
                         val swipeRefreshState = rememberSwipeRefreshState(isRefreshing = isRefreshing)
+
+                        /**
+                         * 应用分类和搜索过滤
+                         */
+                        fun applyFilters(list: List<TodoItem>): List<TodoItem> {
+                            var result = list
+                            val catId = selectedCategoryId
+                            if (catId != null && catId > 0) {
+                                result = result.filter { it.categoryId == catId }
+                            } else if (catId != null && catId == 0L) {
+                                val validCategoryIds = categories.map { it.id }.toSet()
+                                result = result.filter { it.categoryId !in validCategoryIds }
+                            }
+                            if (searchQuery.isNotBlank()) {
+                                result = result.filter { todo ->
+                                    todo.title.contains(searchQuery, ignoreCase = true) ||
+                                    (todo.content?.contains(searchQuery, ignoreCase = true) ?: false) ||
+                                    (todo.contentFormat?.let { format ->
+                                        com.corgimemo.app.util.MarkdownParser.stripMarkdown(format)
+                                            .contains(searchQuery, ignoreCase = true)
+                                    } ?: false)
+                                }
+                            }
+                            return result
+                        }
+
+                        val filteredPending = applyFilters(pendingTodosAll)
+                        val filteredCompleted = applyFilters(visibleCompletedTodosAll)
+                        val dividerIndex = if (completedCount > 0) filteredPending.size else -1
+
+                        val displayItems = remember(
+                            filteredPending, filteredCompleted, showCompleted, completedCount
+                        ) {
+                            buildList {
+                                filteredPending.forEach { add(DisplayItem.Todo(it)) }
+                                if (completedCount > 0) {
+                                    add(DisplayItem.CompletedDivider(count = completedCount, isExpanded = showCompleted))
+                                    if (showCompleted) {
+                                        filteredCompleted.forEach { add(DisplayItem.Todo(it)) }
+                                    }
+                                }
+                            }
+                        }
 
                         SwipeRefresh(
                             state = swipeRefreshState,
@@ -581,120 +717,127 @@ fun HomeScreen(
                                 )
                             }
                         ) {
-                            /**
-                             * 待办列表（可拖拽排序 LazyColumn）
-                             *
-                             * 长按 500ms + 纵向移动 → 进入拖拽模式，
-                             * 手指抬起提交排序到 ViewModel.reorderTodos()。
-                             * 拖拽激活时禁用左滑与批量模式。
-                             */
                             ReorderableLazyColumn(
-                                items = filteredTodos,
-                                isDragEnabled = !isBatchMode && swipeExpandedTodoId == null,
-                                isPinned = { it.isPinned },
-                                key = { it.id },
-                                onReorder = { from, to, crossed ->
-                                    viewModel.reorderTodos(from, to, crossed)
+                                items = displayItems,
+                                listState = lazyListState,
+                                isDragEnabled = !isBatchMode && swipeExpandedTodoId == null
+                                    && searchQuery.isBlank() && selectedCategoryId == null,
+                                isDraggable = { it is DisplayItem.Todo },
+                                isPinned = { (it as? DisplayItem.Todo)?.item?.isPinned ?: false },
+                                key = { item ->
+                                    when (item) {
+                                        is DisplayItem.Todo -> item.item.id
+                                        is DisplayItem.CompletedDivider -> "completed_divider"
+                                    }
+                                },
+                                onReorder = { fromIndex, toIndex, crossed ->
+                                    viewModel.reorderOnDisplayList(fromIndex, toIndex, crossed)
                                 },
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(horizontal = 8.dp)
-                            ) { index, todo, isDragging, dragActive ->
-                                // 同步 isDragActive 到外层状态（用于屏蔽其他 UI 交互）
+                                    /** 级联效果：列表跟随搜索框显隐产生视差偏移 */
+                                    .graphicsLayer {
+                                        translationY = -(1f - searchRevealProgress.value) * searchBarFullHeightPx * 0.12f
+                                    }
+                            ) { index, displayItem, isDragging, dragActive ->
                                 LaunchedEffect(dragActive) {
                                     isDragActive = dragActive
                                 }
 
-                                val category = categories.find { it.id == todo.categoryId }
-                                val categoryIcon = category?.let { c ->
-                                    when(c.type) {
-                                        com.corgimemo.app.data.model.CategoryType.STUDY -> "📚"
-                                        com.corgimemo.app.data.model.CategoryType.WORK -> "💼"
-                                        com.corgimemo.app.data.model.CategoryType.LIFE -> "🏠"
-                                        com.corgimemo.app.data.model.CategoryType.SPORT -> "🏃"
-                                        else -> "📋"
+                                when (displayItem) {
+                                    is DisplayItem.CompletedDivider -> {
+                                        CompletedSectionHeader(
+                                            count = displayItem.count,
+                                            isExpanded = displayItem.isExpanded,
+                                            onClick = {
+                                                viewModel.onUserInteraction()
+                                                viewModel.toggleShowCompleted()
+                                            }
+                                        )
                                     }
-                                }
-                                SwipeableTodoBox(
-                                    // 单卡上下各 1.dp 内边距 → 相邻卡片视觉间距 = 1 + 1 = 2.dp
-                                    modifier = Modifier.padding(1.dp),
-                                    isEnabled = !isBatchMode && !dragActive,
-                                    isExpanded = swipeExpandedTodoId == todo.id,
-                                    onExpandChange = { expanded ->
-                                        swipeExpandedTodoId = if (expanded) todo.id else null
-                                        // 同步展开状态到 ViewModel，
-                                        // 让 MainScreen 控制 ModalNavigationDrawer 手势
-                                        viewModel.setSwipeActionExpanded(expanded)
-                                    },
-                                    onShareClick = {
-                                        shareTodoAsImage(context, todo, categories)
-                                    },
-                                    onPinClick = {
-                                        viewModel.togglePin(todo.id)
-                                    },
-                                    onDeleteClick = {
-                                        pendingDeleteId = todo.id
+                                    is DisplayItem.Todo -> {
+                                        val todo = displayItem.item
+                                        val category = categories.find { it.id == todo.categoryId }
+                                        val categoryIcon = category?.let { c ->
+                                            when(c.type) {
+                                                com.corgimemo.app.data.model.CategoryType.STUDY -> "📚"
+                                                com.corgimemo.app.data.model.CategoryType.WORK -> "💼"
+                                                com.corgimemo.app.data.model.CategoryType.LIFE -> "🏠"
+                                                com.corgimemo.app.data.model.CategoryType.SPORT -> "🏃"
+                                                else -> "📋"
+                                            }
+                                        }
+                                        SwipeableTodoBox(
+                                            modifier = Modifier.padding(1.dp),
+                                            isEnabled = !isBatchMode && !dragActive,
+                                            isExpanded = swipeExpandedTodoId == todo.id,
+                                            onExpandChange = { expanded ->
+                                                swipeExpandedTodoId = if (expanded) todo.id else null
+                                                viewModel.setSwipeActionExpanded(expanded)
+                                            },
+                                            onShareClick = {
+                                                shareTodoAsImage(context, todo, categories)
+                                            },
+                                            onPinClick = {
+                                                viewModel.togglePin(todo.id)
+                                            },
+                                            onDeleteClick = {
+                                                pendingDeleteId = todo.id
+                                            }
+                                        ) {
+                                            TodoListItem(
+                                                todo = todo,
+                                                subTaskProgress = subTaskProgressMap[todo.id],
+                                                subTasks = subTasksMap[todo.id] ?: emptyList(),
+                                                isExpanded = expandedTodos.contains(todo.id),
+                                                isBatchMode = isBatchMode,
+                                                isSelected = selectedTodoIds.contains(todo.id),
+                                                categoryName = category?.name,
+                                                categoryIcon = categoryIcon,
+                                                onToggleComplete = { id, isChecked ->
+                                                    viewModel.onUserInteraction()
+                                                    viewModel.toggleTodoStatus(id, isChecked)
+                                                },
+                                                onDelete = {
+                                                    viewModel.onUserInteraction()
+                                                    pendingDeleteId = it
+                                                },
+                                                onClick = {
+                                                    viewModel.onUserInteraction()
+                                                    navController.navigate(Screen.TodoEditWithId.withArgs(todo.id.toString()))
+                                                },
+                                                onLongClick = {
+                                                    viewModel.enterBatchMode(todo.id)
+                                                },
+                                                onSelectClick = {
+                                                    viewModel.toggleSelection(todo.id)
+                                                },
+                                                onShareAsImage = {
+                                                    shareTodoAsImage(context, todo, categories)
+                                                },
+                                                onToggleExpand = {
+                                                    viewModel.toggleExpand(todo.id)
+                                                },
+                                                onToggleSubTask = { subTaskId ->
+                                                    viewModel.onUserInteraction()
+                                                    viewModel.toggleSubTaskCompletion(subTaskId)
+                                                },
+                                                relationHint = null,
+                                                searchQuery = searchQuery,
+                                                hapticEnabled = hapticEnabled,
+                                                isDragging = isDragging,
+                                                isDragActive = dragActive
+                                            )
+                                        }
                                     }
-                                ) {
-                                    TodoListItem(
-                                        todo = todo,
-                                        subTaskProgress = subTaskProgressMap[todo.id],
-                                        subTasks = subTasksMap[todo.id] ?: emptyList(),
-                                        isExpanded = expandedTodos.contains(todo.id),
-                                        isBatchMode = isBatchMode,
-                                        isSelected = selectedTodoIds.contains(todo.id),
-                                        categoryName = category?.name,
-                                        categoryIcon = categoryIcon,
-                                        onToggleComplete = { id, isChecked ->
-                                            viewModel.onUserInteraction()
-                                            viewModel.toggleTodoStatus(id, isChecked)
-                                        },
-                                        onDelete = {
-                                            /**
-                                             * 长按菜单触发的删除：弹出二次确认弹窗
-                                             */
-                                            viewModel.onUserInteraction()
-                                            pendingDeleteId = it
-                                        },
-                                        onClick = {
-                                            viewModel.onUserInteraction()
-                                            navController.navigate(Screen.TodoEditWithId.withArgs(todo.id.toString()))
-                                        },
-                                        onLongClick = {
-                                            viewModel.enterBatchMode(todo.id)
-                                        },
-                                        onSelectClick = {
-                                            viewModel.toggleSelection(todo.id)
-                                        },
-                                        onShareAsImage = {
-                                            shareTodoAsImage(context, todo, categories)
-                                        },
-                                        onToggleExpand = {
-                                            viewModel.toggleExpand(todo.id)
-                                        },
-                                        onToggleSubTask = { subTaskId ->
-                                            viewModel.onUserInteraction()
-                                            viewModel.toggleSubTaskCompletion(subTaskId)
-                                        },
-                                        relationHint = null,
-                                        /** 传递搜索关键词用于结果高亮显示 */
-                                        searchQuery = searchQuery,
-                                        /** 传递触觉反馈开关设置 */
-                                        hapticEnabled = hapticEnabled,
-                                        /** 拖拽排序相关参数 */
-                                        isDragging = isDragging,
-                                        isDragActive = dragActive
-                                    )
                                 }
                             }
                         }
-                        }
                     }
                 }
-
             }
-
-            }
+        }
 
         // 弹窗和覆盖层（作为外层 Box 的直接子元素）
         if (showNamerDialog) {
@@ -782,8 +925,9 @@ fun HomeScreen(
                 GlowOverlay(level = celebrationState.level)
             }
         }
+    }
 
-        // 批量删除确认对话框
+    // 批量删除确认对话框
     if (showBatchDeleteDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.setShowBatchDeleteDialog(false) },
@@ -2059,31 +2203,55 @@ fun CelebrationOverlay(level: CelebrationLevel, message: String) {
 }
 
 /**
- * 过滤器按钮
- *
- * @param text 按钮文本
- * @param isSelected 是否选中
- * @param onClick 点击回调
+ * 列表显示项：普通待办或"已完成"分隔按钮
+ */
+private sealed interface DisplayItem {
+    data class Todo(val item: TodoItem) : DisplayItem
+    data class CompletedDivider(val count: Int, val isExpanded: Boolean) : DisplayItem
+}
+
+/**
+ * "已完成"区域分隔按钮
+ * 点击展开/折叠已完成待办列表，带箭头旋转动画
  */
 @Composable
-fun FilterButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-            containerColor = if (isSelected) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant
-            },
-            contentColor = if (isSelected) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            }
-        ),
-        shape = RoundedCornerShape(20.dp)
+private fun CompletedSectionHeader(
+    count: Int,
+    isExpanded: Boolean,
+    onClick: () -> Unit
+) {
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 0f else 180f,
+        label = "completed_arrow_rotation"
+    )
+    
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     ) {
-        Text(text = text)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "已完成 ($count)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = if (isExpanded) "折叠" else "展开",
+                modifier = Modifier.rotate(arrowRotation),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

@@ -62,6 +62,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
@@ -135,8 +136,36 @@ class HomeViewModel @Inject constructor(
     private val _todos = MutableStateFlow<List<TodoItem>>(emptyList())
     val todos: StateFlow<List<TodoItem>> = _todos.asStateFlow()
 
-    private val _filterStatus = MutableStateFlow(FilterStatus.ALL)
-    val filterStatus: StateFlow<FilterStatus> = _filterStatus.asStateFlow()
+    /** "已完成"区域是否展开（从持久化加载） */
+    private val _showCompleted = MutableStateFlow(false)
+    val showCompleted: StateFlow<Boolean> = _showCompleted.asStateFlow()
+
+    /** 未完成待办列表（含置顶） */
+    val pendingTodos: StateFlow<List<TodoItem>> = _todos.map { todos ->
+        todos.filter { it.status == 0 }
+            .sortedWith(
+                compareByDescending<TodoItem> { it.isPinned }
+                    .thenBy { it.sortOrder }
+                    .thenByDescending { it.createdAt }
+            )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 可见的已完成待办（30天内） */
+    val visibleCompletedTodos: StateFlow<List<TodoItem>> = _todos.map { todos ->
+        val thirtyDaysAgo = System.currentTimeMillis() - 30 * 24 * 60 * 60 * 1000L
+        todos.filter {
+            it.status == 1 && it.completedAt != null && it.completedAt >= thirtyDaysAgo
+        }.sortedWith(
+            compareByDescending<TodoItem> { it.isPinned }
+                .thenBy { it.sortOrder }
+                .thenByDescending { it.createdAt }
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 已完成待办总数（用于分隔按钮显示） */
+    val completedCount: StateFlow<Int> = _todos.map { todos ->
+        todos.count { it.status == 1 }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     // ========== 搜索相关状态 ==========
 
@@ -160,14 +189,18 @@ class HomeViewModel @Inject constructor(
     private val _sortType = MutableStateFlow("updated_desc")
     val sortType: StateFlow<String> = _sortType.asStateFlow()
 
-    /** 过滤后的待办列表（组合 searchQuery + filterStatus + selectedCategoryId + sortType） */
-    val filteredTodos: StateFlow<List<TodoItem>> =
+    /** 当前可见待办列表（未完成 + 展开时的已完成），应用搜索/分类/排序过滤 */
+    val filteredTodos: StateFlow<List<TodoItem>> = run {
+        val baseFlow = kotlinx.coroutines.flow.combine(
+            pendingTodos, visibleCompletedTodos, _showCompleted
+        ) { pending, completed, showCompleted ->
+            if (showCompleted) pending + completed else pending
+        }
         kotlinx.coroutines.flow.combine(
-            _todos, _searchQuery, _filterStatus, _selectedCategoryId, _sortType
-        ) { todos, query, filter, categoryId, sortType ->
-            var result = todos
+            baseFlow, _searchQuery, _selectedCategoryId, _sortType
+        ) { baseList, query, categoryId, _ ->
+            var result = baseList
 
-            // 应用分类过滤
             if (categoryId != null && categoryId > 0) {
                 result = result.filter { it.categoryId == categoryId }
             } else if (categoryId != null && categoryId == 0L) {
@@ -175,18 +208,10 @@ class HomeViewModel @Inject constructor(
                 result = result.filter { it.categoryId !in validCategoryIds }
             }
 
-            // 应用搜索关键词过滤（支持纯文本 + 格式化内容搜索）
             if (query.isNotBlank()) {
                 result = result.filter { todo ->
                     todo.title.contains(query, ignoreCase = true) ||
                     (todo.content?.contains(query, ignoreCase = true) ?: false) ||
-                    /**
-                     * 搜索格式化内容（contentFormat 字段）
-                     *
-                     * 使用 stripMarkdown() 剥离 Markdown 标记后进行文本匹配，
-                     * 确保用户在编辑器中输入的 **粗体**、~~删除线~~ 等格式化内容
-                     * 也能被首页搜索功能检索到。
-                     */
                     (todo.contentFormat?.let { format ->
                         com.corgimemo.app.util.MarkdownParser.stripMarkdown(format)
                             .contains(query, ignoreCase = true)
@@ -194,36 +219,13 @@ class HomeViewModel @Inject constructor(
                 }
             }
 
-            // 应用状态过滤
-            result = when (filter) {
-                FilterStatus.ALL -> result
-                FilterStatus.PENDING -> result.filter { it.status == 0 }
-                FilterStatus.COMPLETED -> result.filter { it.status == 1 }
-            }
-
-            /** 应用排序 */
-            /**
-             * 应用排序：sortOrder 为列表顺序唯一来源
-             *
-             * - isPinned DESC：置顶项始终在前（修复注释与实现不一致 bug）
-             * - sortOrder ASC：同分区内按拖拽顺序
-             * - createdAt DESC：兜底（sortOrder 并列时，理论上不发生）
-             *
-             * sortType 不直接参与显示排序，仅在切换排序模式时
-             * 由 onSortTypeChanged() 重算 sortOrder（见下方方法）
-             */
-            result = result.sortedWith(
-                compareByDescending<TodoItem> { it.isPinned }
-                    .thenBy { it.sortOrder }
-                    .thenByDescending { it.createdAt }
-            )
-
             result
         }.stateIn(
             scope = viewModelScope,
             started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+    }
 
     // 子任务进度映射：todoId -> 进度文本（如 "2/5"）
     private val _subTaskProgressMap = MutableStateFlow<Map<Long, String>>(emptyMap())
@@ -575,6 +577,10 @@ class HomeViewModel @Inject constructor(
         initAchievements()
         observeRecentlyDeleted()
 
+        viewModelScope.launch {
+            corgiPreferences.showCompleted.collect { _showCompleted.value = it }
+        }
+
         // 订阅全局待办事件：编辑页保存/删除后自动刷新首页数据
         // （编辑器的 HomeViewModel 是 editor 自己的 NavBackStackEntry 实例，
         //  它调用的 refreshSubTaskProgress() 无法影响首页实例，因此需要事件总线）
@@ -717,44 +723,141 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * 拖拽完成后调用：更新被拖项及受影响项的 sortOrder
+     * 拖拽完成后调用（统一入口，支持区域内排序和跨区域拖拽自动完成/取消完成）
      *
-     * 算法：
-     * 1. 从 filteredTodos 取出当前列表（已按 isPinned DESC, sortOrder ASC 排序）
-     * 2. 移除被拖项，插入到目标位置
-     * 3. 若跨越置顶区分界线，对称切换被拖项 isPinned
-     * 4. 重新分配 sortOrder（基于列表位置）
-     * 5. 持久化：批量更新 sortOrder + （可选）更新 isPinned
-     *
-     * @param fromIndex 被拖项原始位置（在 filteredTodos 中）
-     * @param toIndex 被拖项最终位置（在 filteredTodos 中）
+     * @param fromIndex 被拖项原始位置（displayItems 全局索引）
+     * @param toIndex 被拖项最终位置（displayItems 全局索引）
      * @param crossedPinnedZone 是否跨越置顶区分界线
      */
-    fun reorderTodos(fromIndex: Int, toIndex: Int, crossedPinnedZone: Boolean) {
+    fun reorderOnDisplayList(fromIndex: Int, toIndex: Int, crossedPinnedZone: Boolean) {
         viewModelScope.launch {
-            val currentList = filteredTodos.value.toMutableList()
-            if (fromIndex !in currentList.indices || toIndex !in 0..currentList.size) return@launch
-
-            // 1. 移除被拖项
-            val draggedItem = currentList.removeAt(fromIndex)
-            // 2. 处理置顶区跨越（对称规则）
-            val finalDraggedItem = if (crossedPinnedZone) {
-                draggedItem.copy(isPinned = !draggedItem.isPinned)
+            val pendingList = pendingTodos.value.toMutableList()
+            val completedList = if (_showCompleted.value) {
+                visibleCompletedTodos.value.toMutableList()
             } else {
-                draggedItem
+                mutableListOf()
             }
-            // 3. 插入目标位置
-            val insertIndex = toIndex.coerceAtMost(currentList.size)
-            currentList.add(insertIndex, finalDraggedItem)
+            val dividerIndex = pendingList.size
+            val totalSize = pendingList.size + 1 + completedList.size
 
-            // 4. 重新分配 sortOrder（基于列表位置）
-            currentList.forEachIndexed { index, item ->
-                if (item.sortOrder != index || (item.id == finalDraggedItem.id && crossedPinnedZone)) {
-                    todoRepository.updateSortOrder(item.id, index)
-                    if (item.id == finalDraggedItem.id && crossedPinnedZone) {
-                        todoRepository.updatePinnedStatus(item.id, finalDraggedItem.isPinned)
+            if (fromIndex == toIndex) return@launch
+            if (fromIndex !in 0 until totalSize || toIndex !in 0..totalSize) return@launch
+
+            val fromPending = fromIndex < dividerIndex
+            val fromCompleted = fromIndex > dividerIndex
+            val toPending = toIndex < dividerIndex
+            val toCompleted = toIndex > dividerIndex
+
+            // 1. 从对应区域移除被拖项
+            val draggedItem = when {
+                fromPending -> {
+                    val idx = fromIndex
+                    if (idx !in pendingList.indices) return@launch
+                    pendingList.removeAt(idx)
+                }
+                fromCompleted -> {
+                    val idx = fromIndex - dividerIndex - 1
+                    if (idx !in completedList.indices) return@launch
+                    completedList.removeAt(idx)
+                }
+                else -> return@launch
+            }
+
+            // 2. 处理跨区域：pending→completed 需检查子任务约束
+            var finalItem = draggedItem
+            var crossCompleted = false
+            var crossUncompleted = false
+
+            when {
+                fromPending && (toCompleted || toIndex == dividerIndex) -> {
+                    // 检查子任务是否全部完成
+                    val progress = SubTaskManager.getProgress(context, draggedItem.id)
+                    if (progress.total > 0 && progress.completed < progress.total) {
+                        _todoActionMessage.value = "还有 ${progress.total - progress.completed} 个子任务未完成，请先完成所有子任务"
+                        return@launch
+                    }
+                    val now = System.currentTimeMillis()
+                    finalItem = draggedItem.copy(
+                        status = 1,
+                        completedAt = now,
+                        updatedAt = now,
+                        isPinned = if (crossedPinnedZone) !draggedItem.isPinned else draggedItem.isPinned
+                    )
+                    crossCompleted = true
+                }
+                fromCompleted && (toPending || toIndex == dividerIndex) -> {
+                    finalItem = draggedItem.copy(
+                        status = 0,
+                        completedAt = null,
+                        updatedAt = System.currentTimeMillis(),
+                        isPinned = if (crossedPinnedZone) !draggedItem.isPinned else draggedItem.isPinned
+                    )
+                    crossUncompleted = true
+                }
+                else -> {
+                    // 同区域：仅处理置顶切换
+                    if (crossedPinnedZone) {
+                        finalItem = draggedItem.copy(isPinned = !draggedItem.isPinned)
                     }
                 }
+            }
+
+            // 3. 插入到目标区域
+            when {
+                toPending -> {
+                    val insertIdx = toIndex.coerceAtMost(pendingList.size)
+                    pendingList.add(insertIdx, finalItem)
+                }
+                toCompleted -> {
+                    val insertIdx = (toIndex - pendingList.size - 1).coerceAtMost(completedList.size)
+                    completedList.add(insertIdx, finalItem)
+                }
+                toIndex == dividerIndex -> {
+                    if (fromPending) {
+                        // pending→completed，插入completed顶部
+                        completedList.add(0, finalItem)
+                    } else {
+                        // completed→pending，插入pending底部
+                        pendingList.add(pendingList.size, finalItem)
+                    }
+                }
+            }
+
+            // 4. 持久化状态变更（完成/未完成/置顶）
+            val stateChanged = finalItem.status != draggedItem.status
+            val pinChanged = finalItem.isPinned != draggedItem.isPinned
+            if (stateChanged || pinChanged) {
+                todoRepository.updateTodo(finalItem)
+            }
+            if (crossCompleted) {
+                handleTaskCompleted(draggedItem)
+            }
+
+            // 5. 重新分配全局 sortOrder：pending置顶 → pending普通 → completed置顶 → completed普通
+            var globalOrder = 0
+            pendingList.filter { it.isPinned }.forEach { item ->
+                if (item.sortOrder != globalOrder || item.id == finalItem.id) {
+                    todoRepository.updateSortOrder(item.id, globalOrder)
+                }
+                globalOrder++
+            }
+            pendingList.filter { !it.isPinned }.forEach { item ->
+                if (item.sortOrder != globalOrder || item.id == finalItem.id) {
+                    todoRepository.updateSortOrder(item.id, globalOrder)
+                }
+                globalOrder++
+            }
+            completedList.filter { it.isPinned }.forEach { item ->
+                if (item.sortOrder != globalOrder || item.id == finalItem.id) {
+                    todoRepository.updateSortOrder(item.id, globalOrder)
+                }
+                globalOrder++
+            }
+            completedList.filter { !it.isPinned }.forEach { item ->
+                if (item.sortOrder != globalOrder || item.id == finalItem.id) {
+                    todoRepository.updateSortOrder(item.id, globalOrder)
+                }
+                globalOrder++
             }
         }
     }
@@ -939,18 +1042,7 @@ class HomeViewModel @Inject constructor(
     private fun loadTodos() {
         viewModelScope.launch {
             todoRepository.observeAllSorted().collect { allTodos ->
-                _todos.value = when (_filterStatus.value) {
-                    FilterStatus.ALL -> allTodos
-                    FilterStatus.PENDING -> allTodos.filter { it.status == 0 }
-                    FilterStatus.COMPLETED -> {
-                        val thirtyDaysAgo = System.currentTimeMillis() - 30 * 24 * 60 * 60 * 1000L
-                        allTodos.filter {
-                            it.status == 1 &&
-                            it.completedAt != null &&
-                            it.completedAt >= thirtyDaysAgo
-                        }
-                    }
-                }
+                _todos.value = allTodos
 
                 // 标记数据已初始化完成（首次加载后不再重置，避免闪烁）
                 if (!_isDataInitialized.value) {
@@ -1117,11 +1209,14 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * 设置过滤器状态
+     * 切换"已完成"区域展开/折叠状态
      */
-    fun setFilterStatus(status: FilterStatus) {
-        _filterStatus.value = status
-        loadTodos()
+    fun toggleShowCompleted() {
+        val newVal = !_showCompleted.value
+        _showCompleted.value = newVal
+        viewModelScope.launch {
+            corgiPreferences.setShowCompleted(newVal)
+        }
     }
 
     /**
@@ -1514,18 +1609,7 @@ class HomeViewModel @Inject constructor(
     fun refreshAllData() {
         viewModelScope.launch {
             val allTodos = todoRepository.getAllTodos().first()
-            _todos.value = when (_filterStatus.value) {
-                FilterStatus.ALL -> allTodos
-                FilterStatus.PENDING -> allTodos.filter { it.status == 0 }
-                FilterStatus.COMPLETED -> {
-                    val thirtyDaysAgo = System.currentTimeMillis() - 30 * 24 * 60 * 60 * 1000L
-                    allTodos.filter {
-                        it.status == 1 &&
-                                it.completedAt != null &&
-                                it.completedAt >= thirtyDaysAgo
-                    }
-                }
-            }
+            _todos.value = allTodos
             val progressMap = mutableMapOf<Long, String>()
             val subTasksMap = mutableMapOf<Long, List<SubTask>>()
             for (todo in allTodos) {
@@ -2161,13 +2245,6 @@ class HomeViewModel @Inject constructor(
                 message = ""
             )
         }
-    }
-
-    /**
-     * 待办过滤器枚举
-     */
-    enum class FilterStatus {
-        ALL, PENDING, COMPLETED
     }
 
     // ==================== 自主行为相关方法 ====================

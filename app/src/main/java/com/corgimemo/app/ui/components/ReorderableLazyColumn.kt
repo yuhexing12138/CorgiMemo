@@ -38,6 +38,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -333,9 +335,11 @@ data class VisibleItemInfo(
  *
  * @param items 列表数据
  * @param isDragEnabled 是否允许拖拽（批量模式/左滑展开时设为 false）
+ * @param isDraggable 判断项是否可拖拽（用于分隔按钮等不可拖拽项），默认全部可拖拽
  * @param isPinned 获取项是否置顶的函数（用于跨越检测）
  * @param key 项的唯一标识
  * @param onReorder 排序提交回调 (fromIndex, toIndex, crossedPinnedZone)
+ * @param listState LazyListState 实例，外部传入可读取滚动状态；默认内部创建
  * @param modifier Modifier
  * @param content 列表项 Composable，参数为 (index, item, isDragging, isDragActive)
  */
@@ -343,13 +347,14 @@ data class VisibleItemInfo(
 fun <T> ReorderableLazyColumn(
     items: List<T>,
     isDragEnabled: Boolean,
+    isDraggable: (T) -> Boolean = { true },
     isPinned: (T) -> Boolean,
     key: (T) -> Any,
     onReorder: (fromIndex: Int, toIndex: Int, crossedPinnedZone: Boolean) -> Unit,
+    listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
     content: @Composable (index: Int, item: T, isDragging: Boolean, isDragActive: Boolean) -> Unit
 ) {
-    val listState: LazyListState = rememberLazyListState()
     val density = LocalDensity.current
     val context = LocalContext.current
 
@@ -428,11 +433,23 @@ fun <T> ReorderableLazyColumn(
     // ━━━ 主题色（虚线占位框）━━━
     val primaryColor = MaterialTheme.colorScheme.primary
 
+    // ━━━ 拖拽时禁用列表滚动（通过nestedScroll拦截）━━━
+    val dragScrollBlocker = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): Offset {
+                // 拖拽激活时消费所有滚动请求，阻止列表跟随手指滚动
+                return if (isDragActive) available else Offset.Zero
+            }
+        }
+    }
+
     LazyColumn(
         state = listState,
-        modifier = modifier.pointerInput(Unit) {
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
+        modifier = modifier
+            .nestedScroll(dragScrollBlocker)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
                 if (down.isConsumed) return@awaitEachGesture
 
                 // 早期 return 会导致所有手势无响应（项目记忆教训）
@@ -486,6 +503,11 @@ fun <T> ReorderableLazyColumn(
                                         ?: break
                                     val draggedItem = displayItems.getOrNull(draggedIndex.index)
                                         ?: break
+
+                                    if (!isDraggable(draggedItem)) {
+                                        change.consume()
+                                        break
+                                    }
 
                                     isDragActive = true
                                     draggedKey = key(draggedItem)

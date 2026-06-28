@@ -234,10 +234,20 @@ fun TodoListItem(
                      */
                     var longPressTriggered = false
 
-                    // 发射 Press 事件，触发水波纹效果
-                    // 用 Channel.trySend 替代 scope.launch：同步入队，确保顺序正确
+                    /**
+                     * 延迟发射 Press 事件（16ms ≈ 1帧）
+                     *
+                     * 目的：滑动时手指在16ms内移动超过 touchSlop，此时取消发射，
+                     * 水波纹不会出现。正常点击时16ms延迟人眼不可察觉。
+                     * 替代 CompositionLocalProvider 方案，避免全列表重组掉帧。
+                     */
                     val pressInteraction = PressInteraction.Press(downPosition)
-                    interactionChannel.trySend(pressInteraction)
+                    var pressSent = false
+                    val pressJob = scope.launch {
+                        delay(16)
+                        interactionChannel.trySend(pressInteraction)
+                        pressSent = true
+                    }
 
                     /**
                      * 启动长按定时器（500ms）
@@ -282,9 +292,12 @@ fun TodoListItem(
                             // 检测手指抬起
                             if (change.changedToUp()) {
                                 longPressJob.cancel()
+                                pressJob.cancel()
 
-                                // 结束水波纹动画
-                                interactionChannel.trySend(PressInteraction.Release(pressInteraction))
+                                // 仅当 Press 已发射时才发送 Release，结束水波纹
+                                if (pressSent) {
+                                    interactionChannel.trySend(PressInteraction.Release(pressInteraction))
+                                }
                                 terminalEmitted = true
 
                                 if (longPressTriggered) {
@@ -309,8 +322,11 @@ fun TodoListItem(
                                 // 500ms 内：移动 > touchSlop → 让位左滑
                                 if (dragDistance > viewConfiguration.touchSlop) {
                                     longPressJob.cancel()
-                                    // 发射 Cancel，结束水波纹
-                                    interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
+                                    pressJob.cancel()
+                                    // 仅当 Press 已发射时才发送 Cancel
+                                    if (pressSent) {
+                                        interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
+                                    }
                                     terminalEmitted = true
                                     // 不消费事件，break 退出，让 SwipeableTodoBox 的左滑手势接管
                                     break
@@ -319,7 +335,10 @@ fun TodoListItem(
                                 // 500ms 后：仅当容器接管拖拽时 break 让位
                                 if (isDragActive) {
                                     longPressJob.cancel()
-                                    interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
+                                    pressJob.cancel()
+                                    if (pressSent) {
+                                        interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
+                                    }
                                     terminalEmitted = true
                                     break
                                 }
@@ -327,14 +346,8 @@ fun TodoListItem(
                             }
                         }
                     } finally {
-                        /**
-                         * 异常场景兜底：保证 Press 状态被正确清理
-                         *
-                         * 覆盖：协程因重组/CancellationException 被中断、
-                         * pointerInput key 变化导致手势重启等情况。
-                         * MutableInteractionSource 对重复 Cancel 是幂等的。
-                         */
-                        if (!terminalEmitted) {
+                        pressJob.cancel()
+                        if (!terminalEmitted && pressSent) {
                             interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
                         }
                     }
