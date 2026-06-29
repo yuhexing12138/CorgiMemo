@@ -150,6 +150,11 @@ fun SwipeableTodoBox(
     // 关闭动画结束后 200ms 才解除屏蔽（避免尾帧误触）
     var isClickBlocked by remember { mutableStateOf(false) }
 
+    // 右滑意图跟踪：onDrag 中任何 dragAmount > 0 都标记为右滑意图，
+    // 用于 onDragEnd 判断是否需要"抬手总关闭"（即使慢速右滑也关闭）
+    // 实现"右滑跟手 + 抬手总关闭"语义
+    var hadRightDrag by remember { mutableStateOf(false) }
+
     // 几何参数
     val buttonWidthDp = 72.dp
     val actionsWidthDp = buttonWidthDp * 3 // 3 个按钮 = 216dp
@@ -254,9 +259,14 @@ fun SwipeableTodoBox(
                         detectHorizontalDragGestures(
                             onDragStart = {
                                 // 开始新一轮拖动：
-                                // 1. 重置速度跟踪器
+                                // 1. 重置速度跟踪器 + 右滑意图
                                 // 2. 标记为手势进行中 → 禁用内容卡片的 indication 水波纹
+                                // 3. 取消正在跑的恢复动画 → 避免新 snapTo 与旧 animateTo 争抢 cardOffsetX
+                                //    （保留回弹效果让"跟手"更自然）
                                 velocityTracker.resetTracking()
+                                hadRightDrag = false
+                                restoreJob.value?.cancel()
+                                restoreJob.value = null
                                 isDragging = true
                             },
                             onDragEnd = {
@@ -266,9 +276,10 @@ fun SwipeableTodoBox(
                                 } else {
                                     // 计算抬手时的 x 方向速度（px/s）
                                     val velocity = velocityTracker.calculateVelocity()
-                                    // 关键：fling right（快速右滑）时，立即关闭卡片
-                                    // 速度为正表示向右滑动，超过阈值即视为快速右滑
-                                    if (velocity.x > flingVelocityThresholdPx) {
+                                    // 关键：右滑意图（hadRightDrag）或快速右滑（fling）时，立即关闭卡片
+                                    // - hadRightDrag：onDrag 中任何 dragAmount > 0 都标记，实现"跟手 + 抬手总关闭"
+                                    // - velocity.x > flingVelocityThresholdPx：高速右滑 fling 不依赖跟手
+                                    if (hadRightDrag || velocity.x > flingVelocityThresholdPx) {
                                         // 存入 restoreJob 防止与正在跑的动画冲突
                                         restoreJob.value = coroutineScope.launch {
                                             cardOffsetX.animateTo(
@@ -317,9 +328,12 @@ fun SwipeableTodoBox(
                                 if (restoreJob.value != null) {
                                     coroutineScope.launch { restoreJob.value?.join() }
                                 } else {
-                                    // 取消手势时同样按速度判断（极少见，但保持一致）
+                                    // 取消手势时同样按"右滑意图或快速右滑"判断（极少见，但保持一致）
                                     val velocity = velocityTracker.calculateVelocity()
-                                    if (velocity.x > flingVelocityThresholdPx) {
+                                    // 关键：右滑意图（hadRightDrag）或快速右滑（fling）时，立即关闭卡片
+                                    // - hadRightDrag：onDrag 中任何 dragAmount > 0 都标记，实现"跟手 + 抬手总关闭"
+                                    // - velocity.x > flingVelocityThresholdPx：高速右滑 fling 不依赖跟手
+                                    if (hadRightDrag || velocity.x > flingVelocityThresholdPx) {
                                         restoreJob.value = coroutineScope.launch {
                                             cardOffsetX.animateTo(
                                                 targetValue = 0f,
@@ -361,38 +375,20 @@ fun SwipeableTodoBox(
                             // 记录每个 pointer 事件的位置和时间，用于计算抬手时的速度
                             velocityTracker.addPosition(change.uptimeMillis, change.position)
 
-                            // 关键：任何展开度（offset < 0f）+ 首次 dragAmount > 0 立即触发恢复
-                            // 1) 触发条件从 "完全展开" 扩展为 "任何展开度"
-                            // 2) 用 restoreJob 防重入：协程在跑时后续 drag 事件全部忽略
-                            if (cardOffsetX.value < 0f && dragAmount > 0f && restoreJob.value == null) {
-                                // 关键：onExpandChange(false) 延后到 animateTo 完成后调用，
-                                // 保证整个关闭动画期间 swipeActionExpanded 仍为 true，
-                                // MainScreen 的 gesturesEnabled 保持 false，
-                                // 父级 ModalNavigationDrawer 不会响应右滑事件
-                                restoreJob.value = coroutineScope.launch {
-                                    cardOffsetX.animateTo(
-                                        targetValue = 0f,
-                                        animationSpec = tween(
-                                            durationMillis = durationMs,
-                                            easing = easing
-                                        )
-                                    )
-                                    onExpandChange(false)
-                                    // 关闭动画结束：恢复 indication
-                                    isDragging = false
-                                    // 协程完成：清空 restoreJob 允许下次拖动
-                                    restoreJob.value = null
-                                }
-                            } else if (restoreJob.value == null) {
-                                // 未在恢复中：正常 snapTo 跟手（左滑继续展开 / 已经收起时右滑无效）
-                                coroutineScope.launch {
-                                    val newOffset = (cardOffsetX.value + dragAmount)
-                                        .coerceIn(-actionsWidthPx, 0f)
-                                    cardOffsetX.snapTo(newOffset)
-                                }
+                            // 跟踪右滑意图：只要有一次 dragAmount > 0 就在 onDragEnd 触发关闭动画
+                            // 实现"右滑跟手 + 抬手总关闭"语义
+                            if (dragAmount > 0f) {
+                                hadRightDrag = true
                             }
-                            // 注：restoreJob.value != null 的 else 分支不处理，
-                            // 表示恢复动画进行中忽略所有 drag 事件
+
+                            // 关键：右滑"跟手"（snapTo），不再立即触发关闭动画
+                            // onDragEnd 会根据 hadRightDrag / velocity 决定是否关闭
+                            // 这样用户能看到卡片跟随手指位置移动，抬手时由 onDragEnd 启动关闭动画
+                            coroutineScope.launch {
+                                val newOffset = (cardOffsetX.value + dragAmount)
+                                    .coerceIn(-actionsWidthPx, 0f)
+                                cardOffsetX.snapTo(newOffset)
+                            }
                         }
                     }
                     .offset { IntOffset(cardOffsetX.value.roundToInt(), 0) }
