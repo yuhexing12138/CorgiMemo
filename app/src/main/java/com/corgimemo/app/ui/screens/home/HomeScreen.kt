@@ -507,6 +507,9 @@ fun HomeScreen(
                     /** 滚动驱动搜索框显隐进度：1f=完全显示，0f=完全隐藏，使用Animatable支持平滑动画 */
                     val searchRevealProgress = remember { Animatable(1f) }
 
+                    /** 订阅 LazyListState 滚动状态（含 fling + settle），Compose 官方统一管理，跨设备一致 */
+                    val isScrolling = lazyListState.isScrollInProgress
+
                     /** 标记最后一次滚动事件的时间戳（毫秒），用于滚动停止检测的 debounce 判定 */
                     val lastScrollTimeMs = remember { mutableLongStateOf(0L) }
 
