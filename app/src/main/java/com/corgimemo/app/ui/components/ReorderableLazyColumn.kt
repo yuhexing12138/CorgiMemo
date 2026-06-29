@@ -304,6 +304,31 @@ object ReorderAlgorithms {
         }
         return draggedOriginalIsPinned != neighborIsPinned
     }
+
+    /**
+     * 计算释放动画的起始 offset（从 ReorderableLazyColumn finally 块提取为纯函数）
+     *
+     * 用途：用户松手时，被拖卡片 A 的内层 Box offset 仍保持在 `fingerY - baseCenterY`，
+     * 需要驱动 Animatable 从该值平滑过渡到 0，避免松手瞬间 offset 归零造成的视觉瞬移。
+     *
+     * @param fingerY 手指 Y 坐标（视口坐标）
+     * @param baseCenterY 拖拽基线中心 Y（最后交换时的目标项 offset + draggedSize/2）
+     * @return 释放动画起始 offset（手指相对基线的偏移）
+     */
+    fun computeReleaseStartOffset(fingerY: Float, baseCenterY: Float): Float =
+        fingerY - baseCenterY
+
+    /**
+     * 判断释放动画期间是否应跳过 displayItems 更新
+     *
+     * 用途：松手后 250ms 释放动画期间，ViewModel 异步 onReorder 结果回流可能触发
+     * `LaunchedEffect(items)` 重置 displayItems。如果在动画期间重置，会破坏正在播放的
+     * 释放动画（A 的内层 Box offset 与新的 displayItems 位置不一致），造成新的跳变。
+     *
+     * @param isReleasing 是否处于释放动画期
+     * @return true = 跳过 displayItems 更新；false = 正常更新
+     */
+    fun shouldSkipDisplayUpdate(isReleasing: Boolean): Boolean = isReleasing
 }
 
 /**
