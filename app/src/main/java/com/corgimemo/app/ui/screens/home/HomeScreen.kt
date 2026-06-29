@@ -512,42 +512,35 @@ fun HomeScreen(
                     /** 搜索框完整高度（含padding），作为滚动→进度映射的基准 */
                     val searchBarFullHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
 
-                    /** 滚动驱动：向上滑时递减进度（snapTo保持与滚动同步），向下滑时不增加 */
-                    LaunchedEffect(lazyListState) {
-                        var prevIdx = 0
-                        var prevOff = 0
-
-                        snapshotFlow {
-                            lazyListState.firstVisibleItemIndex to lazyListState.firstVisibleItemScrollOffset
-                        }.distinctUntilChanged().collect { (currentIndex, currentOffset) ->
-                            if (searchQuery.isBlank()) {
-                                val isDown = if (currentIndex != prevIdx) {
-                                    currentIndex < prevIdx
-                                } else {
-                                    currentOffset < prevOff
-                                }
-                                val delta = if (currentIndex != prevIdx) {
-                                    (abs(currentIndex - prevIdx) * searchBarFullHeightPx).coerceAtMost(searchBarFullHeightPx * 2)
-                                } else {
-                                    abs(currentOffset - prevOff).toFloat()
-                                }
-                                // 双向驱动：滚上减少 progress（隐藏），滚下增加 progress（显示），形成完整卷帘门对称
-                                if (isDown && searchRevealProgress.value < 1f) {
-                                    val newProgress = (searchRevealProgress.value + delta / searchBarFullHeightPx).coerceIn(0f, 1f)
-                                    // 仅当进度实际变化时才更新，避免无效的 snapTo 调用
-                                    if (newProgress != searchRevealProgress.value) {
-                                        searchRevealProgress.snapTo(newProgress)
-                                    }
-                                } else if (!isDown && searchRevealProgress.value > 0f) {
-                                    val newProgress = (searchRevealProgress.value - delta / searchBarFullHeightPx).coerceIn(0f, 1f)
-                                    // 仅当进度实际变化时才更新，避免无效的 snapTo 调用
-                                    if (newProgress != searchRevealProgress.value) {
-                                        searchRevealProgress.snapTo(newProgress)
-                                    }
-                                }
+                    /**
+                     * 绝对位置驱动搜索框进度：
+                     * - 进度 = 1 - scrollOffsetFromTop / searchBarFullHeightPx
+                     * - scrollOffsetFromTop 来自 lazyListState.layoutInfo.visibleItemsInfo.first().offset
+                     * - 这是单调函数，overscroll 弹回不会引起震荡（firstItem.offset 反映内容真实位置）
+                     *
+                     * 设计动机（v2）：替换 v1 的 delta-based 方案
+                     * - v1 问题：基于相邻两次事件的差值（prevIdx/prevOff）判断方向，overscroll 弹回时
+                     *   currentOffset 增大被误判为"滚下"，与"滚上"分支冲突 → 震荡
+                     * - v2 方案：直接读 LazyListLayoutInfo 的 firstItem.offset（绝对像素位置），
+                     *   单调函数，overscroll 时 offset 不变 → 零震荡
+                     */
+                    val scrollOffsetFromTop by remember {
+                        derivedStateOf {
+                            val firstItem = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull()
+                            if (firstItem != null) {
+                                // firstItem.offset: item 顶部相对 LazyColumn 顶部的偏移（负值=已滚出上方）
+                                // 取反得到"已向下滚动的距离"（正值=已滚下）
+                                (-firstItem.offset).coerceAtLeast(0)
+                            } else {
+                                0
                             }
-                            prevIdx = currentIndex
-                            prevOff = currentOffset
+                        }
+                    }
+
+                    LaunchedEffect(scrollOffsetFromTop) {
+                        val target = (1f - scrollOffsetFromTop / searchBarFullHeightPx).coerceIn(0f, 1f)
+                        if (searchRevealProgress.value != target) {
+                            searchRevealProgress.snapTo(target)
                         }
                     }
 
