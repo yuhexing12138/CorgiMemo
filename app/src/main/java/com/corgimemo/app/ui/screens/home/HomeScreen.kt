@@ -132,6 +132,7 @@ import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.ui.theme.UiColors
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import android.widget.Toast
@@ -506,6 +507,9 @@ fun HomeScreen(
                     /** 滚动驱动搜索框显隐进度：1f=完全显示，0f=完全隐藏，使用Animatable支持平滑动画 */
                     val searchRevealProgress = remember { Animatable(1f) }
 
+                    /** 标记最后一次滚动事件的时间戳（毫秒），用于滚动停止检测的 debounce 判定 */
+                    val lastScrollTimeMs = remember { mutableLongStateOf(0L) }
+
                     /** 搜索框完整高度（含padding），作为滚动→进度映射的基准 */
                     val searchBarFullHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
 
@@ -536,9 +540,41 @@ fun HomeScreen(
                                         searchRevealProgress.snapTo(newProgress)
                                     }
                                 }
+                                // 记录滚动时间，供滚动停止检测使用
+                                lastScrollTimeMs.longValue = System.currentTimeMillis()
                             }
                             prevIdx = currentIndex
                             prevOff = currentOffset
+                        }
+                    }
+
+                    /**
+                     * 滚动停止检测：
+                     * - 距离上次滚动事件 ≥ 150ms 时，判定为"滚动已停止"
+                     * - 若 progress 在中间区域 (0.05, 0.95)，snap 到最近的端点
+                     *   - progress < 0.5 → 完全隐藏（0f），200ms 动画
+                     *   - progress ≥ 0.5 → 完全显示（1f），250ms 动画
+                     * - 端点附近（≤0.05 或 ≥0.95）→ 不动（避免无意义动画）
+                     * - 轮询间隔 50ms，反应及时
+                     */
+                    LaunchedEffect(lazyListState, searchQuery) {
+                        while (true) {
+                            delay(50)
+                            val now = System.currentTimeMillis()
+                            val last = lastScrollTimeMs.longValue
+                            if (last > 0 && now - last >= 150 && searchQuery.isBlank()) {
+                                val current = searchRevealProgress.value
+                                if (current > 0.05f && current < 0.95f) {
+                                    val target = if (current < 0.5f) 0f else 1f
+                                    val duration = if (target == 0f) 200 else 250
+                                    searchRevealProgress.animateTo(
+                                        targetValue = target,
+                                        animationSpec = tween(duration, easing = FastOutSlowInEasing)
+                                    )
+                                }
+                                // 标记本轮已处理，避免重复触发
+                                lastScrollTimeMs.longValue = 0L
+                            }
                         }
                     }
 
@@ -559,18 +595,33 @@ fun HomeScreen(
                         }
                     }
 
-                    /** 有搜索词时，搜索框平滑展开显示；清空搜索词且不在顶部时，平滑隐藏 */
+                    /**
+                     * 搜索词变化时驱动搜索框：
+                     * - 输入搜索词（blank → 非 blank）→ 立即显示（250ms 展开）
+                     * - 清空搜索词（非 blank → blank）→ 基于当前 progress 主动 snap 到端点
+                     *
+                     * 原实现使用 isAtTop 判断"清空时是否隐藏"，但 isAtTop 与搜索框实际
+                     * 状态（progress）可能不一致（如滚动到中部时 progress=0.3 但 isAtTop=false）。
+                     * 改为基于 progress 判定，逻辑统一且与滚动停止检测一致。
+                     */
                     LaunchedEffect(searchQuery) {
                         if (searchQuery.isNotBlank()) {
+                            // 输入搜索词：立即显示
                             searchRevealProgress.animateTo(
                                 1f,
                                 animationSpec = tween(250, easing = FastOutSlowInEasing)
                             )
-                        } else if (!isAtTop) {
-                            searchRevealProgress.animateTo(
-                                0f,
-                                animationSpec = tween(200, easing = FastOutSlowInEasing)
-                            )
+                        } else {
+                            // 清空搜索词：基于当前 progress 主动 snap 到端点
+                            val current = searchRevealProgress.value
+                            if (current > 0.05f && current < 0.95f) {
+                                val target = if (current < 0.5f) 0f else 1f
+                                val duration = if (target == 0f) 200 else 250
+                                searchRevealProgress.animateTo(
+                                    targetValue = target,
+                                    animationSpec = tween(duration, easing = FastOutSlowInEasing)
+                                )
+                            }
                         }
                     }
 
