@@ -132,7 +132,6 @@ import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.ui.theme.UiColors
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import android.widget.Toast
@@ -510,9 +509,6 @@ fun HomeScreen(
                     /** 订阅 LazyListState 滚动状态（含 fling + settle），Compose 官方统一管理，跨设备一致 */
                     val isScrolling = lazyListState.isScrollInProgress
 
-                    /** 标记最后一次滚动事件的时间戳（毫秒），用于滚动停止检测的 debounce 判定 */
-                    val lastScrollTimeMs = remember { mutableLongStateOf(0L) }
-
                     /** 搜索框完整高度（含padding），作为滚动→进度映射的基准 */
                     val searchBarFullHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
 
@@ -552,36 +548,6 @@ fun HomeScreen(
                             }
                             prevIdx = currentIndex
                             prevOff = currentOffset
-                        }
-                    }
-
-                    /**
-                     * 滚动停止检测：
-                     * - 距离上次滚动事件 ≥ 150ms 时，判定为"滚动已停止"
-                     * - 若 progress 在中间区域 (0.05, 0.95)，snap 到最近的端点
-                     *   - progress < 0.5 → 完全隐藏（0f），200ms 动画
-                     *   - progress ≥ 0.5 → 完全显示（1f），250ms 动画
-                     * - 端点附近（≤0.05 或 ≥0.95）→ 不动（避免无意义动画）
-                     * - 轮询间隔 50ms，反应及时
-                     */
-                    LaunchedEffect(lazyListState, searchQuery) {
-                        while (true) {
-                            delay(50)
-                            val now = System.currentTimeMillis()
-                            val last = lastScrollTimeMs.longValue
-                            if (last > 0 && now - last >= 150 && searchQuery.isBlank()) {
-                                val current = searchRevealProgress.value
-                                if (current > 0.05f && current < 0.95f) {
-                                    val target = if (current < 0.5f) 0f else 1f
-                                    val duration = if (target == 0f) 200 else 250
-                                    searchRevealProgress.animateTo(
-                                        targetValue = target,
-                                        animationSpec = tween(duration, easing = FastOutSlowInEasing)
-                                    )
-                                }
-                                // 标记本轮已处理，避免重复触发
-                                lastScrollTimeMs.longValue = 0L
-                            }
                         }
                     }
 
