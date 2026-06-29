@@ -854,9 +854,14 @@ fun <T> ReorderableLazyColumn(
 
             if (isDragging) {
                 // ━━━ 被拖项：虚线占位框 + 浮起卡片 ━━━
+                // 关键：不要对被拖项应用 animateItem()。
+                // 原因：拖拽中 displayItems 变化（如交换）会触发 animateItem 动画，
+                // 该动画会把 outer Box 从旧位置过渡到新位置，与内层 Box 的 offset
+                // （跟随手指）冲突，导致被拖项视觉上"跳"到新位置而脱离手指。
+                // 改为：被拖项 outer Box 立即出现在新位置，由 offset 负责跟随手指。
+                // 普通项（非被拖项）的 animateItem() 保留，让位动画正常生效。
                 Box(
                     modifier = Modifier
-                        .animateItem()
                         .zIndex(1f)
                 ) {
                     // 1. 虚线占位框（底层，定义 Box 尺寸）
