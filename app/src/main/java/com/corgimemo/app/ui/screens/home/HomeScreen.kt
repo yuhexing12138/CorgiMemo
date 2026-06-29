@@ -515,24 +515,27 @@ fun HomeScreen(
                     /**
                      * 绝对位置驱动搜索框进度：
                      * - 进度 = 1 - scrollOffsetFromTop / searchBarFullHeightPx
-                     * - scrollOffsetFromTop 来自 lazyListState.layoutInfo.visibleItemsInfo.first().offset
-                     * - 这是单调函数，overscroll 弹回不会引起震荡（firstItem.offset 反映内容真实位置）
+                     * - scrollOffsetFromTop 来自 LazyListState 的 firstVisibleItemIndex + firstVisibleItemScrollOffset
+                     * - 这是单调函数，跨 item 切换平滑（v2 修复版）
                      *
-                     * 设计动机（v2）：替换 v1 的 delta-based 方案
-                     * - v1 问题：基于相邻两次事件的差值（prevIdx/prevOff）判断方向，overscroll 弹回时
-                     *   currentOffset 增大被误判为"滚下"，与"滚上"分支冲突 → 震荡
-                     * - v2 方案：直接读 LazyListLayoutInfo 的 firstItem.offset（绝对像素位置），
-                     *   单调函数，overscroll 时 offset 不变 → 零震荡
+                     * 设计动机（v2 修复）：替换 v2 原始版使用的 firstItem.offset
+                     * - v2 原始问题：layoutInfo.visibleItemsInfo.first().offset 在第一个 item
+                     *   完全滚出并切换到下一项时会突变（如 item 0 高度 80px，offset 从 -80 突变到 -16），
+                     *   导致 progress 从 0 跳变回 0.75，引发「搜索框来回震荡」
+                     * - v2 修复方案：改用官方 API firstVisibleItemIndex + firstVisibleItemScrollOffset，
+                     *   Compose 框架内部维护这两个状态，跨 item 切换是单调函数，无跳变
+                     * - 当 firstVisibleItemIndex > 0（第一项已完全滚出）时，强制 progress = 0，
+                     *   避免任何突变
                      */
                     val scrollOffsetFromTop by remember {
                         derivedStateOf {
-                            val firstItem = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull()
-                            if (firstItem != null) {
-                                // firstItem.offset: item 顶部相对 LazyColumn 顶部的偏移（负值=已滚出上方）
-                                // 取反得到"已向下滚动的距离"（正值=已滚下）
-                                (-firstItem.offset).coerceAtLeast(0)
+                            val firstIndex = lazyListState.firstVisibleItemIndex
+                            if (firstIndex == 0) {
+                                // 还在第一项内：使用 firstVisibleItemScrollOffset（已向下滚动的像素距离）
+                                lazyListState.firstVisibleItemScrollOffset.toFloat()
                             } else {
-                                0
+                                // 第一项已完全滚出：强制 progress = 0（搜索框完全隐藏）
+                                searchBarFullHeightPx + 1f
                             }
                         }
                     }

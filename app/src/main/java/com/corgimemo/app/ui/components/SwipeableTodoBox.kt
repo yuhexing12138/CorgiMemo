@@ -375,18 +375,28 @@ fun SwipeableTodoBox(
                             // 记录每个 pointer 事件的位置和时间，用于计算抬手时的速度
                             velocityTracker.addPosition(change.uptimeMillis, change.position)
 
-                            // 跟踪右滑意图：只要有一次 dragAmount > 0 就在 onDragEnd 触发关闭动画
+                            // 计算本帧 snapTo 后的目标位置
+                            val newOffset = (cardOffsetX.value + dragAmount)
+                                .coerceIn(-actionsWidthPx, 0f)
+
+                            // 右滑意图跟踪：dragAmount > 0 时标记，
+                            // 用于 onDragEnd 判断是否需要"抬手总关闭"
                             // 实现"右滑跟手 + 抬手总关闭"语义
                             if (dragAmount > 0f) {
                                 hadRightDrag = true
+                            } else if (dragAmount < 0f && hadRightDrag) {
+                                // 右滑后"反悔"语义：用户左滑到完全展开位置时清除右滑意图，
+                                // 抬手后按阈值吸附保持展开（不再触发总关闭）
+                                // 需求："右滑后中途左滑到最大位置松手应保持展开"
+                                if (newOffset <= -actionsWidthPx) {
+                                    hadRightDrag = false
+                                }
                             }
 
                             // 关键：右滑"跟手"（snapTo），不再立即触发关闭动画
                             // onDragEnd 会根据 hadRightDrag / velocity 决定是否关闭
                             // 这样用户能看到卡片跟随手指位置移动，抬手时由 onDragEnd 启动关闭动画
                             coroutineScope.launch {
-                                val newOffset = (cardOffsetX.value + dragAmount)
-                                    .coerceIn(-actionsWidthPx, 0f)
                                 cardOffsetX.snapTo(newOffset)
                             }
                         }

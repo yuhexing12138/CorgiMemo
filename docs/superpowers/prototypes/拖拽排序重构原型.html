@@ -1,0 +1,1913 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>待办卡片拖拽排序重构 - 交互原型</title>
+<style>
+/* ========== 设计规范变量（来自 UI设计规范.md）========== */
+:root {
+  --primary: #FF9A5C;
+  --primary-light: #FFE4CC;
+  --primary-dark: #E88A4D;
+  --background: #F8F6F3;
+  --surface: #FFFFFF;
+  --text-primary: #2D2D2D;
+  --text-secondary: #666666;
+  --text-hint: #999999;
+  --divider: #EEEEEE;
+  --success: #7EC8A0;
+  --warning: #FFB74D;
+  --error: #FF8A80;
+  --priority-high: #FF8A80;
+  --priority-medium: #FFB74D;
+  --priority-low: #90CAF9;
+  --radius-card: 20px;
+  --radius-btn: 16px;
+  --spacing-card: 12px;
+  --spacing-padding: 16px;
+  --shadow-card: 0 2px 8px rgba(0,0,0,0.08);
+  --shadow-drag: 0 8px 24px rgba(0,0,0,0.18);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: linear-gradient(135deg, #F8F6F3 0%, #FFF3E8 100%);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 40px 20px;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+
+/* ========== 页面标题 ========== */
+.page-header {
+  width: 100%;
+  max-width: 1200px;
+  text-align: center;
+  margin-bottom: 10px;
+}
+.page-header h1 {
+  font-size: 28px;
+  color: var(--text-primary);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.page-header p {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.badge {
+  display: inline-block;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 8px;
+}
+
+/* ========== 手机模拟器 ========== */
+.phone-frame {
+  width: 375px;
+  height: 720px;
+  background: var(--background);
+  border-radius: 36px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15), 0 0 0 12px #2D2D2D, 0 0 0 14px #444;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+.phone-statusbar {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--surface);
+}
+.phone-statusbar .time { font-size: 15px; }
+.phone-statusbar .icons { display: flex; gap: 6px; align-items: center; }
+
+/* ========== 列表容器 ========== */
+.todo-list {
+  height: calc(100% - 44px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 16px 100px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--divider) transparent;
+}
+.todo-list::-webkit-scrollbar { width: 4px; }
+.todo-list::-webkit-scrollbar-thumb { background: var(--divider); border-radius: 4px; }
+
+/* ========== 分区标题 ========== */
+.section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-hint);
+  padding: 8px 4px 6px;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.section-label .pin-icon { color: var(--primary); }
+
+/* ========== 分区折叠功能 ========== */
+.section-label.collapsible,
+.completed-divider.collapsible {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.2s;
+}
+.section-label.collapsible:hover,
+.completed-divider.collapsible:hover {
+  background: var(--background);
+  border-radius: 8px;
+}
+.collapse-arrow {
+  display: inline-block;
+  transition: transform 0.3s ease;
+  font-size: 11px;
+  color: var(--text-hint);
+  margin-left: auto;
+}
+.section-label.collapsible .collapse-arrow {
+  margin-left: auto;
+}
+.completed-divider.collapsible .collapse-arrow {
+  margin-right: 4px;
+}
+.section-label.collapsible.collapsed .collapse-arrow,
+.completed-divider.collapsible.collapsed .collapse-arrow {
+  transform: rotate(-90deg);
+}
+/* 分区数量标签（置顶/已完成通用） */
+.zone-count {
+  background: var(--divider);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 24px;
+  text-align: center;
+  transition: background 0.2s, color 0.2s;
+}
+.section-label.collapsible .zone-count {
+  margin-left: 6px;
+}
+.completed-divider.collapsible .zone-count {
+  margin-right: 6px;
+}
+/* 数量变化时的高亮动画 */
+.zone-count.pulse {
+  background: var(--primary);
+  color: white;
+}
+
+/* ========== 长按反馈（参考 PressFeedback.kt 的 scaleDown）========== */
+.todo-item.long-press-active {
+  transform: scale(0.94);
+  transition: transform 0.06s ease;
+}
+
+/* ========== 多选模式 ========== */
+/* 多选模式下：隐藏拖拽手势提示，显示选中勾选框 */
+.todo-item.batch-mode {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.todo-item.batch-mode.dragging {
+  cursor: pointer;
+}
+/* 选中项高亮（左侧主色边框）*/
+.todo-item.selected {
+  background: var(--primary-light);
+  box-shadow: 0 0 0 2px var(--primary), var(--shadow-card);
+}
+/* 多选模式下，未选中项的勾选框显示空心圆圈（提示可点击选中）*/
+.todo-item.batch-mode:not(.selected) .checkbox {
+  border-color: var(--text-hint);
+}
+.todo-item.batch-mode:not(.selected) .checkbox::after {
+  content: '';
+}
+
+/* ========== 多选模式顶部栏 ========== */
+.batch-top-bar {
+  position: absolute;
+  top: 44px;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--divider);
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  z-index: 300;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.batch-top-bar.show { display: flex; }
+.batch-top-bar .close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 20px;
+  color: var(--text-secondary);
+  transition: background 0.2s;
+}
+.batch-top-bar .close-btn:hover { background: var(--background); }
+.batch-top-bar .title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+  text-align: center;
+}
+.batch-top-bar .action-btn {
+  font-size: 13px;
+  color: var(--primary);
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+.batch-top-bar .action-btn:hover { background: var(--primary-light); }
+
+/* ========== 多选模式底部操作栏 ========== */
+.batch-action-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: var(--surface);
+  border-top: 1px solid var(--divider);
+  display: none;
+  align-items: center;
+  justify-content: space-around;
+  padding: 0 12px 20px;
+  z-index: 300;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+}
+.batch-action-bar.show { display: flex; }
+.batch-action-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 8px;
+  transition: all 0.2s;
+  min-width: 56px;
+}
+.batch-action-item:hover { background: var(--background); color: var(--primary); }
+.batch-action-item:active { transform: scale(0.95); }
+.batch-action-item .icon { font-size: 22px; }
+.batch-action-item.danger:hover { color: var(--error); }
+
+/* 多选模式下隐藏原底部栏和 FAB */
+.phone-frame.batch-mode-active .bottom-bar { display: none; }
+/* 折叠状态下隐藏分区内项 */
+.todo-item.in-collapsed-zone {
+  max-height: 0 !important;
+  margin: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden;
+  pointer-events: none;
+  border-width: 0;
+  box-shadow: none;
+}
+
+/* ========== 待办卡片 ========== */
+.todo-item {
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  padding: var(--spacing-padding);
+  margin-bottom: var(--spacing-card);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  position: relative;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.2s ease,
+              opacity 0.2s ease,
+              max-height 0.3s ease,
+              margin 0.3s ease,
+              padding 0.3s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  cursor: grab;
+}
+.todo-item.dragging {
+  cursor: grabbing;
+  z-index: 1000;
+}
+
+/* 优先级竖线 */
+.todo-item .priority-bar {
+  width: 4px;
+  min-height: 48px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.priority-bar.high { background: var(--priority-high); }
+.priority-bar.medium { background: var(--priority-medium); }
+.priority-bar.low { background: var(--priority-low); }
+.priority-bar.none { background: transparent; }
+
+/* 勾选框 */
+.checkbox {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--divider);
+  flex-shrink: 0;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.checkbox.checked {
+  background: var(--success);
+  border-color: var(--success);
+}
+.checkbox.checked::after {
+  content: '✓';
+  color: white;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+/* 卡片内容 */
+.todo-content { flex: 1; min-width: 0; }
+.todo-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 22px;
+  margin-bottom: 4px;
+}
+.todo-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 18px;
+}
+.todo-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+.tag.work { background: #E3F2FD; color: #1565C0; }
+.tag.life { background: var(--primary-light); color: var(--primary-dark); }
+.tag.due { background: #FFF3E0; color: #E65100; }
+
+/* 分隔按钮（CompletedDivider）*/
+.completed-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 4px;
+  margin-bottom: 4px;
+}
+.completed-divider .line {
+  flex: 1;
+  height: 1px;
+  background: var(--divider);
+}
+.completed-divider .label {
+  font-size: 12px;
+  color: var(--text-hint);
+  font-weight: 500;
+}
+.completed-divider .count {
+  background: var(--divider);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* 已完成卡片 */
+.todo-item.completed { opacity: 0.6; }
+.todo-item.completed .todo-title {
+  text-decoration: line-through;
+  color: var(--text-hint);
+}
+
+/* ========== 拖拽中视觉（方案B：占位+浮起）========== */
+.todo-item.dragging-float {
+  box-shadow: var(--shadow-drag);
+  opacity: 0.98;
+  background: var(--surface);
+  transform: scale(1.05);
+  transform-origin: center top;
+}
+/* 占位框样式（虚线边框 + 透明背景）*/
+.todo-item.placeholder {
+  background: transparent;
+  box-shadow: none;
+  border: 2px dashed var(--primary);
+  opacity: 0.6;
+  pointer-events: none;
+}
+.todo-item.placeholder .todo-content,
+.todo-item.placeholder .priority-bar,
+.todo-item.placeholder .checkbox {
+  visibility: hidden;
+}
+
+/* ========== 说明面板 ========== */
+.info-panel {
+  width: 420px;
+  flex-shrink: 0;
+}
+.info-card {
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+  margin-bottom: 16px;
+}
+.info-card h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.info-card h2 .icon { font-size: 20px; }
+
+/* 场景切换按钮 */
+.scenario-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.scenario-btn {
+  padding: 8px 14px;
+  border-radius: var(--radius-btn);
+  border: 2px solid var(--divider);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.scenario-btn:hover { border-color: var(--primary-light); }
+.scenario-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+/* 视觉方案切换 */
+.visual-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.visual-option {
+  flex: 1;
+  padding: 12px;
+  border-radius: 12px;
+  border: 2px solid var(--divider);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+.visual-option.active { border-color: var(--primary); background: var(--primary-light); }
+.visual-option .title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+.visual-option .desc { font-size: 11px; color: var(--text-secondary); }
+
+/* 对比表格 */
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.compare-table th, .compare-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--divider);
+}
+.compare-table th {
+  background: var(--background);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.compare-table .old { color: var(--error); }
+.compare-table .new { color: var(--success); font-weight: 500; }
+
+/* 说明列表 */
+.feature-list { list-style: none; }
+.feature-list li {
+  padding: 8px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-bottom: 1px solid var(--divider);
+}
+.feature-list li:last-child { border-bottom: none; }
+.feature-list .check { color: var(--success); font-weight: bold; flex-shrink: 0; }
+.feature-list .warn { color: var(--warning); flex-shrink: 0; }
+
+/* 提示 */
+.hint {
+  background: var(--primary-light);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--primary-dark);
+  line-height: 18px;
+  margin-top: 12px;
+}
+.hint strong { font-weight: 700; }
+
+/* 底部操作栏模拟 */
+.bottom-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: var(--surface);
+  border-top: 1px solid var(--divider);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 0 20px 20px;
+}
+.bottom-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-hint);
+}
+.bottom-btn.active { color: var(--primary); }
+.bottom-btn .icon { font-size: 22px; }
+.bottom-btn.fab {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  font-size: 28px;
+  box-shadow: 0 4px 12px rgba(255,154,92,0.4);
+}
+
+/* 动画 */
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+.pulse { animation: pulse 1.5s ease-in-out infinite; }
+
+/* 滚动指示 */
+.scroll-indicator {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.7);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  z-index: 200;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.scroll-indicator.show { opacity: 1; }
+.scroll-indicator.top { top: 60px; }
+.scroll-indicator.bottom { bottom: 90px; }
+
+/* ========== 子待办展开功能 ========== */
+.todo-content .todo-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.subtask-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--background);
+  border: 1px solid var(--divider);
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.subtask-toggle:hover { border-color: var(--primary-light); background: var(--primary-light); }
+.subtask-toggle .arrow {
+  display: inline-block;
+  transition: transform 0.3s ease;
+  font-size: 10px;
+}
+.todo-item.expanded .subtask-toggle .arrow { transform: rotate(90deg); }
+.subtask-toggle .count {
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 10px;
+}
+
+/* 子待办列表 */
+.subtask-list {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, margin-top 0.3s ease, opacity 0.3s ease;
+  opacity: 0;
+  margin-top: 0;
+}
+.todo-item.expanded .subtask-list {
+  max-height: 500px;
+  margin-top: 10px;
+  opacity: 1;
+}
+.subtask-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--divider);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.subtask-item .sub-checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--divider);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.subtask-item .sub-checkbox.checked {
+  background: var(--success);
+  border-color: var(--success);
+}
+.subtask-item .sub-checkbox.checked::after {
+  content: '✓';
+  color: white;
+  font-size: 11px;
+  font-weight: bold;
+}
+.subtask-item.done .subtask-text {
+  text-decoration: line-through;
+  color: var(--text-hint);
+}
+.subtask-text { flex: 1; }
+
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>待办卡片拖拽排序重构 <span class="badge">Calvin-LL/Reorderable 3.1.0</span></h1>
+  <p>基于本地库源码分析 · 解决"首项下拖失控"与"交换首项飞出"两个异常</p>
+</div>
+
+<!-- ========== 手机模拟器 ========== -->
+<div class="phone-frame">
+  <div class="phone-statusbar">
+    <span class="time">9:41</span>
+    <span class="icons">📶 🔋</span>
+  </div>
+
+  <!-- 多选模式顶部栏 -->
+  <div class="batch-top-bar" id="batchTopBar">
+    <span class="close-btn" id="batchCloseBtn">✕</span>
+    <span class="title" id="batchTitle">已选 0 项</span>
+    <span class="action-btn" id="batchSelectAllBtn">全选</span>
+  </div>
+
+  <div class="scroll-indicator top" id="scrollUp">⬆️ 自动向上滚动</div>
+  <div class="scroll-indicator bottom" id="scrollDown">⬇️ 自动向下滚动</div>
+
+  <div class="todo-list" id="todoList">
+    <!-- 置顶区 -->
+    <div class="section-label collapsible" data-zone="pinned">
+      <span class="pin-icon">📌</span> 置顶
+      <span class="zone-count" data-count-zone="pinned">0</span>
+      <span class="collapse-arrow">▼</span>
+    </div>
+    <div class="todo-item" data-id="1" data-pinned="true" draggable="false">
+      <div class="priority-bar high"></div>
+      <div class="checkbox"></div>
+      <div class="todo-content">
+        <div class="todo-title">完成季度报告</div>
+        <div class="todo-desc">整理 Q2 数据并提交给主管审核</div>
+        <div class="todo-meta">
+          <span class="tag work">工作</span>
+          <span class="tag due">今天到期</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="todo-item" data-id="2" data-pinned="true" draggable="false">
+      <div class="priority-bar medium"></div>
+      <div class="checkbox"></div>
+      <div class="todo-content">
+        <div class="todo-title">预约牙医</div>
+        <div class="todo-desc">半年一次的口腔检查</div>
+        <div class="todo-meta">
+          <span class="tag life">生活</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 待办区 -->
+    <div class="section-label">待办</div>
+
+    <div class="todo-item" data-id="3" data-pinned="false" draggable="false">
+      <div class="priority-bar high"></div>
+      <div class="checkbox"></div>
+      <div class="todo-content">
+        <div class="todo-top">
+          <div>
+            <div class="todo-title">购买生日礼物</div>
+            <div class="todo-desc">妈妈生日下周六，提前准备</div>
+          </div>
+          <div class="subtask-toggle" data-subtask-toggle="3">
+            <span class="arrow">▶</span>
+            <span class="count">3</span>
+          </div>
+        </div>
+        <div class="todo-meta">
+          <span class="tag life">生活</span>
+          <span class="tag due">3天后</span>
+        </div>
+        <div class="subtask-list">
+          <div class="subtask-item">
+            <div class="sub-checkbox checked"></div>
+            <span class="subtask-text">确定预算（200元以内）</span>
+          </div>
+          <div class="subtask-item">
+            <div class="sub-checkbox"></div>
+            <span class="subtask-text">挑选礼物（围巾/护手霜/书）</span>
+          </div>
+          <div class="subtask-item">
+            <div class="sub-checkbox"></div>
+            <span class="subtask-text">买贺卡并写祝福语</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="todo-item" data-id="4" data-pinned="false" draggable="false">
+      <div class="priority-bar low"></div>
+      <div class="checkbox"></div>
+      <div class="todo-content">
+        <div class="todo-title">读《设计心理学》</div>
+        <div class="todo-desc">第三章笔记整理</div>
+        <div class="todo-meta">
+          <span class="tag life">生活</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="todo-item" data-id="5" data-pinned="false" draggable="false">
+      <div class="priority-bar medium"></div>
+      <div class="checkbox"></div>
+      <div class="todo-content">
+        <div class="todo-title">整理书桌</div>
+        <div class="todo-desc">归类文件，清理杂物</div>
+      </div>
+    </div>
+
+    <div class="todo-item" data-id="6" data-pinned="false" draggable="false">
+      <div class="priority-bar none"></div>
+      <div class="checkbox"></div>
+      <div class="todo-content">
+        <div class="todo-title">给外婆打电话</div>
+        <div class="todo-desc">聊聊最近的生活</div>
+      </div>
+    </div>
+
+    <div class="todo-item" data-id="7" data-pinned="false" draggable="false">
+      <div class="priority-bar high"></div>
+      <div class="checkbox"></div>
+      <div class="todo-content">
+        <div class="todo-top">
+          <div>
+            <div class="todo-title">准备演讲稿</div>
+            <div class="todo-desc">周五会议用，准备PPT</div>
+          </div>
+          <div class="subtask-toggle" data-subtask-toggle="7">
+            <span class="arrow">▶</span>
+            <span class="count">7</span>
+          </div>
+        </div>
+        <div class="todo-meta">
+          <span class="tag work">工作</span>
+          <span class="tag due">2天后</span>
+        </div>
+        <div class="subtask-list">
+          <div class="subtask-item">
+            <div class="sub-checkbox checked"></div>
+            <span class="subtask-text">确定演讲主题和受众</span>
+          </div>
+          <div class="subtask-item">
+            <div class="sub-checkbox checked"></div>
+            <span class="subtask-text">收集数据和案例素材</span>
+          </div>
+          <div class="subtask-item">
+            <div class="sub-checkbox"></div>
+            <span class="subtask-text">撰写开场白（吸引注意力）</span>
+          </div>
+          <div class="subtask-item">
+            <div class="sub-checkbox"></div>
+            <span class="subtask-text">制作PPT框架（10页以内）</span>
+          </div>
+          <div class="subtask-item">
+            <div class="sub-checkbox"></div>
+            <span class="subtask-text">设计图表和视觉元素</span>
+          </div>
+          <div class="subtask-item">
+            <div class="sub-checkbox"></div>
+            <span class="subtask-text">练习演讲（控制在15分钟）</span>
+          </div>
+          <div class="subtask-item">
+            <div class="sub-checkbox"></div>
+            <span class="subtask-text">准备Q&A环节的备选问题</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="todo-item" data-id="8" data-pinned="false" draggable="false">
+      <div class="priority-bar low"></div>
+      <div class="checkbox"></div>
+      <div class="todo-content">
+        <div class="todo-title">浇花</div>
+        <div class="todo-desc">阳台的绿萝和薄荷</div>
+      </div>
+    </div>
+
+    <!-- 已完成分隔 -->
+    <div class="completed-divider collapsible" data-zone="completed">
+      <span class="collapse-arrow">▼</span>
+      <span class="label">已完成</span>
+      <span class="zone-count" data-count-zone="completed">0</span>
+      <div class="line"></div>
+    </div>
+
+    <div class="todo-item completed" data-id="9" data-pinned="false" draggable="false">
+      <div class="priority-bar none"></div>
+      <div class="checkbox checked"></div>
+      <div class="todo-content">
+        <div class="todo-title">回复客户邮件</div>
+      </div>
+    </div>
+
+    <div class="todo-item completed" data-id="10" data-pinned="false" draggable="false">
+      <div class="priority-bar none"></div>
+      <div class="checkbox checked"></div>
+      <div class="todo-content">
+        <div class="todo-title">晨跑3公里</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="bottom-btn active"><span class="icon">🏠</span>首页</div>
+    <div class="bottom-btn"><span class="icon">📅</span>日历</div>
+    <div class="bottom-btn fab">+</div>
+    <div class="bottom-btn"><span class="icon">💡</span>灵感</div>
+    <div class="bottom-btn"><span class="icon">👤</span>我的</div>
+  </div>
+
+  <!-- 多选模式底部操作栏 -->
+  <div class="batch-action-bar" id="batchActionBar">
+    <div class="batch-action-item" data-batch-action="pin"><span class="icon">📌</span>置顶</div>
+    <div class="batch-action-item" data-batch-action="complete"><span class="icon">✓</span>完成</div>
+    <div class="batch-action-item" data-batch-action="move"><span class="icon">📁</span>移动</div>
+    <div class="batch-action-item" data-batch-action="duplicate"><span class="icon">📋</span>复制</div>
+    <div class="batch-action-item danger" data-batch-action="delete"><span class="icon">🗑</span>删除</div>
+  </div>
+</div>
+
+<!-- ========== 说明面板 ========== -->
+<div class="info-panel">
+
+  <div class="info-card">
+    <h2><span class="icon">🎯</span> 交互测试</h2>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;line-height:20px;">
+      <strong>长按 0.5s + 不动 + 抬手</strong> → 进入多选模式（参考 PressFeedback.kt）<br>
+      <strong>长按 0.5s + 移动</strong> → 拖拽排序<br>
+      <strong>点击勾选框</strong> → 切换完成状态（自动分区移动）<br>
+      <strong>点击展开按钮</strong> → 查看/收起子待办<br>
+      <strong>点击分区标题</strong> → 折叠/展开该分区
+    </p>
+
+    <div class="scenario-tabs">
+      <button class="scenario-btn active" data-scenario="normal">正常拖拽</button>
+      <button class="scenario-btn" data-scenario="top">从首项向下拖</button>
+      <button class="scenario-btn" data-scenario="edge">边缘滚动</button>
+      <button class="scenario-btn" data-scenario="subtask">展开子待办拖拽</button>
+    </div>
+    <div class="hint" id="scenarioHint">
+      <strong>当前场景：</strong>正常拖拽。长按任意卡片拖动，其他卡片平滑让位。
+    </div>
+  </div>
+
+  <div class="info-card">
+    <h2><span class="icon">✅</span> 多选模式（参考 HomeViewModel）</h2>
+    <ul class="feature-list">
+      <li><span class="check">✓</span> 长按 0.5s + 抬手 → 进入多选（enterBatchMode）</li>
+      <li><span class="check">✓</span> 首个长按项自动选中（selectedIds = setOf(id)）</li>
+      <li><span class="check">✓</span> 点击其他项切换选中（toggleSelection）</li>
+      <li><span class="check">✓</span> 顶部栏：已选 X 项 + 全选/取消全选</li>
+      <li><span class="check">✓</span> 底部操作栏：置顶/完成/移动/复制/删除</li>
+      <li><span class="check">✓</span> 选中集合为空 → 自动退出多选</li>
+      <li><span class="check">✓</span> 点击 ✕ 或批量操作完成 → 退出多选</li>
+      <li><span class="warn">⚠</span> 多选模式下禁用拖拽（isDragEnabled = !isBatchMode）</li>
+    </ul>
+  </div>
+
+  <div class="info-card">
+    <h2><span class="icon">🎨</span> 拖拽视觉方案</h2>
+    <div style="background:var(--primary-light);border-radius:12px;padding:14px;border-left:4px solid var(--primary);">
+      <div style="font-size:14px;font-weight:600;color:var(--primary-dark);margin-bottom:6px;">方案B：占位符 + 浮起跟随（已确认）</div>
+      <div style="font-size:12px;color:var(--text-secondary);line-height:18px;">
+        • 原位置保留虚线占位框（橙色虚线）<br>
+        • 被拖卡片浮起 + 阴影 + 1.05x 缩放<br>
+        • 卡片精确跟随手指位置<br>
+        • 其他卡片平滑让位（弹性过渡）
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--text-hint);line-height:18px;margin-top:10px;">
+      实施提示：Calvin-LL/Reorderable 库的 <code>ReorderableItem</code> 内部会通过 <code>graphicsLayer.translationY</code> 移动整个 item。
+      虚线占位框需作为底层装饰渲染（如 Box 内底层 Canvas + 上层 ReorderableItem），避免跟随手指移动。
+    </p>
+  </div>
+
+  <div class="info-card">
+    <h2><span class="icon">📊</span> 新旧方案对比</h2>
+    <table class="compare-table">
+      <thead>
+        <tr><th>维度</th><th>旧实现（自研）</th><th>新实现（库）</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>问题1：首项下拖</td>
+          <td class="old">❌ 失控下滑</td>
+          <td class="new">✅ 基于 handleOffset 触发</td>
+        </tr>
+        <tr>
+          <td>问题2：交换首项</td>
+          <td class="old">❌ 卡片飞出</td>
+          <td class="new">✅ 统一视口坐标</td>
+        </tr>
+        <tr>
+          <td>状态变量</td>
+          <td class="old">15+ 个</td>
+          <td class="new">5 个</td>
+        </tr>
+        <tr>
+          <td>坐标系</td>
+          <td class="old">3 套混用</td>
+          <td class="new">1 套（视口）</td>
+        </tr>
+        <tr>
+          <td>释放动画</td>
+          <td class="old">自研受限</td>
+          <td class="new">库内置 spring</td>
+        </tr>
+        <tr>
+          <td>首可见项</td>
+          <td class="old">❌ 不动画</td>
+          <td class="new">✅ requestScrollToItem</td>
+        </tr>
+        <tr>
+          <td>边缘滚动</td>
+          <td class="old">基于 fingerY</td>
+          <td class="new">基于手柄中心</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="info-card">
+    <h2><span class="icon">✨</span> 关键特性</h2>
+    <ul class="feature-list">
+      <li><span class="check">✓</span> 长按 0.5s 进入拖拽（库 detectDragGesturesAfterLongPress）</li>
+      <li><span class="check">✓</span> 卡片跟随手指，弹簧物理动画（StiffnessMediumLow）</li>
+      <li><span class="check">✓</span> 其他项 animateItem() 让位（spring 弹簧规格）</li>
+      <li><span class="check">✓</span> 边缘自动滚动，速度随距离递增（1x~10x）</li>
+      <li><span class="check">✓</span> 释放回弹动画内置（previousDraggingItemOffset）</li>
+      <li><span class="check">✓</span> 置顶区跨越检测（checkPinnedZoneCrossed）</li>
+      <li><span class="check">✓</span> CompletedDivider 不可拖拽（enabled=false）</li>
+      <li><span class="warn">⚠</span> 批量模式/左滑展开时禁用拖拽（isDragEnabled=false）</li>
+    </ul>
+  </div>
+
+  <div class="info-card">
+    <h2><span class="icon">📐</span> 库 API 速查</h2>
+    <pre style="font-size:11px;background:var(--background);padding:12px;border-radius:8px;overflow-x:auto;color:var(--text-secondary);line-height:16px;">
+// 创建状态
+rememberReorderableLazyListState(
+  lazyListState = listState,
+  onMove = { from, to -> /* suspend */ }
+)
+
+// Item 包装器
+ReorderableItem(
+  state = state,
+  key = item.id,
+  enabled = isDraggable  // 可重排序性
+) { isDragging ->
+  Box(Modifier.longPressDraggableHandle(
+    enabled = isDraggable,  // 可拖动性
+    onDragStarted = { ... },
+    onDragStopped = { ... }
+  ))
+}
+
+// ReorderableColumn 适配
+ReorderableColumn(
+  list = items,
+  onSettle = { from, to -> }
+)</pre>
+  </div>
+
+</div>
+
+<script>
+// ========== 拖拽交互逻辑（方案B：占位符 + 浮起跟随）==========
+const list = document.getElementById('todoList');
+
+/** 当前被拖拽的元素 */
+let draggedItem = null;
+/** 占位框元素（虚线框）*/
+let placeholder = null;
+/** 长按定时器句柄 */
+let longPressTimer = null;
+/** 是否正在拖拽 */
+let isDragging = false;
+/** 手指按下时的 Y 坐标（用于长按判定与拖拽基准）*/
+let pressStartY = 0;
+/** 手指按下时的 X 坐标（用于 2D 移动距离判定）*/
+let pressStartX = 0;
+/** 手指相对卡片顶部的偏移（让卡片跟随手指时保持按下的相对位置）*/
+let fingerOffsetInItem = 0;
+/** 拖拽开始时被拖项的视口矩形（用于 fixed 定位初始化）*/
+let draggedStartRect = null;
+/** 当前场景 */
+let currentScenario = 'normal';
+/** 当前手指 Y 坐标（全局追踪，用于边缘滚动基准）*/
+let currentFingerY = 0;
+/** 长按已触发标记（500ms 到时置 true，手指抬起时若未移动则进入多选）*/
+let longPressTriggered = false;
+/** 长按等待中的目标项（500ms 期间记录，用于抬手时进入多选或移动时开始拖拽）*/
+let pendingLongPressItem = null;
+/** 多选模式状态 */
+let isBatchMode = false;
+/** 多选模式下的选中项 ID 集合 */
+let selectedIds = new Set();
+
+/**
+ * 获取当前所有可拖拽的列表项（包括已完成项，排除占位框、分隔按钮、折叠隐藏项）
+ * @returns {HTMLElement[]}
+ */
+function getDraggableItems() {
+  return Array.from(list.querySelectorAll('.todo-item:not(.placeholder):not(.in-collapsed-zone)'));
+}
+
+// ========== 场景切换 ==========
+const scenarioHints = {
+  normal: '<strong>当前场景：</strong>正常拖拽。长按任意卡片拖动，其他卡片平滑让位。',
+  top: '<strong>当前场景：</strong>问题1复现测试。长按<strong>第一个卡片</strong>（完成季度报告）向下拖动，验证不再失控下滑。',
+  edge: '<strong>当前场景：</strong>边缘滚动测试。长按任意卡片拖到列表顶部或底部边缘，体验自动滚动。',
+  subtask: '<strong>当前场景：</strong>子待办拖拽测试。先点击"购买生日礼物"或"准备演讲稿"的展开按钮，展开子待办后再长按拖拽，验证高度变化时拖拽正常。'
+};
+function updateScenarioHint() {
+  document.getElementById('scenarioHint').innerHTML = scenarioHints[currentScenario] || '';
+}
+document.querySelectorAll('.scenario-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentScenario = btn.dataset.scenario;
+    updateScenarioHint();
+
+    if (currentScenario === 'top') {
+      list.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (currentScenario === 'subtask') {
+      // 自动展开"准备演讲稿"卡片（子待办多）
+      const target = document.querySelector('.subtask-toggle[data-subtask-toggle="7"]');
+      if (target && !target.closest('.todo-item').classList.contains('expanded')) {
+        target.click();
+      }
+    }
+  });
+});
+// 初始化提示
+updateScenarioHint();
+
+// ========== 子待办展开/收起 ==========
+document.querySelectorAll('.subtask-toggle').forEach(toggle => {
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const item = toggle.closest('.todo-item');
+    item.classList.toggle('expanded');
+  });
+});
+
+// ========== 子待办勾选 ==========
+document.querySelectorAll('.sub-checkbox').forEach(cb => {
+  cb.addEventListener('click', (e) => {
+    e.stopPropagation();
+    cb.classList.toggle('checked');
+    const subtask = cb.closest('.subtask-item');
+    if (cb.classList.contains('checked')) {
+      subtask.classList.add('done');
+    } else {
+      subtask.classList.remove('done');
+    }
+  });
+});
+
+// ========== 长按 + 拖拽入口 ==========
+// 逻辑参考 PressFeedback.kt：
+// - 长按 500ms → 标记 longPressTriggered=true（不立即动作）
+// - 长按后手指抬起且未移动 → enterBatchMode（多选模式）
+// - 长按后手指移动 → startDrag（拖拽排序）
+// - 短按（< 500ms 抬起）→ 由 click 事件处理（勾选框/展开等）
+list.addEventListener('pointerdown', (e) => {
+  // 已在拖拽中，忽略新的按下
+  if (isDragging) return;
+  // 鼠标右键/中键忽略
+  if (e.button !== 0 && e.pointerType === 'mouse') return;
+  // 多选模式下不进入长按流程（短按切换选中由 click 事件处理）
+  if (isBatchMode) return;
+
+  const item = e.target.closest('.todo-item');
+  if (!item || item.classList.contains('placeholder')) return;
+  // 折叠隐藏项不可拖拽
+  if (item.classList.contains('in-collapsed-zone')) return;
+
+  pressStartY = e.clientY;
+  pressStartX = e.clientX;
+  fingerOffsetInItem = e.clientY - item.getBoundingClientRect().top;
+  longPressTriggered = false;
+  pendingLongPressItem = item;
+
+  // 长按 500ms：仅标记触发，不立即 startDrag
+  // 手指抬起时若未移动 → 多选；若已移动 → 拖拽（在 pointermove 中触发）
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null;
+    longPressTriggered = true;
+    // 长按触发的震动反馈（与 APP 一致）
+    if (navigator.vibrate) navigator.vibrate(30);
+    // 视觉反馈：被长按项缩小（模拟 PressFeedback 的 scaleDown）
+    item.classList.add('long-press-active');
+  }, 500);
+});
+
+// ========== 全局 pointermove ==========
+// touchSlop 阈值：移动超过此距离才视为"拖拽意图"（参考 Compose viewConfiguration.touchSlop）
+const TOUCH_SLOP = 15;
+
+document.addEventListener('pointermove', (e) => {
+  // 计算 2D 移动距离（与 PressFeedback.kt 的 dragDistance = (position - downPosition).getDistance() 一致）
+  const moveDistance = Math.sqrt(
+    Math.pow(e.clientX - pressStartX, 2) + Math.pow(e.clientY - pressStartY, 2)
+  );
+
+  // 长按等待阶段（< 500ms）：移动超过 TOUCH_SLOP 取消长按
+  if (!longPressTriggered && longPressTimer) {
+    if (moveDistance > TOUCH_SLOP) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+      pendingLongPressItem?.classList.remove('long-press-active');
+      pendingLongPressItem = null;
+    }
+    return;
+  }
+
+  // 长按已触发但尚未开始拖拽 → 需移动超过 TOUCH_SLOP 才开始拖拽
+  // 这样长按后微微移动+抬手 → 多选模式；长按后明显移动 → 拖拽排序
+  if (longPressTriggered && !isDragging && pendingLongPressItem) {
+    if (moveDistance > TOUCH_SLOP) {
+      pendingLongPressItem.classList.remove('long-press-active');
+      startDrag(pendingLongPressItem, e);
+    }
+    return;
+  }
+
+  if (!isDragging || !draggedItem) return;
+  e.preventDefault();
+
+  // 记录当前手指 Y（用于边缘滚动基准）
+  currentFingerY = e.clientY;
+
+  // 1. 更新被拖项位置（fixed 定位，直接设置 top）
+  const newTop = e.clientY - fingerOffsetInItem;
+  draggedItem.style.top = newTop + 'px';
+
+  // 2. 边缘自动滚动（根据模式选择基准）
+  updateEdgeScroll();
+
+  // 3. 检测占位框应插入的位置
+  updatePlaceholderPosition();
+});
+
+// ========== 全局 pointerup / pointercancel ==========
+document.addEventListener('pointerup', () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+
+  // 长按已触发但未开始拖拽（手指未移动）→ 进入多选模式
+  if (longPressTriggered && !isDragging && pendingLongPressItem) {
+    pendingLongPressItem.classList.remove('long-press-active');
+    enterBatchMode(pendingLongPressItem);
+    longPressTriggered = false;
+    pendingLongPressItem = null;
+    return;
+  }
+
+  longPressTriggered = false;
+  pendingLongPressItem = null;
+
+  if (isDragging) endDrag();
+});
+document.addEventListener('pointercancel', () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  pendingLongPressItem?.classList.remove('long-press-active');
+  longPressTriggered = false;
+  pendingLongPressItem = null;
+  if (isDragging) endDrag();
+});
+
+/**
+ * 开始拖拽
+ * 1. 记录被拖项初始矩形
+ * 2. 在原位置插入虚线占位框
+ * 3. 将被拖项设为 fixed 定位脱离文档流
+ */
+function startDrag(item, e) {
+  isDragging = true;
+  draggedItem = item;
+  draggedStartRect = item.getBoundingClientRect();
+
+  // 创建占位框（与原项等高）
+  placeholder = document.createElement('div');
+  placeholder.className = 'todo-item placeholder';
+  placeholder.style.height = draggedStartRect.height + 'px';
+  placeholder.style.marginBottom = window.getComputedStyle(item).marginBottom;
+  placeholder.style.visibility = 'visible';
+  list.insertBefore(placeholder, item);
+
+  // 被拖项脱离文档流，使用 fixed 定位跟随手指
+  item.classList.add('dragging', 'dragging-float');
+  item.style.position = 'fixed';
+  item.style.top = draggedStartRect.top + 'px';
+  item.style.left = draggedStartRect.left + 'px';
+  item.style.width = draggedStartRect.width + 'px';
+  item.style.margin = '0';
+  item.style.pointerEvents = 'none';
+  // 修复后效果：opacity=0.98（几乎不透明）
+  item.style.opacity = '0.98';
+
+  // 振动反馈
+  if (navigator.vibrate) navigator.vibrate(30);
+}
+
+/**
+ * 边缘自动滚动
+ * 基于被拖项中心（handleOffset），模拟 Calvin-LL/Reorderable 库的逻辑
+ */
+function updateEdgeScroll() {
+  const listRect = list.getBoundingClientRect();
+  const itemRect = draggedItem.getBoundingClientRect();
+  const itemCenterY = itemRect.top + itemRect.height / 2;
+
+  const topThreshold = listRect.top + 80;
+  const bottomThreshold = listRect.bottom - 80;
+
+  if (itemCenterY < topThreshold) {
+    showScrollIndicator('top');
+    list.scrollTop -= 6;
+  } else if (itemCenterY > bottomThreshold) {
+    showScrollIndicator('bottom');
+    list.scrollTop += 6;
+  } else {
+    hideScrollIndicators();
+  }
+}
+
+/**
+ * 更新占位框位置
+ * 算法：将 todo-item、section-label、completed-divider 都作为比较点，
+ *       找到第一个中心 Y 大于被拖项中心 Y 的元素，将占位框插入到该元素之前；
+ *       若没有，则插入到末尾。
+ * 关键：纳入 section-label 和 completed-divider 作为分区边界比较点，
+ *       解决"置顶区只有1项时拖到该项下方却落入待办区"的问题——
+ *       拖到置顶项下方、"待办"label 上方时，placeholder 会正确插入到 "待办" label 之前（置顶区末尾）。
+ */
+function updatePlaceholderPosition() {
+  const draggedRect = draggedItem.getBoundingClientRect();
+  const draggedCenter = draggedRect.top + draggedRect.height / 2;
+
+  // 收集所有可比较的子元素（排除 placeholder、draggedItem、折叠隐藏项）
+  const allChildren = Array.from(list.children);
+  const comparePoints = [];
+  for (const child of allChildren) {
+    if (child === placeholder || child === draggedItem) continue;
+    if (child.classList.contains('in-collapsed-zone')) continue;
+    if (child.classList.contains('todo-item') ||
+        child.classList.contains('section-label') ||
+        child.classList.contains('completed-divider')) {
+      const rect = child.getBoundingClientRect();
+      comparePoints.push({ element: child, center: rect.top + rect.height / 2 });
+    }
+  }
+
+  // 找到第一个中心 Y > draggedCenter 的比较点
+  let insertBefore = null;
+  for (const point of comparePoints) {
+    if (draggedCenter < point.center) {
+      insertBefore = point.element;
+      break;
+    }
+  }
+
+  if (insertBefore) {
+    if (placeholder.nextElementSibling !== insertBefore) {
+      list.insertBefore(placeholder, insertBefore);
+    }
+  } else {
+    // 没找到 → 放在最后一个比较点之后
+    const lastPoint = comparePoints[comparePoints.length - 1];
+    if (lastPoint && placeholder.previousElementSibling !== lastPoint.element) {
+      list.insertBefore(placeholder, lastPoint.element.nextSibling);
+    }
+  }
+}
+
+/**
+ * 结束拖拽
+ * 弹簧动画过渡到目标位置（模拟修复后的弹簧释放动画）
+ */
+function endDrag() {
+  if (!draggedItem || !placeholder) return;
+
+  const placeholderRect = placeholder.getBoundingClientRect();
+  const targetTop = placeholderRect.top;
+
+  // 弹簧动画过渡到目标位置
+  draggedItem.style.transition = 'top 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.35s ease';
+  draggedItem.style.top = targetTop + 'px';
+  draggedItem.style.transform = 'scale(1)';
+  draggedItem.style.opacity = '1';
+
+  if (navigator.vibrate) navigator.vibrate(20);
+
+  // 动画结束后清理
+  setTimeout(() => {
+    cleanupDraggedItem();
+  }, 360);
+}
+
+/**
+ * 清理被拖项：移到占位框位置，移除占位框，恢复样式
+ * 并根据最终位置自动切换完成状态（跨越分区时）
+ */
+function cleanupDraggedItem() {
+  if (!draggedItem || !placeholder) return;
+
+  // 将被拖项 DOM 移到占位框位置
+  list.insertBefore(draggedItem, placeholder);
+  placeholder.remove();
+  placeholder = null;
+
+  // 恢复样式
+  draggedItem.style.transition = '';
+  draggedItem.style.position = '';
+  draggedItem.style.top = '';
+  draggedItem.style.left = '';
+  draggedItem.style.width = '';
+  draggedItem.style.margin = '';
+  draggedItem.style.pointerEvents = '';
+  draggedItem.style.transform = '';
+  draggedItem.style.opacity = '';
+  draggedItem.classList.remove('dragging', 'dragging-float');
+
+  // 根据拖拽后的位置自动切换完成状态（跨越分区时）
+  updateItemZoneState(draggedItem);
+  // 根据拖拽后的位置自动切换置顶状态（跨越置顶分界线时）
+  updateItemPinnedState(draggedItem);
+  // 实时更新分区数量
+  updateZoneCounts();
+
+  draggedItem = null;
+  isDragging = false;
+  hideScrollIndicators();
+}
+
+// ========== 滚动指示器 ==========
+function showScrollIndicator(dir) {
+  const el = dir === 'top' ? document.getElementById('scrollUp') : document.getElementById('scrollDown');
+  el.classList.add('show');
+}
+function hideScrollIndicators() {
+  document.getElementById('scrollUp').classList.remove('show');
+  document.getElementById('scrollDown').classList.remove('show');
+}
+
+// ========== 勾选框点击（多选模式下切换选中，非多选模式下切换完成状态）==========
+document.querySelectorAll('.checkbox').forEach(cb => {
+  cb.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const item = cb.closest('.todo-item');
+
+    // 多选模式：点击勾选框切换选中（参考 TodoListItem.kt 的 onSelectClick）
+    if (isBatchMode) {
+      toggleSelection(item.dataset.id);
+      return;
+    }
+
+    // 非多选模式：切换完成状态 + 自动分区移动
+    const wasCompleted = item.classList.contains('completed');
+    const divider = document.querySelector('.completed-divider');
+    const completedTrigger = document.querySelector('.completed-divider[data-zone="completed"]');
+    const isCompletedZoneCollapsed = completedTrigger && completedTrigger.classList.contains('collapsed');
+
+    if (wasCompleted) {
+      // 已完成 → 未完成：移除 completed 类，移动到未完成区（divider 之前）
+      item.classList.remove('completed');
+      cb.classList.remove('checked');
+      // 离开已完成区，必定展开显示
+      item.classList.remove('in-collapsed-zone');
+      if (divider) {
+        list.insertBefore(item, divider);
+      }
+    } else {
+      // 未完成 → 已完成：添加 completed 类，移动到已完成区（divider 之后）
+      item.classList.add('completed');
+      cb.classList.add('checked');
+      if (divider) {
+        list.insertBefore(item, divider.nextSibling);
+      }
+      // 若已完成区已折叠，新移入的项也需隐藏
+      if (isCompletedZoneCollapsed) {
+        item.classList.add('in-collapsed-zone');
+      }
+    }
+    // 实时更新分区数量
+    updateZoneCounts();
+  });
+});
+
+// ========== 多选模式下：点击卡片任意区域切换选中 ==========
+// 参考 TodoListItem.kt:193-197 短按在批量模式下走 onSelectClick
+document.querySelectorAll('.todo-item').forEach(item => {
+  item.addEventListener('click', (e) => {
+    if (!isBatchMode) return;
+    // 避免点击折叠按钮/子待办展开按钮时触发选中
+    if (e.target.closest('.subtask-toggle') || e.target.closest('.collapse-arrow')) return;
+    // 避免点击勾选框时重复触发（勾选框已有独立 click 处理）
+    if (e.target.closest('.checkbox')) return;
+    toggleSelection(item.dataset.id);
+  });
+});
+
+/**
+ * 检查项是否在已完成区（CompletedDivider 之后）
+ * @param {HTMLElement} item 待办项
+ * @returns {boolean} true=在已完成区
+ */
+function isInCompletedZone(item) {
+  const divider = document.querySelector('.completed-divider');
+  if (!divider) return false;
+  const allSiblings = Array.from(list.children);
+  const dividerIndex = allSiblings.indexOf(divider);
+  const itemIndex = allSiblings.indexOf(item);
+  return itemIndex > dividerIndex;
+}
+
+/**
+ * 根据拖拽后的位置自动切换完成状态
+ * - 在已完成区但状态是未完成 → 切换为已完成
+ * - 在未完成区但状态是已完成 → 切换为未完成
+ * 同时同步折叠状态：移入已折叠分区则隐藏，移出则显示
+ * @param {HTMLElement} item 被拖项
+ */
+function updateItemZoneState(item) {
+  const inCompletedZone = isInCompletedZone(item);
+  const isCompleted = item.classList.contains('completed');
+  const checkbox = item.querySelector('.checkbox');
+  const completedTrigger = document.querySelector('.completed-divider[data-zone="completed"]');
+  const isCompletedZoneCollapsed = completedTrigger && completedTrigger.classList.contains('collapsed');
+
+  if (inCompletedZone && !isCompleted) {
+    // 在已完成区但状态是未完成 → 切换为已完成
+    item.classList.add('completed');
+    checkbox?.classList.add('checked');
+    // 若已完成区已折叠，新移入的项也需隐藏
+    if (isCompletedZoneCollapsed) item.classList.add('in-collapsed-zone');
+  } else if (!inCompletedZone && isCompleted) {
+    // 在未完成区但状态是已完成 → 切换为未完成
+    item.classList.remove('completed');
+    checkbox?.classList.remove('checked');
+    // 离开已完成区，必定展开显示
+    item.classList.remove('in-collapsed-zone');
+  }
+}
+
+/**
+ * 检查项是否在置顶区（"置顶" section-label 与 "待办" section-label 之间）
+ * @param {HTMLElement} item 待办项
+ * @returns {boolean} true=在置顶区
+ */
+function isInPinnedZone(item) {
+  const allChildren = Array.from(list.children);
+  const itemIdx = allChildren.indexOf(item);
+  if (itemIdx < 0) return false;
+
+  // 定位"置顶"和"待办"两个 section-label
+  const sectionLabels = list.querySelectorAll('.section-label');
+  let pinnedLabelIdx = -1, todoLabelIdx = -1;
+  sectionLabels.forEach(label => {
+    const idx = allChildren.indexOf(label);
+    if (label.textContent.includes('置顶')) pinnedLabelIdx = idx;
+    if (label.textContent.includes('待办')) todoLabelIdx = idx;
+  });
+  if (pinnedLabelIdx < 0 || todoLabelIdx < 0) return false;
+
+  return itemIdx > pinnedLabelIdx && itemIdx < todoLabelIdx;
+}
+
+/**
+ * 根据拖拽后的位置自动切换置顶状态
+ * - 在置顶区但 data-pinned=false → 切换为 true
+ * - 在非置顶区但 data-pinned=true → 切换为 false
+ * 与已完成区逻辑对称：拖入即获属性，拖出即失属性
+ * 同时同步折叠状态：移入已折叠分区则隐藏，移出则显示
+ * @param {HTMLElement} item 被拖项
+ */
+function updateItemPinnedState(item) {
+  const inPinnedZone = isInPinnedZone(item);
+  const isPinned = item.dataset.pinned === 'true';
+  const pinnedTrigger = document.querySelector('.section-label[data-zone="pinned"]');
+  const isPinnedZoneCollapsed = pinnedTrigger && pinnedTrigger.classList.contains('collapsed');
+
+  if (inPinnedZone && !isPinned) {
+    item.dataset.pinned = 'true';
+    showPinnedIndicator(item, true);
+    // 若置顶区已折叠，新移入的项也需隐藏
+    if (isPinnedZoneCollapsed) item.classList.add('in-collapsed-zone');
+  } else if (!inPinnedZone && isPinned) {
+    item.dataset.pinned = 'false';
+    showPinnedIndicator(item, false);
+    // 离开置顶区，必定展开显示
+    item.classList.remove('in-collapsed-zone');
+  }
+}
+
+/**
+ * 在卡片右上角显示/隐藏置顶图标（视觉反馈）
+ * @param {HTMLElement} item 待办项
+ * @param {boolean} show 是否显示
+ */
+function showPinnedIndicator(item, show) {
+  let indicator = item.querySelector('.pinned-indicator');
+  if (show) {
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.className = 'pinned-indicator';
+      indicator.textContent = '📌';
+      indicator.style.cssText = 'position:absolute;top:8px;right:12px;font-size:12px;opacity:0.7;';
+      item.appendChild(indicator);
+    }
+  } else {
+    if (indicator) indicator.remove();
+  }
+}
+
+// ========== 多选模式（参考 HomeViewModel.kt 的 enterBatchMode/exitBatchMode/toggleSelection）==========
+/**
+ * 进入多选模式
+ * 参考 HomeViewModel.enterBatchMode(todoId: Long)
+ * - isBatchMode = true
+ * - selectedIds = setOf(item.id)
+ * @param {HTMLElement} item 长按触发多选的首个项
+ */
+function enterBatchMode(item) {
+  isBatchMode = true;
+  selectedIds = new Set([item.dataset.id]);
+  updateBatchModeUI();
+  if (navigator.vibrate) navigator.vibrate(40);
+}
+
+/**
+ * 退出多选模式
+ * 参考 HomeViewModel.exitBatchMode()
+ * - isBatchMode = false
+ * - selectedIds = emptySet()
+ */
+function exitBatchMode() {
+  isBatchMode = false;
+  selectedIds.clear();
+  updateBatchModeUI();
+}
+
+/**
+ * 切换某项的选中状态
+ * 参考 HomeViewModel.toggleSelection(todoId: Long)
+ * 选中集合为空时自动退出多选模式
+ * @param {string} itemId 待办项 ID
+ */
+function toggleSelection(itemId) {
+  if (selectedIds.has(itemId)) {
+    selectedIds.delete(itemId);
+  } else {
+    selectedIds.add(itemId);
+  }
+  // 选中集合为空 → 自动退出多选（与 APP 行为一致）
+  if (selectedIds.size === 0) {
+    exitBatchMode();
+  } else {
+    updateBatchModeUI();
+  }
+}
+
+/**
+ * 全选/取消全选
+ * 参考 HomeViewModel.selectAll() / clearSelection()
+ */
+function toggleSelectAll() {
+  const allItems = list.querySelectorAll('.todo-item:not(.placeholder):not(.in-collapsed-zone)');
+  const allIds = Array.from(allItems).map(it => it.dataset.id);
+  // 若当前已全选 → 取消全选；否则全选
+  const allSelected = allIds.every(id => selectedIds.has(id));
+  if (allSelected) {
+    selectedIds.clear();
+    if (selectedIds.size === 0) exitBatchMode();
+    else updateBatchModeUI();
+  } else {
+    selectedIds = new Set(allIds);
+    updateBatchModeUI();
+  }
+}
+
+/**
+ * 更新多选模式 UI
+ * 1. 所有 todo-item 添加/移除 batch-mode 类
+ * 2. 选中项添加 selected 类 + 勾选框显示选中
+ * 3. 顶部栏显示/隐藏 + 更新"已选 X 项"文案
+ * 4. 底部操作栏显示/隐藏
+ * 5. 原底部栏在多选模式下隐藏
+ */
+function updateBatchModeUI() {
+  const phoneFrame = document.querySelector('.phone-frame');
+  const batchTopBar = document.getElementById('batchTopBar');
+  const batchActionBar = document.getElementById('batchActionBar');
+  const batchTitle = document.getElementById('batchTitle');
+  const batchSelectAllBtn = document.getElementById('batchSelectAllBtn');
+
+  // 更新所有项的视觉状态
+  document.querySelectorAll('.todo-item').forEach(item => {
+    if (item.classList.contains('placeholder')) return;
+    const isSelected = selectedIds.has(item.dataset.id);
+    item.classList.toggle('batch-mode', isBatchMode);
+    item.classList.toggle('selected', isSelected);
+    const cb = item.querySelector('.checkbox');
+    if (!cb) return;
+    if (isBatchMode) {
+      // 多选模式：勾选框反映选中状态
+      cb.classList.toggle('checked', isSelected);
+    } else {
+      // 非多选模式：勾选框反映完成状态
+      cb.classList.toggle('checked', item.classList.contains('completed'));
+    }
+  });
+
+  // 顶部栏 & 底部操作栏 & 原底部栏
+  batchTopBar.classList.toggle('show', isBatchMode);
+  batchActionBar.classList.toggle('show', isBatchMode);
+  phoneFrame.classList.toggle('batch-mode-active', isBatchMode);
+
+  if (isBatchMode) {
+    batchTitle.textContent = `已选 ${selectedIds.size} 项`;
+    // 全选按钮文案
+    const allItems = list.querySelectorAll('.todo-item:not(.placeholder):not(.in-collapsed-zone)');
+    const allIds = Array.from(allItems).map(it => it.dataset.id);
+    const allSelected = allIds.length > 0 && allIds.every(id => selectedIds.has(id));
+    batchSelectAllBtn.textContent = allSelected ? '取消全选' : '全选';
+  }
+}
+
+// 多选模式顶部栏事件
+document.getElementById('batchCloseBtn').addEventListener('click', exitBatchMode);
+document.getElementById('batchSelectAllBtn').addEventListener('click', toggleSelectAll);
+
+// 多选模式底部操作栏事件（演示用：执行后退出多选模式）
+document.querySelectorAll('.batch-action-item').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const action = btn.dataset.batchAction;
+    const count = selectedIds.size;
+    // 演示性反馈：根据操作类型给出提示
+    if (navigator.vibrate) navigator.vibrate(30);
+    // 简单演示：完成/删除/置顶 会改变项状态
+    if (action === 'delete') {
+      selectedIds.forEach(id => {
+        const item = list.querySelector(`.todo-item[data-id="${id}"]`);
+        if (item) item.remove();
+      });
+      updateZoneCounts();
+    } else if (action === 'complete') {
+      selectedIds.forEach(id => {
+        const item = list.querySelector(`.todo-item[data-id="${id}"]`);
+        if (item && !item.classList.contains('completed')) {
+          item.classList.add('completed');
+          item.querySelector('.checkbox')?.classList.add('checked');
+          const divider = document.querySelector('.completed-divider');
+          if (divider) list.insertBefore(item, divider.nextSibling);
+        }
+      });
+      updateZoneCounts();
+    } else if (action === 'pin') {
+      selectedIds.forEach(id => {
+        const item = list.querySelector(`.todo-item[data-id="${id}"]`);
+        if (item) {
+          const isPinned = item.dataset.pinned === 'true';
+          item.dataset.pinned = (!isPinned).toString();
+          showPinnedIndicator(item, !isPinned);
+        }
+      });
+      updateZoneCounts();
+    }
+    exitBatchMode();
+  });
+});
+
+// 阻止默认拖拽行为
+list.addEventListener('dragstart', (e) => e.preventDefault());
+
+// ========== 分区折叠/展开 ==========
+/**
+ * 切换分区折叠状态
+ * @param {string} zoneName 分区名：'pinned' 或 'completed'
+ */
+function toggleZoneCollapse(zoneName) {
+  const trigger = zoneName === 'pinned'
+    ? list.querySelector('.section-label[data-zone="pinned"]')
+    : list.querySelector('.completed-divider[data-zone="completed"]');
+  if (!trigger) return;
+
+  const willCollapse = !trigger.classList.contains('collapsed');
+  trigger.classList.toggle('collapsed', willCollapse);
+  setZoneItemsVisible(zoneName, !willCollapse);
+}
+
+/**
+ * 设置分区内所有 todo-item 的可见性（通过添加/移除 in-collapsed-zone 类）
+ * @param {string} zoneName 分区名
+ * @param {boolean} visible true=展开, false=折叠
+ */
+function setZoneItemsVisible(zoneName, visible) {
+  const allChildren = Array.from(list.children);
+  let startIdx = -1, endIdx = allChildren.length;
+
+  if (zoneName === 'pinned') {
+    // 置顶区："置顶" label 之后到 "待办" label 之前
+    const pinnedLabel = Array.from(list.querySelectorAll('.section-label'))
+      .find(l => l.textContent.includes('置顶'));
+    const todoLabel = Array.from(list.querySelectorAll('.section-label'))
+      .find(l => l.textContent.includes('待办'));
+    if (!pinnedLabel || !todoLabel) return;
+    startIdx = allChildren.indexOf(pinnedLabel) + 1;
+    endIdx = allChildren.indexOf(todoLabel);
+  } else if (zoneName === 'completed') {
+    // 已完成区："已完成" divider 之后到列表末尾
+    const divider = list.querySelector('.completed-divider');
+    if (!divider) return;
+    startIdx = allChildren.indexOf(divider) + 1;
+    endIdx = allChildren.length;
+  }
+
+  for (let i = startIdx; i < endIdx; i++) {
+    const child = allChildren[i];
+    if (child.classList && child.classList.contains('todo-item')) {
+      child.classList.toggle('in-collapsed-zone', !visible);
+    }
+  }
+}
+
+// 绑定折叠按钮点击事件
+document.querySelectorAll('.collapsible[data-zone]').forEach(trigger => {
+  trigger.addEventListener('click', (e) => {
+    // 避免点击勾选框/子待办展开按钮时触发折叠
+    if (e.target.closest('.checkbox') || e.target.closest('.subtask-toggle')) return;
+    toggleZoneCollapse(trigger.dataset.zone);
+  });
+});
+
+/**
+ * 实时更新分区数量标签（置顶/已完成）
+ * 数量变化时添加 pulse 高亮动画提示用户
+ */
+function updateZoneCounts() {
+  const pinnedCount = list.querySelectorAll('.todo-item[data-pinned="true"]').length;
+  const completedCount = list.querySelectorAll('.todo-item.completed').length;
+
+  const pinnedLabel = document.querySelector('.zone-count[data-count-zone="pinned"]');
+  const completedLabel = document.querySelector('.zone-count[data-count-zone="completed"]');
+
+  if (pinnedLabel) {
+    const oldVal = parseInt(pinnedLabel.textContent, 10) || 0;
+    pinnedLabel.textContent = pinnedCount;
+    if (oldVal !== pinnedCount) pulseCount(pinnedLabel);
+  }
+  if (completedLabel) {
+    const oldVal = parseInt(completedLabel.textContent, 10) || 0;
+    completedLabel.textContent = completedCount;
+    if (oldVal !== completedCount) pulseCount(completedLabel);
+  }
+}
+
+/**
+ * 数量变化时的高亮动画（添加 pulse 类，300ms 后移除）
+ * @param {HTMLElement} el 数量标签元素
+ */
+function pulseCount(el) {
+  el.classList.add('pulse');
+  setTimeout(() => el.classList.remove('pulse'), 300);
+}
+
+// 初始化：给所有 data-pinned=true 的项添加置顶图标
+document.querySelectorAll('.todo-item[data-pinned="true"]').forEach(item => {
+  showPinnedIndicator(item, true);
+});
+// 初始化：更新分区数量
+updateZoneCounts();
+</script>
+
+</body>
+</html>
