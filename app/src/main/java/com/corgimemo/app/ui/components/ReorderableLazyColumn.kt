@@ -590,7 +590,9 @@ fun <T> ReorderableLazyColumn(
                 }
                 if (scrollDelta != 0f) {
                     listState.scrollBy(scrollDelta)
-                    draggedBaseCenterY += scrollDelta // 同步调整基线
+                    // 仅累加滚动补偿到 scrollCompensationY，不动 draggedListCenterY
+                    // 这样交换逻辑的基线与滚动逻辑彻底解耦（修复 Bug B 根因）
+                    scrollCompensationY += scrollDelta
                 }
             }
             delay(16)
