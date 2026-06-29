@@ -625,7 +625,9 @@ fun <T> ReorderableLazyColumn(
                         isReleasing = false
                         releaseDragOffset.floatValue = 0f
                         draggedKey = null
-                        draggedBaseCenterY = 0f
+                        isLongPressActive = false
+                        draggedListCenterY = 0f
+                        scrollCompensationY = 0f
                     }
 
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -783,9 +785,11 @@ fun <T> ReorderableLazyColumn(
                     // ━━━ 拖拽结束或异常 ━━━
                     if (isDragActive) {
                         // 1. 计算释放动画起始 offset（松手时手指相对基线的偏移）
+                        //    基线 = draggedListCenterY + scrollCompensationY
+                        //    （替换原 draggedBaseCenterY；保持外部 finger 偏移语义不变）
                         val releaseStartOffset = ReorderAlgorithms.computeReleaseStartOffset(
                             fingerY = fingerY,
-                            baseCenterY = draggedBaseCenterY
+                            baseCenterY = draggedListCenterY + scrollCompensationY
                         )
                         // isDragActive 置 false（不再消费 pointerEvent）
                         // draggedKey 保持有效 → A 继续在「拖拽分支」中，animateItem 不重启
@@ -823,11 +827,13 @@ fun <T> ReorderableLazyColumn(
                         // 会同步更新 displayItems 到 items，animateItem 完成位置过渡。
                         releaseDragOffset.floatValue = 0f
                         isReleasing = false
+                        isLongPressActive = false
                         draggedKey = null
                         draggedOriginalIndex = -1
                         draggedCurrentIndex = -1
                         fingerY = 0f
-                        draggedBaseCenterY = 0f
+                        draggedListCenterY = 0f
+                        scrollCompensationY = 0f
                         lastSwapTargetKey = null
                         lastSwapFingerY = 0f
                         Log.d("ReorderableLazyColumn",
