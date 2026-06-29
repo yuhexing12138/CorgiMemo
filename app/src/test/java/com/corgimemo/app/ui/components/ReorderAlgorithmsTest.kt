@@ -357,4 +357,32 @@ class ReorderAlgorithmsTest {
         // 关键断言：基线必须等于 75f（顶部中心），绝对不能等于 275f（旧 BUG 的位置）
         assertEquals(75.0f, centerY, 0.001f)
     }
+
+    // ==================== computeAverageItemHeightPx 测试 ====================
+
+    /**
+     * 场景：itemHeights 为空（首帧未测量）
+     * 预期：回退到 defaultHeightPx = 160f
+     */
+    @Test
+    fun `computeAverageItemHeightPx 空 Map 回退到默认值`() {
+        val avg = ReorderAlgorithms.computeAverageItemHeightPx(
+            itemHeights = emptyMap(),
+            defaultHeightPx = 160f
+        )
+        assertEquals(160.0f, avg, 0.001f)
+    }
+
+    /**
+     * 场景：3 项高度分别为 100, 200, 300
+     * 预期：平均 = (100+200+300)/3 = 200f
+     */
+    @Test
+    fun `computeAverageItemHeightPx 三项平均返回 200f`() {
+        val avg = ReorderAlgorithms.computeAverageItemHeightPx(
+            itemHeights = mapOf(0 to 100, 1 to 200, 2 to 300),
+            defaultHeightPx = 160f
+        )
+        assertEquals(200.0f, avg, 0.001f)
+    }
 }

@@ -353,6 +353,24 @@ object ReorderAlgorithms {
         val topY = targetIndex * averageItemHeightPx
         return topY + draggedSize / 2f
     }
+
+    /**
+     * 计算 displayItems 中所有已测量项的平均行高
+     *
+     * 用于 computeDraggedListCenterY 反推被拖项应有位置，
+     * 避免依赖 visibleItemsInfo 的陈旧值。
+     *
+     * @param itemHeights 索引→高度（px）的映射，通过 onSizeChanged 收集
+     * @param defaultHeightPx itemHeights 为空时回退的默认行高
+     * @return 平均行高（px）
+     */
+    fun computeAverageItemHeightPx(
+        itemHeights: Map<Int, Int>,
+        defaultHeightPx: Float
+    ): Float {
+        if (itemHeights.isEmpty()) return defaultHeightPx
+        return itemHeights.values.sum().toFloat() / itemHeights.size
+    }
 }
 
 /**
