@@ -585,6 +585,33 @@ fun HomeScreen(
                         }
                     }
 
+                    /**
+                     * 滚动真正停止时触发 snap：
+                     * - 直接订阅 lazyListState.isScrollInProgress，key 变化时 effect 自动重启
+                     * - 滚动开始（true）或滚动中（保持 true）→ body 内 if 判断跳过
+                     * - 滚动真正停止（false）→ 检查 progress，snap 到 0f 或 1f
+                     * - 使用 Compose 官方状态，准确捕获 fling + settle 结束，跨设备一致
+                     *
+                     * 设计动机：替换原 150ms 时间戳 debounce 方案
+                     * - 旧方案：fling 惯性滚动期间 firstVisibleItemIndex/Offset 持续发射微事件，
+                     *   每次都重置 lastScrollTimeMs，150ms 窗口永远不通过，progress 卡在半路
+                     * - 新方案：isScrollInProgress 由 Compose 框架统一维护 fling + settle 状态，
+                     *   真正停止时才变 false，effect 重启执行 snap
+                     */
+                    LaunchedEffect(isScrolling) {
+                        if (!isScrolling && searchQuery.isBlank()) {
+                            val current = searchRevealProgress.value
+                            if (current > 0.05f && current < 0.95f) {
+                                val target = if (current < 0.5f) 0f else 1f
+                                val duration = if (target == 0f) 200 else 250
+                                searchRevealProgress.animateTo(
+                                    targetValue = target,
+                                    animationSpec = tween(duration, easing = FastOutSlowInEasing)
+                                )
+                            }
+                        }
+                    }
+
                     val isAtTop by remember {
                         derivedStateOf {
                             lazyListState.firstVisibleItemIndex == 0 &&
@@ -843,7 +870,7 @@ fun HomeScreen(
                                             onDeleteClick = {
                                                 pendingDeleteId = todo.id
                                             }
-                                        ) {
+                                        ) { isClickBlocked ->
                                             TodoListItem(
                                                 todo = todo,
                                                 subTaskProgress = subTaskProgressMap[todo.id],
@@ -885,7 +912,8 @@ fun HomeScreen(
                                                 searchQuery = searchQuery,
                                                 hapticEnabled = hapticEnabled,
                                                 isDragging = isDragging,
-                                                isDragActive = dragActive
+                                                isDragActive = dragActive,
+                                                isClickBlocked = isClickBlocked
                                             )
                                         }
                                     }
