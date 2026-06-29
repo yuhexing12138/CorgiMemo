@@ -454,6 +454,34 @@ body {
   visibility: hidden;
 }
 
+/* ========== 多选合并拖拽（merge drag）========== */
+/* 合并拖拽期间：被选中的原项折叠隐藏，腾出空间给占位框 */
+.todo-item.merge-hidden {
+  max-height: 0 !important;
+  margin: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden;
+  pointer-events: none;
+  border-width: 0;
+  box-shadow: none;
+}
+/* 合并卡片：浮起的"选中 X 项"统一卡片 */
+.todo-item.merged-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  z-index: 1001;
+}
+.todo-item.merged-card .merged-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--primary-dark);
+  line-height: 24px;
+}
+
 /* ========== 说明面板 ========== */
 .info-panel {
   width: 420px;
@@ -1124,6 +1152,18 @@ let pendingLongPressItem = null;
 let isBatchMode = false;
 /** 多选模式下的选中项 ID 集合 */
 let selectedIds = new Set();
+/**
+ * 抑制下一次 click 事件标志
+ * pointerup 进入多选模式后，浏览器会在同一元素自动派发 click，
+ * 该 click 会触发 todo-item/checkbox 处理器调用 toggleSelection，
+ * 把刚选中的项移除并 exitBatchMode，导致多选瞬间退出。
+ * 置 true 后由 document 捕获阶段监听消费，一次性拦截该"回旋 click"。
+ */
+let suppressNextClick = false;
+/** 是否正在执行多选合并拖拽 */
+let isMergeDragging = false;
+/** 合并拖拽期间被折叠隐藏的已选中项（按 DOM 顺序，用于释放后按原相对顺序还原）*/
+let mergeSelectedItems = [];
 
 /**
  * 获取当前所有可拖拽的列表项（包括已完成项，排除占位框、分隔按钮、折叠隐藏项）
@@ -1194,12 +1234,12 @@ document.querySelectorAll('.sub-checkbox').forEach(cb => {
 // - 长按后手指移动 → startDrag（拖拽排序）
 // - 短按（< 500ms 抬起）→ 由 click 事件处理（勾选框/展开等）
 list.addEventListener('pointerdown', (e) => {
+  // 清除可能残留的 click 抑制标志（防御性：上次 pointerup 后若 click 未派发）
+  suppressNextClick = false;
   // 已在拖拽中，忽略新的按下
   if (isDragging) return;
   // 鼠标右键/中键忽略
   if (e.button !== 0 && e.pointerType === 'mouse') return;
-  // 多选模式下不进入长按流程（短按切换选中由 click 事件处理）
-  if (isBatchMode) return;
 
   const item = e.target.closest('.todo-item');
   if (!item || item.classList.contains('placeholder')) return;
@@ -1212,7 +1252,26 @@ list.addEventListener('pointerdown', (e) => {
   longPressTriggered = false;
   pendingLongPressItem = item;
 
-  // 长按 500ms：仅标记触发，不立即 startDrag
+  // 多选模式下：仅对"已选中"项启动长按合并拖拽
+  if (isBatchMode) {
+    // 未选中项：不启动长按，交给 click 处理 toggle（保留短按切换选中语义）
+    if (!item.classList.contains('selected')) {
+      pendingLongPressItem = null;
+      return;
+    }
+    // 已选中项：500ms 后立即启动拖拽（无需移动阈值，长按即触发）
+    // 仅 1 项选中时回退为普通单项拖拽，避免"选中 1 项"合并卡片的突兀显示
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      longPressTriggered = true;
+      if (navigator.vibrate) navigator.vibrate(30);
+      if (selectedIds.size <= 1) startDrag(item);
+      else startMergeDrag(item);
+    }, 500);
+    return;
+  }
+
+  // 非多选模式：长按 500ms 仅标记触发，不立即 startDrag
   // 手指抬起时若未移动 → 多选；若已移动 → 拖拽（在 pointermove 中触发）
   longPressTimer = setTimeout(() => {
     longPressTimer = null;
@@ -1283,6 +1342,8 @@ document.addEventListener('pointerup', () => {
   if (longPressTriggered && !isDragging && pendingLongPressItem) {
     pendingLongPressItem.classList.remove('long-press-active');
     enterBatchMode(pendingLongPressItem);
+    // 抑制紧随 pointerup 派发的 click，避免其触发 toggleSelection 撤销多选
+    suppressNextClick = true;
     longPressTriggered = false;
     pendingLongPressItem = null;
     return;
@@ -1291,7 +1352,12 @@ document.addEventListener('pointerup', () => {
   longPressTriggered = false;
   pendingLongPressItem = null;
 
-  if (isDragging) endDrag();
+  if (isDragging) {
+    // 抑制拖拽释放后紧随的 click，避免其误触发 toggleSelection/完成切换
+    // （合并拖拽尤其需要：释放后 click 会落在原 anchor 项上导致误取消选中）
+    suppressNextClick = true;
+    endDrag();
+  }
 });
 document.addEventListener('pointercancel', () => {
   if (longPressTimer) {
@@ -1303,6 +1369,20 @@ document.addEventListener('pointercancel', () => {
   pendingLongPressItem = null;
   if (isDragging) endDrag();
 });
+
+// ========== 抑制 pointerup 进入多选后的"回旋 click" ==========
+// pointerup 触发 enterBatchMode 后，浏览器会在同一元素派发 click，
+// 该 click 会让 todo-item/checkbox 处理器调用 toggleSelection 撤销刚选中的项。
+// 在捕获阶段消费 suppressNextClick 标志并阻止传播，一次性拦截该 click。
+// 捕获阶段先于所有元素级（冒泡阶段）click 处理器执行，因此可同时覆盖
+// checkbox 与 todo-item 两类 click 处理器，无需逐处修改。
+document.addEventListener('click', (e) => {
+  if (suppressNextClick) {
+    suppressNextClick = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }
+}, true); // true = 捕获阶段
 
 /**
  * 开始拖拽
@@ -1374,12 +1454,13 @@ function updatePlaceholderPosition() {
   const draggedRect = draggedItem.getBoundingClientRect();
   const draggedCenter = draggedRect.top + draggedRect.height / 2;
 
-  // 收集所有可比较的子元素（排除 placeholder、draggedItem、折叠隐藏项）
+  // 收集所有可比较的子元素（排除 placeholder、draggedItem、折叠隐藏项、合并拖拽中折叠的项）
   const allChildren = Array.from(list.children);
   const comparePoints = [];
   for (const child of allChildren) {
     if (child === placeholder || child === draggedItem) continue;
     if (child.classList.contains('in-collapsed-zone')) continue;
+    if (child.classList.contains('merge-hidden')) continue;
     if (child.classList.contains('todo-item') ||
         child.classList.contains('section-label') ||
         child.classList.contains('completed-divider')) {
@@ -1389,13 +1470,27 @@ function updatePlaceholderPosition() {
   }
 
   // 找到第一个中心 Y > draggedCenter 的比较点
-  let insertBefore = null;
-  for (const point of comparePoints) {
-    if (draggedCenter < point.center) {
-      insertBefore = point.element;
+  let insertBeforeIdx = -1;
+  for (let i = 0; i < comparePoints.length; i++) {
+    if (draggedCenter < comparePoints[i].center) {
+      insertBeforeIdx = i;
       break;
     }
   }
+
+  // 修复：任何待办都不能拖到"置顶"标签上方（列表最顶部）
+  // "置顶" section-label 是 placeholder 的最小插入位置，
+  // 无论被拖项是否置顶，placeholder 都只能插入到"置顶"标签之后
+  // （非置顶项仍可拖入置顶区，拖入后由 updateItemPinnedState 自动切换为置顶项）
+  const pinnedLabelIdx = comparePoints.findIndex(p =>
+    p.element.classList.contains('section-label') && p.element.textContent.includes('置顶'));
+  if (pinnedLabelIdx >= 0 && insertBeforeIdx !== -1 && insertBeforeIdx <= pinnedLabelIdx) {
+    insertBeforeIdx = pinnedLabelIdx + 1;
+  }
+
+  const insertBefore = (insertBeforeIdx >= 0 && insertBeforeIdx < comparePoints.length)
+    ? comparePoints[insertBeforeIdx].element
+    : null;
 
   if (insertBefore) {
     if (placeholder.nextElementSibling !== insertBefore) {
@@ -1415,7 +1510,20 @@ function updatePlaceholderPosition() {
  * 弹簧动画过渡到目标位置（模拟修复后的弹簧释放动画）
  */
 function endDrag() {
-  if (!draggedItem || !placeholder) return;
+  window._endDrag_log = (window._endDrag_log || []);
+  window._endDrag_log.push({
+    step: 'enter',
+    has_draggedItem: !!draggedItem,
+    has_placeholder: !!placeholder,
+    isMergeDragging: isMergeDragging,
+    isDragging: isDragging,
+    draggedItem_tag: draggedItem ? (draggedItem.tagName + '.' + (draggedItem.className || '')) : null
+  });
+  if (!draggedItem || !placeholder) {
+    window._endDrag_log.push({ step: 'early_return' });
+    return;
+  }
+  window._endDrag_log.push({ step: 'executing' });
 
   const placeholderRect = placeholder.getBoundingClientRect();
   const targetTop = placeholderRect.top;
@@ -1424,13 +1532,87 @@ function endDrag() {
   draggedItem.style.transition = 'top 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.35s ease';
   draggedItem.style.top = targetTop + 'px';
   draggedItem.style.transform = 'scale(1)';
-  draggedItem.style.opacity = '1';
+  // 关键：强制浏览器提交 transition 设置，否则后续同步 DOM 操作（placeholder.remove 等）
+  // 会让浏览器把 transition 与 opacity 变化合并为"同时设置"，导致 transition 不触发
+  window.getComputedStyle(draggedItem).opacity;
+  // 合并卡片淡出（与原项淡入同步形成 cross-fade）；普通拖拽项恢复完全不透明
+  draggedItem.style.opacity = isMergeDragging ? '0' : '1';
+  window._endDrag_log.push({ step: 'opacity_set', opacity: draggedItem.style.opacity, computed: window.getComputedStyle(draggedItem).opacity });
+
+  // 合并拖拽：立即把已选中项移到目标位置并取消隐藏，
+  // 与合并卡片淡出同步——原项 0.2s 淡入 ↔ 合并卡片 0.35s 淡出，重叠形成 cross-fade
+  // 方案 C：transform 补偿同步释放——消除原项展开导致的后续项跳动
+  if (isMergeDragging) {
+    // 0. 在 DOM 变化前，先从 placeholder 量取单项高度与 margin，用于计算补偿 offset
+    const placeholderRect0 = placeholder.getBoundingClientRect();
+    const anchorHeight = placeholderRect0.height;
+    const anchorMarginBottom = parseFloat(window.getComputedStyle(placeholder).marginBottom) || 0;
+    const itemFullHeight = anchorHeight + anchorMarginBottom;
+    // 原项展开后多出的高度：(N-1) × 单项完整高度
+    const offset = (mergeSelectedItems.length - 1) * itemFullHeight;
+
+    // 1. 记录后续可见项（这些项会在原项展开后被推下，需要 transform 补偿）
+    const afterItems = [];
+    let node = placeholder.nextSibling;
+    while (node) {
+      if (node.nodeType === 1 && node.classList && node.classList.contains('todo-item')
+          && !node.classList.contains('merge-hidden')
+          && !node.classList.contains('placeholder')) {
+        afterItems.push(node);
+      }
+      node = node.nextSibling;
+    }
+
+    // 2. 插入原项并取消 merge-hidden（开始淡入，但 opacity 仍由 inline 锁定为 0）
+    const insertTarget = placeholder.nextSibling;
+    for (const it of mergeSelectedItems) list.insertBefore(it, insertTarget);
+    // 关键：先用 inline style 锁定 opacity=0，再移除 merge-hidden 类，
+    // 下一帧再清除 inline opacity 触发 0→1 过渡。
+    // 必须如此：.merge-hidden 用了 !important，直接移除会让 opacity 从 !important:0
+    // 跳到默认值 1，浏览器不会触发 transition，原项会瞬间出现而非淡入。
+    mergeSelectedItems.forEach(it => {
+      it.style.opacity = '0';
+      it.classList.remove('merge-hidden');
+    });
+
+    // 3. 移除占位框（仅单项高度，已不需要；原项已占据其位置）
+    placeholder.remove();
+    placeholder = null;
+
+    // 4. 立即给后续项加 transform: translateY(-offset)，让它们视觉上保持在原位置
+    //    transition: none 防止 transform 立即过渡（否则后续项会先下推再回弹）
+    if (offset > 0) {
+      for (const after of afterItems) {
+        after.style.transition = 'none';
+        after.style.transform = `translateY(${-offset}px)`;
+      }
+    }
+
+    // 5. 双 raf 后：
+    //    - 清除原项 inline opacity → 触发 0→1 淡入（0.2s）
+    //    - 恢复后续项 transition + 清除 transform → 触发 translateY(-offset)→0 过渡（0.3s）
+    //    两者同步启动，cross-fade 与后续项下移同时进行
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window._endDrag_log.push({ step: 'raf_clear_executing' });
+        mergeSelectedItems.forEach(it => { it.style.opacity = ''; });
+        if (offset > 0) {
+          for (const after of afterItems) {
+            after.style.transition = '';  // 恢复 .todo-item 默认 transition
+            after.style.transform = '';
+          }
+        }
+      });
+    });
+    window._endDrag_log.push({ step: 'merge_branch_done', offset, afterItems_count: afterItems.length });
+  }
 
   if (navigator.vibrate) navigator.vibrate(20);
 
-  // 动画结束后清理
+  // 动画结束后清理（合并拖拽走独立清理流程）
   setTimeout(() => {
-    cleanupDraggedItem();
+    if (isMergeDragging) cleanupMergeDrag();
+    else cleanupDraggedItem();
   }, 360);
 }
 
@@ -1467,6 +1649,96 @@ function cleanupDraggedItem() {
 
   draggedItem = null;
   isDragging = false;
+  hideScrollIndicators();
+}
+
+// ========== 多选合并拖拽（merge drag）==========
+/**
+ * 开始合并拖拽
+ * 多选模式下长按"已选中"项触发：
+ * 1. 收集所有已选中项（按 DOM 顺序，用于释放后按原相对顺序还原）
+ * 2. 在 anchor 原位置插入占位框
+ * 3. 折叠隐藏所有已选中项（merge-hidden）
+ * 4. 创建"选中 X 项"合并卡片，fixed 定位跟随手指
+ * 复用既有 draggedItem / placeholder / updateEdgeScroll / updatePlaceholderPosition 逻辑，
+ * 仅 draggedItem 指向合并卡片而非原 todo-item。
+ * @param {HTMLElement} anchor 长按触发的已选中项（决定合并卡片初始位置）
+ */
+function startMergeDrag(anchor) {
+  isDragging = true;
+  isMergeDragging = true;
+
+  // 1. 收集已选中项（按当前 DOM 顺序，保留原相对顺序）
+  mergeSelectedItems = Array.from(list.querySelectorAll(
+    '.todo-item.selected:not(.placeholder):not(.in-collapsed-zone)'
+  ));
+  const mergeCount = mergeSelectedItems.length;
+
+  // 2. 记录 anchor 矩形，用于合并卡片初始定位与手指相对偏移
+  const anchorRect = anchor.getBoundingClientRect();
+  fingerOffsetInItem = anchorRect.height / 2; // 合并卡片以手指为中心垂直跟随
+
+  // 3. 在 anchor 位置插入占位框（代表合并组的插入点）
+  placeholder = document.createElement('div');
+  placeholder.className = 'todo-item placeholder';
+  placeholder.style.height = anchorRect.height + 'px';
+  placeholder.style.marginBottom = window.getComputedStyle(anchor).marginBottom;
+  placeholder.style.visibility = 'visible';
+  list.insertBefore(placeholder, anchor);
+
+  // 4. 折叠隐藏所有已选中项（保留 DOM 位置，仅视觉折叠）
+  mergeSelectedItems.forEach(item => item.classList.add('merge-hidden'));
+
+  // 5. 创建合并卡片并加入 body（脱离 list，避免污染 list.children 查询与 toggleSelectAll）
+  const merged = document.createElement('div');
+  merged.className = 'todo-item merged-card dragging dragging-float';
+  merged.innerHTML = `<div class="merged-text">选中 ${mergeCount} 项</div>`;
+  merged.style.position = 'fixed';
+  merged.style.top = anchorRect.top + 'px';
+  merged.style.left = anchorRect.left + 'px';
+  merged.style.width = anchorRect.width + 'px';
+  merged.style.margin = '0';
+  merged.style.pointerEvents = 'none';
+  merged.style.opacity = '0.98';
+  document.body.appendChild(merged);
+  draggedItem = merged;
+
+  if (navigator.vibrate) navigator.vibrate(30);
+}
+
+/**
+ * 清理合并拖拽（收尾）
+ * 弹簧动画结束后调用。注：已选中项的移动与取消隐藏已在 endDrag 中提前完成
+ * （与合并卡片淡出同步形成 cross-fade），此处仅做收尾：
+ * 1. 移除占位框与合并卡片（合并卡片已淡出至 opacity:0，移除无视觉跳变）
+ * 2. 按新位置刷新各项的完成/置顶状态与分区计数
+ * 3. 重置合并拖拽状态（保留多选模式，仍处于批量态）
+ */
+function cleanupMergeDrag() {
+  window._cleanupMergeDrag_log = (window._cleanupMergeDrag_log || []);
+  window._cleanupMergeDrag_log.push({ step: 'enter', has_draggedItem: !!draggedItem });
+  if (!draggedItem) return;
+
+  // 1. 移除占位框（若仍在 DOM 中）与合并卡片
+  //    占位框在 endDrag 的 transform 补偿分支中可能已被提前移除，这里做防御性清理
+  if (placeholder) {
+    placeholder.remove();
+    placeholder = null;
+  }
+  draggedItem.remove();
+
+  // 2. 按新位置刷新完成/置顶状态与分区计数
+  mergeSelectedItems.forEach(item => {
+    updateItemZoneState(item);
+    updateItemPinnedState(item);
+  });
+  updateZoneCounts();
+
+  // 3. 重置合并拖拽状态（仍处于多选模式）
+  draggedItem = null;
+  isDragging = false;
+  isMergeDragging = false;
+  mergeSelectedItems = [];
   hideScrollIndicators();
 }
 

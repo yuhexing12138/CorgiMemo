@@ -126,6 +126,9 @@ dependencies {
     /** 农历库：tyme4kt（基于 6tail/lunar 升级的 KMP 版本） */
     implementation("cn.6tail:tyme4kt:1.4.5")
 
+    /** 拖拽排序库 Calvin-LL/Reorderable */
+    implementation(libs.reorderable)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

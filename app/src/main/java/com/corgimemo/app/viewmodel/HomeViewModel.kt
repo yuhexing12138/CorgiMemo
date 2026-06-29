@@ -863,6 +863,141 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 合并拖拽批量重排：多选模式下将选中项作为一个整体移动到 toIndex 位置
+     *
+     * 对应设计文档第十三章 13.2 交互流程"释放"阶段：
+     * - 从 pendingList / completedList 中移除所有选中项
+     * - 按原 displayItems 相对顺序合并
+     * - 插入到 toIndex 位置（根据区域判断 pending/completed）
+     * - 处理跨区域状态变更（完成↔未完成）与置顶切换
+     * - 重新分配全局 sortOrder：pending置顶 → pending普通 → completed置顶 → completed普通
+     *
+     * @param selectedIds 已选中项的 id 集合
+     * @param toIndex 占位框在 displayItems 中的目标位置
+     * @param crossedPinnedZone 是否跨越置顶区分界线
+     */
+    fun mergeReorderOnDisplayList(
+        selectedIds: Set<Long>,
+        toIndex: Int,
+        crossedPinnedZone: Boolean
+    ) {
+        viewModelScope.launch {
+            if (selectedIds.size <= 1) return@launch
+
+            val pendingList = pendingTodos.value.toMutableList()
+            val completedList = if (_showCompleted.value) {
+                visibleCompletedTodos.value.toMutableList()
+            } else {
+                mutableListOf()
+            }
+            val dividerIndex = pendingList.size
+            val totalSize = pendingList.size + 1 + completedList.size
+
+            if (toIndex !in 0..totalSize) return@launch
+
+            // 1. 收集所有选中项（按各自列表中的原始顺序，保留相对顺序）
+            val selectedPending = pendingList.mapIndexedNotNull { idx, item ->
+                if (item.id in selectedIds) idx to item else null
+            }
+            val selectedCompleted = completedList.mapIndexedNotNull { idx, item ->
+                if (item.id in selectedIds) idx to item else null
+            }
+
+            if (selectedPending.isEmpty() && selectedCompleted.isEmpty()) return@launch
+
+            // 2. 从原位置移除（从后往前移除避免索引错位）
+            selectedPending.sortedByDescending { it.first }.forEach { (idx, _) ->
+                pendingList.removeAt(idx)
+            }
+            selectedCompleted.sortedByDescending { it.first }.forEach { (idx, _) ->
+                completedList.removeAt(idx)
+            }
+
+            // 3. 按原 displayItems 顺序合并选中项
+            val mergedItems = (selectedPending.map { it.second } +
+                selectedCompleted.map { it.second }).toMutableList()
+
+            // 4. 计算目标区域（dividerIndex 在移除后已变化，用原 dividerIndex 判断）
+            val toPending = toIndex < dividerIndex
+            val toCompleted = toIndex > dividerIndex
+
+            // 5. 处理跨区域状态变更（完成↔未完成、置顶切换）
+            val finalItems = mergedItems.map { item ->
+                var finalItem = item
+                if (item.status == 0 && toCompleted) {
+                    // pending → completed：标记完成
+                    val now = System.currentTimeMillis()
+                    finalItem = item.copy(
+                        status = 1,
+                        completedAt = now,
+                        updatedAt = now,
+                        isPinned = if (crossedPinnedZone) !item.isPinned else item.isPinned
+                    )
+                } else if (item.status == 1 && (toPending || toIndex == dividerIndex)) {
+                    // completed → pending：标记未完成
+                    finalItem = item.copy(
+                        status = 0,
+                        completedAt = null,
+                        updatedAt = System.currentTimeMillis(),
+                        isPinned = if (crossedPinnedZone) !item.isPinned else item.isPinned
+                    )
+                } else if (crossedPinnedZone) {
+                    // 同区域：仅处理置顶切换
+                    finalItem = item.copy(isPinned = !item.isPinned)
+                }
+                finalItem
+            }
+
+            // 6. 插入到目标区域
+            when {
+                toPending -> {
+                    val insertIdx = toIndex.coerceAtMost(pendingList.size)
+                    pendingList.addAll(insertIdx, finalItems)
+                }
+                toCompleted -> {
+                    val insertIdx = (toIndex - pendingList.size - 1).coerceAtMost(completedList.size)
+                    completedList.addAll(insertIdx, finalItems)
+                }
+                toIndex == dividerIndex -> {
+                    pendingList.addAll(pendingList.size, finalItems)
+                }
+            }
+
+            // 7. 持久化状态变更
+            finalItems.forEachIndexed { idx, finalItem ->
+                val originalItem = mergedItems[idx]
+                val stateChanged = finalItem.status != originalItem.status
+                val pinChanged = finalItem.isPinned != originalItem.isPinned
+                if (stateChanged || pinChanged) {
+                    todoRepository.updateTodo(finalItem)
+                }
+            }
+
+            // 8. 重新分配全局 sortOrder：pending置顶 → pending普通 → completed置顶 → completed普通
+            var globalOrder = 0
+            pendingList.filter { it.isPinned }.forEach { item ->
+                todoRepository.updateSortOrder(item.id, globalOrder)
+                globalOrder++
+            }
+            pendingList.filter { !it.isPinned }.forEach { item ->
+                todoRepository.updateSortOrder(item.id, globalOrder)
+                globalOrder++
+            }
+            completedList.filter { it.isPinned }.forEach { item ->
+                todoRepository.updateSortOrder(item.id, globalOrder)
+                globalOrder++
+            }
+            completedList.filter { !it.isPinned }.forEach { item ->
+                todoRepository.updateSortOrder(item.id, globalOrder)
+                globalOrder++
+            }
+
+            // 9. 退出多选模式
+            exitBatchMode()
+        }
+    }
+
+    /**
      * 恢复默认排序：按当前 sortType 重算所有待办的 sortOrder
      *
      * 触发场景：用户在排序菜单点击"恢复默认排序"按钮

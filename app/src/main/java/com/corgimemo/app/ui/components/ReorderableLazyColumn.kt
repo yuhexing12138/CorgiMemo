@@ -1,64 +1,61 @@
 package com.corgimemo.app.ui.components
 
-import android.util.Log
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
+import androidx.compose.ui.unit.sp
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
-import com.corgimemo.app.util.toPxFloat
-import kotlinx.coroutines.delay
-import kotlin.math.abs
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
- * 简化版可拖拽列表面向非 LazyColumn 场景
+ * 简化版可拖拽列表面向非 LazyColumn 场景（基于 Calvin-LL/Reorderable 库）
  *
  * 对于少量固定数量的列表项（如设置页面），
- * 使用 Column + 手动管理状态的方式更简单。
+ * 使用库的 ReorderableColumn（基于 Column）实现拖拽排序。
  *
  * @param items 列表数据
  * @param onReorder 重排回调
@@ -72,155 +69,25 @@ fun <T> ReorderableColumn(
     modifier: Modifier = Modifier,
     content: @Composable (index: Int, item: T, isDragging: Boolean) -> Unit
 ) {
-    var draggedIndex by remember { mutableIntStateOf(-1) }
-    var targetIndex by remember { mutableIntStateOf(-1) }
-    /** 记录拖拽起始 Y 坐标，用于计算偏移量 */
-    var dragStartY by remember { mutableFloatStateOf(0f) }
-    /** 获取 Context 用于触觉反馈 */
     val context = LocalContext.current
-    /** 获取屏幕密度用于 dp→px 转换（确保不同密度下视觉效果一致） */
-    val density = LocalDensity.current
-    /** 上一次跨项移动时的触觉反馈时间戳（节流 200ms） */
-    var lastHapticTime by remember { mutableLongStateOf(0L) }
-    /** 记录上一次 targetIndex 用于检测跨项移动 */
-    var lastTargetIndex by remember { mutableIntStateOf(-1) }
 
-    /**
-     * 动态行高缓存：记录每个内容项的实际渲染高度（像素）
-     *
-     * 通过 onSizeChanged 在首次布局时捕获每项的真实尺寸，
-     * 替代固定 120dp 预估，使拖拽索引计算更精准。
-     * key = 列表索引, value = 高度（像素）
-     *
-     * 使用 Compose 原生 StateMap（Compose 1.9+ 支持 mutableIntStateMapOf）
-     */
-    val itemHeightsPx = remember { mutableStateMapOf<Int, Int>() }
-
-    /**
-     * 获取用于拖拽索引计算的预估行高（像素）
-     *
-     * 策略：
-     * 1. 如果已测量到任意项的高度 → 使用所有已测量项的平均值
-     * 2. 否则 → 回退到固定默认值 160px（约 50dp @ 320dpi）
-     */
-    val defaultHeightPx = if (itemHeightsPx.isNotEmpty()) {
-        itemHeightsPx.values.sum().toFloat() / itemHeightsPx.size
-    } else {
-        160f
-    }
-
-    androidx.compose.foundation.layout.Column(modifier = modifier) {
-        items.forEachIndexed { index, item ->
-            val isCurrentItemDragging = index == draggedIndex
-
-            /**
-             * 拖拽项视觉状态：
-             * - 被拖项：放大 + 阴影 + 浮起
-             * - 目标位置项（被跨越的项）：半透明
-             * - 其他项：正常显示
-             */
-            val alpha = when {
-                isCurrentItemDragging -> 1f /** 被拖项保持不透明 */
-                index == targetIndex && draggedIndex != targetIndex -> 0.4f /** 目标位置半透明提示 */
-                else -> 1f
+    sh.calvin.reorderable.ReorderableColumn(
+        list = items,
+        onSettle = { fromIndex, toIndex ->
+            if (fromIndex != toIndex) {
+                HapticFeedbackManager.performHapticFeedback(
+                    context = context,
+                    type = InteractionType.CONFIRM,
+                    enabled = true
+                )
+                onReorder(fromIndex, toIndex)
             }
-
-            androidx.compose.foundation.layout.Box(
-                modifier = Modifier
-                    .then(
-                        if (isCurrentItemDragging) {
-                            Modifier
-                                .padding(8.dp)
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
-                                .graphicsLayer(
-                                    scaleX = 1.05f,
-                                    scaleY = 1.05f,
-                                    translationY = (-4).dp.toPxFloat(density)
-                                )
-                                /** Compose 1.9 原生投影：使用 DSL 块语法 */
-                                .dropShadow(
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    color = Color.Black.copy(alpha = 0.25f)
-                                    radius = 8f
-                                }
-                        } else {
-                            Modifier
-                                .padding(8.dp)
-                                .graphicsLayer(alpha = alpha)
-                        }
-                    )
-                    /** 捕获每项的实际布局高度，存入动态行高缓存 */
-                    .onSizeChanged { size ->
-                        if (size.height > 0) {
-                            itemHeightsPx[index] = size.height
-                        }
-                    }
-                    .pointerInput(index) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = { offset ->
-                                draggedIndex = index
-                                targetIndex = index
-                                dragStartY = offset.y
-                            },
-                            onDrag = { change, _ ->
-                                change.consume()
-                                /**
-                                 * 基于手指 Y 偏移量 + 动态行高计算目标索引
-                                 *
-                                 * 使用 itemHeightsPx 缓存的实际测量高度，
-                                 * 比固定 120dp 预估更精准地反映真实内容尺寸。
-                                 */
-                                val dragOffset = change.position.y - dragStartY
-
-                                /**
-                                 * 计算目标索引：从被拖项出发，
-                                 * 根据偏移量逐项累加实际高度判断越过了哪些项
-                                 */
-                                val effectiveItemHeight: Float = itemHeightsPx[index]
-                                    ?.toFloat() ?: defaultHeightPx
-                                val indexDelta = (dragOffset / effectiveItemHeight).toInt()
-                                val newTargetIndex = (index + indexDelta)
-                                    .coerceIn(0, items.size - 1)
-                                targetIndex = newTargetIndex
-
-                                /** 跨项移动时触发轻微触觉反馈（节流 200ms） */
-                                if (newTargetIndex != lastTargetIndex && newTargetIndex != draggedIndex) {
-                                    val now = System.currentTimeMillis()
-                                    if (now - lastHapticTime > 200L) {
-                                        HapticFeedbackManager.performHapticFeedback(
-                                            context = context,
-                                            type = InteractionType.TEXT_MOVE,
-                                            enabled = true
-                                        )
-                                        lastHapticTime = now
-                                    }
-                                    lastTargetIndex = newTargetIndex
-                                }
-                            },
-                            onDragEnd = {
-                                /** 排序完成时触发确认触觉反馈 */
-                                if (draggedIndex >= 0 && targetIndex >= 0 &&
-                                    draggedIndex != targetIndex) {
-                                    HapticFeedbackManager.performHapticFeedback(
-                                        context = context,
-                                        type = InteractionType.CONFIRM,
-                                        enabled = true
-                                    )
-                                    onReorder(draggedIndex, targetIndex)
-                                }
-                                draggedIndex = -1
-                                targetIndex = -1
-                                lastTargetIndex = -1
-                            },
-                            onDragCancel = {
-                                draggedIndex = -1
-                                targetIndex = -1
-                            }
-                        )
-                    }
-            ) {
-                content(index, item, isCurrentItemDragging)
+        },
+        modifier = modifier,
+    ) { index, item, isDragging ->
+        ReorderableItem {
+            Box(modifier = Modifier.longPressDraggableHandle()) {
+                content(index, item, isDragging)
             }
         }
     }
@@ -229,56 +96,9 @@ fun <T> ReorderableColumn(
 /**
  * 拖拽排序算法纯函数集合
  *
- * 抽离为顶层 object 便于单元测试（不依赖 Compose Runtime）。
- * 运行时由 ReorderableLazyColumn 调用，测试由 ReorderAlgorithmsTest 验证。
+ * 重构后仅保留置顶区跨越检测，其余算法由 Calvin-LL/Reorderable 库内部处理。
  */
 object ReorderAlgorithms {
-
-    /**
-     * 检测被拖项与哪个可见项重叠超过 50%
-     *
-     * 算法：
-     * - 被拖项中心 = fingerY（手指位置即卡片视觉中心）
-     * - 计算与每个可见项的重叠高度
-     * - 重叠比例 = 重叠高度 / max(被拖项高, 其他项高)
-     * - 比例 > 0.5 时返回该其他项的 key
-     *
-     * 说明：使用 max 而非 min 作为分母，避免小卡片在高度差场景下
-     * 触发阈值过低导致交换震荡。
-     *
-     * @param draggedKey 被拖项 key（不与自身比较）
-     * @param fingerY 手指 Y 坐标（视口坐标）
-     * @param draggedSize 被拖项高度（px）
-     * @param visibleItems 可见项信息列表（key, offset, size）
-     * @return 目标项的 key，无交换返回 null
-     */
-    fun findSwapTarget(
-        draggedKey: Any,
-        fingerY: Float,
-        draggedSize: Int,
-        visibleItems: List<VisibleItemInfo>
-    ): Any? {
-        val draggedCenter = fingerY
-        val draggedTop = draggedCenter - draggedSize / 2f
-        val draggedBottom = draggedCenter + draggedSize / 2f
-
-        for (other in visibleItems) {
-            if (other.key == draggedKey) continue
-
-            val otherTop = other.offset.toFloat()
-            val otherBottom = (other.offset + other.size).toFloat()
-
-            val overlapTop = maxOf(draggedTop, otherTop)
-            val overlapBottom = minOf(draggedBottom, otherBottom)
-            val overlapHeight = maxOf(0f, overlapBottom - overlapTop)
-
-            val maxSize = maxOf(draggedSize, other.size).toFloat()
-            if (maxSize > 0 && overlapHeight / maxSize > 0.5f) {
-                return other.key
-            }
-        }
-        return null
-    }
 
     /**
      * 检测拖拽是否跨越置顶区分界线
@@ -307,105 +127,51 @@ object ReorderAlgorithms {
     }
 
     /**
-     * 计算释放动画的起始 offset（从 ReorderableLazyColumn finally 块提取为纯函数）
+     * 应用置顶区边界限制：占位框不能插入到置顶区起始位置之前
      *
-     * 用途：用户松手时，被拖卡片 A 的内层 Box offset 仍保持在 `fingerY - baseCenterY`，
-     * 需要驱动 Animatable 从该值平滑过渡到 0，避免松手瞬间 offset 归零造成的视觉瞬移。
+     * 规则（对应原型 updatePlaceholderPosition 行 1481-1489）：
+     * - 任何待办的占位框都不能插入到"置顶"标签上方
+     * - 非置顶项仍可拖入置顶区（拖入后由外部 updateItemPinnedState 自动切换为置顶项）
      *
-     * @param fingerY 手指 Y 坐标（视口坐标）
-     * @param baseCenterY 拖拽基线中心 Y（最后交换时的目标项 offset + draggedSize/2）
-     * @return 释放动画起始 offset（手指相对基线的偏移）
+     * @param requestedIndex 请求的插入位置
+     * @param pinnedStartIndex 置顶区起始位置（第一个 isPinned=true 的项的 index），-1 表示无置顶区
+     * @return 限制后的安全插入位置
      */
-    fun computeReleaseStartOffset(fingerY: Float, baseCenterY: Float): Float =
-        fingerY - baseCenterY
-
-    /**
-     * 判断释放动画期间是否应跳过 displayItems 更新
-     *
-     * 用途：松手后 250ms 释放动画期间，ViewModel 异步 onReorder 结果回流可能触发
-     * `LaunchedEffect(items)` 重置 displayItems。如果在动画期间重置，会破坏正在播放的
-     * 释放动画（A 的内层 Box offset 与新的 displayItems 位置不一致），造成新的跳变。
-     *
-     * @param isReleasing 是否处于释放动画期
-     * @return true = 跳过 displayItems 更新；false = 正常更新
-     */
-    fun shouldSkipDisplayUpdate(isReleasing: Boolean): Boolean = isReleasing
-
-    /**
-     * 计算交换后被拖项在 displayItems 中的应有中心 Y
-     *
-     * 不依赖 listState.layoutInfo.visibleItemsInfo（与 displayItems 状态变更
-     * 之间存在一帧延迟，交换后立即读取会读到陈旧位置）。
-     *
-     * 策略：目标索引 × 平均行高 = 被拖项应有顶部 Y；中心 = 顶部 + 自身高度/2
-     *
-     * @param targetIndex 被拖项交换后的目标索引（displayItems[targetIndex] 是被拖项）
-     * @param draggedSize 被拖项自身高度（px）
-     * @param averageItemHeightPx displayItems 中所有项的平均行高（px）
-     * @return 被拖项在新位置的应有中心 Y
-     */
-    fun computeDraggedListCenterY(
-        targetIndex: Int,
-        draggedSize: Int,
-        averageItemHeightPx: Float
-    ): Float {
-        if (averageItemHeightPx <= 0f) return draggedSize / 2f
-        val topY = targetIndex * averageItemHeightPx
-        return topY + draggedSize / 2f
-    }
-
-    /**
-     * 计算 displayItems 中所有已测量项的平均行高
-     *
-     * 用于 computeDraggedListCenterY 反推被拖项应有位置，
-     * 避免依赖 visibleItemsInfo 的陈旧值。
-     *
-     * @param itemHeights 索引→高度（px）的映射，通过 onSizeChanged 收集
-     * @param defaultHeightPx itemHeights 为空时回退的默认行高
-     * @return 平均行高（px）
-     */
-    fun computeAverageItemHeightPx(
-        itemHeights: Map<Int, Int>,
-        defaultHeightPx: Float
-    ): Float {
-        if (itemHeights.isEmpty()) return defaultHeightPx
-        return itemHeights.values.sum().toFloat() / itemHeights.size
+    fun applyPinnedBoundary(
+        requestedIndex: Int,
+        pinnedStartIndex: Int
+    ): Int {
+        if (pinnedStartIndex < 0) return requestedIndex
+        return if (requestedIndex < pinnedStartIndex) pinnedStartIndex else requestedIndex
     }
 }
 
 /**
- * 可见项信息（测试友好型数据类，避免依赖 LazyListLayoutInfo）
- */
-data class VisibleItemInfo(
-    val key: Any,
-    val offset: Int,
-    val size: Int
-)
-
-/**
- * 可拖拽排序 LazyColumn 容器组件
+ * 可拖拽排序 LazyColumn 容器组件（基于 Calvin-LL/Reorderable 库）
  *
  * **职责**：
- * - 长按 500ms + 纵向移动 > 8dp → 进入拖拽模式
+ * - 长按进入拖拽模式（库内置 detectDragGesturesAfterLongPress）
  * - 拖拽中卡片半透明跟随手指，其他项 animateItem() 让位
- * - 50% 重叠触发交换，置顶区跨越自动切换 isPinned
- * - 边缘自动滚动（变速）
+ * - 库内置：边缘自动滚动（基于手柄中心距视口边缘）、释放回弹 spring 动画、首可见项保护
+ * - 置顶区跨越自动检测
  * - 手指抬起提交排序，调用 onReorder
+ * - 多选模式下长按已选中项触发合并拖拽（自定义 pointerInput 包装）
  *
  * **手势分层**：
- * - L1 容器（本组件）：pointerInput(Unit) { awaitEachGesture } 处理长按+拖拽
- * - L2 SwipeableTodoBox：拖拽激活时通过 isEnabled=false 禁用左滑
- * - L3 TodoListItem：检测 isDragActive=true 时 emit Cancel + break 让位
- *
- * **无 1 帧跳变**：手动追踪 draggedBaseCenterY 基线，
- * dragOffsetY = fingerY - draggedBaseCenterY（纯同步计算，不依赖 layoutInfo）
+ * - L1 库 longPressDraggableHandle：长按 + 拖拽（非多选模式，或多选模式下仅选中 1 项）
+ * - L2 自定义 pointerInput：多选模式下 selectedIds.size > 1 时长按已选中项触发合并拖拽
+ * - L3 SwipeableTodoBox：拖拽激活时通过 isDragActive 禁用左滑
+ * - L4 TodoListItem：检测 isDragActive=true 时让位
  *
  * @param items 列表数据
  * @param isDragEnabled 是否允许拖拽（批量模式/左滑展开时设为 false）
  * @param isDraggable 判断项是否可拖拽（用于分隔按钮等不可拖拽项），默认全部可拖拽
- * @param isPinned 获取项是否置顶的函数（用于跨越检测）
+ * @param isPinned 获取项是否置顶的函数（用于跨越检测与边界限制）
  * @param key 项的唯一标识
  * @param onReorder 排序提交回调 (fromIndex, toIndex, crossedPinnedZone)
+ * @param isBatchMode 是否处于多选模式（来自 ViewModel）
+ * @param selectedIds 已选中项的 key 集合（来自 ViewModel）
+ * @param onMergeReorder 合并拖拽提交回调 (selectedIds, toIndex, crossedPinnedZone)
  * @param listState LazyListState 实例，外部传入可读取滚动状态；默认内部创建
  * @param modifier Modifier
  * @param content 列表项 Composable，参数为 (index, item, isDragging, isDragActive)
@@ -418,494 +184,597 @@ fun <T> ReorderableLazyColumn(
     isPinned: (T) -> Boolean,
     key: (T) -> Any,
     onReorder: (fromIndex: Int, toIndex: Int, crossedPinnedZone: Boolean) -> Unit,
+    isBatchMode: Boolean = false,
+    selectedIds: Set<Any> = emptySet(),
+    onMergeReorder: (selectedIds: Set<Any>, toIndex: Int, crossedPinnedZone: Boolean) -> Unit = { _, _, _ -> },
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
     content: @Composable (index: Int, item: T, isDragging: Boolean, isDragActive: Boolean) -> Unit
 ) {
-    val density = LocalDensity.current
     val context = LocalContext.current
 
-    // ━━━ 拖拽状态 ━━━
-    var isDragActive by remember { mutableStateOf(false) }
-    var draggedKey by remember { mutableStateOf<Any?>(null) }
-    var draggedOriginalIndex by remember { mutableIntStateOf(-1) }
-    var draggedCurrentIndex by remember { mutableIntStateOf(-1) }
-    var draggedOriginalIsPinned by remember { mutableStateOf(false) }
-    var fingerY by remember { mutableFloatStateOf(0f) }
-    var lastHapticTime by remember { mutableLongStateOf(0L) }
-
-    /**
-     * 长按触发标志（中间状态）
-     *
-     * 长按触发后立即置 true，驱动 dragScrollBlocker 拦截滚动，
-     * 解决"长按触发到 isDragActive=true 之间的事件未消费窗口"。
-     *
-     * 与 isDragActive 区别：
-     * - isLongPressActive：长按触发即 true，专用滚动拦截
-     * - isDragActive：dy > dragThresholdPx 才 true，驱动交换逻辑
-     *
-     * 重置时机：松手 / 取消 / items 外部变更
-     */
-    var isLongPressActive by remember { mutableStateOf(false) }
-
-    // ━━━ 释放期状态（松手后清理）━━━
-    /**
-     * 释放期标志
-     *
-     * 松手后被置为 true 的极短瞬间即被重置为 false。
-     * 期间：A 仍处于「拖拽分支」（draggedKey 保持有效 → animateItem 不重启），
-     * LaunchedEffect(items) 跳过 displayItems 更新，避免在状态清理过程中插入
-     * 新的 items 引发跳变；接着 finally 块瞬时归零 releaseDragOffset、清空所有
-     * 拖拽字段，LaunchedEffect(items) 下一次触发时正常更新 displayItems。
-     *
-     * 注意：原计划使用 Animatable.animateTo 提供 250ms 平滑过渡，
-     * 但受限挂起作用域内无法调用受限挂起函数，已改为瞬时重置。
-     * 如需平滑过渡，可迁移到 LaunchedEffect(isDragActive=false) 内执行。
-     */
-    var isReleasing by remember { mutableStateOf(false) }
-
-    /**
-     * 释放期 offset 状态
-     *
-     * 松手后内层 Box 应回到 displayItems 期望位置。
-     * 原方案：Animatable.animateTo 从 releaseStartOffset 过渡到 0。
-     * 编译错误：`awaitEachGesture` 是受限挂起作用域，无法调用受限挂起函数
-     * `Animatable.animateTo`。已放弃平滑过渡，改为瞬时同步赋值 0f，
-     * 下一帧 LaunchedEffect(items) 正常更新 displayItems，animateItem 完成过渡。
-     */
-    val releaseDragOffset = remember { mutableFloatStateOf(0f) }
-
-    // ━━━ 逻辑基线 + 滚动补偿（替换原 draggedBaseCenterY）━━━
-    /**
-     * 纯逻辑基线：被拖项在 displayItems 中的应有中心 Y（不含 auto-scroll 调整）
-     *
-     * 初始化：进入拖拽时 = computeDraggedListCenterY(draggedOriginalIndex, ...)
-     * 交换时：= computeDraggedListCenterY(targetIndex, ...)
-     * 不再读 visibleItemsInfo（与 displayItems 状态变更存在一帧延迟）
-     */
-    var draggedListCenterY by remember { mutableFloatStateOf(0f) }
-
-    /**
-     * 滚动补偿：auto-scroll 期间列表整体平移了多少
-     *
-     * 由 LaunchedEffect(isDragActive, fingerY) 在每次 scrollBy 后累加 scrollDelta。
-     * 替换原 draggedBaseCenterY += scrollDelta 写法，
-     * 避免基线在 auto-scroll 与交换逻辑间产生歧义。
-     */
-    var scrollCompensationY by remember { mutableFloatStateOf(0f) }
-
-    /**
-     * 动态行高缓存：记录每个 displayItems 索引对应的实际渲染高度（px）
-     *
-     * key = displayItems 索引, value = 高度（像素）
-     * 通过 Modifier.onSizeChanged 在首次布局时捕获每项真实尺寸，
-     * 替代固定 160px 默认值，使 draggedListCenterY 计算更精准。
-     */
-    val itemHeightsPx = remember { mutableStateMapOf<Int, Int>() }
-
-    /**
-     * 当前已测量项的平均行高（px）
-     *
-     * 空缓存时回退到 160f
-     */
-    val averageItemHeightPx = if (itemHeightsPx.isNotEmpty()) {
-        ReorderAlgorithms.computeAverageItemHeightPx(
-            itemHeights = itemHeightsPx,
-            defaultHeightPx = 160f
-        )
-    } else {
-        160f
-    }
-
-    // ━━━ 反向交换锁定状态（修复点 3）━━━
-    // 交换后记录目标 key 和手指位置，防止下一帧立即反向交换导致震荡
-    // 清除条件：手指移动超过 draggedSize/2 后清除锁定
-    var lastSwapTargetKey by remember { mutableStateOf<Any?>(null) }
-    var lastSwapFingerY by remember { mutableFloatStateOf(0f) }
-
-    // ━━━ 显示列表（拖拽中可重排，与 items 解耦）━━━
+    // ━━━ 拖拽状态（从 15+ 精简到 5 个）━━━
     var displayItems by remember { mutableStateOf(items) }
-    LaunchedEffect(items) {
-        when {
-            // 释放动画期间：跳过更新，避免破坏正在播放的释放动画
-            // （A 的内层 Box offset 与新 displayItems 位置不一致会导致跳变）
-            ReorderAlgorithms.shouldSkipDisplayUpdate(isReleasing) -> {
-                Log.d("ReorderableLazyColumn",
-                    "[DISPLAY_ITEMS_REFRESH] skipped: isReleasing=true, items.size=${items.size}")
-            }
-            // 非拖拽中：正常更新
-            !isDragActive -> {
-                displayItems = items
-            }
-            // 拖拽中 items 被外部变更（如同步）→ 取消拖拽
-            else -> {
-                displayItems = items
-                isDragActive = false
-                isLongPressActive = false
-                draggedKey = null
-                draggedOriginalIndex = -1
-                draggedCurrentIndex = -1
-                fingerY = 0f
-                draggedListCenterY = 0f
-                scrollCompensationY = 0f
-            }
-        }
-    }
+    var isDragActive by remember { mutableStateOf(false) }
+    var draggedOriginalIndex by remember { mutableIntStateOf(-1) }
+    var draggedOriginalIsPinned by remember { mutableStateOf(false) }
+    var crossedPinnedZone by remember { mutableStateOf(false) }
 
-    // ━━━ 阈值参数 ━━━
-    val dragThresholdPx = with(density) { 8.dp.toPx() }
-    val longPressTimeoutMs = 500L
+    /** 触觉反馈节流时间戳 */
+    var lastHapticTime by remember { mutableLongStateOf(0L) }
     val hapticThrottleMs = 200L
-    val edgeThresholdPx = with(density) { 80.dp.toPx() }
-    val maxScrollSpeedPx = with(density) { 20.dp.toPx() }
 
-    // ━━━ dragOffsetY 同步计算（derivedStateOf 避免在 Composable 中声明带 getter 的局部属性）━━━
-    val dragOffsetY by remember {
-        derivedStateOf {
-            when {
-                // 拖拽中：手指位置 - 被拖项在 displayItems 中的逻辑中心 - auto-scroll 补偿
-                isDragActive -> fingerY - draggedListCenterY - scrollCompensationY
-                isReleasing -> releaseDragOffset.floatValue
-                else -> 0f
-            }
-        }
-    }
+    // ━━━ 合并拖拽状态（Task 6 新增）━━━
+    /** 合并拖拽进行中标志 */
+    var isMergeDragging by remember { mutableStateOf(false) }
+    /** 合并拖拽中收集的选中项列表（按 displayItems 顺序，保留原相对顺序） */
+    var mergeSelectedItems by remember { mutableStateOf(listOf<T>()) }
+    /** 合并卡片跟随手指的累积 Y 偏移量（px） */
+    var mergeFingerY by remember { mutableFloatStateOf(0f) }
+    /** 占位框在 displayItems 中的插入位置 index */
+    var mergePlaceholderIndex by remember { mutableIntStateOf(-1) }
+    /** 合并卡片初始 Y 坐标（anchor 项在 LazyList 中的位置，用于计算合并卡片绝对位置） */
+    var mergeCardInitialY by remember { mutableFloatStateOf(0f) }
+    /** 累积拖拽量（用于阈值检测移动占位框） */
+    var cumulativeDragY by remember { mutableFloatStateOf(0f) }
 
-    // ━━━ 自动滚动 ━━━
-    LaunchedEffect(isDragActive, fingerY) {
-        while (isDragActive) {
-            val viewportHeight = listState.layoutInfo.viewportSize.height.toFloat()
-            if (viewportHeight > 0) {
-                val scrollDelta = when {
-                    fingerY < edgeThresholdPx -> {
-                        val ratio = (edgeThresholdPx - fingerY) / edgeThresholdPx
-                        ratio * maxScrollSpeedPx
-                    }
-                    fingerY > viewportHeight - edgeThresholdPx -> {
-                        val ratio = (fingerY - (viewportHeight - edgeThresholdPx)) / edgeThresholdPx
-                        -ratio * maxScrollSpeedPx
-                    }
-                    else -> 0f
-                }
-                if (scrollDelta != 0f) {
-                    listState.scrollBy(scrollDelta)
-                    // 仅累加滚动补偿到 scrollCompensationY，不动 draggedListCenterY
-                    // 这样交换逻辑的基线与滚动逻辑彻底解耦（修复 Bug B 根因）
-                    scrollCompensationY += scrollDelta
-                }
-            }
-            delay(16)
+    // ━━━ 方案 C：释放动画状态（Task 6 优化）━━━
+    /** 协程作用域，驱动释放动画 */
+    val scope = rememberCoroutineScope()
+    /** 释放动画进行中标志（区别于 isMergeDragging：拖拽中） */
+    var isMergeAnimating by remember { mutableStateOf(false) }
+    /** 合并卡片 alpha（0.98 正常 → 0 淡出，Animatable 驱动 cross-fade） */
+    val cardAlpha = remember { Animatable(0.98f) }
+    /** 合并卡片 Y 坐标（弹簧动画到占位框位置，Animatable 驱动） */
+    val cardY = remember { Animatable(0f) }
+    /** 原项淡入 alpha（0 → 1，Animatable 驱动） */
+    val itemsAlpha = remember { Animatable(1f) }
+    /** 后续项 translationY 补偿（-offset → 0，Animatable 驱动） */
+    val itemsOffset = remember { Animatable(0f) }
+    /** 释放动画期间保存的选中项 key 集合（用于区分原项与后续项） */
+    var mergeSelectedKeys by remember { mutableStateOf(emptySet<Any>()) }
+    /** 释放动画期间保存的合并拖拽项数量（用于计算后续项补偿范围） */
+    var mergeSelectedCount by remember { mutableIntStateOf(0) }
+    /** 释放动画初始化完成标志（消除 snapTo 前的一帧跳动：snapTo 是 suspend，需在协程中执行） */
+    var mergeAnimInitDone by remember { mutableStateOf(false) }
+    /** 释放动画的 transform 补偿量（同步存储，供渲染在 snapTo 执行前使用初始值） */
+    var mergeAnimOffset by remember { mutableFloatStateOf(0f) }
+
+    // ━━━ 多选模式下单选回退：selectedIds.size <= 1 时强制启用库的 handle ━━━
+    // HomeScreen 传入 isDragEnabled = !isBatchMode，但多选模式下仅选中 1 项时
+    // 应回退为普通拖拽，因此这里用 || 覆盖
+    val effectiveDragEnabled = isDragEnabled || (isBatchMode && selectedIds.size <= 1)
+
+    // ━━━ 同步外部 items 变更 ━━━
+    LaunchedEffect(items) {
+        if (isMergeAnimating) {
+            // 释放动画中：onMergeReorder 触发 items 变更，允许 displayItems 更新
+            // 但保持 isMergeDragging/isMergeAnimating，让释放动画继续播放
+            displayItems = items
+        } else if (!isDragActive && !isMergeDragging) {
+            displayItems = items
+        } else if (isMergeDragging) {
+            // 合并拖拽中 items 被外部变更 → 取消合并拖拽
+            displayItems = items
+            isMergeDragging = false
+            isDragActive = false
+            mergeSelectedItems = emptyList()
+            mergePlaceholderIndex = -1
+            cumulativeDragY = 0f
+        } else {
+            // 普通拖拽中 items 被外部变更 → 取消拖拽
+            displayItems = items
+            isDragActive = false
+            draggedOriginalIndex = -1
         }
     }
 
     // ━━━ 主题色（虚线占位框）━━━
     val primaryColor = MaterialTheme.colorScheme.primary
 
-    // ━━━ 拖拽时禁用列表滚动（通过nestedScroll拦截）━━━
-    val dragScrollBlocker = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): Offset {
-                // 长按触发即拦截滚动（不等 isDragActive），
-                // 解决"长按到 isDragActive=true 之间的事件未消费窗口"导致的列表失控滚动
-                return if (isLongPressActive) available else Offset.Zero
+    // ━━━ 创建库的 ReorderableLazyListState ━━━
+    val reorderableState = rememberReorderableLazyListState(
+        lazyListState = listState,
+        onMove = { from, to ->
+            // ① 校验 from/to 是否指向不可拖拽项（CompletedDivider）
+            val fromItem = displayItems.getOrNull(from.index)
+            val toItem = displayItems.getOrNull(to.index)
+            if (fromItem == null || toItem == null) return@rememberReorderableLazyListState
+            if (!isDraggable(fromItem) || !isDraggable(toItem)) {
+                return@rememberReorderableLazyListState
             }
+
+            // ② 重排 displayItems
+            val newDisplay = displayItems.toMutableList()
+            val draggedItem = newDisplay.removeAt(from.index)
+            newDisplay.add(to.index, draggedItem)
+            displayItems = newDisplay
+
+            // ③ 触觉反馈（节流）
+            val now = System.currentTimeMillis()
+            if (now - lastHapticTime > hapticThrottleMs) {
+                HapticFeedbackManager.performHapticFeedback(
+                    context = context,
+                    type = InteractionType.TEXT_MOVE,
+                    enabled = true
+                )
+                lastHapticTime = now
+            }
+        }
+    )
+
+    // ━━━ 合并拖拽：开始 ━━━
+    /**
+     * 开始合并拖拽：收集选中项 + 设置占位框初始位置 + 记录合并卡片初始位置
+     * 对应原型 startMergeDrag（行 1667-1707）
+     */
+    fun startMergeDrag(anchor: T) {
+        isMergeDragging = true
+        isDragActive = true
+        // 1. 收集已选中项（按 displayItems 顺序，保留原相对顺序）
+        mergeSelectedItems = displayItems.filter { key(it) in selectedIds }
+        // 2. 占位框初始位置 = anchor 项当前位置
+        mergePlaceholderIndex = displayItems.indexOfFirst { key(it) == key(anchor) }
+        // 3. 记录 anchor 在 LazyList 中的位置（用于合并卡片初始定位）
+        val anchorItemInfo = listState.layoutInfo.visibleItemsInfo.find {
+            it.key == key(anchor)
+        }
+        mergeCardInitialY = anchorItemInfo?.offset?.toFloat() ?: 0f
+        // 4. 重置累积拖拽量
+        mergeFingerY = 0f
+        cumulativeDragY = 0f
+        // 5. 触觉反馈
+        HapticFeedbackManager.performHapticFeedback(
+            context = context,
+            type = InteractionType.TEXT_MOVE,
+            enabled = true
+        )
+    }
+
+    // ━━━ 合并拖拽：更新占位框位置（精确版，含置顶区边界限制）━━━
+    /**
+     * 拖拽中更新占位框位置（精确版）
+     * 对应原型 updatePlaceholderPosition（行 1453-1506）
+     *
+     * 优化（Task 6）：使用 listState.layoutInfo.visibleItemsInfo 精确计算
+     * 合并卡片中心 Y 与可见项中心 Y 的关系，替代固定 80px 阈值检测。
+     *
+     * 算法（对应设计文档 13.5）：
+     * 1. 计算合并卡片中心 Y（相对于 LazyList 视口）
+     * 2. 遍历可见项，找到第一个中心 Y > 合并卡片中心 Y 的项作为插入点
+     * 3. 应用置顶区边界限制：任何待办的占位框都不能插入到"置顶"标签上方
+     *
+     * 坐标系说明：
+     * - visibleItemsInfo.offset 是相对于 LazyList 视口顶部的偏移（考虑滚动）
+     * - mergeCardInitialY 是开始拖拽时 anchor 项的 offset 快照
+     * - mergeFingerY 是手指累积位移（不包含滚动）
+     * - 若 anchor 项仍在可见区域，重新获取其 offset 以处理滚动
+     */
+    fun updateMergePlaceholderPosition() {
+        val visibleItems = listState.layoutInfo.visibleItemsInfo
+        if (visibleItems.isEmpty()) return
+
+        // 1. 计算合并卡片中心 Y（相对于 LazyList 视口）
+        // 若 anchor 项仍在可见区域，用其当前 offset 处理滚动；否则用初始快照
+        val anchorKey = mergeSelectedItems.firstOrNull()?.let { key(it) }
+        val anchorInfo = visibleItems.find { it.key == anchorKey }
+        val effectiveAnchorY = anchorInfo?.offset?.toFloat() ?: mergeCardInitialY
+        // 合并卡片高度近似为可见项高度（单项高度）
+        val cardHeight = visibleItems.firstOrNull()?.size ?: 80
+        val cardCenterY = effectiveAnchorY + mergeFingerY + cardHeight / 2f
+
+        // 2. 遍历可见项，找到第一个中心 Y > cardCenterY 的项
+        var insertBeforeLazyIndex = -1
+        for (itemInfo in visibleItems) {
+            // 跳过占位框本身
+            if (itemInfo.key == "merge_placeholder") continue
+            val itemCenterY = itemInfo.offset + itemInfo.size / 2
+            if (cardCenterY < itemCenterY) {
+                insertBeforeLazyIndex = itemInfo.index
+                break
+            }
+        }
+
+        // 3. 转换 LazyColumn index 为 displayItems index
+        // 合并拖拽模式下 LazyColumn items 结构：
+        //   [0..mergePlaceholderIndex-1] = displayItems[0..mergePlaceholderIndex-1]
+        //   [mergePlaceholderIndex] = merge_placeholder（占位框）
+        //   [mergePlaceholderIndex+1..] = displayItems[mergePlaceholderIndex..]
+        val insertBeforeDisplayIndex = if (insertBeforeLazyIndex == -1) {
+            // 没找到（手指在最后一个可见项之下）→ 放在最后
+            displayItems.size
+        } else if (mergePlaceholderIndex < 0 || insertBeforeLazyIndex <= mergePlaceholderIndex) {
+            insertBeforeLazyIndex
+        } else {
+            insertBeforeLazyIndex - 1
+        }
+
+        // 4. 应用置顶区边界限制（设计文档 13.5）
+        val pinnedStartIdx = displayItems.indexOfFirst { isPinned(it) }
+        val limitedIndex = ReorderAlgorithms.applyPinnedBoundary(
+            insertBeforeDisplayIndex, pinnedStartIdx
+        )
+
+        // 5. 更新占位框位置（带触觉反馈）
+        if (limitedIndex != mergePlaceholderIndex && limitedIndex in 0..displayItems.size) {
+            mergePlaceholderIndex = limitedIndex
+            HapticFeedbackManager.performHapticFeedback(
+                context = context,
+                type = InteractionType.TEXT_MOVE,
+                enabled = true
+            )
         }
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = modifier
-            .nestedScroll(dragScrollBlocker)
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    // 释放期尝试新拖拽 → 清理前次释放状态
-                    // 原因：用户可能在前次拖拽释放后立即开始新拖拽
-                    if (isReleasing) {
-                        isReleasing = false
-                        releaseDragOffset.floatValue = 0f
-                        draggedKey = null
-                        isLongPressActive = false
-                        draggedListCenterY = 0f
-                        scrollCompensationY = 0f
+    // ━━━ 合并拖拽：结束（方案 C：transform 补偿同步释放）━━━
+    /**
+     * 结束合并拖拽：cross-fade + transform 补偿同步释放
+     * 对应原型 endDrag 合并分支（行 1545-1608），设计文档 13.3 Step 3
+     *
+     * 方案 C 核心思路（FLIP 变体消除原项展开导致的布局跳动）：
+     * 1. 合并卡片弹簧动画到占位框位置 + 淡出（0.35s）
+     * 2. 原项 alpha 锁定为 0 后淡入（0.2s，spring dampingRatio=0.7）
+     * 3. 后续项 graphicsLayer translationY = -(N-1)×itemHeight 补偿后下移（0.3s）
+     * 4. Animatable 替代原型双 rAF，同步启动 cross-fade
+     *
+     * @see <a href="设计文档 13.3 Step 3">方案 C 详细规范</a>
+     */
+    fun endMergeDrag() {
+        val N = mergeSelectedItems.size
+        if (N == 0 || mergePlaceholderIndex < 0 || mergePlaceholderIndex > displayItems.size) {
+            // 无选中项或占位框位置无效 → 直接清理（内联 cancelMergeDrag 逻辑，避免前向引用）
+            scope.launch {
+                cardAlpha.snapTo(0.98f)
+                cardY.snapTo(0f)
+                itemsAlpha.snapTo(1f)
+                itemsOffset.snapTo(0f)
+            }
+            isMergeDragging = false
+            isMergeAnimating = false
+            isDragActive = false
+            mergeSelectedItems = emptyList()
+            mergeSelectedKeys = emptySet()
+            mergeSelectedCount = 0
+            mergePlaceholderIndex = -1
+            cumulativeDragY = 0f
+            return
+        }
+
+        // 1. 计算置顶区跨越
+        val displayPinned = displayItems.map { isPinned(it) }
+        val anySelectedPinned = mergeSelectedItems.any { isPinned(it) }
+        val crossed = ReorderAlgorithms.checkPinnedZoneCrossed(
+            displayItems = displayPinned,
+            draggedOriginalIsPinned = anySelectedPinned,
+            draggedCurrentIndex = mergePlaceholderIndex.coerceAtMost(displayPinned.size - 1)
+        )
+
+        // 2. 保存释放动画所需的选中项信息（displayItems 更新后用于区分原项与后续项）
+        mergeSelectedKeys = mergeSelectedItems.map { key(it) }.toSet()
+        mergeSelectedCount = N
+
+        // 3. 获取单项高度（从可见项量取，用于计算 transform 补偿 offset）
+        val visibleItems = listState.layoutInfo.visibleItemsInfo
+        val itemHeightPx = visibleItems.firstOrNull { it.key != "merge_placeholder" }?.size?.toFloat() ?: 80f
+        // 原项展开后多出的高度：(N-1) × 单项完整高度
+        val offset = (N - 1) * itemHeightPx
+
+        // 4. 记录占位框位置（合并卡片弹簧动画的目标位置）
+        val placeholderInfo = visibleItems.find { it.key == "merge_placeholder" }
+        val placeholderY = placeholderInfo?.offset?.toFloat() ?: (mergeCardInitialY + mergeFingerY)
+
+        // 5. 调用外部回调执行批量重排（触发 items 变更 → LaunchedEffect 同步 displayItems）
+        val selectedKeys = mergeSelectedItems.map { key(it) }.toSet()
+        onMergeReorder(selectedKeys, mergePlaceholderIndex, crossed)
+
+        // 6. 确认触觉反馈
+        HapticFeedbackManager.performHapticFeedback(
+            context = context,
+            type = InteractionType.CONFIRM,
+            enabled = true
+        )
+
+        // 7. 进入释放动画阶段：isMergeDragging 保持 true（合并卡片仍显示），
+        //    isMergeAnimating=true 切换渲染分支为"原项已展开 + transform 补偿"
+        isMergeAnimating = true
+
+        // 8. 方案 C：transform 补偿同步释放（Animatable 替代原型双 rAF）
+        scope.launch {
+            // 8.1 锁定初始状态（对应原型 inline style 锁定）
+            cardY.snapTo(mergeCardInitialY + mergeFingerY)
+            cardAlpha.snapTo(0.98f)
+            itemsAlpha.snapTo(0f)
+            itemsOffset.snapTo(-offset)
+
+            // 8.2 同步启动 cross-fade + transform 补偿
+            val cardYJob = launch {
+                cardY.animateTo(placeholderY, spring(dampingRatio = 0.8f, stiffness = 300f))
+            }
+            val cardAlphaJob = launch {
+                cardAlpha.animateTo(0f, tween(350, easing = FastOutSlowInEasing))
+            }
+            val itemsAlphaJob = launch {
+                itemsAlpha.animateTo(1f, spring(dampingRatio = 0.7f))
+            }
+            val itemsOffsetJob = launch {
+                itemsOffset.animateTo(0f, spring())
+            }
+
+            // 8.3 等待所有动画完成
+            cardYJob.join()
+            cardAlphaJob.join()
+            itemsAlphaJob.join()
+            itemsOffsetJob.join()
+
+            // 8.4 清理状态（保留多选模式，仍处于批量态）
+            isMergeDragging = false
+            isMergeAnimating = false
+            isDragActive = false
+            mergeSelectedItems = emptyList()
+            mergeSelectedKeys = emptySet()
+            mergeSelectedCount = 0
+            mergePlaceholderIndex = -1
+            cumulativeDragY = 0f
+
+            // 8.5 重置 Animatable 到初始值，为下次合并拖拽准备
+            cardAlpha.snapTo(0.98f)
+            cardY.snapTo(0f)
+            itemsAlpha.snapTo(1f)
+            itemsOffset.snapTo(0f)
+        }
+    }
+
+    // ━━━ 合并拖拽：取消 ━━━
+    /**
+     * 取消合并拖拽（手指取消、系统中断等）
+     * 对应原型 onDragCancel
+     */
+    fun cancelMergeDrag() {
+        // 异步重置 Animatable（snapTo 是 suspend 函数，需在协程中调用）
+        scope.launch {
+            cardAlpha.snapTo(0.98f)
+            cardY.snapTo(0f)
+            itemsAlpha.snapTo(1f)
+            itemsOffset.snapTo(0f)
+        }
+        isMergeDragging = false
+        isMergeAnimating = false
+        isDragActive = false
+        mergeSelectedItems = emptyList()
+        mergeSelectedKeys = emptySet()
+        mergeSelectedCount = 0
+        mergePlaceholderIndex = -1
+        cumulativeDragY = 0f
+    }
+
+    // ━━━ 渲染：Box 包裹 LazyColumn + 合并卡片浮层 ━━━
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (isMergeAnimating) {
+                // ━━━ 释放动画模式：原项已展开 + alpha 淡入 + 后续项 transform 补偿 ━━━
+                // 对应原型 endDrag 合并分支的 DOM 操作后状态（行 1566-1606）
+                // displayItems 已由 onMergeReorder 触发更新，原项已在正确位置
+                val firstSelectedIndex = displayItems.indexOfFirst { key(it) in mergeSelectedKeys }
+                itemsIndexed(
+                    items = displayItems,
+                    key = { _, item -> key(item) }
+                ) { index, item ->
+                    val isSelected = key(item) in mergeSelectedKeys
+                    // 后续项 = 第一个选中项之后第 N 项开始（index >= firstSelectedIndex + N）
+                    val isAfter = firstSelectedIndex >= 0 &&
+                        index >= firstSelectedIndex + mergeSelectedCount
+                    // 原项 alpha 由 itemsAlpha 驱动（0→1 淡入）
+                    // 后续项 translationY 由 itemsOffset 驱动（-offset→0 补偿恢复）
+                    val itemAlpha = if (isSelected) itemsAlpha.value else 1f
+                    val itemTranslationY = if (isAfter) itemsOffset.value else 0f
+                    Box(
+                        modifier = Modifier.graphicsLayer {
+                            alpha = itemAlpha
+                            translationY = itemTranslationY
+                        }
+                    ) {
+                        content(index, item, false, false)
                     }
-
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                if (down.isConsumed) return@awaitEachGesture
-
-                // 早期 return 会导致所有手势无响应（项目记忆教训）
-                // 将 isDragEnabled 与 items.size 判断移至手势内部
-                if (!isDragEnabled) return@awaitEachGesture
-                if (items.size < 2) return@awaitEachGesture
-
-                val downPosition = down.position
-                var longPressTriggered = false
-                val downTime = System.currentTimeMillis()
-
-                // 注：不使用 scope.launch { delay(500) } 启动长按定时器
-                // 原因：awaitEachGesture 是受限挂起作用域，子项已有自己的 500ms 长按定时器
-                // 容器改为在主循环中通过时间戳检测长按是否触发
-
-                try {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.first()
-                        val now = System.currentTimeMillis()
-
-                        // 检测长按触发（未移动且超过 500ms）
-                        if (!longPressTriggered && now - downTime >= longPressTimeoutMs) {
-                            val dragDistance = (change.position - downPosition).getDistance()
-                            if (dragDistance <= dragThresholdPx) {
-                                longPressTriggered = true
-                                isLongPressActive = true
-                                // 立即消费当前事件，阻止 LazyColumn 在 isDragActive=true 前解释为滚动
-                                change.consume()
-                                // 长按触发但不震动（子项负责 LONG_CLICK 震动）
-                            }
+                }
+            } else if (isMergeDragging) {
+                // ━━━ 合并拖拽模式：手动构建 items（不使用 ReorderableItem）━━━
+                // 选中项折叠隐藏（height=0, alpha=0），占位框在 mergePlaceholderIndex 位置渲染
+                displayItems.forEachIndexed { index, item ->
+                    // 在占位框位置插入虚线边框占位框
+                    if (index == mergePlaceholderIndex) {
+                        item(key = "merge_placeholder", contentType = "placeholder") {
+                            // 占位框：单项高度虚线边框（对应原型 .todo-item.placeholder）
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(72.dp)
+                                    .border(
+                                        width = 2.dp,
+                                        color = primaryColor.copy(alpha = 0.4f),
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                            )
                         }
-
-                        // 检测手指抬起
-                        if (change.changedToUp()) {
-                            break
-                        }
-
-                        // 长按未触发：移动 > touchSlop → 让位左滑
-                        if (!longPressTriggered) {
-                            val touchSlop = viewConfiguration.touchSlop
-                            val dragDistance = (change.position - downPosition).getDistance()
-                            if (dragDistance > touchSlop) {
-                                break // 让位 SwipeableTodoBox
+                    }
+                    item(key = key(item), contentType = "todo") {
+                        val isSelected = key(item) in selectedIds
+                        // 多选模式下 selectedIds.size > 1 时，已选中项绑定自定义 pointerInput
+                        val mergeDragModifier = if (
+                            isBatchMode && isSelected && selectedIds.size > 1
+                        ) {
+                            Modifier.pointerInput(key(item)) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { startMergeDrag(item) },
+                                    onDrag = { _, dragAmount ->
+                                        mergeFingerY += dragAmount.y
+                                        updateMergePlaceholderPosition()
+                                    },
+                                    onDragEnd = { endMergeDrag() },
+                                    onDragCancel = { cancelMergeDrag() }
+                                )
                             }
                         } else {
-                            // 长按已触发：检测纵向移动 > dragThreshold → 进入拖拽
-                            if (!isDragActive) {
-                                val dy = change.position.y - downPosition.y
-                                if (abs(dy) > dragThresholdPx) {
-                                    // ━━━ 进入拖拽模式 ━━━
-                                    val draggedIndex = listState.layoutInfo.visibleItemsInfo
-                                        .find { it.offset <= downPosition.y && (it.offset + it.size) >= downPosition.y }
-                                        ?: break
-                                    val draggedItem = displayItems.getOrNull(draggedIndex.index)
-                                        ?: break
-
-                                    if (!isDraggable(draggedItem)) {
-                                        change.consume()
-                                        break
-                                    }
-
-                                    isDragActive = true
-                                    draggedKey = key(draggedItem)
-                                    draggedOriginalIndex = draggedIndex.index
-                                    draggedCurrentIndex = draggedIndex.index
-                                    draggedOriginalIsPinned = isPinned(draggedItem)
-                                    fingerY = change.position.y
-                                    draggedListCenterY = ReorderAlgorithms.computeDraggedListCenterY(
-                                        targetIndex = draggedIndex.index,
-                                        draggedSize = draggedIndex.size,
-                                        averageItemHeightPx = averageItemHeightPx
-                                    )
-                                    scrollCompensationY = 0f
-
-                                    // 震动：标记进入拖拽
-                                    HapticFeedbackManager.performHapticFeedback(
-                                        context = context,
-                                        type = InteractionType.TEXT_MOVE,
-                                        enabled = true
-                                    )
-                                }
-                            } else {
-                                // ━━━ 拖拽中 ━━━
-                                fingerY = change.position.y
-                                change.consume()
-
-                                // 检测交换目标
-                                val draggedSize = listState.layoutInfo.visibleItemsInfo
-                                    .find { it.key == draggedKey }?.size ?: 0
-                                val visibleInfos = listState.layoutInfo.visibleItemsInfo.map {
-                                    VisibleItemInfo(it.key, it.offset, it.size)
-                                }
-
-                                // 反向交换锁定检查：手指离开上次交换位置超过 draggedSize/2 时清除锁定
-                                if (lastSwapTargetKey != null && draggedSize > 0 &&
-                                    abs(fingerY - lastSwapFingerY) > draggedSize / 2f) {
-                                    lastSwapTargetKey = null
-                                }
-
-                                // 排除刚交换过的目标项，防止立即反向交换
-                                val effectiveVisibleItems = visibleInfos.filter {
-                                    it.key != lastSwapTargetKey
-                                }
-                                val swapTargetKey = ReorderAlgorithms.findSwapTarget(
-                                    draggedKey = draggedKey!!,
-                                    fingerY = fingerY,
-                                    draggedSize = draggedSize,
-                                    visibleItems = effectiveVisibleItems
-                                )
-
-                                if (swapTargetKey != null && swapTargetKey != draggedKey) {
-                                    val targetIndex = displayItems.indexOfFirst {
-                                        key(it) == swapTargetKey
-                                    }
-                                    if (targetIndex >= 0 && targetIndex != draggedCurrentIndex) {
-                                        // ━━━ 执行交换 ━━━
-                                        val newDisplay = displayItems.toMutableList()
-                                        val draggedItem = newDisplay.removeAt(draggedCurrentIndex)
-                                        newDisplay.add(targetIndex, draggedItem)
-                                        displayItems = newDisplay
-                                        draggedCurrentIndex = targetIndex
-
-                                        // 关键修复：用目标索引反推基线，不读 visibleItemsInfo
-                                        // 旧实现读取 otherInfo（被交换目标项），其 offset 在 displayItems 变更后
-                                        // 立即变化，与新 displayItems 不一致，导致基线漂移到 1.5h（Bug B 根因）
-                                        draggedListCenterY = ReorderAlgorithms.computeDraggedListCenterY(
-                                            targetIndex = targetIndex,
-                                            draggedSize = draggedSize,
-                                            averageItemHeightPx = averageItemHeightPx
-                                        )
-
-                                        // 记录本次交换信息，用于反向锁定（修复点 3）
-                                        lastSwapTargetKey = swapTargetKey
-                                        lastSwapFingerY = fingerY
-
-                                        // 节流震动
-                                        if (now - lastHapticTime > hapticThrottleMs) {
-                                            HapticFeedbackManager.performHapticFeedback(
-                                                context = context,
-                                                type = InteractionType.TEXT_MOVE,
-                                                enabled = true
-                                            )
-                                            lastHapticTime = now
-                                        }
-                                    }
-                                }
-                            }
+                            Modifier
+                        }
+                        // 选中项折叠隐藏（等效原型 .merge-hidden：max-height:0, opacity:0）
+                        val hiddenModifier = if (isSelected) {
+                            Modifier
+                                .height(0.dp)
+                                .alpha(0f)
+                        } else {
+                            Modifier
+                        }
+                        Box(
+                            modifier = Modifier
+                                .then(mergeDragModifier)
+                                .then(hiddenModifier)
+                        ) {
+                            content(index, item, false, true)
                         }
                     }
-                } finally {
-                    // ━━━ 拖拽结束或异常 ━━━
-                    if (isDragActive) {
-                        // 1. 计算释放动画起始 offset（松手时手指相对基线的偏移）
-                        //    基线 = draggedListCenterY + scrollCompensationY
-                        //    （替换原 draggedBaseCenterY；保持外部 finger 偏移语义不变）
-                        val releaseStartOffset = ReorderAlgorithms.computeReleaseStartOffset(
-                            fingerY = fingerY,
-                            baseCenterY = draggedListCenterY + scrollCompensationY
-                        )
-                        // isDragActive 置 false（不再消费 pointerEvent）
-                        // draggedKey 保持有效 → A 继续在「拖拽分支」中，animateItem 不重启
-                        isDragActive = false
-
-                        Log.d("ReorderableLazyColumn",
-                            "[RELEASE_START] offset=$releaseStartOffset idx=$draggedCurrentIndex")
-
-                        // 2. 提交排序（同步调用；ViewModel 内部 viewModelScope.launch 异步执行 DB 更新）
-                        if (draggedOriginalIndex != draggedCurrentIndex && draggedOriginalIndex >= 0) {
-                            val displayPinned = displayItems.map { isPinned(it) }
-                            val crossedPinnedZone = ReorderAlgorithms.checkPinnedZoneCrossed(
-                                displayItems = displayPinned,
-                                draggedOriginalIsPinned = draggedOriginalIsPinned,
-                                draggedCurrentIndex = draggedCurrentIndex
-                            )
-                            onReorder(
-                                draggedOriginalIndex,
-                                draggedCurrentIndex,
-                                crossedPinnedZone
-                            )
-
-                            // 确认震动
-                            HapticFeedbackManager.performHapticFeedback(
-                                context = context,
-                                type = InteractionType.CONFIRM,
-                                enabled = true
-                            )
+                }
+            } else {
+                // ━━━ 普通模式：使用库的 ReorderableItem ━━━
+                itemsIndexed(
+                    items = displayItems,
+                    key = { _, item -> key(item) }
+                ) { index, item ->
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = key(item),
+                        enabled = effectiveDragEnabled && isDraggable(item)
+                    ) { isDragging ->
+                        // longPressDraggableHandle 启用条件：
+                        // - effectiveDragEnabled（含多选模式单选回退）
+                        // - isDraggable(item)
+                        // - 非多选模式，或多选模式下仅选中 1 项（回退普通拖拽）
+                        val handleEnabled = effectiveDragEnabled && isDraggable(item) &&
+                            (!isBatchMode || selectedIds.size <= 1)
+                        Box(
+                            modifier = Modifier
+                                .longPressDraggableHandle(
+                                    enabled = handleEnabled,
+                                    onDragStarted = {
+                                        isDragActive = true
+                                        draggedOriginalIndex = items.indexOfFirst {
+                                            key(it) == key(item)
+                                        }
+                                        draggedOriginalIsPinned = isPinned(item)
+                                        crossedPinnedZone = false
+                                        HapticFeedbackManager.performHapticFeedback(
+                                            context = context,
+                                            type = InteractionType.TEXT_MOVE,
+                                            enabled = true
+                                        )
+                                    },
+                                    onDragStopped = {
+                                        val draggedCurrentIndex = displayItems.indexOfFirst {
+                                            key(it) == key(item)
+                                        }
+                                        if (draggedOriginalIndex >= 0 &&
+                                            draggedOriginalIndex != draggedCurrentIndex &&
+                                            draggedCurrentIndex >= 0
+                                        ) {
+                                            val displayPinned = displayItems.map { isPinned(it) }
+                                            crossedPinnedZone = ReorderAlgorithms.checkPinnedZoneCrossed(
+                                                displayItems = displayPinned,
+                                                draggedOriginalIsPinned = draggedOriginalIsPinned,
+                                                draggedCurrentIndex = draggedCurrentIndex
+                                            )
+                                            onReorder(
+                                                draggedOriginalIndex,
+                                                draggedCurrentIndex,
+                                                crossedPinnedZone
+                                            )
+                                            HapticFeedbackManager.performHapticFeedback(
+                                                context = context,
+                                                type = InteractionType.CONFIRM,
+                                                enabled = true
+                                            )
+                                        }
+                                        isDragActive = false
+                                        draggedOriginalIndex = -1
+                                        crossedPinnedZone = false
+                                    }
+                                )
+                        ) {
+                            if (isDragging) {
+                                // ━━━ 被拖项：虚线边框装饰 + 浮起卡片 ━━━
+                                Box {
+                                    Canvas(modifier = Modifier.matchParentSize()) {
+                                        drawRoundRect(
+                                            color = primaryColor.copy(alpha = 0.4f),
+                                            topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
+                                            size = Size(
+                                                this.size.width - 2.dp.toPx(),
+                                                this.size.height - 2.dp.toPx()
+                                            ),
+                                            style = Stroke(
+                                                width = 2.dp.toPx(),
+                                                pathEffect = PathEffect.dashPathEffect(
+                                                    floatArrayOf(12f, 8f), 0f
+                                                )
+                                            ),
+                                            cornerRadius = CornerRadius(16.dp.toPx())
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier.graphicsLayer {
+                                            alpha = 0.9f
+                                            scaleX = 1.05f
+                                            scaleY = 1.05f
+                                            shadowElevation = 8.dp.toPx()
+                                        }
+                                    ) {
+                                        content(index, item, true, true)
+                                    }
+                                }
+                            } else {
+                                // ━━━ 普通项：animateItem 让位动画（库默认 spring）━━━
+                                content(index, item, false, isDragActive)
+                            }
                         }
-
-                        // 3. 释放完成 → 瞬时同步重置所有状态
-                        // 取消原 250ms tween 释放动画：受限挂起作用域内无法调用
-                        // Animatable.animateTo，且新方案无独立协程可承载动画。
-                        // 改为瞬时归零，下一帧 LaunchedEffect(items) 看到 !isDragActive
-                        // 会同步更新 displayItems 到 items，animateItem 完成位置过渡。
-                        releaseDragOffset.floatValue = 0f
-                        isReleasing = false
-                        isLongPressActive = false
-                        draggedKey = null
-                        draggedOriginalIndex = -1
-                        draggedCurrentIndex = -1
-                        fingerY = 0f
-                        draggedListCenterY = 0f
-                        scrollCompensationY = 0f
-                        lastSwapTargetKey = null
-                        lastSwapFingerY = 0f
-                        Log.d("ReorderableLazyColumn",
-                            "[RELEASE_END] isDragActive=$isDragActive isReleasing=$isReleasing")
-                    } else if (isReleasing) {
-                        // 异常路径：pointerInput 协程被取消但释放状态未清理
-                        // 强制清零避免卡在中间状态
-                        releaseDragOffset.floatValue = 0f
-                        isReleasing = false
-                        Log.d("ReorderableLazyColumn",
-                            "[RELEASE_RESET] pointerInput cancelled during releasing")
                     }
                 }
             }
         }
-    ) {
-        itemsIndexed(displayItems, key = { _, item -> key(item) }) { index, item ->
-            val isDragging = key(item) == draggedKey
 
-            if (isDragging) {
-                // ━━━ 被拖项：虚线占位框 + 浮起卡片 ━━━
+        // ━━━ 合并卡片浮层（脱离 LazyColumn，渲染在 Box 上层）━━━
+        // 对应原型 .merged-card：position:fixed 跟随手指
+        // 释放动画中：cardY/cardAlpha 由 Animatable 驱动（弹簧动画到占位框 + 淡出）
+        // 拖拽中：cardY = mergeCardInitialY + mergeFingerY（跟随手指），cardAlpha = 0.98
+        if (isMergeDragging && mergeSelectedItems.isNotEmpty()) {
+            val cardYValue = if (isMergeAnimating) cardY.value else (mergeCardInitialY + mergeFingerY)
+            Surface(
+                modifier = Modifier
+                    .offset {
+                        IntOffset(0, cardYValue.roundToInt())
+                    }
+                    .graphicsLayer {
+                        alpha = cardAlpha.value
+                        shadowElevation = 8.dp.toPx()
+                        scaleX = 1.05f
+                        scaleY = 1.05f
+                    },
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 8.dp
+            ) {
                 Box(
                     modifier = Modifier
-                        .animateItem()
-                        .zIndex(1f)
+                        .fillMaxWidth()
+                        .height(72.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // 1. 虚线占位框（底层，定义 Box 尺寸）
-                    Canvas(modifier = Modifier.matchParentSize()) {
-                        drawRoundRect(
-                            color = primaryColor.copy(alpha = 0.4f),
-                            topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
-                            size = Size(
-                                this.size.width - 2.dp.toPx(),
-                                this.size.height - 2.dp.toPx()
-                            ),
-                            style = Stroke(
-                                width = 2.dp.toPx(),
-                                pathEffect = PathEffect.dashPathEffect(
-                                    floatArrayOf(12f, 8f), 0f
-                                )
-                            ),
-                            cornerRadius = CornerRadius(16.dp.toPx())
-                        )
-                    }
-
-                    // 2. 实际拖拽卡片（上层，offset 跟随手指）
-                    Box(
-                        modifier = Modifier
-                            .offset { IntOffset(0, dragOffsetY.roundToInt()) }
-                            .graphicsLayer {
-                                alpha = 0.7f
-                                scaleX = 1.05f
-                                scaleY = 1.05f
-                                shadowElevation = 8.dp.toPx()
-                            }
-                    ) {
-                        content(index, item, true, true)
-                    }
-                }
-            } else {
-                // ━━━ 普通项：animateItem 让位动画 ━━━
-                Box(
-                    modifier = Modifier
-                        .animateItem()
-                        .zIndex(0f)
-                        // 捕获每项实际渲染高度，用于 computeDraggedListCenterY
-                        .onSizeChanged { size ->
-                            if (size.height > 0) {
-                                itemHeightsPx[index] = size.height
-                            }
-                        }
-                ) {
-                    content(index, item, false, isDragActive)
+                    Text(
+                        text = "选中 ${mergeSelectedItems.size} 项",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = primaryColor
+                    )
                 }
             }
         }

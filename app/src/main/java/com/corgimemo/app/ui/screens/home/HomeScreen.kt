@@ -770,6 +770,15 @@ fun HomeScreen(
                                 onReorder = { fromIndex, toIndex, crossed ->
                                     viewModel.reorderOnDisplayList(fromIndex, toIndex, crossed)
                                 },
+                                isBatchMode = isBatchMode,
+                                selectedIds = selectedTodoIds.map { it as Any }.toSet(),
+                                onMergeReorder = { selectedIds, toIndex, crossed ->
+                                    viewModel.mergeReorderOnDisplayList(
+                                        selectedIds.mapNotNull { it as? Long }.toSet(),
+                                        toIndex,
+                                        crossed
+                                    )
+                                },
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(horizontal = 8.dp)
