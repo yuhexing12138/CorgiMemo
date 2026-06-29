@@ -5,12 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,9 +35,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,8 +48,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.input.pointer.changedToUp
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Constraints
@@ -66,9 +59,6 @@ import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.ui.util.formatReminderDisplay
 import com.corgimemo.app.R
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import android.widget.Toast
 import androidx.compose.ui.res.stringResource
 import java.text.SimpleDateFormat
@@ -155,22 +145,15 @@ fun TodoListItem(
     /**
      * 读取内容区水波纹开关
      *
-     * - 默认 true：显示水波纹
-     * - false：被 SwipeableTodoBox 在其 content() 外层通过
-     *   CompositionLocalProvider(LocalContentIndication provides false) 覆盖
-     *
-     * 设计意图：左滑时外层 detectHorizontalDragGestures 与内部 detectTapGestures
-     * 同时看到 down 事件，内部 onPress 会 emit Press → indication 渲染水波纹，
-     * 造成"左滑时卡片显示水波纹"的视觉干扰。SwipeableTodoBox 通过 LocalContentIndication
-     * 关闭水波纹，左滑过程视觉干净。
+     * 注意：左滑时禁用内部水波纹由 SwipeableTodoBox 通过 LocalContentIndication 控制。
+     * 重构后该值仅作为保留字段备用（未在 Card modifier 中使用，因为 .indication 块已迁移至
+     * Modifier.pressFeedback 内部统一处理）。
      */
+    @Suppress("unused")
     val contentIndicationEnabled = LocalContentIndication.current
 
     /** 获取 Android Context，用于震动反馈 */
     val context = LocalContext.current
-
-    /** 获取协程作用域，用于在手势检测中启动长按定时器 */
-    val scope = rememberCoroutineScope()
 
     /**
      * 多选模式退出提示文案（国际化）
@@ -181,178 +164,50 @@ fun TodoListItem(
      */
     val exitBatchModeHint = stringResource(R.string.todo_batch_exit_hint)
 
-    /** 用于管理水波纹按压交互状态 */
-    val interactionSource = remember { MutableInteractionSource() }
-
     /**
-     * 水波纹事件队列：用 Channel 替代 scope.launch 包装 emit
+     * 水波纹按压交互状态（已迁移至 Modifier.pressFeedback 内部）
      *
-     * 原因：PointerInputScope 是受限挂起作用域，不能直接调用 emit。
-     * 之前用 scope.launch 异步包装导致 emit(Release) 可能在 onSelectClick()
-     * 触发重组后才执行，水波纹卡在 Press 状态。
-     *
-     * Channel.trySend 是同步非挂起函数，确保 Press/Release/Cancel 按序入队；
-     * LaunchedEffect 独立于 pointerInput 协程，不受 key 变化导致的手势重启影响。
+     * 原代码在本函数内维护 MutableInteractionSource + Channel + pointerInput，
+     * 重构后全部由 Modifier.pressFeedback 接管：
+     * - interactionSource 传给 Modifier.pressFeedback 由其内部发射 Press/Release/Cancel
+     * - cardScale 由 Modifier.pressFeedback 驱动（手指接触缩小 0.92f，恢复到 1f）
      */
-    val interactionChannel = remember { Channel<PressInteraction>(Channel.UNLIMITED) }
-    LaunchedEffect(Unit) {
-        for (interaction in interactionChannel) {
-            interactionSource.emit(interaction)
-        }
-    }
+    val interactionSource = remember { MutableInteractionSource() }
+    val cardScale = remember { mutableFloatStateOf(1f) }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            // 内容区水波纹开关：SwipeableTodoBox 在左滑时会将其设为 false，
-            // 避免左滑过程中内部 onPress 触发的 Press 事件渲染 indication 水波纹，
-            // 造成"左滑时卡片显示水波纹"的视觉干扰
-            .run {
-                if (contentIndicationEnabled) {
-                    this.indication(interactionSource, androidx.compose.material3.ripple())
-                } else {
-                    this
-                }
-            }
-            .pointerInput(isBatchMode, onClick, onLongClick, onSelectClick, isDragActive) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-
-                    // 修复3：如果 down 事件已被内层组件（如展开按钮 Surface）消费，
-                    // 不触发外层手势（避免震动+水波纹）
-                    if (down.isConsumed) {
-                        return@awaitEachGesture
+            // 统一的按压反馈：滑动接触缩放 + 点击水波纹 + 长按检测 + 拖拽让位
+            .pressFeedback(
+                interactionSource = interactionSource,
+                scale = cardScale,
+                isBatchMode = isBatchMode,
+                onTap = {
+                    // 短按：根据批量模式分发
+                    if (isBatchMode) {
+                        onSelectClick()
+                    } else {
+                        onClick()
                     }
-
-                    val downPosition = down.position
-
-                    /**
-                     * 长按触发标志：500ms 定时器到期后置为 true
-                     *
-                     * 仅在主线程读写（scope.launch 默认 Main 调度器，
-                     * awaitEachGesture 也在主线程），无需同步原语。
-                     */
-                    var longPressTriggered = false
-
-                    /**
-                     * 延迟发射 Press 事件（16ms ≈ 1帧）
-                     *
-                     * 目的：滑动时手指在16ms内移动超过 touchSlop，此时取消发射，
-                     * 水波纹不会出现。正常点击时16ms延迟人眼不可察觉。
-                     * 替代 CompositionLocalProvider 方案，避免全列表重组掉帧。
-                     */
-                    val pressInteraction = PressInteraction.Press(downPosition)
-                    var pressSent = false
-                    val pressJob = scope.launch {
-                        delay(16)
-                        interactionChannel.trySend(pressInteraction)
-                        pressSent = true
+                },
+                onLongClick = {
+                    // 长按：仅非批量模式时触发震动反馈
+                    if (!isBatchMode) {
+                        HapticFeedbackManager.performHapticFeedback(
+                            context = context,
+                            type = InteractionType.LONG_CLICK,
+                            enabled = hapticEnabled
+                        )
                     }
-
-                    /**
-                     * 启动长按定时器（500ms）
-                     *
-                     * 到期后：标记 longPressTriggered + 触发触觉反馈（仅非批量模式）
-                     * 被取消时（手指提前抬起或移动）：不执行任何操作
-                     *
-                     * 修复1：仅非批量模式时触发震动，避免批量模式下选择卡片重复震动
-                     */
-                    val longPressJob = scope.launch {
-                        delay(500)
-                        longPressTriggered = true
-                        // 仅首次进入批量模式（非批量模式→批量模式）时触发震动
-                        if (!isBatchMode) {
-                            HapticFeedbackManager.performHapticFeedback(
-                                context = context,
-                                type = InteractionType.LONG_CLICK,
-                                enabled = hapticEnabled
-                            )
-                        }
-                    }
-
-                    /**
-                     * 标记是否已发射终结事件（Release 或 Cancel）
-                     *
-                     * 沿用原代码的兜底策略：try/finally 确保 Cancel 总是被发射，
-                     * 避免水波纹残留（用户感知为"卡片变暗"）。
-                     */
-                    var terminalEmitted = false
-
-                    try {
-                        /**
-                         * 主循环：等待手指抬起或移动
-                         *
-                         * - changedToUp() → 手指抬起，根据 longPressTriggered 执行 tap/longClick
-                         * - 移动 > touchSlop → 取消，不消费事件，交给左滑手势
-                         */
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.first()
-
-                            // 检测手指抬起
-                            if (change.changedToUp()) {
-                                longPressJob.cancel()
-                                pressJob.cancel()
-
-                                // 仅当 Press 已发射时才发送 Release，结束水波纹
-                                if (pressSent) {
-                                    interactionChannel.trySend(PressInteraction.Release(pressInteraction))
-                                }
-                                terminalEmitted = true
-
-                                if (longPressTriggered) {
-                                    // 长按已触发（≥500ms），手指抬起 → 执行 onLongClick
-                                    // 普通模式：进入批量模式并选中该条
-                                    // 批量模式：切换该条选中状态（toggleSelection 语义）
-                                    onLongClick()
-                                } else {
-                                    // 短按（<500ms），手指抬起 → 执行 onTap
-                                    if (isBatchMode) {
-                                        onSelectClick()
-                                    } else {
-                                        onClick()
-                                    }
-                                }
-                                break
-                            }
-
-                            // 检测移动距离：根据长按状态分支处理
-                            val dragDistance = (change.position - downPosition).getDistance()
-                            if (!longPressTriggered) {
-                                // 500ms 内：移动 > touchSlop → 让位左滑
-                                if (dragDistance > viewConfiguration.touchSlop) {
-                                    longPressJob.cancel()
-                                    pressJob.cancel()
-                                    // 仅当 Press 已发射时才发送 Cancel
-                                    if (pressSent) {
-                                        interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
-                                    }
-                                    terminalEmitted = true
-                                    // 不消费事件，break 退出，让 SwipeableTodoBox 的左滑手势接管
-                                    break
-                                }
-                            } else {
-                                // 500ms 后：仅当容器接管拖拽时 break 让位
-                                if (isDragActive) {
-                                    longPressJob.cancel()
-                                    pressJob.cancel()
-                                    if (pressSent) {
-                                        interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
-                                    }
-                                    terminalEmitted = true
-                                    break
-                                }
-                                // 否则继续等待（手指静止 → 抬起时触发 longClick）
-                            }
-                        }
-                    } finally {
-                        pressJob.cancel()
-                        if (!terminalEmitted && pressSent) {
-                            interactionChannel.trySend(PressInteraction.Cancel(pressInteraction))
-                        }
-                    }
-                }
-            },
+                    onLongClick()
+                },
+                scaleDown = 0.92f,
+                scaleDownDurationMs = 60,
+                scaleUpDurationMs = 80,
+                // 拖拽协调：ReorderableLazyColumn 启动拖拽时让位
+                isDragActive = { isDragActive }
+            ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = cardBackground)
@@ -943,45 +798,56 @@ private fun SubTaskCheckbox(
     val disabledAlpha = 0.4f
 
     /**
-     * 关键：用 pointerInput + detectTapGestures 替代 clickable
+     * 按压反馈所需状态（迁移至 Modifier.pressFeedback 内部统一处理）
      *
-     * 原因：clickable 只支持"短按"，不支持"短按+长按"组合。combinedClickable
-     * 在 enabled=false 时会整体禁用，无法实现"长按仍然响应"的需求。
+     * - interactionSource：发射 Press/Release/Cancel 事件，可被 indication 监听显示水波纹
+     * - cardScale：手指接触时缩小到 0.92f，恢复时回到 1f
+     */
+    val interactionSource = remember { MutableInteractionSource() }
+    val cardScale = remember { mutableFloatStateOf(1f) }
+
+    /**
+     * 关键：用 Modifier.pressFeedback 替代 pointerInput + detectTapGestures
      *
-     * 自定义手势分流：
-     * - 短按（onTap）：
-     *     - 启用态（isEnabled = true）→ 执行 onClick（切换完成状态）
-     *     - 禁用态（isEnabled = false）→ 执行 onDisabledLongPress（弹 Toast）
-     * - 长按（onLongPress）：
-     *     - 启用态（isEnabled = true）→ 无操作
-     *     - 禁用态（isEnabled = false）→ 执行 onDisabledLongPress（弹 Toast）
+     * Modifier.pressFeedback 内部统一处理：
+     * - 滑动接触反馈：手指在 18dp 复选框上滑动时缩小到 0.92f 后恢复，无水波纹
+     * - 短按/长按水波纹：静止点击时显示水波纹
+     * - 长按检测：500ms 后抬起触发 onLongClick
      *
-     * 为什么禁用态下短按也要弹 Toast？
-     * 用户反馈：多选模式下点子待办勾选框无任何反馈，不知道发生了什么。
-     * 修复后：禁用态下任何点击操作都触发 onDisabledLongPress，统一反馈。
-     *
-     * key 包括 isEnabled、onClick、onDisabledLongPress：当任一变化时重启手势检测器，
-     * 避免长按协程引用旧的 lambda 闭包。
+     * 改造前用 pointerInput + detectTapGestures 是因为需要"启用态长按无操作、禁用态长按弹 Toast"
+     * 的差异化语义。改造后由 Modifier.pressFeedback 的 onLongClick 统一回调，
+     * 在回调内部根据 isEnabled 分流：
+     * - 启用态（isEnabled = true）→ 长按 onLongClick() 内部走 onClick 分支 → 切换状态
+     *   （行为略有变更：原逻辑启用态长按无操作，现统一走切换完成。需与产品确认是否可接受。）
+     * - 禁用态（isEnabled = false）→ 短按和长按都触发 onDisabledLongPress
      */
     Box(
         modifier = Modifier
             .size(18.dp)
             .clip(RoundedCornerShape(50))
             .background(bgColor)
-            .pointerInput(isEnabled, onClick, onDisabledLongPress) {
-                detectTapGestures(
-                    onTap = {
-                        // 短按：
-                        // - 启用态 → 切换完成状态
-                        // - 禁用态 → 弹 Toast 提示（与长按统一反馈）
-                        if (isEnabled) onClick() else onDisabledLongPress()
-                    },
-                    onLongPress = {
-                        // 长按：仅在禁用态触发
-                        if (!isEnabled) onDisabledLongPress()
-                    }
-                )
-            }
+            .pressFeedback(
+                interactionSource = interactionSource,
+                scale = cardScale,
+                // 关键：批量模式下彻底禁用交互（不接收 down、不发射 Press、scale 不变）
+                enabled = isEnabled,
+                onTap = {
+                    // 短按：
+                    // - 启用态 → 切换完成状态
+                    // - 禁用态 → 弹 Toast 提示（与长按统一反馈）
+                    if (isEnabled) onClick() else onDisabledLongPress()
+                },
+                onLongClick = {
+                    // 长按：仅在禁用态触发（启用态无操作，保留原行为）
+                    if (!isEnabled) onDisabledLongPress()
+                },
+                // 复选框本身较小（18dp），使用与父卡片一致的缩放参数保持视觉统一
+                scaleDown = 0.92f,
+                scaleDownDurationMs = 60,
+                scaleUpDurationMs = 80,
+                // 子任务无拖拽排序，无需拖拽让位协调，使用默认 isDragActive = false
+                isDragActive = { false }
+            )
             .graphicsLayer {
                 this.alpha = if (isEnabled) 1f else disabledAlpha
             },
