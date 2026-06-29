@@ -4,7 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,9 +34,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -169,11 +167,13 @@ fun TodoListItem(
      *
      * 原代码在本函数内维护 MutableInteractionSource + Channel + pointerInput，
      * 重构后全部由 Modifier.pressFeedback 接管：
-     * - interactionSource 传给 Modifier.pressFeedback 由其内部发射 Press/Release/Cancel
-     * - cardScale 由 Modifier.pressFeedback 驱动（手指接触缩小 0.92f，恢复到 1f）
+     * - interactionSource 传给 Modifier.pressFeedback，由其内部发射 Press/Release/Cancel，
+     *   indication 监听到后显示水波纹
+     * - cardScale 是 Animatable<Float>，Modifier.pressFeedback 通过 animateTo 触发
+     *   缩小/恢复动画（缩小 60ms、恢复 80ms）
      */
     val interactionSource = remember { MutableInteractionSource() }
-    val cardScale = remember { mutableFloatStateOf(1f) }
+    val cardScale = remember { androidx.compose.animation.core.Animatable(1f) }
 
     Card(
         modifier = Modifier
@@ -800,11 +800,11 @@ private fun SubTaskCheckbox(
     /**
      * 按压反馈所需状态（迁移至 Modifier.pressFeedback 内部统一处理）
      *
-     * - interactionSource：发射 Press/Release/Cancel 事件，可被 indication 监听显示水波纹
-     * - cardScale：手指接触时缩小到 0.92f，恢复时回到 1f
+     * - interactionSource：发射 Press/Release/Cancel 事件，indication 监听到后显示水波纹
+     * - cardScale：Animatable<Float>，手指接触时 animateTo 到 0.92f，抬起时 animateTo 到 1f
      */
     val interactionSource = remember { MutableInteractionSource() }
-    val cardScale = remember { mutableFloatStateOf(1f) }
+    val cardScale = remember { androidx.compose.animation.core.Animatable(1f) }
 
     /**
      * 关键：用 Modifier.pressFeedback 替代 pointerInput + detectTapGestures
