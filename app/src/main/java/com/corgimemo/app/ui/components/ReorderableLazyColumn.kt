@@ -745,15 +745,14 @@ fun <T> ReorderableLazyColumn(
                                         displayItems = newDisplay
                                         draggedCurrentIndex = targetIndex
 
-                                        // 同步更新基线 = 被拖项在新位置的预期中心 Y
-                                        // 关键：必须用 draggedSize（被拖项高度）而非 otherInfo.size（目标项高度）
-                                        // 因为交换后被拖项占据目标项的旧 offset 位置，
-                                        // 其布局中心 = target.offset + draggedSize / 2
-                                        val otherInfo = listState.layoutInfo.visibleItemsInfo
-                                            .find { it.key == swapTargetKey }
-                                        if (otherInfo != null) {
-                                            draggedBaseCenterY = (otherInfo.offset + draggedSize / 2f)
-                                        }
+                                        // 关键修复：用目标索引反推基线，不读 visibleItemsInfo
+                                        // 旧实现读取 otherInfo（被交换目标项），其 offset 在 displayItems 变更后
+                                        // 立即变化，与新 displayItems 不一致，导致基线漂移到 1.5h（Bug B 根因）
+                                        draggedListCenterY = ReorderAlgorithms.computeDraggedListCenterY(
+                                            targetIndex = targetIndex,
+                                            draggedSize = draggedSize,
+                                            averageItemHeightPx = averageItemHeightPx
+                                        )
 
                                         // 记录本次交换信息，用于反向锁定（修复点 3）
                                         lastSwapTargetKey = swapTargetKey
