@@ -542,11 +542,13 @@ fun <T> ReorderableLazyColumn(
             else -> {
                 displayItems = items
                 isDragActive = false
+                isLongPressActive = false
                 draggedKey = null
                 draggedOriginalIndex = -1
                 draggedCurrentIndex = -1
                 fingerY = 0f
-                draggedBaseCenterY = 0f
+                draggedListCenterY = 0f
+                scrollCompensationY = 0f
             }
         }
     }
@@ -601,8 +603,9 @@ fun <T> ReorderableLazyColumn(
     val dragScrollBlocker = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): Offset {
-                // 拖拽激活时消费所有滚动请求，阻止列表跟随手指滚动
-                return if (isDragActive) available else Offset.Zero
+                // 长按触发即拦截滚动（不等 isDragActive），
+                // 解决"长按到 isDragActive=true 之间的事件未消费窗口"导致的列表失控滚动
+                return if (isLongPressActive) available else Offset.Zero
             }
         }
     }
@@ -649,6 +652,9 @@ fun <T> ReorderableLazyColumn(
                             val dragDistance = (change.position - downPosition).getDistance()
                             if (dragDistance <= dragThresholdPx) {
                                 longPressTriggered = true
+                                isLongPressActive = true
+                                // 立即消费当前事件，阻止 LazyColumn 在 isDragActive=true 前解释为滚动
+                                change.consume()
                                 // 长按触发但不震动（子项负责 LONG_CLICK 震动）
                             }
                         }
