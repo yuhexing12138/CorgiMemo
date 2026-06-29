@@ -535,16 +535,20 @@ fun HomeScreen(
                                 } else {
                                     abs(currentOffset - prevOff).toFloat()
                                 }
-                                // 向上滑（远离顶部）→进度减少（隐藏），向下滑（未到顶）→不增加进度
-                                if (!isDown && searchRevealProgress.value > 0f) {
+                                // 双向驱动：滚上减少 progress（隐藏），滚下增加 progress（显示），形成完整卷帘门对称
+                                if (isDown && searchRevealProgress.value < 1f) {
+                                    val newProgress = (searchRevealProgress.value + delta / searchBarFullHeightPx).coerceIn(0f, 1f)
+                                    // 仅当进度实际变化时才更新，避免无效的 snapTo 调用
+                                    if (newProgress != searchRevealProgress.value) {
+                                        searchRevealProgress.snapTo(newProgress)
+                                    }
+                                } else if (!isDown && searchRevealProgress.value > 0f) {
                                     val newProgress = (searchRevealProgress.value - delta / searchBarFullHeightPx).coerceIn(0f, 1f)
                                     // 仅当进度实际变化时才更新，避免无效的 snapTo 调用
                                     if (newProgress != searchRevealProgress.value) {
                                         searchRevealProgress.snapTo(newProgress)
                                     }
                                 }
-                                // 记录滚动时间，供滚动停止检测使用
-                                lastScrollTimeMs.longValue = System.currentTimeMillis()
                             }
                             prevIdx = currentIndex
                             prevOff = currentOffset
