@@ -432,7 +432,6 @@ fun <T> ReorderableLazyColumn(
     var draggedCurrentIndex by remember { mutableIntStateOf(-1) }
     var draggedOriginalIsPinned by remember { mutableStateOf(false) }
     var fingerY by remember { mutableFloatStateOf(0f) }
-    var draggedBaseCenterY by remember { mutableFloatStateOf(0f) }
     var lastHapticTime by remember { mutableLongStateOf(0L) }
 
     /**
