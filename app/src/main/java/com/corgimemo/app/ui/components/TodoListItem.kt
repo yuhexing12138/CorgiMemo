@@ -34,8 +34,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,6 +64,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
 
 /**
  * 待办列表项组件
@@ -116,7 +118,9 @@ fun TodoListItem(
     /** 是否被拖拽中（视觉反馈用） */
     isDragging: Boolean = false,
     /** 容器拖拽是否激活（手势协调用，激活时子项不再消费长按后的移动） */
-    isDragActive: Boolean = false
+    isDragActive: Boolean = false,
+    /** 左滑操作面板是否展开（true 时屏蔽详情点击 / 子待办展开 / 长按 / 复选框） */
+    isClickBlocked: Boolean = false
 ) {
 
     /** 逐区间动画参数：每字符延迟 2ms，最大延迟上限 300ms */
@@ -169,11 +173,11 @@ fun TodoListItem(
      * 重构后全部由 Modifier.pressFeedback 接管：
      * - interactionSource 传给 Modifier.pressFeedback，由其内部发射 Press/Release/Cancel，
      *   indication 监听到后显示水波纹
-     * - cardScale 是 Animatable<Float>，Modifier.pressFeedback 通过 animateTo 触发
-     *   缩小/恢复动画（缩小 60ms、恢复 80ms）
+     * - cardScale 是 MutableFloatState（同步赋值 0.92f / 1f，无动画过渡）。
+     *   详细原因见 PressFeedback.kt KDoc。
      */
     val interactionSource = remember { MutableInteractionSource() }
-    val cardScale = remember { androidx.compose.animation.core.Animatable(1f) }
+    val cardScale = remember { mutableFloatStateOf(1f) }
 
     Card(
         modifier = Modifier
@@ -183,6 +187,7 @@ fun TodoListItem(
                 interactionSource = interactionSource,
                 scale = cardScale,
                 isBatchMode = isBatchMode,
+                enabled = !isClickBlocked,   // ← 新增：左滑操作面板展开时屏蔽整个按压反馈
                 onTap = {
                     // 短按：根据批量模式分发
                     if (isBatchMode) {
@@ -202,9 +207,9 @@ fun TodoListItem(
                     }
                     onLongClick()
                 },
-                scaleDown = 0.92f,
+                scaleDown = 0.94f,
                 scaleDownDurationMs = 60,
-                scaleUpDurationMs = 80,
+                scaleUpDurationMs = 200,
                 // 拖拽协调：ReorderableLazyColumn 启动拖拽时让位
                 isDragActive = { isDragActive }
             ),
@@ -236,12 +241,14 @@ fun TodoListItem(
                     CircularCheckbox(
                         checked = if (isBatchMode) isSelected else todo.status == 1,
                         onCheckedChange = { isChecked ->
-                            if (isBatchMode) {
-                                onSelectClick()
-                            } else {
-                                onToggleComplete(todo.id, isChecked)
-                            }
-                        },
+                        // 左滑操作面板展开时屏蔽复选框点击
+                        if (isClickBlocked) return@CircularCheckbox
+                        if (isBatchMode) {
+                            onSelectClick()
+                        } else {
+                            onToggleComplete(todo.id, isChecked)
+                        }
+                    },
                         // 已完成态视觉降权：勾选框变淡（保持橙色系仅降深度）
                         dimmed = todo.status == 1,
                         modifier = Modifier.padding(end = 12.dp)
@@ -484,7 +491,7 @@ fun TodoListItem(
 
                             // 展开/收起按钮：Surface 圆形阴影 2dp
                             Surface(
-                                onClick = onToggleExpand,
+                                onClick = { if (!isClickBlocked) onToggleExpand() },
                                 shape = androidx.compose.foundation.shape.CircleShape,
                                 color = MaterialTheme.colorScheme.surface,
                                 shadowElevation = 2.dp,
@@ -520,7 +527,8 @@ fun TodoListItem(
                                 // 关键：多选模式下子任务勾选框不可点击
                                 // - 仅可查看，不可切换完成状态
                                 // - 视觉上 alpha 降低，提供 disabled 反馈
-                                isEnabled = !isBatchMode,
+                                // 左滑操作面板展开时也屏蔽（与父卡片保持一致）
+                                isEnabled = !isBatchMode && !isClickBlocked,
                                 onToggleComplete = { onToggleSubTask(subTask.id) },
                                 // 多选模式下长按子任务勾选框，弹 Toast 提示用户先退出多选模式
                                 // 文案来自 strings.xml，支持中英文等多语言
@@ -801,10 +809,11 @@ private fun SubTaskCheckbox(
      * 按压反馈所需状态（迁移至 Modifier.pressFeedback 内部统一处理）
      *
      * - interactionSource：发射 Press/Release/Cancel 事件，indication 监听到后显示水波纹
-     * - cardScale：Animatable<Float>，手指接触时 animateTo 到 0.92f，抬起时 animateTo 到 1f
+     * - cardScale：MutableFloatState，手指接触时同步赋值为 0.92f，抬起时同步赋值为 1f
+     *   （无动画过渡，详见 PressFeedback.kt KDoc 中的技术原因说明）
      */
     val interactionSource = remember { MutableInteractionSource() }
-    val cardScale = remember { androidx.compose.animation.core.Animatable(1f) }
+    val cardScale = remember { mutableFloatStateOf(1f) }
 
     /**
      * 关键：用 Modifier.pressFeedback 替代 pointerInput + detectTapGestures
@@ -842,9 +851,9 @@ private fun SubTaskCheckbox(
                     if (!isEnabled) onDisabledLongPress()
                 },
                 // 复选框本身较小（18dp），使用与父卡片一致的缩放参数保持视觉统一
-                scaleDown = 0.92f,
+                scaleDown = 0.94f,
                 scaleDownDurationMs = 60,
-                scaleUpDurationMs = 80,
+                scaleUpDurationMs = 200,
                 // 子任务无拖拽排序，无需拖拽让位协调，使用默认 isDragActive = false
                 isDragActive = { false }
             )
