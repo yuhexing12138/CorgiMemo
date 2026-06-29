@@ -320,18 +320,6 @@ object ReorderAlgorithms {
         fingerY - baseCenterY
 
     /**
-     * 判断释放动画期间是否应跳过 displayItems 更新
-     *
-     * 用途：松手后 250ms 释放动画期间，ViewModel 异步 onReorder 结果回流可能触发
-     * `LaunchedEffect(items)` 重置 displayItems。如果在动画期间重置，会破坏正在播放的
-     * 释放动画（A 的内层 Box offset 与新的 displayItems 位置不一致），造成新的跳变。
-     *
-     * @param isReleasing 是否处于释放动画期
-     * @return true = 跳过 displayItems 更新；false = 正常更新
-     */
-    fun shouldSkipDisplayUpdate(isReleasing: Boolean): Boolean = isReleasing
-
-    /**
      * 计算交换后被拖项在 displayItems 中的应有中心 Y
      *
      * 不依赖 listState.layoutInfo.visibleItemsInfo（与 displayItems 状态变更
@@ -370,6 +358,60 @@ object ReorderAlgorithms {
     ): Float {
         if (itemHeights.isEmpty()) return defaultHeightPx
         return itemHeights.values.sum().toFloat() / itemHeights.size
+    }
+
+    /**
+     * 计算被拖项交换后在 LazyColumn 视口中的应有中心 Y（基于 key 追踪的真实 size 累加）
+     *
+     * **修复背景**：
+     * 旧 `computeDraggedListCenterY` 用 `targetIndex * averageItemHeightPx` 估算被拖项位置，
+     * 当 displayItems 中各项高度不一致（如 D=300、其他=200）时，估算位置与 LazyColumn
+     * 实际累积位置偏差巨大（最大可达 N * |D.size - average|）。交换瞬间这个偏差突变，
+     * 导致 `dragOffsetY = fingerY - draggedListCenterY` 突变，进而内层 Box 瞬间跳变——
+     * 即用户描述的"剧烈上下跳动"。
+     *
+     * **修复方案**：
+     * 用 `keyToSize`（基于 item key 追踪，包含 dragging 项）累加 0..targetIndex-1 项的真实 size，
+     * 得到 LazyColumn 坐标系下的顶部 Y。再加上 `lazyColumnTopY`（LazyColumn 在视口的 Y 起点，
+     * 如 SearchBar 高度）转换为视口绝对坐标。
+     *
+     * **与旧函数的差异**：
+     * | 维度         | 旧 `computeDraggedListCenterY`        | 新 `computeDraggedListCenterYByKeys`        |
+     * |--------------|--------------------------------------|---------------------------------------------|
+     * | size 来源    | `averageItemHeightPx`（平均，丢失信息） | `keyToSize` 累加（真实 size，不丢失）        |
+     * | 坐标系       | LazyColumn 坐标                       | 视口绝对坐标（含 lazyColumnTopY 校正）       |
+     * | dragging 项  | 不在 itemHeightsPx 中                  | 主动写入 keyToSize[draggedKey]              |
+     *
+     * @param targetIndex 被拖项交换后的目标索引（newDisplayItems[targetIndex] 是被拖项）
+     * @param draggedSize 被拖项自身高度（px，LazyColumn 坐标系）
+     * @param newDisplayItems 交换后的 displayItems（用于 key 查找 size）
+     * @param keyFn 项的 key 提取函数
+     * @param keyToSize 项 key → 真实 size（px）的映射，由 onSizeChanged + onDragStart 维护
+     * @param lazyColumnTopY LazyColumn 视口顶部在屏幕视口的 Y 坐标（px），用于坐标系转换
+     * @param defaultHeightPx keyToSize 缺失某项 size 时的回退值
+     * @return 被拖项在新位置的应有中心 Y（**视口绝对坐标**）
+     */
+    fun <T> computeDraggedListCenterYByKeys(
+        targetIndex: Int,
+        draggedSize: Int,
+        newDisplayItems: List<T>,
+        keyFn: (T) -> Any,
+        keyToSize: Map<Any, Int>,
+        lazyColumnTopY: Float,
+        defaultHeightPx: Float
+    ): Float {
+        if (targetIndex <= 0) {
+            // 移到顶部：顶部 Y = 0，中心 = draggedSize/2
+            return lazyColumnTopY + draggedSize / 2f
+        }
+        // 累加 0..targetIndex-1 项的真实 size
+        var topY = 0f
+        for (i in 0 until targetIndex) {
+            val item = newDisplayItems[i]
+            val size = keyToSize[keyFn(item)] ?: defaultHeightPx
+            topY += size
+        }
+        return lazyColumnTopY + topY + draggedSize / 2f
     }
 }
 
@@ -448,33 +490,6 @@ fun <T> ReorderableLazyColumn(
      */
     var isLongPressActive by remember { mutableStateOf(false) }
 
-    // ━━━ 释放期状态（松手后清理）━━━
-    /**
-     * 释放期标志
-     *
-     * 松手后被置为 true 的极短瞬间即被重置为 false。
-     * 期间：A 仍处于「拖拽分支」（draggedKey 保持有效 → animateItem 不重启），
-     * LaunchedEffect(items) 跳过 displayItems 更新，避免在状态清理过程中插入
-     * 新的 items 引发跳变；接着 finally 块瞬时归零 releaseDragOffset、清空所有
-     * 拖拽字段，LaunchedEffect(items) 下一次触发时正常更新 displayItems。
-     *
-     * 注意：原计划使用 Animatable.animateTo 提供 250ms 平滑过渡，
-     * 但受限挂起作用域内无法调用受限挂起函数，已改为瞬时重置。
-     * 如需平滑过渡，可迁移到 LaunchedEffect(isDragActive=false) 内执行。
-     */
-    var isReleasing by remember { mutableStateOf(false) }
-
-    /**
-     * 释放期 offset 状态
-     *
-     * 松手后内层 Box 应回到 displayItems 期望位置。
-     * 原方案：Animatable.animateTo 从 releaseStartOffset 过渡到 0。
-     * 编译错误：`awaitEachGesture` 是受限挂起作用域，无法调用受限挂起函数
-     * `Animatable.animateTo`。已放弃平滑过渡，改为瞬时同步赋值 0f，
-     * 下一帧 LaunchedEffect(items) 正常更新 displayItems，animateItem 完成过渡。
-     */
-    val releaseDragOffset = remember { mutableFloatStateOf(0f) }
-
     // ━━━ 逻辑基线 + 滚动补偿（替换原 draggedBaseCenterY）━━━
     /**
      * 纯逻辑基线：被拖项在 displayItems 中的应有中心 Y（不含 auto-scroll 调整）
@@ -495,24 +510,41 @@ fun <T> ReorderableLazyColumn(
     var scrollCompensationY by remember { mutableFloatStateOf(0f) }
 
     /**
-     * 动态行高缓存：记录每个 displayItems 索引对应的实际渲染高度（px）
+     * 项 key → 真实 size（px）的全局映射
      *
-     * key = displayItems 索引, value = 高度（像素）
-     * 通过 Modifier.onSizeChanged 在首次布局时捕获每项真实尺寸，
-     * 替代固定 160px 默认值，使 draggedListCenterY 计算更精准。
+     * **修复背景**：
+     * 旧 `itemHeightsPx` 用 displayItems index 作 key，displayItems 变化时 key 失效。
+     * 交换后 `itemHeightsPx[0]` 仍是 A 的旧高度，不是 D 的新高度，导致 averageItemHeightPx
+     * 与 LazyColumn 实际累积位置不一致，进而拖拽项 `draggedListCenterY` 计算有误。
+     *
+     * **修复方案**：
+     * 用 item key 作 key 追踪每项真实 size，包括 dragging 项（在 onDragStart 时写入）。
+     * 这样无论 displayItems 怎么重排，keyToSize 始终反映每项真实尺寸。
      */
-    val itemHeightsPx = remember { mutableStateMapOf<Int, Int>() }
+    val keyToSize = remember { mutableStateMapOf<Any, Int>() }
 
     /**
-     * 当前已测量项的平均行高（px）
+     * LazyColumn 视口顶部在屏幕视口的 Y 坐标（px）
      *
-     * 空缓存时回退到 160f
+     * **修复背景**：
+     * 旧 `draggedListCenterY` 用 LazyColumn 坐标系计算（从 0 开始），
+     * 但 `fingerY` 是视口绝对坐标。`dragOffsetY = fingerY - draggedListCenterY` 混用坐标系，
+     * 内层 Box 持续偏离手指 Y_top 像素。
+     *
+     * **修复方案**：
+     * 在 onDragStart 时记录 `lazyColumnTopY = downPosition.y - firstHitItem.offset`，
+     * 之后 `draggedListCenterY` 加上 `lazyColumnTopY` 转换为视口绝对坐标。
+     * 拖拽期间 LazyColumn 视口位置稳定（isDragEnabled 排除了搜索框变化场景），无需重新计算。
      */
-    val averageItemHeightPx = if (itemHeightsPx.isNotEmpty()) {
-        ReorderAlgorithms.computeAverageItemHeightPx(
-            itemHeights = itemHeightsPx,
-            defaultHeightPx = 160f
-        )
+    var lazyColumnTopY by remember { mutableFloatStateOf(0f) }
+
+    /**
+     * 当前已测量项的平均行高（px），用于 keyToSize 缺失某项 size 时的回退
+     *
+     * 空缓存时回退到 160f（约 50dp @ 320dpi）
+     */
+    val averageItemHeightPx = if (keyToSize.isNotEmpty()) {
+        keyToSize.values.sum().toFloat() / keyToSize.size
     } else {
         160f
     }
@@ -527,12 +559,6 @@ fun <T> ReorderableLazyColumn(
     var displayItems by remember { mutableStateOf(items) }
     LaunchedEffect(items) {
         when {
-            // 释放动画期间：跳过更新，避免破坏正在播放的释放动画
-            // （A 的内层 Box offset 与新 displayItems 位置不一致会导致跳变）
-            ReorderAlgorithms.shouldSkipDisplayUpdate(isReleasing) -> {
-                Log.d("ReorderableLazyColumn",
-                    "[DISPLAY_ITEMS_REFRESH] skipped: isReleasing=true, items.size=${items.size}")
-            }
             // 非拖拽中：正常更新
             !isDragActive -> {
                 displayItems = items
@@ -548,6 +574,7 @@ fun <T> ReorderableLazyColumn(
                 fingerY = 0f
                 draggedListCenterY = 0f
                 scrollCompensationY = 0f
+                lazyColumnTopY = 0f
             }
         }
     }
@@ -562,12 +589,9 @@ fun <T> ReorderableLazyColumn(
     // ━━━ dragOffsetY 同步计算（derivedStateOf 避免在 Composable 中声明带 getter 的局部属性）━━━
     val dragOffsetY by remember {
         derivedStateOf {
-            when {
-                // 拖拽中：手指位置 - 被拖项在 displayItems 中的逻辑中心 - auto-scroll 补偿
-                isDragActive -> fingerY - draggedListCenterY - scrollCompensationY
-                isReleasing -> releaseDragOffset.floatValue
-                else -> 0f
-            }
+            // 拖拽中：fingerY(视口) - draggedListCenterY(视口) - auto-scroll 补偿
+            // 拖拽中为非零，松开手指后 draggedKey=null 切换为普通项，无 offset，松手瞬间无跳变
+            if (isDragActive) fingerY - draggedListCenterY - scrollCompensationY else 0f
         }
     }
 
@@ -618,17 +642,6 @@ fun <T> ReorderableLazyColumn(
             .nestedScroll(dragScrollBlocker)
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    // 释放期尝试新拖拽 → 清理前次释放状态
-                    // 原因：用户可能在前次拖拽释放后立即开始新拖拽
-                    if (isReleasing) {
-                        isReleasing = false
-                        releaseDragOffset.floatValue = 0f
-                        draggedKey = null
-                        isLongPressActive = false
-                        draggedListCenterY = 0f
-                        scrollCompensationY = 0f
-                    }
-
                     val down = awaitFirstDown(requireUnconsumed = false)
                 if (down.isConsumed) return@awaitEachGesture
 
@@ -698,10 +711,37 @@ fun <T> ReorderableLazyColumn(
                                     draggedCurrentIndex = draggedIndex.index
                                     draggedOriginalIsPinned = isPinned(draggedItem)
                                     fingerY = change.position.y
-                                    draggedListCenterY = ReorderAlgorithms.computeDraggedListCenterY(
+
+                                    /**
+                                     * 修复：dragging 项的 size 主动写入 keyToSize
+                                     *
+                                     * 原因：dragging 项没有 onSizeChanged（Box 内的 Box 不会触发 onSizeChanged），
+                                     * 导致 keyToSize 缺失 dragging 项的真实尺寸，
+                                     * computeDraggedListCenterYByKeys 累加时会回退到默认值，
+                                     * 引发位置计算误差。
+                                     */
+                                    keyToSize[draggedKey!!] = draggedIndex.size
+
+                                    /**
+                                     * 修复：记录 LazyColumn 视口顶部在屏幕视口的 Y 坐标
+                                     *
+                                     * 公式：lazyColumnTopY = downPosition.y - draggedIndex.offset
+                                     * - downPosition.y：手指视口绝对坐标
+                                     * - draggedIndex.offset：被拖项在 LazyColumn 坐标系下的 offset（从 0 开始）
+                                     * - 差值 = LazyColumn 顶部在视口的 Y 位置（如 SearchBar 高度）
+                                     *
+                                     * 拖拽期间 isDragEnabled 排除了搜索框变化场景，Y_top 稳定无需重算。
+                                     */
+                                    lazyColumnTopY = downPosition.y - draggedIndex.offset
+
+                                    draggedListCenterY = ReorderAlgorithms.computeDraggedListCenterYByKeys(
                                         targetIndex = draggedIndex.index,
                                         draggedSize = draggedIndex.size,
-                                        averageItemHeightPx = averageItemHeightPx
+                                        newDisplayItems = displayItems,
+                                        keyFn = key,
+                                        keyToSize = keyToSize,
+                                        lazyColumnTopY = lazyColumnTopY,
+                                        defaultHeightPx = averageItemHeightPx
                                     )
                                     scrollCompensationY = 0f
 
@@ -753,13 +793,19 @@ fun <T> ReorderableLazyColumn(
                                         displayItems = newDisplay
                                         draggedCurrentIndex = targetIndex
 
-                                        // 关键修复：用目标索引反推基线，不读 visibleItemsInfo
-                                        // 旧实现读取 otherInfo（被交换目标项），其 offset 在 displayItems 变更后
-                                        // 立即变化，与新 displayItems 不一致，导致基线漂移到 1.5h（Bug B 根因）
-                                        draggedListCenterY = ReorderAlgorithms.computeDraggedListCenterY(
+                                        // 关键修复：用真实 size 累加 + Y_top 校正计算基线
+                                        // 旧实现 `computeDraggedListCenterY` 用 targetIndex * averageItemHeightPx 估算，
+                                        // 当 displayItems 中各项高度不一致时，估算位置与 LazyColumn 实际累积位置
+                                        // 偏差巨大，交换瞬间 draggedListCenterY 突变导致 dragOffsetY 突变，
+                                        // 内层 Box 瞬间跳变（用户描述的"剧烈上下跳动"）。
+                                        draggedListCenterY = ReorderAlgorithms.computeDraggedListCenterYByKeys(
                                             targetIndex = targetIndex,
                                             draggedSize = draggedSize,
-                                            averageItemHeightPx = averageItemHeightPx
+                                            newDisplayItems = newDisplay,
+                                            keyFn = key,
+                                            keyToSize = keyToSize,
+                                            lazyColumnTopY = lazyColumnTopY,
+                                            defaultHeightPx = averageItemHeightPx
                                         )
 
                                         // 记录本次交换信息，用于反向锁定（修复点 3）
@@ -783,22 +829,14 @@ fun <T> ReorderableLazyColumn(
                 } finally {
                     // ━━━ 拖拽结束或异常 ━━━
                     if (isDragActive) {
-                        // 1. 计算释放动画起始 offset（松手时手指相对基线的偏移）
-                        //    基线 = draggedListCenterY + scrollCompensationY
-                        //    （替换原 draggedBaseCenterY；保持外部 finger 偏移语义不变）
-                        val releaseStartOffset = ReorderAlgorithms.computeReleaseStartOffset(
-                            fingerY = fingerY,
-                            baseCenterY = draggedListCenterY + scrollCompensationY
-                        )
-                        // isDragActive 置 false（不再消费 pointerEvent）
-                        // draggedKey 保持有效 → A 继续在「拖拽分支」中，避免外层 Box
-                        // 切换为普通项（带 animateItem）导致外层位置出现意外动画
+                        // 1. isDragActive 置 false（不再消费 pointerEvent）
+                        // 同步提交排序（ViewModel 内部 viewModelScope.launch 异步执行 DB 更新）
                         isDragActive = false
 
                         Log.d("ReorderableLazyColumn",
-                            "[RELEASE_START] offset=$releaseStartOffset idx=$draggedCurrentIndex")
+                            "[RELEASE_START] idx=$draggedCurrentIndex")
 
-                        // 2. 提交排序（同步调用；ViewModel 内部 viewModelScope.launch 异步执行 DB 更新）
+                        // 2. 提交排序（如有变化）
                         if (draggedOriginalIndex != draggedCurrentIndex && draggedOriginalIndex >= 0) {
                             val displayPinned = displayItems.map { isPinned(it) }
                             val crossedPinnedZone = ReorderAlgorithms.checkPinnedZoneCrossed(
@@ -820,13 +858,9 @@ fun <T> ReorderableLazyColumn(
                             )
                         }
 
-                        // 3. 释放完成 → 瞬时同步重置所有状态
-                        // 取消原 250ms tween 释放动画：受限挂起作用域内无法调用
-                        // Animatable.animateTo，且新方案无独立协程可承载动画。
-                        // 改为瞬时归零，下一帧 LaunchedEffect(items) 看到 !isDragActive
-                        // 会同步更新 displayItems 到 items，animateItem 完成位置过渡。
-                        releaseDragOffset.floatValue = 0f
-                        isReleasing = false
+                        // 3. 瞬时同步重置所有拖拽状态
+                        // draggedKey 置 null → 下一帧 isDragging 全部为 false，
+                        // 卡片切换为普通项，自身位置由 LazyColumn 决定，无 offset 跳变。
                         isLongPressActive = false
                         draggedKey = null
                         draggedOriginalIndex = -1
@@ -834,17 +868,11 @@ fun <T> ReorderableLazyColumn(
                         fingerY = 0f
                         draggedListCenterY = 0f
                         scrollCompensationY = 0f
+                        lazyColumnTopY = 0f
                         lastSwapTargetKey = null
                         lastSwapFingerY = 0f
                         Log.d("ReorderableLazyColumn",
-                            "[RELEASE_END] isDragActive=$isDragActive isReleasing=$isReleasing")
-                    } else if (isReleasing) {
-                        // 异常路径：pointerInput 协程被取消但释放状态未清理
-                        // 强制清零避免卡在中间状态
-                        releaseDragOffset.floatValue = 0f
-                        isReleasing = false
-                        Log.d("ReorderableLazyColumn",
-                            "[RELEASE_RESET] pointerInput cancelled during releasing")
+                            "[RELEASE_END] isDragActive=$isDragActive")
                     }
                 }
             }
@@ -904,10 +932,11 @@ fun <T> ReorderableLazyColumn(
                     modifier = Modifier
                         .animateItem()
                         .zIndex(0f)
-                        // 捕获每项实际渲染高度，用于 computeDraggedListCenterY
+                        // 捕获每项实际渲染高度，同时记录到 keyToSize（基于 item key 追踪）
+                        // keyToSize 在 onDragStart 和交换计算时使用，与 displayItems index 解耦
                         .onSizeChanged { size ->
                             if (size.height > 0) {
-                                itemHeightsPx[index] = size.height
+                                keyToSize[key(item)] = size.height
                             }
                         }
                 ) {
