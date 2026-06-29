@@ -880,6 +880,12 @@ fun <T> ReorderableLazyColumn(
                     modifier = Modifier
                         .animateItem()
                         .zIndex(0f)
+                        // 捕获每项实际渲染高度，用于 computeDraggedListCenterY
+                        .onSizeChanged { size ->
+                            if (size.height > 0) {
+                                itemHeightsPx[index] = size.height
+                            }
+                        }
                 ) {
                     content(index, item, false, isDragActive)
                 }
