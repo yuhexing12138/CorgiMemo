@@ -435,6 +435,20 @@ fun <T> ReorderableLazyColumn(
     var draggedBaseCenterY by remember { mutableFloatStateOf(0f) }
     var lastHapticTime by remember { mutableLongStateOf(0L) }
 
+    /**
+     * 长按触发标志（中间状态）
+     *
+     * 长按触发后立即置 true，驱动 dragScrollBlocker 拦截滚动，
+     * 解决"长按触发到 isDragActive=true 之间的事件未消费窗口"。
+     *
+     * 与 isDragActive 区别：
+     * - isLongPressActive：长按触发即 true，专用滚动拦截
+     * - isDragActive：dy > dragThresholdPx 才 true，驱动交换逻辑
+     *
+     * 重置时机：松手 / 取消 / items 外部变更
+     */
+    var isLongPressActive by remember { mutableStateOf(false) }
+
     // ━━━ 释放期状态（松手后清理）━━━
     /**
      * 释放期标志
@@ -461,6 +475,48 @@ fun <T> ReorderableLazyColumn(
      * 下一帧 LaunchedEffect(items) 正常更新 displayItems，animateItem 完成过渡。
      */
     val releaseDragOffset = remember { mutableFloatStateOf(0f) }
+
+    // ━━━ 逻辑基线 + 滚动补偿（替换原 draggedBaseCenterY）━━━
+    /**
+     * 纯逻辑基线：被拖项在 displayItems 中的应有中心 Y（不含 auto-scroll 调整）
+     *
+     * 初始化：进入拖拽时 = computeDraggedListCenterY(draggedOriginalIndex, ...)
+     * 交换时：= computeDraggedListCenterY(targetIndex, ...)
+     * 不再读 visibleItemsInfo（与 displayItems 状态变更存在一帧延迟）
+     */
+    var draggedListCenterY by remember { mutableFloatStateOf(0f) }
+
+    /**
+     * 滚动补偿：auto-scroll 期间列表整体平移了多少
+     *
+     * 由 LaunchedEffect(isDragActive, fingerY) 在每次 scrollBy 后累加 scrollDelta。
+     * 替换原 draggedBaseCenterY += scrollDelta 写法，
+     * 避免基线在 auto-scroll 与交换逻辑间产生歧义。
+     */
+    var scrollCompensationY by remember { mutableFloatStateOf(0f) }
+
+    /**
+     * 动态行高缓存：记录每个 displayItems 索引对应的实际渲染高度（px）
+     *
+     * key = displayItems 索引, value = 高度（像素）
+     * 通过 Modifier.onSizeChanged 在首次布局时捕获每项真实尺寸，
+     * 替代固定 160px 默认值，使 draggedListCenterY 计算更精准。
+     */
+    val itemHeightsPx = remember { mutableStateMapOf<Int, Int>() }
+
+    /**
+     * 当前已测量项的平均行高（px）
+     *
+     * 空缓存时回退到 160f
+     */
+    val averageItemHeightPx = if (itemHeightsPx.isNotEmpty()) {
+        ReorderAlgorithms.computeAverageItemHeightPx(
+            itemHeights = itemHeightsPx,
+            defaultHeightPx = 160f
+        )
+    } else {
+        160f
+    }
 
     // ━━━ 反向交换锁定状态（修复点 3）━━━
     // 交换后记录目标 key 和手指位置，防止下一帧立即反向交换导致震荡
