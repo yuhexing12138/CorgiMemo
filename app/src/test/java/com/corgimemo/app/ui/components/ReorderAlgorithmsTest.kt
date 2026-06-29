@@ -233,4 +233,45 @@ class ReorderAlgorithmsTest {
         )
         assertEquals(false, result)
     }
+
+    // ==================== computeReleaseStartOffset 测试 ====================
+
+    @Test
+    fun `computeReleaseStartOffset 正偏移`() {
+        val offset = ReorderAlgorithms.computeReleaseStartOffset(
+            fingerY = 200f,
+            baseCenterY = 140f
+        )
+        assertEquals(60.0f, offset, 0.001f)
+    }
+
+    @Test
+    fun `computeReleaseStartOffset 零偏移`() {
+        val offset = ReorderAlgorithms.computeReleaseStartOffset(
+            fingerY = 140f,
+            baseCenterY = 140f
+        )
+        assertEquals(0.0f, offset, 0.001f)
+    }
+
+    @Test
+    fun `computeReleaseStartOffset 负偏移`() {
+        val offset = ReorderAlgorithms.computeReleaseStartOffset(
+            fingerY = 110f,
+            baseCenterY = 140f
+        )
+        assertEquals(-30.0f, offset, 0.001f)
+    }
+
+    // ==================== shouldSkipDisplayUpdate 测试 ====================
+
+    @Test
+    fun `shouldSkipDisplayUpdate 释放期间返回 true`() {
+        assertEquals(true, ReorderAlgorithms.shouldSkipDisplayUpdate(isReleasing = true))
+    }
+
+    @Test
+    fun `shouldSkipDisplayUpdate 非释放期间返回 false`() {
+        assertEquals(false, ReorderAlgorithms.shouldSkipDisplayUpdate(isReleasing = false))
+    }
 }
