@@ -695,7 +695,12 @@ fun <T> ReorderableLazyColumn(
                                     draggedCurrentIndex = draggedIndex.index
                                     draggedOriginalIsPinned = isPinned(draggedItem)
                                     fingerY = change.position.y
-                                    draggedBaseCenterY = (draggedIndex.offset + draggedIndex.size / 2f)
+                                    draggedListCenterY = ReorderAlgorithms.computeDraggedListCenterY(
+                                        targetIndex = draggedIndex.index,
+                                        draggedSize = draggedIndex.size,
+                                        averageItemHeightPx = averageItemHeightPx
+                                    )
+                                    scrollCompensationY = 0f
 
                                     // 震动：标记进入拖拽
                                     HapticFeedbackManager.performHapticFeedback(
