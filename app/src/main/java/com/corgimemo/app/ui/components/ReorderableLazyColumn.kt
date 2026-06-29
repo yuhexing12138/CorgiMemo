@@ -791,7 +791,8 @@ fun <T> ReorderableLazyColumn(
                             baseCenterY = draggedListCenterY + scrollCompensationY
                         )
                         // isDragActive 置 false（不再消费 pointerEvent）
-                        // draggedKey 保持有效 → A 继续在「拖拽分支」中，animateItem 不重启
+                        // draggedKey 保持有效 → A 继续在「拖拽分支」中，避免外层 Box
+                        // 切换为普通项（带 animateItem）导致外层位置出现意外动画
                         isDragActive = false
 
                         Log.d("ReorderableLazyColumn",
