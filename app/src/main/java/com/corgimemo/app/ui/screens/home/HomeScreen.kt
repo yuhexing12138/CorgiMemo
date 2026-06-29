@@ -619,16 +619,6 @@ fun HomeScreen(
                         }
                     }
 
-                    /** 到达列表顶部时，搜索框平滑展开显示（级联动画） */
-                    LaunchedEffect(isAtTop) {
-                        if (isAtTop && searchQuery.isBlank()) {
-                            searchRevealProgress.animateTo(
-                                1f,
-                                animationSpec = tween(250, easing = FastOutSlowInEasing)
-                            )
-                        }
-                    }
-
                     /**
                      * 搜索词变化时驱动搜索框：
                      * - 输入搜索词（blank → 非 blank）→ 立即显示（250ms 展开）
