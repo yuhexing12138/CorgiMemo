@@ -274,4 +274,87 @@ class ReorderAlgorithmsTest {
     fun `shouldSkipDisplayUpdate 非释放期间返回 false`() {
         assertEquals(false, ReorderAlgorithms.shouldSkipDisplayUpdate(isReleasing = false))
     }
+
+    // ==================== computeDraggedListCenterY 测试 ====================
+
+    /**
+     * 场景：被拖项被推到列表顶部（targetIndex=0）
+     * 预期：被拖项中心 Y = 自身高度一半 = 75.0f
+     * 依据：顶部 Y = 0 * 160 = 0，中心 = 0 + 150/2 = 75
+     */
+    @Test
+    fun `computeDraggedListCenterY 移到顶部 index 0 返回被拖项中心`() {
+        val centerY = ReorderAlgorithms.computeDraggedListCenterY(
+            targetIndex = 0,
+            draggedSize = 150,
+            averageItemHeightPx = 160f
+        )
+        assertEquals(75.0f, centerY, 0.001f)
+    }
+
+    /**
+     * 场景：被拖项被推到 index=2 位置
+     * 预期：被拖项中心 Y = 2 * 160 + 150/2 = 320 + 75 = 395.0f
+     */
+    @Test
+    fun `computeDraggedListCenterY 移到 index 2 返回 395f`() {
+        val centerY = ReorderAlgorithms.computeDraggedListCenterY(
+            targetIndex = 2,
+            draggedSize = 150,
+            averageItemHeightPx = 160f
+        )
+        assertEquals(395.0f, centerY, 0.001f)
+    }
+
+    /**
+     * 场景：平均行高为 0（异常值，未初始化或空列表场景）
+     * 预期：回退到 draggedSize 一半 = 75.0f（与 targetIndex 无关）
+     */
+    @Test
+    fun `computeDraggedListCenterY 行高为 0 回退到 draggedSize 一半`() {
+        val centerY = ReorderAlgorithms.computeDraggedListCenterY(
+            targetIndex = 0,
+            draggedSize = 150,
+            averageItemHeightPx = 0f
+        )
+        assertEquals(75.0f, centerY, 0.001f)
+    }
+
+    /**
+     * 场景：平均行高为负数（异常值，防止乘法越界）
+     * 预期：回退到 draggedSize 一半 = 50.0f
+     */
+    @Test
+    fun `computeDraggedListCenterY 负数行高回退`() {
+        val centerY = ReorderAlgorithms.computeDraggedListCenterY(
+            targetIndex = 5,
+            draggedSize = 100,
+            averageItemHeightPx = -50f
+        )
+        assertEquals(50.0f, centerY, 0.001f)
+    }
+
+    /**
+     * 关键回归测试：验证 Bug B（非首页卡片与首页卡片交换后飞出屏幕）不会复发
+     *
+     * 场景：首页卡片 A（index=0）下移与 index=2 的卡片 B 交换位置后
+     * 此刻 B（被拖项）的目标索引 = 0
+     * 旧实现：read otherInfo.offset of A（A 此时仍在原位 offset=0），得到 baseCenterY=0+150/2=75
+     * 视觉瞬移：手指 fingerY=275，松手 releaseStartOffset=275-75=200px，盒子飞出去
+     *
+     * 新实现：用目标索引反推基线，targetIndex=0 时中心=75，
+     * 释放起点偏移 = 275 - 75 = 200f（与原 baseline 一致，无瞬移）
+     * 但当 B 实际下移后手指在 275 位置时，松手 releaseStartOffset 必须等于手指相对新基线 75 的偏移
+     * 此测试用纯函数层面固化"移到顶部"基线 = 75f（而非 275f）
+     */
+    @Test
+    fun `computeDraggedListCenterY B 上移与 A 交换后基线为 75f 不是 275f`() {
+        val centerY = ReorderAlgorithms.computeDraggedListCenterY(
+            targetIndex = 0,
+            draggedSize = 150,
+            averageItemHeightPx = 160f
+        )
+        // 关键断言：基线必须等于 75f（顶部中心），绝对不能等于 275f（旧 BUG 的位置）
+        assertEquals(75.0f, centerY, 0.001f)
+    }
 }
