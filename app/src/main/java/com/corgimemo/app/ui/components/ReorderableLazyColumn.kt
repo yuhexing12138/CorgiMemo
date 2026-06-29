@@ -513,6 +513,15 @@ fun <T> ReorderableLazyColumn(
             .nestedScroll(dragScrollBlocker)
             .pointerInput(Unit) {
                 awaitEachGesture {
+                    // 释放动画期间尝试新拖拽 → 清理前次动画
+                    // 原因：用户可能在前次拖拽的释放动画完成前就开始新拖拽
+                    if (isReleasing) {
+                        isReleasing = false
+                        draggedKey = null
+                        draggedBaseCenterY = 0f
+                        // Animatable 协程的 finally 块会检测 isReleasing=false → 协程自然结束
+                    }
+
                     val down = awaitFirstDown(requireUnconsumed = false)
                 if (down.isConsumed) return@awaitEachGesture
 
