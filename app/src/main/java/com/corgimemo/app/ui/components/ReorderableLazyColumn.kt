@@ -564,7 +564,8 @@ fun <T> ReorderableLazyColumn(
     val dragOffsetY by remember {
         derivedStateOf {
             when {
-                isDragActive -> fingerY - draggedBaseCenterY
+                // 拖拽中：手指位置 - 被拖项在 displayItems 中的逻辑中心 - auto-scroll 补偿
+                isDragActive -> fingerY - draggedListCenterY - scrollCompensationY
                 isReleasing -> releaseDragOffset.floatValue
                 else -> 0f
             }
