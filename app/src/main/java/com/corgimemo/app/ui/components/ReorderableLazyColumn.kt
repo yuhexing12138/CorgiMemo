@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.dropShadow
@@ -393,6 +394,27 @@ fun <T> ReorderableLazyColumn(
     var draggedBaseCenterY by remember { mutableFloatStateOf(0f) }
     var lastHapticTime by remember { mutableLongStateOf(0L) }
 
+    // ━━━ 释放动画状态（松手后视觉跳跃修复）━━━
+    /**
+     * 释放动画期标志
+     *
+     * 松手后 250ms 期间为 true。期间：
+     * - draggedKey 保持有效，A 继续在「拖拽分支」中（animateItem 不重启）
+     * - dragOffsetY 由 releaseDragOffset 驱动平滑过渡到 0
+     * - LaunchedEffect(items) 跳过 displayItems 更新（避免破坏动画）
+     */
+    var isReleasing by remember { mutableStateOf(false) }
+
+    /**
+     * 释放动画 Animatable
+     *
+     * 驱动 A 的内层 Box offset 从松手时偏移（fingerY - baseCenterY）平滑过渡到 0。
+     * 使用 Animatable 而非直接修改 fingerY，因为：
+     * - Animatable 是 Composable 状态，Compose 自动驱动重组
+     * - 250ms tween FastOutSlowInEasing 与 animateItem 默认一致
+     */
+    val releaseDragOffset = remember { Animatable(0f) }
+
     // ━━━ 反向交换锁定状态（修复点 3）━━━
     // 交换后记录目标 key 和手指位置，防止下一帧立即反向交换导致震荡
     // 清除条件：手指移动超过 draggedSize/2 后清除锁定
@@ -402,17 +424,27 @@ fun <T> ReorderableLazyColumn(
     // ━━━ 显示列表（拖拽中可重排，与 items 解耦）━━━
     var displayItems by remember { mutableStateOf(items) }
     LaunchedEffect(items) {
-        if (!isDragActive) {
-            displayItems = items
-        } else {
+        when {
+            // 释放动画期间：跳过更新，避免破坏正在播放的释放动画
+            // （A 的内层 Box offset 与新 displayItems 位置不一致会导致跳变）
+            ReorderAlgorithms.shouldSkipDisplayUpdate(isReleasing) -> {
+                Log.d("ReorderableLazyColumn",
+                    "[DISPLAY_ITEMS_REFRESH] skipped: isReleasing=true, items.size=${items.size}")
+            }
+            // 非拖拽中：正常更新
+            !isDragActive -> {
+                displayItems = items
+            }
             // 拖拽中 items 被外部变更（如同步）→ 取消拖拽
-            displayItems = items
-            isDragActive = false
-            draggedKey = null
-            draggedOriginalIndex = -1
-            draggedCurrentIndex = -1
-            fingerY = 0f
-            draggedBaseCenterY = 0f
+            else -> {
+                displayItems = items
+                isDragActive = false
+                draggedKey = null
+                draggedOriginalIndex = -1
+                draggedCurrentIndex = -1
+                fingerY = 0f
+                draggedBaseCenterY = 0f
+            }
         }
     }
 
@@ -426,7 +458,11 @@ fun <T> ReorderableLazyColumn(
     // ━━━ dragOffsetY 同步计算（derivedStateOf 避免在 Composable 中声明带 getter 的局部属性）━━━
     val dragOffsetY by remember {
         derivedStateOf {
-            if (isDragActive && draggedKey != null) fingerY - draggedBaseCenterY else 0f
+            when {
+                isDragActive -> fingerY - draggedBaseCenterY
+                isReleasing -> releaseDragOffset.value
+                else -> 0f
+            }
         }
     }
 
@@ -457,6 +493,9 @@ fun <T> ReorderableLazyColumn(
 
     // ━━━ 主题色（虚线占位框）━━━
     val primaryColor = MaterialTheme.colorScheme.primary
+
+    // ━━━ 协程作用域（用于启动释放动画独立协程）━━━
+    val scope = rememberCoroutineScope()
 
     // ━━━ 拖拽时禁用列表滚动（通过nestedScroll拦截）━━━
     val dragScrollBlocker = remember {
@@ -621,7 +660,19 @@ fun <T> ReorderableLazyColumn(
                 } finally {
                     // ━━━ 拖拽结束或异常 ━━━
                     if (isDragActive) {
-                        // 提交排序
+                        // 1. 计算释放动画起始 offset（松手时手指相对基线的偏移）
+                        val releaseStartOffset = ReorderAlgorithms.computeReleaseStartOffset(
+                            fingerY = fingerY,
+                            baseCenterY = draggedBaseCenterY
+                        )
+                        // isDragActive 置 false（不再消费 pointerEvent）
+                        // draggedKey 保持有效 → A 继续在「拖拽分支」中，animateItem 不重启
+                        isDragActive = false
+
+                        Log.d("ReorderableLazyColumn",
+                            "[RELEASE_START] offset=$releaseStartOffset idx=$draggedCurrentIndex")
+
+                        // 2. 提交排序（同步调用；ViewModel 内部 viewModelScope.launch 异步执行 DB 更新）
                         if (draggedOriginalIndex != draggedCurrentIndex && draggedOriginalIndex >= 0) {
                             val displayPinned = displayItems.map { isPinned(it) }
                             val crossedPinnedZone = ReorderAlgorithms.checkPinnedZoneCrossed(
@@ -643,15 +694,40 @@ fun <T> ReorderableLazyColumn(
                             )
                         }
 
-                        // 重置状态
-                        isDragActive = false
-                        draggedKey = null
-                        draggedOriginalIndex = -1
-                        draggedCurrentIndex = -1
-                        fingerY = 0f
-                        draggedBaseCenterY = 0f
-                        lastSwapTargetKey = null
-                        lastSwapFingerY = 0f
+                        // 3. 启动释放动画（250ms tween，与 animateItem 默认一致）
+                        // 使用 rememberCoroutineScope 启动独立协程，不受 pointerInput 协程取消影响
+                        scope.launch {
+                            try {
+                                isReleasing = true
+                                releaseDragOffset.snapTo(releaseStartOffset)
+                                Log.d("ReorderableLazyColumn",
+                                    "[RELEASE_OFFSET_SNAP] from=$releaseStartOffset to=${releaseDragOffset.value}")
+                                releaseDragOffset.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = tween(
+                                        durationMillis = 250,
+                                        easing = FastOutSlowInEasing
+                                    )
+                                )
+                            } finally {
+                                // 4. 动画结束后重置所有状态
+                                isReleasing = false
+                                draggedKey = null
+                                draggedOriginalIndex = -1
+                                draggedCurrentIndex = -1
+                                fingerY = 0f
+                                draggedBaseCenterY = 0f
+                                lastSwapTargetKey = null
+                                lastSwapFingerY = 0f
+                                Log.d("ReorderableLazyColumn",
+                                    "[RELEASE_END] isDragActive=$isDragActive")
+                            }
+                        }
+                    } else if (isReleasing) {
+                        // pointerInput 因异常/外部原因被取消，但释放动画仍在进行
+                        // Animatable 协程独立于 pointerInput 协程，会自然完成
+                        Log.d("ReorderableLazyColumn",
+                            "[RELEASE_START] pointerInput cancelled during releasing")
                     }
                 }
             }
