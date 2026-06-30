@@ -2,7 +2,10 @@
 compileSdk = "35"
 minSdk = "26"
 targetSdk = "35"
-kotlin = "2.2.10"
+# Kotlin 升级到 2.3.20：
+#  - 解决 KotlinAndroidPlugin 在 AGP 9.0 下 ClassCastException（testVariants 警告根因）
+#  - 2.2.x 已 EOL（2025-10-23 终止支持），2.3.x 为当前稳定线
+kotlin = "2.3.20"
 compose = "1.9.2"
 composeCompiler = "2.1.0"
 hilt = "2.57"
@@ -70,5 +73,6 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 # Kotlin 2.0+ 必须显式声明 Compose Compiler 插件（替代旧版 composeCompilerExtension）
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-ksp = { id = "com.google.devtools.ksp", version = "2.1.0-1.0.29" }
+# KSP 2.3.9：与 Kotlin 2.3.20 配套；KSP 2.3.x 命名已简化为单一版本号（不再使用 <kotlin>-<ksp> 格式）
+ksp = { id = "com.google.devtools.ksp", version = "2.3.9" }
 hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
