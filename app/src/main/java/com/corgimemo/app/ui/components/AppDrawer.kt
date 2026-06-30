@@ -360,7 +360,7 @@ private fun CategoryItem(
         } else {
             Spacer(modifier = Modifier.width(8.dp))
             Icon(
-                imageVector = Icons.Default.ArrowForwardIos,
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                 contentDescription = null,
                 tint = Color(0xFFBDBDBD),
                 modifier = Modifier.size(16.dp)
