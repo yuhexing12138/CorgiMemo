@@ -111,7 +111,10 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.google.accompanist.permissions)
-    implementation("com.google.accompanist:accompanist-swiperefresh:0.34.0")
+    /**
+     * 下拉刷新已从 accompanist-swiperefresh（已废弃）迁移到 Material3 PullToRefreshBox，
+     * 移除 accompanist-swiperefresh 依赖。
+     */
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.glance.material3)
     implementation(libs.androidx.glance.appwidget)

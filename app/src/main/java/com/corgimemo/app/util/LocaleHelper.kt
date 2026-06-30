@@ -73,6 +73,7 @@ object LocaleHelper {
      * @param context 应用上下文（建议使用 ApplicationContext）
      * @param languageCode 目标语言代码（"zh"/"en"/"ja"/"system"）
      */
+    @Suppress("DEPRECATION")
     fun setLocale(context: Context, languageCode: String) {
         val locale = when (languageCode) {
             LANGUAGE_SYSTEM -> Locale.getDefault() /** 使用系统默认语言 */
@@ -86,7 +87,12 @@ object LocaleHelper {
         val config = Configuration(context.resources.configuration)
         config.setLocale(locale)
 
-        /** 应用新的配置到 Resources */
+        /**
+         * 应用新的配置到 Resources。
+         * 说明：Resources.updateConfiguration 在 API 17 起被标记为 deprecated，
+         * 推荐做法是在 Activity.attachBaseContext() 中调用 createConfigurationContext() 并返回新的 Context。
+         * 由于本项目依赖 Activity.recreate() 立即应用新语言，这里保留旧 API 以避免架构层重构。
+         */
         context.resources.updateConfiguration(config, context.resources.displayMetrics)
 
         /** TODO: 将用户选择持久化到 DataStore 或 SharedPreferences */
@@ -105,7 +111,7 @@ object LocaleHelper {
      * @return 当前语言代码字符串（如 "zh"、"en"、"ja"）
      */
     fun getCurrentLanguage(context: Context): String {
-        return context.resources.configuration.locale.language
+        return context.resources.configuration.locales[0].language
     }
 
     /**

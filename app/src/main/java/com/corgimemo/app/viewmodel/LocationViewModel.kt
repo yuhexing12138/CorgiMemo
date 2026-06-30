@@ -6,7 +6,9 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
 import android.os.Bundle
+import android.os.Looper
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
@@ -23,7 +25,7 @@ class LocationViewModel(private val context: Context) : ViewModel() {
     fun requestCurrentLocation() {
         if (checkPermissions()) {
             locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            
+
             locationListener = object : LocationListener {
                 override fun onLocationChanged(location: Location) {
                     _currentLocation.value = location
@@ -35,24 +37,56 @@ class LocationViewModel(private val context: Context) : ViewModel() {
                 override fun onProviderDisabled(provider: String) {}
             }
 
-            try {
-                locationManager?.requestSingleUpdate(
-                    LocationManager.GPS_PROVIDER,
-                    locationListener!!,
-                    null
-                )
-            } catch (e: SecurityException) {
-                e.printStackTrace()
-            } catch (e: IllegalArgumentException) {
-                try {
-                    locationManager?.requestSingleUpdate(
-                        LocationManager.NETWORK_PROVIDER,
-                        locationListener!!,
-                        null
-                    )
-                } catch (ex: Exception) {
-                    ex.printStackTrace()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                requestCurrentLocationModern(LocationManager.GPS_PROVIDER)
+            } else {
+                @Suppress("DEPRECATION")
+                requestSingleUpdateLegacy(LocationManager.GPS_PROVIDER)
+            }
+        }
+    }
+
+    /**
+     * API 30+ 使用 LocationManager.getCurrentLocation() 获取单次定位。
+     * 若 GPS 无结果则降级到 NETWORK_PROVIDER。
+     */
+    private fun requestCurrentLocationModern(provider: String) {
+        try {
+            locationManager?.getCurrentLocation(
+                provider,
+                null,
+                ContextCompat.getMainExecutor(context)
+            ) { location ->
+                if (location != null) {
+                    _currentLocation.value = location
+                } else if (provider == LocationManager.GPS_PROVIDER) {
+                    requestCurrentLocationModern(LocationManager.NETWORK_PROVIDER)
                 }
+            }
+        } catch (e: SecurityException) {
+            e.printStackTrace()
+        } catch (e: IllegalArgumentException) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * API 26-29 走旧的 requestSingleUpdate 路径（已废弃但仍可用）。
+     * 移除 LocationListener 即可停止后续更新。
+     */
+    @Suppress("DEPRECATION")
+    private fun requestSingleUpdateLegacy(provider: String) {
+        try {
+            locationManager?.requestSingleUpdate(
+                provider,
+                locationListener!!,
+                Looper.getMainLooper()
+            )
+        } catch (e: SecurityException) {
+            e.printStackTrace()
+        } catch (e: IllegalArgumentException) {
+            if (provider == LocationManager.GPS_PROVIDER) {
+                requestSingleUpdateLegacy(LocationManager.NETWORK_PROVIDER)
             }
         }
     }

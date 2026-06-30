@@ -119,7 +119,7 @@ fun EditHistoryScreen(
                         }
                     }
                 },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
                 scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()

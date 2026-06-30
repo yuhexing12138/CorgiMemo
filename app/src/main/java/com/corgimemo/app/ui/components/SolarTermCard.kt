@@ -61,19 +61,17 @@ fun SolarTermCard(
     /**
      * 滑动关闭状态
      * 使用新的 Material3 SwipeToDismissBox API
+     * 监听 currentValue 变化触发 onDismiss，替代已废弃的 confirmValueChange 回调
      */
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            when (value) {
-                SwipeToDismissBoxValue.StartToEnd,
-                SwipeToDismissBoxValue.EndToStart -> {
-                    onDismiss()
-                    true
-                }
-                else -> false
-            }
+    val dismissState = rememberSwipeToDismissBoxState()
+
+    LaunchedEffect(dismissState.currentValue) {
+        when (dismissState.currentValue) {
+            SwipeToDismissBoxValue.StartToEnd,
+            SwipeToDismissBoxValue.EndToStart -> onDismiss()
+            SwipeToDismissBoxValue.Settled -> Unit
         }
-    )
+    }
 
     SwipeToDismissBox(
         state = dismissState,

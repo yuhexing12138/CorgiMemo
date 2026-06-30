@@ -857,6 +857,10 @@ class HomeViewModel @Inject constructor(
                 globalOrder++
             }
             if (updates.isNotEmpty()) {
+                android.util.Log.d(
+                    "CorgiMemo-Reorder",
+                    "[reorder:updateTodos] count=${updates.size}"
+                )
                 todoRepository.updateTodos(updates)
             }
         }
@@ -999,6 +1003,10 @@ class HomeViewModel @Inject constructor(
                 globalOrder++
             }
             if (updates.isNotEmpty()) {
+                android.util.Log.d(
+                    "CorgiMemo-Reorder",
+                    "[reorder:updateTodos] count=${updates.size}"
+                )
                 todoRepository.updateTodos(updates)
             }
 
@@ -1040,6 +1048,10 @@ class HomeViewModel @Inject constructor(
                 }
             }
             if (updates.isNotEmpty()) {
+                android.util.Log.d(
+                    "CorgiMemo-Reorder",
+                    "[reorder:updateTodos] count=${updates.size}"
+                )
                 todoRepository.updateTodos(updates)
             }
         }

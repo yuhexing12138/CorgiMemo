@@ -655,23 +655,22 @@ private fun CalendarGridView(
             horizontalArrangement = Arrangement.SpaceAround
         ) {
             daysOfWeek.forEach { dow ->
-                Text(
-                    text = when (dow) {
-                        DayOfWeek.MONDAY -> "一"
-                        DayOfWeek.TUESDAY -> "二"
-                        DayOfWeek.WEDNESDAY -> "三"
-                        DayOfWeek.THURSDAY -> "四"
-                        DayOfWeek.FRIDAY -> "五"
-                        DayOfWeek.SATURDAY -> "六"
-                        DayOfWeek.SUNDAY -> "日"
-                        else -> ""
-                    },
-                    fontSize = 13.sp,
-                    color = Color(0xFF999999),
-                    modifier = Modifier.width(40.dp),  // ✅ 与日期单元格宽度一致
-                    textAlign = TextAlign.Center
-                )
-            }
+                    Text(
+                        text = when (dow) {
+                            DayOfWeek.MONDAY -> "一"
+                            DayOfWeek.TUESDAY -> "二"
+                            DayOfWeek.WEDNESDAY -> "三"
+                            DayOfWeek.THURSDAY -> "四"
+                            DayOfWeek.FRIDAY -> "五"
+                            DayOfWeek.SATURDAY -> "六"
+                            DayOfWeek.SUNDAY -> "日"
+                        },
+                        fontSize = 13.sp,
+                        color = Color(0xFF999999),
+                        modifier = Modifier.width(40.dp),  // ✅ 与日期单元格宽度一致
+                        textAlign = TextAlign.Center
+                    )
+                }
         }
 
         // ===== 第2-6行：日期网格（5行×7列）=====

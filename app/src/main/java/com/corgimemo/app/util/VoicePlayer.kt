@@ -242,6 +242,7 @@ class VoicePlayer(private val context: Context) {
      * 启动进度跟踪协程
      * 定期更新当前播放位置
      */
+    @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
     private fun startProgressTracking() {
         progressJob = kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
             while (isActive && _isPlaying.value) {

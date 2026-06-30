@@ -269,6 +269,7 @@ fun ImagePicker(
  * @param onImagesChange 图片列表变更回调
  * @param onProcessingStateChanged 处理状态变更回调（用于显示/隐藏加载指示器）
  */
+@OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
 private fun processSelectedImage(
     context: Context,
     uri: Uri,

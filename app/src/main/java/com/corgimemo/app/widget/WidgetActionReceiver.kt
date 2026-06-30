@@ -62,6 +62,7 @@ class WidgetActionReceiver : BroadcastReceiver() {
      * @param context 上下文
      * @param todoId 待办 ID
      */
+    @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
     private fun handleCompleteTodo(context: Context, todoId: Long) {
         GlobalScope.launch(Dispatchers.IO) {
             try {

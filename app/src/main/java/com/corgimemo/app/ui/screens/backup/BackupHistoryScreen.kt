@@ -89,7 +89,7 @@ fun BackupHistoryScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color(0xFFFF9A5C)
                 )
             )

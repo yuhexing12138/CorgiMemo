@@ -127,8 +127,8 @@ import com.corgimemo.app.ui.components.SortBottomSheet
 import com.corgimemo.app.ui.components.MoreOptionsSheet
 import com.corgimemo.app.ui.components.PriorityPickerSheet
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
-import com.google.accompanist.swiperefresh.SwipeRefresh
-import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.ui.theme.UiColors
@@ -699,7 +699,7 @@ fun HomeScreen(
                         }
                     } else {
                         val isRefreshing by viewModel.isRefreshing.collectAsState()
-                        val swipeRefreshState = rememberSwipeRefreshState(isRefreshing = isRefreshing)
+                        val pullToRefreshState = rememberPullToRefreshState()
 
                         /**
                          * 应用分类和搜索过滤
@@ -744,13 +744,25 @@ fun HomeScreen(
                             }
                         }
 
-                        SwipeRefresh(
-                            state = swipeRefreshState,
+                        // 当外部刷新状态变化时，同步到 PullToRefreshState
+                        LaunchedEffect(isRefreshing) {
+                            if (isRefreshing) {
+                                pullToRefreshState.startRefresh()
+                            } else {
+                                pullToRefreshState.endRefresh()
+                            }
+                        }
+
+                        PullToRefreshBox(
+                            isRefreshing = isRefreshing,
                             onRefresh = { viewModel.onRefresh() },
-                            indicator = { _, _ ->
+                            state = pullToRefreshState,
+                            modifier = Modifier.fillMaxSize(),
+                            indicator = {
                                 CorgiPullToRefreshIndicator(
                                     isRefreshing = isRefreshing,
-                                    pullProgress = if (isRefreshing) 1f else 0f
+                                    pullProgress = pullToRefreshState.distanceFraction.coerceIn(0f, 1f),
+                                    modifier = Modifier.align(Alignment.TopCenter)
                                 )
                             }
                         ) {

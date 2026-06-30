@@ -808,8 +808,7 @@ class InspirationEditViewModel @Inject constructor(
                     val defaultCategory = when (userType) {
                         UserType.WORKER -> allCategories.find { it.type == CategoryType.WORK }
                         UserType.STUDENT -> allCategories.find { it.type == CategoryType.STUDY }
-                        else -> allCategories.firstOrNull()
-                    }
+                    } ?: allCategories.firstOrNull()
                     defaultCategory?.let {
                         _categoryId.value = it.id
                         android.util.Log.d("InspirationEditVM", "设置默认分类: ${it.name} (ID=${it.id})")

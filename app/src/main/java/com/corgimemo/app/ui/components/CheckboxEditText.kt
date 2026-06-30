@@ -559,7 +559,7 @@ private fun TodoGroupContainer(
                             // 分类点击区域：图标 + 名称
                             Row(
                                 modifier = Modifier
-                                    .clickable(enabled = onCategoryClick != null) { onCategoryClick?.invoke() }
+                                    .clickable { onCategoryClick() }
                                     .padding(start = 10.dp, top = 6.dp, bottom = 6.dp, end = if (categoryName != null && onCategoryClear != null) 4.dp else 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {

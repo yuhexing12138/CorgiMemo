@@ -230,6 +230,7 @@ class VoiceRecorder(private val context: Context) {
      * 启动音量和时长监控协程
      * 定期采样音量振幅并更新录制时长
      */
+    @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
     private fun startMonitoring() {
         recorderJob = kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
             while (isActive && _recordingState.value == RecordingState.RECORDING) {

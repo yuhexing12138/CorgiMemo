@@ -566,7 +566,6 @@ object AchievementDefinition {
         return when (userType) {
             UserType.WORKER -> universalAchievements + workerAchievements
             UserType.STUDENT -> universalAchievements + studentAchievements
-            else -> universalAchievements
         }
     }
 
