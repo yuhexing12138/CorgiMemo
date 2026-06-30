@@ -8,7 +8,9 @@ targetSdk = "35"
 kotlin = "2.3.20"
 compose = "1.9.2"
 composeCompiler = "2.1.0"
-hilt = "2.57"
+# Hilt 升级到 2.59.2：Hilt 2.57.2 在 HiltGradlePlugin.kt:139 仍通过 BaseExtension 访问 Android 扩展，
+# 与 AGP 9.0 内置 Kotlin 模式不兼容（找不到 BaseExtension）。2.59.x 已修复。
+hilt = "2.59.2"
 room = "2.8.4"
 navigation = "2.8.5"
 lifecycle = "2.8.7"
@@ -69,7 +71,8 @@ reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reo
 
 [plugins]
 android-application = { id = "com.android.application", version = "9.2.1" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+# 注意：AGP 9.0 内置 Kotlin 后，kotlin-android 插件不再需要（已在 2.3.20 强制移除）
+# 但 kotlin-compose / kotlin-serialization 是 Kotlin 编译器插件，AGP 内置 Kotlin 不能替代，需保留
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 # Kotlin 2.0+ 必须显式声明 Compose Compiler 插件（替代旧版 composeCompilerExtension）
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

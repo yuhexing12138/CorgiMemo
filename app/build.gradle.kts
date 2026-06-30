@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
     /** Kotlin 2.0+ 必须显式应用 Compose Compiler 插件 */
     alias(libs.plugins.kotlin.compose)
@@ -50,8 +49,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    // AGP 9.0 内置 Kotlin 模式：使用 kotlin { } 扩展替代旧版 kotlinOptions 块
+    //  jvmToolchain(17) 让 Kotlin 编译与 Java 编译共用同一个 JVM 17 toolchain
+    kotlin {
+        jvmToolchain(17)
     }
 
     buildFeatures {
