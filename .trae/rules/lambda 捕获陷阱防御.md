@@ -1,0 +1,1 @@
+"Compose 中 pointerInput/remember 等长效 lambda 捕获外部可变集合引用时，应统一使用内部最新状态（如 displayItems），避免参数快照与实时状态混用"
