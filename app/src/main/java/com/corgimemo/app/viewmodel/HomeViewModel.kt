@@ -834,30 +834,30 @@ class HomeViewModel @Inject constructor(
             }
 
             // 5. 重新分配全局 sortOrder：pending置顶 → pending普通 → completed置顶 → completed普通
+            // ━━━ 关键修复：批量更新避免多次 Flow 推送 ━━━
+            // 原实现：4 个 forEach 循环各调一次 updateSortOrder，导致 N 次 Flow 推送
+            // 和 N 次 displayItems 重组。修复后：单次 updateTodos 批量更新。
             var globalOrder = 0
-            pendingList.filter { it.isPinned }.forEach { item ->
-                if (item.sortOrder != globalOrder || item.id == finalItem.id) {
-                    todoRepository.updateSortOrder(item.id, globalOrder)
+            val allItemsInOrder = pendingList.filter { it.isPinned } +
+                pendingList.filter { !it.isPinned } +
+                completedList.filter { it.isPinned } +
+                completedList.filter { !it.isPinned }
+            val now = System.currentTimeMillis()
+            val updates = mutableListOf<TodoItem>()
+            allItemsInOrder.forEach { item ->
+                val needsUpdate = item.sortOrder != globalOrder || item.id == finalItem.id
+                if (needsUpdate) {
+                    updates.add(
+                        item.copy(
+                            sortOrder = globalOrder,
+                            updatedAt = now
+                        )
+                    )
                 }
                 globalOrder++
             }
-            pendingList.filter { !it.isPinned }.forEach { item ->
-                if (item.sortOrder != globalOrder || item.id == finalItem.id) {
-                    todoRepository.updateSortOrder(item.id, globalOrder)
-                }
-                globalOrder++
-            }
-            completedList.filter { it.isPinned }.forEach { item ->
-                if (item.sortOrder != globalOrder || item.id == finalItem.id) {
-                    todoRepository.updateSortOrder(item.id, globalOrder)
-                }
-                globalOrder++
-            }
-            completedList.filter { !it.isPinned }.forEach { item ->
-                if (item.sortOrder != globalOrder || item.id == finalItem.id) {
-                    todoRepository.updateSortOrder(item.id, globalOrder)
-                }
-                globalOrder++
+            if (updates.isNotEmpty()) {
+                todoRepository.updateTodos(updates)
             }
         }
     }
@@ -974,22 +974,32 @@ class HomeViewModel @Inject constructor(
             }
 
             // 8. 重新分配全局 sortOrder：pending置顶 → pending普通 → completed置顶 → completed普通
+            // ━━━ 关键修复：批量更新避免多次 Flow 推送 ━━━
+            // 原实现：4 个 forEach 循环各调一次 updateSortOrder，导致 N 次 Flow 推送
+            // 和 N 次 displayItems 重组。修复后：单次 updateTodos 批量更新。
             var globalOrder = 0
-            pendingList.filter { it.isPinned }.forEach { item ->
-                todoRepository.updateSortOrder(item.id, globalOrder)
+            val allItemsInOrder = pendingList.filter { it.isPinned } +
+                pendingList.filter { !it.isPinned } +
+                completedList.filter { it.isPinned } +
+                completedList.filter { !it.isPinned }
+            val now = System.currentTimeMillis()
+            val updates = mutableListOf<TodoItem>()
+            // 记录已变更项的 id，用于精准判断"需要更新"
+            val changedIds = finalItems.map { it.id }.toSet()
+            allItemsInOrder.forEach { item ->
+                val needsUpdate = item.sortOrder != globalOrder || item.id in changedIds
+                if (needsUpdate) {
+                    updates.add(
+                        item.copy(
+                            sortOrder = globalOrder,
+                            updatedAt = now
+                        )
+                    )
+                }
                 globalOrder++
             }
-            pendingList.filter { !it.isPinned }.forEach { item ->
-                todoRepository.updateSortOrder(item.id, globalOrder)
-                globalOrder++
-            }
-            completedList.filter { it.isPinned }.forEach { item ->
-                todoRepository.updateSortOrder(item.id, globalOrder)
-                globalOrder++
-            }
-            completedList.filter { !it.isPinned }.forEach { item ->
-                todoRepository.updateSortOrder(item.id, globalOrder)
-                globalOrder++
+            if (updates.isNotEmpty()) {
+                todoRepository.updateTodos(updates)
             }
 
             // 9. 退出多选模式
@@ -1012,12 +1022,25 @@ class HomeViewModel @Inject constructor(
                 "created_asc"  -> currentList.sortedBy { it.createdAt }
                 else -> currentList.sortedByDescending { it.updatedAt }
             }
-            // 同 isPinned 分区内重新分配 sortOrder
-            naturalOrder.foldIndexed(mutableMapOf<Boolean, Int>()) { idx, acc, item ->
-                val next = (acc[item.isPinned] ?: -1) + 1
-                acc[item.isPinned] = next
-                todoRepository.updateSortOrder(item.id, next)
-                acc
+            // ━━━ 关键修复：批量更新避免多次 Flow 推送 ━━━
+            // 同 isPinned 分区内重新分配 sortOrder，使用单次 updateTodos 批量提交
+            val now = System.currentTimeMillis()
+            val updates = mutableListOf<TodoItem>()
+            val orderByPinned = mutableMapOf<Boolean, Int>()
+            naturalOrder.forEach { item ->
+                val next = (orderByPinned[item.isPinned] ?: -1) + 1
+                orderByPinned[item.isPinned] = next
+                if (item.sortOrder != next) {
+                    updates.add(
+                        item.copy(
+                            sortOrder = next,
+                            updatedAt = now
+                        )
+                    )
+                }
+            }
+            if (updates.isNotEmpty()) {
+                todoRepository.updateTodos(updates)
             }
         }
     }

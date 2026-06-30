@@ -877,7 +877,7 @@ fun InspirationEditScreen(
                             style = MaterialTheme.typography.bodySmall
                         )
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowDown,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp)
                         )

@@ -53,7 +53,7 @@ fun EnhancedTopBar(
         ) {
             IconButton(onClick = onMenuClick) {
                 Icon(
-                    imageVector = Icons.Default.Menu,
+                    imageVector = Icons.AutoMirrored.Filled.Menu,
                     contentDescription = "菜单",
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(24.dp)

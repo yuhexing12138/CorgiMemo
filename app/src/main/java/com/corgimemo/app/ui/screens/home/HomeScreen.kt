@@ -34,15 +34,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -2293,7 +2293,7 @@ private fun CompletedSectionHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Icon(
-                imageVector = Icons.Default.KeyboardArrowDown,
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowDown,
                 contentDescription = if (isExpanded) "折叠" else "展开",
                 modifier = Modifier.rotate(arrowRotation),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
