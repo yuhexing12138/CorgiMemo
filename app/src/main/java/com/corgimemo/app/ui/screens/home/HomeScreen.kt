@@ -1494,7 +1494,7 @@ fun HomeBatchActionBar(
                         modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.DriveFileMove,
+                            imageVector = Icons.AutoMirrored.Outlined.DriveFileMove,
                             contentDescription = "移动到分组",
                             tint = if (hasSelection) {
                                 MaterialTheme.colorScheme.onSurface

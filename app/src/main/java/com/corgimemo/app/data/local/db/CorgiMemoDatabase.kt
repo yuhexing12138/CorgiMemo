@@ -99,18 +99,18 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
 
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceLat REAL")
-                database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceLng REAL")
-                database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceRadius REAL")
-                database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceType INTEGER DEFAULT 0")
-                database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceEnabled INTEGER DEFAULT 0")
-                database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceAddress TEXT")
+                db.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceLat REAL")
+                db.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceLng REAL")
+                db.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceRadius REAL")
+                db.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceType INTEGER DEFAULT 0")
+                db.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceEnabled INTEGER DEFAULT 0")
+                db.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceAddress TEXT")
             }
         }
 
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS categories (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         name TEXT NOT NULL,
@@ -119,14 +119,14 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     )
                 """.trimIndent())
 
-                database.execSQL("ALTER TABLE corgi_data ADD COLUMN unlockedAchievements TEXT NOT NULL DEFAULT '[]'")
-                database.execSQL("ALTER TABLE corgi_data ADD COLUMN maxConsecutiveDays INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE corgi_data ADD COLUMN unlockedAchievements TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE corgi_data ADD COLUMN maxConsecutiveDays INTEGER NOT NULL DEFAULT 0")
             }
         }
 
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS mood_history (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         date TEXT NOT NULL,
@@ -139,7 +139,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
 
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS sub_tasks (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         todoId INTEGER NOT NULL,
@@ -150,8 +150,8 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                         `order` INTEGER NOT NULL DEFAULT 0
                     )
                 """.trimIndent())
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_sub_tasks_todoId ON sub_tasks(todoId)")
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_sub_tasks_todoId_order ON sub_tasks(todoId, `order`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sub_tasks_todoId ON sub_tasks(todoId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sub_tasks_todoId_order ON sub_tasks(todoId, `order`)")
             }
         }
 
@@ -162,9 +162,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
         private val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // 添加 hasSubTasks 字段，默认值为 false
-                database.execSQL("ALTER TABLE todo_items ADD COLUMN hasSubTasks INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE todo_items ADD COLUMN hasSubTasks INTEGER NOT NULL DEFAULT 0")
                 // 为 hasSubTasks 创建索引，提高查询效率
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_hasSubTasks ON todo_items(hasSubTasks)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_hasSubTasks ON todo_items(hasSubTasks)")
             }
         }
 
@@ -175,7 +175,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
         private val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // 创建 achievements 表
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS achievements (
                         id TEXT PRIMARY KEY NOT NULL,
                         unlockedAt INTEGER
@@ -183,8 +183,8 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 """.trimIndent())
 
                 // 为 corgi_data 添加新字段
-                database.execSQL("ALTER TABLE corgi_data ADD COLUMN consecutiveEarlyDays INTEGER NOT NULL DEFAULT 0")
-                database.execSQL("ALTER TABLE corgi_data ADD COLUMN lastEarlyDate TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE corgi_data ADD COLUMN consecutiveEarlyDays INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE corgi_data ADD COLUMN lastEarlyDate TEXT NOT NULL DEFAULT ''")
             }
         }
 
@@ -194,7 +194,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          */
         private val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS task_daily_stats (
                         date TEXT PRIMARY KEY NOT NULL,
                         studyCompleted INTEGER NOT NULL DEFAULT 0,
@@ -213,7 +213,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          */
         private val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS category_keywords (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         keyword TEXT NOT NULL,
@@ -223,12 +223,12 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     )
                 """.trimIndent())
 
-                database.execSQL("""
+                db.execSQL("""
                     CREATE INDEX IF NOT EXISTS index_category_keywords_keyword 
                     ON category_keywords(keyword)
                 """.trimIndent())
 
-                database.execSQL("""
+                db.execSQL("""
                     CREATE INDEX IF NOT EXISTS index_category_keywords_categoryType 
                     ON category_keywords(categoryType)
                 """.trimIndent())
@@ -242,7 +242,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          */
         private val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS todo_items_new (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         title TEXT NOT NULL,
@@ -267,7 +267,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     )
                 """.trimIndent())
 
-                database.execSQL("""
+                db.execSQL("""
                     INSERT INTO todo_items_new (
                         id, title, content, categoryId, priority, status, startDate, 
                         reminderTime, repeatType, createdAt, updatedAt, completedAt,
@@ -282,14 +282,14 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     FROM todo_items
                 """.trimIndent())
 
-                database.execSQL("DROP TABLE todo_items")
+                db.execSQL("DROP TABLE todo_items")
 
-                database.execSQL("ALTER TABLE todo_items_new RENAME TO todo_items")
+                db.execSQL("ALTER TABLE todo_items_new RENAME TO todo_items")
 
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_status_createdAt ON todo_items(status, createdAt)")
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_categoryId_status ON todo_items(categoryId, status)")
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_priority_startDate ON todo_items(priority, startDate)")
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_hasSubTasks ON todo_items(hasSubTasks)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_status_createdAt ON todo_items(status, createdAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_categoryId_status ON todo_items(categoryId, status)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_priority_startDate ON todo_items(priority, startDate)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_hasSubTasks ON todo_items(hasSubTasks)")
             }
         }
 
@@ -300,9 +300,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
         private val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // 添加语音备注文件路径字段
-                database.execSQL("ALTER TABLE todo_items ADD COLUMN voiceNotePath TEXT")
+                db.execSQL("ALTER TABLE todo_items ADD COLUMN voiceNotePath TEXT")
                 // 添加语音时长字段（秒）
-                database.execSQL("ALTER TABLE todo_items ADD COLUMN voiceDuration INTEGER")
+                db.execSQL("ALTER TABLE todo_items ADD COLUMN voiceDuration INTEGER")
             }
         }
 
@@ -312,7 +312,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          */
         private val MIGRATION_12_13 = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS user_templates (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         name TEXT NOT NULL,
@@ -332,7 +332,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          */
         private val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS operation_logs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         operation_type TEXT NOT NULL,
@@ -344,7 +344,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 """.trimIndent())
 
                 /** 创建索引优化查询性能 */
-                database.execSQL(
+                db.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_operation_logs_created_at ON operation_logs(created_at)"
                 )
             }
@@ -358,7 +358,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
         private val MIGRATION_14_15 = object : Migration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 /** 1. 创建新表（与 Room Entity 定义完全匹配） */
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS operation_logs_new (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         operation_type TEXT NOT NULL,
@@ -370,20 +370,20 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 """.trimIndent())
 
                 /** 2. 复制数据到新表 */
-                database.execSQL("""
+                db.execSQL("""
                     INSERT INTO operation_logs_new (id, operation_type, target_id, batch_ids_json, snapshot_json, created_at)
                     SELECT id, operation_type, target_id, batch_ids_json, snapshot_json, created_at
                     FROM operation_logs
                 """.trimIndent())
 
                 /** 3. 删除旧表 */
-                database.execSQL("DROP TABLE operation_logs")
+                db.execSQL("DROP TABLE operation_logs")
 
                 /** 4. 重命名新表 */
-                database.execSQL("ALTER TABLE operation_logs_new RENAME TO operation_logs")
+                db.execSQL("ALTER TABLE operation_logs_new RENAME TO operation_logs")
 
                 /** 5. 创建正确名称的索引 */
-                database.execSQL(
+                db.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_operation_logs_created_at ON operation_logs(created_at)"
                 )
             }
@@ -395,7 +395,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      */
     private val MIGRATION_15_16 = object : Migration(15, 16) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            database.execSQL("""
+            db.execSQL("""
                 CREATE TABLE IF NOT EXISTS deleted_todos (
                     id INTEGER PRIMARY KEY NOT NULL,
                     title TEXT NOT NULL,
@@ -433,7 +433,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
         override fun migrate(db: SupportSQLiteDatabase) {
             // 创建 inspirations 表（灵感记录主表）
             // 注意：字段约束必须与 Inspiration.kt Entity 注解完全一致
-            database.execSQL("""
+            db.execSQL("""
                 CREATE TABLE IF NOT EXISTS inspirations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                     title TEXT NOT NULL,
@@ -449,11 +449,11 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             """.trimIndent())
 
             // 创建灵感表索引
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_createdAt ON inspirations(createdAt)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_isPinned ON inspirations(isPinned)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_createdAt ON inspirations(createdAt)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_isPinned ON inspirations(isPinned)")
 
             // 创建 inspiration_relations 表（关联关系表）
-            database.execSQL("""
+            db.execSQL("""
                 CREATE TABLE IF NOT EXISTS inspiration_relations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                     inspirationId INTEGER NOT NULL,
@@ -465,7 +465,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             """.trimIndent())
 
             // 创建关联表索引
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspiration_relations_inspirationId ON inspiration_relations(inspirationId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_inspiration_relations_inspirationId ON inspiration_relations(inspirationId)")
         }
     }
 
@@ -475,7 +475,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      */
     private val MIGRATION_17_18 = object : Migration(17, 18) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            database.execSQL("""
+            db.execSQL("""
                 CREATE TABLE IF NOT EXISTS special_dates (
                     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                     title TEXT NOT NULL,
@@ -494,11 +494,11 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 )
             """.trimIndent())
 
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_special_dates_targetDate ON special_dates(targetDate)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_special_dates_isPinned ON special_dates(isPinned)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_special_dates_category ON special_dates(category)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_special_dates_targetDate ON special_dates(targetDate)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_special_dates_isPinned ON special_dates(isPinned)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_special_dates_category ON special_dates(category)")
 
-            database.execSQL("""
+            db.execSQL("""
                 CREATE TABLE IF NOT EXISTS special_date_relations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                     specialDateId INTEGER NOT NULL,
@@ -509,7 +509,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 )
             """.trimIndent())
 
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_special_date_relations_specialDateId ON special_date_relations(specialDateId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_special_date_relations_specialDateId ON special_date_relations(specialDateId)")
         }
     }
 
@@ -520,7 +520,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     private val MIGRATION_18_19 = object : Migration(18, 19) {
         override fun migrate(db: SupportSQLiteDatabase) {
             /** 添加 imagePaths 字段，用于存储图片路径的 JSON 数组 */
-            database.execSQL("ALTER TABLE todo_items ADD COLUMN imagePaths TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE todo_items ADD COLUMN imagePaths TEXT NOT NULL DEFAULT ''")
         }
     }
 
@@ -531,7 +531,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      */
     private val MIGRATION_19_20 = object : Migration(19, 20) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            database.execSQL("""
+            db.execSQL("""
                 CREATE TABLE IF NOT EXISTS card_relations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                     sourceType TEXT NOT NULL,
@@ -542,17 +542,17 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 )
             """.trimIndent())
 
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId ON card_relations(sourceType, sourceId)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_targetType_targetId ON card_relations(targetType, targetId)")
-            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId_targetType_targetId ON card_relations(sourceType, sourceId, targetType, targetId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId ON card_relations(sourceType, sourceId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_targetType_targetId ON card_relations(targetType, targetId)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId_targetType_targetId ON card_relations(sourceType, sourceId, targetType, targetId)")
 
-            database.execSQL("""
+            db.execSQL("""
                 INSERT INTO card_relations (sourceType, sourceId, targetType, targetId, createdAt)
                 SELECT 'inspiration', inspirationId, targetType, targetId, createdAt
                 FROM inspiration_relations
             """.trimIndent())
 
-            database.execSQL("""
+            db.execSQL("""
                 INSERT INTO card_relations (sourceType, sourceId, targetType, targetId, createdAt)
                 SELECT 'date', specialDateId, targetType, targetId, createdAt
                 FROM special_date_relations
@@ -567,9 +567,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      */
     private val MIGRATION_20_21 = object : Migration(20, 21) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            database.execSQL("DROP TABLE IF EXISTS card_relations")
+            db.execSQL("DROP TABLE IF EXISTS card_relations")
 
-            database.execSQL("""
+            db.execSQL("""
                 CREATE TABLE IF NOT EXISTS card_relations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                     sourceType TEXT NOT NULL,
@@ -580,18 +580,18 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 )
             """.trimIndent())
 
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId ON card_relations(sourceType, sourceId)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_targetType_targetId ON card_relations(targetType, targetId)")
-            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId_targetType_targetId ON card_relations(sourceType, sourceId, targetType, targetId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId ON card_relations(sourceType, sourceId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_targetType_targetId ON card_relations(targetType, targetId)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId_targetType_targetId ON card_relations(sourceType, sourceId, targetType, targetId)")
 
             // 从旧的分散表重新迁移数据（旧的 card_relations 已删）
-            database.execSQL("""
+            db.execSQL("""
                 INSERT OR IGNORE INTO card_relations (sourceType, sourceId, targetType, targetId, createdAt)
                 SELECT 'inspiration', inspirationId, targetType, targetId, createdAt
                 FROM inspiration_relations
             """.trimIndent())
 
-            database.execSQL("""
+            db.execSQL("""
                 INSERT OR IGNORE INTO card_relations (sourceType, sourceId, targetType, targetId, createdAt)
                 SELECT 'date', specialDateId, targetType, targetId, createdAt
                 FROM special_date_relations
@@ -607,10 +607,10 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     private val MIGRATION_21_22 = object : Migration(21, 22) {
         override fun migrate(db: SupportSQLiteDatabase) {
             /** 添加 dueDate 字段，用于存储截止时间戳（毫秒） */
-            database.execSQL("ALTER TABLE todo_items ADD COLUMN dueDate INTEGER")
+            db.execSQL("ALTER TABLE todo_items ADD COLUMN dueDate INTEGER")
 
             /** 为 dueDate 创建复合索引，优化按截止时间和状态查询的性能 */
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_dueDate_status ON todo_items(dueDate, status)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_dueDate_status ON todo_items(dueDate, status)")
         }
     }
 
@@ -626,7 +626,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     private val MIGRATION_22_23 = object : Migration(22, 23) {
         override fun migrate(db: SupportSQLiteDatabase) {
             /** 添加 backgroundColor 字段（ARGB 整数值），默认为白色 */
-            database.execSQL(
+            db.execSQL(
                 "ALTER TABLE todo_items ADD COLUMN backgroundColor INTEGER NOT NULL DEFAULT 16777215"
             )
         }
@@ -645,7 +645,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     private val MIGRATION_23_24 = object : Migration(23, 24) {
         override fun migrate(db: SupportSQLiteDatabase) {
             /** 添加 contentFormat 字段（TEXT 类型，默认空字符串） */
-            database.execSQL(
+            db.execSQL(
                 "ALTER TABLE todo_items ADD COLUMN contentFormat TEXT NOT NULL DEFAULT ''"
             )
         }
@@ -663,12 +663,12 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     private val MIGRATION_24_25 = object : Migration(24, 25) {
         override fun migrate(db: SupportSQLiteDatabase) {
             /** 添加 position 字段（INTEGER 类型，默认值为 0） */
-            database.execSQL(
+            db.execSQL(
                 "ALTER TABLE todo_items ADD COLUMN position INTEGER NOT NULL DEFAULT 0"
             )
 
             /** 为 position 创建索引，优化排序查询性能 */
-            database.execSQL(
+            db.execSQL(
                 "CREATE INDEX IF NOT EXISTS index_todo_items_position ON todo_items(position)"
             )
         }
@@ -686,7 +686,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     private val MIGRATION_25_26 = object : Migration(25, 26) {
         override fun migrate(db: SupportSQLiteDatabase) {
             /** 创建内容块表 */
-            database.execSQL("""
+            db.execSQL("""
                 CREATE TABLE IF NOT EXISTS content_blocks (
                     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                     todoId INTEGER NOT NULL,
@@ -698,7 +698,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             """.trimIndent())
 
             /** 为 todoId 创建索引，优化按待办查询性能 */
-            database.execSQL(
+            db.execSQL(
                 "CREATE INDEX IF NOT EXISTS index_content_blocks_todoId ON content_blocks(todoId)"
             )
 
@@ -707,7 +707,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
              * - imagePaths (JSON数组) → ContentBlockEntity(type="image")
              * - voiceNotePath + voiceDuration → ContentBlockEntity(type="voice")
              */
-            database.execSQL("""
+            db.execSQL("""
                 INSERT OR IGNORE INTO content_blocks (todoId, type, filePath, duration, orderIndex)
                 SELECT
                     todo_items.id,
@@ -719,7 +719,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 WHERE todo_items.imagePaths != '' AND todo_items.imagePaths != '[]'
             """.trimIndent())
 
-            database.execSQL("""
+            db.execSQL("""
                 INSERT OR IGNORE INTO content_blocks (todoId, type, filePath, duration, orderIndex)
                 SELECT
                     id,
@@ -742,39 +742,39 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     private val MIGRATION_26_27 = object : Migration(26, 27) {
         override fun migrate(db: SupportSQLiteDatabase) {
             // --- 基础字段 ---
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN categoryId INTEGER NOT NULL DEFAULT 0")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN status INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN categoryId INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN status INTEGER NOT NULL DEFAULT 0")
 
             // --- 时间管理 (5 字段) ---
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN startDate INTEGER")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN dueDate INTEGER")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN estimatedDurationMinutes INTEGER")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN reminderTime INTEGER")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN repeatType INTEGER NOT NULL DEFAULT 0")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN completedAt INTEGER")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN startDate INTEGER")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN dueDate INTEGER")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN estimatedDurationMinutes INTEGER")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN reminderTime INTEGER")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN repeatType INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN completedAt INTEGER")
 
             // --- 地理围栏 (6 字段) ---
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceLat REAL")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceLng REAL")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceRadius REAL")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceType INTEGER")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceEnabled INTEGER NOT NULL DEFAULT 0")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceAddress TEXT")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceLat REAL")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceLng REAL")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceRadius REAL")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceType INTEGER")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceEnabled INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN geofenceAddress TEXT")
 
             // --- 子任务 / 语音 / 样式 (5 字段) ---
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN hasSubTasks INTEGER NOT NULL DEFAULT 0")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN voiceNotePath TEXT")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN voiceDuration INTEGER")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN backgroundColor INTEGER NOT NULL DEFAULT -1")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
-            database.execSQL("ALTER TABLE inspirations ADD COLUMN contentFormat TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN hasSubTasks INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN voiceNotePath TEXT")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN voiceDuration INTEGER")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN backgroundColor INTEGER NOT NULL DEFAULT -1")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE inspirations ADD COLUMN contentFormat TEXT NOT NULL DEFAULT ''")
 
             // --- 新增索引 ---
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_categoryId ON inspirations(categoryId)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_priority ON inspirations(priority)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_status_createdAt ON inspirations(status, createdAt)")
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_dueDate_status ON inspirations(dueDate, status)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_categoryId ON inspirations(categoryId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_priority ON inspirations(priority)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_status_createdAt ON inspirations(status, createdAt)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_dueDate_status ON inspirations(dueDate, status)")
         }
     }
 
@@ -788,8 +788,8 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     private val MIGRATION_27_28 = object : Migration(27, 28) {
         override fun migrate(db: SupportSQLiteDatabase) {
             // 为 sub_tasks 添加附件字段（默认空字符串，向后兼容旧数据）
-            database.execSQL("ALTER TABLE sub_tasks ADD COLUMN imagePaths TEXT NOT NULL DEFAULT ''")
-            database.execSQL("ALTER TABLE sub_tasks ADD COLUMN voicePaths TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE sub_tasks ADD COLUMN imagePaths TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE sub_tasks ADD COLUMN voicePaths TEXT NOT NULL DEFAULT ''")
         }
     }
 
@@ -802,9 +802,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     private val MIGRATION_28_29 = object : Migration(28, 29) {
         override fun migrate(db: SupportSQLiteDatabase) {
             // 添加 isPinned 字段，默认 0（未置顶）
-            database.execSQL("ALTER TABLE todo_items ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE todo_items ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
             // 创建 isPinned 索引（与 Entity 的 @Index 注解保持一致）
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_isPinned ON todo_items(isPinned)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_isPinned ON todo_items(isPinned)")
         }
     }
 
@@ -826,8 +826,8 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     private val MIGRATION_29_30 = object : Migration(29, 30) {
         override fun migrate(db: SupportSQLiteDatabase) {
             // 先删除关联索引（如果存在），再删除列
-            database.execSQL("DROP INDEX IF EXISTS index_todo_items_position")
-            database.execSQL("ALTER TABLE todo_items DROP COLUMN position")
+            db.execSQL("DROP INDEX IF EXISTS index_todo_items_position")
+            db.execSQL("ALTER TABLE todo_items DROP COLUMN position")
         }
     }
 
@@ -847,13 +847,13 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     private val MIGRATION_30_31 = object : Migration(30, 31) {
         override fun migrate(db: SupportSQLiteDatabase) {
             // 1. 新增 sortOrder 列，默认值 0（与 @ColumnInfo defaultValue 一致）
-            database.execSQL(
+            db.execSQL(
                 "ALTER TABLE todo_items ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0"
             )
 
             // 2. 按 createdAt DESC 回填 sortOrder（同一 isPinned 分区内）
             //    并列 createdAt 时按 id DESC 兜底，保证回填顺序确定
-            database.execSQL("""
+            db.execSQL("""
                 UPDATE todo_items
                 SET sortOrder = (
                     SELECT COUNT(*) FROM todo_items AS t2

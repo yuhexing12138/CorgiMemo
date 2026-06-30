@@ -94,8 +94,9 @@ fun StatsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // TabRow：使用 Material3 新版 PrimaryScrollableTabRow（替代已废弃的 ScrollableTabRow）
-            PrimaryScrollableTabRow(
+            // TabRow：使用已废弃的 ScrollableTabRow（PrimaryScrollableTabRow 签名不兼容，需要 scrollState 参数）
+            @Suppress("DEPRECATION")
+            ScrollableTabRow(
                 selectedTabIndex = selectedTab,
                 modifier = Modifier.fillMaxWidth(),
                 containerColor = MaterialTheme.colorScheme.surface,
