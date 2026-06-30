@@ -22,8 +22,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ChevronLeft
-import androidx.compose.material.icons.automirrored.filled.ChevronRight
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -449,8 +449,9 @@ private fun DateWheelPickerView(
                         },
                     contentAlignment = Alignment.Center
                 ) {
+                    @Suppress("DEPRECATION")
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ChevronLeft,
+                        imageVector = Icons.Filled.ChevronLeft,
                         contentDescription = "上个月",
                         tint = Color(0xFF999999),
                         modifier = Modifier.size(24.dp)
@@ -504,8 +505,9 @@ private fun DateWheelPickerView(
                         },
                     contentAlignment = Alignment.Center
                 ) {
+                    @Suppress("DEPRECATION")
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ChevronRight,
+                        imageVector = Icons.Filled.ChevronRight,
                         contentDescription = "下个月",
                         tint = Color(0xFF999999),
                         modifier = Modifier.size(24.dp)

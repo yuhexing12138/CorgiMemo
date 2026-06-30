@@ -34,11 +34,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SelectAll
@@ -2292,8 +2292,9 @@ private fun CompletedSectionHeader(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            @Suppress("DEPRECATION")
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowDown,
+                imageVector = Icons.Filled.KeyboardArrowDown,
                 contentDescription = if (isExpanded) "折叠" else "展开",
                 modifier = Modifier.rotate(arrowRotation),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant

@@ -52,8 +52,9 @@ fun EnhancedTopBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onMenuClick) {
+                @Suppress("DEPRECATION")
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Menu,
+                    imageVector = Icons.Filled.Menu,
                     contentDescription = "菜单",
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(24.dp)

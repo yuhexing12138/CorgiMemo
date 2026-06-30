@@ -876,8 +876,9 @@ fun InspirationEditScreen(
                             text = selectedCategory?.name ?: "备忘录",
                             style = MaterialTheme.typography.bodySmall
                         )
+                        @Suppress("DEPRECATION")
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowDown,
+                            imageVector = Icons.Default.KeyboardArrowDown,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp)
                         )
