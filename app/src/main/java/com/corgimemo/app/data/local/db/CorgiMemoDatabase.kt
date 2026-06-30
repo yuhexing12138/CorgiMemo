@@ -98,7 +98,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
         }
 
         private val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceLat REAL")
                 database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceLng REAL")
                 database.execSQL("ALTER TABLE todo_items ADD COLUMN geofenceRadius REAL")
@@ -109,7 +109,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
         }
 
         private val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 database.execSQL("""
                     CREATE TABLE IF NOT EXISTS categories (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -125,7 +125,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
         }
 
         private val MIGRATION_4_5 = object : Migration(4, 5) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 database.execSQL("""
                     CREATE TABLE IF NOT EXISTS mood_history (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -138,7 +138,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
         }
 
         private val MIGRATION_5_6 = object : Migration(5, 6) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 database.execSQL("""
                     CREATE TABLE IF NOT EXISTS sub_tasks (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -160,7 +160,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          * 添加 todo_items 表的 hasSubTasks 字段
          */
         private val MIGRATION_6_7 = object : Migration(6, 7) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // 添加 hasSubTasks 字段，默认值为 false
                 database.execSQL("ALTER TABLE todo_items ADD COLUMN hasSubTasks INTEGER NOT NULL DEFAULT 0")
                 // 为 hasSubTasks 创建索引，提高查询效率
@@ -173,7 +173,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          * 创建 achievements 表并添加 corgi_data 表的新字段
          */
         private val MIGRATION_7_8 = object : Migration(7, 8) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // 创建 achievements 表
                 database.execSQL("""
                     CREATE TABLE IF NOT EXISTS achievements (
@@ -193,7 +193,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          * 创建 task_daily_stats 表用于每日任务统计
          */
         private val MIGRATION_8_9 = object : Migration(8, 9) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 database.execSQL("""
                     CREATE TABLE IF NOT EXISTS task_daily_stats (
                         date TEXT PRIMARY KEY NOT NULL,
@@ -212,7 +212,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          * 创建 category_keywords 表用于智能分类关键词
          */
         private val MIGRATION_9_10 = object : Migration(9, 10) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 database.execSQL("""
                     CREATE TABLE IF NOT EXISTS category_keywords (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -241,7 +241,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          * 现有 dueDate 数据将迁移到 startDate
          */
         private val MIGRATION_10_11 = object : Migration(10, 11) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 database.execSQL("""
                     CREATE TABLE IF NOT EXISTS todo_items_new (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -298,7 +298,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          * 添加语音备注相关字段
          */
         private val MIGRATION_11_12 = object : Migration(11, 12) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // 添加语音备注文件路径字段
                 database.execSQL("ALTER TABLE todo_items ADD COLUMN voiceNotePath TEXT")
                 // 添加语音时长字段（秒）
@@ -311,7 +311,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          * 用于支持用户创建和保存自己的待办模板
          */
         private val MIGRATION_12_13 = object : Migration(12, 13) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 database.execSQL("""
                     CREATE TABLE IF NOT EXISTS user_templates (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -331,7 +331,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          * 用于记录待办操作历史，支持撤销功能
          */
         private val MIGRATION_13_14 = object : Migration(13, 14) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 database.execSQL("""
                     CREATE TABLE IF NOT EXISTS operation_logs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -356,7 +356,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
          * 2. 重建表以修复默认值格式匹配
          */
         private val MIGRATION_14_15 = object : Migration(14, 15) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 /** 1. 创建新表（与 Room Entity 定义完全匹配） */
                 database.execSQL("""
                     CREATE TABLE IF NOT EXISTS operation_logs_new (
@@ -394,7 +394,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * 用于"最近删除"功能的数据持久化
      */
     private val MIGRATION_15_16 = object : Migration(15, 16) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             database.execSQL("""
                 CREATE TABLE IF NOT EXISTS deleted_todos (
                     id INTEGER PRIMARY KEY NOT NULL,
@@ -430,7 +430,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * 创建 inspirations 表和 inspiration_relations 关联表
      */
     private val MIGRATION_16_17 = object : Migration(16, 17) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             // 创建 inspirations 表（灵感记录主表）
             // 注意：字段约束必须与 Inspiration.kt Entity 注解完全一致
             database.execSQL("""
@@ -474,7 +474,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * 创建 special_dates 表和 special_date_relations 关联表
      */
     private val MIGRATION_17_18 = object : Migration(17, 18) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             database.execSQL("""
                 CREATE TABLE IF NOT EXISTS special_dates (
                     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -518,7 +518,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * 支持待办事项插入多张图片功能
      */
     private val MIGRATION_18_19 = object : Migration(18, 19) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             /** 添加 imagePaths 字段，用于存储图片路径的 JSON 数组 */
             database.execSQL("ALTER TABLE todo_items ADD COLUMN imagePaths TEXT NOT NULL DEFAULT ''")
         }
@@ -530,7 +530,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * 保留旧表以避免数据丢失
      */
     private val MIGRATION_19_20 = object : Migration(19, 20) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             database.execSQL("""
                 CREATE TABLE IF NOT EXISTS card_relations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -566,7 +566,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * 修复问题：createdAt 默认值不一致、索引名称/唯一属性不一致
      */
     private val MIGRATION_20_21 = object : Migration(20, 21) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             database.execSQL("DROP TABLE IF EXISTS card_relations")
 
             database.execSQL("""
@@ -605,7 +605,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * 提供更灵活的时间管理能力
      */
     private val MIGRATION_21_22 = object : Migration(21, 22) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             /** 添加 dueDate 字段，用于存储截止时间戳（毫秒） */
             database.execSQL("ALTER TABLE todo_items ADD COLUMN dueDate INTEGER")
 
@@ -624,7 +624,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * - 读取方式：数据库 Int → Color(Int) → Compose Color
      */
     private val MIGRATION_22_23 = object : Migration(22, 23) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             /** 添加 backgroundColor 字段（ARGB 整数值），默认为白色 */
             database.execSQL(
                 "ALTER TABLE todo_items ADD COLUMN backgroundColor INTEGER NOT NULL DEFAULT 16777215"
@@ -643,7 +643,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * - `content_format`: Markdown 格式文本（用于编辑器显示）
      */
     private val MIGRATION_23_24 = object : Migration(23, 24) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             /** 添加 contentFormat 字段（TEXT 类型，默认空字符串） */
             database.execSQL(
                 "ALTER TABLE todo_items ADD COLUMN contentFormat TEXT NOT NULL DEFAULT ''"
@@ -661,7 +661,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * - 排序规则：position ASC, createdAt DESC（未设置 position 的项排在最后）
      */
     private val MIGRATION_24_25 = object : Migration(24, 25) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             /** 添加 position 字段（INTEGER 类型，默认值为 0） */
             database.execSQL(
                 "ALTER TABLE todo_items ADD COLUMN position INTEGER NOT NULL DEFAULT 0"
@@ -684,7 +684,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * - content_blocks: id, todoId, type, filePath, duration, orderIndex
      */
     private val MIGRATION_25_26 = object : Migration(25, 26) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             /** 创建内容块表 */
             database.execSQL("""
                 CREATE TABLE IF NOT EXISTS content_blocks (
@@ -740,7 +740,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * 子任务/语音备注(3)、背景色、排序位置、富文本格式
      */
     private val MIGRATION_26_27 = object : Migration(26, 27) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             // --- 基础字段 ---
             database.execSQL("ALTER TABLE inspirations ADD COLUMN categoryId INTEGER NOT NULL DEFAULT 0")
             database.execSQL("ALTER TABLE inspirations ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
@@ -786,7 +786,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * - voicePaths: JSON 数组字符串，默认 ''，支持多语音
      */
     private val MIGRATION_27_28 = object : Migration(27, 28) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             // 为 sub_tasks 添加附件字段（默认空字符串，向后兼容旧数据）
             database.execSQL("ALTER TABLE sub_tasks ADD COLUMN imagePaths TEXT NOT NULL DEFAULT ''")
             database.execSQL("ALTER TABLE sub_tasks ADD COLUMN voicePaths TEXT NOT NULL DEFAULT ''")
@@ -800,7 +800,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * 旧数据默认 0（未置顶），向后兼容。
      */
     private val MIGRATION_28_29 = object : Migration(28, 29) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             // 添加 isPinned 字段，默认 0（未置顶）
             database.execSQL("ALTER TABLE todo_items ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
             // 创建 isPinned 索引（与 Entity 的 @Index 注解保持一致）
@@ -824,7 +824,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * - 用户已有数据不丢失，只是顺序回到时间序
      */
     private val MIGRATION_29_30 = object : Migration(29, 30) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             // 先删除关联索引（如果存在），再删除列
             database.execSQL("DROP INDEX IF EXISTS index_todo_items_position")
             database.execSQL("ALTER TABLE todo_items DROP COLUMN position")
@@ -845,7 +845,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
      * - 后续拖拽会更新 sortOrder
      */
     private val MIGRATION_30_31 = object : Migration(30, 31) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             // 1. 新增 sortOrder 列，默认值 0（与 @ColumnInfo defaultValue 一致）
             database.execSQL(
                 "ALTER TABLE todo_items ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0"
