@@ -857,14 +857,11 @@ class HomeViewModel @Inject constructor(
                 globalOrder++
             }
             if (updates.isNotEmpty()) {
-                android.util.Log.d(
-                    "CorgiMemo-Reorder",
-                    "[reorder:updateTodos] count=${updates.size}"
-                )
                 todoRepository.updateTodos(updates)
             }
         }
     }
+
 
     /**
      * 合并拖拽批量重排：多选模式下将选中项作为一个整体移动到 toIndex 位置
@@ -1003,10 +1000,6 @@ class HomeViewModel @Inject constructor(
                 globalOrder++
             }
             if (updates.isNotEmpty()) {
-                android.util.Log.d(
-                    "CorgiMemo-Reorder",
-                    "[reorder:updateTodos] count=${updates.size}"
-                )
                 todoRepository.updateTodos(updates)
             }
 
@@ -1048,10 +1041,6 @@ class HomeViewModel @Inject constructor(
                 }
             }
             if (updates.isNotEmpty()) {
-                android.util.Log.d(
-                    "CorgiMemo-Reorder",
-                    "[reorder:updateTodos] count=${updates.size}"
-                )
                 todoRepository.updateTodos(updates)
             }
         }

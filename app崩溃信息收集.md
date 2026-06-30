@@ -1,76 +1,99 @@
-
-2026-06-26 08:11:37.000  4072-5901  AndroidRuntime          pid-4072                             E  FATAL EXCEPTION: Thread_ReloadTaskList (Fix with AI)
-                                                                                                    Process: com.miui.home, PID: 4072
-                                                                                                    java.lang.IllegalStateException: setHasAlpha called on a recycled bitmap
-                                                                                                    	at android.graphics.Bitmap.checkRecycled(Bitmap.java:456)
-                                                                                                    	at android.graphics.Bitmap.setHasAlpha(Bitmap.java:2070)
-                                                                                                    	at com.android.systemui.shared.recents.model.ThumbnailData.<init>(ThumbnailData.java:37)
-                                                                                                    	at com.android.systemui.shared.recents.system.ActivityManagerWrapper.getTaskThumbnail(ActivityManagerWrapper.java:589)
-                                                                                                    	at com.android.systemui.shared.recents.model.RecentsTaskLoader.getAndUpdateThumbnail(RecentsTaskLoader.java:725)
-                                                                                                    	at com.android.systemui.shared.recents.model.RecentsTaskLoader.loadTaskThumbnail(RecentsTaskLoader.java:550)
-                                                                                                    	at com.android.systemui.shared.recents.model.RecentsTaskLoader.reloadTasksData(RecentsTaskLoader.java:514)
-                                                                                                    	at com.android.systemui.shared.recents.model.manager.RecentTasksList.reloadTaskList$lambda$3(RecentTasksList.kt:167)
-                                                                                                    	at com.android.systemui.shared.recents.model.manager.RecentTasksList.$r8$lambda$FfBPtMaocRuyZJsHYhPNCBO-LGM(RecentTasksList.kt:0)
-                                                                                                    	at com.android.systemui.shared.recents.model.manager.RecentTasksList$$ExternalSyntheticLambda0.run(R8$$SyntheticClass:0)
-                                                                                                    	at android.os.Handler.handleCallback(Handler.java:959)
-                                                                                                    	at android.os.Handler.dispatchMessage(Handler.java:100)
-                                                                                                    	at android.os.Looper.loopOnce(Looper.java:249)
-                                                                                                    	at android.os.Looper.loop(Looper.java:337)
-                                                                                                    	at android.os.HandlerThread.run(HandlerThread.java:85)
+(base) PS C:\Users\Lenovo\Desktop\CorgiMemo> & "C:\Users\Lenovo\AppData\Local\Android\Sdk\platform-tools\adb.exe" logcat -c                     
+(base) PS C:\Users\Lenovo\Desktop\CorgiMemo> & "C:\Users\Lenovo\AppData\Local\Android\Sdk\platform-tools\adb.exe" logcat CorgiMemo-Reorder:D *:S
 --------- beginning of main
-2026-06-26 09:38:27.635  9950-9950  AndroidRuntime          com.corgimemo.app                    E  FATAL EXCEPTION: main (Fix with AI)
-                                                                                                    Process: com.corgimemo.app, PID: 9950
-                                                                                                    java.lang.IllegalStateException: A migration from 29 to 30 was required but not found. Please provide the necessary Migration path via RoomDatabase.Builder.addMigration(...) or allow for destructive migrations via one of the RoomDatabase.Builder.fallbackToDestructiveMigration* functions.
-                                                                                                    	at androidx.room.BaseRoomConnectionManager.onMigrate(RoomConnectionManager.kt:224)
-                                                                                                    	at androidx.room.RoomConnectionManager$SupportOpenHelperCallback.onUpgrade(RoomConnectionManager.android.kt:165)
-                                                                                                    	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper$OpenHelper.onUpgrade(FrameworkSQLiteOpenHelper.android.kt:245)
-                                                                                                    	at android.database.sqlite.SQLiteOpenHelper.getDatabaseLocked(SQLiteOpenHelper.java:415)
-                                                                                                    	at android.database.sqlite.SQLiteOpenHelper.getWritableDatabase(SQLiteOpenHelper.java:316)
-                                                                                                    	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper$OpenHelper.getWritableOrReadableDatabase(FrameworkSQLiteOpenHelper.android.kt:224)
-                                                                                                    	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper$OpenHelper.innerGetDatabase(FrameworkSQLiteOpenHelper.android.kt:180)
-                                                                                                    	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper$OpenHelper.getSupportDatabase(FrameworkSQLiteOpenHelper.android.kt:141)
-                                                                                                    	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper.getWritableDatabase(FrameworkSQLiteOpenHelper.android.kt:96)
-                                                                                                    	at androidx.sqlite.driver.SupportSQLiteDriver.open(SupportSQLiteDriver.android.kt:57)
-                                                                                                    	at androidx.sqlite.driver.SupportSQLiteDriver.open(SupportSQLiteDriver.android.kt:33)
-                                                                                                    	at androidx.room.coroutines.PassthroughConnectionPool.connection$lambda$0(PassthroughConnectionPool.kt:47)
-                                                                                                    	at androidx.room.coroutines.PassthroughConnectionPool$$ExternalSyntheticLambda0.invoke(D8$$SyntheticClass:0)
-                                                                                                    	at kotlin.SynchronizedLazyImpl.getValue(LazyJVM.kt:86)
-                                                                                                    	at androidx.room.coroutines.PassthroughConnectionPool.useConnection(PassthroughConnectionPool.kt:58)
-                                                                                                    	at androidx.room.RoomConnectionManager.useConnection(RoomConnectionManager.android.kt:138)
-                                                                                                    	at androidx.room.RoomDatabase.useConnection(RoomDatabase.android.kt:619)
-                                                                                                    	at androidx.room.TriggerBasedInvalidationTracker.syncTriggers$room_runtime(InvalidationTracker.kt:306)
-                                                                                                    	at androidx.room.TriggerBasedInvalidationTracker$createFlow$1$1.invokeSuspend(InvalidationTracker.kt:239)
-                                                                                                    	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
-                                                                                                    	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:101)
-                                                                                                    	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1291)
-                                                                                                    	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:670)
-                                                                                                    	at java.lang.Thread.run(Thread.java:1012)
-                                                                                                    	Suppressed: kotlinx.coroutines.internal.DiagnosticCoroutineContextException: [StandaloneCoroutine{Cancelling}@7eb58dd, Dispatchers.Main.immediate]
-2026-06-26 09:39:14.530 11777-11777 AndroidRuntime          com.corgimemo.app                    E  FATAL EXCEPTION: main (Fix with AI)
-                                                                                                    Process: com.corgimemo.app, PID: 11777
-                                                                                                    java.lang.IllegalStateException: A migration from 29 to 30 was required but not found. Please provide the necessary Migration path via RoomDatabase.Builder.addMigration(...) or allow for destructive migrations via one of the RoomDatabase.Builder.fallbackToDestructiveMigration* functions.
-                                                                                                    	at androidx.room.BaseRoomConnectionManager.onMigrate(RoomConnectionManager.kt:224)
-                                                                                                    	at androidx.room.RoomConnectionManager$SupportOpenHelperCallback.onUpgrade(RoomConnectionManager.android.kt:165)
-                                                                                                    	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper$OpenHelper.onUpgrade(FrameworkSQLiteOpenHelper.android.kt:245)
-                                                                                                    	at android.database.sqlite.SQLiteOpenHelper.getDatabaseLocked(SQLiteOpenHelper.java:415)
-                                                                                                    	at android.database.sqlite.SQLiteOpenHelper.getWritableDatabase(SQLiteOpenHelper.java:316)
-                                                                                                    	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper$OpenHelper.getWritableOrReadableDatabase(FrameworkSQLiteOpenHelper.android.kt:224)
-                                                                                                    	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper$OpenHelper.innerGetDatabase(FrameworkSQLiteOpenHelper.android.kt:180)
-                                                                                                    	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper$OpenHelper.getSupportDatabase(FrameworkSQLiteOpenHelper.android.kt:141)
-                                                                                                    	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper.getWritableDatabase(FrameworkSQLiteOpenHelper.android.kt:96)
-                                                                                                    	at androidx.sqlite.driver.SupportSQLiteDriver.open(SupportSQLiteDriver.android.kt:57)
-                                                                                                    	at androidx.sqlite.driver.SupportSQLiteDriver.open(SupportSQLiteDriver.android.kt:33)
-                                                                                                    	at androidx.room.coroutines.PassthroughConnectionPool.connection$lambda$0(PassthroughConnectionPool.kt:47)
-                                                                                                    	at androidx.room.coroutines.PassthroughConnectionPool$$ExternalSyntheticLambda0.invoke(D8$$SyntheticClass:0)
-                                                                                                    	at kotlin.SynchronizedLazyImpl.getValue(LazyJVM.kt:86)
-                                                                                                    	at androidx.room.coroutines.PassthroughConnectionPool.useConnection(PassthroughConnectionPool.kt:58)
-                                                                                                    	at androidx.room.RoomConnectionManager.useConnection(RoomConnectionManager.android.kt:138)
-                                                                                                    	at androidx.room.RoomDatabase.useConnection(RoomDatabase.android.kt:619)
-                                                                                                    	at androidx.room.TriggerBasedInvalidationTracker.syncTriggers$room_runtime(InvalidationTracker.kt:306)
-                                                                                                    	at androidx.room.TriggerBasedInvalidationTracker$createFlow$1$1.invokeSuspend(InvalidationTracker.kt:239)
-                                                                                                    	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
-                                                                                                    	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:101)
-                                                                                                    	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1291)
-                                                                                                    	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:670)
-                                                                                                    	at java.lang.Thread.run(Thread.java:1012)
-                                                                                                    	Suppressed: kotlinx.coroutines.internal.DiagnosticCoroutineContextException: [StandaloneCoroutine{Cancelling}@a693711, Dispatchers.Main.immediate]
+06-30 22:05:16.231 27721 27721 D CorgiMemo-Reorder: [DRAG_START] key=1 itemsSz=10 displaySz=10 origIdx=0
+06-30 22:05:16.503 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=0 to=1 keys=[2, 1, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:16.756 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_ENTER] key=1 origIdx=0 displayKeys=[2, 1, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:16.756 27721 27721 D CorgiMemo-Reorder: [REORDER_CALL] from=0 to=1 crossed=false
+06-30 22:05:16.757 27721 27721 D CorgiMemo-Reorder: [VM_REORDER_ENTER] from=0 to=1 crossed=false pendingSz=10 thread=main
+06-30 22:05:16.757 27721 27721 D CorgiMemo-Reorder: [VM_UPDATE] count=2 ids=[2, 1] newSortOrders=[0, 1]
+06-30 22:05:16.759 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_EXIT] isDragActive=false origIdx=-1
+06-30 22:05:16.838 27721 27721 D CorgiMemo-Reorder: [LE_ITEMS] isDragActive=false isMergeDrag=false isMergeAnim=false itemsSz=10 displaySz=10
+06-30 22:05:17.724 27721 27721 D CorgiMemo-Reorder: [DRAG_START] key=1 itemsSz=10 displaySz=10 origIdx=0
+06-30 22:05:17.942 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=1 to=0 keys=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:18.161 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_ENTER] key=1 origIdx=0 displayKeys=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:18.161 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_EXIT] isDragActive=false origIdx=-1
+06-30 22:05:19.091 27721 27721 D CorgiMemo-Reorder: [DRAG_START] key=1 itemsSz=10 displaySz=10 origIdx=0
+06-30 22:05:19.382 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=0 to=1 keys=[2, 1, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:19.626 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_ENTER] key=1 origIdx=0 displayKeys=[2, 1, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:19.626 27721 27721 D CorgiMemo-Reorder: [REORDER_CALL] from=0 to=1 crossed=false
+06-30 22:05:19.626 27721 27721 D CorgiMemo-Reorder: [VM_REORDER_ENTER] from=0 to=1 crossed=false pendingSz=10 thread=main
+06-30 22:05:19.627 27721 27721 D CorgiMemo-Reorder: [VM_UPDATE] count=2 ids=[1, 2] newSortOrders=[0, 1]
+06-30 22:05:19.628 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_EXIT] isDragActive=false origIdx=-1
+06-30 22:05:19.700 27721 27721 D CorgiMemo-Reorder: [LE_ITEMS] isDragActive=false isMergeDrag=false isMergeAnim=false itemsSz=10 displaySz=10
+06-30 22:05:23.916 27721 27721 D CorgiMemo-Reorder: [DRAG_START] key=1 itemsSz=10 displaySz=10 origIdx=0
+06-30 22:05:24.214 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=0 to=1 keys=[2, 1, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:24.412 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=1 to=2 keys=[2, 3, 1, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:25.026 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_ENTER] key=1 origIdx=0 displayKeys=[2, 3, 1, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:25.027 27721 27721 D CorgiMemo-Reorder: [REORDER_CALL] from=0 to=2 crossed=false
+06-30 22:05:25.027 27721 27721 D CorgiMemo-Reorder: [VM_REORDER_ENTER] from=0 to=2 crossed=false pendingSz=10 thread=main
+06-30 22:05:25.027 27721 27721 D CorgiMemo-Reorder: [VM_UPDATE] count=3 ids=[2, 3, 1] newSortOrders=[0, 1, 2]
+06-30 22:05:25.029 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_EXIT] isDragActive=false origIdx=-1
+06-30 22:05:25.108 27721 27721 D CorgiMemo-Reorder: [LE_ITEMS] isDragActive=false isMergeDrag=false isMergeAnim=false itemsSz=10 displaySz=10
+06-30 22:05:26.116 27721 27721 D CorgiMemo-Reorder: [DRAG_START] key=1 itemsSz=10 displaySz=10 origIdx=0
+06-30 22:05:26.235 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=2 to=1 keys=[2, 1, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:26.393 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=1 to=0 keys=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:26.777 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_ENTER] key=1 origIdx=0 displayKeys=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:26.777 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_EXIT] isDragActive=false origIdx=-1
+06-30 22:05:27.679 27721 27721 D CorgiMemo-Reorder: [DRAG_START] key=1 itemsSz=10 displaySz=10 origIdx=0
+06-30 22:05:27.981 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=0 to=1 keys=[2, 1, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:28.222 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=1 to=2 keys=[2, 3, 1, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:28.613 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_ENTER] key=1 origIdx=0 displayKeys=[2, 3, 1, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:28.614 27721 27721 D CorgiMemo-Reorder: [REORDER_CALL] from=0 to=2 crossed=false
+06-30 22:05:28.614 27721 27721 D CorgiMemo-Reorder: [VM_REORDER_ENTER] from=0 to=2 crossed=false pendingSz=10 thread=main
+06-30 22:05:28.614 27721 27721 D CorgiMemo-Reorder: [VM_UPDATE] count=3 ids=[3, 1, 2] newSortOrders=[0, 1, 2]
+06-30 22:05:28.616 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_EXIT] isDragActive=false origIdx=-1
+06-30 22:05:28.687 27721 27721 D CorgiMemo-Reorder: [LE_ITEMS] isDragActive=false isMergeDrag=false isMergeAnim=false itemsSz=10 displaySz=10
+06-30 22:05:36.708 27721 27721 D CorgiMemo-Reorder: [DRAG_START] key=3 itemsSz=10 displaySz=10 origIdx=0
+06-30 22:05:36.773 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=0 to=1 keys=[1, 3, 2, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:36.932 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=1 to=2 keys=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:37.261 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_ENTER] key=3 origIdx=0 displayKeys=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:37.261 27721 27721 D CorgiMemo-Reorder: [REORDER_CALL] from=0 to=2 crossed=false
+06-30 22:05:37.261 27721 27721 D CorgiMemo-Reorder: [VM_REORDER_ENTER] from=0 to=2 crossed=false pendingSz=10 thread=main
+06-30 22:05:37.262 27721 27721 D CorgiMemo-Reorder: [VM_UPDATE] count=3 ids=[1, 2, 3] newSortOrders=[0, 1, 2]
+06-30 22:05:37.263 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_EXIT] isDragActive=false origIdx=-1
+06-30 22:05:37.333 27721 27721 D CorgiMemo-Reorder: [LE_ITEMS] isDragActive=false isMergeDrag=false isMergeAnim=false itemsSz=10 displaySz=10
+06-30 22:05:38.276 27721 27721 D CorgiMemo-Reorder: [DRAG_START] key=1 itemsSz=10 displaySz=10 origIdx=0
+06-30 22:05:38.404 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=0 to=1 keys=[2, 1, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:38.537 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=1 to=2 keys=[2, 3, 1, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:38.745 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=2 to=3 keys=[2, 3, 4, 1, 5, 6, 7, 8, 9, 10]
+06-30 22:05:39.583 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_ENTER] key=1 origIdx=0 displayKeys=[2, 3, 4, 1, 5, 6, 7, 8, 9, 10]
+06-30 22:05:39.584 27721 27721 D CorgiMemo-Reorder: [REORDER_CALL] from=0 to=3 crossed=false
+06-30 22:05:39.584 27721 27721 D CorgiMemo-Reorder: [VM_REORDER_ENTER] from=0 to=3 crossed=false pendingSz=10 thread=main
+06-30 22:05:39.584 27721 27721 D CorgiMemo-Reorder: [VM_UPDATE] count=4 ids=[2, 3, 4, 1] newSortOrders=[0, 1, 2, 3]
+06-30 22:05:39.586 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_EXIT] isDragActive=false origIdx=-1
+06-30 22:05:39.637 27721 27721 D CorgiMemo-Reorder: [LE_ITEMS] isDragActive=false isMergeDrag=false isMergeAnim=false itemsSz=10 displaySz=10
+06-30 22:05:40.568 27721 27721 D CorgiMemo-Reorder: [DRAG_START] key=1 itemsSz=10 displaySz=10 origIdx=0
+06-30 22:05:40.709 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=3 to=2 keys=[2, 3, 1, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:40.824 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=2 to=1 keys=[2, 1, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:40.941 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=1 to=0 keys=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:41.372 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_ENTER] key=1 origIdx=0 displayKeys=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:41.372 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_EXIT] isDragActive=false origIdx=-1
+06-30 22:05:42.271 27721 27721 D CorgiMemo-Reorder: [DRAG_START] key=1 itemsSz=10 displaySz=10 origIdx=0
+06-30 22:05:42.463 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=0 to=1 keys=[2, 1, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:42.587 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=1 to=2 keys=[2, 3, 1, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:42.729 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=2 to=3 keys=[2, 3, 4, 1, 5, 6, 7, 8, 9, 10]
+06-30 22:05:43.086 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_ENTER] key=1 origIdx=0 displayKeys=[2, 3, 4, 1, 5, 6, 7, 8, 9, 10]
+06-30 22:05:43.086 27721 27721 D CorgiMemo-Reorder: [REORDER_CALL] from=0 to=3 crossed=false
+06-30 22:05:43.086 27721 27721 D CorgiMemo-Reorder: [VM_REORDER_ENTER] from=0 to=3 crossed=false pendingSz=10 thread=main
+06-30 22:05:43.086 27721 27721 D CorgiMemo-Reorder: [VM_UPDATE] count=4 ids=[3, 4, 1, 2] newSortOrders=[0, 1, 2, 3]
+06-30 22:05:43.088 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_EXIT] isDragActive=false origIdx=-1
+06-30 22:05:43.150 27721 27721 D CorgiMemo-Reorder: [LE_ITEMS] isDragActive=false isMergeDrag=false isMergeAnim=false itemsSz=10 displaySz=10
+06-30 22:05:51.899 27721 27721 D CorgiMemo-Reorder: [DRAG_START] key=1 itemsSz=10 displaySz=10 origIdx=2
+06-30 22:05:52.137 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=2 to=1 keys=[3, 1, 4, 2, 5, 6, 7, 8, 9, 10]
+06-30 22:05:52.279 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=1 to=0 keys=[1, 3, 4, 2, 5, 6, 7, 8, 9, 10]
+06-30 22:05:52.865 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_ENTER] key=1 origIdx=2 displayKeys=[1, 3, 4, 2, 5, 6, 7, 8, 9, 10]
+06-30 22:05:52.865 27721 27721 D CorgiMemo-Reorder: [REORDER_CALL] from=2 to=0 crossed=false
+06-30 22:05:52.865 27721 27721 D CorgiMemo-Reorder: [VM_REORDER_ENTER] from=2 to=0 crossed=false pendingSz=10 thread=main
+06-30 22:05:52.865 27721 27721 D CorgiMemo-Reorder: [VM_UPDATE] count=3 ids=[1, 3, 4] newSortOrders=[0, 1, 2]
+06-30 22:05:52.868 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_EXIT] isDragActive=false origIdx=-1
+06-30 22:05:52.949 27721 27721 D CorgiMemo-Reorder: [LE_ITEMS] isDragActive=false isMergeDrag=false isMergeAnim=false itemsSz=10 displaySz=10
+06-30 22:05:53.799 27721 27721 D CorgiMemo-Reorder: [DRAG_START] key=2 itemsSz=10 displaySz=10 origIdx=3
+06-30 22:05:53.952 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=3 to=2 keys=[1, 3, 2, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:54.084 27721 27721 D CorgiMemo-Reorder: [DRAG_MOVE] from=2 to=1 keys=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:54.578 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_ENTER] key=2 origIdx=3 displayKeys=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+06-30 22:05:54.579 27721 27721 D CorgiMemo-Reorder: [REORDER_CALL] from=3 to=1 crossed=false
+06-30 22:05:54.579 27721 27721 D CorgiMemo-Reorder: [VM_REORDER_ENTER] from=3 to=1 crossed=false pendingSz=10 thread=main
+06-30 22:05:54.579 27721 27721 D CorgiMemo-Reorder: [VM_UPDATE] count=3 ids=[2, 3, 4] newSortOrders=[1, 2, 3]
+06-30 22:05:54.581 27721 27721 D CorgiMemo-Reorder: [DRAG_STOP_EXIT] isDragActive=false origIdx=-1
+06-30 22:05:54.636 27721 27721 D CorgiMemo-Reorder: [LE_ITEMS] isDragActive=false isMergeDrag=false isMergeAnim=false itemsSz=10 displaySz=10
