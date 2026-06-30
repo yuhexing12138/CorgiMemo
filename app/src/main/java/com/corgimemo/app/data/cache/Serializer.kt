@@ -68,7 +68,7 @@ class JsonSerializer<T : Any>(
     @OptIn(InternalSerializationApi::class)
     override fun deserialize(json: String): T? {
         return try {
-            json.decodeFromString(tClass.serializer(), json)
+            this.json.decodeFromString(tClass.serializer(), json)
         } catch (e: Exception) {
             // 反序列化失败时返回 null（可能是数据格式变更）
             null

@@ -744,15 +744,6 @@ fun HomeScreen(
                             }
                         }
 
-                        // 当外部刷新状态变化时，同步到 PullToRefreshState
-                        LaunchedEffect(isRefreshing) {
-                            if (isRefreshing) {
-                                pullToRefreshState.startRefresh()
-                            } else {
-                                pullToRefreshState.endRefresh()
-                            }
-                        }
-
                         PullToRefreshBox(
                             isRefreshing = isRefreshing,
                             onRefresh = { viewModel.onRefresh() },
