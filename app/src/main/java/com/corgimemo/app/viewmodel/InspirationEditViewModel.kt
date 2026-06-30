@@ -46,7 +46,7 @@ class InspirationEditViewModel @Inject constructor(
     private val corgiPreferences: CorgiPreferences,
     private val cardRelationRepository: CardRelationRepository,
     private val contentBlockDao: ContentBlockDao,
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private var recommendationJob: Job? = null

@@ -28,7 +28,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class CacheManager @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val preferences: CorgiPreferences
 ) {
     companion object {

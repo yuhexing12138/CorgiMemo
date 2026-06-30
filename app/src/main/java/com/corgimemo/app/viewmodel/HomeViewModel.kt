@@ -124,7 +124,7 @@ class HomeViewModel @Inject constructor(
     private val operationLogRepository: OperationLogRepository,
     private val taskDailyStatsRepository: TaskDailyStatsRepository,
     private val fileCopyManager: FileCopyManager,
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
     // ========== 待办列表相关 ==========

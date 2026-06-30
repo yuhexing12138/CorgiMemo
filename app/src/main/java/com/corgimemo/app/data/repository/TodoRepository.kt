@@ -20,8 +20,8 @@ class TodoRepository @Inject constructor(
     private val todoDao: TodoDao,
     private val deletedTodoRepository: DeletedTodoRepository,
     private val cardRelationRepository: CardRelationRepository,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
-    @ApplicationContext private val context: Context
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
+    @param:ApplicationContext private val context: Context
 ) {
 
     /**

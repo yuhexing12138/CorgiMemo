@@ -17,7 +17,7 @@ import javax.inject.Singleton
 @Singleton
 class MoodHistoryRepository @Inject constructor(
     private val moodHistoryDao: MoodHistoryDao,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")

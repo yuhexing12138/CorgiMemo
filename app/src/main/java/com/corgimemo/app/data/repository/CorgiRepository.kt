@@ -12,7 +12,7 @@ import javax.inject.Singleton
 @Singleton
 class CorgiRepository @Inject constructor(
     private val corgiDao: CorgiDao,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
     suspend fun insertCorgi(corgi: CorgiData) = withContext(ioDispatcher) {

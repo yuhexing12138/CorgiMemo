@@ -19,7 +19,7 @@ import javax.inject.Singleton
 @Singleton
 class TaskDailyStatsRepository @Inject constructor(
     private val taskDailyStatsDao: TaskDailyStatsDao,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())

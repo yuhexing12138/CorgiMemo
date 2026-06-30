@@ -25,7 +25,7 @@ class AchievementRepository @Inject constructor(
     private val corgiRepository: CorgiRepository,
     private val todoRepository: TodoRepository,
     private val taskDailyStatsRepository: TaskDailyStatsRepository,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
     private var isInitialized = false

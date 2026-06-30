@@ -19,7 +19,7 @@ import javax.inject.Singleton
 @Singleton
 class CategoryKeywordRepository @Inject constructor(
     private val categoryKeywordDao: CategoryKeywordDao,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
     private val _keywordsFlow = MutableStateFlow<List<CategoryKeyword>>(emptyList())

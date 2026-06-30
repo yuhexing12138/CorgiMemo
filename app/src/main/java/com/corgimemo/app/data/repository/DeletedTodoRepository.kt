@@ -13,7 +13,7 @@ import javax.inject.Singleton
 @Singleton
 class DeletedTodoRepository @Inject constructor(
     private val deletedTodoDao: DeletedTodoDao,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
     suspend fun insertDeletedTodo(todo: TodoItem) = withContext(ioDispatcher) {

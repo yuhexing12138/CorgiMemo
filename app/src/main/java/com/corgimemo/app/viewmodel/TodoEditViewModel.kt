@@ -62,7 +62,7 @@ class TodoEditViewModel @Inject constructor(
     private val corgiPreferences: CorgiPreferences,
     private val cardRelationRepository: CardRelationRepository,
     private val contentBlockDao: ContentBlockDao,
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
     /** 防抖导出任务引用：用于延迟执行 MarkdownParser.export() */

@@ -31,7 +31,7 @@ class AchievementChecker @Inject constructor(
     private val corgiRepository: CorgiRepository,
     private val categoryRepository: CategoryRepository,
     private val taskDailyStatsRepository: TaskDailyStatsRepository,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())

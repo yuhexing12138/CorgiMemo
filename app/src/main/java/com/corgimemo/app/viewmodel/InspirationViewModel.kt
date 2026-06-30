@@ -29,7 +29,7 @@ import javax.inject.Inject
 class InspirationViewModel @Inject constructor(
     private val inspirationRepository: InspirationRepository,
     private val cardRelationRepository: CardRelationRepository,
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
     // ========== 状态定义 ==========

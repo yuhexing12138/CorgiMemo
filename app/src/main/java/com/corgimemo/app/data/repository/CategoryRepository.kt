@@ -18,7 +18,7 @@ import javax.inject.Singleton
 @Singleton
 class CategoryRepository @Inject constructor(
     private val categoryDao: CategoryDao,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
 
     /**

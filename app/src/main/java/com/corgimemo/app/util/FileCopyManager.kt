@@ -35,7 +35,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class FileCopyManager @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val todoRepository: TodoRepository
 ) {
     companion object {
