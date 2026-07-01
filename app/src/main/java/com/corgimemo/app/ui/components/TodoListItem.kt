@@ -1,7 +1,12 @@
 package com.corgimemo.app.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -514,7 +519,19 @@ fun TodoListItem(
                 }
 
                 // 展开时显示子任务列表
-                if (isExpanded && subTasks.isNotEmpty()) {
+                // 使用 AnimatedVisibility 包裹，提供平滑的展开/收起过渡动画
+                //
+                // 设计要点：
+                // - 默认 enter = expandVertically() + fadeIn()，从顶部展开 + 淡入
+                // - 默认 exit = shrinkVertically() + fadeOut()，从顶部收起 + 淡出
+                // - 触发场景：用户点击"展开子待办"按钮（手动展开）+ 全部子任务完成时自动收起
+                //   （自动收起由 HomeViewModel.toggleSubTaskCompletion 在 parentTodoCompleted = true 时
+                //   调用 toggleExpand(todoId) 触发，isExpanded 从 true 变 false，AnimatedVisibility 自动播放 exit 动画）
+                AnimatedVisibility(
+                    visible = isExpanded && subTasks.isNotEmpty(),
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()

@@ -31,9 +31,12 @@ import androidx.compose.ui.input.pointer.pointerInput
  *   实现"按下立即缩、抬起缓慢回弹"的物理感
  *
  * 状态机（内联在 awaitEachGesture 中）：
- * - down -> 立即 scale.floatValue = scaleDown（同步写入，Composable 自动动画过渡）
- * - **down 事件已被消费（down.isConsumed == true）时直接 return**：
- *   表明子组件（如 clickable、Surface.onClick、CircularCheckbox）已经接管该手势，
+ * - down -> 立即 down.consume() 主动消费 + scale.floatValue = scaleDown（同步写入，Composable 自动动画过渡）
+ *   主动消费 down 的原因：pressFeedback 声明"我处理这个手势"，
+ *   父级 pressFeedback 会通过 down.isConsumed == true 短路 return，
+ *   避免父级误触发 onTap（典型 bug：点击子任务勾选时 Card 同时响应导致页面跳转）。
+ * - **down 事件已被子组件消费（down.isConsumed == true）时直接 return**：
+ *   表明更内层的子组件（如 clickable、Surface.onClick、CircularCheckbox）已经接管该手势，
  *   父级 pressFeedback 不应再响应，避免两个并发问题：
  *   1. scale 缩小后 up 事件被子组件消费，awaitPointerEvent 收不到 up → scale 永远卡在缩小状态
  *   2. 父级 pressFeedback 误触发 onTap/onLongClick，与子组件 click 冲突
@@ -146,6 +149,19 @@ fun Modifier.pressFeedback(
                 if (down.isConsumed) {
                     return@awaitEachGesture
                 }
+
+                // 主动消费 down 事件，阻止父级 pressFeedback 误响应
+                //
+                // 场景：SubTaskCheckbox、TitleColumn 等"无 clickable 但有 pressFeedback"的子组件
+                // 如果 pressFeedback 不消费 down 事件，父级 pressFeedback（Card）也会处理，
+                // 导致点击子任务勾选时同时触发 Card 的 onTap（页面跳转 bug）。
+                //
+                // 语义：pressFeedback 表示"该组件声明处理点击/长按"，
+                // 消费 down 事件是合理且必要的边界声明。
+                // 对父级 pressFeedback 的影响：awaitFirstDown(requireUnconsumed = false)
+                // 仍会收到 down（因参数不要求未消费），但会检测到 down.isConsumed == true
+                // 在上一段 if 判断处 return，完美实现"谁声明、谁处理"。
+                down.consume()
 
                 // 立即同步修改 scale 目标值
                 // Composable 层 animateFloatAsState 监听到 scale 变化会自动动画过渡

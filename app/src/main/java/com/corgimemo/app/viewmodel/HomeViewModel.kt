@@ -1839,6 +1839,28 @@ class HomeViewModel @Inject constructor(
             _subTaskProgressMap.value = progressMap
             _subTasksMap.value = subTasksMap
 
+            // 自动收起：所有子任务都完成时收起子待办列表
+            //
+            // 触发条件：result.parentTodoCompleted == true
+            //   - 表示本次切换导致父任务被自动完成
+            //   - 隐含语义：所有子任务都已完成
+            //   - 与用户需求"仅全部完成时收起"完全吻合
+            //
+            // 实现机制：
+            //   - 调用 toggleExpand(todoId) 将 expandedTodos 中的 todoId 移除
+            //   - TodoListItem 的 isExpanded 变为 false
+            //   - AnimatedVisibility 触发 exit 动画（shrinkVertically + fadeOut）
+            //   - 子待办列表平滑收起
+            //
+            // 顺序设计：先收起再触发父任务完成逻辑，
+            //   这样用户在看到完成庆祝动画前，先看到子待办列表平滑收起，
+            //   视觉体验更连贯（"先清场，再庆祝"）。
+            if (result.parentTodoCompleted) {
+                result.updatedSubTask?.let { subTask ->
+                    toggleExpand(subTask.todoId)
+                }
+            }
+
             // 如果父任务被自动完成，触发完成逻辑
             if (result.parentTodoCompleted) {
                 result.updatedSubTask?.let { subTask ->
