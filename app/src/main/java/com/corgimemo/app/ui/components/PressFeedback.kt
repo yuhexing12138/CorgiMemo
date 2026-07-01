@@ -32,6 +32,11 @@ import androidx.compose.ui.input.pointer.pointerInput
  *
  * 状态机（内联在 awaitEachGesture 中）：
  * - down -> 立即 scale.floatValue = scaleDown（同步写入，Composable 自动动画过渡）
+ * - **down 事件已被消费（down.isConsumed == true）时直接 return**：
+ *   表明子组件（如 clickable、Surface.onClick、CircularCheckbox）已经接管该手势，
+ *   父级 pressFeedback 不应再响应，避免两个并发问题：
+ *   1. scale 缩小后 up 事件被子组件消费，awaitPointerEvent 收不到 up → scale 永远卡在缩小状态
+ *   2. 父级 pressFeedback 误触发 onTap/onLongClick，与子组件 click 冲突
  * - 在 awaitPointerEvent 主循环中通过时间戳检测长按（now - downTime >= 500L）
  * - 手指抬起 -> scale.floatValue = 1f + 触发 onTap/onLongClick
  * - 移动 > touchSlop -> scale.floatValue = 1f，不触发 onTap/onLongClick
@@ -119,6 +124,28 @@ fun Modifier.pressFeedback(
                 val downPosition = down.position
                 // 记录 down 时刻，用于在 awaitPointerEvent 主循环中检测长按
                 val downTime = System.currentTimeMillis()
+
+                // 关键：down 事件已被子组件消费时，父级 pressFeedback 不应再响应
+                //
+                // 背景：在 TodoListItem 中，Card 内部包含可点击子组件
+                // （Surface(onClick = onToggleExpand) 展开按钮、CircularCheckbox 复选框）。
+                // 这些子组件的 Modifier.clickable 内部使用 detectTapGestures，
+                // 会在 down 事件时立即调用 down.consume() 标记事件已被处理，
+                // 并在 up 时再次消费事件触发 onClick。
+                //
+                // 父级 pressFeedback 使用 awaitFirstDown(requireUnconsumed = false)，
+                // 即使 down 事件被消费也会立即返回 → 若继续往下走：
+                // 1. scale.floatValue = scaleDown 让卡片缩小
+                // 2. awaitPointerEvent() 在 Main pass 下收不到被消费的 up 事件
+                // 3. while 循环阻塞，scale 永远卡在缩小状态无法恢复
+                // 4. onTap 也不会被触发（因为 up 事件被消费）但视觉上误触发了"按下"动画
+                //
+                // 修复：检测 down.isConsumed，若已被消费则直接 return，
+                // 让子组件的 clickable 独立处理该手势。
+                // 这样父级 pressFeedback 完全不参与，避免视觉卡顿和事件冲突。
+                if (down.isConsumed) {
+                    return@awaitEachGesture
+                }
 
                 // 立即同步修改 scale 目标值
                 // Composable 层 animateFloatAsState 监听到 scale 变化会自动动画过渡
