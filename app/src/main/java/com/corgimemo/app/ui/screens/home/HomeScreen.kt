@@ -137,6 +137,7 @@ import kotlinx.coroutines.launch
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.dimensionResource
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -641,7 +642,8 @@ fun HomeScreen(
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 8.dp),
+                                .padding(horizontal = 20.dp)
+                                .padding(bottom = dimensionResource(R.dimen.ui_search_bar_bottom_margin)),
                             trailingIcon = {
                                 /** 排序按钮（与清空按钮互斥显示） */
                                 IconButton(
