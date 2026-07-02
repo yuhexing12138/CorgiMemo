@@ -73,7 +73,7 @@ fun InspirationScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp)
-                    .padding(bottom = dimensionResource(R.dimen.ui_search_bar_bottom_margin))
+                    .padding(bottom = dimensionResource(com.corgimemo.app.R.dimen.ui_search_bar_bottom_margin))
             )
 
             Spacer(modifier = Modifier.height(8.dp))
