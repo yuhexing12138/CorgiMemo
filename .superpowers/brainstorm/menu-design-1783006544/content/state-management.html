@@ -1,0 +1,142 @@
+<h2>状态管理与数据流</h2>
+<p class="subtitle">新增状态的存放位置、持久化策略与现有状态的关系</p>
+
+<div class="mockup">
+  <div class="mockup-header">状态流转图</div>
+  <div class="mockup-body" style="padding: 20px; background: #fafafa;">
+    <div style="font-family: monospace; font-size: 12px; line-height: 1.8; color: #333;">
+<pre style="margin:0; padding:0; font-family: inherit;">
+┌─────────────────────────────────────────────────────────────┐
+│                    CorgiPreferences (DataStore)              │
+│                                                              │
+│  现有键：                新增键：                             │
+│  • show_completed        • hide_details (Boolean)            │
+│  • sort_type             • hide_completed_items (Boolean)    │
+│  • selected_category                                         │
+└──────────┬───────────────────────────────────┬──────────────┘
+           │ 启动时加载                        │ 启动时加载
+           ▼                                   ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    HomeViewModel                              │
+│                                                               │
+│  现有状态：                   新增状态：                       │
+│  • _showCompleted             • _hideDetails                  │
+│    (展开已完成折叠区)           (隐藏卡片详情)                  │
+│  • _isBatchMode               • _hideCompletedItems           │
+│    (批量选择模式)               (隐藏所有已完成项)              │
+│  • _sortType                                                  │
+│  • _selectedCategoryId                                         │
+│                                                               │
+│  现有方法：                   新增方法：                       │
+│  • toggleShowCompleted()      • toggleHideDetails()           │
+│  • enterBatchMode()           • toggleHideCompletedItems()    │
+│  • exitBatchMode()                                            │
+│  • setSortType()                                              │
+└──────────┬───────────────────────────────────┬──────────────┘
+           │ collectAsState                    │ collectAsState
+           ▼                                   ▼
+┌──────────────────────────┐    ┌──────────────────────────────┐
+│    HomeScreen            │    │      TodoListItem            │
+│                          │    │                              │
+│  • showCompleted         │    │  • isSimpleMode (新增)       │
+│    控制已完成折叠区展开   │    │    = hideDetails             │
+│  • hideCompletedItems    │    │    隐藏：描述/子任务/分类/    │
+│    (新增) 控制是否显示    │    │    关联提示/附件预览         │
+│    已完成项              │    │                              │
+│  • hideDetails (新增)    │    │  • 置顶图标位置：右上角       │
+│    传给 TodoListItem     │    │    (只图标，无文字)          │
+│  • isBatchMode           │    │                              │
+│  • sortType              │    │  显示：标题/提醒时间/        │
+│                          │    │  优先级图标/置顶图标/勾选框  │
+└──────────────────────────┘    └──────────────────────────────┘
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>关键状态语义区分</h3>
+  <div style="overflow-x: auto;">
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <thead>
+        <tr style="background: #f5f5f7;">
+          <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">状态名</th>
+          <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">类型</th>
+          <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">语义</th>
+          <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">影响范围</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;"><code>showCompleted</code> <span style="color:#999;">(现有)</span></td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">Boolean</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">已完成折叠区域是否展开</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">控制"已完成(N)"按钮点击后是否展开列表</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;"><code>hideCompletedItems</code> <span style="color:#52c41a;">(新增)</span></td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">Boolean</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">是否隐藏所有已完成项</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">true时：隐藏折叠区域 + 列表中所有已勾选待办</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px;"><code>hideDetails</code> <span style="color:#52c41a;">(新增)</span></td>
+          <td style="padding: 10px;">Boolean</td>
+          <td style="padding: 10px;">待办卡片是否简化显示</td>
+          <td style="padding: 10px;">true时：卡片仅显示标题/提醒/优先级/置顶/勾选框</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>状态组合场景</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>场景示例</h4>
+      <ul>
+        <li><strong>默认</strong>：hideDetails=false, hideCompletedItems=false, showCompleted=false</li>
+        <li><strong>仅隐藏详情</strong>：hideDetails=true → 卡片简化，已完成仍可见</li>
+        <li><strong>仅隐藏已完成</strong>：hideCompletedItems=true → 已完成项全隐藏</li>
+        <li><strong>全部隐藏</strong>：hideDetails=true + hideCompletedItems=true</li>
+        <li><strong>显示已完成</strong>：hideCompletedItems=false + showCompleted=true → 展开折叠区</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>互斥逻辑</h4>
+      <ul>
+        <li>hideCompletedItems=true 时，showCompleted 强制为 false（折叠区也隐藏）</li>
+        <li>hideCompletedItems=true 时，不显示"已完成(N)"按钮</li>
+        <li>hideCompletedItems 切回 false 时，showCompleted 保持原值</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>filteredTodos 数据流影响</h3>
+  <p style="font-size: 13px; color: #666; line-height: 1.6;">
+    <strong>现有</strong>：filteredTodos = pendingTodos + (showCompleted ? completedTodos : [])<br>
+    <strong>改造后</strong>：filteredTodos = pendingTodos + (hideCompletedItems ? [] : (showCompleted ? completedTodos : []))<br><br>
+    即 hideCompletedItems=true 时直接过滤掉所有已完成项，不进入 displayItems 列表。<br>
+    同时"已完成(N)"分隔符也不显示（completedCount 在 hideCompletedItems=true 时视为0）。
+  </p>
+</div>
+
+<div class="options" style="margin-top: 24px;">
+  <div class="option" data-choice="confirm" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>确认状态管理设计</h3>
+      <p>状态语义、持久化、组合逻辑均符合预期</p>
+    </div>
+  </div>
+  <div class="option" data-choice="adjust" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content">
+      <h3>需要调整</h3>
+      <p>状态逻辑需要调整，请在终端说明</p>
+    </div>
+  </div>
+</div>

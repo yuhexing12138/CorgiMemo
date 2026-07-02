@@ -1,0 +1,122 @@
+<h2>架构设计</h2>
+<p class="subtitle">组件关系与改造范围</p>
+
+<div class="mockup">
+  <div class="mockup-header">组件架构图</div>
+  <div class="mockup-body" style="padding: 20px; background: #fafafa;">
+    <div style="font-family: monospace; font-size: 12px; line-height: 1.8; color: #333;">
+<pre style="margin:0; padding:0; font-family: inherit;">
+┌─────────────────────────────────────────────────┐
+│                   MainScreen                     │
+│  (配置各页面的 topBarActionButtons + 右侧图标)    │
+└───────────────┬─────────────────────────────────┘
+                │
+    ┌───────────┴───────────┐
+    ▼                       ▼
+┌──────────────┐    ┌──────────────────┐
+│ EnhancedTopBar│    │ TodoMenuDropdown  │
+│  (改造)       │    │   (新建组件)       │
+│              │    │                  │
+│ 新增参数：    │    │ • DropdownMenu    │
+│ • rightIcon  │    │ • 7个功能项       │
+│   _Type:     │    │ • 状态切换逻辑    │
+│   CORGIE/    │    └────────┬─────────┘
+│   MORE_MENU  │             │
+│              │             │ 菜单项触发
+│ • onMore     │             ▼
+│   Click      │    ┌──────────────────┐
+└──────────────┘    │  HomeViewModel    │
+                    │   (扩展状态)      │
+                    │                  │
+                    │ 新增状态：        │
+                    │ • hideDetails    │
+                    │ • hideCompleted  │
+                    │                  │
+                    │ 现有状态：        │
+                    │ • showCompleted  │
+                    │ • isBatchMode    │
+                    │ • sortType       │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │   TodoListItem    │
+                    │    (改造)         │
+                    │                  │
+                    │ 新增参数：        │
+                    │ • isSimpleMode   │
+                    │                  │
+                    │ 简化模式隐藏：    │
+                    │ • 描述内容        │
+                    │ • 子任务进度/列表 │
+                    │ • 分类标签        │
+                    │ • 关联提示        │
+                    │ • 附件预览        │
+                    │                  │
+                    │ 置顶图标：        │
+                    │ 移至卡片右上角    │
+                    └──────────────────┘
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>各页面右侧图标配置</h3>
+  <div style="overflow-x: auto;">
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <thead>
+        <tr style="background: #f5f5f7;">
+          <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">页面</th>
+          <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">右侧图标</th>
+          <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">点击行为</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">📝 待办</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">⋮ 三点图标</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">弹出功能菜单（7项）</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">💡 灵感</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">⋮ 三点图标</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">Toast 提示"功能开发中..."</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">📅 日期</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">⋮ 三点图标</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">Toast 提示"功能开发中..."</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px;">👤 我的</td>
+          <td style="padding: 10px;">🐾 柯基爪子</td>
+          <td style="padding: 10px;">进入柯基详情页（保持现状）</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>改造文件清单</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>新建文件</h4>
+      <ul>
+        <li><code>TodoMenuDropdown.kt</code> — 待办页功能菜单组件</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>修改文件</h4>
+      <ul>
+        <li><code>EnhancedTopBar.kt</code> — 增加 rightIconType 参数</li>
+        <li><code>MainScreen.kt</code> — 配置各页面右侧图标</li>
+        <li><code>HomeViewModel.kt</code> — 新增 hideDetails / hideCompleted 状态</li>
+        <li><code>HomeScreen.kt</code> — 集成菜单、移除搜索框排序按钮</li>
+        <li><code>TodoListItem.kt</code> — 增加 isSimpleMode、置顶图标位置</li>
+        <li><code>CorgiPreferences.kt</code> — 持久化 hideDetails / hideCompleted</li>
+      </ul>
+    </div>
+  </div>
+</div>

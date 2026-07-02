@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.screens.main
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,8 @@ import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.ui.components.AppDrawerContent
 import com.corgimemo.app.ui.components.CategoryAction
 import com.corgimemo.app.ui.components.EnhancedTopBar
+import com.corgimemo.app.ui.components.RightIconType
+import com.corgimemo.app.ui.components.TodoMenuDropdown
 import com.corgimemo.app.ui.components.FloatingCorgiButton
 import com.corgimemo.app.ui.components.navigation.BubbleMenuOverlay
 import com.corgimemo.app.ui.components.navigation.BubbleType
@@ -120,6 +123,16 @@ fun MainScreen(navController: NavController) {
     val selectedTodoIds by homeViewModel.selectedTodoIds.collectAsState()
     val filteredTodos by homeViewModel.filteredTodos.collectAsState()
 
+    /**
+     * 三点功能菜单状态（在 MainScreen 层订阅，供 EnhancedTopBar.dropdownContent 使用）
+     *
+     * 背景：菜单已从 HomeScreen 迁移到 EnhancedTopBar 内部渲染（解决 DropdownMenu
+     * 锚点漂移问题），所以菜单所需的 ViewModel 状态需在 MainScreen 层收集。
+     */
+    val menuExpanded by homeViewModel.menuExpanded.collectAsState()
+    val hideDetails by homeViewModel.hideDetails.collectAsState()
+    val hideCompletedItems by homeViewModel.hideCompletedItems.collectAsState()
+
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var showRenameCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
     var showDeleteCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
@@ -145,6 +158,41 @@ fun MainScreen(navController: NavController) {
         TabItem.DATE -> "📅 特殊日期"
         TabItem.PROFILE -> "👤 我的"
         TabItem.EDIT -> ""
+    }
+
+    /**
+     * 顶部栏右侧图标类型
+     *
+     * - TODO / INSPIRE / DATE：使用三点菜单（MORE_MENU），提供功能菜单入口
+     * - PROFILE：使用柯基爪子图标（CORGIE），跳转柯基详情
+     * - EDIT：中央编辑按钮非真实 Tab，使用默认 CORGIE
+     */
+    val rightIconType = when (selectedTab) {
+        TabItem.TODO -> RightIconType.MORE_MENU
+        TabItem.INSPIRE -> RightIconType.MORE_MENU
+        TabItem.DATE -> RightIconType.MORE_MENU
+        TabItem.PROFILE -> RightIconType.CORGIE
+        else -> RightIconType.CORGIE
+    }
+
+    /**
+     * 三点菜单点击回调
+     *
+     * - TODO：展开 HomeScreen 的 TodoMenuDropdown（通过 ViewModel 状态触发）
+     * - INSPIRE / DATE：暂未实现，弹 Toast 提示
+     * - 其他：无回调（CORGIE 图标走 onCorgiClick）
+     */
+    val onMoreClick: (() -> Unit)? = when (selectedTab) {
+        TabItem.TODO -> {
+            { homeViewModel.setMenuExpanded(true) }
+        }
+        TabItem.INSPIRE -> {
+            { Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show() }
+        }
+        TabItem.DATE -> {
+            { Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show() }
+        }
+        else -> null
     }
 
     val topBarActionButtons: List<@Composable () -> Unit> = when (selectedTab) {
@@ -256,7 +304,39 @@ fun MainScreen(navController: NavController) {
                                 navController.navigate(Screen.CorgiDetail.route)
                             }
                         },
-                        actionButtons = effectiveActionButtons
+                        actionButtons = effectiveActionButtons,
+                        /**
+                         * 批量模式时强制使用柯基图标并禁用三点菜单回调，
+                         * 避免批量操作期间误触发功能菜单。
+                         */
+                        rightIconType = if (isBatchMode) RightIconType.CORGIE else rightIconType,
+                        onMoreClick = if (isBatchMode) null else onMoreClick,
+                        /**
+                         * 三点功能菜单内容（仅 TODO Tab 注入）
+                         *
+                         * 关键：菜单必须在 EnhancedTopBar 内部与 IconButton 共同 Box 渲染，
+                         * 才能保证 Material 3 DropdownMenu 锚定到三点按钮正下方。
+                         * 若在 HomeScreen 或外层 Box 渲染，菜单会锚定到外层 Box 左下角。
+                         */
+                        dropdownContent = if (selectedTab == TabItem.TODO && !isBatchMode) {
+                            {
+                                TodoMenuDropdown(
+                                    expanded = menuExpanded,
+                                    onDismiss = { homeViewModel.setMenuExpanded(false) },
+                                    hideDetails = hideDetails,
+                                    onToggleHideDetails = { homeViewModel.toggleHideDetails() },
+                                    hideCompletedItems = hideCompletedItems,
+                                    onToggleHideCompletedItems = { homeViewModel.toggleHideCompletedItems() },
+                                    onSortClick = { homeViewModel.setShowSortSheet(true) },
+                                    onBatchSelectClick = {
+                                        filteredTodos.firstOrNull()?.let { homeViewModel.enterBatchMode(it.id) }
+                                    },
+                                    onPlaceholderClick = {
+                                        Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            }
+                        } else null
                     )
                 }
             },

@@ -1,0 +1,145 @@
+<h2>功能菜单弹窗样式选择</h2>
+<p class="subtitle">点击右上角 ⋮ 三点图标后弹出的功能菜单，你倾向于哪种样式？</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 16px; background: #f8f9fa;">
+      <div style="background: white; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); padding: 8px 0; width: 200px; margin: 0 auto;">
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px;">👁️</span>
+          <span style="font-size: 14px;">隐藏详情</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px;">☑️</span>
+          <span style="font-size: 14px;">隐藏已完成</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px;">📊</span>
+          <span style="font-size: 14px;">待办排序</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px;">📁</span>
+          <span style="font-size: 14px;">管理分组</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px;">🔲</span>
+          <span style="font-size: 14px;">批量选择</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px;">↗️</span>
+          <span style="font-size: 14px;">分享</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px;">📋</span>
+          <span style="font-size: 14px;">创建待办副本</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 经典下拉菜单</h3>
+      <p>Material 3 DropdownMenu 风格，白底卡片+阴影，每项一行（图标+文字），简洁紧凑，贴近原生 Android 体验</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 16px; background: #f8f9fa;">
+      <div style="background: white; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 12px; width: 220px; margin: 0 auto;">
+        <div style="display: flex; align-items: center; padding: 14px; gap: 14px; border-radius: 10px; background: #fff5f0;">
+          <span style="font-size: 20px;">👁️</span>
+          <span style="font-size: 14px; font-weight: 500;">隐藏详情</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 14px; gap: 14px; border-radius: 10px; margin-top: 4px;">
+          <span style="font-size: 20px;">☑️</span>
+          <span style="font-size: 14px; font-weight: 500;">隐藏已完成</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 14px; gap: 14px; border-radius: 10px; margin-top: 4px;">
+          <span style="font-size: 20px;">📊</span>
+          <span style="font-size: 14px; font-weight: 500;">待办排序</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 14px; gap: 14px; border-radius: 10px; margin-top: 4px;">
+          <span style="font-size: 20px;">📁</span>
+          <span style="font-size: 14px; font-weight: 500;">管理分组</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 14px; gap: 14px; border-radius: 10px; margin-top: 4px;">
+          <span style="font-size: 20px;">🔲</span>
+          <span style="font-size: 14px; font-weight: 500;">批量选择</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 14px; gap: 14px; border-radius: 10px; margin-top: 4px;">
+          <span style="font-size: 20px;">↗️</span>
+          <span style="font-size: 14px; font-weight: 500;">分享</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 14px; gap: 14px; border-radius: 10px; margin-top: 4px;">
+          <span style="font-size: 20px;">📋</span>
+          <span style="font-size: 14px; font-weight: 500;">创建待办副本</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 圆角卡片菜单</h3>
+      <p>更大圆角+更宽间距+首项高亮背景，每项有独立触摸反馈区域，视觉层次更丰富，更现代</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 16px; background: #f8f9fa;">
+      <div style="background: white; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); padding: 8px 0; width: 200px; margin: 0 auto;">
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px; color: #FF9A5C;">👁️</span>
+          <span style="font-size: 14px; flex: 1;">隐藏详情</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px; color: #FF9A5C;">☑️</span>
+          <span style="font-size: 14px; flex: 1;">隐藏已完成</span>
+        </div>
+        <div style="height: 1px; background: #f0f0f0; margin: 4px 16px;"></div>
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px; color: #FF9A5C;">📊</span>
+          <span style="font-size: 14px; flex: 1;">待办排序</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px; color: #FF9A5C;">📁</span>
+          <span style="font-size: 14px; flex: 1;">管理分组</span>
+        </div>
+        <div style="height: 1px; background: #f0f0f0; margin: 4px 16px;"></div>
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px; color: #FF9A5C;">🔲</span>
+          <span style="font-size: 14px; flex: 1;">批量选择</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px; color: #FF9A5C;">↗️</span>
+          <span style="font-size: 14px; flex: 1;">分享</span>
+        </div>
+        <div style="display: flex; align-items: center; padding: 12px 16px; gap: 12px;">
+          <span style="font-size: 18px; color: #FF9A5C;">📋</span>
+          <span style="font-size: 14px; flex: 1;">创建待办副本</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 分组分隔菜单</h3>
+      <p>在 A 的基础上用细分隔线将功能分组：显示控制 / 排序管理 / 操作类，图标用品牌色统一，结构更清晰</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>三种样式对比</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>各方案特点</h4>
+      <ul>
+        <li><strong>A 经典下拉</strong>：原生体验，紧凑高效，适合功能项较多时</li>
+        <li><strong>B 圆角卡片</strong>：现代感强，触摸区域大，首项高亮引导视线</li>
+        <li><strong>C 分组分隔</strong>：通过分隔线分组，功能逻辑更清晰</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>注意事项</h4>
+      <ul>
+        <li>7 个功能项较多，需考虑高度控制</li>
+        <li>切换态（隐藏↔显示）需要明确视觉反馈</li>
+        <li>占位项需要弱化处理避免误操作</li>
+      </ul>
+    </div>
+  </div>
+</div>

@@ -154,6 +154,10 @@ class CorgiPreferences(
         const val REDO_LOG = "redo_log"
         /** V2.8: 待办页"已完成"区域展开状态 */
         const val SHOW_COMPLETED = "show_completed"
+        /** V2.9: 待办卡片简化显示（隐藏详情） */
+        const val HIDE_DETAILS = "hide_details"
+        /** V2.9: 隐藏所有已完成项 */
+        const val HIDE_COMPLETED_ITEMS = "hide_completed_items"
     }
 
     // ==================== 数据迁移（DataStore → ESP）====================
@@ -433,6 +437,20 @@ class CorgiPreferences(
     /** 设置待办页"已完成"区域展开状态 */
     suspend fun setShowCompleted(show: Boolean) = withContext(Dispatchers.IO) {
         esp.edit().putBoolean(Keys.SHOW_COMPLETED, show).apply()
+    }
+
+    /** V2.9: 待办卡片简化显示 */
+    val hideDetails: Flow<Boolean> = booleanFlow(Keys.HIDE_DETAILS, false)
+
+    suspend fun setHideDetails(hide: Boolean) = withContext(Dispatchers.IO) {
+        esp.edit().putBoolean(Keys.HIDE_DETAILS, hide).apply()
+    }
+
+    /** V2.9: 隐藏所有已完成项 */
+    val hideCompletedItems: Flow<Boolean> = booleanFlow(Keys.HIDE_COMPLETED_ITEMS, false)
+
+    suspend fun setHideCompletedItems(hide: Boolean) = withContext(Dispatchers.IO) {
+        esp.edit().putBoolean(Keys.HIDE_COMPLETED_ITEMS, hide).apply()
     }
 
     /**

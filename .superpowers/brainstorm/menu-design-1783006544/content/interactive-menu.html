@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的待办 - 菜单交互原型</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f5f7;
+    color: #1a1a1a;
+    max-width: 420px;
+    margin: 0 auto;
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* 顶部栏 */
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    background: #ffffff;
+    border-bottom: 1px solid #f0f0f0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .top-bar-left, .top-bar-right { display: flex; align-items: center; gap: 8px; }
+  .icon-btn {
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent;
+    cursor: pointer; border-radius: 50%;
+    transition: background 0.15s;
+  }
+  .icon-btn:active { background: rgba(0,0,0,0.08); }
+  .icon-btn svg { width: 24px; height: 24px; fill: #1a1a1a; }
+  .title {
+    font-size: 18px; font-weight: 600; flex: 1;
+    margin-left: 8px; color: #1a1a1a;
+  }
+
+  /* 搜索框 */
+  .search-bar {
+    margin: 12px 16px;
+    background: #f5f5f7;
+    border-radius: 12px;
+    padding: 10px 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .search-bar svg { width: 18px; height: 18px; fill: #999; }
+  .search-bar input {
+    border: none; background: transparent; outline: none;
+    flex: 1; font-size: 14px; color: #1a1a1a;
+  }
+
+  /* 待办卡片 */
+  .todo-card {
+    background: #fff;
+    margin: 8px 12px;
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: all 0.3s ease;
+  }
+  .todo-card.detail-mode { padding: 14px 16px; }
+  .todo-card.simple-mode { padding: 10px 16px; }
+  .todo-row { display: flex; align-items: flex-start; gap: 12px; }
+  .checkbox {
+    width: 22px; height: 22px;
+    border: 2px solid #ddd;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 2px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .checkbox.checked { background: #FF9A5C; border-color: #FF9A5C; }
+  .checkbox.checked::after {
+    content: '✓'; color: white; font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; height: 100%; font-weight: bold;
+  }
+  .todo-content { flex: 1; }
+  .todo-title { font-size: 15px; font-weight: 500; color: #1a1a1a; margin-bottom: 4px; }
+  .todo-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .todo-meta-item { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #888; }
+  .todo-meta-item svg { width: 14px; height: 14px; fill: #888; }
+  .priority-dot { width: 8px; height: 8px; border-radius: 50%; background: #FF9A5C; }
+  .priority-dot.high { background: #ff4d4f; }
+  .priority-dot.medium { background: #FF9A5C; }
+  .priority-dot.low { background: #52c41a; }
+  .pin-icon { color: #FF9A5C; font-size: 14px; }
+  .todo-desc { font-size: 13px; color: #666; margin-top: 6px; line-height: 1.4; }
+  .subtask-progress { font-size: 12px; color: #888; margin-top: 4px; }
+
+  /* 简化模式（隐藏详情时） */
+  .simple-mode .todo-desc,
+  .simple-mode .subtask-progress,
+  .simple-mode .category-tag { display: none; }
+  .simple-mode .todo-row { align-items: center; }
+
+  /* 已完成区域 */
+  .completed-section {
+    margin: 16px 12px;
+    padding: 12px 16px;
+    background: #fff;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer;
+  }
+  .completed-section.hidden { display: none; }
+  .completed-text { font-size: 14px; color: #666; }
+  .completed-arrow { transition: transform 0.3s; }
+  .completed-arrow.expanded { transform: rotate(180deg); }
+
+  /* 遮罩 */
+  .overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.3);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+    z-index: 200;
+  }
+  .overlay.show { opacity: 1; pointer-events: auto; }
+
+  /* 菜单弹窗 - 三种样式 */
+  .menu-popup {
+    position: absolute;
+    top: 60px;
+    right: 16px;
+    background: #fff;
+    z-index: 300;
+    opacity: 0;
+    transform: scale(0.9) translateY(-8px);
+    transform-origin: top right;
+    pointer-events: none;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .menu-popup.show {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    pointer-events: auto;
+  }
+
+  /* 样式 A: 经典下拉 */
+  .menu-style-a {
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    padding: 8px 0;
+    width: 200px;
+  }
+  .menu-style-a .menu-item {
+    display: flex; align-items: center;
+    padding: 12px 16px; gap: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .menu-style-a .menu-item:active { background: #f5f5f7; }
+  .menu-style-a .menu-item-icon { font-size: 18px; width: 24px; text-align: center; }
+  .menu-style-a .menu-item-text { font-size: 14px; color: #1a1a1a; }
+  .menu-style-a .menu-item.disabled { opacity: 0.4; }
+
+  /* 样式 B: 圆角卡片 */
+  .menu-style-b {
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    padding: 8px;
+    width: 220px;
+  }
+  .menu-style-b .menu-item {
+    display: flex; align-items: center;
+    padding: 14px; gap: 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-bottom: 2px;
+  }
+  .menu-style-b .menu-item:active { background: #f5f5f7; }
+  .menu-style-b .menu-item:first-child { background: #fff5f0; }
+  .menu-style-b .menu-item-icon { font-size: 20px; width: 24px; text-align: center; }
+  .menu-style-b .menu-item-text { font-size: 14px; font-weight: 500; color: #1a1a1a; }
+  .menu-style-b .menu-item.disabled { opacity: 0.4; }
+
+  /* 样式 C: 分组分隔 */
+  .menu-style-c {
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    padding: 8px 0;
+    width: 210px;
+  }
+  .menu-style-c .menu-item {
+    display: flex; align-items: center;
+    padding: 12px 16px; gap: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .menu-style-c .menu-item:active { background: #f5f5f7; }
+  .menu-style-c .menu-item-icon { font-size: 18px; width: 24px; text-align: center; color: #FF9A5C; }
+  .menu-style-c .menu-item-text { font-size: 14px; color: #1a1a1a; flex: 1; }
+  .menu-style-c .menu-divider { height: 1px; background: #f0f0f0; margin: 4px 16px; }
+  .menu-style-c .menu-item.disabled { opacity: 0.4; }
+
+  /* 样式切换按钮 */
+  .style-switcher {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #fff;
+    border-radius: 24px;
+    padding: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    display: flex;
+    gap: 4px;
+    z-index: 400;
+  }
+  .style-btn {
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    border-radius: 18px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.2s;
+  }
+  .style-btn.active {
+    background: #FF9A5C;
+    color: white;
+  }
+
+  /* 状态提示 */
+  .status-tip {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    z-index: 500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  .status-tip.show { opacity: 1; }
+
+  /* FAB */
+  .fab {
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    width: 56px; height: 56px;
+    background: #FF9A5C;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 12px rgba(255,154,92,0.4);
+    z-index: 50;
+  }
+  .fab svg { width: 24px; height: 24px; fill: white; }
+
+  /* 底部导航 */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: #fff;
+    border-top: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+    z-index: 100;
+  }
+  .nav-item {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 2px; padding: 4px 12px;
+    cursor: pointer;
+  }
+  .nav-item svg { width: 22px; height: 22px; fill: #999; }
+  .nav-item.active svg { fill: #FF9A5C; }
+  .nav-item span { font-size: 10px; color: #999; }
+  .nav-item.active span { color: #FF9A5C; }
+</style>
+</head>
+<body>
+
+<!-- 状态提示 -->
+<div class="status-tip" id="statusTip">已切换</div>
+
+<!-- 顶部栏 -->
+<div class="top-bar">
+  <div class="top-bar-left">
+    <button class="icon-btn">
+      <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+    </button>
+    <span class="title">📝 我的待办</span>
+  </div>
+  <div class="top-bar-right">
+    <button class="icon-btn" onclick="showTip('统计页面（占位）')">
+      <svg viewBox="0 0 24 24"><path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/></svg>
+    </button>
+    <!-- 三点图标 -->
+    <button class="icon-btn" id="menuTrigger" onclick="toggleMenu()">
+      <svg viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- 搜索框 -->
+<div class="search-bar">
+  <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+  <input placeholder="搜索待办..." readonly>
+</div>
+
+<!-- 待办列表 -->
+<div id="todoList">
+  <div class="todo-card detail-mode" id="todo1">
+    <div class="todo-row">
+      <div class="checkbox"></div>
+      <div class="todo-content">
+        <div class="todo-title">完成项目周报</div>
+        <div class="todo-meta">
+          <div class="todo-meta-item">
+            <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+            <span>今天 18:00</span>
+          </div>
+          <div class="todo-meta-item">
+            <div class="priority-dot high"></div>
+            <span>高优先级</span>
+          </div>
+          <div class="todo-meta-item">
+            <span class="pin-icon">📌</span>
+          </div>
+        </div>
+        <div class="todo-desc">整理本周项目进展，包括完成的任务、遇到的问题和下周计划</div>
+        <div class="subtask-progress">子任务 2/5</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="todo-card detail-mode" id="todo2">
+    <div class="todo-row">
+      <div class="checkbox"></div>
+      <div class="todo-content">
+        <div class="todo-title">购买生日礼物</div>
+        <div class="todo-meta">
+          <div class="todo-meta-item">
+            <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/></svg>
+            <span>明天</span>
+          </div>
+          <div class="todo-meta-item">
+            <div class="priority-dot medium"></div>
+            <span>中优先级</span>
+          </div>
+        </div>
+        <div class="todo-desc">妈妈生日，准备一份特别的礼物</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="todo-card detail-mode" id="todo3">
+    <div class="todo-row">
+      <div class="checkbox checked"></div>
+      <div class="todo-content">
+        <div class="todo-title" style="text-decoration: line-through; color: #999;">晨跑 30 分钟</div>
+        <div class="todo-meta">
+          <div class="todo-meta-item">
+            <div class="priority-dot low"></div>
+            <span>低优先级</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 已完成区域 -->
+  <div class="completed-section" id="completedSection">
+    <span class="completed-text">已完成 (1)</span>
+    <svg class="completed-arrow" viewBox="0 0 24 24" style="width:20px;height:20px;fill:#999;"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+  </div>
+</div>
+
+<!-- 遮罩 -->
+<div class="overlay" id="overlay" onclick="closeMenu()"></div>
+
+<!-- 菜单弹窗 -->
+<div class="menu-popup menu-style-a" id="menuPopup">
+  <div class="menu-item" onclick="toggleDetail()">
+    <span class="menu-item-icon">👁️</span>
+    <span class="menu-item-text" id="detailText">隐藏详情</span>
+  </div>
+  <div class="menu-item" onclick="toggleCompleted()">
+    <span class="menu-item-icon">☑️</span>
+    <span class="menu-item-text" id="completedText">隐藏已完成</span>
+  </div>
+  <div class="menu-item" onclick="showTip('打开排序弹窗')">
+    <span class="menu-item-icon">📊</span>
+    <span class="menu-item-text">待办排序</span>
+  </div>
+  <div class="menu-item disabled" onclick="showTip('管理分组（占位）')">
+    <span class="menu-item-icon">📁</span>
+    <span class="menu-item-text">管理分组</span>
+  </div>
+  <div class="menu-item" onclick="showTip('进入批量选择模式')">
+    <span class="menu-item-icon">🔲</span>
+    <span class="menu-item-text">批量选择</span>
+  </div>
+  <div class="menu-item disabled" onclick="showTip('分享（占位）')">
+    <span class="menu-item-icon">↗️</span>
+    <span class="menu-item-text">分享</span>
+  </div>
+  <div class="menu-item disabled" onclick="showTip('创建待办副本（占位）')">
+    <span class="menu-item-icon">📋</span>
+    <span class="menu-item-text">创建待办副本</span>
+  </div>
+</div>
+
+<!-- FAB -->
+<div class="fab">
+  <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+</div>
+
+<!-- 底部导航 -->
+<div class="bottom-nav">
+  <div class="nav-item active">
+    <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.11 0 2-.9 2-2V5c0-1.1-.89-2-2-2zm-9 14l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+    <span>待办</span>
+  </div>
+  <div class="nav-item">
+    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-.99-13L7 12l4.01 5H9l-4-5 4-5h2.01zm5 0L12 12l4.01 5H14l-4-5 4-5h2.01z"/></svg>
+    <span>灵感</span>
+  </div>
+  <div class="nav-item">
+    <svg viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>
+    <span>日期</span>
+  </div>
+  <div class="nav-item">
+    <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+    <span>我的</span>
+  </div>
+</div>
+
+<!-- 样式切换器 -->
+<div class="style-switcher">
+  <button class="style-btn active" onclick="switchStyle('a', this)">A 经典</button>
+  <button class="style-btn" onclick="switchStyle('b', this)">B 圆角</button>
+  <button class="style-btn" onclick="switchStyle('c', this)">C 分组</button>
+</div>
+
+<script>
+let menuOpen = false;
+let detailHidden = false;
+let completedHidden = false;
+let currentStyle = 'a';
+
+function toggleMenu() {
+  menuOpen = !menuOpen;
+  const popup = document.getElementById('menuPopup');
+  const overlay = document.getElementById('overlay');
+  if (menuOpen) {
+    popup.classList.add('show');
+    overlay.classList.add('show');
+  } else {
+    popup.classList.remove('show');
+    overlay.classList.remove('show');
+  }
+}
+
+function closeMenu() {
+  menuOpen = false;
+  document.getElementById('menuPopup').classList.remove('show');
+  document.getElementById('overlay').classList.remove('show');
+}
+
+function toggleDetail() {
+  detailHidden = !detailHidden;
+  const text = document.getElementById('detailText');
+  text.textContent = detailHidden ? '显示详情' : '隐藏详情';
+  const cards = document.querySelectorAll('.todo-card');
+  cards.forEach(card => {
+    if (detailHidden) {
+      card.classList.remove('detail-mode');
+      card.classList.add('simple-mode');
+    } else {
+      card.classList.remove('simple-mode');
+      card.classList.add('detail-mode');
+    }
+  });
+  showTip(detailHidden ? '已切换为简化显示' : '已切换为完整显示');
+}
+
+function toggleCompleted() {
+  completedHidden = !completedHidden;
+  const text = document.getElementById('completedText');
+  text.textContent = completedHidden ? '显示已完成' : '隐藏已完成';
+  const section = document.getElementById('completedSection');
+  const todo3 = document.getElementById('todo3');
+  if (completedHidden) {
+    section.classList.add('hidden');
+    todo3.style.display = 'none';
+    showTip('已隐藏已完成');
+  } else {
+    section.classList.remove('hidden');
+    todo3.style.display = 'block';
+    showTip('已显示已完成');
+  }
+}
+
+function showTip(msg) {
+  const tip = document.getElementById('statusTip');
+  tip.textContent = msg;
+  tip.classList.add('show');
+  setTimeout(() => tip.classList.remove('show'), 1500);
+}
+
+function switchStyle(style, btn) {
+  currentStyle = style;
+  document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const popup = document.getElementById('menuPopup');
+  popup.className = 'menu-popup menu-style-' + style;
+  if (menuOpen) popup.classList.add('show');
+  // 重建菜单内容
+  const detailT = detailHidden ? '显示详情' : '隐藏详情';
+  const completedT = completedHidden ? '显示已完成' : '隐藏已完成';
+  let html = '';
+  if (style === 'a') {
+    html = `
+      <div class="menu-item" onclick="toggleDetail()"><span class="menu-item-icon">👁️</span><span class="menu-item-text" id="detailText">${detailT}</span></div>
+      <div class="menu-item" onclick="toggleCompleted()"><span class="menu-item-icon">☑️</span><span class="menu-item-text" id="completedText">${completedT}</span></div>
+      <div class="menu-item" onclick="showTip('打开排序弹窗')"><span class="menu-item-icon">📊</span><span class="menu-item-text">待办排序</span></div>
+      <div class="menu-item disabled" onclick="showTip('管理分组（占位）')"><span class="menu-item-icon">📁</span><span class="menu-item-text">管理分组</span></div>
+      <div class="menu-item" onclick="showTip('进入批量选择模式')"><span class="menu-item-icon">🔲</span><span class="menu-item-text">批量选择</span></div>
+      <div class="menu-item disabled" onclick="showTip('分享（占位）')"><span class="menu-item-icon">↗️</span><span class="menu-item-text">分享</span></div>
+      <div class="menu-item disabled" onclick="showTip('创建待办副本（占位）')"><span class="menu-item-icon">📋</span><span class="menu-item-text">创建待办副本</span></div>
+    `;
+  } else if (style === 'b') {
+    html = `
+      <div class="menu-item" onclick="toggleDetail()"><span class="menu-item-icon">👁️</span><span class="menu-item-text" id="detailText">${detailT}</span></div>
+      <div class="menu-item" onclick="toggleCompleted()"><span class="menu-item-icon">☑️</span><span class="menu-item-text" id="completedText">${completedT}</span></div>
+      <div class="menu-item" onclick="showTip('打开排序弹窗')"><span class="menu-item-icon">📊</span><span class="menu-item-text">待办排序</span></div>
+      <div class="menu-item disabled" onclick="showTip('管理分组（占位）')"><span class="menu-item-icon">📁</span><span class="menu-item-text">管理分组</span></div>
+      <div class="menu-item" onclick="showTip('进入批量选择模式')"><span class="menu-item-icon">🔲</span><span class="menu-item-text">批量选择</span></div>
+      <div class="menu-item disabled" onclick="showTip('分享（占位）')"><span class="menu-item-icon">↗️</span><span class="menu-item-text">分享</span></div>
+      <div class="menu-item disabled" onclick="showTip('创建待办副本（占位）')"><span class="menu-item-icon">📋</span><span class="menu-item-text">创建待办副本</span></div>
+    `;
+  } else if (style === 'c') {
+    html = `
+      <div class="menu-item" onclick="toggleDetail()"><span class="menu-item-icon">👁️</span><span class="menu-item-text" id="detailText">${detailT}</span></div>
+      <div class="menu-item" onclick="toggleCompleted()"><span class="menu-item-icon">☑️</span><span class="menu-item-text" id="completedText">${completedT}</span></div>
+      <div class="menu-divider"></div>
+      <div class="menu-item" onclick="showTip('打开排序弹窗')"><span class="menu-item-icon">📊</span><span class="menu-item-text">待办排序</span></div>
+      <div class="menu-item disabled" onclick="showTip('管理分组（占位）')"><span class="menu-item-icon">📁</span><span class="menu-item-text">管理分组</span></div>
+      <div class="menu-divider"></div>
+      <div class="menu-item" onclick="showTip('进入批量选择模式')"><span class="menu-item-icon">🔲</span><span class="menu-item-text">批量选择</span></div>
+      <div class="menu-item disabled" onclick="showTip('分享（占位）')"><span class="menu-item-icon">↗️</span><span class="menu-item-text">分享</span></div>
+      <div class="menu-item disabled" onclick="showTip('创建待办副本（占位）')"><span class="menu-item-icon">📋</span><span class="menu-item-text">创建待办副本</span></div>
+    `;
+  }
+  popup.innerHTML = html;
+  if (menuOpen) popup.classList.add('show');
+  showTip('已切换到样式 ' + style.toUpperCase());
+}
+</script>
+
+</body>
+</html>

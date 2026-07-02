@@ -1,0 +1,156 @@
+<h2>TodoListItem 改造与测试策略</h2>
+<p class="subtitle">卡片组件改造细节、置顶图标位置调整与测试方案</p>
+
+<div class="section">
+  <h3>TodoListItem 改造：置顶图标位置</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">改造前：置顶在 meta 行</div>
+      <div class="mockup-body" style="background: #f5f5f7; padding: 12px;">
+        <div style="background: #fff; border-radius: 12px; padding: 14px 16px; position: relative;">
+          <div style="display: flex; align-items: flex-start; gap: 12px;">
+            <div style="width: 22px; height: 22px; border: 2px solid #ddd; border-radius: 50%; flex-shrink: 0; margin-top: 2px;"></div>
+            <div style="flex: 1;">
+              <div style="font-size: 15px; font-weight: 500; margin-bottom: 4px;">完成项目周报</div>
+              <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <span style="font-size: 12px; color: #888;">⏰ 今天 18:00</span>
+                <span style="font-size: 12px; color: #888;">🔴 高优先级</span>
+                <span style="font-size: 12px; color: #888;">📌 置顶</span>
+              </div>
+            </div>
+          </div>
+          <div style="position: absolute; top: 8px; right: 12px; font-size: 10px; color: #ff4d4f;">↑ 位置</div>
+        </div>
+        <p style="font-size: 11px; color: #999; text-align: center; margin-top: 8px;">置顶在 meta 行（带文字"置顶"）</p>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">改造后：置顶在右上角</div>
+      <div class="mockup-body" style="background: #f5f5f7; padding: 12px;">
+        <div style="background: #fff; border-radius: 12px; padding: 14px 16px; position: relative;">
+          <div style="position: absolute; top: 10px; right: 12px; font-size: 16px;">📌</div>
+          <div style="display: flex; align-items: flex-start; gap: 12px;">
+            <div style="width: 22px; height: 22px; border: 2px solid #ddd; border-radius: 50%; flex-shrink: 0; margin-top: 2px;"></div>
+            <div style="flex: 1; padding-right: 24px;">
+              <div style="font-size: 15px; font-weight: 500; margin-bottom: 4px;">完成项目周报</div>
+              <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <span style="font-size: 12px; color: #888;">⏰ 今天 18:00</span>
+                <span style="font-size: 12px; color: #888;">🔴 高优先级</span>
+              </div>
+            </div>
+          </div>
+          <div style="position: absolute; top: 8px; right: 12px; font-size: 10px; color: #52c41a;">↑ 新位置</div>
+        </div>
+        <p style="font-size: 11px; color: #999; text-align: center; margin-top: 8px;">置顶图标在右上角（只图标，无文字）</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>TodoListItem 新增参数</h3>
+  <div style="background: #f8f9fa; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; line-height: 1.6;">
+<pre style="margin:0;">
+@Composable
+fun TodoListItem(
+    todo: Todo,
+    isSimpleMode: Boolean = false,  <span style="color:#52c41a;">// 新增：简化模式</span>
+    // ... 其他现有参数保持不变
+) {
+    // isSimpleMode=true 时隐藏：
+    //   - todo.content（描述）
+    //   - subtasks（子任务进度+列表）
+    //   - categoryTag（分类标签）
+    //   - inspirationLink（关联提示）
+    //   - attachments（附件预览）
+
+    // 置顶图标：使用 Box + align(Alignment.TopEnd) 定位到右上角
+    // 两种模式（完整/简化）下置顶图标都在右上角，只图标无文字
+}</pre>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>错误处理与边界情况</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>需处理的边界情况</h4>
+      <ul>
+        <li><strong>空状态</strong>：hideCompletedItems=true 且所有待办都已完成时，显示空状态提示</li>
+        <li><strong>批量模式+菜单</strong>：批量模式下点击三点菜单，先退出批量模式再打开菜单</li>
+        <li><strong>排序+隐藏</strong>：hideCompletedItems=true 时排序仍作用于未完成项</li>
+        <li><strong>状态恢复</strong>：从后台恢复时，hideDetails/hideCompletedItems 从 DataStore 正确加载</li>
+        <li><strong>子任务展开+简化</strong>：isSimpleMode=true 时强制收起子任务（忽略 expandState）</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>不做的事（YAGNI）</h4>
+      <ul>
+        <li>不实现管理分组/分享/创建副本的实际功能（仅 Toast）</li>
+        <li>不添加菜单项的长按操作</li>
+        <li>不实现菜单项的拖拽排序</li>
+        <li>不添加 hideDetails 的动画过渡（直接切换）</li>
+        <li>不为灵感/日期页的三点菜单实现实际功能</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>测试策略</h3>
+  <div style="overflow-x: auto;">
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <thead>
+        <tr style="background: #f5f5f7;">
+          <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">测试类型</th>
+          <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">覆盖范围</th>
+          <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">方式</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">手动验证</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">菜单弹出/关闭、7项功能点击、切换态、占位项 Toast</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">运行 App 逐项点击验证</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">状态持久化</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">重启后 hideDetails/hideCompletedItems 保持</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">切换后杀进程重启验证</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">组合状态</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">hideDetails+hideCompletedItems 各种组合</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">手动切换组合验证 UI 正确</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">手势冲突</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">简化模式下子任务勾选、卡片点击不冲突</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">遵循 project_memory 中的 pressFeedback 规则</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px;">图标显示</td>
+          <td style="padding: 10px;">所有 Material Icons 正确渲染无缺失</td>
+          <td style="padding: 10px;">编译通过 + 运行时肉眼检查</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="options" style="margin-top: 24px;">
+  <div class="option" data-choice="confirm" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>确认全部设计</h3>
+      <p>TodoListItem 改造、错误处理、测试策略均符合预期，可以编写设计文档</p>
+    </div>
+  </div>
+  <div class="option" data-choice="adjust" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content">
+      <h3>需要调整</h3>
+      <p>部分内容需要调整，请在终端说明</p>
+    </div>
+  </div>
+</div>

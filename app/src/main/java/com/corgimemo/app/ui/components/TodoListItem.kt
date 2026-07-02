@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -92,6 +93,8 @@ import kotlinx.coroutines.delay
  * @param onToggleSubTask 切换子任务完成状态回调
  * @param relationHint 关联提示文字
  * @param searchQuery 搜索关键词（非空时对标题和内容进行高亮显示）
+ * @param isClickBlocked 左滑操作面板是否展开（true 时屏蔽详情点击 / 子待办展开 / 长按 / 复选框）
+ * @param isSimpleMode 简化模式（true 时隐藏分类标签、子任务进度文本、子任务列表、附件数量，仅保留标题/提醒/优先级/置顶/勾选框）
  */
 @OptIn(
     androidx.compose.foundation.ExperimentalFoundationApi::class,
@@ -125,7 +128,9 @@ fun TodoListItem(
     /** 容器拖拽是否激活（手势协调用，激活时子项不再消费长按后的移动） */
     isDragActive: Boolean = false,
     /** 左滑操作面板是否展开（true 时屏蔽详情点击 / 子待办展开 / 长按 / 复选框） */
-    isClickBlocked: Boolean = false
+    isClickBlocked: Boolean = false,
+    /** 简化模式：隐藏分类标签 / 子任务进度文本 / 子任务列表 / 附件数量，仅保留标题/提醒/优先级/置顶/勾选框 */
+    isSimpleMode: Boolean = false
 ) {
 
     /** 逐区间动画参数：每字符延迟 2ms，最大延迟上限 300ms */
@@ -138,6 +143,14 @@ fun TodoListItem(
      * 当 searchQuery 非空时启用，所有高亮区间以「从左到右波浪扫描」方式依次淡入。
      */
     val isHighlightActive = searchQuery.isNotBlank()
+
+    /**
+     * 子任务展开的有效状态
+     *
+     * 简化模式下强制收起（即使 isExpanded=true 也不展开子任务列表），
+     * 用于 AnimatedVisibility 的 visible 判断及展开按钮图标方向。
+     */
+    val effectiveExpanded = isExpanded && !isSimpleMode
 
     /**
      * 卡片背景色：始终使用 surface，不随选中态变色
@@ -226,13 +239,17 @@ fun TodoListItem(
         // 使用自定义 Layout 强制 PriorityBar 高度 = Column 实际内容总高度，
         // 避免 Row.height(IntrinsicSize.Max) 的 max 取值（max 子项 intrinsic）远小于
         // Column 实际内容总高度（sum）导致 Card 高度被低估、内容被裁剪的问题
-        Layout(
-            content = {
-                /** 左侧 4dp 优先级竖条（无优先级时透明，不占视觉空间） */
-                PriorityBar(priority = todo.priority, isCompleted = todo.status == 1)
+        //
+        // 外层 Box 用于承载右上角置顶图标（align(Alignment.TopEnd)），
+        // Layout 内 measurePolicy 返回的尺寸会撑满 Box，Icon 浮于其上。
+        Box {
+            Layout(
+                content = {
+                    /** 左侧 4dp 优先级竖条（无优先级时透明，不占视觉空间） */
+                    PriorityBar(priority = todo.priority, isCompleted = todo.status == 1)
 
-                /** 内容区域，占满除竖条外的宽度 */
-                Column(modifier = Modifier.fillMaxWidth()) {
+                    /** 内容区域，占满除竖条外的宽度；paddingEnd=24dp 为右上角置顶图标预留空间避免重叠 */
+                    Column(modifier = Modifier.fillMaxWidth().padding(end = 24.dp)) {
                 // 顶部 Row：复选框 + start 槽位 + 内容 + 展开按钮
                 Row(
                     modifier = Modifier
@@ -329,13 +346,14 @@ fun TodoListItem(
 
                         // 提醒时间 + 附件数量（聚合：父 + 所有子任务）
                         val aggregateCounts = aggregateAttachmentCounts(todo, subTasks)
-                        if (todo.reminderTime != null || aggregateCounts.first > 0 || aggregateCounts.second > 0 || categoryName != null) {
+                        // 简化模式下仅保留提醒时间，分类标签与附件数量均隐藏
+                        if (todo.reminderTime != null || (!isSimpleMode && (aggregateCounts.first > 0 || aggregateCounts.second > 0 || categoryName != null))) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(top = 2.dp)
                             ) {
-                                // 分类（内联展示，带阴影效果）
-                                if (categoryName != null) {
+                                // 分类（内联展示，带阴影效果）— 简化模式下隐藏
+                                if (!isSimpleMode && categoryName != null) {
                                     CategoryTagWithShadow(
                                         categoryName = categoryName!!,
                                         isCompleted = todo.status == 1
@@ -371,8 +389,8 @@ fun TodoListItem(
                                     Spacer(modifier = Modifier.width(8.dp))   // 提醒与附件间 1 个空格的间距
                                 }
 
-                                // 附件计数（图片 + 语音）- 使用 Material Icons 图标
-                                if (aggregateCounts.first > 0 || aggregateCounts.second > 0) {
+                                // 附件计数（图片 + 语音）— 简化模式下隐藏
+                                if (!isSimpleMode && (aggregateCounts.first > 0 || aggregateCounts.second > 0)) {
                                     // 附件图标颜色（已完成态视觉降权）
                                     val attachmentColor = if (todo.status == 1) CompletedColors.Text
                                             else MaterialTheme.colorScheme.onSurfaceVariant
@@ -481,7 +499,8 @@ fun TodoListItem(
                     //    点击事件会被 Surface 消费，不会冒泡到外层 Card 的
                     //    onTap（多选点击），所以两个操作互不干扰
                     // 3. 保持 UI 一性：进入多选模式后所有 UI 元素不"凭空消失"
-                    if (subTaskProgress != null) {
+                    // 简化模式下隐藏子任务进度文本与展开按钮
+                    if (!isSimpleMode && subTaskProgress != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             // 子任务进度文本：紧贴展开按钮左侧
                             Text(
@@ -504,12 +523,12 @@ fun TodoListItem(
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
-                                        imageVector = if (isExpanded) {
+                                        imageVector = if (effectiveExpanded) {
                                             Icons.Default.ExpandLess
                                         } else {
                                             Icons.Default.ExpandMore
                                         },
-                                        contentDescription = if (isExpanded) "收起" else "展开",
+                                        contentDescription = if (effectiveExpanded) "收起" else "展开",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -528,7 +547,7 @@ fun TodoListItem(
                 //   （自动收起由 HomeViewModel.toggleSubTaskCompletion 在 parentTodoCompleted = true 时
                 //   调用 toggleExpand(todoId) 触发，isExpanded 从 true 变 false，AnimatedVisibility 自动播放 exit 动画）
                 AnimatedVisibility(
-                    visible = isExpanded && subTasks.isNotEmpty(),
+                    visible = effectiveExpanded && subTasks.isNotEmpty(),
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut()
                 ) {
@@ -594,7 +613,24 @@ fun TodoListItem(
                     columnPlaceable.placeRelative(x = barWidthPx, y = 0)
                 }
             }
-        )
+            )
+
+            // 右上角置顶图标：todo.isPinned 为 true 时显示
+            // 已完成态使用灰色（onSurfaceVariant），未完成态使用品牌色（primary）
+            // 图标大小 16dp，对齐到 Box 的 TopEnd（即卡片右上角）
+            if (todo.isPinned) {
+                Icon(
+                    imageVector = Icons.Outlined.PushPin,
+                    contentDescription = "置顶",
+                    tint = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
+                           else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 12.dp, end = 12.dp)
+                        .size(16.dp)
+                )
+            }
+        }
     }
 }
 

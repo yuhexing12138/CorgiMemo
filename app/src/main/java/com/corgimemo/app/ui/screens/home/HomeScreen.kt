@@ -208,6 +208,11 @@ fun HomeScreen(
     /** 排序方式状态 */
     val sortType by viewModel.sortType.collectAsState()
 
+    /** 待办卡片简化显示（隐藏详情） */
+    val hideDetails by viewModel.hideDetails.collectAsState()
+    /** 隐藏所有已完成项 */
+    val hideCompletedItems by viewModel.hideCompletedItems.collectAsState()
+
     /**
      * 批量操作弹窗显示状态（已提升到 ViewModel）
      *
@@ -246,8 +251,13 @@ fun HomeScreen(
     /** 快速添加待办 BottomSheet 状态 */
     var showQuickAddSheet by remember { mutableStateOf(false) }
 
-    /** 排序弹窗 BottomSheet 状态 */
-    var showSortSheet by remember { mutableStateOf(false) }
+    /**
+     * 排序弹窗显示状态（已提升至 ViewModel，供 MainScreen.dropdownContent 触发）
+     *
+     * 排序入口现位于 EnhancedTopBar.dropdownContent 中（MainScreen 层），
+     * 因此 showSortSheet 必须从 ViewModel 订阅。
+     */
+    val showSortSheet by viewModel.showSortSheet.collectAsState()
     val sortSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     /** MoreOptions 弹窗状态对象（多选页 ⋮ 按钮触发） */
@@ -643,20 +653,7 @@ fun HomeScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 20.dp)
-                                .padding(bottom = dimensionResource(com.corgimemo.app.R.dimen.ui_search_bar_bottom_margin)),
-                            trailingIcon = {
-                                /** 排序按钮（与清空按钮互斥显示） */
-                                IconButton(
-                                    onClick = { showSortSheet = true },
-                                    modifier = Modifier.size(40.dp)
-                                ) {
-                                    Text(
-                                        text = "📊",
-                                        fontSize = 20.sp,
-                                        color = Color(0xFFFF9A5C) // 暖橙色
-                                    )
-                                }
-                            }
+                                .padding(bottom = dimensionResource(com.corgimemo.app.R.dimen.ui_search_bar_bottom_margin))
                         )
                     }
 
@@ -730,14 +727,14 @@ fun HomeScreen(
 
                         val filteredPending = applyFilters(pendingTodosAll)
                         val filteredCompleted = applyFilters(visibleCompletedTodosAll)
-                        val dividerIndex = if (completedCount > 0) filteredPending.size else -1
+                        val dividerIndex = if (!hideCompletedItems && completedCount > 0) filteredPending.size else -1
 
                         val displayItems = remember(
-                            filteredPending, filteredCompleted, showCompleted, completedCount
+                            filteredPending, filteredCompleted, showCompleted, completedCount, hideCompletedItems
                         ) {
                             buildList {
                                 filteredPending.forEach { add(DisplayItem.Todo(it)) }
-                                if (completedCount > 0) {
+                                if (!hideCompletedItems && completedCount > 0) {
                                     add(DisplayItem.CompletedDivider(count = completedCount, isExpanded = showCompleted))
                                     if (showCompleted) {
                                         filteredCompleted.forEach { add(DisplayItem.Todo(it)) }
@@ -844,6 +841,7 @@ fun HomeScreen(
                                                 isExpanded = expandedTodos.contains(todo.id),
                                                 isBatchMode = isBatchMode,
                                                 isSelected = selectedTodoIds.contains(todo.id),
+                                                isSimpleMode = hideDetails,
                                                 categoryName = category?.name,
                                                 categoryIcon = categoryIcon,
                                                 onToggleComplete = { id, isChecked ->
@@ -1166,7 +1164,7 @@ fun HomeScreen(
         SortBottomSheet(
             sheetState = sortSheetState,
             currentSortOrder = sortType,
-            onDismiss = { showSortSheet = false },
+            onDismiss = { viewModel.setShowSortSheet(false) },
             onSortOrderSelected = { order ->
                 viewModel.onSortTypeChanged(order)
             },
@@ -1175,6 +1173,16 @@ fun HomeScreen(
             }
         )
     }
+
+    /**
+     * 三点功能菜单下拉弹窗（已迁移至 MainScreen → EnhancedTopBar.dropdownContent 渲染）
+     *
+     * 关键变更：原 HomeScreen 内渲染 TodoMenuDropdown 时，Material 3 DropdownMenu
+     * 锚定到外层 Box（覆盖整个列表区域），导致菜单显示在屏幕左下角而非右上角三点按钮正下方。
+     * 修复方案：菜单在 EnhancedTopBar 内部与 IconButton 共同 Box 渲染，保证锚点对齐。
+     *
+     * 保留 showSortSheet 状态在此处管理（用于排序弹窗）。
+     */
 
     /**
      * 多选页 ⋮ 按钮触发的"更多选项"弹窗

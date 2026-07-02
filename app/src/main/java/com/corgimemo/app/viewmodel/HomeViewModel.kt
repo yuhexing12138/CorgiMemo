@@ -140,6 +140,22 @@ class HomeViewModel @Inject constructor(
     private val _showCompleted = MutableStateFlow(false)
     val showCompleted: StateFlow<Boolean> = _showCompleted.asStateFlow()
 
+    /** 待办卡片简化显示（隐藏详情） */
+    private val _hideDetails = MutableStateFlow(false)
+    val hideDetails: StateFlow<Boolean> = _hideDetails.asStateFlow()
+
+    /** 隐藏所有已完成项 */
+    private val _hideCompletedItems = MutableStateFlow(false)
+    val hideCompletedItems: StateFlow<Boolean> = _hideCompletedItems.asStateFlow()
+
+    /** 三点功能菜单展开状态 */
+    private val _menuExpanded = MutableStateFlow(false)
+    val menuExpanded: StateFlow<Boolean> = _menuExpanded.asStateFlow()
+
+    /** 排序弹窗显示状态（提升至 ViewModel，供 MainScreen.dropdownContent 触发） */
+    private val _showSortSheet = MutableStateFlow(false)
+    val showSortSheet: StateFlow<Boolean> = _showSortSheet.asStateFlow()
+
     /** 未完成待办列表（含置顶） */
     val pendingTodos: StateFlow<List<TodoItem>> = _todos.map { todos ->
         todos.filter { it.status == 0 }
@@ -192,9 +208,13 @@ class HomeViewModel @Inject constructor(
     /** 当前可见待办列表（未完成 + 展开时的已完成），应用搜索/分类/排序过滤 */
     val filteredTodos: StateFlow<List<TodoItem>> = run {
         val baseFlow = kotlinx.coroutines.flow.combine(
-            pendingTodos, visibleCompletedTodos, _showCompleted
-        ) { pending, completed, showCompleted ->
-            if (showCompleted) pending + completed else pending
+            pendingTodos, visibleCompletedTodos, _showCompleted, _hideCompletedItems
+        ) { pending, completed, showCompleted, hideCompletedItems ->
+            if (hideCompletedItems) {
+                pending
+            } else {
+                if (showCompleted) pending + completed else pending
+            }
         }
         kotlinx.coroutines.flow.combine(
             baseFlow, _searchQuery, _selectedCategoryId, _sortType
@@ -579,6 +599,12 @@ class HomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             corgiPreferences.showCompleted.collect { _showCompleted.value = it }
+        }
+        viewModelScope.launch {
+            corgiPreferences.hideDetails.collect { _hideDetails.value = it }
+        }
+        viewModelScope.launch {
+            corgiPreferences.hideCompletedItems.collect { _hideCompletedItems.value = it }
         }
 
         // 订阅全局待办事件：编辑页保存/删除后自动刷新首页数据
@@ -1376,6 +1402,34 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             corgiPreferences.setShowCompleted(newVal)
         }
+    }
+
+    /** 切换待办卡片简化显示 */
+    fun toggleHideDetails() {
+        val newVal = !_hideDetails.value
+        _hideDetails.value = newVal
+        viewModelScope.launch {
+            corgiPreferences.setHideDetails(newVal)
+        }
+    }
+
+    /** 切换隐藏所有已完成项 */
+    fun toggleHideCompletedItems() {
+        val newVal = !_hideCompletedItems.value
+        _hideCompletedItems.value = newVal
+        viewModelScope.launch {
+            corgiPreferences.setHideCompletedItems(newVal)
+        }
+    }
+
+    /** 设置三点功能菜单展开状态 */
+    fun setMenuExpanded(expanded: Boolean) {
+        _menuExpanded.value = expanded
+    }
+
+    /** 设置排序弹窗显示状态 */
+    fun setShowSortSheet(show: Boolean) {
+        _showSortSheet.value = show
     }
 
     /**
