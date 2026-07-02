@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Icon
@@ -103,6 +104,7 @@ private data class SwipeButtonConfig(
  * @param modifier 修饰符
  * @param isEnabled 是否启用左滑（批量模式或 disabled 状态下设为 false）
  * @param isExpanded 是否处于展开状态（父组件控制互斥）
+ * @param isPinned 当前待办是否已置顶（用于动态切换置顶按钮文字与图标）
  * @param onExpandChange 展开状态变化回调（true=展开, false=收起）
  * @param onShareClick 分享按钮回调
  * @param onPinClick 置顶按钮回调
@@ -118,6 +120,7 @@ fun SwipeableTodoBox(
     modifier: Modifier = Modifier,
     isEnabled: Boolean = true,
     isExpanded: Boolean = false,
+    isPinned: Boolean = false,
     onExpandChange: (Boolean) -> Unit = {},
     onShareClick: () -> Unit = {},
     onPinClick: () -> Unit = {},
@@ -177,15 +180,18 @@ fun SwipeableTodoBox(
 
     // 按钮配置（顺序固定：分享→置顶→删除）
     // 分享按钮（最左）：左上、左下圆角；置顶按钮（中间）：直角；删除按钮（最右）：右上、右下圆角
-    val buttons = remember {
+    val buttons = remember(isPinned) {
         listOf(
             SwipeButtonConfig(
                 "分享", R.color.ui_swipe_share, Icons.Outlined.Share, 3f,
                 RoundedCornerShape(topStart = cornerRadiusDp, bottomStart = cornerRadiusDp)
             ),
             SwipeButtonConfig(
-                "置顶", R.color.ui_primary, Icons.Outlined.PushPin, 2f,
-                RoundedCornerShape(0.dp)
+                label = if (isPinned) "取消置顶" else "置顶",
+                backgroundColorRes = R.color.ui_primary,
+                icon = if (isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                zIndex = 2f,
+                shape = RoundedCornerShape(0.dp)
             ),
             SwipeButtonConfig(
                 "删除", R.color.ui_swipe_delete, Icons.Outlined.Delete, 1f,
@@ -244,14 +250,20 @@ fun SwipeableTodoBox(
                 if (!isEnabled || !isExpanded) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    // 消费 down 事件的所有分量
-                    down.consume()
+                    // 智能分流：down 落在按钮区域则放行，让事件透传给按钮 clickable
+                    val buttonAreaStartX = size.width - actionsWidthPx
+                    val isButtonArea = down.position.x >= buttonAreaStartX
+                    if (!isButtonArea) {
+                        // 仅消费非按钮区域，阻止 ModalNavigationDrawer 抢手势
+                        down.consume()
+                    }
                 }
             },
         content = {
             // === 内容层（measurables[0]）===
             Box(
                 modifier = Modifier
+                    .offset { IntOffset(cardOffsetX.value.roundToInt(), 0) }
                     .pointerInput(isEnabled, isExpanded) {
                         // 关键：key 加入 isExpanded，使得完全展开 ↔ 收起时手势检测器重启，
                         // 避免旧协程与新手势的 snapTo 冲突，解决"完全展开后右滑卡住"问题
@@ -401,7 +413,6 @@ fun SwipeableTodoBox(
                             }
                         }
                     }
-                    .offset { IntOffset(cardOffsetX.value.roundToInt(), 0) }
                     .zIndex(10f)
             ) {
                 /**
@@ -448,7 +459,7 @@ fun SwipeableTodoBox(
                         "分享" -> {
                             { onShareClick(); onButtonClicked() }
                         }
-                        "置顶" -> {
+                        "置顶", "取消置顶" -> {
                             { onPinClick(); onButtonClicked() }
                         }
                         "删除" -> {

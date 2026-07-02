@@ -820,6 +820,7 @@ fun HomeScreen(
                                             modifier = Modifier.padding(1.dp),
                                             isEnabled = !isBatchMode && !dragActive,
                                             isExpanded = swipeExpandedTodoId == todo.id,
+                                            isPinned = todo.isPinned,
                                             onExpandChange = { expanded ->
                                                 swipeExpandedTodoId = if (expanded) todo.id else null
                                                 viewModel.setSwipeActionExpanded(expanded)
