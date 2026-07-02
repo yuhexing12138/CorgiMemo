@@ -21,6 +21,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -66,7 +67,8 @@ fun SpecialDateScreen(
                 placeholder = "搜索日期...",
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = dimensionResource(R.dimen.ui_search_bar_bottom_margin))
             )
 
             Spacer(modifier = Modifier.height(8.dp))
