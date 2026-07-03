@@ -39,6 +39,7 @@ import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.ui.components.AppDrawerContent
 import com.corgimemo.app.ui.components.CategoryAction
 import com.corgimemo.app.ui.components.EnhancedTopBar
+import com.corgimemo.app.ui.components.LeftIconType
 import com.corgimemo.app.ui.components.RightIconType
 import com.corgimemo.app.ui.components.TodoMenuDropdown
 import com.corgimemo.app.ui.components.FloatingCorgiButton
@@ -290,14 +291,13 @@ fun MainScreen(navController: NavController) {
                     EnhancedTopBar(
                         title = effectiveTitle,
                         /**
-                         * 批量模式时禁用菜单按钮（点击不开抽屉），避免误操作。
-                         * 注意：EnhancedTopBar 的 onMenuClick 没有 enabled 参数，
-                         * 因此通过传入"空回调"实现禁用。
+                         * 批量模式时：左侧图标变为返回箭头（LeftIconType.BACK），点击触发
+                         * homeViewModel.exitBatchMode() 退出多选；普通模式沿用 MENU + onMenuClick。
+                         * 注意：EnhancedTopBar 的 onMenuClick 没有 enabled 参数，因此批量模式
+                         * 不再依赖 effectiveMenuEnabled 抑制开抽屉——直接交给 onLeftIconClick 处理。
                          */
                         onMenuClick = {
-                            if (effectiveMenuEnabled) {
-                                coroutineScope.launch { drawerState.open() }
-                            }
+                            coroutineScope.launch { drawerState.open() }
                         },
                         onCorgiClick = {
                             if (effectiveMenuEnabled) {
@@ -336,6 +336,14 @@ fun MainScreen(navController: NavController) {
                                     }
                                 )
                             }
+                        } else null,
+                        /**
+                         * 批量模式时：左侧图标变为返回箭头，点击退出多选模式。
+                         * 普通模式：保持默认 MENU 图标，点击开抽屉（onLeftIconClick=null 时回退到 onMenuClick）。
+                         */
+                        leftIconType = if (isBatchMode) LeftIconType.BACK else LeftIconType.MENU,
+                        onLeftIconClick = if (isBatchMode) {
+                            { homeViewModel.exitBatchMode() }
                         } else null
                     )
                 }
