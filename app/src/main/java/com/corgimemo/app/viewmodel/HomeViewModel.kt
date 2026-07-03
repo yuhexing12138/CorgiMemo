@@ -196,6 +196,24 @@ class HomeViewModel @Inject constructor(
         todos.count { it.isPinned && it.status == 0 }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
+    /**
+     * V2.11: 待完成待办总数(动态计算)
+     *
+     * 位置语义根据置顶数量动态调整:
+     * - 置顶 ≤ 3:待完成按钮在最前,代表所有待完成(含置顶)
+     * - 置顶 ≥ 4:待完成按钮在置顶区后,仅代表非置顶
+     */
+    val pendingCount: StateFlow<Int> = combine(_todos, pinnedCount) { todos, pinnedN ->
+        val nonPinned = todos.count { !it.isPinned && it.status == 0 }
+        if (pinnedN <= 3) {
+            // Case B:按钮在最前,代表所有待完成(含置顶)
+            todos.count { it.status == 0 }
+        } else {
+            // Case A:按钮在置顶区后,仅代表非置顶
+            nonPinned
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     // ========== 搜索相关状态 ==========
 
     private val _searchQuery = MutableStateFlow("")
