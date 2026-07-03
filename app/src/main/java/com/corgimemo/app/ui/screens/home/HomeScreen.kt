@@ -124,6 +124,7 @@ import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.CorgiPullToRefreshIndicator
 import com.corgimemo.app.ui.components.SortBottomSheet
 import com.corgimemo.app.ui.components.MoreOptionsSheet
+import com.corgimemo.app.ui.components.PinnedSectionHeader
 import com.corgimemo.app.ui.components.PriorityPickerSheet
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -151,6 +152,8 @@ fun HomeScreen(
     val isDataInitialized by viewModel.isDataInitialized.collectAsState()
     val showCompleted by viewModel.showCompleted.collectAsState()
     val completedCount by viewModel.completedCount.collectAsState()
+    val showPinned by viewModel.showPinned.collectAsState()
+    val pinnedCount by viewModel.pinnedCount.collectAsState()
     val pendingTodosAll by viewModel.pendingTodos.collectAsState()
     val visibleCompletedTodosAll by viewModel.visibleCompletedTodos.collectAsState()
     val corgiData by viewModel.corgiData.collectAsState()
@@ -729,10 +732,31 @@ fun HomeScreen(
                         val dividerIndex = if (!hideCompletedItems && completedCount > 0) filteredPending.size else -1
 
                         val displayItems = remember(
-                            filteredPending, filteredCompleted, showCompleted, completedCount, hideCompletedItems
+                            filteredPending, filteredCompleted,
+                            showPinned, showCompleted,
+                            pinnedCount, completedCount,
+                            hideCompletedItems
                         ) {
                             buildList {
-                                filteredPending.forEach { add(DisplayItem.Todo(it)) }
+                                // 1. 置顶区:仅当 pinnedCount >= 4 时插入按钮
+                                if (pinnedCount >= 4) {
+                                    add(DisplayItem.PinnedDivider(
+                                        count = pinnedCount,
+                                        isExpanded = showPinned
+                                    ))
+                                    if (showPinned) {
+                                        filteredPending.filter { it.isPinned }
+                                            .forEach { add(DisplayItem.Todo(it)) }
+                                    }
+                                } else {
+                                    // pinnedCount < 4 时,置顶待办直接放在列表最前
+                                    filteredPending.filter { it.isPinned }
+                                        .forEach { add(DisplayItem.Todo(it)) }
+                                }
+                                // 2. 普通待办
+                                filteredPending.filter { !it.isPinned }
+                                    .forEach { add(DisplayItem.Todo(it)) }
+                                // 3. 已完成区(原有逻辑)
                                 if (!hideCompletedItems && completedCount > 0) {
                                     add(DisplayItem.CompletedDivider(count = completedCount, isExpanded = showCompleted))
                                     if (showCompleted) {
@@ -765,6 +789,7 @@ fun HomeScreen(
                                 key = { item ->
                                     when (item) {
                                         is DisplayItem.Todo -> item.item.id
+                                        is DisplayItem.PinnedDivider -> "pinned_divider_${item.count}"
                                         is DisplayItem.CompletedDivider -> "completed_divider"
                                     }
                                 },
@@ -793,6 +818,16 @@ fun HomeScreen(
                                 }
 
                                 when (displayItem) {
+                                    is DisplayItem.PinnedDivider -> {
+                                        PinnedSectionHeader(
+                                            count = displayItem.count,
+                                            isExpanded = displayItem.isExpanded,
+                                            onClick = {
+                                                viewModel.onUserInteraction()
+                                                viewModel.toggleShowPinned()
+                                            }
+                                        )
+                                    }
                                     is DisplayItem.CompletedDivider -> {
                                         CompletedSectionHeader(
                                             count = displayItem.count,
@@ -2267,6 +2302,7 @@ fun CelebrationOverlay(level: CelebrationLevel, message: String) {
  */
 private sealed interface DisplayItem {
     data class Todo(val item: TodoItem) : DisplayItem
+    data class PinnedDivider(val count: Int, val isExpanded: Boolean) : DisplayItem
     data class CompletedDivider(val count: Int, val isExpanded: Boolean) : DisplayItem
 }
 
