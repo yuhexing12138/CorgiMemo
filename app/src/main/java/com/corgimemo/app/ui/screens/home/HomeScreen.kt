@@ -3,7 +3,6 @@ package com.corgimemo.app.ui.screens.home
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -2272,50 +2271,23 @@ private sealed interface DisplayItem {
 }
 
 /**
- * "已完成"区域分隔按钮
- * 点击展开/折叠已完成待办列表，带箭头旋转动画
+ * "已完成"区域分隔按钮（已重构为调用通用 CollapsibleSectionHeader）
+ *
+ * 视觉变化：移除原 surfaceVariant 半透明背景，改为透明背景，
+ * 与新"置顶"按钮统一设计语言（无背景 + 箭头在左 + 无水波纹）。
  */
 @Composable
 private fun CompletedSectionHeader(
     count: Int,
     isExpanded: Boolean,
     onClick: () -> Unit
-) {
-    val arrowRotation by animateFloatAsState(
-        targetValue = if (isExpanded) 0f else 180f,
-        label = "completed_arrow_rotation"
-    )
-    
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "已完成 ($count)",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            @Suppress("DEPRECATION")
-            Icon(
-                imageVector = Icons.Filled.KeyboardArrowDown,
-                contentDescription = if (isExpanded) "折叠" else "展开",
-                modifier = Modifier.rotate(arrowRotation),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
+) = CollapsibleSectionHeader(
+    label = "已完成",
+    count = count,
+    isExpanded = isExpanded,
+    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    onClick = onClick,
+)
 
 /**
  * 边缘光晕效果组件
