@@ -142,7 +142,7 @@ fun PendingSectionHeader(
     label = "待完成",
     count = count,
     isExpanded = isExpanded,
-    color = PendingHeaderColor,           // 蓝色 #5A8DEE
+    color = SectionHeaderColors.Pending,      // 蓝色 #5A8DEE(集中定义,见 4.3)
     expandedLabel = "收起待完成",
     collapsedLabel = "展开待完成",
     onClick = onClick,
@@ -499,7 +499,8 @@ class HomeViewModelPendingButtonTest {
 
 - ✅ 编译通过,无新增警告
 - ✅ 单元测试覆盖率 ≥ 80%(针对新增 ViewModel 逻辑)
-- ✅ 17 个手动测试场景全部通过
+- ✅ 16 个手动测试场景全部通过
+  - 边界情况 #17 (阈值 3↔4 切换) 已被场景 #7/#8 隐含覆盖(取消置顶 4→3 + 重新置顶 3→4)
 - ✅ 视觉与可交互原型一致(http://localhost:53001/pending-button.html)
 - ✅ 现有置顶按钮行为完全不变
 - ✅ 已完成按钮功能不变,仅颜色从灰改绿
