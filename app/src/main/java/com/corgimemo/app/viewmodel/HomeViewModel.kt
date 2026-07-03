@@ -140,6 +140,10 @@ class HomeViewModel @Inject constructor(
     private val _showCompleted = MutableStateFlow(false)
     val showCompleted: StateFlow<Boolean> = _showCompleted.asStateFlow()
 
+    /** V2.10: "置顶"区域是否展开(从持久化加载,默认展开) */
+    private val _showPinned = MutableStateFlow(true)
+    val showPinned: StateFlow<Boolean> = _showPinned.asStateFlow()
+
     /** 待办卡片简化显示（隐藏详情） */
     private val _hideDetails = MutableStateFlow(false)
     val hideDetails: StateFlow<Boolean> = _hideDetails.asStateFlow()
@@ -181,6 +185,11 @@ class HomeViewModel @Inject constructor(
     /** 已完成待办总数（用于分隔按钮显示） */
     val completedCount: StateFlow<Int> = _todos.map { todos ->
         todos.count { it.status == 1 }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    /** V2.10: 置顶待办总数(仅未完成,用于触发"置顶(N)"按钮显示) */
+    val pinnedCount: StateFlow<Int> = _todos.map { todos ->
+        todos.count { it.isPinned && it.status == 0 }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     // ========== 搜索相关状态 ==========
@@ -599,6 +608,9 @@ class HomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             corgiPreferences.showCompleted.collect { _showCompleted.value = it }
+        }
+        viewModelScope.launch {
+            corgiPreferences.showPinned.collect { _showPinned.value = it }
         }
         viewModelScope.launch {
             corgiPreferences.hideDetails.collect { _hideDetails.value = it }
@@ -1401,6 +1413,17 @@ class HomeViewModel @Inject constructor(
         _showCompleted.value = newVal
         viewModelScope.launch {
             corgiPreferences.setShowCompleted(newVal)
+        }
+    }
+
+    /**
+     * V2.10: 切换"置顶"区域展开/折叠状态
+     */
+    fun toggleShowPinned() {
+        val newVal = !_showPinned.value
+        _showPinned.value = newVal
+        viewModelScope.launch {
+            corgiPreferences.setShowPinned(newVal)
         }
     }
 
