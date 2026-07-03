@@ -144,6 +144,10 @@ class HomeViewModel @Inject constructor(
     private val _showPinned = MutableStateFlow(true)
     val showPinned: StateFlow<Boolean> = _showPinned.asStateFlow()
 
+    /** V2.11: "待完成"区域是否展开(从持久化加载,默认展开) */
+    private val _showPending = MutableStateFlow(true)
+    val showPending: StateFlow<Boolean> = _showPending.asStateFlow()
+
     /** 待办卡片简化显示（隐藏详情） */
     private val _hideDetails = MutableStateFlow(false)
     val hideDetails: StateFlow<Boolean> = _hideDetails.asStateFlow()
@@ -1424,6 +1428,17 @@ class HomeViewModel @Inject constructor(
         _showPinned.value = newVal
         viewModelScope.launch {
             corgiPreferences.setShowPinned(newVal)
+        }
+    }
+
+    /**
+     * V2.11: 切换"待完成"区域展开/折叠状态
+     */
+    fun toggleShowPending() {
+        val newVal = !_showPending.value
+        _showPending.value = newVal
+        viewModelScope.launch {
+            corgiPreferences.setShowPending(newVal)
         }
     }
 
