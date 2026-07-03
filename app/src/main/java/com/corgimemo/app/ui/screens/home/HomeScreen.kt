@@ -124,6 +124,7 @@ import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.CorgiPullToRefreshIndicator
 import com.corgimemo.app.ui.components.SortBottomSheet
 import com.corgimemo.app.ui.components.MoreOptionsSheet
+import com.corgimemo.app.ui.components.CollapsibleSectionHeader
 import com.corgimemo.app.ui.components.PinnedSectionHeader
 import com.corgimemo.app.ui.components.PriorityPickerSheet
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
