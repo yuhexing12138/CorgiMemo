@@ -793,11 +793,14 @@ fun TodoEditScreen(
                     onClick = { navController.popBackStack() },
                     modifier = Modifier.size(40.dp)
                 ) {
+                    // 颜色与尺寸与 EnhancedTopBar 多选模式的 LeftIconType.BACK 保持完全一致
+                    // （MaterialTheme.colorScheme.onSurface + 24.dp），统一应用内所有
+                    // "返回箭头"的视觉表达。保留原硬编码橙色会与多选模式不一致。
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "返回",
-                        tint = Color(0xFFFF9A5C),
-                        modifier = Modifier.size(20.dp)
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
 

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>待完成按钮位置原型</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f5f5; padding: 20px; }
+  .phone-container { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; max-width: 1400px; margin: 0 auto; }
+  .phone { width: 360px; height: 720px; background: #fff; border-radius: 32px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); overflow: hidden; display: flex; flex-direction: column; position: relative; }
+  .status-bar { height: 28px; background: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 12px; color: #333; font-weight: 600; }
+  .top-bar { padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f0f0f0; }
+  .top-bar h1 { font-size: 20px; font-weight: 600; color: #1a1a1a; }
+  .top-bar-icons { display: flex; gap: 8px; }
+  .icon-btn { width: 32px; height: 32px; border-radius: 50%; background: #f5f5f5; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #666; }
+  .filter-bar { padding: 8px 16px; display: flex; gap: 8px; overflow-x: auto; border-bottom: 1px solid #f0f0f0; }
+  .filter-chip { padding: 6px 12px; border-radius: 16px; background: #f5f5f5; color: #666; font-size: 12px; white-space: nowrap; }
+  .filter-chip.active { background: #ff9a5c; color: #fff; }
+  .todo-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .section-header { display: flex; align-items: center; padding: 12px 16px; cursor: pointer; transition: background 0.2s; }
+  .section-header:hover { background: rgba(0,0,0,0.02); }
+  .section-arrow { display: inline-block; transition: transform 0.25s cubic-bezier(0.4, 0.0, 0.2, 1); font-size: 18px; margin-right: 6px; color: inherit; }
+  .section-arrow.expanded { transform: rotate(0deg); }
+  .section-arrow.collapsed { transform: rotate(-90deg); }
+  .section-text { font-size: 14px; font-weight: 500; }
+  .section-header.pinned { color: #ff9a5c; }
+  .section-header.pending { color: #5a8dee; }
+  .section-header.completed { color: #7EC8A0; }
+  .todo-item { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #f8f8f8; }
+  .todo-checkbox { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #ddd; margin-right: 12px; flex-shrink: 0; }
+  .todo-checkbox.checked { background: #7EC8A0; border-color: #7EC8A0; position: relative; }
+  .todo-checkbox.checked::after { content: '✓'; color: #fff; font-size: 12px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+  .todo-checkbox.pinned-pin::after { content: '📌'; position: absolute; top: -8px; left: -4px; font-size: 12px; }
+  .todo-content { flex: 1; }
+  .todo-title { font-size: 14px; color: #333; }
+  .todo-time { font-size: 11px; color: #999; margin-top: 2px; }
+  .todo-item.pinned { background: #fff8f3; }
+  .label { text-align: center; padding: 12px; font-weight: 600; color: #555; font-size: 14px; }
+  .annotation { text-align: center; padding: 8px; color: #888; font-size: 12px; }
+  .highlight-new { background: #fff3e0; padding: 2px 6px; border-radius: 4px; }
+  .variant-title { background: linear-gradient(135deg, #ff9a5c, #ff7e3c); color: #fff; padding: 8px 16px; text-align: center; font-weight: 600; }
+  .divider-hint { background: #fafafa; padding: 8px 16px; text-align: center; font-size: 11px; color: #888; border-top: 1px dashed #ddd; border-bottom: 1px dashed #ddd; }
+</style>
+</head>
+<body>
+
+<div class="phone-container">
+
+  <!-- 场景 1: 当前状态(置顶 ≥4) -->
+  <div class="phone">
+    <div class="variant-title">📋 当前状态(置顶 = 5)</div>
+    <div class="status-bar"><span>9:41</span><span>📶 🔋</span></div>
+    <div class="top-bar">
+      <h1>我的待办</h1>
+      <div class="top-bar-icons">
+        <div class="icon-btn">🔍</div>
+        <div class="icon-btn">⋮</div>
+      </div>
+    </div>
+    <div class="filter-bar">
+      <div class="filter-chip active">全部</div>
+      <div class="filter-chip">工作</div>
+      <div class="filter-chip">学习</div>
+      <div class="filter-chip">生活</div>
+    </div>
+    <div class="todo-list">
+      <div class="section-header pinned" onclick="toggleSection(this)">
+        <span class="section-arrow expanded">▼</span>
+        <span class="section-text">收起置顶 (5)</span>
+      </div>
+      <div class="todo-item pinned">
+        <div class="todo-checkbox pinned-pin"></div>
+        <div class="todo-content">
+          <div class="todo-title">紧急: 提交周报</div>
+          <div class="todo-time">今天 18:00</div>
+        </div>
+      </div>
+      <div class="todo-item pinned">
+        <div class="todo-checkbox pinned-pin"></div>
+        <div class="todo-content">
+          <div class="todo-title">回复客户邮件</div>
+          <div class="todo-time">今天 14:00</div>
+        </div>
+      </div>
+      <div class="todo-item pinned">
+        <div class="todo-checkbox pinned-pin"></div>
+        <div class="todo-content">
+          <div class="todo-title">准备明天的演讲</div>
+          <div class="todo-time">明天 09:00</div>
+        </div>
+      </div>
+      <div class="divider-hint">⬇️ 这里有 8 个普通待办 ⬇️</div>
+      <div class="todo-item">
+        <div class="todo-checkbox"></div>
+        <div class="todo-content">
+          <div class="todo-title">买咖啡豆</div>
+          <div class="todo-time">今天 16:00</div>
+        </div>
+      </div>
+      <div class="todo-item">
+        <div class="todo-checkbox"></div>
+        <div class="todo-content">
+          <div class="todo-title">取快递</div>
+          <div class="todo-time">今天 19:00</div>
+        </div>
+      </div>
+      <div class="section-header completed" onclick="toggleSection(this)">
+        <span class="section-arrow collapsed">▼</span>
+        <span class="section-text">展开已完成 (3)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 场景 2: 新增 待完成 按钮(置顶 ≥4) -->
+  <div class="phone">
+    <div class="variant-title" style="background: linear-gradient(135deg, #5a8dee, #3d6dd1);">✨ 新增(置顶 = 5)</div>
+    <div class="status-bar"><span>9:41</span><span>📶 🔋</span></div>
+    <div class="top-bar">
+      <h1>我的待办</h1>
+      <div class="top-bar-icons">
+        <div class="icon-btn">🔍</div>
+        <div class="icon-btn">⋮</div>
+      </div>
+    </div>
+    <div class="filter-bar">
+      <div class="filter-chip active">全部</div>
+      <div class="filter-chip">工作</div>
+      <div class="filter-chip">学习</div>
+      <div class="filter-chip">生活</div>
+    </div>
+    <div class="todo-list">
+      <div class="section-header pinned" onclick="toggleSection(this)">
+        <span class="section-arrow expanded">▼</span>
+        <span class="section-text">收起置顶 (5)</span>
+      </div>
+      <div class="todo-item pinned">
+        <div class="todo-checkbox pinned-pin"></div>
+        <div class="todo-content">
+          <div class="todo-title">紧急: 提交周报</div>
+          <div class="todo-title" style="color:#bbb;text-decoration:line-through">紧急: 提交周报</div>
+          <div class="todo-time">今天 18:00</div>
+        </div>
+      </div>
+      <div class="todo-item pinned">
+        <div class="todo-checkbox pinned-pin"></div>
+        <div class="todo-content">
+          <div class="todo-title">回复客户邮件</div>
+          <div class="todo-time">今天 14:00</div>
+        </div>
+      </div>
+      <div class="todo-item pinned">
+        <div class="todo-checkbox pinned-pin"></div>
+        <div class="todo-content">
+          <div class="todo-title">准备明天的演讲</div>
+          <div class="todo-time">明天 09:00</div>
+        </div>
+      </div>
+      <div class="section-header pending highlight-new" onclick="toggleSection(this)">
+        <span class="section-arrow expanded">▼</span>
+        <span class="section-text">待完成 (8)</span>
+      </div>
+      <div class="annotation">⬅️ 新增按钮(蓝色,标识"待完成区域")</div>
+      <div class="todo-item">
+        <div class="todo-checkbox"></div>
+        <div class="todo-content">
+          <div class="todo-title">买咖啡豆</div>
+          <div class="todo-time">今天 16:00</div>
+        </div>
+      </div>
+      <div class="todo-item">
+        <div class="todo-checkbox"></div>
+        <div class="todo-content">
+          <div class="todo-title">取快递</div>
+          <div class="todo-time">今天 19:00</div>
+        </div>
+      </div>
+      <div class="section-header completed" onclick="toggleSection(this)">
+        <span class="section-arrow collapsed">▼</span>
+        <span class="section-text">展开已完成 (3)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 场景 3: 新增(置顶 ≤3) -->
+  <div class="phone">
+    <div class="variant-title" style="background: linear-gradient(135deg, #5a8dee, #3d6dd1);">✨ 新增(置顶 = 2)</div>
+    <div class="status-bar"><span>9:41</span><span>📶 🔋</span></div>
+    <div class="top-bar">
+      <h1>我的待办</h1>
+      <div class="top-bar-icons">
+        <div class="icon-btn">🔍</div>
+        <div class="icon-btn">⋮</div>
+      </div>
+    </div>
+    <div class="filter-bar">
+      <div class="filter-chip active">全部</div>
+      <div class="filter-chip">工作</div>
+      <div class="filter-chip">学习</div>
+      <div class="filter-chip">生活</div>
+    </div>
+    <div class="todo-list">
+      <div class="section-header pending highlight-new" onclick="toggleSection(this)">
+        <span class="section-arrow expanded">▼</span>
+        <span class="section-text">待完成 (10)</span>
+      </div>
+      <div class="annotation">⬆️ 待完成按钮在顶部<br/>(置顶 ≤ 3,无置顶按钮)</div>
+      <div class="todo-item pinned">
+        <div class="todo-checkbox pinned-pin"></div>
+        <div class="todo-content">
+          <div class="todo-title">紧急: 提交周报</div>
+          <div class="todo-time">今天 18:00</div>
+        </div>
+      </div>
+      <div class="todo-item pinned">
+        <div class="todo-checkbox pinned-pin"></div>
+        <div class="todo-content">
+          <div class="todo-title">回复客户邮件</div>
+          <div class="todo-time">今天 14:00</div>
+        </div>
+      </div>
+      <div class="todo-item">
+        <div class="todo-checkbox"></div>
+        <div class="todo-content">
+          <div class="todo-title">买咖啡豆</div>
+          <div class="todo-time">今天 16:00</div>
+        </div>
+      </div>
+      <div class="todo-item">
+        <div class="todo-checkbox"></div>
+        <div class="todo-content">
+          <div class="todo-title">取快递</div>
+          <div class="todo-time">今天 19:00</div>
+        </div>
+      </div>
+      <div class="section-header completed" onclick="toggleSection(this)">
+        <span class="section-arrow collapsed">▼</span>
+        <span class="section-text">展开已完成 (3)</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="max-width:1200px;margin:30px auto;padding:20px;background:#fff;border-radius:12px;">
+<h2 style="text-align:center;margin-bottom:16px;">📌 关键变化对比</h2>
+<table style="width:100%;border-collapse:collapse;">
+<thead>
+<tr style="background:#f5f5f5;">
+<th style="padding:12px;text-align:left;border:1px solid #ddd;">场景</th>
+<th style="padding:12px;text-align:left;border:1px solid #ddd;">置顶按钮</th>
+<th style="padding:12px;text-align:left;border:1px solid #ddd;">待完成按钮</th>
+<th style="padding:12px;text-align:left;border:1px solid #ddd;">位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="padding:12px;border:1px solid #ddd;">置顶 ≥ 4</td>
+<td style="padding:12px;border:1px solid #ddd;">显示在最顶部</td>
+<td style="padding:12px;border:1px solid #ddd;"><span class="highlight-new">显示在置顶待办之后</span></td>
+<td style="padding:12px;border:1px solid #ddd;">普通待办之前</td>
+</tr>
+<tr>
+<td style="padding:12px;border:1px solid #ddd;">置顶 ≤ 3</td>
+<td style="padding:12px;border:1px solid #ddd;">不显示</td>
+<td style="padding:12px;border:1px solid #ddd;"><span class="highlight-new">显示在最顶部</span></td>
+<td style="padding:12px;border:1px solid:1px solid #ddd;">所有待办之前</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<div style="max-width:1200px;margin:20px auto;padding:20px;background:#fff8f3;border-radius:12px;border:2px dashed #ff9a5c;">
+<h3>❓ 关键待澄清问题</h3>
+<ol style="line-height:2;padding-left:24px;">
+<li><b>按钮功能:</b> 待完成按钮的具体操作是什么?(折叠/展开?筛选?排序?其他?)</li>
+<li><b>颜色:</b> 已用"置顶=橙、已完成=绿",待完成建议用什么?(蓝/紫/灰?)</li>
+<li><b>折叠状态:</b> 是否需要持久化(类似置顶/已完成)?</li>
+<li><b>是否影响拖拽:</b> 折叠时,折叠区域内的待办能否拖拽?</li>
+</ol>
+</div>
+
+<script>
+function toggleSection(el) {
+  const arrow = el.querySelector('.section-arrow');
+  const text = el.querySelector('.section-text');
+  if (arrow.classList.contains('expanded')) {
+    arrow.classList.remove('expanded');
+    arrow.classList.add('collapsed');
+  } else {
+    arrow.classList.remove('collapsed');
+    arrow.classList.add('expanded');
+  }
+}
+</script>
+</body>
+</html>

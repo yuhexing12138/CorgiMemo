@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>待办置顶按钮 - Brainstorming</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #f5f7fa 0%, #e8edf3 100%);
+    min-height: 100vh;
+    padding: 24px;
+    color: #1a1a1a;
+  }
+  .container { max-width: 800px; margin: 0 auto; }
+  .card {
+    background: white;
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+    margin-bottom: 24px;
+  }
+  h1 { font-size: 24px; color: #2c3e50; margin-bottom: 8px; }
+  h2 { font-size: 18px; color: #2c3e50; margin: 16px 0 8px; }
+  p, li { color: #4a5568; line-height: 1.6; font-size: 14px; }
+  .links a {
+    display: block;
+    padding: 12px 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin: 8px 0;
+    color: #2c3e50;
+    text-decoration: none;
+    font-size: 14px;
+    transition: background 0.2s;
+  }
+  .links a:hover { background: #ecf0f1; }
+  .links a::before { content: "📄 "; }
+  .badge {
+    display: inline-block;
+    background: #3498db;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    margin-left: 8px;
+  }
+  .status {
+    background: #27ae60;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    display: inline-block;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>📌 待办置顶按钮 Brainstorming</h1>
+      <p>当已置顶待办 ≥4 个时,动态展示"置顶(N)"按钮,可展开/折叠。</p>
+      <span class="status">视觉伴侣已就绪</span>
+    </div>
+
+    <div class="card">
+      <h2>📂 可访问的页面</h2>
+      <div class="links">
+        <a href="interactive.html">interactive.html - 可交互原型(默认显示方案 A) <span class="badge">⭐ 重点</span></a>
+        <a href="approaches.html">approaches.html - 实现方案对比 (方案1镜像 vs 方案2抽象) <span class="badge">第 4 步</span></a>
+        <a href="placement-options.html">position-options.html - 历史方案对比 (无背景+箭头在左) <span class="badge">归档</span></a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>✅ 已确认的设计决策</h2>
+      <ul style="padding-left: 20px;">
+        <li>✅ <strong>位置:</strong> 方案 A - 顶部独立(按钮在列表顶部,展开时下方显示置顶待办)</li>
+        <li>✅ <strong>持久化:</strong> 折叠状态保存到偏好设置,下次启动恢复</li>
+        <li>✅ <strong>无水波纹:</strong> 文字变化 + 箭头方向变化已足够清晰</li>
+        <li>✅ <strong>无背景色:</strong> 透明按钮,主题色文字(置顶橙 #FF9A5C,已完成绿 #7EC8A0)</li>
+        <li>✅ <strong>箭头在左:</strong> ▼展开 / ▶折叠</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

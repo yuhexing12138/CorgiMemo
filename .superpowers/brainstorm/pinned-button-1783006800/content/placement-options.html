@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>置顶按钮 - 极简版位置方案</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #f5f7fa 0%, #e8edf3 100%);
+    min-height: 100vh;
+    padding: 24px;
+    color: #1a1a1a;
+  }
+  .container { max-width: 1400px; margin: 0 auto; }
+  .header { text-align: center; margin-bottom: 32px; }
+  .header h1 { font-size: 28px; color: #2c3e50; margin-bottom: 8px; }
+  .header p { color: #6c7a89; font-size: 14px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 32px;
+    margin-bottom: 40px;
+  }
+  .phone-card {
+    background: white;
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+  }
+  .phone-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .phone-title .badge {
+    background: #3498db;
+    color: white;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+  }
+  .phone-title .badge.recommended { background: #27ae60; }
+  .phone-desc { font-size: 12px; color: #7f8c8d; margin-bottom: 16px; line-height: 1.5; }
+  .phone-mockup {
+    width: 280px;
+    height: 560px;
+    background: #f8f9fa;
+    border-radius: 32px;
+    margin: 0 auto;
+    border: 8px solid #2c3e50;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  }
+  .status-bar-mock {
+    height: 28px;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    font-size: 10px;
+    color: #2c3e50;
+  }
+  .top-bar {
+    height: 56px;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    border-bottom: 1px solid #ecf0f1;
+  }
+  .top-bar-title { font-size: 16px; font-weight: 600; color: #2c3e50; }
+  .top-bar-icons { display: flex; gap: 12px; }
+  .icon-circle {
+    width: 28px; height: 28px;
+    background: #ecf0f1; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .search-bar-mock {
+    margin: 12px 16px;
+    height: 36px;
+    background: #ecf0f1;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 11px;
+    color: #95a5a6;
+  }
+  .list-area {
+    padding: 0 8px;
+    overflow-y: auto;
+    max-height: 380px;
+  }
+  /* ==== 新版按钮:无背景 + 箭头在左 ==== */
+  .divider-btn {
+    background: transparent;
+    padding: 10px 16px;
+    margin: 8px 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #95a5a6;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .divider-btn .arrow {
+    font-size: 14px;
+    display: inline-block;
+    transition: transform 0.25s ease;
+    color: #95a5a6;
+  }
+  .divider-btn .arrow.expanded { transform: rotate(0deg); }
+  .divider-btn .arrow.collapsed { transform: rotate(-90deg); }
+  .divider-btn.pinned { color: #FF9A5C; }
+  .divider-btn.pinned .arrow { color: #FF9A5C; }
+  .divider-btn.completed { color: #7EC8A0; }
+  .divider-btn.completed .arrow { color: #7EC8A0; }
+  .divider-btn .label { font-weight: 500; }
+  .divider-btn .count { font-weight: 400; opacity: 0.85; }
+
+  .todo-card {
+    background: white;
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin: 6px 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: #2c3e50;
+  }
+  .todo-card.pinned { border-left: 3px solid #FF9A5C; }
+  .todo-card.regular { border-left: 3px solid transparent; }
+  .todo-checkbox {
+    width: 14px; height: 14px;
+    border: 1.5px solid #bdc3c7;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .todo-text { flex: 1; }
+  .todo-meta { font-size: 9px; color: #95a5a6; }
+  .pin-icon { color: #FF9A5C; font-size: 12px; }
+  .pros-cons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 11px;
+  }
+  .pros { background: #e8f5e9; padding: 8px; border-radius: 8px; }
+  .cons { background: #fce4ec; padding: 8px; border-radius: 8px; }
+  .pros h4, .cons h4 { font-size: 11px; margin-bottom: 4px; }
+  .pros h4 { color: #27ae60; }
+  .cons h4 { color: #c0392b; }
+  .pros ul, .cons ul { padding-left: 16px; }
+  .pros li, .cons li { margin: 2px 0; }
+  .state-section {
+    margin-top: 20px;
+    background: #fffbe6;
+    border: 1px dashed #f39c12;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: #7f6000;
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📌 置顶按钮 - 极简版(无背景 + 箭头在左)</h1>
+      <p>已根据反馈更新:按钮无背景色,折叠箭头位于"置顶" / "已完成" 文字左侧</p>
+    </div>
+
+    <div class="grid">
+      <!-- 方案 A: 顶部独立按钮(展开状态) -->
+      <div class="phone-card">
+        <div class="phone-title">
+          方案 A: 顶部独立(展开)
+          <span class="badge">状态 1</span>
+        </div>
+        <div class="phone-desc">按钮位于列表顶部,展开时下方显示所有置顶待办</div>
+        <div class="phone-mockup">
+          <div class="status-bar-mock"><span>9:41</span><span>📶 🔋</span></div>
+          <div class="top-bar">
+            <div class="icon-circle">🐕</div>
+            <div class="top-bar-title">我的待办</div>
+            <div class="top-bar-icons"><div class="icon-circle">⋮</div></div>
+          </div>
+          <div class="search-bar-mock">🔍 搜索待办...</div>
+          <div class="list-area">
+            <div class="divider-btn pinned">
+              <span class="arrow expanded">▼</span>
+              <span class="label">置顶</span>
+              <span class="count">(5)</span>
+            </div>
+            <div class="todo-card pinned">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>准备季度汇报</div><div class="todo-meta">📅 今天 14:00</div></div>
+              <span class="pin-icon">📌</span>
+            </div>
+            <div class="todo-card pinned">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>回复客户邮件</div><div class="todo-meta">📅 明天</div></div>
+              <span class="pin-icon">📌</span>
+            </div>
+            <div class="todo-card pinned">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>买生日礼物</div><div class="todo-meta">📅 周日</div></div>
+              <span class="pin-icon">📌</span>
+            </div>
+            <div class="todo-card regular">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>整理桌面</div><div class="todo-meta">无日期</div></div>
+            </div>
+            <div class="todo-card regular">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>阅读 30 分钟</div><div class="todo-meta">无日期</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="state-section">
+          ▲ 当前为"展开"状态,箭头 ▼ 朝下指向下方的置顶待办
+        </div>
+      </div>
+
+      <!-- 方案 A: 折叠状态 -->
+      <div class="phone-card">
+        <div class="phone-title">
+          方案 A: 顶部独立(折叠)
+          <span class="badge">状态 2</span>
+        </div>
+        <div class="phone-desc">折叠时仅显示按钮,所有置顶待办收起不显示</div>
+        <div class="phone-mockup">
+          <div class="status-bar-mock"><span>9:41</span><span>📶 🔋</span></div>
+          <div class="top-bar">
+            <div class="icon-circle">🐕</div>
+            <div class="top-bar-title">我的待办</div>
+            <div class="top-bar-icons"><div class="icon-circle">⋮</div></div>
+          </div>
+          <div class="search-bar-mock">🔍 搜索待办...</div>
+          <div class="list-area">
+            <div class="divider-btn pinned">
+              <span class="arrow collapsed">▶</span>
+              <span class="label">置顶</span>
+              <span class="count">(5)</span>
+            </div>
+            <div class="todo-card regular">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>整理桌面</div><div class="todo-meta">无日期</div></div>
+            </div>
+            <div class="todo-card regular">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>阅读 30 分钟</div><div class="todo-meta">无日期</div></div>
+            </div>
+            <div class="todo-card regular">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>买咖啡</div><div class="todo-meta">无日期</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="state-section">
+          ▶ 当前为"折叠"状态,箭头 ▶ 朝右表示可点击展开
+        </div>
+      </div>
+
+      <!-- 方案 B: 置顶区末尾 + 已完成对比 -->
+      <div class="phone-card">
+        <div class="phone-title">
+          方案 B: 置顶区末尾(推荐)
+          <span class="badge recommended">推荐</span>
+        </div>
+        <div class="phone-desc">按钮夹在置顶待办与普通待办之间,展开时上下分别显示置顶+已完成</div>
+        <div class="phone-mockup">
+          <div class="status-bar-mock"><span>9:41</span><span>📶 🔋</span></div>
+          <div class="top-bar">
+            <div class="icon-circle">🐕</div>
+            <div class="top-bar-title">我的待办</div>
+            <div class="top-bar-icons"><div class="icon-circle">⋮</div></div>
+          </div>
+          <div class="search-bar-mock">🔍 搜索待办...</div>
+          <div class="list-area">
+            <div class="todo-card pinned">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>准备季度汇报</div><div class="todo-meta">📅 今天 14:00</div></div>
+              <span class="pin-icon">📌</span>
+            </div>
+            <div class="todo-card pinned">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>回复客户邮件</div><div class="todo-meta">📅 明天</div></div>
+              <span class="pin-icon">📌</span>
+            </div>
+            <div class="divider-btn pinned">
+              <span class="arrow expanded">▼</span>
+              <span class="label">收起置顶</span>
+              <span class="count">(5)</span>
+            </div>
+            <div class="todo-card regular">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>整理桌面</div><div class="todo-meta">无日期</div></div>
+            </div>
+            <div class="todo-card regular">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>阅读 30 分钟</div><div class="todo-meta">无日期</div></div>
+            </div>
+            <div class="divider-btn completed">
+              <span class="arrow expanded">▼</span>
+              <span class="label">收起已完成</span>
+              <span class="count">(3)</span>
+            </div>
+            <div class="todo-card regular" style="opacity: 0.5;">
+              <div class="todo-checkbox" style="background: #7EC8A0; border-color: #7EC8A0;"></div>
+              <div class="todo-text" style="text-decoration: line-through;">上月报销</div>
+            </div>
+          </div>
+        </div>
+        <div class="state-section">
+          ✅ 展开状态:置顶按钮(▼)和已完成按钮(▼)上下对称,均无背景色
+        </div>
+      </div>
+
+      <!-- 方案 B: 折叠状态对比 -->
+      <div class="phone-card">
+        <div class="phone-title">
+          方案 B: 折叠状态对比
+          <span class="badge recommended">推荐</span>
+        </div>
+        <div class="phone-desc">折叠后两个按钮保持上下对称,简洁明了</div>
+        <div class="phone-mockup">
+          <div class="status-bar-mock"><span>9:41</span><span>📶 🔋</span></div>
+          <div class="top-bar">
+            <div class="icon-circle">🐕</div>
+            <div class="top-bar-title">我的待办</div>
+            <div class="top-bar-icons"><div class="icon-circle">⋮</div></div>
+          </div>
+          <div class="search-bar-mock">🔍 搜索待办...</div>
+          <div class="list-area">
+            <div class="divider-btn pinned">
+              <span class="arrow collapsed">▶</span>
+              <span class="label">展开置顶</span>
+              <span class="count">(5)</span>
+            </div>
+            <div class="todo-card regular">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>整理桌面</div><div class="todo-meta">无日期</div></div>
+            </div>
+            <div class="todo-card regular">
+              <div class="todo-checkbox"></div>
+              <div class="todo-text"><div>阅读 30 分钟</div><div class="todo-meta">无日期</div></div>
+            </div>
+            <div class="divider-btn completed">
+              <span class="arrow collapsed">▶</span>
+              <span class="label">展开已完成</span>
+              <span class="count">(3)</span>
+            </div>
+          </div>
+        </div>
+        <div class="state-section">
+          ✅ 折叠状态:两个按钮文字"展开置顶"、"展开已完成"统一格式
+        </div>
+      </div>
+    </div>
+
+    <div class="header" style="margin-top: 40px;">
+      <h2>🎨 设计规范要点</h2>
+      <p style="margin-top: 8px;">按钮本身: <strong>无背景色</strong> | 箭头: <strong>位于文字左侧</strong> | 颜色: 置顶用主色橙 #FF9A5C,已完成用柔和绿 #7EC8A0</p>
+      <p style="margin-top: 4px;">无水波纹效果,通过点击区域 + 颜色变化反馈交互</p>
+    </div>
+  </div>
+</body>
+</html>

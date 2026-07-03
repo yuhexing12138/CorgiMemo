@@ -1,5 +1,7 @@
 package com.corgimemo.app.ui.components
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -85,11 +88,15 @@ fun EnhancedTopBar(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 左侧图标：MENU（三横线，打开抽屉）/ BACK（返回箭头，退出当前模式）。
+            // 左侧图标：MENU（三横线，开抽屉）/ BACK（返回箭头，退出当前模式）。
             // onLeftIconClick 为 null 时回退到 onMenuClick，保留默认行为。
-            IconButton(onClick = { (onLeftIconClick ?: onMenuClick).invoke() }) {
-                when (leftIconType) {
-                    LeftIconType.MENU -> {
+            // 注意：BACK 模式使用 Box + clickable(indication = null) 替代 IconButton，
+            // 主动去除水波纹（ripple），避免在多选模式点击退出时出现圆形涟漪，
+            // 提升"瞬时退出"的视觉反馈一致性（与 BackHandler 行为一致）。
+            val leftIconClick = onLeftIconClick ?: onMenuClick
+            when (leftIconType) {
+                LeftIconType.MENU -> {
+                    IconButton(onClick = { leftIconClick() }) {
                         @Suppress("DEPRECATION")
                         Icon(
                             imageVector = Icons.Filled.Menu,
@@ -98,7 +105,20 @@ fun EnhancedTopBar(
                             modifier = Modifier.size(24.dp)
                         )
                     }
-                    LeftIconType.BACK -> {
+                }
+                LeftIconType.BACK -> {
+                    val backInteractionSource = remember { MutableInteractionSource() }
+                    Box(
+                        modifier = Modifier
+                            // 40dp 与 M3 IconButton 默认最小触摸区一致，确保可达性
+                            .size(40.dp)
+                            .clickable(
+                                interactionSource = backInteractionSource,
+                                indication = null,
+                                onClick = { leftIconClick() }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回",
