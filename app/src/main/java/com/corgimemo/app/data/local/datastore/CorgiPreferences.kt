@@ -158,6 +158,8 @@ class CorgiPreferences(
         const val HIDE_DETAILS = "hide_details"
         /** V2.9: 隐藏所有已完成项 */
         const val HIDE_COMPLETED_ITEMS = "hide_completed_items"
+        /** V2.10: 待办页"置顶"区域展开状态(默认展开) */
+        const val SHOW_PINNED = "show_pinned"
     }
 
     // ==================== 数据迁移（DataStore → ESP）====================
@@ -223,7 +225,7 @@ class CorgiPreferences(
             listOf(
                 Keys.IS_FIRST_LAUNCH, Keys.SOUND_ENABLED, Keys.HAPTIC_ENABLED,
                 Keys.IS_ONBOARDING_COMPLETED, Keys.AUTO_BACKUP_ENABLED,
-                Keys.SHOW_COMPLETED, Keys.FIRST_GUIDE_SHOWN
+                Keys.SHOW_COMPLETED, Keys.FIRST_GUIDE_SHOWN, Keys.SHOW_PINNED
             ).forEach { key ->
                 val value = legacyPrefs[booleanPreferencesKey(key)]
                 if (value != null) {
@@ -451,6 +453,14 @@ class CorgiPreferences(
 
     suspend fun setHideCompletedItems(hide: Boolean) = withContext(Dispatchers.IO) {
         esp.edit().putBoolean(Keys.HIDE_COMPLETED_ITEMS, hide).apply()
+    }
+
+    /** V2.10: 获取待办页"置顶"区域展开状态的Flow(默认展开) */
+    val showPinned: Flow<Boolean> = booleanFlow(Keys.SHOW_PINNED, true)
+
+    /** V2.10: 设置待办页"置顶"区域展开状态 */
+    suspend fun setShowPinned(show: Boolean) = withContext(Dispatchers.IO) {
+        esp.edit().putBoolean(Keys.SHOW_PINNED, show).apply()
     }
 
     /**
