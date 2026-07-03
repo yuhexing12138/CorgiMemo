@@ -126,6 +126,7 @@ import com.corgimemo.app.ui.components.CorgiPullToRefreshIndicator
 import com.corgimemo.app.ui.components.SortBottomSheet
 import com.corgimemo.app.ui.components.MoreOptionsSheet
 import com.corgimemo.app.ui.components.CollapsibleSectionHeader
+import com.corgimemo.app.ui.components.PendingSectionHeader
 import com.corgimemo.app.ui.components.PinnedSectionHeader
 import com.corgimemo.app.ui.components.PriorityPickerSheet
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
@@ -156,6 +157,8 @@ fun HomeScreen(
     val completedCount by viewModel.completedCount.collectAsState()
     val showPinned by viewModel.showPinned.collectAsState()
     val pinnedCount by viewModel.pinnedCount.collectAsState()
+    val showPending by viewModel.showPending.collectAsState()
+    val pendingCount by viewModel.pendingCount.collectAsState()
     val pendingTodosAll by viewModel.pendingTodos.collectAsState()
     val visibleCompletedTodosAll by viewModel.visibleCompletedTodos.collectAsState()
     val corgiData by viewModel.corgiData.collectAsState()
@@ -735,13 +738,14 @@ fun HomeScreen(
 
                         val displayItems = remember(
                             filteredPending, filteredCompleted,
-                            showPinned, showCompleted,
-                            pinnedCount, completedCount,
+                            showPinned, showPending, showCompleted,
+                            pinnedCount, pendingCount, completedCount,
                             hideCompletedItems
                         ) {
                             buildList {
-                                // 1. 置顶区:仅当 pinnedCount >= 4 时插入按钮
                                 if (pinnedCount >= 4) {
+                                    // ===== Case A:置顶 ≥ 4 =====
+                                    // 1. 置顶区(顶部)
                                     add(DisplayItem.PinnedDivider(
                                         count = pinnedCount,
                                         isExpanded = showPinned
@@ -750,17 +754,36 @@ fun HomeScreen(
                                         filteredPending.filter { it.isPinned }
                                             .forEach { add(DisplayItem.Todo(it)) }
                                     }
+                                    // 2. 待完成区(置顶区之后)
+                                    add(DisplayItem.PendingDivider(
+                                        count = pendingCount,
+                                        isExpanded = showPending
+                                    ))
+                                    if (showPending) {
+                                        filteredPending.filter { !it.isPinned }
+                                            .forEach { add(DisplayItem.Todo(it)) }
+                                    }
                                 } else {
-                                    // pinnedCount < 4 时,置顶待办直接放在列表最前
-                                    filteredPending.filter { it.isPinned }
-                                        .forEach { add(DisplayItem.Todo(it)) }
+                                    // ===== Case B:置顶 < 4 =====
+                                    // 待完成按钮在最前(代表所有待完成)
+                                    add(DisplayItem.PendingDivider(
+                                        count = pendingCount,
+                                        isExpanded = showPending
+                                    ))
+                                    if (showPending) {
+                                        // 置顶先,非置顶后
+                                        filteredPending.filter { it.isPinned }
+                                            .forEach { add(DisplayItem.Todo(it)) }
+                                        filteredPending.filter { !it.isPinned }
+                                            .forEach { add(DisplayItem.Todo(it)) }
+                                    }
                                 }
-                                // 2. 普通待办
-                                filteredPending.filter { !it.isPinned }
-                                    .forEach { add(DisplayItem.Todo(it)) }
                                 // 3. 已完成区(原有逻辑)
                                 if (!hideCompletedItems && completedCount > 0) {
-                                    add(DisplayItem.CompletedDivider(count = completedCount, isExpanded = showCompleted))
+                                    add(DisplayItem.CompletedDivider(
+                                        count = completedCount,
+                                        isExpanded = showCompleted
+                                    ))
                                     if (showCompleted) {
                                         filteredCompleted.forEach { add(DisplayItem.Todo(it)) }
                                     }
@@ -792,6 +815,7 @@ fun HomeScreen(
                                     when (item) {
                                         is DisplayItem.Todo -> item.item.id
                                         is DisplayItem.PinnedDivider -> "pinned_divider_${item.count}"
+                                        is DisplayItem.PendingDivider -> "pending_divider_${item.count}"
                                         is DisplayItem.CompletedDivider -> "completed_divider"
                                     }
                                 },
@@ -827,6 +851,16 @@ fun HomeScreen(
                                             onClick = {
                                                 viewModel.onUserInteraction()
                                                 viewModel.toggleShowPinned()
+                                            }
+                                        )
+                                    }
+                                    is DisplayItem.PendingDivider -> {
+                                        PendingSectionHeader(
+                                            count = displayItem.count,
+                                            isExpanded = displayItem.isExpanded,
+                                            onClick = {
+                                                viewModel.onUserInteraction()
+                                                viewModel.toggleShowPending()
                                             }
                                         )
                                     }
@@ -2305,6 +2339,7 @@ fun CelebrationOverlay(level: CelebrationLevel, message: String) {
 private sealed interface DisplayItem {
     data class Todo(val item: TodoItem) : DisplayItem
     data class PinnedDivider(val count: Int, val isExpanded: Boolean) : DisplayItem
+    data class PendingDivider(val count: Int, val isExpanded: Boolean) : DisplayItem
     data class CompletedDivider(val count: Int, val isExpanded: Boolean) : DisplayItem
 }
 
