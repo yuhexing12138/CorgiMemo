@@ -121,6 +121,7 @@ import com.corgimemo.app.ui.components.SolarTermCard
 import com.corgimemo.app.ui.components.ReorderableLazyColumn
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.ui.components.SearchBar
+import com.corgimemo.app.ui.components.SectionHeaderColors
 import com.corgimemo.app.ui.components.CorgiPullToRefreshIndicator
 import com.corgimemo.app.ui.components.SortBottomSheet
 import com.corgimemo.app.ui.components.MoreOptionsSheet
@@ -2308,10 +2309,10 @@ private sealed interface DisplayItem {
 }
 
 /**
- * "已完成"区域分隔按钮（已重构为调用通用 CollapsibleSectionHeader）
+ * "已完成"区域分隔按钮
  *
- * 视觉变化：移除原 surfaceVariant 半透明背景，改为透明背景，
- * 与新"置顶"按钮统一设计语言（无背景 + 箭头在左 + 无水波纹）。
+ * 颜色已统一使用 [SectionHeaderColors.Completed](绿色 #7EC8A0),
+ * 与新"置顶"/"待完成"按钮形成完整的设计语言。
  */
 @Composable
 private fun CompletedSectionHeader(
@@ -2322,7 +2323,7 @@ private fun CompletedSectionHeader(
     label = "已完成",
     count = count,
     isExpanded = isExpanded,
-    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    color = SectionHeaderColors.Completed,  // 绿色 #7EC8A0
     onClick = onClick,
 )
 
