@@ -168,10 +168,11 @@ object ReorderAlgorithms {
  * @param isDraggable 判断项是否可拖拽（用于分隔按钮等不可拖拽项），默认全部可拖拽
  * @param isPinned 获取项是否置顶的函数（用于跨越检测与边界限制）
  * @param key 项的唯一标识
- * @param onReorder 排序提交回调 (fromIndex, toIndex, crossedPinnedZone)
+ * @param onReorder 排序提交回调 (fromIndex, toIndex, dividerIndex, crossedPinnedZone)
+ * @param dividerIndex CompletedDivider 在 displayItems 中的真实索引（-1 表示没有已完成区）
  * @param isBatchMode 是否处于多选模式（来自 ViewModel）
  * @param selectedIds 已选中项的 key 集合（来自 ViewModel）
- * @param onMergeReorder 合并拖拽提交回调 (selectedIds, toIndex, crossedPinnedZone)
+ * @param onMergeReorder 合并拖拽提交回调 (selectedIds, toIndex, dividerIndex, crossedPinnedZone)
  * @param listState LazyListState 实例，外部传入可读取滚动状态；默认内部创建
  * @param modifier Modifier
  * @param content 列表项 Composable，参数为 (index, item, isDragging, isDragActive)
@@ -183,10 +184,11 @@ fun <T> ReorderableLazyColumn(
     isDraggable: (T) -> Boolean = { true },
     isPinned: (T) -> Boolean,
     key: (T) -> Any,
-    onReorder: (fromIndex: Int, toIndex: Int, crossedPinnedZone: Boolean) -> Unit,
+    onReorder: (fromIndex: Int, toIndex: Int, dividerIndex: Int, crossedPinnedZone: Boolean) -> Unit,
+    dividerIndex: Int = -1,
     isBatchMode: Boolean = false,
     selectedIds: Set<Any> = emptySet(),
-    onMergeReorder: (selectedIds: Set<Any>, toIndex: Int, crossedPinnedZone: Boolean) -> Unit = { _, _, _ -> },
+    onMergeReorder: (selectedIds: Set<Any>, toIndex: Int, dividerIndex: Int, crossedPinnedZone: Boolean) -> Unit = { _, _, _, _ -> },
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
     content: @Composable (index: Int, item: T, isDragging: Boolean, isDragActive: Boolean) -> Unit
@@ -465,7 +467,7 @@ fun <T> ReorderableLazyColumn(
 
         // 5. 调用外部回调执行批量重排（触发 items 变更 → LaunchedEffect 同步 displayItems）
         val selectedKeys = mergeSelectedItems.map { key(it) }.toSet()
-        onMergeReorder(selectedKeys, mergePlaceholderIndex, crossed)
+        onMergeReorder(selectedKeys, mergePlaceholderIndex, dividerIndex, crossed)
 
         // 6. 确认触觉反馈
         HapticFeedbackManager.performHapticFeedback(
@@ -693,6 +695,7 @@ fun <T> ReorderableLazyColumn(
                                             onReorder(
                                                 draggedOriginalIndex,
                                                 draggedCurrentIndex,
+                                                dividerIndex,
                                                 crossedPinnedZone
                                             )
                                             HapticFeedbackManager.performHapticFeedback(

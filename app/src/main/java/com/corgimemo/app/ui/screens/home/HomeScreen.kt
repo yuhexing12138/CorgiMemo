@@ -734,7 +734,6 @@ fun HomeScreen(
 
                         val filteredPending = applyFilters(pendingTodosAll)
                         val filteredCompleted = applyFilters(visibleCompletedTodosAll)
-                        val dividerIndex = if (!hideCompletedItems && completedCount > 0) filteredPending.size else -1
 
                         val displayItems = remember(
                             filteredPending, filteredCompleted,
@@ -819,18 +818,21 @@ fun HomeScreen(
                                         is DisplayItem.CompletedDivider -> "completed_divider"
                                     }
                                 },
-                                onReorder = { fromIndex, toIndex, crossed ->
-                                    viewModel.reorderOnDisplayList(fromIndex, toIndex, crossed)
+                                onReorder = { fromIndex, toIndex, dividerIndex, crossed ->
+                                    viewModel.reorderOnDisplayList(fromIndex, toIndex, dividerIndex, crossed)
                                 },
                                 isBatchMode = isBatchMode,
                                 selectedIds = selectedTodoIds.map { it as Any }.toSet(),
-                                onMergeReorder = { selectedIds, toIndex, crossed ->
+                                onMergeReorder = { selectedIds, toIndex, dividerIndex, crossed ->
                                     viewModel.mergeReorderOnDisplayList(
                                         selectedIds.mapNotNull { it as? Long }.toSet(),
                                         toIndex,
+                                        dividerIndex,
                                         crossed
                                     )
                                 },
+                                /** 已完成分隔按钮在 displayItems 中的真实索引（-1 表示无已完成区） */
+                                dividerIndex = displayItems.indexOfFirst { it is DisplayItem.CompletedDivider },
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(horizontal = 8.dp)

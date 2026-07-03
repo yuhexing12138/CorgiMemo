@@ -769,9 +769,11 @@ class HomeViewModel @Inject constructor(
      *
      * @param fromIndex 被拖项原始位置（displayItems 全局索引）
      * @param toIndex 被拖项最终位置（displayItems 全局索引）
+     * @param dividerIndex CompletedDivider 在 displayItems 中的真实索引（-1 表示没有已完成区）
+     *                    由 HomeScreen 通过 `displayItems.indexOfFirst { it is DisplayItem.CompletedDivider }` 计算后传入
      * @param crossedPinnedZone 是否跨越置顶区分界线
      */
-    fun reorderOnDisplayList(fromIndex: Int, toIndex: Int, crossedPinnedZone: Boolean) {
+    fun reorderOnDisplayList(fromIndex: Int, toIndex: Int, dividerIndex: Int, crossedPinnedZone: Boolean) {
         viewModelScope.launch {
             val pendingList = pendingTodos.value.toMutableList()
             val completedList = if (_showCompleted.value) {
@@ -779,8 +781,18 @@ class HomeViewModel @Inject constructor(
             } else {
                 mutableListOf()
             }
-            val dividerIndex = pendingList.size
-            val totalSize = pendingList.size + 1 + completedList.size
+            // [Bug 修复] 不再假设 dividerIndex = pendingList.size。
+            // 已完成分隔按钮在 displayItems 中的真实索引由 HomeScreen 传入。
+            // Case A (置顶 ≥ 4): dividerIndex = pendingList.size + 2 (PinnedDivider + PendingDivider + 待办项)
+            // Case B (置顶 < 4): dividerIndex = pendingList.size + 1 (PendingDivider + 待办项)
+            // dividerIndex = -1: 无已完成区
+            val totalSize = if (dividerIndex >= 0) {
+                // 已完成区存在:pending 区域大小 + 1 个 CompletedDivider + completed 项数
+                dividerIndex + 1 + completedList.size
+            } else {
+                // 无已完成区:保守上界(最多 PinnedDivider + PendingDivider + pending 项)
+                pendingList.size + 2
+            }
 
             if (fromIndex == toIndex) return@launch
             if (fromIndex !in 0 until totalSize || toIndex !in 0..totalSize) return@launch
@@ -851,7 +863,7 @@ class HomeViewModel @Inject constructor(
                     pendingList.add(insertIdx, finalItem)
                 }
                 toCompleted -> {
-                    val insertIdx = (toIndex - pendingList.size - 1).coerceAtMost(completedList.size)
+                    val insertIdx = (toIndex - dividerIndex - 1).coerceAtMost(completedList.size)
                     completedList.add(insertIdx, finalItem)
                 }
                 toIndex == dividerIndex -> {
@@ -917,11 +929,13 @@ class HomeViewModel @Inject constructor(
      *
      * @param selectedIds 已选中项的 id 集合
      * @param toIndex 占位框在 displayItems 中的目标位置
+     * @param dividerIndex CompletedDivider 在 displayItems 中的真实索引（-1 表示没有已完成区）
      * @param crossedPinnedZone 是否跨越置顶区分界线
      */
     fun mergeReorderOnDisplayList(
         selectedIds: Set<Long>,
         toIndex: Int,
+        dividerIndex: Int,
         crossedPinnedZone: Boolean
     ) {
         viewModelScope.launch {
@@ -933,8 +947,12 @@ class HomeViewModel @Inject constructor(
             } else {
                 mutableListOf()
             }
-            val dividerIndex = pendingList.size
-            val totalSize = pendingList.size + 1 + completedList.size
+            // [Bug 修复] 使用外部传入的 dividerIndex,不再假设 = pendingList.size
+            val totalSize = if (dividerIndex >= 0) {
+                dividerIndex + 1 + completedList.size
+            } else {
+                pendingList.size + 2
+            }
 
             if (toIndex !in 0..totalSize) return@launch
 
@@ -998,7 +1016,7 @@ class HomeViewModel @Inject constructor(
                     pendingList.addAll(insertIdx, finalItems)
                 }
                 toCompleted -> {
-                    val insertIdx = (toIndex - pendingList.size - 1).coerceAtMost(completedList.size)
+                    val insertIdx = (toIndex - dividerIndex - 1).coerceAtMost(completedList.size)
                     completedList.addAll(insertIdx, finalItems)
                 }
                 toIndex == dividerIndex -> {
