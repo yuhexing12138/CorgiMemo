@@ -106,24 +106,42 @@ object ReorderAlgorithms {
      * 规则：
      * - 置顶区 = 列表顶部连续的 isPinned=true 项
      * - 跨越 = 被拖项原始 isPinned 与当前位置邻居的 isPinned 不同
+     * - 邻居 = 向前/向后扫描时遇到的第一个"非分隔按钮"项
      *
-     * @param displayItems 当前显示列表（被拖项已移除后）的 isPinned 序列
+     * 注意：分隔按钮（PinnedDivider/PendingDivider/CompletedDivider）的 isPinned=false，
+     * 不能作为邻居参与跨区判断，必须跳过。
+     *
+     * @param displayItems 当前显示列表（被拖项已移除后）
+     * @param isPinned 查询项是否置顶
+     * @param isDivider 查询项是否分隔按钮（需跳过的项）
      * @param draggedOriginalIsPinned 被拖项原始 isPinned
      * @param draggedCurrentIndex 被拖项当前列表位置（插入位置）
      * @return true=已跨越分界线
      */
-    fun checkPinnedZoneCrossed(
-        displayItems: List<Boolean>,
+    fun <T> checkPinnedZoneCrossed(
+        displayItems: List<T>,
+        isPinned: (T) -> Boolean,
+        isDivider: (T) -> Boolean,
         draggedOriginalIsPinned: Boolean,
         draggedCurrentIndex: Int
     ): Boolean {
         if (draggedCurrentIndex < 0 || draggedCurrentIndex >= displayItems.size) return false
-        val neighborIsPinned = when {
-            draggedCurrentIndex > 0 -> displayItems[draggedCurrentIndex - 1]
-            draggedCurrentIndex < displayItems.size - 1 -> displayItems[draggedCurrentIndex + 1]
-            else -> draggedOriginalIsPinned
+
+        // 优先向前找第一个非 divider 邻居
+        var neighborIdx = -1
+        for (i in draggedCurrentIndex - 1 downTo 0) {
+            if (!isDivider(displayItems[i])) { neighborIdx = i; break }
         }
-        return draggedOriginalIsPinned != neighborIsPinned
+        // 前面没有则向后找
+        if (neighborIdx < 0) {
+            for (i in draggedCurrentIndex + 1 until displayItems.size) {
+                if (!isDivider(displayItems[i])) { neighborIdx = i; break }
+            }
+        }
+        // 整个列表都是 divider（理论上不可能）→ 不跨区
+        if (neighborIdx < 0) return false
+
+        return draggedOriginalIsPinned != isPinned(displayItems[neighborIdx])
     }
 
     /**
@@ -183,6 +201,7 @@ fun <T> ReorderableLazyColumn(
     isDragEnabled: Boolean,
     isDraggable: (T) -> Boolean = { true },
     isPinned: (T) -> Boolean,
+    isDivider: (T) -> Boolean,
     key: (T) -> Any,
     onReorder: (fromIndex: Int, toIndex: Int, dividerIndex: Int, crossedPinnedZone: Boolean) -> Unit,
     dividerIndex: Int = -1,
@@ -443,12 +462,13 @@ fun <T> ReorderableLazyColumn(
         }
 
         // 1. 计算置顶区跨越
-        val displayPinned = displayItems.map { isPinned(it) }
         val anySelectedPinned = mergeSelectedItems.any { isPinned(it) }
         val crossed = ReorderAlgorithms.checkPinnedZoneCrossed(
-            displayItems = displayPinned,
+            displayItems = displayItems,
+            isPinned = isPinned,
+            isDivider = isDivider,
             draggedOriginalIsPinned = anySelectedPinned,
-            draggedCurrentIndex = mergePlaceholderIndex.coerceAtMost(displayPinned.size - 1)
+            draggedCurrentIndex = mergePlaceholderIndex.coerceAtMost(displayItems.size - 1)
         )
 
         // 2. 保存释放动画所需的选中项信息（displayItems 更新后用于区分原项与后续项）
@@ -686,9 +706,10 @@ fun <T> ReorderableLazyColumn(
                                             draggedOriginalIndex != draggedCurrentIndex &&
                                             draggedCurrentIndex >= 0
                                         ) {
-                                            val displayPinned = displayItems.map { isPinned(it) }
                                             crossedPinnedZone = ReorderAlgorithms.checkPinnedZoneCrossed(
-                                                displayItems = displayPinned,
+                                                displayItems = displayItems,
+                                                isPinned = isPinned,
+                                                isDivider = isDivider,
                                                 draggedOriginalIsPinned = draggedOriginalIsPinned,
                                                 draggedCurrentIndex = draggedCurrentIndex
                                             )

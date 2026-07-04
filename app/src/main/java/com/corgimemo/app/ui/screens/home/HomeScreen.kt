@@ -816,6 +816,9 @@ fun HomeScreen(
                                     && searchQuery.isBlank() && selectedCategoryId == null,
                                 isDraggable = { it is DisplayItem.Todo },
                                 isPinned = { (it as? DisplayItem.Todo)?.item?.isPinned ?: false },
+                                isDivider = { it is DisplayItem.PinnedDivider ||
+                                              it is DisplayItem.PendingDivider ||
+                                              it is DisplayItem.CompletedDivider },
                                 key = { item ->
                                     when (item) {
                                         is DisplayItem.Todo -> item.item.id
