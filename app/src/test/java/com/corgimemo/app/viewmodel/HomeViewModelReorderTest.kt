@@ -14,6 +14,8 @@ import com.corgimemo.app.data.repository.TaskDailyStatsRepository
 import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.data.repository.SubTaskManager
 import com.corgimemo.app.data.repository.SubTaskProgress
+import com.corgimemo.app.ui.components.TodoZone
+import com.corgimemo.app.ui.components.ZoneDragResult
 import com.corgimemo.app.util.FileCopyManager
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -137,10 +139,18 @@ class HomeViewModelReorderTest {
      *
      * pendingTodos 使用 stateIn(WhileSubscribed)，需要活跃订阅者才会处理 _todos 的变更。
      * setUp 与测试方法是独立的 runTest 作用域，所以必须在每个测试内订阅。
+     *
+     * Task 4：同时激活 4 个独立 zone StateFlow（pinnedPendingTodos /
+     * pendingTodosNew / pinnedCompletedTodos / completedTodos），
+     * 让 reorderOnDragResult 能取到正确的 value。
      */
     private fun kotlinx.coroutines.test.TestScope.setupTodos(todos: List<TodoItem>) {
         viewModel.refreshTodosForTest(todos)
         backgroundScope.launch { viewModel.pendingTodos.collect {} }
+        backgroundScope.launch { viewModel.pinnedPendingTodos.collect {} }
+        backgroundScope.launch { viewModel.pendingTodosNew.collect {} }
+        backgroundScope.launch { viewModel.pinnedCompletedTodos.collect {} }
+        backgroundScope.launch { viewModel.completedTodos.collect {} }
         runCurrent()
     }
 
@@ -657,137 +667,156 @@ class HomeViewModelReorderTest {
         coVerify(atLeast = 1) { mockTodoRepository.updateTodos(any()) }
     }
 
-    // ==================== 已完成区内拖拽回归测试 ====================
+    // ==================== Task 4: reorderOnDragResult 测试 ====================
 
     /**
-     * 场景：已完成项在已完成区内拖拽，不应触发 status 变更
+     * 场景：同区域拖拽（PENDING 区内）保持 zone 不变，仅重排 sortOrder
      *
-     * 用户反馈的拖拽 bug 根因验证：已完成项 (status=1) 在已完成区内重新排序时，
-     * ViewModel 不应误判为"跨区域拖拽"而调用 updateTodo 改 status。
+     * 数据：3 个非置顶待完成（id=1,2,3, sortOrder=10000,10001,10002）
+     * 拖 id=1 到 targetZoneRelativeIndex=1（即 id=2 和 id=3 之间）
      *
-     * displayItems 结构：
-     * [PendingDivider(0), 1(1), 2(2), 3(3), 4(4), 5(5), 6(6), CompletedDivider(7), 7(8), 8(9), 9(10), 10(11)]
-     *   0                1   2   3   4   5   6    7                   8   9    10   11
-     *
-     * - 1-6: status=0 (pending), sortOrder=0-5
-     * - 7-10: status=1 (completed), sortOrder=6-9, completedAt=now
-     *
-     * dividerIndex = 7 (CompletedDivider 真实位置)
-     * pendingStartIndex = 1 (前导 1 个 PendingDivider), midPendingDividerIndex = -1 (Case B, 无置顶)
-     *
-     * 拖 7(fromIndex=8) 到 8、9 之间(toIndex=9) — 都在已完成区内
      * 预期：
-     * - fromCompleted = true (8 > 7)
-     * - toCompleted = true (9 > 7)
-     * - 同区域，无 status 变更，无 isPinned 变更 → 不调用 updateTodo
-     * - 调用 updateTodos 重排 sortOrder，且 7 的 status 仍然是 1
+     * - originalZone = currentZone = PENDING（crossedZone=false）
+     * - 不调用 updateTodo（无字段翻转）
+     * - 调用 updateTodos 重排 sortOrder：
+     *   - id=1 的 sortOrder=10001
+     *   - id=2 的 sortOrder=10000
+     *   - id=3 的 sortOrder=10002（不变）
      */
     @Test
-    fun `已完成项在已完成区内拖拽不应改 status`() = runTest(testDispatcher) {
-        // Given: 6 个待完成 + 4 个已完成（7 已被预先拖到已完成区，status=1, completedAt=now）
-        val now = System.currentTimeMillis()
+    fun `reorderOnDragResult 同区拖拽保持 zone 不变仅重排 sortOrder`() = runTest(testDispatcher) {
         val todos = listOf(
-            // 1-6: 待完成 (sortOrder 0-5)
-            testTodo(1, isPinned = false, sortOrder = 0),
-            testTodo(2, isPinned = false, sortOrder = 1),
-            testTodo(3, isPinned = false, sortOrder = 2),
-            testTodo(4, isPinned = false, sortOrder = 3),
-            testTodo(5, isPinned = false, sortOrder = 4),
-            testTodo(6, isPinned = false, sortOrder = 5),
-            // 7-10: 已完成 (sortOrder 6-9, completedAt=now)
-            testTodo(7, isPinned = false, sortOrder = 6).copy(status = 1, completedAt = now),
-            testTodo(8, isPinned = false, sortOrder = 7).copy(status = 1, completedAt = now),
-            testTodo(9, isPinned = false, sortOrder = 8).copy(status = 1, completedAt = now),
-            testTodo(10, isPinned = false, sortOrder = 9).copy(status = 1, completedAt = now)
+            testTodo(1, isPinned = false, sortOrder = 10000),
+            testTodo(2, isPinned = false, sortOrder = 10001),
+            testTodo(3, isPinned = false, sortOrder = 10002)
         )
-        // 1. 打开已完成区，使 _showCompleted = true（reorderOnDisplayList 据此填充 completedList）
-        viewModel.toggleShowCompleted()
-        // 2. 订阅 visibleCompletedTodos，使 stateIn(WhileSubscribed) 计算出非空列表
-        //    否则 completedList 为空，fromCompleted 的 removeAt 会越界导致静默 return
-        backgroundScope.launch { viewModel.visibleCompletedTodos.collect {} }
-        // 3. 注入数据并激活 pendingTodos
         setupTodos(todos)
-        runCurrent()
 
-        // When: 用户在已完成区内拖动 7 到 8、9 之间
-        // displayItems: [PendingDivider(0), 1(1), ..., 6(6), CompletedDivider(7), 7(8), 8(9), 9(10), 10(11)]
-        // 拖 7(fromIndex=8) 到 8、9 之间(toIndex=9) — 均在已完成区内
-        viewModel.reorderOnDisplayList(
-            fromIndex = 8,
-            toIndex = 9,
-            dividerIndex = 7,
-            crossedPinnedZone = false,
-            pendingStartIndex = 1,
-            midPendingDividerIndex = -1
+        val draggedTodo = todos[0]
+        val dragResult = ZoneDragResult(
+            originalZone = TodoZone.PENDING,
+            currentZone = TodoZone.PENDING,
+            finalIsPinned = false,
+            finalStatus = 0,
+            crossedZone = false
         )
 
-        // Then: 不调用 updateTodo（status 未变，isPinned 未变）
+        viewModel.reorderOnDragResult(
+            draggedItemId = 1L,
+            draggedTodo = draggedTodo,
+            dragResult = dragResult,
+            targetZoneRelativeIndex = 1
+        )
+
+        // 不调用 updateTodo（无字段翻转）
         coVerify(exactly = 0) { mockTodoRepository.updateTodo(any()) }
-        // Then: 调用 updateTodos 重排 sortOrder，且 7 的 status 仍然是 1
+        // 调用 updateTodos 重排 sortOrder：id=1 → 10001, id=2 → 10000
         coVerify(atLeast = 1) { mockTodoRepository.updateTodos(match { updates ->
-            val item7 = updates.find { it.id == 7L }
-            item7?.status == 1
+            val byId = updates.associateBy { it.id }
+            byId[1L]?.sortOrder == 10001 && byId[2L]?.sortOrder == 10000
         }) }
     }
 
     /**
-     * 场景：已完成项被拖到 pending 区，应触发 status 变更（status: 1 → 0, completedAt: now → null）
+     * 场景：跨区拖拽 PENDING → COMPLETED，翻转 status 并设置 completedAt
      *
-     * 与上一测试对照：跨区域拖拽应正确触发 updateTodo 改 status 和 completedAt，
-     * 验证 ViewModel 跨区行为处理正确。
+     * 数据：2 个非置顶待完成（id=1,2）+ 1 个非置顶已完成（id=3, sortOrder=30000）
+     * 拖 id=1 到 COMPLETED 区 targetZoneRelativeIndex=0
      *
-     * displayItems 结构同上：
-     * [PendingDivider(0), 1(1), 2(2), 3(3), 4(4), 5(5), 6(6), CompletedDivider(7), 7(8), 8(9), 9(10), 10(11)]
-     *
-     * 拖 7(fromIndex=8, 已完成区) 到 pending 区(toIndex=6, 即 6 的位置)
      * 预期：
-     * - fromCompleted = true (8 > 7)
-     * - toPending = true (6 < 7)
-     * - 跨区域：finalItem = 7.copy(status=0, completedAt=null, ...)
-     * - stateChanged = true → 调用 updateTodo，传入 status=0, completedAt=null
+     * - finalItem.status = 1, finalItem.completedAt != null
+     * - updateTodos 被调用：
+     *   - id=1 的 status=1, completedAt != null, sortOrder=30000, isPinned=false
+     *   - id=3 的 sortOrder=30001
+     *   - id=2 的 sortOrder 不变（10001，PENDING 区未受影响区域不重排）
+     *
+     * 注：handleTaskCompleted 会因 _corgiData.value == null 而 return，
+     *     不影响 updateTodos 的调用验证。
      */
     @Test
-    fun `已完成项被拖到 pending 区应改 status`() = runTest(testDispatcher) {
-        // Given: 同上设置
+    fun `reorderOnDragResult 跨区拖拽 PENDING 到 COMPLETED 翻转 status`() = runTest(testDispatcher) {
         val now = System.currentTimeMillis()
         val todos = listOf(
-            // 1-6: 待完成 (sortOrder 0-5)
-            testTodo(1, isPinned = false, sortOrder = 0),
-            testTodo(2, isPinned = false, sortOrder = 1),
-            testTodo(3, isPinned = false, sortOrder = 2),
-            testTodo(4, isPinned = false, sortOrder = 3),
-            testTodo(5, isPinned = false, sortOrder = 4),
-            testTodo(6, isPinned = false, sortOrder = 5),
-            // 7-10: 已完成 (sortOrder 6-9, completedAt=now)
-            testTodo(7, isPinned = false, sortOrder = 6).copy(status = 1, completedAt = now),
-            testTodo(8, isPinned = false, sortOrder = 7).copy(status = 1, completedAt = now),
-            testTodo(9, isPinned = false, sortOrder = 8).copy(status = 1, completedAt = now),
-            testTodo(10, isPinned = false, sortOrder = 9).copy(status = 1, completedAt = now)
+            testTodo(1, isPinned = false, sortOrder = 10000),
+            testTodo(2, isPinned = false, sortOrder = 10001),
+            testTodo(3, isPinned = false, sortOrder = 30000).copy(status = 1, completedAt = now)
         )
-        // 1. 打开已完成区
-        viewModel.toggleShowCompleted()
-        // 2. 订阅 visibleCompletedTodos，确保 completedList 非空
-        backgroundScope.launch { viewModel.visibleCompletedTodos.collect {} }
-        // 3. 注入数据
         setupTodos(todos)
-        runCurrent()
 
-        // When: 用户拖 7 到 pending 区（toIndex=6, 即原 6 的位置）
-        viewModel.reorderOnDisplayList(
-            fromIndex = 8,
-            toIndex = 6,
-            dividerIndex = 7,
-            crossedPinnedZone = false,
-            pendingStartIndex = 1,
-            midPendingDividerIndex = -1
+        val draggedTodo = todos[0]
+        val dragResult = ZoneDragResult(
+            originalZone = TodoZone.PENDING,
+            currentZone = TodoZone.COMPLETED,
+            finalIsPinned = false,
+            finalStatus = 1,
+            crossedZone = true
         )
 
-        // Then: updateTodo 被调用，7 的 status 改为 0，completedAt 改为 null
-        coVerify(atLeast = 1) {
-            mockTodoRepository.updateTodo(match {
-                it.id == 7L && it.status == 0 && it.completedAt == null
-            })
-        }
+        viewModel.reorderOnDragResult(
+            draggedItemId = 1L,
+            draggedTodo = draggedTodo,
+            dragResult = dragResult,
+            targetZoneRelativeIndex = 0
+        )
+
+        coVerify(atLeast = 1) { mockTodoRepository.updateTodos(match { updates ->
+            val byId = updates.associateBy { it.id }
+            // id=1 翻转为完成
+            byId[1L]?.status == 1 &&
+                byId[1L]?.completedAt != null &&
+                byId[1L]?.sortOrder == 30000 &&
+                byId[1L]?.isPinned == false &&
+                // id=3 顺延为 30001
+                byId[3L]?.sortOrder == 30001
+        }) }
+    }
+
+    /**
+     * 场景：sortOrder 按 zone 分段分配（PENDING → PINNED_PENDING 跨入置顶区）
+     *
+     * 数据：1 个置顶待完成（id=1, sortOrder=0）+ 1 个非置顶待完成（id=2, sortOrder=10000）
+     * 拖 id=2 到 PINNED_PENDING 区 targetZoneRelativeIndex=0
+     *
+     * 预期：
+     * - finalItem.isPinned=true, finalStatus=0
+     * - updateTodos 被调用：
+     *   - id=2 在 PINNED_PENDING 区，sortOrder=0，isPinned=true
+     *   - id=1 在 PINNED_PENDING 区，sortOrder=1（被顺延）
+     *   - PENDING 区已空（id=2 已移走），不参与更新
+     */
+    @Test
+    fun `reorderOnDragResult sortOrder 按 zone 分段分配`() = runTest(testDispatcher) {
+        val todos = listOf(
+            testTodo(1, isPinned = true, sortOrder = 0),
+            testTodo(2, isPinned = false, sortOrder = 10000)
+        )
+        setupTodos(todos)
+
+        val draggedTodo = todos[1]
+        val dragResult = ZoneDragResult(
+            originalZone = TodoZone.PENDING,
+            currentZone = TodoZone.PINNED_PENDING,
+            finalIsPinned = true,
+            finalStatus = 0,
+            crossedZone = true
+        )
+
+        viewModel.reorderOnDragResult(
+            draggedItemId = 2L,
+            draggedTodo = draggedTodo,
+            dragResult = dragResult,
+            targetZoneRelativeIndex = 0
+        )
+
+        coVerify(atLeast = 1) { mockTodoRepository.updateTodos(match { updates ->
+            val byId = updates.associateBy { it.id }
+            // id=2 跨入 PINNED_PENDING 区，sortOrder=0，isPinned=true
+            byId[2L]?.sortOrder == 0 &&
+                byId[2L]?.isPinned == true &&
+                byId[2L]?.status == 0 &&
+                // id=1 顺延为 sortOrder=1
+                byId[1L]?.sortOrder == 1
+        }) }
     }
 
     // ==================== 测试辅助方法 ====================

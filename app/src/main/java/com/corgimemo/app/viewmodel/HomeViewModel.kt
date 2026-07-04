@@ -42,6 +42,8 @@ import com.corgimemo.app.data.local.db.OperationLogEntity
 import com.corgimemo.app.data.repository.OperationLogRepository
 import com.corgimemo.app.data.repository.TaskDailyStatsRepository
 import com.corgimemo.app.data.repository.TodoRepository
+import com.corgimemo.app.ui.components.TodoZone
+import com.corgimemo.app.ui.components.ZoneDragResult
 import com.corgimemo.app.util.FileCopyManager
 import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiBehaviorManager
@@ -185,6 +187,46 @@ class HomeViewModel @Inject constructor(
                 .thenBy { it.sortOrder }
                 .thenByDescending { it.createdAt }
         )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // ========== Task 4: 4 个独立区域 StateFlow（按 TodoZone 拆分） ==========
+    // 旧 pendingTodos / visibleCompletedTodos 暂时保留，等 Task 7 删除旧代码时统一清理。
+    // 新 flow 按 zone 分段（PINNED_PENDING=0-9999, PENDING=10000-19999,
+    // PINNED_COMPLETED=20000-29999, COMPLETED=30000-39999）纯粹按 sortOrder 排序。
+
+    /** PINNED_PENDING 区：置顶待完成（isPinned=true, status=0） */
+    val pinnedPendingTodos: StateFlow<List<TodoItem>> = _todos.map { todos ->
+        todos.filter { it.isPinned && it.status == 0 }
+            .sortedBy { it.sortOrder }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * PENDING 区：普通待完成（isPinned=false, status=0）
+     *
+     * 注：旧 [pendingTodos] 含置顶，新 [pendingTodosNew] 仅含非置顶。
+     * Task 7 删除旧代码后会将此重命名为 pendingTodos。
+     */
+    val pendingTodosNew: StateFlow<List<TodoItem>> = _todos.map { todos ->
+        todos.filter { !it.isPinned && it.status == 0 }
+            .sortedBy { it.sortOrder }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** PINNED_COMPLETED 区：置顶已完成（含 30 天过滤） */
+    val pinnedCompletedTodos: StateFlow<List<TodoItem>> = _todos.map { todos ->
+        val thirtyDaysAgo = System.currentTimeMillis() - 30 * 24 * 60 * 60 * 1000L
+        todos.filter {
+            it.isPinned && it.status == 1 &&
+                it.completedAt != null && it.completedAt >= thirtyDaysAgo
+        }.sortedBy { it.sortOrder }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** COMPLETED 区：普通已完成（含 30 天过滤） */
+    val completedTodos: StateFlow<List<TodoItem>> = _todos.map { todos ->
+        val thirtyDaysAgo = System.currentTimeMillis() - 30 * 24 * 60 * 60 * 1000L
+        todos.filter {
+            !it.isPinned && it.status == 1 &&
+                it.completedAt != null && it.completedAt >= thirtyDaysAgo
+        }.sortedBy { it.sortOrder }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** 已完成待办总数（用于分隔按钮显示） */
@@ -939,6 +981,134 @@ class HomeViewModel @Inject constructor(
             }
             if (updates.isNotEmpty()) {
                 todoRepository.updateTodos(updates)
+            }
+        }
+    }
+
+
+    // ========== Task 4: reorderOnDragResult（基于 ZoneDragResult 的新版拖拽持久化） ==========
+
+    /**
+     * 应用拖拽结果到数据层（新版，基于 [ZoneDragResult]）
+     *
+     * 设计要点：
+     * 1. 区域 List 单一来源：4 个独立 StateFlow（[pinnedPendingTodos] /
+     *    [pendingTodosNew] / [pinnedCompletedTodos] / [completedTodos]），
+     *    不再依赖 displayItems 全局索引，避免 divider 位置变更带来的偏差。
+     * 2. zone 内排序按 sortOrder 分段（PINNED_PENDING=0-9999, PENDING=10000-19999,
+     *    PINNED_COMPLETED=20000-29999, COMPLETED=30000-39999）。
+     * 3. 单次 [TodoRepository.updateTodos] 批量持久化，避免 N 次 Flow 推送。
+     * 4. completedAt 副作用：跨入完成区设为 now，跨出完成区置 null，
+     *    直接合并到 finalItem 中（不依赖 repository.updateCompletedAt）。
+     * 5. 跨入完成区时触发 [handleTaskCompleted]（柯基庆祝/成就/经验值）。
+     *
+     * 与 [reorderOnDisplayList] 的区别：
+     * - 不需要 dividerIndex / pendingStartIndex / midPendingDividerIndex 等 displayItems 索引
+     * - 由调用方传入 [draggedTodo]（DisplayItem 是 HomeScreen 的 private sealed interface，
+     *   这里用 TodoItem 直接接收，避免反射或类型提升）
+     *
+     * @param draggedItemId 被拖项 ID（用于从原区域 List 移除）
+     * @param draggedTodo 被拖项原始数据（用于 copy 出 finalItem）
+     * @param dragResult [DragZoneStateMachine.endDrag] 输出的最终状态
+     * @param targetZoneRelativeIndex 目标 zone 列表内的相对索引（0..size）
+     */
+    fun reorderOnDragResult(
+        draggedItemId: Long,
+        draggedTodo: TodoItem,
+        dragResult: ZoneDragResult,
+        targetZoneRelativeIndex: Int
+    ) {
+        viewModelScope.launch {
+            val originalZone = dragResult.originalZone
+            val targetZone = dragResult.currentZone
+
+            // ① 从原区域 List 移除被拖项
+            val originalList = getListForZone(originalZone).toMutableList()
+            originalList.removeAll { it.id == draggedItemId }
+
+            // ② 应用 ZoneDragResult 的 finalIsPinned / finalStatus + completedAt 副作用
+            val now = System.currentTimeMillis()
+            val fromCompleted = originalZone == TodoZone.PINNED_COMPLETED ||
+                originalZone == TodoZone.COMPLETED
+            val toCompleted = targetZone == TodoZone.PINNED_COMPLETED ||
+                targetZone == TodoZone.COMPLETED
+            val newCompletedAt: Long? = when {
+                !fromCompleted && toCompleted -> now
+                fromCompleted && !toCompleted -> null
+                else -> draggedTodo.completedAt
+            }
+            val finalItem = draggedTodo.copy(
+                isPinned = dragResult.finalIsPinned,
+                status = dragResult.finalStatus,
+                completedAt = newCompletedAt,
+                updatedAt = now
+            )
+
+            // ③ 插入到目标区域 List 的相对位置
+            val targetList = getListForZone(targetZone).toMutableList()
+            // 防御：若被拖项原本就在 target zone（同区拖拽），先移除避免重复
+            targetList.removeAll { it.id == draggedItemId }
+            val insertIdx = targetZoneRelativeIndex.coerceIn(0, targetList.size)
+            targetList.add(insertIdx, finalItem)
+
+            // ④ 重新分配 sortOrder（仅受影响区域，按 zone 分段）
+            reassignSortOrder(targetList, targetZone)
+            if (originalZone != targetZone) {
+                reassignSortOrder(originalList, originalZone)
+            }
+
+            // ⑤ 单次批量持久化
+            val allToUpdate = if (originalZone != targetZone) {
+                targetList + originalList
+            } else {
+                targetList
+            }
+            todoRepository.updateTodos(allToUpdate)
+
+            // ⑥ 跨区副作用：完成↔未完成时触发柯基庆祝/成就/经验值
+            if (!fromCompleted && toCompleted) {
+                handleTaskCompleted(finalItem)
+            }
+        }
+    }
+
+    /**
+     * 获取指定 zone 对应的当前 List 快照
+     *
+     * 注：使用 value 取 StateFlow 当前值（受 WhileSubscribed 订阅影响，
+     * 调用方应确保 UI 层有活跃订阅）。
+     */
+    private fun getListForZone(zone: TodoZone): List<TodoItem> {
+        return when (zone) {
+            TodoZone.PINNED_PENDING -> pinnedPendingTodos.value
+            TodoZone.PENDING -> pendingTodosNew.value
+            TodoZone.PINNED_COMPLETED -> pinnedCompletedTodos.value
+            TodoZone.COMPLETED -> completedTodos.value
+        }
+    }
+
+    /**
+     * 按 zone 分段重新分配 sortOrder
+     *
+     * 分段规则（与 Migration 31→32 一致）：
+     * - PINNED_PENDING: 0..9999
+     * - PENDING: 10000..19999
+     * - PINNED_COMPLETED: 20000..29999
+     * - COMPLETED: 30000..39999
+     *
+     * 仅当 sortOrder 实际变化时才创建新对象，减少不必要的 copy。
+     */
+    private fun reassignSortOrder(list: MutableList<TodoItem>, zone: TodoZone) {
+        val baseSortOrder = when (zone) {
+            TodoZone.PINNED_PENDING -> 0
+            TodoZone.PENDING -> 10000
+            TodoZone.PINNED_COMPLETED -> 20000
+            TodoZone.COMPLETED -> 30000
+        }
+        list.forEachIndexed { index, item ->
+            val expected = baseSortOrder + index
+            if (item.sortOrder != expected) {
+                list[index] = item.copy(sortOrder = expected)
             }
         }
     }
