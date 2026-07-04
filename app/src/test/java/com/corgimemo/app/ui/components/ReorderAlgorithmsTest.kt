@@ -315,4 +315,82 @@ class ReorderAlgorithmsTest {
         val result = checkCrossed(items, draggedOriginalIsPinned = true, draggedCurrentIndex = 3)
         assertEquals(true, result)
     }
+
+    // ========== 新增：已完成区内拖拽跳跃 bug 验证测试 ==========
+
+    /**
+     * 场景：已完成区内向前拖拽（用户报告的 bug 场景）
+     *
+     * 用户场景：10 条待办，7,8,9,10 是已完成状态。
+     * 将 7 拖到 8 和 9 之间释放，结果变成 8,9,7（错误），正确应为 8,7,9。
+     *
+     * 根因分析：
+     * - displayItems 已完成区：[CompletedDivider, 7, 8, 9, 10]
+     * - 拖 7 到 8 和 9 之间 → draggedCurrentIndex=2（8 后,9 前的位置）
+     * - 前面最近 divider 是 CompletedDivider → currentZone=COMPLETED
+     * - draggedOriginalIsPinned=false → originalZone=PENDING（bug 源头！）
+     * - 当前算法：PENDING != COMPLETED → 返回 true（误判跨区）
+     * - 期望：返回 false（已完成区内拖拽不应翻转 isPinned）
+     *
+     * 本测试当前应失败（返回 true），用于验证 bug 存在；修复后应通过（返回 false）。
+     */
+    @Test
+    fun `已完成区内向前拖拽不应跨区`() {
+        val items = listOf(
+            TestItem(isPinned = false, dividerKind = DividerKind.COMPLETED),  // CompletedDivider
+            TestItem(isPinned = false),                                       // 8（已拖到 7 之前）
+            TestItem(isPinned = false),                                       // 7（被拖到 8 和 9 之间）
+            TestItem(isPinned = false),                                       // 9
+            TestItem(isPinned = false)                                        // 10
+        )
+        // 7 原本 isPinned=false，现在位于 index=2
+        val result = checkCrossed(items, draggedOriginalIsPinned = false, draggedCurrentIndex = 2)
+        assertEquals(false, result)
+    }
+
+    /**
+     * 场景：已完成区内向后拖拽（与向前拖拽对称的回归保护）
+     *
+     * - displayItems 已完成区：[CompletedDivider, 7, 8, 9, 10]
+     * - 拖 7 到 9 和 10 之间 → draggedCurrentIndex=3（9 后,10 前的位置）
+     * - 前面最近 divider 是 CompletedDivider → currentZone=COMPLETED
+     * - draggedOriginalIsPinned=false → originalZone=PENDING
+     * - 当前算法：误判为跨区
+     * - 期望：返回 false
+     */
+    @Test
+    fun `已完成区内向后拖拽不应跨区`() {
+        val items = listOf(
+            TestItem(isPinned = false, dividerKind = DividerKind.COMPLETED),  // CompletedDivider
+            TestItem(isPinned = false),                                       // 8
+            TestItem(isPinned = false),                                       // 9
+            TestItem(isPinned = false),                                       // 7（被拖到 9 和 10 之间）
+            TestItem(isPinned = false)                                        // 10
+        )
+        val result = checkCrossed(items, draggedOriginalIsPinned = false, draggedCurrentIndex = 3)
+        assertEquals(false, result)
+    }
+
+    /**
+     * 场景：已完成区内非置顶项拖到已完成区开头（紧贴 CompletedDivider 之后）
+     *
+     * - displayItems 已完成区：[CompletedDivider, 7(被拖到此处), 8, 9, 10]
+     * - draggedCurrentIndex=1
+     * - 前面最近 divider 是 CompletedDivider → currentZone=COMPLETED
+     * - draggedOriginalIsPinned=false → originalZone=PENDING
+     * - 当前算法：误判为跨区
+     * - 期望：返回 false（仍在已完成区内，未跨置顶区）
+     */
+    @Test
+    fun `已完成区内拖到开头不应跨区`() {
+        val items = listOf(
+            TestItem(isPinned = false, dividerKind = DividerKind.COMPLETED),  // CompletedDivider
+            TestItem(isPinned = false),                                       // 7（被拖到此处）
+            TestItem(isPinned = false),                                       // 8
+            TestItem(isPinned = false),                                       // 9
+            TestItem(isPinned = false)                                        // 10
+        )
+        val result = checkCrossed(items, draggedOriginalIsPinned = false, draggedCurrentIndex = 1)
+        assertEquals(false, result)
+    }
 }

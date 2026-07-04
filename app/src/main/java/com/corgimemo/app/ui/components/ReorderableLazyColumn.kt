@@ -121,12 +121,13 @@ object ReorderAlgorithms {
      *
      * 混合算法：
      * 1. 优先基于 divider 类型判定：扫描被拖项前面最近的 divider，
-     *    根据 divider 类型直接确定当前所在区域（PINNED/PENDING/COMPLETED）
-     * 2. 若无 divider（如 pinnedCount=0 的纯待办场景），回退到"找邻居 + 比较 isPinned"
+     *    根据 divider 类型直接确定当前所在区域（PINNED/PENDING）
+     * 2. 若 currentZone=COMPLETED 或无 divider：回退到"找邻居 + 比较 isPinned"
      *
-     * 优势：
-     * - 有 divider 时：基于 divider 类型直接判定，语义更清晰
-     * - 无 divider 时：回退到找邻居，保持向后兼容
+     * 为什么 COMPLETED 区要回退？
+     * - 已完成区内没有 PinnedDivider，无法用 divider 类型判断置顶边界
+     * - COMPLETED 的语义是"已完成区"，与 PINNED/PENDING 是不同维度，不能直接比较
+     * - 已完成区同样支持置顶（visibleCompletedTodos 排序含 isPinned 降序）
      *
      * @param displayItems 全局显示列表（含分隔按钮和待办项）
      * @param isPinned 查询项是否置顶
@@ -154,8 +155,10 @@ object ReorderAlgorithms {
             }
         }
 
-        // 2. 若找到 divider，基于 divider 类型直接判定
-        if (currentZone != null) {
+        // 2. 基于 divider 类型判定（仅对 PINNED 和 PENDING 区有效）
+        //    已完成区（COMPLETED）没有 PinnedDivider，无法用 divider 判断置顶边界，
+        //    应回退到"找邻居 + 比较 isPinned"逻辑
+        if (currentZone == DividerKind.PINNED || currentZone == DividerKind.PENDING) {
             val originalZone = if (draggedOriginalIsPinned) DividerKind.PINNED else DividerKind.PENDING
             return currentZone != originalZone
         }
