@@ -64,14 +64,18 @@ object HapticFeedbackManager {
         if (!enabled) return
 
         try {
+            // 使用安全转换（as?）避免在测试环境（mock Context 无法返回真实 Vibrator）
+            // 或某些无震动设备上抛出 ClassCastException。
+            // 转换失败时 vibrator 为 null，直接 return（无设备支持则不做任何事）。
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vibratorManager =
-                    context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vibratorManager.defaultVibrator
+                    context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vibratorManager?.defaultVibrator
             } else {
                 @Suppress("DEPRECATION")
-                context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             }
+            if (vibrator == null) return
 
             when (type) {
                 InteractionType.SINGLE_CLICK -> {
