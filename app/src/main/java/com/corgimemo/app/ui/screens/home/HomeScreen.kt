@@ -119,6 +119,7 @@ import com.corgimemo.app.ui.components.UnifiedEmptyState
 import com.corgimemo.app.ui.components.FirstTimeGuideOverlay
 import com.corgimemo.app.ui.components.SolarTermCard
 import com.corgimemo.app.ui.components.ReorderableLazyColumn
+import com.corgimemo.app.ui.components.DividerKind
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.SectionHeaderColors
@@ -801,9 +802,12 @@ fun HomeScreen(
                                     && searchQuery.isBlank() && selectedCategoryId == null,
                                 isDraggable = { it is DisplayItem.Todo },
                                 isPinned = { (it as? DisplayItem.Todo)?.item?.isPinned ?: false },
-                                isDivider = { it is DisplayItem.PinnedDivider ||
-                                              it is DisplayItem.PendingDivider ||
-                                              it is DisplayItem.CompletedDivider },
+                                dividerKind = { when (it) {
+                                    is DisplayItem.PinnedDivider -> DividerKind.PINNED
+                                    is DisplayItem.PendingDivider -> DividerKind.PENDING
+                                    is DisplayItem.CompletedDivider -> DividerKind.COMPLETED
+                                    else -> null
+                                }},
                                 key = { item ->
                                     when (item) {
                                         is DisplayItem.Todo -> item.item.id

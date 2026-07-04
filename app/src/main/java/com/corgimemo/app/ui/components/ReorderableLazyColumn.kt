@@ -52,6 +52,22 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
+ * 分隔按钮类型枚举
+ *
+ * 用于区分 displayItems 中三种不同的区域分隔按钮，
+ * 让算法能基于 divider 类型直接判定区域，而非间接"找邻居"。
+ *
+ * - [PINNED]: 置顶区与待完成区之间的分隔按钮（PinnedDivider）
+ * - [PENDING]: 待完成区与已完成区之间的分隔按钮（PendingDivider）
+ * - [COMPLETED]: 已完成区之后的分隔按钮（CompletedDivider）
+ */
+enum class DividerKind {
+    PINNED,
+    PENDING,
+    COMPLETED
+}
+
+/**
  * 简化版可拖拽列表面向非 LazyColumn 场景（基于 Calvin-LL/Reorderable 库）
  *
  * 对于少量固定数量的列表项（如设置页面），
@@ -101,46 +117,61 @@ fun <T> ReorderableColumn(
 object ReorderAlgorithms {
 
     /**
-     * 检测拖拽是否跨越置顶区分界线
+     * 检测拖拽是否跨越了置顶区边界
      *
-     * 规则：
-     * - 置顶区 = 列表顶部连续的 isPinned=true 项
-     * - 跨越 = 被拖项原始 isPinned 与当前位置邻居的 isPinned 不同
-     * - 邻居 = 向前/向后扫描时遇到的第一个"非分隔按钮"项
+     * 混合算法：
+     * 1. 优先基于 divider 类型判定：扫描被拖项前面最近的 divider，
+     *    根据 divider 类型直接确定当前所在区域（PINNED/PENDING/COMPLETED）
+     * 2. 若无 divider（如 pinnedCount=0 的纯待办场景），回退到"找邻居 + 比较 isPinned"
      *
-     * 注意：分隔按钮（PinnedDivider/PendingDivider/CompletedDivider）的 isPinned=false，
-     * 不能作为邻居参与跨区判断，必须跳过。
+     * 优势：
+     * - 有 divider 时：基于 divider 类型直接判定，语义更清晰
+     * - 无 divider 时：回退到找邻居，保持向后兼容
      *
-     * @param displayItems 当前显示列表（被拖项已移除后）
+     * @param displayItems 全局显示列表（含分隔按钮和待办项）
      * @param isPinned 查询项是否置顶
-     * @param isDivider 查询项是否分隔按钮（需跳过的项）
+     * @param dividerKind 查询项的分隔按钮类型，返回 null 表示非 divider
      * @param draggedOriginalIsPinned 被拖项原始 isPinned
-     * @param draggedCurrentIndex 被拖项当前列表位置（插入位置）
-     * @return true=已跨越分界线
+     * @param draggedCurrentIndex 被拖项当前在 displayItems 中的索引
+     * @return true 表示跨越了置顶区边界（需翻转 isPinned）
      */
     fun <T> checkPinnedZoneCrossed(
         displayItems: List<T>,
         isPinned: (T) -> Boolean,
-        isDivider: (T) -> Boolean,
+        dividerKind: (T) -> DividerKind?,
         draggedOriginalIsPinned: Boolean,
         draggedCurrentIndex: Int
     ): Boolean {
         if (draggedCurrentIndex < 0 || draggedCurrentIndex >= displayItems.size) return false
 
-        // 向前找邻居：divider 是区域边界，遇到立即停止（不能跨越边界找邻居）
+        // 1. 扫描被拖项前面最近的 divider，确定其当前所在区域
+        var currentZone: DividerKind? = null
+        for (i in draggedCurrentIndex - 1 downTo 0) {
+            val kind = dividerKind(displayItems[i])
+            if (kind != null) {
+                currentZone = kind
+                break
+            }
+        }
+
+        // 2. 若找到 divider，基于 divider 类型直接判定
+        if (currentZone != null) {
+            val originalZone = if (draggedOriginalIsPinned) DividerKind.PINNED else DividerKind.PENDING
+            return currentZone != originalZone
+        }
+
+        // 3. 无 divider → 回退到"找邻居 + 比较 isPinned"（保持向后兼容）
         var neighborIdx = -1
         val prevIdx = draggedCurrentIndex - 1
-        if (prevIdx >= 0 && !isDivider(displayItems[prevIdx])) {
+        if (prevIdx >= 0 && dividerKind(displayItems[prevIdx]) == null) {
             neighborIdx = prevIdx
         }
-        // 前面被 divider 阻断或到列表头 → 向后找
         if (neighborIdx < 0) {
             val nextIdx = draggedCurrentIndex + 1
-            if (nextIdx < displayItems.size && !isDivider(displayItems[nextIdx])) {
+            if (nextIdx < displayItems.size && dividerKind(displayItems[nextIdx]) == null) {
                 neighborIdx = nextIdx
             }
         }
-        // 两边都被 divider 阻断或到列表边界 → 无法判定，不跨区
         if (neighborIdx < 0) return false
 
         return draggedOriginalIsPinned != isPinned(displayItems[neighborIdx])
@@ -203,7 +234,7 @@ fun <T> ReorderableLazyColumn(
     isDragEnabled: Boolean,
     isDraggable: (T) -> Boolean = { true },
     isPinned: (T) -> Boolean,
-    isDivider: (T) -> Boolean,
+    dividerKind: (T) -> DividerKind?,
     key: (T) -> Any,
     onReorder: (fromIndex: Int, toIndex: Int, dividerIndex: Int, crossedPinnedZone: Boolean) -> Unit,
     dividerIndex: Int = -1,
@@ -468,7 +499,7 @@ fun <T> ReorderableLazyColumn(
         val crossed = ReorderAlgorithms.checkPinnedZoneCrossed(
             displayItems = displayItems,
             isPinned = isPinned,
-            isDivider = isDivider,
+            dividerKind = dividerKind,
             draggedOriginalIsPinned = anySelectedPinned,
             draggedCurrentIndex = mergePlaceholderIndex.coerceAtMost(displayItems.size - 1)
         )
@@ -711,7 +742,7 @@ fun <T> ReorderableLazyColumn(
                                             crossedPinnedZone = ReorderAlgorithms.checkPinnedZoneCrossed(
                                                 displayItems = displayItems,
                                                 isPinned = isPinned,
-                                                isDivider = isDivider,
+                                                dividerKind = dividerKind,
                                                 draggedOriginalIsPinned = draggedOriginalIsPinned,
                                                 draggedCurrentIndex = draggedCurrentIndex
                                             )
