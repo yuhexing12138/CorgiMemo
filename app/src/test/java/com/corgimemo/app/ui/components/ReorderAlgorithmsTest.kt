@@ -11,8 +11,8 @@ import org.junit.Test
  */
 class ReorderAlgorithmsTest {
 
-    /** 测试用数据项：isPinned 表示是否置顶，isDivider 表示是否分隔按钮 */
-    private data class TestItem(val isPinned: Boolean, val isDivider: Boolean = false)
+    /** 测试用数据项：isPinned 表示是否置顶，dividerKind 表示分隔按钮类型（null 表示普通项） */
+    private data class TestItem(val isPinned: Boolean, val dividerKind: DividerKind? = null)
 
     /** 便捷封装：传入 List<TestItem> 调用算法 */
     private fun checkCrossed(
@@ -22,7 +22,7 @@ class ReorderAlgorithmsTest {
     ): Boolean = ReorderAlgorithms.checkPinnedZoneCrossed(
         displayItems = items,
         isPinned = { it.isPinned },
-        isDivider = { it.isDivider },
+        dividerKind = { it.dividerKind },
         draggedOriginalIsPinned = draggedOriginalIsPinned,
         draggedCurrentIndex = draggedCurrentIndex
     )
@@ -97,7 +97,7 @@ class ReorderAlgorithmsTest {
     @Test
     fun `置顶项拖到置顶区内应跳过 PinnedDivider 不跨区`() {
         val items = listOf(
-            TestItem(isPinned = false, isDivider = true),  // PinnedDivider
+            TestItem(isPinned = false, dividerKind = DividerKind.PINNED),  // PinnedDivider
             TestItem(isPinned = true),                       // P1
             TestItem(isPinned = true),                       // P2
             TestItem(isPinned = true)                        // P3
@@ -117,7 +117,7 @@ class ReorderAlgorithmsTest {
     @Test
     fun `非置顶项拖到置顶区内应跳过 PinnedDivider 跨区`() {
         val items = listOf(
-            TestItem(isPinned = false, isDivider = true),  // PinnedDivider
+            TestItem(isPinned = false, dividerKind = DividerKind.PINNED),  // PinnedDivider
             TestItem(isPinned = true),                       // P1
             TestItem(isPinned = true)                        // P2
         )
@@ -137,7 +137,7 @@ class ReorderAlgorithmsTest {
         val items = listOf(
             TestItem(isPinned = true),                       // P1
             TestItem(isPinned = true),                       // P2
-            TestItem(isPinned = false, isDivider = true),   // PendingDivider
+            TestItem(isPinned = false, dividerKind = DividerKind.PENDING),   // PendingDivider
             TestItem(isPinned = false)                        // N1
         )
         val result = checkCrossed(items, draggedOriginalIsPinned = true, draggedCurrentIndex = 2)
@@ -188,8 +188,8 @@ class ReorderAlgorithmsTest {
     @Test
     fun `全 divider 列表应返回 false`() {
         val items = listOf(
-            TestItem(isPinned = false, isDivider = true),
-            TestItem(isPinned = false, isDivider = true)
+            TestItem(isPinned = false, dividerKind = DividerKind.PINNED),
+            TestItem(isPinned = false, dividerKind = DividerKind.PINNED)
         )
         val result = checkCrossed(items, draggedOriginalIsPinned = true, draggedCurrentIndex = 1)
         assertEquals(false, result)
@@ -241,9 +241,9 @@ class ReorderAlgorithmsTest {
     @Test
     fun `divider 后第一项不应跨区`() {
         val items = listOf(
-            TestItem(isPinned = false, isDivider = true),   // PinnedDivider
+            TestItem(isPinned = false, dividerKind = DividerKind.PINNED),   // PinnedDivider
             TestItem(isPinned = true),                       // P4
-            TestItem(isPinned = false, isDivider = true),   // PendingDivider
+            TestItem(isPinned = false, dividerKind = DividerKind.PENDING),   // PendingDivider
             TestItem(isPinned = false),                      // N6（被拖到此处）
             TestItem(isPinned = false)                        // N5
         )
@@ -264,13 +264,55 @@ class ReorderAlgorithmsTest {
     @Test
     fun `divider 前第一项不应跨区`() {
         val items = listOf(
-            TestItem(isPinned = false, isDivider = true),   // PinnedDivider
+            TestItem(isPinned = false, dividerKind = DividerKind.PINNED),   // PinnedDivider
             TestItem(isPinned = true),                       // P1（前邻居）
             TestItem(isPinned = true),                       // P4（被拖到此处）
-            TestItem(isPinned = false, isDivider = true),   // PendingDivider
+            TestItem(isPinned = false, dividerKind = DividerKind.PENDING),   // PendingDivider
             TestItem(isPinned = false)                        // N5
         )
         val result = checkCrossed(items, draggedOriginalIsPinned = true, draggedCurrentIndex = 2)
         assertEquals(false, result)
+    }
+
+    /**
+     * 场景：PinnedDivider 后的项判定为 PINNED 区
+     *
+     * 验证新算法基于 divider 类型直接判定区域。
+     * - displayItems: [PinnedDivider, N1(被拖到此处), P1]
+     * - 前面最近 divider 是 PinnedDivider → currentZone=PINNED
+     * - draggedOriginalIsPinned=false → originalZone=PENDING
+     * - 期望 crossed=true（PENDING → PINNED 跨区）
+     */
+    @Test
+    fun `PinnedDivider 后的项判定为 PINNED 区`() {
+        val items = listOf(
+            TestItem(isPinned = false, dividerKind = DividerKind.PINNED),  // PinnedDivider
+            TestItem(isPinned = false),                                      // N1（被拖到此处）
+            TestItem(isPinned = true)                                         // P1
+        )
+        val result = checkCrossed(items, draggedOriginalIsPinned = false, draggedCurrentIndex = 1)
+        assertEquals(true, result)
+    }
+
+    /**
+     * 场景：PendingDivider 后的项判定为 PENDING 区
+     *
+     * 验证新算法基于 divider 类型直接判定区域。
+     * - displayItems: [PinnedDivider, P1, PendingDivider, N1(被拖到此处), N2]
+     * - 前面最近 divider 是 PendingDivider → currentZone=PENDING
+     * - draggedOriginalIsPinned=true → originalZone=PINNED
+     * - 期望 crossed=true（PINNED → PENDING 跨区）
+     */
+    @Test
+    fun `PendingDivider 后的项判定为 PENDING 区`() {
+        val items = listOf(
+            TestItem(isPinned = false, dividerKind = DividerKind.PINNED),   // PinnedDivider
+            TestItem(isPinned = true),                                        // P1
+            TestItem(isPinned = false, dividerKind = DividerKind.PENDING),  // PendingDivider
+            TestItem(isPinned = false),                                      // N1（被拖到此处）
+            TestItem(isPinned = false)                                         // N2
+        )
+        val result = checkCrossed(items, draggedOriginalIsPinned = true, draggedCurrentIndex = 3)
+        assertEquals(true, result)
     }
 }
