@@ -70,10 +70,11 @@ class ReminderTimeFormatterTest {
     }
 
     @Test fun case7_crossYearFuture() {
-        val reminder = ts(2027, 1, 1, 9, 0)
+        // reminder 设为 1月2日，避免成为 now(12-31) 的明天，从而触发跨年分支
+        val reminder = ts(2027, 1, 2, 9, 0)
         val now = ts(2026, 12, 31, 18, 0)
         val r = formatReminderDisplay(reminder, now)
-        assertEquals("2027年1月1日 09:00", r.text)
+        assertEquals("2027年1月2日 09:00", r.text)
         assertEquals(false, r.isOverdue)
     }
 
@@ -102,27 +103,29 @@ class ReminderTimeFormatterTest {
     }
 
     @Test fun case11_lastYearFuture() {
+        // now 改为 2024 年，让 reminder(2025) 真正成为去年未来，触发跨年分支
         val reminder = ts(2025, 12, 31, 10, 0)
-        val now = ts(2025, 6, 1, 12, 0)
+        val now = ts(2024, 6, 1, 12, 0)
         val r = formatReminderDisplay(reminder, now)
         assertEquals("2025年12月31日 10:00", r.text)
         assertEquals(false, r.isOverdue)
     }
 
     @Test fun case12_noZeroPadding() {
+        // now 改为 2月，让 reminder(3月) 是未来，纯测试月日不补0格式，无需过期后缀
         val reminder = ts(2026, 3, 5, 8, 5)
-        val now = ts(2026, 4, 1, 12, 0)
+        val now = ts(2026, 2, 1, 12, 0)
         val r = formatReminderDisplay(reminder, now)
         assertEquals("3月5日 08:05", r.text)
-        assertEquals(true, r.isOverdue)
+        assertEquals(false, r.isOverdue)
     }
 
     @Test fun case13_crossYearBoundary() {
-        // 2026/12/31 23:59 → 2027/1/1 00:01
-        val reminder = ts(2026, 12, 31, 23, 59)
+        // reminder 改为 12月30日，避免成为 now(2027-01-01) 的昨天，从而触发跨年分支
+        val reminder = ts(2026, 12, 30, 23, 59)
         val now = ts(2027, 1, 1, 0, 1)
         val r = formatReminderDisplay(reminder, now)
-        assertEquals("2026年12月31日 23:59 已过期", r.text)
+        assertEquals("2026年12月30日 23:59 已过期", r.text)
         assertEquals(true, r.isOverdue)
     }
 }
