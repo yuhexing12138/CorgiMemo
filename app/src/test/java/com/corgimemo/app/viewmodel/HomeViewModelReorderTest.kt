@@ -553,6 +553,110 @@ class HomeViewModelReorderTest {
         }) }
     }
 
+    /**
+     * 场景：pinnedCount=1 时跨区拖拽（N 拖到 P 上方）
+     *
+     * 验证新阈值 pinnedCount >= 1 下，PinnedDivider 显示，
+     * 非置顶项拖到置顶区时 isPinned 正确翻转。
+     *
+     * displayItems: [PinnedDivider(0), P1(1), PendingDivider(2), N1(3), N2(4)]
+     * 拖 N1(3) 到 P1(1) 上方 → toIndex=1, crossedPinnedZone=true
+     * 预期：N1.isPinned 翻转为 true
+     */
+    @Test
+    fun `pinnedCount 为 1 时跨区拖拽应翻转 isPinned`() = runTest(testDispatcher) {
+        val todos = listOf(
+            testTodo(1, isPinned = true, sortOrder = 0),
+            testTodo(2, isPinned = false, sortOrder = 1),
+            testTodo(3, isPinned = false, sortOrder = 2)
+        )
+        setupTodos(todos)
+
+        // displayItems: [PinnedDivider(0), P1(1), PendingDivider(2), N1(3), N2(4)]
+        // 拖 N1(3) 到 P1(1) 上方 → fromIndex=3, toIndex=1
+        viewModel.reorderOnDisplayList(
+            fromIndex = 3,
+            toIndex = 1,
+            dividerIndex = -1,
+            crossedPinnedZone = true,
+            pendingStartIndex = 1,
+            midPendingDividerIndex = 2
+        )
+
+        // 验证：N1(id=2) isPinned 翻转为 true
+        coVerify(exactly = 1) { mockTodoRepository.updateTodo(match { it.id == 2L && it.isPinned }) }
+    }
+
+    /**
+     * 场景：pinnedCount=3 时跨区拖拽（N 拖到 P 上方）
+     *
+     * 验证阈值不再是 4，pinnedCount=3 也能正常跨区拖拽。
+     *
+     * displayItems: [PinnedDivider(0), P1(1), P2(2), P3(3), PendingDivider(4), N1(5), N2(6)]
+     * 拖 N1(5) 到 P1(1) 上方 → toIndex=1, crossedPinnedZone=true
+     * 预期：N1.isPinned 翻转为 true
+     */
+    @Test
+    fun `pinnedCount 为 3 时跨区拖拽应翻转 isPinned`() = runTest(testDispatcher) {
+        val todos = listOf(
+            testTodo(1, isPinned = true, sortOrder = 0),
+            testTodo(2, isPinned = true, sortOrder = 1),
+            testTodo(3, isPinned = true, sortOrder = 2),
+            testTodo(4, isPinned = false, sortOrder = 3),
+            testTodo(5, isPinned = false, sortOrder = 4)
+        )
+        setupTodos(todos)
+
+        // displayItems: [PinnedDivider(0), P1(1), P2(2), P3(3), PendingDivider(4), N1(5), N2(6)]
+        // 拖 N1(5) 到 P1(1) 上方 → fromIndex=5, toIndex=1
+        viewModel.reorderOnDisplayList(
+            fromIndex = 5,
+            toIndex = 1,
+            dividerIndex = -1,
+            crossedPinnedZone = true,
+            pendingStartIndex = 1,
+            midPendingDividerIndex = 4
+        )
+
+        // 验证：N1(id=4) isPinned 翻转为 true
+        coVerify(exactly = 1) { mockTodoRepository.updateTodo(match { it.id == 4L && it.isPinned }) }
+    }
+
+    /**
+     * 场景：pinnedCount=0 时同区拖拽不翻转 isPinned
+     *
+     * 验证无置顶时，待完成区内拖拽不会误翻转 isPinned。
+     *
+     * displayItems: [PendingDivider(0), N1(1), N2(2), N3(3)]
+     * 拖 N1(1) 到 N2(2) 上方 → toIndex=2, crossedPinnedZone=false
+     * 预期：不调用 updateTodo 翻转 isPinned，但仍调用 updateTodos 重排 sortOrder
+     */
+    @Test
+    fun `pinnedCount 为 0 时同区拖拽不应翻转 isPinned`() = runTest(testDispatcher) {
+        val todos = listOf(
+            testTodo(1, isPinned = false, sortOrder = 0),
+            testTodo(2, isPinned = false, sortOrder = 1),
+            testTodo(3, isPinned = false, sortOrder = 2)
+        )
+        setupTodos(todos)
+
+        // displayItems: [PendingDivider(0), N1(1), N2(2), N3(3)]
+        // 拖 N1(1) 到 N2(2) 上方 → fromIndex=1, toIndex=2
+        viewModel.reorderOnDisplayList(
+            fromIndex = 1,
+            toIndex = 2,
+            dividerIndex = -1,
+            crossedPinnedZone = false,
+            pendingStartIndex = 1,
+            midPendingDividerIndex = -1
+        )
+
+        // 验证：不调用 updateTodo（isPinned 未变，status 未变）
+        coVerify(exactly = 0) { mockTodoRepository.updateTodo(any()) }
+        // 验证：调用 updateTodos 重排 sortOrder
+        coVerify(atLeast = 1) { mockTodoRepository.updateTodos(any()) }
+    }
+
     // ==================== 测试辅助方法 ====================
 
     /** 构造测试 TodoItem */

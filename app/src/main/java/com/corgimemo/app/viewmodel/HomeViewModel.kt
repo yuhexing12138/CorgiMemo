@@ -198,21 +198,16 @@ class HomeViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     /**
-     * V2.11: 待完成待办总数(动态计算)
+     * 待完成待办总数（仅非置顶）
      *
-     * 位置语义根据置顶数量动态调整:
-     * - 置顶 ≤ 3:待完成按钮在最前,代表所有待完成(含置顶)
-     * - 置顶 ≥ 4:待完成按钮在置顶区后,仅代表非置顶
+     * 新逻辑：pinnedCount >= 1 时显示 PinnedDivider，PendingDivider 始终只代表非置顶待完成。
+     * - pinnedCount >= 1：PendingDivider 在置顶区后，count = 非置顶待完成数
+     * - pinnedCount == 0：无 PinnedDivider，PendingDivider 代表所有待完成（此时都是非置顶）
+     *
+     * 两种情况 count 都是 "非置顶待完成数"，逻辑统一。
      */
-    val pendingCount: StateFlow<Int> = combine(_todos, pinnedCount) { todos, pinnedN ->
-        val nonPinned = todos.count { !it.isPinned && it.status == 0 }
-        if (pinnedN <= 3) {
-            // Case B:按钮在最前,代表所有待完成(含置顶)
-            todos.count { it.status == 0 }
-        } else {
-            // Case A:按钮在置顶区后,仅代表非置顶
-            nonPinned
-        }
+    val pendingCount: StateFlow<Int> = _todos.map { todos ->
+        todos.count { !it.isPinned && it.status == 0 }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     // ========== 搜索相关状态 ==========
@@ -815,8 +810,8 @@ class HomeViewModel @Inject constructor(
             }
             // [Bug 修复] 不再假设 dividerIndex = pendingList.size。
             // 已完成分隔按钮在 displayItems 中的真实索引由 HomeScreen 传入。
-            // Case A (置顶 ≥ 4): dividerIndex = pendingList.size + 2 (PinnedDivider + PendingDivider + 待办项)
-            // Case B (置顶 < 4): dividerIndex = pendingList.size + 1 (PendingDivider + 待办项)
+            // pinnedCount >= 1: dividerIndex = pendingList.size + 2 (PinnedDivider + PendingDivider + 待办项)
+            // pinnedCount == 0: dividerIndex = pendingList.size + 1 (PendingDivider + 待办项)
             // dividerIndex = -1: 无已完成区
             val totalSize = if (dividerIndex >= 0) {
                 // 已完成区存在:pending 区域大小 + 1 个 CompletedDivider + completed 项数

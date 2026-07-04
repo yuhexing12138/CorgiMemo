@@ -742,9 +742,8 @@ fun HomeScreen(
                             hideCompletedItems
                         ) {
                             buildList {
-                                if (pinnedCount >= 4) {
-                                    // ===== Case A:置顶 ≥ 4 =====
-                                    // 1. 置顶区(顶部)
+                                // 置顶区（仅当有置顶待办时显示）
+                                if (pinnedCount >= 1) {
                                     add(DisplayItem.PinnedDivider(
                                         count = pinnedCount,
                                         isExpanded = showPinned
@@ -753,31 +752,17 @@ fun HomeScreen(
                                         filteredPending.filter { it.isPinned }
                                             .forEach { add(DisplayItem.Todo(it)) }
                                     }
-                                    // 2. 待完成区(置顶区之后)
-                                    add(DisplayItem.PendingDivider(
-                                        count = pendingCount,
-                                        isExpanded = showPending
-                                    ))
-                                    if (showPending) {
-                                        filteredPending.filter { !it.isPinned }
-                                            .forEach { add(DisplayItem.Todo(it)) }
-                                    }
-                                } else {
-                                    // ===== Case B:置顶 < 4 =====
-                                    // 待完成按钮在最前(代表所有待完成)
-                                    add(DisplayItem.PendingDivider(
-                                        count = pendingCount,
-                                        isExpanded = showPending
-                                    ))
-                                    if (showPending) {
-                                        // 置顶先,非置顶后
-                                        filteredPending.filter { it.isPinned }
-                                            .forEach { add(DisplayItem.Todo(it)) }
-                                        filteredPending.filter { !it.isPinned }
-                                            .forEach { add(DisplayItem.Todo(it)) }
-                                    }
                                 }
-                                // 3. 已完成区(原有逻辑)
+                                // 待完成区（始终显示，代表非置顶待完成）
+                                add(DisplayItem.PendingDivider(
+                                    count = pendingCount,
+                                    isExpanded = showPending
+                                ))
+                                if (showPending) {
+                                    filteredPending.filter { !it.isPinned }
+                                        .forEach { add(DisplayItem.Todo(it)) }
+                                }
+                                // 已完成区（原有逻辑不变）
                                 if (!hideCompletedItems && completedCount > 0) {
                                     add(DisplayItem.CompletedDivider(
                                         count = completedCount,
@@ -805,7 +790,7 @@ fun HomeScreen(
                         ) {
                             val pendingStartIndex = displayItems.indexOfFirst { it is DisplayItem.Todo }
                             val midPendingDividerIndex =
-                                if (pinnedCount >= 4)
+                                if (pinnedCount >= 1)
                                     displayItems.indexOfFirst { it is DisplayItem.PendingDivider }
                                 else -1
 
