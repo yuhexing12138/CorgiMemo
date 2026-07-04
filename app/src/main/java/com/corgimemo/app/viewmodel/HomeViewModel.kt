@@ -167,30 +167,7 @@ class HomeViewModel @Inject constructor(
     private val _showSortSheet = MutableStateFlow(false)
     val showSortSheet: StateFlow<Boolean> = _showSortSheet.asStateFlow()
 
-    /** 未完成待办列表（含置顶） */
-    val pendingTodos: StateFlow<List<TodoItem>> = _todos.map { todos ->
-        todos.filter { it.status == 0 }
-            .sortedWith(
-                compareByDescending<TodoItem> { it.isPinned }
-                    .thenBy { it.sortOrder }
-                    .thenByDescending { it.createdAt }
-            )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    /** 可见的已完成待办（30天内） */
-    val visibleCompletedTodos: StateFlow<List<TodoItem>> = _todos.map { todos ->
-        val thirtyDaysAgo = System.currentTimeMillis() - 30 * 24 * 60 * 60 * 1000L
-        todos.filter {
-            it.status == 1 && it.completedAt != null && it.completedAt >= thirtyDaysAgo
-        }.sortedWith(
-            compareByDescending<TodoItem> { it.isPinned }
-                .thenBy { it.sortOrder }
-                .thenByDescending { it.createdAt }
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // ========== Task 4: 4 个独立区域 StateFlow（按 TodoZone 拆分） ==========
-    // 旧 pendingTodos / visibleCompletedTodos 暂时保留，等 Task 7 删除旧代码时统一清理。
+    // ========== 4 个独立区域 StateFlow（按 TodoZone 拆分） ==========
     // 新 flow 按 zone 分段（PINNED_PENDING=0-9999, PENDING=10000-19999,
     // PINNED_COMPLETED=20000-29999, COMPLETED=30000-39999）纯粹按 sortOrder 排序。
 
@@ -203,10 +180,9 @@ class HomeViewModel @Inject constructor(
     /**
      * PENDING 区：普通待完成（isPinned=false, status=0）
      *
-     * 注：旧 [pendingTodos] 含置顶，新 [pendingTodosNew] 仅含非置顶。
-     * Task 7 删除旧代码后会将此重命名为 pendingTodos。
+     * 按 zone 分段：sortOrder 范围 10000..19999。
      */
-    val pendingTodosNew: StateFlow<List<TodoItem>> = _todos.map { todos ->
+    val pendingTodos: StateFlow<List<TodoItem>> = _todos.map { todos ->
         todos.filter { !it.isPinned && it.status == 0 }
             .sortedBy { it.sortOrder }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -274,21 +250,32 @@ class HomeViewModel @Inject constructor(
     private val _sortType = MutableStateFlow("updated_desc")
     val sortType: StateFlow<String> = _sortType.asStateFlow()
 
-    /** 当前可见待办列表（未完成 + 展开时的已完成），应用搜索/分类/排序过滤 */
+    /**
+     * 当前可见待办列表（基于 4 个 zone StateFlow 合并，应用搜索/分类过滤）
+     *
+     * 合并顺序：PINNED_PENDING → PENDING → PINNED_COMPLETED → COMPLETED
+     * - hideCompletedItems=true：仅返回 pending 区（含置顶）
+     * - showCompleted=false：仅返回 pending 区（含置顶）
+     * - 否则：返回 4 个 zone 合并列表
+     */
     val filteredTodos: StateFlow<List<TodoItem>> = run {
         val baseFlow = kotlinx.coroutines.flow.combine(
-            pendingTodos, visibleCompletedTodos, _showCompleted, _hideCompletedItems
-        ) { pending, completed, showCompleted, hideCompletedItems ->
-            if (hideCompletedItems) {
-                pending
-            } else {
-                if (showCompleted) pending + completed else pending
-            }
+            pinnedPendingTodos,
+            pendingTodos,
+            pinnedCompletedTodos,
+            completedTodos
+        ) { pinnedPending, pending, pinnedCompleted, completed ->
+            pinnedPending + pending + pinnedCompleted + completed
         }
         kotlinx.coroutines.flow.combine(
-            baseFlow, _searchQuery, _selectedCategoryId, _sortType
-        ) { baseList, query, categoryId, _ ->
-            var result = baseList
+            baseFlow, _searchQuery, _selectedCategoryId, _showCompleted, _hideCompletedItems
+        ) { baseList, query, categoryId, showCompleted, hideCompletedItems ->
+            // 先按展开状态过滤
+            var result = if (hideCompletedItems || !showCompleted) {
+                baseList.filter { it.status == 0 }
+            } else {
+                baseList
+            }
 
             if (categoryId != null && categoryId > 0) {
                 result = result.filter { it.categoryId == categoryId }
@@ -820,180 +807,15 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 拖拽完成后调用（统一入口，支持区域内排序和跨区域拖拽自动完成/取消完成）
-     *
-     * @param fromIndex 被拖项原始位置（displayItems 全局索引）
-     * @param toIndex 被拖项最终位置（displayItems 全局索引）
-     * @param dividerIndex CompletedDivider 在 displayItems 中的真实索引（-1 表示没有已完成区）
-     *                    由 HomeScreen 通过 `displayItems.indexOfFirst { it is DisplayItem.CompletedDivider }` 计算后传入
-     * @param crossedPinnedZone 是否跨越置顶区分界线
-     * @param pendingStartIndex 第一个待办卡片在 displayItems 中的全局索引（前导分隔按钮数）
-     * @param midPendingDividerIndex Case A 中分隔置顶/非置顶的 PendingDivider 索引；Case B 传 -1
-     */
-    fun reorderOnDisplayList(
-        fromIndex: Int,
-        toIndex: Int,
-        dividerIndex: Int,
-        crossedPinnedZone: Boolean,
-        pendingStartIndex: Int,
-        midPendingDividerIndex: Int
-    ) {
-        viewModelScope.launch {
-            /** 将 displayItems 全局索引转换为 pendingList 索引 */
-            fun pendingOffset(displayIdx: Int): Int =
-                pendingStartIndex + (if (midPendingDividerIndex >= 0 && displayIdx > midPendingDividerIndex) 1 else 0)
 
-            val pendingList = pendingTodos.value.toMutableList()
-            val completedList = if (_showCompleted.value) {
-                visibleCompletedTodos.value.toMutableList()
-            } else {
-                mutableListOf()
-            }
-            // [Bug 修复] 不再假设 dividerIndex = pendingList.size。
-            // 已完成分隔按钮在 displayItems 中的真实索引由 HomeScreen 传入。
-            // pinnedCount >= 1: dividerIndex = pendingList.size + 2 (PinnedDivider + PendingDivider + 待办项)
-            // pinnedCount == 0: dividerIndex = pendingList.size + 1 (PendingDivider + 待办项)
-            // dividerIndex = -1: 无已完成区
-            val totalSize = if (dividerIndex >= 0) {
-                // 已完成区存在:pending 区域大小 + 1 个 CompletedDivider + completed 项数
-                dividerIndex + 1 + completedList.size
-            } else {
-                // 无已完成区:保守上界(最多 PinnedDivider + PendingDivider + pending 项)
-                pendingList.size + 2
-            }
-
-            if (fromIndex == toIndex) return@launch
-            if (fromIndex !in 0 until totalSize || toIndex !in 0..totalSize) return@launch
-
-            val fromPending = dividerIndex < 0 || fromIndex < dividerIndex
-            val fromCompleted = dividerIndex >= 0 && fromIndex > dividerIndex
-            val toPending = dividerIndex < 0 || toIndex < dividerIndex
-            val toCompleted = dividerIndex >= 0 && toIndex > dividerIndex
-
-            // 1. 从对应区域移除被拖项
-            val draggedItem = when {
-                fromPending -> {
-                    val idx = fromIndex - pendingOffset(fromIndex)
-                    if (idx !in pendingList.indices) return@launch
-                    pendingList.removeAt(idx)
-                }
-                fromCompleted -> {
-                    val idx = fromIndex - dividerIndex - 1
-                    if (idx !in completedList.indices) return@launch
-                    completedList.removeAt(idx)
-                }
-                else -> return@launch
-            }
-
-            // 2. 处理跨区域：pending→completed 需检查子任务约束
-            var finalItem = draggedItem
-            var crossCompleted = false
-            var crossUncompleted = false
-
-            when {
-                fromPending && (toCompleted || toIndex == dividerIndex) -> {
-                    // 检查子任务是否全部完成
-                    val progress = SubTaskManager.getProgress(context, draggedItem.id)
-                    if (progress.total > 0 && progress.completed < progress.total) {
-                        _todoActionMessage.value = "还有 ${progress.total - progress.completed} 个子任务未完成，请先完成所有子任务"
-                        return@launch
-                    }
-                    val now = System.currentTimeMillis()
-                    finalItem = draggedItem.copy(
-                        status = 1,
-                        completedAt = now,
-                        updatedAt = now,
-                        isPinned = if (crossedPinnedZone) !draggedItem.isPinned else draggedItem.isPinned
-                    )
-                    crossCompleted = true
-                }
-                fromCompleted && (toPending || toIndex == dividerIndex) -> {
-                    finalItem = draggedItem.copy(
-                        status = 0,
-                        completedAt = null,
-                        updatedAt = System.currentTimeMillis(),
-                        isPinned = if (crossedPinnedZone) !draggedItem.isPinned else draggedItem.isPinned
-                    )
-                    crossUncompleted = true
-                }
-                else -> {
-                    // 同区域：仅处理置顶切换
-                    if (crossedPinnedZone) {
-                        finalItem = draggedItem.copy(isPinned = !draggedItem.isPinned)
-                    }
-                }
-            }
-
-            // 3. 插入到目标区域
-            when {
-                toPending -> {
-                    val insertIdx = (toIndex - pendingOffset(toIndex)).coerceIn(0, pendingList.size)
-                    pendingList.add(insertIdx, finalItem)
-                }
-                toCompleted -> {
-                    val insertIdx = (toIndex - dividerIndex - 1).coerceAtMost(completedList.size)
-                    completedList.add(insertIdx, finalItem)
-                }
-                toIndex == dividerIndex -> {
-                    if (fromPending) {
-                        // pending→completed，插入completed顶部
-                        completedList.add(0, finalItem)
-                    } else {
-                        // completed→pending，插入pending底部
-                        pendingList.add(pendingList.size, finalItem)
-                    }
-                }
-            }
-
-            // 4. 持久化状态变更（完成/未完成/置顶）
-            val stateChanged = finalItem.status != draggedItem.status
-            val pinChanged = finalItem.isPinned != draggedItem.isPinned
-            if (stateChanged || pinChanged) {
-                todoRepository.updateTodo(finalItem)
-            }
-            if (crossCompleted) {
-                handleTaskCompleted(draggedItem)
-            }
-
-            // 5. 重新分配全局 sortOrder：pending置顶 → pending普通 → completed置顶 → completed普通
-            // ━━━ 关键修复：批量更新避免多次 Flow 推送 ━━━
-            // 原实现：4 个 forEach 循环各调一次 updateSortOrder，导致 N 次 Flow 推送
-            // 和 N 次 displayItems 重组。修复后：单次 updateTodos 批量更新。
-            var globalOrder = 0
-            val allItemsInOrder = pendingList.filter { it.isPinned } +
-                pendingList.filter { !it.isPinned } +
-                completedList.filter { it.isPinned } +
-                completedList.filter { !it.isPinned }
-            val now = System.currentTimeMillis()
-            val updates = mutableListOf<TodoItem>()
-            allItemsInOrder.forEach { item ->
-                val needsUpdate = item.sortOrder != globalOrder || item.id == finalItem.id
-                if (needsUpdate) {
-                    updates.add(
-                        item.copy(
-                            sortOrder = globalOrder,
-                            updatedAt = now
-                        )
-                    )
-                }
-                globalOrder++
-            }
-            if (updates.isNotEmpty()) {
-                todoRepository.updateTodos(updates)
-            }
-        }
-    }
-
-
-    // ========== Task 4: reorderOnDragResult（基于 ZoneDragResult 的新版拖拽持久化） ==========
+    // ========== reorderOnDragResult（基于 ZoneDragResult 的拖拽持久化） ==========
 
     /**
      * 应用拖拽结果到数据层（新版，基于 [ZoneDragResult]）
      *
      * 设计要点：
      * 1. 区域 List 单一来源：4 个独立 StateFlow（[pinnedPendingTodos] /
-     *    [pendingTodosNew] / [pinnedCompletedTodos] / [completedTodos]），
+     *    [pendingTodos] / [pinnedCompletedTodos] / [completedTodos]），
      *    不再依赖 displayItems 全局索引，避免 divider 位置变更带来的偏差。
      * 2. zone 内排序按 sortOrder 分段（PINNED_PENDING=0-9999, PENDING=10000-19999,
      *    PINNED_COMPLETED=20000-29999, COMPLETED=30000-39999）。
@@ -1002,7 +824,7 @@ class HomeViewModel @Inject constructor(
      *    直接合并到 finalItem 中（不依赖 repository.updateCompletedAt）。
      * 5. 跨入完成区时触发 [handleTaskCompleted]（柯基庆祝/成就/经验值）。
      *
-     * 与 [reorderOnDisplayList] 的区别：
+     * 设计特点：
      * - 不需要 dividerIndex / pendingStartIndex / midPendingDividerIndex 等 displayItems 索引
      * - 由调用方传入 [draggedTodo]（DisplayItem 是 HomeScreen 的 private sealed interface，
      *   这里用 TodoItem 直接接收，避免反射或类型提升）
@@ -1081,7 +903,7 @@ class HomeViewModel @Inject constructor(
     private fun getListForZone(zone: TodoZone): List<TodoItem> {
         return when (zone) {
             TodoZone.PINNED_PENDING -> pinnedPendingTodos.value
-            TodoZone.PENDING -> pendingTodosNew.value
+            TodoZone.PENDING -> pendingTodos.value
             TodoZone.PINNED_COMPLETED -> pinnedCompletedTodos.value
             TodoZone.COMPLETED -> completedTodos.value
         }
@@ -1110,165 +932,6 @@ class HomeViewModel @Inject constructor(
             if (item.sortOrder != expected) {
                 list[index] = item.copy(sortOrder = expected)
             }
-        }
-    }
-
-
-    /**
-     * 合并拖拽批量重排：多选模式下将选中项作为一个整体移动到 toIndex 位置
-     *
-     * 对应设计文档第十三章 13.2 交互流程"释放"阶段：
-     * - 从 pendingList / completedList 中移除所有选中项
-     * - 按原 displayItems 相对顺序合并
-     * - 插入到 toIndex 位置（根据区域判断 pending/completed）
-     * - 处理跨区域状态变更（完成↔未完成）与置顶切换
-     * - 重新分配全局 sortOrder：pending置顶 → pending普通 → completed置顶 → completed普通
-     *
-     * @param selectedIds 已选中项的 id 集合
-     * @param toIndex 占位框在 displayItems 中的目标位置
-     * @param dividerIndex CompletedDivider 在 displayItems 中的真实索引（-1 表示没有已完成区）
-     * @param crossedPinnedZone 是否跨越置顶区分界线
-     * @param pendingStartIndex 第一个待办卡片在 displayItems 中的全局索引（前导分隔按钮数）
-     * @param midPendingDividerIndex Case A 中分隔置顶/非置顶的 PendingDivider 索引；Case B 传 -1
-     */
-    fun mergeReorderOnDisplayList(
-        selectedIds: Set<Long>,
-        toIndex: Int,
-        dividerIndex: Int,
-        crossedPinnedZone: Boolean,
-        pendingStartIndex: Int,
-        midPendingDividerIndex: Int
-    ) {
-        viewModelScope.launch {
-            /** 将 displayItems 全局索引转换为 pendingList 索引 */
-            fun pendingOffset(displayIdx: Int): Int =
-                pendingStartIndex + (if (midPendingDividerIndex >= 0 && displayIdx > midPendingDividerIndex) 1 else 0)
-            if (selectedIds.size <= 1) return@launch
-
-            val pendingList = pendingTodos.value.toMutableList()
-            val completedList = if (_showCompleted.value) {
-                visibleCompletedTodos.value.toMutableList()
-            } else {
-                mutableListOf()
-            }
-            // [Bug 修复] 使用外部传入的 dividerIndex,不再假设 = pendingList.size
-            val totalSize = if (dividerIndex >= 0) {
-                dividerIndex + 1 + completedList.size
-            } else {
-                pendingList.size + 2
-            }
-
-            if (toIndex !in 0..totalSize) return@launch
-
-            // 1. 收集所有选中项（按各自列表中的原始顺序，保留相对顺序）
-            val selectedPending = pendingList.mapIndexedNotNull { idx, item ->
-                if (item.id in selectedIds) idx to item else null
-            }
-            val selectedCompleted = completedList.mapIndexedNotNull { idx, item ->
-                if (item.id in selectedIds) idx to item else null
-            }
-
-            if (selectedPending.isEmpty() && selectedCompleted.isEmpty()) return@launch
-
-            // 2. 从原位置移除（从后往前移除避免索引错位）
-            selectedPending.sortedByDescending { it.first }.forEach { (idx, _) ->
-                pendingList.removeAt(idx)
-            }
-            selectedCompleted.sortedByDescending { it.first }.forEach { (idx, _) ->
-                completedList.removeAt(idx)
-            }
-
-            // 3. 按原 displayItems 顺序合并选中项
-            val mergedItems = (selectedPending.map { it.second } +
-                selectedCompleted.map { it.second }).toMutableList()
-
-            // 4. 计算目标区域（dividerIndex 在移除后已变化，用原 dividerIndex 判断）
-            val toPending = dividerIndex < 0 || toIndex < dividerIndex
-            val toCompleted = dividerIndex >= 0 && toIndex > dividerIndex
-
-            // 5. 处理跨区域状态变更（完成↔未完成、置顶切换）
-            val finalItems = mergedItems.map { item ->
-                var finalItem = item
-                if (item.status == 0 && toCompleted) {
-                    // pending → completed：标记完成
-                    val now = System.currentTimeMillis()
-                    finalItem = item.copy(
-                        status = 1,
-                        completedAt = now,
-                        updatedAt = now,
-                        isPinned = if (crossedPinnedZone) !item.isPinned else item.isPinned
-                    )
-                } else if (item.status == 1 && (toPending || toIndex == dividerIndex)) {
-                    // completed → pending：标记未完成
-                    finalItem = item.copy(
-                        status = 0,
-                        completedAt = null,
-                        updatedAt = System.currentTimeMillis(),
-                        isPinned = if (crossedPinnedZone) !item.isPinned else item.isPinned
-                    )
-                } else if (crossedPinnedZone) {
-                    // 同区域：仅处理置顶切换
-                    finalItem = item.copy(isPinned = !item.isPinned)
-                }
-                finalItem
-            }
-
-            // 6. 插入到目标区域
-            when {
-                toPending -> {
-                    val insertIdx = (toIndex - pendingOffset(toIndex)).coerceIn(0, pendingList.size)
-                    pendingList.addAll(insertIdx, finalItems)
-                }
-                toCompleted -> {
-                    val insertIdx = (toIndex - dividerIndex - 1).coerceAtMost(completedList.size)
-                    completedList.addAll(insertIdx, finalItems)
-                }
-                toIndex == dividerIndex -> {
-                    pendingList.addAll(pendingList.size, finalItems)
-                }
-            }
-
-            // 7. 持久化状态变更
-            finalItems.forEachIndexed { idx, finalItem ->
-                val originalItem = mergedItems[idx]
-                val stateChanged = finalItem.status != originalItem.status
-                val pinChanged = finalItem.isPinned != originalItem.isPinned
-                if (stateChanged || pinChanged) {
-                    todoRepository.updateTodo(finalItem)
-                }
-            }
-
-            // 8. 重新分配全局 sortOrder：pending置顶 → pending普通 → completed置顶 → completed普通
-            // ━━━ 关键修复：批量更新避免多次 Flow 推送 ━━━
-            // 原实现：4 个 forEach 循环各调一次 updateSortOrder，导致 N 次 Flow 推送
-            // 和 N 次 displayItems 重组。修复后：单次 updateTodos 批量更新。
-            var globalOrder = 0
-            val allItemsInOrder = pendingList.filter { it.isPinned } +
-                pendingList.filter { !it.isPinned } +
-                completedList.filter { it.isPinned } +
-                completedList.filter { !it.isPinned }
-            val now = System.currentTimeMillis()
-            val updates = mutableListOf<TodoItem>()
-            // 记录已变更项的 id，用于精准判断"需要更新"
-            val changedIds = finalItems.map { it.id }.toSet()
-            allItemsInOrder.forEach { item ->
-                val needsUpdate = item.sortOrder != globalOrder || item.id in changedIds
-                if (needsUpdate) {
-                    updates.add(
-                        item.copy(
-                            sortOrder = globalOrder,
-                            updatedAt = now
-                        )
-                    )
-                }
-                globalOrder++
-            }
-            if (updates.isNotEmpty()) {
-                todoRepository.updateTodos(updates)
-            }
-
-            // 9. 退出多选模式
-            exitBatchMode()
         }
     }
 

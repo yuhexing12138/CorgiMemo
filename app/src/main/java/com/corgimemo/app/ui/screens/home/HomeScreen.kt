@@ -118,8 +118,8 @@ import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.ui.components.UnifiedEmptyState
 import com.corgimemo.app.ui.components.FirstTimeGuideOverlay
 import com.corgimemo.app.ui.components.SolarTermCard
-import com.corgimemo.app.ui.components.ReorderableLazyColumn
-import com.corgimemo.app.ui.components.DividerKind
+import com.corgimemo.app.ui.components.ZonedReorderableLazyColumn
+import com.corgimemo.app.ui.components.zone
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.SectionHeaderColors
@@ -160,8 +160,14 @@ fun HomeScreen(
     val pinnedCount by viewModel.pinnedCount.collectAsState()
     val showPending by viewModel.showPending.collectAsState()
     val pendingCount by viewModel.pendingCount.collectAsState()
-    val pendingTodosAll by viewModel.pendingTodos.collectAsState()
-    val visibleCompletedTodosAll by viewModel.visibleCompletedTodos.collectAsState()
+    val pinnedPendingTodos by viewModel.pinnedPendingTodos.collectAsState()
+    val pendingTodos by viewModel.pendingTodos.collectAsState()
+    val pinnedCompletedTodos by viewModel.pinnedCompletedTodos.collectAsState()
+    val completedTodos by viewModel.completedTodos.collectAsState()
+    /** 合并所有待完成（置顶 + 非置顶），用于空状态判断与过滤 */
+    val pendingTodosAll = pinnedPendingTodos + pendingTodos
+    /** 合并所有已完成（置顶 + 非置顶），用于过滤 */
+    val visibleCompletedTodosAll = pinnedCompletedTodos + completedTodos
     val corgiData by viewModel.corgiData.collectAsState()
     val showNamerDialog by viewModel.showNamerDialog.collectAsState()
     val _currentPose by viewModel.currentPose.collectAsState()
@@ -789,25 +795,11 @@ fun HomeScreen(
                                 )
                             }
                         ) {
-                            val pendingStartIndex = displayItems.indexOfFirst { it is DisplayItem.Todo }
-                            val midPendingDividerIndex =
-                                if (pinnedCount >= 1)
-                                    displayItems.indexOfFirst { it is DisplayItem.PendingDivider }
-                                else -1
-
-                            ReorderableLazyColumn(
+                            ZonedReorderableLazyColumn(
                                 items = displayItems,
                                 listState = lazyListState,
                                 isDragEnabled = !isBatchMode && swipeExpandedTodoId == null
                                     && searchQuery.isBlank() && selectedCategoryId == null,
-                                isDraggable = { it is DisplayItem.Todo },
-                                isPinned = { (it as? DisplayItem.Todo)?.item?.isPinned ?: false },
-                                dividerKind = { when (it) {
-                                    is DisplayItem.PinnedDivider -> DividerKind.PINNED
-                                    is DisplayItem.PendingDivider -> DividerKind.PENDING
-                                    is DisplayItem.CompletedDivider -> DividerKind.COMPLETED
-                                    else -> null
-                                }},
                                 key = { item ->
                                     when (item) {
                                         is DisplayItem.Todo -> item.item.id
@@ -816,26 +808,29 @@ fun HomeScreen(
                                         is DisplayItem.CompletedDivider -> "completed_divider"
                                     }
                                 },
-                                onReorder = { fromIndex, toIndex, dividerIndex, crossed ->
-                                    viewModel.reorderOnDisplayList(
-                                        fromIndex, toIndex, dividerIndex, crossed,
-                                        pendingStartIndex, midPendingDividerIndex
+                                onReorder = { dragResult, fromIndex, toIndex ->
+                                    // 找到被拖项（基于最终位置）
+                                    val draggedTodoItem = displayItems.getOrNull(toIndex) as? DisplayItem.Todo
+                                    val draggedTodo = draggedTodoItem?.item
+                                        ?: return@ZonedReorderableLazyColumn
+
+                                    // 计算目标 zone 内的相对索引（仅统计同 zone 的 Todo 项）
+                                    val targetZone = dragResult.currentZone
+                                    var relativeIndex = 0
+                                    for (i in 0 until toIndex) {
+                                        val item = displayItems[i]
+                                        if (item is DisplayItem.Todo && item.item.zone() == targetZone) {
+                                            relativeIndex++
+                                        }
+                                    }
+
+                                    viewModel.reorderOnDragResult(
+                                        draggedItemId = draggedTodo.id,
+                                        draggedTodo = draggedTodo,
+                                        dragResult = dragResult,
+                                        targetZoneRelativeIndex = relativeIndex
                                     )
                                 },
-                                isBatchMode = isBatchMode,
-                                selectedIds = selectedTodoIds.map { it as Any }.toSet(),
-                                onMergeReorder = { selectedIds, toIndex, dividerIndex, crossed ->
-                                    viewModel.mergeReorderOnDisplayList(
-                                        selectedIds.mapNotNull { it as? Long }.toSet(),
-                                        toIndex,
-                                        dividerIndex,
-                                        crossed,
-                                        pendingStartIndex,
-                                        midPendingDividerIndex
-                                    )
-                                },
-                                /** 已完成分隔按钮在 displayItems 中的真实索引（-1 表示无已完成区） */
-                                dividerIndex = displayItems.indexOfFirst { it is DisplayItem.CompletedDivider },
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(horizontal = 8.dp)
