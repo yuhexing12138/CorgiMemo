@@ -2340,8 +2340,11 @@ fun CelebrationOverlay(level: CelebrationLevel, message: String) {
 
 /**
  * 列表显示项：普通待办或"已完成"分隔按钮
+ *
+ * 提升为 top-level public，供 [com.corgimemo.app.ui.components.ZonedReorderableLazyColumn]
+ * 跨文件引用（Task 5）。
  */
-private sealed interface DisplayItem {
+sealed interface DisplayItem {
     data class Todo(val item: TodoItem) : DisplayItem
     data class PinnedDivider(val count: Int, val isExpanded: Boolean) : DisplayItem
     data class PendingDivider(val count: Int, val isExpanded: Boolean) : DisplayItem
