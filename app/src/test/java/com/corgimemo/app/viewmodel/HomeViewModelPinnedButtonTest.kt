@@ -103,10 +103,14 @@ class HomeViewModelPinnedButtonTest {
             fileCopyManager = mockFileCopyManager,
             context = mockContext
         )
+
+        // 取消 init 中 startIdleDetection 的 while(isActive) 无限循环，避免阻塞 runTest
+        viewModel.stopIdleDetection()
     }
 
     @After
     fun tearDown() {
+        viewModel.stopIdleDetection()
         Dispatchers.resetMain()
     }
 

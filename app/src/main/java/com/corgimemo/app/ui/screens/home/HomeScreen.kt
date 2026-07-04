@@ -803,6 +803,12 @@ fun HomeScreen(
                                 )
                             }
                         ) {
+                            val pendingStartIndex = displayItems.indexOfFirst { it is DisplayItem.Todo }
+                            val midPendingDividerIndex =
+                                if (pinnedCount >= 4)
+                                    displayItems.indexOfFirst { it is DisplayItem.PendingDivider }
+                                else -1
+
                             ReorderableLazyColumn(
                                 items = displayItems,
                                 listState = lazyListState,
@@ -819,7 +825,10 @@ fun HomeScreen(
                                     }
                                 },
                                 onReorder = { fromIndex, toIndex, dividerIndex, crossed ->
-                                    viewModel.reorderOnDisplayList(fromIndex, toIndex, dividerIndex, crossed)
+                                    viewModel.reorderOnDisplayList(
+                                        fromIndex, toIndex, dividerIndex, crossed,
+                                        pendingStartIndex, midPendingDividerIndex
+                                    )
                                 },
                                 isBatchMode = isBatchMode,
                                 selectedIds = selectedTodoIds.map { it as Any }.toSet(),
@@ -828,7 +837,9 @@ fun HomeScreen(
                                         selectedIds.mapNotNull { it as? Long }.toSet(),
                                         toIndex,
                                         dividerIndex,
-                                        crossed
+                                        crossed,
+                                        pendingStartIndex,
+                                        midPendingDividerIndex
                                     )
                                 },
                                 /** 已完成分隔按钮在 displayItems 中的真实索引（-1 表示无已完成区） */

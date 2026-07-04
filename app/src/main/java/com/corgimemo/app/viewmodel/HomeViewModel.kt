@@ -51,6 +51,7 @@ import com.corgimemo.app.animation.TimeSlot
 import com.corgimemo.app.data.weather.WeatherManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -790,9 +791,22 @@ class HomeViewModel @Inject constructor(
      * @param dividerIndex CompletedDivider 在 displayItems 中的真实索引（-1 表示没有已完成区）
      *                    由 HomeScreen 通过 `displayItems.indexOfFirst { it is DisplayItem.CompletedDivider }` 计算后传入
      * @param crossedPinnedZone 是否跨越置顶区分界线
+     * @param pendingStartIndex 第一个待办卡片在 displayItems 中的全局索引（前导分隔按钮数）
+     * @param midPendingDividerIndex Case A 中分隔置顶/非置顶的 PendingDivider 索引；Case B 传 -1
      */
-    fun reorderOnDisplayList(fromIndex: Int, toIndex: Int, dividerIndex: Int, crossedPinnedZone: Boolean) {
+    fun reorderOnDisplayList(
+        fromIndex: Int,
+        toIndex: Int,
+        dividerIndex: Int,
+        crossedPinnedZone: Boolean,
+        pendingStartIndex: Int,
+        midPendingDividerIndex: Int
+    ) {
         viewModelScope.launch {
+            /** 将 displayItems 全局索引转换为 pendingList 索引 */
+            fun pendingOffset(displayIdx: Int): Int =
+                pendingStartIndex + (if (midPendingDividerIndex >= 0 && displayIdx > midPendingDividerIndex) 1 else 0)
+
             val pendingList = pendingTodos.value.toMutableList()
             val completedList = if (_showCompleted.value) {
                 visibleCompletedTodos.value.toMutableList()
@@ -815,15 +829,15 @@ class HomeViewModel @Inject constructor(
             if (fromIndex == toIndex) return@launch
             if (fromIndex !in 0 until totalSize || toIndex !in 0..totalSize) return@launch
 
-            val fromPending = fromIndex < dividerIndex
-            val fromCompleted = fromIndex > dividerIndex
-            val toPending = toIndex < dividerIndex
-            val toCompleted = toIndex > dividerIndex
+            val fromPending = dividerIndex < 0 || fromIndex < dividerIndex
+            val fromCompleted = dividerIndex >= 0 && fromIndex > dividerIndex
+            val toPending = dividerIndex < 0 || toIndex < dividerIndex
+            val toCompleted = dividerIndex >= 0 && toIndex > dividerIndex
 
             // 1. 从对应区域移除被拖项
             val draggedItem = when {
                 fromPending -> {
-                    val idx = fromIndex
+                    val idx = fromIndex - pendingOffset(fromIndex)
                     if (idx !in pendingList.indices) return@launch
                     pendingList.removeAt(idx)
                 }
@@ -877,7 +891,7 @@ class HomeViewModel @Inject constructor(
             // 3. 插入到目标区域
             when {
                 toPending -> {
-                    val insertIdx = toIndex.coerceAtMost(pendingList.size)
+                    val insertIdx = (toIndex - pendingOffset(toIndex)).coerceIn(0, pendingList.size)
                     pendingList.add(insertIdx, finalItem)
                 }
                 toCompleted -> {
@@ -949,14 +963,21 @@ class HomeViewModel @Inject constructor(
      * @param toIndex 占位框在 displayItems 中的目标位置
      * @param dividerIndex CompletedDivider 在 displayItems 中的真实索引（-1 表示没有已完成区）
      * @param crossedPinnedZone 是否跨越置顶区分界线
+     * @param pendingStartIndex 第一个待办卡片在 displayItems 中的全局索引（前导分隔按钮数）
+     * @param midPendingDividerIndex Case A 中分隔置顶/非置顶的 PendingDivider 索引；Case B 传 -1
      */
     fun mergeReorderOnDisplayList(
         selectedIds: Set<Long>,
         toIndex: Int,
         dividerIndex: Int,
-        crossedPinnedZone: Boolean
+        crossedPinnedZone: Boolean,
+        pendingStartIndex: Int,
+        midPendingDividerIndex: Int
     ) {
         viewModelScope.launch {
+            /** 将 displayItems 全局索引转换为 pendingList 索引 */
+            fun pendingOffset(displayIdx: Int): Int =
+                pendingStartIndex + (if (midPendingDividerIndex >= 0 && displayIdx > midPendingDividerIndex) 1 else 0)
             if (selectedIds.size <= 1) return@launch
 
             val pendingList = pendingTodos.value.toMutableList()
@@ -997,8 +1018,8 @@ class HomeViewModel @Inject constructor(
                 selectedCompleted.map { it.second }).toMutableList()
 
             // 4. 计算目标区域（dividerIndex 在移除后已变化，用原 dividerIndex 判断）
-            val toPending = toIndex < dividerIndex
-            val toCompleted = toIndex > dividerIndex
+            val toPending = dividerIndex < 0 || toIndex < dividerIndex
+            val toCompleted = dividerIndex >= 0 && toIndex > dividerIndex
 
             // 5. 处理跨区域状态变更（完成↔未完成、置顶切换）
             val finalItems = mergedItems.map { item ->
@@ -1030,7 +1051,7 @@ class HomeViewModel @Inject constructor(
             // 6. 插入到目标区域
             when {
                 toPending -> {
-                    val insertIdx = toIndex.coerceAtMost(pendingList.size)
+                    val insertIdx = (toIndex - pendingOffset(toIndex)).coerceIn(0, pendingList.size)
                     pendingList.addAll(insertIdx, finalItems)
                 }
                 toCompleted -> {
@@ -2665,9 +2686,21 @@ class HomeViewModel @Inject constructor(
     /**
      * 启动空闲检测
      * 每 1 秒检查一次用户是否操作
+     *
+     * 注意：本协程运行在 [Dispatchers.Default] 上而非默认的 Main dispatcher。
+     * 原因：
+     * 1. 避免在单元测试中因 [Dispatchers.setMain] 注入 TestDispatcher 后，
+     *    runTest 会为完成 delay(1000) 而自动推进虚拟时间，但 while(isActive)
+     *    让循环无限继续，导致 runTest 无法正常结束。
+     * 2. 让空闲检测在后台线程运行，避免阻塞 UI 线程。
+     *
+     * 取消机制：调用 [stopIdleDetection] 或 viewModel.onCleared() 会通过
+     * Job.cancel() 取消本协程，cancellation 通过 Job 层级传播，与 dispatcher 无关。
+     * triggerYawn() 内部仍用 viewModelScope.launch（Main dispatcher）更新 UI 状态，
+     * 确保线程安全。
      */
     private fun startIdleDetection() {
-        idleCheckJob = viewModelScope.launch {
+        idleCheckJob = viewModelScope.launch(Dispatchers.Default) {
             while (isActive) {
                 delay(1000)
 
@@ -2696,8 +2729,10 @@ class HomeViewModel @Inject constructor(
     /**
      * 停止空闲检测
      * ViewModel 销毁时调用
+     * 测试中也可手动调用以避免 while(isActive) 无限循环阻塞 runTest
      */
-    private fun stopIdleDetection() {
+    @androidx.annotation.VisibleForTesting
+    fun stopIdleDetection() {
         idleCheckJob?.cancel()
         idleCheckJob = null
     }

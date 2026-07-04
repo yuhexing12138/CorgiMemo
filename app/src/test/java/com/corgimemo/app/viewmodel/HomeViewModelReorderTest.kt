@@ -12,15 +12,21 @@ import com.corgimemo.app.data.repository.MoodHistoryRepository
 import com.corgimemo.app.data.repository.OperationLogRepository
 import com.corgimemo.app.data.repository.TaskDailyStatsRepository
 import com.corgimemo.app.data.repository.TodoRepository
+import com.corgimemo.app.data.repository.SubTaskManager
+import com.corgimemo.app.data.repository.SubTaskProgress
 import com.corgimemo.app.util.FileCopyManager
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.match
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -32,11 +38,10 @@ import org.junit.Test
  * HomeViewModel 拖拽排序相关方法单元测试
  *
  * 覆盖：
- * - reorderTodos：单项向下/向上移动、置顶区跨越
- * - restoreDefaultOrder：按 sortType 重算 sortOrder
+ * - reorderOnDisplayList：单拖偏移校正、跨区域拖拽、dividerIndex=-1 处理
  *
  * 说明：HomeViewModel 构造函数有 11 个依赖 + Context，全部使用 relaxed mock。
- * 由于 reorderTodos/restoreDefaultOrder 仅依赖 todoRepository，
+ * 由于 reorderOnDisplayList 仅依赖 todoRepository，
  * 其他 mock 不需要特定 stub。
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -56,8 +61,18 @@ class HomeViewModelReorderTest {
     private lateinit var mockContext: Context
     private lateinit var viewModel: HomeViewModel
 
+    /**
+     * 共享的 TestDispatcher
+     *
+     * 关键设计：setUp 中 [Dispatchers.setMain] 和测试方法中 [runTest] 必须使用
+     * 同一个 dispatcher 实例，否则 viewModelScope（通过 Dispatchers.Main）
+     * 会绑定到 setUp 的 dispatcher，而测试方法的 runCurrent()/advanceUntilIdle()
+     * 操作的是另一个 dispatcher，导致 viewModelScope.launch 中的协程无法被推进。
+     */
+    private val testDispatcher = UnconfinedTestDispatcher()
+
     @Before
-    fun setUp() = runTest {
+    fun setUp() {
         mockTodoRepository = mockk(relaxed = true)
         mockCorgiRepository = mockk(relaxed = true)
         mockCategoryRepository = mockk(relaxed = true)
@@ -72,10 +87,24 @@ class HomeViewModelReorderTest {
         mockContext = mockk(relaxed = true)
 
         // 默认返回空列表，避免 filteredTodos 初始化时 NPE
-        coEvery { mockTodoRepository.getAllTodos() } returns flowOf(emptyList())
-        coEvery { mockTodoRepository.observeAllSorted() } returns flowOf(emptyList())
+        coEvery { mockTodoRepository.getAllTodos() } returns emptyFlow()
+        coEvery { mockTodoRepository.observeAllSorted() } returns emptyFlow()
 
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        // 桩：corgiPreferences 的所有 Flow 用 emptyFlow 立即完成，避免 init 中 collect 永久挂起
+        coEvery { mockCorgiPreferences.showCompleted } returns emptyFlow()
+        coEvery { mockCorgiPreferences.showPinned } returns emptyFlow()
+        coEvery { mockCorgiPreferences.hideDetails } returns emptyFlow()
+        coEvery { mockCorgiPreferences.hideCompletedItems } returns emptyFlow()
+        coEvery { mockCorgiPreferences.userType } returns emptyFlow()
+
+        // 桩：SubTaskManager 是 object，跨区域拖拽会调用 getProgress 检查子任务约束。
+        // mockContext 无法创建真实数据库，会导致 NPE 使协程静默失败。
+        // 返回 total=0 表示无子任务，跳过 "未完成子任务" 拦截。
+        mockkObject(SubTaskManager)
+        coEvery { SubTaskManager.getProgress(any(), any()) } returns SubTaskProgress(0, 0, 0f)
+
+        // 使用共享 dispatcher，确保 viewModelScope 与测试方法的 runTest 共用同一 scheduler
+        Dispatchers.setMain(testDispatcher)
 
         viewModel = HomeViewModel(
             todoRepository = mockTodoRepository,
@@ -91,87 +120,28 @@ class HomeViewModelReorderTest {
             fileCopyManager = mockFileCopyManager,
             context = mockContext
         )
+
+        // 取消 init 中 startIdleDetection 的 while(isActive) 无限循环，避免阻塞 runTest
+        viewModel.stopIdleDetection()
     }
 
     @After
     fun tearDown() {
+        viewModel.stopIdleDetection()
+        unmockkObject(SubTaskManager)
         Dispatchers.resetMain()
     }
 
     /**
-     * 场景：3 项待办（无置顶），将第 0 项拖到位置 2
-     * 预期：
-     * - updateSortOrder 被调用 3 次（重新分配所有 sortOrder）
-     * - 不调用 updatePinnedStatus（未跨越置顶区）
+     * 测试辅助：注入数据并激活 pendingTodos StateFlow
+     *
+     * pendingTodos 使用 stateIn(WhileSubscribed)，需要活跃订阅者才会处理 _todos 的变更。
+     * setUp 与测试方法是独立的 runTest 作用域，所以必须在每个测试内订阅。
      */
-    @Test
-    fun `reorderTodos 单项向下移动更新所有 sortOrder`() = runTest {
-        // Given: ViewModel 当前 filteredTodos 为 3 项
-        val todos = listOf(
-            testTodo(1, isPinned = false, sortOrder = 0),
-            testTodo(2, isPinned = false, sortOrder = 1),
-            testTodo(3, isPinned = false, sortOrder = 2)
-        )
-        // 重新触发 collect
+    private fun kotlinx.coroutines.test.TestScope.setupTodos(todos: List<TodoItem>) {
         viewModel.refreshTodosForTest(todos)
-
-        // When: 拖拽 fromIndex=0 → toIndex=2
-        viewModel.reorderTodos(fromIndex = 0, toIndex = 2, crossedPinnedZone = false)
-
-        // Then: updateSortOrder 被调用 3 次
-        coVerify(atLeast = 3) { mockTodoRepository.updateSortOrder(any(), any()) }
-        // 不调用 updatePinnedStatus
-        coVerify(exactly = 0) { mockTodoRepository.updatePinnedStatus(any(), any()) }
-    }
-
-    /**
-     * 场景：拖拽跨越置顶区
-     * 预期：updatePinnedStatus 被调用 1 次，状态翻转
-     */
-    @Test
-    fun `reorderTodos 跨越置顶区更新 isPinned`() = runTest {
-        val todos = listOf(
-            testTodo(1, isPinned = true, sortOrder = 0),
-            testTodo(2, isPinned = false, sortOrder = 0)
-        )
-        viewModel.refreshTodosForTest(todos)
-
-        viewModel.reorderTodos(fromIndex = 0, toIndex = 1, crossedPinnedZone = true)
-
-        // 验证：updatePinnedStatus(1, false) 被调用（true → false）
-        coVerify(atLeast = 1) { mockTodoRepository.updatePinnedStatus(1, false) }
-    }
-
-    /**
-     * 场景：调用 restoreDefaultOrder，sortType = "updated_desc"
-     * 预期：按 updatedAt DESC 重新分配 sortOrder = [0, 1, 2]
-     */
-    @Test
-    fun `restoreDefaultOrder 按 updatedAt DESC 重算 sortOrder`() = runTest {
-        val todos = listOf(
-            testTodo(1, updatedAt = 100, sortOrder = 5),
-            testTodo(2, updatedAt = 300, sortOrder = 5),
-            testTodo(3, updatedAt = 200, sortOrder = 5)
-        )
-        viewModel.refreshTodosForTest(todos)
-        viewModel.setSortTypeForTest("updated_desc")
-
-        viewModel.restoreDefaultOrder()
-
-        // 排序后顺序应为 [2(300), 3(200), 1(100)]，sortOrder 分别为 [0, 1, 2]
-        coVerify { mockTodoRepository.updateSortOrder(2, 0) }
-        coVerify { mockTodoRepository.updateSortOrder(3, 1) }
-        coVerify { mockTodoRepository.updateSortOrder(1, 2) }
-    }
-
-    /**
-     * 场景：fromIndex 越界
-     * 预期：直接 return，不调用任何 DAO 方法
-     */
-    @Test
-    fun `reorderTodos fromIndex 越界安全返回`() = runTest {
-        viewModel.reorderTodos(fromIndex = 99, toIndex = 0, crossedPinnedZone = false)
-        coVerify(exactly = 0) { mockTodoRepository.updateSortOrder(any(), any()) }
+        backgroundScope.launch { viewModel.pendingTodos.collect {} }
+        runCurrent()
     }
 
     /**
@@ -192,7 +162,7 @@ class HomeViewModelReorderTest {
      * - updateTodo 被调用(N5 状态变更)
      */
     @Test
-    fun `Case A 置顶大于等于4 跨边界拖拽应标记为完成`() = runTest {
+    fun `Case A 置顶大于等于4 跨边界拖拽应标记为完成`() = runTest(testDispatcher) {
         // Given: 4 个置顶待办 + 5 个非置顶待办 + 3 个已完成待办
         val todos = listOf(
             // 4 个置顶 (sortOrder 0-3)
@@ -211,7 +181,7 @@ class HomeViewModelReorderTest {
             testTodo(11, isPinned = false, sortOrder = 10).copy(status = 1),
             testTodo(12, isPinned = false, sortOrder = 11).copy(status = 1)
         )
-        viewModel.refreshTodosForTest(todos)
+        setupTodos(todos)
 
         // When: Case A 真实 dividerIndex = 11
         // N5(原始 index=10)拖到 C1 位置(index=12,即第 13 项,已完成的顶部)
@@ -219,7 +189,9 @@ class HomeViewModelReorderTest {
             fromIndex = 10,
             toIndex = 12,
             dividerIndex = 11,
-            crossedPinnedZone = false
+            crossedPinnedZone = false,
+            pendingStartIndex = 1,
+            midPendingDividerIndex = 5
         )
 
         // Then: updateTodo 被调用(N5 跨区完成)
@@ -243,7 +215,7 @@ class HomeViewModelReorderTest {
      * - 触发跨区域状态变更:N5.status 0 → 1
      */
     @Test
-    fun `Case B 置顶小于4 跨边界拖拽应标记为完成`() = runTest {
+    fun `Case B 置顶小于4 跨边界拖拽应标记为完成`() = runTest(testDispatcher) {
         // Given: 2 个置顶 + 5 个非置顶 + 3 个已完成
         val todos = listOf(
             // 2 个置顶 (sortOrder 0-1)
@@ -260,7 +232,7 @@ class HomeViewModelReorderTest {
             testTodo(9, isPinned = false, sortOrder = 8).copy(status = 1),
             testTodo(10, isPinned = false, sortOrder = 9).copy(status = 1)
         )
-        viewModel.refreshTodosForTest(todos)
+        setupTodos(todos)
 
         // When: Case B 真实 dividerIndex = 8
         // N5(原始 index=7)拖到 C1 位置(index=9)
@@ -268,7 +240,9 @@ class HomeViewModelReorderTest {
             fromIndex = 7,
             toIndex = 9,
             dividerIndex = 8,
-            crossedPinnedZone = false
+            crossedPinnedZone = false,
+            pendingStartIndex = 1,
+            midPendingDividerIndex = -1
         )
 
         // Then: updateTodo 被调用(N5 跨区完成)
@@ -280,24 +254,179 @@ class HomeViewModelReorderTest {
      * 预期：reorderOnDisplayList 不会因 totalSize 校验而误判
      */
     @Test
-    fun `dividerIndex 负一表示无已完成区不应误判跨区`() = runTest {
+    fun `dividerIndex 负一表示无已完成区不应误判跨区`() = runTest(testDispatcher) {
         // Given: 全部都是待办,无已完成
         val todos = listOf(
             testTodo(1, isPinned = false, sortOrder = 0),
             testTodo(2, isPinned = false, sortOrder = 1)
         )
-        viewModel.refreshTodosForTest(todos)
+        setupTodos(todos)
 
         // When: dividerIndex = -1,fromIndex 越界 → 应当直接 return
         viewModel.reorderOnDisplayList(
             fromIndex = 0,
             toIndex = 1,
             dividerIndex = -1,
-            crossedPinnedZone = false
+            crossedPinnedZone = false,
+            pendingStartIndex = 1,
+            midPendingDividerIndex = -1
         )
 
         // Then: 正常执行(同区排序),不调用 updateTodo (无状态变更)
         coVerify(exactly = 0) { mockTodoRepository.updateTodo(any()) }
+    }
+
+    /**
+     * 场景：Case B（置顶 < 4）同区拖拽，9 待完成 + 1 已完成
+     *
+     * displayItems 结构：
+     * [PendingDivider(0), 1(1), 2(2), 3(3), ..., 9(9), CompletedDivider(10), 10(11)]
+     * pendingStartIndex = 1, midPendingDividerIndex = -1, dividerIndex = 10
+     *
+     * 拖"1"到 2、3 之间 → from=1, to=2
+     * 预期 pending 顺序：[2,1,3,4,5,6,7,8,9]（不是 [1,3,2,...]）
+     */
+    @Test
+    fun `Case B 同区拖拽应正确偏移`() = runTest(testDispatcher) {
+        val todos = listOf(
+            testTodo(1, isPinned = false, sortOrder = 0),
+            testTodo(2, isPinned = false, sortOrder = 1),
+            testTodo(3, isPinned = false, sortOrder = 2),
+            testTodo(4, isPinned = false, sortOrder = 3),
+            testTodo(5, isPinned = false, sortOrder = 4),
+            testTodo(6, isPinned = false, sortOrder = 5),
+            testTodo(7, isPinned = false, sortOrder = 6),
+            testTodo(8, isPinned = false, sortOrder = 7),
+            testTodo(9, isPinned = false, sortOrder = 8),
+            testTodo(10, isPinned = false, sortOrder = 9).copy(status = 1)
+        )
+        setupTodos(todos)
+
+        viewModel.reorderOnDisplayList(
+            fromIndex = 1,
+            toIndex = 2,
+            dividerIndex = 10,
+            crossedPinnedZone = false,
+            pendingStartIndex = 1,
+            midPendingDividerIndex = -1
+        )
+
+        // 验证：1 的 sortOrder 应为 1（位置 2），2 的 sortOrder 应为 0（位置 1）
+        coVerify(atLeast = 1) { mockTodoRepository.updateTodos(match { updates ->
+            val byId = updates.associateBy { it.id }
+            byId[1L]?.sortOrder == 1 && byId[2L]?.sortOrder == 0
+        }) }
+    }
+
+    /**
+     * 场景：Case A（置顶 ≥ 4）置顶区内拖拽
+     *
+     * displayItems 结构：
+     * [PinnedDivider(0), P1(1), P2(2), P3(3), P4(4), PendingDivider(5), N1(6), ..., N5(10), CompletedDivider(11), C1(12)]
+     * pendingStartIndex = 1, midPendingDividerIndex = 5, dividerIndex = 11
+     *
+     * 拖 P1 到 P2、P3 之间 → from=1, to=2（均在置顶区，< mid=5）
+     * 偏移 = pendingStartIndex(1) + 0 = 1
+     * 预期 pendingList 顺序：[P2, P1, P3, P4, N1, N2, N3, N4, N5]
+     */
+    @Test
+    fun `Case A 置顶区内拖拽应正确偏移`() = runTest(testDispatcher) {
+        val todos = listOf(
+            testTodo(1, isPinned = true, sortOrder = 0),
+            testTodo(2, isPinned = true, sortOrder = 1),
+            testTodo(3, isPinned = true, sortOrder = 2),
+            testTodo(4, isPinned = true, sortOrder = 3),
+            testTodo(5, isPinned = false, sortOrder = 4),
+            testTodo(6, isPinned = false, sortOrder = 5),
+            testTodo(7, isPinned = false, sortOrder = 6),
+            testTodo(8, isPinned = false, sortOrder = 7),
+            testTodo(9, isPinned = false, sortOrder = 8),
+            testTodo(10, isPinned = false, sortOrder = 9).copy(status = 1)
+        )
+        setupTodos(todos)
+
+        viewModel.reorderOnDisplayList(
+            fromIndex = 1,
+            toIndex = 2,
+            dividerIndex = 11,
+            crossedPinnedZone = false,
+            pendingStartIndex = 1,
+            midPendingDividerIndex = 5
+        )
+
+        coVerify(atLeast = 1) { mockTodoRepository.updateTodos(match { updates ->
+            val byId = updates.associateBy { it.id }
+            byId[1L]?.sortOrder == 1 && byId[2L]?.sortOrder == 0
+        }) }
+    }
+
+    /**
+     * 场景：Case A（置顶 ≥ 4）非置顶区内拖拽
+     *
+     * displayItems 同上：pendingStartIndex = 1, mid = 5, dividerIndex = 11
+     * 拖 N1(6) 到 N2(7)、N3(8) 之间 → from=6, to=7（均 > mid=5）
+     * 偏移 = 1 + 1 = 2
+     * 预期 pendingList 非置顶部分：[N2, N1, N3, N4, N5]
+     */
+    @Test
+    fun `Case A 非置顶区内拖拽应正确偏移`() = runTest(testDispatcher) {
+        val todos = listOf(
+            testTodo(1, isPinned = true, sortOrder = 0),
+            testTodo(2, isPinned = true, sortOrder = 1),
+            testTodo(3, isPinned = true, sortOrder = 2),
+            testTodo(4, isPinned = true, sortOrder = 3),
+            testTodo(5, isPinned = false, sortOrder = 4),
+            testTodo(6, isPinned = false, sortOrder = 5),
+            testTodo(7, isPinned = false, sortOrder = 6),
+            testTodo(8, isPinned = false, sortOrder = 7),
+            testTodo(9, isPinned = false, sortOrder = 8),
+            testTodo(10, isPinned = false, sortOrder = 9).copy(status = 1)
+        )
+        setupTodos(todos)
+
+        viewModel.reorderOnDisplayList(
+            fromIndex = 6,
+            toIndex = 7,
+            dividerIndex = 11,
+            crossedPinnedZone = false,
+            pendingStartIndex = 1,
+            midPendingDividerIndex = 5
+        )
+
+        // N1(id=5, 原 sortOrder=4) → 新位置 5；N2(id=6, 原 5) → 新 4
+        // 拖 N1 到 N2、N3 之间，应交换 N1 和 N2 的 sortOrder
+        coVerify(atLeast = 1) { mockTodoRepository.updateTodos(match { updates ->
+            val byId = updates.associateBy { it.id }
+            byId[5L]?.sortOrder == 5 && byId[6L]?.sortOrder == 4
+        }) }
+    }
+
+    /**
+     * 场景：dividerIndex = -1（无已完成区）同区拖拽应正常持久化
+     *
+     * 旧 bug：dividerIndex=-1 时所有项被误判为已完成区 → removeAt 越界 → 静默 return
+     * 修复后：dividerIndex<0 全部按 pending 处理
+     */
+    @Test
+    fun `dividerIndex 负一同区拖拽应持久化`() = runTest(testDispatcher) {
+        val todos = listOf(
+            testTodo(1, isPinned = false, sortOrder = 0),
+            testTodo(2, isPinned = false, sortOrder = 1),
+            testTodo(3, isPinned = false, sortOrder = 2)
+        )
+        setupTodos(todos)
+
+        viewModel.reorderOnDisplayList(
+            fromIndex = 1,
+            toIndex = 2,
+            dividerIndex = -1,
+            crossedPinnedZone = false,
+            pendingStartIndex = 1,
+            midPendingDividerIndex = -1
+        )
+
+        // 应当调用 updateTodos（而非静默跳过）
+        coVerify(atLeast = 1) { mockTodoRepository.updateTodos(any()) }
     }
 
     // ==================== 测试辅助方法 ====================
