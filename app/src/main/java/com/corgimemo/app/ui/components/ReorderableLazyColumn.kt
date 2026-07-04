@@ -127,18 +127,20 @@ object ReorderAlgorithms {
     ): Boolean {
         if (draggedCurrentIndex < 0 || draggedCurrentIndex >= displayItems.size) return false
 
-        // 优先向前找第一个非 divider 邻居
+        // 向前找邻居：divider 是区域边界，遇到立即停止（不能跨越边界找邻居）
         var neighborIdx = -1
-        for (i in draggedCurrentIndex - 1 downTo 0) {
-            if (!isDivider(displayItems[i])) { neighborIdx = i; break }
+        val prevIdx = draggedCurrentIndex - 1
+        if (prevIdx >= 0 && !isDivider(displayItems[prevIdx])) {
+            neighborIdx = prevIdx
         }
-        // 前面没有则向后找
+        // 前面被 divider 阻断或到列表头 → 向后找
         if (neighborIdx < 0) {
-            for (i in draggedCurrentIndex + 1 until displayItems.size) {
-                if (!isDivider(displayItems[i])) { neighborIdx = i; break }
+            val nextIdx = draggedCurrentIndex + 1
+            if (nextIdx < displayItems.size && !isDivider(displayItems[nextIdx])) {
+                neighborIdx = nextIdx
             }
         }
-        // 整个列表都是 divider（理论上不可能）→ 不跨区
+        // 两边都被 divider 阻断或到列表边界 → 无法判定，不跨区
         if (neighborIdx < 0) return false
 
         return draggedOriginalIsPinned != isPinned(displayItems[neighborIdx])

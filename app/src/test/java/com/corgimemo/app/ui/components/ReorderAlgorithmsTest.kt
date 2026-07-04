@@ -225,4 +225,52 @@ class ReorderAlgorithmsTest {
         val result = checkCrossed(items, draggedOriginalIsPinned = true, draggedCurrentIndex = 1)
         assertEquals(false, result)
     }
+
+    /**
+     * 场景：非置顶项紧贴 PendingDivider 之后放置（divider 后第一项）
+     *
+     * 这是 "N6 拖到 PendingDivider 和 N5 之间" bug 场景的算法层不变式：
+     * - displayItems: [PinnedDivider, P4, PendingDivider, N6(被拖到此处), N5]
+     * - draggedOriginalIsPinned=false（N6 非置顶）
+     * - 前邻居是 PendingDivider（边界）→ 应停止向前搜索
+     * - 后邻居是 N5（isPinned=false）
+     * - 期望 crossed=false（不触发 isPinned 翻转）
+     *
+     * 回归保护：未来若算法被重构，必须保持 "divider 是区域边界，不能跨越" 契约。
+     */
+    @Test
+    fun `divider 后第一项不应跨区`() {
+        val items = listOf(
+            TestItem(isPinned = false, isDivider = true),   // PinnedDivider
+            TestItem(isPinned = true),                       // P4
+            TestItem(isPinned = false, isDivider = true),   // PendingDivider
+            TestItem(isPinned = false),                      // N6（被拖到此处）
+            TestItem(isPinned = false)                        // N5
+        )
+        val result = checkCrossed(items, draggedOriginalIsPinned = false, draggedCurrentIndex = 3)
+        assertEquals(false, result)
+    }
+
+    /**
+     * 场景：置顶项紧贴 PendingDivider 之前放置（divider 前第一项）
+     *
+     * 对称场景：置顶区末尾项不应因后邻居是 divider 而被误判跨区。
+     * - displayItems: [PinnedDivider, P1(前邻居), P4(被拖到此处), PendingDivider, N5]
+     * - draggedOriginalIsPinned=true（P4 置顶）
+     * - 前邻居是 P1（isPinned=true）
+     * - 后邻居是 PendingDivider（边界）→ 应停止向后搜索
+     * - 期望 crossed=false
+     */
+    @Test
+    fun `divider 前第一项不应跨区`() {
+        val items = listOf(
+            TestItem(isPinned = false, isDivider = true),   // PinnedDivider
+            TestItem(isPinned = true),                       // P1（前邻居）
+            TestItem(isPinned = true),                       // P4（被拖到此处）
+            TestItem(isPinned = false, isDivider = true),   // PendingDivider
+            TestItem(isPinned = false)                        // N5
+        )
+        val result = checkCrossed(items, draggedOriginalIsPinned = true, draggedCurrentIndex = 2)
+        assertEquals(false, result)
+    }
 }
