@@ -29,7 +29,7 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class],
-    version = 31,
+    version = 32,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -90,7 +90,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32)
                     .build()
                 INSTANCE = instance
                 instance
@@ -862,6 +862,83 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                            OR (t2.createdAt = todo_items.createdAt
                                AND t2.id > todo_items.id))
                 )
+            """.trimIndent())
+        }
+    }
+
+    /**
+     * 版本 31 → 32 迁移：sortOrder 按 zone 分段重算
+     *
+     * 配合 zone 状态机拖拽架构，将每个 zone 的 sortOrder 重置到固定区段，
+     * 保证四 zone 互不重叠，便于后续跨 zone 拖拽时直接拼接显示列表。
+     *
+     * **Zone 分段方案**（每段 10000 容量，预留充足空间）:
+     * - PINNED_PENDING  (isPinned=1, status=0): 0      ~ 9999
+     * - PENDING         (isPinned=0, status=0): 10000  ~ 19999
+     * - PINNED_COMPLETED(isPinned=1, status=1): 20000  ~ 29999
+     * - COMPLETED       (isPinned=0, status=1): 30000  ~ 39999
+     *
+     * **重算策略**:
+     * - 同一 zone 内按 createdAt ASC 顺序分配连续整数（0,1,2,...）
+     * - 加上该 zone 的基础偏移量（0 / 10000 / 20000 / 30000）
+     * - 空 zone 自然不会匹配任何行，无需特殊处理
+     *
+     * **用户影响**:
+     * - 升级后列表顺序保持 createdAt ASC（与 v31 的 DESC 顺序相反，符合 zone 架构新约定）
+     * - 拖拽排序写入的新值会落在对应 zone 段内
+     */
+    private val MIGRATION_31_32 = object : Migration(31, 32) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // 1. PINNED_PENDING: 0, 1, 2, ... (按 createdAt ASC 排序)
+            db.execSQL("""
+                UPDATE todo_items
+                SET sortOrder = (
+                    SELECT COUNT(*)
+                    FROM todo_items t2
+                    WHERE t2.isPinned = 1
+                      AND t2.status = 0
+                      AND t2.createdAt <= todo_items.createdAt
+                ) - 1
+                WHERE isPinned = 1 AND status = 0
+            """.trimIndent())
+
+            // 2. PENDING: 10000, 10001, ...
+            db.execSQL("""
+                UPDATE todo_items
+                SET sortOrder = 10000 + (
+                    SELECT COUNT(*)
+                    FROM todo_items t2
+                    WHERE t2.isPinned = 0
+                      AND t2.status = 0
+                      AND t2.createdAt <= todo_items.createdAt
+                ) - 1
+                WHERE isPinned = 0 AND status = 0
+            """.trimIndent())
+
+            // 3. PINNED_COMPLETED: 20000, 20001, ...
+            db.execSQL("""
+                UPDATE todo_items
+                SET sortOrder = 20000 + (
+                    SELECT COUNT(*)
+                    FROM todo_items t2
+                    WHERE t2.isPinned = 1
+                      AND t2.status = 1
+                      AND t2.createdAt <= todo_items.createdAt
+                ) - 1
+                WHERE isPinned = 1 AND status = 1
+            """.trimIndent())
+
+            // 4. COMPLETED: 30000, 30001, ...
+            db.execSQL("""
+                UPDATE todo_items
+                SET sortOrder = 30000 + (
+                    SELECT COUNT(*)
+                    FROM todo_items t2
+                    WHERE t2.isPinned = 0
+                      AND t2.status = 1
+                      AND t2.createdAt <= todo_items.createdAt
+                ) - 1
+                WHERE isPinned = 0 AND status = 1
             """.trimIndent())
         }
     }
