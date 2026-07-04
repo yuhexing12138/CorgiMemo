@@ -205,4 +205,24 @@ class ReorderAlgorithmsTest {
         val result = checkCrossed(items, draggedOriginalIsPinned = true, draggedCurrentIndex = -1)
         assertEquals(false, result)
     }
+
+    /**
+     * 场景：已置顶项（isPinned=true）在置顶区内拖拽，邻居同为 isPinned=true
+     *
+     * 这是 "首次拖入置顶区后再次拖拽" bug 场景的算法层不变式：
+     * - draggedOriginalIsPinned=true（修复后由 displayItems 查询得到）
+     * - 邻居 isPinned=true
+     * - 期望 crossed=false（不触发 isPinned 翻转）
+     *
+     * 回归保护：未来若算法被重构，必须保持此不变式。
+     */
+    @Test
+    fun `已置顶项与置顶区邻居同区不应跨区`() {
+        val items = listOf(
+            TestItem(isPinned = true),   // P1
+            TestItem(isPinned = true)    // P2
+        )
+        val result = checkCrossed(items, draggedOriginalIsPinned = true, draggedCurrentIndex = 1)
+        assertEquals(false, result)
+    }
 }

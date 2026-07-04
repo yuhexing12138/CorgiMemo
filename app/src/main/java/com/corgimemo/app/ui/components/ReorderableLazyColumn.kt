@@ -680,17 +680,17 @@ fun <T> ReorderableLazyColumn(
                                 .longPressDraggableHandle(
                                     enabled = handleEnabled,
                                     onDragStarted = {
-                                        // 注意：draggedOriginalIndex 必须用 displayItems 计算，
+                                        // 注意：draggedOriginalIndex 与 draggedOriginalIsPinned 必须用 displayItems 计算，
                                         // 与 onDragStopped 中 draggedCurrentIndex 的参照系保持一致。
-                                        // 原因：onDragStarted lambda 可能捕获旧的 items（因 longPressDraggableHandle
-                                        // 的 pointerInput 未因 items 变化而重启），导致 draggedOriginalIndex
-                                        // 用旧 items 计算，与 draggedCurrentIndex（用最新 displayItems 计算）
-                                        // 参照系不一致，进而引发位置跳跃。
+                                        // 原因：onDragStarted lambda 可能捕获旧的 item（因 longPressDraggableHandle
+                                        // 的 pointerInput 未因 items 变化而重启），导致 isPinned(item) 返回旧值，
+                                        // 进而引发 "已置顶项二次拖拽时被误判为跨区" 的位置跳跃。
                                         isDragActive = true
-                                        draggedOriginalIndex = displayItems.indexOfFirst {
+                                        val draggedIdx = displayItems.indexOfFirst {
                                             key(it) == key(item)
                                         }
-                                        draggedOriginalIsPinned = isPinned(item)
+                                        draggedOriginalIndex = draggedIdx
+                                        draggedOriginalIsPinned = if (draggedIdx >= 0) isPinned(displayItems[draggedIdx]) else false
                                         crossedPinnedZone = false
                                         HapticFeedbackManager.performHapticFeedback(
                                             context = context,

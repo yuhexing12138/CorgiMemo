@@ -507,6 +507,52 @@ class HomeViewModelReorderTest {
         coVerify(atLeast = 1) { mockTodoRepository.updateTodo(match { it.id == 5L && it.isPinned }) }
     }
 
+    /**
+     * 场景：N5 首次拖入置顶区后再次在置顶区内拖动
+     *
+     * 这是用户报告的 "二次拖拽跳跃" bug 场景的 ViewModel 层验证：
+     * - 初始：N1-N4 已 pinned，N5 已 pinned（首次拖入后的状态）
+     * - 二次拖动：N5 在置顶区内移动，crossedPinnedZone=false（修复后正确值）
+     * - 预期：不调用 updateTodo 翻转 isPinned（N5 保持 isPinned=true）
+     *         仅调用 updateTodos 重排 sortOrder
+     *
+     * 回归保护：确保 ViewModel 在 crossedPinnedZone=false 时不会误翻转 isPinned。
+     */
+    @Test
+    fun `二次拖拽已置顶项不应翻转 isPinned`() = runTest(testDispatcher) {
+        // Given: N1-N4 已 pinned + N5 已 pinned（首次拖入后的状态）+ N6-N7 pending
+        val todos = listOf(
+            testTodo(1, isPinned = true, sortOrder = 0),
+            testTodo(2, isPinned = true, sortOrder = 1),
+            testTodo(3, isPinned = true, sortOrder = 2),
+            testTodo(4, isPinned = true, sortOrder = 3),
+            testTodo(5, isPinned = true, sortOrder = 4),   // N5 已 pinned
+            testTodo(6, isPinned = false, sortOrder = 5),
+            testTodo(7, isPinned = false, sortOrder = 6)
+        )
+        setupTodos(todos)
+
+        // When: 二次拖动 N5(置顶区内移动)，crossedPinnedZone=false（修复后正确值）
+        // displayItems: [PinnedDivider(0), P1(1), P2(2), P3(3), P4(4), N5(5), PendingDivider(6), N6(7), N7(8)]
+        // 拖 N5(5) 到 P4(4) 上方 → fromIndex=5, toIndex=4
+        viewModel.reorderOnDisplayList(
+            fromIndex = 5,
+            toIndex = 4,
+            dividerIndex = -1,
+            crossedPinnedZone = false,
+            pendingStartIndex = 1,
+            midPendingDividerIndex = 6
+        )
+
+        // Then: 不调用 updateTodo 翻转 N5 的 isPinned
+        coVerify(exactly = 0) { mockTodoRepository.updateTodo(match { it.id == 5L && !it.isPinned }) }
+        // Then: 调用 updateTodos 重排 sortOrder，且 N5 仍为 isPinned=true
+        coVerify(atLeast = 1) { mockTodoRepository.updateTodos(match { updates ->
+            val n5 = updates.find { it.id == 5L }
+            n5?.isPinned == true
+        }) }
+    }
+
     // ==================== 测试辅助方法 ====================
 
     /** 构造测试 TodoItem */
