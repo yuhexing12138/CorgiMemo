@@ -256,6 +256,8 @@ fun <T> ReorderableLazyColumn(
     var draggedOriginalIndex by remember { mutableIntStateOf(-1) }
     var draggedOriginalIsPinned by remember { mutableStateOf(false) }
     var crossedPinnedZone by remember { mutableStateOf(false) }
+    /** 是否尝试跨 CompletedDivider（onMove 阻止跨 divider 时记录，onDragStopped 据此触发跨区） */
+    var attemptedCrossDivider by remember { mutableStateOf(false) }
 
     /** 触觉反馈节流时间戳 */
     var lastHapticTime by remember { mutableLongStateOf(0L) }
@@ -341,13 +343,27 @@ fun <T> ReorderableLazyColumn(
                 return@rememberReorderableLazyListState
             }
 
-            // ② 重排 displayItems
+            // ② [新增] 阻止跨 CompletedDivider 移动，但记录尝试意图
+            //    原因：库的 findTargetItem 会跳过 divider，把 divider 后面的项作为 targetItem，
+            //    导致 onMove 跨过 divider，引发 ViewModel 误判跨区将 status 改为 0。
+            //    修复：onMove 阻止跨 divider，保留被拖项在原区域；
+            //         onDragStopped 中通过 attemptedCrossDivider + 紧邻位置检查触发跨区。
+            if (dividerIndex >= 0) {
+                val minIdx = minOf(from.index, to.index)
+                val maxIdx = maxOf(from.index, to.index)
+                if (minIdx < dividerIndex && maxIdx > dividerIndex) {
+                    attemptedCrossDivider = true
+                    return@rememberReorderableLazyListState
+                }
+            }
+
+            // ③ 重排 displayItems
             val newDisplay = displayItems.toMutableList()
             val draggedItem = newDisplay.removeAt(from.index)
             newDisplay.add(to.index, draggedItem)
             displayItems = newDisplay
 
-            // ③ 触觉反馈（节流）
+            // ④ 触觉反馈（节流）
             val now = System.currentTimeMillis()
             if (now - lastHapticTime > hapticThrottleMs) {
                 HapticFeedbackManager.performHapticFeedback(
@@ -728,6 +744,7 @@ fun <T> ReorderableLazyColumn(
                                         draggedOriginalIndex = draggedIdx
                                         draggedOriginalIsPinned = if (draggedIdx >= 0) isPinned(displayItems[draggedIdx]) else false
                                         crossedPinnedZone = false
+                                        attemptedCrossDivider = false
                                         HapticFeedbackManager.performHapticFeedback(
                                             context = context,
                                             type = InteractionType.TEXT_MOVE,
@@ -738,7 +755,53 @@ fun <T> ReorderableLazyColumn(
                                         val draggedCurrentIndex = displayItems.indexOfFirst {
                                             key(it) == key(item)
                                         }
-                                        if (draggedOriginalIndex >= 0 &&
+
+                                        // [新增] 跨 CompletedDivider 检测：
+                                        // 如果 onMove 期间尝试跨 divider（被阻止），
+                                        // 且被拖项当前在 divider 紧邻位置，触发跨区。
+                                        var crossDividerTriggered = false
+                                        if (attemptedCrossDivider && dividerIndex >= 0 &&
+                                            draggedOriginalIndex >= 0 && draggedCurrentIndex >= 0
+                                        ) {
+                                            val originalInPending = draggedOriginalIndex < dividerIndex
+                                            // 双重检查：尝试跨 divider + 被拖项在 divider 紧邻位置
+                                            val isAdjacentToDivider =
+                                                draggedCurrentIndex == dividerIndex - 1 ||
+                                                draggedCurrentIndex == dividerIndex + 1
+                                            if (isAdjacentToDivider) {
+                                                // 跨区目标位置：divider 另一侧紧邻位置
+                                                val effectiveToIndex = if (originalInPending) {
+                                                    dividerIndex + 1
+                                                } else {
+                                                    dividerIndex - 1
+                                                }
+
+                                                crossedPinnedZone = ReorderAlgorithms.checkPinnedZoneCrossed(
+                                                    displayItems = displayItems,
+                                                    isPinned = isPinned,
+                                                    dividerKind = dividerKind,
+                                                    draggedOriginalIsPinned = draggedOriginalIsPinned,
+                                                    draggedCurrentIndex = effectiveToIndex
+                                                )
+                                                onReorder(
+                                                    draggedOriginalIndex,
+                                                    effectiveToIndex,
+                                                    dividerIndex,
+                                                    crossedPinnedZone
+                                                )
+                                                HapticFeedbackManager.performHapticFeedback(
+                                                    context = context,
+                                                    type = InteractionType.CONFIRM,
+                                                    enabled = true
+                                                )
+                                                crossDividerTriggered = true
+                                            }
+                                            // 如果 attemptedCrossDivider=true 但不在紧邻位置，回退到原逻辑
+                                        }
+
+                                        // 原逻辑：同区域内拖拽（仅在未触发跨区时执行）
+                                        if (!crossDividerTriggered &&
+                                            draggedOriginalIndex >= 0 &&
                                             draggedOriginalIndex != draggedCurrentIndex &&
                                             draggedCurrentIndex >= 0
                                         ) {
@@ -764,6 +827,7 @@ fun <T> ReorderableLazyColumn(
                                         isDragActive = false
                                         draggedOriginalIndex = -1
                                         crossedPinnedZone = false
+                                        attemptedCrossDivider = false
                                     }
                                 )
                         ) {
