@@ -281,4 +281,57 @@ class DragZoneStateMachineTest {
         assertEquals(false, sm.visualIsPinned)
         assertEquals(1, sm.visualStatus)
     }
+
+    // ==================== setZone 测试 ====================
+
+    /**
+     * 场景：setZone 同 zone 不触发翻转
+     *
+     * startDrag(A/PENDING) → setZone(PENDING)
+     *
+     * 预期：返回 false；visualIsPinned/visualStatus 不变
+     */
+    @Test
+    fun `setZone 同 zone 不触发翻转`() {
+        sm.startDrag(buildItem(id = 1, isPinned = false, status = 0))
+        val result = sm.setZone(TodoZone.PENDING)
+        assertFalse(result)
+        assertEquals(false, sm.visualIsPinned)
+        assertEquals(0, sm.visualStatus)
+        assertEquals(TodoZone.PENDING, sm.currentZone)
+    }
+
+    /**
+     * 场景：setZone 跨 zone 触发视觉翻转
+     *
+     * startDrag(A/PENDING) → setZone(COMPLETED)
+     *
+     * 预期：返回 true；visualStatus=1（PENDING → COMPLETED 翻转 status）
+     */
+    @Test
+    fun `setZone 跨 zone 触发视觉翻转`() {
+        sm.startDrag(buildItem(id = 1, isPinned = false, status = 0))
+        val result = sm.setZone(TodoZone.COMPLETED)
+        assertTrue(result)
+        assertEquals(1, sm.visualStatus)
+        assertEquals(false, sm.visualIsPinned)  // PENDING 和 COMPLETED 都是 isPinned=false，不翻转
+        assertEquals(TodoZone.COMPLETED, sm.currentZone)
+    }
+
+    /**
+     * 场景：setZone 跨 zone 后再 setZone 同 zone 不触发
+     *
+     * startDrag(A/PENDING) → setZone(COMPLETED) → setZone(COMPLETED)
+     *
+     * 预期：第一次返回 true，第二次返回 false
+     */
+    @Test
+    fun `setZone 跨 zone 后再 setZone 同 zone 不触发`() {
+        sm.startDrag(buildItem(id = 1, isPinned = false, status = 0))
+        val first = sm.setZone(TodoZone.COMPLETED)
+        val second = sm.setZone(TodoZone.COMPLETED)
+        assertTrue(first)
+        assertFalse(second)
+        assertEquals(TodoZone.COMPLETED, sm.currentZone)
+    }
 }

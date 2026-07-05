@@ -84,6 +84,26 @@ class DragZoneStateMachine {
         )
     }
 
+    /**
+     * 直接设置 currentZone 并应用视觉层翻转
+     *
+     * 用于外部基于更准确的信息源（如含 divider 的 displayItems）推断 zone 后，
+     * 显式同步到状态机。
+     *
+     * 与 [onPositionChanged] 的区别：
+     * - [onPositionChanged] 内部调用 inferZone 推断（基于 todosOnly）
+     * - 本方法由调用方推断后传入，状态机只负责应用翻转
+     *
+     * @param newZone 新的 currentZone
+     * @return true 表示发生跨区（currentZone 变化）
+     */
+    fun setZone(newZone: TodoZone): Boolean {
+        if (newZone == currentZone) return false
+        applyZoneTransition(currentZone, newZone)
+        currentZone = newZone
+        return true
+    }
+
     /** 重置（用于拖拽取消或释放后） */
     fun reset() {
         originalZone = TodoZone.PENDING
