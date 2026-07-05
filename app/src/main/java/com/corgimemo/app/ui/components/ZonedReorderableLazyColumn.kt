@@ -243,3 +243,40 @@ internal fun computeRelativeIndexInZone(
     }
     return relativeIndex
 }
+
+/**
+ * 基于 displayItems（含 divider）推断被拖项的当前 zone
+ *
+ * 算法：从被拖项位置向前扫描，遇到最近的 divider 即确定 zone：
+ * - PinnedDivider → PINNED_PENDING（前面是置顶待完成区）
+ * - PendingDivider → PENDING（前面是待完成区）
+ * - CompletedDivider → COMPLETED（前面是已完成区）
+ *
+ * 若扫描到列表开头仍无 divider，根据被拖项自身 zone 推断（防御性回退）。
+ *
+ * 注：与 DragZoneStateMachine.inferZone 的区别：
+ * - DragZoneStateMachine.inferZone 基于 todosOnly（divider 已过滤），看邻居 Todo 的 zone
+ * - 本函数基于含 divider 的 displayItems，直接识别 divider 类型，准确度更高
+ *
+ * @param displayItems 含 divider 的完整显示列表
+ * @param draggedIndex 被拖项在 displayItems 中的当前位置
+ * @return 被拖项当前所在 zone
+ */
+internal fun inferZoneFromDisplayItems(
+    displayItems: List<DisplayItem>,
+    draggedIndex: Int
+): TodoZone {
+    // 1. 从被拖项前一项向前扫描，找最近的 divider
+    for (i in draggedIndex - 1 downTo 0) {
+        when (displayItems[i]) {
+            is DisplayItem.PinnedDivider -> return TodoZone.PINNED_PENDING
+            is DisplayItem.PendingDivider -> return TodoZone.PENDING
+            is DisplayItem.CompletedDivider -> return TodoZone.COMPLETED
+            else -> { /* Todo，继续向前扫描 */ }
+        }
+    }
+    // 2. 扫描到列表开头仍无 divider，看被拖项自身 zone（单 zone 列表场景）
+    val draggedItem = displayItems.getOrNull(draggedIndex)
+    return if (draggedItem is DisplayItem.Todo) draggedItem.item.zone()
+           else TodoZone.PENDING
+}

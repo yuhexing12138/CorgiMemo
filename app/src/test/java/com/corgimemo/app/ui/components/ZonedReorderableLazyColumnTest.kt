@@ -144,4 +144,119 @@ class ZonedReorderableLazyColumnTest {
         )
         assertEquals(1, result)
     }
+
+    // ==================== inferZoneFromDisplayItems 测试 ====================
+
+    /**
+     * 场景：扫描到 PinnedDivider 返回 PINNED_PENDING
+     *
+     * 列表：[PinnedDivider, A, B]（A/B 均为 PINNED_PENDING）
+     * 被拖项当前在 idx=2（B 的位置）
+     *
+     * 预期：扫描 newDisplay[1]=A（Todo，继续）→ newDisplay[0]=PinnedDivider → 返回 PINNED_PENDING
+     */
+    @Test
+    fun `inferZoneFromDisplayItems 扫描到 PinnedDivider 返回 PINNED_PENDING`() {
+        val displayItems = listOf<DisplayItem>(
+            DisplayItem.PinnedDivider(count = 2, isExpanded = true),
+            DisplayItem.Todo(buildItem(id = 1, isPinned = true)),
+            DisplayItem.Todo(buildItem(id = 2, isPinned = true))
+        )
+        val result = inferZoneFromDisplayItems(
+            displayItems = displayItems,
+            draggedIndex = 2
+        )
+        assertEquals(TodoZone.PINNED_PENDING, result)
+    }
+
+    /**
+     * 场景：扫描到 PendingDivider 返回 PENDING
+     *
+     * 列表：[PinnedDivider, A, PendingDivider, B]
+     * 被拖项当前在 idx=3（B 的位置）
+     *
+     * 预期：扫描 newDisplay[2]=PendingDivider → 返回 PENDING
+     */
+    @Test
+    fun `inferZoneFromDisplayItems 扫描到 PendingDivider 返回 PENDING`() {
+        val displayItems = listOf<DisplayItem>(
+            DisplayItem.PinnedDivider(count = 1, isExpanded = true),
+            DisplayItem.Todo(buildItem(id = 1, isPinned = true)),
+            DisplayItem.PendingDivider(count = 1, isExpanded = true),
+            DisplayItem.Todo(buildItem(id = 2))
+        )
+        val result = inferZoneFromDisplayItems(
+            displayItems = displayItems,
+            draggedIndex = 3
+        )
+        assertEquals(TodoZone.PENDING, result)
+    }
+
+    /**
+     * 场景：扫描到 CompletedDivider 返回 COMPLETED
+     *
+     * 列表：[PendingDivider, A, CompletedDivider, X]
+     * 被拖项当前在 idx=3（X 的位置）
+     *
+     * 预期：扫描 newDisplay[2]=CompletedDivider → 返回 COMPLETED
+     */
+    @Test
+    fun `inferZoneFromDisplayItems 扫描到 CompletedDivider 返回 COMPLETED`() {
+        val displayItems = listOf<DisplayItem>(
+            DisplayItem.PendingDivider(count = 1, isExpanded = true),
+            DisplayItem.Todo(buildItem(id = 1)),
+            DisplayItem.CompletedDivider(count = 1, isExpanded = true),
+            DisplayItem.Todo(buildItem(id = 2, status = 1))
+        )
+        val result = inferZoneFromDisplayItems(
+            displayItems = displayItems,
+            draggedIndex = 3
+        )
+        assertEquals(TodoZone.COMPLETED, result)
+    }
+
+    /**
+     * 场景：跨过多项找到最近的 divider
+     *
+     * 列表：[PinnedDivider, A, B, C]（A/B/C 均为 PINNED_PENDING）
+     * 被拖项当前在 idx=3（C 的位置）
+     *
+     * 预期：扫描 newDisplay[2]=B、newDisplay[1]=A（Todo，继续）→ newDisplay[0]=PinnedDivider → 返回 PINNED_PENDING
+     */
+    @Test
+    fun `inferZoneFromDisplayItems 跨过多项找到最近的 divider`() {
+        val displayItems = listOf<DisplayItem>(
+            DisplayItem.PinnedDivider(count = 3, isExpanded = true),
+            DisplayItem.Todo(buildItem(id = 1, isPinned = true)),
+            DisplayItem.Todo(buildItem(id = 2, isPinned = true)),
+            DisplayItem.Todo(buildItem(id = 3, isPinned = true))
+        )
+        val result = inferZoneFromDisplayItems(
+            displayItems = displayItems,
+            draggedIndex = 3
+        )
+        assertEquals(TodoZone.PINNED_PENDING, result)
+    }
+
+    /**
+     * 场景：无 divider 回退到被拖项自身 zone
+     *
+     * 列表：[A, B, C]（无 divider，A/B/C 均为 PENDING）
+     * 被拖项当前在 idx=1（B 的位置）
+     *
+     * 预期：扫描到列表开头仍无 divider → 回退到被拖项 B.zone() = PENDING
+     */
+    @Test
+    fun `inferZoneFromDisplayItems 无 divider 回退到被拖项自身 zone`() {
+        val displayItems = listOf<DisplayItem>(
+            DisplayItem.Todo(buildItem(id = 1)),
+            DisplayItem.Todo(buildItem(id = 2)),
+            DisplayItem.Todo(buildItem(id = 3))
+        )
+        val result = inferZoneFromDisplayItems(
+            displayItems = displayItems,
+            draggedIndex = 1
+        )
+        assertEquals(TodoZone.PENDING, result)
+    }
 }
