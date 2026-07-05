@@ -201,3 +201,31 @@ fun ZonedReorderableLazyColumn(
         }
     }
 }
+
+/**
+ * 计算被拖项在目标 zone 内的相对索引
+ *
+ * 仅统计 displayItems[0..draggedCurrentIndex-1] 中与 targetZone 相同的 Todo 项数量，
+ * 跳过 divider 与其他 zone 的 Todo。
+ *
+ * 内部可见（internal），便于单元测试。
+ *
+ * @param displayItems 组件内部 displayItems（已被 onMove 更新）
+ * @param draggedCurrentIndex 被拖项在 displayItems 中的当前位置
+ * @param targetZone 目标 zone（来自 [ZoneDragResult.currentZone]）
+ * @return 目标 zone 内的相对索引（0..size）
+ */
+internal fun computeRelativeIndexInZone(
+    displayItems: List<DisplayItem>,
+    draggedCurrentIndex: Int,
+    targetZone: TodoZone
+): Int {
+    var relativeIndex = 0
+    for (i in 0 until draggedCurrentIndex) {
+        val item = displayItems[i]
+        if (item is DisplayItem.Todo && item.item.zone() == targetZone) {
+            relativeIndex++
+        }
+    }
+    return relativeIndex
+}
