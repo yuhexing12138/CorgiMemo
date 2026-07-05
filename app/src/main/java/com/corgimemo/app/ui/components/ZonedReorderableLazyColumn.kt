@@ -87,23 +87,27 @@ fun ZonedReorderableLazyColumn(
         lazyListState = listState,
         onMove = { from, to ->
             val fromItem = displayItems.getOrNull(from.index)
-            val toItem = displayItems.getOrNull(to.index)
-
-            // ① 校验：from 和 to 都必须是 Todo 项（divider 不可拖拽、不可作为目标）
-            if (fromItem !is DisplayItem.Todo || toItem !is DisplayItem.Todo) {
+            // ① 仅校验 from 是 Todo（divider 不可拖拽，由 Modifier.draggable(enabled=false) 保证）
+            //    to 可以是 Todo 或 divider（divider 已加入 reorderableKeys，可作为目标）
+            if (fromItem !is DisplayItem.Todo) {
                 return@rememberReorderableLazyListState
             }
 
-            // ② 重排 displayItems
+            // ② 重排 displayItems（A 跨过 divider / Todo，divider 不动）
             val newDisplay = displayItems.toMutableList()
             newDisplay.removeAt(from.index)
             newDisplay.add(to.index, fromItem)
             displayItems = newDisplay
 
-            // ③ 状态机追踪（仅 Todo 列表，过滤 divider）
-            val todosOnly = newDisplay.filterIsInstance<DisplayItem.Todo>().map { it.item }
-            val draggedTodoIndex = todosOnly.indexOfFirst { it.id == fromItem.item.id }
-            val crossed = dragZoneState.onPositionChanged(todosOnly, draggedTodoIndex)
+            // ③ 基于 newDisplay 推断 currentZone（含 divider，准确识别 zone 边界）
+            val newDraggedIdx = newDisplay.indexOfFirst {
+                (it as? DisplayItem.Todo)?.item?.id == fromItem.item.id
+            }
+            val newZone = inferZoneFromDisplayItems(newDisplay, newDraggedIdx)
+            val crossed = newZone != dragZoneState.currentZone
+            if (crossed) {
+                dragZoneState.setZone(newZone)
+            }
 
             // ④ 跨区触觉反馈
             if (crossed) {
@@ -126,8 +130,28 @@ fun ZonedReorderableLazyColumn(
                 is DisplayItem.PinnedDivider,
                 is DisplayItem.PendingDivider,
                 is DisplayItem.CompletedDivider -> {
-                    // Divider 不可拖拽，直接渲染
-                    content(index, item, false, isDragActive)
+                    // Divider 包裹 ReorderableItem(enabled=true) 加入 reorderableKeys，
+                    // 使其可作为 onMove 的 to 目标（其他项可跨过 divider）。
+                    // 但 Modifier.longPressDraggableHandle(enabled=false) 保证 divider 本身不可被拖拽。
+                    // 注：库的 longPressDraggableHandle 是 ReorderableCollectionItemScope 的扩展，
+                    // 不是 Compose 标准库的 Modifier.draggable（后者需要 state + orientation 参数）。
+                    val dividerKey = when (item) {
+                        is DisplayItem.PinnedDivider -> "pinned_divider"
+                        is DisplayItem.PendingDivider -> "pending_divider"
+                        is DisplayItem.CompletedDivider -> "completed_divider"
+                        else -> error("不可达：外层 when 已过滤非 divider 类型")
+                    }
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = dividerKey,
+                        enabled = true   // 加入 reorderableKeys，可作为 to
+                    ) {
+                        Box(
+                            modifier = Modifier.longPressDraggableHandle(enabled = false)  // 不可拖拽
+                        ) {
+                            content(index, item, false, isDragActive)
+                        }
+                    }
                 }
                 is DisplayItem.Todo -> {
                     ReorderableItem(
