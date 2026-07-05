@@ -646,7 +646,7 @@ fun HomeScreen(
 
                     /**
                      * 搜索框容器：
-                     * - 上边缘固定，底部边缘根据 searchRevealProgress 收缩/展开
+                     * - 上边缘固定，底部边缘根据 currentProgress 收缩/展开
                      * - 透明度与进度同步变化，实现淡入淡出
                      * - clipToBounds 裁剪超出部分
                      */
