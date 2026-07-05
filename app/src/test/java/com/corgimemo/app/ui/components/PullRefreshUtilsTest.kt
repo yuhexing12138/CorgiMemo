@@ -41,4 +41,146 @@ class PullRefreshUtilsTest {
     fun `阻尼曲线_负值归零`() {
         assertEquals(0f, computeDampedOffset(-10f, 100f))
     }
+
+    // ===================== computeNextPullRefreshState 状态机测试 =====================
+
+    @Test
+    fun `状态机_IDLE且无下拉时保持IDLE`() {
+        assertEquals(
+            PullRefreshState.IDLE,
+            computeNextPullRefreshState(
+                current = PullRefreshState.IDLE,
+                pullOffset = 0f,
+                refreshThreshold = 60f,
+                isReleased = false,
+                isRefreshing = false
+            )
+        )
+    }
+
+    @Test
+    fun `状态机_IDLE有下拉时进入PULLING`() {
+        assertEquals(
+            PullRefreshState.PULLING,
+            computeNextPullRefreshState(
+                current = PullRefreshState.IDLE,
+                pullOffset = 10f,
+                refreshThreshold = 60f,
+                isReleased = false,
+                isRefreshing = false
+            )
+        )
+    }
+
+    @Test
+    fun `状态机_PULLING达阈值释放进入REFRESHING`() {
+        assertEquals(
+            PullRefreshState.REFRESHING,
+            computeNextPullRefreshState(
+                current = PullRefreshState.PULLING,
+                pullOffset = 70f,
+                refreshThreshold = 60f,
+                isReleased = true,
+                isRefreshing = false
+            )
+        )
+    }
+
+    @Test
+    fun `状态机_PULLING未达阈值释放进入RELEASING`() {
+        assertEquals(
+            PullRefreshState.RELEASING,
+            computeNextPullRefreshState(
+                current = PullRefreshState.PULLING,
+                pullOffset = 30f,
+                refreshThreshold = 60f,
+                isReleased = true,
+                isRefreshing = false
+            )
+        )
+    }
+
+    @Test
+    fun `状态机_RELEASING回弹完成进入IDLE`() {
+        assertEquals(
+            PullRefreshState.IDLE,
+            computeNextPullRefreshState(
+                current = PullRefreshState.RELEASING,
+                pullOffset = 0f,
+                refreshThreshold = 60f,
+                isReleased = false,
+                isRefreshing = false
+            )
+        )
+    }
+
+    @Test
+    fun `状态机_RELEASING动画中保持RELEASING`() {
+        assertEquals(
+            PullRefreshState.RELEASING,
+            computeNextPullRefreshState(
+                current = PullRefreshState.RELEASING,
+                pullOffset = 15f,
+                refreshThreshold = 60f,
+                isReleased = false,
+                isRefreshing = false
+            )
+        )
+    }
+
+    @Test
+    fun `状态机_REFRESHING刷新完成进入IDLE`() {
+        assertEquals(
+            PullRefreshState.IDLE,
+            computeNextPullRefreshState(
+                current = PullRefreshState.REFRESHING,
+                pullOffset = 60f,
+                refreshThreshold = 60f,
+                isReleased = false,
+                isRefreshing = false
+            )
+        )
+    }
+
+    @Test
+    fun `状态机_REFRESHING中保持REFRESHING_忽略下拉`() {
+        assertEquals(
+            PullRefreshState.REFRESHING,
+            computeNextPullRefreshState(
+                current = PullRefreshState.REFRESHING,
+                pullOffset = 80f,
+                refreshThreshold = 60f,
+                isReleased = true,
+                isRefreshing = true
+            )
+        )
+    }
+
+    @Test
+    fun `状态机_PULLING未释放保持PULLING`() {
+        assertEquals(
+            PullRefreshState.PULLING,
+            computeNextPullRefreshState(
+                current = PullRefreshState.PULLING,
+                pullOffset = 50f,
+                refreshThreshold = 60f,
+                isReleased = false,
+                isRefreshing = false
+            )
+        )
+    }
+
+    @Test
+    fun `状态机_PULLING恰等于阈值释放进入REFRESHING`() {
+        assertEquals(
+            PullRefreshState.REFRESHING,
+            computeNextPullRefreshState(
+                current = PullRefreshState.PULLING,
+                pullOffset = 60f,
+                refreshThreshold = 60f,
+                isReleased = true,
+                isRefreshing = false
+            )
+        )
+    }
 }
