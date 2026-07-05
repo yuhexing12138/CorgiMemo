@@ -1,6 +1,7 @@
 package com.corgimemo.app.viewmodel
 
 import android.content.Context
+import com.corgimemo.app.animation.HapticFeedbackController
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.data.repository.AchievementChecker
@@ -42,7 +43,7 @@ import org.junit.Test
  * 覆盖：
  * - reorderOnDragResult：同区拖拽、跨区拖拽、sortOrder 分段分配
  *
- * 说明：HomeViewModel 构造函数有 11 个依赖 + Context，全部使用 relaxed mock。
+ * 说明：HomeViewModel 构造函数有 12 个依赖 + Context，全部使用 relaxed mock。
  * 由于 reorderOnDragResult 仅依赖 todoRepository，
  * 其他 mock 不需要特定 stub。
  */
@@ -60,6 +61,7 @@ class HomeViewModelReorderTest {
     private lateinit var mockOperationLogRepository: OperationLogRepository
     private lateinit var mockTaskDailyStatsRepository: TaskDailyStatsRepository
     private lateinit var mockFileCopyManager: FileCopyManager
+    private lateinit var mockHapticFeedbackController: HapticFeedbackController
     private lateinit var mockContext: Context
     private lateinit var viewModel: HomeViewModel
 
@@ -86,6 +88,7 @@ class HomeViewModelReorderTest {
         mockOperationLogRepository = mockk(relaxed = true)
         mockTaskDailyStatsRepository = mockk(relaxed = true)
         mockFileCopyManager = mockk(relaxed = true)
+        mockHapticFeedbackController = mockk(relaxed = true)
         mockContext = mockk(relaxed = true)
 
         // 默认返回空列表，避免 filteredTodos 初始化时 NPE
@@ -120,6 +123,7 @@ class HomeViewModelReorderTest {
             operationLogRepository = mockOperationLogRepository,
             taskDailyStatsRepository = mockTaskDailyStatsRepository,
             fileCopyManager = mockFileCopyManager,
+            hapticFeedbackController = mockHapticFeedbackController,
             context = mockContext
         )
 

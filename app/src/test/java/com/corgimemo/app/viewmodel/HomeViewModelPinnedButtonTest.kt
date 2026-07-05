@@ -1,6 +1,7 @@
 package com.corgimemo.app.viewmodel
 
 import android.content.Context
+import com.corgimemo.app.animation.HapticFeedbackController
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.repository.AchievementChecker
 import com.corgimemo.app.data.repository.AchievementRepository
@@ -36,7 +37,7 @@ import org.junit.Test
  * - toggleShowPinned 翻转状态并触发持久化
  * - toggleShowPinned 两次回到原状态
  *
- * 说明：HomeViewModel 构造函数有 11 个依赖 + Context，全部使用 relaxed mock。
+ * 说明：HomeViewModel 构造函数有 12 个依赖 + Context，全部使用 relaxed mock。
  * 关键点：必须在 setUp 中 stub corgiPreferences 的所有 booleanFlow
  * （showCompleted/showPinned/hideDetails/hideCompletedItems），
  * 否则 init 块中的 collect 会因 relaxed mock 返回 null Flow 而崩溃。
@@ -55,12 +56,13 @@ class HomeViewModelPinnedButtonTest {
     private lateinit var mockOperationLogRepository: OperationLogRepository
     private lateinit var mockTaskDailyStatsRepository: TaskDailyStatsRepository
     private lateinit var mockFileCopyManager: FileCopyManager
+    private lateinit var mockHapticFeedbackController: HapticFeedbackController
     private lateinit var mockContext: Context
     private lateinit var viewModel: HomeViewModel
 
     @Before
     fun setUp() = runTest {
-        // 创建 12 个 relaxed mock（11 依赖 + Context）
+        // 创建 13 个 relaxed mock（12 依赖 + Context）
         mockTodoRepository = mockk(relaxed = true)
         mockCorgiRepository = mockk(relaxed = true)
         mockCategoryRepository = mockk(relaxed = true)
@@ -72,6 +74,7 @@ class HomeViewModelPinnedButtonTest {
         mockOperationLogRepository = mockk(relaxed = true)
         mockTaskDailyStatsRepository = mockk(relaxed = true)
         mockFileCopyManager = mockk(relaxed = true)
+        mockHapticFeedbackController = mockk(relaxed = true)
         mockContext = mockk(relaxed = true)
 
         // 桩：todoRepository 的 Flow，避免 filteredTodos 初始化 NPE
@@ -101,6 +104,7 @@ class HomeViewModelPinnedButtonTest {
             operationLogRepository = mockOperationLogRepository,
             taskDailyStatsRepository = mockTaskDailyStatsRepository,
             fileCopyManager = mockFileCopyManager,
+            hapticFeedbackController = mockHapticFeedbackController,
             context = mockContext
         )
 

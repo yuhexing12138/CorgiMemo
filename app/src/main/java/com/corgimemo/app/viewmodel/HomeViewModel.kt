@@ -9,7 +9,7 @@ import com.corgimemo.app.animation.AchievementManager
 import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.CorgiPose
 import com.corgimemo.app.animation.GreetingManager
-import com.corgimemo.app.animation.HapticFeedbackManager
+import com.corgimemo.app.animation.HapticFeedbackController
 import com.corgimemo.app.animation.Holiday
 import com.corgimemo.app.animation.HolidayManager
 import com.corgimemo.app.animation.SolarTerm
@@ -127,6 +127,7 @@ class HomeViewModel @Inject constructor(
     private val operationLogRepository: OperationLogRepository,
     private val taskDailyStatsRepository: TaskDailyStatsRepository,
     private val fileCopyManager: FileCopyManager,
+    private val hapticFeedbackController: HapticFeedbackController,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -611,19 +612,11 @@ class HomeViewModel @Inject constructor(
         )
 
     /**
-     * 执行触觉反馈
-     * 读取用户设置的震动开关状态，并触发对应的震动模式
+     * 触觉反馈
      *
-     * @param type 交互类型
+     * 通过注入的 [HapticFeedbackController] 调用，提升可测试性
+     * （测试中可注入 stub 实现避免真实 Vibrator 调用）。
      */
-    private fun triggerHapticFeedback(type: InteractionType) {
-        val hapticEnabledValue = hapticEnabled.value
-        HapticFeedbackManager.performHapticFeedback(
-            context = context,
-            type = type,
-            enabled = hapticEnabledValue
-        )
-    }
 
     // 用户身份状态
     private val _userType = MutableStateFlow<UserType>(UserType.WORKER)
@@ -1663,7 +1656,10 @@ class HomeViewModel @Inject constructor(
 
             for (achievement in newAchievements) {
                 // 触觉反馈：成就解锁长震动
-                triggerHapticFeedback(InteractionType.ACHIEVEMENT_UNLOCK)
+                hapticFeedbackController.perform(
+                    type = InteractionType.ACHIEVEMENT_UNLOCK,
+                    enabled = hapticEnabled.value
+                )
                 _showAchievementUnlock.value = achievement
                 delay(3000)
             }
@@ -1911,7 +1907,10 @@ class HomeViewModel @Inject constructor(
         val duration = getCelebrationDuration(level)
 
         // 触觉反馈：任务完成双短震动
-        triggerHapticFeedback(InteractionType.TASK_COMPLETE)
+        hapticFeedbackController.perform(
+            type = InteractionType.TASK_COMPLETE,
+            enabled = hapticEnabled.value
+        )
 
         _celebrationState.value = CelebrationState(
             isShowing = true,
@@ -2386,8 +2385,7 @@ class HomeViewModel @Inject constructor(
             )
 
             /** 5. 震动反馈（成就解锁长震动）*/
-            HapticFeedbackManager.performHapticFeedback(
-                context = context,
+            hapticFeedbackController.perform(
                 type = InteractionType.ACHIEVEMENT_UNLOCK,
                 enabled = hapticEnabled.value
             )
@@ -2831,7 +2829,10 @@ class HomeViewModel @Inject constructor(
             }
 
             // 5. 触发单次震动反馈（修复前是每条震动一次）
-            triggerHapticFeedback(InteractionType.TASK_COMPLETE)
+            hapticFeedbackController.perform(
+                type = InteractionType.TASK_COMPLETE,
+                enabled = hapticEnabled.value
+            )
 
             // 6. 触发单次庆祝动画（取最高优先级待办的庆祝级别）
             triggerBatchCelebration(originalTodos)
