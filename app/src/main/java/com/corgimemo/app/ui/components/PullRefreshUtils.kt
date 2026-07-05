@@ -1,5 +1,7 @@
 package com.corgimemo.app.ui.components
 
+import kotlin.math.sqrt
+
 /**
  * 下拉刷新核心纯函数
  *
@@ -8,31 +10,57 @@ package com.corgimemo.app.ui.components
  */
 
 /**
- * 阻尼曲线：随下拉量增大，阻尼系数递减
+ * 阻尼曲线：随下拉量增大，阻尼递增（越拉越难拉）
  *
- * 阻尼公式：dampingFactor = 1 - (rawOffset / maxPullHeight)²
+ * 阻尼公式：dampedOffset = rawOffset - rawOffset² / (4 * maxPullHeight)
+ * 等价于：dampedOffset = maxPullHeight * (2·ratio - ratio²)，其中 ratio = rawOffset / (2·maxPullHeight)
  *
- * 特性：
- * - rawOffset = 0：阻尼系数 1.0（无阻尼，跟随手指）
- * - rawOffset = maxPullHeight / 2：阻尼系数 0.75（轻微阻尼）
- * - rawOffset = maxPullHeight：阻尼系数 0.0（完全锁死，无法继续下拉）
+ * 特性（全程单调递增，增速递减）：
+ * - rawOffset = 0：阻尼系数 1.0（与手指 1:1 跟随，无阻尼）
+ * - rawOffset = maxPullHeight：阻尼系数 0.75（75% 跟随）
+ * - rawOffset = 2·maxPullHeight：阻尼系数 0.5（50% 跟随），dampedOffset 达到 maxPullHeight
+ *
+ * 数学性质：
+ * - f(0) = 0, f'(0) = 1（起点跟手）
+ * - f'(x) = 1 - x/(2·M)，导数从 1 线性递减到 0（阻尼递增）
+ * - f(2M) = M，之后封顶为 maxPullHeight
+ * - f''(x) = -1/(2M) < 0，凹函数（拉得越远越难拉）
  *
  * 边界处理：
  * - rawOffset <= 0：返回 0（无下拉）
- * - rawOffset >= maxPullHeight：返回 maxPullHeight（封顶）
+ * - rawOffset >= 2*maxPullHeight：返回 maxPullHeight（封顶）
  * - maxPullHeight <= 0：返回 0（防护）
  *
- * @param rawOffset 原始下拉量（单位与 maxPullHeight 一致，px 或 dp）
- * @param maxPullHeight 最大下拉高度
- * @return 阻尼后的实际偏移
+ * @param rawOffset 原始下拉量（累计手指移动距离，单位 px）
+ * @param maxPullHeight 最大下拉高度（px）
+ * @return 阻尼后的实际偏移量（px）
  */
 fun computeDampedOffset(rawOffset: Float, maxPullHeight: Float): Float {
     if (maxPullHeight <= 0f) return 0f
     if (rawOffset <= 0f) return 0f
-    if (rawOffset >= maxPullHeight) return maxPullHeight
-    val ratio = rawOffset / maxPullHeight
-    val dampingFactor = 1f - ratio * ratio
-    return rawOffset * dampingFactor
+    if (rawOffset >= 2f * maxPullHeight) return maxPullHeight
+    return rawOffset - rawOffset * rawOffset / (4f * maxPullHeight)
+}
+
+/**
+ * 阻尼反向换算：从已阻尼的偏移量反推原始下拉量
+ *
+ * 用于 onPreScroll 收回阶段：线性减少 dampedOffset 后，反推对应的 rawOffset，
+ * 保证再次下拉时阻尼曲线连续。
+ *
+ * 公式推导：damped = raw - raw²/(4M)
+ *   → raw² - 4M·raw + 4M·damped = 0
+ *   → raw = 2M(1 - √(1 - damped/M))（取 [0, 2M] 区间内的根）
+ *
+ * @param dampedOffset 已阻尼的偏移量（px）
+ * @param maxPullHeight 最大下拉高度（px）
+ * @return 对应的原始下拉量（px）
+ */
+fun computeRawOffsetForDamped(dampedOffset: Float, maxPullHeight: Float): Float {
+    if (maxPullHeight <= 0f) return 0f
+    if (dampedOffset <= 0f) return 0f
+    if (dampedOffset >= maxPullHeight) return 2f * maxPullHeight
+    return 2f * maxPullHeight * (1f - sqrt(1f - dampedOffset / maxPullHeight))
 }
 
 /**

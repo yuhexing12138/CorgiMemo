@@ -2,6 +2,7 @@ package com.corgimemo.app.ui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -45,6 +46,8 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  *                  - targetZoneRelativeIndex: 目标 zone 内的相对索引（仅统计同 zone Todo）
  * @param listState LazyListState 实例
  * @param modifier Modifier
+ * @param headerContent 列表前置项内容（搜索框、下拉刷新 spacer 等），不参与拖拽排序
+ * @param headerItemCount 前置项数量（用于 onMove 索引偏移：全局索引 → displayItems 索引）
  * @param content 列表项 Composable，参数为 (index, item, isDragging, isDragActive)
  */
 @Composable
@@ -59,6 +62,8 @@ fun ZonedReorderableLazyColumn(
     ) -> Unit,
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
+    headerContent: LazyListScope.() -> Unit = {},
+    headerItemCount: Int = 0,
     content: @Composable (index: Int, item: DisplayItem, isDragging: Boolean, isDragActive: Boolean) -> Unit
 ) {
     val context = LocalContext.current
@@ -86,7 +91,12 @@ fun ZonedReorderableLazyColumn(
     val reorderableState = rememberReorderableLazyListState(
         lazyListState = listState,
         onMove = { from, to ->
-            val fromItem = displayItems.getOrNull(from.index)
+            // 全局索引（含 header）→ displayItems 索引（不含 header）
+            // from.index / to.index 是 LazyColumn 全局索引（含 headerContent 项），
+            // 而 displayItems 仅含 divider + Todo，需在所有访问 displayItems 的索引处减去 headerItemCount。
+            val fromIdx = from.index - headerItemCount
+            val toIdx = to.index - headerItemCount
+            val fromItem = displayItems.getOrNull(fromIdx)
             // ① 仅校验 from 是 Todo（divider 不可拖拽，由 Modifier.draggable(enabled=false) 保证）
             //    to 可以是 Todo 或 divider（divider 已加入 reorderableKeys，可作为目标）
             if (fromItem !is DisplayItem.Todo) {
@@ -95,11 +105,12 @@ fun ZonedReorderableLazyColumn(
 
             // ② 重排 displayItems（A 跨过 divider / Todo，divider 不动）
             val newDisplay = displayItems.toMutableList()
-            newDisplay.removeAt(from.index)
-            newDisplay.add(to.index, fromItem)
+            newDisplay.removeAt(fromIdx)
+            newDisplay.add(toIdx, fromItem)
             displayItems = newDisplay
 
             // ③ 基于 newDisplay 推断 currentZone（含 divider，准确识别 zone 边界）
+            // 注：indexOfFirst 基于 item.id 匹配，与 header 偏移无关，无需额外偏移。
             val newDraggedIdx = newDisplay.indexOfFirst {
                 (it as? DisplayItem.Todo)?.item?.id == fromItem.item.id
             }
@@ -122,6 +133,8 @@ fun ZonedReorderableLazyColumn(
 
     // ━━━ 渲染 ━━━
     LazyColumn(state = listState, modifier = modifier) {
+        // 前置项（搜索框、下拉刷新 spacer 等），不参与拖拽排序
+        headerContent()
         itemsIndexed(
             items = displayItems,
             key = { _, it -> key(it) }

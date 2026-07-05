@@ -1,9 +1,6 @@
 package com.corgimemo.app.ui.screens.home
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -75,7 +72,6 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -90,8 +86,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -144,7 +138,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.dimensionResource
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -529,156 +522,6 @@ fun HomeScreen(
 
                     val searchQuery by viewModel.searchQuery.collectAsState()
 
-                    /** 订阅 LazyListState 滚动状态（含 fling + settle），Compose 官方统一管理，跨设备一致 */
-                    val isScrolling = lazyListState.isScrollInProgress
-
-                    /** 搜索框完整高度（含padding），作为滚动→进度映射的基准 */
-                    val searchBarFullHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
-
-                    /**
-                     * 阶段 1：滚动中同步跟手（无协程延迟）
-                     *
-                     * 直接基于 LazyListState 官方 API 派生 progress，1:1 跟随滚动 delta。
-                     * - firstVisibleItemIndex == 0：progress = 1 - offset / searchBarHeight
-                     * - firstVisibleItemIndex > 0：强制 0f（第一项已完全滚出）
-                     *
-                     * 替换原 Animatable + LaunchedEffect + snapTo 异步链路，
-                     * 消除每帧 effect 重启 + 协程调度引入的 1-3 帧延迟（跳跃感根因）。
-                     */
-                    val scrollDrivenProgress by remember {
-                        derivedStateOf {
-                            computeScrollDrivenProgress(
-                                firstVisibleItemIndex = lazyListState.firstVisibleItemIndex,
-                                firstVisibleItemScrollOffset = lazyListState.firstVisibleItemScrollOffset,
-                                searchBarHeightPx = searchBarFullHeightPx
-                            )
-                        }
-                    }
-
-                    /**
-                     * 阶段 2：滚动停止时的吸附动画
-                     *
-                     * 仅在 isScrollInProgress == false 时由 currentProgress 读取。
-                     * 滚动中此 Animatable 不参与计算，被 scrollDrivenProgress 覆盖。
-                     */
-                    val animatableProgress = remember { Animatable(1f) }
-
-                    /**
-                     * 当前生效的 progress（二选一）
-                     *
-                     * - 滚动中：scrollDrivenProgress（同步跟手）
-                     * - 滚动停止：animatableProgress.value（吸附动画结果）
-                     *
-                     * layout/graphicsLayer 应读取本字段，不要直接读 Animatable.value。
-                     */
-                    val currentProgress = if (isScrolling) scrollDrivenProgress else animatableProgress.value
-
-                    /**
-                     * 滚动停止时：同步对齐起点 → animateTo 吸附端点
-                     *
-                     * - snapTo(scrollDrivenProgress) 同步对齐，消除阶段切换时的数值跳跃
-                     * - animateTo(0f 或 1f) 用 tween 动画吸附到端点
-                     *
-                     * 阈值：< 0.5 吸附到 0f（隐藏），>= 0.5 吸附到 1f（显示）
-                     * 仅在 searchQuery 为空时执行（搜索词非空时强制保持显示）
-                     */
-                    LaunchedEffect(isScrolling) {
-                        if (!isScrolling && searchQuery.isBlank()) {
-                            val start = scrollDrivenProgress
-                            if (start > 0.05f && start < 0.95f) {
-                                val target = if (start < 0.5f) 0f else 1f
-                                val duration = if (target == 0f) 200 else 250
-                                animatableProgress.snapTo(start)
-                                animatableProgress.animateTo(
-                                    targetValue = target,
-                                    animationSpec = tween(duration, easing = FastOutSlowInEasing)
-                                )
-                            }
-                        }
-                    }
-
-                    val isAtTop by remember {
-                        derivedStateOf {
-                            lazyListState.firstVisibleItemIndex == 0 &&
-                                lazyListState.firstVisibleItemScrollOffset == 0
-                        }
-                    }
-
-                    /**
-                     * 搜索词变化时驱动搜索框：
-                     * - 输入搜索词（blank → 非 blank）→ 立即显示（250ms 展开）
-                     * - 清空搜索词（非 blank → blank）→ 基于当前 progress 主动 snap 到端点
-                     *
-                     * 原实现使用 isAtTop 判断"清空时是否隐藏"，但 isAtTop 与搜索框实际
-                     * 状态（progress）可能不一致（如滚动到中部时 progress=0.3 但 isAtTop=false）。
-                     * 改为基于 progress 判定，逻辑统一且与滚动停止检测一致。
-                     */
-                    /**
-                     * 搜索词变化时驱动搜索框：
-                     * - 输入搜索词（blank → 非 blank）→ 立即显示（250ms 展开）
-                     * - 清空搜索词（非 blank → blank）→ 基于当前 progress 主动 snap 到端点
-                     *
-                     * 注意：animatableProgress.snapTo 用于同步对齐起点，避免从旧值动画到目标值产生跳跃
-                     */
-                    LaunchedEffect(searchQuery) {
-                        if (searchQuery.isNotBlank()) {
-                            // 输入搜索词：立即显示
-                            val start = if (isScrolling) scrollDrivenProgress else animatableProgress.value
-                            animatableProgress.snapTo(start)
-                            animatableProgress.animateTo(
-                                targetValue = 1f,
-                                animationSpec = tween(250, easing = FastOutSlowInEasing)
-                            )
-                        } else {
-                            // 清空搜索词：基于当前 progress 主动 snap 到端点
-                            val current = if (isScrolling) scrollDrivenProgress else animatableProgress.value
-                            if (current > 0.05f && current < 0.95f) {
-                                val target = if (current < 0.5f) 0f else 1f
-                                val duration = if (target == 0f) 200 else 250
-                                animatableProgress.snapTo(current)
-                                animatableProgress.animateTo(
-                                    targetValue = target,
-                                    animationSpec = tween(duration, easing = FastOutSlowInEasing)
-                                )
-                            }
-                        }
-                    }
-
-                    /**
-                     * 搜索框容器：
-                     * - 上边缘固定，底部边缘根据 currentProgress 收缩/展开
-                     * - 透明度与进度同步变化，实现淡入淡出
-                     * - clipToBounds 裁剪超出部分
-                     */
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .layout { measurable, constraints ->
-                                val placeable = measurable.measure(constraints)
-                                val targetHeight = (placeable.height * currentProgress).roundToInt()
-                                layout(placeable.width, targetHeight) {
-                                    // place(0, 0) 保证上边缘固定
-                                    placeable.place(0, 0)
-                                }
-                            }
-                            .clipToBounds()
-                            .graphicsLayer { alpha = currentProgress }
-                    ) {
-                        SearchBar(
-                            query = searchQuery,
-                            onQueryChange = { newQuery ->
-                                viewModel.updateSearchQuery(newQuery)
-                            },
-                            onClear = {
-                                viewModel.clearSearch()
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp)
-                                .padding(bottom = dimensionResource(com.corgimemo.app.R.dimen.ui_search_bar_bottom_margin))
-                        )
-                    }
-
                     // 柯基陪伴区已分离为悬浮按钮，此处不再显示
 
                     /**
@@ -799,27 +642,13 @@ fun HomeScreen(
                             }
                         }
 
-                        // 外层 Box：承载 nestedScrollConnection 与柯基指示器
+                        // 外层 Box：仅承载 nestedScrollConnection
+                        // 柯基动画已移入 LazyColumn 的 headerContent（PullRefreshSpacer）
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .nestedScroll(pullRefreshState.nestedScrollConnection)
                         ) {
-                            // 空白区 + 居中奔跑柯基（铺满宽度，高度=pullOffset）
-                            CorgiPullRefreshIndicator(
-                                pullOffset = pullRefreshState.pullOffset,
-                                state = pullRefreshState.state,
-                                maxPullHeightPx = pullRefreshState.maxPullHeightPx,
-                                refreshThresholdPx = pullRefreshState.refreshThresholdPx,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            // 内层 Box：列表 + 搜索框整体下移 pullOffset
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer { translationY = pullRefreshState.pullOffset }
-                            ) {
                             ZonedReorderableLazyColumn(
                                 items = displayItems,
                                 listState = lazyListState,
@@ -842,13 +671,38 @@ fun HomeScreen(
                                         targetZoneRelativeIndex = targetZoneRelativeIndex
                                     )
                                 },
+                                headerContent = {
+                                    // 第 0 项：搜索框（随滚动自然出屏）
+                                    item {
+                                        SearchBar(
+                                            query = searchQuery,
+                                            onQueryChange = { newQuery ->
+                                                viewModel.updateSearchQuery(newQuery)
+                                            },
+                                            onClear = {
+                                                viewModel.clearSearch()
+                                            },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 20.dp)
+                                                .padding(bottom = dimensionResource(com.corgimemo.app.R.dimen.ui_search_bar_bottom_margin))
+                                        )
+                                    }
+                                    // 第 1 项：下拉刷新 spacer（高度 = pullOffset，含柯基动画）
+                                    item {
+                                        PullRefreshSpacer(
+                                            pullOffset = pullRefreshState.pullOffset,
+                                            state = pullRefreshState.state,
+                                            maxPullHeightPx = pullRefreshState.maxPullHeightPx,
+                                            refreshThresholdPx = pullRefreshState.refreshThresholdPx,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                },
+                                headerItemCount = 2,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(horizontal = 8.dp)
-                                    /** 级联效果：列表跟随搜索框显隐产生视差偏移 */
-                                    .graphicsLayer {
-                                        translationY = -(1f - currentProgress) * searchBarFullHeightPx * 0.12f
-                                    }
                             ) { index, displayItem, isDragging, dragActive ->
                                 LaunchedEffect(dragActive) {
                                     isDragActive = dragActive
@@ -965,7 +819,6 @@ fun HomeScreen(
                                     }
                                 }
                             }
-                            } // 闭合内层 Box（列表 + 搜索框整体下移 pullOffset）
                         }
                     }
                 }
@@ -3155,26 +3008,39 @@ fun shareTodoAsImage(
 }
 
 /**
- * 计算滚动驱动的搜索框显隐进度
+ * 下拉刷新空白区 + 柯基动画
  *
- * 规则:
- * - firstVisibleItemIndex == 0: progress = 1 - scrollOffset / searchBarHeight,clamp 到 [0, 1]
- * - firstVisibleItemIndex > 0: 强制返回 0f(第一项已完全滚出)
+ * 作为 LazyColumn 的前置 item，高度随 pullOffset 增长，
+ * 替代原外层 Box 的 translationY 偏移方案。
  *
- * @param firstVisibleItemIndex LazyListState.firstVisibleItemIndex
- * @param firstVisibleItemScrollOffset LazyListState.firstVisibleItemScrollOffset
- * @param searchBarHeightPx 搜索框完整高度(px)
- * @return 搜索框显隐进度 [0f, 1f],1f=完全显示,0f=完全隐藏
+ * @param pullOffset 当前下拉偏移量（px）
+ * @param state 下拉刷新状态
+ * @param maxPullHeightPx 最大下拉高度（px）
+ * @param refreshThresholdPx 刷新触发阈值（px）
+ * @param modifier Modifier
  */
-internal fun computeScrollDrivenProgress(
-    firstVisibleItemIndex: Int,
-    firstVisibleItemScrollOffset: Int,
-    searchBarHeightPx: Float
-): Float {
-    if (searchBarHeightPx <= 0f) return 1f
-    return if (firstVisibleItemIndex == 0) {
-        (1f - firstVisibleItemScrollOffset / searchBarHeightPx).coerceIn(0f, 1f)
-    } else {
-        0f
+@Composable
+private fun PullRefreshSpacer(
+    pullOffset: Float,
+    state: PullRefreshState,
+    maxPullHeightPx: Float,
+    refreshThresholdPx: Float,
+    modifier: Modifier = Modifier
+) {
+    // 高度 = pullOffset（px → dp），未下拉时高度为 0 不可见
+    val heightDp = with(LocalDensity.current) { pullOffset.toDp() }
+    Box(
+        modifier = modifier
+            .height(heightDp)
+            .clipToBounds()
+    ) {
+        CorgiPullRefreshIndicator(
+            pullOffset = pullOffset,
+            state = state,
+            maxPullHeightPx = maxPullHeightPx,
+            refreshThresholdPx = refreshThresholdPx,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
+
