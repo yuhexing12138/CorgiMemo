@@ -123,7 +123,9 @@ import com.corgimemo.app.ui.components.zone
 import com.corgimemo.app.ui.components.TodoListItem
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.SectionHeaderColors
-import com.corgimemo.app.ui.components.CorgiPullToRefreshIndicator
+import com.corgimemo.app.ui.components.CorgiPullRefreshIndicator
+import com.corgimemo.app.ui.components.PullRefreshState
+import com.corgimemo.app.ui.components.rememberPullRefreshStateHolder
 import com.corgimemo.app.ui.components.SortBottomSheet
 import com.corgimemo.app.ui.components.MoreOptionsSheet
 import com.corgimemo.app.ui.components.CollapsibleSectionHeader
@@ -131,8 +133,7 @@ import com.corgimemo.app.ui.components.PendingSectionHeader
 import com.corgimemo.app.ui.components.PinnedSectionHeader
 import com.corgimemo.app.ui.components.PriorityPickerSheet
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.ui.theme.UiColors
@@ -712,7 +713,16 @@ fun HomeScreen(
                         }
                     } else {
                         val isRefreshing by viewModel.isRefreshing.collectAsState()
-                        val pullToRefreshState = rememberPullToRefreshState()
+                        val pullRefreshState = rememberPullRefreshStateHolder(
+                            maxPullHeight = 100.dp,
+                            refreshThreshold = 60.dp,
+                            onRefresh = { viewModel.onRefresh() }
+                        )
+
+                        // 刷新完成时回弹 pullOffset
+                        LaunchedEffect(isRefreshing) {
+                            if (!isRefreshing) pullRefreshState.onRefreshComplete()
+                        }
 
                         /**
                          * 应用分类和搜索过滤
@@ -782,19 +792,27 @@ fun HomeScreen(
                             }
                         }
 
-                        PullToRefreshBox(
-                            isRefreshing = isRefreshing,
-                            onRefresh = { viewModel.onRefresh() },
-                            state = pullToRefreshState,
-                            modifier = Modifier.fillMaxSize(),
-                            indicator = {
-                                CorgiPullToRefreshIndicator(
-                                    isRefreshing = isRefreshing,
-                                    pullProgress = pullToRefreshState.distanceFraction.coerceIn(0f, 1f),
-                                    modifier = Modifier.align(Alignment.TopCenter)
-                                )
-                            }
+                        // 外层 Box：承载 nestedScrollConnection 与柯基指示器
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .nestedScroll(pullRefreshState.nestedScrollConnection)
                         ) {
+                            // 空白区 + 居中奔跑柯基（铺满宽度，高度=pullOffset）
+                            CorgiPullRefreshIndicator(
+                                pullOffset = pullRefreshState.pullOffset,
+                                state = pullRefreshState.state,
+                                maxPullHeightPx = pullRefreshState.maxPullHeightPx,
+                                refreshThresholdPx = pullRefreshState.refreshThresholdPx,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // 内层 Box：列表 + 搜索框整体下移 pullOffset
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer { translationY = pullRefreshState.pullOffset }
+                            ) {
                             ZonedReorderableLazyColumn(
                                 items = displayItems,
                                 listState = lazyListState,
@@ -940,6 +958,7 @@ fun HomeScreen(
                                     }
                                 }
                             }
+                            } // 闭合内层 Box（列表 + 搜索框整体下移 pullOffset）
                         }
                     }
                 }
@@ -3125,5 +3144,30 @@ fun shareTodoAsImage(
                 ).show()
             }
         }
+    }
+}
+
+/**
+ * 计算滚动驱动的搜索框显隐进度
+ *
+ * 规则:
+ * - firstVisibleItemIndex == 0: progress = 1 - scrollOffset / searchBarHeight,clamp 到 [0, 1]
+ * - firstVisibleItemIndex > 0: 强制返回 0f(第一项已完全滚出)
+ *
+ * @param firstVisibleItemIndex LazyListState.firstVisibleItemIndex
+ * @param firstVisibleItemScrollOffset LazyListState.firstVisibleItemScrollOffset
+ * @param searchBarHeightPx 搜索框完整高度(px)
+ * @return 搜索框显隐进度 [0f, 1f],1f=完全显示,0f=完全隐藏
+ */
+internal fun computeScrollDrivenProgress(
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffset: Int,
+    searchBarHeightPx: Float
+): Float {
+    if (searchBarHeightPx <= 0f) return 1f
+    return if (firstVisibleItemIndex == 0) {
+        (1f - firstVisibleItemScrollOffset / searchBarHeightPx).coerceIn(0f, 1f)
+    } else {
+        0f
     }
 }
