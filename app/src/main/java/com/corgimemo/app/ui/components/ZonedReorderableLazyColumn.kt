@@ -39,10 +39,10 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  * @param items 显示列表（含 divider 与 Todo）
  * @param isDragEnabled 是否允许拖拽（批量模式 / 左滑展开时设为 false）
  * @param key 项的唯一标识
- * @param onReorder 排序提交回调 (dragResult, fromIndex, toIndex)
+ * @param onReorder 排序提交回调 (dragResult, draggedItem, targetZoneRelativeIndex)
  *                  - dragResult: 状态机输出的最终 zone 状态
- *                  - fromIndex: 被拖项在 displayItems 中的原始索引
- *                  - toIndex:   被拖项在 displayItems 中的最终索引
+ *                  - draggedItem: 被拖项（基于组件内部 displayItems 取得，类型安全）
+ *                  - targetZoneRelativeIndex: 目标 zone 内的相对索引（仅统计同 zone Todo）
  * @param listState LazyListState 实例
  * @param modifier Modifier
  * @param content 列表项 Composable，参数为 (index, item, isDragging, isDragActive)
@@ -52,7 +52,11 @@ fun ZonedReorderableLazyColumn(
     items: List<DisplayItem>,
     isDragEnabled: Boolean,
     key: (DisplayItem) -> Any,
-    onReorder: (dragResult: ZoneDragResult, fromIndex: Int, toIndex: Int) -> Unit,
+    onReorder: (
+        dragResult: ZoneDragResult,
+        draggedItem: DisplayItem.Todo,
+        targetZoneRelativeIndex: Int
+    ) -> Unit,
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
     content: @Composable (index: Int, item: DisplayItem, isDragging: Boolean, isDragActive: Boolean) -> Unit
@@ -165,11 +169,21 @@ fun ZonedReorderableLazyColumn(
                                     ) {
                                         // 状态机输出最终 zone 状态
                                         val dragResult = dragZoneState.endDrag()
-                                        onReorder(
-                                            dragResult,
-                                            draggedOriginalIndex,
-                                            draggedCurrentIndex
+
+                                        // 基于内部 displayItems（已被 onMove 更新）取被拖项
+                                        val draggedTodoItem = displayItems[draggedCurrentIndex]
+                                            as? DisplayItem.Todo
+                                            ?: return@longPressDraggableHandle
+
+                                        // 基于 dragResult.currentZone 计算目标 zone 内相对索引
+                                        val relativeIndex = computeRelativeIndexInZone(
+                                            displayItems = displayItems,
+                                            draggedCurrentIndex = draggedCurrentIndex,
+                                            targetZone = dragResult.currentZone
                                         )
+
+                                        onReorder(dragResult, draggedTodoItem, relativeIndex)
+
                                         HapticFeedbackManager.performHapticFeedback(
                                             context = context,
                                             type = InteractionType.CONFIRM,
