@@ -808,27 +808,13 @@ fun HomeScreen(
                                         is DisplayItem.CompletedDivider -> "completed_divider"
                                     }
                                 },
-                                onReorder = { dragResult, fromIndex, toIndex ->
-                                    // 找到被拖项（基于最终位置）
-                                    val draggedTodoItem = displayItems.getOrNull(toIndex) as? DisplayItem.Todo
-                                    val draggedTodo = draggedTodoItem?.item
-                                        ?: return@ZonedReorderableLazyColumn
-
-                                    // 计算目标 zone 内的相对索引（仅统计同 zone 的 Todo 项）
-                                    val targetZone = dragResult.currentZone
-                                    var relativeIndex = 0
-                                    for (i in 0 until toIndex) {
-                                        val item = displayItems[i]
-                                        if (item is DisplayItem.Todo && item.item.zone() == targetZone) {
-                                            relativeIndex++
-                                        }
-                                    }
-
+                                onReorder = { dragResult, draggedTodoItem, targetZoneRelativeIndex ->
+                                    // 纯转发：组件已基于内部 displayItems 计算好被拖项和相对索引
                                     viewModel.reorderOnDragResult(
-                                        draggedItemId = draggedTodo.id,
-                                        draggedTodo = draggedTodo,
+                                        draggedItemId = draggedTodoItem.item.id,
+                                        draggedTodo = draggedTodoItem.item,
                                         dragResult = dragResult,
-                                        targetZoneRelativeIndex = relativeIndex
+                                        targetZoneRelativeIndex = targetZoneRelativeIndex
                                     )
                                 },
                                 modifier = Modifier
