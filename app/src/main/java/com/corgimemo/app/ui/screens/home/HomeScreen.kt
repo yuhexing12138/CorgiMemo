@@ -529,9 +529,6 @@ fun HomeScreen(
 
                     val searchQuery by viewModel.searchQuery.collectAsState()
 
-                    /** 滚动驱动搜索框显隐进度：1f=完全显示，0f=完全隐藏，使用Animatable支持平滑动画 */
-                    val searchRevealProgress = remember { Animatable(1f) }
-
                     /** 订阅 LazyListState 滚动状态（含 fling + settle），Compose 官方统一管理，跨设备一致 */
                     val isScrolling = lazyListState.isScrollInProgress
 
@@ -539,60 +536,60 @@ fun HomeScreen(
                     val searchBarFullHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
 
                     /**
-                     * 绝对位置驱动搜索框进度：
-                     * - 进度 = 1 - scrollOffsetFromTop / searchBarFullHeightPx
-                     * - scrollOffsetFromTop 来自 LazyListState 的 firstVisibleItemIndex + firstVisibleItemScrollOffset
-                     * - 这是单调函数，跨 item 切换平滑（v2 修复版）
+                     * 阶段 1：滚动中同步跟手（无协程延迟）
                      *
-                     * 设计动机（v2 修复）：替换 v2 原始版使用的 firstItem.offset
-                     * - v2 原始问题：layoutInfo.visibleItemsInfo.first().offset 在第一个 item
-                     *   完全滚出并切换到下一项时会突变（如 item 0 高度 80px，offset 从 -80 突变到 -16），
-                     *   导致 progress 从 0 跳变回 0.75，引发「搜索框来回震荡」
-                     * - v2 修复方案：改用官方 API firstVisibleItemIndex + firstVisibleItemScrollOffset，
-                     *   Compose 框架内部维护这两个状态，跨 item 切换是单调函数，无跳变
-                     * - 当 firstVisibleItemIndex > 0（第一项已完全滚出）时，强制 progress = 0，
-                     *   避免任何突变
+                     * 直接基于 LazyListState 官方 API 派生 progress，1:1 跟随滚动 delta。
+                     * - firstVisibleItemIndex == 0：progress = 1 - offset / searchBarHeight
+                     * - firstVisibleItemIndex > 0：强制 0f（第一项已完全滚出）
+                     *
+                     * 替换原 Animatable + LaunchedEffect + snapTo 异步链路，
+                     * 消除每帧 effect 重启 + 协程调度引入的 1-3 帧延迟（跳跃感根因）。
                      */
-                    val scrollOffsetFromTop by remember {
+                    val scrollDrivenProgress by remember {
                         derivedStateOf {
-                            val firstIndex = lazyListState.firstVisibleItemIndex
-                            if (firstIndex == 0) {
-                                // 还在第一项内：使用 firstVisibleItemScrollOffset（已向下滚动的像素距离）
-                                lazyListState.firstVisibleItemScrollOffset.toFloat()
-                            } else {
-                                // 第一项已完全滚出：强制 progress = 0（搜索框完全隐藏）
-                                searchBarFullHeightPx + 1f
-                            }
-                        }
-                    }
-
-                    LaunchedEffect(scrollOffsetFromTop) {
-                        val target = (1f - scrollOffsetFromTop / searchBarFullHeightPx).coerceIn(0f, 1f)
-                        if (searchRevealProgress.value != target) {
-                            searchRevealProgress.snapTo(target)
+                            computeScrollDrivenProgress(
+                                firstVisibleItemIndex = lazyListState.firstVisibleItemIndex,
+                                firstVisibleItemScrollOffset = lazyListState.firstVisibleItemScrollOffset,
+                                searchBarHeightPx = searchBarFullHeightPx
+                            )
                         }
                     }
 
                     /**
-                     * 滚动真正停止时触发 snap：
-                     * - 直接订阅 lazyListState.isScrollInProgress，key 变化时 effect 自动重启
-                     * - 滚动开始（true）或滚动中（保持 true）→ body 内 if 判断跳过
-                     * - 滚动真正停止（false）→ 检查 progress，snap 到 0f 或 1f
-                     * - 使用 Compose 官方状态，准确捕获 fling + settle 结束，跨设备一致
+                     * 阶段 2：滚动停止时的吸附动画
                      *
-                     * 设计动机：替换原 150ms 时间戳 debounce 方案
-                     * - 旧方案：fling 惯性滚动期间 firstVisibleItemIndex/Offset 持续发射微事件，
-                     *   每次都重置 lastScrollTimeMs，150ms 窗口永远不通过，progress 卡在半路
-                     * - 新方案：isScrollInProgress 由 Compose 框架统一维护 fling + settle 状态，
-                     *   真正停止时才变 false，effect 重启执行 snap
+                     * 仅在 isScrollInProgress == false 时由 currentProgress 读取。
+                     * 滚动中此 Animatable 不参与计算，被 scrollDrivenProgress 覆盖。
+                     */
+                    val animatableProgress = remember { Animatable(1f) }
+
+                    /**
+                     * 当前生效的 progress（二选一）
+                     *
+                     * - 滚动中：scrollDrivenProgress（同步跟手）
+                     * - 滚动停止：animatableProgress.value（吸附动画结果）
+                     *
+                     * layout/graphicsLayer 应读取本字段，不要直接读 Animatable.value。
+                     */
+                    val currentProgress = if (isScrolling) scrollDrivenProgress else animatableProgress.value
+
+                    /**
+                     * 滚动停止时：同步对齐起点 → animateTo 吸附端点
+                     *
+                     * - snapTo(scrollDrivenProgress) 同步对齐，消除阶段切换时的数值跳跃
+                     * - animateTo(0f 或 1f) 用 tween 动画吸附到端点
+                     *
+                     * 阈值：< 0.5 吸附到 0f（隐藏），>= 0.5 吸附到 1f（显示）
+                     * 仅在 searchQuery 为空时执行（搜索词非空时强制保持显示）
                      */
                     LaunchedEffect(isScrolling) {
                         if (!isScrolling && searchQuery.isBlank()) {
-                            val current = searchRevealProgress.value
-                            if (current > 0.05f && current < 0.95f) {
-                                val target = if (current < 0.5f) 0f else 1f
+                            val start = scrollDrivenProgress
+                            if (start > 0.05f && start < 0.95f) {
+                                val target = if (start < 0.5f) 0f else 1f
                                 val duration = if (target == 0f) 200 else 250
-                                searchRevealProgress.animateTo(
+                                animatableProgress.snapTo(start)
+                                animatableProgress.animateTo(
                                     targetValue = target,
                                     animationSpec = tween(duration, easing = FastOutSlowInEasing)
                                 )
@@ -616,20 +613,30 @@ fun HomeScreen(
                      * 状态（progress）可能不一致（如滚动到中部时 progress=0.3 但 isAtTop=false）。
                      * 改为基于 progress 判定，逻辑统一且与滚动停止检测一致。
                      */
+                    /**
+                     * 搜索词变化时驱动搜索框：
+                     * - 输入搜索词（blank → 非 blank）→ 立即显示（250ms 展开）
+                     * - 清空搜索词（非 blank → blank）→ 基于当前 progress 主动 snap 到端点
+                     *
+                     * 注意：animatableProgress.snapTo 用于同步对齐起点，避免从旧值动画到目标值产生跳跃
+                     */
                     LaunchedEffect(searchQuery) {
                         if (searchQuery.isNotBlank()) {
                             // 输入搜索词：立即显示
-                            searchRevealProgress.animateTo(
-                                1f,
+                            val start = if (isScrolling) scrollDrivenProgress else animatableProgress.value
+                            animatableProgress.snapTo(start)
+                            animatableProgress.animateTo(
+                                targetValue = 1f,
                                 animationSpec = tween(250, easing = FastOutSlowInEasing)
                             )
                         } else {
                             // 清空搜索词：基于当前 progress 主动 snap 到端点
-                            val current = searchRevealProgress.value
+                            val current = if (isScrolling) scrollDrivenProgress else animatableProgress.value
                             if (current > 0.05f && current < 0.95f) {
                                 val target = if (current < 0.5f) 0f else 1f
                                 val duration = if (target == 0f) 200 else 250
-                                searchRevealProgress.animateTo(
+                                animatableProgress.snapTo(current)
+                                animatableProgress.animateTo(
                                     targetValue = target,
                                     animationSpec = tween(duration, easing = FastOutSlowInEasing)
                                 )
@@ -648,14 +655,14 @@ fun HomeScreen(
                             .fillMaxWidth()
                             .layout { measurable, constraints ->
                                 val placeable = measurable.measure(constraints)
-                                val targetHeight = (placeable.height * searchRevealProgress.value).roundToInt()
+                                val targetHeight = (placeable.height * currentProgress).roundToInt()
                                 layout(placeable.width, targetHeight) {
                                     // place(0, 0) 保证上边缘固定
                                     placeable.place(0, 0)
                                 }
                             }
                             .clipToBounds()
-                            .graphicsLayer { alpha = searchRevealProgress.value }
+                            .graphicsLayer { alpha = currentProgress }
                     ) {
                         SearchBar(
                             query = searchQuery,
@@ -840,7 +847,7 @@ fun HomeScreen(
                                     .padding(horizontal = 8.dp)
                                     /** 级联效果：列表跟随搜索框显隐产生视差偏移 */
                                     .graphicsLayer {
-                                        translationY = -(1f - searchRevealProgress.value) * searchBarFullHeightPx * 0.12f
+                                        translationY = -(1f - currentProgress) * searchBarFullHeightPx * 0.12f
                                     }
                             ) { index, displayItem, isDragging, dragActive ->
                                 LaunchedEffect(dragActive) {
