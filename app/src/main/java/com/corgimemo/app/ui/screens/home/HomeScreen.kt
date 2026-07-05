@@ -82,10 +82,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -522,6 +522,30 @@ fun HomeScreen(
 
                     val searchQuery by viewModel.searchQuery.collectAsState()
 
+                    /**
+                     * 搜索框：固定显示在顶部，不随滚动隐藏
+                     *
+                     * 与 InspirationScreen / SpecialDateScreen 保持一致的布局结构，
+                     * SearchBar 作为 Column 的首项，modifier 配置三页统一：
+                     * - fillMaxWidth()
+                     * - padding(horizontal = 20.dp)
+                     * - padding(bottom = dimensionResource(ui_search_bar_bottom_margin))
+                     */
+                    SearchBar(
+                        query = searchQuery,
+                        onQueryChange = { newQuery ->
+                            viewModel.updateSearchQuery(newQuery)
+                        },
+                        onClear = {
+                            viewModel.clearSearch()
+                        },
+                        placeholder = "搜索待办...",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .padding(bottom = dimensionResource(com.corgimemo.app.R.dimen.ui_search_bar_bottom_margin))
+                    )
+
                     // 柯基陪伴区已分离为悬浮按钮，此处不再显示
 
                     /**
@@ -642,13 +666,27 @@ fun HomeScreen(
                             }
                         }
 
-                        // 外层 Box：仅承载 nestedScrollConnection
-                        // 柯基动画已移入 LazyColumn 的 headerContent（PullRefreshSpacer）
+                        // 外层 Box：承载 nestedScrollConnection 与柯基指示器
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .nestedScroll(pullRefreshState.nestedScrollConnection)
                         ) {
+                            // 空白区 + 居中奔跑柯基（铺满宽度，高度=pullOffset）
+                            CorgiPullRefreshIndicator(
+                                pullOffset = pullRefreshState.pullOffset,
+                                state = pullRefreshState.state,
+                                maxPullHeightPx = pullRefreshState.maxPullHeightPx,
+                                refreshThresholdPx = pullRefreshState.refreshThresholdPx,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // 内层 Box：列表 + 搜索框整体下移 pullOffset
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer { translationY = pullRefreshState.pullOffset }
+                            ) {
                             ZonedReorderableLazyColumn(
                                 items = displayItems,
                                 listState = lazyListState,
@@ -671,35 +709,6 @@ fun HomeScreen(
                                         targetZoneRelativeIndex = targetZoneRelativeIndex
                                     )
                                 },
-                                headerContent = {
-                                    // 第 0 项：搜索框（随滚动自然出屏）
-                                    item {
-                                        SearchBar(
-                                            query = searchQuery,
-                                            onQueryChange = { newQuery ->
-                                                viewModel.updateSearchQuery(newQuery)
-                                            },
-                                            onClear = {
-                                                viewModel.clearSearch()
-                                            },
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 20.dp)
-                                                .padding(bottom = dimensionResource(com.corgimemo.app.R.dimen.ui_search_bar_bottom_margin))
-                                        )
-                                    }
-                                    // 第 1 项：下拉刷新 spacer（高度 = pullOffset，含柯基动画）
-                                    item {
-                                        PullRefreshSpacer(
-                                            pullOffset = pullRefreshState.pullOffset,
-                                            state = pullRefreshState.state,
-                                            maxPullHeightPx = pullRefreshState.maxPullHeightPx,
-                                            refreshThresholdPx = pullRefreshState.refreshThresholdPx,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-                                },
-                                headerItemCount = 2,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(horizontal = 8.dp)
@@ -819,6 +828,7 @@ fun HomeScreen(
                                     }
                                 }
                             }
+                            } // 闭合内层 Box（列表 + 搜索框整体下移 pullOffset）
                         }
                     }
                 }
@@ -3006,41 +3016,3 @@ fun shareTodoAsImage(
         }
     }
 }
-
-/**
- * 下拉刷新空白区 + 柯基动画
- *
- * 作为 LazyColumn 的前置 item，高度随 pullOffset 增长，
- * 替代原外层 Box 的 translationY 偏移方案。
- *
- * @param pullOffset 当前下拉偏移量（px）
- * @param state 下拉刷新状态
- * @param maxPullHeightPx 最大下拉高度（px）
- * @param refreshThresholdPx 刷新触发阈值（px）
- * @param modifier Modifier
- */
-@Composable
-private fun PullRefreshSpacer(
-    pullOffset: Float,
-    state: PullRefreshState,
-    maxPullHeightPx: Float,
-    refreshThresholdPx: Float,
-    modifier: Modifier = Modifier
-) {
-    // 高度 = pullOffset（px → dp），未下拉时高度为 0 不可见
-    val heightDp = with(LocalDensity.current) { pullOffset.toDp() }
-    Box(
-        modifier = modifier
-            .height(heightDp)
-            .clipToBounds()
-    ) {
-        CorgiPullRefreshIndicator(
-            pullOffset = pullOffset,
-            state = state,
-            maxPullHeightPx = maxPullHeightPx,
-            refreshThresholdPx = refreshThresholdPx,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-}
-

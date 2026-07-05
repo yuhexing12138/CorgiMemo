@@ -1,0 +1,136 @@
+<h2>§6 测试策略总览</h2>
+<p class="subtitle">三层测试覆盖：单元测试 · 手动验证 · 回归测试</p>
+
+<div class="section">
+  <h3>测试金字塔</h3>
+  <div class="mockup">
+    <div class="mockup-header">三层测试覆盖矩阵</div>
+    <div class="mockup-body" style="padding: 24px; background: linear-gradient(180deg, #fef3c7 0%, #fef9e7 100%);">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+
+        <!-- 顶层：单元测试 -->
+        <div style="width: 60%; background: #10b981; color: white; padding: 16px; border-radius: 8px; text-align: center; box-shadow: 0 2px 8px rgba(16,185,129,0.3);">
+          <div style="font-weight: bold; font-size: 16px;">① 单元测试（纯函数）</div>
+          <div style="font-size: 13px; margin-top: 4px; opacity: 0.95;">JUnit · ~10 用例 · 不依赖 Compose runtime</div>
+        </div>
+
+        <!-- 中层：手动验证 -->
+        <div style="width: 80%; background: #f59e0b; color: white; padding: 16px; border-radius: 8px; text-align: center; box-shadow: 0 2px 8px rgba(245,158,11,0.3);">
+          <div style="font-weight: bold; font-size: 16px;">② 手动验证（真机）</div>
+          <div style="font-size: 13px; margin-top: 4px; opacity: 0.95;">8 个场景 · 手势 + 动画 + 视觉</div>
+        </div>
+
+        <!-- 底层：回归测试 -->
+        <div style="width: 100%; background: #3b82f6; color: white; padding: 16px; border-radius: 8px; text-align: center; box-shadow: 0 2px 8px rgba(59,130,246,0.3);">
+          <div style="font-weight: bold; font-size: 16px;">③ 回归测试（已有）</div>
+          <div style="font-size: 13px; margin-top: 4px; opacity: 0.95;">57+ 用例 · 拖拽 + Zone + ViewModel</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>单元测试用例详情（纯函数）</h3>
+
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">computeDampedOffset · 5 用例</div>
+      <div class="mockup-body" style="padding: 16px; background: #fafafa;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          <thead>
+            <tr style="background: #e5e7eb;">
+              <th style="padding: 8px; text-align: left; border: 1px solid #d1d5db;">输入</th>
+              <th style="padding: 8px; text-align: left; border: 1px solid #d1d5db;">期望</th>
+              <th style="padding: 8px; text-align: left; border: 1px solid #d1d5db;">意图</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">(0, 100)</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">0</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">无下拉</td></tr>
+            <tr><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">(50, 100)</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">37.5</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">中段阻尼</td></tr>
+            <tr><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">(100, 100)</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">100</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">达最大封顶</td></tr>
+            <tr><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">(200, 100)</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">100</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">超最大仍封顶</td></tr>
+            <tr><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">(-10, 100)</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">0</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">负值防护</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mockup">
+      <div class="mockup-header">computeNextPullRefreshState · 5 用例</div>
+      <div class="mockup-body" style="padding: 16px; background: #fafafa;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          <thead>
+            <tr style="background: #e5e7eb;">
+              <th style="padding: 8px; text-align: left; border: 1px solid #d1d5db;">当前</th>
+              <th style="padding: 8px; text-align: left; border: 1px solid #d1d5db;">触发</th>
+              <th style="padding: 8px; text-align: left; border: 1px solid #d1d5db;">下一状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">IDLE</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">pullOffset &gt; 0</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">PULLING</td></tr>
+            <tr><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">PULLING</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">≥阈值 + 释放</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">REFRESHING</td></tr>
+            <tr><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">PULLING</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">&lt;阈值 + 释放</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">IDLE（回弹）</td></tr>
+            <tr><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">REFRESHING</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">isRefreshing=false</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">IDLE</td></tr>
+            <tr><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">REFRESHING</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">任意下拉</td><td style="padding: 6px 8px; border: 1px solid #e5e7eb;">REFRESHING（锁定）</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>手动验证场景（真机 · 8 项）</h3>
+  <div class="mockup">
+    <div class="mockup-header">真机验证清单</div>
+    <div class="mockup-body" style="padding: 16px; background: #fafafa;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead>
+          <tr style="background: #fef3c7;">
+            <th style="padding: 8px; border: 1px solid #fde68a; width: 40px;">#</th>
+            <th style="padding: 8px; border: 1px solid #fde68a; text-align: left;">场景</th>
+            <th style="padding: 8px; border: 1px solid #fde68a; text-align: left;">期望表现</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td style="padding: 6px 8px; border: 1px solid #fde68a; text-align: center;">1</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">未达阈值释放</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">回弹，不刷新，柯基消失</td></tr>
+          <tr><td style="padding: 6px 8px; border: 1px solid #fde68a; text-align: center;">2</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">达阈值释放</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">触发刷新，柯基奔跑</td></tr>
+          <tr><td style="padding: 6px 8px; border: 1px solid #fde68a; text-align: center;">3</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">拉至最大</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">阻尼明显，柯基 64dp</td></tr>
+          <tr><td style="padding: 6px 8px; border: 1px solid #fde68a; text-align: center;">4</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">刷新完成</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">柯基消失，列表复位</td></tr>
+          <tr><td style="padding: 6px 8px; border: 1px solid #fde68a; text-align: center;">5</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">刷新中再下拉</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">不响应（状态锁定）</td></tr>
+          <tr><td style="padding: 6px 8px; border: 1px solid #fde68a; text-align: center;">6</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">搜索框位置</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">随列表同步下移</td></tr>
+          <tr><td style="padding: 6px 8px; border: 1px solid #fde68a; text-align: center;">7</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">柯基居中</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">始终水平居中</td></tr>
+          <tr><td style="padding: 6px 8px; border: 1px solid #fde68a; text-align: center;">8</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">柯基大小渐变</td><td style="padding: 6px 8px; border: 1px solid #fde68a;">48dp → 64dp 渐变</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>不测试的部分</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>测试</h4>
+      <ul>
+        <li>阻尼曲线纯函数</li>
+        <li>状态机转换纯函数</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>不测试（手动验证）</h4>
+      <ul>
+        <li>Animatable 动画插值</li>
+        <li>NestedScrollConnection 手势分发</li>
+        <li>FrameAnimation 帧切换（已有测试）</li>
+        <li>柯基居中对齐</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px; padding: 16px; background: #ecfdf5; border-radius: 8px; border-left: 4px solid #10b981;">
+  <p style="margin: 0; font-size: 14px;">是否通过 §6 测试策略？通过后我将整理 spec 文档并提交。</p>
+</div>

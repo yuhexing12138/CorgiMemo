@@ -1,0 +1,157 @@
+<h2>下拉过程阶段划分</h2>
+<p class="subtitle">不同下拉进度下的视觉表现</p>
+
+<div class="section">
+  <div style="background:#fff; padding:16px; border-radius:12px; display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:12px;">
+
+    <!-- 阶段1：未下拉 -->
+    <div style="border:2px solid #cbd5e1; border-radius:8px; overflow:hidden;">
+      <div style="background:#f1f5f9; padding:6px 8px; font-size:11px; font-weight:600; color:#475569;">阶段1：IDLE</div>
+      <div style="background:#fff; height:280px; padding:0; position:relative;">
+        <div style="padding:4px 8px; font-size:10px; color:#999; border-bottom:1px solid #f1f5f9;">12:32</div>
+        <div style="padding:4px 8px; font-size:14px; font-weight:bold;">待办</div>
+        <div style="padding:0 8px;"><div style="background:#f0f0f0; border-radius:12px; padding:6px 8px; font-size:10px; color:#999;">🔍 搜索</div></div>
+        <div style="padding:2px 8px;"><div style="background:#f0f0f0; border-radius:6px; padding:4px 8px; font-size:9px; color:#666;">同步完成</div></div>
+        <!-- 无空白区域 -->
+        <div style="padding:4px 8px;">
+          <div style="background:#fff; border-radius:8px; padding:8px; box-shadow:0 1px 2px rgba(0,0,0,0.1); font-size:11px;">☐ 置顶</div>
+          <div style="background:#fff; border-radius:8px; padding:8px; margin-top:4px; box-shadow:0 1px 2px rgba(0,0,0,0.1); font-size:11px;">☐ 待完成</div>
+        </div>
+      </div>
+      <div style="background:#f8fafc; padding:6px 8px; font-size:10px; color:#64748b;">
+        <div>pullOffset = 0</div>
+        <div>无柯基</div>
+      </div>
+    </div>
+
+    <!-- 阶段2：下拉中（小） -->
+    <div style="border:2px solid #f59e0b; border-radius:8px; overflow:hidden;">
+      <div style="background:#fef3c7; padding:6px 8px; font-size:11px; font-weight:600; color:#92400e;">阶段2：PULLING (小)</div>
+      <div style="background:#fff; height:280px; padding:0; position:relative;">
+        <div style="padding:4px 8px; font-size:10px; color:#999; border-bottom:1px solid #f1f5f9;">12:32</div>
+        <div style="padding:4px 8px; font-size:14px; font-weight:bold;">待办</div>
+        <div style="padding:0 8px;"><div style="background:#f0f0f0; border-radius:12px; padding:6px 8px; font-size:10px; color:#999;">🔍 搜索</div></div>
+        <div style="padding:2px 8px;"><div style="background:#f0f0f0; border-radius:6px; padding:4px 8px; font-size:9px; color:#666;">同步完成</div></div>
+        <!-- 小空白区域 -->
+        <div style="height:30px; background:#fafafa; display:flex; align-items:center; justify-content:center;">
+          <div style="font-size:24px; opacity:0.7;">🏃</div>
+        </div>
+        <div style="padding:4px 8px; transform:translateY(30px);">
+          <div style="background:#fff; border-radius:8px; padding:8px; box-shadow:0 1px 2px rgba(0,0,0,0.1); font-size:11px;">☐ 置顶</div>
+        </div>
+      </div>
+      <div style="background:#fef3c7; padding:6px 8px; font-size:10px; color:#92400e;">
+        <div>pullOffset = 30dp</div>
+        <div>柯基 48dp，RUN</div>
+      </div>
+    </div>
+
+    <!-- 阶段3：下拉到阈值 -->
+    <div style="border:2px solid #22c55e; border-radius:8px; overflow:hidden;">
+      <div style="background:#dcfce7; padding:6px 8px; font-size:11px; font-weight:600; color:#15803d;">阶段3：PULLING (达阈值)</div>
+      <div style="background:#fff; height:280px; padding:0; position:relative;">
+        <div style="padding:4px 8px; font-size:10px; color:#999; border-bottom:1px solid #f1f5f9;">12:32</div>
+        <div style="padding:4px 8px; font-size:14px; font-weight:bold;">待办</div>
+        <div style="padding:0 8px;"><div style="background:#f0f0f0; border-radius:12px; padding:6px 8px; font-size:10px; color:#999;">🔍 搜索</div></div>
+        <div style="padding:2px 8px;"><div style="background:#f0f0f0; border-radius:6px; padding:4px 8px; font-size:9px; color:#666;">同步完成</div></div>
+        <!-- 阈值空白 -->
+        <div style="height:60px; background:#fafafa; display:flex; align-items:center; justify-content:center; flex-direction:column;">
+          <div style="font-size:36px;">🐕</div>
+          <div style="font-size:9px; color:#22c55e; margin-top:2px;">释放刷新</div>
+        </div>
+        <div style="padding:4px 8px; transform:translateY(60px);">
+          <div style="background:#fff; border-radius:8px; padding:8px; box-shadow:0 1px 2px rgba(0,0,0,0.1); font-size:11px;">☐ 置顶</div>
+        </div>
+      </div>
+      <div style="background:#dcfce7; padding:6px 8px; font-size:10px; color:#15803d;">
+        <div>pullOffset = 60dp (阈值)</div>
+        <div>柯基 56dp，WAG</div>
+      </div>
+    </div>
+
+    <!-- 阶段4：最大下拉 -->
+    <div style="border:2px solid #6366f1; border-radius:8px; overflow:hidden;">
+      <div style="background:#e0e7ff; padding:6px 8px; font-size:11px; font-weight:600; color:#3730a3;">阶段4：PULLING (最大)</div>
+      <div style="background:#fff; height:280px; padding:0; position:relative;">
+        <div style="padding:4px 8px; font-size:10px; color:#999; border-bottom:1px solid #f1f5f9;">12:32</div>
+        <div style="padding:4px 8px; font-size:14px; font-weight:bold;">待办</div>
+        <div style="padding:0 8px;"><div style="background:#f0f0f0; border-radius:12px; padding:6px 8px; font-size:10px; color:#999;">🔍 搜索</div></div>
+        <div style="padding:2px 8px;"><div style="background:#f0f0f0; border-radius:6px; padding:4px 8px; font-size:9px; color:#666;">同步完成</div></div>
+        <!-- 最大空白 -->
+        <div style="height:100px; background:#fafafa; display:flex; align-items:center; justify-content:center; flex-direction:column;">
+          <div style="font-size:48px;">🐕</div>
+          <div style="font-size:9px; color:#6366f1; margin-top:2px;">阻尼最大</div>
+        </div>
+        <div style="padding:4px 8px; transform:translateY(100px);">
+          <div style="background:#fff; border-radius:8px; padding:8px; box-shadow:0 1px 2px rgba(0,0,0,0.1); font-size:11px;">☐ 置顶</div>
+        </div>
+      </div>
+      <div style="background:#e0e7ff; padding:6px 8px; font-size:10px; color:#3730a3;">
+        <div>pullOffset = 100dp (最大)</div>
+        <div>柯基 64dp，WAG</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="section" style="margin-top:16px;">
+  <h3>动画类型映射表</h3>
+  <div style="background:#fff; padding:16px; border-radius:12px;">
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead>
+        <tr style="background:#f1f5f9;">
+          <th style="padding:8px; text-align:left; border:1px solid #cbd5e1;">状态</th>
+          <th style="padding:8px; text-align:left; border:1px solid #cbd5e1;">条件</th>
+          <th style="padding:8px; text-align:left; border:1px solid #cbd5e1;">柯基动画</th>
+          <th style="padding:8px; text-align:left; border:1px solid #cbd5e1;">柯基大小</th>
+          <th style="padding:8px; text-align:left; border:1px solid #cbd5e1;">提示文字</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:8px; border:1px solid #cbd5e1;">IDLE</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">pullOffset = 0</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">无</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">—</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">无</td>
+        </tr>
+        <tr>
+          <td style="padding:8px; border:1px solid #cbd5e1;">PULLING (小)</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">0 &lt; pullOffset &lt; threshold</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">RUN（奔跑）</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">48-56dp 渐变</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">下拉刷新</td>
+        </tr>
+        <tr>
+          <td style="padding:8px; border:1px solid #cbd5e1;">PULLING (达阈值)</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">pullOffset ≥ threshold</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">WAG（摇尾巴）</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">56-64dp 渐变</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">释放刷新</td>
+        </tr>
+        <tr>
+          <td style="padding:8px; border:1px solid #cbd5e1;">PULLING (最大)</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">pullOffset = maxPullHeight</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">WAG（摇尾巴）</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">64dp（最大）</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">阻尼最大</td>
+        </tr>
+        <tr>
+          <td style="padding:8px; border:1px solid #cbd5e1;">RELEASING</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">释放回弹中</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">WAG → 无</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">渐缩</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">无</td>
+        </tr>
+        <tr>
+          <td style="padding:8px; border:1px solid #cbd5e1;">REFRESHING</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">刷新中</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">WAG（摇尾巴）</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">56dp</td>
+          <td style="padding:8px; border:1px solid #cbd5e1;">柯基努力加载中~</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

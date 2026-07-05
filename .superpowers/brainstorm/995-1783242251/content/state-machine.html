@@ -1,0 +1,114 @@
+<h2>下拉状态机与阻尼曲线</h2>
+<p class="subtitle">理解拖拽过程中的状态转换和阻尼特性</p>
+
+<div class="section">
+  <h3>状态机</h3>
+  <div style="background:#fff; padding:24px; border-radius:12px; margin-top:12px;">
+    <svg viewBox="0 0 800 240" style="width:100%; height:auto; font-family: system-ui, sans-serif;">
+      <!-- IDLE -->
+      <circle cx="100" cy="120" r="48" fill="#e0e7ff" stroke="#6366f1" stroke-width="2"/>
+      <text x="100" y="116" text-anchor="middle" font-size="14" font-weight="600" fill="#3730a3">IDLE</text>
+      <text x="100" y="134" text-anchor="middle" font-size="11" fill="#6366f1">空闲</text>
+
+      <!-- PULLING -->
+      <circle cx="350" cy="60" r="48" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+      <text x="350" y="56" text-anchor="middle" font-size="14" font-weight="600" fill="#92400e">PULLING</text>
+      <text x="350" y="74" text-anchor="middle" font-size="11" fill="#f59e0b">下拉中</text>
+
+      <!-- RELEASING -->
+      <circle cx="350" cy="180" r="48" fill="#fee2e2" stroke="#ef4444" stroke-width="2"/>
+      <text x="350" y="176" text-anchor="middle" font-size="13" font-weight="600" fill="#991b1b">RELEASING</text>
+      <text x="350" y="194" text-anchor="middle" font-size="11" fill="#ef4444">回弹中</text>
+
+      <!-- REFRESHING -->
+      <circle cx="650" cy="120" r="48" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+      <text x="650" y="116" text-anchor="middle" font-size="13" font-weight="600" fill="#15803d">REFRESHING</text>
+      <text x="650" y="134" text-anchor="middle" font-size="11" fill="#22c55e">刷新中</text>
+
+      <!-- 箭头：IDLE → PULLING -->
+      <path d="M 145 95 Q 230 70 305 60" stroke="#6366f1" stroke-width="2" fill="none" marker-end="url(#arr1)"/>
+      <text x="225" y="62" font-size="11" fill="#6366f1">手指下拉</text>
+
+      <!-- 箭头：PULLING → RELEASING (未达阈值) -->
+      <path d="M 350 108 Q 350 145 350 135" stroke="#ef4444" stroke-width="2" fill="none" marker-end="url(#arr2)"/>
+      <text x="390" y="125" font-size="11" fill="#ef4444">未达阈值</text>
+      <text x="390" y="140" font-size="11" fill="#ef4444">释放</text>
+
+      <!-- 箭头：PULLING → REFRESHING (达阈值) -->
+      <path d="M 395 60 Q 510 70 605 105" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#arr3)"/>
+      <text x="475" y="62" font-size="11" fill="#22c55e">达阈值释放</text>
+
+      <!-- 箭头：RELEASING → IDLE -->
+      <path d="M 305 180 Q 200 170 145 130" stroke="#ef4444" stroke-width="2" fill="none" marker-end="url(#arr2)"/>
+      <text x="200" y="170" font-size="11" fill="#ef4444">回弹完成</text>
+
+      <!-- 箭头：REFRESHING → IDLE -->
+      <path d="M 605 130 Q 400 175 145 130" stroke="#22c55e" stroke-width="2" fill="none" stroke-dasharray="4,3" marker-end="url(#arr3)"/>
+      <text x="380" y="195" font-size="11" fill="#22c55e">刷新完成</text>
+
+      <defs>
+        <marker id="arr1" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#6366f1"/>
+        </marker>
+        <marker id="arr2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#ef4444"/>
+        </marker>
+        <marker id="arr3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#22c55e"/>
+        </marker>
+      </defs>
+    </svg>
+  </div>
+</div>
+
+<div class="section">
+  <h3>阻尼曲线</h3>
+  <p class="subtitle">实际位移 = 用户拖拽位移 × 阻尼因子</p>
+
+  <div style="background:#fff; padding:24px; border-radius:12px; margin-top:12px;">
+    <svg viewBox="0 0 600 320" style="width:100%; height:auto; font-family: system-ui, sans-serif;">
+      <!-- 坐标轴 -->
+      <line x1="60" y1="270" x2="560" y2="270" stroke="#999" stroke-width="1"/>
+      <line x1="60" y1="30" x2="60" y2="270" stroke="#999" stroke-width="1"/>
+      <text x="560" y="290" font-size="11" fill="#666" text-anchor="end">用户拖拽位移</text>
+      <text x="40" y="40" font-size="11" fill="#666" text-anchor="end">实际下拉</text>
+
+      <!-- 网格 -->
+      <line x1="60" y1="120" x2="560" y2="120" stroke="#eee"/>
+      <line x1="310" y1="30" x2="310" y2="270" stroke="#eee"/>
+
+      <!-- Linear (无阻尼) -->
+      <line x1="60" y1="270" x2="560" y2="30" stroke="#dc2626" stroke-width="2" stroke-dasharray="4,4"/>
+      <text x="540" y="50" font-size="11" fill="#dc2626" text-anchor="end">无阻尼（线性）</text>
+
+      <!-- 阻尼曲线：1 - (x/max)^2 -->
+      <path d="M 60 270 Q 310 270 560 30" stroke="#22c55e" stroke-width="3" fill="none"/>
+      <text x="540" y="80" font-size="11" fill="#22c55e" text-anchor="end">阻尼曲线 1-(x/max)²（推荐）</text>
+
+      <!-- 阈值标记 -->
+      <line x1="310" y1="30" x2="310" y2="270" stroke="#f59e0b" stroke-width="1" stroke-dasharray="2,3"/>
+      <text x="315" y="50" font-size="11" fill="#f59e0b">阈值 60dp</text>
+      <text x="315" y="65" font-size="10" fill="#999">(实际位移~45dp)</text>
+
+      <!-- 最大值标记 -->
+      <line x1="560" y1="30" x2="560" y2="270" stroke="#6366f1" stroke-width="1" stroke-dasharray="2,3"/>
+      <text x="565" y="50" font-size="11" fill="#6366f1">最大 100dp</text>
+      <text x="565" y="65" font-size="10" fill="#999">(用户拖拽~∞)</text>
+
+      <!-- 关键点说明 -->
+      <circle cx="60" cy="270" r="4" fill="#6366f1"/>
+      <text x="70" y="265" font-size="10" fill="#666">起点</text>
+      <circle cx="310" cy="170" r="4" fill="#f59e0b"/>
+      <text x="320" y="165" font-size="10" fill="#666">阈值点</text>
+      <circle cx="560" cy="30" r="4" fill="#6366f1"/>
+      <text x="530" y="25" font-size="10" fill="#666">最大点</text>
+    </svg>
+
+    <p style="font-size:13px; color:#666; margin-top:16px; line-height:1.6;">
+      <strong>阻尼公式：</strong> <code>pullOffset = maxPullHeight × (1 - (1 - userDrag/maxPullHeight)²) ÷ 1</code><br>
+      <strong>等效形式：</strong> <code>pullOffset = userDrag × (1 - (pullOffset/maxPullHeight)²)</code>（隐式迭代）<br>
+      <strong>简化实现：</strong> <code>pullOffset = userDrag × dampingFactor</code>，其中 <code>dampingFactor = 1 - (pullOffset/maxPullHeight)²</code><br>
+      <strong>效果：</strong> 接近 0 时阻尼接近 1（手感自然），接近 max 时阻尼接近 0（拉不动）
+    </p>
+  </div>
+</div>
