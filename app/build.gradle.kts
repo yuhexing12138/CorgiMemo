@@ -135,6 +135,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
+    testImplementation(libs.turbine)
     testImplementation(libs.kotlinx.coroutines.test)
     /** Room Migration 单元测试：用纯 JVM SQLite 验证 migrate() 的 SQL 逻辑 */
     testImplementation(libs.sqlite.jdbc)
