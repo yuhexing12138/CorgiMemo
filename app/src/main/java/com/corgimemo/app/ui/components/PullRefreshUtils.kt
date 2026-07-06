@@ -110,3 +110,84 @@ fun computeNextPullRefreshState(
         }
     }
 }
+
+/**
+ * 下拉刷新指示器布局计算结果
+ *
+ * @property displayHeightDp 空白区展示高度（已应用最小 72dp）
+ * @property corgiSizeDp 柯基尺寸（48~64dp）
+ * @property contentAlpha 文字+柯基整体透明度（0~1）
+ * @property shouldRender 是否进入渲染分支（IDLE 且无下拉时为 false）
+ * @property tipText 提示文字（null = 不渲染文字）
+ */
+data class IndicatorLayout(
+    val displayHeightDp: Float,
+    val corgiSizeDp: Float,
+    val contentAlpha: Float,
+    val shouldRender: Boolean,
+    val tipText: String?
+)
+
+/**
+ * 计算下拉刷新指示器布局
+ *
+ * 单位约定：所有几何参数均以 dp 为单位，调用方负责从 px 转换。
+ *
+ * @param pullOffsetDp 当前下拉偏移（已阻尼，单位 dp）
+ * @param maxPullHeightDp 最大下拉高度（dp）
+ * @param refreshThresholdDp 刷新阈值（dp）
+ * @param state 当前下拉刷新状态
+ * @param minEmptyHeightDp 最小空白高度（dp，默认 72）
+ * @param fadeInStartDp 文字+柯基开始淡入的 pullOffset 阈值（dp，默认 8）
+ * @param fadeInRangeDp 淡入完成区间（dp，默认 8）
+ * @param corgiSizeMinDp 柯基最小尺寸（dp，默认 48）
+ * @param corgiSizeMaxDp 柯基最大尺寸（dp，默认 64）
+ */
+fun computePullRefreshIndicatorLayout(
+    pullOffsetDp: Float,
+    maxPullHeightDp: Float,
+    refreshThresholdDp: Float,
+    state: PullRefreshState,
+    minEmptyHeightDp: Float = 72f,
+    fadeInStartDp: Float = 8f,
+    fadeInRangeDp: Float = 8f,
+    corgiSizeMinDp: Float = 48f,
+    corgiSizeMaxDp: Float = 64f
+): IndicatorLayout {
+    // 1. IDLE 且无下拉 → 不渲染
+    if (state == PullRefreshState.IDLE && pullOffsetDp <= 0f) {
+        return IndicatorLayout(0f, corgiSizeMinDp, 0f, false, null)
+    }
+
+    // 2. 空白区展示高度：取 pullOffset 与最小高度的较大值
+    val displayHeightDp = maxOf(pullOffsetDp, minEmptyHeightDp)
+
+    // 3. 柯基尺寸：48~64dp 渐变
+    val pullProgress = (pullOffsetDp / maxPullHeightDp).coerceIn(0f, 1f)
+    val corgiSizeDp = corgiSizeMinDp + (corgiSizeMaxDp - corgiSizeMinDp) * pullProgress
+
+    // 4. 文字 + 柯基 alpha
+    val contentAlpha = if (state == PullRefreshState.REFRESHING) {
+        1f
+    } else {
+        ((pullOffsetDp - fadeInStartDp) / fadeInRangeDp).coerceIn(0f, 1f)
+    }
+
+    // 5. 提示文字（反映该状态下应有的文字，与 alpha 独立）
+    val tipText: String? = when {
+        state == PullRefreshState.REFRESHING -> "柯基努力加载中~"
+        state == PullRefreshState.PULLING && pullOffsetDp >= refreshThresholdDp -> "释放刷新"
+        state == PullRefreshState.PULLING -> "下拉刷新"
+        state == PullRefreshState.RELEASING -> "下拉刷新"
+        state == PullRefreshState.IDLE -> null
+        else -> null
+    }
+
+    return IndicatorLayout(
+        displayHeightDp = displayHeightDp,
+        corgiSizeDp = corgiSizeDp,
+        contentAlpha = contentAlpha,
+        shouldRender = true,
+        tipText = tipText
+    )
+}
