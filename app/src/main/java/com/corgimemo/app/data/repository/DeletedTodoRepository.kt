@@ -36,9 +36,23 @@ class DeletedTodoRepository @Inject constructor(
         deletedTodoDao.getDeletedCountBlocking()
     }
 
-    suspend fun restoreDeletedTodo(todoId: Long): DeletedTodo? = withContext(ioDispatcher) {
+    /**
+     * 根据 ID 获取最近删除项（供最近删除页面使用）
+     *
+     * @param todoId 待办 ID
+     * @return DeletedTodo 记录；不存在时返回 null
+     */
+    suspend fun getByIdBlocking(todoId: Long): DeletedTodo? = withContext(ioDispatcher) {
         deletedTodoDao.getDeletedTodoById(todoId)
     }
+
+    /**
+     * [保留] 旧方法名，内部委托给 getByIdBlocking
+     *
+     * 保持向后兼容，避免破坏其他调用方。
+     */
+    @Deprecated("Use getByIdBlocking instead", ReplaceWith("getByIdBlocking(todoId)"))
+    suspend fun restoreDeletedTodo(todoId: Long): DeletedTodo? = getByIdBlocking(todoId)
 
     suspend fun permanentlyDelete(todoId: Long) = withContext(ioDispatcher) {
         deletedTodoDao.deleteById(todoId)
