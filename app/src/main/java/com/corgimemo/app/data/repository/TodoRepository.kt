@@ -292,4 +292,19 @@ class TodoRepository @Inject constructor(
     suspend fun getTodosWithPendingReminders(): List<TodoItem> = withContext(ioDispatcher) {
         todoDao.getPendingRemindersBlocking(System.currentTimeMillis())
     }
+
+    /**
+     * 获取指定分区的最大 sortOrder
+     *
+     * 用于恢复最近删除的待办时，将 sortOrder 设为 max + 1。
+     * 委托给 [TodoDao.getMaxSortOrder] 执行 IO 查询。
+     *
+     * @param isPinned 目标分区的置顶状态
+     * @param status 目标分区的状态（0=PENDING, 1=COMPLETED）
+     * @return 最大 sortOrder；分区为空时返回 null
+     */
+    suspend fun getMaxSortOrderBlocking(isPinned: Boolean, status: Int): Int? =
+        withContext(ioDispatcher) {
+            todoDao.getMaxSortOrder(isPinned, status)
+        }
 }

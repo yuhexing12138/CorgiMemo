@@ -283,4 +283,20 @@ interface TodoDao {
      */
     @Query("SELECT * FROM todo_items WHERE status = 1 ORDER BY createdAt DESC LIMIT :limit OFFSET :offset")
     suspend fun getCompletedTodosPaging(limit: Int, offset: Int): List<TodoItem>
+
+    /**
+     * 获取指定 (isPinned, status) 分区下最大的 sortOrder
+     *
+     * 用于恢复最近删除的待办时，将其 sortOrder 设为分区末尾（max + 1），
+     * 避免和现有待办的 sortOrder 冲突。
+     *
+     * @param isPinned 是否置顶
+     * @param status 0=PENDING, 1=COMPLETED
+     * @return 最大 sortOrder；分区为空时返回 null
+     */
+    @Query("""
+        SELECT MAX(sortOrder) FROM todo_items
+        WHERE isPinned = :isPinned AND status = :status
+    """)
+    suspend fun getMaxSortOrder(isPinned: Boolean, status: Int): Int?
 }
