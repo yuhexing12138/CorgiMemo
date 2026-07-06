@@ -1,0 +1,64 @@
+<h2>下拉刷新：文字与柯基动画重叠问题</h2>
+<p class="subtitle">根因分析 + 候选布局方案 · 请在浏览器中查看并在终端选择您倾向的方案</p>
+
+<div class="section">
+  <h3>问题根因</h3>
+  <p>当前 <code>CorgiPullToRefreshIndicator</code> 使用 <code>Box(contentAlignment=Center, height=pullOffset)</code>，柯基居中（<code>Modifier.align(Center)</code>），文字底部（<code>Modifier.align(BottomCenter)</code>）。</p>
+  <p>当 <code>pullOffset</code> 较小时（30~60dp），空白区高度不够同时容纳 <strong>48~64dp 柯基</strong> + <strong>~16dp 文字</strong>，柯基居中位置会向下延伸，底部压到文字上。</p>
+  <p>定量：<code>pullOffset=60dp</code>、柯基 <code>= 48 + 16×0.6 = 57.6dp</code>，柯基底部 <code>= 30 + 28.8 = 58.8dp</code>，文字顶部 <code>≈ 44dp</code> → 重叠 <strong>~15dp</strong>。</p>
+</div>
+
+<div class="section">
+  <h3>候选布局方案（点击查看效果）</h3>
+  <div class="cards">
+    <div class="card" data-choice="A" onclick="toggleSelect(this)">
+      <div class="card-image" style="background:#FFF7ED;height:200px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:8px;gap:4px;">
+        <div style="font-size:11px;color:#666;background:rgba(0,0,0,0.05);padding:2px 8px;border-radius:4px;">下拉刷新</div>
+        <div style="width:60px;height:48px;background:linear-gradient(135deg,#F5A97F,#E07A5F);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;">🐕</div>
+        <div style="height:60px;"></div>
+      </div>
+      <div class="card-body">
+        <h3>A · 文字在柯基上方</h3>
+        <p>文字顶部对齐，柯基在下方；空白区不够时文字会被截掉顶部，但不与柯基重叠。</p>
+      </div>
+    </div>
+
+    <div class="card" data-choice="B" onclick="toggleSelect(this)">
+      <div class="card-image" style="background:#FFF7ED;height:200px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:8px;">
+        <div style="width:60px;height:48px;background:linear-gradient(135deg,#F5A97F,#E07A5F);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;">🐕</div>
+        <div style="font-size:11px;color:#666;background:rgba(0,0,0,0.05);padding:2px 8px;border-radius:4px;">下拉刷新</div>
+      </div>
+      <div class="card-body">
+        <h3>B · 文字固定在柯基正下方 + 留固定间距</h3>
+        <p>用 Column 布局强制柯基顶部、文字底部对齐，间距固定 4dp，无论空白高度都清晰分层。</p>
+      </div>
+    </div>
+
+    <div class="card" data-choice="C" onclick="toggleSelect(this)">
+      <div class="card-image" style="background:#FFF7ED;height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;gap:2px;">
+        <div style="width:60px;height:48px;background:linear-gradient(135deg,#F5A97F,#E07A5F);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;">🐕</div>
+        <div style="font-size:11px;color:#666;background:rgba(0,0,0,0.05);padding:2px 8px;border-radius:4px;">下拉刷新</div>
+      </div>
+      <div class="card-body">
+        <h3>C · 整体居中 + 固定间距</h3>
+        <p>把「柯基+文字」视为一个整体放 Box 居中。空白小时，文字超出 Box 底部被裁剪但不重叠。</p>
+      </div>
+    </div>
+
+    <div class="card" data-choice="D" onclick="toggleSelect(this)">
+      <div class="card-image" style="background:#FFF7ED;height:200px;display:flex;flex-direction:row;align-items:center;justify-content:center;padding:8px;gap:8px;">
+        <div style="width:48px;height:48px;background:linear-gradient(135deg,#F5A97F,#E07A5F);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;">🐕</div>
+        <div style="font-size:11px;color:#666;background:rgba(0,0,0,0.05);padding:2px 8px;border-radius:4px;">下拉刷新</div>
+      </div>
+      <div class="card-body">
+        <h3>D · 柯基+文字水平并排</h3>
+        <p>柯基在左、文字在右，水平居中。占用水平空间多，但绝不重叠。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>补充：阈值/加载中的特殊处理</h3>
+  <p>无论选哪个方案，「柯基努力加载中~」文字（10 个汉字）都明显比「下拉刷新/释放刷新」长，需确保文字宽度 + 12sp 字号不超出屏幕宽度（避免被截断）。</p>
+</div>

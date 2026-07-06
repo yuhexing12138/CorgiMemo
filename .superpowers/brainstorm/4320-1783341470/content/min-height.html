@@ -1,0 +1,65 @@
+<h2>方案A 细节参数：最小高度 & 间距</h2>
+<p class="subtitle">您已选「文字在柯基上方 + 设最小空白高度」。请确认具体参数</p>
+
+<div class="section">
+  <h3>当前关键参数（基线）</h3>
+  <table style="width:100%;border-collapse:collapse;">
+    <tr><td style="padding:6px;border-bottom:1px solid #eee;">柯基最小尺寸</td><td style="padding:6px;border-bottom:1px solid #eee;"><code>48.dp</code></td></tr>
+    <tr><td style="padding:6px;border-bottom:1px solid #eee;">柯基最大尺寸</td><td style="padding:6px;border-bottom:1px solid #eee;"><code>64.dp</code></td></tr>
+    <tr><td style="padding:6px;border-bottom:1px solid #eee;">提示文字字号</td><td style="padding:6px;border-bottom:1px solid #eee;"><code>12.sp</code></td></tr>
+    <tr><td style="padding:6px;border-bottom:1px solid #eee;">文字颜色</td><td style="padding:6px;border-bottom:1px solid #eee;">onSurfaceVariant α=0.6</td></tr>
+    <tr><td style="padding:6px;border-bottom:1px solid #eee;">maxPullHeight</td><td style="padding:6px;border-bottom:1px solid #eee;"><code>100.dp</code></td></tr>
+    <tr><td style="padding:6px;border-bottom:1px solid #eee;">refreshThreshold</td><td style="padding:6px;border-bottom:1px solid #eee;"><code>60.dp</code></td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>布局结构（方案A · 文字在上、柯基在下）</h3>
+  <div class="mockup">
+    <div class="mockup-header">空白区 = max(pullOffset, minEmptyHeight) · Column 居中布局</div>
+    <div class="mockup-body" style="background:#FFF7ED;height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;">
+      <div style="font-size:11px;color:#666;background:rgba(0,0,0,0.05);padding:2px 8px;border-radius:4px;">下拉刷新</div>
+      <div style="width:48px;height:48px;background:linear-gradient(135deg,#F5A97F,#E07A5F);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;">🐕</div>
+    </div>
+  </div>
+  <p style="color:#666;margin-top:8px;">文字与柯基之间固定 <code>4dp</code> 间距；空白区高度 ≥ 文字(<code>~16dp</code>) + 间距(<code>4dp</code>) + 柯基(<code>48~64dp</code>) = <code>68~84dp</code>，因此最小空白高度建议 <code>72dp</code>。</p>
+</div>
+
+<div class="section">
+  <h3>最小空白高度候选值</h3>
+  <div class="cards">
+    <div class="card" data-choice="68" onclick="toggleSelect(this)">
+      <div class="card-image" style="background:#FAFAFA;height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <div style="font-size:11px;color:#666;background:rgba(0,0,0,0.05);padding:2px 8px;border-radius:4px;">下拉刷新</div>
+        <div style="width:48px;height:48px;background:linear-gradient(135deg,#F5A97F,#E07A5F);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;margin-top:4px;">🐕</div>
+        <div style="font-size:10px;color:#999;margin-top:6px;">68dp</div>
+      </div>
+      <div class="card-body">
+        <h3>68dp · 紧凑</h3>
+        <p>仅在阈值附近能完整显示。小下拉时仍有裁切风险。</p>
+      </div>
+    </div>
+    <div class="card" data-choice="72" onclick="toggleSelect(this)">
+      <div class="card-image" style="background:#FAFAFA;height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <div style="font-size:11px;color:#666;background:rgba(0,0,0,0.05);padding:2px 8px;border-radius:4px;">下拉刷新</div>
+        <div style="width:48px;height:48px;background:linear-gradient(135deg,#F5A97F,#E07A5F);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;margin-top:4px;">🐕</div>
+        <div style="font-size:10px;color:#999;margin-top:6px;">72dp</div>
+      </div>
+      <div class="card-body">
+        <h3>72dp · 推荐</h3>
+        <p>16 + 4 + 48 = 68dp + 安全余量 4dp。所有下拉量都能完整显示文字+最小柯基。</p>
+      </div>
+    </div>
+    <div class="card" data-choice="84" onclick="toggleSelect(this)">
+      <div class="card-image" style="background:#FAFAFA;height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <div style="font-size:11px;color:#666;background:rgba(0,0,0,0.05);padding:2px 8px;border-radius:4px;">下拉刷新</div>
+        <div style="width:64px;height:64px;background:linear-gradient(135deg,#F5A97F,#E07A5F);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:28px;margin-top:4px;">🐕</div>
+        <div style="font-size:10px;color:#999;margin-top:6px;">84dp</div>
+      </div>
+      <div class="card-body">
+        <h3>84dp · 宽松</h3>
+        <p>16 + 4 + 64 = 84dp。可容纳最大柯基尺寸。视觉更舒展，但小下拉时空白区看起来「有点空」。</p>
+      </div>
+    </div>
+  </div>
+</div>
