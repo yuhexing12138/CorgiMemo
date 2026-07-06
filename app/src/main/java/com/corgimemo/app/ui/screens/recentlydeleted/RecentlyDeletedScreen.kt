@@ -48,6 +48,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
  * - 空态：柯基表情 + 提示 + 返回按钮
  * - SnackBar：撤销删除（5s）
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun RecentlyDeletedScreen(
     onBack: () -> Unit,

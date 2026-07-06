@@ -184,6 +184,13 @@ fun AppNavHost(
             )
         }
 
+        // 最近删除页面路由
+        composable(Screen.RecentlyDeleted.route) {
+            com.corgimemo.app.ui.screens.recentlydeleted.RecentlyDeletedScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         // 图片全屏预览页面路由
         composable(Screen.ImagePreview.route) { backStackEntry ->
             /**

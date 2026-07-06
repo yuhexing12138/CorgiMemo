@@ -36,6 +36,9 @@ sealed class Screen(val route: String) {
     /** 智能分类设置页面 */
     object SmartCategorySettings : Screen("smart_category_settings")
 
+    /** V2.7: 最近删除页面 */
+    object RecentlyDeleted : Screen("recently_deleted")
+
     fun withArgs(vararg args: String): String {
         var result = route
         args.forEach { arg ->

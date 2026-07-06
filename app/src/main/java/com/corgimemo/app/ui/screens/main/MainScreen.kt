@@ -263,6 +263,7 @@ fun MainScreen(navController: NavController) {
                         }
                     },
                     onRecentlyDeletedClick = {
+                        navController.navigate(Screen.RecentlyDeleted.route)
                         coroutineScope.launch { drawerState.close() }
                     },
                     onSettingsClick = {
