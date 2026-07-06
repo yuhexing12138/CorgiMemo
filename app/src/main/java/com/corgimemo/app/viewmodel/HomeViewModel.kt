@@ -1066,47 +1066,6 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * 获取所有已删除待办
-     */
-    fun getRecentlyDeletedTodos(): kotlinx.coroutines.flow.Flow<List<com.corgimemo.app.data.model.DeletedTodo>> {
-        return deletedTodoRepository.getAllDeletedTodos()
-    }
-
-    /**
-     * 恢复已删除的待办
-     *
-     * @param deletedTodoId 已删除待办的 ID
-     */
-    fun restoreDeletedTodo(deletedTodoId: Long) {
-        viewModelScope.launch {
-            val deleted = deletedTodoRepository.restoreDeletedTodo(deletedTodoId) ?: return@launch
-            val todo = com.corgimemo.app.data.model.DeletedTodo.toTodoItem(deleted)
-            todoRepository.insertTodo(todo)
-            deletedTodoRepository.permanentlyDelete(deletedTodoId)
-        }
-    }
-
-    /**
-     * 永久删除所有最近删除记录
-     */
-    fun permanentlyDeleteAllDeleted() {
-        viewModelScope.launch {
-            deletedTodoRepository.permanentlyDeleteAll()
-        }
-    }
-
-    /**
-     * 清理超过指定时间的最近删除记录
-     *
-     * @param threshold 时间阈值（毫秒）
-     */
-    fun cleanUpOldDeletedTodos(threshold: Long) {
-        viewModelScope.launch {
-            deletedTodoRepository.cleanUpOldDeletedTodos(threshold)
-        }
-    }
-
-    /**
      * 初始化姿态和情绪
      * 默认姿态根据情绪选择
      */
