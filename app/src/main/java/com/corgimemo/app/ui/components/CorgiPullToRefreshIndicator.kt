@@ -1,6 +1,8 @@
 package com.corgimemo.app.ui.components
 
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -10,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -18,18 +21,21 @@ import com.corgimemo.app.animation.AnimationType
 import com.corgimemo.app.animation.FrameAnimation
 
 /**
- * 柯基下拉刷新指示器（新版）
+ * 柯基下拉刷新指示器（v2 - 文字与动画分层版）
  *
- * 与旧版的差异：
- * - 删除"从右侧跑入"逻辑
- * - 改为空白区 + 水平居中奔跑柯基 + 提示文字
- * - 柯基动画所有阶段都使用 AnimationType.RUN（不切换为 WAG）
- * - 柯基大小随下拉进度从 48dp 渐变至 64dp
+ * 与 v1 的差异：
+ * - Box(contentAlignment=Center) → Column(verticalArrangement=Center) 强制分层
+ * - 提示文字位于柯基上方（符合"先读文字再看图"阅读顺序）
+ * - 文字与柯基之间固定 4dp 间距，从根本上消除重叠
+ * - 最小空白高度 72dp（容纳 16dp 文字 + 4dp 间距 + 48dp 最小柯基 + 4dp 余量）
+ * - 8~16dp 区间内淡入淡出，避免硬切违和感
+ * - 柯基动画所有阶段都使用 AnimationType.RUN（不变）
+ * - 柯基大小随下拉进度从 48dp 渐变至 64dp（不变）
  *
  * 渲染层次：
- * 1. 空白区（高度 = pullOffset，铺满宽度）
- * 2. 居中奔跑柯基（FrameAnimation）
- * 3. 提示文字（下拉刷新 / 释放刷新 / 柯基努力加载中~）
+ * 1. 空白区（高度 = max(pullOffset, 72dp)，铺满宽度）
+ * 2. Column 居中布局：文字（顶部） → 4dp 间距 → 柯基（底部）
+ * 3. 整体 graphicsLayer alpha 渐变（避免硬切）
  *
  * @param pullOffset 当前下拉偏移（px，已阻尼）
  * @param state 当前下拉刷新状态
@@ -46,59 +52,58 @@ fun CorgiPullRefreshIndicator(
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
-    val pullOffsetDp = with(density) { pullOffset.toDp() }
 
-    // 柯基显示条件：有下拉量 或 刷新中
-    val showCorgi = pullOffset > 0.01f || state == PullRefreshState.REFRESHING
+    // 1. px → dp 转换（在调用纯函数前完成单位转换）
+    val pullOffsetDp = with(density) { pullOffset.toDp().value }
+    val maxPullHeightDp = with(density) { maxPullHeightPx.toDp().value }
+    val refreshThresholdDp = with(density) { refreshThresholdPx.toDp().value }
 
-    // 下拉进度（0~1），用于柯基大小渐变
-    val pullProgress = if (maxPullHeightPx > 0f) {
-        (pullOffset / maxPullHeightPx).coerceIn(0f, 1f)
-    } else {
-        0f
+    // 2. 调用纯函数计算布局
+    val layout = remember(pullOffsetDp, state, maxPullHeightDp, refreshThresholdDp) {
+        computePullRefreshIndicatorLayout(
+            pullOffsetDp = pullOffsetDp,
+            maxPullHeightDp = maxPullHeightDp,
+            refreshThresholdDp = refreshThresholdDp,
+            state = state
+        )
     }
 
-    // 柯基大小：48dp → 64dp 渐变
-    val corgiSizeDp = 48.dp + (64.dp - 48.dp) * pullProgress
+    // 3. IDLE 早返
+    if (!layout.shouldRender) return
 
-    // 提示文字
-    val tipText: String? = when {
-        state == PullRefreshState.REFRESHING -> "柯基努力加载中~"
-        state == PullRefreshState.PULLING && pullOffset >= refreshThresholdPx -> "释放刷新"
-        state == PullRefreshState.PULLING -> "下拉刷新"
-        else -> null
-    }
+    // 4. dp → Dp 转换
+    val displayHeight = layout.displayHeightDp.dp
+    val corgiSize = layout.corgiSizeDp.dp
 
-    if (!showCorgi) return
-
-    Box(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(pullOffsetDp),
-        contentAlignment = Alignment.Center
+            .height(displayHeight)
+            .graphicsLayer { alpha = layout.contentAlpha },
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 居中奔跑柯基
+        // 5. 提示文字（位于柯基上方）
+        if (layout.tipText != null) {
+            Text(
+                text = layout.tipText!!,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            )
+            Spacer(Modifier.height(4.dp))
+        }
+
+        // 6. 柯基动画
         val frames = remember(AnimationType.RUN) {
             AnimationResourceManager.getAnimationFrames(AnimationType.RUN)
         }
-
         if (frames.isNotEmpty()) {
             FrameAnimation(
                 frames = frames,
                 fps = 8,
                 isLooping = true,
                 isPlaying = true,
-                modifier = Modifier.size(corgiSizeDp)
-            )
-        }
-
-        // 提示文字（位于柯基下方）
-        if (tipText != null) {
-            Text(
-                text = tipText,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.align(Alignment.BottomCenter)
+                modifier = Modifier.size(corgiSize)
             )
         }
     }
