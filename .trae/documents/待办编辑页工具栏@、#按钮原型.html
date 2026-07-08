@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>待办编辑页底部工具栏原型 - 添加@、#按钮</title>
+<!-- 引入 Google Material Symbols 图标字体（用于显示 Material Icons） -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #FFF8F0 0%, #FFEFE0 100%);
+    min-height: 100vh;
+    padding: 24px 16px;
+    color: #333;
+  }
+
+  h1 {
+    text-align: center;
+    color: #FF9A5C;
+    margin-bottom: 8px;
+    font-size: 22px;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: #888;
+    margin-bottom: 24px;
+    font-size: 13px;
+  }
+
+  .device {
+    max-width: 420px;
+    margin: 0 auto 32px;
+    background: white;
+    border-radius: 24px;
+    overflow: hidden;
+    box-shadow: 0 12px 32px rgba(255, 154, 92, 0.15);
+    border: 1px solid #FFE0CC;
+  }
+
+  .device-title {
+    background: #FF9A5C;
+    color: white;
+    text-align: center;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .device-title.alt { background: #6B7280; }
+
+  /* 模拟手机屏幕内容 */
+  .screen {
+    height: 480px;
+    padding: 20px;
+    background: #FFFBF5;
+    overflow-y: auto;
+    position: relative;
+  }
+
+  .top-bar {
+    display: flex;
+    align-items: center;
+    padding: 8px 0 16px;
+    border-bottom: 1px solid #F0F0F0;
+    margin-bottom: 16px;
+  }
+
+  .back-arrow {
+    font-size: 24px;
+    color: #333;
+    cursor: pointer;
+  }
+
+  .top-title {
+    flex: 1;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+  }
+
+  .save-btn {
+    background: #FF9A5C;
+    color: white;
+    border: none;
+    border-radius: 14px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .todo-content {
+    font-size: 15px;
+    line-height: 1.8;
+    color: #333;
+  }
+
+  .todo-content .line {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .checkbox {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #FF9A5C;
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .subtask-checkbox {
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid #FFB366;
+    border-radius: 3px;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  .highlight {
+    background: linear-gradient(transparent 60%, #FFE0CC 60%);
+  }
+
+  /* 模拟底部工具栏 */
+  .toolbar {
+    background: #FFFBF5;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.06);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-evenly;
+  }
+
+  .toolbar-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: none;
+    background: transparent;
+    color: #666;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background 0.2s, color 0.2s, transform 0.15s;
+  }
+
+  .toolbar-btn:hover {
+    background: rgba(255, 154, 92, 0.08);
+    color: #FF9A5C;
+    transform: translateY(-2px);
+  }
+
+  .toolbar-btn:active {
+    transform: scale(0.92);
+  }
+
+  .toolbar-btn .material-symbols-outlined {
+    font-size: 22px;
+  }
+
+  .toolbar-btn.highlight-btn {
+    color: #FF9A5C;
+    background: rgba(255, 154, 92, 0.1);
+  }
+
+  .toolbar-btn.highlight-btn:hover {
+    background: rgba(255, 154, 92, 0.2);
+  }
+
+  .label {
+    text-align: center;
+    font-size: 12px;
+    color: #888;
+    margin-top: 8px;
+  }
+
+  /* 弹窗样式 */
+  .popup-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 999;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .popup-overlay.active { display: flex; }
+
+  .popup {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    width: 320px;
+    max-width: 90vw;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+    animation: pop 0.2s ease-out;
+  }
+
+  @keyframes pop {
+    from { transform: scale(0.9); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  .popup h3 {
+    color: #FF9A5C;
+    margin-bottom: 12px;
+    font-size: 16px;
+  }
+
+  .popup p { font-size: 13px; color: #666; line-height: 1.6; margin-bottom: 12px; }
+
+  .popup-search {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #FFD0B0;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+
+  .popup-card-list {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .popup-card {
+    padding: 10px;
+    border-bottom: 1px solid #F5F5F5;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .popup-card:hover { background: #FFF8F0; }
+
+  .popup-card .icon-circle {
+    width: 28px;
+    height: 28px;
+    background: #FFE0CC;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #FF9A5C;
+    font-size: 14px;
+  }
+
+  .popup-card .card-info { flex: 1; }
+  .popup-card .card-title { font-size: 13px; font-weight: 500; }
+  .popup-card .card-sub { font-size: 11px; color: #999; }
+
+  .popup-btn {
+    background: #FF9A5C;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    margin-top: 12px;
+    width: 100%;
+  }
+
+  .badge-new {
+    display: inline-block;
+    background: #FF9A5C;
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  .compare-section {
+    max-width: 860px;
+    margin: 0 auto 24px;
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+  }
+
+  .compare-section h2 {
+    color: #FF9A5C;
+    font-size: 16px;
+    margin-bottom: 12px;
+  }
+
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .compare-card {
+    padding: 12px;
+    background: #FFFBF5;
+    border-radius: 8px;
+    border: 1px solid #FFE0CC;
+  }
+
+  .compare-card h4 {
+    font-size: 13px;
+    color: #FF9A5C;
+    margin-bottom: 6px;
+  }
+
+  .compare-card ul {
+    list-style: none;
+    padding: 0;
+    font-size: 12px;
+    color: #666;
+    line-height: 1.8;
+  }
+
+  .compare-card ul li::before {
+    content: "•";
+    color: #FF9A5C;
+    font-weight: bold;
+    display: inline-block;
+    width: 1em;
+  }
+</style>
+</head>
+<body>
+
+<h1>📱 待办编辑页底部工具栏 - 添加 @、# 按钮</h1>
+<p class="subtitle">点击按钮可体验弹窗效果 · 对比灵感编辑页保持 5 按钮布局</p>
+
+<!-- 第一部分：修改后效果对比 -->
+<div class="compare-section">
+  <h2>📊 改动概览</h2>
+  <div class="compare-grid">
+    <div class="compare-card">
+      <h4>修改前（5 按钮）</h4>
+      <ul>
+        <li>相机 · 麦克风 · 调色盘 · 分享 · 删除</li>
+        <li>SpaceEvenly 均匀分布</li>
+        <li>待办 / 灵感编辑页统一</li>
+      </ul>
+    </div>
+    <div class="compare-card">
+      <h4>修改后（7 按钮 / 5 按钮）<span class="badge-new">本次改动</span></h4>
+      <ul>
+        <li>待办页：相机 · 麦克风 · 调色盘 · <b>@关联</b> · <b>#位置</b> · 分享 · 删除</li>
+        <li>灵感页：保持原 5 按钮布局（参数可选）</li>
+        <li>SpaceEvenly 自动按可见按钮均匀分布</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- 第二部分：待办编辑页 - 7 按钮 -->
+<div class="device">
+  <div class="device-title">待办编辑页（7 按钮 - 全部可见）</div>
+  <div class="screen">
+    <div class="top-bar">
+      <span class="back-arrow material-symbols-outlined">arrow_back</span>
+      <span class="top-title">编辑待办</span>
+      <button class="save-btn">全部完成</button>
+    </div>
+    <div class="todo-content">
+      <div class="line">
+        <div class="checkbox"></div>
+        <div><span class="highlight">@关联</span> 提醒我去 <span class="highlight">#公司</span> 拿快递</div>
+      </div>
+      <div class="line" style="padding-left: 26px;">
+        <div class="subtask-checkbox"></div>
+        <div>检查前一天的邮件</div>
+      </div>
+      <div class="line" style="padding-left: 26px;">
+        <div class="subtask-checkbox"></div>
+        <div>准备会议材料</div>
+      </div>
+      <div class="line">
+        <div class="checkbox"></div>
+        <div>买牛奶和面包</div>
+      </div>
+    </div>
+  </div>
+  <!-- 7 按钮工具栏 -->
+  <div class="toolbar">
+    <button class="toolbar-btn" title="照片">
+      <span class="material-symbols-outlined">photo_camera</span>
+    </button>
+    <button class="toolbar-btn" title="语音">
+      <span class="material-symbols-outlined">mic</span>
+    </button>
+    <button class="toolbar-btn" title="背景色">
+      <span class="material-symbols-outlined">palette</span>
+    </button>
+    <button class="toolbar-btn highlight-btn" title="关联" onclick="openMentionPopup()">
+      <span class="material-symbols-outlined">alternate_email</span>
+    </button>
+    <button class="toolbar-btn highlight-btn" title="位置" onclick="openLocationPopup()">
+      <span class="material-symbols-outlined">tag</span>
+    </button>
+    <button class="toolbar-btn" title="分享">
+      <span class="material-symbols-outlined">share</span>
+    </button>
+    <button class="toolbar-btn" title="删除">
+      <span class="material-symbols-outlined">delete</span>
+    </button>
+  </div>
+  <p class="label">↑ 调色盘右侧新增 @（关联）和 #（位置）按钮</p>
+</div>
+
+<!-- 第三部分：灵感编辑页 - 5 按钮 -->
+<div class="device">
+  <div class="device-title alt">灵感编辑页（5 按钮 - 保持原样）</div>
+  <div class="screen">
+    <div class="top-bar">
+      <span class="back-arrow material-symbols-outlined">arrow_back</span>
+      <span class="top-title">编辑灵感</span>
+      <button class="save-btn" style="background:#6B7280;">保存</button>
+    </div>
+    <div class="todo-content">
+      <div>一个关于产品灵感的小记录</div>
+      <div style="color:#999; font-size:12px; margin-top:8px;">在地铁上突然想到的，要快速记录下来...</div>
+    </div>
+  </div>
+  <!-- 5 按钮工具栏（未传新参数时不渲染 @、# 按钮） -->
+  <div class="toolbar">
+    <button class="toolbar-btn" title="照片">
+      <span class="material-symbols-outlined">photo_camera</span>
+    </button>
+    <button class="toolbar-btn" title="语音">
+      <span class="material-symbols-outlined">mic</span>
+    </button>
+    <button class="toolbar-btn" title="背景色">
+      <span class="material-symbols-outlined">palette</span>
+    </button>
+    <button class="toolbar-btn" title="分享">
+      <span class="material-symbols-outlined">share</span>
+    </button>
+    <button class="toolbar-btn" title="删除">
+      <span class="material-symbols-outlined">delete</span>
+    </button>
+  </div>
+  <p class="label">↑ 因灵感页不传 onMentionClick / onLocationClick 回调，@、# 按钮不渲染</p>
+</div>
+
+<!-- @ 关联弹窗 -->
+<div class="popup-overlay" id="mentionPopup" onclick="closePopup('mentionPopup', event)">
+  <div class="popup" onclick="event.stopPropagation()">
+    <h3>🔍 搜索关联卡片...</h3>
+    <input class="popup-search" placeholder="输入卡片关键词..." value="会议" />
+    <p style="font-size:12px; color:#999; margin-bottom: 8px;">弹窗打开时自动恢复上一次的搜索关键词</p>
+    <div class="popup-card-list">
+      <div class="popup-card">
+        <div class="icon-circle">📋</div>
+        <div class="card-info">
+          <div class="card-title">周会汇报</div>
+          <div class="card-sub">待办 · 2026-07-09</div>
+        </div>
+      </div>
+      <div class="popup-card">
+        <div class="icon-circle">💡</div>
+        <div class="card-info">
+          <div class="card-title">产品会议灵感</div>
+          <div class="card-sub">灵感 · 2026-07-05</div>
+        </div>
+      </div>
+      <div class="popup-card">
+        <div class="icon-circle">📅</div>
+        <div class="card-info">
+          <div class="card-title">月度总结会议</div>
+          <div class="card-sub">日期 · 2026-07-30</div>
+        </div>
+      </div>
+    </div>
+    <button class="popup-btn" onclick="closePopupDirect('mentionPopup')">关闭</button>
+  </div>
+</div>
+
+<!-- # 位置弹窗 -->
+<div class="popup-overlay" id="locationPopup" onclick="closePopup('locationPopup', event)">
+  <div class="popup" onclick="event.stopPropagation()">
+    <h3>📍 位置提醒</h3>
+    <p>输入 # 后可搜索地点设置提醒</p>
+    <input class="popup-search" placeholder="搜索地点..." value="公司" />
+    <p style="font-size:12px; color:#999;">弹窗打开时自动恢复上一次的搜索关键词</p>
+    <div style="background:#FFFBF5; border-radius:8px; padding:12px; margin-top:8px; font-size:12px; color:#666;">
+      <div style="margin-bottom:4px;"><b>当前位置：</b>公司 - 上海市浦东新区张江路</div>
+      <div><b>提醒半径：</b>200 米</div>
+    </div>
+    <button class="popup-btn" onclick="closePopupDirect('locationPopup')">确定</button>
+  </div>
+</div>
+
+<script>
+  function openMentionPopup() {
+    document.getElementById('mentionPopup').classList.add('active');
+  }
+
+  function openLocationPopup() {
+    document.getElementById('locationPopup').classList.add('active');
+  }
+
+  function closePopup(id, event) {
+    if (event.target.id === id) {
+      document.getElementById(id).classList.remove('active');
+    }
+  }
+
+  function closePopupDirect(id) {
+    document.getElementById(id).classList.remove('active');
+  }
+</script>
+
+</body>
+</html>

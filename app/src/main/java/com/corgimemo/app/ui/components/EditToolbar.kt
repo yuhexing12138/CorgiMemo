@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,8 +31,18 @@ import androidx.compose.ui.unit.sp
 /**
  * 编辑页底部工具栏组件
  *
- * 均匀分布图标布局（5个核心功能按钮）：
+ * 基础布局（5 个核心功能按钮，始终显示）：
  *   相机 | 麦克风 | 背景/画笔 | 分享 | 删除
+ *
+ * 可选按钮（仅在调用方传入对应回调时渲染）：
+ * - 关联按钮（@, Icons.Default.AlternateEmail）：传入 onMentionClick 时显示，触发卡片关联弹窗
+ * - 位置按钮（#, Icons.Default.Tag）：传入 onLocationClick 时显示，触发位置提醒弹窗
+ *
+ * 设计原则：
+ * - 未传回调时不渲染对应按钮，让 SpaceEvenly 仅基于可见按钮做均匀分布，
+ *   避免占位按钮挤压其他图标的间距
+ * - 待办编辑页：传两个回调 → 渲染 7 个按钮
+ * - 灵感编辑页：不传 → 保持原 5 按钮布局
  *
  * 已移除的功能：
  * - 字体格式（A/A）和列表格式按钮（富文本编辑功能）
@@ -46,6 +58,8 @@ fun EditToolbar(
     onPhotoClick: () -> Unit,
     onVoiceClick: () -> Unit,
     onBackgroundClick: () -> Unit,
+    onMentionClick: (() -> Unit)? = null,
+    onLocationClick: (() -> Unit)? = null,
     onShareClick: () -> Unit,
     onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -72,6 +86,30 @@ fun EditToolbar(
                 ToolbarIconBtn(imageVector = Icons.Default.PhotoCamera, contentDescription = "照片", onClick = onPhotoClick)
                 ToolbarIconBtn(imageVector = Icons.Default.Mic, contentDescription = "语音", onClick = onVoiceClick)
                 ToolbarIconBtn(imageVector = Icons.Default.Palette, contentDescription = "背景色", onClick = onBackgroundClick)
+                /**
+                 * 关联按钮（@）：
+                 * - 调用方传入 onMentionClick 时才渲染（待办编辑页）
+                 * - 未传时不渲染（灵感编辑页保持原 5 按钮布局）
+                 * 这样可保证 SpaceEvenly 仅基于实际显示的按钮做均匀分布，
+                 * 不会因为占位空按钮而挤压其他图标的间距。
+                 */
+                if (onMentionClick != null) {
+                    ToolbarIconBtn(
+                        imageVector = Icons.Default.AlternateEmail,
+                        contentDescription = "关联",
+                        onClick = onMentionClick
+                    )
+                }
+                /**
+                 * 位置按钮（#）：同上，调用方未传 onLocationClick 时不渲染。
+                 */
+                if (onLocationClick != null) {
+                    ToolbarIconBtn(
+                        imageVector = Icons.Default.Tag,
+                        contentDescription = "位置",
+                        onClick = onLocationClick
+                    )
+                }
                 ToolbarIconBtn(imageVector = Icons.Default.Share, contentDescription = "分享", onClick = onShareClick)
                 ToolbarIconBtn(imageVector = Icons.Default.Delete, contentDescription = "删除", onClick = onDeleteClick)
             }
