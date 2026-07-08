@@ -1,8 +1,10 @@
 package com.corgimemo.app.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -11,9 +13,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -40,6 +45,7 @@ import com.corgimemo.app.data.model.CategoryType
  * - 弹窗分两个区域：「默认分类」+「我的分组（用户自定义）」
  * - 每个分类以 Tag 标签形式展示，点击即选中并关闭弹窗
  * - 「自定义」按钮点击后展开输入框，用于创建新分组
+ * - 长按自定义分类 Tag 触发删除流程（仅自定义分类支持，默认分类不可删）
  * - 若用户没有自定义过分组，则只显示默认分类区域
  *
  * @param categories 可选分类列表（已包含默认 + 用户自定义）
@@ -48,14 +54,18 @@ import com.corgimemo.app.data.model.CategoryType
  * @param onCategorySelected 分类选中回调，参数为 (id, name)。
  *        - id > 0 表示选中默认/已存在分类
  *        - id == 0L 表示"自定义分类"（name 为用户输入）
+ * @param onCategoryLongPress 自定义分类长按回调，参数为被长按的分类对象。
+ *        调用方应弹出确认对话框，确认后调用 viewModel.deleteCustomCategory(category)。
+ *        传 null 时所有分类都不响应长按（保留行为兼容性）。
  */
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun CategorySelectorDialog(
     categories: List<Category>,
     currentCategoryId: Long?,
     onDismiss: () -> Unit,
-    onCategorySelected: (id: Long, name: String) -> Unit
+    onCategorySelected: (id: Long, name: String) -> Unit,
+    onCategoryLongPress: ((Category) -> Unit)? = null
 ) {
     /** 自定义输入框是否展开 */
     var showCustomInput by remember { mutableStateOf(false) }
@@ -84,7 +94,24 @@ fun CategorySelectorDialog(
             )
         },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            /**
+             * 弹窗内容区域
+             *
+             * 使用 heightIn(max = 360.dp) + verticalScroll 防止分类过多时弹窗过高超出屏幕：
+             * - 360.dp 大约可容纳 6-7 行 FlowRow 标签 + 标题 + 输入框，符合手机屏幕视觉舒适度
+             * - 当分类数较少时，heightIn 不会强制撑开，内容按实际高度渲染
+             * - 配合 rememberScrollState() 实现超出区域垂直滚动
+             *
+             * 滚动状态使用 remember 而非 rememberSaveable：
+             * - 弹窗每次打开都是新实例（onDismiss 后 pendingCategoryGroupId 置 null 触发重组），
+             *   不需要跨实例保留滚动位置
+             */
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
                 /** 区域 1：默认分类（始终显示） */
                 SectionHeader(title = "默认分类")
                 FlowRow(
@@ -123,6 +150,13 @@ fun CategorySelectorDialog(
                                     onCategorySelected(category.id, category.name)
                                     onDismiss()
                                 },
+                                /**
+                                 * 长按回调：仅在调用方提供 onCategoryLongPress 时启用。
+                                 * 默认分类不传此回调，所以不会触发长按删除（与 HomeViewModel 侧滑页逻辑一致）。
+                                 */
+                                onLongClick = if (onCategoryLongPress != null) {
+                                    { onCategoryLongPress(category) }
+                                } else null,
                                 /** 自定义分类统一使用 📋 图标（区别于默认分类的彩色 emoji） */
                                 forceIcon = "📋"
                             )
@@ -216,14 +250,18 @@ private fun SectionHeader(title: String) {
  * @param category 分类实体
  * @param isSelected 是否处于选中状态
  * @param onClick 点击回调
+ * @param onLongClick 可选的长按回调，传 null 时不启用长按识别。
+ *        启用后使用 combinedClickable 同时支持 click + longClick。
  * @param forceIcon 可选参数：强制使用指定图标（用于自定义分类统一 📋）。
  *        传 null 时使用 type 映射的默认 emoji。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CategoryTag(
     category: Category,
     isSelected: Boolean,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     forceIcon: String? = null
 ) {
     val categoryColor = getCategoryColor(category.type)
@@ -239,9 +277,22 @@ private fun CategoryTag(
         Modifier
     }
 
+    /**
+     * 交互修饰符选择：
+     * - 有 onLongClick → combinedClickable 同时支持 click + longClick（仅自定义分类启用）
+     * - 无 onLongClick → 普通 clickable（默认分类，避免无用的长按识别）
+     */
+    val interactionModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
     Row(
-        modifier = Modifier
-            .clickable(onClick = onClick)
+        modifier = interactionModifier
             .then(borderModifier)
             .background(color = bgColor, shape = RoundedCornerShape(20.dp))
             .padding(horizontal = 12.dp, vertical = 6.dp),

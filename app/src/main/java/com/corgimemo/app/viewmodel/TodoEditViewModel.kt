@@ -1257,6 +1257,38 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
+     * 删除自定义分类
+     *
+     * 用户在「分类选择弹窗」长按某个自定义分类 Tag 时调用。
+     * 行为与侧滑页（HomeViewModel.deleteCategory）保持一致：
+     * - 数据库层：调用 [CategoryRepository.deleteCustomCategory] 删除行（带 isDefault=0 过滤）
+     * - 内存层：刷新 [_categories] 列表，让弹窗立即移除已删除项
+     * - 引用层：调用方需自行处理引用该 categoryId 的 todo（[clearGroupCategory] 或 [setGroupCategory]）
+     *
+     * 注意：被删除分类下的 todo 不会自动迁移到「未分类」，
+     * 这些 todo 的 categoryId 字段会保持原值但在弹窗中不再可见，
+     * 与 HomeViewModel 侧滑页的删除行为一致（项目既定行为，避免破坏性变更）。
+     *
+     * @param category 要删除的自定义分类（必须 isDefault=false，否则 dao 层不会执行）
+     */
+    fun deleteCustomCategory(category: Category) {
+        if (category.isDefault) {
+            android.util.Log.w("TodoEditVM", "尝试删除默认分类，已拒绝: id=${category.id}")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                categoryRepository.deleteCustomCategory(category.id)
+                // 刷新内存中的分类列表（弹窗基于此列表渲染）
+                _categories.value = categoryRepository.getAllCategoriesList()
+                android.util.Log.w("TodoEditVM", "删除自定义分类成功: id=${category.id}, name='${category.name}'")
+            } catch (e: Exception) {
+                android.util.Log.e("TodoEditVM", "删除自定义分类失败", e)
+            }
+        }
+    }
+
+    /**
      * 注：原 triggerRecommendation() / acceptRecommendation() 方法已整体移除。
      * 分类推荐（基于关键词匹配）功能仅在灵感编辑页（InspirationEditViewModel）保留。
      * 待办编辑页不再做自动推荐，由用户主动选择分类。

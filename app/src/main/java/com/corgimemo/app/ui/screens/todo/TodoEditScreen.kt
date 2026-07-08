@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.ui.components.*
 import com.corgimemo.app.ui.model.ContentBlock
@@ -165,6 +166,18 @@ fun TodoEditScreen(
      * 替代旧 showCategoryDialog: Boolean，携带目标分组上下文
      */
     var pendingCategoryGroupId by remember { mutableStateOf<Int?>(null) }
+    /**
+     * 待删除的自定义分类（点击删除确认按钮后才真正删除）
+     *
+     * null = 不显示确认弹窗；非 null = 显示「确认删除分类」弹窗
+     *
+     * 触发链：用户长按弹窗中的自定义分类 Tag
+     *   → CategorySelectorDialog.onCategoryLongPress(category)
+     *   → pendingDeleteCategory = category（弹窗不关闭，让用户看清背景）
+     *   → 弹出确认 AlertDialog
+     *   → 用户点击「删除」→ viewModel.deleteCustomCategory + 关闭确认弹窗 + 关闭选分类弹窗
+     */
+    var pendingDeleteCategory by remember { mutableStateOf<Category?>(null) }
 
     val imagePaths by viewModel.imagePaths.collectAsState()
     val categories by viewModel.categories.collectAsState()
@@ -845,6 +858,21 @@ fun TodoEditScreen(
                 },
                 onBackgroundClick = {
                     showColorPicker = true
+                },
+                /**
+                 * @按钮点击回调：直接打开关联弹窗。
+                 * mentionQuery 为屏幕级 remember 状态，关闭弹窗时不会被重置，
+                 * 因此再次打开时会自动恢复上一次的搜索关键词。
+                 */
+                onMentionClick = {
+                    showMentionPopup = true
+                },
+                /**
+                 * #按钮点击回调：直接打开位置提醒弹窗。
+                 * locationQuery 同理保留上一次状态。
+                 */
+                onLocationClick = {
+                    showLocationPopup = true
                 },
                 onShareClick = {},
                 onDeleteClick = {
@@ -1724,6 +1752,78 @@ fun TodoEditScreen(
                     }
                 }
                 pendingCategoryGroupId = null
+            },
+            /**
+             * 长按自定义分类：暂存到 pendingDeleteCategory，由下方确认弹窗处理。
+             * 注意：此处不直接关闭选分类弹窗，
+             * 让用户可以在确认弹窗与原选分类弹窗叠加显示中看清上下文。
+             */
+            onCategoryLongPress = { category ->
+                pendingDeleteCategory = category
+            }
+        )
+    }
+
+    /**
+     * 删除自定义分类确认弹窗
+     *
+     * 叠加在 [CategorySelectorDialog] 之上显示（Material3 AlertDialog 默认层级更高），
+     * 避免在长按后直接关闭选分类弹窗导致用户失去上下文。
+     *
+     * 删除行为：
+     * 1. 调用 viewModel.deleteCustomCategory(category) → 数据库删除 + 内存列表刷新
+     * 2. 若当前 groupId 关联了该 categoryId，主动清空关联（避免弹窗刷新后出现"幽灵选中"）
+     * 3. 关闭确认弹窗（pendingDeleteCategory = null）
+     * 4. 关闭选分类弹窗（pendingCategoryGroupId = null），
+     *    让用户回到编辑页查看最新分类状态
+     */
+    pendingDeleteCategory?.let { targetCategory ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteCategory = null },
+            title = { Text("删除自定义分组") },
+            text = {
+                Column {
+                    Text(
+                        text = "确定要删除「${targetCategory.name}」分组吗？",
+                        fontSize = 15.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "提示：使用此分组的待办将变为「未分类」状态。",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // 1. 记录当前 groupId 关联的 categoryId，删除后用于清理关联
+                        val currentGroupId = pendingCategoryGroupId
+                        val oldCategoryId = currentGroupId?.let { gid ->
+                            groupCategoryIds[gid]
+                        }
+                        // 2. 执行删除
+                        viewModel.deleteCustomCategory(targetCategory)
+                        // 3. 清理当前 group 与被删分类的关联（若曾选中该分类）
+                        if (currentGroupId != null && oldCategoryId == targetCategory.id) {
+                            viewModel.clearGroupCategory(currentGroupId)
+                        }
+                        // 4. 关闭两个弹窗
+                        pendingDeleteCategory = null
+                        pendingCategoryGroupId = null
+                    }
+                ) {
+                    Text(
+                        text = "删除",
+                        color = androidx.compose.ui.graphics.Color(0xFFDC2626)
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteCategory = null }) {
+                    Text("取消")
+                }
             }
         )
     }
