@@ -128,6 +128,8 @@ import com.corgimemo.app.ui.components.PinnedSectionHeader
 import com.corgimemo.app.ui.components.PriorityPickerSheet
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.awaitPointerEvent
+import androidx.compose.ui.input.pointer.pointerInput
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.ui.theme.UiColors
@@ -671,6 +673,20 @@ fun HomeScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .nestedScroll(pullRefreshState.nestedScrollConnection)
+                                // 兜底监听"松手"事件：解决列表底部快速下滑时
+                                // onPreFling 不会被触发的卡住问题
+                                .pointerInput(pullRefreshState) {
+                                    awaitEachGesture {
+                                        // 监听但不消费 down 事件（不阻塞 LazyColumn 滚动）
+                                        awaitFirstDown(requireUnconsumed = false)
+                                        // 循环等待所有指针抬起（支持多指）
+                                        do {
+                                            val event = awaitPointerEvent()
+                                        } while (event.changes.any { it.pressed })
+                                        // 手指完全抬起 → 触发松手处理
+                                        pullRefreshState.onRelease()
+                                    }
+                                }
                         ) {
                             // 空白区 + 居中奔跑柯基（铺满宽度，高度=pullOffset）
                             CorgiPullRefreshIndicator(
