@@ -2,9 +2,16 @@ package com.corgimemo.app.ui.screens.main
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,8 +39,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
@@ -65,6 +76,7 @@ import com.corgimemo.app.ui.components.ShareModeDialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 /**
  * 主屏幕容器（统一版）
@@ -97,6 +109,15 @@ fun MainScreen(
     var isBubbleExpanded by remember { mutableStateOf(false) }
     var isFastCollapse by remember { mutableStateOf(false) }
     var lastClickTime by remember { mutableLongStateOf(0L) }
+
+    /**
+     * 灵感页日历弹窗显示状态
+     *
+     * 由 MainScreen 统一管理，centerContent 点击时置 true，
+     * 传递给 InspirationScreen 由其内部渲染 InspirationCalendarDialog。
+     * 声明在 MainScreen 顶层以保证 topBar 与 content 区域均可访问。
+     */
+    var showInspirationCalendar by remember { mutableStateOf(false) }
 
     /**
      * 监听其他页面返回时设置的 targetTab
@@ -195,13 +216,13 @@ fun MainScreen(
     val topBarTitle = when (selectedTab) {
         TabItem.TODO -> {
             when (selectedCategoryId) {
-                null -> "📝 我的待办"
+                null -> "📝 待办"
                 0L -> "📦 未分类"
-                else -> categories.find { it.id == selectedCategoryId }?.let { "📁 ${it.name}" } ?: "📝 我的待办"
+                else -> categories.find { it.id == selectedCategoryId }?.let { "📁 ${it.name}" } ?: "📝 待办"
             }
         }
-        TabItem.INSPIRE -> "💡 我的灵感"
-        TabItem.DATE -> "📅 特殊日期"
+        TabItem.INSPIRE -> "💡 灵感"
+        TabItem.DATE -> "📅 日期"
         TabItem.PROFILE -> "👤 我的"
         TabItem.EDIT -> ""
     }
@@ -336,6 +357,44 @@ fun MainScreen(
 
                     EnhancedTopBar(
                         title = effectiveTitle,
+                        /**
+                         * 灵感页中间内容：大号日期 + 月份 + 下拉箭头，点击触发日历弹窗。
+                         * 仅在灵感页且非批量模式时显示，其他页面使用默认 title。
+                         */
+                        centerContent = if (selectedTab == TabItem.INSPIRE && !isBatchMode) {
+                            {
+                                // 日期显示（居中叠加在标题上方），点击打开日历弹窗
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable {
+                                        showInspirationCalendar = true
+                                    }
+                                ) {
+                                    val now = Calendar.getInstance()
+                                    Text(
+                                        text = String.format("%02d", now.get(Calendar.DAY_OF_MONTH)),
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = String.format("%02d月", now.get(Calendar.MONTH) + 1),
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF666666)
+                                        )
+                                        Text(
+                                            text = "▼",
+                                            fontSize = 8.sp,
+                                            color = Color(0xFF666666)
+                                        )
+                                    }
+                                }
+                            }
+                        } else null,
                         /**
                          * 批量模式时：左侧图标变为返回箭头（LeftIconType.BACK），点击触发
                          * homeViewModel.exitBatchMode() 退出多选；普通模式沿用 MENU + onMenuClick。
@@ -510,7 +569,9 @@ fun MainScreen(
                         )
                         TabItem.INSPIRE -> InspirationScreen(
                             navController = navController,
-                            onFabClick = { navController.navigate("inspiration_edit") }
+                            onFabClick = { navController.navigate("inspiration_edit") },
+                            showCalendarDialog = showInspirationCalendar,
+                            onCalendarDialogChange = { showInspirationCalendar = it }
                         )
                         TabItem.DATE -> SpecialDateScreen(
                             navController = navController,

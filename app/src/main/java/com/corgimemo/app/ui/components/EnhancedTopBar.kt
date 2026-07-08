@@ -66,6 +66,8 @@ enum class LeftIconType {
  *                     当设为 BACK 时显示返回箭头，常见于多选模式等"返回常规视图"场景。
  * @param onLeftIconClick 左侧图标点击回调（可空）。为 null 时回退到 onMenuClick。
  *                        当 leftIconType 为 BACK 时，建议传入"退出多选"等专用回调。
+ * @param centerContent 中间自定义内容（可空）。传入时替换默认标题文字，
+ *                      用于灵感页显示日期等自定义布局。为 null 时使用 title 标题。
  */
 @Composable
 fun EnhancedTopBar(
@@ -78,16 +80,21 @@ fun EnhancedTopBar(
     onMoreClick: (() -> Unit)? = null,
     dropdownContent: (@Composable () -> Unit)? = null,
     leftIconType: LeftIconType = LeftIconType.MENU,
-    onLeftIconClick: (() -> Unit)? = null
+    onLeftIconClick: (() -> Unit)? = null,
+    centerContent: @Composable (() -> Unit)? = null
 ) {
     Column(modifier = modifier.fillMaxWidth().safeAreaForTopBar()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        // 使用 Box 包裹 Row，让 centerContent 能覆盖整个导航栏宽度居中
+        Box(
+            modifier = Modifier.fillMaxWidth()
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
             // 左侧图标：MENU（三横线，开抽屉）/ BACK（返回箭头，退出当前模式）。
             // onLeftIconClick 为 null 时回退到 onMenuClick，保留默认行为。
             // 注意：BACK 模式使用 Box + clickable(indication = null) 替代 IconButton，
@@ -129,6 +136,7 @@ fun EnhancedTopBar(
                 }
             }
 
+            // 中间区域：标题（左对齐，位置与待办页完全一致）
             Text(
                 text = title,
                 fontSize = 18.sp,
@@ -173,6 +181,19 @@ fun EnhancedTopBar(
                     }
                 }
             }
-        }
+
+            } // Row 闭合
+
+            // centerContent 叠加在整个导航栏上方居中显示（如日期）
+            // 在外层 Box 的 BoxScope 中，可使用 matchParentSize
+            if (centerContent != null) {
+                Box(
+                    modifier = Modifier.matchParentSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    centerContent()
+                }
+            }
+        } // Box 闭合
     }
 }

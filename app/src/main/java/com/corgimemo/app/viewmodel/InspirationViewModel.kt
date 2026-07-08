@@ -54,6 +54,29 @@ class InspirationViewModel @Inject constructor(
             initialValue = emptyMap()
         )
 
+    /** 置顶的灵感列表 */
+    val pinnedInspirations: StateFlow<List<Inspiration>> =
+        _inspirations.map { list ->
+            list.filter { it.isPinned }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    /** 非置顶的普通灵感列表（按年月分组） */
+    val normalGroupedInspirations: StateFlow<Map<String, List<Inspiration>>> =
+        _inspirations.map { list ->
+            list.filter { !it.isPinned }
+                .groupBy { inspiration ->
+                    formatYearMonthKey(inspiration.createdAt)
+                }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
+        )
+
     /** 搜索关键词 */
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -268,6 +291,24 @@ class InspirationViewModel @Inject constructor(
     }
 
     /**
+     * 更新灵感的创建日期时间
+     * @param id 灵感ID
+     * @param newDateTime 新的日期时间戳（毫秒）
+     */
+    fun updateInspirationDateTime(id: Long, newDateTime: Long) {
+        viewModelScope.launch {
+            val currentList = _inspirations.value
+            val inspiration = currentList.find { it.id == id } ?: return@launch
+            inspirationRepository.update(
+                inspiration.copy(
+                    createdAt = newDateTime,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    /**
      * 切换归档状态
      * @param id 灵感ID
      */
@@ -314,6 +355,52 @@ class InspirationViewModel @Inject constructor(
         val calendar = Calendar.getInstance().apply { timeInMillis = timestamp }
         val weekdays = arrayOf("日", "一", "二", "三", "四", "五", "六")
         return "${calendar.get(Calendar.YEAR)}年${calendar.get(Calendar.MONTH) + 1}月${calendar.get(Calendar.DAY_OF_MONTH)}日 周${weekdays[calendar.get(Calendar.DAY_OF_WEEK) - 1]}"
+    }
+
+    /**
+     * 将时间戳格式化为年月分组 Key
+     * 格式："2026.07"
+     * @param timestamp 时间戳（毫秒）
+     * @return 格式化后的年月字符串
+     */
+    private fun formatYearMonthKey(timestamp: Long): String {
+        val calendar = Calendar.getInstance().apply { timeInMillis = timestamp }
+        return String.format("%04d.%02d", calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH) + 1)
+    }
+
+    /**
+     * 获取指定日期的灵感列表
+     * @param year 年
+     * @param month 月（1-12）
+     * @param day 日
+     * @return 当天的灵感列表
+     */
+    fun getInspirationsByDate(year: Int, month: Int, day: Int): List<Inspiration> {
+        return _inspirations.value.filter { inspiration ->
+            val cal = Calendar.getInstance().apply { timeInMillis = inspiration.createdAt }
+            cal.get(Calendar.YEAR) == year &&
+            cal.get(Calendar.MONTH) + 1 == month &&
+            cal.get(Calendar.DAY_OF_MONTH) == day
+        }.sortedByDescending { it.createdAt }
+    }
+
+    /**
+     * 获取指定月份每天的灵感条数（用于日历显示圆点）
+     * @param year 年
+     * @param month 月（1-12）
+     * @return 日期 -> 条数 的映射
+     */
+    fun getCalendarInspirationCount(year: Int, month: Int): Map<Int, Int> {
+        return _inspirations.value
+            .filter { inspiration ->
+                val cal = Calendar.getInstance().apply { timeInMillis = inspiration.createdAt }
+                cal.get(Calendar.YEAR) == year && cal.get(Calendar.MONTH) + 1 == month
+            }
+            .groupBy { inspiration ->
+                val cal = Calendar.getInstance().apply { timeInMillis = inspiration.createdAt }
+                cal.get(Calendar.DAY_OF_MONTH)
+            }
+            .mapValues { it.value.size }
     }
 
     /**
