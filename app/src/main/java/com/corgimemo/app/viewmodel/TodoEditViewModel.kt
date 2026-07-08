@@ -1067,15 +1067,20 @@ class TodoEditViewModel @Inject constructor(
     /**
      * 获取当前 todo 中所有"已保存"的子 todo 列表
      *
-     * 用于分享功能：从 [groupSaveStates] 中筛选 isSaved==true 且 savedTodoId 不为空的分组，
+     * 用于分享功能：从 [groupSaveStates] 中筛选 isSaved==true 且 savedTodoId 不为空的子分组，
      * 通过 [TodoRepository] 查询对应的子 todo。
      *
-     * @return 已保存的子 todo 列表（按 groupId 升序）
+     * 【重要】**排除 groupId=0**（主 todo 卡片），只返回 groupId >= 1 的子分组。
+     * 否则在 onShareClick 中 `listOf(mainTodo) + savedSubTodos` 会把主 todo 算两次，
+     * 出现"只有 1 条 todo 却显示 2 条待办"的 bug。
+     *
+     * @return 已保存的子 todo 列表（按 groupId 升序，不含主 todo）
      */
     suspend fun getSavedSubTodos(): List<TodoItem> {
-        /** 1. 筛选已保存且有真实 todoId 的分组（按 groupId 升序） */
+        /** 1. 筛选已保存且有真实 todoId 的子分组（按 groupId 升序），【关键】排除 groupId=0 */
         val savedGroupIds = _groupSaveStates.value
             .filterValues { it.isSaved && it.savedTodoId != null }
+            .filterKeys { it != 0 }  // 排除主 todo 卡片
             .keys
             .sorted()
 
