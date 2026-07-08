@@ -894,18 +894,25 @@ fun TodoEditScreen(
                 onShareClick = {
                     /**
                      * 分享按钮点击：
-                     * 1. 拉取已保存的子 todo 列表
-                     * 2. 判断是否有未保存分组
-                     * 3. 调 ShareCoordinator.shareTodosFromEdit 统一处理
+                     * 1. 获取主 todo（编辑模式走 currentTodo，新建模式走 groupSaveStates[0] 兜底）
+                     * 2. 拉取已保存的子 todo 列表
+                     * 3. 判断是否有未保存分组
+                     * 4. 调 ShareCoordinator.shareTodosFromEdit 统一处理
                      */
                     coroutineScope.launch {
+                        /**
+                         * 主 todo 来源说明：
+                         * - 编辑模式（todoId != null）：viewModel.currentTodo 必有值
+                         * - 新建模式但已保存 groupId=0：getMainTodoForShare() 兜底从 DB 拉取
+                         *   （修复"已保存仍误判未保存"问题）
+                         */
+                        val mainTodo = viewModel.getMainTodoForShare()
                         val savedSubTodos = viewModel.getSavedSubTodos()
                         val hasUnsavedGroups = viewModel.groupSaveStates.value
                             .any { !it.value.isSaved }
-                        val mainTodo = viewModel.currentTodo
 
                         if (mainTodo == null) {
-                            // 主 todo 未保存：提示用户先保存再分享
+                            // 主 todo 真正未保存（groupId=0 没存）：提示用户先保存
                             snackbarHostState.showSnackbar("请先保存待办再分享")
                             return@launch
                         }

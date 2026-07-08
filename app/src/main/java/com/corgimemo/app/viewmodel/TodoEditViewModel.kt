@@ -1092,6 +1092,25 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
+     * 获取"主 todo"用于分享
+     *
+     * 【多卡片架构】groupId=0 的卡片即"主 todo"卡片（标题卡片）。
+     * 优先从 ViewModel 内存 [existingTodo] 取（编辑模式），
+     * fallback 到 [groupSaveStates] 中 groupId=0 对应的已保存记录（新建模式但已保存）。
+     *
+     * 修复背景：原 [onShareClick] 直接读 [currentTodo]，但新建模式下
+     * [existingTodo] 始终为 null（loadTodo 不被调用），导致 "全部完成" 后
+     * 即便数据库中已有 todo 仍被误判"主 todo 未保存"。
+     *
+     * @return 主 todo（TodoItem），若 groupId=0 尚未保存则返回 null
+     */
+    suspend fun getMainTodoForShare(): TodoItem? {
+        if (existingTodo != null) return existingTodo
+        val mainGroupSavedId = _groupSaveStates.value[0]?.savedTodoId
+        return mainGroupSavedId?.let { todoRepository.getTodoById(it) }
+    }
+
+    /**
      * 保存所有未保存的分组
      *
      * 遍历所有 groupId，对未保存的分组逐一调用 saveGroup()。
