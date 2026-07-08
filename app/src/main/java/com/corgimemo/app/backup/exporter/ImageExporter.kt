@@ -437,4 +437,106 @@ object ImageExporter {
             else -> "${mins}分钟"
         }
     }
+
+    /**
+     * 拼图数量超过上限异常
+     *
+     * @param count 实际拼图数量
+     */
+    class TooManyBitmapsException(val count: Int) :
+        IllegalArgumentException("拼图数量 $count 超过上限 10，请选择一条条分享")
+
+    /**
+     * 拼图策略枚举
+     */
+    private enum class MergeStrategy {
+        GRID_2_COL,  // 2-6 张：2 列网格
+        VERTICAL     // 7-10 张：垂直拼接
+    }
+
+    /**
+     * 合并多张待办分享图片为一张
+     *
+     * 智能拼接策略：
+     * - 2-6 张：2 列网格布局
+     * - 7-10 张：垂直拼接
+     * - >10 张：抛出 [TooManyBitmapsException]（调用方需禁用合并按钮）
+     * - 0 张：抛出 [IllegalArgumentException]
+     *
+     * 所有图片宽度按比例缩放至 outputWidthPx，高度按比例计算。
+     * 拼接背景为纯白，网格布局子图间隔 spacingPx，垂直布局直接堆叠（无间隔）。
+     *
+     * @param bitmaps 待合并的 Bitmap 列表（已按顺序排列）
+     * @param outputWidthPx 每列目标宽度（像素），默认 720
+     * @param spacingPx 网格子图间隔像素，默认 24（垂直布局忽略此参数）
+     * @return 合并后的 Bitmap
+     * @throws TooManyBitmapsException 当 count > 10
+     * @throws IllegalArgumentException 当 count == 0
+     */
+    suspend fun mergeBitmaps(
+        bitmaps: List<Bitmap>,
+        outputWidthPx: Int = 720,
+        spacingPx: Int = 24
+    ): Bitmap = withContext(Dispatchers.Default) {
+        require(bitmaps.isNotEmpty()) { "拼图列表不能为空" }
+        if (bitmaps.size > 10) {
+            throw TooManyBitmapsException(bitmaps.size)
+        }
+
+        val strategy = if (bitmaps.size <= 6) MergeStrategy.GRID_2_COL else MergeStrategy.VERTICAL
+
+        // 每列宽度固定为 outputWidthPx，等比缩放源图
+        val columnWidth = outputWidthPx
+        val rowScaledBitmaps = bitmaps.map { scaleBitmapToWidth(it, columnWidth) }
+
+        val columnsCount = if (strategy == MergeStrategy.GRID_2_COL) 2 else 1
+        val rowsCount = (rowScaledBitmaps.size + columnsCount - 1) / columnsCount
+
+        // 垂直布局无间距，网格布局使用 spacingPx 间距
+        val effectiveSpacing = if (strategy == MergeStrategy.VERTICAL) 0 else spacingPx
+
+        val rowHeights = IntArray(rowsCount) { rowIdx ->
+            val start = rowIdx * columnsCount
+            val end = minOf(start + columnsCount, rowScaledBitmaps.size)
+            (start until end).maxOf { rowScaledBitmaps[it].height }
+        }
+
+        val totalHeight = rowHeights.sum() + (rowsCount - 1) * effectiveSpacing
+        val totalWidth = columnsCount * columnWidth + (columnsCount - 1) * effectiveSpacing
+
+        val output = Bitmap.createBitmap(totalWidth, totalHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
+        canvas.drawColor(Color.WHITE)
+
+        var currentY = 0
+        for (rowIdx in 0 until rowsCount) {
+            val start = rowIdx * columnsCount
+            val end = minOf(start + columnsCount, rowScaledBitmaps.size)
+            val rowHeight = rowHeights[rowIdx]
+
+            for (colIdx in 0 until (end - start)) {
+                val bmp = rowScaledBitmaps[start + colIdx]
+                val x = colIdx * (columnWidth + effectiveSpacing)
+                val y = currentY + (rowHeight - bmp.height) / 2
+                canvas.drawBitmap(bmp, x.toFloat(), y.toFloat(), null)
+            }
+            currentY += rowHeight + effectiveSpacing
+        }
+
+        output
+    }
+
+    /**
+     * 按宽度等比缩放 Bitmap
+     *
+     * @param source 源 Bitmap
+     * @param targetWidth 目标宽度
+     * @return 缩放后的 Bitmap
+     */
+    private fun scaleBitmapToWidth(source: Bitmap, targetWidth: Int): Bitmap {
+        if (source.width == targetWidth) return source
+        val ratio = targetWidth.toFloat() / source.width
+        val targetHeight = (source.height * ratio).toInt()
+        return Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true)
+    }
 }

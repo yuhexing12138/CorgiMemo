@@ -139,6 +139,8 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     /** Room Migration 单元测试：用纯 JVM SQLite 验证 migrate() 的 SQL 逻辑 */
     testImplementation(libs.sqlite.jdbc)
+    /** Robolectric：在 JVM 上模拟 Android Framework，使 Bitmap 等 Android API 能在单元测试中使用 */
+    testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
