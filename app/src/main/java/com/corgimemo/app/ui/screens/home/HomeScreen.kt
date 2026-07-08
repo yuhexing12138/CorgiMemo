@@ -135,6 +135,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.ui.theme.UiColors
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import android.widget.Toast
@@ -602,17 +603,19 @@ fun HomeScreen(
                             if (!isRefreshing) pullRefreshState.onRefreshComplete()
                         }
 
-                        // 兜底超时回弹：监测 PULLING 状态持续 200ms 无新事件
+                        // 兜底超时回弹：监测 PULLING/RELEASING 状态持续 200ms 无新事件
                         // 解决 pointerInput 兜底仍偶尔失效的场景（部分 Android 版本 / 设备上
-                        // up 事件传递不可靠）。当 state == PULLING 时启动延迟任务，
+                        // up 事件传递不可靠）。当 state 在 PULLING 或 RELEASING 时启动延迟任务，
                         // 期间 state 或 pullOffset 任何变化都会重启协程（key 变化），
                         // 用户继续操作时不会误触发
+                        // 关键：必须同时处理 RELEASING 状态（卡死恢复路径）
                         LaunchedEffect(pullRefreshState.state, pullRefreshState.pullOffset) {
-                            if (pullRefreshState.state == PullRefreshState.PULLING) {
+                            if (pullRefreshState.state == PullRefreshState.PULLING ||
+                                pullRefreshState.state == PullRefreshState.RELEASING) {
                                 delay(200)
-                                // 延迟结束后再次校验，避免状态在 delay 期间已变
-                                if (pullRefreshState.state == PullRefreshState.PULLING) {
-                                    pullRefreshState.onRelease()
+                                if (pullRefreshState.state == PullRefreshState.PULLING ||
+                                    pullRefreshState.state == PullRefreshState.RELEASING) {
+                                    pullRefreshState.onRelease(forceResetFromReleasing = true)
                                 }
                             }
                         }
