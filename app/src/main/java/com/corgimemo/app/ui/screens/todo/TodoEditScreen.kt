@@ -225,6 +225,14 @@ fun TodoEditScreen(
     var showShareModeDialog by remember { mutableStateOf(false) }
 
     /**
+     * 部分未保存分组确认弹窗
+     *
+     * 当主 todo 已保存但有其他分组未保存时显示，
+     * 让用户选择"仅分享已保存的 N 条"还是"先去保存"。
+     */
+    var showPartialSaveDialog by remember { mutableStateOf(false) }
+
+    /**
      * 待分享的 todo 列表快照（在弹窗打开时填充）
      *
      * 编辑页分享时由主 todo + savedSubTodos 组合而成；
@@ -897,7 +905,11 @@ fun TodoEditScreen(
                      * 1. 获取主 todo（编辑模式走 currentTodo，新建模式走 groupSaveStates[0] 兜底）
                      * 2. 拉取已保存的子 todo 列表
                      * 3. 判断是否有未保存分组
-                     * 4. 调 ShareCoordinator.shareTodosFromEdit 统一处理
+                     * 4. 决策树：
+                     *    - mainTodo == null → SnackBar "请先保存"
+                     *    - 总数 (主+已保存子) == 1 → 直接分享
+                     *    - hasUnsavedGroups && 总数 > 1 → 弹 PartialSaveConfirmDialog
+                     *    - !hasUnsavedGroups && 总数 > 1 → 弹 ShareModeDialog
                      */
                     coroutineScope.launch {
                         /**
@@ -908,8 +920,9 @@ fun TodoEditScreen(
                          */
                         val mainTodo = viewModel.getMainTodoForShare()
                         val savedSubTodos = viewModel.getSavedSubTodos()
-                        val hasUnsavedGroups = viewModel.groupSaveStates.value
-                            .any { !it.value.isSaved }
+                        val groupSaveStates = viewModel.groupSaveStates.value
+                        val unsavedCount = groupSaveStates.count { !it.value.isSaved }
+                        val hasUnsavedGroups = unsavedCount > 0
 
                         if (mainTodo == null) {
                             // 主 todo 真正未保存（groupId=0 没存）：提示用户先保存
@@ -917,21 +930,35 @@ fun TodoEditScreen(
                             return@launch
                         }
 
-                        ShareCoordinator.shareTodosFromEdit(
-                            context = context,
-                            mainTodo = mainTodo,
-                            savedSubTodos = savedSubTodos,
-                            categories = categories,
-                            hasUnsavedGroups = hasUnsavedGroups,
-                            onShowSnackBar = { msg ->
-                                coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
-                            },
-                            onShowDialog = { _ ->
-                                /** 拼接"主 todo + 已保存子 todo"作为待分享列表 */
-                                shareTodosSnapshot = listOf(mainTodo) + savedSubTodos
-                                showShareModeDialog = true
-                            }
-                        )
+                        val savedOnlyList = listOf(mainTodo) + savedSubTodos
+                        val totalCount = savedOnlyList.size
+
+                        if (totalCount == 1) {
+                            // 只有一个已保存 todo：直接走单张分享（不弹选择）
+                            ShareCoordinator.shareTodosFromEdit(
+                                context = context,
+                                mainTodo = mainTodo,
+                                savedSubTodos = savedSubTodos,
+                                categories = categories,
+                                hasUnsavedGroups = false,
+                                onShowSnackBar = { msg ->
+                                    coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                                },
+                                onShowDialog = null
+                            )
+                            return@launch
+                        }
+
+                        // totalCount > 1：
+                        if (hasUnsavedGroups) {
+                            // 有未保存分组：弹"是否仅分享已保存"确认弹窗
+                            shareTodosSnapshot = savedOnlyList
+                            showPartialSaveDialog = true
+                        } else {
+                            // 全部已保存：直接弹 ShareModeDialog
+                            shareTodosSnapshot = savedOnlyList
+                            showShareModeDialog = true
+                        }
                     }
                 },
                 onDeleteClick = {
@@ -1922,6 +1949,31 @@ fun TodoEditScreen(
                         categories = categories
                     )
                 }
+            }
+        )
+    }
+
+    /**
+     * 部分未保存分组确认弹窗
+     *
+     * 当主 todo 已保存但有其他分组未保存时显示。
+     * 用户选择"仅分享已保存"后，关闭此弹窗并弹 ShareModeDialog。
+     * 用户选择"先去保存"或 dismiss 时，仅关闭此弹窗。
+     */
+    if (showPartialSaveDialog) {
+        val totalGroups = viewModel.groupSaveStates.value.size
+        val unsavedCount = viewModel.groupSaveStates.value.count { !it.value.isSaved }
+        val savedCount = totalGroups - unsavedCount
+        com.corgimemo.app.ui.components.PartialSaveConfirmDialog(
+            totalGroups = totalGroups,
+            unsavedCount = unsavedCount,
+            savedCount = savedCount,
+            onDismiss = { showPartialSaveDialog = false },
+            onShareSavedOnly = {
+                // 确认"仅分享已保存"：关闭确认弹窗，弹出 ShareModeDialog
+                // shareTodosSnapshot 已在 onShareClick 中填充为"已保存列表"，直接复用
+                showPartialSaveDialog = false
+                showShareModeDialog = true
             }
         )
     }

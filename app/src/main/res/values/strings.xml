@@ -306,7 +306,7 @@
     <!-- ==================== 批量复制附件（方案 B：仅失败 Snackbar） ==================== -->
     <string name="batch_duplicate_failure_hint">⚠️ 部分文件复制失败，请手动检查</string>
 
-    <!-- ==================== 待办分享方式选择弹窗 ==================== -->
+    <!-- 待办分享方式选择弹窗 -->
     <string name="share_mode_title">选择分享方式</string>
     <string name="share_mode_subtitle_normal">共 %1$d 条待办，可合并为一张图片或单独分享</string>
     <string name="share_mode_subtitle_too_many">共 %1$d 条待办，数量过多，请选择一条条分享</string>
@@ -314,4 +314,9 @@
     <string name="share_mode_one_by_one">一条条分享</string>
     <string name="share_mode_cancel">取消</string>
     <string name="share_unsaved_groups_hint">请先保存所有分组</string>
+    <!-- 部分未保存分组确认弹窗 -->
+    <string name="partial_save_title">有未保存的分组</string>
+    <string name="partial_save_subtitle">共 %1$d 个分组，其中 %2$d 个未保存。可仅分享已保存的 %3$d 条，或先去保存。</string>
+    <string name="partial_save_share_saved_only">仅分享已保存</string>
+    <string name="partial_save_go_save">先去保存</string>
 </resources>

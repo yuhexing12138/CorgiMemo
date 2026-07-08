@@ -74,3 +74,50 @@ fun ShareModeDialog(
         }
     )
 }
+
+/**
+ * 部分未保存分组时的确认弹窗
+ *
+ * 场景：用户点分享时，有 N 个分组未保存。
+ * 让用户选择"仅分享已保存的 M 条"还是"先去保存"。
+ *
+ * @param totalGroups 总分组数（含未保存的）
+ * @param unsavedCount 未保存分组数
+ * @param savedCount 已保存分组数（含主 todo）
+ * @param onDismiss 关闭弹窗
+ * @param onShareSavedOnly 确认"仅分享已保存"，之后会再走 ShareModeDialog
+ */
+@Composable
+fun PartialSaveConfirmDialog(
+    totalGroups: Int,
+    unsavedCount: Int,
+    savedCount: Int,
+    onDismiss: () -> Unit,
+    onShareSavedOnly: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(id = R.string.partial_save_title)) },
+        text = {
+            Text(
+                text = stringResource(
+                    id = R.string.partial_save_subtitle,
+                    totalGroups,
+                    unsavedCount,
+                    savedCount
+                ),
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+        confirmButton = {
+            Button(onClick = onShareSavedOnly) {
+                Text(text = stringResource(id = R.string.partial_save_share_saved_only))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(id = R.string.partial_save_go_save))
+            }
+        }
+    )
+}

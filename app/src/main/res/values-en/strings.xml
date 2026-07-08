@@ -306,7 +306,7 @@
     <!-- ==================== Batch Duplicate (Plan B: Failure Snackbar Only) ==================== -->
     <string name="batch_duplicate_failure_hint">⚠️ Some files failed to copy, please check manually</string>
 
-    <!-- ==================== Todo share mode selection dialog ==================== -->
+    <!-- Todo share mode selection dialog -->
     <string name="share_mode_title">Choose share mode</string>
     <string name="share_mode_subtitle_normal">%1$d todos. Merge into one image or share one by one.</string>
     <string name="share_mode_subtitle_too_many">%1$d todos. Too many, please share one by one.</string>
@@ -314,4 +314,9 @@
     <string name="share_mode_one_by_one">Share one by one</string>
     <string name="share_mode_cancel">Cancel</string>
     <string name="share_unsaved_groups_hint">Please save all groups first</string>
+    <!-- Partial save confirm dialog -->
+    <string name="partial_save_title">Some groups are unsaved</string>
+    <string name="partial_save_subtitle">%1$d groups in total, %2$d unsaved. You can share the %3$d saved ones, or go save them first.</string>
+    <string name="partial_save_share_saved_only">Share saved only</string>
+    <string name="partial_save_go_save">Go save</string>
 </resources>
