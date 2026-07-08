@@ -49,7 +49,6 @@ class InspirationEditViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
-    private var recommendationJob: Job? = null
     /** 防抖导出任务引用：用于延迟执行 MarkdownParser.export() */
     private var _debounceJob: Job? = null
     private val reminderRecommender = ReminderRecommender()
@@ -108,18 +107,6 @@ class InspirationEditViewModel @Inject constructor(
     private val _categories = MutableStateFlow<List<Category>>(emptyList())
     val categories: StateFlow<List<Category>> = _categories.asStateFlow()
 
-    private val _recommendedCategory = MutableStateFlow<Category?>(null)
-    val recommendedCategory: StateFlow<Category?> = _recommendedCategory.asStateFlow()
-
-    private val _hasManuallySelectedCategory = MutableStateFlow(false)
-    val hasManuallySelectedCategory: StateFlow<Boolean> = _hasManuallySelectedCategory.asStateFlow()
-
-    private val _showKeywordSelection = MutableStateFlow(false)
-    val showKeywordSelection: StateFlow<Boolean> = _showKeywordSelection.asStateFlow()
-
-    private val _extractedKeywords = MutableStateFlow<List<String>>(emptyList())
-    val extractedKeywords: StateFlow<List<String>> = _extractedKeywords.asStateFlow()
-
     private val _isCategoriesLoaded = MutableStateFlow(false)
     val isCategoriesLoaded: StateFlow<Boolean> = _isCategoriesLoaded.asStateFlow()
 
@@ -153,6 +140,47 @@ class InspirationEditViewModel @Inject constructor(
      */
     private val _tags = MutableStateFlow<List<String>>(emptyList())
     val tags: StateFlow<List<String>> = _tags.asStateFlow()
+
+    /**
+     * 历史标签列表状态
+     *
+     * 从数据库中所有灵感的 tags 字段聚合、去重后得到的历史标签集合。
+     * 用于 TagPickerSheet 展示"曾经使用过的标签"，让用户快速选择而无需重新输入。
+     *
+     * 加载时机：ViewModel 初始化时一次性加载（first()），不持续监听变化。
+     * 这是因为历史标签仅用于辅助选择，不需要实时同步。
+     */
+    private val _savedTags = MutableStateFlow<List<String>>(emptyList())
+    val savedTags: StateFlow<List<String>> = _savedTags.asStateFlow()
+
+    init {
+        /** 加载历史标签：从所有灵感的 tags 字段聚合去重 */
+        loadSavedTags()
+    }
+
+    /**
+     * 加载历史标签
+     *
+     * 从数据库读取所有灵感，解析各自的 tags JSON 字段，
+     * 聚合所有标签并去重后更新 _savedTags 状态。
+     */
+    private fun loadSavedTags() {
+        viewModelScope.launch {
+            try {
+                val allInspirations = inspirationRepository.getAllInspirations().first()
+                val tagSet = linkedSetOf<String>()
+                allInspirations.forEach { inspiration ->
+                    decodeTags(inspiration.tags).forEach { tag ->
+                        tagSet.add(tag)
+                    }
+                }
+                _savedTags.value = tagSet.toList()
+            } catch (e: Exception) {
+                // 加载失败时保持空列表，不影响正常编辑功能
+                _savedTags.value = emptyList()
+            }
+        }
+    }
 
     // ==================== 内容块统一管理（ContentBlock 系统） ====================
 
@@ -290,16 +318,11 @@ class InspirationEditViewModel @Inject constructor(
     }
 
     /**
-     * 设置标题并触发智能分类推荐（带防抖）
+     * 设置标题
      * @param title 灵感标题
      */
     fun setTitleWithRecommendation(title: String) {
         _title.value = title
-        recommendationJob?.cancel()
-        recommendationJob = viewModelScope.launch {
-            delay(300)
-            triggerRecommendation()
-        }
     }
 
     /**
@@ -316,7 +339,6 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setCategoryId(categoryId: Long) {
         _categoryId.value = categoryId
-        _hasManuallySelectedCategory.value = true
         updateReminderRecommendation()
     }
 
@@ -510,7 +532,6 @@ class InspirationEditViewModel @Inject constructor(
                 _title.value = inspiration.title
                 _content.value = inspiration.content ?: ""
                 _categoryId.value = inspiration.categoryId
-                _hasManuallySelectedCategory.value = inspiration.categoryId > 0
                 _priority.value = inspiration.priority
                 _startDate.value = inspiration.startDate
                 _dueDate.value = inspiration.dueDate
@@ -572,22 +593,6 @@ class InspirationEditViewModel @Inject constructor(
     fun saveInspiration(): Boolean {
         if (_title.value.isBlank()) {
             return false
-        }
-
-        if (!_hasManuallySelectedCategory.value) {
-            val categoriesList = _categories.value
-            
-            if (categoriesList.isEmpty()) {
-                performSave()
-                return true
-            }
-
-            val keywords = com.corgimemo.app.data.util.KeywordExtractor.extractKeywords(_title.value)
-            if (keywords.isNotEmpty()) {
-                _extractedKeywords.value = keywords
-                _showKeywordSelection.value = true
-                return false
-            }
         }
 
         performSave()
@@ -698,60 +703,6 @@ class InspirationEditViewModel @Inject constructor(
     }
 
     /**
-     * 确认关键词选择并保存
-     *
-     * @param selectedKeyword 用户选择的关键词
-     * @param selectedCategoryId 用户选择的分类 ID
-     * @return 是否成功
-     */
-    fun confirmKeywordSelection(selectedKeyword: String, selectedCategoryId: Long): Boolean {
-        if (selectedKeyword.isBlank() || selectedCategoryId <= 0) {
-            return false
-        }
-
-        viewModelScope.launch {
-            val selectedCategory = _categories.value.find { it.id == selectedCategoryId }
-            selectedCategory?.let { category ->
-                categoryKeywordRepository.addUserKeyword(
-                    keyword = selectedKeyword,
-                    categoryType = category.type
-                )
-            }
-
-            _categoryId.value = selectedCategoryId
-            _hasManuallySelectedCategory.value = true
-            _showKeywordSelection.value = false
-
-            performSave()
-        }
-
-        return true
-    }
-
-    /**
-     * 跳过关键词添加，直接保存
-     */
-    fun skipKeywordSelection() {
-        _showKeywordSelection.value = false
-        _hasManuallySelectedCategory.value = true
-        performSave()
-    }
-
-    /**
-     * 取消关键词选择
-     */
-    fun cancelKeywordSelection() {
-        _showKeywordSelection.value = false
-    }
-
-    /**
-     * 关闭关键词选择对话框
-     */
-    fun dismissKeywordSelection() {
-        _showKeywordSelection.value = false
-    }
-
-    /**
      * 保存子任务（编辑模式下先删除旧子任务再添加新的）
      * 并同步更新灵感的 hasSubTasks 字段
      *
@@ -821,42 +772,6 @@ class InspirationEditViewModel @Inject constructor(
                 _isCategoriesLoaded.value = true
                 android.util.Log.d("InspirationEditVM", "分类加载完成, isCategoriesLoaded=true, categories数量=${_categories.value.size}")
             }
-        }
-    }
-
-    /**
-     * 触发分类推荐
-     */
-    fun triggerRecommendation() {
-        viewModelScope.launch {
-            android.util.Log.d("InspirationEditVM", "触发推荐, title='${_title.value}', hasManuallySelectedCategory=${_hasManuallySelectedCategory.value}")
-            
-            val recommendation = categoryMatcher.recommendCategory(
-                title = _title.value,
-                content = _content.value.takeIf { it.isNotBlank() }
-            )
-
-            android.util.Log.d("InspirationEditVM", "推荐结果: $recommendation")
-
-            if (recommendation != null) {
-                val category = _categories.value.find { it.type == recommendation.categoryType }
-                android.util.Log.d("InspirationEditVM", "匹配到分类: $category")
-                _recommendedCategory.value = category
-            } else {
-                _recommendedCategory.value = null
-                android.util.Log.d("InspirationEditVM", "无匹配推荐, title=${_title.value}, recommendedCategory=null, hasManuallySelected=${_hasManuallySelectedCategory.value}")
-            }
-        }
-    }
-
-    /**
-     * 接受推荐的分类
-     */
-    fun acceptRecommendation() {
-        _recommendedCategory.value?.let { category ->
-            _categoryId.value = category.id
-            _hasManuallySelectedCategory.value = true
-            _recommendedCategory.value = null
         }
     }
 

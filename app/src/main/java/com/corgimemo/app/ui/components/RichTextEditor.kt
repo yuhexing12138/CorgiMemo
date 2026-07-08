@@ -129,7 +129,7 @@ fun RichTextEditor(
             maxLines = maxLines,
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             decorationBox = { innerTextField ->
-                if (state.textFieldValue.value.annotatedString.isEmpty() && !isFocused) {
+                if (state.textFieldValue.value.annotatedString.isEmpty()) {
                     androidx.compose.foundation.layout.Box {
                         Text(
                             text = placeholder,

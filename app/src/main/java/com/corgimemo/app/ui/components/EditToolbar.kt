@@ -31,18 +31,21 @@ import androidx.compose.ui.unit.sp
 /**
  * 编辑页底部工具栏组件
  *
- * 基础布局（5 个核心功能按钮，始终显示）：
- *   相机 | 麦克风 | 背景/画笔 | 分享 | 删除
+ * 基础布局（2 个始终显示的核心按钮）：
+ *   相机 | 麦克风
  *
  * 可选按钮（仅在调用方传入对应回调时渲染）：
+ * - 背景色按钮（Icons.Default.Palette）：传入 onBackgroundClick 时显示
  * - 关联按钮（@, Icons.Default.AlternateEmail）：传入 onMentionClick 时显示，触发卡片关联弹窗
  * - 位置按钮（#, Icons.Default.Tag）：传入 onLocationClick 时显示，触发位置提醒弹窗
+ * - 分享按钮（Icons.Default.Share）：传入 onShareClick 时显示
+ * - 删除按钮（Icons.Default.Delete）：传入 onDeleteClick 时显示
  *
  * 设计原则：
  * - 未传回调时不渲染对应按钮，让 SpaceEvenly 仅基于可见按钮做均匀分布，
  *   避免占位按钮挤压其他图标的间距
- * - 待办编辑页：传两个回调 → 渲染 7 个按钮
- * - 灵感编辑页：不传 → 保持原 5 按钮布局
+ * - 待办编辑页：传所有回调 → 渲染 7 个按钮（相机/麦克风/背景/@/#/分享/删除）
+ * - 灵感编辑页：仅传相机/麦克风 → 2 按钮布局（画板/分享/删除已移至顶部工具栏）
  *
  * 已移除的功能：
  * - 字体格式（A/A）和列表格式按钮（富文本编辑功能）
@@ -57,11 +60,11 @@ import androidx.compose.ui.unit.sp
 fun EditToolbar(
     onPhotoClick: () -> Unit,
     onVoiceClick: () -> Unit,
-    onBackgroundClick: () -> Unit,
+    onBackgroundClick: (() -> Unit)? = null,
     onMentionClick: (() -> Unit)? = null,
     onLocationClick: (() -> Unit)? = null,
-    onShareClick: () -> Unit,
-    onDeleteClick: () -> Unit,
+    onShareClick: (() -> Unit)? = null,
+    onDeleteClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     /** 默认使用主题背景色（暖米色），与新建日期/新建灵感页一致 */
     backgroundColor: Color = MaterialTheme.colorScheme.background
@@ -85,11 +88,17 @@ fun EditToolbar(
                 /** 核心功能按钮组（均匀分布） */
                 ToolbarIconBtn(imageVector = Icons.Default.PhotoCamera, contentDescription = "照片", onClick = onPhotoClick)
                 ToolbarIconBtn(imageVector = Icons.Default.Mic, contentDescription = "语音", onClick = onVoiceClick)
-                ToolbarIconBtn(imageVector = Icons.Default.Palette, contentDescription = "背景色", onClick = onBackgroundClick)
+                /**
+                 * 背景色按钮：调用方传入 onBackgroundClick 时才渲染。
+                 * 灵感编辑页已将此按钮移至顶部工具栏，不再传入此回调。
+                 */
+                if (onBackgroundClick != null) {
+                    ToolbarIconBtn(imageVector = Icons.Default.Palette, contentDescription = "背景色", onClick = onBackgroundClick)
+                }
                 /**
                  * 关联按钮（@）：
                  * - 调用方传入 onMentionClick 时才渲染（待办编辑页）
-                 * - 未传时不渲染（灵感编辑页保持原 5 按钮布局）
+                 * - 未传时不渲染（灵感编辑页）
                  * 这样可保证 SpaceEvenly 仅基于实际显示的按钮做均匀分布，
                  * 不会因为占位空按钮而挤压其他图标的间距。
                  */
@@ -110,8 +119,20 @@ fun EditToolbar(
                         onClick = onLocationClick
                     )
                 }
-                ToolbarIconBtn(imageVector = Icons.Default.Share, contentDescription = "分享", onClick = onShareClick)
-                ToolbarIconBtn(imageVector = Icons.Default.Delete, contentDescription = "删除", onClick = onDeleteClick)
+                /**
+                 * 分享按钮：调用方传入 onShareClick 时才渲染。
+                 * 灵感编辑页已将此按钮移至顶部工具栏，不再传入此回调。
+                 */
+                if (onShareClick != null) {
+                    ToolbarIconBtn(imageVector = Icons.Default.Share, contentDescription = "分享", onClick = onShareClick)
+                }
+                /**
+                 * 删除按钮：调用方传入 onDeleteClick 时才渲染。
+                 * 灵感编辑页已将此按钮移至顶部工具栏，不再传入此回调。
+                 */
+                if (onDeleteClick != null) {
+                    ToolbarIconBtn(imageVector = Icons.Default.Delete, contentDescription = "删除", onClick = onDeleteClick)
+                }
             }
         }
     }

@@ -47,8 +47,8 @@ fun AppNavHost(
             OnboardingScreen(navController = navController)
         }
 
-        composable(Screen.Home.route) {
-            MainScreen(navController = navController)
+        composable(Screen.Home.route) { backStackEntry ->
+            MainScreen(navController = navController, backStackEntry = backStackEntry)
         }
 
         composable(Screen.TodoEdit.route) {

@@ -34,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.ui.components.AppDrawerContent
@@ -87,11 +89,36 @@ import kotlinx.coroutines.launch
  */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun MainScreen(navController: NavController) {
+fun MainScreen(
+    navController: NavController,
+    backStackEntry: NavBackStackEntry? = null
+) {
     var selectedTab by remember { mutableStateOf(TabItem.TODO) }
     var isBubbleExpanded by remember { mutableStateOf(false) }
     var isFastCollapse by remember { mutableStateOf(false) }
     var lastClickTime by remember { mutableLongStateOf(0L) }
+
+    /**
+     * 监听其他页面返回时设置的 targetTab
+     *
+     * 例如：灵感编辑页退出时设置 savedStateHandle["targetTab"] = "INSPIRE"，
+     * MainScreen 接收后切换到灵感 tab，确保从灵感编辑页退出后回到灵感页（而非待办页）。
+     *
+     * 使用 savedStateHandle.getStateFlow 监听值变化，消费后清除避免重复触发。
+     */
+    backStackEntry?.savedStateHandle?.let { handle ->
+        val targetTab by handle.getStateFlow<String?>("targetTab", null)
+            .collectAsStateWithLifecycle()
+        LaunchedEffect(targetTab) {
+            if (targetTab != null) {
+                runCatching { TabItem.valueOf(targetTab!!) }.getOrNull()?.let {
+                    selectedTab = it
+                }
+                // 消费后清除，避免重复触发
+                handle["targetTab"] = null
+            }
+        }
+    }
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()

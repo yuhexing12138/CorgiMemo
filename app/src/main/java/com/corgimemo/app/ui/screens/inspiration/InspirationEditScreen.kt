@@ -5,16 +5,20 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,19 +37,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.filled.Redo
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.material3.Icon
@@ -61,9 +62,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -95,11 +93,8 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.data.model.CardRelation
-import com.corgimemo.app.data.repository.RepeatTaskManager
-import com.corgimemo.app.ui.components.KeywordSelectionDialog
 import com.corgimemo.app.ui.components.LocationPicker
 import com.corgimemo.app.ui.components.MentionTriggerPopup
-import com.corgimemo.app.ui.components.RecommendationChip
 import com.corgimemo.app.ui.components.VoiceRecordBottomSheet
 import com.corgimemo.app.ui.components.DeleteConfirmDialog /** 删除确认对话框（防误触）*/
 import com.corgimemo.app.ui.components.safeAreaForTopBar /** 安全区域内边距：顶栏状态栏*/
@@ -119,18 +114,14 @@ import com.corgimemo.app.util.VoicePlayer
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.InspirationEditViewModel
-import com.corgimemo.app.ui.screens.inspiration.components.TagInputField /** 标签输入组件（灵感独有功能）*/
+import com.corgimemo.app.ui.screens.inspiration.components.TagPickerSheet /** 标签选择弹窗组件（灵感独有功能）*/
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
 import kotlinx.coroutines.launch
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 
 /** 内容块定义已提取至 com.corgimemo.app.ui.model.ContentBlock（公共模块），通过 import 复用 */
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun InspirationEditScreen(
     navController: NavController,
@@ -145,18 +136,6 @@ fun InspirationEditScreen(
     /** Undo/Redo 状态：控制撤销/重做按钮的启用状态 */
     val canUndo by viewModel.canUndo.collectAsState()
     val canRedo by viewModel.canRedo.collectAsState()
-    val priority by viewModel.priority.collectAsState()
-    val categoryId by viewModel.categoryId.collectAsState()
-    val categories by viewModel.categories.collectAsState()
-    val recommendedCategory by viewModel.recommendedCategory.collectAsState()
-    val hasManuallySelectedCategory by viewModel.hasManuallySelectedCategory.collectAsState()
-    val showKeywordSelection by viewModel.showKeywordSelection.collectAsState()
-    val extractedKeywords by viewModel.extractedKeywords.collectAsState()
-    val isCategoriesLoaded by viewModel.isCategoriesLoaded.collectAsState()
-    val startDate by viewModel.startDate.collectAsState()
-    val dueDate by viewModel.dueDate.collectAsState()
-    val estimatedDurationMinutes by viewModel.estimatedDurationMinutes.collectAsState()
-    val repeatType by viewModel.repeatType.collectAsState()
 
     // 地理围栏相关状态
     val geofenceLat by viewModel.geofenceLat.collectAsState()
@@ -165,11 +144,6 @@ fun InspirationEditScreen(
     val geofenceType by viewModel.geofenceType.collectAsState()
     val geofenceEnabled by viewModel.geofenceEnabled.collectAsState()
     val geofenceAddress by viewModel.geofenceAddress.collectAsState()
-
-    // 提醒时间相关状态
-    val reminderTime by viewModel.reminderTime.collectAsState()
-    val recommendedReminderTime by viewModel.recommendedReminderTime.collectAsState()
-    val showReminderRecommendation by viewModel.showReminderRecommendation.collectAsState()
 
     // 子任务相关状态
     val subTasks by viewModel.subTasks.collectAsState()
@@ -183,6 +157,8 @@ fun InspirationEditScreen(
 
     /** ★★★ 标签列表状态（灵感独有功能）★★★ */
     val tags by viewModel.tags.collectAsState()
+    /** ★ 历史标签列表（从所有灵感聚合去重，用于 TagPickerSheet 快速选择）★ */
+    val savedTags by viewModel.savedTags.collectAsState()
 
     val context = LocalContext.current
     /** 屏幕密度实例，用于 dp→px 精确转换 */
@@ -416,36 +392,34 @@ fun InspirationEditScreen(
         }
     }
 
-    var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDatePickerState()
-    var selectedDateMillis by remember { mutableStateOf<Long?>(null) }
-    var showStartTimePicker by remember { mutableStateOf(false) }
-    val startTimePickerState = rememberTimePickerState(
-        initialHour = 9,
-        initialMinute = 0,
-        is24Hour = true
-    )
-    var showTimePicker by remember { mutableStateOf(false) }
-    val timePickerState = rememberTimePickerState(
-        initialHour = 9,
-        initialMinute = 0,
-        is24Hour = true
-    )
-
-    /** 截止时间选择器相关状态 */
-    var showDueDatePicker by remember { mutableStateOf(false) }
-    val dueDatePickerState = rememberDatePickerState()
-    var selectedDueDateMillis by remember { mutableStateOf<Long?>(null) }
-    var showDueTimePicker by remember { mutableStateOf(false) }
-    val dueTimePickerState = rememberTimePickerState(
-        initialHour = 18,
-        initialMinute = 0,
-        is24Hour = true
-    )
     val snackbarHostState = remember { SnackbarHostState() }
 
     /** @触发关联弹窗状态 */
     var showMentionPopup by remember { mutableStateOf(false) }
+    /**
+     * 返回上一页辅助函数
+     *
+     * 在 popBackStack 之前设置 savedStateHandle["targetTab"] = "INSPIRE"，
+     * 让 MainScreen 接收到返回事件后切换到灵感 tab，
+     * 确保从灵感编辑页退出后始终回到灵感页（而非待办页等其他 tab）。
+     */
+    val navigateBack: () -> Unit = {
+        navController.previousBackStackEntry?.savedStateHandle?.set("targetTab", "INSPIRE")
+        navController.popBackStack()
+    }
+
+    /**
+     * 拦截系统返回事件（侧滑返回 / 系统返回键）
+     *
+     * 确保所有退出方式（应用内返回按钮、完成按钮、删除确认、系统返回）
+     * 都经过 navigateBack()，统一设置 targetTab=INSPIRE，
+     * 让 MainScreen 切换到灵感 tab。
+     */
+    BackHandler { navigateBack() }
+    /** 标签选择弹窗显示状态（由顶部标签按钮触发） */
+    var showTagPicker by remember { mutableStateOf(false) }
+    /** 待删除的标签（长按标签后弹出确认对话框，null=不显示） */
+    var pendingDeleteTag by remember { mutableStateOf<String?>(null) }
     /** @搜索关键词状态 */
     var mentionQuery by remember { mutableStateOf("") }
     /** #触发位置提醒弹窗状态 */
@@ -511,14 +485,6 @@ fun InspirationEditScreen(
         }
     }
 
-    /** 自动计算预计时长（当开始日期和截止时间都设置后） */
-    LaunchedEffect(startDate, dueDate) {
-        if (startDate != null && dueDate != null && dueDate!! > startDate!!) {
-            val totalMinutes = (dueDate!! - startDate!!) / 1000 / 60
-            viewModel.setEstimatedDurationMinutes(totalMinutes.toInt())
-        }
-    }
-
     /**
      * V2.7: 监听编辑历史时间线的恢复请求（NavResult API + 完整格式恢复）
      *
@@ -576,7 +542,6 @@ fun InspirationEditScreen(
 
     if (speechResult.isNotEmpty()) {
         viewModel.setTitle(speechResult)
-        viewModel.triggerRecommendation()
         speechViewModel.startListening()
     }
 
@@ -591,7 +556,7 @@ fun InspirationEditScreen(
         /** 初始背景使用 background 暖米色，与新建日期/新建灵感页保持一致 */
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            /** 顶部工具栏：返回 | 撤销/重做 | 通知/锁定 | 完成 */
+            /** 顶部工具栏：返回 | 撤销/重做 | 画板/分享/删除 | 锁定 | 完成 */
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -599,16 +564,16 @@ fun InspirationEditScreen(
                     .padding(horizontal = 4.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                /** 返回按钮 */
+                /** 返回按钮：颜色与尺寸与 TodoEditScreen / EnhancedTopBar 统一 */
                 IconButton(
-                    onClick = { navController.popBackStack() },
+                    onClick = navigateBack,
                     modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "返回",
-                        tint = Color(0xFFFF9A5C),
-                        modifier = Modifier.size(20.dp)
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
 
@@ -656,103 +621,65 @@ fun InspirationEditScreen(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                /** 通知 + 锁定（紧凑组） */
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                /** 通知/时间设置（下拉菜单：开始日期 | 截止时间 | 提醒时间） */
-                var showTimeMenu by remember { mutableStateOf(false) }
-                Box {
-                    IconButton(
-                        onClick = { showTimeMenu = true },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = "时间设置",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    androidx.compose.material3.DropdownMenu(
-                        expanded = showTimeMenu,
-                        onDismissRequest = { showTimeMenu = false }
-                    ) {
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text("开始日期") },
-                            onClick = {
-                                showTimeMenu = false
-                                showDatePicker = true
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
-                            }
-                        )
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text("截止时间") },
-                            onClick = {
-                                showTimeMenu = false
-                                showDueDatePicker = true
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
-                            }
-                        )
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text("提醒时间") },
-                            onClick = {
-                                showTimeMenu = false
-                                showTimePicker = true
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(18.dp))
-                            }
-                        )
+                /** ===== 从底部工具栏移入的 3 个按钮（锁按钮左侧，大小与撤销/重做/锁定一致）===== */
 
-                        // 分隔线
-                        androidx.compose.material3.HorizontalDivider()
-
-                        /** 重复类型选项 */
-                        val repeatOptions = RepeatTaskManager.getRepeatTypeOptions()
-                        repeatOptions.forEach { (type, name) ->
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(name)
-                                        if (repeatType == type) {
-                                            Spacer(modifier = Modifier.weight(1f))
-                                            Text(
-                                                "✓",
-                                                color = MaterialTheme.colorScheme.primary,
-                                                fontSize = 14.sp
-                                            )
-                                        }
-                                    }
-                                },
-                                onClick = {
-                                    viewModel.setRepeatType(type)
-                                    showTimeMenu = false
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.DateRange,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            )
-                        }
-                    }
+                /** 画板按钮：触发背景色选择器 */
+                IconButton(
+                    onClick = { showColorPicker = true },
+                    enabled = !isLocked,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Palette,
+                        contentDescription = "背景色",
+                        tint = if (!isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
-                    IconButton(
-                        onClick = { isLocked = !isLocked },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                            contentDescription = if (isLocked) "解锁" else "锁定",
-                            tint = if (isLocked) Color(0xFFFF9A5C) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+
+                /** 分享按钮：添加子任务（复用分享图标位） */
+                IconButton(
+                    onClick = { viewModel.addSubTask("新子任务") },
+                    enabled = !isLocked,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "添加子任务",
+                        tint = if (!isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                /** 删除按钮：弹出删除确认对话框（仅已保存灵感可删除） */
+                IconButton(
+                    onClick = {
+                        if (inspirationId != null && inspirationId > 0) {
+                            showDeleteConfirmDialog = true
+                        }
+                    },
+                    enabled = !isLocked,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "删除",
+                        tint = if (!isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                /** 锁定按钮 */
+                IconButton(
+                    onClick = { isLocked = !isLocked },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                        contentDescription = if (isLocked) "解锁" else "锁定",
+                        tint = if (isLocked) Color(0xFFFF9A5C) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
 
                 Spacer(modifier = Modifier.width(8.dp))
@@ -763,7 +690,7 @@ fun InspirationEditScreen(
                         if (viewModel.saveInspiration()) {
                             homeViewModel.setPoseForLoading()
                             homeViewModel.refreshSubTaskProgress()
-                            navController.popBackStack()
+                            navigateBack()
                         }
                     },
                     shape = RoundedCornerShape(14.dp),
@@ -784,7 +711,7 @@ fun InspirationEditScreen(
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
-            /** 编辑页底部工具栏（均匀分布图标版）- 添加imePadding自适应软键盘高度 */
+            /** 编辑页底部工具栏（仅保留相机和麦克风按钮；画板/分享/删除已移至顶部工具栏）- 添加imePadding自适应软键盘高度 */
             EditToolbar(
                 onPhotoClick = {
                     /** 触发图片选择对话框 */
@@ -793,20 +720,6 @@ fun InspirationEditScreen(
                 onVoiceClick = {
                     /** 打开语音录制面板 */
                     showVoiceRecordSheet = true
-                },
-                onBackgroundClick = {
-                    /** 触发背景色选择器 */
-                    showColorPicker = true
-                },
-                onShareClick = {
-                    /** 添加子任务（复用分享图标位） */
-                    viewModel.addSubTask("新子任务")
-                },
-                onDeleteClick = {
-                    /** 弹出删除确认对话框（防止误触） */
-                    if (inspirationId != null && inspirationId > 0) {
-                        showDeleteConfirmDialog = true
-                    }
                 },
                 /** 使用 safeAreaForEditBar 适配不同导航模式（手势导航/三键导航）+ 软键盘 */
                 modifier = Modifier.safeAreaForEditBar()
@@ -837,7 +750,7 @@ fun InspirationEditScreen(
                     Text(
                         "标题",
                         style = MaterialTheme.typography.headlineMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
                     )
                 },
@@ -848,81 +761,71 @@ fun InspirationEditScreen(
                     unfocusedBorderColor = Color.Transparent,
                     cursorColor = Color(0xFFFF9A5C)
                 ),
-                textStyle = androidx.compose.ui.text.TextStyle(
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
+                textStyle = MaterialTheme.typography.headlineMedium.copy(
                     color = MaterialTheme.colorScheme.onSurface
                 ),
                 enabled = !isLocked
             )
 
-            /** ===== 分类 + 优先级行（标题下方紧凑排列）===== */
-            val selectedCategory = categories.find { it.id == categoryId }
-            Row(
-                modifier = Modifier.padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                var showCategoryPicker by remember { mutableStateOf(false) }
+            /** ===== 标签区（标题下方：标签按钮 + 已添加标签展示）===== */
+            Column(modifier = Modifier.padding(top = 8.dp)) {
+                /** 标签按钮：点击触发标签选择弹窗 */
                 Surface(
                     shape = RoundedCornerShape(14.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
-                    onClick = { showCategoryPicker = true }
+                    enabled = !isLocked,
+                    onClick = { showTagPicker = true }
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = selectedCategory?.name ?: "备忘录",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        @Suppress("DEPRECATION")
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = null,
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "添加标签",
                             modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "标签",
+                            style = MaterialTheme.typography.bodySmall
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(10.dp))
-
-                /** 优先级内联选择 */
-                listOf(Pair(0, "低"), Pair(1, "中"), Pair(2, "高")).forEach { (value, label) ->
-                    Text(
-                        text = label,
+                /** 已添加标签展示（FlowRow 流式布局；点击进入弹窗，长按删除） */
+                if (tags.isNotEmpty()) {
+                    FlowRow(
                         modifier = Modifier
-                            .clickable(enabled = !isLocked) { viewModel.setPriority(value) }
-                            .padding(horizontal = 5.dp, vertical = 2.dp),
-                        color = if (priority == value) Color(0xFFFF9A5C) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = if (priority == value) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 12.sp
-                    )
-                    if (value < 2) Spacer(modifier = Modifier.width(2.dp))
-                }
-
-                /** 分类选择弹窗 */
-                if (showCategoryPicker && categories.isNotEmpty()) {
-                    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                    com.corgimemo.app.ui.components.CategoryPickerSheet(
-                        sheetState = sheetState,
-                        categories = categories,
-                        currentCategoryId = categoryId,
-                        onDismiss = { showCategoryPicker = false },
-                        onCategorySelected = { newId ->
-                            viewModel.setCategoryId(newId)
-                            showCategoryPicker = false
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        tags.forEach { tag ->
+                            Box(
+                                modifier = Modifier
+                                    .combinedClickable(
+                                        onClick = { showTagPicker = true },
+                                        onLongClick = { pendingDeleteTag = tag }
+                                    )
+                                    .background(
+                                        color = Color(0xFFFFF3E0),
+                                        shape = RoundedCornerShape(20.dp)
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = "#$tag",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFFFF9A5C)
+                                )
+                            }
                         }
-                    )
+                    }
                 }
             }
-
-            // ★★★ 标签系统（灵感独有功能，保留）★★★
-            TagInputField(
-                tags = tags,
-                onTagsChange = { newTags -> viewModel.updateTags(newTags) },
-                modifier = Modifier.fillMaxWidth()
-            )
 
             /** ===== 动态内容流编辑器区域（支持拖拽排序 + 两步删除） ===== */
 
@@ -1368,106 +1271,6 @@ fun InspirationEditScreen(
                 )
             }
 
-            AnimatedVisibility(visible = recommendedCategory != null) {
-                Column(modifier = Modifier.padding(top = 8.dp)) {
-                    recommendedCategory?.let { category ->
-                        RecommendationChip(
-                            category = category,
-                            onClick = { viewModel.acceptRecommendation() }
-                        )
-                    }
-                }
-            }
-
-            AnimatedVisibility(visible = recommendedCategory == null && title.isNotBlank() && !hasManuallySelectedCategory) {
-                Column(modifier = Modifier.padding(top = 16.dp)) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "⚠️",
-                                fontSize = 18.sp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "需要分类",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                                Text(
-                                    text = "请为这条灵感选择一个分类",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            }
-                        }
-                    }
-            }
-
-            /** 自动计算时长显示（根据开始日期和截止时间自动计算） */
-            val autoDuration = remember(startDate, dueDate) {
-                if (startDate != null && dueDate != null && dueDate!! > startDate!!) {
-                    val diffMs = dueDate!! - startDate!!
-                    val totalMinutes = diffMs / 1000 / 60
-                    val hours = totalMinutes / 60
-                    val minutes = totalMinutes % 60
-                    when {
-                        hours > 24 -> "${hours / 24}天${hours % 24}小时"
-                        hours > 0 -> "${hours}小时${if (minutes > 0) "${minutes}分" else ""}"
-                        minutes > 0 -> "${minutes}分钟"
-                        else -> null
-                    }
-                } else null
-            }
-
-            AnimatedVisibility(visible = autoDuration != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "⏱️ 预计时长: $autoDuration",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 推荐提醒时间标签
-            AnimatedVisibility(visible = showReminderRecommendation) {
-                recommendedReminderTime?.let { time ->
-                    val format = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
-                    val recTimeText = format.format(Date(time))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp)
-                            .background(Color(0xFFE3F2FD), RoundedCornerShape(8.dp))
-                            .clickable { viewModel.acceptReminderRecommendation() }
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "\uD83D\uDCA1 推荐提醒：$recTimeText",
-                            fontSize = 14.sp,
-                                color = Color(0xFF1565C0)
-                            )
-                        }
-                    }
-                }
-            }
-
             } /** 主内容 Column 结束 */
 
     /**
@@ -1528,176 +1331,47 @@ fun InspirationEditScreen(
         )
     }
 
-    if (showDatePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val selectedDate = datePickerState.selectedDateMillis
-                        if (selectedDate != null) {
-                            selectedDateMillis = selectedDate
-                            showDatePicker = false
-                            showStartTimePicker = true
-                        }
-                    }
-                ) {
-                    Text("确定")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) {
-                    Text("取消")
-                }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
-    }
-
-    if (showStartTimePicker) {
-        AlertDialog(
-            onDismissRequest = { showStartTimePicker = false },
-            title = { Text("选择开始时间") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val cal = Calendar.getInstance()
-                        cal.timeInMillis = selectedDateMillis ?: System.currentTimeMillis()
-                        cal.set(Calendar.HOUR_OF_DAY, startTimePickerState.hour)
-                        cal.set(Calendar.MINUTE, startTimePickerState.minute)
-                        cal.set(Calendar.SECOND, 0)
-                        cal.set(Calendar.MILLISECOND, 0)
-                        viewModel.setStartDate(cal.timeInMillis)
-                        showStartTimePicker = false
-                        selectedDateMillis = null
-                    }
-                ) {
-                    Text("确定")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showStartTimePicker = false }) {
-                    Text("取消")
-                }
-            },
-            text = {
-                TimePicker(state = startTimePickerState)
-            }
+    /** 标签选择弹窗（类似待办编辑页的分组弹窗） */
+    if (showTagPicker) {
+        val tagSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        TagPickerSheet(
+            sheetState = tagSheetState,
+            tags = tags,
+            savedTags = savedTags,
+            onTagsChange = { newTags -> viewModel.updateTags(newTags) },
+            onDismiss = { showTagPicker = false }
         )
     }
 
-    if (showTimePicker) {
+    /** 标签长按删除确认对话框（防误触） */
+    pendingDeleteTag?.let { targetTag ->
         AlertDialog(
-            onDismissRequest = { showTimePicker = false },
-            title = { Text("选择提醒时间") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val cal = Calendar.getInstance()
-                        cal.timeInMillis = startDate ?: System.currentTimeMillis()
-                        cal.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                        cal.set(Calendar.MINUTE, timePickerState.minute)
-                        cal.set(Calendar.SECOND, 0)
-                        cal.set(Calendar.MILLISECOND, 0)
-                        viewModel.setReminderTime(cal.timeInMillis)
-                        showTimePicker = false
-                    }
-                ) {
-                    Text("确定")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTimePicker = false }) {
-                    Text("取消")
-                }
-            },
+            onDismissRequest = { pendingDeleteTag = null },
+            title = { Text("删除标签", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
             text = {
-                TimePicker(state = timePickerState)
-            }
-        )
-    }
-
-    /** 截止日期选择对话框 */
-    if (showDueDatePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDueDatePicker = false },
+                Text(
+                    text = "确定要删除标签「#$targetTag」吗？",
+                    fontSize = 14.sp
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val selectedDate = dueDatePickerState.selectedDateMillis
-                        if (selectedDate != null) {
-                            selectedDueDateMillis = selectedDate
-                            showDueDatePicker = false
-                            showDueTimePicker = true
-                        }
+                        viewModel.updateTags(tags - targetTag)
+                        pendingDeleteTag = null
                     }
                 ) {
-                    Text("确定")
+                    Text(
+                        text = "删除",
+                        color = Color(0xFFDC2626)
+                    )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDueDatePicker = false }) {
+                TextButton(onClick = { pendingDeleteTag = null }) {
                     Text("取消")
                 }
             }
-        ) {
-            DatePicker(state = dueDatePickerState)
-        }
-    }
-
-    /** 截止时间选择对话框 */
-    if (showDueTimePicker) {
-        AlertDialog(
-            onDismissRequest = { showDueTimePicker = false },
-            title = { Text("选择截止时间") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val cal = Calendar.getInstance()
-                        cal.timeInMillis = selectedDueDateMillis ?: System.currentTimeMillis()
-                        cal.set(Calendar.HOUR_OF_DAY, dueTimePickerState.hour)
-                        cal.set(Calendar.MINUTE, dueTimePickerState.minute)
-                        cal.set(Calendar.SECOND, 0)
-                        cal.set(Calendar.MILLISECOND, 0)
-                        viewModel.setDueDate(cal.timeInMillis)
-                        showDueTimePicker = false
-                        selectedDueDateMillis = null
-                    }
-                ) {
-                    Text("确定")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDueTimePicker = false }) {
-                    Text("取消")
-                }
-            },
-            text = {
-                TimePicker(state = dueTimePickerState)
-            }
-        )
-    }
-
-    if (showKeywordSelection) {
-        KeywordSelectionDialog(
-            title = title,
-            keywords = extractedKeywords,
-            categories = categories,
-            onConfirm = { keyword, categoryId ->
-                if (viewModel.confirmKeywordSelection(keyword, categoryId)) {
-                    homeViewModel.setPoseForLoading()
-                    homeViewModel.refreshSubTaskProgress()
-                    navController.popBackStack()
-                }
-            },
-            onSkip = {
-                viewModel.skipKeywordSelection()
-                homeViewModel.setPoseForLoading()
-                homeViewModel.refreshSubTaskProgress()
-                navController.popBackStack()
-            },
-            onDismiss = { viewModel.cancelKeywordSelection() }
         )
     }
 
@@ -1771,7 +1445,7 @@ fun InspirationEditScreen(
             /** 用户确认删除：执行删除并返回 */
             if (inspirationId != null && inspirationId > 0) {
                 viewModel.deleteInspiration(inspirationId)
-                navController.popBackStack()
+                navigateBack()
             }
         },
         onDismiss = { showDeleteConfirmDialog = false }
@@ -1824,34 +1498,5 @@ fun RecordingWaveAnimation(isListening: Boolean) {
                     .background(MaterialTheme.colorScheme.primary)
             )
         }
-    }
-}
-
-@Composable
-fun PriorityChip(text: String, priority: Int, isSelected: Boolean, onClick: () -> Unit) {
-    val (color, bgColor) = when (priority) {
-        2 -> Pair(
-            androidx.compose.ui.graphics.Color(0xFFDC2626),
-            androidx.compose.ui.graphics.Color(0xFFFFE4E6)
-        )
-        1 -> Pair(
-            androidx.compose.ui.graphics.Color(0xFFD97706),
-            androidx.compose.ui.graphics.Color(0xFFFFF3E0)
-        )
-        else -> Pair(
-            androidx.compose.ui.graphics.Color(0xFF16A34A),
-            androidx.compose.ui.graphics.Color(0xFFECFDF5)
-        )
-    }
-
-    Button(
-        onClick = onClick,
-        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-            containerColor = if (isSelected) bgColor else MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = if (isSelected) color else MaterialTheme.colorScheme.onSurfaceVariant
-        ),
-        modifier = Modifier.padding(end = 8.dp)
-    ) {
-        Text(text = text)
     }
 }
