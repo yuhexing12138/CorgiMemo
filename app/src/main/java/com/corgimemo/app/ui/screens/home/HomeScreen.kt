@@ -8,6 +8,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -128,7 +130,6 @@ import com.corgimemo.app.ui.components.PinnedSectionHeader
 import com.corgimemo.app.ui.components.PriorityPickerSheet
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.awaitPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
