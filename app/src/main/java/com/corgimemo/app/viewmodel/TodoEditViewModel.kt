@@ -1065,6 +1065,33 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
+     * 获取当前 todo 中所有"已保存"的子 todo 列表
+     *
+     * 用于分享功能：从 [groupSaveStates] 中筛选 isSaved==true 且 savedTodoId 不为空的分组，
+     * 通过 [TodoRepository] 查询对应的子 todo。
+     *
+     * @return 已保存的子 todo 列表（按 groupId 升序）
+     */
+    suspend fun getSavedSubTodos(): List<TodoItem> {
+        /** 1. 筛选已保存且有真实 todoId 的分组（按 groupId 升序） */
+        val savedGroupIds = _groupSaveStates.value
+            .filterValues { it.isSaved && it.savedTodoId != null }
+            .keys
+            .sorted()
+
+        /** 2. 逐个查询真实 todo 对象，过滤掉已被外部删除的孤儿记录 */
+        val result = mutableListOf<TodoItem>()
+        for (groupId in savedGroupIds) {
+            val savedTodoId = _groupSaveStates.value[groupId]?.savedTodoId ?: continue
+            val todo = todoRepository.getTodoById(savedTodoId)
+            if (todo != null) {
+                result.add(todo)
+            }
+        }
+        return result
+    }
+
+    /**
      * 保存所有未保存的分组
      *
      * 遍历所有 groupId，对未保存的分组逐一调用 saveGroup()。

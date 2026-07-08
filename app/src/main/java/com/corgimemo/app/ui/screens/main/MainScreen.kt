@@ -58,6 +58,8 @@ import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.analytics.UserBehaviorAnalyzer
 import com.corgimemo.app.analytics.UserBehaviorAnalyzerEntryPoint
+import com.corgimemo.app.backup.exporter.ShareCoordinator
+import com.corgimemo.app.ui.components.ShareModeDialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.launch
@@ -94,6 +96,22 @@ fun MainScreen(navController: NavController) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    /**
+     * 分享方式选择弹窗是否显示（多选模式）
+     *
+     * 当用户点击批量操作栏的"分享"按钮时，Coordinator 通过 onShowDialog 回调置为 true。
+     * 用户选择合并/一条条 或 关闭弹窗时置为 false。
+     */
+    var showShareModeDialog by remember { mutableStateOf(false) }
+
+    /**
+     * 待分享的 todo 列表快照（多选模式，在弹窗打开时填充）
+     *
+     * 多选分享时由 selectedTodoIds 映射成的 TodoItem 列表；
+     * 用于在弹窗的"合并/一条条"两个分支间共享同一份待分享数据。
+     */
+    var shareTodosSnapshot by remember { mutableStateOf<List<TodoItem>>(emptyList()) }
 
     val homeViewModel: HomeViewModel = hiltViewModel()
     /** 用户行为分析器（通过 Hilt 入口点获取 @Singleton 实例，用于记录页面访问） */
@@ -374,13 +392,25 @@ fun MainScreen(navController: NavController) {
                         onClearSelection = { homeViewModel.clearSelection() },
                         onShare = {
                             /**
-                             * 遍历选中项，对每个待办生成图片并弹出系统分享面板。
-                             * 复用 HomeScreen 中提取的 shareTodoAsImage 函数。
+                             * 多选模式分享：
+                             * 1. 用 selectedTodoIds 从 filteredTodos 找出完整 TodoItem 列表
+                             * 2. 调用 ShareCoordinator.shareTodos() 统一处理（单/多分支）
+                             * 3. 多个时由 Coordinator 回调 onShowDialog → 显示选择弹窗
                              */
-                            selectedTodoIds.forEach { id ->
-                                val todo = filteredTodos.find { it.id == id }
-                                if (todo != null) {
-                                    shareTodoAsImage(context, todo, categories)
+                            val todos = selectedTodoIds.mapNotNull { id ->
+                                filteredTodos.find { it.id == id }
+                            }
+                            if (todos.isNotEmpty()) {
+                                shareTodosSnapshot = todos
+                                coroutineScope.launch {
+                                    ShareCoordinator.shareTodos(
+                                        context = context,
+                                        todos = todos,
+                                        categories = categories,
+                                        onShowDialog = { _ ->
+                                            showShareModeDialog = true
+                                        }
+                                    )
                                 }
                             }
                         },
@@ -550,6 +580,49 @@ fun MainScreen(navController: NavController) {
                 showCategorySheet = null
             },
             onDismiss = { showCategorySheet = null }
+        )
+    }
+
+    /**
+     * 分享方式选择弹窗（多选模式）
+     *
+     * 当用户点击批量操作栏的"分享"按钮时，onShare 内 Coordinator 通过回调设置
+     * shareTodosSnapshot + showShareModeDialog=true 触发显示。
+     * 弹窗中提供"合并分享/一条条分享/取消"三种操作。
+     */
+    if (showShareModeDialog) {
+        val enableMerge = shareTodosSnapshot.size <= 10
+        ShareModeDialog(
+            count = shareTodosSnapshot.size,
+            enableMerge = enableMerge,
+            onDismiss = { showShareModeDialog = false },
+            onMerge = {
+                showShareModeDialog = false
+                coroutineScope.launch {
+                    ShareCoordinator.shareMerged(
+                        context = context,
+                        todos = shareTodosSnapshot,
+                        categories = categories,
+                        onShowSnackBar = { msg ->
+                            android.widget.Toast.makeText(
+                                context,
+                                msg,
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
+                }
+            },
+            onOneByOne = {
+                showShareModeDialog = false
+                coroutineScope.launch {
+                    ShareCoordinator.shareOneByOne(
+                        context = context,
+                        todos = shareTodosSnapshot,
+                        categories = categories
+                    )
+                }
+            }
         )
     }
 }

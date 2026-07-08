@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.corgimemo.app.backup.exporter.ShareCoordinator
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.ui.components.*
@@ -214,6 +215,22 @@ fun TodoEditScreen(
     var showImagePicker by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     var pendingPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    /**
+     * 分享方式选择弹窗是否显示
+     *
+     * 当编辑页点击分享按钮时，Coordinator 通过 onShowDialog 回调置为 true。
+     * 用户选择合并/一条条 或 关闭弹窗时置为 false。
+     */
+    var showShareModeDialog by remember { mutableStateOf(false) }
+
+    /**
+     * 待分享的 todo 列表快照（在弹窗打开时填充）
+     *
+     * 编辑页分享时由主 todo + savedSubTodos 组合而成；
+     * 用于在弹窗的"合并/一条条"两个分支间共享同一份待分享数据。
+     */
+    var shareTodosSnapshot by remember { mutableStateOf<List<com.corgimemo.app.data.model.TodoItem>>(emptyList()) }
 
     val contentBlocks = remember { androidx.compose.runtime.mutableStateListOf<ContentBlock>() }
     var highlightedIndex by remember { mutableIntStateOf(-1) }
@@ -874,7 +891,42 @@ fun TodoEditScreen(
                 onLocationClick = {
                     showLocationPopup = true
                 },
-                onShareClick = {},
+                onShareClick = {
+                    /**
+                     * 分享按钮点击：
+                     * 1. 拉取已保存的子 todo 列表
+                     * 2. 判断是否有未保存分组
+                     * 3. 调 ShareCoordinator.shareTodosFromEdit 统一处理
+                     */
+                    coroutineScope.launch {
+                        val savedSubTodos = viewModel.getSavedSubTodos()
+                        val hasUnsavedGroups = viewModel.groupSaveStates.value
+                            .any { !it.value.isSaved }
+                        val mainTodo = viewModel.currentTodo
+
+                        if (mainTodo == null) {
+                            // 主 todo 未保存：提示用户先保存再分享
+                            snackbarHostState.showSnackbar("请先保存待办再分享")
+                            return@launch
+                        }
+
+                        ShareCoordinator.shareTodosFromEdit(
+                            context = context,
+                            mainTodo = mainTodo,
+                            savedSubTodos = savedSubTodos,
+                            categories = categories,
+                            hasUnsavedGroups = hasUnsavedGroups,
+                            onShowSnackBar = { msg ->
+                                coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                            },
+                            onShowDialog = { _ ->
+                                /** 拼接"主 todo + 已保存子 todo"作为待分享列表 */
+                                shareTodosSnapshot = listOf(mainTodo) + savedSubTodos
+                                showShareModeDialog = true
+                            }
+                        )
+                    }
+                },
                 onDeleteClick = {
                     if (todoId != null && todoId > 0) {
                         homeViewModel.deleteTodo(todoId)
@@ -1823,6 +1875,45 @@ fun TodoEditScreen(
             dismissButton = {
                 TextButton(onClick = { pendingDeleteCategory = null }) {
                     Text("取消")
+                }
+            }
+        )
+    }
+
+    /**
+     * 分享方式选择弹窗
+     *
+     * 当用户在编辑页点击"分享"按钮时，onShareClick 内 Coordinator 通过回调设置
+     * shareTodosSnapshot + showShareModeDialog=true 触发显示。
+     * 弹窗中提供"合并分享/一条条分享/取消"三种操作。
+     */
+    if (showShareModeDialog) {
+        val enableMerge = shareTodosSnapshot.size <= 10
+        com.corgimemo.app.ui.components.ShareModeDialog(
+            count = shareTodosSnapshot.size,
+            enableMerge = enableMerge,
+            onDismiss = { showShareModeDialog = false },
+            onMerge = {
+                showShareModeDialog = false
+                coroutineScope.launch {
+                    ShareCoordinator.shareMerged(
+                        context = context,
+                        todos = shareTodosSnapshot,
+                        categories = categories,
+                        onShowSnackBar = { msg ->
+                            coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                        }
+                    )
+                }
+            },
+            onOneByOne = {
+                showShareModeDialog = false
+                coroutineScope.launch {
+                    ShareCoordinator.shareOneByOne(
+                        context = context,
+                        todos = shareTodosSnapshot,
+                        categories = categories
+                    )
                 }
             }
         )

@@ -305,4 +305,13 @@
 
     <!-- ==================== Batch Duplicate (Plan B: Failure Snackbar Only) ==================== -->
     <string name="batch_duplicate_failure_hint">⚠️ Some files failed to copy, please check manually</string>
+
+    <!-- ==================== Todo share mode selection dialog ==================== -->
+    <string name="share_mode_title">Choose share mode</string>
+    <string name="share_mode_subtitle_normal">%1$d todos. Merge into one image or share one by one.</string>
+    <string name="share_mode_subtitle_too_many">%1$d todos. Too many, please share one by one.</string>
+    <string name="share_mode_merge">Merge and share</string>
+    <string name="share_mode_one_by_one">Share one by one</string>
+    <string name="share_mode_cancel">Cancel</string>
+    <string name="share_unsaved_groups_hint">Please save all groups first</string>
 </resources>
