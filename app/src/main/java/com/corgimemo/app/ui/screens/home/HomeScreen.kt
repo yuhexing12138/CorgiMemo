@@ -130,6 +130,7 @@ import com.corgimemo.app.ui.components.PinnedSectionHeader
 import com.corgimemo.app.ui.components.PriorityPickerSheet
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
@@ -601,6 +602,21 @@ fun HomeScreen(
                             if (!isRefreshing) pullRefreshState.onRefreshComplete()
                         }
 
+                        // 兜底超时回弹：监测 PULLING 状态持续 200ms 无新事件
+                        // 解决 pointerInput 兜底仍偶尔失效的场景（部分 Android 版本 / 设备上
+                        // up 事件传递不可靠）。当 state == PULLING 时启动延迟任务，
+                        // 期间 state 或 pullOffset 任何变化都会重启协程（key 变化），
+                        // 用户继续操作时不会误触发
+                        LaunchedEffect(pullRefreshState.state, pullRefreshState.pullOffset) {
+                            if (pullRefreshState.state == PullRefreshState.PULLING) {
+                                delay(200)
+                                // 延迟结束后再次校验，避免状态在 delay 期间已变
+                                if (pullRefreshState.state == PullRefreshState.PULLING) {
+                                    pullRefreshState.onRelease()
+                                }
+                            }
+                        }
+
                         /**
                          * 应用分类和搜索过滤
                          */
@@ -674,15 +690,21 @@ fun HomeScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .nestedScroll(pullRefreshState.nestedScrollConnection)
-                                // 兜底监听"松手"事件：解决列表底部快速下滑时
-                                // onPreFling 不会被触发的卡住问题
+                                // 兜底监听"松手"事件：解决列表底部快速下滑 / 慢速下拉
+                                // 放手时 onPreFling 不会被触发的卡住问题
                                 .pointerInput(pullRefreshState) {
                                     awaitEachGesture {
-                                        // 监听但不消费 down 事件（不阻塞 LazyColumn 滚动）
-                                        awaitFirstDown(requireUnconsumed = false)
-                                        // 循环等待所有指针抬起（支持多指）
+                                        // 关键：使用 Initial pass 监听 down 事件
+                                        // 父组件在 Initial pass 比子组件先收到事件，可靠性最高
+                                        awaitFirstDown(
+                                            requireUnconsumed = false,
+                                            pass = PointerEventPass.Initial
+                                        )
+                                        // 关键：使用 Final pass 等待 up 事件
+                                        // Final pass 是兜底 pass，即使 LazyColumn 在 Main pass
+                                        // 消费了 up 事件，pointerInput 仍能在 Final pass 收到
                                         do {
-                                            val event = awaitPointerEvent()
+                                            val event = awaitPointerEvent(PointerEventPass.Final)
                                         } while (event.changes.any { it.pressed })
                                         // 手指完全抬起 → 触发松手处理
                                         pullRefreshState.onRelease()
