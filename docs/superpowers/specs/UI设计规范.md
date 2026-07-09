@@ -192,10 +192,12 @@
 灵感页采用"左侧时间栏 + 节点 + 右侧内容区"三段式时间线结构：
 
 ```
-[左侧时间栏 44dp] [间距 14dp] [节点 8dp] [右侧内容区]
+[左侧时间栏 56dp] [间距 14dp] [节点 8dp] [右侧内容区]
                   ↑                ↑
-                  节点中心 X = 58dp  内容区起始 X = 62dp
+                  节点中心 X = 70dp  内容区起始 X = 74dp
 ```
+
+时间栏宽度 56dp 是为了容纳"2026.07"在 12sp + letterSpacing 0.5sp 下的完整宽度（约 50-56dp），避免自动换行。
 
 #### 12.1.8.2 字号体系
 
@@ -244,7 +246,7 @@
 | 间距 | 值 | 说明 |
 |------|-----|------|
 | **页面左右内容安全边距** | 18dp | `LazyColumn.padding(horizontal = 18.dp)` |
-| **左侧时间轴栏与右侧笔记内容横向间隔** | 14dp | 时间栏宽度 44dp + 间距 14dp = 节点中心 58dp |
+| **左侧时间轴栏与右侧笔记内容横向间隔** | 14dp | 时间栏宽度 56dp + 间距 14dp = 节点中心 70dp |
 
 #### 12.1.8.4 节点与竖线
 
@@ -252,10 +254,12 @@
 |------|------|------|
 | **节点直径** | 8dp | 圆形 CircleShape |
 | **节点颜色** | `#FF9A5C`（置顶项） / `MaterialTheme.colorScheme.primary`（普通项） | 与 PRD 主题色一致 |
-| **节点 Y 位置** | 对齐"08"大号日期数字中心 | 通过 `onSizeChanged` 测量时间栏高度，按 0.66 系数估算 |
-| **节点 X 位置** | 58dp（时间栏宽度 44 + 间距 14） | 居中对齐"29"数字右侧 14dp |
-| **竖线 X** | 58dp（与节点中心对齐） | `drawBehind` 绘制，#EEEEEE 灰色，2dp 宽 |
+| **节点 Y 位置** | **固定 11dp**（对齐"灵感标题"16sp Medium 中心） | 16sp Medium lineHeight ≈ 22dp，文字中心 y = 11dp |
+| **节点 X 位置** | 70dp（时间栏宽度 56 + 间距 14） | 与"2026.07"和"灵感标题"在第一行同一水平线 |
+| **竖线 X** | 70dp（与节点中心对齐） | `drawBehind` 绘制，#EEEEEE 灰色，2dp 宽 |
 | **竖线 Y 范围** | 0 到 Item 底部 | 贯通整个 Item 高度 |
+
+> **设计决策**：节点 Y 中心固定为 11dp，对齐"灵感标题"中心，让"2026.07"、节点、"灵感标题"在第一行同一水平线上。
 
 #### 12.1.8.5 标签与图片
 
@@ -275,12 +279,16 @@
 `TimelineInspirationItem.kt` 中定义的关键常量：
 
 ```kotlin
-val dateColumnWidth = 44.dp              // 时间栏宽度
+val dateColumnWidth = 56.dp              // 时间栏宽度（容纳"2026.07"不换行）
 val dateToNodeGap = 14.dp                // 时间栏到节点中心
 val nodeDiameter = 8.dp                  // 节点直径
-val nodeCenterX = dateColumnWidth + dateToNodeGap  // 58dp
-val contentStartX = nodeCenterX + nodeDiameter / 2  // 62dp
+val nodeCenterX = dateColumnWidth + dateToNodeGap  // 70dp
+val contentStartX = nodeCenterX + nodeDiameter / 2  // 74dp
 val timelineLineX = nodeCenterX          // 竖线 X
+
+// 节点 Y 中心：固定对齐"灵感标题"16sp Medium 中心
+val nodeCenterY = 11.dp                  // 16sp Medium lineHeight ≈ 22dp，中心 y = 11dp
+val nodeTopY = (nodeCenterY - nodeRadius).coerceAtLeast(0.dp)
 
 val titleToTimeGap = 4.dp                // 标题 → 时分时间
 val timeToContentGap = 9.dp              // 时分时间 → 正文
@@ -299,25 +307,30 @@ LazyColumn(
 
 #### 12.1.8.7 节点 Y 定位算法
 
-节点中心 Y = "2026.07" 高度 + "08" 高度 / 2
+节点中心 Y 固定为 **11dp**，对齐"灵感标题"16sp Medium 文字中心。
 
-经验估算：
-- "2026.07" 12sp lineHeight ≈ 14dp
-- "08" 25sp lineHeight ≈ 30dp
-- 比例 14:30 ≈ 0.32:0.68
-- "08" 中心 = 0.32h + 0.34h = 0.66h（h 为时间栏总高度）
+设计依据：
+- 16sp Medium 默认 lineHeight ≈ 22dp
+- 文字中心 y = 22dp / 2 = 11dp
+- 节点直径 8dp，节点 top = 11dp - 4dp = 7dp
 
 实现方式：
 
 ```kotlin
-var dateColumnHeightPx by remember { mutableIntStateOf(0) }
-val dateColumnHeightDp = with(density) { dateColumnHeightPx.toDp() }
-val nodeCenterY = dateColumnHeightDp * 0.66f
+val nodeCenterY = 11.dp  // 固定值，对齐"灵感标题"中心
 val nodeTopY = (nodeCenterY - nodeRadius).coerceAtLeast(0.dp)
 ```
+
+**为什么不用动态测量**：
+- 硬编码 11dp 与 16sp Medium lineHeight 的"经验中点"一致，简洁可靠
+- 若系统字体设置放大到 1.3x，16sp 实际渲染高度会变化，节点仍固定在 11dp 会有 1-2dp 偏差
+- 后续如需精确适配，可改为 `onSizeChanged` 测量"灵感标题"实际渲染高度，动态计算节点 Y 中心
 
 #### 12.1.8.8 排版变更记录
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
 | 2026-07-09 | v1 | 初始规范（按 PRD 参考图） |
+| 2026-07-09 | v1.1 | 修复"2026.07"换行：时间栏宽度 44dp → 56dp |
+| 2026-07-09 | v1.1 | 修复节点位置：Y 中心改为固定 11dp，对齐"灵感标题"中心而非"08"中心 |
+

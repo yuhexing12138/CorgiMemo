@@ -21,18 +21,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,7 +40,7 @@ import java.util.Calendar
  *
  * 布局结构：
  * ```
- * [左侧时间栏 44dp] [间距 14dp] [节点 8dp] [右侧内容区]
+ * [左侧时间栏 56dp] [间距 14dp] [节点 8dp] [右侧内容区]
  * ```
  *
  * 字号体系（与 PRD 参考图一致）：
@@ -61,11 +55,14 @@ import java.util.Calendar
  * - 正文行高：21sp
  *
  * 横向边距：
- * - 时间栏宽度：44dp
+ * - 时间栏宽度：56dp（容纳"2026.07" 12sp + letterSpacing 0.5sp 不换行）
  * - 时间栏 → 节点中心：14dp
  * - 节点直径：8dp
- * - 节点中心 X 坐标：58dp（=44+14）
- * - 内容区起始 X 坐标：62dp（=58+4 节点半径）
+ * - 节点中心 X 坐标：70dp（=56+14）
+ * - 内容区起始 X 坐标：74dp（=70+4 节点半径）
+ *
+ * 节点 Y 位置：固定 11dp，对齐"灵感标题"16sp Medium 中心，
+ * 让"2026.07"、节点、"灵感标题"在第一行同一水平线上
  *
  * @param inspiration 灵感实体数据
  * @param tags 标签列表
@@ -90,16 +87,15 @@ fun TimelineInspirationItem(
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val density = LocalDensity.current
-
     // ===== 横向布局常量 =====
-    val dateColumnWidth = 44.dp                 // 左侧时间栏宽度
+    // 时间栏宽度 56dp：容纳"2026.07" 12sp + letterSpacing 0.5sp（约 50-56dp）不换行
+    val dateColumnWidth = 56.dp                 // 左侧时间栏宽度
     val dateToNodeGap = 14.dp                   // 时间栏右侧到节点中心
     val nodeDiameter = 8.dp                     // 节点直径
-    val nodeCenterX = dateColumnWidth + dateToNodeGap     // 58dp
+    val nodeCenterX = dateColumnWidth + dateToNodeGap     // 70dp
     val nodeRadius = nodeDiameter / 2                      // 4dp
-    val contentStartX = nodeCenterX + nodeRadius          // 62dp
-    val timelineLineX = nodeCenterX                        // 竖线 X = 58dp
+    val contentStartX = nodeCenterX + nodeRadius          // 74dp
+    val timelineLineX = nodeCenterX                        // 竖线 X = 70dp
 
     // ===== 垂直间距常量 =====
     val titleToTimeGap = 4.dp                   // 标题 → 时分时间
@@ -110,20 +106,11 @@ fun TimelineInspirationItem(
     // ===== 中文字间距 =====
     val chineseLetterSpacing = 0.5.sp
 
-    // ===== 状态：测量时间栏实际高度（用于节点 Y 定位）=====
-    var dateColumnHeightPx by remember { mutableIntStateOf(0) }
-    val dateColumnHeightDp = with(density) { dateColumnHeightPx.toDp() }
-
-    // 节点中心 Y = "2026.07" 高度 + "08" 高度/2
-    // 经验估算："2026.07" lineHeight 14dp，"08" lineHeight 30dp
-    // 比例 14:30 ≈ 0.32:0.68，"08" 中心 = 0.32h + 0.34h = 0.66h
-    // 使用 Dp * Float 运算符重载，比 (value * 0.66f).dp 更可靠
-    val nodeCenterY = dateColumnHeightDp * 0.66f
+    // ===== 节点 Y 位置：固定对齐"灵感标题"16sp Medium 中心 =====
+    // 16sp Medium 默认 lineHeight ≈ 22dp，文字中心 y = 11dp
+    // 这样节点与"2026.07"和"灵感标题"在第一行同一水平线上
+    val nodeCenterY = 11.dp
     val nodeTopY = (nodeCenterY - nodeRadius).coerceAtLeast(0.dp)
-
-    // ===== 状态：测量正文实际高度（用于图片位置备用）=====
-    var contentHeightPx by remember { mutableIntStateOf(0) }
-    val contentHeightDp = with(density) { contentHeightPx.toDp() }
 
     // ===== 颜色 =====
     val nodeColor = if (isPinnedItem) Color(0xFFFF9A5C) else MaterialTheme.colorScheme.primary
@@ -154,7 +141,6 @@ fun TimelineInspirationItem(
                 modifier = Modifier
                     .width(dateColumnWidth)
                     .align(Alignment.TopStart)
-                    .onSizeChanged { dateColumnHeightPx = it.height }
             ) {
                 // 年月文本（12sp 灰色）
                 Text(
@@ -174,7 +160,8 @@ fun TimelineInspirationItem(
             }
         }
 
-        // ========== 节点（8dp 圆点，垂直对齐"08"数字中心）==========
+        // ========== 节点（8dp 圆点，垂直对齐"灵感标题"中心）==========
+        // 节点 Y 中心固定 11dp，与"2026.07"、"灵感标题"在第一行同一水平线
         if (showDate) {
             Box(
                 modifier = Modifier
@@ -235,8 +222,7 @@ fun TimelineInspirationItem(
                     fontSize = 14.sp,
                     lineHeight = 21.sp,
                     color = Color(0xFF666666),
-                    letterSpacing = chineseLetterSpacing,
-                    modifier = Modifier.onSizeChanged { contentHeightPx = it.height }
+                    letterSpacing = chineseLetterSpacing
                 )
             }
 
