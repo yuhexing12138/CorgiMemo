@@ -192,12 +192,32 @@
 灵感页采用"左侧时间栏 + 节点 + 右侧内容区"三段式时间线结构：
 
 ```
-[左侧时间栏 56dp] [间距 14dp] [节点 8dp] [右侧内容区]
-                  ↑                ↑
-                  节点中心 X = 70dp  内容区起始 X = 74dp
+[左侧时间栏 50dp] [间距 7dp] [节点 6dp] [间距 7dp] [右侧内容区]
+                  ↑             ↑             ↑
+                  节点左边缘     节点中心      节点右边缘
+                  X=57dp         X=60dp        X=63dp
+                                                   ↑
+                                                内容区起始 X=70dp
 ```
 
-时间栏宽度 56dp 是为了容纳"2026.07"在 12sp + letterSpacing 0.5sp 下的完整宽度（约 50-56dp），避免自动换行。
+时间栏宽度 **50dp** 是为了**精确匹配"2026.07"实际渲染宽度**（约 50dp），让"2026.07"在 Column 内水平居中后**右边距 = 0**。这样时间栏右边缘紧贴"2026.07"右边缘，"2026.07"到节点视觉距离 = 0 + 7 = **7dp**，与节点到内容区（7dp）**视觉相等**。
+
+"2026.07"距离屏幕左边距 = LazyColumn.padding(horizontal = 18.dp) = 18dp。
+
+**节点尺寸与间距**：节点直径 6dp（紧凑型），时间栏右边缘到节点左边缘 7dp，节点右边缘到内容区左边缘 7dp，使整体结构 = 时间栏 50dp + 7dp + 节点 6dp + 7dp = 内容区起始 70dp。
+
+##### 时间栏内部布局
+
+时间栏 Column 内部 `horizontalAlignment = Alignment.CenterHorizontally`，让"2026.07"和"08"水平居中在同一垂直中线（Column 宽度 50dp 的中点 X=25dp）：
+
+| 元素 | 字号 | 实际宽度 | 在 50dp 内居中后位置 |
+|------|------|---------|---------------------|
+| **"2026.07"** | 12sp | 约 50dp | X = 0dp ~ 50dp（中心 X=25dp，右边距=0）|
+| **"08"** | 24sp Medium | 约 25dp | X = 12.5dp ~ 37.5dp（中心 X=25dp）|
+
+两者视觉中心都在 X=25dp，满足"08 与 2026.07 视觉中心在同一垂直线"的要求。
+
+**关键效果**：Column 宽度 50dp 精确匹配"2026.07"实际宽度，使"2026.07"在 Column 内居中后**右边距 = 0**（X=50dp 即 Column 右边缘），时间栏右边缘紧贴"2026.07"右边缘。这样"2026.07"到节点视觉距离 = 0 + 7 = **7dp**，与节点到内容区（7dp）**视觉相等**。
 
 #### 12.1.8.2 字号体系
 
@@ -206,7 +226,7 @@
 | 元素 | 字号 | 字重 | 颜色 |
 |------|------|------|------|
 | **年月文本**（如"2026.07"） | 12sp | Regular | #999999 提示文字 |
-| **大号日期数字**（如"08"） | 25sp | Medium | `MaterialTheme.colorScheme.onSurface` |
+| **大号日期数字**（如"08"） | 24sp | Medium | `MaterialTheme.colorScheme.onSurface` |
 
 ##### 右侧内容区
 
@@ -246,18 +266,23 @@
 | 间距 | 值 | 说明 |
 |------|-----|------|
 | **页面左右内容安全边距** | 18dp | `LazyColumn.padding(horizontal = 18.dp)` |
-| **左侧时间轴栏与右侧笔记内容横向间隔** | 14dp | 时间栏宽度 56dp + 间距 14dp = 节点中心 70dp |
+| **左侧时间轴栏与右侧笔记内容横向间隔** | 14dp | 时间栏 50dp + 节点 6dp + 间隔 7dp = 节点右边缘到内容区 = 7dp。**v1.12 起**总间距 14dp（7dp 时间栏到节点 + 7dp 节点到内容区），两个 7dp 视觉相等 |
+| **时间栏右边缘 → 节点左边缘** | 7dp | 节点与时间栏间距 |
+| **节点右边缘 → 内容区左边缘** | 7dp | 节点与内容区间距 |
 
 #### 12.1.8.4 节点与竖线
 
 | 元素 | 规格 | 说明 |
 |------|------|------|
-| **节点直径** | 8dp | 圆形 CircleShape |
+| **节点直径** | **6dp** | 圆形 CircleShape（v1.11 紧凑型） |
 | **节点颜色** | `#FF9A5C`（置顶项） / `MaterialTheme.colorScheme.primary`（普通项） | 与 PRD 主题色一致 |
 | **节点 Y 位置** | **固定 11dp**（对齐"灵感标题"16sp Medium 中心） | 16sp Medium lineHeight ≈ 22dp，文字中心 y = 11dp |
-| **节点 X 位置** | 70dp（时间栏宽度 56 + 间距 14） | 与"2026.07"和"灵感标题"在第一行同一水平线 |
-| **竖线 X** | 70dp（与节点中心对齐） | `drawBehind` 绘制，#EEEEEE 灰色，2dp 宽 |
-| **竖线 Y 范围** | 0 到 Item 底部 | 贯通整个 Item 高度 |
+| **节点 X 位置** | 60dp（时间栏宽度 50 + 间距 7 + 节点半径 3） | v1.12 时间栏宽度从 56dp 改为 50dp |
+| **节点右边缘 → 内容区左边缘** | 7dp | v1.11 改为 7dp |
+| **节点显示规则** | **每条灵感都显示节点**（包括同一天内的非首条） | 用户要求"同一天内不同的灵感都需要时间节点" |
+| **日期栏显示规则** | 仅每天第一条灵感显示（`showDate = isFirstOfDay`） | 避免重复显示日期 |
+| **竖线 X** | 60dp（与节点中心对齐） | `drawBehind` 绘制，#EEEEEE 灰色，2dp 宽 |
+| **竖线 Y 范围** | **起点 -18dp → 终点 Item 底部** | 向上延伸 18dp 覆盖 `LazyColumn.verticalArrangement = spacedBy(18.dp)` 间距，实现连续不中断 |
 
 > **设计决策**：节点 Y 中心固定为 11dp，对齐"灵感标题"中心，让"2026.07"、节点、"灵感标题"在第一行同一水平线上。
 
@@ -266,7 +291,8 @@
 | 元素 | 规格 |
 |------|------|
 | **标签数量** | 最多显示 3 个，超出显示 `+N` |
-| **标签内边距** | 水平 6dp / 垂直 2dp |
+| **标签内边距** | 水平 0.5dp / 垂直 0dp（紧凑型，文字紧贴背景） |
+| **标签 lineHeight** | 11sp（等于 fontSize，压缩到最小行高） |
 | **标签圆角** | 10dp（胶囊形状） |
 | **标签背景色** | `#FFF3E0`（暖橙浅） / `#F5F5F5`（`+N` 灰色背景） |
 | **标签文字色** | `UiColors.Primary`（暖橙） / `#999999`（`+N` 灰色） |
@@ -279,12 +305,13 @@
 `TimelineInspirationItem.kt` 中定义的关键常量：
 
 ```kotlin
-val dateColumnWidth = 56.dp              // 时间栏宽度（容纳"2026.07"不换行）
-val dateToNodeGap = 14.dp                // 时间栏到节点中心
-val nodeDiameter = 8.dp                  // 节点直径
-val nodeCenterX = dateColumnWidth + dateToNodeGap  // 70dp
-val contentStartX = nodeCenterX + nodeDiameter / 2  // 74dp
-val timelineLineX = nodeCenterX          // 竖线 X
+val dateColumnWidth = 50.dp              // 时间栏宽度（v1.12 从 56dp 改为 50dp，精确匹配"2026.07"实际宽度）
+val dateToNodeGap = 7.dp                 // 时间栏右边缘到节点左边缘（v1.11 用户要求 7dp）
+val nodeDiameter = 6.dp                  // 节点直径（v1.11 紧凑型 6dp）
+val nodeToContentGap = 7.dp              // 节点右边缘到内容区左边缘（v1.11 用户要求 7dp）
+val nodeCenterX = dateColumnWidth + dateToNodeGap + nodeDiameter / 2  // 60dp
+val contentStartX = nodeCenterX + nodeDiameter / 2 + nodeToContentGap  // 70dp
+val timelineLineX = nodeCenterX          // 竖线 X = 60dp
 
 // 节点 Y 中心：固定对齐"灵感标题"16sp Medium 中心
 val nodeCenterY = 11.dp                  // 16sp Medium lineHeight ≈ 22dp，中心 y = 11dp
@@ -294,6 +321,8 @@ val titleToTimeGap = 4.dp                // 标题 → 时分时间
 val timeToContentGap = 9.dp              // 时分时间 → 正文
 val contentToTagGap = 7.dp               // 正文 → 标签
 val tagToImageGap = 4.dp                 // 标签 → 图片
+val lazyColumnItemGap = 18.dp            // LazyColumn 相邻 Item 间距
+val timelineLineOverlap = lazyColumnItemGap // 竖线向上延伸量（覆盖 18dp 间距）
 ```
 
 `InspirationScreen.kt` 中：
@@ -326,11 +355,83 @@ val nodeTopY = (nodeCenterY - nodeRadius).coerceAtLeast(0.dp)
 - 若系统字体设置放大到 1.3x，16sp 实际渲染高度会变化，节点仍固定在 11dp 会有 1-2dp 偏差
 - 后续如需精确适配，可改为 `onSizeChanged` 测量"灵感标题"实际渲染高度，动态计算节点 Y 中心
 
-#### 12.1.8.8 排版变更记录
+#### 12.1.8.8 灵感页导航栏规范
+
+> **关联文件**：[MainScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/main/MainScreen.kt) 第 365-402 行
+> **适用范围**：灵感页（`TabItem.INSPIRE`）且非批量模式下的 `EnhancedTopBar` 中间内容
+
+灵感页导航栏中间区域采用"大号日期 + 月份 + 下拉箭头"**水平三段式**布局，高度自适应内容，由外层 `Box(Alignment.Center)` 在导航栏中居中（v1.15）：
+
+```
+[大号日期] [7dp] [月份] [2dp] [▼]
+  "09"           "07月"       "▼"
+  25sp Bold      16sp         8sp
+  ↘ 全部底部对齐（Alignment.Bottom），Row 高度由 25sp "日" 撑高
+```
+
+| 元素 | 字号 | 字重 | 颜色 |
+|------|------|------|------|
+| **大号日期**（如 "09"） | **25sp** | Bold | `MaterialTheme.colorScheme.onSurface` |
+| **月份**（如 "07月"） | **16sp** | Regular | `#666666` 次要文字 |
+| **下拉箭头**（"▼"） | 8sp | Regular | `#666666` 次要文字 |
+| **日 → 月间距** | **7dp** | — | 水平间距 |
+| **月 → 箭头间距** | 2dp | — | 水平间距 |
+
+##### 布局结构
+
+```kotlin
+Row(
+    verticalAlignment = Alignment.Bottom,           // 子元素底部对齐
+    modifier = Modifier
+        .clickable { showInspirationCalendar = true }
+    // 不使用 fillMaxHeight()，高度自适应内容，由外层 Box 居中
+) {
+    Text("09", fontSize = 25.sp, fontWeight = FontWeight.Bold)   // 大号日期
+    Spacer(modifier = Modifier.width(7.dp))                      // 日 → 月 7dp
+    Text("07月", fontSize = 16.sp)                               // 月份
+    Spacer(modifier = Modifier.width(2.dp))                      // 月 → 箭头 2dp
+    Text("▼", fontSize = 8.sp)                                   // 下拉箭头
+}
+```
+
+##### 交互与对齐
+
+- **可点击**：整行 `Modifier.clickable` 触发日历弹窗 `showInspirationCalendar = true`
+- **高度自适应**：不使用 `fillMaxHeight()`，Row 高度由最高的"09"（25sp）撑高
+- **居中**：由 `EnhancedTopBar` 外层 `Box(contentAlignment = Alignment.Center)` 在导航栏中居中
+- **底部对齐**：`verticalAlignment = Alignment.Bottom` 让"07月"（16sp）、"▼"（8sp）与"09"（25sp）底部对齐
+
+##### 显示条件
+
+- 仅在 `selectedTab == TabItem.INSPIRE` 且 `!isBatchMode` 时显示
+- 其他页面（待办、日期、我的）使用 `EnhancedTopBar` 的默认 title
+- 批量模式下显示"批量模式"标题，centerContent 为 null
+
+##### 版本变更说明
+
+- **v1.13**：用 `Column` 垂直布局，"07月" 和 "▼" 上下排列 ❌
+- **v1.14**：改为纯水平 `Row` 布局，"07月" 和 "▼" 紧邻水平排列 ✓（但整体垂直居中，日期偏上）
+- **v1.15**：保持水平 `Row` 布局，日→月间距改为 **7dp**，子元素**底部对齐**（`Alignment.Bottom`），高度自适应内容（不 `fillMaxHeight`），由外层 Box 居中 ✓
+
+#### 12.1.8.9 排版变更记录
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
 | 2026-07-09 | v1 | 初始规范（按 PRD 参考图） |
 | 2026-07-09 | v1.1 | 修复"2026.07"换行：时间栏宽度 44dp → 56dp |
 | 2026-07-09 | v1.1 | 修复节点位置：Y 中心改为固定 11dp，对齐"灵感标题"中心而非"08"中心 |
+| 2026-07-09 | v1.2 | **修正时间轴栏与内容区间隔**：时间栏 56dp + 间距 4dp + 节点 8dp + 间距 14dp + 内容区 82dp。满足"2026.07 距左边距 18dp + 不换行 + 节点与内容区横向间隔 14dp"全部要求 |
+| 2026-07-09 | v1.3 | **时间栏内部 Column 改为 CenterHorizontally**：让"2026.07"和"08"视觉中心在同一垂直线（X=28dp），满足"08 相对于 2026.07 水平居中"要求 |
+| 2026-07-09 | v1.4 | **大号日期数字 25sp → 24sp**，**标签内边距 6dp/2dp → 4dp/1dp**：让"08"更精致、标签更紧凑 |
+| 2026-07-09 | v1.5 | **标签内边距再缩：4dp/1dp → 2dp/1dp**：进一步压缩标签水平内边距，达到 PRD 参考图的极简效果 |
+| 2026-07-09 | v1.6 | **标签内边距归零：2dp/1dp → 0dp/0dp**：文字完全紧贴背景，标签呈现"实心药丸"效果。注意：Text 自带字体 ascent/descent，无法完全消除视觉留白 |
+| 2026-07-09 | v1.7 | **标签 lineHeight 压缩到 11sp（等于 fontSize）**：进一步压缩标签上下间距。注意：中文上下笔画可能被裁切，请验证可读性 |
+| 2026-07-09 | v1.8 | **节点始终显示**：移除节点 Box 的 `if (showDate)` 条件，让同一天内的非首条灵感也显示节点。日期栏仍仅在每天第一条显示 |
+| 2026-07-09 | v1.9 | **节点紧贴时间栏 + 向左移动**：`dateToNodeGap` 从 4dp 改为 0dp，节点 X 坐标从 64dp 改为 60dp，内容区起始 X 从 82dp 改为 78dp。同时修复"08"字号错误：源码中 `fontSize = 2.sp` 误改回 `24.sp`（之前字符截断导致"08"显示极小） |
+| 2026-07-09 | v1.10 | **竖线连续性修复**：竖线起点 Y 从 0 改为 -18dp（向上延伸 18dp），覆盖 `LazyColumn.verticalArrangement = spacedBy(18.dp)` 的 Item 间距，实现竖线连续不中断。新增 `lazyColumnItemGap` 和 `timelineLineOverlap` 常量保持代码与规范同步 |
+| 2026-07-09 | v1.11 | **节点尺寸与间距重设**：节点直径 8dp → **6dp**，时间栏到节点间距 0dp → **7dp**，节点到内容区间距 14dp → **7dp**。节点中心 X = 66dp，内容区起始 X = 76dp。整体结构 = 时间栏 56dp + 7dp + 节点 6dp + 7dp = 76dp |
+| 2026-07-09 | v1.12 | **时间栏宽度从 56dp 改为 50dp**：精确匹配"2026.07" 12sp 实际渲染宽度，让"2026.07"在 Column 内水平居中后右边距 = 0。修复 v1.11 6/7/7 布局下两个间距视觉不等问题（之前"2026.07"右边距 3dp，"2026.07"→节点 10dp ≠ 节点→内容区 7dp）。现在节点中心 X = 60dp，内容区起始 X = 70dp |
+| 2026-07-09 | v1.13 | **灵感页导航栏日期字号调整**：`MainScreen.kt` 中大号日期 "09" 20sp → **25sp**（Bold），月份 "07月" 10sp → **16sp**，下拉箭头 "▼" 保持 8sp。Column 宽度保持 wrapContentWidth（自适应内容） |
+| 2026-07-09 | v1.14 | **导航栏日期布局从 Column 改为 Row**：原 Column 垂直布局导致 "07月" 和 "▼" 上下排列，改为纯水平 Row 布局让 "▼" 紧邻 "07月" 右侧。月份与箭头间距 2dp |
+| 2026-07-09 | v1.15 | **导航栏日期水平排列 + 底部对齐**：保持 Row 水平布局，日→月间距从 2dp 改为 **7dp**，子元素对齐改为 **`Alignment.Bottom`**，高度自适应内容（去掉 `fillMaxHeight`），由外层 Box `Alignment.Center` 居中 |
 

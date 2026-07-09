@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,7 +41,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,6 +71,8 @@ import com.corgimemo.app.ui.screens.home.shareTodoAsImage
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
 import com.corgimemo.app.viewmodel.HomeViewModel
+import com.corgimemo.app.viewmodel.InspirationViewModel
+import com.corgimemo.app.ui.screens.inspiration.components.InspirationCalendarDialog
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.analytics.UserBehaviorAnalyzer
 import com.corgimemo.app.analytics.UserBehaviorAnalyzerEntryPoint
@@ -144,6 +149,9 @@ fun MainScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+    val density = LocalDensity.current
+    /** topBar 实际渲染高度（px），用于日历弹窗 topPadding 计算 */
+    var topBarHeightPx by remember { mutableStateOf(0) }
 
     /**
      * 分享方式选择弹窗是否显示（多选模式）
@@ -162,6 +170,8 @@ fun MainScreen(
     var shareTodosSnapshot by remember { mutableStateOf<List<TodoItem>>(emptyList()) }
 
     val homeViewModel: HomeViewModel = hiltViewModel()
+    /** 灵感页 ViewModel（用于日历弹窗获取灵感数据，与 InspirationScreen 共享同一实例） */
+    val inspirationViewModel: InspirationViewModel = hiltViewModel()
     /** 用户行为分析器（通过 Hilt 入口点获取 @Singleton 实例，用于记录页面访问） */
     val userBehaviorAnalyzer: UserBehaviorAnalyzer = remember {
         EntryPointAccessors.fromApplication(context, UserBehaviorAnalyzerEntryPoint::class.java).analyzer()
@@ -343,6 +353,8 @@ fun MainScreen(
             }
         }
     ) {
+        // 外层 Box：包裹 Scaffold + 日历弹窗，让弹窗能覆盖全屏（包括底部导航栏）
+        Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
                 if (selectedTab != TabItem.EDIT) {
@@ -357,41 +369,49 @@ fun MainScreen(
 
                     EnhancedTopBar(
                         title = effectiveTitle,
+                        modifier = Modifier.onGloballyPositioned { coordinates ->
+                            topBarHeightPx = coordinates.size.height
+                        },
                         /**
                          * 灵感页中间内容：大号日期 + 月份 + 下拉箭头，点击触发日历弹窗。
                          * 仅在灵感页且非批量模式时显示，其他页面使用默认 title。
                          */
                         centerContent = if (selectedTab == TabItem.INSPIRE && !isBatchMode) {
                             {
-                                // 日期显示（居中叠加在标题上方），点击打开日历弹窗
+                                // 日期显示：日 + 月 + 箭头 水平排列，高度自适应，外层 Box 居中
+                                // 箭头方向与弹窗展开状态同步：展开▲ / 收起▼
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.clickable {
-                                        showInspirationCalendar = true
-                                    }
+                                    verticalAlignment = Alignment.Bottom,
+                                    modifier = Modifier
+                                        .clickable {
+                                            // 切换弹窗显示状态：再次点击可收起
+                                            showInspirationCalendar = !showInspirationCalendar
+                                        }
                                 ) {
                                     val now = Calendar.getInstance()
+                                    // 大号日期数字（25sp Bold）
                                     Text(
                                         text = String.format("%02d", now.get(Calendar.DAY_OF_MONTH)),
-                                        fontSize = 20.sp,
+                                        fontSize = 25.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
+                                    // 日 → 月 水平间距 7dp
+                                    Spacer(modifier = Modifier.width(7.dp))
+                                    // 月份（16sp）
+                                    Text(
+                                        text = String.format("%02d月", now.get(Calendar.MONTH) + 1),
+                                        fontSize = 16.sp,
+                                        color = Color(0xFF666666)
+                                    )
+                                    // 月 → 箭头 间距 2dp
                                     Spacer(modifier = Modifier.width(2.dp))
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Text(
-                                            text = String.format("%02d月", now.get(Calendar.MONTH) + 1),
-                                            fontSize = 10.sp,
-                                            color = Color(0xFF666666)
-                                        )
-                                        Text(
-                                            text = "▼",
-                                            fontSize = 8.sp,
-                                            color = Color(0xFF666666)
-                                        )
-                                    }
+                                    // 箭头方向随弹窗状态切换：展开时向上▲，收起时向下▼
+                                    Text(
+                                        text = if (showInspirationCalendar) "▲" else "▼",
+                                        fontSize = 8.sp,
+                                        color = Color(0xFF666666)
+                                    )
                                 }
                             }
                         } else null,
@@ -569,9 +589,7 @@ fun MainScreen(
                         )
                         TabItem.INSPIRE -> InspirationScreen(
                             navController = navController,
-                            onFabClick = { navController.navigate("inspiration_edit") },
-                            showCalendarDialog = showInspirationCalendar,
-                            onCalendarDialogChange = { showInspirationCalendar = it }
+                            onFabClick = { navController.navigate("inspiration_edit") }
                         )
                         TabItem.DATE -> SpecialDateScreen(
                             navController = navController,
@@ -620,7 +638,26 @@ fun MainScreen(
                     )
                 }
             }
+        } // Scaffold content lambda 闭合
+
+        // 灵感页日历弹窗（在 Scaffold 外部、外层 Box 内部渲染，覆盖全屏包括底部导航栏）
+        if (showInspirationCalendar && selectedTab == TabItem.INSPIRE) {
+            InspirationCalendarDialog(
+                inspirationCountByDate = { year, month ->
+                    inspirationViewModel.getCalendarInspirationCount(year, month)
+                },
+                getInspirationsByDate = { year, month, day ->
+                    inspirationViewModel.getInspirationsByDate(year, month, day)
+                },
+                onInspirationClick = { inspiration ->
+                    showInspirationCalendar = false
+                    navController.navigate("inspiration_edit/${inspiration.id}")
+                },
+                onDismiss = { showInspirationCalendar = false },
+                topPadding = with(density) { topBarHeightPx.toDp() }
+            )
         }
+        } // 外层 Box 闭合
     }
 
     if (showAddCategoryDialog) {

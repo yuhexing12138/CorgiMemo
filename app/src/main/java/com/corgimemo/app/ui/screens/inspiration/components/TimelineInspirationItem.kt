@@ -40,11 +40,12 @@ import java.util.Calendar
  *
  * 布局结构：
  * ```
- * [左侧时间栏 56dp] [间距 14dp] [节点 8dp] [右侧内容区]
+ * [左侧时间栏 50dp] [间距 7dp] [节点 6dp] [间距 7dp] [右侧内容区]
+ *   "2026.07"+"08"                                标题/时分时间/正文/标签
  * ```
  *
  * 字号体系（与 PRD 参考图一致）：
- * - 左侧时间栏：年月 12sp / 大号日期数字 25sp Medium
+ * - 左侧时间栏：年月 12sp / 大号日期数字 24sp Medium
  * - 右侧内容区：标题 16sp Medium / 时分时间 11sp / 正文 14sp / 标签 11sp
  * - 中文字间距统一 +0.5sp
  *
@@ -53,16 +54,31 @@ import java.util.Calendar
  * - 时分时间 → 正文：9dp
  * - 正文 → 标签：7dp
  * - 正文行高：21sp
+ * - 标签内边距：水平 0.5dp / 垂直 0dp（紧凑型）
+ * - 标签 lineHeight：11sp（等于 fontSize，最小行高）
  *
  * 横向边距：
- * - 时间栏宽度：56dp（容纳"2026.07" 12sp + letterSpacing 0.5sp 不换行）
- * - 时间栏 → 节点中心：14dp
- * - 节点直径：8dp
- * - 节点中心 X 坐标：70dp（=56+14）
- * - 内容区起始 X 坐标：74dp（=70+4 节点半径）
+ * - 时间栏宽度：50dp（精确匹配"2026.07"实际宽度，"2026.07"居中后右边距 = 0）
+ * - 时间栏右边缘 → 节点左边缘：7dp
+ * - 节点直径：6dp
+ * - 节点右边缘 → 内容区左边缘：7dp
+ * - 节点中心 X 坐标：60dp（=50+7+3）
+ * - 内容区起始 X 坐标：70dp（=60+3+7）
+ * - 时间栏内部 Column 水平居中：让"2026.07"和"08"视觉中心在同一垂直线
+ * - **关键**：两个 7dp 间距视觉上相等（"2026.07"到节点 = 节点到内容区 = 7dp）
  *
  * 节点 Y 位置：固定 11dp，对齐"灵感标题"16sp Medium 中心，
  * 让"2026.07"、节点、"灵感标题"在第一行同一水平线上
+ *
+ * 节点显示规则：
+ * - 节点（橙黄色圆点）每条灵感都显示（包括同一天内的非首条）
+ * - 左侧"2026.07"+"08"日期栏仅在每天第一条灵感显示（showDate=true）
+ *
+ * 竖线连续性：
+ * - 竖线起点 Y = -18dp（向上延伸 18dp），终点 Y = Item 高度
+ * - 延伸 18dp 用于覆盖 LazyColumn.verticalArrangement = spacedBy(18.dp) 的间距
+ * - 这样竖线在 Item 顶部之上 18dp 到 Item 底部范围内连续绘制，不被 Item 间距中断
+ * - 由于 LazyColumn 顶部边界裁剪，第一个 Item 顶部之上 18dp 不会显示，但其他 Item 之间的间距被完整覆盖
  *
  * @param inspiration 灵感实体数据
  * @param tags 标签列表
@@ -88,20 +104,25 @@ fun TimelineInspirationItem(
     modifier: Modifier = Modifier
 ) {
     // ===== 横向布局常量 =====
-    // 时间栏宽度 56dp：容纳"2026.07" 12sp + letterSpacing 0.5sp（约 50-56dp）不换行
-    val dateColumnWidth = 56.dp                 // 左侧时间栏宽度
-    val dateToNodeGap = 14.dp                   // 时间栏右侧到节点中心
-    val nodeDiameter = 8.dp                     // 节点直径
-    val nodeCenterX = dateColumnWidth + dateToNodeGap     // 70dp
-    val nodeRadius = nodeDiameter / 2                      // 4dp
-    val contentStartX = nodeCenterX + nodeRadius          // 74dp
-    val timelineLineX = nodeCenterX                        // 竖线 X = 70dp
+    // 时间栏宽度 50dp：精确匹配"2026.07" 12sp 实际渲染宽度（约 50dp），
+    // 让"2026.07"在 Column 内居中后右边距 = 0，时间栏右边缘紧贴"2026.07"右边缘。
+    // 这样"2026.07" → 节点视觉距离 = 节点 → 内容区 = 7dp，两个间距视觉相等。
+    val dateColumnWidth = 50.dp                 // 左侧时间栏宽度（v1.12 从 56dp 改为 50dp）
+    val dateToNodeGap = 7.dp                    // 时间栏右边缘到节点左边缘（用户要求 7dp）
+    val nodeDiameter = 6.dp                     // 节点直径（用户要求 6dp）
+    val nodeToContentGap = 7.dp                 // 节点右边缘到内容区左边缘（用户要求 7dp）
+    val nodeCenterX = dateColumnWidth + dateToNodeGap + nodeDiameter / 2  // 50 + 7 + 3 = 60dp
+    val nodeRadius = nodeDiameter / 2                      // 3dp
+    val contentStartX = nodeCenterX + nodeRadius + nodeToContentGap  // 60 + 3 + 7 = 70dp
+    val timelineLineX = nodeCenterX                        // 竖线 X = 60dp
 
     // ===== 垂直间距常量 =====
     val titleToTimeGap = 4.dp                   // 标题 → 时分时间
     val timeToContentGap = 9.dp                 // 时分时间 → 正文
     val contentToTagGap = 7.dp                  // 正文 → 标签
     val tagToImageGap = 4.dp                    // 标签 → 图片
+    val lazyColumnItemGap = 18.dp               // LazyColumn 相邻 Item 间距（与 InspirationScreen.kt 保持一致）
+    val timelineLineOverlap = lazyColumnItemGap // 竖线向上延伸量，覆盖 Item 间 18dp 间距实现连续
 
     // ===== 中文字间距 =====
     val chineseLetterSpacing = 0.5.sp
@@ -123,21 +144,26 @@ fun TimelineInspirationItem(
                 onClick = onClick,
                 onLongClick = onLongClick
             )
-            // 竖线贯通整个 Item 高度
+            // 竖线贯通整个 Item 高度 + 向上延伸 18dp 覆盖 LazyColumn 间距，实现连续不中断
             .drawBehind {
                 val x = timelineLineX.toPx()
+                val startY = -timelineLineOverlap.toPx()  // 向上延伸 18dp
                 drawLine(
                     color = timelineLineColor,
-                    start = Offset(x, 0f),
+                    start = Offset(x, startY),
                     end = Offset(x, size.height),
                     strokeWidth = 2.dp.toPx()
                 )
             }
     ) {
         // ========== 左侧时间栏（年月 + 大号日期）==========
+        // Column 水平居中：让"2026.07"和"08"在同一垂直中线
+        // - "2026.07" 12sp 宽度约 50dp，56dp 内居中
+        // - "08" 24sp 宽度约 26dp，56dp 内居中
+        // - 两者视觉中心都在 Column 宽度（56dp）的中点 X=28dp
         if (showDate) {
             Column(
-                horizontalAlignment = Alignment.Start,
+                horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .width(dateColumnWidth)
                     .align(Alignment.TopStart)
@@ -149,10 +175,10 @@ fun TimelineInspirationItem(
                     color = Color(0xFF999999),
                     letterSpacing = chineseLetterSpacing
                 )
-                // 大号日期数字（25sp 黑色 Medium）
+                // 大号日期数字（20sp 黑色 Medium）
                 Text(
                     text = String.format("%02d", getDay(inspiration.createdAt)),
-                    fontSize = 25.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                     letterSpacing = chineseLetterSpacing
@@ -162,15 +188,14 @@ fun TimelineInspirationItem(
 
         // ========== 节点（8dp 圆点，垂直对齐"灵感标题"中心）==========
         // 节点 Y 中心固定 11dp，与"2026.07"、"灵感标题"在第一行同一水平线
-        if (showDate) {
-            Box(
-                modifier = Modifier
-                    .offset(x = nodeCenterX - nodeRadius, y = nodeTopY)
-                    .size(nodeDiameter)
-                    .background(color = nodeColor, shape = CircleShape)
-                    .align(Alignment.TopStart)
-            )
-        }
+        // 节点始终显示：每条灵感都有时间节点（包括同一天内的非首条）
+        Box(
+            modifier = Modifier
+                .offset(x = nodeCenterX - nodeRadius, y = nodeTopY)
+                .size(nodeDiameter)
+                .background(color = nodeColor, shape = CircleShape)
+                .align(Alignment.TopStart)
+        )
 
         // ========== 右侧内容区（标题、时分时间、正文、标签、图片）==========
         Column(
@@ -235,6 +260,7 @@ fun TimelineInspirationItem(
                         Text(
                             text = "#$tag",
                             fontSize = 11.sp,
+                            lineHeight = 11.sp,  // 压缩行高到 fontSize，减小标签上下间距
                             color = UiColors.Primary,
                             letterSpacing = chineseLetterSpacing,
                             modifier = Modifier
@@ -242,7 +268,7 @@ fun TimelineInspirationItem(
                                     color = Color(0xFFFFF3E0),
                                     shape = RoundedCornerShape(10.dp)
                                 )
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .padding(horizontal = 1.dp, vertical = 0.dp)
                         )
                     }
                     // 超出 3 个显示 "+N"
@@ -250,6 +276,7 @@ fun TimelineInspirationItem(
                         Text(
                             text = "+${tags.size - 3}",
                             fontSize = 11.sp,
+                            lineHeight = 11.sp,  // 压缩行高到 fontSize，减小标签上下间距
                             color = Color(0xFF999999),
                             letterSpacing = chineseLetterSpacing,
                             modifier = Modifier
@@ -257,7 +284,7 @@ fun TimelineInspirationItem(
                                     color = Color(0xFFF5F5F5),
                                     shape = RoundedCornerShape(10.dp)
                                 )
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .padding(horizontal = 1.dp, vertical = 0.dp)
                         )
                     }
                 }

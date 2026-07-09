@@ -38,7 +38,6 @@ import androidx.navigation.NavController
 import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.UnifiedEmptyState
-import com.corgimemo.app.ui.screens.inspiration.components.InspirationCalendarDialog
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationLongPressSheet
 import com.corgimemo.app.ui.screens.inspiration.components.TimelineInspirationItem
 import com.corgimemo.app.viewmodel.InspirationViewModel
@@ -60,16 +59,12 @@ import java.util.Calendar
  *
  * @param navController 导航控制器，用于页面跳转
  * @param onFabClick FAB按钮点击回调（由 MainScreen 传入）
- * @param showCalendarDialog 外部控制的日历弹窗显示状态
- * @param onCalendarDialogChange 日历弹窗显示状态变化回调
  * @param viewModel 灵感视图模型（通过 Hilt 自动注入）
  */
 @Composable
 fun InspirationScreen(
     navController: NavController,
     onFabClick: () -> Unit = {},
-    showCalendarDialog: Boolean = false,
-    onCalendarDialogChange: (Boolean) -> Unit = {},
     viewModel: InspirationViewModel = hiltViewModel()
 ) {
     val pinnedInspirations by viewModel.pinnedInspirations.collectAsState()
@@ -222,23 +217,6 @@ fun InspirationScreen(
                 modifier = Modifier.size(24.dp)
             )
         }
-    }
-
-    // 日历弹窗（由外部 MainScreen 通过 showCalendarDialog 控制）
-    if (showCalendarDialog) {
-        InspirationCalendarDialog(
-            inspirationCountByDate = { year, month ->
-                viewModel.getCalendarInspirationCount(year, month)
-            },
-            getInspirationsByDate = { year, month, day ->
-                viewModel.getInspirationsByDate(year, month, day)
-            },
-            onInspirationClick = { inspiration ->
-                onCalendarDialogChange(false)
-                navController.navigate("inspiration_edit/${inspiration.id}")
-            },
-            onDismiss = { onCalendarDialogChange(false) }
-        )
     }
 
     // 长按操作面板
