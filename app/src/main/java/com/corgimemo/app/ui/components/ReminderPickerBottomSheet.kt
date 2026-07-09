@@ -983,7 +983,7 @@ private fun DateWheelContent(
  * 用户可通过上下滑动设置时和分，无上午/下午切换。
  */
 @Composable
-private fun TimeWheelView(
+internal fun TimeWheelView(
     hour: Int,
     minute: Int,
     onHourChange: (Int) -> Unit,

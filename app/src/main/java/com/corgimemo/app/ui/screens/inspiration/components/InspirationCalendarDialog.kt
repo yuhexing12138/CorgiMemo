@@ -282,7 +282,7 @@ fun InspirationCalendarDialog(
  * @param onDateSelect 日期选择回调
  */
 @Composable
-private fun CalendarMonthView(
+internal fun CalendarMonthView(
     currentMonth: YearMonth,
     selectedDate: LocalDate,
     countMap: Map<Int, Int>,
@@ -441,7 +441,7 @@ private fun CalendarMonthView(
  * @param onDateChange 日期变化回调
  */
 @Composable
-private fun DateWheelPicker(
+internal fun DateWheelPicker(
     selectedDate: LocalDate,
     onDateChange: (LocalDate) -> Unit
 ) {
@@ -722,21 +722,37 @@ private fun <T> WheelColumn(
  * @param onClick 点击回调
  */
 @Composable
-private fun CalendarInspirationItem(
+internal fun CalendarInspirationItem(
     inspiration: Inspiration,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    dynamicDate: LocalDate? = null,
+    dynamicHour: Int? = null,
+    dynamicMinute: Int? = null
 ) {
     // 解码标签和图片路径（与 InspirationViewModel.decodeTags/decodePaths 逻辑一致）
     val tags = remember(inspiration.tags) { decodeTagsJson(inspiration.tags) }
     val imagePaths = remember(inspiration.imagePaths) { decodePathsJson(inspiration.imagePaths) }
     // 格式化时分时间（HH:mm）
-    val formattedTime = remember(inspiration.createdAt) {
-        val cal = Calendar.getInstance().apply { timeInMillis = inspiration.createdAt }
-        String.format("%02d:%02d", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
+    // dynamicHour/Minute 非 null 时用动态值，否则用灵感原始 createdAt
+    val formattedTime = remember(inspiration.createdAt, dynamicHour, dynamicMinute) {
+        if (dynamicHour != null && dynamicMinute != null) {
+            String.format("%02d:%02d", dynamicHour, dynamicMinute)
+        } else {
+            val cal = Calendar.getInstance().apply { timeInMillis = inspiration.createdAt }
+            String.format("%02d:%02d", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
+        }
     }
 
     // 中文字间距（与灵感页统一）
     val chineseLetterSpacing = 0.5.sp
+
+    // 动态日期格式化（仅 dynamicDate != null 时使用）
+    val formattedDynamicDate = remember(dynamicDate) {
+        if (dynamicDate != null) {
+            val weekday = dynamicDate.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.CHINESE)
+            "${dynamicDate.year}年${dynamicDate.monthValue}月${dynamicDate.dayOfMonth}日 $weekday"
+        } else null
+    }
 
     Column(
         modifier = Modifier
@@ -744,6 +760,18 @@ private fun CalendarInspirationItem(
             .clickable(onClick = onClick)
             .padding(vertical = 8.dp)
     ) {
+        // ===== 动态日期行（仅 dynamicDate != null 时显示，标题上方）=====
+        if (formattedDynamicDate != null) {
+            Text(
+                text = formattedDynamicDate,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                letterSpacing = chineseLetterSpacing
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
         // ===== 标题行（置顶图标 + 标题 16sp Medium）=====
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (inspiration.isPinned) {
@@ -788,6 +816,8 @@ private fun CalendarInspirationItem(
                 fontSize = 14.sp,
                 lineHeight = 21.sp,
                 color = Color(0xFF666666),
+                maxLines = 6,
+                overflow = TextOverflow.Ellipsis,
                 letterSpacing = chineseLetterSpacing
             )
         }
