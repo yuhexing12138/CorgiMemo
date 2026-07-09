@@ -41,7 +41,6 @@ import com.corgimemo.app.ui.components.UnifiedEmptyState
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationLongPressSheet
 import com.corgimemo.app.ui.screens.inspiration.components.TimelineInspirationItem
 import com.corgimemo.app.viewmodel.InspirationViewModel
-import java.util.Calendar
 
 /**
  * 灵感记录列表页面（时间线版）
@@ -67,8 +66,7 @@ fun InspirationScreen(
     onFabClick: () -> Unit = {},
     viewModel: InspirationViewModel = hiltViewModel()
 ) {
-    val pinnedInspirations by viewModel.pinnedInspirations.collectAsState()
-    val normalGroupedInspirations by viewModel.normalGroupedInspirations.collectAsState()
+    val displayItems by viewModel.displayInspirations.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isDataInitialized by viewModel.isDataInitialized.collectAsState()
@@ -102,7 +100,7 @@ fun InspirationScreen(
             // 内容区域
             if (!isDataInitialized) {
                 InspirationSkeleton(groupCount = 1, itemsPerGroup = 2)
-            } else if (pinnedInspirations.isEmpty() && normalGroupedInspirations.isEmpty()) {
+            } else if (displayItems.isEmpty()) {
                 UnifiedEmptyState(
                     icon = "💡",
                     title = "还没有灵感记录~",
@@ -118,70 +116,30 @@ fun InspirationScreen(
                         .padding(horizontal = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp)
                 ) {
-                    // ===== 置顶区域 =====
-                    if (pinnedInspirations.isNotEmpty()) {
-                        items(
-                            items = pinnedInspirations,
-                            key = { "pinned_${it.id}" }
-                        ) { inspiration ->
-                            val tags = viewModel.decodeTags(inspiration.tags)
-                            val imagePaths = viewModel.decodePaths(inspiration.imagePaths)
-                            val formattedTime = viewModel.formatTime(inspiration.createdAt)
-                            val showDate = pinnedInspirations.indexOf(inspiration) == 0
+                    items(
+                        items = displayItems,
+                        key = { "inspiration_${it.inspiration.id}" }
+                    ) { item ->
+                        val inspiration = item.inspiration
+                        val tags = viewModel.decodeTags(inspiration.tags)
+                        val imagePaths = viewModel.decodePaths(inspiration.imagePaths)
+                        val formattedTime = viewModel.formatTime(inspiration.createdAt)
 
-                            TimelineInspirationItem(
-                                inspiration = inspiration,
-                                tags = tags,
-                                imagePaths = imagePaths,
-                                formattedTime = formattedTime,
-                                showDate = showDate,
-                                isPinnedItem = true,
-                                onClick = {
-                                    navController.navigate("inspiration_edit/${inspiration.id}")
-                                },
-                                onLongClick = {
-                                    longPressedInspiration = inspiration
-                                    showLongPressSheet = true
-                                }
-                            )
-                        }
-                    }
-
-                    // ===== 普通灵感（按年月分组）=====
-                    normalGroupedInspirations.forEach { (yearMonth, inspirationsInGroup) ->
-                        // 按日期分组（同一年月内按日期分组显示）
-                        val dayGroups = inspirationsInGroup.groupBy {
-                            val cal = Calendar.getInstance().apply { timeInMillis = it.createdAt }
-                            cal.get(Calendar.DAY_OF_MONTH)
-                        }.toSortedMap(reverseOrder())
-
-                        dayGroups.forEach { (day, dayInspirations) ->
-                            items(
-                                items = dayInspirations,
-                                key = { "inspiration_${it.id}" }
-                            ) { inspiration ->
-                                val tags = viewModel.decodeTags(inspiration.tags)
-                                val imagePaths = viewModel.decodePaths(inspiration.imagePaths)
-                                val formattedTime = viewModel.formatTime(inspiration.createdAt)
-                                val isFirstOfDay = dayInspirations.indexOf(inspiration) == 0
-
-                                TimelineInspirationItem(
-                                    inspiration = inspiration,
-                                    tags = tags,
-                                    imagePaths = imagePaths,
-                                    formattedTime = formattedTime,
-                                    showDate = isFirstOfDay,
-                                    isPinnedItem = false,
-                                    onClick = {
-                                        navController.navigate("inspiration_edit/${inspiration.id}")
-                                    },
-                                    onLongClick = {
-                                        longPressedInspiration = inspiration
-                                        showLongPressSheet = true
-                                    }
-                                )
+                        TimelineInspirationItem(
+                            inspiration = inspiration,
+                            tags = tags,
+                            imagePaths = imagePaths,
+                            formattedTime = formattedTime,
+                            showDate = item.showDate,
+                            isPinnedItem = item.isPinned,
+                            onClick = {
+                                navController.navigate("inspiration_edit/${inspiration.id}")
+                            },
+                            onLongClick = {
+                                longPressedInspiration = inspiration
+                                showLongPressSheet = true
                             }
-                        }
+                        )
                     }
 
                     // 底部留白

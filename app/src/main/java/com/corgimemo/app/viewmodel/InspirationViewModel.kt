@@ -32,6 +32,57 @@ class InspirationViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
+    /**
+     * 灵感显示项（用于 UI 渲染的统一数据模型）
+     * @param inspiration 灵感实体
+     * @param showDate 是否显示左侧日期列（相邻相同日期只显示一次）
+     * @param isPinned 是否为置顶项
+     */
+    data class InspirationDisplayItem(
+        val inspiration: Inspiration,
+        val showDate: Boolean,
+        val isPinned: Boolean
+    )
+
+    companion object {
+        /**
+         * 构建统一显示列表：相邻相同日期只显示一次
+         * - 第 1 条始终 showDate=true
+         * - 后续仅当与前一条日期（年月日）不同时 showDate=true
+         * @param list 已按显示顺序排序的灵感列表（置顶在前 + 非置顶在后，各自按 createdAt 倒序）
+         * @return 带 showDate 标记的显示项列表
+         */
+        fun buildDisplayItems(list: List<Inspiration>): List<InspirationDisplayItem> {
+            if (list.isEmpty()) return emptyList()
+            return list.mapIndexed { index, inspiration ->
+                val showDate = if (index == 0) {
+                    true
+                } else {
+                    !isSameDay(list[index - 1].createdAt, inspiration.createdAt)
+                }
+                InspirationDisplayItem(
+                    inspiration = inspiration,
+                    showDate = showDate,
+                    isPinned = inspiration.isPinned
+                )
+            }
+        }
+
+        /**
+         * 判断两个时间戳是否同一天
+         * @param t1 时间戳1（毫秒）
+         * @param t2 时间戳2（毫秒）
+         * @return true 表示同年同月同日
+         */
+        fun isSameDay(t1: Long, t2: Long): Boolean {
+            val c1 = java.util.Calendar.getInstance().apply { timeInMillis = t1 }
+            val c2 = java.util.Calendar.getInstance().apply { timeInMillis = t2 }
+            return c1.get(java.util.Calendar.YEAR) == c2.get(java.util.Calendar.YEAR) &&
+                   c1.get(java.util.Calendar.MONTH) == c2.get(java.util.Calendar.MONTH) &&
+                   c1.get(java.util.Calendar.DAY_OF_MONTH) == c2.get(java.util.Calendar.DAY_OF_MONTH)
+        }
+    }
+
     // ========== 状态定义 ==========
 
     /** 数据是否已初始化完成（用于避免冷启动时从空列表闪烁到有数据） */
@@ -75,6 +126,16 @@ class InspirationViewModel @Inject constructor(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyMap()
+        )
+
+    /** 统一显示列表（置顶+非置顶，已计算 showDate，相邻相同日期只显示一次） */
+    val displayInspirations: StateFlow<List<InspirationDisplayItem>> =
+        _inspirations.map { list ->
+            buildDisplayItems(list)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
         )
 
     /** 搜索关键词 */
