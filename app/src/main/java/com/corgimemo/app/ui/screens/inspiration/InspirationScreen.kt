@@ -121,7 +121,7 @@ fun InspirationScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     // ===== 置顶区域 =====
                     if (pinnedInspirations.isNotEmpty()) {
