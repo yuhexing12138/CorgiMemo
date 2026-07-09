@@ -1,0 +1,431 @@
+<style>
+/* ============================================
+   手机外壳 — 参考 corgimemo-showcase.html
+   ============================================ */
+.phone-mockup {
+  width: 280px;
+  height: 920px;
+  background: #0a0a14;
+  border-radius: 36px;
+  border: 3px solid #2D2D2D;
+  box-shadow: 8px 8px 0 #1a1a1a;
+  padding: 10px;
+  position: relative;
+  overflow: hidden;
+  margin: 2rem auto;
+  isolation: isolate;
+}
+.phone-screen {
+  width: 100%;
+  height: 100%;
+  background: #F8F6F3;
+  border-radius: 28px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  color: #2D2D2D;
+}
+
+/* 状态栏 */
+.phone-statusbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 18px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  color: #2D2D2D;
+}
+
+/* 顶部 AppBar - 灵感页特殊样式 */
+.phone-appbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  flex-shrink: 0;
+}
+.phone-appbar .left-icon { font-size: 18px; color: #2D2D2D; }
+.phone-appbar .center-content { display: flex; align-items: center; gap: 4px; }
+.phone-appbar .light-bulb { font-size: 16px; }
+.phone-appbar .day-num { font-size: 18px; font-weight: bold; color: #2D2D2D; }
+.phone-appbar .month-col { display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.phone-appbar .month-text { font-size: 9px; color: #666; }
+.phone-appbar .arrow-down { font-size: 7px; color: #666; }
+.phone-appbar .right-icons { display: flex; gap: 12px; font-size: 16px; color: #2D2D2D; }
+
+/* 搜索框 */
+.phone-searchbar {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  flex-shrink: 0;
+}
+.phone-searchbar .search-box {
+  flex: 1;
+  background: #FFF3E8;
+  border-radius: 20px;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #999;
+}
+
+/* 内容区 */
+.phone-body {
+  flex: 1;
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* 底部导航栏 */
+.phone-bottomnav {
+  background: #fff;
+  border-top: 1px solid #E0E0E0;
+  flex-shrink: 0;
+  position: relative;
+  padding-top: 6px;
+  padding-bottom: 8px;
+}
+.phone-bottomnav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+}
+.phone-bottomnav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+}
+.phone-bottomnav-item .icon { font-size: 18px; color: #999; }
+.phone-bottomnav-item .label { font-size: 10px; color: #666; }
+.phone-bottomnav-item.active .icon { color: #FF9A5C; }
+.phone-bottomnav-item.active .label { color: #FF9A5C; font-weight: 500; }
+
+/* 中央编辑按钮（凸起） */
+.center-fab {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 22px;
+  width: 48px;
+  height: 48px;
+  background: #FF9A5C;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 26px;
+  font-weight: 300;
+  box-shadow: 0 2px 8px rgba(255, 154, 92, 0.4);
+}
+
+/* 柯基悬浮球（左下角） */
+.floating-corgi {
+  position: absolute;
+  left: 12px;
+  bottom: 78px;
+  width: 44px;
+  height: 44px;
+  background: #FFF3E8;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+/* 灵感 FAB（右下角 - 铅笔图标） */
+.inspiration-fab {
+  position: absolute;
+  right: 12px;
+  bottom: 78px;
+  width: 48px;
+  height: 48px;
+  background: #FF9A5C;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 22px;
+  box-shadow: 0 2px 8px rgba(255, 154, 92, 0.4);
+  z-index: 10;
+}
+
+/* ============================================
+   灵感元素样式
+   ============================================ */
+.insp-content {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.55;
+}
+.tag {
+  font-size: 10px;
+  color: #FF6B35;
+  background: #FFF3E0;
+  padding: 2px 6px;
+  border-radius: 10px;
+  display: inline-block;
+  white-space: nowrap;
+}
+.tag-count {
+  font-size: 10px;
+  color: #999;
+  background: #F5F5F5;
+  padding: 2px 6px;
+  border-radius: 10px;
+  display: inline-block;
+  white-space: nowrap;
+}
+.link-hint {
+  font-size: 9px;
+  color: #999;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* 图例 */
+.legend {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  margin: 1rem 0;
+  font-size: 12px;
+  color: #666;
+  flex-wrap: wrap;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-line { width: 16px; height: 2px; background: #E0E0E0; }
+.legend-line-red { width: 16px; height: 1px; background: red; }
+.legend-node { width: 8px; height: 8px; background: #FF9A5C; border-radius: 50%; }
+</style>
+
+<h1 style="text-align:center; margin:1rem 0;">灵感时间线对齐方案</h1>
+
+<div style="background:#FFF3E0; padding:1rem 1.5rem; border-radius:8px; border-left:4px solid #FF9A5C; margin:1rem 0;">
+  <h3 style="margin:0 0 0.5rem 0;">📐 距离规范</h3>
+  <ul style="margin:0; padding-left:1.2rem; line-height:1.8;">
+    <li><strong>2026.07 底部 → 08 顶部</strong> = 1px</li>
+    <li><strong>标题底部 → 时间戳顶部</strong> = 1px（固定）</li>
+    <li><strong>时间戳底部 → 正文顶部</strong> = 2px</li>
+    <li><strong>正文底部 → 标签顶部</strong> = 2px（动态跟随正文行数）</li>
+    <li><strong>正文列表预览最多 2 行</strong>，超过自动省略号</li>
+    <li><strong>正文详情页最多 6 行</strong>，超过自动省略号</li>
+    <li><strong>灵感间距</strong> = 4px</li>
+    <li><strong>标签内边距</strong> = 水平 6dp / 垂直 2dp</li>
+    <li><strong>标签最多显示 3 个</strong>，超出显示 "+N"</li>
+  </ul>
+  <div style="margin-top:0.8rem; padding-top:0.8rem; border-top:1px solid #FFE0B2; font-size:13px;">
+    <strong>字号体系</strong>：标题 15sp Bold / 正文 13sp / 时间戳 11sp / 标签 10sp / "2026.07" 9sp / "08" 22sp Bold
+  </div>
+</div>
+
+<div style="background:var(--bg-secondary); padding:1rem 1.5rem; border-radius:8px; margin:1.5rem 0; border:1px solid var(--border);">
+  <h3 style="margin:0 0 0.5rem 0; font-size:14px; color:#FF9A5C;">⭐ 选用方案 B：Box + Modifier.align(Center) + 动态 offset</h3>
+  <p style="margin:0; font-size:13px; line-height:1.6; color:var(--text-secondary);">整个 Item 用 Box，三目标元素（"2026.07"、节点、标题）用 Modifier.align(Alignment.Center) 居中对齐。"08"、时间戳、正文、标签、关联提示都用 offset 动态跟随。标签通过 Modifier.onSizeChanged 测量正文实际渲染高度定位，确保 1/2/6 行正文时标签始终紧贴正文最后一行 + 2px。</p>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-line"></div>时间线竖线</div>
+  <div class="legend-item"><div class="legend-node"></div>时间节点</div>
+  <div class="legend-item"><div class="legend-line-red"></div>中心对齐参考线（红线）</div>
+</div>
+
+<!-- ============================================
+     手机外壳：280px × 920px
+     ============================================ -->
+<div class="phone-mockup">
+  <div class="phone-screen">
+    <!-- 状态栏 -->
+    <div class="phone-statusbar">
+      <span>9:20</span>
+      <span class="status-right" style="display:flex; gap:4px; align-items:center; font-size:10px;">📶 5G 🔋91%</span>
+    </div>
+
+    <!-- 顶部 AppBar -->
+    <div class="phone-appbar">
+      <span class="left-icon">☰</span>
+      <div class="center-content">
+        <span class="light-bulb">💡</span>
+        <span class="day-num">10</span>
+        <div class="month-col">
+          <span class="month-text">07月</span>
+          <span class="arrow-down">▼</span>
+        </div>
+      </div>
+      <div class="right-icons">
+        <span>📹</span>
+        <span>📷</span>
+        <span>⋮</span>
+      </div>
+    </div>
+
+    <!-- 搜索框 -->
+    <div class="phone-searchbar">
+      <div class="search-box">
+        <span>🔍</span>
+        <span>搜索灵感...</span>
+      </div>
+    </div>
+
+    <!-- 内容区：5 个灵感跨 3 天 -->
+    <div class="phone-body">
+      <!-- 时间线竖线 -->
+      <div style="position:absolute; left:30px; top:5px; bottom:5px; width:2px; background:#E0E0E0;"></div>
+
+      <!-- ========== Day 1：2026.07.08（周三）· 上班族视角 ========== -->
+      <!-- ===== 灵感 1：周报模板优化思路（2 行，2 标签，关联提示）===== -->
+      <!-- 灵感 1 "2026.07" 中心 = 30px -->
+      <div style="position:absolute; left:0; top:30px; transform:translate(0, -50%); width:24px; text-align:center; font-size:9px; color:#999; line-height:1.5; white-space:nowrap;">2026</div>
+      <div style="position:absolute; left:0; top:30px; transform:translate(0, -50%); width:24px; text-align:center; font-size:9px; color:#999; line-height:1.5; white-space:nowrap; padding-top:14px;">.07</div>
+      <div style="position:absolute; left:0; top:57.65px; transform:translate(0, -50%); width:24px; text-align:center; font-size:22px; font-weight:bold; color:#2D2D2D; line-height:1.4; white-space:nowrap;">08</div>
+      <div style="position:absolute; left:26px; top:30px; transform:translate(0, -50%); width:8px; height:8px; border-radius:50%; background:#FF9A5C;"></div>
+      <div style="position:absolute; left:48px; top:30px; transform:translate(0, -50%); font-size:15px; font-weight:bold; color:#2D2D2D; line-height:1.5; white-space:nowrap;">周报模板优化思路</div>
+      <div style="position:absolute; left:48px; top:43px; font-size:11px; color:#999; line-height:1.5; white-space:nowrap;">09:15</div>
+      <!-- 2 行正文 top=61 -->
+      <div class="insp-content" style="position:absolute; left:48px; top:61px; right:8px;">今天和产品讨论了下周周报模板，提议用"进展-问题-下一步"三段式，比当前的流水账清晰很多。</div>
+      <!-- 标签 top=101（2行高度 40 + 2） -->
+      <div style="position:absolute; left:48px; top:101px; display:flex; gap:3px;">
+        <span class="tag">#工作</span>
+        <span class="tag">#效率</span>
+      </div>
+      <!-- 关联提示 top=120 -->
+      <div class="link-hint" style="position:absolute; left:48px; top:120px;">🔗 关联：@产品设计 周报模板</div>
+      <!-- 红线：灵感 1 中心 -->
+      <div style="position:absolute; left:0; right:0; top:30px; height:1px; background:red; opacity:0.4; pointer-events:none;"></div>
+
+      <!-- ===== 灵感 2：冬至吃饺子啦（1 行，2 标签）===== -->
+      <!-- 灵感间距 4px，灵感 1 底部 ~137，灵感 2 中心 = 137 + 4 + 11.25 = 152.25px -->
+      <div style="position:absolute; left:0; top:152.25px; transform:translate(0, -50%); width:24px; text-align:center; font-size:9px; color:#999; line-height:1.5; white-space:nowrap;">2026</div>
+      <div style="position:absolute; left:0; top:152.25px; transform:translate(0, -50%); width:24px; text-align:center; font-size:9px; color:#999; line-height:1.5; white-space:nowrap; padding-top:14px;">.07</div>
+      <div style="position:absolute; left:0; top:168.15px; transform:translate(0, -50%); width:24px; text-align:center; font-size:22px; font-weight:bold; color:#2D2D2D; line-height:1.4; white-space:nowrap;">08</div>
+      <div style="position:absolute; left:26px; top:152.25px; transform:translate(0, -50%); width:8px; height:8px; border-radius:50%; background:#FF9A5C;"></div>
+      <div style="position:absolute; left:48px; top:152.25px; transform:translate(0, -50%); font-size:15px; font-weight:bold; color:#2D2D2D; line-height:1.5; white-space:nowrap;">冬至吃饺子啦</div>
+      <div style="position:absolute; left:48px; top:165.25px; font-size:11px; color:#999; line-height:1.5; white-space:nowrap;">19:30</div>
+      <!-- 1 行正文 top=183 -->
+      <div class="insp-content" style="position:absolute; left:48px; top:183px; right:8px;">今天冬至！一个人也要好好吃饭🥟</div>
+      <!-- 标签 top=203（1行高度 20 + 2） -->
+      <div style="position:absolute; left:48px; top:203px; display:flex; gap:3px;">
+        <span class="tag">#节日</span>
+        <span class="tag">#生活</span>
+      </div>
+      <div style="position:absolute; left:0; right:0; top:152.25px; height:1px; background:red; opacity:0.3; pointer-events:none;"></div>
+
+      <!-- ========== Day 2：2026.07.09（周四）· 学生视角 ========== -->
+      <!-- ===== 灵感 3：高数笔记：泰勒公式（6 行，2 标签，关联提示）===== -->
+      <!-- 灵感 2 底部 ~225，灵感间距 4px，灵感 3 中心 = 225 + 4 + 11.25 = 240.25px -->
+      <div style="position:absolute; left:0; top:240.25px; transform:translate(0, -50%); width:24px; text-align:center; font-size:9px; color:#999; line-height:1.5; white-space:nowrap;">2026</div>
+      <div style="position:absolute; left:0; top:240.25px; transform:translate(0, -50%); width:24px; text-align:center; font-size:9px; color:#999; line-height:1.5; white-space:nowrap; padding-top:14px;">.07</div>
+      <div style="position:absolute; left:0; top:256.15px; transform:translate(0, -50%); width:24px; text-align:center; font-size:22px; font-weight:bold; color:#2D2D2D; line-height:1.4; white-space:nowrap;">09</div>
+      <div style="position:absolute; left:26px; top:240.25px; transform:translate(0, -50%); width:8px; height:8px; border-radius:50%; background:#FF9A5C;"></div>
+      <div style="position:absolute; left:48px; top:240.25px; transform:translate(0, -50%); font-size:15px; font-weight:bold; color:#2D2D2D; line-height:1.5; white-space:nowrap;">高数笔记：泰勒公式</div>
+      <div style="position:absolute; left:48px; top:253.25px; font-size:11px; color:#999; line-height:1.5; white-space:nowrap;">22:15</div>
+      <!-- 6 行正文 top=271, 高度=120, 底部=391 -->
+      <div class="insp-content" style="position:absolute; left:48px; top:271px; right:8px; line-height:1.5;">泰勒公式本质是用多项式"贴近"原函数，展开到几阶就贴近到什么程度。<br>把 f(x) 想象成"目标函数"，多项式是它的"投影"。<br>阶数越高，投影就越像原函数，但计算也越复杂。<br>误差项是拉格朗日余项，描述"还差多少"。<br>麦克劳林公式是泰勒公式在 x₀=0 的特殊形式。<br>应用：近似计算、证明不等式、求解极限。</div>
+      <!-- 标签 top=393 -->
+      <div style="position:absolute; left:48px; top:393px; display:flex; gap:3px;">
+        <span class="tag">#学习</span>
+        <span class="tag">#数学</span>
+      </div>
+      <!-- 关联提示 top=412 -->
+      <div class="link-hint" style="position:absolute; left:48px; top:412px;">🔗 关联：@高等数学 第八章</div>
+      <div style="position:absolute; left:0; right:0; top:240.25px; height:1px; background:red; opacity:0.3; pointer-events:none;"></div>
+
+      <!-- ========== Day 3：2026.07.10（周五）· 家庭/产品视角 ========== -->
+      <!-- ===== 灵感 4：女儿教我视频通话（2 行，2 标签）===== -->
+      <!-- 灵感 3 底部 ~432，间距 4px，灵感 4 中心 = 432 + 4 + 11.25 = 447.25px -->
+      <div style="position:absolute; left:0; top:447.25px; transform:translate(0, -50%); width:24px; text-align:center; font-size:9px; color:#999; line-height:1.5; white-space:nowrap;">2026</div>
+      <div style="position:absolute; left:0; top:447.25px; transform:translate(0, -50%); width:24px; text-align:center; font-size:9px; color:#999; line-height:1.5; white-space:nowrap; padding-top:14px;">.07</div>
+      <div style="position:absolute; left:0; top:463.15px; transform:translate(0, -50%); width:24px; text-align:center; font-size:22px; font-weight:bold; color:#2D2D2D; line-height:1.4; white-space:nowrap;">10</div>
+      <div style="position:absolute; left:26px; top:447.25px; transform:translate(0, -50%); width:8px; height:8px; border-radius:50%; background:#FF9A5C;"></div>
+      <div style="position:absolute; left:48px; top:447.25px; transform:translate(0, -50%); font-size:15px; font-weight:bold; color:#2D2D2D; line-height:1.5; white-space:nowrap;">女儿教我视频通话</div>
+      <div style="position:absolute; left:48px; top:460.25px; font-size:11px; color:#999; line-height:1.5; white-space:nowrap;">15:42</div>
+      <!-- 2 行正文 top=478 -->
+      <div class="insp-content" style="position:absolute; left:48px; top:478px; right:8px;">今天女儿远程教我开了视频通话，第一次看到小外孙的脸，胖乎乎的，真想抱抱他。</div>
+      <!-- 标签 top=518 -->
+      <div style="position:absolute; left:48px; top:518px; display:flex; gap:3px;">
+        <span class="tag">#家庭</span>
+        <span class="tag">#生活</span>
+      </div>
+      <div style="position:absolute; left:0; right:0; top:447.25px; height:1px; background:red; opacity:0.3; pointer-events:none;"></div>
+
+      <!-- ===== 灵感 5：柯基陪伴系统思考（2 行，3 标签，关联提示）===== -->
+      <!-- 灵感 4 底部 ~554，间距 4px，灵感 5 中心 = 554 + 4 + 11.25 = 569.25px -->
+      <div style="position:absolute; left:0; top:569.25px; transform:translate(0, -50%); width:24px; text-align:center; font-size:9px; color:#999; line-height:1.5; white-space:nowrap;">2026</div>
+      <div style="position:absolute; left:0; top:569.25px; transform:translate(0, -50%); width:24px; text-align:center; font-size:9px; color:#999; line-height:1.5; white-space:nowrap; padding-top:14px;">.07</div>
+      <div style="position:absolute; left:0; top:585.15px; transform:translate(0, -50%); width:24px; text-align:center; font-size:22px; font-weight:bold; color:#2D2D2D; line-height:1.4; white-space:nowrap;">10</div>
+      <div style="position:absolute; left:26px; top:569.25px; transform:translate(0, -50%); width:8px; height:8px; border-radius:50%; background:#FF9A5C;"></div>
+      <div style="position:absolute; left:48px; top:569.25px; transform:translate(0, -50%); font-size:15px; font-weight:bold; color:#2D2D2D; line-height:1.5; white-space:nowrap;">柯基陪伴系统思考</div>
+      <div style="position:absolute; left:48px; top:582.25px; font-size:11px; color:#999; line-height:1.5; white-space:nowrap;">21:20</div>
+      <!-- 2 行正文 top=600 -->
+      <div class="insp-content" style="position:absolute; left:48px; top:600px; right:8px;">产品 PRD 里"柯基陪伴"这个点很打动我，技术是冰冷的，加一只"会摇尾巴的柯基"，记录就有温度了。</div>
+      <!-- 标签 top=640 -->
+      <div style="position:absolute; left:48px; top:640px; display:flex; gap:3px;">
+        <span class="tag">#产品</span>
+        <span class="tag">#设计</span>
+        <span class="tag">#思考</span>
+      </div>
+      <!-- 关联提示 top=659 -->
+      <div class="link-hint" style="position:absolute; left:48px; top:659px;">🔗 关联：@产品设计 用户故事</div>
+      <div style="position:absolute; left:0; right:0; top:569.25px; height:1px; background:red; opacity:0.3; pointer-events:none;"></div>
+    </div>
+
+    <!-- 底部导航栏 -->
+    <div class="phone-bottomnav">
+      <div class="phone-bottomnav-row">
+        <div class="phone-bottomnav-item">
+          <span class="icon">📝</span>
+          <span class="label">待办</span>
+        </div>
+        <div class="phone-bottomnav-item active">
+          <span class="icon">💡</span>
+          <span class="label">灵感</span>
+        </div>
+        <div class="phone-bottomnav-item" style="visibility:hidden;">
+          <span class="icon">⊕</span>
+          <span class="label">占位</span>
+        </div>
+        <div class="phone-bottomnav-item">
+          <span class="icon">📅</span>
+          <span class="label">日期</span>
+        </div>
+        <div class="phone-bottomnav-item">
+          <span class="icon">👤</span>
+          <span class="label">我的</span>
+        </div>
+      </div>
+      <div class="center-fab">+</div>
+    </div>
+
+    <div class="floating-corgi">🐕</div>
+    <div class="inspiration-fab">✏️</div>
+  </div>
+</div>
+
+<div style="text-align:center; margin:2rem 0 1rem 0; padding:1rem; background:#F5F5F5; border-radius:8px; font-size:13px; color:#666;">
+  <strong>5 个灵感语料 · 3 天时间</strong>：<br>
+  📅 07.08 周三（小林·上班族）：①周报模板优化思路 ②冬至吃饺子啦<br>
+  📅 07.09 周四（小雨·学生）：③高数笔记：泰勒公式<br>
+  📅 07.10 周五（王阿姨·老年 + 小林）：④女儿教我视频通话 ⑤柯基陪伴系统思考<br><br>
+  ✓ "2026.07" / 节点 / 标题 三个元素中心都精准落在各自的红线上<br>
+  ✓ 标签根据正文实际行数（1/2/6 行）动态计算位置<br>
+  ✓ 标签最多 3 个，正文列表预览最多 2 行<br>
+  ✓ 关联提示用 @ 类型：标题 格式（PRD 3.2.3 规范）<br>
+  ✓ 时间线竖线贯通所有 5 个灵感节点
+</div>
