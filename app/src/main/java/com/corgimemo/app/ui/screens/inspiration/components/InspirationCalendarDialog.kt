@@ -876,7 +876,7 @@ private fun CalendarInspirationItem(
  * @param tagsJson JSON字符串（如 ["标签1","标签2"]）
  * @return 标签列表
  */
-private fun decodeTagsJson(tagsJson: String): List<String> {
+internal fun decodeTagsJson(tagsJson: String): List<String> {
     if (tagsJson.isBlank()) return emptyList()
     return try {
         tagsJson
@@ -898,7 +898,7 @@ private fun decodeTagsJson(tagsJson: String): List<String> {
  * @param pathsJson JSON字符串（如 ["/path1.jpg","/path2.jpg"]）
  * @return 路径列表
  */
-private fun decodePathsJson(pathsJson: String): List<String> {
+internal fun decodePathsJson(pathsJson: String): List<String> {
     if (pathsJson.isBlank()) return emptyList()
     return try {
         pathsJson

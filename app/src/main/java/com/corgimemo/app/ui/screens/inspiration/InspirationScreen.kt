@@ -1,5 +1,7 @@
 package com.corgimemo.app.ui.screens.inspiration
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,6 +46,7 @@ import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.UnifiedEmptyState
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationLongPressSheet
+import com.corgimemo.app.ui.screens.inspiration.components.InspirationDateTimePreview
 import com.corgimemo.app.ui.screens.inspiration.components.TagPickerSheet
 import com.corgimemo.app.ui.screens.inspiration.components.TimelineInspirationItem
 import com.corgimemo.app.viewmodel.InspirationViewModel
@@ -257,39 +262,129 @@ fun InspirationScreen(
     }
 
     // 日期时间修改弹窗
+    // 关键架构：使用 androidx.compose.ui.window.Dialog 将弹窗渲染至独立窗口层级，
+    // 逃脱 InspirationScreen 父容器（MainScreen 的 Scaffold content + padding）约束，
+    // 从而实现与 TodoEditScreen 弹窗一致的整屏遮罩覆盖效果（含 topBar 和 bottomBar）。
+    // 若直接在 @Composable 层渲染，父容器 padding 会限制遮罩范围，
+    // 导致弹窗位置偏下、被导航栏遮挡。
     if (showDateTimePicker && longPressedInspiration != null) {
         val inspiration = longPressedInspiration!!
-        val calendar = remember(inspiration.id) {
-            Calendar.getInstance().apply { timeInMillis = inspiration.createdAt }
-        }
-        val dateTimeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        // 使用系统当前时间（非灵感原始 createdAt）
+        val nowCalendar = remember { Calendar.getInstance() }
+
+        // 弹窗出现时隐藏键盘（作用于原页面的输入框焦点）
+        androidx.compose.ui.platform.LocalFocusManager.current.clearFocus()
+
+        androidx.compose.ui.window.Dialog(
             onDismissRequest = {
                 showDateTimePicker = false
                 longPressedInspiration = null
             },
-            sheetState = dateTimeSheetState,
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            ReminderPickerBottomSheet(
-                initialDateMillis = inspiration.createdAt,
-                initialHour = calendar.get(Calendar.HOUR_OF_DAY),
-                initialMinute = calendar.get(Calendar.MINUTE),
-                showAdvancedOptions = false,        // 隐藏重复提醒和农历
-                title = "修改日期时间",
-                rowLabel = "日期时间",
-                onDismiss = {
-                    showDateTimePicker = false
-                    longPressedInspiration = null
-                },
-                onConfirm = { dateMillis, _, _, _, _ ->
-                    if (dateMillis != null) {
-                        viewModel.updateInspirationDateTime(inspiration.id, dateMillis)
-                    }
-                    showDateTimePicker = false
-                    longPressedInspiration = null
-                }
+            properties = androidx.compose.ui.window.DialogProperties(
+                dismissOnBackPress = true,         // 返回键关闭弹窗
+                dismissOnClickOutside = false,     // 由遮罩自行处理点击关闭
+                usePlatformDefaultWidth = false,   // 允许弹窗宽度撑满屏幕
+                decorFitsSystemWindows = false     // 允许内容延伸至系统栏区域（导航栏/状态栏）
             )
+        ) {
+            // 计算屏幕高度用于4:1比例定位（上边距:下边距=4:1）
+            // Dialog 内容获得整屏约束，screenHeightPx 即真实屏幕高度
+            val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+            val screenDensity = androidx.compose.ui.platform.LocalDensity.current
+            val screenHeightPx = remember(configuration) {
+                with(screenDensity) { configuration.screenHeightDp.dp.toPx().toInt() }
+            }
+
+            // 全屏半透明遮罩，点击关闭
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+                    .background(Color(0x99000000))
+                    .clickable {
+                        showDateTimePicker = false
+                        longPressedInspiration = null
+                    }
+            ) {
+                // 弹窗容器：固定高度屏幕90%，按4:1比例定位（上边距:下边距=4:1）
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .clickable(
+                            interactionSource = androidx.compose.foundation.interaction.MutableInteractionSource(),
+                            indication = null,
+                            onClick = {}
+                        )
+                        .layout { measurable, constraints ->
+                            // Dialog 内 constraints.maxHeight 即屏幕高度，
+                            // 但保留 Infinity 兜底以防 Dialog 未正确传递约束
+                            val screenH = if (constraints.maxHeight != androidx.compose.ui.unit.Constraints.Infinity) {
+                                constraints.maxHeight
+                            } else {
+                                screenHeightPx
+                            }
+                            // 固定弹窗高度：屏幕高度的 90%
+                            val dialogHeight = if (screenH > 0) (screenH * 0.9).toInt() else 900
+                            // 按 4:1 比例分配上下空白：B=(H-h)/5, T=4(H-h)/5
+                            val bottomSpace = (screenH - dialogHeight) / 5
+                            val topSpace = bottomSpace * 4
+                            val fixedConstraints = constraints.copy(
+                                minHeight = dialogHeight,
+                                maxHeight = dialogHeight
+                            )
+                            val placeable = measurable.measure(fixedConstraints)
+                            layout(placeable.width, dialogHeight) {
+                                placeable.placeRelative(0, topSpace.coerceAtLeast(0))
+                            }
+                        }
+                ) {
+                    // 弹窗内容：淡入+缩放动画
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = true,
+                        enter = androidx.compose.animation.fadeIn(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                            )
+                        ) + androidx.compose.animation.scaleIn(
+                            initialScale = 0.9f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                            )
+                        )
+                    ) {
+                        ReminderPickerBottomSheet(
+                            initialDateMillis = System.currentTimeMillis(),  // 系统当前时间
+                            initialHour = nowCalendar.get(Calendar.HOUR_OF_DAY),
+                            initialMinute = nowCalendar.get(Calendar.MINUTE),
+                            showAdvancedOptions = false,        // 隐藏重复提醒和农历
+                            title = "修改日期时间",
+                            rowLabel = "日期时间",
+                            calendarRowSpacing = 4.dp,          // 日历间距 4dp
+                            inspirationPreview = { selectedDate, selectedHour, selectedMinute ->
+                                // 灵感预览区：静态字段来自 inspiration，动态字段来自参数
+                                InspirationDateTimePreview(
+                                    inspiration = inspiration,
+                                    date = selectedDate,
+                                    hour = selectedHour,
+                                    minute = selectedMinute
+                                )
+                            },
+                            onDismiss = {
+                                showDateTimePicker = false
+                                longPressedInspiration = null
+                            },
+                            onConfirm = { dateMillis, _, _, _, _ ->
+                                if (dateMillis != null) {
+                                    viewModel.updateInspirationDateTime(inspiration.id, dateMillis)
+                                }
+                                showDateTimePicker = false
+                                longPressedInspiration = null
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 }

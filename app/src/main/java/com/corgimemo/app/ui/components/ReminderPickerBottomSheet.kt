@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -76,6 +77,8 @@ fun ReminderPickerBottomSheet(
     showAdvancedOptions: Boolean = true,
     title: String = "设置提醒时间",
     rowLabel: String = "提醒时间",
+    calendarRowSpacing: Dp? = null,
+    inspirationPreview: @Composable ((date: LocalDate, hour: Int, minute: Int) -> Unit)? = null,
     onDismiss: () -> Unit,
     onConfirm: (dateMillis: Long?, hour: Int, minute: Int, repeatType: Int, calendarEnabled: Boolean) -> Unit
 ) {
@@ -317,7 +320,10 @@ fun ReminderPickerBottomSheet(
         // 所有间距由此外部 Spacer 统一控制，确保日历模式和滚轮模式完全一致
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ===== 内容区域：日期滚轮 或 时间滚轮（弹性填充剩余空间） =====
+        // ===== 内容区域：日期滚轮 或 时间滚轮 =====
+        // 有预览区时不使用 weight(1f)，让日历区自适应高度，预览区紧贴日历区底部
+        val hasPreview = inspirationPreview != null
+        val contentModifier = if (hasPreview) Modifier else Modifier.weight(1f)
         when (viewMode) {
             "calendar" -> DateWheelPickerView(
                 selectedDate = selectedDate,
@@ -328,15 +334,25 @@ fun ReminderPickerBottomSheet(
                 isExpanded = isCalendarExpanded,
                 onToggleExpand = { isCalendarExpanded = !isCalendarExpanded },
                 calendarEnabled = calendarEnabled && showAdvancedOptions,  // 非高级模式强制不显示农历
-                modifier = Modifier.weight(1f)
+                rowSpacing = calendarRowSpacing,  // 传入日历行间距
+                modifier = contentModifier
             )
             "time" -> TimeWheelView(
                 hour = selectedHour,
                 minute = selectedMinute,
                 onHourChange = { selectedHour = it.coerceIn(0, 23) },
                 onMinuteChange = { selectedMinute = it.coerceIn(0, 59) },
-                modifier = Modifier.weight(1f)
+                modifier = contentModifier
             )
+        }
+
+        // ===== 灵感预览区（仅 inspirationPreview != null 时显示）=====
+        if (hasPreview) {
+            // 日历区/时间区到预览区 4dp 间距（需求2）
+            Spacer(modifier = Modifier.height(4.dp))
+            inspirationPreview?.invoke(selectedDate, selectedHour, selectedMinute)
+            // 弹性占位，推底部按钮到底部
+            Spacer(modifier = Modifier.weight(1f))
         }
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -412,7 +428,8 @@ private fun DateWheelPickerView(
     onDateChange: (LocalDate) -> Unit,
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
-    calendarEnabled: Boolean = false,  // ✅ 新增：农历开关状态
+    calendarEnabled: Boolean = false,  // ✅ 新增：是否启用农历显示
+    rowSpacing: Dp? = null,            // 行间距：null=SpaceEvenly, 非null=spacedBy
     modifier: Modifier = Modifier
 ) {
     // 视图模式："calendar" 网格日历 / "wheel" 滚轮选择器
@@ -542,8 +559,11 @@ private fun DateWheelPickerView(
                     navMonth = navMonth,
                     onDateSelect = onDateChange,
                     onMonthChange = { navMonth = it },
-                    calendarEnabled = calendarEnabled,  // ✅ 传递农历开关状态
-                    modifier = Modifier.fillMaxSize()
+                    calendarEnabled = calendarEnabled,  // 已在调用方处理 showAdvancedOptions
+                    rowSpacing = rowSpacing,  // 传入行间距参数
+                    // 灵感场景(rowSpacing!=null)：只填满宽度，高度自适应内容，让预览区紧贴日历区底部
+                    // 待办场景(rowSpacing==null)：填满整个空间，日历均匀分布
+                    modifier = if (rowSpacing != null) Modifier.fillMaxWidth() else Modifier.fillMaxSize()
                 )
                 "wheel" -> DateWheelContent(
                     year = currentYear,
@@ -587,6 +607,7 @@ private fun CalendarGridView(
     onDateSelect: (LocalDate) -> Unit,
     onMonthChange: (YearMonth) -> Unit = {},
     calendarEnabled: Boolean = false,  // ✅ 新增：是否启用农历显示
+    rowSpacing: Dp? = null,            // 行间距：null=SpaceEvenly, 非null=spacedBy
     modifier: Modifier = Modifier
 ) {
     val daysOfWeek = DayOfWeek.entries.take(7)
@@ -627,8 +648,27 @@ private fun CalendarGridView(
      * 日历内容区：星期行 + 5行日期网格
      * 所有子项（共7行：1星期+5日期）自动等间距分布
      */
+    // 灵感场景：日历区水平边距 16dp（与 InspirationCalendarDialog 一致）
+    // 主 Column padding 24dp，需要每侧溢出 8dp（24-16=8）实现 16dp 边距
+    val finalModifier = if (rowSpacing != null) {
+        val overflowPx = with(LocalDensity.current) { 8.dp.toPx().toInt() }
+        modifier.layout { measurable, constraints ->
+            // 扩展最大宽度（每侧 8dp，共 16dp）
+            val newConstraints = constraints.copy(
+                maxWidth = (constraints.maxWidth + overflowPx * 2).coerceAtLeast(0)
+            )
+            val placeable = measurable.measure(newConstraints)
+            layout(placeable.width, placeable.height) {
+                // 向左偏移 8dp，实现每侧 8dp 溢出
+                placeable.placeRelative(-overflowPx, 0)
+            }
+        }
+    } else {
+        modifier
+    }
+
     Column(
-        modifier = modifier
+        modifier = finalModifier
             .pointerInput(navMonth) {  // ✅ key=navMonth，每月变化时重新初始化手势检测器
                 detectHorizontalDragGestures(
                     onDragStart = {
@@ -654,7 +694,11 @@ private fun CalendarGridView(
                     totalDragX += dragAmount
                 }
             },
-        verticalArrangement = Arrangement.SpaceEvenly  // ✅ 星期行与每行日期等间距
+        verticalArrangement = if (rowSpacing != null) {
+            Arrangement.spacedBy(rowSpacing)  // 灵感场景：固定间距（如 4.dp）
+        } else {
+            Arrangement.SpaceEvenly  // 待办场景：默认等间距
+        }
     ) {
         // ===== 第1行：星期标题 =====
         Row(
@@ -711,11 +755,14 @@ private fun CalendarGridView(
                     // ✅ 触觉反馈实例
                     val hapticFeedback = LocalHapticFeedback.current
 
-                    // ✅ 正方形圆角盒子：宽度=高度，容纳数字+农历两行内容
+                    // 日期格尺寸：
+                    // - 灵感场景(rowSpacing!=null)：40×34dp，与 InspirationCalendarDialog 日历区一致
+                    // - 待办场景(rowSpacing==null)：40×40dp 正方形，容纳农历文字
+                    val cellHeight = if (rowSpacing != null) 34.dp else 40.dp
                     Box(
                         modifier = Modifier
-                            .size(40.dp)  // 正方形：足够容纳14sp数字 + 9-10sp农历 + 间距
-                            .clip(RoundedCornerShape(8.dp))  // 方形 + 圆角
+                            .size(width = 40.dp, height = cellHeight)
+                            .clip(RoundedCornerShape(8.dp))  // 圆角
                             .background(bgColor)
                             .clickable {
                                 // ✅ 震动反馈
