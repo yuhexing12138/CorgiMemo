@@ -120,8 +120,8 @@ fun InspirationScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                        .padding(horizontal = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
                 ) {
                     // ===== 置顶区域 =====
                     if (pinnedInspirations.isNotEmpty()) {

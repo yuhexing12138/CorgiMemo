@@ -178,3 +178,146 @@
 2. **一致性**：同类动画使用相同时长和缓动
 3. **可打断**：动画应可被打断，不影响操作
 4. **尊重用户**：支持 `prefers-reduced-motion` 设置
+
+### 12.1.8 灵感页时间线规范
+
+> **适用范围**：`InspirationScreen` 的 `TimelineInspirationItem` 组件及所属 `LazyColumn`
+> **关联文件**：
+> - 组件：[TimelineInspirationItem.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/components/TimelineInspirationItem.kt)
+> - 页面：[InspirationScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationScreen.kt)
+> - 原型：参考 PRD `【刻记+】APP\不会忘记的备忘录-PRD-v2.md` 中灵感页章节
+
+#### 12.1.8.1 整体布局
+
+灵感页采用"左侧时间栏 + 节点 + 右侧内容区"三段式时间线结构：
+
+```
+[左侧时间栏 44dp] [间距 14dp] [节点 8dp] [右侧内容区]
+                  ↑                ↑
+                  节点中心 X = 58dp  内容区起始 X = 62dp
+```
+
+#### 12.1.8.2 字号体系
+
+##### 左侧时间栏
+
+| 元素 | 字号 | 字重 | 颜色 |
+|------|------|------|------|
+| **年月文本**（如"2026.07"） | 12sp | Regular | #999999 提示文字 |
+| **大号日期数字**（如"08"） | 25sp | Medium | `MaterialTheme.colorScheme.onSurface` |
+
+##### 右侧内容区
+
+| 元素 | 字号 | 字重 | 颜色 | 行高 |
+|------|------|------|------|------|
+| **笔记标题** | 16sp | Medium | `MaterialTheme.colorScheme.onSurface` | 默认 |
+| **时分时间**（如"09:00"） | 11sp | Regular | #999999 提示文字 | 默认 |
+| **笔记正文** | 14sp | Regular | #666666 次要文字 | **21sp** |
+| **话题标签** | 11sp | Regular | `UiColors.Primary` | 默认 |
+
+##### 中文字间距
+
+所有文本统一应用 **`letterSpacing = 0.5sp`**，增强中文阅读节奏感。
+
+#### 12.1.8.3 间距体系
+
+##### 文本行排版
+
+| 项 | 值 |
+|----|-----|
+| **正文行高** | 21sp |
+| **中文字间距** | +0.5sp（letterSpacing） |
+
+##### 垂直间距（dp）
+
+| 间距关系 | 值 | 说明 |
+|---------|-----|------|
+| **标题 → 时分时间** | 4dp | 时分时间紧贴标题下方 |
+| **时分时间 → 正文** | 9dp | 满足"标题与下方正文 9dp"规范 |
+| **正文 → 标签** | 7dp | 标签紧贴正文下方 |
+| **标签 → 图片** | 4dp | 图片与标签分组 |
+| **单条笔记内部换行段间距** | 8dp | 正文内段落之间 |
+| **相邻两条笔记间距** | 18dp | `LazyColumn.verticalArrangement = spacedBy(18.dp)` |
+
+##### 横向边距（dp）
+
+| 间距 | 值 | 说明 |
+|------|-----|------|
+| **页面左右内容安全边距** | 18dp | `LazyColumn.padding(horizontal = 18.dp)` |
+| **左侧时间轴栏与右侧笔记内容横向间隔** | 14dp | 时间栏宽度 44dp + 间距 14dp = 节点中心 58dp |
+
+#### 12.1.8.4 节点与竖线
+
+| 元素 | 规格 | 说明 |
+|------|------|------|
+| **节点直径** | 8dp | 圆形 CircleShape |
+| **节点颜色** | `#FF9A5C`（置顶项） / `MaterialTheme.colorScheme.primary`（普通项） | 与 PRD 主题色一致 |
+| **节点 Y 位置** | 对齐"08"大号日期数字中心 | 通过 `onSizeChanged` 测量时间栏高度，按 0.66 系数估算 |
+| **节点 X 位置** | 58dp（时间栏宽度 44 + 间距 14） | 居中对齐"29"数字右侧 14dp |
+| **竖线 X** | 58dp（与节点中心对齐） | `drawBehind` 绘制，#EEEEEE 灰色，2dp 宽 |
+| **竖线 Y 范围** | 0 到 Item 底部 | 贯通整个 Item 高度 |
+
+#### 12.1.8.5 标签与图片
+
+| 元素 | 规格 |
+|------|------|
+| **标签数量** | 最多显示 3 个，超出显示 `+N` |
+| **标签内边距** | 水平 6dp / 垂直 2dp |
+| **标签圆角** | 10dp（胶囊形状） |
+| **标签背景色** | `#FFF3E0`（暖橙浅） / `#F5F5F5`（`+N` 灰色背景） |
+| **标签文字色** | `UiColors.Primary`（暖橙） / `#999999`（`+N` 灰色） |
+| **图片缩略图** | 28dp 方形，最多 2 个 + `+N` 提示 |
+| **图片圆角** | 6dp |
+| **图片占位色** | `#F5F5F5` / `#EEEEEE` |
+
+#### 12.1.8.6 实施常量参考
+
+`TimelineInspirationItem.kt` 中定义的关键常量：
+
+```kotlin
+val dateColumnWidth = 44.dp              // 时间栏宽度
+val dateToNodeGap = 14.dp                // 时间栏到节点中心
+val nodeDiameter = 8.dp                  // 节点直径
+val nodeCenterX = dateColumnWidth + dateToNodeGap  // 58dp
+val contentStartX = nodeCenterX + nodeDiameter / 2  // 62dp
+val timelineLineX = nodeCenterX          // 竖线 X
+
+val titleToTimeGap = 4.dp                // 标题 → 时分时间
+val timeToContentGap = 9.dp              // 时分时间 → 正文
+val contentToTagGap = 7.dp               // 正文 → 标签
+val tagToImageGap = 4.dp                 // 标签 → 图片
+```
+
+`InspirationScreen.kt` 中：
+
+```kotlin
+LazyColumn(
+    modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp),
+    verticalArrangement = Arrangement.spacedBy(18.dp)
+)
+```
+
+#### 12.1.8.7 节点 Y 定位算法
+
+节点中心 Y = "2026.07" 高度 + "08" 高度 / 2
+
+经验估算：
+- "2026.07" 12sp lineHeight ≈ 14dp
+- "08" 25sp lineHeight ≈ 30dp
+- 比例 14:30 ≈ 0.32:0.68
+- "08" 中心 = 0.32h + 0.34h = 0.66h（h 为时间栏总高度）
+
+实现方式：
+
+```kotlin
+var dateColumnHeightPx by remember { mutableIntStateOf(0) }
+val dateColumnHeightDp = with(density) { dateColumnHeightPx.toDp() }
+val nodeCenterY = dateColumnHeightDp * 0.66f
+val nodeTopY = (nodeCenterY - nodeRadius).coerceAtLeast(0.dp)
+```
+
+#### 12.1.8.8 排版变更记录
+
+| 日期 | 版本 | 变更 |
+|------|------|------|
+| 2026-07-09 | v1 | 初始规范（按 PRD 参考图） |

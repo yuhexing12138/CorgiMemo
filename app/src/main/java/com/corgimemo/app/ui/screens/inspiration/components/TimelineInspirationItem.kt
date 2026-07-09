@@ -4,10 +4,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,6 +32,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,28 +42,35 @@ import com.corgimemo.app.ui.theme.UiColors
 import java.util.Calendar
 
 /**
- * 时间线灵感条目组件
+ * 时间线灵感条目组件（参考图规范版）
  *
- * 布局结构（方案 B - Box + Modifier.align + 动态 offset）：
- * [日期列 52dp] [时间线区域 20dp（节点）] [间距 4dp] [内容区]
+ * 布局结构：
+ * ```
+ * [左侧时间栏 44dp] [间距 14dp] [节点 8dp] [右侧内容区]
+ * ```
  *
- * 三个目标元素（"2026.07"、节点、灵感标题）的中心 Y 对齐到 Y0 = 12dp：
- * - 三个元素都被限制在 height=24dp（targetRowHeight）的对齐参考容器中
- * - 用 Modifier.align(Alignment.Center) 自动居中，无需计算 lineHeight
+ * 字号体系（与 PRD 参考图一致）：
+ * - 左侧时间栏：年月 12sp / 大号日期数字 25sp Medium
+ * - 右侧内容区：标题 16sp Medium / 时分时间 11sp / 正文 14sp / 标签 11sp
+ * - 中文字间距统一 +0.5sp
  *
- * 距离规范（与原型 15-alignment-v15.html 一致）：
- * - "2026.07" 底部 → "08" 顶部 = 1px
- * - 标题底部 → 时间戳顶部 = 1px（固定 offset y=25dp）
- * - 时间戳底部 → 正文顶部 = 2px
- * - 正文底部 → 标签顶部 = 2px（动态，onSizeChanged 测量）
- * - 灵感间距 = 4px（由 LazyColumn spacedBy 控制）
+ * 间距体系：
+ * - 标题 → 时分时间：4dp
+ * - 时分时间 → 正文：9dp
+ * - 正文 → 标签：7dp
+ * - 正文行高：21sp
  *
- * 字号体系：标题 16sp / 正文 15sp / 时间戳 14sp / 标签 11sp / "2026.07" 15sp / "08" 22sp
+ * 横向边距：
+ * - 时间栏宽度：44dp
+ * - 时间栏 → 节点中心：14dp
+ * - 节点直径：8dp
+ * - 节点中心 X 坐标：58dp（=44+14）
+ * - 内容区起始 X 坐标：62dp（=58+4 节点半径）
  *
  * @param inspiration 灵感实体数据
  * @param tags 标签列表
  * @param imagePaths 图片路径列表
- * @param formattedTime 格式化后的时间字符串
+ * @param formattedTime 格式化后的时间字符串（如 "09:00"）
  * @param showDate 是否显示左侧日期列（同一天多条时仅第一条显示）
  * @param isPinnedItem 是否为置顶项
  * @param onClick 点击回调
@@ -80,20 +90,44 @@ fun TimelineInspirationItem(
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // 三个目标元素统一在 height=24dp 的对齐参考容器中居中
-    val targetRowHeight = 24.dp  // 16sp 标题 lineHeight
+    val density = LocalDensity.current
 
-    // 距离常量
-    val timeStampOffsetY = 25.dp  // 标题底部 12dp + 1px + 时间戳 lineHeight 12dp
-    val contentTopOffsetY = timeStampOffsetY + 14.dp + 2.dp  // 时间戳底部 + 2px
+    // ===== 横向布局常量 =====
+    val dateColumnWidth = 44.dp                 // 左侧时间栏宽度
+    val dateToNodeGap = 14.dp                   // 时间栏右侧到节点中心
+    val nodeDiameter = 8.dp                     // 节点直径
+    val nodeCenterX = dateColumnWidth + dateToNodeGap     // 58dp
+    val nodeRadius = nodeDiameter / 2                      // 4dp
+    val contentStartX = nodeCenterX + nodeRadius          // 62dp
+    val timelineLineX = nodeCenterX                        // 竖线 X = 58dp
 
-    // 正文实际渲染高度（用于标签动态定位）
+    // ===== 垂直间距常量 =====
+    val titleToTimeGap = 4.dp                   // 标题 → 时分时间
+    val timeToContentGap = 9.dp                 // 时分时间 → 正文
+    val contentToTagGap = 7.dp                  // 正文 → 标签
+    val tagToImageGap = 4.dp                    // 标签 → 图片
+
+    // ===== 中文字间距 =====
+    val chineseLetterSpacing = 0.5.sp
+
+    // ===== 状态：测量时间栏实际高度（用于节点 Y 定位）=====
+    var dateColumnHeightPx by remember { mutableIntStateOf(0) }
+    val dateColumnHeightDp = with(density) { dateColumnHeightPx.toDp() }
+
+    // 节点中心 Y = "2026.07" 高度 + "08" 高度/2
+    // 经验估算："2026.07" lineHeight 14dp，"08" lineHeight 30dp
+    // 比例 14:30 ≈ 0.32:0.68，"08" 中心 = 0.32h + 0.34h = 0.66h
+    // 使用 Dp * Float 运算符重载，比 (value * 0.66f).dp 更可靠
+    val nodeCenterY = dateColumnHeightDp * 0.66f
+    val nodeTopY = (nodeCenterY - nodeRadius).coerceAtLeast(0.dp)
+
+    // ===== 状态：测量正文实际高度（用于图片位置备用）=====
     var contentHeightPx by remember { mutableIntStateOf(0) }
+    val contentHeightDp = with(density) { contentHeightPx.toDp() }
 
-    // 时间线竖线的X坐标：日期列52dp + 时间线区域一半10dp = 62dp
-    val timelineLineX = 62.dp
-    val timelineLineColor = Color(0xFFEEEEEE)
+    // ===== 颜色 =====
     val nodeColor = if (isPinnedItem) Color(0xFFFF9A5C) else MaterialTheme.colorScheme.primary
+    val timelineLineColor = Color(0xFFEEEEEE)
 
     Box(
         modifier = modifier
@@ -102,7 +136,7 @@ fun TimelineInspirationItem(
                 onClick = onClick,
                 onLongClick = onLongClick
             )
-            // drawBehind 在 padding 之前，绘制范围包括 padding 区域
+            // 竖线贯通整个 Item 高度
             .drawBehind {
                 val x = timelineLineX.toPx()
                 drawLine(
@@ -112,76 +146,53 @@ fun TimelineInspirationItem(
                     strokeWidth = 2.dp.toPx()
                 )
             }
-            // 关键：去掉 padding(vertical = 8.dp)，间距改由 LazyColumn spacedBy(4.dp) 控制
     ) {
-        // ========== 日期列（"2026.07" 居中 + "08" 跟随）==========
-        if (showDate || isPinnedItem) {
-            Box(
+        // ========== 左侧时间栏（年月 + 大号日期）==========
+        if (showDate) {
+            Column(
+                horizontalAlignment = Alignment.Start,
                 modifier = Modifier
-                    .width(52.dp)
-                    .height(targetRowHeight)
+                    .width(dateColumnWidth)
                     .align(Alignment.TopStart)
+                    .onSizeChanged { dateColumnHeightPx = it.height }
             ) {
-                if (isPinnedItem) {
-                    // 置顶项显示 PushPin 图标
-                    Icon(
-                        imageVector = Icons.Default.PushPin,
-                        contentDescription = "已置顶",
-                        tint = Color(0xFFFF9A5C),
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .size(20.dp)
-                    )
-                } else {
-                    // "2026.07" 居中（中心 Y = 12dp）
-                    Text(
-                        text = String.format("%04d.%02d", getYear(inspiration.createdAt), getMonth(inspiration.createdAt)),
-                        fontSize = 15.sp,
-                        color = Color(0xFF999999),
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-                    // "08" 跟随"2026.07"下方 1px
-                    Text(
-                        text = String.format("%02d", getDay(inspiration.createdAt)),
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .offset(y = (targetRowHeight / 2) + 1.dp)
-                    )
-                }
+                // 年月文本（12sp 灰色）
+                Text(
+                    text = String.format("%04d.%02d", getYear(inspiration.createdAt), getMonth(inspiration.createdAt)),
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999),
+                    letterSpacing = chineseLetterSpacing
+                )
+                // 大号日期数字（25sp 黑色 Medium）
+                Text(
+                    text = String.format("%02d", getDay(inspiration.createdAt)),
+                    fontSize = 25.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    letterSpacing = chineseLetterSpacing
+                )
             }
         }
 
-        // ========== 节点（8dp 圆点，居中到 Y0 = 12dp）==========
-        Box(
-            modifier = Modifier
-                .offset(x = 52.dp)  // 日期列右侧
-                .size(20.dp, targetRowHeight)
-                .align(Alignment.TopStart)
-        ) {
+        // ========== 节点（8dp 圆点，垂直对齐"08"数字中心）==========
+        if (showDate) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(8.dp)
+                    .offset(x = nodeCenterX - nodeRadius, y = nodeTopY)
+                    .size(nodeDiameter)
                     .background(color = nodeColor, shape = CircleShape)
+                    .align(Alignment.TopStart)
             )
         }
 
-        // ========== 内容区（包含标题、时间戳、正文、标签、图片）==========
-        // 标题：居中到 Y0 = 12dp
-        Box(
+        // ========== 右侧内容区（标题、时分时间、正文、标签、图片）==========
+        Column(
             modifier = Modifier
-                .padding(start = 76.dp)  // 52dp 日期 + 20dp 时间线 + 4dp 间距
-                .height(targetRowHeight)
+                .padding(start = contentStartX)
                 .align(Alignment.TopStart)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.align(Alignment.Center)
-            ) {
-                // 置顶标识（标题前）
+            // 标题（16sp Medium）
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 if (isPinnedItem) {
                     Icon(
                         imageVector = Icons.Default.PushPin,
@@ -191,127 +202,111 @@ fun TimelineInspirationItem(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                 }
-                // 标题
                 Text(
                     text = inspiration.title,
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    letterSpacing = chineseLetterSpacing
                 )
             }
-        }
 
-        // 时间戳：标题底部 + 1px（固定 offset y=25dp）
-        Text(
-            text = formattedTime,
-            fontSize = 14.sp,
-            color = Color(0xFF999999),
-            modifier = Modifier
-                .padding(start = 76.dp, top = timeStampOffsetY)
-                .align(Alignment.TopStart)
-        )
+            // 标题 → 时分时间 间距
+            Spacer(modifier = Modifier.height(titleToTimeGap))
 
-        // 正文：时间戳底部 + 2px；onSizeChanged 测量实际高度用于标签定位
-        if (inspiration.content.isNotBlank()) {
-            val plainContent = removeHtmlTags(inspiration.content)
+            // 时分时间（11sp 灰色）
             Text(
-                text = plainContent,
-                fontSize = 15.sp,
-                color = Color(0xFF666666),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .padding(start = 76.dp, top = contentTopOffsetY)
-                    .align(Alignment.TopStart)
-                    .onSizeChanged { size ->
-                        contentHeightPx = size.height
-                    }
+                text = formattedTime,
+                fontSize = 11.sp,
+                color = Color(0xFF999999),
+                letterSpacing = chineseLetterSpacing
             )
-        }
 
-        // 标签：正文底部 + 2px（动态 offset 由 contentHeightPx 决定）
-        if (tags.isNotEmpty()) {
-            val tagTopOffsetY = (contentTopOffsetY + contentHeightPx.toDp() + 2.dp)
-                .coerceAtLeast(contentTopOffsetY)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
-                    .padding(start = 76.dp, top = tagTopOffsetY)
-                    .align(Alignment.TopStart)
-            ) {
-                // 最多显示 3 个标签
-                tags.take(3).forEach { tag ->
-                    Text(
-                        text = "#$tag",
-                        fontSize = 11.sp,
-                        color = UiColors.Primary,
-                        modifier = Modifier
-                            .background(
-                                color = Color(0xFFFFF3E0),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-                // 超出 3 个显示 "+N"
-                if (tags.size > 3) {
-                    Text(
-                        text = "+${tags.size - 3}",
-                        fontSize = 11.sp,
-                        color = Color(0xFF999999),
-                        modifier = Modifier
-                            .background(
-                                color = Color(0xFFF5F5F5),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
+            // 时分时间 → 正文 间距
+            Spacer(modifier = Modifier.height(timeToContentGap))
 
-        // 图片缩略图：标签底部 + 4px
-        if (imagePaths.isNotEmpty()) {
-            val imageTopOffsetY = if (tags.isNotEmpty()) {
-                (contentTopOffsetY + contentHeightPx.toDp() + 2.dp + 22.dp + 4.dp)
-                    .coerceAtLeast(contentTopOffsetY)
-            } else {
-                (contentTopOffsetY + contentHeightPx.toDp() + 2.dp)
-                    .coerceAtLeast(contentTopOffsetY)
+            // 正文（14sp，行高 21sp）
+            if (inspiration.content.isNotBlank()) {
+                val plainContent = removeHtmlTags(inspiration.content)
+                Text(
+                    text = plainContent,
+                    fontSize = 14.sp,
+                    lineHeight = 21.sp,
+                    color = Color(0xFF666666),
+                    letterSpacing = chineseLetterSpacing,
+                    modifier = Modifier.onSizeChanged { contentHeightPx = it.height }
+                )
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
-                    .padding(start = 76.dp, top = imageTopOffsetY)
-                    .align(Alignment.TopStart)
-            ) {
-                imagePaths.take(2).forEach { _ ->
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xFFF5F5F5)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = "🖼️", fontSize = 12.sp)
+
+            // 正文 → 标签 间距
+            if (tags.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(contentToTagGap))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // 最多显示 3 个标签
+                    tags.take(3).forEach { tag ->
+                        Text(
+                            text = "#$tag",
+                            fontSize = 11.sp,
+                            color = UiColors.Primary,
+                            letterSpacing = chineseLetterSpacing,
+                            modifier = Modifier
+                                .background(
+                                    color = Color(0xFFFFF3E0),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    // 超出 3 个显示 "+N"
+                    if (tags.size > 3) {
+                        Text(
+                            text = "+${tags.size - 3}",
+                            fontSize = 11.sp,
+                            color = Color(0xFF999999),
+                            letterSpacing = chineseLetterSpacing,
+                            modifier = Modifier
+                                .background(
+                                    color = Color(0xFFF5F5F5),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
                     }
                 }
-                if (imagePaths.size > 2) {
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xFFEEEEEE)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "+${imagePaths.size - 2}",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFF666666)
-                        )
+            }
+
+            // 标签 → 图片 间距
+            if (imagePaths.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(tagToImageGap))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    imagePaths.take(2).forEach { _ ->
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFF5F5F5)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = "🖼️", fontSize = 12.sp)
+                        }
+                    }
+                    if (imagePaths.size > 2) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFEEEEEE)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "+${imagePaths.size - 2}",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF666666)
+                            )
+                        }
                     }
                 }
             }
