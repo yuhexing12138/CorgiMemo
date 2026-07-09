@@ -81,6 +81,22 @@ class InspirationViewModel @Inject constructor(
                    c1.get(java.util.Calendar.MONTH) == c2.get(java.util.Calendar.MONTH) &&
                    c1.get(java.util.Calendar.DAY_OF_MONTH) == c2.get(java.util.Calendar.DAY_OF_MONTH)
         }
+
+        /**
+         * 聚合多个灵感的标签为去重排序列表
+         *
+         * 用于 savedTags 流：从所有灵感中收集已使用的标签，
+         * 去重后按字典序排序，供 TagPickerSheet 的「历史标签快速添加」区域使用。
+         *
+         * @param allTagsLists 每个灵感已解码的标签列表
+         * @return 去重并按字典序排序的标签列表
+         */
+        fun aggregateSavedTags(allTagsLists: List<List<String>>): List<String> {
+            return allTagsLists
+                .flatten()
+                .distinct()
+                .sorted()
+        }
     }
 
     // ========== 状态定义 ==========
@@ -132,6 +148,16 @@ class InspirationViewModel @Inject constructor(
     val displayInspirations: StateFlow<List<InspirationDisplayItem>> =
         _inspirations.map { list ->
             buildDisplayItems(list)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    /** 历史标签列表（从所有灵感聚合去重排序，用于 TagPickerSheet 快速选择） */
+    val savedTags: StateFlow<List<String>> =
+        _inspirations.map { list ->
+            aggregateSavedTags(list.map { decodeTags(it.tags) })
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -363,6 +389,28 @@ class InspirationViewModel @Inject constructor(
             inspirationRepository.update(
                 inspiration.copy(
                     createdAt = newDateTime,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    /**
+     * 更新指定灵感的标签
+     *
+     * 修改后的 tags 通过 encodeTags 编码为 JSON 字符串后持久化。
+     * 数据库更新后，_inspirations 流自动触发，UI 自动刷新。
+     *
+     * @param id 灵感ID
+     * @param newTags 新标签列表
+     */
+    fun updateTags(id: Long, newTags: List<String>) {
+        viewModelScope.launch {
+            val currentList = _inspirations.value
+            val inspiration = currentList.find { it.id == id } ?: return@launch
+            inspirationRepository.update(
+                inspiration.copy(
+                    tags = encodeTags(newTags),
                     updatedAt = System.currentTimeMillis()
                 )
             )

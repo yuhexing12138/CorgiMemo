@@ -73,6 +73,9 @@ fun ReminderPickerBottomSheet(
     initialMinute: Int = 35,
     initialRepeatType: Int = 0,
     initialCalendarEnabled: Boolean = false,
+    showAdvancedOptions: Boolean = true,
+    title: String = "设置提醒时间",
+    rowLabel: String = "提醒时间",
     onDismiss: () -> Unit,
     onConfirm: (dateMillis: Long?, hour: Int, minute: Int, repeatType: Int, calendarEnabled: Boolean) -> Unit
 ) {
@@ -127,7 +130,7 @@ fun ReminderPickerBottomSheet(
         ) {
         // 标题
         Text(
-            text = "设置提醒时间",
+            text = title,
             fontSize = 17.sp,
             fontWeight = FontWeight.SemiBold,
             color = Color(0xFF2D2D2D),
@@ -143,7 +146,7 @@ fun ReminderPickerBottomSheet(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "提醒时间",
+                text = rowLabel,
                 fontSize = 15.sp,
                 color = Color(0xFF2D2D2D),
                 fontWeight = FontWeight.Medium
@@ -187,6 +190,8 @@ fun ReminderPickerBottomSheet(
             }
         }
 
+        // ===== 重复提醒行（仅 showAdvancedOptions=true 时显示） =====
+        if (showAdvancedOptions) {
         Spacer(modifier = Modifier.height(16.dp))
 
         // ===== 重复提醒行（胶囊按钮 + ↕箭头，展开时显示背景） =====
@@ -269,8 +274,10 @@ fun ReminderPickerBottomSheet(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+        }
 
-        // ===== 农历行 =====
+        // ===== 农历行（仅 showAdvancedOptions=true 时显示） =====
+        if (showAdvancedOptions) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -294,7 +301,7 @@ fun ReminderPickerBottomSheet(
                 modifier = Modifier.height(28.dp)
             )
         }
-
+        }
         Spacer(modifier = Modifier.height(16.dp))
 
         // 分割线
@@ -320,7 +327,7 @@ fun ReminderPickerBottomSheet(
                 },
                 isExpanded = isCalendarExpanded,
                 onToggleExpand = { isCalendarExpanded = !isCalendarExpanded },
-                calendarEnabled = calendarEnabled,  // ✅ 传递农历开关状态
+                calendarEnabled = calendarEnabled && showAdvancedOptions,  // 非高级模式强制不显示农历
                 modifier = Modifier.weight(1f)
             )
             "time" -> TimeWheelView(
@@ -373,7 +380,7 @@ fun ReminderPickerBottomSheet(
                             selectedHour,
                             selectedMinute,
                             repeatType,
-                            calendarEnabled
+                            calendarEnabled && showAdvancedOptions  // 非高级模式强制返回 false
                         )
                     },
                 contentAlignment = Alignment.Center

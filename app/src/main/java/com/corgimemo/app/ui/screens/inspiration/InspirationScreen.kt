@@ -15,9 +15,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,9 +40,13 @@ import androidx.navigation.NavController
 import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.UnifiedEmptyState
+import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationLongPressSheet
+import com.corgimemo.app.ui.screens.inspiration.components.TagPickerSheet
 import com.corgimemo.app.ui.screens.inspiration.components.TimelineInspirationItem
 import com.corgimemo.app.viewmodel.InspirationViewModel
+import androidx.compose.material3.rememberModalBottomSheetState
+import java.util.Calendar
 
 /**
  * 灵感记录列表页面（时间线版）
@@ -60,6 +66,7 @@ import com.corgimemo.app.viewmodel.InspirationViewModel
  * @param onFabClick FAB按钮点击回调（由 MainScreen 传入）
  * @param viewModel 灵感视图模型（通过 Hilt 自动注入）
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InspirationScreen(
     navController: NavController,
@@ -76,6 +83,7 @@ fun InspirationScreen(
     var longPressedInspiration by remember { mutableStateOf<Inspiration?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showDateTimePicker by remember { mutableStateOf(false) }
+    var showTagPicker by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -187,13 +195,14 @@ fun InspirationScreen(
                 longPressedInspiration = null
             },
             onTagClick = {
-                // 标签管理功能后续实现
+                // 关闭长按面板，打开标签管理弹窗（保留 longPressedInspiration 供 TagPickerSheet 使用）
                 showLongPressSheet = false
-                longPressedInspiration = null
+                showTagPicker = true
             },
             onDateClick = {
-                showDateTimePicker = true
+                // 关闭长按面板，打开日期时间选择器（保留 longPressedInspiration 供 ReminderPickerBottomSheet 使用）
                 showLongPressSheet = false
+                showDateTimePicker = true
             },
             onDeleteClick = {
                 showDeleteConfirm = true
@@ -227,5 +236,60 @@ fun InspirationScreen(
                 }
             }
         )
+    }
+
+    // 标签管理弹窗
+    if (showTagPicker && longPressedInspiration != null) {
+        val tagSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val savedTags by viewModel.savedTags.collectAsState()
+        TagPickerSheet(
+            sheetState = tagSheetState,
+            tags = viewModel.decodeTags(longPressedInspiration!!.tags),
+            savedTags = savedTags,
+            onTagsChange = { newTags ->
+                viewModel.updateTags(longPressedInspiration!!.id, newTags)
+            },
+            onDismiss = {
+                showTagPicker = false
+                longPressedInspiration = null
+            }
+        )
+    }
+
+    // 日期时间修改弹窗
+    if (showDateTimePicker && longPressedInspiration != null) {
+        val inspiration = longPressedInspiration!!
+        val calendar = remember(inspiration.id) {
+            Calendar.getInstance().apply { timeInMillis = inspiration.createdAt }
+        }
+        val dateTimeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = {
+                showDateTimePicker = false
+                longPressedInspiration = null
+            },
+            sheetState = dateTimeSheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            ReminderPickerBottomSheet(
+                initialDateMillis = inspiration.createdAt,
+                initialHour = calendar.get(Calendar.HOUR_OF_DAY),
+                initialMinute = calendar.get(Calendar.MINUTE),
+                showAdvancedOptions = false,        // 隐藏重复提醒和农历
+                title = "修改日期时间",
+                rowLabel = "日期时间",
+                onDismiss = {
+                    showDateTimePicker = false
+                    longPressedInspiration = null
+                },
+                onConfirm = { dateMillis, _, _, _, _ ->
+                    if (dateMillis != null) {
+                        viewModel.updateInspirationDateTime(inspiration.id, dateMillis)
+                    }
+                    showDateTimePicker = false
+                    longPressedInspiration = null
+                }
+            )
+        }
     }
 }
