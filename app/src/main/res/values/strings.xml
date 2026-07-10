@@ -303,6 +303,24 @@
     <string name="language_ja">日本語</string>
     <string name="language_system_default">跟随系统</string>
 
+    <!-- ==================== 灵感展示页 ==================== -->
+    <string name="inspiration_view_title">灵感</string>
+    <string name="inspiration_view_back">返回</string>
+    <string name="inspiration_view_copy">复制</string>
+    <string name="inspiration_view_edit">编辑</string>
+    <string name="inspiration_view_share">分享</string>
+    <string name="inspiration_view_copy_success">文本内容已复制到剪切板</string>
+    <string name="inspiration_view_share_sheet_title">分享灵感</string>
+    <string name="inspiration_view_share_save">保存到相册</string>
+    <string name="inspiration_view_share_more">更多分享</string>
+    <string name="inspiration_view_share_cancel">取消</string>
+    <string name="inspiration_view_save_success">已保存到相册</string>
+    <string name="inspiration_view_share_failed">分享失败，请重试</string>
+    <string name="inspiration_view_save_failed">保存失败，请重试</string>
+    <string name="inspiration_view_word_count_suffix">字</string>
+    <string name="inspiration_view_logo_text">- 简记事 -</string>
+    <string name="inspiration_view_image_close">关闭</string>
+
     <!-- ==================== 批量复制附件（方案 B：仅失败 Snackbar） ==================== -->
     <string name="batch_duplicate_failure_hint">⚠️ 部分文件复制失败，请手动检查</string>
 
