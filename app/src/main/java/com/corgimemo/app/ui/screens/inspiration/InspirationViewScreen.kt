@@ -40,12 +40,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -99,6 +101,8 @@ fun InspirationViewScreen(
     val inspirations = remember(displayItems) {
         displayItems.mapNotNull { it.inspiration }
     }
+    // 临时调试：监听当前选中的标签（用于排查 inspirations.size = 1 问题）
+    val selectedTagsDebug by viewModel.selectedTags.collectAsState()
 
     // 找到 inspirationId 对应的初始页码
     val initialIndex = remember(inspirations, inspirationId) {
@@ -158,25 +162,26 @@ fun InspirationViewScreen(
                 // 数据加载中显示菊花
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             } else {
-                // 水平 Pager：左右滑动浏览所有灵感
-                HorizontalPager(
-                    state = pagerState,
-                    beyondViewportPageCount = 1,
-                    pageSpacing = 16.dp,
-                    contentPadding = PaddingValues(horizontal = 18.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) { page ->
-                    val ins = inspirations[page]
-                    // 缓存当前页的图片路径列表（用于图片预览）
-                    val insImagePaths = remember(ins.imagePaths) {
-                        if (ins.imagePaths.isBlank()) emptyList()
-                        else try {
-                            org.json.JSONArray(ins.imagePaths).let { arr ->
-                                (0 until arr.length()).map { arr.getString(it) }
-                            }
-                        } catch (e: Exception) { emptyList() }
-                    }
-                    InspirationViewCard(
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // 水平 Pager：左右滑动浏览所有灵感
+                    HorizontalPager(
+                        state = pagerState,
+                        beyondViewportPageCount = 1,
+                        pageSpacing = 16.dp,
+                        contentPadding = PaddingValues(horizontal = 18.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) { page ->
+                        val ins = inspirations[page]
+                        // 缓存当前页的图片路径列表（用于图片预览）
+                        val insImagePaths = remember(ins.imagePaths) {
+                            if (ins.imagePaths.isBlank()) emptyList()
+                            else try {
+                                org.json.JSONArray(ins.imagePaths).let { arr ->
+                                    (0 until arr.length()).map { arr.getString(it) }
+                                }
+                            } catch (e: Exception) { emptyList() }
+                        }
+                        InspirationViewCard(
                         inspiration = ins,
                         onImageClick = { index ->
                             // 打开图片全屏预览
@@ -189,6 +194,16 @@ fun InspirationViewScreen(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
+                // 临时调试信息（覆盖在屏幕底部，便于排查 inspirations.size=1 问题）
+                Text(
+                    text = "DEBUG: size=${inspirations.size} | currentPage=${pagerState.currentPage} | insId=$inspirationId | ids=${inspirations.map { it.id }} | tags=$selectedTagsDebug",
+                    color = Color.Red,
+                    fontSize = 9.sp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .background(Color.White.copy(alpha = 0.85f))
+                        .padding(8.dp)
+                )
             }
         }
     }
@@ -238,7 +253,9 @@ fun InspirationViewScreen(
             onDismiss = { showImageGallery = false }
         )
     }
-}
+}  // 关闭 Scaffold 调用 + Scaffold content lambda
+
+}  // 关闭 InspirationViewScreen 函数
 
 /**
  * 顶部导航栏
