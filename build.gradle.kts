@@ -9,6 +9,11 @@ buildscript {
 
 plugins {
     alias(libs.plugins.android.application) apply false
+    /** 以下插件在根项目声明 apply false，子模块 :richeditor-compose 通过 id() 不带版本应用
+     *  原因：AGP 9.2.1 内置 Kotlin 且 application 插件包含 library 插件，
+     *  这些插件已在 classpath（版本未知），子模块若带版本应用会触发兼容性检查失败 */
+    alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.android.library) apply false
 }
 
 tasks.register("clean", Delete::class) {

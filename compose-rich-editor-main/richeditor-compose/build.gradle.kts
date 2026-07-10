@@ -18,9 +18,11 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
  */
 
 plugins {
-    alias(libs.plugins.kotlin.multiplatform)
+    /** 以下插件用 id() 不带版本应用（已在根项目声明 apply false，
+     *  且 AGP 9.2.1 内置 Kotlin / application 包含 library 已将它们加入 classpath） */
+    id("org.jetbrains.kotlin.multiplatform")
+    id("com.android.library")
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.android.library)
 }
 
 kotlin {
