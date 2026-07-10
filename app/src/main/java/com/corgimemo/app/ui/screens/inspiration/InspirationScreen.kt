@@ -158,7 +158,11 @@ fun InspirationScreen(
                                 if (isBatchMode) {
                                     viewModel.toggleSelection(inspiration.id)
                                 } else {
-                                    navController.navigate("inspiration_edit/${inspiration.id}")
+                                    // v2.8 改为先进入展示页，再决定复制/编辑/分享
+                                    navController.navigate(
+                                        com.corgimemo.app.ui.navigation.Screen.InspirationViewWithId
+                                            .createRoute(inspiration.id)
+                                    )
                                 }
                             },
                             onLongClick = if (isBatchMode) {

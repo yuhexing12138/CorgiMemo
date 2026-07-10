@@ -375,6 +375,16 @@ class InspirationViewModel @Inject constructor(
     }
 
     /**
+     * 灵感展示页调用：从编辑页返回时重新加载数据
+     * 复用现有 loadInspirations()，避免重新初始化 ViewModel 状态
+     */
+    fun refresh() {
+        viewModelScope.launch {
+            loadInspirations()
+        }
+    }
+
+    /**
      * 创建新灵感
      * @param title 标题
      * @param content 富文本内容

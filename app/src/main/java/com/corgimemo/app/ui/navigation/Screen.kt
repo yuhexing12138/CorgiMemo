@@ -26,6 +26,12 @@ sealed class Screen(val route: String) {
     object InspirationEdit : Screen("inspiration_edit")                    // 新建灵感
     object InspirationEditWithId : Screen("inspiration_edit/{inspirationId}")  // 编辑灵感
 
+    // 灵感展示页面（只读预览，支持左右滑动切换）
+    object InspirationViewWithId : Screen("inspiration_view/{inspirationId}") {
+        /** 带参数的导航路径 */
+        fun createRoute(inspirationId: Long) = "inspiration_view/$inspirationId"
+    }
+
     // 特殊日期编辑页面
     object SpecialDateEdit : Screen("date_edit")                          // 新建日期
     object SpecialDateEditWithId : Screen("date_edit/{specialDateId}")     // 编辑日期

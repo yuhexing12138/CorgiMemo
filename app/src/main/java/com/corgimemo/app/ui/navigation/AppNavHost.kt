@@ -184,6 +184,22 @@ fun AppNavHost(
             )
         }
 
+        // 灵感展示页面路由（只读预览，支持左右滑动切换）
+        composable(
+            route = Screen.InspirationViewWithId.route,
+            arguments = listOf(
+                androidx.navigation.navArgument("inspirationId") {
+                    type = androidx.navigation.NavType.LongType
+                }
+            )
+        ) { backStackEntry ->
+            val inspirationId = backStackEntry.arguments?.getLong("inspirationId") ?: -1L
+            com.corgimemo.app.ui.screens.inspiration.InspirationViewScreen(
+                inspirationId = inspirationId,
+                navController = navController
+            )
+        }
+
         // 最近删除页面路由
         composable(Screen.RecentlyDeleted.route) {
             com.corgimemo.app.ui.screens.recentlydeleted.RecentlyDeletedScreen(
