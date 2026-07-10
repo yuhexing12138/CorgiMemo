@@ -19,11 +19,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +58,7 @@ import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.theme.UiColors
 import com.corgimemo.app.viewmodel.GroupType
+import com.corgimemo.app.viewmodel.TagFilterMode
 
 private const val DRAWER_ICON_ALL = "📋"
 private const val DRAWER_ICON_DELETED = "🗑️"
@@ -84,12 +89,17 @@ private val categoryIcons = mapOf(
  * @param recentlyDeletedCount 最近删除数量
  * @param selectedCategoryId 当前选中的待办分组ID
  * @param inspirationTags 灵感标签列表
- * @param selectedTag 当前选中的灵感标签
+ * @param selectedTags 当前选中的灵感标签集合（多选）
+ * @param tagFilterMode 标签筛选模式（OR/AND/NOT）
+ * @param tagCounts 每个标签对应的灵感数量
+ * @param totalInspirationCount 灵感总数（用于"全部灵感"项计数）
  * @param selectedDateType 当前选中的日期类型
  * @param onCategoryClick 待办分组点击回调
  * @param onAddCategoryClick 添加分组回调
  * @param onCategoryAction 分组操作回调
- * @param onTagClick 灵感标签点击回调
+ * @param onTagClick 标签点击回调（传入标签名，由调用方切换选中状态）
+ * @param onTagFilterModeChange 筛选模式切换回调
+ * @param onClearTagSelection 清空所有选中标签回调（"全部灵感"点击时调用）
  * @param onAddTagClick 添加标签回调
  * @param onDateTypeClick 日期类型点击回调
  * @param onRecentlyDeletedClick 最近删除点击回调
@@ -106,12 +116,17 @@ fun AppDrawerContent(
     recentlyDeletedCount: Int,
     selectedCategoryId: Long?,
     inspirationTags: List<String> = emptyList(),
-    selectedTag: String? = null,
+    selectedTags: Set<String> = emptySet(),
+    tagFilterMode: TagFilterMode = TagFilterMode.OR,
+    tagCounts: Map<String, Int> = emptyMap(),
+    totalInspirationCount: Int = 0,
     selectedDateType: GroupType? = null,
     onCategoryClick: (Long?) -> Unit = {},
     onAddCategoryClick: () -> Unit = {},
     onCategoryAction: (CategoryAction) -> Unit = {},
-    onTagClick: (String?) -> Unit = {},
+    onTagClick: (String) -> Unit = {},
+    onTagFilterModeChange: (TagFilterMode) -> Unit = {},
+    onClearTagSelection: () -> Unit = {},
     onAddTagClick: () -> Unit = {},
     onDateTypeClick: (GroupType?) -> Unit = {},
     onRecentlyDeletedClick: () -> Unit = {},
@@ -146,11 +161,16 @@ fun AppDrawerContent(
             TabItem.INSPIRE -> {
                 InspirationFilterSection(
                     tags = inspirationTags,
-                    selectedTag = selectedTag,
+                    selectedTags = selectedTags,
+                    filterMode = tagFilterMode,
+                    tagCounts = tagCounts,
+                    totalInspirationCount = totalInspirationCount,
                     onTagClick = onTagClick,
-                    onAddTagClick = onAddTagClick,
+                    onFilterModeChange = onTagFilterModeChange,
+                    onClearTagSelection = onClearTagSelection,
                     modifier = Modifier.weight(1f)
                 )
+                AddCategoryButton(text = "添加标签", onClick = onAddTagClick)
             }
             TabItem.DATE -> {
                 DateTypeFilterSection(
@@ -399,16 +419,43 @@ private fun AddCategoryButton(text: String = "添加分组", onClick: () -> Unit
 
 /**
  * 灵感标签筛选区域
+ *
+ * 布局：标题 → 搜索框 → 模式芯片（OR/AND/NOT）→ 标签列表（可滚动）
+ *
+ * @param tags 所有可选标签列表
+ * @param selectedTags 当前选中的标签集合
+ * @param filterMode 当前筛选模式
+ * @param tagCounts 每个标签对应的灵感数量
+ * @param totalInspirationCount 灵感总数（用于"全部灵感"项计数）
+ * @param onTagClick 标签点击回调（由调用方切换选中状态）
+ * @param onFilterModeChange 筛选模式切换回调
+ * @param onClearTagSelection 清空选中标签回调（点击"全部灵感"时触发）
+ * @param modifier 修饰符
  */
 @Composable
 private fun InspirationFilterSection(
     tags: List<String>,
-    selectedTag: String?,
-    onTagClick: (String?) -> Unit,
-    onAddTagClick: () -> Unit,
+    selectedTags: Set<String>,
+    filterMode: TagFilterMode,
+    tagCounts: Map<String, Int>,
+    totalInspirationCount: Int,
+    onTagClick: (String) -> Unit,
+    onFilterModeChange: (TagFilterMode) -> Unit,
+    onClearTagSelection: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 搜索框本地状态（不需要 ViewModel 持久化）
+    var searchQuery by remember { mutableStateOf("") }
+
+    // 根据搜索词过滤标签列表（忽略大小写的模糊匹配）
+    val filteredTags = if (searchQuery.isBlank()) {
+        tags
+    } else {
+        tags.filter { it.contains(searchQuery, ignoreCase = true) }
+    }
+
     Column(modifier = modifier) {
+        // 标题
         Text(
             text = "🏷️ 标签筛选",
             fontSize = 16.sp,
@@ -417,6 +464,7 @@ private fun InspirationFilterSection(
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
         )
 
+        // 橙色分割线
         Box(
             modifier = Modifier
                 .padding(horizontal = 20.dp)
@@ -427,31 +475,115 @@ private fun InspirationFilterSection(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // 搜索框
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = {
+                Text(
+                    text = "搜索标签",
+                    fontSize = 14.sp,
+                    color = Color(0xFF79747E)
+                )
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = Color(0xFF79747E),
+                    modifier = Modifier.size(18.dp)
+                )
+            },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "清除搜索",
+                            tint = Color(0xFF79747E),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = UiColors.Primary,
+                unfocusedBorderColor = Color(0xFFE0E0E0)
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .height(52.dp)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 筛选模式芯片（OR / AND / NOT）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = filterMode == TagFilterMode.OR,
+                onClick = { onFilterModeChange(TagFilterMode.OR) },
+                label = { Text("OR", fontSize = 12.sp) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = UiColors.PrimaryLight,
+                    selectedLabelColor = UiColors.Primary
+                )
+            )
+            FilterChip(
+                selected = filterMode == TagFilterMode.AND,
+                onClick = { onFilterModeChange(TagFilterMode.AND) },
+                label = { Text("AND", fontSize = 12.sp) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = UiColors.PrimaryLight,
+                    selectedLabelColor = UiColors.Primary
+                )
+            )
+            FilterChip(
+                selected = filterMode == TagFilterMode.NOT,
+                onClick = { onFilterModeChange(TagFilterMode.NOT) },
+                label = { Text("NOT", fontSize = 12.sp) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = UiColors.PrimaryLight,
+                    selectedLabelColor = UiColors.Primary
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // 标签列表（可滚动）
         LazyColumn(modifier = Modifier.fillMaxWidth()) {
+            // "全部灵感"选项
             item {
                 CategoryItem(
                     icon = DRAWER_ICON_ALL,
                     name = "全部灵感",
-                    count = 0,
-                    isSelected = selectedTag == null,
+                    count = totalInspirationCount,
+                    isSelected = selectedTags.isEmpty(),
                     showMenu = false,
-                    onClick = { onTagClick(null) }
+                    onClick = { onClearTagSelection() }
                 )
             }
 
-            items(tags) { tag ->
+            // 过滤后的标签列表
+            items(filteredTags) { tag ->
                 CategoryItem(
                     icon = "#",
                     name = tag,
-                    count = 0,
-                    isSelected = selectedTag == tag,
+                    count = tagCounts[tag] ?: 0,
+                    isSelected = tag in selectedTags,
                     showMenu = false,
                     onClick = { onTagClick(tag) }
                 )
             }
         }
-
-        AddCategoryButton(text = "添加标签", onClick = onAddTagClick)
     }
 }
 
