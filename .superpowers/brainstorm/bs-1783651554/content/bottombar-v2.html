@@ -1,0 +1,115 @@
+<h2>底部栏布局 v2（按你的设计）</h2>
+<p class="subtitle">收起态 5 按钮 · 点击 ⋮ 展开上行格式工具栏 · 再次点击 ⋮ 才收回</p>
+
+<div class="mockup">
+  <div class="mockup-header">收起态（默认）</div>
+  <div class="mockup-body" style="background:#FAF6F0;padding:16px">
+    <div style="background:#FFF;border-radius:12px 12px 0 0;box-shadow:0 -2px 8px rgba(0,0,0,0.08);overflow:hidden">
+      <div style="display:flex;justify-content:space-around;align-items:center;padding:12px 16px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+          <span style="color:#666;font-size:22px">📷</span>
+          <span style="font-size:9px;color:#999">相机</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+          <span style="color:#666;font-size:22px">🎤</span>
+          <span style="font-size:9px;color:#999">语音</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+          <span style="color:#666;font-size:18px;font-weight:bold">#</span>
+          <span style="font-size:9px;color:#999">位置</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+          <span style="color:#666;font-size:18px;font-weight:bold">@</span>
+          <span style="font-size:9px;color:#999">关联</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+          <span style="background:#FFE0C0;color:#E88A4D;font-size:18px;font-weight:bold;padding:2px 8px;border-radius:6px">⋮</span>
+          <span style="font-size:9px;color:#E88A4D">格式</span>
+        </div>
+      </div>
+    </div>
+    <div style="text-align:center;font-size:11px;color:#aaa;margin-top:8px">高度约 56dp · 5 按钮均匀分布</div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:20px">
+  <div class="mockup-header">展开态（点击 ⋮ 后）</div>
+  <div class="mockup-body" style="background:#FAF6F0;padding:16px">
+    <div style="background:#FFF;border-radius:12px 12px 0 0;box-shadow:0 -2px 8px rgba(0,0,0,0.08);overflow:hidden">
+      <!-- 上行：格式工具栏（可横滑） -->
+      <div style="display:flex;align-items:center;gap:2px;padding:8px 12px;border-bottom:1px solid #F0E8E0;overflow-x:auto;white-space:nowrap">
+        <span style="background:#FFE0C0;color:#E88A4D;font-weight:bold;font-size:13px;padding:5px 9px;border-radius:6px;flex-shrink:0">B</span>
+        <span style="color:#666;font-style:italic;font-size:13px;padding:5px 9px;flex-shrink:0">I</span>
+        <span style="color:#666;text-decoration:underline;font-size:13px;padding:5px 9px;flex-shrink:0">U</span>
+        <span style="color:#666;text-decoration:line-through;font-size:13px;padding:5px 9px;flex-shrink:0">S</span>
+        <span style="color:#999;font-size:10px;margin:0 2px;flex-shrink:0">│</span>
+        <span style="color:#666;font-size:13px;padding:5px 9px;flex-shrink:0">•≡</span>
+        <span style="color:#666;font-size:13px;padding:5px 9px;flex-shrink:0">1.</span>
+        <span style="color:#999;font-size:10px;margin:0 2px;flex-shrink:0">│</span>
+        <span style="color:#666;font-size:13px;padding:5px 9px;flex-shrink:0">🔗</span>
+        <span style="color:#666;font-size:13px;padding:5px 9px;flex-shrink:0">⟨/⟩</span>
+        <span style="color:#666;font-size:13px;padding:5px 9px;flex-shrink:0">⬅</span>
+        <span style="color:#666;font-size:13px;padding:5px 9px;flex-shrink:0">⬌</span>
+        <span style="color:#666;font-size:13px;padding:5px 9px;flex-shrink:0">➡</span>
+        <span style="color:#aaa;font-size:11px;padding-left:4px;flex-shrink:0">← 可横滑 →</span>
+      </div>
+      <!-- 下行：5 按钮保持不变 -->
+      <div style="display:flex;justify-content:space-around;align-items:center;padding:12px 16px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+          <span style="color:#666;font-size:22px">📷</span>
+          <span style="font-size:9px;color:#999">相机</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+          <span style="color:#666;font-size:22px">🎤</span>
+          <span style="font-size:9px;color:#999">语音</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+          <span style="color:#666;font-size:18px;font-weight:bold">#</span>
+          <span style="font-size:9px;color:#999">位置</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+          <span style="color:#666;font-size:18px;font-weight:bold">@</span>
+          <span style="font-size:9px;color:#999">关联</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+          <span style="background:#FF9A5C;color:#FFF;font-size:18px;font-weight:bold;padding:2px 8px;border-radius:6px">⋮</span>
+          <span style="font-size:9px;color:#FF9A5C">格式</span>
+        </div>
+      </div>
+    </div>
+    <div style="text-align:center;font-size:11px;color:#aaa;margin-top:8px">高度约 104dp · ⋮ 按钮高亮表示激活态</div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px">
+  <h3>交互行为说明</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>展开/收起规则</h4>
+      <ul>
+        <li>点击 ⋮ → 展开上行工具栏</li>
+        <li>再次点击 ⋮ → 收起工具栏</li>
+        <li>点击工具栏内格式按钮 → 不收起</li>
+        <li>点击相机/麦克风/#/@ → 不收起</li>
+        <li>编辑器输入/光标移动 → 不收起</li>
+        <li>软键盘弹出/收起 → 不收起</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>⋮ 激活态视觉</h4>
+      <ul>
+        <li>收起态：浅橙背景 #FFE0C0</li>
+        <li>展开态：实心橙背景 #FF9A5C + 白字</li>
+        <li>明确指示当前工具栏状态</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:16px">
+  <h3># 与 @ 按钮行为</h3>
+  <ul style="font-size:14px;color:#555">
+    <li><b># 位置按钮</b>：点击触发位置提醒弹窗（showLocationPopup），与编辑器内输入 # 行为一致</li>
+    <li><b>@ 关联按钮</b>：点击触发关联选择弹窗（showMentionPopup），与编辑器内输入 @ 行为一致</li>
+  </ul>
+</div>

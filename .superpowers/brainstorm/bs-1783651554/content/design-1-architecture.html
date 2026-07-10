@@ -1,0 +1,85 @@
+<h2>设计第 1 节：整体架构</h2>
+<p class="subtitle">混合迁移 · 库编辑器 + 保留扩展 Undo/Redo 和内容块联动</p>
+
+<div class="mockup">
+  <div class="mockup-header">架构层次图</div>
+  <div class="mockup-body" style="background:#FAF6F0;padding:20px">
+
+    <!-- UI 层 -->
+    <div style="background:#FFF3E0;border:2px solid #FF9A5C;border-radius:8px;padding:12px;margin-bottom:12px">
+      <div style="font-weight:bold;color:#E88A4D;margin-bottom:8px">UI 层（Composable）</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="background:#FFE0C0;border-radius:6px;padding:8px 12px;font-size:12px;flex:1;min-width:140px">
+          <b>InspirationEditScreen</b><br/>
+          <span style="color:#888">修改：替换 bottomBar</span>
+        </div>
+        <div style="background:#FFE6CC;border-radius:6px;padding:8px 12px;font-size:12px;flex:1;min-width:140px;border:2px dashed #FF9A5C">
+          <b>InspirationEditBottomBar</b><br/>
+          <span style="color:#888">新建：5按钮+工具栏容器</span>
+        </div>
+        <div style="background:#FFE6CC;border-radius:6px;padding:8px 12px;font-size:12px;flex:1;min-width:140px;border:2px dashed #FF9A5C">
+          <b>RichTextFormatToolbar</b><br/>
+          <span style="color:#888">新建：折叠展开式格式栏</span>
+        </div>
+        <div style="background:#FFD699;border-radius:6px;padding:8px 12px;font-size:12px;flex:1;min-width:140px;border:2px dashed #FF9A5C">
+          <b>RichTextEditor</b><br/>
+          <span style="color:#888">替换：用库的 composable</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态层 -->
+    <div style="background:#E8F5E9;border:2px solid #4CAF50;border-radius:8px;padding:12px;margin-bottom:12px">
+      <div style="font-weight:bold;color:#2E7D32;margin-bottom:8px">状态层（ViewModel）</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="background:#C8E6C9;border-radius:6px;padding:8px 12px;font-size:12px;flex:1;min-width:160px">
+          <b>InspirationEditViewModel</b><br/>
+          <span style="color:#888">修改：持有 RichTextState</span>
+        </div>
+        <div style="background:#A5D6A7;border-radius:6px;padding:8px 12px;font-size:12px;flex:1;min-width:160px">
+          <b>RichTextState</b>（库）<br/>
+          <span style="color:#888">新增：编辑器状态</span>
+        </div>
+        <div style="background:#C8E6C9;border-radius:6px;padding:8px 12px;font-size:12px;flex:1;min-width:160px">
+          <b>扩展 Undo/Redo 栈</b><br/>
+          <span style="color:#888">保留：文本+内容块</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 持久化层 -->
+    <div style="background:#E3F2FD;border:2px solid #2196F3;border-radius:8px;padding:12px;margin-bottom:12px">
+      <div style="font-weight:bold;color:#1565C0;margin-bottom:8px">持久化 / 转换层</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="background:#BBDEFB;border-radius:6px;padding:8px 12px;font-size:12px;flex:1;min-width:160px">
+          <b>toMarkdown() / setMarkdown()</b>（库）<br/>
+          <span style="color:#888">替换 MarkdownParser</span>
+        </div>
+        <div style="background:#BBDEFB;border-radius:6px;padding:8px 12px;font-size:12px;flex:1;min-width:160px">
+          <b>Room Entity</b><br/>
+          <span style="color:#888">contentFormat 字段不变</span>
+        </div>
+        <div style="background:#FFCDD2;border-radius:6px;padding:8px 12px;font-size:12px;flex:1;min-width:160px;text-decoration:line-through;color:#999">
+          <b>MarkdownParser</b><br/>
+          <span style="color:#999">废弃</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 集成层 -->
+    <div style="background:#F3E5F5;border:2px solid #9C27B0;border-radius:8px;padding:12px">
+      <div style="font-weight:bold;color:#7B1FA2;margin-bottom:8px">集成层（Gradle Module）</div>
+      <div style="background:#E1BEE7;border-radius:6px;padding:8px 12px;font-size:12px">
+        <b>:compose-rich-editor-main:richeditor-compose</b>（源码 include）<br/>
+        <span style="color:#666">用项目 Kotlin 2.3.20 + Compose BOM 2026.04.01 编译</span>
+      </div>
+    </div>
+
+    <!-- 数据流箭头说明 -->
+    <div style="margin-top:16px;font-size:12px;color:#666">
+      <b>数据流：</b> 用户输入 → RichTextState → ViewModel 监听 → toMarkdown() 导出 → contentFormat → Room 持久化<br/>
+      <b>Undo/Redo：</b> RichTextState 变更 → 包装为扩展操作 → 推入扩展栈 → 撤销时 setMarkdown() 恢复
+    </div>
+
+  </div>
+</div>

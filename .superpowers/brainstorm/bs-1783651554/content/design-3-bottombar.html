@@ -1,0 +1,97 @@
+<h2>设计第 3 节：底部栏组件设计</h2>
+<p class="subtitle">InspirationEditBottomBar + RichTextFormatToolbar 组件结构</p>
+
+<div class="mockup">
+  <div class="mockup-header">组件树结构</div>
+  <div class="mockup-body" style="background:#FAF6F0;padding:20px;font-family:monospace;font-size:13px;line-height:1.8">
+
+    <div style="color:#E88A4D;font-weight:bold">InspirationEditBottomBar</div>
+    <div style="color:#888;font-size:11px;margin-bottom:8px">新建 · 替换现有 EditToolbar 作为 bottomBar</div>
+
+    <div style="margin-left:20px">
+      <div>├── <span style="color:#4CAF50">Column</span> <span style="color:#aaa">(AnimatedVisibility 控制工具栏)</span></div>
+
+      <div style="margin-left:20px">
+        <div>├── <span style="color:#9C27B0">if (isFormatToolbarExpanded)</span></div>
+        <div style="margin-left:20px">
+          <div>└── <span style="color:#E88A4D;font-weight:bold">RichTextFormatToolbar</span> <span style="color:#aaa">(新建)</span></div>
+          <div style="margin-left:20px">
+            <div>└── <span style="color:#4CAF50">LazyRow</span> <span style="color:#aaa">(可横滑)</span></div>
+            <div style="margin-left:20px">
+              <div>├── FormatButton(B) <span style="color:#aaa">粗体 toggleSpanStyle</span></div>
+              <div>├── FormatButton(I) <span style="color:#aaa">斜体</span></div>
+              <div>├── FormatButton(U) <span style="color:#aaa">下划线</span></div>
+              <div>├── FormatButton(S) <span style="color:#aaa">删除线</span></div>
+              <div>├── <span style="color:#DDD">─── 分隔线 ───</span></div>
+              <div>├── FormatButton(•≡) <span style="color:#aaa">无序列表 toggleUnorderedList</span></div>
+              <div>├── FormatButton(1.) <span style="color:#aaa">有序列表 toggleOrderedList</span></div>
+              <div>├── <span style="color:#DDD">─── 分隔线 ───</span></div>
+              <div>├── FormatButton(⬅) <span style="color:#aaa">左对齐</span></div>
+              <div>├── FormatButton(⬌) <span style="color:#aaa">居中</span></div>
+              <div>├── FormatButton(➡) <span style="color:#aaa">右对齐</span></div>
+              <div>├── <span style="color:#DDD">─── 分隔线 ───</span></div>
+              <div>├── FormatButton(🔗) <span style="color:#aaa">链接 addLink</span></div>
+              <div>└── FormatButton(⟨/⟩) <span style="color:#aaa">代码块 toggleCodeSpan</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div>└── <span style="color:#4CAF50">Row</span> <span style="color:#aaa">(5 按钮，spaceArrangement=SpaceEvenly)</span></div>
+        <div style="margin-left:20px">
+          <div>├── IconButton(📷) <span style="color:#aaa">相机 onPhotoClick</span></div>
+          <div>├── IconButton(🎤) <span style="color:#aaa">语音 onVoiceClick</span></div>
+          <div>├── IconButton(#) <span style="color:#aaa">位置 onLocationClick</span></div>
+          <div>├── IconButton(@) <span style="color:#aaa">关联 onMentionClick</span></div>
+          <div>└── IconButton(⋮) <span style="color:#aaa">格式 onFormatToggleClick</span></div>
+          <div style="margin-left:20px;color:#FF9A5C">└── 背景色随 isFormatToolbarExpanded 切换：</div>
+          <div style="margin-left:40px;color:#666">收起=#FFE0C0(浅橙) / 展开=#FF9A5C(实心橙)+白字</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px">
+  <h3>关键设计点</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>状态管理</h4>
+      <ul>
+        <li><code>isFormatToolbarExpanded: Boolean</code> 存于 ViewModel</li>
+        <li>只有 ⋮ 按钮点击切换该状态</li>
+        <li>其他操作（输入/光标/相机/#/@）均不切换</li>
+        <li>用 <code>AnimatedVisibility</code> 实现展开/收起动画</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>格式按钮激活态</h4>
+      <ul>
+        <li>从 <code>RichTextState</code> 读取当前样式</li>
+        <li><code>state.isBold</code> / <code>isItalic</code> 等</li>
+        <li>激活态：浅橙背景 #FFE0C0 + 橙字 #E88A4D</li>
+        <li>默认态：灰字 #5C5C5C</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>函数签名预览</h3>
+  <pre style="background:#263238;color:#80CBC4;padding:12px;border-radius:6px;font-size:12px;overflow-x:auto"><code>@Composable
+fun InspirationEditBottomBar(
+    richTextState: RichTextState,
+    isFormatToolbarExpanded: Boolean,
+    onFormatToggleClick: () -> Unit,
+    onPhotoClick: () -> Unit,
+    onVoiceClick: () -> Unit,
+    onLocationClick: () -> Unit,
+    onMentionClick: () -> Unit,
+    modifier: Modifier = Modifier
+)
+
+@Composable
+fun RichTextFormatToolbar(
+    state: RichTextState,
+    modifier: Modifier = Modifier
+)</code></pre>
+</div>

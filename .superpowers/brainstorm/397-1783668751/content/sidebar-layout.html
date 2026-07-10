@@ -1,0 +1,147 @@
+<h2>灵感页侧边栏 — 布局设计</h2>
+<p class="subtitle">展示当前布局 vs 提议的新布局</p>
+
+<div class="split">
+  <!-- 当前布局 -->
+  <div class="mockup">
+    <div class="mockup-header">当前布局</div>
+    <div class="mockup-body" style="padding:0; background:#fff; min-height:500px;">
+      <!-- 用户区域 -->
+      <div style="padding:12px 20px; display:flex; align-items:center; gap:12px; border-bottom:1px solid #f0f0f0;">
+        <div style="width:48px; height:48px; border-radius:50%; background:#FFE5D0; display:flex; align-items:center; justify-content:center; font-size:24px;">🐕</div>
+        <div>
+          <div style="font-weight:bold; font-size:15px;">Corgi</div>
+          <div style="font-size:12px; color:#999;">view corgi's world</div>
+        </div>
+      </div>
+      <!-- 标签筛选标题 -->
+      <div style="padding:8px 20px; font-weight:bold; font-size:16px;">🏷️ 标签筛选</div>
+      <div style="margin:0 20px; height:3px; background:#FF9A5C;"></div>
+      <div style="height:8px;"></div>
+      <!-- 标签列表 -->
+      <div style="padding:0 20px;">
+        <div style="padding:10px 8px; display:flex; align-items:center; justify-content:space-between; color:#666; font-size:14px;">
+          <span>📋 全部灵感</span>
+        </div>
+        <div style="padding:10px 8px; display:flex; align-items:center; justify-content:space-between; color:#666; font-size:14px;">
+          <span># 产品</span>
+        </div>
+        <div style="padding:10px 8px; display:flex; align-items:center; justify-content:space-between; color:#666; font-size:14px;">
+          <span># 设计</span>
+        </div>
+        <div style="padding:10px 8px; display:flex; align-items:center; justify-content:space-between; color:#666; font-size:14px;">
+          <span># 读书笔记</span>
+        </div>
+      </div>
+      <!-- 添加标签按钮（在列表后，不在固定底部） -->
+      <div style="padding:12px 20px;">
+        <div style="display:flex; align-items:center; gap:4px; color:#FF9A5C; font-size:15px; font-weight:500;">
+          <span>+</span> 添加标签
+        </div>
+      </div>
+      <!-- 问题标注 -->
+      <div style="padding:8px 20px; background:#FFF3E0; margin-top:20px;">
+        <div style="font-size:12px; color:#E65100;">⚠️ 问题：</div>
+        <ul style="font-size:11px; color:#E65100; padding-left:16px; margin:4px 0;">
+          <li>单选模式</li>
+          <li>无标签计数</li>
+          <li>添加按钮非固定底部</li>
+          <li>无搜索功能</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新布局 -->
+  <div class="mockup">
+    <div class="mockup-header">提议新布局</div>
+    <div class="mockup-body" style="padding:0; background:#fff; min-height:500px;">
+      <!-- 用户区域 -->
+      <div style="padding:12px 20px; display:flex; align-items:center; gap:12px; border-bottom:1px solid #f0f0f0;">
+        <div style="width:48px; height:48px; border-radius:50%; background:#FFE5D0; display:flex; align-items:center; justify-content:center; font-size:24px;">🐕</div>
+        <div>
+          <div style="font-weight:bold; font-size:15px;">Corgi</div>
+          <div style="font-size:12px; color:#999;">view corgi's world</div>
+        </div>
+      </div>
+      <!-- 标签筛选标题 -->
+      <div style="padding:8px 20px; font-weight:bold; font-size:16px;">🏷️ 标签筛选</div>
+      <div style="margin:0 20px; height:3px; background:#FF9A5C;"></div>
+      <div style="height:8px;"></div>
+      <!-- 搜索框 -->
+      <div style="padding:0 20px 8px;">
+        <div style="border:1px solid #ddd; border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:8px; background:#f9f9f9;">
+          <span style="font-size:14px; color:#999;">🔍</span>
+          <span style="font-size:13px; color:#999;">搜索标签...</span>
+        </div>
+      </div>
+      <!-- 筛选模式芯片 -->
+      <div style="padding:0 20px 8px; display:flex; gap:6px;">
+        <span style="padding:4px 12px; border-radius:12px; background:#FF9A5C; color:white; font-size:12px; font-weight:500;">OR</span>
+        <span style="padding:4px 12px; border-radius:12px; background:#f0f0f0; color:#666; font-size:12px;">AND</span>
+        <span style="padding:4px 12px; border-radius:12px; background:#f0f0f0; color:#666; font-size:12px;">NOT</span>
+      </div>
+      <!-- 标签列表（带计数、多选） -->
+      <div style="padding:0 20px; flex:1; overflow-y:auto;">
+        <div style="padding:10px 8px; display:flex; align-items:center; justify-content:space-between; color:#666; font-size:14px;">
+          <span>📋 全部灵感</span>
+          <span style="background:#f0f0f0; padding:1px 8px; border-radius:8px; font-size:11px; color:#999;">12</span>
+        </div>
+        <div style="padding:10px 8px; display:flex; align-items:center; justify-content:space-between; font-size:14px; background:#FFE5D0; border-radius:6px; margin:2px 0;">
+          <span style="color:#E65100; font-weight:500;">✓ # 产品</span>
+          <span style="background:#FF9A5C; padding:1px 8px; border-radius:8px; font-size:11px; color:white;">5</span>
+        </div>
+        <div style="padding:10px 8px; display:flex; align-items:center; justify-content:space-between; font-size:14px; background:#FFE5D0; border-radius:6px; margin:2px 0;">
+          <span style="color:#E65100; font-weight:500;">✓ # 设计</span>
+          <span style="background:#FF9A5C; padding:1px 8px; border-radius:8px; font-size:11px; color:white;">3</span>
+        </div>
+        <div style="padding:10px 8px; display:flex; align-items:center; justify-content:space-between; color:#666; font-size:14px;">
+          <span># 读书笔记</span>
+          <span style="background:#f0f0f0; padding:1px 8px; border-radius:8px; font-size:11px; color:#999;">4</span>
+        </div>
+      </div>
+      <!-- 固定底部：添加标签按钮 -->
+      <div style="padding:12px 20px; border-top:1px solid #f0f0f0; position:sticky; bottom:0; background:#fff;">
+        <div style="display:flex; align-items:center; justify-content:center; gap:4px; color:#FF9A5C; font-size:15px; font-weight:500; border:1px solid #FF9A5C; border-radius:8px; padding:8px;">
+          <span>+</span> 添加标签
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>设计要点</h3>
+<table style="width:100%; border-collapse:collapse; font-size:13px;">
+  <thead>
+    <tr style="border-bottom:2px solid #444;">
+      <th style="text-align:left; padding:8px;">功能</th>
+      <th style="text-align:left; padding:8px;">说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:8px;">搜索框</td>
+      <td style="padding:8px;">实时过滤标签列表，支持精确和模糊匹配</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:8px;">筛选模式芯片</td>
+      <td style="padding:8px;">OR(默认) / AND / NOT，3个可切换芯片按钮</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:8px;">标签计数</td>
+      <td style="padding:8px;">每个标签右侧显示对应灵感数量</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:8px;">多选标签</td>
+      <td style="padding:8px;">点击切换选中/取消，选中项高亮显示</td>
+    </tr>
+    <tr style="border-bottom:1px solid #333;">
+      <td style="padding:8px;">全部灵感</td>
+      <td style="padding:8px;">点击清空所有选中标签，显示全部</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;">添加标签按钮</td>
+      <td style="padding:8px;">固定在底部（参考待办页模式），不在滚动区域内</td>
+    </tr>
+  </tbody>
+</table>

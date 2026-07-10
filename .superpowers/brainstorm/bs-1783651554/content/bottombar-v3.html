@@ -1,0 +1,87 @@
+<h2>底部栏最终样式 v3</h2>
+<p class="subtitle">仅图标无文字 · 收起态 5 按钮 · 展开态上行工具栏</p>
+
+<div class="mockup">
+  <div class="mockup-header">收起态（仅图标）</div>
+  <div class="mockup-body" style="background:#FAF6F0;padding:16px">
+    <div style="background:#FFF;border-radius:12px 12px 0 0;box-shadow:0 -2px 8px rgba(0,0,0,0.08);overflow:hidden">
+      <div style="display:flex;justify-content:space-around;align-items:center;padding:14px 16px">
+        <span style="color:#5C5C5C;font-size:22px">📷</span>
+        <span style="color:#5C5C5C;font-size:22px">🎤</span>
+        <span style="color:#5C5C5C;font-size:20px;font-weight:bold">#</span>
+        <span style="color:#5C5C5C;font-size:20px;font-weight:bold">@</span>
+        <span style="background:#FFE0C0;color:#E88A4D;font-size:20px;font-weight:bold;padding:4px 10px;border-radius:8px">⋮</span>
+      </div>
+    </div>
+    <div style="text-align:center;font-size:11px;color:#aaa;margin-top:8px">高度约 52dp · 5 图标均匀分布</div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:20px">
+  <div class="mockup-header">展开态（点击 ⋮ 后）</div>
+  <div class="mockup-body" style="background:#FAF6F0;padding:16px">
+    <div style="background:#FFF;border-radius:12px 12px 0 0;box-shadow:0 -2px 8px rgba(0,0,0,0.08);overflow:hidden">
+      <!-- 上行：格式工具栏（仅图标，可横滑） -->
+      <div style="display:flex;align-items:center;gap:0px;padding:8px 8px;border-bottom:1px solid #F0E8E0;overflow-x:auto;white-space:nowrap">
+        <!-- 基础样式组 -->
+        <span style="background:#FFE0C0;color:#E88A4D;font-weight:bold;font-size:14px;padding:6px 10px;border-radius:6px;flex-shrink:0">B</span>
+        <span style="color:#5C5C5C;font-style:italic;font-size:14px;padding:6px 10px;flex-shrink:0">I</span>
+        <span style="color:#5C5C5C;text-decoration:underline;font-size:14px;padding:6px 10px;flex-shrink:0">U</span>
+        <span style="color:#5C5C5C;text-decoration:line-through;font-size:14px;padding:6px 10px;flex-shrink:0">S</span>
+        <span style="color:#DDD;font-size:12px;margin:0 2px;flex-shrink:0">│</span>
+        <!-- 列表组 -->
+        <span style="color:#5C5C5C;font-size:14px;padding:6px 10px;flex-shrink:0">•≡</span>
+        <span style="color:#5C5C5C;font-size:14px;padding:6px 10px;flex-shrink:0">1.</span>
+        <span style="color:#DDD;font-size:12px;margin:0 2px;flex-shrink:0">│</span>
+        <!-- 对齐组 -->
+        <span style="color:#5C5C5C;font-size:14px;padding:6px 10px;flex-shrink:0">⬅</span>
+        <span style="color:#5C5C5C;font-size:14px;padding:6px 10px;flex-shrink:0">⬌</span>
+        <span style="color:#5C5C5C;font-size:14px;padding:6px 10px;flex-shrink:0">➡</span>
+        <span style="color:#DDD;font-size:12px;margin:0 2px;flex-shrink:0">│</span>
+        <!-- 高级组 -->
+        <span style="color:#5C5C5C;font-size:14px;padding:6px 10px;flex-shrink:0">🔗</span>
+        <span style="color:#5C5C5C;font-size:14px;padding:6px 10px;flex-shrink:0">⟨/⟩</span>
+      </div>
+      <!-- 下行：5 图标（⋮ 高亮） -->
+      <div style="display:flex;justify-content:space-around;align-items:center;padding:14px 16px">
+        <span style="color:#5C5C5C;font-size:22px">📷</span>
+        <span style="color:#5C5C5C;font-size:22px">🎤</span>
+        <span style="color:#5C5C5C;font-size:20px;font-weight:bold">#</span>
+        <span style="color:#5C5C5C;font-size:20px;font-weight:bold">@</span>
+        <span style="background:#FF9A5C;color:#FFF;font-size:20px;font-weight:bold;padding:4px 10px;border-radius:8px">⋮</span>
+      </div>
+    </div>
+    <div style="text-align:center;font-size:11px;color:#aaa;margin-top:8px">高度约 100dp · ⋮ 实心橙=激活态</div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px">
+  <h3>工具栏按钮分组</h3>
+  <table style="width:100%;font-size:13px;border-collapse:collapse">
+    <tr style="background:#FFF3E0">
+      <th style="padding:8px;text-align:left;border:1px solid #FFE0C0">分组</th>
+      <th style="padding:8px;text-align:left;border:1px solid #FFE0C0">按钮</th>
+      <th style="padding:8px;text-align:left;border:1px solid #FFE0C0">库 API</th>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #F0E8E0"><b>基础样式</b></td>
+      <td style="padding:8px;border:1px solid #F0E8E0">B / I / U / S</td>
+      <td style="padding:8px;border:1px solid #F0E8E0;font-family:monospace;font-size:11px">toggleSpanStyle(SpanStyle(...))</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #F0E8E0"><b>列表</b></td>
+      <td style="padding:8px;border:1px solid #F0E8E0">•≡ / 1.</td>
+      <td style="padding:8px;border:1px solid #F0E8E0;font-family:monospace;font-size:11px">toggleUnorderedList() / toggleOrderedList()</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #F0E8E0"><b>对齐</b></td>
+      <td style="padding:8px;border:1px solid #F0E8E0">⬅ / ⬌ / ➡</td>
+      <td style="padding:8px;border:1px solid #F0E8E0;font-family:monospace;font-size:11px">toggleParagraphStyle(ParagraphStyle(textAlign=...))</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #F0E8E0"><b>高级</b></td>
+      <td style="padding:8px;border:1px solid #F0E8E0">🔗 / ⟨/⟩</td>
+      <td style="padding:8px;border:1px solid #F0E8E0;font-family:monospace;font-size:11px">addLink() / toggleCodeSpan()</td>
+    </tr>
+  </table>
+</div>

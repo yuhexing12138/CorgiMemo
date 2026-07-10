@@ -1,0 +1,79 @@
+<h2>工具栏高度统一</h2>
+<p class="subtitle">当前上下两个工具栏高度不一致，请选择一个统一高度</p>
+
+<div class="section">
+  <h3>当前状态</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">上层工具栏 (~52dp)</div>
+      <div class="mockup-body" style="padding: 0;">
+        <div style="background: transparent; padding: 6px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e0e0e0;">
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <span style="font-size: 20px;">←</span>
+            <span style="font-size: 15px;">↶</span>
+            <span style="font-size: 15px;">↷</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <span style="font-size: 15px;">🎨</span>
+            <span style="font-size: 15px;">📤</span>
+            <span style="font-size: 15px;">🗑</span>
+            <span style="font-size: 15px;">🔒</span>
+            <span style="background: #FF9A5C; color: white; padding: 2px 10px; border-radius: 4px; font-size: 13px;">完成</span>
+          </div>
+        </div>
+        <div style="padding: 20px; text-align: center; color: #999; font-size: 13px;">
+          内边距: 6dp<br>图标按钮: 40dp(返回) / 36dp(其他)<br>图标大小: 24dp(返回) / 18dp(其他)<br>背景: 透明
+        </div>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">下层工具栏 (~60dp)</div>
+      <div class="mockup-body" style="padding: 0;">
+        <div style="background: #FFFBF5; padding: 10px 16px; display: flex; align-items: center; justify-content: space-evenly; border-radius: 12px 12px 0 0; box-shadow: 0 -2px 8px rgba(0,0,0,0.08);">
+          <span style="font-size: 18px;">📷</span>
+          <span style="font-size: 18px;">🎤</span>
+          <span style="font-size: 18px;">🏷</span>
+          <span style="font-size: 18px;">@</span>
+          <span style="font-size: 18px;">⋮</span>
+        </div>
+        <div style="padding: 20px; text-align: center; color: #999; font-size: 13px;">
+          内边距: 10dp<br>图标按钮: 40dp(全部)<br>图标大小: 22dp(全部)<br>背景: 暖米色 + 圆角 + 阴影
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>选择统一高度</h3>
+<p class="subtitle">点击下方选项选择一个高度（所有高度均包含 IconButton 40dp 标准）</p>
+
+<div class="options">
+  <div class="option" data-choice="52dp" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>52dp — 紧凑</h3>
+      <p>内边距 6dp，与当前上层一致。节省屏幕空间，更多内容可见。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="56dp" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>56dp — Material 标准（推荐）</h3>
+      <p>内边距 8dp，Material Design 推荐的工具栏高度。平衡了触摸目标和屏幕空间。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="60dp" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>60dp — 舒适</h3>
+      <p>内边距 10dp，与当前下层一致。触摸目标更大，但占用更多垂直空间。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="64dp" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>64dp — 宽松</h3>
+      <p>内边距 12dp，更大的触摸区域。适合手大的用户，但工具栏偏厚。</p>
+    </div>
+  </div>
+</div>

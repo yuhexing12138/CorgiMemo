@@ -1,0 +1,152 @@
+<h2>底部栏布局方案对比</h2>
+<p class="subtitle">格式化工具栏 + 相机/麦克风按钮共存的 4 种布局方式（暖橙色主题 #FF9A5C）</p>
+
+<div class="cards" data-multiselect>
+
+  <!-- 方案 A：上下分层 -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#FAF6F0">
+      <div style="font-size:12px;color:#999;margin-bottom:8px">方案 A · 上下分层（双行）</div>
+      <!-- 模拟手机底部栏 -->
+      <div style="background:#FFF;border-radius:12px 12px 0 0;box-shadow:0 -2px 8px rgba(0,0,0,0.08);overflow:hidden">
+        <!-- 上层：格式化工具栏 -->
+        <div style="display:flex;align-items:center;gap:2px;padding:8px 12px;border-bottom:1px solid #F0E8E0;overflow-x:auto">
+          <span style="background:#FFE0C0;color:#E88A4D;font-weight:bold;font-size:13px;padding:5px 9px;border-radius:6px">B</span>
+          <span style="color:#666;font-style:italic;font-size:13px;padding:5px 9px">I</span>
+          <span style="color:#666;text-decoration:underline;font-size:13px;padding:5px 9px">U</span>
+          <span style="color:#666;text-decoration:line-through;font-size:13px;padding:5px 9px">S</span>
+          <span style="color:#999;font-size:10px;margin:0 2px">│</span>
+          <span style="color:#666;font-size:13px;padding:5px 9px">•≡</span>
+          <span style="color:#666;font-size:13px;padding:5px 9px">1.</span>
+          <span style="color:#666;font-size:13px;padding:5px 9px">🔗</span>
+          <span style="color:#666;font-size:13px;padding:5px 9px">⟨/⟩</span>
+        </div>
+        <!-- 下层：相机/麦克风 -->
+        <div style="display:flex;justify-content:space-around;align-items:center;padding:10px 16px">
+          <span style="color:#666;font-size:20px">📷</span>
+          <span style="color:#666;font-size:20px">🎤</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · 上下分层</h3>
+      <p>上行格式化按钮（可横滑），下行相机/麦克风。功能分区清晰，但占用高度较大（约 96dp）。</p>
+    </div>
+  </div>
+
+  <!-- 方案 B：单行混合 -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#FAF6F0">
+      <div style="font-size:12px;color:#999;margin-bottom:8px">方案 B · 单行混合</div>
+      <div style="background:#FFF;border-radius:12px 12px 0 0;box-shadow:0 -2px 8px rgba(0,0,0,0.08);overflow:hidden">
+        <div style="display:flex;align-items:center;gap:2px;padding:10px 12px;overflow-x:auto">
+          <span style="background:#FFE0C0;color:#E88A4D;font-weight:bold;font-size:13px;padding:5px 9px;border-radius:6px">B</span>
+          <span style="color:#666;font-style:italic;font-size:13px;padding:5px 9px">I</span>
+          <span style="color:#666;text-decoration:underline;font-size:13px;padding:5px 9px">U</span>
+          <span style="color:#666;text-decoration:line-through;font-size:13px;padding:5px 9px">S</span>
+          <span style="color:#666;font-size:13px;padding:5px 9px">•≡</span>
+          <span style="color:#666;font-size:13px;padding:5px 9px">1.</span>
+          <span style="color:#999;font-size:10px;margin:0 4px">│</span>
+          <span style="color:#666;font-size:20px;padding:0 6px">📷</span>
+          <span style="color:#666;font-size:20px;padding:0 6px">🎤</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · 单行混合</h3>
+      <p>所有按钮一行排列，格式化按钮 + 分隔线 + 相机/麦克风。高度紧凑（约 56dp），但按钮多时可能拥挤。</p>
+    </div>
+  </div>
+
+  <!-- 方案 C：左右分区 -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#FAF6F0">
+      <div style="font-size:12px;color:#999;margin-bottom:8px">方案 C · 左右分区</div>
+      <div style="background:#FFF;border-radius:12px 12px 0 0;box-shadow:0 -2px 8px rgba(0,0,0,0.08);overflow:hidden">
+        <div style="display:flex;align-items:center;padding:10px 8px">
+          <!-- 左：可滚动格式化 -->
+          <div style="display:flex;align-items:center;gap:2px;flex:1;overflow-x:auto">
+            <span style="background:#FFE0C0;color:#E88A4D;font-weight:bold;font-size:13px;padding:5px 9px;border-radius:6px;flex-shrink:0">B</span>
+            <span style="color:#666;font-style:italic;font-size:13px;padding:5px 9px;flex-shrink:0">I</span>
+            <span style="color:#666;text-decoration:underline;font-size:13px;padding:5px 9px;flex-shrink:0">U</span>
+            <span style="color:#666;text-decoration:line-through;font-size:13px;padding:5px 9px;flex-shrink:0">S</span>
+            <span style="color:#666;font-size:13px;padding:5px 9px;flex-shrink:0">•≡</span>
+            <span style="color:#666;font-size:13px;padding:5px 9px;flex-shrink:0">1.</span>
+            <span style="color:#666;font-size:13px;padding:5px 9px;flex-shrink:0">🔗</span>
+          </div>
+          <!-- 右：固定相机/麦克风 -->
+          <div style="display:flex;align-items:center;gap:4px;border-left:1px solid #F0E8E0;padding-left:8px;margin-left:4px">
+            <span style="color:#666;font-size:20px">📷</span>
+            <span style="color:#666;font-size:20px">🎤</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · 左右分区</h3>
+      <p>左侧格式化按钮可横滑，右侧相机/麦克风固定。紧凑（约 56dp），功能分区清晰，推荐。</p>
+    </div>
+  </div>
+
+  <!-- 方案 D：折叠展开 -->
+  <div class="card" data-choice="d" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#FAF6F0">
+      <div style="font-size:12px;color:#999;margin-bottom:8px">方案 D · 折叠展开</div>
+      <!-- 收起态 -->
+      <div style="font-size:11px;color:#aaa;margin-bottom:4px">收起态：</div>
+      <div style="background:#FFF;border-radius:12px 12px 0 0;box-shadow:0 -2px 8px rgba(0,0,0,0.08);overflow:hidden;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-around;align-items:center;padding:10px 16px">
+          <span style="color:#666;font-size:20px">📷</span>
+          <span style="background:#FFE0C0;color:#E88A4D;font-size:13px;padding:5px 10px;border-radius:6px;font-weight:bold">Aa 格式</span>
+          <span style="color:#666;font-size:20px">🎤</span>
+        </div>
+      </div>
+      <!-- 展开态 -->
+      <div style="font-size:11px;color:#aaa;margin-bottom:4px">展开态：</div>
+      <div style="background:#FFF;border-radius:12px 12px 0 0;box-shadow:0 -2px 8px rgba(0,0,0,0.08);overflow:hidden">
+        <div style="display:flex;align-items:center;gap:2px;padding:8px 12px;border-bottom:1px solid #F0E8E0;overflow-x:auto">
+          <span style="background:#FFE0C0;color:#E88A4D;font-weight:bold;font-size:13px;padding:5px 9px;border-radius:6px">B</span>
+          <span style="color:#666;font-style:italic;font-size:13px;padding:5px 9px">I</span>
+          <span style="color:#666;text-decoration:underline;font-size:13px;padding:5px 9px">U</span>
+          <span style="color:#666;text-decoration:line-through;font-size:13px;padding:5px 9px">S</span>
+          <span style="color:#666;font-size:13px;padding:5px 9px">•≡</span>
+          <span style="color:#666;font-size:13px;padding:5px 9px">1.</span>
+          <span style="color:#666;font-size:13px;padding:5px 9px">🔗</span>
+          <span style="color:#666;font-size:13px;padding:5px 9px">⟨/⟩</span>
+        </div>
+        <div style="display:flex;justify-content:space-around;align-items:center;padding:10px 16px">
+          <span style="color:#666;font-size:20px">📷</span>
+          <span style="color:#666;font-size:20px">🎤</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>D · 折叠展开</h3>
+      <p>默认只显示相机/麦克风+"格式"按钮，点击"格式"展开工具栏。最省空间但需额外点击。</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:24px">
+  <h3>对比总结</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>方案 C（推荐）</h4>
+      <ul>
+        <li>高度紧凑，不挤压编辑区</li>
+        <li>格式按钮可横滑，扩展性强</li>
+        <li>相机/麦克风固定右侧，随时可达</li>
+        <li>功能分区清晰，视觉层次好</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>其他方案顾虑</h4>
+      <ul>
+        <li>A 占用双行高度，挤压内容区</li>
+        <li>B 按钮多时拥挤，无分隔感</li>
+        <li>D 需额外点击才能格式化，体验打断</li>
+      </ul>
+    </div>
+  </div>
+</div>

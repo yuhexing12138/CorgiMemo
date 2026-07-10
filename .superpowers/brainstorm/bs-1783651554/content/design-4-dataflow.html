@@ -1,0 +1,105 @@
+<h2>设计第 4 节：状态管理与数据流</h2>
+<p class="subtitle">RichTextState 与现有 contentFormat / Undo-Redo 栈的桥接</p>
+
+<div class="mockup">
+  <div class="mockup-header">数据流图</div>
+  <div class="mockup-body" style="background:#FAF6F0;padding:20px;font-size:13px">
+
+    <!-- 编辑流程 -->
+    <div style="background:#E8F5E9;border-radius:8px;padding:12px;margin-bottom:12px">
+      <div style="font-weight:bold;color:#2E7D32;margin-bottom:8px">编辑流程（实时）</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span style="background:#FFF;padding:6px 10px;border-radius:6px;border:1px solid #4CAF50">用户输入</span>
+        <span style="color:#4CAF50">→</span>
+        <span style="background:#C8E6C9;padding:6px 10px;border-radius:6px">RichTextState 自动更新</span>
+        <span style="color:#4CAF50">→</span>
+        <span style="background:#FFF;padding:6px 10px;border-radius:6px;border:1px solid #4CAF50">snapshotFlow 监听</span>
+        <span style="color:#4CAF50">→</span>
+        <span style="background:#FFF3E0;padding:6px 10px;border-radius:6px;border:1px solid #FF9A5C">防抖 500ms</span>
+        <span style="color:#4CAF50">→</span>
+        <span style="background:#FFE0C0;padding:6px 10px;border-radius:6px">toMarkdown()</span>
+        <span style="color:#4CAF50">→</span>
+        <span style="background:#BBDEFB;padding:6px 10px;border-radius:6px;border:1px solid #2196F3">contentFormat</span>
+        <span style="color:#4CAF50">→</span>
+        <span style="background:#BBDEFB;padding:6px 10px;border-radius:6px">Room 持久化</span>
+      </div>
+    </div>
+
+    <!-- 加载流程 -->
+    <div style="background:#E3F2FD;border-radius:8px;padding:12px;margin-bottom:12px">
+      <div style="font-weight:bold;color:#1565C0;margin-bottom:8px">加载流程（进入页面时）</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span style="background:#FFF;padding:6px 10px;border-radius:6px;border:1px solid #2196F3">Room 读取</span>
+        <span style="color:#2196F3">→</span>
+        <span style="background:#BBDEFB;padding:6px 10px;border-radius:6px">contentFormat (Markdown)</span>
+        <span style="color:#2196F3">→</span>
+        <span style="background:#FFE0C0;padding:6px 10px;border-radius:6px">setMarkdown()</span>
+        <span style="color:#2196F3">→</span>
+        <span style="background:#C8E6C9;padding:6px 10px;border-radius:6px">RichTextState 恢复</span>
+        <span style="color:#2196F3">→</span>
+        <span style="background:#FFF;padding:6px 10px;border-radius:6px;border:1px solid #2196F3">编辑器显示</span>
+      </div>
+    </div>
+
+    <!-- Undo/Redo 桥接 -->
+    <div style="background:#FFF3E0;border-radius:8px;padding:12px;margin-bottom:12px">
+      <div style="font-weight:bold;color:#E88A4D;margin-bottom:8px">Undo/Redo 桥接（保留扩展栈）</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:12px;color:#888;margin-bottom:4px">文本操作</div>
+          <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+            <span style="background:#FFE0C0;padding:4px 8px;border-radius:4px;font-size:11px">RichTextState 变更</span>
+            <span>→</span>
+            <span style="background:#FFF;padding:4px 8px;border-radius:4px;font-size:11px;border:1px solid #FF9A5C">包装为 RichTextSnapshot</span>
+            <span>→</span>
+            <span style="background:#FFD699;padding:4px 8px;border-radius:4px;font-size:11px">推入扩展栈</span>
+          </div>
+        </div>
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:12px;color:#888;margin-bottom:4px">撤销时</div>
+          <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+            <span style="background:#FFD699;padding:4px 8px;border-radius:4px;font-size:11px">取出上一 snapshot</span>
+            <span>→</span>
+            <span style="background:#FFE0C0;padding:4px 8px;border-radius:4px;font-size:11px">setMarkdown() 恢复</span>
+          </div>
+        </div>
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:12px;color:#888;margin-bottom:4px">内容块操作（图片/语音）</div>
+          <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+            <span style="background:#E1BEE7;padding:4px 8px;border-radius:4px;font-size:11px">现有扩展栈逻辑</span>
+            <span>→</span>
+            <span style="background:#FFF;padding:4px 8px;border-radius:4px;font-size:11px;border:1px solid #9C27B0">不变</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 格式工具栏交互 -->
+    <div style="background:#F3E5F5;border-radius:8px;padding:12px;margin-bottom:12px">
+      <div style="font-weight:bold;color:#7B1FA2;margin-bottom:8px">格式工具栏交互</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span style="background:#FFF;padding:6px 10px;border-radius:6px;border:1px solid #9C27B0">点击格式按钮 (如 B)</span>
+        <span style="color:#9C27B0">→</span>
+        <span style="background:#E1BEE7;padding:6px 10px;border-radius:6px">toggleSpanStyle(Bold)</span>
+        <span style="color:#9C27B0">→</span>
+        <span style="background:#C8E6C9;padding:6px 10px;border-radius:6px">RichTextState 更新</span>
+        <span style="color:#9C27B0">→</span>
+        <span style="background:#FFF3E0;padding:6px 10px;border-radius:6px;border:1px solid #FF9A5C">同编辑流程（防抖导出）</span>
+      </div>
+    </div>
+
+    <!-- 工具栏展开状态 -->
+    <div style="background:#FFEBEE;border-radius:8px;padding:12px">
+      <div style="font-weight:bold;color:#C62828;margin-bottom:8px">工具栏展开状态</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span style="background:#FFF;padding:6px 10px;border-radius:6px;border:1px solid #C62828">⋮ 按钮点击</span>
+        <span style="color:#C62828">→</span>
+        <span style="background:#FFCDD2;padding:6px 10px;border-radius:6px">isFormatToolbarExpanded = !isFormatToolbarExpanded</span>
+        <span style="color:#C62828">→</span>
+        <span style="background:#FFF;padding:6px 10px;border-radius:6px;border:1px solid #C62828">AnimatedVisibility 展开/收起</span>
+      </div>
+      <div style="font-size:11px;color:#888;margin-top:6px">状态存于 ViewModel，配置改变时保留；只有 ⋮ 点击才切换</div>
+    </div>
+
+  </div>
+</div>

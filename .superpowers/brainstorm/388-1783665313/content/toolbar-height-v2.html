@@ -1,0 +1,132 @@
+<h2>工具栏高度统一</h2>
+<p class="subtitle">上层 = RichTextFormatToolbar（格式工具栏）｜下层 = BottomBar 底部按钮行</p>
+
+<div class="section">
+  <h3>当前状态对比</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">上层：格式工具栏 (~52dp)</div>
+      <div class="mockup-body" style="padding: 0;">
+        <div style="background: #FFFFFF; padding: 8px 12px; display: flex; align-items: center; gap: 6px; overflow-x: auto; border-bottom: 1px solid #e0e0e0;">
+          <span style="display:inline-block; width:36px; height:36px; line-height:36px; text-align:center; font-weight:bold; font-size:15px; color:#666;">B</span>
+          <span style="display:inline-block; width:36px; height:36px; line-height:36px; text-align:center; font-style:italic; font-size:15px; color:#666;">I</span>
+          <span style="display:inline-block; width:36px; height:36px; line-height:36px; text-align:center; text-decoration:underline; font-size:15px; color:#666;">U</span>
+          <span style="display:inline-block; width:36px; height:36px; line-height:36px; text-align:center; text-decoration:line-through; font-size:15px; color:#666;">S</span>
+          <span style="width:1px; height:24px; background:#ccc; margin:0 4px;"></span>
+          <span style="display:inline-block; width:36px; height:36px; line-height:36px; text-align:center; font-size:16px; color:#666;">•≡</span>
+          <span style="display:inline-block; width:36px; height:36px; line-height:36px; text-align:center; font-size:15px; color:#666;">1.</span>
+          <span style="width:1px; height:24px; background:#ccc; margin:0 4px;"></span>
+          <span style="display:inline-block; width:36px; height:36px; line-height:36px; text-align:center; font-size:16px; color:#666;">⬅</span>
+          <span style="display:inline-block; width:36px; height:36px; line-height:36px; text-align:center; font-size:16px; color:#666;">⬌</span>
+          <span style="display:inline-block; width:36px; height:36px; line-height:36px; text-align:center; font-size:16px; color:#666;">➡</span>
+          <span style="width:1px; height:24px; background:#ccc; margin:0 4px;"></span>
+          <span style="display:inline-block; width:36px; height:36px; line-height:36px; text-align:center; font-size:18px;">🔗</span>
+          <span style="display:inline-block; width:36px; height:36px; line-height:36px; text-align:center; font-size:15px; color:#666;">&lt;/&gt;</span>
+        </div>
+        <div style="padding: 16px; text-align: center; color: #999; font-size: 13px;">
+          背景: <code>surface</code> (白色)<br>
+          内边距: 8dp × 12dp<br>
+          按钮: Box 36dp (Text 文字)<br>
+          字号: 15sp / 16sp / 18sp<br>
+          <strong>估算高度: ~52dp</strong>
+        </div>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">下层：底部按钮行 (~60dp)</div>
+      <div class="mockup-body" style="padding: 0;">
+        <div style="background: #FFFBF5; padding: 10px 16px; display: flex; align-items: center; justify-content: space-evenly; border-radius: 12px 12px 0 0; box-shadow: 0 -2px 8px rgba(0,0,0,0.08);">
+          <span style="display:inline-flex; width:40px; height:40px; align-items:center; justify-content:center; font-size:22px; color:#666;">📷</span>
+          <span style="display:inline-flex; width:40px; height:40px; align-items:center; justify-content:center; font-size:22px; color:#666;">🎤</span>
+          <span style="display:inline-flex; width:40px; height:40px; align-items:center; justify-content:center; font-size:22px; color:#666;">🏷</span>
+          <span style="display:inline-flex; width:40px; height:40px; align-items:center; justify-content:center; font-size:22px; color:#666;">@</span>
+          <span style="display:inline-flex; width:40px; height:40px; align-items:center; justify-content:center; font-size:22px; color:#666;">⋮</span>
+        </div>
+        <div style="padding: 16px; text-align: center; color: #999; font-size: 13px;">
+          背景: <code>background</code> (暖米色 #FFFBF5)<br>
+          内边距: 10dp × 16dp<br>
+          按钮: IconButton 40dp (Icon 图标)<br>
+          图标大小: 22dp<br>
+          <strong>估算高度: ~60dp</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>差异总结</h3>
+  <table style="width:100%; border-collapse:collapse; font-size:14px;">
+    <thead>
+      <tr style="border-bottom:2px solid #444;">
+        <th style="text-align:left; padding:8px;">属性</th>
+        <th style="text-align:center; padding:8px;">上层 (格式工具栏)</th>
+        <th style="text-align:center; padding:8px;">下层 (底部按钮行)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:8px;">容器</td>
+        <td style="text-align:center; padding:8px;">Row (无 Surface)</td>
+        <td style="text-align:center; padding:8px;">Surface (圆角12dp + 阴影4dp)</td>
+      </tr>
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:8px;">背景色</td>
+        <td style="text-align:center; padding:8px;">surface (白色)</td>
+        <td style="text-align:center; padding:8px;">background (暖米色)</td>
+      </tr>
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:8px;">垂直内边距</td>
+        <td style="text-align:center; padding:8px;">8dp</td>
+        <td style="text-align:center; padding:8px;">10dp</td>
+      </tr>
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:8px;">按钮容器</td>
+        <td style="text-align:center; padding:8px;">Box 36dp</td>
+        <td style="text-align:center; padding:8px;">IconButton 40dp</td>
+      </tr>
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:8px;">内容元素</td>
+        <td style="text-align:center; padding:8px;">Text (文字 B/I/U/S...)</td>
+        <td style="text-align:center; padding:8px;">Icon (Material 图标)</td>
+      </tr>
+      <tr style="border-bottom:1px solid #333;">
+        <td style="padding:8px;">内容大小</td>
+        <td style="text-align:center; padding:8px;">15sp / 16sp / 18sp</td>
+        <td style="text-align:center; padding:8px;">22dp</td>
+      </tr>
+      <tr>
+        <td style="padding:8px;"><strong>估算高度</strong></td>
+        <td style="text-align:center; padding:8px;"><strong>~52dp</strong></td>
+        <td style="text-align:center; padding:8px;"><strong>~60dp</strong></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>选择统一高度</h3>
+<p class="subtitle">所有选项均统一使用 IconButton 40dp + Icon 22dp 标准，仅垂直内边距不同</p>
+
+<div class="options">
+  <div class="option" data-choice="52dp" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>52dp — 紧凑（内边距 6dp）</h3>
+      <p>节省垂直空间，格式工具栏弹出时占用最少。触摸目标稍小但可接受。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="56dp" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>56dp — Material 标准（推荐，内边距 8dp）</h3>
+      <p>Material Design 官方推荐的工具栏高度。平衡触摸目标和屏幕空间，与上层当前内边距一致。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="60dp" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>60dp — 舒适（内边距 10dp）</h3>
+      <p>与下层当前高度一致。触摸目标更大，但格式工具栏弹出时占用更多空间。</p>
+    </div>
+  </div>
+</div>
