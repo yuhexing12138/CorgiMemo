@@ -318,7 +318,7 @@
     <string name="inspiration_view_share_failed">分享失败，请重试</string>
     <string name="inspiration_view_save_failed">保存失败，请重试</string>
     <string name="inspiration_view_word_count_suffix">字</string>
-    <string name="inspiration_view_logo_text">- 简记事 -</string>
+    <string name="inspiration_view_logo_text">- 刻记+ -</string>
     <string name="inspiration_view_image_close">关闭</string>
 
     <!-- ==================== 批量复制附件（方案 B：仅失败 Snackbar） ==================== -->
