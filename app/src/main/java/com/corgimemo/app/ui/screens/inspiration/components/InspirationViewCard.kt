@@ -31,10 +31,12 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.corgimemo.app.R
 import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils
 import com.corgimemo.app.ui.theme.UiColors
@@ -95,37 +97,55 @@ fun InspirationViewCard(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp),
-            shape = RoundedCornerShape(20.dp),
+                .padding(horizontal = 10.dp),  // 18dp → 10dp：更紧凑
+            shape = RoundedCornerShape(12.dp),  // 20dp → 12dp：更小更精致
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                // 标题（16sp Medium）
+            Column(modifier = Modifier.padding(18.dp)) {
+                // 字数徽章（卡片内右上角，横向居右）
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .background(
+                            Color(0xFFE0E0E0).copy(alpha = 0.6f),
+                            RoundedCornerShape(12.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "${charCount}字",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF666666)
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                // 标题（18sp Medium）
                 Text(
                     text = inspiration.title,
-                    fontSize = 16.sp,
+                    fontSize = 18.sp,  // 16sp → 18sp
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                     letterSpacing = 0.5.sp
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                // 日期时间（11sp 灰色）
+                // 日期时间（12sp 灰色）
                 Text(
                     text = formattedDate,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,  // 11sp → 12sp
                     color = Color(0xFF999999),
                     letterSpacing = 0.5.sp
                 )
                 Spacer(modifier = Modifier.height(9.dp))
-                // 正文（14sp，行高 21sp，#666666）
+                // 正文（15sp，行高 22sp，#666666）
                 Text(
                     text = inspiration.content,
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,  // 14sp → 15sp
                     color = Color(0xFF666666),
-                    lineHeight = 21.sp,
+                    lineHeight = 22.sp,  // 21sp → 22sp
                     letterSpacing = 0.5.sp
                 )
                 // 图片列表（如果有）
@@ -185,32 +205,13 @@ fun InspirationViewCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "- 简记事 -",
+                        text = stringResource(R.string.inspiration_view_logo_text),  // 从字符串资源读取
                         fontSize = 13.sp,
                         color = Color(0xFF999999),
                         letterSpacing = 0.5.sp
                     )
                 }
             }
-        }
-
-        // 字数徽章（卡片右上角，胶囊形状）
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 16.dp, end = 28.dp)
-                .background(
-                    Color(0xFFE0E0E0).copy(alpha = 0.6f),
-                    RoundedCornerShape(12.dp)
-                )
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        ) {
-            Text(
-                text = "${charCount}字",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF666666)
-            )
         }
     }
 }
