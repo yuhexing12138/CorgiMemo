@@ -22,10 +22,12 @@ object InspirationScreenshot {
     /**
      * 将 GraphicsLayer 捕获为 Android Bitmap
      *
+     * toImageBitmap() 是 suspend 函数，所以本方法也必须是 suspend
+     *
      * @param layer 录制了卡片内容的 GraphicsLayer
      * @return Android Bitmap
      */
-    fun captureAsBitmap(layer: GraphicsLayer): Bitmap {
+    suspend fun captureAsBitmap(layer: GraphicsLayer): Bitmap {
         return layer.toImageBitmap().asAndroidBitmap()
     }
 

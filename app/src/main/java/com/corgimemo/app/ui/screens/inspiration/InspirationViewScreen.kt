@@ -27,7 +27,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.awaitFrame
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +50,7 @@ import com.corgimemo.app.ui.screens.inspiration.components.InspirationViewCard
 import com.corgimemo.app.ui.screens.inspiration.components.ShareInspirationSheet
 import com.corgimemo.app.util.InspirationScreenshot
 import com.corgimemo.app.viewmodel.InspirationViewModel
+import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
