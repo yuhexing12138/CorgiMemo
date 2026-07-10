@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.screens.inspiration
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,6 +77,9 @@ fun InspirationScreen(
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isDataInitialized by viewModel.isDataInitialized.collectAsState()
+    val isBatchMode by viewModel.isBatchMode.collectAsState()
+    val selectedInspirationIds by viewModel.selectedInspirationIds.collectAsState()
+    val hideDetails by viewModel.hideDetails.collectAsState()
 
     // 弹窗状态
     var showLongPressSheet by remember { mutableStateOf(false) }
@@ -83,6 +87,14 @@ fun InspirationScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showDateTimePicker by remember { mutableStateOf(false) }
     var showTagPicker by remember { mutableStateOf(false) }
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
+
+    // 批量模式下拦截返回键
+    if (isBatchMode) {
+        BackHandler {
+            viewModel.exitBatchMode()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -139,12 +151,23 @@ fun InspirationScreen(
                             formattedTime = formattedTime,
                             showDate = item.showDate,
                             isPinnedItem = item.isPinned,
+                            hideDetails = hideDetails,
+                            isBatchMode = isBatchMode,
+                            isSelected = selectedInspirationIds.contains(inspiration.id),
                             onClick = {
-                                navController.navigate("inspiration_edit/${inspiration.id}")
+                                if (isBatchMode) {
+                                    viewModel.toggleSelection(inspiration.id)
+                                } else {
+                                    navController.navigate("inspiration_edit/${inspiration.id}")
+                                }
                             },
-                            onLongClick = {
-                                longPressedInspiration = inspiration
-                                showLongPressSheet = true
+                            onLongClick = if (isBatchMode) {
+                                {}
+                            } else {
+                                {
+                                    longPressedInspiration = inspiration
+                                    showLongPressSheet = true
+                                }
                             }
                         )
                     }
@@ -167,20 +190,22 @@ fun InspirationScreen(
             )
         }
 
-        // FAB 按钮
-        FloatingActionButton(
-            onClick = onFabClick,
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 16.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Edit,
-                contentDescription = "记录灵感",
-                modifier = Modifier.size(24.dp)
-            )
+        // FAB 按钮（批量模式下隐藏）
+        if (!isBatchMode) {
+            FloatingActionButton(
+                onClick = onFabClick,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 20.dp, bottom = 16.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "记录灵感",
+                    modifier = Modifier.size(24.dp)
+                )
+            }
         }
     }
 
@@ -231,6 +256,30 @@ fun InspirationScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 批量删除确认弹窗
+    if (showBatchDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteDialog = false },
+            title = { Text("删除选中项") },
+            text = {
+                Text("确定要删除已选择的 ${selectedInspirationIds.size} 条灵感吗？\n此操作不可撤销。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.batchDeleteInspirations()
+                    showBatchDeleteDialog = false
+                }) {
+                    Text("删除", color = Color(0xFFE53935))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteDialog = false }) {
                     Text("取消")
                 }
             }
