@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CardSearchResult
 import com.corgimemo.app.data.model.Inspiration
+import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.repository.CardRelationRepository
 import com.corgimemo.app.data.repository.InspirationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -167,10 +168,15 @@ class InspirationViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
-    /** 历史标签列表（从所有灵感聚合去重排序，用于 TagPickerSheet 快速选择） */
+    /** 用户自定义标签集合（从 CorgiPreferences 加载，与灵感派生标签合并显示） */
+    private val _userDefinedTags = MutableStateFlow<Set<String>>(emptySet())
+
+    /** 历史标签列表（从所有灵感聚合去重排序 + 用户自定义标签合并，用于侧边栏和 TagPickerSheet） */
     val savedTags: StateFlow<List<String>> =
-        _inspirations.map { list ->
-            aggregateSavedTags(list.map { decodeTags(it.tags) })
+        combine(_inspirations, _userDefinedTags) { list, userTags ->
+            (aggregateSavedTags(list.map { decodeTags(it.tags) }) + userTags)
+                .distinct()
+                .sorted()
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -237,6 +243,16 @@ class InspirationViewModel @Inject constructor(
 
     init {
         loadInspirations()
+        loadUserDefinedTags()
+    }
+
+    /**
+     * 从 CorgiPreferences 加载用户自定义标签
+     */
+    private fun loadUserDefinedTags() {
+        viewModelScope.launch {
+            _userDefinedTags.value = CorgiPreferences.getInstance(context).getUserDefinedTags()
+        }
     }
 
     // ========== 核心方法 ==========
@@ -298,6 +314,24 @@ class InspirationViewModel @Inject constructor(
      */
     fun clearTagSelection() {
         _selectedTags.value = emptySet()
+    }
+
+    /**
+     * 添加用户自定义标签
+     *
+     * 将新标签加入 _userDefinedTags 并持久化到 CorgiPreferences。
+     * 已存在的标签不会重复添加。
+     *
+     * @param name 标签名称
+     */
+    fun addUserTag(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        val updated = _userDefinedTags.value + trimmed
+        _userDefinedTags.value = updated
+        viewModelScope.launch {
+            CorgiPreferences.getInstance(context).saveUserDefinedTags(updated)
+        }
     }
 
     /**

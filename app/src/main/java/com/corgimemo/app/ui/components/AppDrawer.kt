@@ -758,7 +758,9 @@ private fun BottomActionSection(
 @Composable
 fun AddCategoryDialog(
     onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    title: String = "新建分组",
+    label: String = "分组名称"
 ) {
     var name by remember { mutableStateOf("") }
 
@@ -766,7 +768,7 @@ fun AddCategoryDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "新建分组",
+                text = title,
                 fontWeight = FontWeight.Bold
             )
         },
@@ -774,7 +776,7 @@ fun AddCategoryDialog(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("分组名称") },
+                label = { Text(label) },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(

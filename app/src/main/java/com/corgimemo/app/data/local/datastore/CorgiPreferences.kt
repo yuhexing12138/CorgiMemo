@@ -162,6 +162,8 @@ class CorgiPreferences(
         const val SHOW_PINNED = "show_pinned"
         /** V2.11: 待办页"待完成"区域展开状态(默认展开) */
         const val SHOW_PENDING = "show_pending"
+        /** 用户自定义灵感标签（JSON 数组字符串） */
+        const val USER_DEFINED_TAGS = "user_defined_tags"
     }
 
     // ==================== 数据迁移（DataStore → ESP）====================
@@ -957,5 +959,38 @@ class CorgiPreferences(
      */
     suspend fun removeKeyDirect(key: String) = withContext(Dispatchers.IO) {
         esp.edit().remove(key).apply()
+    }
+
+    // ==================== 用户自定义灵感标签 ====================
+
+    /**
+     * 获取用户自定义灵感标签集合
+     *
+     * 从 ESP 读取 JSON 数组字符串并解析为 Set<String>。
+     * 与灵感派生标签（savedTags）合并后供侧边栏显示。
+     *
+     * @return 用户自定义标签集合（可能为空集）
+     */
+    suspend fun getUserDefinedTags(): Set<String> = withContext(Dispatchers.IO) {
+        val json = esp.getString(Keys.USER_DEFINED_TAGS, null) ?: "[]"
+        try {
+            val array = JSONArray(json)
+            (0 until array.length()).map { array.getString(it) }.toSet()
+        } catch (e: Exception) {
+            emptySet()
+        }
+    }
+
+    /**
+     * 保存用户自定义灵感标签集合
+     *
+     * 将 Set<String> 序列化为 JSON 数组字符串写入 ESP。
+     *
+     * @param tags 标签集合
+     */
+    suspend fun saveUserDefinedTags(tags: Set<String>) = withContext(Dispatchers.IO) {
+        val array = JSONArray()
+        tags.sorted().forEach { array.put(it) }
+        esp.edit().putString(Keys.USER_DEFINED_TAGS, array.toString()).apply()
     }
 }

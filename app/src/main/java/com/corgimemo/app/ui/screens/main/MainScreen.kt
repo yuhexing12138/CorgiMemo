@@ -217,6 +217,7 @@ fun MainScreen(
     val hideCompletedItems by homeViewModel.hideCompletedItems.collectAsState()
 
     var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var showAddTagDialog by remember { mutableStateOf(false) }
     var showRenameCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
     var showDeleteCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
     var showCategorySheet by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
@@ -362,9 +363,7 @@ fun MainScreen(
                     onClearTagSelection = {
                         inspirationViewModel.clearTagSelection()
                     },
-                    onAddTagClick = {
-                        Toast.makeText(context, "添加标签功能开发中", Toast.LENGTH_SHORT).show()
-                    },
+                    onAddTagClick = { showAddTagDialog = true },
                     onSettingsClick = {
                         navController.navigate(Screen.Settings.route)
                         coroutineScope.launch { drawerState.close() }
@@ -690,6 +689,18 @@ fun MainScreen(
                 showAddCategoryDialog = false
             },
             onDismiss = { showAddCategoryDialog = false }
+        )
+    }
+
+    if (showAddTagDialog) {
+        com.corgimemo.app.ui.components.AddCategoryDialog(
+            onConfirm = { name ->
+                inspirationViewModel.addUserTag(name)
+                showAddTagDialog = false
+            },
+            onDismiss = { showAddTagDialog = false },
+            title = "新建标签",
+            label = "标签名称"
         )
     }
 
