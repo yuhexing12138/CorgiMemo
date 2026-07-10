@@ -72,7 +72,7 @@ fun InspirationScreen(
     onFabClick: () -> Unit = {},
     viewModel: InspirationViewModel = hiltViewModel()
 ) {
-    val displayItems by viewModel.displayInspirations.collectAsState()
+    val displayItems by viewModel.filteredDisplayInspirations.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isDataInitialized by viewModel.isDataInitialized.collectAsState()
