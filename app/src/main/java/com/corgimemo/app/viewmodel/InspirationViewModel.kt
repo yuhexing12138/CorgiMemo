@@ -171,6 +171,28 @@ class InspirationViewModel @Inject constructor(
     /** 用户自定义标签集合（从 CorgiPreferences 加载，与灵感派生标签合并显示） */
     private val _userDefinedTags = MutableStateFlow<Set<String>>(emptySet())
 
+    // ========== 隐藏详情 ==========
+
+    /** 是否隐藏灵感详情（时分时间、正文、标签、图片），仅保留标题和时间线 */
+    private val _hideDetails = MutableStateFlow(false)
+    val hideDetails: StateFlow<Boolean> = _hideDetails.asStateFlow()
+
+    // ========== 菜单弹窗 ==========
+
+    /** 三点菜单弹窗展开状态 */
+    private val _menuExpanded = MutableStateFlow(false)
+    val menuExpanded: StateFlow<Boolean> = _menuExpanded.asStateFlow()
+
+    // ========== 批量选择模式 ==========
+
+    /** 是否处于批量选择模式 */
+    private val _isBatchMode = MutableStateFlow(false)
+    val isBatchMode: StateFlow<Boolean> = _isBatchMode.asStateFlow()
+
+    /** 当前选中的灵感 ID 集合 */
+    private val _selectedInspirationIds = MutableStateFlow<Set<Long>>(emptySet())
+    val selectedInspirationIds: StateFlow<Set<Long>> = _selectedInspirationIds.asStateFlow()
+
     /** 历史标签列表（从所有灵感聚合去重排序 + 用户自定义标签合并，用于侧边栏和 TagPickerSheet） */
     val savedTags: StateFlow<List<String>> =
         combine(_inspirations, _userDefinedTags) { list, userTags ->
@@ -408,6 +430,97 @@ class InspirationViewModel @Inject constructor(
     fun deleteInspiration(inspiration: Inspiration) {
         viewModelScope.launch {
             inspirationRepository.delete(inspiration)
+        }
+    }
+
+    // ========== 菜单与隐藏详情方法 ==========
+
+    /**
+     * 设置菜单弹窗展开状态
+     * @param expanded 是否展开
+     */
+    fun setMenuExpanded(expanded: Boolean) {
+        _menuExpanded.value = expanded
+    }
+
+    /**
+     * 切换隐藏详情状态
+     */
+    fun toggleHideDetails() {
+        _hideDetails.value = !_hideDetails.value
+    }
+
+    // ========== 批量选择模式方法 ==========
+
+    /**
+     * 进入批量选择模式（清空已选）
+     */
+    fun enterBatchMode() {
+        _isBatchMode.value = true
+        _selectedInspirationIds.value = emptySet()
+    }
+
+    /**
+     * 退出批量选择模式（清空已选）
+     */
+    fun exitBatchMode() {
+        _isBatchMode.value = false
+        _selectedInspirationIds.value = emptySet()
+    }
+
+    /**
+     * 切换灵感选中状态
+     * @param inspirationId 灵感 ID
+     */
+    fun toggleSelection(inspirationId: Long) {
+        _selectedInspirationIds.value = _selectedInspirationIds.value.let {
+            if (it.contains(inspirationId)) it - inspirationId else it + inspirationId
+        }
+    }
+
+    /**
+     * 全选当前所有灵感
+     */
+    fun selectAllInspirations() {
+        _selectedInspirationIds.value = _inspirations.value.map { it.id }.toSet()
+    }
+
+    /**
+     * 清空选中（不退出批量模式）
+     */
+    fun clearSelection() {
+        _selectedInspirationIds.value = emptySet()
+    }
+
+    /**
+     * 批量删除选中的灵感
+     */
+    fun batchDeleteInspirations() {
+        val selectedIds = _selectedInspirationIds.value
+        if (selectedIds.isEmpty()) return
+        viewModelScope.launch {
+            selectedIds.forEach { id ->
+                inspirationRepository.deleteById(id)
+            }
+            exitBatchMode()
+        }
+    }
+
+    /**
+     * 批量置顶/取消置顶选中的灵感
+     * 逻辑：如果所有选中灵感都已置顶则取消置顶，否则全部置顶
+     */
+    fun batchPinInspirations() {
+        val selectedIds = _selectedInspirationIds.value
+        if (selectedIds.isEmpty()) return
+        viewModelScope.launch {
+            val inspirations = _inspirations.value.filter { it.id in selectedIds }
+            val allPinned = inspirations.all { it.isPinned }
+            inspirations.forEach { insp ->
+                val updated = insp.copy(isPinned = !allPinned)
+                inspirationRepository.update(updated)
+            }
+            exitBatchMode()
         }
     }
 
