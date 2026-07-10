@@ -1,6 +1,8 @@
 package com.corgimemo.app.ui.screens.inspiration
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +26,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +35,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,8 +46,11 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.data.model.Inspiration
+import com.corgimemo.app.ui.components.CorgiPullRefreshIndicator
+import com.corgimemo.app.ui.components.PullRefreshState
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.UnifiedEmptyState
+import com.corgimemo.app.ui.components.rememberPullRefreshStateHolder
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationDateTimePickerDialog
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationLongPressSheet
 import com.corgimemo.app.ui.screens.inspiration.components.TagPickerSheet
@@ -129,56 +139,128 @@ fun InspirationScreen(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                LazyColumn(
+                val isRefreshing by viewModel.isRefreshing.collectAsState()
+                val pullRefreshState = rememberPullRefreshStateHolder(
+                    maxPullHeight = 100.dp,
+                    refreshThreshold = 60.dp,
+                    onRefresh = { viewModel.onRefresh() }
+                )
+
+                // 刷新完成时回弹 pullOffset
+                LaunchedEffect(isRefreshing) {
+                    if (!isRefreshing) pullRefreshState.onRefreshComplete()
+                }
+
+                // 兜底超时回弹：监测 PULLING/RELEASING 状态持续 200ms 无新事件
+                // 解决 pointerInput 兜底仍偶尔失效的场景（部分 Android 版本 / 设备上
+                // up 事件传递不可靠）。当 state 在 PULLING 或 RELEASING 时启动延迟任务，
+                // 期间 state 或 pullOffset 任何变化都会重启协程（key 变化），
+                // 用户继续操作时不会误触发
+                // 关键：必须同时处理 RELEASING 状态（卡死恢复路径）
+                LaunchedEffect(pullRefreshState.state, pullRefreshState.pullOffset) {
+                    if (pullRefreshState.state == PullRefreshState.PULLING ||
+                        pullRefreshState.state == PullRefreshState.RELEASING) {
+                        kotlinx.coroutines.delay(200)
+                        if (pullRefreshState.state == PullRefreshState.PULLING ||
+                            pullRefreshState.state == PullRefreshState.RELEASING) {
+                            pullRefreshState.onRelease(forceResetFromReleasing = true)
+                        }
+                    }
+                }
+
+                // 外层 Box：承载 nestedScrollConnection 与柯基指示器
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 18.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp)
-                ) {
-                    items(
-                        items = displayItems,
-                        key = { "inspiration_${it.inspiration.id}" }
-                    ) { item ->
-                        val inspiration = item.inspiration
-                        val tags = viewModel.decodeTags(inspiration.tags)
-                        val imagePaths = viewModel.decodePaths(inspiration.imagePaths)
-                        val formattedTime = viewModel.formatTime(inspiration.createdAt)
-
-                        TimelineInspirationItem(
-                            inspiration = inspiration,
-                            tags = tags,
-                            imagePaths = imagePaths,
-                            formattedTime = formattedTime,
-                            showDate = item.showDate,
-                            isPinnedItem = item.isPinned,
-                            hideDetails = hideDetails,
-                            isBatchMode = isBatchMode,
-                            isSelected = selectedInspirationIds.contains(inspiration.id),
-                            onClick = {
-                                if (isBatchMode) {
-                                    viewModel.toggleSelection(inspiration.id)
-                                } else {
-                                    // v2.8 改为先进入展示页，再决定复制/编辑/分享
-                                    navController.navigate(
-                                        com.corgimemo.app.ui.navigation.Screen.InspirationViewWithId
-                                            .createRoute(inspiration.id)
-                                    )
-                                }
-                            },
-                            onLongClick = if (isBatchMode) {
-                                {}
-                            } else {
-                                {
-                                    longPressedInspiration = inspiration
-                                    showLongPressSheet = true
-                                }
+                        .nestedScroll(pullRefreshState.nestedScrollConnection)
+                        // 兜底监听"松手"事件：解决列表底部快速下滑 / 慢速下拉
+                        // 放手时 onPreFling 不会被触发的卡住问题
+                        .pointerInput(pullRefreshState) {
+                            awaitEachGesture {
+                                // 关键：使用 Initial pass 监听 down 事件
+                                // 父组件在 Initial pass 比子组件先收到事件，可靠性最高
+                                awaitFirstDown(
+                                    requireUnconsumed = false,
+                                    pass = PointerEventPass.Initial
+                                )
+                                // 关键：使用 Final pass 等待 up 事件
+                                // Final pass 是兜底 pass，即使 LazyColumn 在 Main pass
+                                // 消费了 up 事件，pointerInput 仍能在 Final pass 收到
+                                do {
+                                    val event = awaitPointerEvent(PointerEventPass.Final)
+                                } while (event.changes.any { it.pressed })
+                                // 手指完全抬起 → 触发松手处理
+                                pullRefreshState.onRelease()
                             }
-                        )
-                    }
+                        }
+                ) {
+                    // 空白区 + 居中奔跑柯基（铺满宽度，高度=pullOffset）
+                    CorgiPullRefreshIndicator(
+                        pullOffset = pullRefreshState.pullOffset,
+                        state = pullRefreshState.state,
+                        maxPullHeightPx = pullRefreshState.maxPullHeightPx,
+                        refreshThresholdPx = pullRefreshState.refreshThresholdPx,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                    // 底部留白
-                    item {
-                        Spacer(modifier = Modifier.height(80.dp))
+                    // 内层 Box：列表整体下移 pullOffset
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { translationY = pullRefreshState.pullOffset }
+                    ) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 18.dp),
+                            verticalArrangement = Arrangement.spacedBy(18.dp)
+                        ) {
+                            items(
+                                items = displayItems,
+                                key = { "inspiration_${it.inspiration.id}" }
+                            ) { item ->
+                                val inspiration = item.inspiration
+                                val tags = viewModel.decodeTags(inspiration.tags)
+                                val imagePaths = viewModel.decodePaths(inspiration.imagePaths)
+                                val formattedTime = viewModel.formatTime(inspiration.createdAt)
+
+                                TimelineInspirationItem(
+                                    inspiration = inspiration,
+                                    tags = tags,
+                                    imagePaths = imagePaths,
+                                    formattedTime = formattedTime,
+                                    showDate = item.showDate,
+                                    isPinnedItem = item.isPinned,
+                                    hideDetails = hideDetails,
+                                    isBatchMode = isBatchMode,
+                                    isSelected = selectedInspirationIds.contains(inspiration.id),
+                                    onClick = {
+                                        if (isBatchMode) {
+                                            viewModel.toggleSelection(inspiration.id)
+                                        } else {
+                                            // v2.8 改为先进入展示页，再决定复制/编辑/分享
+                                            navController.navigate(
+                                                com.corgimemo.app.ui.navigation.Screen.InspirationViewWithId
+                                                    .createRoute(inspiration.id)
+                                            )
+                                        }
+                                    },
+                                    onLongClick = if (isBatchMode) {
+                                        {}
+                                    } else {
+                                        {
+                                            longPressedInspiration = inspiration
+                                            showLongPressSheet = true
+                                        }
+                                    }
+                                )
+                            }
+
+                            // 底部留白
+                            item {
+                                Spacer(modifier = Modifier.height(80.dp))
+                            }
+                        }
                     }
                 }
             }

@@ -1,6 +1,7 @@
 // app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationViewScreen.kt
 package com.corgimemo.app.ui.screens.inspiration
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,7 +30,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -40,14 +40,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -101,8 +100,6 @@ fun InspirationViewScreen(
     val inspirations = remember(displayItems) {
         displayItems.mapNotNull { it.inspiration }
     }
-    // 临时调试：监听当前选中的标签（用于排查 inspirations.size = 1 问题）
-    val selectedTagsDebug by viewModel.selectedTags.collectAsState()
 
     // 找到 inspirationId 对应的初始页码
     val initialIndex = remember(inspirations, inspirationId) {
@@ -120,8 +117,30 @@ fun InspirationViewScreen(
     var imageGalleryInitialIndex by remember { mutableStateOf(0) }
     var imageGalleryPaths by remember { mutableStateOf(emptyList<String>()) }
 
-    // 截图录制层（用于保存/分享时将卡片内容保存为图片）
-    val screenshotLayer = rememberGraphicsLayer()
+    // 截图录制层：跟踪当前显示页的 GraphicsLayer
+    // 关键：每个 page 必须使用独立的 GraphicsLayer，否则 record() 会互相覆盖
+    // 导致所有页面都渲染最后绘制的那个 page 的内容
+    var currentPageLayer by remember { mutableStateOf<GraphicsLayer?>(null) }
+
+    /**
+     * 返回上一页辅助函数
+     *
+     * 在 popBackStack 之前设置 savedStateHandle["targetTab"] = "INSPIRE"，
+     * 让 MainScreen 接收到返回事件后切换到灵感 tab，
+     * 确保从灵感展示页退出后始终回到灵感页（而非待办页等其他 tab）。
+     */
+    val navigateBack: () -> Unit = {
+        navController.previousBackStackEntry?.savedStateHandle?.set("targetTab", "INSPIRE")
+        navController.popBackStack()
+    }
+
+    /**
+     * 拦截系统返回事件（侧滑返回 / 系统返回键）
+     *
+     * 确保所有退出方式（应用内返回箭头、系统返回键）都经过 navigateBack()，
+     * 统一设置 targetTab=INSPIRE，让 MainScreen 切换到灵感 tab。
+     */
+    BackHandler { navigateBack() }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),  // 由各 Composable 自行处理 WindowInsets
@@ -129,7 +148,7 @@ fun InspirationViewScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopBar(
-                onBack = { navController.popBackStack() },
+                onBack = { navigateBack() },
                 onCopy = {
                     // 复制当前页灵感到剪贴板
                     val ins = currentInspiration ?: return@TopBar
@@ -166,7 +185,7 @@ fun InspirationViewScreen(
                     // 水平 Pager：左右滑动浏览所有灵感
                     HorizontalPager(
                         state = pagerState,
-                        beyondViewportPageCount = 1,
+                        beyondViewportPageCount = 0,  // 不预渲染相邻页，提升性能
                         pageSpacing = 16.dp,
                         contentPadding = PaddingValues(horizontal = 18.dp),
                         modifier = Modifier.fillMaxSize()
@@ -181,29 +200,27 @@ fun InspirationViewScreen(
                                 }
                             } catch (e: Exception) { emptyList() }
                         }
+                        // 每个 page 独立创建 GraphicsLayer
+                        // 关键：不能共享同一个 layer，否则多个 page 的 record() 会互相覆盖，导致所有 Card 都渲染最后绘制的 page 内容
+                        val pageLayer = rememberGraphicsLayer()
+                        // 同步当前 page 的 layer 到外层 state，供截图回调使用
+                        if (page == pagerState.currentPage) {
+                            currentPageLayer = pageLayer
+                        }
                         InspirationViewCard(
-                        inspiration = ins,
-                        onImageClick = { index ->
-                            // 打开图片全屏预览
-                            imageGalleryPaths = insImagePaths
-                            imageGalleryInitialIndex = index
-                            showImageGallery = true
-                        },
-                        // 传入 GraphicsLayer，使卡片内容被录制以供后续截图分享
-                        graphicsLayer = screenshotLayer,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                            inspiration = ins,
+                            onImageClick = { index ->
+                                // 打开图片全屏预览
+                                imageGalleryPaths = insImagePaths
+                                imageGalleryInitialIndex = index
+                                showImageGallery = true
+                            },
+                            // 传入当前 page 独立的 GraphicsLayer，使卡片内容被录制以供后续截图分享
+                            graphicsLayer = pageLayer,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
-                // 临时调试信息（覆盖在屏幕底部，便于排查 inspirations.size=1 问题）
-                Text(
-                    text = "DEBUG: size=${inspirations.size} | currentPage=${pagerState.currentPage} | insId=$inspirationId | ids=${inspirations.map { it.id }} | tags=$selectedTagsDebug",
-                    color = Color.Red,
-                    fontSize = 9.sp,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .background(Color.White.copy(alpha = 0.85f))
-                        .padding(8.dp)
-                )
             }
         }
     }
@@ -215,12 +232,20 @@ fun InspirationViewScreen(
             onSaveToGallery = {
                 showShareSheet = false
                 coroutineScope.launch {
-                    // 等待当前帧绘制完成，确保 GraphicsLayer 已有最新内容
+                    // 等待当前帧绘制完成
                     awaitFrame()
-                    val bitmap = InspirationScreenshot.captureAsBitmap(screenshotLayer)
-                    val file = InspirationScreenshot.saveToGallery(context, bitmap)
-                    if (file != null) {
-                        snackbarHostState.showSnackbar("已保存到相册：${file.name}")
+                    // 使用当前 page 的 GraphicsLayer 截图（位图放大 3x）
+                    val layer = currentPageLayer ?: run {
+                        snackbarHostState.showSnackbar("截图失败：未找到当前页面")
+                        return@launch
+                    }
+                    val bitmap = InspirationScreenshot.captureAsBitmap(layer, scaleFactor = 3.0f)
+                    // saveToGallery 现在返回 Uri（API 29+ MediaStore）
+                    val uri = InspirationScreenshot.saveToGallery(context, bitmap)
+                    if (uri != null) {
+                        // 用 lastPathSegment 显示文件名（API 29+ MediaStore Uri 也支持）
+                        val fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "图片"
+                        snackbarHostState.showSnackbar("已保存到相册：$fileName")
                     } else {
                         snackbarHostState.showSnackbar("保存失败，请重试")
                     }
@@ -231,11 +256,17 @@ fun InspirationViewScreen(
                 coroutineScope.launch {
                     // 等待当前帧绘制完成
                     awaitFrame()
-                    val bitmap = InspirationScreenshot.captureAsBitmap(screenshotLayer)
-                    val file = InspirationScreenshot.saveToGallery(context, bitmap)
-                    if (file != null) {
-                        // 启动系统分享面板
-                        val intent = InspirationScreenshot.createShareIntent(context, file)
+                    // 使用当前 page 的 GraphicsLayer 截图
+                    val layer = currentPageLayer ?: run {
+                        snackbarHostState.showSnackbar("截图失败：未找到当前页面")
+                        return@launch
+                    }
+                    val bitmap = InspirationScreenshot.captureAsBitmap(layer, scaleFactor = 3.0f)
+                    // saveToGallery 现在返回 Uri（API 29+ MediaStore）
+                    val uri = InspirationScreenshot.saveToGallery(context, bitmap)
+                    if (uri != null) {
+                        // 启动系统分享面板（使用 Uri 重载）
+                        val intent = InspirationScreenshot.createShareIntent(context, uri)
                         context.startActivity(intent)
                     } else {
                         snackbarHostState.showSnackbar("分享失败，请重试")
@@ -253,9 +284,7 @@ fun InspirationViewScreen(
             onDismiss = { showImageGallery = false }
         )
     }
-}  // 关闭 Scaffold 调用 + Scaffold content lambda
-
-}  // 关闭 InspirationViewScreen 函数
+}
 
 /**
  * 顶部导航栏

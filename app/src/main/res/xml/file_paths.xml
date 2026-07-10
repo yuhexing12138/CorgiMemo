@@ -4,4 +4,7 @@
     <cache-path name="ical_files" path="ical_files/" />
     <cache-path name="share" path="." />
     <files-path name="pictures" path="pictures/" />
+    <!-- 灵感卡片截图保存到 getExternalFilesDir(Environment.DIRECTORY_PICTURES)，
+         需通过 external-files-path 让 FileProvider 识别该路径下的文件用于分享 -->
+    <external-files-path name="external_pictures" path="Pictures/" />
 </paths>

@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,13 +52,6 @@ fun ShareInspirationSheet(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
-            // 弹窗标题
-            Text(
-                text = "分享灵感",
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
             // 保存到相册
             ShareOption(
                 icon = Icons.Outlined.Image,
@@ -72,13 +64,6 @@ fun ShareInspirationSheet(
                 icon = Icons.Outlined.Share,
                 title = "更多分享",
                 onClick = onMoreShare
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            // 取消
-            ShareOption(
-                icon = Icons.Outlined.Close,
-                title = "取消",
-                onClick = onDismiss
             )
         }
     }

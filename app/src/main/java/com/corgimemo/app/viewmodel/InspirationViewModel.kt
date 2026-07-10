@@ -261,6 +261,25 @@ class InspirationViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    // ========== 下拉刷新相关 ==========
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    /**
+     * 下拉刷新
+     * 重新加载灵感列表和用户自定义标签
+     */
+    fun onRefresh() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            loadInspirations()
+            loadUserDefinedTags()
+            kotlinx.coroutines.delay(800) // 确保柯基动画至少显示 800ms
+            _isRefreshing.value = false
+        }
+    }
+
     // ========== 初始化 ==========
 
     init {

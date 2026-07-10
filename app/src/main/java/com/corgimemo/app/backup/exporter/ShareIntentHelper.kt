@@ -37,7 +37,11 @@ object ShareIntentHelper {
             }
         }
 
-        return Intent.createChooser(shareIntent, "分享待办卡片")
+        // 必须添加 NEW_TASK flag，否则从非 Activity Context（如 ApplicationContext）
+        // 或者某些设备上启动 chooser 会闪退（Android 8+ 后部分 ROM 强制要求）
+        return Intent.createChooser(shareIntent, "分享待办卡片").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
     }
 
     /**
