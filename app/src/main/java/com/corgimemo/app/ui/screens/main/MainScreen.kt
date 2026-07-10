@@ -172,6 +172,12 @@ fun MainScreen(
     val homeViewModel: HomeViewModel = hiltViewModel()
     /** 灵感页 ViewModel（用于日历弹窗获取灵感数据，与 InspirationScreen 共享同一实例） */
     val inspirationViewModel: InspirationViewModel = hiltViewModel()
+    /** 灵感页标签相关状态（供侧边栏使用） */
+    val inspirationTags by inspirationViewModel.savedTags.collectAsState()
+    val selectedTags by inspirationViewModel.selectedTags.collectAsState()
+    val tagFilterMode by inspirationViewModel.tagFilterMode.collectAsState()
+    val tagCounts by inspirationViewModel.tagCounts.collectAsState()
+    val totalInspirationCount by inspirationViewModel.totalInspirationCount.collectAsState()
     /** 用户行为分析器（通过 Hilt 入口点获取 @Singleton 实例，用于记录页面访问） */
     val userBehaviorAnalyzer: UserBehaviorAnalyzer = remember {
         EntryPointAccessors.fromApplication(context, UserBehaviorAnalyzerEntryPoint::class.java).analyzer()
@@ -325,6 +331,11 @@ fun MainScreen(
                     todoCountByCategory = todoCountByCategory,
                     recentlyDeletedCount = recentlyDeletedCount,
                     selectedCategoryId = selectedCategoryId,
+                    inspirationTags = inspirationTags,
+                    selectedTags = selectedTags,
+                    tagFilterMode = tagFilterMode,
+                    tagCounts = tagCounts,
+                    totalInspirationCount = totalInspirationCount,
                     onCategoryClick = { categoryId ->
                         homeViewModel.filterByCategory(categoryId)
                         coroutineScope.launch { drawerState.close() }
@@ -341,6 +352,18 @@ fun MainScreen(
                     onRecentlyDeletedClick = {
                         navController.navigate(Screen.RecentlyDeleted.route)
                         coroutineScope.launch { drawerState.close() }
+                    },
+                    onTagClick = { tag ->
+                        inspirationViewModel.toggleTagSelection(tag)
+                    },
+                    onTagFilterModeChange = { mode ->
+                        inspirationViewModel.setTagFilterMode(mode)
+                    },
+                    onClearTagSelection = {
+                        inspirationViewModel.clearTagSelection()
+                    },
+                    onAddTagClick = {
+                        Toast.makeText(context, "添加标签功能开发中", Toast.LENGTH_SHORT).show()
                     },
                     onSettingsClick = {
                         navController.navigate(Screen.Settings.route)
