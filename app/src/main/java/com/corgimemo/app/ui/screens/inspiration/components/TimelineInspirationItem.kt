@@ -1,6 +1,7 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -86,6 +88,9 @@ import java.util.Calendar
  * @param formattedTime 格式化后的时间字符串（如 "09:00"）
  * @param showDate 是否显示左侧日期列（同一天多条时仅第一条显示）
  * @param isPinnedItem 是否为置顶项
+ * @param hideDetails 是否隐藏详情（时分时间、正文、标签、图片），仅显示标题
+ * @param isBatchMode 是否为批量选择模式（节点变为 16dp 空心圆，选中后填充并打√）
+ * @param isSelected 批量模式下当前条目是否被选中
  * @param onClick 点击回调
  * @param onLongClick 长按回调
  * @param modifier 修饰符
@@ -99,6 +104,9 @@ fun TimelineInspirationItem(
     formattedTime: String,
     showDate: Boolean = true,
     isPinnedItem: Boolean = false,
+    hideDetails: Boolean = false,
+    isBatchMode: Boolean = false,
+    isSelected: Boolean = false,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -132,6 +140,11 @@ fun TimelineInspirationItem(
     // 这样节点与"2026.07"和"灵感标题"在第一行同一水平线上
     val nodeCenterY = 11.dp
     val nodeTopY = (nodeCenterY - nodeRadius).coerceAtLeast(0.dp)
+
+    // ===== 批量模式节点尺寸 =====
+    // 批量模式下节点放大为 16dp 空心圆，便于点击选择；普通模式保持 6dp 实心圆点
+    val nodeSize = if (isBatchMode) 16.dp else nodeDiameter
+    val effectiveNodeCenterY = if (isBatchMode) 18.dp else nodeCenterY
 
     // ===== 颜色 =====
     val nodeColor = if (isPinnedItem) Color(0xFFFF9A5C) else MaterialTheme.colorScheme.primary
@@ -186,16 +199,36 @@ fun TimelineInspirationItem(
             }
         }
 
-        // ========== 节点（8dp 圆点，垂直对齐"灵感标题"中心）==========
-        // 节点 Y 中心固定 11dp，与"2026.07"、"灵感标题"在第一行同一水平线
+        // ========== 节点（批量模式变大空心+打√，普通模式 6dp 实心圆点）==========
+        // 节点 Y 中心固定 11dp（批量模式 18dp），与"2026.07"、"灵感标题"在同一水平线
         // 节点始终显示：每条灵感都有时间节点（包括同一天内的非首条）
         Box(
             modifier = Modifier
-                .offset(x = nodeCenterX - nodeRadius, y = nodeTopY)
-                .size(nodeDiameter)
-                .background(color = nodeColor, shape = CircleShape)
-                .align(Alignment.TopStart)
-        )
+                .offset(x = nodeCenterX - nodeSize / 2, y = effectiveNodeCenterY - nodeSize / 2)
+                .size(nodeSize)
+                .then(
+                    if (isBatchMode) {
+                        if (isSelected) {
+                            Modifier.background(UiColors.Primary, CircleShape)
+                        } else {
+                            Modifier.border(2.dp, Color(0xFFCCCCCC), CircleShape)
+                        }
+                    } else {
+                        Modifier.background(nodeColor, CircleShape)
+                    }
+                )
+                .align(Alignment.TopStart),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isBatchMode && isSelected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "已选中",
+                    tint = Color.White,
+                    modifier = Modifier.size(12.dp)
+                )
+            }
+        }
 
         // ========== 右侧内容区（标题、时分时间、正文、标签、图片）==========
         Column(
@@ -225,104 +258,107 @@ fun TimelineInspirationItem(
                 )
             }
 
-            // 标题 → 时分时间 间距
-            Spacer(modifier = Modifier.height(titleToTimeGap))
+            // ===== 以下内容在隐藏详情模式下不显示 =====
+            if (!hideDetails) {
+                // 标题 → 时分时间 间距
+                Spacer(modifier = Modifier.height(titleToTimeGap))
 
-            // 时分时间（11sp 灰色）
-            Text(
-                text = formattedTime,
-                fontSize = 11.sp,
-                color = Color(0xFF999999),
-                letterSpacing = chineseLetterSpacing
-            )
-
-            // 时分时间 → 正文 间距
-            Spacer(modifier = Modifier.height(timeToContentGap))
-
-            // 正文（14sp，行高 21sp）
-            if (inspiration.content.isNotBlank()) {
-                val plainContent = removeHtmlTags(inspiration.content)
+                // 时分时间（11sp 灰色）
                 Text(
-                    text = plainContent,
-                    fontSize = 14.sp,
-                    lineHeight = 21.sp,
-                    color = Color(0xFF666666),
+                    text = formattedTime,
+                    fontSize = 11.sp,
+                    color = Color(0xFF999999),
                     letterSpacing = chineseLetterSpacing
                 )
-            }
 
-            // 正文 → 标签 间距
-            if (tags.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(contentToTagGap))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // 最多显示 3 个标签
-                    tags.take(3).forEach { tag ->
-                        Text(
-                            text = "#$tag",
-                            fontSize = 11.sp,
-                            lineHeight = 11.sp,  // 压缩行高到 fontSize，减小标签上下间距
-                            color = UiColors.Primary,
-                            letterSpacing = chineseLetterSpacing,
-                            modifier = Modifier
-                                .background(
-                                    color = Color(0xFFFFF3E0),
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .padding(horizontal = 1.dp, vertical = 0.dp)
-                        )
-                    }
-                    // 超出 3 个显示 "+N"
-                    if (tags.size > 3) {
-                        Text(
-                            text = "+${tags.size - 3}",
-                            fontSize = 11.sp,
-                            lineHeight = 11.sp,  // 压缩行高到 fontSize，减小标签上下间距
-                            color = Color(0xFF999999),
-                            letterSpacing = chineseLetterSpacing,
-                            modifier = Modifier
-                                .background(
-                                    color = Color(0xFFF5F5F5),
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .padding(horizontal = 1.dp, vertical = 0.dp)
-                        )
-                    }
+                // 时分时间 → 正文 间距
+                Spacer(modifier = Modifier.height(timeToContentGap))
+
+                // 正文（14sp，行高 21sp）
+                if (inspiration.content.isNotBlank()) {
+                    val plainContent = removeHtmlTags(inspiration.content)
+                    Text(
+                        text = plainContent,
+                        fontSize = 14.sp,
+                        lineHeight = 21.sp,
+                        color = Color(0xFF666666),
+                        letterSpacing = chineseLetterSpacing
+                    )
                 }
-            }
 
-            // 标签 → 图片 间距
-            if (imagePaths.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(tagToImageGap))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    imagePaths.take(2).forEach { _ ->
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFFF5F5F5)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = "🖼️", fontSize = 12.sp)
-                        }
-                    }
-                    if (imagePaths.size > 2) {
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFFEEEEEE)),
-                            contentAlignment = Alignment.Center
-                        ) {
+                // 正文 → 标签 间距
+                if (tags.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(contentToTagGap))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        // 最多显示 3 个标签
+                        tags.take(3).forEach { tag ->
                             Text(
-                                text = "+${imagePaths.size - 2}",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFF666666)
+                                text = "#$tag",
+                                fontSize = 11.sp,
+                                lineHeight = 11.sp,  // 压缩行高到 fontSize，减小标签上下间距
+                                color = UiColors.Primary,
+                                letterSpacing = chineseLetterSpacing,
+                                modifier = Modifier
+                                    .background(
+                                        color = Color(0xFFFFF3E0),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .padding(horizontal = 1.dp, vertical = 0.dp)
+                            )
+                        }
+                        // 超出 3 个显示 "+N"
+                        if (tags.size > 3) {
+                            Text(
+                                text = "+${tags.size - 3}",
+                                fontSize = 11.sp,
+                                lineHeight = 11.sp,  // 压缩行高到 fontSize，减小标签上下间距
+                                color = Color(0xFF999999),
+                                letterSpacing = chineseLetterSpacing,
+                                modifier = Modifier
+                                    .background(
+                                        color = Color(0xFFF5F5F5),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .padding(horizontal = 1.dp, vertical = 0.dp)
                             )
                         }
                     }
                 }
-            }
+
+                // 标签 → 图片 间距
+                if (imagePaths.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(tagToImageGap))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        imagePaths.take(2).forEach { _ ->
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFF5F5F5)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(text = "🖼️", fontSize = 12.sp)
+                            }
+                        }
+                        if (imagePaths.size > 2) {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFEEEEEE)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "+${imagePaths.size - 2}",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF666666)
+                                )
+                            }
+                        }
+                    }
+                }
+            } // end if (!hideDetails)
         }
     }
 }
