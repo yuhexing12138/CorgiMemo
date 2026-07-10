@@ -3,13 +3,18 @@ package com.corgimemo.app.ui.screens.inspiration
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -115,6 +120,7 @@ fun InspirationViewScreen(
     val screenshotLayer = rememberGraphicsLayer()
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),  // 由各 Composable 自行处理 WindowInsets
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -237,6 +243,7 @@ fun InspirationViewScreen(
 /**
  * 顶部导航栏
  * 左侧：返回箭头；右侧：复制/编辑/分享三个图标按钮
+ * 高度 = 状态栏高度 + 64dp，跨设备一致
  *
  * @param onBack 返回回调
  * @param onCopy 复制回调
@@ -250,52 +257,63 @@ private fun TopBar(
     onEdit: () -> Unit,
     onShare: () -> Unit
 ) {
-    Box(
+    // 动态获取状态栏高度，跨设备一致
+    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp)
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // 左侧返回箭头
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier.align(Alignment.CenterStart).padding(start = 6.dp)
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                contentDescription = "返回",
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(24.dp)
-            )
-        }
-        // 右侧功能按钮组（复制 + 编辑 + 分享）
+        // 状态栏占位区域（透明，保留可点击性）
+        Spacer(modifier = Modifier.height(statusBarHeight))
+        // 实际内容区域（64dp）
         Box(
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 6.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
         ) {
-            Row {
-                IconButton(onClick = onCopy) {
-                    Icon(
-                        Icons.Outlined.ContentCopy,
-                        contentDescription = "复制",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                IconButton(onClick = onEdit) {
-                    Icon(
-                        Icons.Outlined.Edit,
-                        contentDescription = "编辑",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                IconButton(onClick = onShare) {
-                    Icon(
-                        Icons.Outlined.Share,
-                        contentDescription = "分享",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(24.dp)
-                    )
+            // 左侧返回箭头
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = "返回",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            // 右侧功能按钮组（复制 + 编辑 + 分享）
+            Box(
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 6.dp)
+            ) {
+                Row {
+                    IconButton(onClick = onCopy) {
+                        Icon(
+                            Icons.Outlined.ContentCopy,
+                            contentDescription = "复制",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    IconButton(onClick = onEdit) {
+                        Icon(
+                            Icons.Outlined.Edit,
+                            contentDescription = "编辑",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    IconButton(onClick = onShare) {
+                        Icon(
+                            Icons.Outlined.Share,
+                            contentDescription = "分享",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
         }
