@@ -89,3 +89,6 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 # KSP 2.3.9：与 Kotlin 2.3.20 配套；KSP 2.3.x 命名已简化为单一版本号（不再使用 <kotlin>-<ksp> 格式）
 ksp = { id = "com.google.devtools.ksp", version = "2.3.9" }
 hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+# 子模块 :richeditor-compose 需要（KMP + Android Library）
+android-library = { id = "com.android.library", version = "9.2.1" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

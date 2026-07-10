@@ -21,6 +21,7 @@ import com.corgimemo.app.data.repository.SubTaskManager
 import com.corgimemo.app.domain.ReminderRecommender
 import com.corgimemo.app.model.UserType
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
+import com.mohamedrejeb.richeditor.model.RichTextState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -201,6 +202,35 @@ class InspirationEditViewModel @Inject constructor(
         data class BlocksReordered(val oldOrder: List<ContentBlock>) : EditOperation()
     }
 
+    /**
+     * RichTextState 快照桥接数据类
+     *
+     * 用于将 compose-rich-editor 库的 RichTextState 状态桥接到现有的扩展 Undo/Redo 栈。
+     * 当 RichTextState 内容变化时（用户输入或格式化操作），
+     * 通过此快照记录变化前的 Markdown 文本，支持撤销恢复。
+     *
+     * @param markdownText 变化前的 Markdown 文本（由 RichTextState.toMarkdown() 导出）
+     * @param selectionStart 光标起始位置
+     * @param selectionEnd 光标结束位置
+     */
+    private data class RichTextSnapshot(
+        val markdownText: String,
+        val selectionStart: Int,
+        val selectionEnd: Int
+    )
+
+    /**
+     * 内容块操作进行中标志
+     *
+     * 当此标志为 true 时，RichTextState 的变化监听器不推送 Undo 记录，
+     * 避免内容块操作（插入/删除/排序）与文本变化监听形成反馈循环。
+     *
+     * 设置时机：
+     * - 内容块插入/删除/排序前 → true
+     * - 内容块操作完成 → false
+     */
+    private var isContentBlockOperating: Boolean = false
+
     /** 扩展后的 Undo 栈：支持文本和内容块操作 */
     private val _undoStackExtended = ArrayDeque<EditOperation>()
 
@@ -280,6 +310,29 @@ class InspirationEditViewModel @Inject constructor(
      */
     private val _contentFormat = MutableStateFlow("") // 默认空字符串（无格式）
     val contentFormat: StateFlow<String> = _contentFormat.asStateFlow()
+
+    /**
+     * 富文本编辑器状态（compose-rich-editor 库）
+     *
+     * 替代原有的自定义 RichTextEditorState，提供完整的富文本编辑能力：
+     * - toggleSpanStyle（粗体/斜体/下划线/删除线）
+     * - toggleUnorderedList / toggleOrderedList
+     * - toggleCodeSpan（代码块）
+     * - addLink（超链接）
+     * - setMarkdown / toMarkdown（Markdown 导入导出）
+     *
+     * **与扩展 Undo/Redo 栈的关系**：
+     * RichTextState 自带 history（100 条），但本项目需要支持内容块级撤销，
+     * 因此通过 RichTextSnapshot 桥接到扩展栈，禁用库自带 undo。
+     *
+     * **UI 层使用**：
+     * - 编辑器组件：rememberRichTextState() 初始化，通过此字段访问
+     * - 格式工具栏：直接调用 state.toggleSpanStyle() 等方法
+     */
+    private var _richTextState: RichTextState? = null
+
+    /** 富文本编辑器状态（只读暴露） */
+    val richTextState: RichTextState? get() = _richTextState
 
     // ==================== Undo/Redo 双栈（编辑器内撤销/重做） ====================
 
@@ -565,6 +618,14 @@ class InspirationEditViewModel @Inject constructor(
 
                 /** 加载富文本格式化内容（Markdown 字符串） */
                 _contentFormat.value = inspiration.contentFormat ?: ""
+                /** 使用库的 setMarkdown 恢复 RichTextState 格式（若已注入） */
+                val markdownToRestore = inspiration.contentFormat ?: ""
+                _richTextState?.let { state ->
+                    if (markdownToRestore.isNotBlank()) {
+                        state.setMarkdown(markdownToRestore)
+                        _content.value = state.annotatedString.text
+                    }
+                }
 
                 /** 从 DataStore 恢复跨会话的 Undo/Redo 栈（如有） */
                 restoreUndoStacks(inspirationId)
@@ -1210,26 +1271,38 @@ class InspirationEditViewModel @Inject constructor(
     }
 
     /**
-     * 防抖调度：延迟 300ms 后将 AnnotatedString 导出为 Markdown 格式
+     * 设置 RichTextState 实例（由 UI 层在 rememberRichTextState() 后调用）
+     *
+     * UI 层创建 RichTextState 后通过此方法注入到 ViewModel，
+     * 以便 ViewModel 调用 setMarkdown()/toMarkdown() 等方法。
+     *
+     * @param state 由 rememberRichTextState() 创建的 RichTextState 实例
+     */
+    fun setRichTextState(state: RichTextState) {
+        _richTextState = state
+    }
+
+    /**
+     * 防抖调度：延迟 300ms 后将 RichTextState 导出为 Markdown 格式
      *
      * 每次调用会取消上一次未完成的防抖任务（cancel-and-restart 模式），
-     * 确保只有用户停止输入后的最终状态会被导出，减少高频编辑时的解析开销。
+     * 确保只有用户停止输入后的最终状态会被导出。
      *
-     * **数据流**:
-     * 用户按键 → onValueChange → setContent(text) [立即]
-     *                              → scheduleFormatExport() [防抖 300ms]
-     *                                  → delay 结束 → export() → _contentFormat 更新
+     * **优先使用库的 toMarkdown()**：
+     * - 若 _richTextState 非空 → 使用库原生导出（支持列表/代码块/链接等完整格式）
+     * - 若 _richTextState 为空（降级）→ 回退到 MarkdownParser.export()
      *
-     * @param annotatedString 当前的富文本内容（AnnotatedString）
+     * @param annotatedString 当前的富文本内容（AnnotatedString，兼容旧调用）
      */
     fun scheduleFormatExport(annotatedString: androidx.compose.ui.text.AnnotatedString) {
-        /** 取消上一个未完成的防抖任务 */
         _debounceJob?.cancel()
-        /** 启动新的防抖任务：等待 300ms 无新输入后执行导出 */
         _debounceJob = viewModelScope.launch {
             delay(300L)
-            val markdown = com.corgimemo.app.util.MarkdownParser.export(annotatedString)
+            val markdown = _richTextState?.toMarkdown()
+                ?: com.corgimemo.app.util.MarkdownParser.export(annotatedString)
             _contentFormat.value = markdown
+            /** 同步纯文本内容（用于搜索/字数统计） */
+            _content.value = annotatedString.text
         }
     }
 
@@ -1293,6 +1366,41 @@ class InspirationEditViewModel @Inject constructor(
 
         /** 异步持久化 Undo 栈到 DataStore（跨会话保留撤销历史） */
         persistUndoRedoStacksAsync()
+    }
+
+    /**
+     * 推送 RichTextState 变化前的快照到扩展 Undo 栈
+     *
+     * 在执行格式化操作（toggleSpanStyle/toggleCodeSpan 等）前由 UI 层调用，
+     * 记录操作前的 Markdown 文本以支持撤销。
+     *
+     * **防反馈循环**：当 isContentBlockOperating=true 时跳过（内容块操作期间不记录）。
+     *
+     * @param markdownBefore 操作前的 Markdown 文本
+     */
+    fun pushRichTextSnapshot(markdownBefore: String) {
+        if (isContentBlockOperating) return
+        /** 构造 TextChange 操作记录操作前的 Markdown 文本 */
+        val newOp = EditOperation.TextChange(
+            androidx.compose.ui.text.AnnotatedString(markdownBefore)
+        )
+        /** 复用扩展栈的提交逻辑 */
+        _undoStackExtended.addLast(newOp)
+        if (_undoStackExtended.size > MAX_UNDO_DEPTH) _undoStackExtended.removeFirst()
+        _redoStackExtended.clear()
+        _canUndo.value = true
+        _canRedo.value = false
+        trimExtendedStackIfNeeded()
+        persistUndoRedoStacksAsync()
+    }
+
+    /**
+     * 设置内容块操作标志（UI 层在内容块操作前后调用）
+     *
+     * @param operating true=正在操作内容块（暂停文本变化监听），false=操作完成
+     */
+    fun setContentBlockOperating(operating: Boolean) {
+        isContentBlockOperating = operating
     }
 
     /**

@@ -133,6 +133,9 @@ dependencies {
     /** 拖拽排序库 Calvin-LL/Reorderable */
     implementation(libs.reorderable)
 
+    /** 富文本编辑器库（源码 module 集成） */
+    implementation(project(":richeditor-compose"))
+
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.turbine)
