@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.automirrored.filled.Label
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -28,6 +29,7 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +60,7 @@ import com.corgimemo.app.ui.components.EnhancedTopBar
 import com.corgimemo.app.ui.components.LeftIconType
 import com.corgimemo.app.ui.components.RightIconType
 import com.corgimemo.app.ui.components.TodoMenuDropdown
+import com.corgimemo.app.ui.components.InspirationMenuDropdown
 import com.corgimemo.app.ui.components.FloatingCorgiButton
 import com.corgimemo.app.ui.components.navigation.BubbleMenuOverlay
 import com.corgimemo.app.ui.components.navigation.BubbleType
@@ -66,6 +69,7 @@ import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.screens.date.SpecialDateScreen
 import com.corgimemo.app.ui.screens.home.HomeBatchActionBar
+import com.corgimemo.app.ui.screens.inspiration.components.InspirationBatchActionBar
 import com.corgimemo.app.ui.screens.home.HomeScreen
 import com.corgimemo.app.ui.screens.home.shareTodoAsImage
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
@@ -178,6 +182,16 @@ fun MainScreen(
     val tagFilterMode by inspirationViewModel.tagFilterMode.collectAsState()
     val tagCounts by inspirationViewModel.tagCounts.collectAsState()
     val totalInspirationCount by inspirationViewModel.totalInspirationCount.collectAsState()
+    /**
+     * 灵感页菜单与批量模式相关状态
+     *
+     * 与待办页对应状态（menuExpanded / isBatchMode / selectedTodoIds / hideDetails）同构，
+     * 用于驱动灵感页的三点菜单弹窗（InspirationMenuDropdown）与批量操作栏（InspirationBatchActionBar）。
+     */
+    val inspirationMenuExpanded by inspirationViewModel.menuExpanded.collectAsState()
+    val inspirationIsBatchMode by inspirationViewModel.isBatchMode.collectAsState()
+    val inspirationSelectedIds by inspirationViewModel.selectedInspirationIds.collectAsState()
+    val inspirationHideDetails by inspirationViewModel.hideDetails.collectAsState()
     /** 用户行为分析器（通过 Hilt 入口点获取 @Singleton 实例，用于记录页面访问） */
     val userBehaviorAnalyzer: UserBehaviorAnalyzer = remember {
         EntryPointAccessors.fromApplication(context, UserBehaviorAnalyzerEntryPoint::class.java).analyzer()
@@ -218,6 +232,8 @@ fun MainScreen(
 
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var showAddTagDialog by remember { mutableStateOf(false) }
+    /** 灵感页批量删除确认弹窗显示状态（由 InspirationBatchActionBar 的删除按钮触发） */
+    var showInspirationBatchDeleteDialog by remember { mutableStateOf(false) }
     var showRenameCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
     var showDeleteCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
     var showCategorySheet by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
@@ -271,7 +287,7 @@ fun MainScreen(
             { homeViewModel.setMenuExpanded(true) }
         }
         TabItem.INSPIRE -> {
-            { Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show() }
+            { inspirationViewModel.setMenuExpanded(true) }
         }
         TabItem.DATE -> {
             { Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show() }
@@ -319,6 +335,15 @@ fun MainScreen(
 
     BackHandler(enabled = drawerState.isOpen) {
         coroutineScope.launch { drawerState.close() }
+    }
+
+    /**
+     * 灵感页批量模式返回拦截：按返回键退出批量选择而非退出页面
+     *
+     * 仅在 inspirationIsBatchMode 为 true 时生效，避免与普通返回逻辑冲突。
+     */
+    BackHandler(enabled = inspirationIsBatchMode) {
+        inspirationViewModel.exitBatchMode()
     }
 
     ModalNavigationDrawer(
@@ -376,6 +401,23 @@ fun MainScreen(
         }
     ) {
         // 外层 Box：包裹 Scaffold + 日历弹窗，让弹窗能覆盖全屏（包括底部导航栏）
+        /**
+         * 有效批量模式判断：根据当前 Tab 选择对应的批量模式状态
+         *
+         * 待办页使用 homeViewModel.isBatchMode，灵感页使用 inspirationViewModel.isBatchMode，
+         * 其他页面无批量模式。统一为 effectiveBatchMode 后，topBar / bottomBar 各处判断无需再区分 Tab。
+         * 声明在 Scaffold 之前，确保 topBar 与 bottomBar 两个 lambda 均可访问。
+         */
+        val effectiveBatchMode = when (selectedTab) {
+            TabItem.TODO -> isBatchMode
+            TabItem.INSPIRE -> inspirationIsBatchMode
+            else -> false
+        }
+        val effectiveSelectedCount = when (selectedTab) {
+            TabItem.TODO -> selectedTodoIds.size
+            TabItem.INSPIRE -> inspirationSelectedIds.size
+            else -> 0
+        }
         Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
@@ -384,10 +426,10 @@ fun MainScreen(
                      * 批量模式时：title 切换为"选中 X 项"，隐藏菜单/柯基/统计按钮，
                      * 避免与批量操作 UI 冲突。
                      */
-                    val batchModeTitle = if (isBatchMode) "选中 ${selectedTodoIds.size} 项" else null
+                    val batchModeTitle = if (effectiveBatchMode) "选中 $effectiveSelectedCount 项" else null
                     val effectiveTitle = batchModeTitle ?: topBarTitle
-                    val effectiveActionButtons = if (isBatchMode) emptyList() else topBarActionButtons
-                    val effectiveMenuEnabled = !isBatchMode
+                    val effectiveActionButtons = if (effectiveBatchMode) emptyList() else topBarActionButtons
+                    val effectiveMenuEnabled = !effectiveBatchMode
 
                     EnhancedTopBar(
                         title = effectiveTitle,
@@ -398,7 +440,7 @@ fun MainScreen(
                          * 灵感页中间内容：大号日期 + 月份 + 下拉箭头，点击触发日历弹窗。
                          * 仅在灵感页且非批量模式时显示，其他页面使用默认 title。
                          */
-                        centerContent = if (selectedTab == TabItem.INSPIRE && !isBatchMode) {
+                        centerContent = if (selectedTab == TabItem.INSPIRE && !effectiveBatchMode) {
                             {
                                 // 日期显示：日 + 月 + 箭头 水平排列，高度自适应，外层 Box 居中
                                 // 箭头方向与弹窗展开状态同步：展开▲ / 收起▼
@@ -456,16 +498,16 @@ fun MainScreen(
                          * 批量模式时强制使用柯基图标并禁用三点菜单回调，
                          * 避免批量操作期间误触发功能菜单。
                          */
-                        rightIconType = if (isBatchMode) RightIconType.CORGIE else rightIconType,
-                        onMoreClick = if (isBatchMode) null else onMoreClick,
+                        rightIconType = if (effectiveBatchMode) RightIconType.CORGIE else rightIconType,
+                        onMoreClick = if (effectiveBatchMode) null else onMoreClick,
                         /**
-                         * 三点功能菜单内容（仅 TODO Tab 注入）
+                         * 三点功能菜单内容（TODO / INSPIRE Tab 注入）
                          *
                          * 关键：菜单必须在 EnhancedTopBar 内部与 IconButton 共同 Box 渲染，
                          * 才能保证 Material 3 DropdownMenu 锚定到三点按钮正下方。
                          * 若在 HomeScreen 或外层 Box 渲染，菜单会锚定到外层 Box 左下角。
                          */
-                        dropdownContent = if (selectedTab == TabItem.TODO && !isBatchMode) {
+                        dropdownContent = if (selectedTab == TabItem.TODO && !effectiveBatchMode) {
                             {
                                 TodoMenuDropdown(
                                     expanded = menuExpanded,
@@ -483,106 +525,145 @@ fun MainScreen(
                                     }
                                 )
                             }
+                        } else if (selectedTab == TabItem.INSPIRE && !effectiveBatchMode) {
+                            {
+                                InspirationMenuDropdown(
+                                    expanded = inspirationMenuExpanded,
+                                    onDismiss = { inspirationViewModel.setMenuExpanded(false) },
+                                    hideDetails = inspirationHideDetails,
+                                    onToggleHideDetails = { inspirationViewModel.toggleHideDetails() },
+                                    onBatchSelectClick = { inspirationViewModel.enterBatchMode() },
+                                    onPlaceholderClick = { Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show() }
+                                )
+                            }
                         } else null,
                         /**
                          * 批量模式时：左侧图标变为返回箭头，点击退出多选模式。
                          * 普通模式：保持默认 MENU 图标，点击开抽屉（onLeftIconClick=null 时回退到 onMenuClick）。
                          */
-                        leftIconType = if (isBatchMode) LeftIconType.BACK else LeftIconType.MENU,
-                        onLeftIconClick = if (isBatchMode) {
-                            { homeViewModel.exitBatchMode() }
+                        leftIconType = if (effectiveBatchMode) LeftIconType.BACK else LeftIconType.MENU,
+                        onLeftIconClick = if (effectiveBatchMode) {
+                            {
+                                when (selectedTab) {
+                                    TabItem.TODO -> homeViewModel.exitBatchMode()
+                                    TabItem.INSPIRE -> inspirationViewModel.exitBatchMode()
+                                    else -> {}
+                                }
+                            }
                         } else null
                     )
                 }
             },
             bottomBar = {
                 /**
-                 * 底部槽位：批量模式时显示 HomeBatchActionBar（"全选+4图标"），
-                 * 普通模式时显示 CorgiBottomNavigationBar（底部导航栏）。
-                 * 两者互斥，避免遮挡问题。
+                 * 底部槽位：批量模式时显示批量操作栏，普通模式时显示底部导航栏。
+                 * 三路判断：TODO 批量 / INSPIRE 批量 / 普通，三者互斥避免遮挡。
                  */
-                if (isBatchMode && selectedTab == TabItem.TODO) {
-                    /**
-                     * 批量操作栏（从 HomeScreen 提取）
-                     *
-                     * 只在 TODO tab 下显示，避免在灵感/日期/我的 tab 下误触发。
-                     * 回调：
-                     * - 全选/取消全选：viewModel 直接处理
-                     * - 分享：遍历 selectedTodoIds 调用本地 shareTodoAsImage
-                     * - 移动/删除/更多：触发 viewModel 中的对应 StateFlow，
-                     *   HomeScreen 内部 subscribe 并渲染弹窗
-                     */
-                    HomeBatchActionBar(
-                        isBatchMode = isBatchMode,
-                        selectedTodoIds = selectedTodoIds,
-                        filteredTodos = filteredTodos,
-                        onSelectAll = { homeViewModel.selectAll() },
-                        onClearSelection = { homeViewModel.clearSelection() },
-                        onShare = {
-                            /**
-                             * 多选模式分享：
-                             * 1. 用 selectedTodoIds 从 filteredTodos 找出完整 TodoItem 列表
-                             * 2. 调用 ShareCoordinator.shareTodos() 统一处理（单/多分支）
-                             * 3. 多个时由 Coordinator 回调 onShowDialog → 显示选择弹窗
-                             */
-                            val todos = selectedTodoIds.mapNotNull { id ->
-                                filteredTodos.find { it.id == id }
-                            }
-                            if (todos.isNotEmpty()) {
-                                shareTodosSnapshot = todos
-                                coroutineScope.launch {
-                                    ShareCoordinator.shareTodos(
-                                        context = context,
-                                        todos = todos,
-                                        categories = categories,
-                                        onShowDialog = { _ ->
-                                            showShareModeDialog = true
-                                        }
-                                    )
+                when {
+                    effectiveBatchMode && selectedTab == TabItem.TODO -> {
+                        /**
+                         * 待办页批量操作栏（从 HomeScreen 提取）
+                         *
+                         * 只在 TODO tab 下显示，避免在灵感/日期/我的 tab 下误触发。
+                         * 回调：
+                         * - 全选/取消全选：viewModel 直接处理
+                         * - 分享：遍历 selectedTodoIds 调用本地 shareTodoAsImage
+                         * - 移动/删除/更多：触发 viewModel 中的对应 StateFlow，
+                         *   HomeScreen 内部 subscribe 并渲染弹窗
+                         */
+                        HomeBatchActionBar(
+                            isBatchMode = isBatchMode,
+                            selectedTodoIds = selectedTodoIds,
+                            filteredTodos = filteredTodos,
+                            onSelectAll = { homeViewModel.selectAll() },
+                            onClearSelection = { homeViewModel.clearSelection() },
+                            onShare = {
+                                /**
+                                 * 多选模式分享：
+                                 * 1. 用 selectedTodoIds 从 filteredTodos 找出完整 TodoItem 列表
+                                 * 2. 调用 ShareCoordinator.shareTodos() 统一处理（单/多分支）
+                                 * 3. 多个时由 Coordinator 回调 onShowDialog → 显示选择弹窗
+                                 */
+                                val todos = selectedTodoIds.mapNotNull { id ->
+                                    filteredTodos.find { it.id == id }
                                 }
-                            }
-                        },
-                        onMove = { homeViewModel.setShowBatchMoveDialog(true) },
-                        onDelete = { homeViewModel.setShowBatchDeleteDialog(true) },
-                        onMoreOptions = { homeViewModel.setShowMoreOptionsSheet(true) }
-                    )
-                } else {
-                    /**
-                     * 普通模式：底部导航栏（集成中央编辑按钮）
-                     *
-                     * 架构变更：CenterEditButton 已从独立 overlay 移入 CorgiBottomNavigationBar 内部
-                     * 优势：无层级遮挡、按钮完整可见、统一管理安全区域
-                     */
-                    CorgiBottomNavigationBar(
-                        selectedTab = selectedTab,
-                        isExpanded = isBubbleExpanded,
-                        onCenterButtonClick = {
-                            val now = System.currentTimeMillis()
-                            if (now - lastClickTime > 300) {
-                                lastClickTime = now
-                                isBubbleExpanded = !isBubbleExpanded
-                            }
-                        },
-                        onTabSelected = { tab ->
-                            if (isBubbleExpanded) {
-                                isFastCollapse = true
-                                isBubbleExpanded = false
-                            }
+                                if (todos.isNotEmpty()) {
+                                    shareTodosSnapshot = todos
+                                    coroutineScope.launch {
+                                        ShareCoordinator.shareTodos(
+                                            context = context,
+                                            todos = todos,
+                                            categories = categories,
+                                            onShowDialog = { _ ->
+                                                showShareModeDialog = true
+                                            }
+                                        )
+                                    }
+                                }
+                            },
+                            onMove = { homeViewModel.setShowBatchMoveDialog(true) },
+                            onDelete = { homeViewModel.setShowBatchDeleteDialog(true) },
+                            onMoreOptions = { homeViewModel.setShowMoreOptionsSheet(true) }
+                        )
+                    }
+                    effectiveBatchMode && selectedTab == TabItem.INSPIRE -> {
+                        /**
+                         * 灵感页批量操作栏
+                         *
+                         * 仅在 INSPIRE tab 批量模式下显示。
+                         * 回调：
+                         * - 全选/取消全选：inspirationViewModel 直接处理
+                         * - 删除：触发 showInspirationBatchDeleteDialog 弹窗确认
+                         * - 置顶：调用 inspirationViewModel.batchPinInspirations()
+                         */
+                        InspirationBatchActionBar(
+                            isBatchMode = inspirationIsBatchMode,
+                            selectedInspirationIds = inspirationSelectedIds,
+                            totalInspirationCount = totalInspirationCount,
+                            onSelectAll = { inspirationViewModel.selectAllInspirations() },
+                            onClearSelection = { inspirationViewModel.clearSelection() },
+                            onDelete = { showInspirationBatchDeleteDialog = true },
+                            onPin = { inspirationViewModel.batchPinInspirations() }
+                        )
+                    }
+                    else -> {
+                        /**
+                         * 普通模式：底部导航栏（集成中央编辑按钮）
+                         *
+                         * 架构变更：CenterEditButton 已从独立 overlay 移入 CorgiBottomNavigationBar 内部
+                         * 优势：无层级遮挡、按钮完整可见、统一管理安全区域
+                         */
+                        CorgiBottomNavigationBar(
+                            selectedTab = selectedTab,
+                            isExpanded = isBubbleExpanded,
+                            onCenterButtonClick = {
+                                val now = System.currentTimeMillis()
+                                if (now - lastClickTime > 300) {
+                                    lastClickTime = now
+                                    isBubbleExpanded = !isBubbleExpanded
+                                }
+                            },
+                            onTabSelected = { tab ->
+                                if (isBubbleExpanded) {
+                                    isFastCollapse = true
+                                    isBubbleExpanded = false
+                                }
 
-                            // 记录页面访问（用于智能预加载策略优化）
-                            val pageType = when (tab) {
-                                TabItem.TODO -> UserBehaviorAnalyzer.PageType.HOME
-                                TabItem.INSPIRE -> UserBehaviorAnalyzer.PageType.INSPIRATION
-                                TabItem.DATE -> UserBehaviorAnalyzer.PageType.SPECIAL_DATE
-                                else -> null
-                            }
-                            pageType?.let { type ->
-                                coroutineScope.launch { userBehaviorAnalyzer.recordPageVisit(type) }
-                            }
+                                // 记录页面访问（用于智能预加载策略优化）
+                                val pageType = when (tab) {
+                                    TabItem.TODO -> UserBehaviorAnalyzer.PageType.HOME
+                                    TabItem.INSPIRE -> UserBehaviorAnalyzer.PageType.INSPIRATION
+                                    TabItem.DATE -> UserBehaviorAnalyzer.PageType.SPECIAL_DATE
+                                    else -> null
+                                }
+                                pageType?.let { type ->
+                                    coroutineScope.launch { userBehaviorAnalyzer.recordPageVisit(type) }
+                                }
 
-                            selectedTab = tab
-                        }
-                    )
+                                selectedTab = tab
+                            }
+                        )
+                    }
                 }
             }
         ) { paddingValues ->
@@ -780,6 +861,35 @@ fun MainScreen(
                         todos = shareTodosSnapshot,
                         categories = categories
                     )
+                }
+            }
+        )
+    }
+
+    /**
+     * 灵感页批量删除确认弹窗
+     *
+     * 由 InspirationBatchActionBar 的 onDelete 回调触发（showInspirationBatchDeleteDialog = true）。
+     * 确认后调用 inspirationViewModel.batchDeleteInspirations() 执行删除并退出批量模式。
+     */
+    if (showInspirationBatchDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showInspirationBatchDeleteDialog = false },
+            title = { Text("删除选中项") },
+            text = {
+                Text("确定要删除已选择的 ${inspirationSelectedIds.size} 条灵感吗？\n此操作不可撤销。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    inspirationViewModel.batchDeleteInspirations()
+                    showInspirationBatchDeleteDialog = false
+                }) {
+                    Text("删除", color = Color(0xFFE53935))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showInspirationBatchDeleteDialog = false }) {
+                    Text("取消")
                 }
             }
         )
