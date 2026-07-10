@@ -13,7 +13,8 @@ plugins {
      *  原因：AGP 9.2.1 内置 Kotlin 且 application 插件包含 library 插件，
      *  这些插件已在 classpath（版本未知），子模块若带版本应用会触发兼容性检查失败 */
     alias(libs.plugins.kotlin.multiplatform) apply false
-    alias(libs.plugins.android.library) apply false
+    /** AGP 9.0+ KMP 专用 Android Library 插件（替代 com.android.library） */
+    alias(libs.plugins.android.kotlin.multiplatform.library) apply false
 }
 
 tasks.register("clean", Delete::class) {

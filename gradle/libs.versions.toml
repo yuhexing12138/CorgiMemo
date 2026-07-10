@@ -92,3 +92,5 @@ hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 # 子模块 :richeditor-compose 需要（KMP + Android Library）
 android-library = { id = "com.android.library", version = "9.2.1" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+# AGP 9.0+ KMP Android Library 插件（替代 com.android.library，与 KMP 兼容）
+android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version = "9.2.1" }
