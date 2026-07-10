@@ -14,11 +14,24 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import javax.inject.Inject
+
+/**
+ * 标签筛选模式
+ * - OR：并集，显示包含任意选中标签的灵感
+ * - AND：交集，显示同时包含所有选中标签的灵感
+ * - NOT：非，显示不包含任何选中标签的灵感
+ */
+enum class TagFilterMode {
+    OR,
+    AND,
+    NOT
+}
 
 /**
  * 灵感记录视图模型
@@ -164,6 +177,46 @@ class InspirationViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
+    /** 选中的标签集合（多选） */
+    private val _selectedTags = MutableStateFlow<Set<String>>(emptySet())
+    val selectedTags: StateFlow<Set<String>> = _selectedTags.asStateFlow()
+
+    /** 当前标签筛选模式（默认 OR） */
+    private val _tagFilterMode = MutableStateFlow(TagFilterMode.OR)
+    val tagFilterMode: StateFlow<TagFilterMode> = _tagFilterMode.asStateFlow()
+
+    /** 每个标签对应的灵感数量 */
+    val tagCounts: StateFlow<Map<String, Int>> =
+        _inspirations.map { list ->
+            list.flatMap { decodeTags(it.tags) }
+                .groupingBy { it }
+                .eachCount()
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
+        )
+
+    /** 灵感总数（用于"全部灵感"项的计数显示，避免 tagCounts.values.sum() 重复计算） */
+    val totalInspirationCount: StateFlow<Int> =
+        _inspirations.map { it.size }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = 0
+            )
+
+    /** 应用标签筛选后的统一显示列表（供 InspirationScreen 消费） */
+    val filteredDisplayInspirations: StateFlow<List<InspirationDisplayItem>> =
+        combine(_inspirations, _selectedTags, _tagFilterMode) { list, tags, mode ->
+            val filtered = filterInspirationsByTags(list, tags, mode)
+            buildDisplayItems(filtered)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     /** 搜索关键词 */
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -187,6 +240,65 @@ class InspirationViewModel @Inject constructor(
     }
 
     // ========== 核心方法 ==========
+
+    /**
+     * 根据选中标签和筛选模式过滤灵感列表
+     * - 选中标签为空时返回全部灵感
+     * - OR 模式：包含任意选中标签
+     * - AND 模式：同时包含所有选中标签
+     * - NOT 模式：不包含任何选中标签
+     *
+     * @param inspirations 原始灵感列表
+     * @param selectedTags 选中的标签集合
+     * @param mode 筛选模式
+     * @return 过滤后的灵感列表
+     */
+    private fun filterInspirationsByTags(
+        inspirations: List<Inspiration>,
+        selectedTags: Set<String>,
+        mode: TagFilterMode
+    ): List<Inspiration> {
+        if (selectedTags.isEmpty()) return inspirations
+        return when (mode) {
+            TagFilterMode.OR -> inspirations.filter { insp ->
+                val tags = decodeTags(insp.tags)
+                tags.any { it in selectedTags }
+            }
+            TagFilterMode.AND -> inspirations.filter { insp ->
+                val tags = decodeTags(insp.tags)
+                selectedTags.all { it in tags }
+            }
+            TagFilterMode.NOT -> inspirations.filter { insp ->
+                val tags = decodeTags(insp.tags)
+                selectedTags.none { it in tags }
+            }
+        }
+    }
+
+    /**
+     * 切换标签选中状态（已选中则取消，未选中则加入）
+     * @param tag 标签名
+     */
+    fun toggleTagSelection(tag: String) {
+        _selectedTags.value = _selectedTags.value.toMutableSet().apply {
+            if (contains(tag)) remove(tag) else add(tag)
+        }
+    }
+
+    /**
+     * 设置标签筛选模式
+     * @param mode 筛选模式（OR/AND/NOT）
+     */
+    fun setTagFilterMode(mode: TagFilterMode) {
+        _tagFilterMode.value = mode
+    }
+
+    /**
+     * 清空所有已选中的标签（恢复"全部灵感"状态）
+     */
+    fun clearTagSelection() {
+        _selectedTags.value = emptySet()
+    }
 
     /**
      * 加载所有灵感
