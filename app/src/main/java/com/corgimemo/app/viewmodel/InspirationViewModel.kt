@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -239,6 +240,12 @@ class InspirationViewModel @Inject constructor(
         combine(_inspirations, _selectedTags, _tagFilterMode) { list, tags, mode ->
             val filtered = filterInspirationsByTags(list, tags, mode)
             buildDisplayItems(filtered)
+        }.onEach {
+            // 数据首次通过筛选逻辑后标记为已初始化，确保 UI 不会在 isDataInitialized=true
+            // 但 displayItems 仍为空时闪现空页面
+            if (!_isDataInitialized.value) {
+                _isDataInitialized.value = true
+            }
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -384,11 +391,8 @@ class InspirationViewModel @Inject constructor(
             inspirationRepository.getAllInspirations().collect { list ->
                 _inspirations.value = list
                 _isLoading.value = false
-
-                // 标记数据已初始化完成（首次加载后不再重置，避免闪烁）
-                if (!_isDataInitialized.value) {
-                    _isDataInitialized.value = true
-                }
+                // isDataInitialized 已移至 filteredDisplayInspirations 的 onEach 中设置，
+                // 确保与 UI 消费的数据列表同步，避免闪现空页面
             }
         }
     }
