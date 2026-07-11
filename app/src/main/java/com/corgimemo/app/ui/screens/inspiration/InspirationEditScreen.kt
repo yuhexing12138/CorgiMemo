@@ -904,6 +904,9 @@ fun InspirationEditScreen(
                  *
                  * 可见性变化时更新 blockVisibilityStates，
                  * 子组件根据 isVisible 决定是否加载实际资源。
+                 *
+                 * V2.8 调整：图片块（InlineImagePreview）已移除懒加载避免占位符问题，
+                 * 可见性追踪当前仅服务于语音块（VoicePlayerComponent）。
                  */
                 val globalBlockIndex = contentBlocks.indexOf(block)
                 val isBlockVisible = blockVisibilityStates.getOrDefault(globalBlockIndex, false)
@@ -936,9 +939,8 @@ fun InspirationEditScreen(
                         com.corgimemo.app.ui.components.InlineImagePreview(
                             imageUri = block.path,
                             modifier = baseModifier,
-                            isHighlighted = index == highlightedIndex,
-                            /** 仅在可见时加载图片资源；不可见时显示轻量占位符 */
-                            isVisible = isBlockVisible
+                            isHighlighted = index == highlightedIndex
+                            /** V2.8: 移除 isVisible 参数，图片始终渲染避免滚动时变成占位符 */
                         )
                     }
                     is ContentBlock.Voice -> {

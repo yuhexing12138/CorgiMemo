@@ -1,21 +1,19 @@
 package com.corgimemo.app.ui.components
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.Image
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,18 +21,14 @@ import androidx.compose.ui.draw.innerShadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.Text
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
-import coil.request.SuccessResult
 import coil.size.Scale
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * 内联图片预览组件
@@ -44,24 +38,22 @@ import java.io.File
  *
  * **功能特性**:
  * - ✅ 异步加载（使用 Coil 库，避免主线程阻塞）
- * - ✅ 自适应高度（保持原始宽高比，动态获取图片真实比例）
+ * - ✅ 自适应高度（成功加载后按 drawable 真实宽高比渲染）
  * - ✅ 圆角边框（符合项目 UI 设计规范 16dp）
+ * - ✅ 加载中/失败占位符（避免布局跳动）
  *
- * **UI 布局结构**:
- * ```
- * ┌─────────────────────────────┐
- * │  ┌─────────────────────┐    │
- * │  │                     │    │
- * │  │     图片预览区域      │    │
- * │  │   (maxWidth=300dp)  │    │
- * │  │                     │    │
- * │  └─────────────────────┘    │
- * └─────────────────────────────┘
- * ```
+ * **历史变更**:
+ * - V2.8 移除 `isVisible` 懒加载策略：编辑器场景下图片数量少（通常 1-3 张），
+ *   上下滚动时图片被识别为不可见会切换为占位符，造成"图片消失"问题。
+ * - V2.8.1 改用 `SubcomposeAsyncImage`：原方案使用 `imageAspectRatio` 状态 + `BitmapFactory`
+ *   预读 + Coil `onSuccess` 更新比例的机制，在预读失败或 Coil 加载异常时，
+ *   容器宽高比停留在默认值 4/3 = 1.333，导致实际为 1.5:1 的横图被显示在
+ *   "过方"容器中产生"被挤压"视觉感。改为 `SubcomposeAsyncImage` 后，
+ *   加载成功才渲染真实图片，比例直接来自 drawable.intrinsicWidth/Height。
  *
  * @param imageUri 图片的 Uri 地址（支持本地文件、网络 URL、Content URI）
  * @param modifier Modifier（可选）
- * @param maxWidth 图片最大宽度限制（默认 300.dp，防止大图撑开布局）
+ * @param maxWidth 图片最大宽度限制（默认 300.dp，预留参数，当前未使用宽度硬限制）
  * @param onClick 图片点击回调（可选，用于实现全屏预览功能）
  */
 @Composable
@@ -70,54 +62,9 @@ fun InlineImagePreview(
     modifier: Modifier = Modifier,
     maxWidth: Dp = 300.dp,
     isHighlighted: Boolean = false,
-    isVisible: Boolean = true,
     onClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
-
-    /**
-     * 图片真实宽高比（从加载的图片中动态获取）
-     *
-     * 默认 4:3（常见照片比例），图片加载完成后更新为真实宽高比。
-     * 使用 imageUri 作为 key，切换图片时重置。
-     *
-     * 之前硬编码 16:9 导致非 16:9 的图片被压缩/拉伸。
-     */
-    var imageAspectRatio by remember(imageUri) { mutableStateOf(4f / 3f) }
-
-    /**
-     * 通过 BitmapFactory 预读图片宽高比
-     *
-     * 在 Coil 异步加载前，先通过 inJustDecodeBounds 读取图片宽高
-     * （不加载像素数据，几乎零耗时），避免首次渲染时的比例跳变。
-     */
-    LaunchedEffect(imageUri) {
-        withContext(Dispatchers.IO) {
-            try {
-                val options = BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
-                }
-                if (imageUri.startsWith("content://")) {
-                    context.contentResolver.openInputStream(android.net.Uri.parse(imageUri))
-                        ?.use { stream ->
-                            BitmapFactory.decodeStream(stream, null, options)
-                        }
-                } else {
-                    val file = File(imageUri)
-                    if (file.exists()) {
-                        BitmapFactory.decodeFile(imageUri, options)
-                    }
-                }
-                if (options.outWidth > 0 && options.outHeight > 0) {
-                    withContext(Dispatchers.Main) {
-                        imageAspectRatio = options.outWidth.toFloat() / options.outHeight.toFloat()
-                    }
-                }
-            } catch (_: Exception) {
-                /** 预读失败不影响功能，Coil 加载后会再次更新 */
-            }
-        }
-    }
 
     Box(
         modifier = modifier
@@ -158,69 +105,92 @@ fun InlineImagePreview(
             contentAlignment = Alignment.Center
         ) {
             /**
-             * Compose 1.9 onVisibilityChanged 懒加载策略：
+             * V2.8.1 改用 SubcomposeAsyncImage：
+             * - loading/error slot → 显示带相机图标的占位符（轻量、无图）
+             * - success slot → 从 drawable.intrinsicWidth/Height 计算真实宽高比，
+             *                 按 aspectRatio 渲染，**完全避免默认值误用**
+             * - heightIn(max = 400.dp) → 加载中占位符的最大高度（避免过高）
              *
-             * isVisible=true  → 渲染 AsyncImage（Coil 异步加载 + 内存/磁盘缓存）
-             * isVisible=false → 显示轻量占位符（避免 Coil 预加载屏幕外图片占用内存）
-             *
-             * 性能收益：
-             * - 用户插入10张图片但只看到前2张时，仅加载2张
-             * - 滚动离开视口的图片自动释放内存（Coil 自动取消请求）
+             * **为什么不用 BitmapFactory 预读**：
+             *   预读是"推测"，与 Coil 实际加载结果可能不一致（EXIF 旋转、缓存命中、
+             *   inSampleSize 计算误差），反而造成布局抖动。直接信任 Coil 的最终结果
+             *   更稳健。
              */
-            if (isVisible) {
-                /** 使用 Coil AsyncImage 异步加载图片 */
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(imageUri)
-                        .crossfade(true)
-                        .scale(Scale.FIT)
-                        .listener(object : ImageRequest.Listener {
-                            /** 图片加载成功后，获取真实宽高比并更新容器尺寸 */
-                            override fun onSuccess(request: ImageRequest, result: SuccessResult) {
-                                val drawable = result.drawable
-                                if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
-                                    imageAspectRatio = drawable.intrinsicWidth.toFloat() / drawable.intrinsicHeight.toFloat()
-                                }
-                            }
-                        })
-                        .build(),
-                    contentDescription = "插入的图片",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(imageAspectRatio)
-                        .then(
-                            if (maxWidth.value < Float.MAX_VALUE) {
-                                Modifier.padding(8.dp)
-                            } else {
-                                Modifier
-                            }
-                        ),
-                    onLoading = { _ -> },
-                    onError = { _ -> }
-                )
-            } else {
-                /**
-                 * 不可见时的轻量占位符：
-                 * 保持与可见时相同的尺寸（避免布局跳动），
-                 * 但不加载任何图片资源。
-                 */
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(imageAspectRatio)
-                        .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp))
-                        .padding(8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    /** 图片图标占位提示 */
-                    Text(
-                        text = "📷",
-                        style = TextStyle(fontSize = 24.sp),
-                        color = Color.Gray.copy(alpha = 0.4f)
+            SubcomposeAsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(imageUri)
+                    .crossfade(true)
+                    .scale(Scale.FIT)
+                    .build(),
+                contentDescription = "插入的图片",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp),
+                loading = {
+                    /**
+                     * 使用 matchParentSize() 跟随 SubcomposeAsyncImage 容器尺寸
+                     * （而非 fillMaxSize()，后者在 subcompose slot 内行为不一致）
+                     */
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "📷",
+                            style = TextStyle(fontSize = 24.sp),
+                            color = Color.Gray.copy(alpha = 0.4f)
+                        )
+                    }
+                },
+                success = { state: AsyncImagePainter.State.Success ->
+                    /**
+                     * 从 drawable 真实尺寸计算宽高比
+                     * - drawable.intrinsicWidth/Height 是加载完成后的实际像素尺寸
+                     * - 已包含 EXIF 旋转后的方向（Coil 内部处理 EXIF 后输出 drawable）
+                     * - 使用 remember(result) 缓存比例，state 变化才重新计算
+                     */
+                    val ratio = remember(state.result) {
+                        val drawable = state.result.drawable
+                        if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
+                            drawable.intrinsicWidth.toFloat() / drawable.intrinsicHeight.toFloat()
+                        } else {
+                            4f / 3f /** drawable 未报告尺寸时兜底 */
+                        }
+                    }
+                    /**
+                     * 直接使用 state.painter 渲染（不再二次请求 Coil）
+                     * - state.painter 是 SubcomposeAsyncImage 已经加载完成的 Painter
+                     * - 配合 aspectRatio(ratio) 锁定容器宽高比
+                     * - ContentScale.Fit 保证图片不变形
+                     */
+                    Image(
+                        painter = state.painter,
+                        contentDescription = "插入的图片",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(ratio)
                     )
+                },
+                error = {
+                    /** 加载失败占位符（与 loading 复用 matchParentSize 模式） */
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "📷",
+                            style = TextStyle(fontSize = 24.sp),
+                            color = Color.Gray.copy(alpha = 0.4f)
+                        )
+                    }
                 }
-            }
+            )
         }
     }
 }

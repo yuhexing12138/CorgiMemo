@@ -45,19 +45,18 @@ fun BarChart(
     val gridColor = Color(0xFFEEEEEE)
     val labelFormatter = DateTimeFormatter.ofPattern("MM/dd")
 
-    // 计算 Y 轴最大值：取当日字数最大值的 1.2 倍，向上取整到 10 的倍数
-    val maxValue = points.maxOf { it.dailyChars }.coerceAtLeast(1)
-    val yMax = ((maxValue * 1.2f).toInt() + 9) / 10 * 10
-    // Y 轴刻度数量
-    val yTicks = 5
-    // 柱形宽度：数据点 <=7 时 24dp；否则（30 天）8dp
-    val barWidth = if (points.size <= 7) 24.dp.toPx() else 8.dp.toPx()
-
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .height(200.dp)
     ) {
+        // 计算 Y 轴最大值：取当日字数最大值的 1.2 倍，向上取整到 10 的倍数
+        val maxValue = points.maxOf { it.dailyChars }.coerceAtLeast(1)
+        val yMax = ((maxValue * 1.2f).toInt() + 9) / 10 * 10
+        // Y 轴刻度数量
+        val yTicks = 5
+        // 柱形宽度：数据点 <=7 时 24dp；否则（30 天）8dp
+        val barWidth = if (points.size <= 7) 24.dp.toPx() else 8.dp.toPx()
         // 计算绘图区矩形
         val plotLeft = 36.dp.toPx()
         val plotRight = size.width - 12.dp.toPx()
