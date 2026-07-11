@@ -713,21 +713,39 @@ class InspirationEditViewModel @Inject constructor(
          * 现在 performSave 开头直接调用 _richTextState.toMarkdown() 获取最新 Markdown，
          * 不依赖防抖，确保保存的内容永远是最新的。
          */
-        val liveMarkdown: String
         val liveText: String
         val richText = _richTextState
-        if (richText != null) {
+
+        /**
+         * V2.8.4 关键修复：使用 try as expression 同步导出最新 Markdown
+         *
+         * 之前用 val 声明 + 在 try-catch 两个分支赋值的写法会导致
+         * "'val' cannot be reassigned" 编译错误——
+         * Kotlin 编译器认为 try 和 catch 是两个互斥分支，
+         * 每个分支都需要赋值，val 无法处理这种"分支赋值"语义。
+         *
+         * 现在改为 try as expression（Kotlin 1.5+ 支持）：
+         * - try-catch 整体作为表达式
+         * - 直接赋值给 val liveMarkdown，无需先声明再赋值
+         * - 编译通过且语义清晰
+         */
+        val liveMarkdown: String = if (richText != null) {
             try {
-                liveMarkdown = richText.toMarkdown()
+                richText.toMarkdown()
             } catch (e: Exception) {
                 android.util.Log.w("InspirationEditViewModel", "toMarkdown() 失败，回退旧值", e)
-                liveMarkdown = _contentFormat.value
+                _contentFormat.value
             }
+        } else {
+            _contentFormat.value
+        }
+
+        if (richText != null) {
             liveText = richText.annotatedString.text
+            /** 同步更新 _contentFormat 和 _content（不等防抖） */
             _contentFormat.value = liveMarkdown
             _content.value = liveText
         } else {
-            liveMarkdown = _contentFormat.value
             liveText = _content.value
         }
 

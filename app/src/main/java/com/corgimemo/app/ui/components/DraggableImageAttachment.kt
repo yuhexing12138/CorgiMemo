@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.components
 
+import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
