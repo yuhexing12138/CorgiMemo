@@ -642,16 +642,33 @@ class InspirationEditViewModel @Inject constructor(
     // ==================== 保存方法 ====================
 
     /**
-     * 保存灵感（带分类推荐检查）
+     * 保存灵感（带分类推荐检查 + 真正等待完成）
+     *
+     * **V2.8.4 关键改进**：将 saveInspiration() 改为 suspend 函数，
+     * 调用方（UI 层）必须通过 coroutineScope.launch 启动并 await，
+     * 确保 performSave() 中的数据库 IO 操作全部完成后再返回。
+     *
+     * 之前的 fire-and-forget 模式存在两个隐患：
+     * 1. navigateBack() 立即触发，ViewModel.onCleared() 可能取消 viewModelScope，
+     *    导致 performSave 协程被中途取消 → 数据丢失
+     * 2. 用户快速点击"完成"时，防抖任务被取消但 _contentFormat 仍为旧值，
+     *    导致 contentFormat 字段保存为旧值（卡片页不影响但重新进入编辑页会丢格式）
+     *
+     * 修复后，UI 层 onClick 会 await 整个保存过程（包括同步导出 contentFormat），
+     * 杜绝以上两个问题。
      *
      * 保存流程：
      * 1. 校验标题非空
      * 2. 若未手动选择分类，触发智能关键词匹配
-     * 3. 通过校验后执行实际保存
+     * 3. 同步导出最新 contentFormat（不等防抖）
+     * 4. 持久化到数据库
+     * 5. 保存子任务
+     * 6. 保存内容块
+     * 7. 清理 Undo 栈
      *
      * @return 是否成功保存（false 表示需要用户选择分类）
      */
-    fun saveInspiration(): Boolean {
+    suspend fun saveInspiration(): Boolean {
         if (_title.value.isBlank()) {
             return false
         }
@@ -663,104 +680,137 @@ class InspirationEditViewModel @Inject constructor(
     /**
      * 执行实际的保存操作（私有方法）
      *
+     * **V2.8.4 改动**：
+     * 1. 改为 suspend 函数，由 saveInspiration() 直接 await
+     * 2. 不再 viewModelScope.launch，避免 fire-and-forget 导致 ViewModel.onCleared 取消协程
+     * 3. 在持久化前**同步**从 RichTextState 导出最新 contentFormat 和 content，
+     *    防止防抖任务被取消防控丢失
+     *
      * 保存逻辑：
-     * 1. 构建或更新 Inspiration 对象
-     * 2. 处理标签编码（List<String> → JSON 字符串）
-     * 3. 持久化到数据库
-     * 4. 保存子任务
-     * 5. 保存内容块（图片/语音等混合内容）
-     * 6. 保存关联关系（新建时绑定临时关联到新 ID）
-     * 7. 清理 Undo 栈持久化数据
+     * 1. 同步刷新 contentFormat / content（从 RichTextState 直接导出）
+     * 2. 构建或更新 Inspiration 对象
+     * 3. 处理标签编码（List<String> → JSON 字符串）
+     * 4. 持久化到数据库
+     * 5. 保存子任务
+     * 6. 保存内容块（图片/语音等混合内容）
+     * 7. 保存关联关系（新建时绑定临时关联到新 ID）
+     * 8. 清理 Undo 栈持久化数据
      */
-    private fun performSave() {
-        viewModelScope.launch {
-            val currentTime = System.currentTimeMillis()
-            val hasSubTasks = _subTasks.value.isNotEmpty()
+    private suspend fun performSave() {
+        val currentTime = System.currentTimeMillis()
+        val hasSubTasks = _subTasks.value.isNotEmpty()
 
-            /** 取消未完成的防抖任务，确保不泄漏协程 */
-            _debounceJob?.cancel()
+        /** 取消未完成的防抖任务，确保不泄漏协程 */
+        _debounceJob?.cancel()
+        _debounceJob = null
 
-            /** 保存前对 contentFormat 进行校验和修复（防止损坏数据） */
-            val safeContentFormat = com.corgimemo.app.util.MarkdownParser.validateAndSanitize(_contentFormat.value)
-
-            val inspirationId: Long = if (existingInspiration != null) {
-                // 更新已有灵感
-                val inspiration = existingInspiration!!.copy(
-                    title = _title.value,
-                    content = if (_content.value.isBlank()) "" else _content.value,
-                    categoryId = _categoryId.value,
-                    priority = _priority.value,
-                    startDate = _startDate.value,
-                    dueDate = _dueDate.value,
-                    estimatedDurationMinutes = _estimatedDurationMinutes.value,
-                    reminderTime = _reminderTime.value,
-                    repeatType = _repeatType.value,
-                    updatedAt = currentTime,
-                    geofenceLat = _geofenceLat.value,
-                    geofenceLng = _geofenceLng.value,
-                    geofenceRadius = if (_geofenceEnabled.value) _geofenceRadius.value else null,
-                    geofenceType = _geofenceType.value,
-                    geofenceEnabled = _geofenceEnabled.value,
-                    geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
-                    hasSubTasks = hasSubTasks,
-                    voiceNotePath = _voiceNotePath.value,
-                    voiceDuration = _voiceDuration.value,
-                    imagePaths = encodePaths(_imagePaths.value),
-                    tags = encodeTags(_tags.value), /** 编码标签列表为 JSON 字符串 */
-                    backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
-                    contentFormat = safeContentFormat /** 持久化校验后的富文本格式内容（Markdown）*/
-                )
-                inspirationRepository.update(inspiration)
-                existingInspiration!!.id
-            } else {
-                // 创建新灵感
-                val inspiration = Inspiration(
-                    title = _title.value,
-                    content = if (_content.value.isBlank()) "" else _content.value,
-                    tags = encodeTags(_tags.value), /** 编码标签列表为 JSON 字符串 */
-                    imagePaths = encodePaths(_imagePaths.value),
-                    createdAt = currentTime,
-                    updatedAt = currentTime,
-                    categoryId = _categoryId.value,
-                    priority = _priority.value,
-                    status = 0,
-                    startDate = _startDate.value,
-                    dueDate = _dueDate.value,
-                    estimatedDurationMinutes = _estimatedDurationMinutes.value,
-                    reminderTime = _reminderTime.value,
-                    repeatType = _repeatType.value,
-                    geofenceLat = _geofenceLat.value,
-                    geofenceLng = _geofenceLng.value,
-                    geofenceRadius = if (_geofenceEnabled.value) _geofenceRadius.value else null,
-                    geofenceType = _geofenceType.value,
-                    geofenceEnabled = _geofenceEnabled.value,
-                    geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
-                    hasSubTasks = hasSubTasks,
-                    voiceNotePath = _voiceNotePath.value,
-                    voiceDuration = _voiceDuration.value,
-                    backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
-                    contentFormat = safeContentFormat /** 持久化校验后的富文本格式内容（Markdown）*/
-                )
-                inspirationRepository.insert(inspiration)
+        /**
+         * V2.8.4 关键修复：同步导出最新 contentFormat
+         *
+         * 之前 _contentFormat.value 依赖 scheduleFormatExport 的 300ms 防抖更新，
+         * 用户快速点"完成"时防抖任务被 cancel，导致保存的是旧值。
+         *
+         * 现在 performSave 开头直接调用 _richTextState.toMarkdown() 获取最新 Markdown，
+         * 不依赖防抖，确保保存的内容永远是最新的。
+         */
+        val liveMarkdown: String
+        val liveText: String
+        val richText = _richTextState
+        if (richText != null) {
+            try {
+                liveMarkdown = richText.toMarkdown()
+            } catch (e: Exception) {
+                android.util.Log.w("InspirationEditViewModel", "toMarkdown() 失败，回退旧值", e)
+                liveMarkdown = _contentFormat.value
             }
-
-            saveSubTasks(inspirationId)
-
-            /** 保存内容块到独立表（图片/语音等混合内容） */
-            if (_currentContentBlocks.value.isNotEmpty()) {
-                saveContentBlocks(inspirationId, _currentContentBlocks.value)
-            }
-
-            // 保存关联关系（新建时将临时关联绑定到新ID）
-            if (existingInspiration == null) {
-                _relations.value.forEach { relation ->
-                    cardRelationRepository.addRelation(relation.copy(sourceId = inspirationId))
-                }
-            }
-
-            /** 保存成功后清除当前灵感的持久化 Undo 栈（按 inspirationId 隔离清除） */
-            corgiPreferences.clearUndoRedoStacks(existingInspiration?.id ?: -1L)
+            liveText = richText.annotatedString.text
+            _contentFormat.value = liveMarkdown
+            _content.value = liveText
+        } else {
+            liveMarkdown = _contentFormat.value
+            liveText = _content.value
         }
+
+        /** 保存前对 contentFormat 进行校验和修复（防止损坏数据） */
+        val safeContentFormat = com.corgimemo.app.util.MarkdownParser.validateAndSanitize(liveMarkdown)
+
+        val inspirationId: Long = if (existingInspiration != null) {
+            // 更新已有灵感
+            val inspiration = existingInspiration!!.copy(
+                title = _title.value,
+                content = if (liveText.isBlank()) "" else liveText,
+                categoryId = _categoryId.value,
+                priority = _priority.value,
+                startDate = _startDate.value,
+                dueDate = _dueDate.value,
+                estimatedDurationMinutes = _estimatedDurationMinutes.value,
+                reminderTime = _reminderTime.value,
+                repeatType = _repeatType.value,
+                updatedAt = currentTime,
+                geofenceLat = _geofenceLat.value,
+                geofenceLng = _geofenceLng.value,
+                geofenceRadius = if (_geofenceEnabled.value) _geofenceRadius.value else null,
+                geofenceType = _geofenceType.value,
+                geofenceEnabled = _geofenceEnabled.value,
+                geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
+                hasSubTasks = hasSubTasks,
+                voiceNotePath = _voiceNotePath.value,
+                voiceDuration = _voiceDuration.value,
+                imagePaths = encodePaths(_imagePaths.value),
+                tags = encodeTags(_tags.value), /** 编码标签列表为 JSON 字符串 */
+                backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
+                contentFormat = safeContentFormat /** 持久化同步导出的最新富文本内容（Markdown）*/
+            )
+            inspirationRepository.update(inspiration)
+            existingInspiration!!.id
+        } else {
+            // 创建新灵感
+            val inspiration = Inspiration(
+                title = _title.value,
+                content = if (liveText.isBlank()) "" else liveText,
+                tags = encodeTags(_tags.value), /** 编码标签列表为 JSON 字符串 */
+                imagePaths = encodePaths(_imagePaths.value),
+                createdAt = currentTime,
+                updatedAt = currentTime,
+                categoryId = _categoryId.value,
+                priority = _priority.value,
+                status = 0,
+                startDate = _startDate.value,
+                dueDate = _dueDate.value,
+                estimatedDurationMinutes = _estimatedDurationMinutes.value,
+                reminderTime = _reminderTime.value,
+                repeatType = _repeatType.value,
+                geofenceLat = _geofenceLat.value,
+                geofenceLng = _geofenceLng.value,
+                geofenceRadius = if (_geofenceEnabled.value) _geofenceRadius.value else null,
+                geofenceType = _geofenceType.value,
+                geofenceEnabled = _geofenceEnabled.value,
+                geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
+                hasSubTasks = hasSubTasks,
+                voiceNotePath = _voiceNotePath.value,
+                voiceDuration = _voiceDuration.value,
+                backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
+                contentFormat = safeContentFormat /** 持久化同步导出的最新富文本内容（Markdown）*/
+            )
+            inspirationRepository.insert(inspiration)
+        }
+
+        saveSubTasks(inspirationId)
+
+        /** 保存内容块到独立表（图片/语音等混合内容） */
+        if (_currentContentBlocks.value.isNotEmpty()) {
+            saveContentBlocks(inspirationId, _currentContentBlocks.value)
+        }
+
+        // 保存关联关系（新建时将临时关联绑定到新ID）
+        if (existingInspiration == null) {
+            _relations.value.forEach { relation ->
+                cardRelationRepository.addRelation(relation.copy(sourceId = inspirationId))
+            }
+        }
+
+        /** 保存成功后清除当前灵感的持久化 Undo 栈（按 inspirationId 隔离清除） */
+        corgiPreferences.clearUndoRedoStacks(existingInspiration?.id ?: -1L)
     }
 
     /**

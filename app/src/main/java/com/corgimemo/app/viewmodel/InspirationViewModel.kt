@@ -11,6 +11,7 @@ import com.corgimemo.app.data.repository.CardRelationRepository
 import com.corgimemo.app.data.repository.InspirationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -383,13 +384,35 @@ class InspirationViewModel @Inject constructor(
     }
 
     /**
-     * 加载所有灵感
+     * 当前正在运行的 collect 协程引用
+     *
+     * **V2.8.4 修复**：之前 loadInspirations() 每次都启动新的 viewModelScope.launch + collect，
+     * 且 collect 是**永久阻塞**的（直到 ViewModel.onCleared 才结束）。
+     * 多次调用（ON_RESUME 触发 refresh）会留下多个 collect 协程同时运行，
+     * 每次数据库变化都会触发所有 collect 协程更新 _inspirations，浪费 CPU/IO。
+     *
+     * 现在用 collectJob 持有当前 collect 协程：
+     * - 新调用 startCollect() 时先 cancel 旧 collectJob
+     * - 确保**始终只有一个 collect 协程在运行**
+     * - 协程随 viewModelScope 生命周期自动清理
      */
-    fun loadInspirations() {
-        viewModelScope.launch {
+    private var collectJob: Job? = null
+
+    /**
+     * 启动数据收集（统一入口，供 loadInspirations/refresh 共用）
+     *
+     * 每次调用会取消上一个 collect 协程（如果还在运行），
+     * 然后启动新的 collect 协程，确保只有一个 collect 在运行。
+     */
+    private fun startCollect() {
+        collectJob?.cancel()
+        collectJob = viewModelScope.launch {
             _isLoading.value = true
-            inspirationRepository.getAllInspirations().collect { list ->
-                _inspirations.value = list
+            try {
+                inspirationRepository.getAllInspirations().collect { list ->
+                    _inspirations.value = list
+                }
+            } finally {
                 _isLoading.value = false
                 // isDataInitialized 已移至 filteredDisplayInspirations 的 onEach 中设置，
                 // 确保与 UI 消费的数据列表同步，避免闪现空页面
@@ -398,14 +421,18 @@ class InspirationViewModel @Inject constructor(
     }
 
     /**
-     * 灵感展示页调用：从编辑页返回时重新加载数据
-     * 复用现有 loadInspirations()，避免重新初始化 ViewModel 状态
+     * 加载所有灵感
      */
-    fun refresh() {
-        viewModelScope.launch {
-            loadInspirations()
-        }
-    }
+    fun loadInspirations() = startCollect()
+
+    /**
+     * 灵感展示页调用：从编辑页返回时重新加载数据
+     *
+     * **V2.8.4 修复**：不再 viewModelScope.launch 包装 startCollect()，
+     * 因为 startCollect 内部已经用 collectJob 管理协程，
+     * 外层再 launch 一次会导致每次 refresh 留下一个"空挂起"协程等待 collectJob 完成。
+     */
+    fun refresh() = startCollect()
 
     /**
      * 创建新灵感

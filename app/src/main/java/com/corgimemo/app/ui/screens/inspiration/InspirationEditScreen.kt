@@ -218,6 +218,16 @@ fun InspirationEditScreen(
     /** 锁定编辑状态 */
     var isLocked by remember { mutableStateOf(false) }
 
+    /**
+     * V2.8.4 新增：保存进行中标志
+     *
+     * 防止用户连续点击"完成"按钮触发多次保存：
+     * - onClick 入口检查 isSaving=true → 直接 return
+     * - Button 的 enabled 参数也禁用按钮（视觉反馈）
+     * - 保存成功（navigateBack）或异常（snackbar）后 isSaving=false
+     */
+    var isSaving by remember { mutableStateOf(false) }
+
     /** 删除确认对话框显示状态（防止误触删除灵感） */
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
@@ -665,12 +675,41 @@ fun InspirationEditScreen(
                 /** 完成按钮 */
                 Button(
                     onClick = {
-                        if (viewModel.saveInspiration()) {
-                            homeViewModel.setPoseForLoading()
-                            homeViewModel.refreshSubTaskProgress()
-                            navigateBack()
+                        /**
+                         * V2.8.4 关键修复：coroutineScope.launch 等待 saveInspiration() 真正完成
+                         *
+                         * 之前 saveInspiration() 是 fire-and-forget：
+                         * 1. 同步返回 true
+                         * 2. navigateBack() 立即执行
+                         * 3. ViewModel.onCleared() 可能取消 viewModelScope
+                         * 4. performSave 协程被中途取消 → 数据丢失
+                         *
+                         * 现在 saveInspiration() 是 suspend 函数，UI 层必须用 launch 启动并 await，
+                         * 确保数据库 update/insert 全部完成后再返回。
+                         *
+                         * 防重复点击：保存期间禁用按钮（isSaving=true），
+                         * 防止用户连续点击触发多次保存。
+                         */
+                        if (isSaving) return@Button
+                        isSaving = true
+                        coroutineScope.launch {
+                            try {
+                                if (viewModel.saveInspiration()) {
+                                    homeViewModel.setPoseForLoading()
+                                    homeViewModel.refreshSubTaskProgress()
+                                    navigateBack()
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("InspirationEditScreen", "保存失败", e)
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("保存失败：${e.message ?: "未知错误"}")
+                                }
+                            } finally {
+                                isSaving = false
+                            }
                         }
                     },
+                    enabled = !isSaving,
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFFFF9A5C)
