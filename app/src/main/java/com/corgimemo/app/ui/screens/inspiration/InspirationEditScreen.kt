@@ -407,8 +407,27 @@ fun InspirationEditScreen(
         }
     )
 
-    if (inspirationId != null && inspirationId > 0) {
-        viewModel.loadInspiration(inspirationId)
+    /**
+     * 加载已有灵感的标记（防止重复加载）
+     *
+     * **V2.8.4 关键修复**：原本 `viewModel.loadInspiration(inspirationId)` 是在 Composable
+     * 函数体中直接调用的，**每次重组都会重新执行**，触发 `loadInspiration()` 内部协程
+     * 用数据库的原始数据**覆盖用户已修改的 `_title.value`/`_content.value`/`_tags.value` 等字段**，
+     * 导致用户输入后点击"完成"保存的仍是旧值（看起来"修改不生效"）。
+     *
+     * 修复方案：
+     * 1. 把 loadInspiration 调用从 Composable 函数体移到 LaunchedEffect(inspirationId)
+     * 2. 用 hasLoadedInspiration 标志保证仅在编辑模式首次进入时加载一次
+     * 3. LaunchedEffect 的 key 用 inspirationId + hasLoadedInspiration，
+     *    避免 inspirationId 变化但 hasLoaded 已为 true 时重新加载
+     */
+    var hasLoadedInspiration by remember(inspirationId) { mutableStateOf(false) }
+
+    LaunchedEffect(inspirationId) {
+        if (inspirationId != null && inspirationId > 0 && !hasLoadedInspiration) {
+            viewModel.loadInspiration(inspirationId)
+            hasLoadedInspiration = true
+        }
     }
 
     LaunchedEffect(Unit) {
