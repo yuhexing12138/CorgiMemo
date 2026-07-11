@@ -43,7 +43,8 @@ fun BarChart(
     val primary = MaterialTheme.colorScheme.primary
     val barColor = MaterialTheme.colorScheme.outlineVariant
     val gridColor = Color(0xFFEEEEEE)
-    val labelFormatter = DateTimeFormatter.ofPattern("MM/dd")
+    // 标签格式：M/d（无前导零），7 天全部展示无重叠，30 天隔位仍清晰
+    val labelFormatter = DateTimeFormatter.ofPattern("M/d")
 
     Canvas(
         modifier = modifier
@@ -136,21 +137,27 @@ fun BarChart(
         }
 
         // 3. 绘制 X 轴日期标签
+        // 7 天：全部显示（4字符 M/d 格式无重叠）
+        // 30 天：每隔一天显示（15 个标签，避免拥挤）
         val xLabelPaint = android.graphics.Paint().apply {
             isAntiAlias = true
             color = android.graphics.Color.parseColor("#999999")
             textSize = 11.sp.toPx()
             textAlign = android.graphics.Paint.Align.CENTER
         }
+        val showAll = points.size <= 7
         points.forEachIndexed { index, point ->
-            val centerX = plotLeft + stepX * (index + 0.5f)
-            val label = point.date.format(labelFormatter)
-            drawContext.canvas.nativeCanvas.drawText(
-                label,
-                centerX,
-                plotBottom + 18.dp.toPx(),
-                xLabelPaint
-            )
+            // 7 天全部展示；30 天仅展示偶数索引（0, 2, 4, ..., 28）
+            if (showAll || index % 2 == 0) {
+                val centerX = plotLeft + stepX * (index + 0.5f)
+                val label = point.date.format(labelFormatter)
+                drawContext.canvas.nativeCanvas.drawText(
+                    label,
+                    centerX,
+                    plotBottom + 18.dp.toPx(),
+                    xLabelPaint
+                )
+            }
         }
     }
 }

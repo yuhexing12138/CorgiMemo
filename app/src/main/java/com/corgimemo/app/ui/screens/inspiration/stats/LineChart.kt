@@ -41,7 +41,8 @@ fun LineChart(
     // 读取主题色与基础样式
     val primary = MaterialTheme.colorScheme.primary
     val gridColor = Color(0xFFEEEEEE)
-    val labelFormatter = DateTimeFormatter.ofPattern("MM/dd")
+    // 标签格式：M/d（无前导零），7 天全部展示无重叠，30 天隔位仍清晰
+    val labelFormatter = DateTimeFormatter.ofPattern("M/d")
 
     // 计算 Y 轴最大值：取累计最大值的 1.2 倍，向上取整到 10 的倍数
     val maxValue = points.maxOf { it.cumulativeChars }.coerceAtLeast(1)
@@ -159,21 +160,27 @@ fun LineChart(
         }
 
         // 6. 绘制 X 轴日期标签
+        // 7 天：全部显示（4字符 M/d 格式无重叠）
+        // 30 天：每隔一天显示（15 个标签，避免拥挤）
         val xLabelPaint = android.graphics.Paint().apply {
             isAntiAlias = true
             color = android.graphics.Color.parseColor("#999999")
             textSize = 11.sp.toPx()
             textAlign = android.graphics.Paint.Align.CENTER
         }
+        val showAll = points.size <= 7
         points.forEachIndexed { index, point ->
-            val x = plotLeft + stepX * index
-            val label = point.date.format(labelFormatter)
-            drawContext.canvas.nativeCanvas.drawText(
-                label,
-                x,
-                plotBottom + 18.dp.toPx(),
-                xLabelPaint
-            )
+            // 7 天全部展示；30 天仅展示偶数索引（0, 2, 4, ..., 28）
+            if (showAll || index % 2 == 0) {
+                val x = plotLeft + stepX * index
+                val label = point.date.format(labelFormatter)
+                drawContext.canvas.nativeCanvas.drawText(
+                    label,
+                    x,
+                    plotBottom + 18.dp.toPx(),
+                    xLabelPaint
+                )
+            }
         }
     }
 }

@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.viewmodel.InspirationStatsViewModel
 
@@ -73,7 +74,13 @@ fun InspirationStatsScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = {
+                        // 返回灵感页而非待办页：通过 savedStateHandle 通知 MainScreen 切换 tab
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set("targetTab", TabItem.INSPIRE.name)
+                        navController.popBackStack()
+                    }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回"

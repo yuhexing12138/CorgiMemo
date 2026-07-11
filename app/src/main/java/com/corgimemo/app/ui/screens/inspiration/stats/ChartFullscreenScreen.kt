@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
@@ -68,6 +69,8 @@ fun ChartFullscreenScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            // 顶部避开系统状态栏，避免标题与 X 按钮被状态栏遮挡
+            .statusBarsPadding()
     ) {
         Column(
             modifier = Modifier
@@ -113,8 +116,10 @@ fun ChartFullscreenScreen(
             ) {
                 if (!isLoading) {
                     if (chartType == "line") {
+                        // 折线图：30 天横排隔天显示
                         LineChart(points = chartData.points)
                     } else {
+                        // 柱状图：30 天横排隔天显示
                         BarChart(points = chartData.points)
                     }
                 }
