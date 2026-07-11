@@ -1,5 +1,6 @@
 package com.corgimemo.app.viewmodel
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.corgimemo.app.data.model.Inspiration
@@ -22,21 +23,25 @@ import java.time.ZoneId
 import javax.inject.Inject
 
 /**
- * 灵感字数统计 ViewModel（in-place 页面）
+ * 灵感图表横屏全屏 ViewModel
  *
- * 固定展示最近 7 天的字数数据：
- * - 折线图：累计总字数
- * - 柱状图：每日输入字数
- *
- * 30 天视图请参见 [ChartFullscreenViewModel]（横屏全屏）。
+ * 固定展示最近 30 天的字数数据。通过 [chartType] 参数决定渲染折线图（line）
+ * 还是柱状图（bar）。
  *
  * 字数口径：title + content + tags 拼接后去除所有空白字符（中英文均按 1 字符）。
  * 包含已归档的灵感。
+ *
+ * @param savedStateHandle 用于接收路由参数 chartType
+ * @param inspirationRepository 灵感仓库，注入获取全量灵感
  */
 @HiltViewModel
-class InspirationStatsViewModel @Inject constructor(
+class ChartFullscreenViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
     private val inspirationRepository: InspirationRepository
 ) : ViewModel() {
+
+    /** 图表类型（line / bar），从路由参数读取 */
+    val chartType: String = savedStateHandle.get<String>("chartType") ?: "line"
 
     /** 全部灵感数据 */
     private val _allInspirations = MutableStateFlow<List<Inspiration>>(emptyList())
@@ -45,33 +50,19 @@ class InspirationStatsViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    /** 折线图数据（累计总字数，固定 7 天） */
-    val lineChartData: StateFlow<WordCountChartData> = _allInspirations
+    /** 30 天图表数据 */
+    val chartData: StateFlow<WordCountChartData> = _allInspirations
         .map { inspirations -> computeChartData(inspirations) }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
-            WordCountChartData(ChartRange.SEVEN_DAYS, emptyList())
+            WordCountChartData(ChartRange.THIRTY_DAYS, emptyList())
         )
 
-    /** 柱状图数据（每日输入字数，固定 7 天） */
-    val barChartData: StateFlow<WordCountChartData> = _allInspirations
-        .map { inspirations -> computeChartData(inspirations) }
-        .stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(5_000),
-            WordCountChartData(ChartRange.SEVEN_DAYS, emptyList())
-        )
-
-    /** 当前累计字数（7 天累计最后值） */
-    val currentCumulativeChars: StateFlow<Int> = lineChartData
+    /** 当前累计字数（30 天累计最后值） */
+    val currentCumulativeChars: StateFlow<Int> = chartData
         .map { it.currentCumulativeChars }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
-
-    /** 是否完全无数据 */
-    val isEmpty: StateFlow<Boolean> = _allInspirations
-        .map { it.isEmpty() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
     init {
         loadStats()
@@ -84,7 +75,7 @@ class InspirationStatsViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                // 通过阻塞方式一次性加载全量灵感，供图表统计使用
+                // 阻塞加载全量灵感以计算 30 天累计
                 _allInspirations.value = inspirationRepository.getAllInspirationsBlocking()
             } finally {
                 _isLoading.value = false
@@ -93,28 +84,24 @@ class InspirationStatsViewModel @Inject constructor(
     }
 
     /**
-     * 计算 7 天图表数据集
+     * 计算 30 天图表数据集
      *
      * @param inspirations 全部灵感
-     * @param today 锚定日期（默认今天，便于测试）
-     * @return 时间范围对应的每日字数与累计字数
+     * @param today 锚定日期（默认今天）
      */
     private fun computeChartData(
         inspirations: List<Inspiration>,
         today: LocalDate = LocalDate.now()
     ): WordCountChartData {
-        val range = ChartRange.SEVEN_DAYS
-        // 按范围生成日期序列（从最早到今天）
+        val range = ChartRange.THIRTY_DAYS
         val days = (0 until range.days).map { offset ->
             today.minusDays((range.days - 1 - offset).toLong())
         }
-        // 将灵感按 createdAt 对应的本地日期分组
         val groupedByDay = inspirations.groupBy { ins ->
             Instant.ofEpochMilli(ins.createdAt)
                 .atZone(ZoneId.systemDefault())
                 .toLocalDate()
         }
-        // 累计统计每日字数
         var cumulative = 0
         val points = days.map { date ->
             val daily = groupedByDay[date]?.sumOf { ins ->

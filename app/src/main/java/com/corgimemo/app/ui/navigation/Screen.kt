@@ -35,6 +35,12 @@ sealed class Screen(val route: String) {
     // 灵感字数统计页面
     object InspirationStats : Screen("inspiration_stats")
 
+    // 灵感图表横屏全屏页面（chartType: line / bar）
+    object ChartFullscreen : Screen("chart_fullscreen/{chartType}") {
+        /** 带参数的导航路径 */
+        fun createRoute(chartType: String) = "chart_fullscreen/$chartType"
+    }
+
     // 特殊日期编辑页面
     object SpecialDateEdit : Screen("date_edit")                          // 新建日期
     object SpecialDateEditWithId : Screen("date_edit/{specialDateId}")     // 编辑日期

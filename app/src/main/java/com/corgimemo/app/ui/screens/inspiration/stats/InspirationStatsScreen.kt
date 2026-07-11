@@ -13,7 +13,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -36,16 +35,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.corgimemo.app.data.stats.ChartRange
+import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.viewmodel.InspirationStatsViewModel
 
 /**
- * 灵感字数统计页面
+ * 灵感字数统计页面（in-place 视图）
  *
- * 展示最近 7/30 天的累计总字数（折线图）与每日输入字数（柱状图）。
- * 每张卡片右上角有展开按钮，可在 7 天与 30 天视图间切换。
+ * - 展示最近 7 天的累计总字数（折线图）与每日输入字数（柱状图）
+ * - 每张卡片右上角「展开」按钮：跳转至横屏全屏视图（[Screen.ChartFullscreen]）
+ * - 全屏视图固定 30 天、强制横屏显示
  *
- * @param navController 导航控制器，用于返回上一页与跳转灵感编辑页（空状态 CTA）
+ * @param navController 导航控制器
  * @param viewModel 字数统计 ViewModel，通过 hiltViewModel() 注入
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,8 +60,6 @@ fun InspirationStatsScreen(
     val lineChartData by viewModel.lineChartData.collectAsState()
     val barChartData by viewModel.barChartData.collectAsState()
     val currentCumulativeChars by viewModel.currentCumulativeChars.collectAsState()
-    val lineRange by viewModel.lineRange.collectAsState()
-    val barRange by viewModel.barRange.collectAsState()
 
     Scaffold(
         topBar = {
@@ -115,8 +113,10 @@ fun InspirationStatsScreen(
                     StatsCard(
                         title = "累计总字数",
                         value = "$currentCumulativeChars 字",
-                        range = lineRange,
-                        onToggleRange = { viewModel.toggleLineRange() }
+                        onExpand = {
+                            // 跳转到横屏全屏折线图（30 天）
+                            navController.navigate(Screen.ChartFullscreen.createRoute("line"))
+                        }
                     ) {
                         LineChart(points = lineChartData.points)
                     }
@@ -125,8 +125,10 @@ fun InspirationStatsScreen(
                     StatsCard(
                         title = "输入字数",
                         value = null,
-                        range = barRange,
-                        onToggleRange = { viewModel.toggleBarRange() }
+                        onExpand = {
+                            // 跳转到横屏全屏柱状图（30 天）
+                            navController.navigate(Screen.ChartFullscreen.createRoute("bar"))
+                        }
                     ) {
                         BarChart(points = barChartData.points)
                     }
@@ -141,16 +143,14 @@ fun InspirationStatsScreen(
  *
  * @param title 卡片标题（如"累计总字数"）
  * @param value 标题右侧显示的数值（如"123 字"），传 null 时不显示
- * @param range 当前时间范围（用于切换图标）
- * @param onToggleRange 切换时间范围回调
+ * @param onExpand 展开按钮点击回调：跳转至横屏全屏视图
  * @param chart 图表内容（LineChart 或 BarChart）
  */
 @Composable
 private fun StatsCard(
     title: String,
     value: String?,
-    range: ChartRange,
-    onToggleRange: () -> Unit,
+    onExpand: () -> Unit,
     chart: @Composable () -> Unit
 ) {
     Card(
@@ -182,22 +182,14 @@ private fun StatsCard(
                         )
                     }
                 }
-                // 展开/收起按钮：7 天显示 OpenInNew（展开），30 天显示 NorthEast（返回 7 天）
+                // 展开按钮：跳转至横屏全屏 30 天视图
                 IconButton(
-                    onClick = onToggleRange,
+                    onClick = onExpand,
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        imageVector = if (range == ChartRange.SEVEN_DAYS) {
-                            Icons.Default.OpenInNew
-                        } else {
-                            Icons.Default.NorthEast
-                        },
-                        contentDescription = if (range == ChartRange.SEVEN_DAYS) {
-                            "展开为 30 天"
-                        } else {
-                            "返回 7 天"
-                        },
+                        imageVector = Icons.Default.OpenInNew,
+                        contentDescription = "横屏全屏展开",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
                     )
