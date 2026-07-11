@@ -32,6 +32,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -108,6 +109,15 @@ fun InspirationViewScreen(
 
     // 初始化 Pager 状态，初始页 = 传入的灵感 ID 对应的索引
     val pagerState = rememberPagerState(initialPage = initialIndex) { inspirations.size }
+
+    // 修正页码：filteredDisplayInspirations 初始值为空列表，导致 initialIndex 首次计算为 0，
+    // 而 rememberPagerState 的 initialPage 只在首次创建时生效。数据异步加载后需手动滚动到正确页。
+    LaunchedEffect(initialIndex) {
+        if (pagerState.currentPage != initialIndex && inspirations.isNotEmpty()) {
+            pagerState.scrollToPage(initialIndex)
+        }
+    }
+
     val currentInspiration = inspirations.getOrNull(pagerState.currentPage)
 
     // 分享弹窗状态
