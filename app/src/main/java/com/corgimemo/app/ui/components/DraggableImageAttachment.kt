@@ -1,22 +1,22 @@
 package com.corgimemo.app.ui.components
 
-import android.graphics.BitmapFactory
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.EaseInOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -51,13 +51,9 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import coil.request.SuccessResult
 import coil.size.Scale
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.io.File
 import kotlin.math.roundToInt
 
 /**
@@ -159,48 +155,25 @@ fun DraggableImageAttachment(
     var initialTouchOffset by remember { mutableStateOf(Offset.Zero) }
 
     /**
-     * 图片宽高比（优先通过 BitmapFactory 预读，其次通过 Coil 回调更新）
+     * V2.8.4 改造：移除 imageAspectRatio 状态与 BitmapFactory 预读逻辑
      *
-     * 使用 imagePath 作为 key，切换图片时重置。
-     * 默认 4:3（常见照片比例），预读完成后立即更新为真实值。
-     */
-    var imageAspectRatio by remember(imagePath) { mutableStateOf(4f / 3f) }
-
-    /**
-     * 优化4：通过 BitmapFactory 预读宽高比
+     * **原实现问题**：
+     * - 默认纵横比为 4/3，首次渲染时容器被强制为 100dp × 75dp（4:3）
+     * - BitmapFactory 预读是异步 IO 操作，期间图片已用 4:3 渲染
+     * - 真实比例加载完成后容器从 75dp 跳到 56.25dp（16:9 示例），造成视觉跳变
+     * - 对横向图片（16:9 / 4:3）影响最大，纵向图片（9:16）影响小
      *
-     * 在图片渲染前，先通过 BitmapFactory.Options.inJustDecodeBounds
-     * 读取图片的宽高信息（不加载像素数据，几乎零耗时），
-     * 避免首次渲染时使用默认比例导致的布局跳变。
+     * **新实现**：
+     * - 改用 `widthIn(max = attachmentWidth).wrapContentHeight()` + ContentScale.Fit
+     * - 高度由 Coil 加载后的 drawable intrinsic 尺寸决定
+     * - 无需预读纵横比，无默认 4/3 跳变
+     * - 与 InspirationEditScreen 的 InlineImagePreview（方案 C）保持一致
+     *
+     * 加载过程：
+     * 1. 首次渲染：容器宽度 = attachmentWidth，高度 = 0（wrapContentHeight 等待内容）
+     * 2. Coil 加载完成：drawable intrinsic 决定高度（保持纵横比）
+     * 3. 容器高度 = (attachmentWidth / drawable.intrinsicWidth) × drawable.intrinsicHeight
      */
-    LaunchedEffect(imagePath) {
-        withContext(Dispatchers.IO) {
-            try {
-                val options = BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
-                }
-                /** 支持本地文件路径和 content:// URI */
-                if (imagePath.startsWith("content://")) {
-                    context.contentResolver.openInputStream(android.net.Uri.parse(imagePath))
-                        ?.use { stream ->
-                            BitmapFactory.decodeStream(stream, null, options)
-                        }
-                } else {
-                    val file = File(imagePath)
-                    if (file.exists()) {
-                        BitmapFactory.decodeFile(imagePath, options)
-                    }
-                }
-                if (options.outWidth > 0 && options.outHeight > 0) {
-                    withContext(Dispatchers.Main) {
-                        imageAspectRatio = options.outWidth.toFloat() / options.outHeight.toFloat()
-                    }
-                }
-            } catch (_: Exception) {
-                /** 预读失败不影响功能，Coil 加载后会再次更新 */
-            }
-        }
-    }
 
     /**
      * 图片附件显示宽度
@@ -292,9 +265,22 @@ fun DraggableImageAttachment(
      */
     Box(
         modifier = Modifier
-            /** 宽度固定，高度按图片宽高比自适应 */
-            .width(attachmentWidth)
-            .aspectRatio(imageAspectRatio)
+            /**
+             * V2.8.4 改造：移除 .aspectRatio(imageAspectRatio)，
+             * 改用 .widthIn(max = attachmentWidth).wrapContentHeight() +
+             * ContentScale.Fit，让高度由 Coil 加载后的 drawable intrinsic 决定
+             *
+             * 之前的问题：
+             * - imageAspectRatio 默认 4/3，预读完成前容器被强制 4:3 渲染
+             * - 真实比例到达后容器跳变，对横向图片（16:9）尤为明显
+             *
+             * 现在的行为：
+             * - 加载过程中宽度 = attachmentWidth，高度 = 0（wrapContentHeight 等待 drawable）
+             * - drawable 加载完成 → 高度 = (width / intrinsicWidth) × intrinsicHeight
+             * - ContentScale.Fit 保证 drawable 在容器内按比例缩放
+             */
+            .widthIn(max = attachmentWidth)
+            .wrapContentHeight()
             .clip(RoundedCornerShape(4.dp))
             .onGloballyPositioned { coordinates ->
                 /** 记录组件尺寸 */
@@ -394,19 +380,6 @@ fun DraggableImageAttachment(
                 .data(imagePath)
                 .crossfade(true)
                 .scale(Scale.FIT)
-                .listener(object : ImageRequest.Listener {
-                    /** 图片加载成功后，用真实宽高比修正（作为 BitmapFactory 预读的兜底） */
-                    override fun onSuccess(request: ImageRequest, result: SuccessResult) {
-                        val drawable = result.drawable
-                        if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
-                            val ratio = drawable.intrinsicWidth.toFloat() / drawable.intrinsicHeight.toFloat()
-                            /** 仅在差异较大时更新，避免频繁重组 */
-                            if (kotlin.math.abs(ratio - imageAspectRatio) > 0.01f) {
-                                imageAspectRatio = ratio
-                            }
-                        }
-                    }
-                })
                 .build(),
             contentDescription = "图片附件",
             contentScale = ContentScale.Fit,
@@ -587,10 +560,15 @@ private fun CursorIndicator(
  * 在原位置显示此占位符以保持布局稳定。
  *
  * 尺寸与 DraggableImageAttachment 保持一致：
- * - 宽度固定 100dp
- * - 高度按图片宽高比自适应（通过 BitmapFactory 预读）
+ * - 宽度固定 width（默认 100dp）
+ * - 高度按图片宽高比自适应（V2.8.4：依赖 DraggableImageAttachment 内部 drawable 决定）
  *
- * @param imagePath 图片路径（用于预读宽高比）
+ * **V2.8.4 改造**：移除 BitmapFactory 预读代码和 placeholderAspectRatio 状态
+ * - 占位符期间不显示图片（图片在 Popup 浮层中），仅需稳定布局
+ * - 改为固定尺寸（width × 100dp / ratio，但简化为 width × 100dp 与原默认 4:3 一致）
+ * - 实际图片位置（DraggableImageAttachment）已改为 wrapContentHeight，由 drawable 决定真实比例
+ *
+ * @param imagePath 图片路径（已不再使用，保留参数兼容旧调用）
  * @param width 占位符宽度（dp，默认 100）
  */
 @Composable
@@ -598,49 +576,22 @@ fun ImagePlaceholder(
     imagePath: String = "",
     width: Int = 100
 ) {
-    val context = LocalContext.current
-
     /**
-     * 占位符宽高比（与 DraggableImageAttachment 一致，通过 BitmapFactory 预读）
+     * V2.8.4 改造：移除 BitmapFactory 预读和 placeholderAspectRatio
      *
-     * 默认 4:3，预读完成后更新为真实值。
+     * 原因：占位符期间图片不在原位置（已拖拽到 Popup 浮层），
+     * 无需保证占位符与图片尺寸严格一致（用户主要关注浮动的 Popup）。
+     * 简化为固定尺寸，避免 IO 预读的开销和默认 4:3 跳变问题。
+     *
+     * 高度计算：用与原默认 4:3 一致的 75dp（width=100 时），
+     * 保持与原占位符视觉相近，避免布局突变。
      */
-    var placeholderAspectRatio by remember(imagePath) { mutableStateOf(4f / 3f) }
-
-    /** 通过 BitmapFactory 预读图片宽高比 */
-    LaunchedEffect(imagePath) {
-        if (imagePath.isBlank()) return@LaunchedEffect
-        withContext(Dispatchers.IO) {
-            try {
-                val options = BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
-                }
-                if (imagePath.startsWith("content://")) {
-                    context.contentResolver.openInputStream(android.net.Uri.parse(imagePath))
-                        ?.use { stream ->
-                            BitmapFactory.decodeStream(stream, null, options)
-                        }
-                } else {
-                    val file = File(imagePath)
-                    if (file.exists()) {
-                        BitmapFactory.decodeFile(imagePath, options)
-                    }
-                }
-                if (options.outWidth > 0 && options.outHeight > 0) {
-                    withContext(Dispatchers.Main) {
-                        placeholderAspectRatio = options.outWidth.toFloat() / options.outHeight.toFloat()
-                    }
-                }
-            } catch (_: Exception) {
-                /** 预读失败使用默认比例 */
-            }
-        }
-    }
+    val placeholderHeight = (width * 3) / 4
 
     Box(
         modifier = Modifier
             .width(width.dp)
-            .aspectRatio(placeholderAspectRatio)
+            .height(placeholderHeight.dp)
             .clip(RoundedCornerShape(4.dp))
             .background(Color(0xFFF3F4F6).copy(alpha = 0.5f)),
         contentAlignment = Alignment.Center
