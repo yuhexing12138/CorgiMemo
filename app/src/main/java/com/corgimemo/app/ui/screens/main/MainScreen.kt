@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -307,10 +306,10 @@ fun MainScreen(
             }
         })
         TabItem.INSPIRE -> listOf({
-            IconButton(onClick = { /* TODO: 标签管理 */ }) {
+            IconButton(onClick = { navController.navigate(Screen.InspirationStats.route) }) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Label,
-                    contentDescription = "标签管理",
+                    imageVector = Icons.Default.BarChart,
+                    contentDescription = "字数统计",
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(24.dp)
                 )

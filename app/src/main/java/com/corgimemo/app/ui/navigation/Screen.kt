@@ -32,6 +32,9 @@ sealed class Screen(val route: String) {
         fun createRoute(inspirationId: Long) = "inspiration_view/$inspirationId"
     }
 
+    // 灵感字数统计页面
+    object InspirationStats : Screen("inspiration_stats")
+
     // 特殊日期编辑页面
     object SpecialDateEdit : Screen("date_edit")                          // 新建日期
     object SpecialDateEditWithId : Screen("date_edit/{specialDateId}")     // 编辑日期
