@@ -41,11 +41,20 @@ import coil.size.Scale
  * - 配合 `ContentScale.Fit` 自动保持原图比例
  * - 不再依赖 `imageAspectRatio` 状态，彻底避免"过方容器导致挤压"的视觉感
  *
+ * **V2.8.3 根因补充**：
+ * UI 层逻辑（widthIn + wrapContentHeight + ContentScale.Fit）已完全正确，
+ * **但**前提是数据源（drawable.intrinsicWidth/intrinsicHeight）保持正确纵横比。
+ * 如果上游 ImageUtils 把图片强制拉伸成正方形保存到 internal storage，
+ * 这里再怎么 fit 都救不回来——画布本身已经 1:1。
+ *
+ * V2.8.3 配套修复：ImageUtils.compressAndSaveImage 改为按比例缩放，
+ * 保留原始纵横比，UI 层才能正确显示。
+ *
  * **历史变更**:
  * - V2.8 移除 `isVisible` 懒加载策略
  * - V2.8.1 改用 `SubcomposeAsyncImage`（仍依赖 `aspectRatio(ratio)` 预设）
- * - V2.8.2 方案 C：移除 `aspectRatio`，用 `wrapContentHeight()` 自适应，
- *   解决图片被"压扁"在固定比例容器中的视觉问题
+ * - V2.8.2 方案 C：移除 `aspectRatio`，用 `wrapContentHeight()` 自适应
+ * - V2.8.3 根因定位：上游 ImageUtils 拉伸为正方形是问题源
  *
  * @param imageUri 图片的 Uri 地址
  * @param modifier Modifier（可选）

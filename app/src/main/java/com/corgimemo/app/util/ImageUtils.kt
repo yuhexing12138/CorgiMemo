@@ -99,12 +99,39 @@ object ImageUtils {
                 /** 注意：现代手机相机已自动处理EXIF旋转，此处无需额外处理 */
                 // bitmap = handleExifRotation(context, uri, bitmap)  /** 暂时禁用EXIF处理以避免依赖问题 */
 
-                /** 第五步：如果仍超过目标尺寸，进行二次缩放 */
+                /**
+                 * 第五步：按比例缩放（保留原始纵横比，避免被压成 1:1 正方形）
+                 *
+                 * **根因修复** (V2.8.3)：
+                 * 之前使用 `Bitmap.createScaledBitmap(bitmap, maxWidth, maxHeight, true)`
+                 * 会强制把图片拉伸到 (maxWidth × maxHeight) 的正方形，
+                 * 导致 16:9 / 4:3 等横向图片全部被压扁成 1:1。
+                 *
+                 * **正确做法**：
+                 * - 计算 scale = min(maxWidth/width, maxHeight/height)
+                 * - 目标尺寸 = 原尺寸 × scale
+                 * - 这样最长边不超过 max(maxWidth, maxHeight)，且纵横比完全保留
+                 *
+                 * 示例（原图 4000×2250，目标上限 2048×2048）：
+                 * - scale = min(2048/4000, 2048/2250) = min(0.512, 0.910) = 0.512
+                 * - target = 2048 × 1152（保持 16:9）✅
+                 *
+                 * **尺寸边界保护**：
+                 * - scale < 1.0：原图超过上限，需要缩小
+                 * - scale >= 1.0：原图已小于上限，不再放大（避免放大失真）
+                 */
                 if (bitmap.width > maxWidth || bitmap.height > maxHeight) {
+                    val scale = minOf(
+                        maxWidth.toFloat() / bitmap.width,
+                        maxHeight.toFloat() / bitmap.height
+                    )
+                    val targetWidth = (bitmap.width * scale).toInt().coerceAtLeast(1)
+                    val targetHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
+
                     val scaledBitmap = Bitmap.createScaledBitmap(
                         bitmap,
-                        maxWidth.coerceAtMost(bitmap.width),
-                        maxHeight.coerceAtMost(bitmap.height),
+                        targetWidth,
+                        targetHeight,
                         true /** 启用双线性滤波，提高缩放质量*/
                     )
                     if (scaledBitmap != bitmap) {
