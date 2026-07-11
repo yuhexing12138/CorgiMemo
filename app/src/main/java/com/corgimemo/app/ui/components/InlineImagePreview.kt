@@ -4,16 +4,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Image
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,7 +25,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import coil.size.Scale
@@ -33,28 +32,25 @@ import coil.size.Scale
 /**
  * 内联图片预览组件
  *
- * 在富文本编辑器中显示插入的图片缩略图，
- * 支持异步加载和点击放大查看功能。
+ * 在富文本编辑器中显示插入的图片缩略图。
  *
- * **功能特性**:
- * - ✅ 异步加载（使用 Coil 库，避免主线程阻塞）
- * - ✅ 自适应高度（成功加载后按 drawable 真实宽高比渲染）
- * - ✅ 圆角边框（符合项目 UI 设计规范 16dp）
- * - ✅ 加载中/失败占位符（避免布局跳动）
+ * **V2.8.2 方案 C 重构**：
+ * - 移除 `aspectRatio` 修饰符
+ * - 使用 `widthIn(max = maxWidth)` 限制最大宽度
+ * - 使用 `wrapContentHeight()` 让图片高度由 drawable 真实尺寸决定
+ * - 配合 `ContentScale.Fit` 自动保持原图比例
+ * - 不再依赖 `imageAspectRatio` 状态，彻底避免"过方容器导致挤压"的视觉感
  *
  * **历史变更**:
- * - V2.8 移除 `isVisible` 懒加载策略：编辑器场景下图片数量少（通常 1-3 张），
- *   上下滚动时图片被识别为不可见会切换为占位符，造成"图片消失"问题。
- * - V2.8.1 改用 `SubcomposeAsyncImage`：原方案使用 `imageAspectRatio` 状态 + `BitmapFactory`
- *   预读 + Coil `onSuccess` 更新比例的机制，在预读失败或 Coil 加载异常时，
- *   容器宽高比停留在默认值 4/3 = 1.333，导致实际为 1.5:1 的横图被显示在
- *   "过方"容器中产生"被挤压"视觉感。改为 `SubcomposeAsyncImage` 后，
- *   加载成功才渲染真实图片，比例直接来自 drawable.intrinsicWidth/Height。
+ * - V2.8 移除 `isVisible` 懒加载策略
+ * - V2.8.1 改用 `SubcomposeAsyncImage`（仍依赖 `aspectRatio(ratio)` 预设）
+ * - V2.8.2 方案 C：移除 `aspectRatio`，用 `wrapContentHeight()` 自适应，
+ *   解决图片被"压扁"在固定比例容器中的视觉问题
  *
- * @param imageUri 图片的 Uri 地址（支持本地文件、网络 URL、Content URI）
+ * @param imageUri 图片的 Uri 地址
  * @param modifier Modifier（可选）
- * @param maxWidth 图片最大宽度限制（默认 300.dp，预留参数，当前未使用宽度硬限制）
- * @param onClick 图片点击回调（可选，用于实现全屏预览功能）
+ * @param maxWidth 图片最大宽度限制（默认 300.dp）
+ * @param onClick 图片点击回调（可选）
  */
 @Composable
 fun InlineImagePreview(
@@ -66,35 +62,33 @@ fun InlineImagePreview(
 ) {
     val context = LocalContext.current
 
+    /** 外层容器：限制最大宽度，让子元素（Image）按 drawable 真实比例渲染 */
     Box(
         modifier = modifier
-            .fillMaxWidth()
+            .widthIn(max = maxWidth)
+            .wrapContentHeight()
             .padding(vertical = 8.dp, horizontal = 4.dp)
             .then(
                 if (isHighlighted) {
-                    /** Compose 1.9 内阴影：使用 DSL 块语法替代旧版命名参数 */
+                    /** 高亮时显示内阴影 + 浅黄底色 */
                     Modifier
-                        .innerShadow(
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
+                        .innerShadow(shape = RoundedCornerShape(16.dp)) {
                             color = Color(0xFFFFB74D).copy(alpha = 0.6f)
                             radius = 6f
                         }
-                        /** 保留细边框作为视觉锚点 */
                         .border(1.dp, Color(0xFFFFB74D).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
                 } else {
                     Modifier
                 }
             )
     ) {
-        /** 图片容器 */
+        /** 内层容器：圆角 + 背景 + 点击 */
         Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .widthIn(max = maxWidth)
+                .wrapContentHeight()
                 .clip(RoundedCornerShape(16.dp))
-                .background(
-                    if (isHighlighted) Color(0xFFFFF8E1) else Color.Transparent
-                )
+                .background(if (isHighlighted) Color(0xFFFFF8E1) else Color.Transparent)
                 .then(
                     if (onClick != null) {
                         Modifier.clickable(onClick = onClick)
@@ -105,16 +99,11 @@ fun InlineImagePreview(
             contentAlignment = Alignment.Center
         ) {
             /**
-             * V2.8.1 改用 SubcomposeAsyncImage：
-             * - loading/error slot → 显示带相机图标的占位符（轻量、无图）
-             * - success slot → 从 drawable.intrinsicWidth/Height 计算真实宽高比，
-             *                 按 aspectRatio 渲染，**完全避免默认值误用**
-             * - heightIn(max = 400.dp) → 加载中占位符的最大高度（避免过高）
-             *
-             * **为什么不用 BitmapFactory 预读**：
-             *   预读是"推测"，与 Coil 实际加载结果可能不一致（EXIF 旋转、缓存命中、
-             *   inSampleSize 计算误差），反而造成布局抖动。直接信任 Coil 的最终结果
-             *   更稳健。
+             * 方案 C 核心：移除 aspectRatio，使用 wrapContentHeight + ContentScale.Fit
+             * - 加载中/失败：显示固定高度占位符（避免 wrapContentHeight 在无 drawable 时高度=0）
+             * - 加载成功：直接用 state.painter 渲染，wrapContentHeight 让 Image 高度
+             *             = drawable.intrinsicHeight × (实际宽度 / drawable.intrinsicWidth)
+             * - ContentScale.Fit 保证图片不变形
              */
             SubcomposeAsyncImage(
                 model = ImageRequest.Builder(context)
@@ -125,16 +114,14 @@ fun InlineImagePreview(
                 contentDescription = "插入的图片",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 400.dp),
+                    .widthIn(max = maxWidth)
+                    .wrapContentHeight(),
                 loading = {
-                    /**
-                     * 使用 matchParentSize() 跟随 SubcomposeAsyncImage 容器尺寸
-                     * （而非 fillMaxSize()，后者在 subcompose slot 内行为不一致）
-                     */
+                    /** 加载中：固定 180dp 高度 + 相机占位符（避免布局抖动） */
                     Box(
                         modifier = Modifier
-                            .matchParentSize()
+                            .widthIn(max = maxWidth)
+                            .height(180.dp)
                             .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
@@ -145,41 +132,29 @@ fun InlineImagePreview(
                         )
                     }
                 },
-                success = { state: AsyncImagePainter.State.Success ->
+                success = { state ->
                     /**
-                     * 从 drawable 真实尺寸计算宽高比
-                     * - drawable.intrinsicWidth/Height 是加载完成后的实际像素尺寸
-                     * - 已包含 EXIF 旋转后的方向（Coil 内部处理 EXIF 后输出 drawable）
-                     * - 使用 remember(result) 缓存比例，state 变化才重新计算
-                     */
-                    val ratio = remember(state.result) {
-                        val drawable = state.result.drawable
-                        if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
-                            drawable.intrinsicWidth.toFloat() / drawable.intrinsicHeight.toFloat()
-                        } else {
-                            4f / 3f /** drawable 未报告尺寸时兜底 */
-                        }
-                    }
-                    /**
-                     * 直接使用 state.painter 渲染（不再二次请求 Coil）
-                     * - state.painter 是 SubcomposeAsyncImage 已经加载完成的 Painter
-                     * - 配合 aspectRatio(ratio) 锁定容器宽高比
-                     * - ContentScale.Fit 保证图片不变形
+                     * 关键：直接用 state.painter + Image
+                     * - wrapContentHeight() 会让 Image 高度 = drawable 真实高度
+                     * - widthIn(max = maxWidth) 限制最大宽度
+                     * - ContentScale.Fit 让图片按比例缩放
+                     * - 三者结合：图片完美按原比例显示，无任何预设 aspectRatio
                      */
                     Image(
                         painter = state.painter,
                         contentDescription = "插入的图片",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(ratio)
+                            .widthIn(max = maxWidth)
+                            .wrapContentHeight()
                     )
                 },
                 error = {
-                    /** 加载失败占位符（与 loading 复用 matchParentSize 模式） */
+                    /** 加载失败：固定高度占位符 */
                     Box(
                         modifier = Modifier
-                            .matchParentSize()
+                            .widthIn(max = maxWidth)
+                            .height(180.dp)
                             .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
@@ -200,11 +175,6 @@ fun InlineImagePreview(
  *
  * 当编辑器中插入多张图片时，
  * 使用此组件以水平列表方式展示所有图片。
- *
- * **使用场景**:
- * - 用户连续插入了多张图片
- * - 需要在有限空间内展示多张图片缩略图
- * - 支持左右滑动浏览所有图片
  *
  * @param imageUris 图片 Uri 列表
  * @param modifier Modifier（可选）
