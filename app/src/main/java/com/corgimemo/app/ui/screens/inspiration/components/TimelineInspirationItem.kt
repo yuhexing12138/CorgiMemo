@@ -143,8 +143,9 @@ fun TimelineInspirationItem(
 
     // ===== 批量模式节点尺寸 =====
     // 批量模式下节点放大为 16dp 空心圆，便于点击选择；普通模式保持 6dp 实心圆点
+    // 批量模式下节点从原时间节点中心向外扩大，中心位置保持与标题对齐不变
     val nodeSize = if (isBatchMode) 16.dp else nodeDiameter
-    val effectiveNodeCenterY = if (isBatchMode) 18.dp else nodeCenterY
+    val effectiveNodeCenterY = nodeCenterY
 
     // ===== 颜色 =====
     val nodeColor = if (isPinnedItem) Color(0xFFFF9A5C) else MaterialTheme.colorScheme.primary
@@ -158,15 +159,37 @@ fun TimelineInspirationItem(
                 onLongClick = onLongClick
             )
             // 竖线贯通整个 Item 高度 + 向上延伸 18dp 覆盖 LazyColumn 间距，实现连续不中断
+            // 批量模式下在空心圆节点区域留出间隙，避免竖线穿过空心圆内部
             .drawBehind {
                 val x = timelineLineX.toPx()
                 val startY = -timelineLineOverlap.toPx()  // 向上延伸 18dp
-                drawLine(
-                    color = timelineLineColor,
-                    start = Offset(x, startY),
-                    end = Offset(x, size.height),
-                    strokeWidth = 2.dp.toPx()
-                )
+                if (isBatchMode) {
+                    // 批量模式：竖线分两段，跳过节点区域
+                    val nodeGapRadius = (nodeSize / 2).toPx()
+                    val nodeCenterYPx = nodeCenterY.toPx()
+                    // 上段：从顶部延伸到节点顶部
+                    drawLine(
+                        color = timelineLineColor,
+                        start = Offset(x, startY),
+                        end = Offset(x, nodeCenterYPx - nodeGapRadius),
+                        strokeWidth = 2.dp.toPx()
+                    )
+                    // 下段：从节点底部到 Item 底部
+                    drawLine(
+                        color = timelineLineColor,
+                        start = Offset(x, nodeCenterYPx + nodeGapRadius),
+                        end = Offset(x, size.height),
+                        strokeWidth = 2.dp.toPx()
+                    )
+                } else {
+                    // 普通模式：竖线连续绘制
+                    drawLine(
+                        color = timelineLineColor,
+                        start = Offset(x, startY),
+                        end = Offset(x, size.height),
+                        strokeWidth = 2.dp.toPx()
+                    )
+                }
             }
     ) {
         // ========== 左侧时间栏（年月 + 大号日期）==========
