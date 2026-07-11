@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.screens.inspiration.stats
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,6 +63,17 @@ fun InspirationStatsScreen(
     val barChartData by viewModel.barChartData.collectAsState()
     val currentCumulativeChars by viewModel.currentCumulativeChars.collectAsState()
 
+    // 返回处理：保证无论 TopBar 返回按钮还是系统返回键，都能切换到灵感 tab
+    // 通过 savedStateHandle["targetTab"] 通知 MainScreen，触发其 LaunchedEffect 切到 INSPIRE
+    val handleBack: () -> Unit = {
+        navController.previousBackStackEntry
+            ?.savedStateHandle
+            ?.set("targetTab", TabItem.INSPIRE.name)
+        navController.popBackStack()
+    }
+    // 拦截系统返回键（手机自带返回手势/物理键），复用同一返回逻辑
+    BackHandler(onBack = handleBack)
+
     Scaffold(
         topBar = {
             // 顶部应用栏：标题"字数统计" + 返回按钮
@@ -74,13 +86,7 @@ fun InspirationStatsScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        // 返回灵感页而非待办页：通过 savedStateHandle 通知 MainScreen 切换 tab
-                        navController.previousBackStackEntry
-                            ?.savedStateHandle
-                            ?.set("targetTab", TabItem.INSPIRE.name)
-                        navController.popBackStack()
-                    }) {
+                    IconButton(onClick = handleBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回"
