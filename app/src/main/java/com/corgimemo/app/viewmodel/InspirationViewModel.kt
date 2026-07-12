@@ -265,10 +265,6 @@ class InspirationViewModel @Inject constructor(
     private val _relations = MutableStateFlow<List<CardRelation>>(emptyList())
     val relations: StateFlow<List<CardRelation>> = _relations.asStateFlow()
 
-    /** 是否正在加载 */
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
     // ========== 下拉刷新相关 ==========
 
     private val _isRefreshing = MutableStateFlow(false)
@@ -407,15 +403,13 @@ class InspirationViewModel @Inject constructor(
     private fun startCollect() {
         collectJob?.cancel()
         collectJob = viewModelScope.launch {
-            _isLoading.value = true
             try {
                 inspirationRepository.getAllInspirations().collect { list ->
                     _inspirations.value = list
                 }
-            } finally {
-                _isLoading.value = false
-                // isDataInitialized 已移至 filteredDisplayInspirations 的 onEach 中设置，
-                // 确保与 UI 消费的数据列表同步，避免闪现空页面
+            } catch (e: Exception) {
+                // 异常时仅记录，不再设置 _isLoading（已移除该状态）
+                // isDataInitialized 已在 filteredDisplayInspirations.onEach 中维护
             }
         }
     }

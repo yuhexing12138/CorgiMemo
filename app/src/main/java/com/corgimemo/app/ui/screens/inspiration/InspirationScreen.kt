@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -52,6 +51,7 @@ import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.UnifiedEmptyState
 import com.corgimemo.app.ui.components.rememberPullRefreshStateHolder
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationDateTimePickerDialog
+import com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationLongPressSheet
 import com.corgimemo.app.ui.screens.inspiration.components.TagPickerSheet
 import com.corgimemo.app.ui.screens.inspiration.components.TimelineInspirationItem
@@ -85,7 +85,6 @@ fun InspirationScreen(
 ) {
     val displayItems by viewModel.filteredDisplayInspirations.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
     val isDataInitialized by viewModel.isDataInitialized.collectAsState()
     val isBatchMode by viewModel.isBatchMode.collectAsState()
     val selectedInspirationIds by viewModel.selectedInspirationIds.collectAsState()
@@ -98,6 +97,11 @@ fun InspirationScreen(
     var showDateTimePicker by remember { mutableStateOf(false) }
     var showTagPicker by remember { mutableStateOf(false) }
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
+
+    // 图片全屏预览状态
+    var showImageGallery by remember { mutableStateOf(false) }
+    var galleryImagePaths by remember { mutableStateOf<List<String>>(emptyList()) }
+    var galleryInitialIndex by remember { mutableStateOf(0) }
 
     // 批量模式下拦截返回键
     if (isBatchMode) {
@@ -252,6 +256,12 @@ fun InspirationScreen(
                                             longPressedInspiration = inspiration
                                             showLongPressSheet = true
                                         }
+                                    },
+                                    onImageClick = { index ->
+                                        // 点击图片：打开全屏图片预览（不进入编辑页）
+                                        galleryImagePaths = imagePaths
+                                        galleryInitialIndex = index
+                                        showImageGallery = true
                                     }
                                 )
                             }
@@ -267,14 +277,10 @@ fun InspirationScreen(
         }
 
         // 加载指示器
-        if (isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(16.dp),
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
+        // 注意：原先使用 viewModel.isLoading + CircularProgressIndicator 居中展示。
+        // 由于 Room Flow 的 collect 永不结束，导致 _isLoading 永远为 true，
+        // 圆圈会一直旋转遮住列表内容。已移除该状态，改用 isDataInitialized
+        // 控制骨架屏作为统一的加载占位。
 
         // FAB 按钮（批量模式下隐藏）
         if (!isBatchMode) {
@@ -408,6 +414,19 @@ fun InspirationScreen(
                 viewModel.updateInspirationDateTime(inspiration.id, dateMillis)
                 showDateTimePicker = false
                 longPressedInspiration = null
+            }
+        )
+    }
+
+    // 图片全屏预览（点击图片触发，支持双指缩放、双击放大、多图滑动翻页）
+    if (showImageGallery) {
+        InspirationImageGallery(
+            imagePaths = galleryImagePaths,
+            initialIndex = galleryInitialIndex,
+            onDismiss = {
+                showImageGallery = false
+                galleryImagePaths = emptyList()
+                galleryInitialIndex = 0
             }
         )
     }
