@@ -113,9 +113,13 @@ fun InspirationImageGallery(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        // 关键：LocalView.current 在 Dialog content 中就是 DialogLayout 自身，
+        // DialogLayout extends AbstractComposeView implements DialogWindowProvider，
+        // 所以 view 自己就是 DialogWindowProvider；view.parent 是 Dialog 的 content FrameLayout，
+        // 不是 DialogWindowProvider。
         val view = LocalView.current
         val dialogWindow = remember(view) {
-            (view.parent as? DialogWindowProvider)?.window
+            (view as? DialogWindowProvider)?.window
         }
         DisposableEffect(dialogWindow) {
             val window = dialogWindow
