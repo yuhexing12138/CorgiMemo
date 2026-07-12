@@ -43,6 +43,43 @@ class SpecialDateRepository @Inject constructor(
     /** 切换置顶 */
     suspend fun togglePin(id: Long) = specialDateDao.togglePin(id)
 
+    /** 获取所有未归档的特殊日期（响应式，主页用） */
+    fun getActiveDates(): Flow<List<SpecialDate>> = specialDateDao.getActiveDates()
+
+    /** 获取所有已归档的特殊日期（响应式，未来入口用） */
+    fun getArchivedDates(): Flow<List<SpecialDate>> = specialDateDao.getArchivedDates()
+
+    /** 获取所有未归档的特殊日期（阻塞方式，撤回快照用） */
+    suspend fun getActiveDatesBlocking(): List<SpecialDate> = specialDateDao.getActiveDatesBlocking()
+
+    /**
+     * 归档特殊日期（软删除）
+     * - 不动 isPinned（归档态置顶信息保留）
+     * - 不动关联关系（恢复后仍可访问）
+     */
+    suspend fun archive(id: Long) {
+        specialDateDao.setArchived(id, true, System.currentTimeMillis())
+    }
+
+    /** 恢复已归档的特殊日期 */
+    suspend fun unarchive(id: Long) {
+        specialDateDao.setArchived(id, false, System.currentTimeMillis())
+    }
+
+    /**
+     * 置顶特殊日期（单选：自动取消其它卡片的置顶）
+     * 调用顺序：先 clearPinExcept 再 setPinned，保证事务外层调用不冲突
+     */
+    suspend fun pinDate(id: Long) {
+        specialDateDao.clearPinExcept(id)
+        specialDateDao.setPinned(id, true)
+    }
+
+    /** 取消置顶（无需 clearPinExcept） */
+    suspend fun unpinDate(id: Long) {
+        specialDateDao.setPinned(id, false)
+    }
+
     /** 获取某日期的关联列表（响应式） */
     fun getRelations(dateId: Long): Flow<List<SpecialDateRelation>> =
         relationDao.getRelationsBySpecialDateId(dateId)
