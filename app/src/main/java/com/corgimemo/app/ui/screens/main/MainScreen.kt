@@ -706,7 +706,8 @@ fun MainScreen(
                         )
                         TabItem.DATE -> SpecialDateScreen(
                             navController = navController,
-                            onFabClick = { navController.navigate("date_edit") }
+                            onFabClick = { navController.navigate("date_edit") },
+                            snackbarHostState = snackbarHostState
                         )
                         TabItem.PROFILE -> ProfileScreen(navController)
                         TabItem.EDIT -> { /* 中央编辑按钮不是真实Tab */ }

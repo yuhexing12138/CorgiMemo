@@ -14,16 +14,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PushPin as FilledPushPin
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
@@ -63,14 +60,21 @@ import kotlinx.coroutines.delay
  * 3. 左滑操作：置顶/归档/删除三按钮
  * 4. 归档后 Snackbar 3 秒撤回：点"撤回"恢复数据；超时仅清空缓存（不撤回）
  *
+ * 注意：本页面**不包含** Scaffold / padding(paddingValues) / SnackbarHost。
+ * - Scaffold 由 MainScreen 顶层统一管理（与 HomeScreen / InspirationScreen 保持一致）
+ * - snackbarHostState 由 MainScreen 创建并通过参数传入，避免双重渲染
+ * - 这样可保证搜索框与待办页 / 灵感页在同一相对位置（不被多推下 status bar 高度）
+ *
  * @param navController 导航控制器，用于页面跳转
  * @param onFabClick FAB按钮点击回调（由 MainScreen 传入）
+ * @param snackbarHostState Snackbar 宿主（由 MainScreen 顶层 Scaffold 创建并传入）
  * @param viewModel 日期视图模型（通过 Hilt 自动注入）
  */
 @Composable
 fun SpecialDateScreen(
     navController: NavController,
     onFabClick: () -> Unit = {},
+    snackbarHostState: SnackbarHostState,
     viewModel: SpecialDateViewModel = hiltViewModel()
 ) {
     val groupedDates by viewModel.groupedDates.collectAsState()
@@ -90,10 +94,14 @@ fun SpecialDateScreen(
     }
 
     // Snackbar：归档后 3 秒内可点"撤回"恢复
-    val snackbarHostState = remember { SnackbarHostState() }
+    // snackbarHostState 由 MainScreen 顶层 Scaffold 创建并通过参数传入
+    // 深链场景下可能为 null，此时跳过 showSnackbar 调用（撤回功能静默失效）
+    // 注意：仅用 pendingArchive 作为 key，因为 nullable 状态不适合作为 LaunchedEffect key
+    // （否则会引发 Kotlin 编译警告"elvis always returns left operand"）
     LaunchedEffect(pendingArchive) {
+        val host = snackbarHostState ?: return@LaunchedEffect
         val snapshot = pendingArchive ?: return@LaunchedEffect
-        val result = snackbarHostState.showSnackbar(
+        val result = host.showSnackbar(
             message = "已归档『${snapshot.title}』",
             actionLabel = "撤回",
             withDismissAction = true,
@@ -116,76 +124,72 @@ fun SpecialDateScreen(
         )
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // 1. 搜索框
-                SearchBar(
-                    query = searchQuery,
-                    onQueryChange = { viewModel.updateSearchQuery(it) },
-                    onClear = { viewModel.updateSearchQuery("") },
-                    placeholder = "搜索日期...",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                        .padding(bottom = dimensionResource(R.dimen.ui_search_bar_bottom_margin))
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 2. 内容区显示逻辑
-                if (!isDataInitialized) {
-                    // 数据未初始化：显示页面专属骨架屏，避免从空列表闪烁到有数据
-                    SpecialDateSkeleton()
-                } else if (groupedDates.isEmpty()) {
-                    UnifiedEmptyState(
-                        icon = "📅",
-                        title = "还没有特殊日期~",
-                        subtitle = "记录重要的日子，不错过每个纪念！",
-                        ctaText = "📅 添加日期",
-                        onCtaClick = onFabClick,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    DateSectionsList(
-                        groupedDates = groupedDates,
-                        nowMs = nowMs,
-                        expandedDateId = expandedDateId,
-                        pinnedDateId = pinnedDateId,
-                        expandState = expandState,
-                        onSetExpanded = viewModel::setExpandedDateId,
-                        onPin = viewModel::pinDate,
-                        onUnpin = viewModel::unpinDate,
-                        onArchive = viewModel::archiveDate,
-                        onDelete = viewModel::deleteDate,
-                        onCardClick = { date ->
-                            navController.navigate("date_edit/${date.id}")
-                        }
-                    )
-                }
-            }
-
-            // 3. FAB
-            FloatingActionButton(
-                onClick = onFabClick,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+    // 顶层 Box：与 HomeScreen / InspirationScreen 结构一致
+    // - MainScreen 顶层已用 .padding(paddingValues) 避开 status bar / nav bar
+    // - 本页面 Box 不再嵌套 Scaffold / padding(paddingValues)，避免双重 padding
+    // - 确保搜索框与待办页 / 灵感页在同一相对位置
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 1. 搜索框
+            SearchBar(
+                query = searchQuery,
+                onQueryChange = { viewModel.updateSearchQuery(it) },
+                onClear = { viewModel.updateSearchQuery("") },
+                placeholder = "搜索日期...",
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 20.dp, bottom = 16.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "添加日期",
-                    modifier = Modifier.size(24.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = dimensionResource(R.dimen.ui_search_bar_bottom_margin))
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 2. 内容区显示逻辑
+            if (!isDataInitialized) {
+                // 数据未初始化：显示页面专属骨架屏，避免从空列表闪烁到有数据
+                SpecialDateSkeleton()
+            } else if (groupedDates.isEmpty()) {
+                UnifiedEmptyState(
+                    icon = "📅",
+                    title = "还没有特殊日期~",
+                    subtitle = "记录重要的日子，不错过每个纪念！",
+                    ctaText = "📅 添加日期",
+                    onCtaClick = onFabClick,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                DateSectionsList(
+                    groupedDates = groupedDates,
+                    nowMs = nowMs,
+                    expandedDateId = expandedDateId,
+                    pinnedDateId = pinnedDateId,
+                    expandState = expandState,
+                    onSetExpanded = viewModel::setExpandedDateId,
+                    onPin = viewModel::pinDate,
+                    onUnpin = viewModel::unpinDate,
+                    onArchive = viewModel::archiveDate,
+                    onDelete = viewModel::deleteDate,
+                    onCardClick = { date ->
+                        navController.navigate("date_edit/${date.id}")
+                    }
                 )
             }
+        }
+
+        // 3. FAB
+        FloatingActionButton(
+            onClick = onFabClick,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 20.dp, bottom = 16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Edit,
+                contentDescription = "添加日期",
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }
