@@ -222,7 +222,6 @@ fun ReminderPickerBottomSheet(
             isDateSelected = isDueDateSet,
             isCalendarActive = viewMode == "calendar",
             isTimeActive = viewMode == "time",
-            highlightEnabled = isDueDateAutoFixed,
             onDateClick = {
                 if (!isDueDateSet) {
                     // 首次点击：初始化为提醒时间同一天 23:59
@@ -241,7 +240,8 @@ fun ReminderPickerBottomSheet(
             onClear = {
                 isDueDateSet = false
                 editTarget = EditTarget.REMINDER
-            }
+            },
+            highlightEnabled = isDueDateAutoFixed
         )
 
         Spacer(modifier = Modifier.height(16.dp))

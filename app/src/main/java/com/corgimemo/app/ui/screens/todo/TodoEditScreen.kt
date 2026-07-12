@@ -113,9 +113,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
-/**
- * 权限引导状态：合并通知权限和精确闹钟权限的引导状态
+/** 权限引导状态：合并通知权限和精确闹钟权限的引导状态
  *
  * Idle - 初始状态，未触发任何引导
  * NotificationDenied - 通知权限被永久拒绝，需引导去应用设置
@@ -127,6 +125,7 @@ private sealed class PermissionGuideState {
     object ExactAlarmDenied : PermissionGuideState()
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TodoEditScreen(
     navController: NavController,
