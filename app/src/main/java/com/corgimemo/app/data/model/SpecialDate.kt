@@ -14,7 +14,11 @@ import androidx.room.PrimaryKey
     indices = [
         Index(value = ["targetDate"]),
         Index(value = ["isPinned"]),
-        Index(value = ["category"])
+        Index(value = ["category"]),
+        // isArchived 索引：主页查询常态按 isArchived=0 过滤未归档日期
+        // 注意：必须与 MIGRATION_33_34 中创建的 index_special_dates_isArchived 保持一致
+        // （参见 .trae/rules/entity与migration同步检查.md）
+        Index(value = ["isArchived"])
     ]
 )
 data class SpecialDate(
