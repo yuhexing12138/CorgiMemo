@@ -40,9 +40,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import coil3.image.BitmapImage
 import coil3.imageLoader
 import coil3.request.SuccessResult
+import coil3.toBitmap
 import com.corgimemo.app.util.InspirationScreenshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -83,13 +83,11 @@ fun InspirationImageGallery(
         scope.launch {
             val saved = withContext(Dispatchers.IO) {
                 try {
-                    val request = ImageRequest.Builder(context).data(path).build()
-                    val result = context.imageLoader.execute(request)
-                    if (result !is SuccessResult) {
-                        Log.w("InspirationImageGallery", "图片加载失败: $path")
+                    val bitmap = BitmapFactory.decodeFile(path)
+                    if (bitmap == null) {
+                        Log.w("InspirationImageGallery", "图片不存在或无法解码: $path")
                         return@withContext false
                     }
-                    val bitmap = result.image.toBitmap()
                     InspirationScreenshot.saveToGallery(context, bitmap) != null
                 } catch (e: Exception) {
                     Log.e("InspirationImageGallery", "下载失败: $path", e)

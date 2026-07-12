@@ -101,15 +101,11 @@ fun downloadCurrentImage() {
     scope.launch {
         val result = withContext(Dispatchers.IO) {
             try {
-                // 1. 用 Coil 加载图片为 Bitmap
-                val request = ImageRequest.Builder(context).data(path).build()
-                val result = context.imageLoader.execute(request)
-                if (result !is SuccessResult) return@withContext false
-                val bitmap = result.image.toBitmap()
-
-                // 2. 复用现有 saveToGallery
-                InspirationScreenshot.saveToGallery(context, bitmap)
-                true
+                // 用 BitmapFactory.decodeFile 直接读取本地图片为 Bitmap
+                // 替代 Coil 的 image.toBitmap()，避免 KMP expect/actual 扩展的解析问题
+                val bitmap = BitmapFactory.decodeFile(path)
+                if (bitmap == null) return@withContext false
+                InspirationScreenshot.saveToGallery(context, bitmap) != null
             } catch (e: Exception) {
                 Log.e("InspirationImageGallery", "下载失败", e)
                 false
