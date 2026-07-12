@@ -24,6 +24,7 @@ import com.corgimemo.app.ui.screens.corgi.CorgiDetailScreen
 import com.corgimemo.app.ui.screens.date.DateScreenPlaceholder
 import com.corgimemo.app.ui.screens.date.SpecialDateScreen
 import com.corgimemo.app.ui.screens.date.SpecialDateEditScreen
+import com.corgimemo.app.ui.screens.date.SpecialDateQuickCreateScreen
 import com.corgimemo.app.ui.screens.inspire.InspireScreenPlaceholder
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.inspiration.InspirationEditScreen
@@ -165,6 +166,11 @@ fun AppNavHost(
         // 特殊日期编辑页面路由
         composable(Screen.SpecialDateEdit.route) {
             SpecialDateEditScreen(navController = navController)
+        }
+
+        // 特殊日期快速创建页面路由（重构版：4 行核心 + 下一步）
+        composable(route = Screen.SpecialDateQuickCreate.route) {
+            SpecialDateQuickCreateScreen(navController = navController)
         }
 
         composable(Screen.SpecialDateEditWithId.route) { backStackEntry ->

@@ -45,6 +45,9 @@ sealed class Screen(val route: String) {
     object SpecialDateEdit : Screen("date_edit")                          // 新建日期
     object SpecialDateEditWithId : Screen("date_edit/{specialDateId}")     // 编辑日期
 
+    // 特殊日期快速创建页面（重构版：4 行核心功能 + 下一步）
+    object SpecialDateQuickCreate : Screen("date_create")                  // 日期新建快速创建页
+
     // 图片全屏预览页面
     object ImagePreview : Screen("image_preview")                          // 图片预览（参数通过 NavBackStackEntry 传递）
 

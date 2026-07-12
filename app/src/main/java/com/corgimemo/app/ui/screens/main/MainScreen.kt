@@ -706,7 +706,7 @@ fun MainScreen(
                         )
                         TabItem.DATE -> SpecialDateScreen(
                             navController = navController,
-                            onFabClick = { navController.navigate("date_edit") },
+                            onFabClick = { navController.navigate(Screen.SpecialDateQuickCreate.route) },
                             snackbarHostState = snackbarHostState
                         )
                         TabItem.PROFILE -> ProfileScreen(navController)
