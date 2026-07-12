@@ -36,6 +36,36 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * 把毫秒差值格式化为 "X年 X天 X时 X分 X秒"，从最大有效单位逐级显示到秒。
+ *
+ * 例：
+ * - 366_1000ms → "1年 1天 0时 0分 1秒"
+ * - 5天3时   → "5天 3时 0分 0秒"
+ * - 不足1时 → "4分 5秒"
+ * - =0      → "0秒"（兜底）
+ *
+ * 注：使用"365天=1年"简化计算（不区分闰年），与现有 calculateDaysRemaining 一致。
+ *
+ * @param millis 时间差毫秒（负数会被 coerce 为 0）
+ * @return 格式化字符串
+ */
+internal fun formatDuration(millis: Long): String {
+    val totalSec = (millis / 1000).coerceAtLeast(0L)
+    val sec = (totalSec % 60).toInt()
+    val min = (totalSec / 60 % 60).toInt()
+    val hr  = (totalSec / 3600 % 24).toInt()
+    val day = (totalSec / 86400 % 365).toInt()
+    val yr  = (totalSec / (86400 * 365)).toInt()
+    return when {
+        yr  > 0 -> "$yr 年 $day 天 $hr 时 $min 分 $sec 秒"
+        day > 0 -> "$day 天 $hr 时 $min 分 $sec 秒"
+        hr  > 0 -> "$hr 时 $min 分 $sec 秒"
+        min > 0 -> "$min 分 $sec 秒"
+        else    -> "$sec 秒"
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SpecialDateCard(
