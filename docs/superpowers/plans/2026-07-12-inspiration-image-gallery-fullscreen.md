@@ -42,7 +42,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
-import coil3.image.BitmapImage
+import coil3.toBitmap
 import com.corgimemo.app.util.InspirationScreenshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -163,7 +163,7 @@ git commit -m "feat(inspiration): add download button placeholder to image galle
                         Log.w("InspirationImageGallery", "图片加载失败: $path")
                         return@withContext false
                     }
-                    val bitmap = (result.image as BitmapImage).bitmap
+                    val bitmap = result.image.toBitmap()
                     InspirationScreenshot.saveToGallery(context, bitmap) != null
                 } catch (e: Exception) {
                     Log.e("InspirationImageGallery", "下载失败: $path", e)

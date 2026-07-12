@@ -89,7 +89,7 @@ fun InspirationImageGallery(
                         Log.w("InspirationImageGallery", "图片加载失败: $path")
                         return@withContext false
                     }
-                    val bitmap = (result.image as BitmapImage).bitmap
+                    val bitmap = result.image.toBitmap()
                     InspirationScreenshot.saveToGallery(context, bitmap) != null
                 } catch (e: Exception) {
                     Log.e("InspirationImageGallery", "下载失败: $path", e)

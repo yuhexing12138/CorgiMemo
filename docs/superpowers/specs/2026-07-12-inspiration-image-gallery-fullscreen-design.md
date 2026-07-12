@@ -105,7 +105,7 @@ fun downloadCurrentImage() {
                 val request = ImageRequest.Builder(context).data(path).build()
                 val result = context.imageLoader.execute(request)
                 if (result !is SuccessResult) return@withContext false
-                val bitmap = (result.image as BitmapImage).bitmap
+                val bitmap = result.image.toBitmap()
 
                 // 2. 复用现有 saveToGallery
                 InspirationScreenshot.saveToGallery(context, bitmap)
