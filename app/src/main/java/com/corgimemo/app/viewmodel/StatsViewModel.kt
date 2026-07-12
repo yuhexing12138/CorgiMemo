@@ -113,76 +113,80 @@ class StatsViewModel @Inject constructor(
     fun loadStats() {
         viewModelScope.launch {
             _isLoading.value = true
+            // 使用 try/finally 保证 _isLoading 一定被关闭，
+            // 避免业务计算中途抛异常时 loading 状态永远卡在 true
+            // （与灵感页 InspirationViewModel 同类 bug 的预防性修复）
+            try {
+                val currentTime = System.currentTimeMillis()
+                val calendar = Calendar.getInstance()
 
-            val currentTime = System.currentTimeMillis()
-            val calendar = Calendar.getInstance()
+                // 今日开始时间
+                calendar.set(Calendar.HOUR_OF_DAY, 0)
+                calendar.set(Calendar.MINUTE, 0)
+                calendar.set(Calendar.SECOND, 0)
+                calendar.set(Calendar.MILLISECOND, 0)
+                val todayStart = calendar.timeInMillis
 
-            // 今日开始时间
-            calendar.set(Calendar.HOUR_OF_DAY, 0)
-            calendar.set(Calendar.MINUTE, 0)
-            calendar.set(Calendar.SECOND, 0)
-            calendar.set(Calendar.MILLISECOND, 0)
-            val todayStart = calendar.timeInMillis
+                // 本周开始时间（周一）
+                calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                val weekStart = calendar.timeInMillis
 
-            // 本周开始时间（周一）
-            calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-            val weekStart = calendar.timeInMillis
+                // 本月开始时间
+                calendar.set(Calendar.DAY_OF_MONTH, 1)
+                val monthStart = calendar.timeInMillis
 
-            // 本月开始时间
-            calendar.set(Calendar.DAY_OF_MONTH, 1)
-            val monthStart = calendar.timeInMillis
+                // 获取所有待办和分类
+                val allTodos = todoRepository.getAllTodos().first()
+                val categories = categoryRepository.getAllCategoriesList()
+                val completedTodos = allTodos.filter { it.status == 1 && it.completedAt != null }
 
-            // 获取所有待办和分类
-            val allTodos = todoRepository.getAllTodos().first()
-            val categories = categoryRepository.getAllCategoriesList()
-            val completedTodos = allTodos.filter { it.status == 1 && it.completedAt != null }
+                // 今日完成数
+                val todayCount = completedTodos.count { it.completedAt!! >= todayStart }
 
-            // 今日完成数
-            val todayCount = completedTodos.count { it.completedAt!! >= todayStart }
+                // 本周完成数
+                val weekCount = completedTodos.count { it.completedAt!! >= weekStart }
 
-            // 本周完成数
-            val weekCount = completedTodos.count { it.completedAt!! >= weekStart }
+                // 本月完成数
+                val monthCount = completedTodos.count { it.completedAt!! >= monthStart }
 
-            // 本月完成数
-            val monthCount = completedTodos.count { it.completedAt!! >= monthStart }
+                // 累计完成数
+                val totalCompleted = completedTodos.size
 
-            // 累计完成数
-            val totalCompleted = completedTodos.size
+                // 连续完成天数
+                val consecutiveDays = calculateConsecutiveDays(completedTodos, currentTime)
 
-            // 连续完成天数
-            val consecutiveDays = calculateConsecutiveDays(completedTodos, currentTime)
+                // 最近7天的趋势
+                val weeklyTrend = calculateWeeklyTrend(completedTodos, currentTime)
 
-            // 最近7天的趋势
-            val weeklyTrend = calculateWeeklyTrend(completedTodos, currentTime)
+                // 分类统计
+                val categoryStats = calculateCategoryStats(allTodos, categories)
 
-            // 分类统计
-            val categoryStats = calculateCategoryStats(allTodos, categories)
+                // 时段统计
+                val (timePeriodStats, bestTimePeriod) = calculateTimePeriodStats(completedTodos)
 
-            // 时段统计
-            val (timePeriodStats, bestTimePeriod) = calculateTimePeriodStats(completedTodos)
+                // 趋势预测
+                val (predictedCompletion, predictedTotal, predictionRate) =
+                    calculatePrediction(completedTodos, monthCount)
+                val needsEncouragement = predictionRate < 0.8f
 
-            // 趋势预测
-            val (predictedCompletion, predictedTotal, predictionRate) =
-                calculatePrediction(completedTodos, monthCount)
-            val needsEncouragement = predictionRate < 0.8f
-
-            _stats.value = CompletionStats(
-                todayCount = todayCount,
-                weekCount = weekCount,
-                monthCount = monthCount,
-                consecutiveDays = consecutiveDays,
-                totalCompleted = totalCompleted,
-                weeklyTrend = weeklyTrend,
-                categoryStats = categoryStats,
-                timePeriodStats = timePeriodStats,
-                bestTimePeriod = bestTimePeriod,
-                predictedCompletion = predictedCompletion,
-                predictedTotal = predictedTotal,
-                predictionRate = predictionRate,
-                needsEncouragement = needsEncouragement
-            )
-
-            _isLoading.value = false
+                _stats.value = CompletionStats(
+                    todayCount = todayCount,
+                    weekCount = weekCount,
+                    monthCount = monthCount,
+                    consecutiveDays = consecutiveDays,
+                    totalCompleted = totalCompleted,
+                    weeklyTrend = weeklyTrend,
+                    categoryStats = categoryStats,
+                    timePeriodStats = timePeriodStats,
+                    bestTimePeriod = bestTimePeriod,
+                    predictedCompletion = predictedCompletion,
+                    predictedTotal = predictedTotal,
+                    predictionRate = predictionRate,
+                    needsEncouragement = needsEncouragement
+                )
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
