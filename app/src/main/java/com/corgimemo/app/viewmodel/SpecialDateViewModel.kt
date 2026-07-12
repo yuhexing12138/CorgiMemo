@@ -53,12 +53,15 @@ class SpecialDateViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** 三组分类后的展示数据 */
-    val groupedDates: StateFlow<Map<GroupType, List<DisplayDate>>> =
+    val groupedDates: StateFlow<Map<DateGroup, List<DisplayDate>>> =
         combine(specialDates, _searchQuery) { dates, query ->
+            // 1. 只取未归档
+            val active = dates.filter { !it.isArchived }
+            // 2. 搜索过滤
             if (query.isBlank()) {
-                dates
+                active
             } else {
-                dates.filter { it.title.contains(query, ignoreCase = true) }
+                active.filter { it.title.contains(query, ignoreCase = true) }
             }
         }.map { dates ->
             groupByDisplayDates(dates)
@@ -204,7 +207,7 @@ class SpecialDateViewModel @Inject constructor(
             return "${year}年${month}月${day}日 周${weekDay}"
         }
 
-        internal fun groupByDisplayDates(dates: List<SpecialDate>): Map<GroupType, List<DisplayDate>> {
+        internal fun groupByDisplayDates(dates: List<SpecialDate>): Map<DateGroup, List<DisplayDate>> {
             val todayStart = Calendar.getInstance().apply {
                 set(Calendar.HOUR_OF_DAY, 0)
                 set(Calendar.MINUTE, 0)
@@ -219,14 +222,21 @@ class SpecialDateViewModel @Inject constructor(
                     val daysDiff = ((effectiveDate - todayStart) / msPerDay)
                     val daysAbs = kotlin.math.abs(daysDiff)
 
+                    /**
+                     * 分组规则（与 plan 5.2 节一致）：
+                     * - countMode=0 且 targetDate >= today → COUNTDOWN（倒计时）
+                     * - countMode=1 且 targetDate <= today → COUNTUP（正计时）
+                     * - countMode=0 且 targetDate <  today → EXPIRED（已过期）
+                     * - countMode=1 且 targetDate >  today → COUNTUP（正计时，纪念尚未开始）
+                     */
                     val groupType = when {
-                        date.countMode == 1 -> GroupType.CELEBRATING
-                        daysDiff > 0 -> GroupType.UPCOMING
-                        else -> GroupType.EXPIRED
+                        date.countMode == 1 -> DateGroup.COUNTUP
+                        daysDiff > 0 -> DateGroup.COUNTDOWN
+                        else -> DateGroup.EXPIRED
                     }
 
                     val dayColor = when (groupType) {
-                        GroupType.CELEBRATING -> DayColor.GREEN
+                        DateGroup.COUNTUP -> DayColor.GREEN
                         else -> when {
                             daysAbs <= 3L -> DayColor.RED
                             daysAbs <= 30L -> DayColor.ORANGE
@@ -235,9 +245,9 @@ class SpecialDateViewModel @Inject constructor(
                     }
 
                     val displayText = when (groupType) {
-                        GroupType.UPCOMING -> "${daysAbs}天后"
-                        GroupType.CELEBRATING -> "${daysAbs}天"
-                        GroupType.EXPIRED -> "${daysAbs}天前"
+                        DateGroup.COUNTDOWN -> "${daysAbs}天后"
+                        DateGroup.COUNTUP -> "${daysAbs}天"
+                        DateGroup.EXPIRED -> "${daysAbs}天前"
                     }
 
                     DisplayDate(
@@ -335,7 +345,7 @@ data class DisplayDate(
     val daysRemaining: Long,
     val daysAbsolute: Long,
     val dayColor: DayColor,
-    val groupType: GroupType,
+    val groupType: DateGroup,
     val displayText: String,
     val content: String,
     val tags: List<String>,
@@ -344,7 +354,27 @@ data class DisplayDate(
     val isPinned: Boolean
 )
 
+/**
+ * 日期分组：按 countMode + 是否过期划分
+ * - COUNTDOWN: 倒计时模式（countMode=0）且未过期
+ * - COUNTUP:   正计时模式（countMode=1）（无论是否已开始）
+ * - EXPIRED:   倒计时模式（countMode=0）但已过期
+ *
+ * 命名替换自旧版 GroupType（UPCOMING/CELEBRATING/EXPIRED）。
+ * 字段名 groupType 暂保留以避免破坏 SpecialDateCard，任务 13 会统一改为 group。
+ */
+enum class DateGroup { COUNTDOWN, COUNTUP, EXPIRED }
+
+/**
+ * 已废弃：保留以避免破坏潜在引用
+ * - 旧：GroupType.UPCOMING/Celebrating/Expired
+ * - 新：DateGroup.COUNTDOWN/COUNTUP/EXPIRED
+ *
+ * 任务 13 重写 SpecialDateCard 时会一并清理。
+ */
+@Deprecated("改用 DateGroup；该枚举仅保留以避免破坏潜在引用")
 enum class GroupType { UPCOMING, CELEBRATING, EXPIRED }
+
 enum class DayColor { RED, ORANGE, GRAY, GREEN }
 
 enum class DateCategory(val displayName: String, val emoji: String) {

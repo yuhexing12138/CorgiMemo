@@ -132,9 +132,9 @@ fun SpecialDateCard(
                             Text("${date.daysAbsolute}天", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = dayTextColor)
                         }
                         Text(when (date.groupType) {
-                            GroupType.UPCOMING -> "还有"
-                            GroupType.CELEBRATING -> "已经"
-                            GroupType.EXPIRED -> "已过"
+                            DateGroup.COUNTDOWN -> "还有"
+                            DateGroup.COUNTUP -> "已经"
+                            DateGroup.EXPIRED -> "已过"
                         }, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
 
