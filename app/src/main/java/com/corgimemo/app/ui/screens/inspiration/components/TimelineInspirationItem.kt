@@ -429,9 +429,8 @@ private fun getDay(timestamp: Long): Int {
 /**
  * 时间线单张图片组件
  *
- * - 固定高度 120dp，宽度按原图比例自适应（最小 80dp，最大 240dp）
+ * - 固定 120dp × 120dp 方形 box，图片用 ContentScale.Crop 自动裁剪保留中间主体
  * - 使用 ImageRequest.Builder 包装路径（与项目内 InlineImagePreview/DraggableImageAttachment 一致）
- * - Coil 2.5.0 处理流程：String → StringMapper → Uri → FileUriMapper → File → FileFetcher
  * - 圆角 12dp + 浅灰背景
  * - 点击图片触发 onClick 回调（不冒泡到外层整行点击）
  * - 通过 onState 回调记录加载状态到 logcat，便于排查图片加载失败问题
@@ -444,11 +443,8 @@ private fun InspirationTimelineImage(
     path: String,
     onClick: () -> Unit
 ) {
-    // 高度固定 120dp
-    // 宽度按原图比例限制（最小 80dp，最大 240dp）
-    val fixedHeight: Dp = 120.dp
-    val minWidth: Dp = 80.dp
-    val maxWidth: Dp = 240.dp
+    // 固定 120dp × 120dp 方形
+    val boxSize: Dp = 120.dp
 
     // 获取当前 context，用于 ImageRequest.Builder
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -459,7 +455,7 @@ private fun InspirationTimelineImage(
             .crossfade(true)
             .build(),
         contentDescription = "灵感图片",
-        contentScale = ContentScale.Fit,
+        contentScale = ContentScale.Crop,
         /**
          * 监听加载状态：
          * - 加载失败时输出详细日志（path + 文件是否存在 + 异常堆栈）
@@ -502,8 +498,7 @@ private fun InspirationTimelineImage(
             }
         },
         modifier = Modifier
-            .height(fixedHeight)
-            .widthIn(min = minWidth, max = maxWidth)
+            .size(boxSize)
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xFFF5F5F5))
             // 使用 clickable 处理图片点击（进入全屏预览）

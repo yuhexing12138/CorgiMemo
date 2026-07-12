@@ -1,6 +1,7 @@
 // app/src/main/java/com/corgimemo/app/ui/screens/inspiration/components/InspirationViewCard.kt
 package com.corgimemo.app.ui.screens.inspiration.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,13 +9,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.Card
@@ -31,11 +34,12 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
+import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.corgimemo.app.R
@@ -116,7 +120,12 @@ fun InspirationViewCard(
             Box(modifier = Modifier.fillMaxWidth()) {
                 // 内容 Column：标题、日期、正文、图片、标签、Logo
                 // 顶部 padding 36dp 留白给右上角的字数徽章
-                Column(modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 36.dp, bottom = 18.dp)) {
+                // 加 verticalScroll 允许内容超出时上下滚动（图片多时）
+                Column(
+                    modifier = Modifier
+                        .padding(start = 18.dp, end = 18.dp, top = 36.dp, bottom = 18.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
                     // 标题（18sp Medium）
                     Text(
                         text = inspiration.title,
@@ -143,23 +152,18 @@ fun InspirationViewCard(
                         letterSpacing = 0.5.sp
                     )
                     // 图片列表（如果有）
+                    // 竖向排列：每张图片占一行，宽度与灵感正文一致（fillMaxWidth），
+                    // 高度完全按原图比例计算（不限制最大高度）
                     if (imagePaths.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(12.dp))
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            items(imagePaths.size) { index ->
-                                val path = imagePaths[index]
-                                AsyncImage(
-                                    model = coil3.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                                        .data(path)
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(120.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .clickable { onImageClick(index) }
+                            imagePaths.forEachIndexed { index, path ->
+                                ImageWithRatio(
+                                    path = path,
+                                    onClick = { onImageClick(index) }
                                 )
                             }
                         }
@@ -234,6 +238,68 @@ fun InspirationViewCard(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * 按原图比例显示的竖向图片项
+ *
+ * - 宽度严格撑满（fillMaxWidth），与灵感正文宽度一致
+ * - 高度 = 宽度 / 原图宽高比（不设最大高度限制，按原比例完整显示）
+ * - 使用 ContentScale.Crop 让图片填满 Box（不留白），保证宽度一致
+ * - 使用 SubcomposeAsyncImage 在 lambda 内读取 painter.intrinsicSize
+ *   获取真实宽高比
+ *
+ * @param path 图片路径
+ * @param onClick 点击图片回调
+ */
+@Composable
+private fun ImageWithRatio(
+    path: String,
+    onClick: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    SubcomposeAsyncImage(
+        model = coil3.request.ImageRequest.Builder(context)
+            .data(path)
+            .crossfade(true)
+            .build(),
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+    ) {
+        val painter = this.painter
+        val intrinsicSize = painter.intrinsicSize
+        if (intrinsicSize.width > 0f && intrinsicSize.height > 0f) {
+            androidx.compose.foundation.layout.BoxWithConstraints(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val containerWidth = maxWidth
+                val aspectRatio = intrinsicSize.width / intrinsicSize.height
+                // 高度 = 容器宽度 / 宽高比，完全按原图比例显示，不限制最大高度
+                val finalHeight = containerWidth / aspectRatio
+                Image(
+                    painter = painter,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(finalHeight)
+                )
+            }
+        } else {
+            // painter 尚未就绪（loading 状态），显示占位
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .background(Color(0xFFF5F5F5), RoundedCornerShape(6.dp))
+            )
         }
     }
 }

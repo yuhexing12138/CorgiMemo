@@ -157,13 +157,13 @@ git commit -m "feat(inspiration): add download button placeholder to image galle
         scope.launch {
             val saved = withContext(Dispatchers.IO) {
                 try {
-                    // 用 BitmapFactory.decodeFile 直接读取本地图片为 Bitmap
-                    // 替代 Coil 的 image.toBitmap()，避免 KMP expect/actual 扩展的解析问题
-                    val bitmap = BitmapFactory.decodeFile(path)
-                    if (bitmap == null) {
-                        Log.w("InspirationImageGallery", "图片不存在或无法解码: $path")
+                    val request = ImageRequest.Builder(context).data(path).build()
+                    val result = context.imageLoader.execute(request)
+                    if (result !is SuccessResult) {
+                        Log.w("InspirationImageGallery", "图片加载失败: $path")
                         return@withContext false
                     }
+                    val bitmap = result.image.toBitmap()
                     InspirationScreenshot.saveToGallery(context, bitmap) != null
                 } catch (e: Exception) {
                     Log.e("InspirationImageGallery", "下载失败: $path", e)
