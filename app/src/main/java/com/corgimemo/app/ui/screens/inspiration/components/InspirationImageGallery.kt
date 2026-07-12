@@ -30,6 +30,23 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import android.app.Activity
+import android.util.Log
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import coil3.image.BitmapImage
+import coil3.imageLoader
+import coil3.request.SuccessResult
+import com.corgimemo.app.util.InspirationScreenshot
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 灵感图片全屏预览
@@ -54,6 +71,22 @@ fun InspirationImageGallery(
     }
 
     val pagerState = rememberPagerState(initialPage = initialIndex) { imagePaths.size }
+
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    // 粘性沉浸式：隐藏状态栏与导航栏
+    DisposableEffect(Unit) {
+        val window = (context as? Activity)?.window
+        val controller = window?.let { WindowInsetsControllerCompat(it, it.decorView) }
+        controller?.hide(WindowInsetsCompat.Type.systemBars())
+        controller?.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        onDispose {
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
 
     Box(
         modifier = Modifier
