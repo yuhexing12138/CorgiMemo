@@ -1433,23 +1433,23 @@ fun HomeScreen(
                 initialRepeatType = firstSelected?.repeatType ?: 0,
                 onDismiss = { showReminderPickerSheet = false },
                 onConfirm = { dateMillis, hour, minute, repeatType, _, dueDateMillis ->
-                    /**
-                     * 把日期 + 时分组合为完整时间戳。
-                     * 若未选择日期（dateMillis 为 null），使用当前时刻。
-                     */
-                    val calendar = java.util.Calendar.getInstance()
-                    if (dateMillis != null) {
-                        calendar.timeInMillis = dateMillis
-                    }
-                    calendar.set(java.util.Calendar.HOUR_OF_DAY, hour)
-                    calendar.set(java.util.Calendar.MINUTE, minute)
-                    calendar.set(java.util.Calendar.SECOND, 0)
-                    calendar.set(java.util.Calendar.MILLISECOND, 0)
-                    val reminderTime = calendar.timeInMillis
-
                     showReminderPickerSheet = false
                     val count = selectedTodoIds.size
-                    viewModel.batchUpdateReminder(reminderTime, repeatType)
+
+                    if (dateMillis != null) {
+                        // 设置提醒时间
+                        val calendar = java.util.Calendar.getInstance()
+                        calendar.timeInMillis = dateMillis
+                        calendar.set(java.util.Calendar.HOUR_OF_DAY, hour)
+                        calendar.set(java.util.Calendar.MINUTE, minute)
+                        calendar.set(java.util.Calendar.SECOND, 0)
+                        calendar.set(java.util.Calendar.MILLISECOND, 0)
+                        viewModel.batchUpdateReminder(calendar.timeInMillis, repeatType)
+                    } else {
+                        // 仅设截止日期，清除提醒
+                        viewModel.batchUpdateReminder(null, 0)
+                    }
+
                     // 批量更新截止日期
                     viewModel.batchUpdateDueDate(dueDateMillis)
                     viewModel.exitBatchMode()

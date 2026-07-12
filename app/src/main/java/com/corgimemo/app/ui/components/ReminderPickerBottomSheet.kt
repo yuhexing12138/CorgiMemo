@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -509,6 +510,16 @@ fun ReminderPickerBottomSheet(
                     },
                 contentAlignment = Alignment.Center
             ) {
+                if (isDueDateAutoFixed) {
+                    // 修正后显示橙色感叹号图标引导用户确认
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "已自动修正",
+                        modifier = Modifier.size(16.dp),
+                        tint = Color(0xFFFF9A5C)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
                 Text(
                     text = "确定",
                     fontSize = 15.sp,
