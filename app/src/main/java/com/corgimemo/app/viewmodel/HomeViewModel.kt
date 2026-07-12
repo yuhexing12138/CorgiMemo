@@ -3171,7 +3171,9 @@ class HomeViewModel @Inject constructor(
     /**
      * 获取指定月份每天有待办的条数（用于日历圆点显示）
      *
-     * 基于 startDate 字段过滤，仅统计 startDate 不为 null 且落在指定年月的待办。
+     * 基于 reminderTime 字段过滤，仅统计 reminderTime 不为 null 且落在指定年月的待办。
+     * 优先使用提醒时间，因为日历弹窗的语义是"那天提醒我的待办"；
+     * 若 reminderTime 为 null 则回退到 startDate。
      *
      * @param year 年
      * @param month 月（1-12）
@@ -3180,22 +3182,25 @@ class HomeViewModel @Inject constructor(
     fun getCalendarTodoCount(year: Int, month: Int): Map<Int, Int> {
         return _todos.value
             .filter { todo ->
-                todo.startDate != null && run {
-                    val cal = Calendar.getInstance().apply { timeInMillis = todo.startDate!! }
+                val timestamp = todo.reminderTime ?: todo.startDate
+                timestamp != null && run {
+                    val cal = Calendar.getInstance().apply { timeInMillis = timestamp }
                     cal.get(Calendar.YEAR) == year && cal.get(Calendar.MONTH) + 1 == month
                 }
             }
             .groupBy { todo ->
-                val cal = Calendar.getInstance().apply { timeInMillis = todo.startDate!! }
+                val timestamp = todo.reminderTime ?: todo.startDate
+                val cal = Calendar.getInstance().apply { timeInMillis = timestamp!! }
                 cal.get(Calendar.DAY_OF_MONTH)
             }
             .mapValues { it.value.size }
     }
 
     /**
-     * 获取指定日期的所有待办（基于 startDate，含已完成）
+     * 获取指定日期的所有待办（基于 reminderTime，含已完成）
      *
-     * 排序规则：未完成在前，已完成在后；同状态内按优先级 DESC。
+     * 优先使用提醒时间过滤，若 reminderTime 为 null 则回退到 startDate。
+     * 排序规则：未完成在前，已完成在后；同状态内按提醒时间 ASC。
      *
      * @param year 年
      * @param month 月（1-12）
@@ -3205,8 +3210,9 @@ class HomeViewModel @Inject constructor(
     fun getTodosByDate(year: Int, month: Int, day: Int): List<TodoItem> {
         return _todos.value
             .filter { todo ->
-                todo.startDate != null && run {
-                    val cal = Calendar.getInstance().apply { timeInMillis = todo.startDate!! }
+                val timestamp = todo.reminderTime ?: todo.startDate
+                timestamp != null && run {
+                    val cal = Calendar.getInstance().apply { timeInMillis = timestamp }
                     cal.get(Calendar.YEAR) == year &&
                     cal.get(Calendar.MONTH) + 1 == month &&
                     cal.get(Calendar.DAY_OF_MONTH) == day
@@ -3214,7 +3220,7 @@ class HomeViewModel @Inject constructor(
             }
             .sortedWith(
                 compareByDescending<TodoItem> { it.status == 0 }
-                    .thenByDescending { it.priority }
+                    .thenBy(nullsLast()) { it.reminderTime ?: it.startDate }
             )
     }
 
