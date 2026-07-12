@@ -699,6 +699,37 @@ fun HomeScreen(
                             }
                         }
 
+                        // 监听日历弹窗点击待办后的滚动请求
+                        val scrollToTodoId by viewModel.scrollToTodoId.collectAsState()
+                        LaunchedEffect(scrollToTodoId) {
+                            val targetId = scrollToTodoId ?: return@LaunchedEffect
+                            // 在 displayItems 中查找目标待办
+                            val targetIndex = displayItems.indexOfFirst { item ->
+                                item is DisplayItem.Todo && item.item.id == targetId
+                            }
+                            if (targetIndex >= 0) {
+                                // 目标在可见列表中，直接滚动
+                                lazyListState.animateScrollToItem(targetIndex)
+                            } else {
+                                // 目标可能在已完成区且已完成区折叠，先展开再查找
+                                val todo = viewModel.filteredTodos.value.find { it.id == targetId }
+                                if (todo != null && todo.status == 1) {
+                                    // 展开已完成区
+                                    viewModel.setShowCompleted(true)
+                                    // 等待 displayItems 更新后再滚动
+                                    delay(100)
+                                    val newIndex = displayItems.indexOfFirst { item ->
+                                        item is DisplayItem.Todo && item.item.id == targetId
+                                    }
+                                    if (newIndex >= 0) {
+                                        lazyListState.animateScrollToItem(newIndex)
+                                    }
+                                }
+                            }
+                            // 滚动完成后重置状态
+                            viewModel.clearScrollToTodo()
+                        }
+
                         // 外层 Box：承载 nestedScrollConnection 与柯基指示器
                         Box(
                             modifier = Modifier
@@ -1367,7 +1398,7 @@ fun HomeScreen(
                 initialMinute = initMinute,
                 initialRepeatType = firstSelected?.repeatType ?: 0,
                 onDismiss = { showReminderPickerSheet = false },
-                onConfirm = { dateMillis, hour, minute, repeatType, _ ->
+                onConfirm = { dateMillis, hour, minute, repeatType, _, _ ->
                     /**
                      * 把日期 + 时分组合为完整时间戳。
                      * 若未选择日期（dateMillis 为 null），使用当前时刻。

@@ -1,7 +1,9 @@
 package com.corgimemo.app.ui.screens.todo
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -86,6 +88,7 @@ import androidx.compose.ui.platform.LocalDensity
 import com.corgimemo.app.util.toPxFloat
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -381,15 +384,6 @@ fun TodoEditScreen(
     /** picker 是否打开：editingReminderGroupId != null 即展示 */
     val showReminderPicker = editingReminderGroupId != null
 
-    var showDueDatePicker by remember { mutableStateOf(false) }
-    val dueDatePickerState = rememberDatePickerState()
-    var selectedDueDateMillis by remember { mutableStateOf<Long?>(null) }
-    var showDueTimePicker by remember { mutableStateOf(false) }
-    val dueTimePickerState = rememberTimePickerState(
-        initialHour = 18,
-        initialMinute = 0,
-        is24Hour = true
-    )
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showLocationPopup by remember { mutableStateOf(false) }
@@ -405,11 +399,33 @@ fun TodoEditScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (!isGranted) {
-            coroutineScope.launch {
-                snackbarHostState.showSnackbar("需要通知权限才能接收提醒通知")
+            // 检查是否为永久拒绝（用户选择了"不要再次询问"）
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                if (!ActivityCompat.shouldShowRequestPermissionRationale(
+                        context as Activity,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    )
+                ) {
+                    // 永久拒绝：引导去应用设置页
+                    showNotificationPermissionDeniedDialog = true
+                } else {
+                    // 普通拒绝：Snackbar 提示
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("需要通知权限才能接收提醒通知")
+                    }
+                }
             }
         }
     }
+
+    /** 本次会话是否已请求过通知权限（防止重复弹窗） */
+    var hasRequestedNotificationPermission by remember { mutableStateOf(false) }
+
+    /** 是否显示精确闹钟权限引导对话框 */
+    var showExactAlarmDialog by remember { mutableStateOf(false) }
+
+    /** 是否显示通知权限永久拒绝引导对话框 */
+    var showNotificationPermissionDeniedDialog by remember { mutableStateOf(false) }
 
     val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -1516,65 +1532,6 @@ fun TodoEditScreen(
          *   → editingReminderGroupId = groupId → ReminderPickerBottomSheet 自动打开
          */
 
-        if (showDueDatePicker) {
-            DatePickerDialog(
-                onDismissRequest = { showDueDatePicker = false },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            val selectedDate = dueDatePickerState.selectedDateMillis
-                            if (selectedDate != null) {
-                                selectedDueDateMillis = selectedDate
-                                showDueDatePicker = false
-                                showDueTimePicker = true
-                            }
-                        }
-                    ) {
-                        Text("确定")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDueDatePicker = false }) {
-                        Text("取消")
-                    }
-                }
-            ) {
-                DatePicker(state = dueDatePickerState)
-            }
-        }
-
-        if (showDueTimePicker) {
-            AlertDialog(
-                onDismissRequest = { showDueTimePicker = false },
-                title = { Text("选择截止时间") },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            val cal = Calendar.getInstance()
-                            cal.timeInMillis = selectedDueDateMillis ?: System.currentTimeMillis()
-                            cal.set(Calendar.HOUR_OF_DAY, dueTimePickerState.hour)
-                            cal.set(Calendar.MINUTE, dueTimePickerState.minute)
-                            cal.set(Calendar.SECOND, 0)
-                            cal.set(Calendar.MILLISECOND, 0)
-                            viewModel.setDueDate(cal.timeInMillis)
-                            showDueTimePicker = false
-                            selectedDueDateMillis = null
-                        }
-                    ) {
-                        Text("确定")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDueTimePicker = false }) {
-                        Text("取消")
-                    }
-                },
-                text = {
-                    TimePicker(state = dueTimePickerState)
-                }
-            )
-        }
-
         if (showVoiceRecordSheet) {
             var permissionState by remember { mutableStateOf<RecordAudioPermissionState>(RecordAudioPermissionState.SHOULD_REQUEST) }
             
@@ -1726,21 +1683,25 @@ fun TodoEditScreen(
                          * 没有则 fallback 为 0（不重复）
                          */
                         initialRepeatType = editingReminderGroupId?.let { groupRepeatTypes[it] } ?: 0,
+                        /** 初始截止日期：从 ViewModel 获取当前 todo 的 dueDate */
+                        initialDueDateMillis = dueDate,
                         /**
                          * 关闭 picker：清空 editingReminderGroupId，
                          * 下游 showReminderPicker 自动变 false
                          */
                         onDismiss = { editingReminderGroupId = null },
                         /**
-                         * 确认回调：把 picker 选中的 (date, hour, minute, repeatType) 路由回指定分组
+                         * 确认回调：把 picker 选中的 (date, hour, minute, repeatType, dueDate) 路由回指定分组
                          *  - gid 来自当前编辑态：picker 打开期间不应被外部改写，但为防御性仍做 null 检查
                          *  - 调用新 API：setGroupReminder / setGroupRepeatType（按 groupId 维度）
                          *  - calendarEnabled 暂不处理（与日历功能相关，本期未接入）
+                         *  - dueDateMillis：截止日期时间戳，来自 ReminderPickerBottomSheet
                          */
-                        onConfirm = { dateMillis, hour, minute, repeatTypeNew, calendarEnabled ->
+                        onConfirm = { dateMillis, hour, minute, repeatTypeNew, calendarEnabled, dueDateMillis ->
                             val gid = editingReminderGroupId ?: return@ReminderPickerBottomSheet
                             viewModel.setGroupReminder(gid, dateMillis ?: System.currentTimeMillis())
                             viewModel.setGroupRepeatType(gid, repeatTypeNew)
+                            viewModel.setDueDate(dueDateMillis)
                             editingReminderGroupId = null
 
                             /** Android 13+ 首次设置提醒时检查通知权限，未授权则引导用户开启 */
@@ -1750,8 +1711,16 @@ fun TodoEditScreen(
                                         Manifest.permission.POST_NOTIFICATIONS
                                     ) != PackageManager.PERMISSION_GRANTED
                                 ) {
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    if (!hasRequestedNotificationPermission) {
+                                        hasRequestedNotificationPermission = true
+                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    }
                                 }
+                            }
+
+                            /** Android 12+ 检查精确闹钟权限 */
+                            if (!com.corgimemo.app.notification.AlarmScheduler.hasExactAlarmPermission(context)) {
+                                showExactAlarmDialog = true
                             }
                         }
                     )
@@ -1761,6 +1730,60 @@ fun TodoEditScreen(
     }
 
     }  // end outer Box (ensures overlay covers Scaffold topBar/bottomBar)
+
+    // ===== 通知权限永久拒绝引导对话框 =====
+    if (showNotificationPermissionDeniedDialog) {
+        AlertDialog(
+            onDismissRequest = { showNotificationPermissionDeniedDialog = false },
+            title = { Text("开启通知权限") },
+            text = { Text("需要在系统设置中允许 CorgiMemo 发送通知，才能接收待办提醒。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showNotificationPermissionDeniedDialog = false
+                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = android.net.Uri.parse("package:com.corgimemo.app")
+                    }
+                    context.startActivity(intent)
+                }) {
+                    Text("去设置")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNotificationPermissionDeniedDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // ===== 精确闹钟权限引导对话框 =====
+    if (showExactAlarmDialog) {
+        AlertDialog(
+            onDismissRequest = { showExactAlarmDialog = false },
+            title = { Text("开启精确闹钟权限") },
+            text = { Text("开启后可以确保提醒在设定时间准时响起，避免延迟。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExactAlarmDialog = false
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        val intent = Intent(
+                            android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
+                        ).apply {
+                            data = android.net.Uri.parse("package:com.corgimemo.app")
+                        }
+                        context.startActivity(intent)
+                    }
+                }) {
+                    Text("去设置")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExactAlarmDialog = false }) {
+                    Text("以后再说")
+                }
+            }
+        )
+    }
 
     /**
      * 优先级选择弹窗

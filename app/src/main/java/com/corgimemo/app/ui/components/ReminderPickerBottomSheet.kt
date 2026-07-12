@@ -58,6 +58,14 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /**
+ * 提醒弹窗中当前编辑的目标
+ */
+private enum class EditTarget {
+    REMINDER,   // 提醒时间
+    DUE_DATE    // 截止日期
+}
+
+/**
  * 提醒设置底部弹窗（完整版）
  *
  * 包含：日期选择、时间选择、重复提醒、日历开关
@@ -79,8 +87,9 @@ fun ReminderPickerBottomSheet(
     rowLabel: String = "提醒时间",
     calendarRowSpacing: Dp? = null,
     inspirationPreview: @Composable ((date: LocalDate, hour: Int, minute: Int) -> Unit)? = null,
+    initialDueDateMillis: Long? = null,
     onDismiss: () -> Unit,
-    onConfirm: (dateMillis: Long?, hour: Int, minute: Int, repeatType: Int, calendarEnabled: Boolean) -> Unit
+    onConfirm: (dateMillis: Long?, hour: Int, minute: Int, repeatType: Int, calendarEnabled: Boolean, dueDateMillis: Long?) -> Unit
 ) {
     // 当前选中的日期和时间
     val now = System.currentTimeMillis()
@@ -109,6 +118,24 @@ fun ReminderPickerBottomSheet(
 
     // 日历展开/收起状态（默认展开）
     var isCalendarExpanded by remember { mutableStateOf(true) }
+
+    // 编辑目标：提醒时间 或 截止日期
+    var editTarget by remember { mutableStateOf(EditTarget.REMINDER) }
+
+    // ===== 截止日期状态 =====
+    // 截止日期是否已设置（null 表示未设置）
+    var isDueDateSet by remember { mutableStateOf(initialDueDateMillis != null) }
+    // 截止日期的日期/时间（仅在 isDueDateSet=true 时有效）
+    val initDueLocalDate = if (initialDueDateMillis != null) {
+        java.time.Instant.ofEpochMilli(initialDueDateMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDate()
+    } else {
+        selectedDate  // 未设置时默认同提醒日期
+    }
+    var dueDate by remember { mutableStateOf(initDueLocalDate) }
+    var dueHour by remember { mutableIntStateOf(23) }  // 默认 23:59
+    var dueMinute by remember { mutableIntStateOf(59) }
 
     // 重复类型选项
     val repeatOptions = listOf(
@@ -151,7 +178,7 @@ fun ReminderPickerBottomSheet(
             Text(
                 text = rowLabel,
                 fontSize = 15.sp,
-                color = Color(0xFF2D2D2D),
+                color = if (editTarget == EditTarget.REMINDER) MaterialTheme.colorScheme.primary else Color(0xFF999999),
                 fontWeight = FontWeight.Medium
             )
             Spacer(modifier = Modifier.weight(1f))
@@ -160,16 +187,19 @@ fun ReminderPickerBottomSheet(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (viewMode == "calendar") MaterialTheme.colorScheme.primary else Color(0xFFFFE4CC))
-                    .clickable { viewMode = "calendar" }
+                    .background(if (editTarget == EditTarget.REMINDER && viewMode == "calendar") MaterialTheme.colorScheme.primary else Color(0xFFFFE4CC))
+                    .clickable {
+                        editTarget = EditTarget.REMINDER
+                        viewMode = "calendar"
+                    }
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "${selectedDate.year}/${String.format("%02d", selectedDate.monthValue)}/${String.format("%02d", selectedDate.dayOfMonth)}",
                     fontSize = 13.sp,
-                    color = if (viewMode == "calendar") Color.White else Color(0xFF666666),
-                    fontWeight = if (viewMode == "calendar") FontWeight.Medium else FontWeight.Normal
+                    color = if (editTarget == EditTarget.REMINDER && viewMode == "calendar") Color.White else Color(0xFF666666),
+                    fontWeight = if (editTarget == EditTarget.REMINDER && viewMode == "calendar") FontWeight.Medium else FontWeight.Normal
                 )
             }
 
@@ -179,19 +209,106 @@ fun ReminderPickerBottomSheet(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (viewMode == "time") MaterialTheme.colorScheme.primary else Color(0xFFFFE4CC))
-                    .clickable { viewMode = "time" }
+                    .background(if (editTarget == EditTarget.REMINDER && viewMode == "time") MaterialTheme.colorScheme.primary else Color(0xFFFFE4CC))
+                    .clickable {
+                        editTarget = EditTarget.REMINDER
+                        viewMode = "time"
+                    }
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "${String.format("%02d", selectedHour)}:${String.format("%02d", selectedMinute)}",
                     fontSize = 13.sp,
-                    color = if (viewMode == "time") Color.White else Color(0xFF666666),
-                    fontWeight = if (viewMode == "time") FontWeight.Medium else FontWeight.Normal
+                    color = if (editTarget == EditTarget.REMINDER && viewMode == "time") Color.White else Color(0xFF666666),
+                    fontWeight = if (editTarget == EditTarget.REMINDER && viewMode == "time") FontWeight.Medium else FontWeight.Normal
                 )
             }
         }
+
+        // ===== 截止日期行 =====
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "截止日期",
+                fontSize = 15.sp,
+                color = if (editTarget == EditTarget.DUE_DATE) MaterialTheme.colorScheme.primary else Color(0xFF999999),
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.weight(1f))
+
+            // 日期芯片
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (editTarget == EditTarget.DUE_DATE && viewMode == "calendar") MaterialTheme.colorScheme.primary else Color(0xFFFFE4CC))
+                    .clickable {
+                        if (!isDueDateSet) {
+                            // 首次点击：初始化为提醒时间同一天 23:59
+                            dueDate = selectedDate
+                            dueHour = 23
+                            dueMinute = 59
+                            isDueDateSet = true
+                        }
+                        editTarget = EditTarget.DUE_DATE
+                        viewMode = "calendar"
+                    }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isDueDateSet) "${dueDate.year}/${String.format("%02d", dueDate.monthValue)}/${String.format("%02d", dueDate.dayOfMonth)}" else "未设置",
+                    fontSize = 13.sp,
+                    color = if (editTarget == EditTarget.DUE_DATE && viewMode == "calendar") Color.White else if (isDueDateSet) Color(0xFF666666) else Color(0xFF999999),
+                    fontWeight = if (editTarget == EditTarget.DUE_DATE && viewMode == "calendar") FontWeight.Medium else FontWeight.Normal
+                )
+            }
+
+            if (isDueDateSet) {
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // 时间芯片
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (editTarget == EditTarget.DUE_DATE && viewMode == "time") MaterialTheme.colorScheme.primary else Color(0xFFFFE4CC))
+                        .clickable {
+                            editTarget = EditTarget.DUE_DATE
+                            viewMode = "time"
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${String.format("%02d", dueHour)}:${String.format("%02d", dueMinute)}",
+                        fontSize = 13.sp,
+                        color = if (editTarget == EditTarget.DUE_DATE && viewMode == "time") Color.White else Color(0xFF666666),
+                        fontWeight = if (editTarget == EditTarget.DUE_DATE && viewMode == "time") FontWeight.Medium else FontWeight.Normal
+                    )
+                }
+            }
+
+            if (isDueDateSet) {
+                Spacer(modifier = Modifier.width(8.dp))
+                // ×清除按钮
+                Text(
+                    text = "×",
+                    fontSize = 16.sp,
+                    color = Color(0xFF999999),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            isDueDateSet = false
+                            editTarget = EditTarget.REMINDER
+                        }
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // ===== 重复提醒行（仅 showAdvancedOptions=true 时显示） =====
         if (showAdvancedOptions) {
@@ -324,24 +441,46 @@ fun ReminderPickerBottomSheet(
         // 有预览区时不使用 weight(1f)，让日历区自适应高度，预览区紧贴日历区底部
         val hasPreview = inspirationPreview != null
         val contentModifier = if (hasPreview) Modifier else Modifier.weight(1f)
+
+        // 根据 editTarget 确定滚轮当前应使用哪组日期/时间
+        val activeDate = if (editTarget == EditTarget.DUE_DATE && isDueDateSet) dueDate else selectedDate
+        val activeHour = if (editTarget == EditTarget.DUE_DATE && isDueDateSet) dueHour else selectedHour
+        val activeMinute = if (editTarget == EditTarget.DUE_DATE && isDueDateSet) dueMinute else selectedMinute
+
         when (viewMode) {
             "calendar" -> DateWheelPickerView(
-                selectedDate = selectedDate,
+                selectedDate = activeDate,
                 onDateChange = { newDate ->
-                    selectedDate = newDate
-                    navMonth = YearMonth.from(newDate)
+                    if (editTarget == EditTarget.DUE_DATE) {
+                        dueDate = newDate
+                    } else {
+                        selectedDate = newDate
+                        navMonth = YearMonth.from(newDate)
+                    }
                 },
                 isExpanded = isCalendarExpanded,
                 onToggleExpand = { isCalendarExpanded = !isCalendarExpanded },
-                calendarEnabled = calendarEnabled && showAdvancedOptions,  // 非高级模式强制不显示农历
-                rowSpacing = calendarRowSpacing,  // 传入日历行间距
+                calendarEnabled = calendarEnabled && showAdvancedOptions,
+                rowSpacing = calendarRowSpacing,
                 modifier = contentModifier
             )
             "time" -> TimeWheelView(
-                hour = selectedHour,
-                minute = selectedMinute,
-                onHourChange = { selectedHour = it.coerceIn(0, 23) },
-                onMinuteChange = { selectedMinute = it.coerceIn(0, 59) },
+                hour = activeHour,
+                minute = activeMinute,
+                onHourChange = {
+                    if (editTarget == EditTarget.DUE_DATE) {
+                        dueHour = it.coerceIn(0, 23)
+                    } else {
+                        selectedHour = it.coerceIn(0, 23)
+                    }
+                },
+                onMinuteChange = {
+                    if (editTarget == EditTarget.DUE_DATE) {
+                        dueMinute = it.coerceIn(0, 59)
+                    } else {
+                        selectedMinute = it.coerceIn(0, 59)
+                    }
+                },
                 modifier = contentModifier
             )
         }
@@ -391,12 +530,19 @@ fun ReminderPickerBottomSheet(
                     .clickable {
                         val zonedDateTime = selectedDate.atTime(selectedHour, selectedMinute)
                             .atZone(java.time.ZoneId.systemDefault())
+                        // 计算截止日期时间戳（未设置则为 null）
+                        val dueDateMillis = if (isDueDateSet) {
+                            dueDate.atTime(dueHour, dueMinute)
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .toInstant().toEpochMilli()
+                        } else null
                         onConfirm(
                             zonedDateTime.toInstant().toEpochMilli(),
                             selectedHour,
                             selectedMinute,
                             repeatType,
-                            calendarEnabled && showAdvancedOptions  // 非高级模式强制返回 false
+                            calendarEnabled && showAdvancedOptions,
+                            dueDateMillis
                         )
                     },
                 contentAlignment = Alignment.Center

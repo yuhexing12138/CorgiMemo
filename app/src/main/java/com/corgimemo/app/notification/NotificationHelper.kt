@@ -322,6 +322,13 @@ object NotificationHelper {
 
         parts.add(getPriorityName(todo.priority))
 
+        // 追加截止日期信息
+        if (todo.dueDate != null) {
+            val dueInstant = java.time.Instant.ofEpochMilli(todo.dueDate!!)
+                .atZone(java.time.ZoneId.systemDefault())
+            parts.add("截止：${String.format("%04d", dueInstant.year)}/${String.format("%02d", dueInstant.monthValue)}/${String.format("%02d", dueInstant.dayOfMonth)} ${String.format("%02d", dueInstant.hour)}:${String.format("%02d", dueInstant.minute)}")
+        }
+
         if (todo.content != null && todo.content!!.isNotEmpty()) {
             parts.add(todo.content!!)
         }
