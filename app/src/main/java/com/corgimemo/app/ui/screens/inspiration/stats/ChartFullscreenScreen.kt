@@ -83,10 +83,15 @@ fun ChartFullscreenScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val titleText = if (chartType == "line") {
-                    "累计总字数：$currentCumulativeChars 字"
-                } else {
-                    "输入字数"
+                val titleText = when (chartType) {
+                    "line" -> "累计总字数：$currentCumulativeChars 字"
+                    "bar" -> "输入字数"
+                    "todo_line" -> {
+                        val todoTotal by viewModel.todoTotalCompleted.collectAsState()
+                        "累计完成数：$todoTotal 个"
+                    }
+                    "todo_bar" -> "每日完成数"
+                    else -> "图表"
                 }
                 Text(
                     text = titleText,
@@ -115,15 +120,25 @@ fun ChartFullscreenScreen(
                 contentAlignment = Alignment.Center
             ) {
                 if (!isLoading) {
-                    if (chartType == "line") {
-                        // 折线图：30 天横排隔天显示
-                        LineChart(points = chartData.points)
-                    } else {
-                        // 柱状图：30 天横排隔天显示
-                        BarChart(points = chartData.points)
+                    when (chartType) {
+                        "line" -> {
+                            LineChart(points = chartData.points)
+                        }
+                        "bar" -> {
+                            BarChart(points = chartData.points)
+                        }
+                        "todo_line" -> {
+                            val todoData by viewModel.todoChartData.collectAsState()
+                            LineChart(points = todoData.points)
+                        }
+                        "todo_bar" -> {
+                            val todoData by viewModel.todoChartData.collectAsState()
+                            BarChart(points = todoData.points)
+                        }
                     }
                 }
             }
         }
     }
 }
+
