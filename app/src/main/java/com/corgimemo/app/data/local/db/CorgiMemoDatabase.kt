@@ -14,6 +14,7 @@ import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.DeletedTodo
+import com.corgimemo.app.data.model.DeletedInspiration
 import com.corgimemo.app.data.model.MoodHistory
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
@@ -28,8 +29,8 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  * 管理待办事项、柯基数据、任务分类、成就和用户模板
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class],
-    version = 32,
+    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class],
+    version = 33,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -58,6 +59,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
 
     /** 最近删除 DAO */
     abstract fun deletedTodoDao(): DeletedTodoDao
+
+    /** 灵感回收站 DAO */
+    abstract fun deletedInspirationDao(): DeletedInspirationDao
 
     /** 灵感记录 DAO */
     abstract fun inspirationDao(): InspirationDao
@@ -90,7 +94,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33)
                     .build()
                 INSTANCE = instance
                 instance
@@ -939,6 +943,51 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                       AND t2.createdAt <= todo_items.createdAt
                 ) - 1
                 WHERE isPinned = 0 AND status = 1
+            """.trimIndent())
+        }
+    }
+    /**
+     * 数据库迁移：版本 32 → 33
+     * 新增 deleted_inspirations 表（灵感回收站）
+     */
+    private val MIGRATION_32_33 = object : Migration(32, 33) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS deleted_inspirations (
+                    id INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL DEFAULT '',
+                    tags TEXT NOT NULL DEFAULT '',
+                    imagePaths TEXT NOT NULL DEFAULT '',
+                    imageUrls TEXT NOT NULL DEFAULT '',
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    isPinned INTEGER NOT NULL DEFAULT 0,
+                    isArchived INTEGER NOT NULL DEFAULT 0,
+                    categoryId INTEGER NOT NULL DEFAULT 0,
+                    priority INTEGER NOT NULL DEFAULT 0,
+                    status INTEGER NOT NULL DEFAULT 0,
+                    startDate INTEGER,
+                    dueDate INTEGER,
+                    estimatedDurationMinutes INTEGER,
+                    reminderTime INTEGER,
+                    repeatType INTEGER NOT NULL DEFAULT 0,
+                    completedAt INTEGER,
+                    geofenceLat REAL,
+                    geofenceLng REAL,
+                    geofenceRadius REAL,
+                    geofenceType INTEGER,
+                    geofenceEnabled INTEGER NOT NULL DEFAULT 0,
+                    geofenceAddress TEXT,
+                    hasSubTasks INTEGER NOT NULL DEFAULT 0,
+                    voiceNotePath TEXT,
+                    voiceDuration INTEGER,
+                    backgroundColor INTEGER NOT NULL DEFAULT -1,
+                    position INTEGER NOT NULL DEFAULT 0,
+                    contentFormat TEXT NOT NULL DEFAULT '',
+                    deletedAt INTEGER NOT NULL,
+                    PRIMARY KEY(id)
+                )
             """.trimIndent())
         }
     }
