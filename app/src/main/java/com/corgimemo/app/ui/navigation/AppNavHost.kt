@@ -221,9 +221,11 @@ fun AppNavHost(
                 type = NavType.StringType
                 defaultValue = "todo"
             })
-        ) {
+        ) { backStackEntry ->
+            val source = backStackEntry.arguments?.getString("source") ?: "todo"
             com.corgimemo.app.ui.screens.recyclebin.RecycleBinScreen(
-                onBack = { navController.popBackStack() }
+                navController = navController,
+                source = source
             )
         }
 

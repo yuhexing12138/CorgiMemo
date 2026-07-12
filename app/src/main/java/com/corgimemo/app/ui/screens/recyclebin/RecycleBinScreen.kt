@@ -43,7 +43,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.BackHandler
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
 
 /** 主题橙色，选中 Tab 使用 */
 private val TabSelectedColor = Color(0xFFFF9A5C)
@@ -57,15 +59,43 @@ private val TabSelectedColor = Color(0xFFFF9A5C)
  * - 空态：柯基表情 + "回收站是空的" + 返回按钮
  * - SnackBar：撤销删除（5s）
  * - 清空确认弹窗：包含待办和灵感两个数量
+ * - 退出时根据 source 参数设置 targetTab，确保返回正确的来源页面
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun RecycleBinScreen(
-    onBack: () -> Unit,
+    navController: NavController,
+    source: String,
     viewModel: RecycleBinViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    /**
+     * 返回上一页辅助函数
+     *
+     * 根据 source 参数设置 targetTab：
+     * - source="inspiration" → targetTab="INSPIRE"（返回灵感页）
+     * - source="todo" → targetTab="TODO"（返回待办页）
+     * 让 MainScreen 接收到返回事件后切换到正确的 Tab。
+     */
+    val navigateBack: () -> Unit = {
+        val targetTab = when (source) {
+            "inspiration" -> "INSPIRE"
+            else -> "TODO"
+        }
+        navController.previousBackStackEntry?.savedStateHandle?.set("targetTab", targetTab)
+        navController.popBackStack()
+    }
+
+    /**
+     * 拦截系统返回事件（侧滑返回 / 系统返回键）
+     *
+     * 确保所有退出方式（应用内返回按钮、空态返回按钮、系统返回）
+     * 都经过 navigateBack()，统一设置 targetTab，
+     * 让 MainScreen 切换到正确的来源 Tab。
+     */
+    BackHandler { navigateBack() }
 
     // 监听一次性 UI 事件（SnackBar）
     LaunchedEffect(Unit) {
@@ -93,7 +123,7 @@ fun RecycleBinScreen(
             TopAppBar(
                 title = { Text("回收站") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = navigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
@@ -115,7 +145,7 @@ fun RecycleBinScreen(
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
                 uiState.isLoading -> LoadingState()
-                uiState.todoTotalCount + uiState.inspirationTotalCount == 0 -> EmptyState(onBack = onBack)
+                uiState.todoTotalCount + uiState.inspirationTotalCount == 0 -> EmptyState(onBack = navigateBack)
                 else -> {
                     Column(modifier = Modifier.fillMaxSize()) {
                         // Tab 栏：待办 / 灵感
