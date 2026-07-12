@@ -58,4 +58,31 @@ interface SpecialDateDao {
     /** 切换置顶状态 */
     @Query("UPDATE special_dates SET isPinned = CASE WHEN isPinned = 0 THEN 1 ELSE 0 END WHERE id = :id")
     suspend fun togglePin(id: Long)
+
+    /** 获取所有未归档的特殊日期（主页用，按置顶和目标日期排序） */
+    @Query("SELECT * FROM special_dates WHERE isArchived = 0 ORDER BY isPinned DESC, targetDate ASC")
+    fun getActiveDates(): Flow<List<SpecialDate>>
+
+    /** 获取所有已归档的特殊日期（未来"已归档"入口用） */
+    @Query("SELECT * FROM special_dates WHERE isArchived = 1 ORDER BY updatedAt DESC")
+    fun getArchivedDates(): Flow<List<SpecialDate>>
+
+    /** 获取所有未归档的特殊日期（阻塞方式，撤回快照用） */
+    @Query("SELECT * FROM special_dates WHERE isArchived = 0 ORDER BY isPinned DESC, targetDate ASC")
+    suspend fun getActiveDatesBlocking(): List<SpecialDate>
+
+    /**
+     * 设置归档状态（true=归档, false=恢复）
+     * 同时更新 updatedAt 为当前时间
+     */
+    @Query("UPDATE special_dates SET isArchived = :archived, updatedAt = :now WHERE id = :id")
+    suspend fun setArchived(id: Long, archived: Boolean, now: Long)
+
+    /** 设置置顶状态（true=置顶, false=取消置顶） */
+    @Query("UPDATE special_dates SET isPinned = :pinned WHERE id = :id")
+    suspend fun setPinned(id: Long, pinned: Boolean)
+
+    /** 清除除指定 id 外所有卡片的置顶（保证单选置顶） */
+    @Query("UPDATE special_dates SET isPinned = 0 WHERE id != :id AND isPinned = 1")
+    suspend fun clearPinExcept(id: Long)
 }
