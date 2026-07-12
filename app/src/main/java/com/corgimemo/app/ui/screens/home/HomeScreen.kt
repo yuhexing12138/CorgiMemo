@@ -1436,22 +1436,18 @@ fun HomeScreen(
                     showReminderPickerSheet = false
                     val count = selectedTodoIds.size
 
-                    if (dateMillis != null) {
-                        // 设置提醒时间
+                    // 合并提醒和截止日期为单次数据库循环
+                    val reminderTime = if (dateMillis != null) {
                         val calendar = java.util.Calendar.getInstance()
                         calendar.timeInMillis = dateMillis
                         calendar.set(java.util.Calendar.HOUR_OF_DAY, hour)
                         calendar.set(java.util.Calendar.MINUTE, minute)
                         calendar.set(java.util.Calendar.SECOND, 0)
                         calendar.set(java.util.Calendar.MILLISECOND, 0)
-                        viewModel.batchUpdateReminder(calendar.timeInMillis, repeatType)
-                    } else {
-                        // 仅设截止日期，清除提醒
-                        viewModel.batchUpdateReminder(null, 0)
-                    }
+                        calendar.timeInMillis
+                    } else null
 
-                    // 批量更新截止日期
-                    viewModel.batchUpdateDueDate(dueDateMillis)
+                    viewModel.batchUpdateReminderAndDueDate(reminderTime, repeatType, dueDateMillis)
                     viewModel.exitBatchMode()
                     coroutineScope.launch {
                         val msg = when {

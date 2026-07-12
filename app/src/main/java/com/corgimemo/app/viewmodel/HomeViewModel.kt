@@ -2929,12 +2929,17 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * 批量更新选中待办的截止日期
+     * 批量更新选中待办的提醒和截止日期
      *
-     * 在批量设置提醒弹窗中，用户可以同时设置截止日期。
-     * dueDateMillis 为 null 时清除截止日期。
+     * 合并提醒时间和截止日期为单次循环，减少数据库往返。
+     * 在批量设置提醒弹窗中，用户可以同时设置提醒和截止日期。
+     * - reminderTime 为 null 时清除提醒，dueDate 为 null 时清除截止日期
+     *
+     * @param reminderTime 提醒时间戳，null 清除
+     * @param repeatType 重复类型
+     * @param dueDate 截止日期时间戳，null 清除
      */
-    fun batchUpdateDueDate(dueDateMillis: Long?) {
+    fun batchUpdateReminderAndDueDate(reminderTime: Long?, repeatType: Int, dueDate: Long?) {
         val selectedIds = _selectedTodoIds.value
         if (selectedIds.isEmpty()) return
         viewModelScope.launch {
@@ -2942,7 +2947,9 @@ class HomeViewModel @Inject constructor(
                 todoRepository.getTodoById(id)?.let { todo ->
                     todoRepository.updateTodo(
                         todo.copy(
-                            dueDate = dueDateMillis,
+                            reminderTime = reminderTime,
+                            repeatType = repeatType,
+                            dueDate = dueDate,
                             updatedAt = System.currentTimeMillis()
                         )
                     )
