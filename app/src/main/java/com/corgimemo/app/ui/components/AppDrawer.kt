@@ -57,7 +57,7 @@ import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.theme.UiColors
-import com.corgimemo.app.viewmodel.GroupType
+import com.corgimemo.app.viewmodel.DateGroup
 import com.corgimemo.app.viewmodel.TagFilterMode
 
 private const val DRAWER_ICON_ALL = "📋"
@@ -116,7 +116,7 @@ fun AppDrawerContent(
     tagFilterMode: TagFilterMode = TagFilterMode.OR,
     tagCounts: Map<String, Int> = emptyMap(),
     totalInspirationCount: Int = 0,
-    selectedDateType: GroupType? = null,
+    selectedDateType: DateGroup? = null,
     onCategoryClick: (Long?) -> Unit = {},
     onAddCategoryClick: () -> Unit = {},
     onCategoryAction: (CategoryAction) -> Unit = {},
@@ -124,7 +124,7 @@ fun AppDrawerContent(
     onTagFilterModeChange: (TagFilterMode) -> Unit = {},
     onClearTagSelection: () -> Unit = {},
     onAddTagClick: () -> Unit = {},
-    onDateTypeClick: (GroupType?) -> Unit = {},
+    onDateTypeClick: (DateGroup?) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onHelpClick: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -571,8 +571,8 @@ private fun InspirationFilterSection(
  */
 @Composable
 private fun DateTypeFilterSection(
-    selectedDateType: GroupType?,
-    onDateTypeClick: (GroupType?) -> Unit,
+    selectedDateType: DateGroup?,
+    onDateTypeClick: (DateGroup?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -611,9 +611,9 @@ private fun DateTypeFilterSection(
                     icon = "⏳",
                     name = "倒计时",
                     count = 0,
-                    isSelected = selectedDateType == GroupType.UPCOMING,
+                    isSelected = selectedDateType == DateGroup.COUNTDOWN,
                     showMenu = false,
-                    onClick = { onDateTypeClick(GroupType.UPCOMING) }
+                    onClick = { onDateTypeClick(DateGroup.COUNTDOWN) }
                 )
             }
 
@@ -622,9 +622,9 @@ private fun DateTypeFilterSection(
                     icon = "⏱️",
                     name = "正计时",
                     count = 0,
-                    isSelected = selectedDateType == GroupType.CELEBRATING,
+                    isSelected = selectedDateType == DateGroup.COUNTUP,
                     showMenu = false,
-                    onClick = { onDateTypeClick(GroupType.CELEBRATING) }
+                    onClick = { onDateTypeClick(DateGroup.COUNTUP) }
                 )
             }
 
@@ -633,10 +633,10 @@ private fun DateTypeFilterSection(
                     icon = "📌",
                     name = "已过期",
                     count = 0,
-                    isSelected = selectedDateType == GroupType.EXPIRED,
+                    isSelected = selectedDateType == DateGroup.EXPIRED,
                     showMenu = false,
                     textColor = Color(0xFF79747E),
-                    onClick = { onDateTypeClick(GroupType.EXPIRED) }
+                    onClick = { onDateTypeClick(DateGroup.EXPIRED) }
                 )
             }
         }

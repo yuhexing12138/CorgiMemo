@@ -82,11 +82,17 @@ val ElasticOutEasing: Easing = Easing { fraction ->
  *
  * 由 SwipeButtonConfig 持有，SwipeableTodoBox 根据此类型路由到对应回调。
  * 这样调用方（如日期页）可注入自定义按钮列表而不必遵循原 label 字符串约定。
+ *
+ * 可见性：必须为 public，因为 SwipeableTodoBox 是 public 函数，
+ * 其参数类型 List<SwipeButtonConfig> 间接依赖本枚举。
  */
-internal enum class SwipeActionType { SHARE, PIN, ARCHIVE, DELETE }
+enum class SwipeActionType { SHARE, PIN, ARCHIVE, DELETE }
 
 /**
  * 左滑操作按钮配置
+ *
+ * 可见性：必须为 public，因为 SwipeableTodoBox 是 public 函数，
+ * 其参数类型 List<SwipeButtonConfig> 暴露了本类。
  *
  * @param label 按钮文字
  * @param backgroundColorRes 背景色资源 ID
@@ -95,7 +101,7 @@ internal enum class SwipeActionType { SHARE, PIN, ARCHIVE, DELETE }
  * @param shape 按钮的圆角形状
  * @param actionType 按钮的语义动作（用于路由到对应回调）
  */
-internal data class SwipeButtonConfig(
+data class SwipeButtonConfig(
     val label: String,
     val backgroundColorRes: Int,
     val icon: ImageVector,

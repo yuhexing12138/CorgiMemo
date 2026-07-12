@@ -251,7 +251,8 @@ private fun DateSectionsList(
                             SwipeButtonConfig(
                                 label = if (date.isPinned) "取消置顶" else "置顶",
                                 backgroundColorRes = R.color.ui_primary,
-                                icon = if (date.isPinned) FilledPushPin else Icons.Outlined.PushPin,
+                                // 激活态与未激活态用同一图标，靠主色 + label 文案区分
+                                icon = Icons.Outlined.PushPin,
                                 zIndex = 3f,
                                 shape = RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp),
                                 actionType = SwipeActionType.PIN
