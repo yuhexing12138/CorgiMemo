@@ -60,7 +60,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
@@ -148,7 +147,17 @@ import kotlin.math.abs
 fun HomeScreen(
     navController: NavController,
     onFabClick: () -> Unit = {},
-    viewModel: HomeViewModel = hiltViewModel()
+    viewModel: HomeViewModel = hiltViewModel(),
+    /**
+     * 共享的 Snackbar 状态
+     *
+     * 来源：MainScreen 顶层 Scaffold 创建并通过参数传入。
+     * 原因：使用 Material 3 Scaffold 的 snackbarHost 槽位后，Scaffold 会自动
+     * 管理 Snackbar 与 FAB / 底部导航栏的避让，避免被遮挡。
+     *
+     * 子页面调用 snackbarHostState.showSnackbar(...) 即可触发显示。
+     */
+    snackbarHostState: SnackbarHostState
 ) {
     val filteredTodos by viewModel.filteredTodos.collectAsState()
     val isDataInitialized by viewModel.isDataInitialized.collectAsState()
@@ -289,7 +298,12 @@ fun HomeScreen(
 
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
-    val snackbarHostState = remember { SnackbarHostState() }
+    /**
+     * snackbarHostState 来源：
+     * - 不再在 HomeScreen 内部创建，改为由 MainScreen 顶层 Scaffold 创建并通过参数传入
+     * - 这样 SnackbarHost 通过 Scaffold 的 snackbarHost 槽位渲染，自动管理避让
+     * - 调用方：snackbarHostState.showSnackbar(...)
+     */
 
     // 新成就解锁弹窗状态
     var currentUnlockedAchievement by remember {
@@ -938,11 +952,13 @@ fun HomeScreen(
                 )
             }
 
-            // SnackbarHost 悬浮显示
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
+            /**
+             * SnackbarHost 已提升到 MainScreen 顶层 Scaffold 的 snackbarHost 槽位，
+             * 由 Scaffold 自动管理与 FAB / 底部导航栏的避让。
+             * 此处不再渲染 SnackbarHost，避免双重渲染与位置冲突。
+             *
+             * 调用方式：snackbarHostState.showSnackbar(...) 即可触发显示。
+             */
 
             /**
              * 批量操作栏已提取为 HomeBatchActionBar，在 MainScreen 的 bottomBar 槽位渲染。

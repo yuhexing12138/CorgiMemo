@@ -27,6 +27,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
@@ -240,6 +242,19 @@ fun MainScreen(
     val corgiPrefs = remember { CorgiPreferences.getInstance(context) }
     var corgiButtonPosition by remember { mutableStateOf<Pair<Float, Float>?>(null) }
     var celebrationTrigger by remember { mutableLongStateOf(0L) }
+
+    /**
+     * 共享 SnackbarHost 状态
+     *
+     * 设计目标：让 SnackbarHost 通过 Material 3 Scaffold 的 snackbarHost 槽位渲染，
+     * 自动管理 Snackbar 与 FAB / 底部导航栏的避让，避免与 FAB 重叠遮挡。
+     *
+     * 使用方式：
+     * - 子页面（如 HomeScreen）通过参数接收该 state
+     * - 调用 snackbarHostState.showSnackbar(...) 即可触发显示
+     * - Scaffold 会自动调整位置避开 FAB / bottomBar
+     */
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
         corgiButtonPosition = corgiPrefs.getFloatingCorgiPosition()
@@ -664,7 +679,16 @@ fun MainScreen(
                         )
                     }
                 }
-            }
+            },
+            /**
+             * 共享 Snackbar 槽位
+             *
+             * 使用 Material 3 Scaffold 的 snackbarHost 槽位，让 Scaffold 自动管理
+             * Snackbar 与 FAB / 底部导航栏的避让，避免手动定位时被遮挡。
+             *
+             * 子页面（HomeScreen）通过参数接收 snackbarHostState，调用 showSnackbar() 即可触发显示。
+             */
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
         ) { paddingValues ->
             /**
              * 动态计算导航栏总高度（含安全区域）
@@ -687,7 +711,8 @@ fun MainScreen(
                                 homeViewModel.setPoseForCreating()
                                 navController.navigate("todo_edit")
                             },
-                            viewModel = homeViewModel
+                            viewModel = homeViewModel,
+                            snackbarHostState = snackbarHostState
                         )
                         TabItem.INSPIRE -> InspirationScreen(
                             navController = navController,
