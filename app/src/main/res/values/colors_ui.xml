@@ -48,4 +48,5 @@
     <!-- ========== 左滑操作按钮配色 ========== -->
     <color name="ui_swipe_share">#FFD54F</color>   <!-- 分享：黄色 -->
     <color name="ui_swipe_delete">#FF5252</color>  <!-- 删除：正红色 -->
+    <color name="ui_archive">#5A8DEE</color>      <!-- 归档：柔和蓝（日期页专用） -->
 </resources>
