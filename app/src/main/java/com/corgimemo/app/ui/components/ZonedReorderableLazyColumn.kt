@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.components
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -15,6 +16,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.screens.home.DisplayItem
@@ -48,6 +51,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  * @param modifier Modifier
  * @param headerContent 列表前置项内容（搜索框、下拉刷新 spacer 等），不参与拖拽排序
  * @param headerItemCount 前置项数量（用于 onMove 索引偏移：全局索引 → displayItems 索引）
+ * @param itemSpacing 列表项之间的间距
  * @param content 列表项 Composable，参数为 (index, item, isDragging, isDragActive)
  */
 @Composable
@@ -64,6 +68,7 @@ fun ZonedReorderableLazyColumn(
     modifier: Modifier = Modifier,
     headerContent: LazyListScope.() -> Unit = {},
     headerItemCount: Int = 0,
+    itemSpacing: Dp = 0.dp,
     content: @Composable (index: Int, item: DisplayItem, isDragging: Boolean, isDragActive: Boolean) -> Unit
 ) {
     val context = LocalContext.current
@@ -132,7 +137,11 @@ fun ZonedReorderableLazyColumn(
     )
 
     // ━━━ 渲染 ━━━
-    LazyColumn(state = listState, modifier = modifier) {
+    LazyColumn(
+        state = listState,
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(itemSpacing)
+    ) {
         // 前置项（搜索框、下拉刷新 spacer 等），不参与拖拽排序
         headerContent()
         itemsIndexed(

@@ -92,7 +92,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -483,8 +482,6 @@ fun HomeScreen(
                     .align(Alignment.BottomEnd)
                     /** 小间距即可：父容器 Column 已通过 paddingValues 避开导航栏区域 */
                     .padding(end = 20.dp, bottom = 16.dp)
-                    /** 提升 z-index 到最上层，避免被 fillMaxSize() 的内容列遮挡 */
-                    .zIndex(10f)
             ) {
                 Icon(
                     imageVector = Icons.Default.Edit,
@@ -753,7 +750,8 @@ fun HomeScreen(
                                 },
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(horizontal = 8.dp)
+                                    .padding(horizontal = 8.dp),
+                                itemSpacing = 8.dp
                             ) { index, displayItem, isDragging, dragActive ->
                                 LaunchedEffect(dragActive) {
                                     isDragActive = dragActive
