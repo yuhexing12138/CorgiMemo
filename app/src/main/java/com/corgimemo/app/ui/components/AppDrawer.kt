@@ -61,7 +61,6 @@ import com.corgimemo.app.viewmodel.GroupType
 import com.corgimemo.app.viewmodel.TagFilterMode
 
 private const val DRAWER_ICON_ALL = "📋"
-private const val DRAWER_ICON_DELETED = "🗑️"
 private const val DRAWER_ICON_UNCATEGORIZED = "📦"
 
 private val categoryIcons = mapOf(
@@ -86,7 +85,6 @@ private val categoryIcons = mapOf(
  * @param corgiData 柯基数据
  * @param categories 待办分组列表
  * @param todoCountByCategory 待办分组计数
- * @param recentlyDeletedCount 最近删除数量
  * @param selectedCategoryId 当前选中的待办分组ID
  * @param inspirationTags 灵感标签列表
  * @param selectedTags 当前选中的灵感标签集合（多选）
@@ -102,7 +100,6 @@ private val categoryIcons = mapOf(
  * @param onClearTagSelection 清空所有选中标签回调（"全部灵感"点击时调用）
  * @param onAddTagClick 添加标签回调
  * @param onDateTypeClick 日期类型点击回调
- * @param onRecentlyDeletedClick 最近删除点击回调
  * @param onSettingsClick 设置点击回调
  * @param onHelpClick 帮助点击回调
  * @param modifier 修饰符
@@ -113,7 +110,6 @@ fun AppDrawerContent(
     corgiData: CorgiData?,
     categories: List<Category>,
     todoCountByCategory: Map<Long, Int>,
-    recentlyDeletedCount: Int,
     selectedCategoryId: Long?,
     inspirationTags: List<String> = emptyList(),
     selectedTags: Set<String> = emptySet(),
@@ -129,7 +125,6 @@ fun AppDrawerContent(
     onClearTagSelection: () -> Unit = {},
     onAddTagClick: () -> Unit = {},
     onDateTypeClick: (GroupType?) -> Unit = {},
-    onRecentlyDeletedClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onHelpClick: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -149,10 +144,8 @@ fun AppDrawerContent(
                 CategoryGroupSection(
                     categories = categories,
                     todoCountByCategory = todoCountByCategory,
-                    recentlyDeletedCount = recentlyDeletedCount,
                     selectedCategoryId = selectedCategoryId,
                     onCategoryClick = onCategoryClick,
-                    onRecentlyDeletedClick = onRecentlyDeletedClick,
                     onCategoryAction = onCategoryAction,
                     modifier = Modifier.weight(1f)
                 )
@@ -244,10 +237,8 @@ private fun UserProfileSection(corgiData: CorgiData?) {
 private fun CategoryGroupSection(
     categories: List<Category>,
     todoCountByCategory: Map<Long, Int>,
-    recentlyDeletedCount: Int,
     selectedCategoryId: Long?,
     onCategoryClick: (Long?) -> Unit,
-    onRecentlyDeletedClick: () -> Unit,
     onCategoryAction: (CategoryAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -309,18 +300,6 @@ private fun CategoryGroupSection(
                             CategoryAction.ShowMenu(category)
                         )
                     }
-                )
-            }
-
-            item {
-                CategoryItem(
-                    icon = DRAWER_ICON_DELETED,
-                    name = "最近删除",
-                    count = recentlyDeletedCount,
-                    isSelected = false,
-                    showMenu = false,
-                    textColor = Color(0xFF79747E),
-                    onClick = onRecentlyDeletedClick
                 )
             }
         }

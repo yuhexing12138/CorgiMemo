@@ -79,6 +79,7 @@ import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.InspirationViewModel
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationCalendarDialog
 import com.corgimemo.app.ui.screens.home.components.TodoCalendarDialog
+import com.corgimemo.app.ui.components.calendar.DatePickerRow
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.analytics.UserBehaviorAnalyzer
 import com.corgimemo.app.analytics.UserBehaviorAnalyzerEntryPoint
@@ -209,7 +210,6 @@ fun MainScreen(
     val corgiData by homeViewModel.corgiData.collectAsState()
     val categories by homeViewModel.categories.collectAsState()
     val todoCountByCategory by homeViewModel.todoCountByCategory.collectAsState()
-    val recentlyDeletedCount by homeViewModel.recentlyDeletedCount.collectAsState()
     val selectedCategoryId by homeViewModel.selectedCategoryId.collectAsState()
     val currentMood by homeViewModel.currentMood.collectAsState()
     val currentPose by homeViewModel.currentPose.collectAsState()
@@ -378,7 +378,6 @@ fun MainScreen(
                     corgiData = corgiData,
                     categories = categories,
                     todoCountByCategory = todoCountByCategory,
-                    recentlyDeletedCount = recentlyDeletedCount,
                     selectedCategoryId = selectedCategoryId,
                     inspirationTags = inspirationTags,
                     selectedTags = selectedTags,
@@ -397,10 +396,6 @@ fun MainScreen(
                             is CategoryAction.Rename -> showRenameCategoryDialog = action.category
                             is CategoryAction.Delete -> showDeleteCategoryDialog = action.category
                         }
-                    },
-                    onRecentlyDeletedClick = {
-                        navController.navigate(Screen.RecentlyDeleted.route)
-                        coroutineScope.launch { drawerState.close() }
                     },
                     onTagClick = { tag ->
                         inspirationViewModel.toggleTagSelection(tag)
@@ -466,63 +461,15 @@ fun MainScreen(
                         centerContent = if ((selectedTab == TabItem.INSPIRE || selectedTab == TabItem.TODO) && !effectiveBatchMode) {
                             {
                                 if (selectedTab == TabItem.TODO) {
-                                    // 待办页日期显示：大号日期 + 月份 + 箭头
-                                    Row(
-                                        verticalAlignment = Alignment.Bottom,
-                                        modifier = Modifier
-                                            .clickable {
-                                                showTodoCalendar = !showTodoCalendar
-                                            }
-                                    ) {
-                                        val now = Calendar.getInstance()
-                                        Text(
-                                            text = String.format("%02d", now.get(Calendar.DAY_OF_MONTH)),
-                                            fontSize = 25.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Spacer(modifier = Modifier.width(7.dp))
-                                        Text(
-                                            text = String.format("%02d月", now.get(Calendar.MONTH) + 1),
-                                            fontSize = 16.sp,
-                                            color = Color(0xFF666666)
-                                        )
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                        Text(
-                                            text = if (showTodoCalendar) "▲" else "▼",
-                                            fontSize = 8.sp,
-                                            color = Color(0xFF666666)
-                                        )
-                                    }
+                                    DatePickerRow(
+                                        isExpanded = showTodoCalendar,
+                                        onClick = { showTodoCalendar = !showTodoCalendar }
+                                    )
                                 } else {
-                                    // 灵感页日期显示：大号日期 + 月份 + 箭头（原有逻辑不变）
-                                    Row(
-                                        verticalAlignment = Alignment.Bottom,
-                                        modifier = Modifier
-                                            .clickable {
-                                                showInspirationCalendar = !showInspirationCalendar
-                                            }
-                                    ) {
-                                        val now = Calendar.getInstance()
-                                        Text(
-                                            text = String.format("%02d", now.get(Calendar.DAY_OF_MONTH)),
-                                            fontSize = 25.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Spacer(modifier = Modifier.width(7.dp))
-                                        Text(
-                                            text = String.format("%02d月", now.get(Calendar.MONTH) + 1),
-                                            fontSize = 16.sp,
-                                            color = Color(0xFF666666)
-                                        )
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                        Text(
-                                            text = if (showInspirationCalendar) "▲" else "▼",
-                                            fontSize = 8.sp,
-                                            color = Color(0xFF666666)
-                                        )
-                                    }
+                                    DatePickerRow(
+                                        isExpanded = showInspirationCalendar,
+                                        onClick = { showInspirationCalendar = !showInspirationCalendar }
+                                    )
                                 }
                             }
                         } else null,
@@ -569,7 +516,8 @@ fun MainScreen(
                                     },
                                     onPlaceholderClick = {
                                         Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show()
-                                    }
+                                    },
+                                    onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("todo")) }
                                 )
                             }
                         } else if (selectedTab == TabItem.INSPIRE && !effectiveBatchMode) {
@@ -580,7 +528,8 @@ fun MainScreen(
                                     hideDetails = inspirationHideDetails,
                                     onToggleHideDetails = { inspirationViewModel.toggleHideDetails() },
                                     onBatchSelectClick = { inspirationViewModel.enterBatchMode() },
-                                    onPlaceholderClick = { Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show() }
+                                    onPlaceholderClick = { Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show() },
+                                    onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("inspiration")) }
                                 )
                             }
                         } else null,
@@ -706,6 +655,10 @@ fun MainScreen(
                                 pageType?.let { type ->
                                     coroutineScope.launch { userBehaviorAnalyzer.recordPageVisit(type) }
                                 }
+
+                                // Tab 切换时关闭日历弹窗，避免切换到其他页面时弹窗残留
+                                showInspirationCalendar = false
+                                showTodoCalendar = false
 
                                 selectedTab = tab
                             }

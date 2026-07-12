@@ -34,7 +34,6 @@ import com.corgimemo.app.data.repository.AchievementChecker
 import com.corgimemo.app.data.repository.AchievementRepository
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.CorgiRepository
-import com.corgimemo.app.data.repository.DeletedTodoRepository
 import com.corgimemo.app.data.repository.MoodHistoryRepository
 import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.data.repository.SubTaskManager
@@ -119,7 +118,6 @@ class HomeViewModel @Inject constructor(
     private val todoRepository: TodoRepository,
     private val corgiRepository: CorgiRepository,
     private val categoryRepository: CategoryRepository,
-    private val deletedTodoRepository: DeletedTodoRepository,
     private val achievementChecker: AchievementChecker,
     private val achievementRepository: AchievementRepository,
     private val corgiPreferences: CorgiPreferences,
@@ -588,9 +586,6 @@ class HomeViewModel @Inject constructor(
 
     // ========== 侧滑导航栏相关状态 ==========
 
-    private val _recentlyDeletedCount = MutableStateFlow(0)
-    val recentlyDeletedCount: StateFlow<Int> = _recentlyDeletedCount.asStateFlow()
-
     /**
      * 每个分类的待办计数（包括全部和未分类）
      */
@@ -648,7 +643,6 @@ class HomeViewModel @Inject constructor(
         checkHoliday()
         checkSolarTerm()
         initAchievements()
-        observeRecentlyDeleted()
 
         viewModelScope.launch {
             corgiPreferences.showCompleted.collect { _showCompleted.value = it }
@@ -997,17 +991,6 @@ class HomeViewModel @Inject constructor(
     }
 
     // ========== 侧滑导航栏相关方法 ==========
-
-    /**
-     * 观察最近删除待办数量
-     */
-    private fun observeRecentlyDeleted() {
-        viewModelScope.launch {
-            deletedTodoRepository.getDeletedCount().collect { count ->
-                _recentlyDeletedCount.value = count
-            }
-        }
-    }
 
     /**
      * 设置分类过滤
