@@ -475,9 +475,21 @@ enum class GroupType { UPCOMING, CELEBRATING, EXPIRED }
 
 enum class DayColor { RED, ORANGE, GRAY, GREEN }
 
+/**
+ * 特殊日期类型
+ *
+ * 注意事项：
+ * 1. 新增枚举值时必须放在 OTHER 之前，OTHER 必须保持最末尾
+ * 2. 枚举的 ordinal 不保证稳定，数据库存的是 name() 字符串，不是 ordinal
+ * 3. 自定义类型在数据库中存为 "CUSTOM:xxx" 格式字符串，不属于本枚举
+ */
 enum class DateCategory(val displayName: String, val emoji: String) {
     BIRTHDAY("生日", "\uD83C\uDF82"),
     ANNIVERSARY("纪念日", "\uD83D\uDC95"),
     HOLIDAY("节日", "\uD83C\uDF89"),
+    LIFE("生活", "🌱"),
+    STUDY("学习", "📚"),
+    WORK("工作", "💼"),
+    ENTERTAINMENT("娱乐", "🎮"),
     OTHER("其他", "\uD83D\uDCC5")
 }
