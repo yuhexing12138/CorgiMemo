@@ -128,6 +128,15 @@ fun ReminderPickerBottomSheet(
     // 编辑目标：提醒时间 或 截止日期
     var editTarget by remember { mutableStateOf(EditTarget.REMINDER) }
 
+    // 截止时间自动修正后的短暂高亮（1.5秒后恢复）
+    var isDueDateAutoFixed by remember { mutableStateOf(false) }
+    LaunchedEffect(isDueDateAutoFixed) {
+        if (isDueDateAutoFixed) {
+            kotlinx.coroutines.delay(1500)
+            isDueDateAutoFixed = false
+        }
+    }
+
     // ===== 截止日期状态 =====
     // 截止日期是否已设置（null 表示未设置）
     var isDueDateSet by remember { mutableStateOf(initialDueDateMillis != null) }
@@ -213,6 +222,7 @@ fun ReminderPickerBottomSheet(
             isDateSelected = isDueDateSet,
             isCalendarActive = viewMode == "calendar",
             isTimeActive = viewMode == "time",
+            highlightEnabled = isDueDateAutoFixed,
             onDateClick = {
                 if (!isDueDateSet) {
                     // 首次点击：初始化为提醒时间同一天 23:59
@@ -476,6 +486,9 @@ fun ReminderPickerBottomSheet(
                                 dueHour = adjustedDateTime.hour
                                 dueMinute = adjustedDateTime.minute
                                 dueDateMillis = reminderMillis
+                                // 切换到截止日期行并高亮提示
+                                editTarget = EditTarget.DUE_DATE
+                                isDueDateAutoFixed = true
                                 Toast.makeText(context, "截止时间已自动调整为提醒时间", Toast.LENGTH_SHORT).show()
                             }
                         }
@@ -527,6 +540,7 @@ fun ReminderPickerBottomSheet(
  * @param onDateClick 日期芯片点击回调
  * @param onTimeClick 时间芯片点击回调
  * @param onClear 清除按钮点击回调，null 时不显示清除按钮
+ * @param highlightEnabled 是否高亮显示（自动修正后短暂高亮提示）
  */
 @Composable
 private fun DateTimeRow(
@@ -539,10 +553,17 @@ private fun DateTimeRow(
     isTimeActive: Boolean,
     onDateClick: () -> Unit,
     onTimeClick: () -> Unit,
-    onClear: (() -> Unit)?
+    onClear: (() -> Unit)?,
+    highlightEnabled: Boolean = false
 ) {
+    // 高亮背景色：自动修正后短暂使用橙色淡背景
+    val rowBackground = if (highlightEnabled) Color(0xFFFFF3E8) else Color.Transparent
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(rowBackground)
+            .padding(vertical = if (highlightEnabled) 4.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(

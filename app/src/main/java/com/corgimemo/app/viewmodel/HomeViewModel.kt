@@ -2929,6 +2929,29 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 批量更新选中待办的截止日期
+     *
+     * 在批量设置提醒弹窗中，用户可以同时设置截止日期。
+     * dueDateMillis 为 null 时清除截止日期。
+     */
+    fun batchUpdateDueDate(dueDateMillis: Long?) {
+        val selectedIds = _selectedTodoIds.value
+        if (selectedIds.isEmpty()) return
+        viewModelScope.launch {
+            selectedIds.forEach { id ->
+                todoRepository.getTodoById(id)?.let { todo ->
+                    todoRepository.updateTodo(
+                        todo.copy(
+                            dueDate = dueDateMillis,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * 批量复制选中的待办
      *
      * 每条新待办使用 Room 自增 id（id=0），createdAt/updatedAt 重置为当前时间，

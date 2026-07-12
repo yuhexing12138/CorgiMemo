@@ -1432,7 +1432,7 @@ fun HomeScreen(
                 initialMinute = initMinute,
                 initialRepeatType = firstSelected?.repeatType ?: 0,
                 onDismiss = { showReminderPickerSheet = false },
-                onConfirm = { dateMillis, hour, minute, repeatType, _, _ ->
+                onConfirm = { dateMillis, hour, minute, repeatType, _, dueDateMillis ->
                     /**
                      * 把日期 + 时分组合为完整时间戳。
                      * 若未选择日期（dateMillis 为 null），使用当前时刻。
@@ -1450,6 +1450,8 @@ fun HomeScreen(
                     showReminderPickerSheet = false
                     val count = selectedTodoIds.size
                     viewModel.batchUpdateReminder(reminderTime, repeatType)
+                    // 批量更新截止日期
+                    viewModel.batchUpdateDueDate(dueDateMillis)
                     viewModel.exitBatchMode()
                     coroutineScope.launch {
                         snackbarHostState.showSnackbar("已为 $count 个待办设置提醒")
