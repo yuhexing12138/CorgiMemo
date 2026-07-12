@@ -137,6 +137,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -719,7 +720,7 @@ fun HomeScreen(
                                     when {
                                         // 已完成区折叠 → 展开已完成区
                                         todo.status == 1 && !showCompleted -> {
-                                            viewModel.setShowCompleted(true)
+                                            viewModel.toggleShowCompleted()
                                         }
                                         // 置顶区折叠 → 展开置顶区
                                         todo.isPinned && !showPinned -> {
@@ -735,11 +736,22 @@ fun HomeScreen(
                                             return@LaunchedEffect
                                         }
                                     }
-                                    // 等待 displayItems 重组后包含目标待办
-                                    snapshotFlow { displayItems }
-                                        .first { items ->
-                                            items.any { it is DisplayItem.Todo && it.item.id == targetId }
+                                    // 等待 displayItems 重组后包含目标待办（3秒超时保护，避免无限挂起）
+                                    val found = try {
+                                        withTimeout(3000L) {
+                                            snapshotFlow { displayItems }
+                                                .first { items ->
+                                                    items.any { it is DisplayItem.Todo && it.item.id == targetId }
+                                                }
+                                            true
                                         }
+                                    } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                                        false
+                                    }
+                                    if (!found) {
+                                        viewModel.clearScrollToTodo()
+                                        return@LaunchedEffect
+                                    }
                                     // 重组完成后滚动到目标位置
                                     val newIndex = displayItems.indexOfFirst { item ->
                                         item is DisplayItem.Todo && item.item.id == targetId
