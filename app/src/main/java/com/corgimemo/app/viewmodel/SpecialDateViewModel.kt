@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import com.corgimemo.app.util.TagUtils
@@ -42,20 +43,14 @@ class SpecialDateViewModel @Inject constructor(
     private val _isDataInitialized = MutableStateFlow(false)
     val isDataInitialized: StateFlow<Boolean> = _isDataInitialized
 
-    /** 原始数据流 */
+    /** 原始数据流（在 stateIn 之前通过 onEach 监听初始化状态） */
     val specialDates: StateFlow<List<SpecialDate>> = repository.allDates
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    /** 监听数据初始化状态（首次发射非空数据时标记为已初始化） */
-    init {
-        viewModelScope.launch {
-            specialDates.collect { dates ->
-                if (dates.isNotEmpty() && !_isDataInitialized.value) {
-                    _isDataInitialized.value = true
-                }
+        .onEach {
+            if (!_isDataInitialized.value) {
+                _isDataInitialized.value = true
             }
         }
-    }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** 三组分类后的展示数据 */
     val groupedDates: StateFlow<Map<GroupType, List<DisplayDate>>> =
