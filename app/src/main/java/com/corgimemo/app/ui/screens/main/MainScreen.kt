@@ -743,7 +743,7 @@ fun MainScreen(
                             when (bubbleType) {
                                 BubbleType.CREATE_TODO -> navController.navigate("todo_edit")
                                 BubbleType.RECORD_INSPIRE -> navController.navigate("inspiration_edit")
-                                BubbleType.SPECIAL_DATE -> navController.navigate("date_edit")
+                                BubbleType.SPECIAL_DATE -> navController.navigate(Screen.SpecialDateQuickCreate.route)
                             }
                         },
                         navBarHeight = dynamicNavBarHeight,  // 动态值：Scaffold底部内边距 + 按钮凸起量

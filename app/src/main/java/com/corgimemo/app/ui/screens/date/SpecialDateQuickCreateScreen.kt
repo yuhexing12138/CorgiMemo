@@ -1,5 +1,13 @@
 package com.corgimemo.app.ui.screens.date
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,6 +19,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -29,13 +41,13 @@ import java.time.ZoneId
 /**
  * 特殊日期快速创建页（新建专用）
  *
- * 与 SpecialDateEditScreen 的区别：
+ * 设计说明：
  * - 仅显示 4 行核心功能：头像 / 名称 / 日期 / 类型 / 置顶 / 关联
  * - 不显示：备注 / 标签 / 图片 / 关联编辑 / 计时 / 重复 / 提醒
  * - "下一步"按钮当前为占位（功能开发中）
  *
  * 状态全部 Local 化管理，不写入 ViewModel。
- * 编辑模式（点击日期卡片）继续走旧版 SpecialDateEditScreen，本次不变。
+ * V2.7 反馈：编辑模式（点击日期卡片）改为显示"编辑功能开发中" Snackbar 占位。
  *
  * @param navController 导航控制器
  */
@@ -122,11 +134,16 @@ fun SpecialDateQuickCreateScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 名称输入框
+            // 名称输入框（placeholder 透明度 0.5f 与灵感编辑页保持一致）
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
-                placeholder = { Text("名称") },
+                placeholder = {
+                    Text(
+                        text = "请在这里输入名称...",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                },
                 trailingIcon = {
                     IconButton(onClick = {
                         coroutineScope.launch {
@@ -219,40 +236,100 @@ fun SpecialDateQuickCreateScreen(
         }
     }
 
-    // 日期选择弹窗（复用 ReminderPickerBottomSheet）
-    // 真实签名（来自 app/src/main/java/com/corgimemo/app/ui/components/ReminderPickerBottomSheet.kt）：
-    //   fun ReminderPickerBottomSheet(
-    //       initialDateMillis: Long? = null,
-    //       initialHour: Int = 13,
-    //       initialMinute: Int = 35,
-    //       initialRepeatType: Int = 0,
-    //       initialCalendarEnabled: Boolean = false,
-    //       showAdvancedOptions: Boolean = true,
-    //       title: String = "设置提醒时间",
-    //       rowLabel: String = "提醒时间",
-    //       calendarRowSpacing: Dp? = null,
-    //       inspirationPreview: @Composable ((date: LocalDate, hour: Int, minute: Int) -> Unit)? = null,
-    //       initialDueDateMillis: Long? = null,
-    //       onDismiss: () -> Unit,
-    //       onConfirm: (dateMillis: Long?, hour: Int, minute: Int, repeatType: Int, calendarEnabled: Boolean, dueDateMillis: Long?) -> Unit
-    //   )
-    // 关键：showAdvancedOptions = false 隐藏时间/重复/截止日期/农历高级选项
-    //       onConfirm 接收到 6 个参数（dateMillis, hour, minute, repeatType, calendarEnabled, dueDateMillis）
+    /**
+     * 日期选择弹窗
+     *
+     * V2.9 反馈：**完全参考**待办编辑页设置提醒按钮的弹窗模式：
+     * - 全屏半透明遮罩（Color(0x99000000) + navigationBarsPadding）
+     * - 点击遮罩关闭弹窗
+     * - 弹窗容器：固定高度 90% 屏幕 + 自定义 layout 按 4:1 比例定位（上方 4 份空白：下方 1 份空白）
+     * - 弹窗内容：AnimatedVisibility + fadeIn + scaleIn(initialScale = 0.9f) + spring
+     * - 内部承载 ReminderPickerBottomSheet（不带容器）
+     * - 标题"设置提醒时间"，行标签"提醒时间"（与待办编辑页一致）
+     */
     if (showDatePicker) {
-        ReminderPickerBottomSheet(
-            initialDateMillis = selectedDateMillis,
-            showAdvancedOptions = false,
-            title = "选择日期",
-            rowLabel = "日期",
-            onDismiss = { showDatePicker = false },
-            onConfirm = { dateMillis, _, _, _, _, _ ->
-                if (dateMillis != null) {
-                    selectedDateMillis = dateMillis
-                    dateRowText = formatDateText(dateMillis)
+        // 弹窗出现时隐藏键盘（与待办编辑页一致）
+        androidx.compose.ui.platform.LocalFocusManager.current.clearFocus()
+
+        // 使用 LocalConfiguration 获取屏幕高度 + LocalDensity 转 px（与待办编辑页一致）
+        val configuration = LocalConfiguration.current
+        val screenDensity = LocalDensity.current
+        val screenHeightPx = remember(configuration) {
+            with(screenDensity) { configuration.screenHeightDp.dp.toPx().toInt() }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                // 延伸到系统导航栏区域，确保遮罩层完全覆盖底部白条
+                .navigationBarsPadding()
+                .background(Color(0x99000000))
+                // 点击遮罩关闭 picker
+                .clickable(onClick = { showDatePicker = false })
+        ) {
+            // 弹窗容器：固定高度 + 自定义 layout 按 4:1 比例定位
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clickable(
+                        // 阻止事件穿透到底层遮罩
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    )
+                    // 自定义布局：固定弹窗高度为屏幕 90%，按 4:1 比例定位
+                    .layout { measurable, constraints ->
+                        val screenH = screenHeightPx
+
+                        // 固定弹窗高度：屏幕高度的 90%
+                        val dialogHeight = if (screenH > 0) (screenH * 0.9).toInt() else 900
+
+                        // 按 4:1 比例分配上下空白
+                        // T/B = 4/1, T + h + B = H → B=(H-h)/5, T=4(H-h)/5
+                        val bottomSpace = (screenH - dialogHeight) / 5
+                        val topSpace = bottomSpace * 4
+
+                        // 创建固定高度的约束，让子元素填满这个固定空间
+                        val fixedConstraints = constraints.copy(
+                            minHeight = dialogHeight,
+                            maxHeight = dialogHeight
+                        )
+
+                        val placeable = measurable.measure(fixedConstraints)
+
+                        layout(placeable.width, dialogHeight) {
+                            placeable.placeRelative(0, topSpace.coerceAtLeast(0))
+                        }
+                    }
+            ) {
+                // 弹窗内容：带淡入+缩放动画
+                AnimatedVisibility(
+                    visible = true,
+                    enter = fadeIn(
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                    ) + scaleIn(
+                        initialScale = 0.9f,
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                    )
+                ) {
+                    ReminderPickerBottomSheet(
+                        initialDateMillis = selectedDateMillis,
+                        // showAdvancedOptions 默认 true，启用时间/重复/截止日期/农历高级选项
+                        title = "设置提醒时间",  // 与待办编辑页一致
+                        rowLabel = "提醒时间",   // 与待办编辑页一致
+                        onDismiss = { showDatePicker = false },
+                        onConfirm = { dateMillis, _, _, _, _, _ ->
+                            if (dateMillis != null) {
+                                selectedDateMillis = dateMillis
+                                dateRowText = formatDateText(dateMillis)
+                            }
+                            showDatePicker = false
+                        }
+                    )
                 }
-                showDatePicker = false
             }
-        )
+        }
     }
 
     // 类型选择弹窗

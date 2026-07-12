@@ -41,10 +41,6 @@ sealed class Screen(val route: String) {
         fun createRoute(chartType: String) = "chart_fullscreen/$chartType"
     }
 
-    // 特殊日期编辑页面
-    object SpecialDateEdit : Screen("date_edit")                          // 新建日期
-    object SpecialDateEditWithId : Screen("date_edit/{specialDateId}")     // 编辑日期
-
     // 特殊日期快速创建页面（重构版：4 行核心功能 + 下一步）
     object SpecialDateQuickCreate : Screen("date_create")                  // 日期新建快速创建页
 

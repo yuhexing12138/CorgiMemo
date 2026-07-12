@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +49,7 @@ import com.corgimemo.app.ui.screens.date.components.SpecialDateCard
 import com.corgimemo.app.viewmodel.DateGroup
 import com.corgimemo.app.viewmodel.SpecialDateViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * 特殊日期列表页面（重构版）
@@ -83,6 +85,9 @@ fun SpecialDateScreen(
     val expandedDateId by viewModel.expandedDateId.collectAsState()
     val pinnedDateId by viewModel.pinnedDateId.collectAsState()
     val pendingArchive by viewModel.pendingArchive.collectAsState()
+
+    /** 协程作用域：用于点击日期卡片时显示"编辑功能开发中" Snackbar */
+    val coroutineScope = rememberCoroutineScope()
 
     // 单一 ticker：整页仅 1 个协程驱动 nowMs，每秒更新一次
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -170,7 +175,16 @@ fun SpecialDateScreen(
                     onArchive = viewModel::archiveDate,
                     onDelete = viewModel::deleteDate,
                     onCardClick = { date ->
-                        navController.navigate("date_edit/${date.id}")
+                        /**
+                         * V2.7 反馈：编辑功能开发中
+                         *
+                         * 原逻辑：跳转到旧版 SpecialDateEditScreen 路由 `date_edit/{id}`
+                         * 新逻辑：复用 MainScreen 顶层 SnackbarHostState 显示"编辑功能开发中"占位提示。
+                         * - snackbarHostState 为 null 时静默忽略（深链场景下可降级）
+                         */
+                        coroutineScope.launch {
+                            snackbarHostState?.showSnackbar("编辑功能开发中，敬请期待")
+                        }
                     }
                 )
             }
