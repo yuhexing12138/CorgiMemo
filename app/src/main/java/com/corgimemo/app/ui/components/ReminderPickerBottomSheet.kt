@@ -472,30 +472,29 @@ fun ReminderPickerBottomSheet(
                         } else null
 
                         // 计算截止日期时间戳（未设置则为 null）
-                        var dueDateMillis: Long? = null
-                        if (isDueDateSet) {
-                            dueDateMillis = dueDate.atTime(dueHour, dueMinute)
+                        val dueDateMillis = if (isDueDateSet) {
+                            dueDate.atTime(dueHour, dueMinute)
                                 .atZone(java.time.ZoneId.systemDefault())
                                 .toInstant().toEpochMilli()
-
-                            // 截止时间自动修正：早于提醒时间时自动调整为提醒时间
-                            if (reminderMillis != null && dueDateMillis < reminderMillis) {
-                                val adjustedDateTime = java.time.Instant.ofEpochMilli(reminderMillis)
-                                    .atZone(java.time.ZoneId.systemDefault())
-                                dueDate = adjustedDateTime.toLocalDate()
-                                dueHour = adjustedDateTime.hour
-                                dueMinute = adjustedDateTime.minute
-                                dueDateMillis = reminderMillis
-                                // 切换到截止日期行并高亮提示
-                                editTarget = EditTarget.DUE_DATE
-                                isDueDateAutoFixed = true
-                                Toast.makeText(context, "截止时间已自动调整为提醒时间", Toast.LENGTH_SHORT).show()
-                            }
-                        }
+                        } else null
 
                         // 至少需要设置提醒时间或截止日期其中之一
                         if (reminderMillis == null && dueDateMillis == null) {
                             Toast.makeText(context, "请至少设置提醒时间或截止日期", Toast.LENGTH_SHORT).show()
+                            return@clickable
+                        }
+
+                        // 截止时间自动修正：早于提醒时间时自动调整为提醒时间
+                        // 修正后不立即提交，切换到截止日期行高亮让用户确认
+                        if (reminderMillis != null && dueDateMillis != null && dueDateMillis < reminderMillis) {
+                            val adjustedDateTime = java.time.Instant.ofEpochMilli(reminderMillis)
+                                .atZone(java.time.ZoneId.systemDefault())
+                            dueDate = adjustedDateTime.toLocalDate()
+                            dueHour = adjustedDateTime.hour
+                            dueMinute = adjustedDateTime.minute
+                            editTarget = EditTarget.DUE_DATE
+                            isDueDateAutoFixed = true
+                            Toast.makeText(context, "截止时间已自动调整为提醒时间，请确认", Toast.LENGTH_SHORT).show()
                             return@clickable
                         }
 

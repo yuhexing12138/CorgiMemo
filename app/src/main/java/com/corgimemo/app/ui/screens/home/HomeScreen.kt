@@ -1454,10 +1454,11 @@ fun HomeScreen(
                     viewModel.batchUpdateDueDate(dueDateMillis)
                     viewModel.exitBatchMode()
                     coroutineScope.launch {
-                        val msg = if (dueDateMillis != null) {
-                            "已为 $count 个待办设置提醒和截止日期"
-                        } else {
-                            "已为 $count 个待办设置提醒"
+                        val msg = when {
+                            dateMillis != null && dueDateMillis != null -> "已为 $count 个待办设置提醒和截止日期"
+                            dateMillis != null -> "已为 $count 个待办设置提醒"
+                            dueDateMillis != null -> "已为 $count 个待办设置截止日期"
+                            else -> "已为 $count 个待办更新"
                         }
                         snackbarHostState.showSnackbar(msg)
                     }
