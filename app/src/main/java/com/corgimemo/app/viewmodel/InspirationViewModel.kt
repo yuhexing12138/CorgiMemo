@@ -8,6 +8,7 @@ import com.corgimemo.app.data.model.CardSearchResult
 import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.repository.CardRelationRepository
+import com.corgimemo.app.data.repository.DeletedInspirationRepository
 import com.corgimemo.app.data.repository.InspirationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -44,6 +45,7 @@ enum class TagFilterMode {
 @HiltViewModel
 class InspirationViewModel @Inject constructor(
     private val inspirationRepository: InspirationRepository,
+    private val deletedInspirationRepository: DeletedInspirationRepository,
     private val cardRelationRepository: CardRelationRepository,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
@@ -468,21 +470,28 @@ class InspirationViewModel @Inject constructor(
     }
 
     /**
-     * 删除灵感（级联删除关联）
+     * 删除灵感（先插入回收站再删除，软删除流程）
      * @param id 灵感ID
      */
     fun deleteInspiration(id: Long) {
         viewModelScope.launch {
-            inspirationRepository.deleteById(id)
+            runCatching {
+                val inspiration = inspirationRepository.getInspirationById(id)
+                if (inspiration != null) {
+                    deletedInspirationRepository.insertDeletedInspiration(inspiration)
+                }
+                inspirationRepository.deleteById(id)
+            }
         }
     }
 
     /**
-     * 删除灵感实体
+     * 删除灵感实体（先插入回收站再删除，软删除流程）
      * @param inspiration 灵感实体
      */
     fun deleteInspiration(inspiration: Inspiration) {
         viewModelScope.launch {
+            deletedInspirationRepository.insertDeletedInspiration(inspiration)
             inspirationRepository.delete(inspiration)
         }
     }
@@ -547,13 +556,17 @@ class InspirationViewModel @Inject constructor(
     }
 
     /**
-     * 批量删除选中的灵感
+     * 批量删除选中的灵感（先插入回收站再删除，软删除流程）
      */
     fun batchDeleteInspirations() {
         val selectedIds = _selectedInspirationIds.value
         if (selectedIds.isEmpty()) return
         viewModelScope.launch {
             selectedIds.forEach { id ->
+                val inspiration = inspirationRepository.getInspirationById(id)
+                if (inspiration != null) {
+                    deletedInspirationRepository.insertDeletedInspiration(inspiration)
+                }
                 inspirationRepository.deleteById(id)
             }
             exitBatchMode()
