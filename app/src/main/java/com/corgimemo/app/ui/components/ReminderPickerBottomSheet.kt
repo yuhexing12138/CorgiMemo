@@ -164,9 +164,10 @@ fun ReminderPickerBottomSheet(
                 .background(Color.White)
                 .padding(horizontal = 24.dp)
         ) {
-        // 标题
+        // 标题（动态：仅截止日期时显示"设置截止日期"）
+        val displayTitle = if (!isReminderSet && isDueDateSet) "设置截止日期" else title
         Text(
-            text = title,
+            text = displayTitle,
             fontSize = 17.sp,
             fontWeight = FontWeight.SemiBold,
             color = Color(0xFF2D2D2D),
@@ -461,16 +462,22 @@ fun ReminderPickerBottomSheet(
                         } else null
 
                         // 计算截止日期时间戳（未设置则为 null）
-                        val dueDateMillis = if (isDueDateSet) {
-                            dueDate.atTime(dueHour, dueMinute)
+                        var dueDateMillis: Long? = null
+                        if (isDueDateSet) {
+                            dueDateMillis = dueDate.atTime(dueHour, dueMinute)
                                 .atZone(java.time.ZoneId.systemDefault())
                                 .toInstant().toEpochMilli()
-                        } else null
 
-                        // 截止时间校验：提醒和截止都设置时，截止不能早于提醒
-                        if (reminderMillis != null && dueDateMillis != null && dueDateMillis < reminderMillis) {
-                            Toast.makeText(context, "截止时间不能早于提醒时间", Toast.LENGTH_SHORT).show()
-                            return@clickable
+                            // 截止时间自动修正：早于提醒时间时自动调整为提醒时间
+                            if (reminderMillis != null && dueDateMillis < reminderMillis) {
+                                val adjustedDateTime = java.time.Instant.ofEpochMilli(reminderMillis)
+                                    .atZone(java.time.ZoneId.systemDefault())
+                                dueDate = adjustedDateTime.toLocalDate()
+                                dueHour = adjustedDateTime.hour
+                                dueMinute = adjustedDateTime.minute
+                                dueDateMillis = reminderMillis
+                                Toast.makeText(context, "截止时间已自动调整为提醒时间", Toast.LENGTH_SHORT).show()
+                            }
                         }
 
                         // 至少需要设置提醒时间或截止日期其中之一
