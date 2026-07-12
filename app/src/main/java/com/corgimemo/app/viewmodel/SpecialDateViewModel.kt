@@ -43,6 +43,18 @@ class SpecialDateViewModel @Inject constructor(
     private val _isDataInitialized = MutableStateFlow(false)
     val isDataInitialized: StateFlow<Boolean> = _isDataInitialized
 
+    /** 左滑展开互斥（同时仅一张卡片展开） */
+    private val _expandedDateId = MutableStateFlow<Long?>(null)
+    val expandedDateId: StateFlow<Long?> = _expandedDateId
+
+    /** 当前已置顶日期 id（仅一个） */
+    private val _pinnedDateId = MutableStateFlow<Long?>(null)
+    val pinnedDateId: StateFlow<Long?> = _pinnedDateId
+
+    /** Snackbar 撤回缓存（归档时的 SpecialDate 快照） */
+    private val _pendingArchive = MutableStateFlow<SpecialDate?>(null)
+    val pendingArchive: StateFlow<SpecialDate?> = _pendingArchive
+
     /** 原始数据流（在 stateIn 之前通过 onEach 监听初始化状态） */
     val specialDates: StateFlow<List<SpecialDate>> = repository.allDates
         .onEach {
@@ -152,6 +164,84 @@ class SpecialDateViewModel @Inject constructor(
     fun togglePin(id: Long) {
         viewModelScope.launch {
             repository.togglePin(id)
+        }
+    }
+
+    /**
+     * 设置左滑展开卡片 id（同时仅一张卡片展开）
+     * 传入 null 表示全部收起
+     */
+    fun setExpandedDateId(id: Long?) {
+        _expandedDateId.value = id
+    }
+
+    /**
+     * 归档特殊日期
+     * 1. 调用 repository.archive(id)
+     * 2. 缓存 SpecialDate 快照到 _pendingArchive（供撤回用）
+     * 3. 若归档的是置顶卡，同步清空 _pinnedDateId
+     */
+    fun archiveDate(id: Long) {
+        viewModelScope.launch {
+            try {
+                // 1. 先取快照（在 archive 之前），getById 是 suspend
+                val snapshot = repository.getById(id)
+                // 2. 归档
+                repository.archive(id)
+                // 3. 缓存快照
+                _pendingArchive.value = snapshot
+                // 4. 若归档的是置顶卡，清空 pinnedDateId
+                if (_pinnedDateId.value == id) {
+                    _pinnedDateId.value = null
+                }
+            } catch (e: Exception) {
+                // 走项目内统一的全局错误处理流程，UI 弹简短 Toast
+                android.util.Log.e("SpecialDateVM", "归档失败: id=$id", e)
+            }
+        }
+    }
+
+    /**
+     * 撤回归档（恢复 SpecialDate 到 isArchived=false）
+     * 必须在 Snackbar 显示的 3 秒内由 UI 触发
+     */
+    fun undoArchive() {
+        val snapshot = _pendingArchive.value ?: return
+        viewModelScope.launch {
+            try {
+                repository.unarchive(snapshot.id)
+                _pendingArchive.value = null
+            } catch (e: Exception) {
+                android.util.Log.e("SpecialDateVM", "撤回归档失败: id=${snapshot.id}", e)
+                // 失败：清空缓存，让 UI 弹 Toast
+                _pendingArchive.value = null
+            }
+        }
+    }
+
+    /**
+     * 置顶特殊日期（单选：自动取消其它卡片的置顶）
+     */
+    fun pinDate(id: Long) {
+        viewModelScope.launch {
+            try {
+                repository.pinDate(id)
+                _pinnedDateId.value = id
+            } catch (e: Exception) {
+                android.util.Log.e("SpecialDateVM", "置顶失败: id=$id", e)
+            }
+        }
+    }
+
+    /** 取消置顶 */
+    fun unpinDate(id: Long) {
+        viewModelScope.launch {
+            try {
+                repository.unpinDate(id)
+                _pinnedDateId.value = null
+            } catch (e: Exception) {
+                android.util.Log.e("SpecialDateVM", "取消置顶失败: id=$id", e)
+            }
         }
     }
 
