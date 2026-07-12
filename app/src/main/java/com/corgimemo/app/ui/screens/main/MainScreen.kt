@@ -78,6 +78,7 @@ import com.corgimemo.app.ui.screens.profile.ProfileScreen
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.InspirationViewModel
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationCalendarDialog
+import com.corgimemo.app.ui.screens.home.components.TodoCalendarDialog
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.analytics.UserBehaviorAnalyzer
 import com.corgimemo.app.analytics.UserBehaviorAnalyzerEntryPoint
@@ -128,6 +129,14 @@ fun MainScreen(
      * 声明在 MainScreen 顶层以保证 topBar 与 content 区域均可访问。
      */
     var showInspirationCalendar by remember { mutableStateOf(false) }
+
+    /**
+     * 待办页日历弹窗显示状态
+     *
+     * 由 MainScreen 统一管理，centerContent 点击时置 true，
+     * 传递给 TodoCalendarDialog 由其内部渲染。
+     */
+    var showTodoCalendar by remember { mutableStateOf(false) }
 
     /**
      * 监听其他页面返回时设置的 targetTab
@@ -454,42 +463,66 @@ fun MainScreen(
                          * 灵感页中间内容：大号日期 + 月份 + 下拉箭头，点击触发日历弹窗。
                          * 仅在灵感页且非批量模式时显示，其他页面使用默认 title。
                          */
-                        centerContent = if (selectedTab == TabItem.INSPIRE && !effectiveBatchMode) {
+                        centerContent = if ((selectedTab == TabItem.INSPIRE || selectedTab == TabItem.TODO) && !effectiveBatchMode) {
                             {
-                                // 日期显示：日 + 月 + 箭头 水平排列，高度自适应，外层 Box 居中
-                                // 箭头方向与弹窗展开状态同步：展开▲ / 收起▼
-                                Row(
-                                    verticalAlignment = Alignment.Bottom,
-                                    modifier = Modifier
-                                        .clickable {
-                                            // 切换弹窗显示状态：再次点击可收起
-                                            showInspirationCalendar = !showInspirationCalendar
-                                        }
-                                ) {
-                                    val now = Calendar.getInstance()
-                                    // 大号日期数字（25sp Bold）
-                                    Text(
-                                        text = String.format("%02d", now.get(Calendar.DAY_OF_MONTH)),
-                                        fontSize = 25.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    // 日 → 月 水平间距 7dp
-                                    Spacer(modifier = Modifier.width(7.dp))
-                                    // 月份（16sp）
-                                    Text(
-                                        text = String.format("%02d月", now.get(Calendar.MONTH) + 1),
-                                        fontSize = 16.sp,
-                                        color = Color(0xFF666666)
-                                    )
-                                    // 月 → 箭头 间距 2dp
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                    // 箭头方向随弹窗状态切换：展开时向上▲，收起时向下▼
-                                    Text(
-                                        text = if (showInspirationCalendar) "▲" else "▼",
-                                        fontSize = 8.sp,
-                                        color = Color(0xFF666666)
-                                    )
+                                if (selectedTab == TabItem.TODO) {
+                                    // 待办页日期显示：大号日期 + 月份 + 箭头
+                                    Row(
+                                        verticalAlignment = Alignment.Bottom,
+                                        modifier = Modifier
+                                            .clickable {
+                                                showTodoCalendar = !showTodoCalendar
+                                            }
+                                    ) {
+                                        val now = Calendar.getInstance()
+                                        Text(
+                                            text = String.format("%02d", now.get(Calendar.DAY_OF_MONTH)),
+                                            fontSize = 25.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Spacer(modifier = Modifier.width(7.dp))
+                                        Text(
+                                            text = String.format("%02d月", now.get(Calendar.MONTH) + 1),
+                                            fontSize = 16.sp,
+                                            color = Color(0xFF666666)
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text(
+                                            text = if (showTodoCalendar) "▲" else "▼",
+                                            fontSize = 8.sp,
+                                            color = Color(0xFF666666)
+                                        )
+                                    }
+                                } else {
+                                    // 灵感页日期显示：大号日期 + 月份 + 箭头（原有逻辑不变）
+                                    Row(
+                                        verticalAlignment = Alignment.Bottom,
+                                        modifier = Modifier
+                                            .clickable {
+                                                showInspirationCalendar = !showInspirationCalendar
+                                            }
+                                    ) {
+                                        val now = Calendar.getInstance()
+                                        Text(
+                                            text = String.format("%02d", now.get(Calendar.DAY_OF_MONTH)),
+                                            fontSize = 25.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Spacer(modifier = Modifier.width(7.dp))
+                                        Text(
+                                            text = String.format("%02d月", now.get(Calendar.MONTH) + 1),
+                                            fontSize = 16.sp,
+                                            color = Color(0xFF666666)
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text(
+                                            text = if (showInspirationCalendar) "▲" else "▼",
+                                            fontSize = 8.sp,
+                                            color = Color(0xFF666666)
+                                        )
+                                    }
                                 }
                             }
                         } else null,
@@ -781,6 +814,24 @@ fun MainScreen(
                     navController.navigate("inspiration_edit/${inspiration.id}")
                 },
                 onDismiss = { showInspirationCalendar = false },
+                topPadding = with(density) { topBarHeightPx.toDp() }
+            )
+        }
+
+        // 待办页日历弹窗（在 Scaffold 外部、外层 Box 内部渲染，覆盖全屏包括底部导航栏）
+        if (showTodoCalendar && selectedTab == TabItem.TODO) {
+            TodoCalendarDialog(
+                todoCountByDate = { year, month ->
+                    homeViewModel.getCalendarTodoCount(year, month)
+                },
+                getTodosByDate = { year, month, day ->
+                    homeViewModel.getTodosByDate(year, month, day)
+                },
+                onTodoClick = { todo ->
+                    showTodoCalendar = false
+                    homeViewModel.requestScrollToTodo(todo.id)
+                },
+                onDismiss = { showTodoCalendar = false },
                 topPadding = with(density) { topBarHeightPx.toDp() }
             )
         }

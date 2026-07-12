@@ -156,6 +156,10 @@ class HomeViewModel @Inject constructor(
     private val _hideDetails = MutableStateFlow(false)
     val hideDetails: StateFlow<Boolean> = _hideDetails.asStateFlow()
 
+    /** 请求滚动到指定待办（消费后自动重置为 null） */
+    private val _scrollToTodoId = MutableStateFlow<Long?>(null)
+    val scrollToTodoId: StateFlow<Long?> = _scrollToTodoId.asStateFlow()
+
     /** 隐藏所有已完成项 */
     private val _hideCompletedItems = MutableStateFlow(false)
     val hideCompletedItems: StateFlow<Boolean> = _hideCompletedItems.asStateFlow()
@@ -3147,6 +3151,77 @@ class HomeViewModel @Inject constructor(
             /** 日志记录失败不应影响主流程，仅打印日志 */
             android.util.Log.e("HomeViewModel", "Failed to record operation log", e)
         }
+    }
+
+    // ========== 日历相关数据方法 ==========
+
+    /**
+     * 获取指定月份每天有待办的条数（用于日历圆点显示）
+     *
+     * 基于 startDate 字段过滤，仅统计 startDate 不为 null 且落在指定年月的待办。
+     *
+     * @param year 年
+     * @param month 月（1-12）
+     * @return 日期 -> 条数 的映射
+     */
+    fun getCalendarTodoCount(year: Int, month: Int): Map<Int, Int> {
+        return _todos.value
+            .filter { todo ->
+                todo.startDate != null && run {
+                    val cal = Calendar.getInstance().apply { timeInMillis = todo.startDate!! }
+                    cal.get(Calendar.YEAR) == year && cal.get(Calendar.MONTH) + 1 == month
+                }
+            }
+            .groupBy { todo ->
+                val cal = Calendar.getInstance().apply { timeInMillis = todo.startDate!! }
+                cal.get(Calendar.DAY_OF_MONTH)
+            }
+            .mapValues { it.value.size }
+    }
+
+    /**
+     * 获取指定日期的所有待办（基于 startDate，含已完成）
+     *
+     * 排序规则：未完成在前，已完成在后；同状态内按优先级 DESC。
+     *
+     * @param year 年
+     * @param month 月（1-12）
+     * @param day 日
+     * @return 当天的待办列表
+     */
+    fun getTodosByDate(year: Int, month: Int, day: Int): List<TodoItem> {
+        return _todos.value
+            .filter { todo ->
+                todo.startDate != null && run {
+                    val cal = Calendar.getInstance().apply { timeInMillis = todo.startDate!! }
+                    cal.get(Calendar.YEAR) == year &&
+                    cal.get(Calendar.MONTH) + 1 == month &&
+                    cal.get(Calendar.DAY_OF_MONTH) == day
+                }
+            }
+            .sortedWith(
+                compareByDescending<TodoItem> { it.status == 0 }
+                    .thenByDescending { it.priority }
+            )
+    }
+
+    /**
+     * 请求滚动到指定待办
+     *
+     * 由 MainScreen 中 TodoCalendarDialog 的 onTodoClick 回调触发，
+     * HomeScreen 中 LaunchedEffect 监听 scrollToTodoId 变化执行滚动。
+     *
+     * @param id 目标待办的 ID
+     */
+    fun requestScrollToTodo(id: Long) {
+        _scrollToTodoId.value = id
+    }
+
+    /**
+     * 重置滚动目标（滚动完成后调用）
+     */
+    fun clearScrollToTodo() {
+        _scrollToTodoId.value = null
     }
 
     // ==================== 测试辅助方法（仅用于单元测试） ====================
