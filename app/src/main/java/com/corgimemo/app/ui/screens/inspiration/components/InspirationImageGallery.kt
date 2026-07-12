@@ -167,6 +167,14 @@ fun InspirationImageGallery(
                 modifier = Modifier.size(28.dp)
             )
         }
+
+        // Snackbar 提示：底部居中，离底 80dp 避开下载按钮
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 80.dp)
+        )
     }
 }
 
