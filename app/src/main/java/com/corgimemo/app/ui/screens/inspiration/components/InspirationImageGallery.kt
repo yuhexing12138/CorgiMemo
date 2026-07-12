@@ -27,7 +27,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 
 /**
  * 灵感图片全屏预览
@@ -114,7 +116,10 @@ private fun ZoomableImage(path: String) {
         contentAlignment = Alignment.Center
     ) {
         AsyncImage(
-            model = path,
+            model = coil3.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                .data(path)
+                .crossfade(true)
+                .build(),
             contentDescription = null,
             modifier = Modifier
                 .fillMaxSize()

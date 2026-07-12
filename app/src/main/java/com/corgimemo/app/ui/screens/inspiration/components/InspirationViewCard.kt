@@ -35,7 +35,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.corgimemo.app.R
 import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils
@@ -149,7 +151,10 @@ fun InspirationViewCard(
                             items(imagePaths.size) { index ->
                                 val path = imagePaths[index]
                                 AsyncImage(
-                                    model = path,
+                                    model = coil3.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                                        .data(path)
+                                        .crossfade(true)
+                                        .build(),
                                     contentDescription = null,
                                     modifier = Modifier
                                         .size(120.dp)

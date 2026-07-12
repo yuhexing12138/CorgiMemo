@@ -26,9 +26,9 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.corgimemo.app.backup.exporter.ShareIntentHelper
 import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationViewCard
-import coil.imageLoader
-import coil.request.ImageRequest
-import coil.request.SuccessResult
+import coil3.imageLoader
+import coil3.request.ImageRequest
+import coil3.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.async

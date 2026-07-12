@@ -17,6 +17,16 @@ plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library) apply false
 }
 
+// 全局强制 kotlin-metadata-jvm 版本：Kotlin 2.3.20 产生 metadata 2.4.0，
+// Hilt/Dagger 内部 shaded 的旧版本仅支持到 2.3.0，强制解析到 2.3.20 确保兼容。
+subprojects {
+    configurations.all {
+        resolutionStrategy {
+            force("org.jetbrains.kotlin:kotlin-metadata-jvm:2.3.20")
+        }
+    }
+}
+
 tasks.register("clean", Delete::class) {
     delete(rootProject.layout.buildDirectory)
 }

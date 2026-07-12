@@ -52,20 +52,45 @@ object TagUtils {
     /**
      * 解码图片路径 JSON 字符串为列表
      *
+     * **重要**：必须使用 org.json.JSONArray 真正的 JSON 解析器，
+     * 因为路径中的 `/` 在 JSON 中会被转义为 `\/`（例如 org.json.JSONArray 默认转义）。
+     * 手写 removeSurrounding("\"") 不会反转义这些字符，导致路径变成 `\/data\/...`，
+     * File.exists() 返回 false，Coil 加载失败。
+     *
      * @param pathsJson JSON 字符串
      * @return 路径列表，解析失败返回空列表
      */
     fun decodePaths(pathsJson: String): List<String> {
-        return decodeTags(pathsJson) // 格式与标签相同，复用逻辑
+        if (pathsJson.isBlank()) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(pathsJson)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (e: Exception) {
+            // 兼容旧数据（非标准 JSON）：回退到手写解析
+            try {
+                pathsJson
+                    .removeSurrounding("[", "]")
+                    .split(",")
+                    .map { it.trim().removeSurrounding("\"") }
+                    .map { it.replace("\\/", "/") }  // 手动反转义
+                    .filter { it.isNotBlank() }
+            } catch (e2: Exception) {
+                emptyList()
+            }
+        }
     }
 
     /**
      * 编码图片路径列表为 JSON 字符串
      *
+     * 使用 org.json.JSONArray 进行标准 JSON 序列化，
+     * 自动处理路径中的特殊字符转义（/, \, " 等）。
+     *
      * @param paths 路径列表
      * @return JSON 字符串
      */
     fun encodePaths(paths: List<String>): String {
-        return encodeTags(paths) // 格式与标签相同，复用逻辑
+        if (paths.isEmpty()) return "[]"
+        return org.json.JSONArray(paths).toString()
     }
 }

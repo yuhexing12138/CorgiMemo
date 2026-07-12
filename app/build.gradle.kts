@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.corgimemo.app"
-    compileSdk = 35
+    compileSdk = 36
 
     signingConfigs {
         create("release") {
@@ -110,6 +110,8 @@ dependencies {
     implementation(libs.androidx.security.crypto.ktx)
 
     implementation(libs.coil.compose)
+    // Coil 3.x 网络图片支持（CorgiCompanion 通过 HTTPS URL 加载图片）
+    implementation(libs.coil.network.okhttp)
     implementation(libs.google.accompanist.permissions)
     /**
      * 下拉刷新已从 accompanist-swiperefresh（已废弃）迁移到 Material3 PullToRefreshBox，
@@ -121,6 +123,10 @@ dependencies {
 
     implementation(libs.google.dagger.hilt.android)
     ksp(libs.google.dagger.hilt.compiler)
+    // Hilt 使用 kotlin-metadata-jvm 读取 Kotlin 元数据，Kotlin 2.3.20 产生 metadata 2.4.0，
+    // 但 Hilt 内部 shaded 版本仅支持到 2.3.0。Dagger 2.57+ 已 unshade 该依赖，
+    // 显式声明匹配 Kotlin 版本的 kotlin-metadata-jvm 即可解决兼容性问题。
+    ksp("org.jetbrains.kotlin:kotlin-metadata-jvm:2.3.20")
 
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)

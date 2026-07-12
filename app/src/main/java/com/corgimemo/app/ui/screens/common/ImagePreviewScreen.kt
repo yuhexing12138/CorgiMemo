@@ -45,7 +45,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.corgimemo.app.util.ImageUtils
 
 /**
@@ -283,7 +285,7 @@ private fun PreviewImageItem(
          * - ContentScale.Fit: 保持宽高比适配容器（避免变形裁切）
          */
         AsyncImage(
-            model = coil.request.ImageRequest.Builder(LocalContext.current)
+            model = coil3.request.ImageRequest.Builder(LocalContext.current)
                 .data(imagePath)
                 .crossfade(true) /** 启用渐入动画 */
                 .build(),

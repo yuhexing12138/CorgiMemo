@@ -4,6 +4,9 @@ import android.app.Application
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import coil3.ComponentRegistry
+import coil3.ImageLoader
+import coil3.imageLoader
 import com.corgimemo.app.analytics.UserBehaviorAnalyzer
 import com.corgimemo.app.data.repository.InspirationRepository
 import com.corgimemo.app.data.repository.SpecialDateRepository
@@ -43,6 +46,17 @@ class CorgiMemoApplication : Application() {
         ReminderRestoreScheduler.restoreNow(this)
 
         /**
+         * 临时调试日志：输出 Coil ImageLoader 内部 components 列表
+         *
+         * - 用于确认 FileFetcher/FileUriMapper 是否正确注册到默认 ComponentRegistry
+         * - Coil 2.5.0 + Compose BOM 2026.04.01 存在已知兼容性问题
+         *   （[coil-kt/coil#2273]），可能某些 Component 在运行时未被正确添加
+         * - 通过反射访问 ComponentRegistry 的 internal fetcherFactories/mapperFactories 字段
+         * - 验证完成后可删除此函数
+         */
+        logCoilComponents()
+
+        /**
          * Application 级智能数据预加载
          *
          * 监听应用生命周期（前台/后台），
@@ -60,6 +74,60 @@ class CorgiMemoApplication : Application() {
             }
         } catch (e: Exception) {
             android.util.Log.w("CorgiMemoApplication", "⚠️ 预加载器注册失败（不影响正常使用）: ${e.message}")
+        }
+    }
+
+    /**
+     * 临时调试：输出 Coil ImageLoader components 列表
+     *
+     * - 获取默认 ImageLoader 实例
+     * - 通过反射访问 ComponentRegistry 的 internal factory 列表
+     * - 检查 FileFetcher（type=java.io.File）和 FileUriMapper（type=android.net.Uri）是否注册
+     * - 输出每个 factory 的 type 和 factory class
+     */
+    private fun logCoilComponents() {
+        try {
+            // 触发 ImageLoader 懒初始化（如果还没初始化）
+            val imageLoader: ImageLoader = imageLoader
+            val components: ComponentRegistry = imageLoader.components
+            android.util.Log.d("CoilDebug", "=== Coil ImageLoader components ===")
+            android.util.Log.d("CoilDebug", "ImageLoader class: ${imageLoader.javaClass.name}")
+
+            // 反射访问 internal fetcherFactories 字段
+            val fetcherField = ComponentRegistry::class.java.getDeclaredField("fetcherFactories")
+            fetcherField.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            val fetcherFactories = fetcherField.get(components) as List<Pair<*, *>>
+            android.util.Log.d("CoilDebug", "Fetcher factories count: ${fetcherFactories.size}")
+            fetcherFactories.forEachIndexed { index, pair ->
+                val factory = pair.first
+                val type = pair.second
+                val factoryName = factory?.javaClass?.name ?: "null"
+                android.util.Log.d(
+                    "CoilDebug",
+                    "  [$index] type=$type factory=$factoryName"
+                )
+            }
+
+            // 反射访问 internal mapperFactories 字段
+            val mapperField = ComponentRegistry::class.java.getDeclaredField("mapperFactories")
+            mapperField.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            val mapperFactories = mapperField.get(components) as List<Pair<*, *>>
+            android.util.Log.d("CoilDebug", "Mapper factories count: ${mapperFactories.size}")
+            mapperFactories.forEachIndexed { index, pair ->
+                val factory = pair.first
+                val type = pair.second
+                val factoryName = factory?.javaClass?.name ?: "null"
+                android.util.Log.d(
+                    "CoilDebug",
+                    "  [$index] type=$type factory=$factoryName"
+                )
+            }
+
+            android.util.Log.d("CoilDebug", "=== End Coil components ===")
+        } catch (e: Exception) {
+            android.util.Log.e("CoilDebug", "Failed to log Coil components: ${e.message}", e)
         }
     }
 

@@ -45,6 +45,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.ui.components.TimeWheelView
+import com.corgimemo.app.ui.components.calendar.CalendarMonthView
 import com.corgimemo.app.ui.components.calendar.DateWheelPicker
 import java.time.LocalDate
 import java.time.YearMonth
@@ -273,7 +274,7 @@ fun InspirationDateTimePickerDialog(
                                     "grid" -> CalendarMonthView(
                                         currentMonth = navMonth,
                                         selectedDate = selectedDate,
-                                        countMap = emptyMap(),  // 无圆点
+                                        countMap = emptyMap<Int, Int>(),  // 无圆点
                                         onMonthChange = { navMonth = it },
                                         onDateSelect = { date -> selectedDate = date }
                                     )

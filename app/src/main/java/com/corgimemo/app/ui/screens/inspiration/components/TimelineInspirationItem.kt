@@ -2,6 +2,7 @@ package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,10 +33,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.ui.theme.UiColors
 import java.util.Calendar
@@ -93,6 +103,7 @@ import java.util.Calendar
  * @param isSelected 批量模式下当前条目是否被选中
  * @param onClick 点击回调
  * @param onLongClick 长按回调
+ * @param onImageClick 点击图片回调，参数为图片在 imagePaths 中的索引（用于打开全屏预览）
  * @param modifier 修饰符
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -109,6 +120,7 @@ fun TimelineInspirationItem(
     isSelected: Boolean = false,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
+    onImageClick: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // ===== 横向布局常量 =====
@@ -351,33 +363,26 @@ fun TimelineInspirationItem(
                 // 标签 → 图片 间距
                 if (imagePaths.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(tagToImageGap))
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        imagePaths.take(2).forEach { _ ->
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFFF5F5F5)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(text = "🖼️", fontSize = 12.sp)
-                            }
-                        }
-                        if (imagePaths.size > 2) {
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFFEEEEEE)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "+${imagePaths.size - 2}",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFF666666)
-                                )
-                            }
+                    /**
+                     * 横向滚动图片区（LazyRow）：
+                     * - 固定高度 120dp，宽度按原图比例自适应（最大 200dp）
+                     * - 使用 SubcomposeAsyncImage 通过 state.painter.intrinsicSize
+                     *   获取原图真实宽高比，确保不拉伸
+                     * - 点击图片触发 onImageClick 回调（不冒泡到外层整行点击）
+                     * - 横向滑动 LazyRow 不会触发外层 LazyColumn 滚动
+                     */
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        itemsIndexed(
+                            items = imagePaths,
+                            key = { index, path -> "img_${inspiration.id}_${index}_$path" }
+                        ) { index, path ->
+                            InspirationTimelineImage(
+                                path = path,
+                                onClick = { onImageClick(index) }
+                            )
                         }
                     }
                 }
@@ -408,6 +413,90 @@ private fun getMonth(timestamp: Long): Int {
 private fun getDay(timestamp: Long): Int {
     return Calendar.getInstance().apply { timeInMillis = timestamp }
         .get(Calendar.DAY_OF_MONTH)
+}
+
+/**
+ * 时间线单张图片组件
+ *
+ * - 固定高度 120dp，宽度按原图比例自适应（最小 80dp，最大 240dp）
+ * - 使用 ImageRequest.Builder 包装路径（与项目内 InlineImagePreview/DraggableImageAttachment 一致）
+ * - Coil 2.5.0 处理流程：String → StringMapper → Uri → FileUriMapper → File → FileFetcher
+ * - 圆角 12dp + 浅灰背景
+ * - 点击图片触发 onClick 回调（不冒泡到外层整行点击）
+ * - 通过 onState 回调记录加载状态到 logcat，便于排查图片加载失败问题
+ *
+ * @param path 图片路径（绝对路径或 Uri 字符串）
+ * @param onClick 图片点击回调
+ */
+@Composable
+private fun InspirationTimelineImage(
+    path: String,
+    onClick: () -> Unit
+) {
+    // 高度固定 120dp
+    // 宽度按原图比例限制（最小 80dp，最大 240dp）
+    val fixedHeight: Dp = 120.dp
+    val minWidth: Dp = 80.dp
+    val maxWidth: Dp = 240.dp
+
+    // 获取当前 context，用于 ImageRequest.Builder
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    AsyncImage(
+        model = coil3.request.ImageRequest.Builder(context)
+            .data(path)
+            .crossfade(true)
+            .build(),
+        contentDescription = "灵感图片",
+        contentScale = ContentScale.Fit,
+        /**
+         * 监听加载状态：
+         * - 加载失败时输出详细日志（path + 文件是否存在 + 异常堆栈）
+         * - 便于在 logcat 中通过 "InspirationImage" tag 过滤排查
+         */
+        onState = { state ->
+            val file = java.io.File(path)
+            val exists = file.exists()
+            val length = if (exists) file.length() else -1L
+            when (state) {
+                is AsyncImagePainter.State.Loading -> {
+                    android.util.Log.d(
+                        "InspirationImage",
+                        "Loading: $path | file.exists=$exists"
+                    )
+                }
+                is AsyncImagePainter.State.Success -> {
+                    val painterSize = state.painter?.intrinsicSize
+                    android.util.Log.d(
+                        "InspirationImage",
+                        "Success: $path | file.exists=$exists | painterSize=$painterSize"
+                    )
+                }
+                is AsyncImagePainter.State.Error -> {
+                    val throwable = state.result.throwable
+                    val throwableSimpleName = throwable.javaClass.simpleName
+                    android.util.Log.e(
+                        "InspirationImage",
+                        "Load failed: $path | file.exists=$exists length=$length | " +
+                            "error=$throwableSimpleName: ${throwable.message}",
+                        throwable
+                    )
+                }
+                else -> {
+                    android.util.Log.d(
+                        "InspirationImage",
+                        "Other state for $path | file.exists=$exists"
+                    )
+                }
+            }
+        },
+        modifier = Modifier
+            .height(fixedHeight)
+            .widthIn(min = minWidth, max = maxWidth)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFFF5F5F5))
+            .clickable(onClick = onClick)
+    )
 }
 
 /**

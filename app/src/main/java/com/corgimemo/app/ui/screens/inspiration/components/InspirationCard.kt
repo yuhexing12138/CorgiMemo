@@ -122,9 +122,15 @@ fun InspirationCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    /** 缩略图预览（32×32dp，圆角8dp，最多显示2张） */
+                    /**
+                     * 图片预览区域：
+                     * 原 ImageThumbnails 函数（占位符实现）已删除，
+                     * 由于 InspirationCard 组件当前未被任何页面引用，
+                     * 此处不再渲染图片，避免再次引入旧的占位符实现。
+                     * 如未来需恢复，可复用 TimelineInspirationItem 中的 InspirationTimelineImage 组件。
+                     */
                     if (imagePaths.isNotEmpty()) {
-                        ImageThumbnails(imagePaths = imagePaths)
+                        Spacer(modifier = Modifier.height(1.dp))
                     } else {
                         Spacer(modifier = Modifier.height(1.dp))
                     }
@@ -145,59 +151,6 @@ fun InspirationCard(
                         TagChips(tags = tags, modifier = Modifier.weight(1f))
                     }
                 }
-            }
-        }
-    }
-}
-
-/**
- * 图片缩略图组件
- * 显示灵感关联的图片缩略图，最多显示2张，多余显示"+N"
- *
- * @param imagePaths 图片路径列表
- * @param modifier 修饰符
- */
-@Composable
-private fun ImageThumbnails(
-    imagePaths: List<String>,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = modifier
-    ) {
-        /** 显示前2张图片的占位框 */
-        imagePaths.take(2).forEach { _ ->
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFF5F5F5)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "🖼️",
-                    fontSize = 14.sp
-                )
-            }
-        }
-
-        /** 如果超过2张，显示多余数量 */
-        if (imagePaths.size > 2) {
-            val extraCount = imagePaths.size - 2
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFEEEEEE)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "+$extraCount",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF666666)
-                )
             }
         }
     }

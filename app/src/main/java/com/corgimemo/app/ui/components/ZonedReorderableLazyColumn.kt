@@ -51,6 +51,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  * @param modifier Modifier
  * @param headerContent 列表前置项内容（搜索框、下拉刷新 spacer 等），不参与拖拽排序
  * @param headerItemCount 前置项数量（用于 onMove 索引偏移：全局索引 → displayItems 索引）
+ * @param footerContent 列表尾部项内容（如避开 FAB 的底部 Spacer），不参与拖拽排序
  * @param itemSpacing 列表项之间的间距
  * @param content 列表项 Composable，参数为 (index, item, isDragging, isDragActive)
  */
@@ -67,6 +68,16 @@ fun ZonedReorderableLazyColumn(
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
     headerContent: LazyListScope.() -> Unit = {},
+    /**
+     * 列表底部追加项内容
+     *
+     * 用途：在 LazyColumn 末尾添加额外 item（如 Spacer），用于：
+     * - 避开底部悬浮 FAB（参考灵感页 InspirationScreen 的 80.dp Spacer）
+     * - 避开底部固定操作栏
+     *
+     * 注意：footerContent 不参与拖拽排序，与 headerContent 行为一致。
+     */
+    footerContent: LazyListScope.() -> Unit = {},
     headerItemCount: Int = 0,
     itemSpacing: Dp = 0.dp,
     content: @Composable (index: Int, item: DisplayItem, isDragging: Boolean, isDragActive: Boolean) -> Unit
@@ -259,6 +270,8 @@ fun ZonedReorderableLazyColumn(
                 }
             }
         }
+        // 尾部追加项（如避开 FAB 的底部 Spacer），不参与拖拽排序
+        footerContent()
     }
 }
 

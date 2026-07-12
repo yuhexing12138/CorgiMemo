@@ -92,6 +92,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.ui.navigation.Screen
@@ -498,6 +499,23 @@ fun HomeScreen(
                     .align(Alignment.BottomEnd)
                     /** 小间距即可：父容器 Column 已通过 paddingValues 避开导航栏区域 */
                     .padding(end = 20.dp, bottom = 16.dp)
+                    /**
+                     * 提升 zIndex 到 10f，确保 FAB 在 Box 内最上层。
+                     *
+                     * 为什么需要 zIndex：
+                     * - Box 中子元素按代码顺序绘制：FAB（先）→ Column（含 LazyColumn，后）
+                     * - 后绘制在上层，所以 LazyColumn 默认覆盖在 FAB 之上
+                     * - 即使列表底部有 80dp Spacer，LazyColumn 整体仍占据 FAB 区域（透明空白）
+                     *   → 这部分空白会拦截 FAB 的触摸事件，导致点击无反应
+                     * - 加 zIndex(10f) 后 FAB 永远在 LazyColumn 之上，触摸事件可正常传递
+                     *
+                     * 与 Snackbar 关系（不冲突）：
+                     * - SnackbarHost 已在 MainScreen 顶层 Scaffold 的 snackbarHost 槽位中渲染
+                     * - Scaffold 渲染层级：snackbarHost 槽位 > content 槽位
+                     * - FAB 在 content 内部，即使 zIndex=10f 仍在 content 层级内
+                     * - SnackbarHost 始终在 content 之上，不会被 zIndex=10f 的 FAB 遮挡
+                     */
+                    .zIndex(10f)
             ) {
                 Icon(
                     imageVector = Icons.Default.Edit,
@@ -830,7 +848,28 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(horizontal = 8.dp),
-                                itemSpacing = 8.dp
+                                itemSpacing = 8.dp,
+                                /**
+                                 * 列表底部 80dp 留白
+                                 *
+                                 * 参考灵感页（InspirationScreen）的实现：
+                                 * - FAB 位于 HomeScreen 外层 Box 的 align(BottomEnd) + padding(bottom=16.dp)，
+                                 *   FAB 自身高度 56dp，所以 FAB 占据屏幕底部约 72dp 空间
+                                 * - 列表最后一项不加 padding 会延伸到 FAB 位置，造成：
+                                 *   1. FAB 视觉被卡片遮挡
+                                 *   2. 卡片拦截触摸事件，FAB 点击无反应
+                                 * - 添加 80dp Spacer 后，列表最后一项停在 FAB 之上，
+                                 *   FAB 可正常显示和接收点击事件
+                                 *
+                                 * 注意：Snackbar 不会受此影响，
+                                 * 因为 SnackbarHost 已在 MainScreen 顶层 Scaffold 的 snackbarHost 槽位中渲染，
+                                 * Scaffold 渲染层级 snackbarHost > content，Snackbar 始终在内容之上。
+                                 */
+                                footerContent = {
+                                    item {
+                                        Spacer(modifier = Modifier.height(80.dp))
+                                    }
+                                }
                             ) { index, displayItem, isDragging, dragActive ->
                                 LaunchedEffect(dragActive) {
                                     isDragActive = dragActive
