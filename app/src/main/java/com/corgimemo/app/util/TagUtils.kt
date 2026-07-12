@@ -64,7 +64,10 @@ object TagUtils {
         if (pathsJson.isBlank()) return emptyList()
         return try {
             val arr = org.json.JSONArray(pathsJson)
-            (0 until arr.length()).map { arr.getString(it) }
+            // 防御性反转义：部分 Android 版本的 org.json.JSONArray.getString()
+            // 不会将 JSON 中的 \/ 反转为 /，导致路径变为 \/data\/user\/...
+            // 文件查找失败，Coil 加载抛出 FileNotFoundException
+            (0 until arr.length()).map { arr.getString(it).replace("\\/", "/") }
         } catch (e: Exception) {
             // 兼容旧数据（非标准 JSON）：回退到手写解析
             try {

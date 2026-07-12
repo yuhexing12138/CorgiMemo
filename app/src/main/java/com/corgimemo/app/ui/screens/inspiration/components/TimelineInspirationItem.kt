@@ -163,13 +163,11 @@ fun TimelineInspirationItem(
     val nodeColor = if (isPinnedItem) Color(0xFFFF9A5C) else MaterialTheme.colorScheme.primary
     val timelineLineColor = Color(0xFFEEEEEE)
 
+    // combinedClickable 从外层 Box 移至文本内容区 Column，
+    // 避免与图片区域的点击事件冲突（点击图片应进入预览页，而非触发整行 onClick）
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
             // 竖线贯通整个 Item 高度 + 向上延伸 18dp 覆盖 LazyColumn 间距，实现连续不中断
             // 批量模式下在空心圆节点区域留出间隙，避免竖线穿过空心圆内部
             .drawBehind {
@@ -210,11 +208,14 @@ fun TimelineInspirationItem(
         // - "08" 24sp 宽度约 26dp，56dp 内居中
         // - 两者视觉中心都在 Column 宽度（56dp）的中点 X=28dp
         if (showDate) {
+            // 日期列单独设置 clickable（外层 Box 已移除 combinedClickable），
+            // 点击日期区域同样跳转到灵感详情页
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .width(dateColumnWidth)
                     .align(Alignment.TopStart)
+                    .clickable(onClick = onClick)
             ) {
                 // 年月文本（12sp 灰色）
                 Text(
@@ -271,122 +272,132 @@ fun TimelineInspirationItem(
                 .padding(start = contentStartX)
                 .align(Alignment.TopStart)
         ) {
-            // 标题（16sp Medium）
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (isPinnedItem) {
-                    Icon(
-                        imageVector = Icons.Default.PushPin,
-                        contentDescription = "已置顶",
-                        tint = Color(0xFFFF9A5C),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                }
-                Text(
-                    text = inspiration.title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    letterSpacing = chineseLetterSpacing
+            // 文本内容区域：combinedClickable 处理整行的点击和长按
+            // 图片区域在 combinedClickable 外部，拥有独立的点击处理（进入预览页）
+            Column(
+                modifier = Modifier.combinedClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick
                 )
-            }
-
-            // ===== 以下内容在隐藏详情模式下不显示 =====
-            if (!hideDetails) {
-                // 标题 → 时分时间 间距
-                Spacer(modifier = Modifier.height(titleToTimeGap))
-
-                // 时分时间（11sp 灰色）
-                Text(
-                    text = formattedTime,
-                    fontSize = 11.sp,
-                    color = Color(0xFF999999),
-                    letterSpacing = chineseLetterSpacing
-                )
-
-                // 时分时间 → 正文 间距
-                Spacer(modifier = Modifier.height(timeToContentGap))
-
-                // 正文（14sp，行高 21sp）
-                if (inspiration.content.isNotBlank()) {
-                    val plainContent = removeHtmlTags(inspiration.content)
+            ) {
+                // 标题（16sp Medium）
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isPinnedItem) {
+                        Icon(
+                            imageVector = Icons.Default.PushPin,
+                            contentDescription = "已置顶",
+                            tint = Color(0xFFFF9A5C),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
                     Text(
-                        text = plainContent,
-                        fontSize = 14.sp,
-                        lineHeight = 21.sp,
-                        color = Color(0xFF666666),
+                        text = inspiration.title,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         letterSpacing = chineseLetterSpacing
                     )
                 }
 
-                // 正文 → 标签 间距
-                if (tags.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(contentToTagGap))
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        // 最多显示 3 个标签
-                        tags.take(3).forEach { tag ->
-                            Text(
-                                text = "#$tag",
-                                fontSize = 11.sp,
-                                lineHeight = 11.sp,  // 压缩行高到 fontSize，减小标签上下间距
-                                color = UiColors.Primary,
-                                letterSpacing = chineseLetterSpacing,
-                                modifier = Modifier
-                                    .background(
-                                        color = Color(0xFFFFF3E0),
-                                        shape = RoundedCornerShape(10.dp)
-                                    )
-                                    .padding(horizontal = 1.dp, vertical = 0.dp)
-                            )
-                        }
-                        // 超出 3 个显示 "+N"
-                        if (tags.size > 3) {
-                            Text(
-                                text = "+${tags.size - 3}",
-                                fontSize = 11.sp,
-                                lineHeight = 11.sp,  // 压缩行高到 fontSize，减小标签上下间距
-                                color = Color(0xFF999999),
-                                letterSpacing = chineseLetterSpacing,
-                                modifier = Modifier
-                                    .background(
-                                        color = Color(0xFFF5F5F5),
-                                        shape = RoundedCornerShape(10.dp)
-                                    )
-                                    .padding(horizontal = 1.dp, vertical = 0.dp)
-                            )
-                        }
-                    }
-                }
+                // ===== 以下内容在隐藏详情模式下不显示 =====
+                if (!hideDetails) {
+                    // 标题 → 时分时间 间距
+                    Spacer(modifier = Modifier.height(titleToTimeGap))
 
-                // 标签 → 图片 间距
-                if (imagePaths.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(tagToImageGap))
-                    /**
-                     * 横向滚动图片区（LazyRow）：
-                     * - 固定高度 120dp，宽度按原图比例自适应（最大 200dp）
-                     * - 使用 SubcomposeAsyncImage 通过 state.painter.intrinsicSize
-                     *   获取原图真实宽高比，确保不拉伸
-                     * - 点击图片触发 onImageClick 回调（不冒泡到外层整行点击）
-                     * - 横向滑动 LazyRow 不会触发外层 LazyColumn 滚动
-                     */
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        itemsIndexed(
-                            items = imagePaths,
-                            key = { index, path -> "img_${inspiration.id}_${index}_$path" }
-                        ) { index, path ->
-                            InspirationTimelineImage(
-                                path = path,
-                                onClick = { onImageClick(index) }
-                            )
+                    // 时分时间（11sp 灰色）
+                    Text(
+                        text = formattedTime,
+                        fontSize = 11.sp,
+                        color = Color(0xFF999999),
+                        letterSpacing = chineseLetterSpacing
+                    )
+
+                    // 时分时间 → 正文 间距
+                    Spacer(modifier = Modifier.height(timeToContentGap))
+
+                    // 正文（14sp，行高 21sp）
+                    if (inspiration.content.isNotBlank()) {
+                        val plainContent = removeHtmlTags(inspiration.content)
+                        Text(
+                            text = plainContent,
+                            fontSize = 14.sp,
+                            lineHeight = 21.sp,
+                            color = Color(0xFF666666),
+                            letterSpacing = chineseLetterSpacing
+                        )
+                    }
+
+                    // 正文 → 标签 间距
+                    if (tags.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(contentToTagGap))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            // 最多显示 3 个标签
+                            tags.take(3).forEach { tag ->
+                                Text(
+                                    text = "#$tag",
+                                    fontSize = 11.sp,
+                                    lineHeight = 11.sp,  // 压缩行高到 fontSize，减小标签上下间距
+                                    color = UiColors.Primary,
+                                    letterSpacing = chineseLetterSpacing,
+                                    modifier = Modifier
+                                        .background(
+                                            color = Color(0xFFFFF3E0),
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                        .padding(horizontal = 1.dp, vertical = 0.dp)
+                                )
+                            }
+                            // 超出 3 个显示 "+N"
+                            if (tags.size > 3) {
+                                Text(
+                                    text = "+${tags.size - 3}",
+                                    fontSize = 11.sp,
+                                    lineHeight = 11.sp,  // 压缩行高到 fontSize，减小标签上下间距
+                                    color = Color(0xFF999999),
+                                    letterSpacing = chineseLetterSpacing,
+                                    modifier = Modifier
+                                        .background(
+                                            color = Color(0xFFF5F5F5),
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                        .padding(horizontal = 1.dp, vertical = 0.dp)
+                                )
+                            }
                         }
                     }
+                } // end if (!hideDetails)
+            } // end combinedClickable Column
+
+            // 图片区域：独立于文本内容区的 combinedClickable，
+            // 点击图片触发 onImageClick（进入预览页）而非 onClick（进入详情页）
+            if (!hideDetails && imagePaths.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(tagToImageGap))
+                /**
+                 * 横向滚动图片区（LazyRow）：
+                 * - 固定高度 120dp，宽度按原图比例自适应（最大 200dp）
+                 * - 使用 SubcomposeAsyncImage 通过 state.painter.intrinsicSize
+                 *   获取原图真实宽高比，确保不拉伸
+                 * - 点击图片触发 onImageClick 回调（进入全屏预览）
+                 * - 横向滑动 LazyRow 不会触发外层 LazyColumn 滚动
+                 */
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    itemsIndexed(
+                        items = imagePaths,
+                        key = { index, path -> "img_${inspiration.id}_${index}_$path" }
+                    ) { index, path ->
+                        InspirationTimelineImage(
+                            path = path,
+                            onClick = { onImageClick(index) }
+                        )
+                    }
                 }
-            } // end if (!hideDetails)
+            }
         }
     }
 }
@@ -495,6 +506,9 @@ private fun InspirationTimelineImage(
             .widthIn(min = minWidth, max = maxWidth)
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xFFF5F5F5))
+            // 使用 clickable 处理图片点击（进入全屏预览）
+            // 由于图片区域已独立于文本内容区的 combinedClickable，
+            // 不存在手势冲突，clickable 可以正常工作
             .clickable(onClick = onClick)
     )
 }
