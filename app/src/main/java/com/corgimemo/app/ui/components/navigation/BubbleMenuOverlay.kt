@@ -118,13 +118,13 @@ fun BubbleMenuOverlay(
             val arcRadius = 20.dp
 
             // ══════════════════════════════════════
-            // 气泡1: 创建待办 — 正上方（弧顶，角度 -90°）
-            // 位置：水平居中，垂直向上 arcRadius
+            // 气泡1: 创建待办 — 左上方（弧左侧，角度约 -150°）
+            // 位置：按比例缩小偏移量，保持弧形张角一致
             // ══════════════════════════════════════
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .offset(y = (-arcRadius))
+                    .offset(x = (-80).dp, y = (-5).dp)
             ) {
                 AnimatedBubble(
                     isVisible = isExpanded,
@@ -143,13 +143,13 @@ fun BubbleMenuOverlay(
             }
 
             // ══════════════════════════════════════
-            // 气泡2: 记录灵感 — 左上方（弧左侧，角度约 -150°）
-            // 位置：按比例缩小偏移量，保持弧形张角一致
+            // 气泡2: 记录灵感 — 正上方（弧顶，角度 -90°）
+            // 位置：水平居中，垂直向上 arcRadius
             // ══════════════════════════════════════
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .offset(x = (-80).dp, y = (-5).dp)
+                    .offset(y = (-arcRadius))
             ) {
                 AnimatedBubble(
                     isVisible = isExpanded,
