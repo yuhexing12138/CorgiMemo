@@ -63,6 +63,14 @@ data class SpecialDate(
     @ColumnInfo(defaultValue = "0")
     val isPinned: Boolean = false,
 
+    /**
+     * 是否已归档（软删除）
+     * - true: 不在主页列表显示，可通过"已归档"入口（未来提供）查看与恢复
+     * - false: 正常显示（默认）
+     */
+    @ColumnInfo(defaultValue = "0")
+    val isArchived: Boolean = false,
+
     /** 创建时间戳(毫秒) */
     val createdAt: Long,
 
