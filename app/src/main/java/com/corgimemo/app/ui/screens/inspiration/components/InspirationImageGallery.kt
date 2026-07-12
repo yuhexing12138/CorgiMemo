@@ -125,6 +125,22 @@ fun InspirationImageGallery(
                 .align(Alignment.TopCenter)
                 .padding(top = 24.dp)
         )
+
+        // 下载按钮（右下角）：透明背景 + 白色图标，与关闭按钮风格一致
+        // 当前 onClick 仅为占位，Task 3 将替换为 ::downloadCurrentImage
+        IconButton(
+            onClick = { /* TODO: Task 3 */ },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 24.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Download,
+                contentDescription = "保存到相册",
+                tint = Color.White,
+                modifier = Modifier.size(28.dp)
+            )
+        }
     }
 }
 
