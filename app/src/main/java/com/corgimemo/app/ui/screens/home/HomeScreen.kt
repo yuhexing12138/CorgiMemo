@@ -135,6 +135,7 @@ import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.ui.theme.UiColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
@@ -710,14 +711,36 @@ fun HomeScreen(
                             if (targetIndex >= 0) {
                                 // 目标在可见列表中，直接滚动
                                 lazyListState.animateScrollToItem(targetIndex)
+                                viewModel.clearScrollToTodo()
                             } else {
-                                // 目标可能在已完成区且已完成区折叠，先展开再查找
+                                // 目标可能在折叠区域，需要先展开再查找
                                 val todo = viewModel.filteredTodos.value.find { it.id == targetId }
-                                if (todo != null && todo.status == 1) {
-                                    // 展开已完成区
-                                    viewModel.setShowCompleted(true)
-                                    // 等待 displayItems 更新后再滚动
-                                    delay(100)
+                                if (todo != null) {
+                                    when {
+                                        // 已完成区折叠 → 展开已完成区
+                                        todo.status == 1 && !showCompleted -> {
+                                            viewModel.setShowCompleted(true)
+                                        }
+                                        // 置顶区折叠 → 展开置顶区
+                                        todo.isPinned && !showPinned -> {
+                                            viewModel.toggleShowPinned()
+                                        }
+                                        // 待完成区折叠 → 展开待完成区
+                                        !todo.isPinned && !showPending -> {
+                                            viewModel.toggleShowPending()
+                                        }
+                                        else -> {
+                                            // 不在任何折叠区，滚动失败
+                                            viewModel.clearScrollToTodo()
+                                            return@LaunchedEffect
+                                        }
+                                    }
+                                    // 等待 displayItems 重组后包含目标待办
+                                    snapshotFlow { displayItems }
+                                        .first { items ->
+                                            items.any { it is DisplayItem.Todo && it.item.id == targetId }
+                                        }
+                                    // 重组完成后滚动到目标位置
                                     val newIndex = displayItems.indexOfFirst { item ->
                                         item is DisplayItem.Todo && item.item.id == targetId
                                     }
@@ -725,9 +748,8 @@ fun HomeScreen(
                                         lazyListState.animateScrollToItem(newIndex)
                                     }
                                 }
+                                viewModel.clearScrollToTodo()
                             }
-                            // 滚动完成后重置状态
-                            viewModel.clearScrollToTodo()
                         }
 
                         // 外层 Box：承载 nestedScrollConnection 与柯基指示器
