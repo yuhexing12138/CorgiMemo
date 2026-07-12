@@ -42,6 +42,8 @@ import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.data.model.Inspiration
@@ -300,6 +302,21 @@ fun InspirationScreen(
                 )
             }
         }
+
+        // 图片全屏预览（在 Box 内部渲染，确保 fillMaxSize 能正确占满屏幕）
+        // 之前放在 Box 外部，但 MainScreen 将 InspirationScreen 放在 Column 中，
+        // Box(fillMaxSize) 占满空间后 Column 无剩余高度，导致 Gallery 高度为 0 不可见。
+        if (showImageGallery) {
+            InspirationImageGallery(
+                imagePaths = galleryImagePaths,
+                initialIndex = galleryInitialIndex,
+                onDismiss = {
+                    showImageGallery = false
+                    galleryImagePaths = emptyList()
+                    galleryInitialIndex = 0
+                }
+            )
+        }
     }
 
     // 长按操作面板
@@ -459,19 +476,6 @@ fun InspirationScreen(
                 viewModel.updateInspirationDateTime(inspiration.id, dateMillis)
                 showDateTimePicker = false
                 longPressedInspiration = null
-            }
-        )
-    }
-
-    // 图片全屏预览（点击图片触发，支持双指缩放、双击放大、多图滑动翻页）
-    if (showImageGallery) {
-        InspirationImageGallery(
-            imagePaths = galleryImagePaths,
-            initialIndex = galleryInitialIndex,
-            onDismiss = {
-                showImageGallery = false
-                galleryImagePaths = emptyList()
-                galleryInitialIndex = 0
             }
         )
     }

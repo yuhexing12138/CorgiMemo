@@ -43,7 +43,8 @@
 
 | 文件 | 改动 |
 |------|------|
-| `ui/screens/inspiration/components/InspirationImageGallery.kt` | 新增沉浸式、下载按钮、Snackbar；调用方零改动 |
+| `ui/screens/inspiration/components/InspirationImageGallery.kt` | 新增沉浸式、下载按钮、Snackbar |
+| `ui/screens/inspiration/InspirationScreen.kt` | 用 `Dialog` 包裹 Gallery 调用（独立 Window 渲染） |
 | `util/InspirationScreenshot.kt` | 复用：现成 `saveToGallery(context, bitmap)` 函数，无需改动 |
 
 ### 3.2 沉浸式实现
@@ -101,11 +102,15 @@ fun downloadCurrentImage() {
     scope.launch {
         val result = withContext(Dispatchers.IO) {
             try {
-                // 用 BitmapFactory.decodeFile 直接读取本地图片为 Bitmap
-                // 替代 Coil 的 image.toBitmap()，避免 KMP expect/actual 扩展的解析问题
-                val bitmap = BitmapFactory.decodeFile(path)
-                if (bitmap == null) return@withContext false
-                InspirationScreenshot.saveToGallery(context, bitmap) != null
+                // 1. 用 Coil 加载图片为 Bitmap
+                val request = ImageRequest.Builder(context).data(path).build()
+                val result = context.imageLoader.execute(request)
+                if (result !is SuccessResult) return@withContext false
+                val bitmap = result.image.toBitmap()
+
+                // 2. 复用现有 saveToGallery
+                InspirationScreenshot.saveToGallery(context, bitmap)
+                true
             } catch (e: Exception) {
                 Log.e("InspirationImageGallery", "下载失败", e)
                 false
