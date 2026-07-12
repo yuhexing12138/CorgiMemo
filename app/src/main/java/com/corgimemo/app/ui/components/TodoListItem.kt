@@ -469,19 +469,6 @@ fun TodoListItem(
                             }
                         }
 
-                        /** 截止时间（dueDate）显示 */
-                        if (todo.dueDate != null) {
-                            val isOverdue = todo.status != 1 && todo.dueDate!! < System.currentTimeMillis()
-                            Column(modifier = Modifier.padding(top = 4.dp)) {
-                                Text(
-                                    text = "\u23F0 ${formatDateTime(todo.dueDate!!)}${if (isOverdue) " (已过期)" else ""}",
-                                    fontSize = 12.sp,
-                                    color = if (isOverdue) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = if (isOverdue) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
-                                )
-                            }
-                        }
-
                         // 进度条
                         if (todo.status != 1 && todo.content.isNullOrBlank() && subTaskProgress != null) {
                             SubTaskProgressBar(

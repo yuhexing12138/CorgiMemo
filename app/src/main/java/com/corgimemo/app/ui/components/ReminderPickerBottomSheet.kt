@@ -98,8 +98,6 @@ fun ReminderPickerBottomSheet(
     val context = LocalContext.current
     val now = System.currentTimeMillis()
 
-    // 提醒时间是否已设置（支持"仅设截止日期不设提醒"场景）
-    var isReminderSet by remember { mutableStateOf(initialDateMillis != null) }
     val initLocalDate = if (initialDateMillis != null) {
         java.time.Instant.ofEpochMilli(initialDateMillis)
             .atZone(java.time.ZoneId.systemDefault())
@@ -139,19 +137,18 @@ fun ReminderPickerBottomSheet(
     }
 
     // ===== 截止日期状态 =====
-    // 截止日期是否已设置（null 表示未设置）
-    var isDueDateSet by remember { mutableStateOf(initialDueDateMillis != null) }
-    // 截止日期的日期/时间（仅在 isDueDateSet=true 时有效）
-    val initDueLocalDate = if (initialDueDateMillis != null) {
+    // 截止时间默认与提醒时间一致（日期 + 时分完全相同）
+    val initDueZoned = if (initialDueDateMillis != null) {
         java.time.Instant.ofEpochMilli(initialDueDateMillis)
             .atZone(java.time.ZoneId.systemDefault())
-            .toLocalDate()
     } else {
-        selectedDate  // 未设置时默认同提醒日期
+        // 未传入截止日期时，使用提醒时间的时区日期（与 selectedDate/selectedHour/Minute 一致）
+        initLocalDate.atTime(initialHour, initialMinute)
+            .atZone(java.time.ZoneId.systemDefault())
     }
-    var dueDate by remember { mutableStateOf(initDueLocalDate) }
-    var dueHour by remember { mutableIntStateOf(23) }  // 默认 23:59
-    var dueMinute by remember { mutableIntStateOf(59) }
+    var dueDate by remember { mutableStateOf(initDueZoned.toLocalDate()) }
+    var dueHour by remember { mutableIntStateOf(initDueZoned.hour) }
+    var dueMinute by remember { mutableIntStateOf(initDueZoned.minute) }
 
     // 重复类型选项
     val repeatOptions = listOf(
@@ -175,7 +172,7 @@ fun ReminderPickerBottomSheet(
                 .padding(horizontal = 24.dp)
         ) {
         // 标题（动态：仅截止日期时显示"设置截止日期"）
-        val displayTitle = if (!isReminderSet && isDueDateSet) "设置截止日期" else title
+        val displayTitle = if (initialDateMillis == null && initialDueDateMillis != null) "设置截止日期" else title
         Text(
             text = displayTitle,
             fontSize = 17.sp,
@@ -191,16 +188,11 @@ fun ReminderPickerBottomSheet(
         DateTimeRow(
             label = rowLabel,
             isActive = editTarget == EditTarget.REMINDER,
-            dateText = if (isReminderSet) "${selectedDate.year}/${String.format("%02d", selectedDate.monthValue)}/${String.format("%02d", selectedDate.dayOfMonth)}" else "未设置",
-            timeText = if (isReminderSet) "${String.format("%02d", selectedHour)}:${String.format("%02d", selectedMinute)}" else null,
-            isDateSelected = isReminderSet,
+            dateText = "${selectedDate.year}/${String.format("%02d", selectedDate.monthValue)}/${String.format("%02d", selectedDate.dayOfMonth)}",
+            timeText = "${String.format("%02d", selectedHour)}:${String.format("%02d", selectedMinute)}",
             isCalendarActive = viewMode == "calendar",
             isTimeActive = viewMode == "time",
             onDateClick = {
-                if (!isReminderSet) {
-                    // 首次点击：初始化为当前日期的默认时间
-                    isReminderSet = true
-                }
                 editTarget = EditTarget.REMINDER
                 viewMode = "calendar"
             },
@@ -208,29 +200,20 @@ fun ReminderPickerBottomSheet(
                 editTarget = EditTarget.REMINDER
                 viewMode = "time"
             },
-            onClear = {
-                isReminderSet = false
-                editTarget = EditTarget.DUE_DATE
-            }
+            onClear = null
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // ===== 截止日期行 =====
         DateTimeRow(
             label = "截止日期",
             isActive = editTarget == EditTarget.DUE_DATE,
-            dateText = if (isDueDateSet) "${dueDate.year}/${String.format("%02d", dueDate.monthValue)}/${String.format("%02d", dueDate.dayOfMonth)}" else "未设置",
-            timeText = if (isDueDateSet) "${String.format("%02d", dueHour)}:${String.format("%02d", dueMinute)}" else null,
-            isDateSelected = isDueDateSet,
+            dateText = "${dueDate.year}/${String.format("%02d", dueDate.monthValue)}/${String.format("%02d", dueDate.dayOfMonth)}",
+            timeText = "${String.format("%02d", dueHour)}:${String.format("%02d", dueMinute)}",
             isCalendarActive = viewMode == "calendar",
             isTimeActive = viewMode == "time",
             onDateClick = {
-                if (!isDueDateSet) {
-                    // 首次点击：初始化为提醒时间同一天 23:59
-                    dueDate = selectedDate
-                    dueHour = 23
-                    dueMinute = 59
-                    isDueDateSet = true
-                }
                 editTarget = EditTarget.DUE_DATE
                 viewMode = "calendar"
             },
@@ -238,10 +221,7 @@ fun ReminderPickerBottomSheet(
                 editTarget = EditTarget.DUE_DATE
                 viewMode = "time"
             },
-            onClear = {
-                isDueDateSet = false
-                editTarget = EditTarget.REMINDER
-            },
+            onClear = null,
             highlightEnabled = isDueDateAutoFixed
         )
 
@@ -249,7 +229,6 @@ fun ReminderPickerBottomSheet(
 
         // ===== 重复提醒行（仅 showAdvancedOptions=true 时显示） =====
         if (showAdvancedOptions) {
-        Spacer(modifier = Modifier.height(16.dp))
 
         // ===== 重复提醒行（胶囊按钮 + ↕箭头，展开时显示背景） =====
         var expanded by remember { mutableStateOf(false) }
@@ -380,9 +359,9 @@ fun ReminderPickerBottomSheet(
         val contentModifier = if (hasPreview) Modifier else Modifier.weight(1f)
 
         // 根据 editTarget 确定滚轮当前应使用哪组日期/时间
-        val activeDate = if (editTarget == EditTarget.DUE_DATE && isDueDateSet) dueDate else selectedDate
-        val activeHour = if (editTarget == EditTarget.DUE_DATE && isDueDateSet) dueHour else selectedHour
-        val activeMinute = if (editTarget == EditTarget.DUE_DATE && isDueDateSet) dueMinute else selectedMinute
+        val activeDate = if (editTarget == EditTarget.DUE_DATE) dueDate else selectedDate
+        val activeHour = if (editTarget == EditTarget.DUE_DATE) dueHour else selectedHour
+        val activeMinute = if (editTarget == EditTarget.DUE_DATE) dueMinute else selectedMinute
 
         when (viewMode) {
             "calendar" -> DateWheelPickerView(
@@ -465,29 +444,19 @@ fun ReminderPickerBottomSheet(
                     .clip(RoundedCornerShape(22.dp))
                     .background(MaterialTheme.colorScheme.primary)
                     .clickable {
-                        // 计算提醒时间戳（未设置则为 null）
-                        val reminderMillis = if (isReminderSet) {
-                            selectedDate.atTime(selectedHour, selectedMinute)
-                                .atZone(java.time.ZoneId.systemDefault())
-                                .toInstant().toEpochMilli()
-                        } else null
+                        // 计算提醒时间戳（始终有值，因为默认为今天当前时间）
+                        val reminderMillis = selectedDate.atTime(selectedHour, selectedMinute)
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toInstant().toEpochMilli()
 
-                        // 计算截止日期时间戳（未设置则为 null）
-                        val dueDateMillis = if (isDueDateSet) {
-                            dueDate.atTime(dueHour, dueMinute)
-                                .atZone(java.time.ZoneId.systemDefault())
-                                .toInstant().toEpochMilli()
-                        } else null
-
-                        // 至少需要设置提醒时间或截止日期其中之一
-                        if (reminderMillis == null && dueDateMillis == null) {
-                            Toast.makeText(context, "请至少设置提醒时间或截止日期", Toast.LENGTH_SHORT).show()
-                            return@clickable
-                        }
+                        // 计算截止日期时间戳（始终有值，默认等于提醒时间）
+                        val dueDateMillis = dueDate.atTime(dueHour, dueMinute)
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toInstant().toEpochMilli()
 
                         // 截止时间自动修正：早于提醒时间时自动调整为提醒时间
                         // 修正后不立即提交，切换到截止日期行高亮让用户确认
-                        if (reminderMillis != null && dueDateMillis != null && dueDateMillis < reminderMillis) {
+                        if (dueDateMillis < reminderMillis) {
                             val adjustedDateTime = java.time.Instant.ofEpochMilli(reminderMillis)
                                 .atZone(java.time.ZoneId.systemDefault())
                             dueDate = adjustedDateTime.toLocalDate()
@@ -544,7 +513,6 @@ fun ReminderPickerBottomSheet(
  * @param isActive 是否为当前编辑目标（高亮标签颜色）
  * @param dateText 日期芯片显示文字
  * @param timeText 时间芯片显示文字，null 时隐藏时间芯片
- * @param isDateSelected 是否已选择日期（影响"未设置"样式）
  * @param isCalendarActive 日历视图是否为当前激活视图
  * @param isTimeActive 时间视图是否为当前激活视图
  * @param onDateClick 日期芯片点击回调
@@ -558,7 +526,6 @@ private fun DateTimeRow(
     isActive: Boolean,
     dateText: String,
     timeText: String?,
-    isDateSelected: Boolean,
     isCalendarActive: Boolean,
     isTimeActive: Boolean,
     onDateClick: () -> Unit,
@@ -576,64 +543,74 @@ private fun DateTimeRow(
             .padding(vertical = if (highlightEnabled) 4.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // 标签固定宽度，避免压缩右侧芯片区域
         Text(
             text = label,
             fontSize = 15.sp,
-            color = if (isActive) MaterialTheme.colorScheme.primary else Color(0xFF999999),
-            fontWeight = FontWeight.Medium
+            color = if (isActive) MaterialTheme.colorScheme.primary else Color(0xFF2D2D2D),
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.width(64.dp)
         )
-        Spacer(modifier = Modifier.weight(1f))
 
-        // 日期芯片
+        // 右侧芯片区域整体 weight(1f) 右对齐
         Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(if (isActive && isCalendarActive) MaterialTheme.colorScheme.primary else Color(0xFFFFE4CC))
-                .clickable(onClick = onDateClick)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = dateText,
-                fontSize = 13.sp,
-                color = if (isActive && isCalendarActive) Color.White else if (isDateSelected) Color(0xFF666666) else Color(0xFF999999),
-                fontWeight = if (isActive && isCalendarActive) FontWeight.Medium else FontWeight.Normal
-            )
-        }
-
-        // 时间芯片（仅在 timeText 非 null 时显示）
-        if (timeText != null) {
-            Spacer(modifier = Modifier.width(8.dp))
+            // 日期芯片
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (isActive && isTimeActive) MaterialTheme.colorScheme.primary else Color(0xFFFFE4CC))
-                    .clickable(onClick = onTimeClick)
+                    .background(if (isActive && isCalendarActive) MaterialTheme.colorScheme.primary else Color(0xFFFFE4CC))
+                    .clickable(onClick = onDateClick)
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = timeText,
+                    text = dateText,
                     fontSize = 13.sp,
-                    color = if (isActive && isTimeActive) Color.White else Color(0xFF666666),
-                    fontWeight = if (isActive && isTimeActive) FontWeight.Medium else FontWeight.Normal
+                    color = if (isActive && isCalendarActive) Color.White else Color(0xFF2D2D2D),
+                    fontWeight = if (isActive && isCalendarActive) FontWeight.Medium else FontWeight.Normal,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
-        }
 
-        // 清除按钮（仅在 onClear 非 null 时显示）
-        if (onClear != null) {
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "清除",
-                modifier = Modifier
-                    .size(18.dp)
-                    .clip(RoundedCornerShape(9.dp))
-                    .clickable(onClick = onClear)
-                    .padding(2.dp),
-                tint = Color(0xFF999999)
-            )
+            // 时间芯片（仅在 timeText 非 null 时显示）
+            if (timeText != null) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isActive && isTimeActive) MaterialTheme.colorScheme.primary else Color(0xFFFFE4CC))
+                        .clickable(onClick = onTimeClick)
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = timeText,
+                        fontSize = 13.sp,
+                        color = if (isActive && isTimeActive) Color.White else Color(0xFF2D2D2D),
+                        fontWeight = if (isActive && isTimeActive) FontWeight.Medium else FontWeight.Normal,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+
+            // 清除按钮（仅在 onClear 非 null 时显示）
+            if (onClear != null) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "清除",
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .clickable(onClick = onClear)
+                        .padding(2.dp),
+                    tint = Color(0xFF999999)
+                )
+            }
         }
     }
 }
