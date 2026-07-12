@@ -15,8 +15,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
+import com.corgimemo.app.util.TagUtils
 import java.util.Calendar
 import java.util.Locale
 import javax.inject.Inject
@@ -190,41 +189,13 @@ class SpecialDateViewModel @Inject constructor(
         }
     }
 
-    fun encodeTags(tags: List<String>): String {
-        return try {
-            JSONArray(tags).toString()
-        } catch (e: Exception) {
-            "[]"
-        }
-    }
+    fun encodeTags(tags: List<String>): String = TagUtils.encodeTags(tags)
 
-    fun decodeTags(json: String): List<String> {
-        return try {
-            if (json.isBlank()) return emptyList()
-            val arr = JSONArray(json)
-            (0 until arr.length()).map { arr.getString(it) }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    fun decodeTags(json: String): List<String> = TagUtils.decodeTags(json)
 
-    fun encodePaths(paths: List<String>): String {
-        return try {
-            JSONArray(paths).toString()
-        } catch (e: Exception) {
-            "[]"
-        }
-    }
+    fun encodePaths(paths: List<String>): String = TagUtils.encodePaths(paths)
 
-    fun decodePaths(json: String): List<String> {
-        return try {
-            if (json.isBlank()) return emptyList()
-            val arr = JSONArray(json)
-            (0 until arr.length()).map { arr.getString(it) }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    fun decodePaths(json: String): List<String> = TagUtils.decodePaths(json)
 
     companion object {
 
@@ -353,25 +324,9 @@ class SpecialDateViewModel @Inject constructor(
             }
         }
 
-        private fun decodeTagsSafe(json: String): List<String> {
-            return try {
-                if (json.isBlank()) return emptyList()
-                val arr = JSONArray(json)
-                (0 until arr.length()).map { arr.getString(it) }
-            } catch (e: Exception) {
-                emptyList()
-            }
-        }
+        private fun decodeTagsSafe(json: String): List<String> = TagUtils.decodeTags(json)
 
-        private fun decodePathsSafe(json: String): List<String> {
-            return try {
-                if (json.isBlank()) return emptyList()
-                val arr = JSONArray(json)
-                (0 until arr.length()).map { arr.getString(it) }
-            } catch (e: Exception) {
-                emptyList()
-            }
-        }
+        private fun decodePathsSafe(json: String): List<String> = TagUtils.decodePaths(json)
     }
 }
 

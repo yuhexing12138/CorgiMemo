@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.corgimemo.app.util.TagUtils
 import javax.inject.Inject
 
 /**
@@ -1973,17 +1974,7 @@ class InspirationEditViewModel @Inject constructor(
      * @param tags 标签列表
      * @return JSON格式的字符串（如 ["产品","设计"]）
      */
-    fun encodeTags(tags: List<String>): String {
-        if (tags.isEmpty()) return ""
-        return buildString {
-            append("[")
-            tags.forEachIndexed { index, tag ->
-                if (index > 0) append(",")
-                append("\"$tag\"")
-            }
-            append("]")
-        }
-    }
+    fun encodeTags(tags: List<String>): String = TagUtils.encodeTags(tags)
 
     /**
      * 解码标签JSON字符串为列表
@@ -1992,18 +1983,7 @@ class InspirationEditViewModel @Inject constructor(
      * @param tagsJson JSON字符串
      * @return 标签列表，解析失败返回空列表
      */
-    fun decodeTags(tagsJson: String): List<String> {
-        if (tagsJson.isBlank()) return emptyList()
-        return try {
-            tagsJson
-                .removeSurrounding("[", "]")
-                .split(",")
-                .map { it.trim().removeSurrounding("\"") }
-                .filter { it.isNotBlank() }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    fun decodeTags(tagsJson: String): List<String> = TagUtils.decodeTags(tagsJson)
 
     /**
      * 将图片路径列表编码为JSON字符串
@@ -2012,13 +1992,7 @@ class InspirationEditViewModel @Inject constructor(
      * @param paths 图片路径列表
      * @return JSON格式的字符串（如 ["path1","path2"]）
      */
-    private fun encodePaths(paths: List<String>): String {
-        return try {
-            org.json.JSONArray(paths).toString()
-        } catch (e: Exception) {
-            ""
-        }
-    }
+    private fun encodePaths(paths: List<String>): String = TagUtils.encodePaths(paths)
 
     /**
      * 从JSON字符串解码图片路径列表
@@ -2027,14 +2001,7 @@ class InspirationEditViewModel @Inject constructor(
      * @param json JSON格式字符串
      * @return 解析后的路径列表，解析失败返回空列表
      */
-    private fun decodePaths(json: String): List<String> {
-        return try {
-            val jsonArray = org.json.JSONArray(json)
-            (0 until jsonArray.length()).map { i -> jsonArray.getString(i) }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    private fun decodePaths(json: String): List<String> = TagUtils.decodePaths(json)
 
     // ========== 关联管理方法 ==========
 

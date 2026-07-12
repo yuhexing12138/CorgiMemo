@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.corgimemo.app.util.TagUtils
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
@@ -148,7 +149,7 @@ class RecycleBinViewModel @Inject constructor(
             DeletedInspirationListItem(
                 id = d.id,
                 title = d.title,
-                tags = decodeTags(d.tags),
+                tags = TagUtils.decodeTags(d.tags),
                 deletedAt = d.deletedAt,
                 relativeTime = TimeClassifier.formatRelativeTime(d.deletedAt, now)
             )
@@ -182,24 +183,6 @@ class RecycleBinViewModel @Inject constructor(
         DeletedGroupKind.YESTERDAY -> "昨天"
         DeletedGroupKind.THIS_WEEK -> "本周"
         DeletedGroupKind.EARLIER -> "更早"
-    }
-
-    /**
-     * 解码标签 JSON 字符串为列表
-     *
-     * tags 字段格式：["标签1","标签2"]
-     */
-    private fun decodeTags(tagsJson: String): List<String> {
-        if (tagsJson.isBlank()) return emptyList()
-        return try {
-            tagsJson
-                .removeSurrounding("[", "]")
-                .split(",")
-                .map { it.trim().removeSurrounding("\"") }
-                .filter { it.isNotBlank() }
-        } catch (e: Exception) {
-            emptyList()
-        }
     }
 
     // ========== 恢复操作 ==========

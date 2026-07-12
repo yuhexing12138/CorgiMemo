@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.corgimemo.app.util.TagUtils
 import java.util.Calendar
 import javax.inject.Inject
 
@@ -843,70 +844,28 @@ class InspirationViewModel @Inject constructor(
      * @param tags 标签列表
      * @return JSON字符串
      */
-    fun encodeTags(tags: List<String>): String {
-        if (tags.isEmpty()) return ""
-        return buildString {
-            append("[")
-            tags.forEachIndexed { index, tag ->
-                if (index > 0) append(",")
-                append("\"$tag\"")
-            }
-            append("]")
-        }
-    }
+    fun encodeTags(tags: List<String>): String = TagUtils.encodeTags(tags)
 
     /**
      * 编码图片路径列表为JSON字符串
      * @param paths 路径列表
      * @return JSON字符串
      */
-    fun encodePaths(paths: List<String>): String {
-        if (paths.isEmpty()) return ""
-        return buildString {
-            append("[")
-            paths.forEachIndexed { index, path ->
-                if (index > 0) append(",")
-                append("\"$path\"")
-            }
-            append("]")
-        }
-    }
+    fun encodePaths(paths: List<String>): String = TagUtils.encodePaths(paths)
 
     /**
      * 解码标签JSON字符串为列表
      * @param tagsJson JSON字符串
      * @return 标签列表
      */
-    fun decodeTags(tagsJson: String): List<String> {
-        if (tagsJson.isBlank()) return emptyList()
-        return try {
-            tagsJson
-                .removeSurrounding("[", "]")
-                .split(",")
-                .map { it.trim().removeSurrounding("\"") }
-                .filter { it.isNotBlank() }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    fun decodeTags(tagsJson: String): List<String> = TagUtils.decodeTags(tagsJson)
 
     /**
      * 解码图片路径JSON字符串为列表
      * @param pathsJson JSON字符串
      * @return 路径列表
      */
-    fun decodePaths(pathsJson: String): List<String> {
-        if (pathsJson.isBlank()) return emptyList()
-        return try {
-            pathsJson
-                .removeSurrounding("[", "]")
-                .split(",")
-                .map { it.trim().removeSurrounding("\"") }
-                .filter { it.isNotBlank() }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    fun decodePaths(pathsJson: String): List<String> = TagUtils.decodePaths(pathsJson)
 
     /**
      * 格式化时间显示（HH:mm）

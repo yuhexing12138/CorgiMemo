@@ -42,6 +42,7 @@ import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.ui.components.calendar.CalendarMonthView
 import com.corgimemo.app.ui.components.calendar.DateWheelPicker
 import com.corgimemo.app.ui.theme.UiColors
+import com.corgimemo.app.util.TagUtils
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.TextStyle
@@ -448,46 +449,24 @@ internal fun CalendarInspirationItem(
 /**
  * 解码标签JSON字符串为列表
  *
- * 与 InspirationViewModel.decodeTags 逻辑一致，
+ * 委托给 TagUtils.decodeTags，
  * 用于在日历弹窗中复用标签解析而无需依赖 ViewModel。
  *
  * @param tagsJson JSON字符串（如 ["标签1","标签2"]）
  * @return 标签列表
  */
-internal fun decodeTagsJson(tagsJson: String): List<String> {
-    if (tagsJson.isBlank()) return emptyList()
-    return try {
-        tagsJson
-            .removeSurrounding("[", "]")
-            .split(",")
-            .map { it.trim().removeSurrounding("\"") }
-            .filter { it.isNotBlank() }
-    } catch (e: Exception) {
-        emptyList()
-    }
-}
+internal fun decodeTagsJson(tagsJson: String): List<String> = TagUtils.decodeTags(tagsJson)
 
 /**
  * 解码图片路径JSON字符串为列表
  *
- * 与 InspirationViewModel.decodePaths 逻辑一致，
+ * 委托给 TagUtils.decodePaths，
  * 用于在日历弹窗中复用图片路径解析而无需依赖 ViewModel。
  *
  * @param pathsJson JSON字符串（如 ["/path1.jpg","/path2.jpg"]）
  * @return 路径列表
  */
-internal fun decodePathsJson(pathsJson: String): List<String> {
-    if (pathsJson.isBlank()) return emptyList()
-    return try {
-        pathsJson
-            .removeSurrounding("[", "]")
-            .split(",")
-            .map { it.trim().removeSurrounding("\"") }
-            .filter { it.isNotBlank() }
-    } catch (e: Exception) {
-        emptyList()
-    }
-}
+internal fun decodePathsJson(pathsJson: String): List<String> = TagUtils.decodePaths(pathsJson)
 
 /**
  * 去除HTML标签
