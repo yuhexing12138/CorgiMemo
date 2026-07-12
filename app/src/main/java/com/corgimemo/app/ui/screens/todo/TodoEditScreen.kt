@@ -90,6 +90,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.backup.exporter.ShareCoordinator
@@ -426,6 +429,31 @@ fun TodoEditScreen(
 
     /** 是否显示通知权限永久拒绝引导对话框 */
     var showNotificationPermissionDeniedDialog by remember { mutableStateOf(false) }
+
+    /**
+     * 监听 Activity 生命周期 ON_RESUME 事件：
+     * 用户从系统设置返回时，自动检测权限是否已授予，关闭引导对话框。
+     */
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                // 通知权限：如果已授予，关闭永久拒绝引导对话框
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                        showNotificationPermissionDeniedDialog = false
+                        hasRequestedNotificationPermission = true
+                    }
+                }
+                // 精确闹钟权限：如果已授予，关闭引导对话框
+                if (com.corgimemo.app.notification.AlarmScheduler.hasExactAlarmPermission(context)) {
+                    showExactAlarmDialog = false
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
