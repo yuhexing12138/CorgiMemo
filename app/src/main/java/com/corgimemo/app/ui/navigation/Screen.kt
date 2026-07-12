@@ -51,8 +51,10 @@ sealed class Screen(val route: String) {
     /** 智能分类设置页面 */
     object SmartCategorySettings : Screen("smart_category_settings")
 
-    /** V2.7: 最近删除页面 */
-    object RecentlyDeleted : Screen("recently_deleted")
+    /** 回收站页面（支持 source 参数指定默认 Tab） */
+    object RecycleBin : Screen("recycle_bin?source={source}") {
+        fun createRoute(source: String) = "recycle_bin?source=$source"
+    }
 
     fun withArgs(vararg args: String): String {
         var result = route

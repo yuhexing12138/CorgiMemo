@@ -5,7 +5,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
+import androidx.navigation.NavType
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import com.corgimemo.app.backup.BackupManager
 import com.corgimemo.app.ui.screens.achievement.AchievementScreen
 import com.corgimemo.app.ui.screens.backup.BackupHistoryScreen
@@ -212,9 +214,15 @@ fun AppNavHost(
             ChartFullscreenScreen(navController = navController)
         }
 
-        // 最近删除页面路由
-        composable(Screen.RecentlyDeleted.route) {
-            com.corgimemo.app.ui.screens.recentlydeleted.RecentlyDeletedScreen(
+        // 回收站页面路由
+        composable(
+            route = Screen.RecycleBin.route,
+            arguments = listOf(navArgument("source") {
+                type = NavType.StringType
+                defaultValue = "todo"
+            })
+        ) {
+            com.corgimemo.app.ui.screens.recyclebin.RecycleBinScreen(
                 onBack = { navController.popBackStack() }
             )
         }
