@@ -240,7 +240,8 @@ class RecycleBinViewModel @Inject constructor(
      * 流程：
      * 1. 从 deleted_inspirations 读取
      * 2. 判断原 categoryId 是否还存在（被删则重置为 0）
-     * 3. 写入 inspirations，删除 deleted_inspirations 记录
+     * 3. 计算非置顶区最大 position + 1
+     * 4. 写入 inspirations，删除 deleted_inspirations 记录
      */
     fun restoreInspiration(deletedInspirationId: Long) {
         viewModelScope.launch {
@@ -259,13 +260,18 @@ class RecycleBinViewModel @Inject constructor(
                     if (categoryRepository.getCategoryById(id) != null) id else 0L
                 } ?: 0L
 
+                // 2. 决定 position（非置顶区最大值 + 1）
+                val maxPosition = inspirationRepository.getMaxPosition(isPinned = false)
+                val newPosition = (maxPosition ?: 9999) + 1
+
                 val restoredInspiration = inspiration.copy(
                     categoryId = finalCategoryId,
+                    position = newPosition,
                     isPinned = false,
                     status = 0
                 )
 
-                // 2. 写入灵感表 + 清理 deleted_inspirations
+                // 3. 写入灵感表 + 清理 deleted_inspirations
                 inspirationRepository.insert(restoredInspiration)
                 deletedInspirationRepository.permanentlyDelete(deletedInspirationId)
                 _events.send(UiEvent.ShowSnackBar("已恢复"))

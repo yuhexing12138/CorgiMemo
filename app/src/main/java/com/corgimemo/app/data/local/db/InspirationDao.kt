@@ -128,4 +128,15 @@ interface InspirationDao {
      */
     @Query("SELECT * FROM inspirations ORDER BY isPinned DESC, createdAt DESC LIMIT :limit OFFSET :offset")
     suspend fun getInspirationsPaging(limit: Int, offset: Int): List<Inspiration>
+
+    /**
+     * 获取非置顶灵感的最大 position 值
+     *
+     * 用于恢复灵感时计算新的排序位置。
+     *
+     * @param isPinned 是否置顶
+     * @return 最大 position 值，无记录时返回 null
+     */
+    @Query("SELECT MAX(position) FROM inspirations WHERE isPinned = :isPinned")
+    suspend fun getMaxPosition(isPinned: Boolean): Int?
 }

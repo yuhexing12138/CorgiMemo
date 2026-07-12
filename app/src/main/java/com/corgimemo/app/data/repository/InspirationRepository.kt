@@ -110,6 +110,17 @@ class InspirationRepository @Inject constructor(
      */
     suspend fun toggleArchive(id: Long, isArchived: Boolean) = 
         inspirationDao.toggleArchive(id, isArchived)
+
+    /**
+     * 获取非置顶灵感的最大 position 值
+     *
+     * 用于恢复灵感时计算新的排序位置。
+     *
+     * @param isPinned 是否置顶
+     * @return 最大 position 值，无记录时返回 null
+     */
+    suspend fun getMaxPosition(isPinned: Boolean): Int? =
+        inspirationDao.getMaxPosition(isPinned)
     
     // ========== 关联关系操作 ==========
     
