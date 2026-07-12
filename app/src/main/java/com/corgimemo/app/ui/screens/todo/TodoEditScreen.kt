@@ -400,6 +400,17 @@ fun TodoEditScreen(
     /** #搜索关键词状态 */
     var locationQuery by remember { mutableStateOf("") }
 
+    /** 通知权限请求启动器：首次设置提醒时间时引导用户授权 */
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (!isGranted) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("需要通知权限才能接收提醒通知")
+            }
+        }
+    }
+
     val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { granted ->
@@ -1731,6 +1742,17 @@ fun TodoEditScreen(
                             viewModel.setGroupReminder(gid, dateMillis ?: System.currentTimeMillis())
                             viewModel.setGroupRepeatType(gid, repeatTypeNew)
                             editingReminderGroupId = null
+
+                            /** Android 13+ 首次设置提醒时检查通知权限，未授权则引导用户开启 */
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                if (ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.POST_NOTIFICATIONS
+                                    ) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            }
                         }
                     )
                 }
