@@ -78,6 +78,14 @@ val ElasticOutEasing: Easing = Easing { fraction ->
 }
 
 /**
+ * 左滑操作按钮的语义动作类型
+ *
+ * 由 SwipeButtonConfig 持有，SwipeableTodoBox 根据此类型路由到对应回调。
+ * 这样调用方（如日期页）可注入自定义按钮列表而不必遵循原 label 字符串约定。
+ */
+internal enum class SwipeActionType { SHARE, PIN, ARCHIVE, DELETE }
+
+/**
  * 左滑操作按钮配置
  *
  * @param label 按钮文字
@@ -85,13 +93,46 @@ val ElasticOutEasing: Easing = Easing { fraction ->
  * @param icon Material 图标
  * @param zIndex z-index 值（从左到右递减：分享=3, 置顶=2, 删除=1）
  * @param shape 按钮的圆角形状
+ * @param actionType 按钮的语义动作（用于路由到对应回调）
  */
-private data class SwipeButtonConfig(
+internal data class SwipeButtonConfig(
     val label: String,
     val backgroundColorRes: Int,
     val icon: ImageVector,
     val zIndex: Float,
-    val shape: RoundedCornerShape
+    val shape: RoundedCornerShape,
+    val actionType: SwipeActionType
+)
+
+/**
+ * 待办页默认按钮配置（分享→置顶→删除）
+ * 抽出为顶层函数，让 SwipeableTodoBox 在 customButtons == null 时复用
+ *
+ * @param isPinned 当前是否已置顶（决定置顶按钮文字/图标）
+ * @param cornerRadiusDp 圆角 dp
+ */
+internal fun defaultTodoButtons(
+    isPinned: Boolean,
+    cornerRadiusDp: androidx.compose.ui.unit.Dp = 16.dp
+): List<SwipeButtonConfig> = listOf(
+    SwipeButtonConfig(
+        "分享", R.color.ui_swipe_share, Icons.Outlined.Share, 3f,
+        RoundedCornerShape(topStart = cornerRadiusDp, bottomStart = cornerRadiusDp),
+        SwipeActionType.SHARE
+    ),
+    SwipeButtonConfig(
+        label = if (isPinned) "取消置顶" else "置顶",
+        backgroundColorRes = R.color.ui_primary,
+        icon = if (isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+        zIndex = 2f,
+        shape = RoundedCornerShape(0.dp),
+        actionType = SwipeActionType.PIN
+    ),
+    SwipeButtonConfig(
+        "删除", R.color.ui_swipe_delete, Icons.Outlined.Delete, 1f,
+        RoundedCornerShape(topEnd = cornerRadiusDp, bottomEnd = cornerRadiusDp),
+        SwipeActionType.DELETE
+    )
 )
 
 /**
@@ -178,26 +219,11 @@ fun SwipeableTodoBox(
     // 快速右滑速度阈值：x 方向 > 800 px/s 视为 fling
     val flingVelocityThresholdPx = with(density) { 800.dp.toPx() }
 
-    // 按钮配置（顺序固定：分享→置顶→删除）
-    // 分享按钮（最左）：左上、左下圆角；置顶按钮（中间）：直角；删除按钮（最右）：右上、右下圆角
-    val buttons = remember(isPinned) {
-        listOf(
-            SwipeButtonConfig(
-                "分享", R.color.ui_swipe_share, Icons.Outlined.Share, 3f,
-                RoundedCornerShape(topStart = cornerRadiusDp, bottomStart = cornerRadiusDp)
-            ),
-            SwipeButtonConfig(
-                label = if (isPinned) "取消置顶" else "置顶",
-                backgroundColorRes = R.color.ui_primary,
-                icon = if (isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                zIndex = 2f,
-                shape = RoundedCornerShape(0.dp)
-            ),
-            SwipeButtonConfig(
-                "删除", R.color.ui_swipe_delete, Icons.Outlined.Delete, 1f,
-                RoundedCornerShape(topEnd = cornerRadiusDp, bottomEnd = cornerRadiusDp)
-            )
-        )
+    // 按钮配置
+    // - customButtons 优先：日期页等需要自定义按钮顺序/类型时传入
+    // - 否则用待办页默认"分享→置顶→删除"
+    val buttons = remember(isPinned, customButtons) {
+        customButtons ?: defaultTodoButtons(isPinned, cornerRadiusDp)
     }
 
     // 父组件强制收起时同步动画
