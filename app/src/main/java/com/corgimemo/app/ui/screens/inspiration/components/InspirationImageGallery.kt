@@ -76,6 +76,32 @@ fun InspirationImageGallery(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    // 下载当前显示的图片到相册：使用 Coil 同步加载图片为 Bitmap，再复用 InspirationScreenshot 保存到系统相册
+    // IO 线程执行避免主线程阻塞，Snackbar 反馈结果
+    fun downloadCurrentImage() {
+        val path = imagePaths.getOrNull(pagerState.currentPage) ?: return
+        scope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                try {
+                    val request = ImageRequest.Builder(context).data(path).build()
+                    val result = context.imageLoader.execute(request)
+                    if (result !is SuccessResult) {
+                        Log.w("InspirationImageGallery", "图片加载失败: $path")
+                        return@withContext false
+                    }
+                    val bitmap = (result.image as BitmapImage).bitmap
+                    InspirationScreenshot.saveToGallery(context, bitmap) != null
+                } catch (e: Exception) {
+                    Log.e("InspirationImageGallery", "下载失败: $path", e)
+                    false
+                }
+            }
+            snackbarHostState.showSnackbar(
+                if (saved) "已保存到相册" else "保存失败"
+            )
+        }
+    }
+
     // 粘性沉浸式：隐藏状态栏与导航栏
     DisposableEffect(Unit) {
         val window = (context as? Activity)?.window
@@ -127,9 +153,9 @@ fun InspirationImageGallery(
         )
 
         // 下载按钮（右下角）：透明背景 + 白色图标，与关闭按钮风格一致
-        // 当前 onClick 仅为占位，Task 3 将替换为 ::downloadCurrentImage
+        // 点击触发 downloadCurrentImage()：Coil 同步加载 + InspirationScreenshot 保存到相册 + Snackbar 反馈
         IconButton(
-            onClick = { /* TODO: Task 3 */ },
+            onClick = ::downloadCurrentImage,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 16.dp, bottom = 24.dp)
