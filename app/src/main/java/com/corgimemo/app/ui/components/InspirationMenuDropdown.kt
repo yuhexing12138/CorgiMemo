@@ -44,7 +44,8 @@ fun InspirationMenuDropdown(
     hideDetails: Boolean,
     onToggleHideDetails: () -> Unit,
     onBatchSelectClick: () -> Unit,
-    onPlaceholderClick: () -> Unit
+    onPlaceholderClick: () -> Unit,
+    onRecycleBinClick: () -> Unit
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -144,11 +145,11 @@ fun InspirationMenuDropdown(
             },
             modifier = Modifier.alpha(0.4f)
         )
-        // 7. 回收站（占位）
+        // 7. 回收站
         DropdownMenuItem(
             text = { Text("回收站") },
             onClick = {
-                onPlaceholderClick()
+                onRecycleBinClick()
                 onDismiss()
             },
             leadingIcon = {
@@ -157,8 +158,7 @@ fun InspirationMenuDropdown(
                     contentDescription = null,
                     modifier = Modifier.size(20.dp)
                 )
-            },
-            modifier = Modifier.alpha(0.4f)
+            }
         )
     }
 }

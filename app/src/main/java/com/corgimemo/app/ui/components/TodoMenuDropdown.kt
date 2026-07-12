@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Share
@@ -40,7 +41,8 @@ fun TodoMenuDropdown(
     onToggleHideCompletedItems: () -> Unit,
     onSortClick: () -> Unit,
     onBatchSelectClick: () -> Unit,
-    onPlaceholderClick: () -> Unit
+    onPlaceholderClick: () -> Unit,
+    onRecycleBinClick: () -> Unit
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -153,6 +155,21 @@ fun TodoMenuDropdown(
                 )
             },
             modifier = Modifier.alpha(0.4f)
+        )
+        // 8. 回收站
+        DropdownMenuItem(
+            text = { Text("回收站") },
+            onClick = {
+                onRecycleBinClick()
+                onDismiss()
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Outlined.DeleteOutline,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         )
     }
 }
