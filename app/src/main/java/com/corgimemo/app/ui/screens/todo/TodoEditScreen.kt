@@ -114,6 +114,19 @@ import java.util.Date
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
+/**
+ * 权限引导状态：合并通知权限和精确闹钟权限的引导状态
+ *
+ * Idle - 初始状态，未触发任何引导
+ * NotificationDenied - 通知权限被永久拒绝，需引导去应用设置
+ * ExactAlarmDenied - 精确闹钟权限未授予，需引导去闹钟设置
+ */
+private sealed class PermissionGuideState {
+    object Idle : PermissionGuideState()
+    object NotificationDenied : PermissionGuideState()
+    object ExactAlarmDenied : PermissionGuideState()
+}
+
 @Composable
 fun TodoEditScreen(
     navController: NavController,
@@ -397,6 +410,9 @@ fun TodoEditScreen(
     /** #搜索关键词状态 */
     var locationQuery by remember { mutableStateOf("") }
 
+    /** 权限引导状态（提前声明，供 notificationPermissionLauncher 回调使用） */
+    var permissionGuideState by remember { mutableStateOf<PermissionGuideState>(PermissionGuideState.Idle) }
+
     /** 通知权限请求启动器：首次设置提醒时间时引导用户授权 */
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -410,7 +426,7 @@ fun TodoEditScreen(
                     )
                 ) {
                     // 永久拒绝：引导去应用设置页
-                    showNotificationPermissionDeniedDialog = true
+                    permissionGuideState = PermissionGuideState.NotificationDenied
                 } else {
                     // 普通拒绝：Snackbar 提示
                     coroutineScope.launch {
@@ -424,12 +440,6 @@ fun TodoEditScreen(
     /** 本次会话是否已请求过通知权限（防止重复弹窗） */
     var hasRequestedNotificationPermission by remember { mutableStateOf(false) }
 
-    /** 是否显示精确闹钟权限引导对话框 */
-    var showExactAlarmDialog by remember { mutableStateOf(false) }
-
-    /** 是否显示通知权限永久拒绝引导对话框 */
-    var showNotificationPermissionDeniedDialog by remember { mutableStateOf(false) }
-
     /**
      * 监听 Activity 生命周期 ON_RESUME 事件：
      * 用户从系统设置返回时，自动检测权限是否已授予，关闭引导对话框。
@@ -441,13 +451,17 @@ fun TodoEditScreen(
                 // 通知权限：如果已授予，关闭永久拒绝引导对话框
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                        showNotificationPermissionDeniedDialog = false
+                        if (permissionGuideState == PermissionGuideState.NotificationDenied) {
+                            permissionGuideState = PermissionGuideState.Idle
+                        }
                         hasRequestedNotificationPermission = true
                     }
                 }
                 // 精确闹钟权限：如果已授予，关闭引导对话框
                 if (com.corgimemo.app.notification.AlarmScheduler.hasExactAlarmPermission(context)) {
-                    showExactAlarmDialog = false
+                    if (permissionGuideState == PermissionGuideState.ExactAlarmDenied) {
+                        permissionGuideState = PermissionGuideState.Idle
+                    }
                 }
             }
         }
@@ -1727,28 +1741,36 @@ fun TodoEditScreen(
                          */
                         onConfirm = { dateMillis, hour, minute, repeatTypeNew, calendarEnabled, dueDateMillis ->
                             val gid = editingReminderGroupId ?: return@ReminderPickerBottomSheet
-                            viewModel.setGroupReminder(gid, dateMillis ?: System.currentTimeMillis())
-                            viewModel.setGroupRepeatType(gid, repeatTypeNew)
+                            if (dateMillis != null) {
+                                viewModel.setGroupReminder(gid, dateMillis)
+                                viewModel.setGroupRepeatType(gid, repeatTypeNew)
+                            } else {
+                                // 提醒时间未设置（用户清除了提醒），清除该分组的提醒
+                                viewModel.clearGroupReminder(gid)
+                            }
                             viewModel.setDueDate(dueDateMillis)
                             editingReminderGroupId = null
 
-                            /** Android 13+ 首次设置提醒时检查通知权限，未授权则引导用户开启 */
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                if (ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.POST_NOTIFICATIONS
-                                    ) != PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    if (!hasRequestedNotificationPermission) {
-                                        hasRequestedNotificationPermission = true
-                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            /** 仅在设置了提醒时间时才引导通知权限和精确闹钟权限 */
+                            if (dateMillis != null) {
+                                /** Android 13+ 首次设置提醒时检查通知权限，未授权则引导用户开启 */
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                    if (ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.POST_NOTIFICATIONS
+                                        ) != PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        if (!hasRequestedNotificationPermission) {
+                                            hasRequestedNotificationPermission = true
+                                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        }
                                     }
                                 }
-                            }
 
-                            /** Android 12+ 检查精确闹钟权限 */
-                            if (!com.corgimemo.app.notification.AlarmScheduler.hasExactAlarmPermission(context)) {
-                                showExactAlarmDialog = true
+                                /** Android 12+ 检查精确闹钟权限 */
+                                if (!com.corgimemo.app.notification.AlarmScheduler.hasExactAlarmPermission(context)) {
+                                    permissionGuideState = PermissionGuideState.ExactAlarmDenied
+                                }
                             }
                         }
                     )
@@ -1760,14 +1782,14 @@ fun TodoEditScreen(
     }  // end outer Box (ensures overlay covers Scaffold topBar/bottomBar)
 
     // ===== 通知权限永久拒绝引导对话框 =====
-    if (showNotificationPermissionDeniedDialog) {
+    if (permissionGuideState == PermissionGuideState.NotificationDenied) {
         AlertDialog(
-            onDismissRequest = { showNotificationPermissionDeniedDialog = false },
+            onDismissRequest = { permissionGuideState = PermissionGuideState.Idle },
             title = { Text("开启通知权限") },
             text = { Text("需要在系统设置中允许 CorgiMemo 发送通知，才能接收待办提醒。") },
             confirmButton = {
                 TextButton(onClick = {
-                    showNotificationPermissionDeniedDialog = false
+                    permissionGuideState = PermissionGuideState.Idle
                     val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                         data = android.net.Uri.parse("package:com.corgimemo.app")
                     }
@@ -1777,7 +1799,7 @@ fun TodoEditScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showNotificationPermissionDeniedDialog = false }) {
+                TextButton(onClick = { permissionGuideState = PermissionGuideState.Idle }) {
                     Text("取消")
                 }
             }
@@ -1785,14 +1807,14 @@ fun TodoEditScreen(
     }
 
     // ===== 精确闹钟权限引导对话框 =====
-    if (showExactAlarmDialog) {
+    if (permissionGuideState == PermissionGuideState.ExactAlarmDenied) {
         AlertDialog(
-            onDismissRequest = { showExactAlarmDialog = false },
+            onDismissRequest = { permissionGuideState = PermissionGuideState.Idle },
             title = { Text("开启精确闹钟权限") },
             text = { Text("开启后可以确保提醒在设定时间准时响起，避免延迟。") },
             confirmButton = {
                 TextButton(onClick = {
-                    showExactAlarmDialog = false
+                    permissionGuideState = PermissionGuideState.Idle
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                         val intent = Intent(
                             android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
@@ -1806,7 +1828,7 @@ fun TodoEditScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showExactAlarmDialog = false }) {
+                TextButton(onClick = { permissionGuideState = PermissionGuideState.Idle }) {
                     Text("以后再说")
                 }
             }

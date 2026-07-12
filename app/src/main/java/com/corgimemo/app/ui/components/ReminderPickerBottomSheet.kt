@@ -96,6 +96,9 @@ fun ReminderPickerBottomSheet(
     // 当前选中的日期和时间
     val context = LocalContext.current
     val now = System.currentTimeMillis()
+
+    // 提醒时间是否已设置（支持"仅设截止日期不设提醒"场景）
+    var isReminderSet by remember { mutableStateOf(initialDateMillis != null) }
     val initLocalDate = if (initialDateMillis != null) {
         java.time.Instant.ofEpochMilli(initialDateMillis)
             .atZone(java.time.ZoneId.systemDefault())
@@ -177,12 +180,16 @@ fun ReminderPickerBottomSheet(
         DateTimeRow(
             label = rowLabel,
             isActive = editTarget == EditTarget.REMINDER,
-            dateText = "${selectedDate.year}/${String.format("%02d", selectedDate.monthValue)}/${String.format("%02d", selectedDate.dayOfMonth)}",
-            timeText = "${String.format("%02d", selectedHour)}:${String.format("%02d", selectedMinute)}",
-            isDateSelected = true,
+            dateText = if (isReminderSet) "${selectedDate.year}/${String.format("%02d", selectedDate.monthValue)}/${String.format("%02d", selectedDate.dayOfMonth)}" else "未设置",
+            timeText = if (isReminderSet) "${String.format("%02d", selectedHour)}:${String.format("%02d", selectedMinute)}" else null,
+            isDateSelected = isReminderSet,
             isCalendarActive = viewMode == "calendar",
             isTimeActive = viewMode == "time",
             onDateClick = {
+                if (!isReminderSet) {
+                    // 首次点击：初始化为当前日期的默认时间
+                    isReminderSet = true
+                }
                 editTarget = EditTarget.REMINDER
                 viewMode = "calendar"
             },
@@ -190,7 +197,10 @@ fun ReminderPickerBottomSheet(
                 editTarget = EditTarget.REMINDER
                 viewMode = "time"
             },
-            onClear = null  // 提醒时间行不显示清除按钮
+            onClear = {
+                isReminderSet = false
+                editTarget = EditTarget.DUE_DATE
+            }
         )
 
         // ===== 截止日期行 =====
@@ -443,8 +453,13 @@ fun ReminderPickerBottomSheet(
                     .clip(RoundedCornerShape(22.dp))
                     .background(MaterialTheme.colorScheme.primary)
                     .clickable {
-                        val zonedDateTime = selectedDate.atTime(selectedHour, selectedMinute)
-                            .atZone(java.time.ZoneId.systemDefault())
+                        // 计算提醒时间戳（未设置则为 null）
+                        val reminderMillis = if (isReminderSet) {
+                            selectedDate.atTime(selectedHour, selectedMinute)
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .toInstant().toEpochMilli()
+                        } else null
+
                         // 计算截止日期时间戳（未设置则为 null）
                         val dueDateMillis = if (isDueDateSet) {
                             dueDate.atTime(dueHour, dueMinute)
@@ -452,14 +467,20 @@ fun ReminderPickerBottomSheet(
                                 .toInstant().toEpochMilli()
                         } else null
 
-                        // 截止时间校验：截止日期不能早于提醒时间
-                        if (dueDateMillis != null && dueDateMillis < zonedDateTime.toInstant().toEpochMilli()) {
+                        // 截止时间校验：提醒和截止都设置时，截止不能早于提醒
+                        if (reminderMillis != null && dueDateMillis != null && dueDateMillis < reminderMillis) {
                             Toast.makeText(context, "截止时间不能早于提醒时间", Toast.LENGTH_SHORT).show()
                             return@clickable
                         }
 
+                        // 至少需要设置提醒时间或截止日期其中之一
+                        if (reminderMillis == null && dueDateMillis == null) {
+                            Toast.makeText(context, "请至少设置提醒时间或截止日期", Toast.LENGTH_SHORT).show()
+                            return@clickable
+                        }
+
                         onConfirm(
-                            zonedDateTime.toInstant().toEpochMilli(),
+                            reminderMillis,
                             selectedHour,
                             selectedMinute,
                             repeatType,
