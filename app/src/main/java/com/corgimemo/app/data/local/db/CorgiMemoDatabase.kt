@@ -30,7 +30,7 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class],
-    version = 33,
+    version = 34,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -94,7 +94,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34)
                     .build()
                 INSTANCE = instance
                 instance
@@ -989,6 +989,27 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     PRIMARY KEY(id)
                 )
             """.trimIndent())
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 33 → 34
+     * special_dates 表新增 isArchived 字段（软删除）
+     *
+     * 依据 .trae/rules/entity与 migration同步检查.md 规则：
+     * DEFAULT 0 必须与 SpecialDate.isArchived 的 @ColumnInfo(defaultValue = "0") 保持一致
+     */
+    internal val MIGRATION_33_34 = object : Migration(33, 34) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // 1. 新增 isArchived 字段，默认 0（未归档）
+            db.execSQL(
+                "ALTER TABLE special_dates ADD COLUMN isArchived INTEGER NOT NULL DEFAULT 0"
+            )
+            // 2. 加索引：isArchived 过滤是主页查询常态
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_special_dates_isArchived " +
+                "ON special_dates(isArchived)"
+            )
         }
     }
     // companion object 闭合
