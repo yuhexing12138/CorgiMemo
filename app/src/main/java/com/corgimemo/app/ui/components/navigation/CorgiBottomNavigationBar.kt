@@ -96,9 +96,9 @@ fun CorgiBottomNavigationBar(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(Color.White)  // 先设置背景，确保覆盖安全区域 padding 区域
                 .align(Alignment.BottomCenter)  // 锚定在容器底部
-                .safeAreaForBottomBar()  // 系统导航栏安全区域（自动推高整个导航栏）
-                .background(Color.White),
+                .safeAreaForBottomBar(),  // 系统导航栏安全区域（自动推高整个导航栏）
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // 顶部1dp分割线（设计规范11.2.3）
