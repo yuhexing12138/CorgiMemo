@@ -74,7 +74,7 @@ import kotlinx.coroutines.delay
 fun SpecialDateScreen(
     navController: NavController,
     onFabClick: () -> Unit = {},
-    snackbarHostState: SnackbarHostState,
+    snackbarHostState: SnackbarHostState? = null,
     viewModel: SpecialDateViewModel = hiltViewModel()
 ) {
     val groupedDates by viewModel.groupedDates.collectAsState()
