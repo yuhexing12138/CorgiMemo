@@ -238,17 +238,21 @@ private fun ZoomableImage(path: String) {
             contentDescription = null,
             modifier = Modifier
                 .fillMaxSize()
-                // 双指捏合/拖动：缩放 + 缩放>1 时平移
-                .pointerInput(Unit) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        scale = (scale * zoom).coerceIn(1f, 4f)
-                        if (scale > 1f) {
-                            offsetX += pan.x
-                            offsetY += pan.y
+                // 关键：pointerInput 依赖 scale，scale 变化时重启
+                // scale = 1f（未放大）时不消费指针，让 HorizontalPager 接收单指 pan 用于翻页
+                // scale > 1f（已放大）时消费指针处理平移，让用户能拖动查看图片细节
+                .pointerInput(scale) {
+                    if (scale > 1f) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            scale = (scale * zoom).coerceIn(1f, 4f)
+                            if (scale > 1f) {
+                                offsetX += pan.x
+                                offsetY += pan.y
+                            }
                         }
                     }
                 }
-                // 双击：放大/还原
+                // 双击：放大/还原（独立 pointerInput，不影响翻页手势）
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onDoubleTap = {
