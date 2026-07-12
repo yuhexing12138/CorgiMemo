@@ -165,7 +165,14 @@ fun SwipeableTodoBox(
     onExpandChange: (Boolean) -> Unit = {},
     onShareClick: () -> Unit = {},
     onPinClick: () -> Unit = {},
+    onArchiveClick: () -> Unit = {},
     onDeleteClick: () -> Unit = {},
+    /**
+     * 自定义按钮配置列表（新增）。
+     * - null（默认）：使用内置"分享/置顶/删除"配置（待办页兼容）
+     * - 非 null：使用调用方传入的列表（日期页用"置顶/归档/删除"）
+     */
+    customButtons: List<SwipeButtonConfig>? = null,
     durationMs: Int = 300,
     staggerRatio: Float = 0.00f,
     thresholdRatio: Float = 0.20f,
@@ -480,18 +487,20 @@ fun SwipeableTodoBox(
                     // opacity 二元化：无淡入淡出
                     val alpha = if (revealPx > 0f) 1f else 0f
 
-                    // 点击回调
-                    val clickAction: () -> Unit = when (btnConfig.label) {
-                        "分享" -> {
+                    // 点击回调：根据 SwipeActionType 路由到对应 onXxxClick
+                    val clickAction: () -> Unit = when (btnConfig.actionType) {
+                        SwipeActionType.SHARE -> {
                             { onShareClick(); onButtonClicked() }
                         }
-                        "置顶", "取消置顶" -> {
+                        SwipeActionType.PIN -> {
                             { onPinClick(); onButtonClicked() }
                         }
-                        "删除" -> {
+                        SwipeActionType.ARCHIVE -> {
+                            { onArchiveClick(); onButtonClicked() }
+                        }
+                        SwipeActionType.DELETE -> {
                             { onDeleteClick(); onButtonClicked() }
                         }
-                        else -> ({})
                     }
 
                     SwipeActionButton(

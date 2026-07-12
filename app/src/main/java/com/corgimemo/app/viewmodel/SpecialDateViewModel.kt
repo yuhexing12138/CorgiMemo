@@ -202,6 +202,14 @@ class SpecialDateViewModel @Inject constructor(
     }
 
     /**
+     * 仅清空 pendingArchive 缓存（不调用 unarchive）
+     * 用途：Snackbar 3s 后无操作时调用，避免重复展示
+     */
+    fun clearPendingArchive() {
+        _pendingArchive.value = null
+    }
+
+    /**
      * 撤回归档（恢复 SpecialDate 到 isArchived=false）
      * 必须在 Snackbar 显示的 3 秒内由 UI 触发
      */
