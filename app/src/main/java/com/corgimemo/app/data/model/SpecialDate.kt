@@ -75,6 +75,17 @@ data class SpecialDate(
     @ColumnInfo(defaultValue = "0")
     val isArchived: Boolean = false,
 
+    /**
+     * 卡片样式(参考"日期卡片样式选择页")
+     * - "ORANGE_TEAR_OFF": 橙色撕页样式(参考图 2)
+     * - "CALENDAR_TEAR_OFF": 米色日历撕页样式(参考图 3)
+     * - 默认 "ORANGE_TEAR_OFF",与 @ColumnInfo defaultValue 必须完全一致
+     *
+     * 注意:本次主页不读该字段,仅 Entity 持久化。后续任务(主页按样式渲染)会读取。
+     */
+    @ColumnInfo(defaultValue = "ORANGE_TEAR_OFF")
+    val cardStyle: String = "ORANGE_TEAR_OFF",
+
     /** 创建时间戳(毫秒) */
     val createdAt: Long,
 
