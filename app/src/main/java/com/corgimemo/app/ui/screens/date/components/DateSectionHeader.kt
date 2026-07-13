@@ -1,7 +1,6 @@
 package com.corgimemo.app.ui.screens.date.components
 
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,6 +45,8 @@ fun DateSectionHeader(
         onClick = onToggle,
         expandedLabel = "收起$label",
         collapsedLabel = "展开$label",
-        modifier = modifier.fillMaxWidth().padding(horizontal = 4.dp)
+        // 不再加水平 padding,与待办页 PinnedSectionHeader 完全一致
+        // (CollapsibleSectionHeader 内部已有 padding(horizontal=16.dp))
+        modifier = modifier.fillMaxWidth()
     )
 }

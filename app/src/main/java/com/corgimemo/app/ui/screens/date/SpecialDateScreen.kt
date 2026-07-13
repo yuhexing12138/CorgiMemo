@@ -3,10 +3,8 @@ package com.corgimemo.app.ui.screens.date
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -160,7 +158,8 @@ fun SpecialDateScreen(
                     .padding(bottom = dimensionResource(R.dimen.ui_search_bar_bottom_margin))
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // 移除 Spacer(8.dp),与待办页 SectionHeader 距搜索框距离完全一致(0dp)
+            // (待办页 ZonedReorderableLazyColumn 的 itemSpacing = 0.dp)
 
             // 2. 内容区显示逻辑
             if (!isDataInitialized) {
@@ -244,8 +243,10 @@ private fun DateSectionsList(
 ) {
     LazyColumn(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp),
+            .fillMaxSize(),
+        // 不再加水平 padding(原 20dp),让 SectionHeader 与待办页 PinnedSectionHeader
+        // 距离屏幕左侧完全一致(都是 16dp,来自 CollapsibleSectionHeader 内部 padding)
+        // 卡片(SwipeableTodoBox)的位置通过传 modifier = Modifier.padding(horizontal=20.dp) 保持
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         DateGroup.values().forEach { group ->
@@ -277,6 +278,9 @@ private fun DateSectionsList(
                         },
                         onArchiveClick = { onArchive(date.id) },
                         onDeleteClick = { onDelete(date.id) },
+                        // 卡片水平 20dp 缩进(原 LazyColumn 的 padding 移到这里)
+                        // 保持与修复前的卡片视觉位置一致
+                        modifier = Modifier.padding(horizontal = 20.dp),
                         customButtons = listOf(
                             // 置顶按钮（最左）
                             SwipeButtonConfig(
