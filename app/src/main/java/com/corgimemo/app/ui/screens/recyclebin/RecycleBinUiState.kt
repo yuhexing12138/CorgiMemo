@@ -3,10 +3,10 @@ package com.corgimemo.app.ui.screens.recyclebin
 /**
  * 回收站 Tab 枚举
  */
-enum class RecycleBinTab { TODO, INSPIRATION }
+enum class RecycleBinTab { TODO, INSPIRATION, DATE }
 
 /**
- * 时间分组枚举（待办和灵感共用）
+ * 时间分组枚举（待办、灵感、日期共用）
  */
 enum class DeletedGroupKind { TODAY, YESTERDAY, THIS_WEEK, EARLIER }
 
@@ -15,8 +15,10 @@ enum class DeletedGroupKind { TODAY, YESTERDAY, THIS_WEEK, EARLIER }
  *
  * @property todoGroups 待办按时间分组列表
  * @property inspirationGroups 灵感按时间分组列表
+ * @property dateGroups 日期按时间分组列表
  * @property todoTotalCount 待办总数
  * @property inspirationTotalCount 灵感总数
+ * @property dateTotalCount 日期总数
  * @property selectedTab 当前选中的 Tab
  * @property showClearAllDialog 是否显示清空全部确认弹窗
  * @property isLoading 是否处于初始加载状态
@@ -24,8 +26,10 @@ enum class DeletedGroupKind { TODAY, YESTERDAY, THIS_WEEK, EARLIER }
 data class RecycleBinUiState(
     val todoGroups: List<DeletedTodoGroup> = emptyList(),
     val inspirationGroups: List<DeletedInspirationGroup> = emptyList(),
+    val dateGroups: List<DeletedDateGroup> = emptyList(),
     val todoTotalCount: Int = 0,
     val inspirationTotalCount: Int = 0,
+    val dateTotalCount: Int = 0,
     val selectedTab: RecycleBinTab = RecycleBinTab.TODO,
     val showClearAllDialog: Boolean = false,
     val isLoading: Boolean = true
@@ -60,6 +64,22 @@ data class DeletedInspirationListItem(
     val id: Long,
     val title: String,
     val tags: List<String>,
+    val deletedAt: Long,
+    val relativeTime: String
+)
+
+/** 日期时间分组 */
+data class DeletedDateGroup(
+    val kind: DeletedGroupKind,
+    val title: String,
+    val items: List<DeletedDateListItem>
+)
+
+/** 日期列表项 */
+data class DeletedDateListItem(
+    val id: Long,
+    val title: String,
+    val category: String,
     val deletedAt: Long,
     val relativeTime: String
 )

@@ -1,4 +1,4 @@
-// 回收站页面 ViewModel（双数据源：待办 + 灵感）
+// 回收站页面 ViewModel（三数据源：待办 + 灵感 + 日期）
 package com.corgimemo.app.ui.screens.recyclebin
 
 import androidx.lifecycle.SavedStateHandle
@@ -6,11 +6,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.DeletedInspiration
+import com.corgimemo.app.data.model.DeletedSpecialDate
 import com.corgimemo.app.data.model.DeletedTodo
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.DeletedInspirationRepository
+import com.corgimemo.app.data.repository.DeletedSpecialDateRepository
 import com.corgimemo.app.data.repository.DeletedTodoRepository
 import com.corgimemo.app.data.repository.InspirationRepository
+import com.corgimemo.app.data.repository.SpecialDateRepository
 import com.corgimemo.app.data.repository.TodoRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
@@ -28,9 +31,9 @@ import javax.inject.Inject
 /**
  * 回收站页面 ViewModel
  *
- * - 订阅 deletedTodos + deletedInspirations + categories 三个 Flow，
- *   combine 后分别映射为待办/灵感的时间分组 UiState
- * - init 时启动 30 天前自动清理（两个表）
+ * - 订阅 deletedTodos + deletedInspirations + deletedDates + categories 四个 Flow，
+ *   combine 后分别映射为待办/灵感/日期的时间分组 UiState
+ * - init 时启动 30 天前自动清理（三个表）
  * - 暴露写方法：恢复/永久删除/清空 + Tab 切换 + Dialog 状态切换
  * - 通过 [events] Channel 发送一次性 UI 事件（SnackBar / SnackBarWithUndo）
  * - 通过 [SavedStateHandle] 读取 source 参数决定初始 Tab
@@ -42,6 +45,8 @@ class RecycleBinViewModel @Inject constructor(
     private val todoRepository: TodoRepository,
     private val inspirationRepository: InspirationRepository,
     private val categoryRepository: CategoryRepository,
+    private val deletedSpecialDateRepository: DeletedSpecialDateRepository,
+    private val specialDateRepository: SpecialDateRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -53,7 +58,7 @@ class RecycleBinViewModel @Inject constructor(
 
     /**
      * 缓存最近一次永久删除的对象，用于 SnackBar 撤销（5 秒内）
-     * type: "todo" 或 "inspiration"，id: 记录 ID
+     * type: "todo" / "inspiration" / "date"，id: 记录 ID
      */
     private var lastDeletedForUndo: Triple<String, Long, Any>? = null
 
@@ -62,6 +67,7 @@ class RecycleBinViewModel @Inject constructor(
         val source = savedStateHandle.get<String>("source")
         val initialTab = when (source) {
             "inspiration" -> RecycleBinTab.INSPIRATION
+            "date" -> RecycleBinTab.DATE
             else -> RecycleBinTab.TODO
         }
         _uiState.update { it.copy(selectedTab = initialTab) }
@@ -71,23 +77,26 @@ class RecycleBinViewModel @Inject constructor(
     }
 
     /**
-     * 订阅三个 Flow，combine 后映射为时间分组的 UiState
+     * 订阅四个 Flow，combine 后映射为时间分组的 UiState
      */
     private fun observeData() {
         viewModelScope.launch {
             combine(
                 deletedTodoRepository.getAllDeletedTodos(),
                 deletedInspirationRepository.getAllDeletedInspirations(),
+                deletedSpecialDateRepository.getAllDeletedDates(),
                 categoryRepository.getAllCategories()
-            ) { deletedTodos, deletedInspirations, categories ->
-                mapToUiState(deletedTodos, deletedInspirations, categories)
+            ) { deletedTodos, deletedInspirations, deletedDates, categories ->
+                mapToUiState(deletedTodos, deletedInspirations, deletedDates, categories)
             }.collect { newState ->
                 _uiState.update {
                     it.copy(
                         todoGroups = newState.todoGroups,
                         inspirationGroups = newState.inspirationGroups,
+                        dateGroups = newState.dateGroups,
                         todoTotalCount = newState.todoTotalCount,
                         inspirationTotalCount = newState.inspirationTotalCount,
+                        dateTotalCount = newState.dateTotalCount,
                         isLoading = false
                     )
                 }
@@ -96,7 +105,7 @@ class RecycleBinViewModel @Inject constructor(
     }
 
     /**
-     * 清理 30 天前的回收站记录（两个表同时清理）
+     * 清理 30 天前的回收站记录（三个表同时清理）
      *
      * 静默执行：失败时吞掉异常，下次启动会重试。
      */
@@ -106,16 +115,18 @@ class RecycleBinViewModel @Inject constructor(
                 val threshold = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(30)
                 deletedTodoRepository.cleanUpOldDeletedTodos(threshold)
                 deletedInspirationRepository.cleanUpOldDeletedInspirations(threshold)
+                deletedSpecialDateRepository.cleanUpOldDeletedDates(threshold)
             }
         }
     }
 
     /**
-     * 将原始数据映射为 UiState（待办 + 灵感各自按时间分组）
+     * 将原始数据映射为 UiState（待办 + 灵感 + 日期各自按时间分组）
      */
     private fun mapToUiState(
         deletedTodos: List<DeletedTodo>,
         deletedInspirations: List<DeletedInspiration>,
+        deletedDates: List<DeletedSpecialDate>,
         categories: List<Category>
     ): RecycleBinUiState {
         val now = System.currentTimeMillis()
@@ -166,11 +177,35 @@ class RecycleBinViewModel @Inject constructor(
                 )
             }
 
+        // ---- 日期分组 ----
+        val dateItems = deletedDates.map { d ->
+            DeletedDateListItem(
+                id = d.id,
+                title = d.title,
+                category = d.category,
+                deletedAt = d.deletedAt,
+                relativeTime = TimeClassifier.formatRelativeTime(d.deletedAt, now)
+            )
+        }
+
+        val dateGroups = dateItems
+            .sortedByDescending { it.deletedAt }
+            .groupBy { TimeClassifier.classifyByTime(it.deletedAt, now) }
+            .map { (kind, list) ->
+                DeletedDateGroup(
+                    kind = kind,
+                    title = groupTitle(kind),
+                    items = list
+                )
+            }
+
         return RecycleBinUiState(
             todoGroups = todoGroups,
             inspirationGroups = inspirationGroups,
+            dateGroups = dateGroups,
             todoTotalCount = todoItems.size,
             inspirationTotalCount = inspirationItems.size,
+            dateTotalCount = dateItems.size,
             isLoading = false
         )
     }
@@ -281,6 +316,35 @@ class RecycleBinViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 恢复单条日期
+     *
+     * 流程：
+     * 1. 从 deleted_special_dates 读取
+     * 2. 通过 DeletedSpecialDate.toSpecialDate() 转换（已重置 isPinned/isArchived）
+     * 3. 写入 special_dates，删除 deleted_special_dates 记录
+     */
+    fun restoreDate(deletedDateId: Long) {
+        viewModelScope.launch {
+            runCatching {
+                val deleted = deletedSpecialDateRepository.getByIdBlocking(deletedDateId)
+                if (deleted == null) {
+                    _events.send(UiEvent.ShowSnackBar("该日期不存在"))
+                    return@launch
+                }
+
+                val restored = DeletedSpecialDate.toSpecialDate(deleted)
+
+                // 写入日期主表 + 清理 deleted_special_dates
+                specialDateRepository.insert(restored)
+                deletedSpecialDateRepository.permanentlyDelete(deletedDateId)
+                _events.send(UiEvent.ShowSnackBar("已恢复"))
+            }.onFailure {
+                _events.send(UiEvent.ShowSnackBar("恢复失败，请重试"))
+            }
+        }
+    }
+
     // ========== 永久删除操作（带 SnackBar 撤销） ==========
 
     /**
@@ -320,9 +384,27 @@ class RecycleBinViewModel @Inject constructor(
     }
 
     /**
+     * 永久删除单条日期（带 SnackBar 撤销支持）
+     */
+    fun permanentlyDeleteDate(deletedDateId: Long) {
+        viewModelScope.launch {
+            runCatching {
+                val deleted = deletedSpecialDateRepository.getByIdBlocking(deletedDateId)
+                deletedSpecialDateRepository.permanentlyDelete(deletedDateId)
+                if (deleted != null) {
+                    lastDeletedForUndo = Triple("date", deletedDateId, deleted)
+                    _events.send(UiEvent.ShowSnackBarWithUndo("已永久删除", "date", deletedDateId))
+                }
+            }.onFailure {
+                _events.send(UiEvent.ShowSnackBar("删除失败，请重试"))
+            }
+        }
+    }
+
+    /**
      * 撤销最近一次永久删除（5 秒内有效）
      *
-     * 根据 type 判断撤销的是待办还是灵感
+     * 根据 type 判断撤销的是待办、灵感还是日期
      */
     fun undoLastDelete() {
         val cached = lastDeletedForUndo ?: return
@@ -345,6 +427,13 @@ class RecycleBinViewModel @Inject constructor(
                             DeletedInspiration.toInspiration(deletedInspiration)
                         )
                     }
+                    "date" -> {
+                        val deletedDate = cached.third as DeletedSpecialDate
+                        // 将日期重新插入 deleted_special_dates 表
+                        deletedSpecialDateRepository.insertDeletedDate(
+                            DeletedSpecialDate.toSpecialDate(deletedDate)
+                        )
+                    }
                 }
                 _events.send(UiEvent.ShowSnackBar("已恢复"))
             }.onFailure {
@@ -356,13 +445,14 @@ class RecycleBinViewModel @Inject constructor(
     // ========== 清空全部 ==========
 
     /**
-     * 确认清空回收站（同时清空两个表）
+     * 确认清空回收站（同时清空三个表）
      */
     fun confirmClearAll() {
         viewModelScope.launch {
             runCatching {
                 deletedTodoRepository.permanentlyDeleteAll()
                 deletedInspirationRepository.permanentlyDeleteAll()
+                deletedSpecialDateRepository.permanentlyDeleteAll()
                 _uiState.update { it.copy(showClearAllDialog = false) }
             }.onFailure {
                 _uiState.update { it.copy(showClearAllDialog = false) }

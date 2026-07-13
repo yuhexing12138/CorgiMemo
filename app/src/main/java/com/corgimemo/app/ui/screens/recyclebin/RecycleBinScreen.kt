@@ -1,4 +1,4 @@
-// 回收站全屏页面（待办 + 灵感双 Tab）
+// 回收站全屏页面（待办 + 灵感 + 日期三 Tab）
 package com.corgimemo.app.ui.screens.recyclebin
 
 import androidx.compose.foundation.BorderStroke
@@ -54,11 +54,11 @@ private val TabSelectedColor = Color(0xFFFF9A5C)
  * 回收站全屏页面
  *
  * - 顶栏：返回 + 标题"回收站" + 清空全部（文字按钮，仅当有记录时显示）
- * - Tab 栏：待办 / 灵感，放在 TopBar 下方
- * - 列表：按时间分组的卡片（待办 Tab 显示 DeletedTodoCard，灵感 Tab 显示 DeletedInspirationCard）
+ * - Tab 栏：待办 / 灵感 / 日期，放在 TopBar 下方
+ * - 列表：按时间分组的卡片（待办 Tab 显示 DeletedTodoCard，灵感 Tab 显示 DeletedInspirationCard，日期 Tab 显示 DeletedDateCard）
  * - 空态：柯基表情 + "回收站是空的" + 返回按钮
  * - SnackBar：撤销删除（5s）
- * - 清空确认弹窗：包含待办和灵感两个数量
+ * - 清空确认弹窗：包含待办、灵感和日期三个数量
  * - 退出时根据 source 参数设置 targetTab，确保返回正确的来源页面
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -76,12 +76,14 @@ fun RecycleBinScreen(
      *
      * 根据 source 参数设置 targetTab：
      * - source="inspiration" → targetTab="INSPIRE"（返回灵感页）
-     * - source="todo" → targetTab="TODO"（返回待办页）
+     * - source="date" → targetTab="DATE"（返回日期页）
+     * - source="todo" 或其他 → targetTab="TODO"（返回待办页）
      * 让 MainScreen 接收到返回事件后切换到正确的 Tab。
      */
     val navigateBack: () -> Unit = {
         val targetTab = when (source) {
             "inspiration" -> "INSPIRE"
+            "date" -> "DATE"
             else -> "TODO"
         }
         navController.previousBackStackEntry?.savedStateHandle?.set("targetTab", targetTab)
@@ -128,8 +130,8 @@ fun RecycleBinScreen(
                     }
                 },
                 actions = {
-                    // 仅当有待办或灵感记录时显示"清空全部"按钮
-                    if (uiState.todoTotalCount + uiState.inspirationTotalCount > 0) {
+                    // 仅当有待办、灵感或日期记录时显示"清空全部"按钮
+                    if (uiState.todoTotalCount + uiState.inspirationTotalCount + uiState.dateTotalCount > 0) {
                         TextButton(onClick = { viewModel.showClearAllDialog() }) {
                             Text("清空全部")
                         }
@@ -145,15 +147,16 @@ fun RecycleBinScreen(
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
                 uiState.isLoading -> LoadingState()
-                uiState.todoTotalCount + uiState.inspirationTotalCount == 0 -> EmptyState(onBack = navigateBack)
+                uiState.todoTotalCount + uiState.inspirationTotalCount + uiState.dateTotalCount == 0 -> EmptyState(onBack = navigateBack)
                 else -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // Tab 栏：待办 / 灵感
+                        // Tab 栏：待办 / 灵感 / 日期
                         TabBar(
                             selectedTab = uiState.selectedTab,
                             onTabSelected = { viewModel.selectTab(it) },
                             todoCount = uiState.todoTotalCount,
-                            inspirationCount = uiState.inspirationTotalCount
+                            inspirationCount = uiState.inspirationTotalCount,
+                            dateCount = uiState.dateTotalCount
                         )
                         // 内容区：根据 Tab 显示对应列表
                         when (uiState.selectedTab) {
@@ -167,6 +170,11 @@ fun RecycleBinScreen(
                                 onRestore = viewModel::restoreInspiration,
                                 onPermanentDelete = viewModel::permanentlyDeleteInspiration
                             )
+                            RecycleBinTab.DATE -> DateList(
+                                groups = uiState.dateGroups,
+                                onRestore = viewModel::restoreDate,
+                                onPermanentDelete = viewModel::permanentlyDeleteDate
+                            )
                         }
                     }
                 }
@@ -177,6 +185,7 @@ fun RecycleBinScreen(
                 ClearAllConfirmDialog(
                     todoCount = uiState.todoTotalCount,
                     inspirationCount = uiState.inspirationTotalCount,
+                    dateCount = uiState.dateTotalCount,
                     onConfirm = { viewModel.confirmClearAll() },
                     onDismiss = { viewModel.dismissClearAllDialog() }
                 )
@@ -186,7 +195,7 @@ fun RecycleBinScreen(
 }
 
 /**
- * Tab 栏：待办 / 灵感
+ * Tab 栏：待办 / 灵感 / 日期
  *
  * 使用 OutlinedButton 实现，选中态使用橙色主题色，未选中态使用默认样式
  */
@@ -195,7 +204,8 @@ private fun TabBar(
     selectedTab: RecycleBinTab,
     onTabSelected: (RecycleBinTab) -> Unit,
     todoCount: Int,
-    inspirationCount: Int
+    inspirationCount: Int,
+    dateCount: Int
 ) {
     Row(
         modifier = Modifier
@@ -242,6 +252,26 @@ private fun TabBar(
             }
         ) {
             Text(if (inspirationCount > 0) "灵感 ($inspirationCount)" else "灵感")
+        }
+        // 日期 Tab
+        OutlinedButton(
+            onClick = { onTabSelected(RecycleBinTab.DATE) },
+            shape = RoundedCornerShape(20.dp),
+            colors = if (selectedTab == RecycleBinTab.DATE) {
+                ButtonDefaults.outlinedButtonColors(
+                    containerColor = TabSelectedColor.copy(alpha = 0.15f),
+                    contentColor = TabSelectedColor
+                )
+            } else {
+                ButtonDefaults.outlinedButtonColors()
+            },
+            border = if (selectedTab == RecycleBinTab.DATE) {
+                BorderStroke(1.dp, TabSelectedColor)
+            } else {
+                BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            }
+        ) {
+            Text(if (dateCount > 0) "日期 ($dateCount)" else "日期")
         }
     }
 }
@@ -333,6 +363,32 @@ private fun InspirationList(
 }
 
 /**
+ * 日期列表视图：按时间分组的卡片
+ */
+@Composable
+private fun DateList(
+    groups: List<DeletedDateGroup>,
+    onRestore: (Long) -> Unit,
+    onPermanentDelete: (Long) -> Unit
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        groups.forEach { group ->
+            item(key = "date_header_${group.kind}") {
+                GroupHeader(title = group.title)
+            }
+            items(group.items, key = { it.id }) { item ->
+                DeletedDateCard(
+                    item = item,
+                    onRestore = { onRestore(item.id) },
+                    onPermanentDelete = { onPermanentDelete(item.id) }
+                )
+            }
+        }
+        item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+/**
  * 分组标题
  */
 @Composable
@@ -352,12 +408,13 @@ private fun GroupHeader(title: String) {
 /**
  * 清空全部确认弹窗
  *
- * 显示待办和灵感两个数量，提示"将永久删除 N 条待办和 M 条灵感记录，且无法恢复"
+ * 显示待办、灵感和日期三个数量，提示"将永久删除 N 条待办、M 条灵感和 K 条日期记录，且无法恢复"
  */
 @Composable
 private fun ClearAllConfirmDialog(
     todoCount: Int,
     inspirationCount: Int,
+    dateCount: Int,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -365,7 +422,7 @@ private fun ClearAllConfirmDialog(
         onDismissRequest = onDismiss,
         title = { Text("清空回收站？") },
         text = {
-            Text("将永久删除 $todoCount 条待办和 $inspirationCount 条灵感记录，且无法恢复。")
+            Text("将永久删除 $todoCount 条待办、$inspirationCount 条灵感和 $dateCount 条日期记录，且无法恢复。")
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
