@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.corgimemo.app.data.model.DateCardColor
 import com.corgimemo.app.data.model.DateCardStyle
 import com.corgimemo.app.ui.theme.UiColors
 
@@ -36,6 +37,7 @@ import com.corgimemo.app.ui.theme.UiColors
  * @param onSelect 点击样式回调
  * @param targetDateMillis 缩略图渲染用的目标日期(与主预览一致)
  * @param title 缩略图渲染用的标题(与主预览一致)
+ * @param cardColor 透传给缩略图渲染的卡片颜色(默认 DEFAULT,使用样式原色;由 DateCardColor 透传)
  */
 @Composable
 fun DateCardStyleSelector(
@@ -44,7 +46,8 @@ fun DateCardStyleSelector(
     onSelect: (DateCardStyle) -> Unit,
     targetDateMillis: Long,
     title: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    cardColor: DateCardColor = DateCardColor.DEFAULT  // ← 新增
 ) {
     LazyRow(
         modifier = modifier
@@ -67,13 +70,14 @@ fun DateCardStyleSelector(
                     )
                     .clickable { onSelect(style) }
             ) {
-                // 缩略图渲染(使用与主预览一致的 title 与 targetDateMillis)
+                // 缩略图渲染(使用与主预览一致的 title 与 targetDateMillis 与 cardColor)
                 DateCardStyleRenderer(
                     style = style,
                     title = title,
                     targetDateMillis = targetDateMillis,
                     modifier = Modifier.fillMaxSize(),
-                    isThumbnail = true
+                    isThumbnail = true,
+                    cardColor = cardColor  // ← 透传给缩略图
                 )
                 // 选中态右上角勾选标记
                 if (isSelected) {
