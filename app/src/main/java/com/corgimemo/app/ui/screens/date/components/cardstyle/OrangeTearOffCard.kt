@@ -29,6 +29,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corgimemo.app.data.model.DateCardColor
+import com.corgimemo.app.data.model.DateCardStyle
+import com.corgimemo.app.data.model.backgroundColor
+import com.corgimemo.app.data.model.bigNumberColor
+import com.corgimemo.app.data.model.topBarColor
 import com.corgimemo.app.ui.theme.UiColors
 
 /**
@@ -46,6 +51,7 @@ import com.corgimemo.app.ui.theme.UiColors
  * @param title 标题(空时显示 "未命名")
  * @param targetDateMillis 目标日期时间戳(毫秒)
  * @param isThumbnail 是否为缩略图(默认 false)
+ * @param cardColor 卡片颜色(默认 DEFAULT,使用样式原色;由 DateCardColor 透传)
  * @param onShareClick 分享图标点击(缩略图版不显示,完整版默认 Snackbar 占位)
  * @param onCalendarClick 日历图标点击(缩略图版不显示,完整版默认 Snackbar 占位)
  * @param onCardClick 整个卡片点击(可选,用于将来扩展)
@@ -56,6 +62,7 @@ fun OrangeTearOffCard(
     targetDateMillis: Long,
     modifier: Modifier = Modifier,
     isThumbnail: Boolean = false,
+    cardColor: DateCardColor = DateCardColor.DEFAULT,  // ← 新增
     onShareClick: (() -> Unit)? = null,
     onCalendarClick: (() -> Unit)? = null,
     onCardClick: (() -> Unit)? = null
@@ -69,11 +76,16 @@ fun OrangeTearOffCard(
     val cornerRadius = if (isThumbnail) 8.dp else 20.dp
     val shadowElevation = if (isThumbnail) 0.dp else 4.dp
 
+    // 颜色源(全部走 helper 函数;DEFAULT 时输出与现有硬编码完全一致)
+    val topColor = topBarColor(cardColor)
+    val bgColor = backgroundColor(cardColor, DateCardStyle.OrangeTearOff)
+    val numberColor = bigNumberColor(cardColor, DateCardStyle.OrangeTearOff)
+
     Box(
         modifier = modifier
             .shadow(shadowElevation, RoundedCornerShape(cornerRadius))
             .clip(WavyBottomShape(waveHeightPx = if (isThumbnail) 3f else 8f))
-            .background(MaterialTheme.colorScheme.surface)
+            .background(bgColor)                          // ← 原 MaterialTheme.colorScheme.surface
             .then(if (onCardClick != null) Modifier.clickable { onCardClick() } else Modifier)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -82,7 +94,7 @@ fun OrangeTearOffCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(topSectionHeight)
-                    .background(UiColors.Primary)
+                    .background(topColor)                // ← 原 UiColors.Primary
             ) {
                 // 左圆孔
                 Box(
@@ -123,7 +135,7 @@ fun OrangeTearOffCard(
                     text = daysUntil(targetDateMillis).toString(),
                     fontSize = numberFontSize,
                     fontWeight = FontWeight.Bold,
-                    color = UiColors.Primary
+                    color = numberColor  // ← 原 UiColors.Primary
                 )
                 // 标题
                 Text(
