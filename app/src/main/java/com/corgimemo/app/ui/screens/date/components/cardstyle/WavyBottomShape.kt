@@ -39,7 +39,7 @@ class WavyBottomShape(
                 val endX = size.width - (i + 1) * waveWidth
                 val startX = size.width - i * waveWidth
                 val midX = (startX + endX) / 2
-                quadraticBezierTo(
+                quadraticTo(
                     midX, size.height + waveHeightPx,
                     endX, size.height
                 )
