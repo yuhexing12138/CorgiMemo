@@ -115,16 +115,6 @@ private fun ColorCircle(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // 选中态:用外层 border 绘制 2dp 白色描边圆环,内 padding(2dp)留出间隙
-    // 这样描边在外、圆在内,不会挤压圆自身颜色
-    val selectionModifier = if (isSelected) {
-        Modifier
-            .padding(2.dp)
-            .border(2.dp, Color.White, CircleShape)
-    } else {
-        Modifier
-    }
-
     // 圆自身颜色(单色情况):Default → 白色,其他单色 → 调色板
     // Rainbow 设为透明(由内层 Box 的 Brush 渐变覆盖)
     val solidColor: Color = when (color) {
@@ -133,36 +123,74 @@ private fun ColorCircle(
         else -> topBarColor(color)
     }
 
-    Box(
-        modifier = modifier
-            .aspectRatio(1f)
-            .then(selectionModifier)
-            // 圆自身的颜色(用 Color 重载,语义即"卡片自身颜色")
-            .background(color = solidColor, shape = CircleShape)
-            .clip(CircleShape)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        // Rainbow 渐变:用内部 Box 覆盖外层透明底,绘制 sweepGradient
-        if (color == DateCardColor.Rainbow) {
+    // 选中态:三层圆环结构(从外到内)
+    // 1. 最外层:1dp 深灰色细边
+    // 2. 中间层:2dp 白色环(由白色背景 + padding 留出)
+    // 3. 最内层:颜色填充圆
+    if (isSelected) {
+        Box(
+            modifier = modifier
+                .aspectRatio(1f)
+                // 第 1 层:最外层 1dp 深灰色细边
+                .border(1.dp, Color(0xFF666666), CircleShape)
+                .padding(1.dp)
+                // 第 2 层:中间白色环(白底 + padding 留出一圈白色)
+                .background(Color.White, CircleShape)
+                .padding(2.dp)
+                .clip(CircleShape)
+                .clickable { onClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            // 第 3 层:颜色填充圆
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(brush = rainbowBrush(), shape = CircleShape)
-            )
-        }
-
-        // Default 圆:在白底上画一条对角红线
-        if (color == DateCardColor.Default) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val strokeWidth = 2.dp.toPx()
-                drawLine(
-                    color = Color(0xFFFF5252),
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, size.height),
-                    strokeWidth = strokeWidth
-                )
+                    .background(color = solidColor, shape = CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                ColorCircleContent(color = color)
             }
+        }
+    } else {
+        // 未选中态:只有颜色圆,无描边
+        Box(
+            modifier = modifier
+                .aspectRatio(1f)
+                .background(color = solidColor, shape = CircleShape)
+                .clip(CircleShape)
+                .clickable { onClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            ColorCircleContent(color = color)
+        }
+    }
+}
+
+/**
+ * 颜色圆内部内容(Default 斜线 / Rainbow 渐变 / 纯色无内容)
+ * 抽离出来避免选中态与未选中态代码重复
+ */
+@Composable
+private fun ColorCircleContent(color: DateCardColor) {
+    // Rainbow 渐变:用内部 Box 覆盖外层透明底,绘制 sweepGradient
+    if (color == DateCardColor.Rainbow) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(brush = rainbowBrush(), shape = CircleShape)
+        )
+    }
+
+    // Default 圆:在白底上画一条对角红线
+    if (color == DateCardColor.Default) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokeWidth = 2.dp.toPx()
+            drawLine(
+                color = Color(0xFFFF5252),
+                start = Offset(0f, 0f),
+                end = Offset(size.width, size.height),
+                strokeWidth = strokeWidth
+            )
         }
     }
 }

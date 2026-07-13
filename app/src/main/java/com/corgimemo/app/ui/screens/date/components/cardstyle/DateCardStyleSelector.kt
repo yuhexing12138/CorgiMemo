@@ -4,7 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -70,15 +72,27 @@ fun DateCardStyleSelector(
                     )
                     .clickable { onSelect(style) }
             ) {
-                // 缩略图渲染(使用与主预览一致的 title 与 targetDateMillis 与 cardColor)
-                DateCardStyleRenderer(
-                    style = style,
-                    title = title,
-                    targetDateMillis = targetDateMillis,
+                // 缩略图渲染：使用完整版卡片 + 居中裁剪（等比例缩小，不拉伸变形）
+                Box(
                     modifier = Modifier.fillMaxSize(),
-                    isThumbnail = true,
-                    cardColor = cardColor  // ← 透传给缩略图
-                )
+                    contentAlignment = Alignment.Center
+                ) {
+                    DateCardStyleRenderer(
+                        style = style,
+                        title = title,
+                        targetDateMillis = targetDateMillis,
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .then(
+                                when (style) {
+                                    DateCardStyle.OrangeTearOff -> Modifier.aspectRatio(4f / 5f)
+                                    DateCardStyle.CalendarTearOff -> Modifier.aspectRatio(2f / 3f)
+                                }
+                            ),
+                        isThumbnail = false,
+                        cardColor = cardColor
+                    )
+                }
                 // 选中态右上角勾选标记
                 if (isSelected) {
                     Box(

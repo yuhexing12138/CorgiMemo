@@ -1,14 +1,18 @@
 package com.corgimemo.app.ui.screens.date.components.cardstyle
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,8 +34,12 @@ import java.time.YearMonth
  * @param year 年份
  * @param month 月份(1-12)
  * @param targetDay 目标日(高亮显示;0 表示不高亮)
- * @param textSize 单元格数字字号(默认 14sp)
+ * @param textSize 日期数字字号
+ * @param weekHeaderTextSize 星期表头字号(默认等于 textSize * 0.9)
  * @param targetRingColor 目标日圆圈描边颜色(默认 #FFFF8A80 现有红色;由 DateCardColor 透传)
+ * @param targetTextColor 目标日数字颜色(默认主题 primary 橙红色;由 DateCardColor 透传,与圆圈描边同色)
+ * @param showDividers 是否显示分割虚线
+ * @param dividerColor 分割线颜色
  */
 @Composable
 fun MiniCalendar(
@@ -40,8 +48,17 @@ fun MiniCalendar(
     targetDay: Int,
     modifier: Modifier = Modifier,
     textSize: TextUnit = 14.sp,
-    targetRingColor: Color = Color(0xFFFF8A80)  // ← 新增,默认保持现有红色
+    weekHeaderTextSize: TextUnit = TextUnit.Unspecified,
+    targetRingColor: Color = Color(0xFFFF8A80),
+    targetTextColor: Color = Color.Unspecified,
+    showDividers: Boolean = true,
+    dividerColor: Color = Color(0xFFCCCCCC)
 ) {
+    val effectiveWeekHeaderTextSize = if (weekHeaderTextSize != TextUnit.Unspecified) {
+        weekHeaderTextSize
+    } else {
+        12.sp
+    }
     // 1 号是星期几(0=周一 ... 6=周日),用于计算上月填充日数
     val firstDayOfWeek = (YearMonth.of(year, month).atDay(1).dayOfWeek.value - 1 + 7) % 7
     val daysInMonth = YearMonth.of(year, month).lengthOfMonth()
@@ -70,7 +87,7 @@ fun MiniCalendar(
             listOf("一", "二", "三", "四", "五", "六", "日").forEach { dow ->
                 Text(
                     text = dow,
-                    fontSize = 12.sp,
+                    fontSize = effectiveWeekHeaderTextSize,
                     color = Color(0xFF999999),
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center
@@ -78,11 +95,25 @@ fun MiniCalendar(
             }
         }
         Spacer(Modifier.height(4.dp))
+        if (showDividers) {
+            Canvas(modifier = Modifier.fillMaxWidth()) {
+                drawLine(
+                    color = dividerColor,
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, 0f),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()), 0f)
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+        }
         // 5 行日期
         repeat(5) { weekIndex ->
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceAround
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 repeat(7) { dayIndex ->
                     val (day, isPrevOrNext, isTarget) = gridItems[weekIndex * 7 + dayIndex]
@@ -94,11 +125,11 @@ fun MiniCalendar(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(if (textSize == 14.sp) 24.dp else 16.dp)
+                            .fillMaxHeight()
                             .then(
                                 if (isTarget) Modifier.border(
                                     width = 1.5.dp,
-                                    color = targetRingColor,  // ← 改用参数(默认 #FFFF8A80)
+                                    color = targetRingColor,
                                     shape = CircleShape
                                 ) else Modifier
                             ),
@@ -107,11 +138,28 @@ fun MiniCalendar(
                         Text(
                             text = day.toString(),
                             fontSize = textSize,
-                            color = textColor,
+                            // 目标日数字颜色:未指定时用主题 primary(原行为),指定时用参数值
+                            color = if (isTarget && targetTextColor != Color.Unspecified) {
+                                targetTextColor  // 跟随 cardColor
+                            } else {
+                                textColor
+                            },
                             textAlign = TextAlign.Center
                         )
                     }
                 }
+            }
+            if (showDividers && weekIndex < 4) {
+                Spacer(Modifier.height(2.dp))
+                Canvas(modifier = Modifier.fillMaxWidth()) {
+                    drawLine(
+                        color = dividerColor,
+                        start = Offset(0f, 0f),
+                        end = Offset(size.width, 0f),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()), 0f)
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
             }
         }
     }

@@ -43,8 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -151,7 +149,7 @@ fun SpecialDateCardStyleScreen(
         SideEffect {
             val window = (view.context as Activity).window
             WindowCompat.getInsetsController(window, view)
-                .isAppearanceLightStatusBars = screenBackgroundColor.luminance() > 0.5f
+                .isAppearanceLightStatusBars = true
         }
     }
 
@@ -271,7 +269,7 @@ fun SpecialDateCardStyleScreen(
                     title = title.ifBlank { "未命名" },
                     targetDateMillis = dateMillis,
                     cardColor = selectedCardColor,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(0.7f)
                 )
             }
 

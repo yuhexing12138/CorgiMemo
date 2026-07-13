@@ -118,17 +118,18 @@ fun backgroundColor(color: DateCardColor, style: DateCardStyle): Color = when (c
 /**
  * 大数字 64sp Bold 文字色
  * - DEFAULT → UiColors.Primary (#FF9A5C)
- * - 5 个深色(Navy / Black / Brown / Purple / Red)→ 两种样式都用 White,与同色背景对比
- * - 其他浅色 → 调色板对应色
+ * - 非 DEFAULT → 固定深灰 #333333
+ *
+ * 设计意图:大数字在白底卡片上**必须绝对清晰可见**。
+ * 之前的设计是"5 个深色 cardColor(Navy/Black/Brown/Purple/Red)用 Color.White",
+ * 但 [backgroundColor] helper 已改为永远输出 DEFAULT 分支(白底),
+ * 导致白字+白底=完全不可见的 bug。
+ * 改为固定深灰 #333333 后,所有 cardColor 下大数字都清晰可读。
+ * 撕页条(顶部装饰)仍通过 [topBarColor] 跟随 cardColor 表达用户颜色选择。
  */
 fun bigNumberColor(color: DateCardColor, style: DateCardStyle): Color = when (color) {
     DateCardColor.Default -> Color(0xFFFF9A5C)
-    DateCardColor.Navy,
-    DateCardColor.Black,
-    DateCardColor.Brown,
-    DateCardColor.Purple,
-    DateCardColor.Red -> Color.White
-    else -> topBarColor(color)
+    else -> Color(0xFF333333)  // 固定深灰,在白底卡片上绝对清晰可见
 }
 
 /**
