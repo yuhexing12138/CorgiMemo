@@ -72,6 +72,7 @@ import com.corgimemo.app.ui.components.navigation.CorgiBottomNavigationBar
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.screens.date.SpecialDateScreen
+import com.corgimemo.app.ui.screens.date.components.SpecialDateCalendarDialog
 import com.corgimemo.app.ui.screens.home.HomeBatchActionBar
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationBatchActionBar
 import com.corgimemo.app.ui.components.SpecialDateBatchActionBar
@@ -144,6 +145,26 @@ fun MainScreen(
      * 传递给 TodoCalendarDialog 由其内部渲染。
      */
     var showTodoCalendar by remember { mutableStateOf(false) }
+
+    /**
+     * 日期页日历弹窗显示状态
+     *
+     * 由 MainScreen 统一管理，centerContent 点击时置 true，
+     * 与 showTodoCalendar / showInspirationCalendar 并列。
+     */
+    var showSpecialDateCalendar by remember { mutableStateOf(false) }
+
+    /**
+     * Tab 切换时重置非当前 tab 的弹窗状态
+     *
+     * 保证切回原 tab 时弹窗默认关闭（不保留上次打开状态）。
+     * 与 showTodoCalendar / showInspirationCalendar / showSpecialDateCalendar 三者协同。
+     */
+    LaunchedEffect(selectedTab) {
+        if (selectedTab != TabItem.DATE) showSpecialDateCalendar = false
+        if (selectedTab != TabItem.TODO) showTodoCalendar = false
+        if (selectedTab != TabItem.INSPIRE) showInspirationCalendar = false
+    }
 
     /**
      * 监听其他页面返回时设置的 targetTab
@@ -502,18 +523,30 @@ fun MainScreen(
                          * 灵感页中间内容：大号日期 + 月份 + 下拉箭头，点击触发日历弹窗。
                          * 仅在灵感页且非批量模式时显示，其他页面使用默认 title。
                          */
-                        centerContent = if ((selectedTab == TabItem.INSPIRE || selectedTab == TabItem.TODO) && !effectiveBatchMode) {
+                        centerContent = if ((selectedTab == TabItem.INSPIRE
+                                    || selectedTab == TabItem.TODO
+                                    || selectedTab == TabItem.DATE) && !effectiveBatchMode) {
                             {
-                                if (selectedTab == TabItem.TODO) {
-                                    DatePickerRow(
-                                        isExpanded = showTodoCalendar,
-                                        onClick = { showTodoCalendar = !showTodoCalendar }
-                                    )
-                                } else {
-                                    DatePickerRow(
-                                        isExpanded = showInspirationCalendar,
-                                        onClick = { showInspirationCalendar = !showInspirationCalendar }
-                                    )
+                                when (selectedTab) {
+                                    TabItem.TODO -> {
+                                        DatePickerRow(
+                                            isExpanded = showTodoCalendar,
+                                            onClick = { showTodoCalendar = !showTodoCalendar }
+                                        )
+                                    }
+                                    TabItem.INSPIRE -> {
+                                        DatePickerRow(
+                                            isExpanded = showInspirationCalendar,
+                                            onClick = { showInspirationCalendar = !showInspirationCalendar }
+                                        )
+                                    }
+                                    TabItem.DATE -> {
+                                        DatePickerRow(
+                                            isExpanded = showSpecialDateCalendar,
+                                            onClick = { showSpecialDateCalendar = !showSpecialDateCalendar }
+                                        )
+                                    }
+                                    else -> {}
                                 }
                             }
                         } else null,
@@ -877,6 +910,24 @@ fun MainScreen(
                     homeViewModel.requestScrollToTodo(todo.id)
                 },
                 onDismiss = { showTodoCalendar = false },
+                topPadding = with(density) { topBarHeightPx.toDp() }
+            )
+        }
+
+        // 日期页日历弹窗（在 Scaffold 外部、外层 Box 内部渲染，覆盖全屏包括底部导航栏）
+        if (showSpecialDateCalendar && selectedTab == TabItem.DATE) {
+            SpecialDateCalendarDialog(
+                dateCountByDate = { year, month ->
+                    specialDateViewModel.getCalendarDateColor(year, month)
+                },
+                getDatesByDate = { year, month, day ->
+                    specialDateViewModel.getDatesByDate(year, month, day)
+                },
+                onDateClick = { date ->
+                    showSpecialDateCalendar = false
+                    navController.navigate(Screen.SpecialDateDetailWithId.createRoute(date.id))
+                },
+                onDismiss = { showSpecialDateCalendar = false },
                 topPadding = with(density) { topBarHeightPx.toDp() }
             )
         }
