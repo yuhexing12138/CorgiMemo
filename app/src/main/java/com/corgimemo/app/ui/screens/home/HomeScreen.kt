@@ -593,7 +593,7 @@ fun HomeScreen(
                      */
                     if (!isDataInitialized) {
                         // 数据未初始化：显示页面专属骨架屏，避免从空列表闪烁到有数据
-                        TodoSkeleton(itemCount = 4)
+                        TodoSkeleton()
                     } else if (pendingTodosAll.isEmpty() && completedCount == 0) {
                         UnifiedEmptyState(
                             icon = "📝",

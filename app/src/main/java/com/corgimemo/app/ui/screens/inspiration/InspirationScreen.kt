@@ -133,7 +133,7 @@ fun InspirationScreen(
 
             // 内容区域
             if (!isDataInitialized) {
-                InspirationSkeleton(groupCount = 1, itemsPerGroup = 2)
+                InspirationSkeleton()
             } else if (displayItems.isEmpty()) {
                 UnifiedEmptyState(
                     icon = "💡",
