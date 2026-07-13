@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.screens.date
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -41,7 +42,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.corgimemo.app.data.model.DateCardColor
 import com.corgimemo.app.data.model.DateCardStyle
+import com.corgimemo.app.ui.components.navigation.TabItem
+import com.corgimemo.app.ui.screens.date.components.cardstyle.DateCardColorPicker
 import com.corgimemo.app.ui.screens.date.components.cardstyle.DateCardStyleRenderer
 import com.corgimemo.app.ui.screens.date.components.cardstyle.DateCardStyleSelector
 import com.corgimemo.app.ui.screens.date.components.cardstyle.DateCardStyleTab
@@ -55,16 +59,22 @@ import kotlinx.coroutines.launch
  *
  * 页面结构（自上而下）：
  * 1. 顶部 TopAppBar：仅保留返回箭头，标题留空（Spacer 占位以保持居中布局风格）
- * 2. 卡片预览区：使用 [DateCardStyleRenderer] 渲染用户当前选中的大卡片样式
- * 3. 样式 / 颜色 Tab 切换条：当前阶段颜色 Tab 触发"开发中"占位
- * 4. 底部样式选择器（横向滚动）：[DateCardStyleSelector] 列出所有可用的 [DateCardStyle]
- * 5. 保存按钮：点击后调用 ViewModel 落库；期间显示 loading；成功/失败给出不同反馈
+ * 2. 卡片预览区：使用 [DateCardStyleRenderer] 渲染用户当前选中的大卡片样式 + 卡片颜色
+ * 3. 样式 / 颜色 Tab 切换条：真实切换两个 Tab,COLOR 切换为颜色选择
+ * 4. 底部选择器（根据 tab 切换）：
+ *    - STYLE Tab → [DateCardStyleSelector] 列出所有可用的 [DateCardStyle]
+ *    - COLOR Tab → [DateCardColorPicker] 显示 2×7 颜色网格（12 单色 + Default 占位 + Rainbow 占位）
+ * 5. 保存按钮：点击后调用 ViewModel 落库（同时写入 cardStyle + cardColor）；期间显示 loading；
+ *              成功/失败给出不同反馈
  *
  * 业务行为：
  * - 接收 QuickCreate 页传来的 4 个参数（title/dateMillis/category/isPinned）
- * - 用户选中的样式通过 [SpecialDateCardStyleViewModel.saveNewDate] 落库
- * - 落库成功后：写入 `previousBackStackEntry.savedStateHandle["date_saved"] = true`
- *   并 popBackStack 回到主页；SpecialDateScreen 通过 LaunchedEffect 监听此信号
+ * - 用户选中的样式 + 颜色通过 [SpecialDateCardStyleViewModel.saveNewDate] 落库
+ * - 落库成功后：用 `getBackStackEntry(home)` 拿到 MainScreen 的 entry 并写
+ *   targetTab=DATE，再用 `popBackStack(route=home, inclusive=false)` 一次性弹出
+ *   SpecialDateCardStyleScreen + SpecialDateQuickCreateScreen，直接回到 MainScreen，
+ *   MainScreen 收到信号后切换到日期 tab，确保保存成功后直接回到日期页，
+ *   相应日期卡片平滑出现。
  *
  * @param navController 导航控制器（用于 popBackStack + SavedStateHandle 通信）
  * @param title         来自 QuickCreate 的名称（已 URL 解码）
@@ -94,12 +104,37 @@ fun SpecialDateCardStyleScreen(
     var selectedStyle by remember { mutableStateOf<DateCardStyle>(DateCardStyle.DEFAULT) }
     /** Tab 切换状态：默认停留在"样式"Tab */
     var selectedTab by remember { mutableStateOf(DateCardStyleTab.STYLE) }
+    /** 用户当前选中的卡片颜色（本地状态，初始为 DateCardColor.DEFAULT） */
+    var selectedCardColor by remember { mutableStateOf<DateCardColor>(DateCardColor.DEFAULT) }
+
+    /**
+     * 返回上一页辅助函数
+     *
+     * 在 popBackStack 之前设置 savedStateHandle["targetTab"] = "DATE"，
+     * 让 MainScreen 接收到返回事件后切换到日期 tab，
+     * 确保从日期编辑页退出后始终回到日期页（而非待办页等其他 tab）。
+     */
+    val navigateBack: () -> Unit = {
+        navController.previousBackStackEntry?.savedStateHandle?.set("targetTab", TabItem.DATE.name)
+        navController.popBackStack()
+    }
+
+    /**
+     * 拦截系统返回事件（侧滑返回 / 系统返回键）
+     *
+     * 确保所有退出方式（应用内返回箭头、系统返回键）
+     * 都经过 navigateBack()，统一设置 targetTab=DATE，让 MainScreen 切换到日期 tab。
+     */
+    BackHandler { navigateBack() }
 
     /**
      * 监听保存状态机的变化
      *
-     * - Success：通过 previousBackStackEntry.savedStateHandle 向主页发"date_saved=true"
-     *           信号后立即 popBackStack；主页在 SpecialDateScreen 中监听该信号
+     * - Success：先向 home 路由（MainScreen）的 savedStateHandle 写 targetTab=DATE，
+     *           然后用 popBackStack(route=home, inclusive=false) 一次性弹出
+     *           SpecialDateCardStyleScreen + SpecialDateQuickCreateScreen，
+     *           直接回到 MainScreen；MainScreen 收到 targetTab 信号后切换到日期 tab，
+     *           相应日期卡片平滑出现。
      * - Error：弹 Snackbar 提示"保存失败,请重试"
      * - Idle / Saving：无需响应
      *
@@ -110,12 +145,22 @@ fun SpecialDateCardStyleScreen(
     LaunchedEffect(saveState) {
         when (saveState) {
             is SaveState.Success -> {
-                // 向主页（SpecialDateScreen）发送保存成功信号
-                navController.previousBackStackEntry
-                    ?.savedStateHandle
-                    ?.set("date_saved", true)
-                // 返回上一页（SpecialDateCardStyleScreen 自己从栈顶弹出）
-                navController.popBackStack()
+                // 1) 向 MainScreen (home 路由) 发送 targetTab=DATE 信号
+                //    当前栈：[home, date_create, date_card_style]
+                //    用 getBackStackEntry(route) 显式获取 home 路由的 NavBackStackEntry
+                //    （previousBackStackEntry 是 NavController 扩展属性，
+                //    不能在 NavBackStackEntry 上再次链式调用）
+                runCatching {
+                    navController.getBackStackEntry("home")
+                        .savedStateHandle
+                        .set("targetTab", TabItem.DATE.name)
+                }
+                // 2) 一次性 popUpTo 回到 home,清空中间的 QuickCreateScreen
+                //    inclusive=false 保留 home 自身在栈中（回到 MainScreen）
+                navController.popBackStack(
+                    route = "home",
+                    inclusive = false
+                )
             }
             is SaveState.Error -> {
                 coroutineScope.launch {
@@ -131,9 +176,9 @@ fun SpecialDateCardStyleScreen(
             TopAppBar(
                 title = { Spacer(Modifier) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = navigateBack) {
                         Icon(
-                            imageVector = Icons.Filled.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回"
                         )
                     }
@@ -151,7 +196,7 @@ fun SpecialDateCardStyleScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // 1. 大卡片预览区（占据主要剩余空间）
+            // 1. 大卡片预览区（占据主要剩余空间）— 透传 cardColor
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -163,33 +208,39 @@ fun SpecialDateCardStyleScreen(
                     style = selectedStyle,
                     title = title.ifBlank { "未命名" },
                     targetDateMillis = dateMillis,
+                    cardColor = selectedCardColor,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
 
-            // 2. 样式 / 颜色 Tab 切换条
+            // 2. 样式 / 颜色 Tab 切换条 — COLOR 不再是占位 Snackbar,真实切换
             DateCardStyleTabs(
                 selected = selectedTab,
                 onTabChange = { tab ->
-                    if (tab == DateCardStyleTab.COLOR) {
-                        // 颜色功能当前阶段未实现，弹 Snackbar 占位
-                        coroutineScope.launch {
-                            snackbarHostState.showSnackbar("颜色功能开发中")
-                        }
-                    } else {
-                        selectedTab = tab
-                    }
+                    selectedTab = tab
                 }
             )
 
-            // 3. 底部样式选择器（横向滚动）
-            DateCardStyleSelector(
-                styles = DateCardStyle.all,
-                selected = selectedStyle,
-                onSelect = { selectedStyle = it },
-                targetDateMillis = dateMillis,
-                title = title.ifBlank { "未命名" }
-            )
+            // 3. 底部选择器（根据 tab 切换）
+            when (selectedTab) {
+                DateCardStyleTab.STYLE -> DateCardStyleSelector(
+                    styles = DateCardStyle.all,
+                    selected = selectedStyle,
+                    onSelect = { selectedStyle = it },
+                    targetDateMillis = dateMillis,
+                    title = title.ifBlank { "未命名" },
+                    cardColor = selectedCardColor
+                )
+                DateCardStyleTab.COLOR -> DateCardColorPicker(
+                    selected = selectedCardColor,
+                    onSelect = { selectedCardColor = it },
+                    onRainbowClick = {
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("彩虹色功能开发中")
+                        }
+                    }
+                )
+            }
 
             // 与 QuickCreate "下一步" 按钮位置对齐:24dp 间距 + 底部按钮(无边距)
             Spacer(modifier = Modifier.height(24.dp))
@@ -209,7 +260,8 @@ fun SpecialDateCardStyleScreen(
                             dateMillis = dateMillis,
                             category = category.ifBlank { "OTHER" },
                             isPinned = isPinned,
-                            cardStyle = selectedStyle
+                            cardStyle = selectedStyle,
+                            cardColor = selectedCardColor
                         )
                     }
                 },
