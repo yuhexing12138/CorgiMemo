@@ -30,9 +30,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.corgimemo.app.viewmodel.DisplayDate
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlin.math.abs
 
 /**
@@ -69,11 +66,11 @@ internal fun formatDuration(millis: Long): String {
  * 特殊日期卡片（重构版）
  *
  * 视觉结构（左→右）：
- * - 圆形图片区（56dp，emoji 占位）
+ * - 圆形图片区（48dp，emoji 占位）
  * - Spacer 12dp
- * - 内容区（weight=1f）：标题行 + 时间信息行 + 日期标签行
+ * - 内容区（weight=1f）：标题行 + 时间信息行（移除原"还有/已经/已归档 + 日期"行，简化卡片高度）
  * - Spacer 8dp
- * - 右侧大数字（24sp Bold，剩余/已过天数）
+ * - 右侧大数字（22sp Bold，剩余/已过天数）
  *
  * 左滑操作由父级 SpecialDateScreen 用 SwipeableTodoBox 包裹注入，
  * 本组件只关心视觉与渲染（职责单一）。
@@ -103,23 +100,19 @@ fun SpecialDateCard(
 
     // 2. 时间差（毫秒），diff >= 0 表示目标日期未到（未来），否则已过
     val diff = date.targetDate - nowMs
-    val isFuture = diff >= 0
 
     // 3. 时间信息颜色：
     //    - 已归档 → 灰色（#999999）
     //    - 未来（倒计时）→ 主色（暖橙）
     //    - 已开始（正计时）→ 柔和绿（#7EC8A0）
+    val isFuture = diff >= 0
     val timeColor = when {
         isArchivedGroup -> Color(0xFF999999)
         isFuture -> MaterialTheme.colorScheme.primary
         else -> Color(0xFF7EC8A0)
     }
 
-    // 4. 日期字符串（中文格式：yyyy年M月d日）
-    val formattedDate = SimpleDateFormat("yyyy年M月d日", Locale.getDefault())
-        .format(Date(date.targetDate))
-
-    // 5. 剩余/已过天数（取整除一天）
+    // 4. 剩余/已过天数（取整除一天），用于右侧大数字
     val daysAbs = abs(diff) / 86_400_000L
 
     Card(
@@ -143,15 +136,17 @@ fun SpecialDateCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                // 2026-07-13：减小外层 padding（16→12），同步降低卡片高度
+                .padding(12.dp)
                 // 已归档分组整体降权（仅内容层），左滑按钮区域仍保持完全不透明
                 .then(if (isArchivedGroup) Modifier.alpha(0.6f) else Modifier),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 1. 圆形图片区（56dp，emoji 占位）
+            // 1. 圆形图片区（48dp，emoji 占位）
+            // 2026-07-13：图片尺寸从 56dp 减小到 48dp，同步 emoji 字号 28sp→24sp
             Box(
                 modifier = Modifier
-                    .size(56.dp)
+                    .size(48.dp)
                     .background(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = CircleShape
@@ -160,13 +155,14 @@ fun SpecialDateCard(
             ) {
                 Text(
                     text = date.category.emoji,
-                    fontSize = 28.sp
+                    fontSize = 24.sp
                 )
             }
 
             Spacer(Modifier.width(12.dp))
 
             // 2. 内容区（weight=1f）
+            // 2026-07-13：移除原"还有/已经/已归档 + 日期"行，简化为两行结构（标题 + 时间）
             Column(modifier = Modifier.weight(1f)) {
                 // 2.1 标题行：置顶图标 + title
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -199,31 +195,15 @@ fun SpecialDateCard(
                     fontWeight = FontWeight.Medium,
                     color = timeColor
                 )
-
-                Spacer(Modifier.size(4.dp))
-
-                // 2.3 日期标签行：
-                //    - 已归档 → 显示"已归档 + 日期"，明确归档语义
-                //    - 未来日期 → "还有 + 日期"
-                //    - 过去日期（正计时）→ "已经 + 日期"
-                val prefix = when {
-                    isArchivedGroup -> "已归档"
-                    isFuture -> "还有"
-                    else -> "已经"
-                }
-                Text(
-                    text = "$prefix $formattedDate",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
             Spacer(Modifier.width(8.dp))
 
             // 3. 右侧大数字（剩余/已过天数）
+            // 2026-07-13：右侧大数字字号从 24sp 减小到 22sp，与缩短后的卡片高度匹配
             Text(
                 text = daysAbs.toString(),
-                fontSize = 24.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = timeColor
             )
