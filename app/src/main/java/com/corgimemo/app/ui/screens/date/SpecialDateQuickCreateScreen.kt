@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.screens.date
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
+import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.screens.date.components.AvatarWithEdit
 import com.corgimemo.app.ui.screens.date.components.DateTypePickerBottomSheet
@@ -49,6 +51,11 @@ import java.time.ZoneId
  *
  * 状态全部 Local 化管理，不写入 ViewModel。
  * V2.7 反馈：编辑模式（点击日期卡片）改为显示"编辑功能开发中" Snackbar 占位。
+ *
+ * 退出行为：通过 [navigateBack] 在 popBackStack 之前设置 targetTab=DATE，
+ * 让 MainScreen 切换到日期 tab；系统返回键 / 关闭按钮 / 弹窗打开时的返回键
+ * 均被 BackHandler 统一拦截，确保从日期编辑页退出后始终回到日期页
+ * （而非待办页等其他 tab）。弹窗打开时 BackHandler 仅关闭弹窗，避免误操作。
  *
  * @param navController 导航控制器
  */
@@ -82,6 +89,37 @@ fun SpecialDateQuickCreateScreen(
     // 占位提示文本
     val developingMessage = "功能开发中，敬请期待"
 
+    /**
+     * 返回上一页辅助函数
+     *
+     * 在 popBackStack 之前设置 savedStateHandle["targetTab"] = "DATE"，
+     * 让 MainScreen 接收到返回事件后切换到日期 tab，
+     * 确保从日期编辑页退出后始终回到日期页（而非待办页等其他 tab）。
+     */
+    val navigateBack: () -> Unit = {
+        navController.previousBackStackEntry?.savedStateHandle?.set("targetTab", TabItem.DATE.name)
+        navController.popBackStack()
+    }
+
+    /**
+     * 拦截系统返回事件：弹窗打开时仅关闭弹窗
+     *
+     * 自实现的遮罩弹窗（不是 Material Dialog/BottomSheet）默认不响应系统返回键，
+     * 这里拦截后只关闭弹窗，避免按返回键直接退出页面导致用户误操作丢失输入。
+     */
+    BackHandler(enabled = showDatePicker || showTypePicker) {
+        showDatePicker = false
+        showTypePicker = false
+    }
+
+    /**
+     * 拦截系统返回事件（侧滑返回 / 系统返回键）
+     *
+     * 确保所有退出方式（应用内关闭按钮、系统返回键）
+     * 都经过 navigateBack()，统一设置 targetTab=DATE，让 MainScreen 切换到日期 tab。
+     */
+    BackHandler { navigateBack() }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -95,7 +133,7 @@ fun SpecialDateQuickCreateScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = navigateBack) {
                         Icon(
                             imageVector = Icons.Filled.Close,
                             contentDescription = "关闭"
