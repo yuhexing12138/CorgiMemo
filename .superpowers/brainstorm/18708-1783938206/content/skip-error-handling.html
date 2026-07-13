@@ -1,0 +1,178 @@
+<h2>设计章节 5/6：跳过逻辑与错误处理</h2>
+<p class="subtitle">跳过策略实现、错误处理、边界情况</p>
+
+<div class="section">
+  <h3>跳过策略详解</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <thead>
+        <tr style="background:rgba(0,0,0,0.05)">
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">步骤</th>
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">页面</th>
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">可跳过</th>
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">跳过行为</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">1</td>
+          <td style="padding:10px">欢迎页</td>
+          <td style="padding:10px;color:#e74c3c">✗ 否</td>
+          <td style="padding:10px">-</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">2</td>
+          <td style="padding:10px">身份选择</td>
+          <td style="padding:10px;color:#e74c3c">✗ 否</td>
+          <td style="padding:10px">-</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">3</td>
+          <td style="padding:10px">柯基命名</td>
+          <td style="padding:10px;color:#e74c3c">✗ 否</td>
+          <td style="padding:10px">-</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">4</td>
+          <td style="padding:10px">功能概览</td>
+          <td style="padding:10px;color:#27ae60">✓ 是</td>
+          <td style="padding:10px">跳过 → Step 9（权限请求）</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">5</td>
+          <td style="padding:10px">待办+创建</td>
+          <td style="padding:10px;color:#27ae60">✓ 是</td>
+          <td style="padding:10px">不创建待办，直接下一步</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">6</td>
+          <td style="padding:10px">灵感+创建</td>
+          <td style="padding:10px;color:#27ae60">✓ 是</td>
+          <td style="padding:10px">不创建灵感，直接下一步</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">7</td>
+          <td style="padding:10px">日期功能（占位）</td>
+          <td style="padding:10px;color:#27ae60">✓ 是</td>
+          <td style="padding:10px">直接下一步</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">8</td>
+          <td style="padding:10px">柯基养成（占位）</td>
+          <td style="padding:10px;color:#27ae60">✓ 是</td>
+          <td style="padding:10px">直接下一步</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">9</td>
+          <td style="padding:10px">权限请求</td>
+          <td style="padding:10px;color:#e74c3c">✗ 否</td>
+          <td style="padding:10px">-</td>
+        </tr>
+        <tr>
+          <td style="padding:10px">10</td>
+          <td style="padding:10px">完成总结</td>
+          <td style="padding:10px;color:#e74c3c">✗ 否</td>
+          <td style="padding:10px">-</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h3>跳过按钮的位置与行为</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div style="padding:16px;background:rgba(243,156,18,0.08);border-radius:8px;border-left:4px solid #f39c12">
+      <h4 style="margin:0 0 8px 0">顶部"跳过"按钮（Step 4-8）</h4>
+      <ul style="margin:0;padding-left:20px;font-size:13px">
+        <li>位置：页面右上角</li>
+        <li>文字："跳过功能介绍"</li>
+        <li>点击后：弹出确认对话框</li>
+        <li>确认后：直接跳到 Step 9（权限请求）</li>
+        <li>取消后：留在当前页</li>
+      </ul>
+    </div>
+    <div style="padding:16px;background:rgba(149,165,166,0.08);border-radius:8px;border-left:4px solid #95a5a6">
+      <h4 style="margin:0 0 8px 0">底部"下一步"跳过创建（Step 5-6）</h4>
+      <ul style="margin:0;padding-left:20px;font-size:13px">
+        <li>位置：底部控制栏</li>
+        <li>文字："下一步"（不输入内容也可点击）</li>
+        <li>行为：不创建待办/灵感，直接进入下一步</li>
+        <li>无确认对话框（轻量跳过）</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>跳过确认对话框设计</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="padding:20px;background:#fff;border-radius:8px;max-width:400px;margin:0 auto">
+      <h4 style="margin:0 0 12px 0;text-align:center">跳过功能介绍？</h4>
+      <p style="font-size:13px;color:#666;text-align:center;margin:0 0 16px 0">
+        你可以随时在APP中探索这些功能。<br>
+        跳过后将直接进入权限设置。
+      </p>
+      <div style="display:flex;gap:8px;justify-content:center">
+        <button style="padding:8px 16px;border:1px solid #ddd;border-radius:16px;background:#fff;font-size:13px">取消</button>
+        <button style="padding:8px 16px;border:none;border-radius:16px;background:#007aff;color:#fff;font-size:13px">跳过</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>错误处理策略</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div style="padding:16px;background:rgba(231,76,60,0.08);border-radius:8px">
+      <h4 style="margin:0 0 8px 0;color:#e74c3c">创建待办/灵感失败</h4>
+      <ul style="margin:0;padding-left:20px;font-size:13px">
+        <li><strong>场景：</strong> Room 数据库插入失败</li>
+        <li><strong>处理：</strong> 显示错误 Toast "创建失败，请稍后重试"</li>
+        <li><strong>恢复：</strong> 留在当前页，允许重试或跳过</li>
+        <li><strong>日志：</strong> 记录异常到日志</li>
+      </ul>
+    </div>
+    <div style="padding:16px;background:rgba(243,156,18,0.08);border-radius:8px">
+      <h4 style="margin:0 0 8px 0;color:#f39c12">柯基数据保存失败</h4>
+      <ul style="margin:0;padding-left:20px;font-size:13px">
+        <li><strong>场景：</strong> CorgiData 插入失败</li>
+        <li><strong>处理：</strong> 使用默认值重试一次</li>
+        <li><strong>恢复：</strong> 重试成功则继续，失败则跳过</li>
+        <li><strong>降级：</strong> 不阻塞引导完成</li>
+      </ul>
+    </div>
+    <div style="padding:16px;background:rgba(149,165,166,0.08);border-radius:8px">
+      <h4 style="margin:0 0 8px 0;color:#95a5a6">DataStore 写入失败</h4>
+      <ul style="margin:0;padding-left:20px;font-size:13px">
+        <li><strong>场景：</strong> 首次启动标记保存失败</li>
+        <li><strong>处理：</strong> 静默重试（用户无感知）</li>
+        <li><strong>恢复：</strong> 下次启动重新检查</li>
+        <li><strong>影响：</strong> 可能导致重复显示引导</li>
+      </ul>
+    </div>
+    <div style="padding:16px;background:rgba(52,152,219,0.08);border-radius:8px">
+      <h4 style="margin:0 0 8px 0;color:#3498db">权限请求异常</h4>
+      <ul style="margin:0;padding-left:20px;font-size:13px">
+        <li><strong>场景：</strong> 权限请求 Launcher 异常</li>
+        <li><strong>处理：</strong> 标记为"未请求"，继续下一项</li>
+        <li><strong>恢复：</strong> 允许用户在设置中手动开启</li>
+        <li><strong>影响：</strong> 功能受限但不崩溃</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>边界情况处理</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px;font-size:13px">
+    <ul style="margin:0;padding-left:20px">
+      <li><strong>进程被杀：</strong> 引导中途进程被杀，下次启动重新开始引导（不保留中间状态）</li>
+      <li><strong>旋转屏幕：</strong> ViewModel 保留状态，HorizontalPager 自动恢复页面位置</li>
+      <li><strong>返回键：</strong> Step 1 按返回键退出APP；其他步骤按返回键回到上一步</li>
+      <li><strong>柯基名字为空：</strong> Step 3 下一步按钮禁用，显示"请输入柯基名字"</li>
+      <li><strong>柯基名字过长：</strong> 输入限制8字符，超过不接收；显示 <code>WORRY</code> 动画</li>
+      <li><strong>待办标题为空：</strong> Step 5 创建按钮禁用；下一步仍可点击（跳过创建）</li>
+    </ul>
+  </div>
+</div>

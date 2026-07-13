@@ -128,10 +128,11 @@ private fun FullOrangeTearOffCard(
     BoxWithConstraints(
         modifier = modifier
             .aspectRatio(4f / 5f)
-            .shadow(4.dp, RoundedCornerShape(20.dp))
     ) {
         val cardHeight = maxHeight
         val cardWidth = maxWidth
+        val cornerRadius = cardWidth * 0.07f
+        val shadowElevation = cardWidth * 0.015f
 
         val topBarHeight = cardHeight * 0.20f
         val holeSize = topBarHeight * 0.27f
@@ -147,11 +148,16 @@ private fun FullOrangeTearOffCard(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clip(WavyBottomShape(waveHeightPx = waveHeightPx))
-                .background(bgColor)
-                .then(if (onCardClick != null) Modifier.clickable { onCardClick() } else Modifier)
+                .shadow(shadowElevation, RoundedCornerShape(cornerRadius))
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(WavyBottomShape(waveHeightPx = waveHeightPx))
+                    .background(bgColor)
+                    .then(if (onCardClick != null) Modifier.clickable { onCardClick() } else Modifier)
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -258,6 +264,7 @@ private fun FullOrangeTearOffCard(
             }
         }
     }
+}
 }
 
 /**

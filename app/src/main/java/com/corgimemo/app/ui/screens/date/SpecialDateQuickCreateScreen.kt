@@ -28,6 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
 import com.corgimemo.app.ui.components.navigation.TabItem
@@ -36,21 +38,23 @@ import com.corgimemo.app.ui.screens.date.components.AvatarWithEdit
 import com.corgimemo.app.ui.screens.date.components.DateTypePickerBottomSheet
 import com.corgimemo.app.ui.screens.date.components.SpecialDateFeatureRow
 import com.corgimemo.app.viewmodel.DateCategory
+import com.corgimemo.app.viewmodel.SaveState
+import com.corgimemo.app.viewmodel.SpecialDateQuickCreateViewModel
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * 特殊日期快速创建页（新建专用）
+ * 特殊日期快速创建/编辑页
  *
  * 设计说明：
+ * - 新建模式：dateId = 0L，显示"添加"标题，底部按钮为"下一步"，跳转样式选择页
+ * - 编辑模式：dateId > 0，显示"编辑"标题，底部按钮为"保存"，直接更新数据
  * - 仅显示 4 行核心功能：头像 / 名称 / 日期 / 类型 / 置顶 / 关联
  * - 不显示：备注 / 标签 / 图片 / 关联编辑 / 计时 / 重复 / 提醒
- * - "下一步"按钮当前为占位（功能开发中）
  *
  * 状态全部 Local 化管理，不写入 ViewModel。
- * V2.7 反馈：编辑模式（点击日期卡片）改为显示"编辑功能开发中" Snackbar 占位。
  *
  * 退出行为：通过 [navigateBack] 在 popBackStack 之前设置 targetTab=DATE，
  * 让 MainScreen 切换到日期 tab；系统返回键 / 关闭按钮 / 弹窗打开时的返回键
@@ -58,15 +62,20 @@ import java.time.ZoneId
  * （而非待办页等其他 tab）。弹窗打开时 BackHandler 仅关闭弹窗，避免误操作。
  *
  * @param navController 导航控制器
+ * @param dateId 日期ID，0 表示新建模式，大于 0 表示编辑模式
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SpecialDateQuickCreateScreen(
-    navController: NavController
+    navController: NavController,
+    dateId: Long = 0L,
+    viewModel: SpecialDateQuickCreateViewModel = hiltViewModel()
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
+    val isEditMode = dateId > 0
+    val saveState by viewModel.saveState.collectAsState()
 
     // 本地状态：名称
     var title by remember { mutableStateOf("") }
@@ -85,6 +94,53 @@ fun SpecialDateQuickCreateScreen(
     // 已选中的类型（用于持久化时构建 "CUSTOM:xxx" 字符串）
     var selectedCategory by remember { mutableStateOf(DateCategory.OTHER) }
     var customCategoryName by remember { mutableStateOf<String?>(null) }
+
+    // 编辑模式下加载数据
+    LaunchedEffect(dateId) {
+        if (isEditMode) {
+            viewModel.loadDate(dateId)
+        }
+    }
+
+    // 监听加载完成，填充表单
+    val loadedDate by viewModel.loadedDate.collectAsState()
+    LaunchedEffect(loadedDate) {
+        loadedDate?.let { date ->
+            title = date.title
+            selectedDateMillis = date.targetDate
+            dateRowText = formatDateText(date.targetDate)
+            isPinned = date.isPinned
+            // 解析类型
+            val categoryName = date.category
+            val presetCategory = DateCategory.values().firstOrNull { cat ->
+                cat.name == categoryName
+            }
+            if (presetCategory != null) {
+                selectedCategory = presetCategory
+                typeRowText = presetCategory.displayName
+                customCategoryName = null
+            } else {
+                selectedCategory = DateCategory.OTHER
+                typeRowText = categoryName
+                customCategoryName = categoryName
+            }
+        }
+    }
+
+    // 监听保存结果
+    LaunchedEffect(saveState) {
+        when (val state = saveState) {
+            is SaveState.Success -> {
+                navController.previousBackStackEntry?.savedStateHandle?.set("targetTab", TabItem.DATE.name)
+                navController.popBackStack()
+            }
+            is SaveState.Error -> {
+                snackbarHostState.showSnackbar(state.message)
+                viewModel.resetSaveState()
+            }
+            else -> {}
+        }
+    }
 
     // 占位提示文本
     val developingMessage = "功能开发中，敬请期待"
@@ -125,7 +181,7 @@ fun SpecialDateQuickCreateScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "添加",
+                        text = if (isEditMode) "编辑" else "添加",
                         modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center,
                         fontSize = 17.sp,
@@ -248,29 +304,44 @@ fun SpecialDateQuickCreateScreen(
             Spacer(modifier = Modifier.weight(1f))
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 底部"下一步"按钮(跳转卡片样式选择页)
+            // 底部按钮（新建模式显示"下一步"，编辑模式显示"保存"）
             Button(
                 onClick = {
-                    // 防御：必须先选日期,否则给出 Snackbar 提示并终止跳转
+                    // 防御：必须先选日期,否则给出 Snackbar 提示并终止
                     if (selectedDateMillis == null) {
                         coroutineScope.launch {
                             snackbarHostState.showSnackbar("请先选择日期")
                         }
                         return@Button
                     }
-                    // 分类值约定:用户选择自定义时直接存 customCategoryName(如 "旅行"),
-                    // 选择预设时存 DateCategory.name(如 "BIRTHDAY")。不添加任何前缀。
-                    val categoryValue = customCategoryName ?: selectedCategory.name
-                    // 跳转 SpecialDateCardStyleScreen,4 个参数通过 URL Query 传递
-                    navController.navigate(
-                        Screen.SpecialDateCardStyle.createRoute(
-                            title = title.ifBlank { "未命名" },
-                            date = selectedDateMillis!!,
-                            category = categoryValue,
-                            pin = isPinned
+                    if (isEditMode) {
+                        // 编辑模式：直接保存更新
+                        val currentDate = loadedDate ?: return@Button
+                        val categoryValue = customCategoryName ?: selectedCategory.name
+                        viewModel.updateDate(
+                            currentDate.copy(
+                                title = title.ifBlank { "未命名" },
+                                targetDate = selectedDateMillis!!,
+                                category = categoryValue,
+                                isPinned = isPinned,
+                                updatedAt = System.currentTimeMillis()
+                            )
                         )
-                    )
+                    } else {
+                        // 新建模式：跳转样式选择页
+                        val categoryValue = customCategoryName ?: selectedCategory.name
+                        // 跳转 SpecialDateCardStyleScreen,4 个参数通过 URL Query 传递
+                        navController.navigate(
+                            Screen.SpecialDateCardStyle.createRoute(
+                                title = title.ifBlank { "未命名" },
+                                date = selectedDateMillis!!,
+                                category = categoryValue,
+                                pin = isPinned
+                            )
+                        )
+                    }
                 },
+                enabled = saveState !is SaveState.Saving,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
@@ -279,12 +350,20 @@ fun SpecialDateQuickCreateScreen(
                     containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
-                Text(
-                    text = "下一步",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
+                if (saveState is SaveState.Saving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        text = if (isEditMode) "保存" else "下一步",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

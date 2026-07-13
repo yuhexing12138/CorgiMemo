@@ -1,0 +1,181 @@
+<h2>设计章节 4/6：权限处理详细设计</h2>
+<p class="subtitle">实际触发系统权限对话框、处理拒绝情况、Android 版本兼容</p>
+
+<div class="section">
+  <h3>权限请求流程</h3>
+  <div style="padding:20px;background:rgba(0,0,0,0.02);border-radius:8px;font-family:monospace;font-size:12px;line-height:1.8">
+<pre style="margin:0;white-space:pre-wrap">
+用户进入 Step 9 (PermissionPage)
+         │
+         ↓
+    ┌─────────────┐
+    │ 显示权限列表 │  4项权限：通知/存储/麦克风/位置
+    └─────┬───────┘
+          │
+          ↓
+    ┌─────────────────┐
+    │ 逐个请求权限     │  按顺序：通知 → 存储 → 麦克风 → 位置
+    │ (非同时请求)     │
+    └─────┬───────────┘
+          │
+          ↓
+    ┌─────────────────────────┐
+    │ ActivityResultContracts │  实际触发系统权限对话框
+    │ .RequestPermission()    │
+    └─────┬───────────────────┘
+          │
+          ├─ 授权 → 标记 ✓ → 请求下一项
+          │
+          ├─ 拒绝 → 标记 ✗ → 请求下一项
+          │
+          └─ 永久拒绝 → 标记 ⚠ → 显示"去设置"按钮
+          │
+          ↓
+    所有权限请求完毕
+          │
+          ↓
+    ┌─────────────────────┐
+    │ "完成"按钮可用       │  必须请求过所有权限（无论授权/拒绝）
+    └─────────────────────┘
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Android 版本兼容</h3>
+  <div style="overflow-x:auto">
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <thead>
+        <tr style="background:rgba(0,0,0,0.05)">
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">权限</th>
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">Android &lt; 13</th>
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">Android 13+ (API 33+)</th>
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">Android 14+ (API 34+)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">🔔 通知</td>
+          <td style="padding:10px">默认开启，无需请求</td>
+          <td style="padding:10px"><code>POST_NOTIFICATIONS</code></td>
+          <td style="padding:10px"><code>POST_NOTIFICATIONS</code></td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">📁 存储</td>
+          <td style="padding:10px"><code>WRITE_EXTERNAL_STORAGE</code></td>
+          <td style="padding:10px">使用 Scoped Storage，仅图片需要 <code>READ_MEDIA_IMAGES</code></td>
+          <td style="padding:10px">同 Android 13</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">🎤 麦克风</td>
+          <td style="padding:10px"><code>RECORD_AUDIO</code></td>
+          <td style="padding:10px"><code>RECORD_AUDIO</code></td>
+          <td style="padding:10px"><code>RECORD_AUDIO</code></td>
+        </tr>
+        <tr>
+          <td style="padding:10px">📍 位置</td>
+          <td style="padding:10px"><code>ACCESS_COARSE_LOCATION</code></td>
+          <td style="padding:10px"><code>ACCESS_COARSE_LOCATION</code></td>
+          <td style="padding:10px"><code>ACCESS_COARSE_LOCATION</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h3>权限状态 UI 设计</h3>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+    <div style="padding:16px;background:rgba(149,165,166,0.1);border-radius:8px;text-align:center">
+      <div style="font-size:28px">⏳</div>
+      <strong style="font-size:13px">未请求</strong>
+      <p style="font-size:11px;color:#666;margin:4px 0 0 0">灰色背景</p>
+    </div>
+    <div style="padding:16px;background:rgba(39,174,96,0.1);border-radius:8px;text-align:center">
+      <div style="font-size:28px">✓</div>
+      <strong style="font-size:13px">已授权</strong>
+      <p style="font-size:11px;color:#666;margin:4px 0 0 0">绿色背景</p>
+    </div>
+    <div style="padding:16px;background:rgba(231,76,60,0.1);border-radius:8px;text-align:center">
+      <div style="font-size:28px">✗</div>
+      <strong style="font-size:13px">已拒绝</strong>
+      <p style="font-size:11px;color:#666;margin:4px 0 0 0">红色背景+"稍后设置"</p>
+    </div>
+    <div style="padding:16px;background:rgba(243,156,18,0.1);border-radius:8px;text-align:center">
+      <div style="font-size:28px">⚠</div>
+      <strong style="font-size:13px">永久拒绝</strong>
+      <p style="font-size:11px;color:#666;margin:4px 0 0 0">橙色背景+"去设置"</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>核心技术实现</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px;font-family:monospace;font-size:12px">
+<pre style="margin:0;white-space:pre-wrap">
+// Compose 中使用 ActivityResultContracts
+@Composable
+fun PermissionPage(viewModel: OnboardingViewModel) {
+    val context = LocalContext.current
+
+    // 权限请求 Launcher
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        viewModel.updatePermissionState(
+            currentPermission,
+            if (isGranted) PermissionState.GRANTED
+            else PermissionState.DENIED
+        )
+        // 请求下一项权限
+        viewModel.requestNextPermission()
+    }
+
+    // 检查是否永久拒绝（shouldShowRequestPermissionRationale）
+    fun checkPermanentlyDenied(permission: String): Boolean {
+        return !ActivityCompat.shouldShowRequestPermissionRationale(
+            context as Activity, permission
+        ) && ContextCompat.checkSelfPermission(
+            context, permission
+        ) != PackageManager.PERMISSION_GRANTED
+    }
+
+    // 请求权限
+    fun requestPermission(permission: String) {
+        permissionLauncher.launch(permission)
+    }
+}
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>永久拒绝的处理</h3>
+  <div style="padding:16px;background:rgba(243,156,18,0.05);border-radius:8px;border-left:4px solid #f39c12">
+    <p style="margin:0 0 8px 0"><strong>当用户永久拒绝权限时（勾选"不再询问"）：</strong></p>
+    <ol style="margin:0;padding-left:20px;font-size:13px">
+      <li>权限项显示橙色 ⚠ 图标和"去设置"按钮</li>
+      <li>点击"去设置"跳转到应用设置页：<code>Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)</code></li>
+      <li>用户从设置返回后，重新检查权限状态并更新 UI</li>
+      <li>不阻塞引导流程，用户可以继续完成引导</li>
+    </ol>
+  </div>
+</div>
+
+<div class="section">
+  <h3>权限请求顺序与依赖</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px;font-size:13px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="padding:8px 12px;background:#fff;border-radius:6px;border:1px solid #ddd">🔔 通知</span>
+      <span>→</span>
+      <span style="padding:8px 12px;background:#fff;border-radius:6px;border:1px solid #ddd">📁 存储</span>
+      <span>→</span>
+      <span style="padding:8px 12px;background:#fff;border-radius:6px;border:1px solid #ddd">🎤 麦克风</span>
+      <span>→</span>
+      <span style="padding:8px 12px;background:#fff;border-radius:6px;border:1px solid #ddd">📍 位置</span>
+    </div>
+    <p style="font-size:12px;color:#666;margin-top:8px">
+      <strong>说明：</strong> 逐个请求，每项请求后无论结果如何都继续下一项。不设权限依赖关系，用户可以拒绝任意权限而不影响其他权限的请求。
+    </p>
+  </div>
+</div>

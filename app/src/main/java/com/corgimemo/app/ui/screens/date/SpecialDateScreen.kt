@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.R
+import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.SwipeActionType
 import com.corgimemo.app.ui.components.SwipeButtonConfig
@@ -189,16 +190,7 @@ fun SpecialDateScreen(
                     onArchive = viewModel::archiveDate,
                     onDelete = viewModel::deleteDate,
                     onCardClick = { date ->
-                        /**
-                         * V2.7 反馈：编辑功能开发中
-                         *
-                         * 原逻辑：跳转到旧版 SpecialDateEditScreen 路由 `date_edit/{id}`
-                         * 新逻辑：复用 MainScreen 顶层 SnackbarHostState 显示"编辑功能开发中"占位提示。
-                         * - snackbarHostState 为 null 时静默忽略（深链场景下可降级）
-                         */
-                        coroutineScope.launch {
-                            snackbarHostState?.showSnackbar("编辑功能开发中，敬请期待")
-                        }
+                        navController.navigate(Screen.SpecialDateDetailWithId.createRoute(date.id))
                     }
                 )
             }

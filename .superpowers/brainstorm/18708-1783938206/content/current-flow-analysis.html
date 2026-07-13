@@ -1,0 +1,92 @@
+<h2>现有引导流程分析</h2>
+<p class="subtitle">APP 已迭代多次，请选择哪些引导环节需要保留、删除或改进</p>
+
+<div class="section">
+  <h3>当前 5 步引导流程</h3>
+  <div class="cards">
+    <div class="card" data-choice="keep-welcome" onclick="toggleSelect(this)">
+      <div class="card-image" style="background:linear-gradient(135deg,#FFE5B4,#FFD699);display:flex;align-items:center;justify-content:center;font-size:48px">
+        🐶
+      </div>
+      <div class="card-body">
+        <h3>1. 欢迎页</h3>
+        <p>显示 APP 名称 "柯基待办" 和 Logo，介绍 "你的专属柯基助手"</p>
+        <div class="label" style="margin-top:8px;color:#888">问题：内容单薄，仅展示文字</div>
+      </div>
+    </div>
+
+    <div class="card" data-choice="remove-usertype" onclick="toggleSelect(this)">
+      <div class="card-image" style="background:linear-gradient(135deg,#E0F0FF,#CCE7FF);display:flex;align-items:center;justify-content:center;font-size:48px">
+        💼📚
+      </div>
+      <div class="card-body">
+        <h3>2. 身份选择</h3>
+        <p>选择"上班族"或"学生"，声称提供个性化待办推荐</p>
+        <div class="label" style="margin-top:8px;color:#c0392b">问题：身份选择后未被实际使用，功能已废弃</div>
+      </div>
+    </div>
+
+    <div class="card" data-choice="keep-naming" onclick="toggleSelect(this)">
+      <div class="card-image" style="background:linear-gradient(135deg,#FFF0E0,#FFE0C0);display:flex;align-items:center;justify-content:center;font-size:48px">
+        🐕
+      </div>
+      <div class="card-body">
+        <h3>3. 柯基命名</h3>
+        <p>给柯基起名字（1-8字符），提供身份相关的命名建议</p>
+        <div class="label" style="margin-top:8px;color:#27ae60">核心功能，柯基养成系统需要</div>
+      </div>
+    </div>
+
+    <div class="card" data-choice="remove-greeting" onclick="toggleSelect(this)">
+      <div class="card-image" style="background:linear-gradient(135deg,#F0E0FF,#E0C0FF);display:flex;align-items:center;justify-content:center;font-size:48px">
+        💫
+      </div>
+      <div class="card-body">
+        <h3>4. 问候页</h3>
+        <p>柯基打招呼："你好！我是 XXX，很高兴认识你"</p>
+        <div class="label" style="margin-top:8px;color:#c0392b">问题：纯展示页，无交互，浪费时间</div>
+      </div>
+    </div>
+
+    <div class="card" data-choice="keep-permission" onclick="toggleSelect(this)">
+      <div class="card-image" style="background:linear-gradient(135deg,#E0FFE0,#C0FFC0);display:flex;align-items:center;justify-content:center;font-size:48px">
+        🔔
+      </div>
+      <div class="card-body">
+        <h3>5. 权限请求</h3>
+        <p>请求通知权限，列出待办/时间/位置提醒</p>
+        <div class="label" style="margin-top:8px;color:#27ae60">必要功能，但可简化</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>APP 当前核心功能（引导中未介绍）</h3>
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:12px">
+    <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+      <div style="font-size:24px">📋</div>
+      <strong>待办管理</strong>
+      <p style="font-size:13px;color:#666;margin-top:4px">拖拽排序、分区置顶、子任务、模板</p>
+    </div>
+    <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+      <div style="font-size:24px">💡</div>
+      <strong>灵感记录</strong>
+      <p style="font-size:13px;color:#666;margin-top:4px">富文本编辑、图片、字数统计</p>
+    </div>
+    <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+      <div style="font-size:24px">📅</div>
+      <strong>特殊日期</strong>
+      <p style="font-size:13px;color:#666;margin-top:4px">倒计时、卡片样式、颜色选择</p>
+    </div>
+    <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+      <div style="font-size:24px">🐕</div>
+      <strong>柯基养成</strong>
+      <p style="font-size:13px;color:#666;margin-top:4px">等级、经验、心情、装扮、成就</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="subtitle">点击你认为<strong>需要保留</strong>的环节（可多选）。未被选中的环节将被删除。在终端告诉我你的想法。</p>
+</div>

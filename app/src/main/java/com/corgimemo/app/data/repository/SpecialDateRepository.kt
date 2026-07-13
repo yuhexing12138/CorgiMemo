@@ -24,6 +24,9 @@ class SpecialDateRepository @Inject constructor(
     /** 根据ID获取特殊日期 */
     suspend fun getById(id: Long): SpecialDate? = specialDateDao.getSpecialDateById(id)
 
+    /** 根据ID获取特殊日期（Flow形式，实时监听变化） */
+    fun getByIdFlow(id: Long): Flow<SpecialDate?> = specialDateDao.getSpecialDateByIdFlow(id)
+
     /** 新增特殊日期 */
     suspend fun insert(date: SpecialDate): Long = specialDateDao.insert(date)
 

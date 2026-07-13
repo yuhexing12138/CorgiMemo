@@ -125,7 +125,6 @@ private fun FullCalendarTearOffCard(
     Box(
         modifier = modifier
             .aspectRatio(2f / 3f)
-            .shadow(4.dp, RoundedCornerShape(20.dp))
             .then(if (onCardClick != null) Modifier.clickable { onCardClick() } else Modifier)
     ) {
         BoxWithConstraints(
@@ -133,98 +132,107 @@ private fun FullCalendarTearOffCard(
         ) {
             val cardMaxHeight = maxHeight
             val cardMaxWidth = maxWidth
+            val cornerRadius = cardMaxWidth * 0.07f
+            val shadowElevation = cardMaxWidth * 0.015f
             val topWaveHeightPx = with(density) { (cardMaxHeight * 0.03f).toPx() }
             val bottomWaveHeightPx = with(density) { (cardMaxHeight * 0.03f).toPx() }
 
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .clip(
-                        WavyTopBottomShape(
-                            topWaveHeightPx = topWaveHeightPx,
-                            bottomWaveHeightPx = bottomWaveHeightPx
-                        )
-                    )
-                    .background(bgColor)
+                    .shadow(shadowElevation, RoundedCornerShape(cornerRadius))
             ) {
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(top = cardMaxHeight * 0.03f)
-                        .padding(horizontal = cardMaxWidth * 0.06f),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .clip(
+                            WavyTopBottomShape(
+                                topWaveHeightPx = topWaveHeightPx,
+                                bottomWaveHeightPx = bottomWaveHeightPx
+                            )
+                        )
+                        .background(bgColor)
                 ) {
-                    val headerHeight = cardMaxHeight * 0.06f
-                    val calendarHeight = cardMaxHeight * 0.45f
-                    val titleAreaHeight = cardMaxHeight * 0.06f
-                    val bigNumberHeight = cardMaxHeight * 0.22f
-                    val distanceTextHeight = cardMaxHeight * 0.06f
-                    val dividerTopPadding = cardMaxHeight * 0.01f
-                    val dividerBottomPadding = cardMaxHeight * 0.01f
-                    val bottomPadding = cardMaxHeight * 0.01f
-
-                    val monthTitleFontSize = with(density) { (cardMaxHeight * 0.035f).toSp() }
-                    val dotSize = cardMaxHeight * 0.010f
-                    val weekHeaderFontSize = with(density) { (cardMaxHeight * 0.028f).toSp() }
-                    val dateFontSize = with(density) { (cardMaxHeight * 0.030f).toSp() }
-                    val titleFontSize = with(density) { (cardMaxHeight * 0.038f).toSp() }
-                    val bigNumberFontSize = with(density) { (cardMaxHeight * 0.18f).toSp() }
-                    val distanceFontSize = with(density) { (cardMaxHeight * 0.028f).toSp() }
-
-                    TopHeaderArea(
-                        year = targetYear,
-                        month = targetMonth,
-                        height = headerHeight,
-                        monthTitleFontSize = monthTitleFontSize,
-                        dotSize = dotSize
-                    )
-
-                    MiniCalendar(
-                        year = targetYear,
-                        month = targetMonth,
-                        targetDay = targetDay,
-                        textSize = dateFontSize,
-                        weekHeaderTextSize = weekHeaderFontSize,
-                        targetRingColor = ringColor,
-                        targetTextColor = targetTextColor,
-                        showDividers = true,
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(calendarHeight)
-                    )
+                            .fillMaxSize()
+                            .padding(top = cardMaxHeight * 0.03f)
+                            .padding(horizontal = cardMaxWidth * 0.06f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        val headerHeight = cardMaxHeight * 0.06f
+                        val calendarHeight = cardMaxHeight * 0.45f
+                        val titleAreaHeight = cardMaxHeight * 0.06f
+                        val bigNumberHeight = cardMaxHeight * 0.22f
+                        val distanceTextHeight = cardMaxHeight * 0.06f
+                        val dividerTopPadding = cardMaxHeight * 0.01f
+                        val dividerBottomPadding = cardMaxHeight * 0.01f
+                        val bottomPadding = cardMaxHeight * 0.01f
 
-                    Spacer(Modifier.height(dividerTopPadding))
+                        val monthTitleFontSize = with(density) { (cardMaxHeight * 0.035f).toSp() }
+                        val dotSize = cardMaxHeight * 0.010f
+                        val weekHeaderFontSize = with(density) { (cardMaxHeight * 0.028f).toSp() }
+                        val dateFontSize = with(density) { (cardMaxHeight * 0.030f).toSp() }
+                        val titleFontSize = with(density) { (cardMaxHeight * 0.038f).toSp() }
+                        val bigNumberFontSize = with(density) { (cardMaxHeight * 0.18f).toSp() }
+                        val distanceFontSize = with(density) { (cardMaxHeight * 0.028f).toSp() }
 
-                    MainDivider()
+                        TopHeaderArea(
+                            year = targetYear,
+                            month = targetMonth,
+                            height = headerHeight,
+                            monthTitleFontSize = monthTitleFontSize,
+                            dotSize = dotSize
+                        )
 
-                    Spacer(Modifier.height(dividerBottomPadding))
+                        MiniCalendar(
+                            year = targetYear,
+                            month = targetMonth,
+                            targetDay = targetDay,
+                            textSize = dateFontSize,
+                            weekHeaderTextSize = weekHeaderFontSize,
+                            targetRingColor = ringColor,
+                            targetTextColor = targetTextColor,
+                            showDividers = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(calendarHeight)
+                        )
 
-                    TitleArea(
-                        title = displayTitle,
-                        height = titleAreaHeight,
-                        titleFontSize = titleFontSize,
-                        titleColor = titleColor
-                    )
+                        Spacer(Modifier.height(dividerTopPadding))
 
-                    BigNumberArea(
-                        targetDateMillis = targetDateMillis,
-                        height = bigNumberHeight,
-                        numberFontSize = bigNumberFontSize,
-                        numberColor = numberColor
-                    )
+                        MainDivider()
 
-                    DistanceTextArea(
-                        targetDateMillis = targetDateMillis,
-                        height = distanceTextHeight,
-                        distanceFontSize = distanceFontSize
-                    )
+                        Spacer(Modifier.height(dividerBottomPadding))
 
-                    Spacer(Modifier.height(bottomPadding))
+                        TitleArea(
+                            title = displayTitle,
+                            height = titleAreaHeight,
+                            titleFontSize = titleFontSize,
+                            titleColor = titleColor
+                        )
+
+                        BigNumberArea(
+                            targetDateMillis = targetDateMillis,
+                            height = bigNumberHeight,
+                            numberFontSize = bigNumberFontSize,
+                            numberColor = numberColor
+                        )
+
+                        DistanceTextArea(
+                            targetDateMillis = targetDateMillis,
+                            height = distanceTextHeight,
+                            distanceFontSize = distanceFontSize
+                        )
+
+                        Spacer(Modifier.height(bottomPadding))
+                    }
                 }
             }
         }
     }
 }
+
 
 /**
  * 缩略图版日历撕页卡片

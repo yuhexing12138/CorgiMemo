@@ -1,0 +1,220 @@
+<h2>设计章节 2/6：页面详细设计（修订版）</h2>
+<p class="subtitle">已根据反馈调整：使用项目现有帧动画、APP名称改为"刻记+"</p>
+
+<div class="section">
+  <h3>可用柯基帧动画资源（13种）</h3>
+  <div style="padding:12px;background:rgba(0,0,0,0.03);border-radius:8px;font-size:12px;display:flex;flex-wrap:wrap;gap:8px">
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">SIT 坐立</span>
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">STAND 站立</span>
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">LIE 趴卧</span>
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">RUN 奔跑</span>
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">WINK 眨眼</span>
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">WAG 摇尾巴</span>
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">TILT 歪头</span>
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">ROLL 打滚</span>
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">SLEEP 睡觉</span>
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">SAD 难过</span>
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">PROUD 骄傲</span>
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">SHY 害羞</span>
+    <span style="padding:4px 8px;background:#fff;border-radius:4px">WORRY 担心</span>
+  </div>
+  <p style="font-size:12px;color:#666;margin-top:8px">通过 <code>AnimationResourceManager.getAnimationFrames(type)</code> 获取帧资源，用 <code>FrameAnimation</code> 组件播放</p>
+</div>
+
+<div class="section">
+  <h3>阶段1：个性化设置</h3>
+
+  <!-- Step 1: WelcomePage 修订版 -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:linear-gradient(135deg,rgba(255,229,180,0.3),rgba(255,214,153,0.2));border-radius:8px;border-left:4px solid #f39c12">
+    <div style="width:140px;flex-shrink:0;text-align:center">
+      <div style="font-size:40px">🐶</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 1</div>
+      <div style="font-weight:bold;font-size:13px">欢迎页（修订）</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">WelcomePage（改进版）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局：</strong><br>
+          - 顶部：柯基 <code>WAG</code>（摇尾巴）帧动画<br>
+          &nbsp;&nbsp;尺寸 120dp，循环播放，友好欢迎感<br>
+          - 中部：APP名称 <strong>"刻记⁺"</strong><br>
+          &nbsp;&nbsp;使用 BaselineShift.Superscript 实现 + 上标<br>
+          - 底部：slogan "记录生活，刻下每一刻"<br>
+          - 底部按钮："开始体验"
+        </div>
+        <div>
+          <strong>技术实现：</strong><br>
+          <code>FrameAnimation(</code><br>
+          <code>&nbsp;&nbsp;frames = AnimationResourceManager</code><br>
+          <code>&nbsp;&nbsp;&nbsp;&nbsp;.getAnimationFrames(WAG),</code><br>
+          <code>&nbsp;&nbsp;fps = 12,</code><br>
+          <code>&nbsp;&nbsp;modifier = Modifier.size(120.dp)</code><br>
+          <code>)</code><br><br>
+          <strong>+上标实现：</strong><br>
+          <code>Text(buildAnnotatedString {</code><br>
+          <code>&nbsp;&nbsp;append("刻记")</code><br>
+          <code>&nbsp;&nbsp;withStyle(SpanStyle(</code><br>
+          <code>&nbsp;&nbsp;&nbsp;&nbsp;baselineShift = Superscript,</code><br>
+          <code>&nbsp;&nbsp;&nbsp;&nbsp;fontSize = 14.sp)) { append("+") }</code><br>
+          <code>})</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: UserTypePage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="width:140px;flex-shrink:0;text-align:center">
+      <div style="font-size:40px">🎓</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 2</div>
+      <div style="font-weight:bold;font-size:13px">身份选择</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">UserTypePage（修改版）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局（3卡片横排）：</strong><br>
+          - 🎓 学生：正常显示，可选<br>
+          - 💼 上班族：灰色 + 🔒图标<br>
+          - 👴 老人模式：灰色 + 🔒图标<br>
+          <strong>灰色卡片下方：</strong><br>
+          "后续版本实现"（小字）
+        </div>
+        <div>
+          <strong>交互：</strong><br>
+          - 点击灰色卡片 → Toast：<br>
+          &nbsp;&nbsp;"此模式将在后续版本实现"<br>
+          - 选择学生 → 高亮 + 下一步可用<br>
+          - 顶部说明："选择你的身份"<br>
+          - 副标题："我们将为你提供个性化体验"
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: CorgiNamingPage 修订版 -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:linear-gradient(135deg,rgba(255,240,224,0.3),rgba(255,224,192,0.2));border-radius:8px;border-left:4px solid #e67e22">
+    <div style="width:140px;flex-shrink:0;text-align:center">
+      <div style="font-size:40px">🐕</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 3</div>
+      <div style="font-weight:bold;font-size:13px">柯基命名（修订）</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">CorgiNamingPage（保留+优化）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局：</strong><br>
+          - 柯基 <code>SIT</code>（坐立）帧动画预览<br>
+          &nbsp;&nbsp;尺寸 100dp，循环播放<br>
+          - 输入框（1-8字符）<br>
+          - 命名建议Chip列表（学生版）<br>
+          - 实时预览名字效果
+        </div>
+        <div>
+          <strong>动画互动反应：</strong><br>
+          - 输入时切换为 <code>TILT</code>（歪头）<br>
+          - 名字有效时切换为 <code>WINK</code>（眨眼）<br>
+          - 名字过长时切换为 <code>WORRY</code>（担心）<br><br>
+          <strong>必须完成，不可跳过</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>阶段2：功能探索（前半）</h3>
+
+  <!-- Step 4: FunctionOverviewPage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="width:140px;flex-shrink:0;text-align:center">
+      <div style="font-size:40px">📱</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 4</div>
+      <div style="font-weight:bold;font-size:13px">功能概览</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">FunctionOverviewPage（新增）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局（2x2网格）：</strong><br>
+          - 📋 待办：拖拽排序/子任务/模板<br>
+          - 💡 灵感：富文本/图片/字数统计<br>
+          - 📅 日期：倒计时/卡片样式（占位）<br>
+          - 🐕 柯基：等级/装扮（占位）
+        </div>
+        <div>
+          <strong>交互：</strong><br>
+          - 卡片点击有涟漪效果<br>
+          - 底部"跳过功能介绍"按钮<br>
+          - 跳过 → 直接到 Step 9（权限）<br>
+          - 不跳过 → 逐步介绍各功能
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 5: TodoFeaturePage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="width:140px;flex-shrink:0;text-align:center">
+      <div style="font-size:40px">📋</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 5</div>
+      <div style="font-weight:bold;font-size:13px">待办+创建</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">TodoFeaturePage（新增）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局（上下分栏）：</strong><br>
+          - 上半：功能介绍<br>
+          &nbsp;&nbsp;"拖拽排序、分区置顶、子任务"<br>
+          - 下半：创建首个待办<br>
+          &nbsp;&nbsp;标题输入 + 优先级选择<br>
+          &nbsp;&nbsp;+ "创建"按钮
+        </div>
+        <div>
+          <strong>交互：</strong><br>
+          - 输入待办标题<br>
+          - 选择优先级（低/中/高）<br>
+          - 创建 → 保存到Room数据库<br>
+          - 创建成功 → <code>PROUD</code> 动画<br>
+          - 可跳过（不创建直接下一步）
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 6: InspirationFeaturePage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="width:140px;flex-shrink:0;text-align:center">
+      <div style="font-size:40px">💡</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 6</div>
+      <div style="font-weight:bold;font-size:13px">灵感+创建</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">InspirationFeaturePage（新增）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局（上下分栏）：</strong><br>
+          - 上半：功能介绍<br>
+          &nbsp;&nbsp;"富文本编辑、图片插入、字数统计"<br>
+          - 下半：创建首个灵感<br>
+          &nbsp;&nbsp;标题输入 + 简化编辑器<br>
+          &nbsp;&nbsp;+ "保存"按钮
+        </div>
+        <div>
+          <strong>交互：</strong><br>
+          - 输入标题和内容<br>
+          - 简化富文本编辑（基础格式）<br>
+          - 保存 → 存入Room<br>
+          - 保存成功 → <code>WINK</code> 动画<br>
+          - 可跳过
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="subtitle">下一步将展示 Step 7-10 的详细设计</p>
+</div>

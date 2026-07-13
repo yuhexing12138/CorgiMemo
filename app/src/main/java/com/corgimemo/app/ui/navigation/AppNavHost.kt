@@ -25,6 +25,7 @@ import com.corgimemo.app.ui.screens.date.DateScreenPlaceholder
 import com.corgimemo.app.ui.screens.date.SpecialDateScreen
 import com.corgimemo.app.ui.screens.date.SpecialDateQuickCreateScreen
 import com.corgimemo.app.ui.screens.date.SpecialDateCardStyleScreen
+import com.corgimemo.app.ui.screens.date.SpecialDateDetailScreen
 import com.corgimemo.app.ui.screens.inspire.InspireScreenPlaceholder
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.inspiration.InspirationEditScreen
@@ -191,6 +192,28 @@ fun AppNavHost(
                 category = category,
                 isPinned = pin
             )
+        }
+
+        // 日期详情页路由
+        composable(
+            route = Screen.SpecialDateDetailWithId.route,
+            arguments = listOf(
+                navArgument("dateId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val dateId = backStackEntry.arguments?.getLong("dateId") ?: 0L
+            SpecialDateDetailScreen(navController = navController, dateId = dateId)
+        }
+
+        // 日期编辑页路由（复用 QuickCreate，通过 dateId 参数区分编辑模式）
+        composable(
+            route = Screen.SpecialDateEditWithId.route,
+            arguments = listOf(
+                navArgument("dateId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val dateId = backStackEntry.arguments?.getLong("dateId") ?: 0L
+            SpecialDateQuickCreateScreen(navController = navController, dateId = dateId)
         }
 
         // 灵感编辑页面路由

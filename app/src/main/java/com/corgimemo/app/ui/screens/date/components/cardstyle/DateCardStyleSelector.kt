@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.corgimemo.app.data.model.DateCardColor
 import com.corgimemo.app.data.model.DateCardStyle
+import com.corgimemo.app.data.model.screenBackgroundColor
 import com.corgimemo.app.ui.theme.UiColors
 
 /**
@@ -54,17 +55,18 @@ fun DateCardStyleSelector(
     LazyRow(
         modifier = modifier
             .fillMaxWidth()
-            .height(140.dp),
+            .height(180.dp),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(styles, key = { it.serialName }) { style ->
             val isSelected = style == selected
+            val bgColor = screenBackgroundColor(cardColor) ?: MaterialTheme.colorScheme.surface
             Box(
                 modifier = Modifier
-                    .size(width = 80.dp, height = 120.dp)
+                    .size(width = 90.dp, height = 160.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(bgColor)
                     .border(
                         width = if (isSelected) 2.dp else 0.dp,
                         color = if (isSelected) UiColors.Primary else Color.Transparent,
@@ -72,7 +74,7 @@ fun DateCardStyleSelector(
                     )
                     .clickable { onSelect(style) }
             ) {
-                // 缩略图渲染：使用完整版卡片 + 居中裁剪（等比例缩小，不拉伸变形）
+                // 缩略图渲染：卡片居中，宽度占缩略图框的70%，与预览区比例一致
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -81,14 +83,7 @@ fun DateCardStyleSelector(
                         style = style,
                         title = title,
                         targetDateMillis = targetDateMillis,
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .then(
-                                when (style) {
-                                    DateCardStyle.OrangeTearOff -> Modifier.aspectRatio(4f / 5f)
-                                    DateCardStyle.CalendarTearOff -> Modifier.aspectRatio(2f / 3f)
-                                }
-                            ),
+                        modifier = Modifier.fillMaxWidth(0.7f),
                         isThumbnail = false,
                         cardColor = cardColor
                     )

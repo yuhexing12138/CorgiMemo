@@ -47,6 +47,10 @@ interface SpecialDateDao {
     @Query("SELECT * FROM special_dates WHERE id = :id")
     suspend fun getSpecialDateById(id: Long): SpecialDate?
 
+    /** 根据ID获取特殊日期（Flow形式，实时监听变化） */
+    @Query("SELECT * FROM special_dates WHERE id = :id")
+    fun getSpecialDateByIdFlow(id: Long): Flow<SpecialDate?>
+
     /** 搜索特殊日期（按标题模糊匹配） */
     @Query("SELECT * FROM special_dates WHERE title LIKE '%' || :query || '%' ORDER BY isPinned DESC, targetDate ASC")
     fun searchSpecialDates(query: String): Flow<List<SpecialDate>>

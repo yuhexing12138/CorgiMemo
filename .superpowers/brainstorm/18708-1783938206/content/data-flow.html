@@ -1,0 +1,163 @@
+<h2>设计章节 3/6：数据流与状态管理</h2>
+<p class="subtitle">ViewModel 重构、状态流转、数据持久化策略</p>
+
+<div class="section">
+  <h3>OnboardingViewModel 状态流转图</h3>
+  <div style="padding:20px;background:rgba(0,0,0,0.02);border-radius:8px;font-family:monospace;font-size:12px;line-height:1.8">
+<pre style="margin:0;white-space:pre-wrap">
+┌─────────────────────────────────────────────────────────────────┐
+│                    OnboardingViewModel                          │
+│                                                                 │
+│  StateFlow                                                      │
+│  ├─ currentPage: Int        (0-9, 当前页面索引)                │
+│  ├─ selectedUserType: UserType?  (仅 STUDENT 可选)             │
+│  ├─ corgiName: String       (1-8字符)                         │
+│  ├─ createdTodo: Todo?      (引导中创建的待办)                 │
+│  ├─ createdInspiration: Inspiration?  (引导中创建的灵感)      │
+│  ├─ permissionStates: Map<PermissionType, PermissionState>     │
+│  ├─ isCompleting: Boolean                                    │
+│  └─ skippedFunctions: Set&lt;FunctionType&gt;  (已跳过的功能)  │
+│                                                                 │
+│  Derived State                                                  │
+│  ├─ canGoNext: Boolean     (根据 currentPage 计算)             │
+│  ├─ isLastPage: Boolean    (currentPage == 9)                  │
+│  └─ mustComplete: Boolean  (currentPage == 2 || currentPage == 8)│
+└─────────────────────────────────────────────────────────────────┘
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>数据持久化策略</h3>
+  <div style="overflow-x:auto">
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <thead>
+        <tr style="background:rgba(0,0,0,0.05)">
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">数据</th>
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">存储方式</th>
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">时机</th>
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">键/表</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">引导完成状态</td>
+          <td style="padding:10px">DataStore</td>
+          <td style="padding:10px">Step 10 完成时</td>
+          <td style="padding:10px"><code>isOnboardingCompleted</code></td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">首次启动标记</td>
+          <td style="padding:10px">DataStore</td>
+          <td style="padding:10px">Step 10 完成时</td>
+          <td style="padding:10px"><code>isFirstLaunchDone</code></td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">用户身份</td>
+          <td style="padding:10px">DataStore</td>
+          <td style="padding:10px">Step 2 选择时</td>
+          <td style="padding:10px"><code>userType</code></td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">柯基名字</td>
+          <td style="padding:10px">DataStore + Room</td>
+          <td style="padding:10px">Step 3 完成时</td>
+          <td style="padding:10px"><code>corgiName</code> + CorgiData 表</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">创建的待办</td>
+          <td style="padding:10px">Room</td>
+          <td style="padding:10px">Step 5 创建时</td>
+          <td style="padding:10px">Todo 表</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px">创建的灵感</td>
+          <td style="padding:10px">Room</td>
+          <td style="padding:10px">Step 6 创建时</td>
+          <td style="padding:10px">Inspiration 表</td>
+        </tr>
+        <tr>
+          <td style="padding:10px">权限状态</td>
+          <td style="padding:10px">内存（不持久化）</td>
+          <td style="padding:10px">Step 9 请求时</td>
+          <td style="padding:10px">ViewModel StateFlow</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h3>核心方法设计</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px;font-family:monospace;font-size:12px">
+<pre style="margin:0;white-space:pre-wrap">
+// 页面导航
+fun nextPage()                    // 下一页（检查 canGoNext）
+fun prevPage()                    // 上一页
+fun goToPage(page: Int)          // 跳转到指定页
+fun skipToPermission()           // 跳过功能介绍 → Step 9
+
+// 个性化设置
+fun setUserType(type: UserType)  // 设置身份（仅 STUDENT）
+fun setCorgiName(name: String)   // 设置柯基名字
+fun isValidName(): Boolean       // 验证名字有效性
+
+// 功能创建
+fun createFirstTodo(title: String, priority: Priority)  // 创建首个待办
+fun createFirstInspiration(title: String, content: String)  // 创建首个灵感
+
+// 权限处理
+fun requestPermission(type: PermissionType)  // 请求权限
+fun updatePermissionState(type: PermissionType, state: PermissionState)
+
+// 完成引导
+fun completeOnboarding(onComplete: () -> Unit)  // 保存所有数据并完成
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>权限状态管理</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+      <div style="padding:12px;background:#fff;border-radius:6px;text-align:center">
+        <div style="font-size:24px">🔔</div>
+        <strong style="font-size:12px">通知</strong>
+        <div style="font-size:11px;color:#666;margin-top:4px">POST_NOTIFICATIONS</div>
+      </div>
+      <div style="padding:12px;background:#fff;border-radius:6px;text-align:center">
+        <div style="font-size:24px">📁</div>
+        <strong style="font-size:12px">存储</strong>
+        <div style="font-size:11px;color:#666;margin-top:4px">READ/WRITE_EXTERNAL_STORAGE</div>
+      </div>
+      <div style="padding:12px;background:#fff;border-radius:6px;text-align:center">
+        <div style="font-size:24px">🎤</div>
+        <strong style="font-size:12px">麦克风</strong>
+        <div style="font-size:11px;color:#666;margin-top:4px">RECORD_AUDIO</div>
+      </div>
+      <div style="padding:12px;background:#fff;border-radius:6px;text-align:center">
+        <div style="font-size:24px">📍</div>
+        <strong style="font-size:12px">位置</strong>
+        <div style="font-size:11px;color:#666;margin-top:4px">ACCESS_COARSE_LOCATION</div>
+      </div>
+    </div>
+    <p style="font-size:12px;color:#666;margin-top:12px">
+      <strong>权限请求顺序：</strong> 通知 → 存储 → 麦克风 → 位置（逐个请求）<br>
+      <strong>拒绝处理：</strong> 标记为"已拒绝"，不阻塞流程，显示"可在设置中稍后开启"
+    </p>
+  </div>
+</div>
+
+<div class="section">
+  <h3>与现有代码的集成</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px;font-size:13px">
+    <ul style="margin:0;padding-left:20px">
+      <li><strong>OnboardingRouter</strong>（MainActivity.kt）：保持现有逻辑，读取 <code>isOnboardingCompleted</code> 决定起始页</li>
+      <li><strong>CorgiPreferences</strong>：复用现有方法（saveUserType, saveCorgiName, setOnboardingCompleted 等）</li>
+      <li><strong>CorgiRepository</strong>：复用现有方法插入 CorgiData</li>
+      <li><strong>TodoRepository</strong>：复用现有方法插入 Todo</li>
+      <li><strong>InspirationRepository</strong>：复用现有方法插入 Inspiration</li>
+      <li><strong>AppNavHost</strong>：保持 <code>Screen.Onboarding.route</code> 路由不变</li>
+    </ul>
+  </div>
+</div>

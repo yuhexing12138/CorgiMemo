@@ -1,0 +1,189 @@
+<h2>设计章节 6/6：旧代码清理与迁移</h2>
+<p class="subtitle">删除操作指引组件、清理引用、数据库迁移、测试策略</p>
+
+<div class="section">
+  <h3>删除的操作指引组件</h3>
+  <div style="padding:16px;background:rgba(231,76,60,0.05);border-radius:8px;border-left:4px solid #e74c3c">
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <thead>
+        <tr style="background:rgba(0,0,0,0.05)">
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">文件</th>
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">操作</th>
+          <th style="padding:10px;text-align:left;border-bottom:2px solid #ddd">说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px"><code>OperationGuide.kt</code></td>
+          <td style="padding:10px;color:#e74c3c">删除</td>
+          <td style="padding:10px">FAB 箭头指引动画，已过时</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px"><code>FirstTimeGuideOverlay.kt</code></td>
+          <td style="padding:10px;color:#e74c3c">删除</td>
+          <td style="padding:10px">4步引导覆盖层，已被新引导流程取代</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:10px"><code>CorgiGuideAnimation.kt</code></td>
+          <td style="padding:10px;color:#e74c3c">删除</td>
+          <td style="padding:10px">柯基引导动画，功能合并到新引导页面</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h3>引用清理清单</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <p style="font-size:13px;margin:0 0 8px 0">需要检查并清理以下文件中对已删除组件的引用：</p>
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <thead>
+        <tr style="background:rgba(0,0,0,0.05)">
+          <th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">引用文件</th>
+          <th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">引用的组件</th>
+          <th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">处理方式</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:8px"><code>EmptyState.kt</code></td>
+          <td style="padding:8px">OperationGuide</td>
+          <td style="padding:8px">移除引用，保留 EmptyState 本身</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:8px"><code>HomeScreen.kt</code></td>
+          <td style="padding:8px">可能引用引导组件</td>
+          <td style="padding:8px">检查并移除引用</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:8px"><code>HomeViewModel.kt</code></td>
+          <td style="padding:8px">可能引用引导状态</td>
+          <td style="padding:8px">检查并移除引用</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:8px"><code>SettingsScreen.kt</code></td>
+          <td style="padding:8px">可能有"重看引导"入口</td>
+          <td style="padding:8px">检查并调整</td>
+        </tr>
+        <tr>
+          <td style="padding:8px"><code>AchievementManager.kt</code></td>
+          <td style="padding:8px">FIRST_GUIDE 成就</td>
+          <td style="padding:8px">保留成就定义，触发逻辑调整</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h3>现有 Onboarding 页面处理</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <thead>
+        <tr style="background:rgba(0,0,0,0.05)">
+          <th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">文件</th>
+          <th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">操作</th>
+          <th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:8px"><code>OnboardingScreen.kt</code></td>
+          <td style="padding:8px;color:#f39c12">重构</td>
+          <td style="padding:8px">页面数从5改为10，更新 HorizontalPager</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:8px"><code>OnboardingViewModel.kt</code></td>
+          <td style="padding:8px;color:#f39c3c">重构</td>
+          <td style="padding:8px">新增状态和方法，支持新流程</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:8px"><code>WelcomePage.kt</code></td>
+          <td style="padding:8px;color:#f39c12">改进</td>
+          <td style="padding:8px">添加帧动画、改APP名称为"刻记⁺"</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:8px"><code>UserTypePage.kt</code></td>
+          <td style="padding:8px;color:#f39c12">修改</td>
+          <td style="padding:8px">3卡片，学生可选，其他灰色</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:8px"><code>CorgiNamingPage.kt</code></td>
+          <td style="padding:8px;color:#f39c12">优化</td>
+          <td style="padding:8px">添加帧动画预览和互动反应</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:8px"><code>GreetingPage.kt</code></td>
+          <td style="padding:8px;color:#e74c3c">删除</td>
+          <td style="padding:8px">纯展示页，已被完成总结页取代</td>
+        </tr>
+        <tr style="border-bottom:1px solid #eee">
+          <td style="padding:8px"><code>PermissionPage.kt</code></td>
+          <td style="padding:8px;color:#f39c12">重构</td>
+          <td style="padding:8px">实际触发权限请求</td>
+        </tr>
+        <tr>
+          <td style="padding:8px">新文件（6个）</td>
+          <td style="padding:8px;color:#27ae60">新增</td>
+          <td style="padding:8px">FunctionOverview/TodoFeature/InspirationFeature/DateFeature/CorgiSystem/Completion 页面</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h3>数据库迁移评估</h3>
+  <div style="padding:16px;background:rgba(39,174,96,0.05);border-radius:8px;border-left:4px solid #27ae60">
+    <p style="margin:0 0 8px 0"><strong>结论：无需数据库迁移</strong></p>
+    <ul style="margin:0;padding-left:20px;font-size:13px">
+      <li>新引导流程不新增 Entity 或字段</li>
+      <li>复用现有 Todo、Inspiration、CorgiData 表</li>
+      <li>权限状态不持久化（仅内存）</li>
+      <li>UserType 枚举保持不变（仅学生可选，但枚举值不变）</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section">
+  <h3>测试策略</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+      <h4 style="margin:0 0 8px 0">单元测试</h4>
+      <ul style="margin:0;padding-left:20px;font-size:13px">
+        <li>OnboardingViewModel 状态流转</li>
+        <li>canGoNext 逻辑验证</li>
+        <li>createFirstTodo/Inspiration 方法</li>
+        <li>权限状态更新逻辑</li>
+        <li>跳过逻辑验证</li>
+      </ul>
+    </div>
+    <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+      <h4 style="margin:0 0 8px 0">UI 测试</h4>
+      <ul style="margin:0;padding-left:20px;font-size:13px">
+        <li>HorizontalPager 页面切换</li>
+        <li>柯基命名输入验证</li>
+        <li>创建待办/灵感端到端流程</li>
+        <li>权限请求对话框交互</li>
+        <li>跳过按钮行为</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>实施顺序建议</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px;font-size:13px">
+    <ol style="margin:0;padding-left:20px">
+      <li><strong>阶段1：</strong>删除旧操作指引组件（OperationGuide/FirstTimeGuideOverlay/CorgiGuideAnimation）</li>
+      <li><strong>阶段2：</strong>清理引用，确保编译通过</li>
+      <li><strong>阶段3：</strong>重构 OnboardingViewModel（新增状态和方法）</li>
+      <li><strong>阶段4：</strong>改进现有页面（WelcomePage/UserTypePage/CorgiNamingPage）</li>
+      <li><strong>阶段5：</strong>新增6个页面（FunctionOverview/TodoFeature/InspirationFeature/DateFeature/CorgiSystem/Completion）</li>
+      <li><strong>阶段6：</strong>重构 PermissionPage（实际触发权限）</li>
+      <li><strong>阶段7：</strong>重构 OnboardingScreen（10页 HorizontalPager）</li>
+      <li><strong>阶段8：</strong>删除 GreetingPage，整体测试</li>
+    </ol>
+  </div>
+</div>

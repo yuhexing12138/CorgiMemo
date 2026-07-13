@@ -44,6 +44,18 @@ sealed class Screen(val route: String) {
     // 特殊日期快速创建页面（重构版：4 行核心功能 + 下一步）
     object SpecialDateQuickCreate : Screen("date_create")                  // 日期新建快速创建页
 
+    // 日期详情页
+    object SpecialDateDetailWithId : Screen("date_detail/{dateId}") {
+        /** 带参数的导航路径 */
+        fun createRoute(dateId: Long) = "date_detail/$dateId"
+    }
+
+    // 日期编辑页（复用 QuickCreate，编辑模式）
+    object SpecialDateEditWithId : Screen("date_edit/{dateId}") {
+        /** 带参数的导航路径 */
+        fun createRoute(dateId: Long) = "date_edit/$dateId"
+    }
+
     // 特殊日期卡片样式选择页（新建日期流程第二步：选样式后保存落库）
     object SpecialDateCardStyle :
         Screen("date_card_style?title={title}&date={date}&category={category}&pin={pin}") {

@@ -141,3 +141,15 @@ fun targetRingColor(color: DateCardColor): Color = when (color) {
     DateCardColor.Default -> Color(0xFFFF8A80)
     else -> topBarColor(color)
 }
+
+/**
+ * 屏幕/页面背景色(卡片后面的背景)
+ * - DEFAULT → null(由页面主题色决定)
+ * - 单色 → 对应颜色 30% 透明度
+ * - Rainbow → null(由页面主题色决定)
+ */
+fun screenBackgroundColor(color: DateCardColor): Color? = when (color) {
+    DateCardColor.Default -> null
+    DateCardColor.Rainbow -> null
+    else -> topBarColor(color).copy(alpha = 0.3f)
+}

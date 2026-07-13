@@ -69,10 +69,10 @@ fun DateCardColorPicker(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            // 固定高度 140dp,与 DateCardStyleSelector 一致 —
+            // 固定高度 180dp,与 DateCardStyleSelector 一致 —
             // 切换 Tab 时,底部选择器区域高度不变化,避免视觉跳动感
-            .height(140.dp),
-        // 两行(各 40dp 圆)+ 8dp 间距 = 88dp 内容,在 140dp 内垂直居中(上下各 26dp 空隙)
+            .height(180.dp),
+        // 两行(各 40dp 圆)+ 8dp 间距 = 88dp 内容,在 180dp 内垂直居中(上下各 46dp 空隙)
         verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
     ) {
         // 第 1 行

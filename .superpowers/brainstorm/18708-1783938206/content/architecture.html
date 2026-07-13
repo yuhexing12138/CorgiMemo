@@ -1,0 +1,119 @@
+<h2>设计章节 1/6：整体架构</h2>
+<p class="subtitle">引导流程的整体结构、阶段划分与导航逻辑</p>
+
+<div class="section">
+  <h3>分阶段流程架构图</h3>
+  <div style="padding:20px;background:rgba(0,0,0,0.02);border-radius:8px;font-family:monospace;font-size:13px;line-height:1.8">
+<pre style="margin:0;white-space:pre-wrap">
+┌─────────────────────────────────────────────────────────────┐
+│                    OnboardingScreen                          │
+│              (HorizontalPager + 10页)                        │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  阶段1：个性化设置（Step 1-3）                       │    │
+│  │  ├─ 1. WelcomePage      欢迎页（改进版）             │    │
+│  │  ├─ 2. UserTypePage     身份选择（仅学生可选）       │    │
+│  │  └─ 3. CorgiNamingPage  柯基命名                    │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                          ↓                                   │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  阶段2：功能探索（Step 4-8）  [可跳过→Step 9]       │    │
+│  │  ├─ 4. FunctionOverviewPage  功能概览（4大功能）    │    │
+│  │  ├─ 5. TodoFeaturePage      待办介绍+创建首个待办   │    │
+│  │  ├─ 6. InspirationFeaturePage 灵感介绍+创建首个灵感 │    │
+│  │  ├─ 7. DateFeaturePage      日期功能（占位）        │    │
+│  │  └─ 8. CorgiSystemPage      柯基养成（占位）        │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                          ↓                                   │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  阶段3：权限与完成（Step 9-10）  [必须完成]         │    │
+│  │  ├─ 9. PermissionPage      权限请求                 │    │
+│  │  │   ├─ 通知权限（实际触发）                        │    │
+│  │  │   ├─ 存储权限（实际触发）                        │    │
+│  │  │   ├─ 麦克风权限（实际触发）                      │    │
+│  │  │   └─ 位置权限（实际触发）                        │    │
+│  │  └─ 10. CompletionPage     完成总结+进入主页        │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+</pre>
+  </div>
+</div>
+
+<div class="section">
+  <h3>导航与跳过逻辑</h3>
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
+    <div style="padding:16px;background:rgba(39,174,96,0.08);border-radius:8px;border-left:4px solid #27ae60">
+      <h4 style="margin:0 0 8px 0;color:#27ae60">✓ 必须完成</h4>
+      <ul style="margin:0;padding-left:20px;font-size:14px">
+        <li>柯基命名（Step 3）</li>
+        <li>权限请求（Step 9）</li>
+      </ul>
+      <p style="font-size:12px;color:#666;margin-top:8px">这些步骤不可跳过，确保核心功能可用</p>
+    </div>
+    <div style="padding:16px;background:rgba(243,156,18,0.08);border-radius:8px;border-left:4px solid #f39c12">
+      <h4 style="margin:0 0 8px 0;color:#f39c12">○ 可跳过</h4>
+      <ul style="margin:0;padding-left:20px;font-size:14px">
+        <li>功能概览（Step 4-8）</li>
+        <li>创建首个待办/灵感</li>
+      </ul>
+      <p style="font-size:12px;color:#666;margin-top:8px">跳过时使用默认值，用户可后续自行探索</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>技术架构</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <tr style="border-bottom:1px solid #ddd">
+        <td style="padding:8px;font-weight:bold;width:30%">UI框架</td>
+        <td style="padding:8px">Jetpack Compose + HorizontalPager（沿用现有）</td>
+      </tr>
+      <tr style="border-bottom:1px solid #ddd">
+        <td style="padding:8px;font-weight:bold">状态管理</td>
+        <td style="padding:8px">OnboardingViewModel（重构）+ StateFlow</td>
+      </tr>
+      <tr style="border-bottom:1px solid #ddd">
+        <td style="padding:8px;font-weight:bold">数据持久化</td>
+        <td style="padding:8px">CorgiPreferences（DataStore）+ Room（待办/灵感）</td>
+      </tr>
+      <tr style="border-bottom:1px solid #ddd">
+        <td style="padding:8px;font-weight:bold">权限处理</td>
+        <td style="padding:8px">ActivityResultContracts（实际触发系统权限对话框）</td>
+      </tr>
+      <tr>
+        <td style="padding:8px;font-weight:bold">依赖注入</td>
+        <td style="padding:8px">Hilt（沿用现有）</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h3>文件结构规划</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px;font-family:monospace;font-size:12px">
+<pre style="margin:0;white-space:pre-wrap">
+ui/screens/onboarding/
+├─ OnboardingScreen.kt          [重构] 主页面+HorizontalPager
+├─ WelcomePage.kt               [改进] 欢迎页
+├─ UserTypePage.kt              [修改] 仅学生可选+灰色显示
+├─ CorgiNamingPage.kt           [保留] 柯基命名
+├─ FunctionOverviewPage.kt      [新增] 功能概览
+├─ TodoFeaturePage.kt           [新增] 待办介绍+创建
+├─ InspirationFeaturePage.kt    [新增] 灵感介绍+创建
+├─ DateFeaturePage.kt           [新增] 日期占位页
+├─ CorgiSystemPage.kt           [新增] 柯基养成占位页
+├─ PermissionPage.kt            [重构] 实际触发权限请求
+└─ CompletionPage.kt            [新增] 完成总结页
+
+viewmodel/
+└─ OnboardingViewModel.kt       [重构] 支持新流程+创建待办/灵感
+
+ui/components/
+├─ OperationGuide.kt            [删除]
+├─ FirstTimeGuideOverlay.kt     [删除]
+├─ CorgiGuideAnimation.kt       [删除]
+└─ EmptyState.kt                [保留] 空状态组件
+</pre>
+  </div>
+</div>

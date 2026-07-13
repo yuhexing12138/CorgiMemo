@@ -1,0 +1,182 @@
+<h2>设计章节 2/6：页面详细设计（阶段1+阶段2前半）</h2>
+<p class="subtitle">Step 1-6 的具体内容、布局与交互</p>
+
+<div class="section">
+  <h3>阶段1：个性化设置</h3>
+
+  <!-- Step 1: WelcomePage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="width:120px;flex-shrink:0;text-align:center">
+      <div style="font-size:32px">🐶</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 1</div>
+      <div style="font-weight:bold;font-size:13px">欢迎页</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">WelcomePage（改进版）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局：</strong><br>
+          - 顶部：柯基Logo动画<br>
+          - 中部：APP名称"柯基待办"<br>
+          - 底部：简短slogan<br>
+          - 底部按钮："开始体验"
+        </div>
+        <div>
+          <strong>改进点：</strong><br>
+          - 添加柯基帧动画（TILT/WAG）<br>
+          - 添加"跳过引导"按钮（顶部右）<br>
+          - 简化文案，突出核心价值
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: UserTypePage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="width:120px;flex-shrink:0;text-align:center">
+      <div style="font-size:32px">🎓</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 2</div>
+      <div style="font-weight:bold;font-size:13px">身份选择</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">UserTypePage（修改版）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局：</strong><br>
+          - 3个身份卡片（横向排列）<br>
+          - 学生：正常显示，可选<br>
+          - 上班族：灰色+锁图标<br>
+          - 老人模式：灰色+锁图标
+        </div>
+        <div>
+          <strong>交互：</strong><br>
+          - 点击灰色卡片显示Toast：<br>
+            "此模式将在后续版本实现"<br>
+          - 选择学生后高亮+下一步可用<br>
+          - 添加"为什么需要身份？"说明
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: CorgiNamingPage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="width:120px;flex-shrink:0;text-align:center">
+      <div style="font-size:32px">🐕</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 3</div>
+      <div style="font-weight:bold;font-size:13px">柯基命名</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">CorgiNamingPage（保留+优化）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局：</strong><br>
+          - 柯基动画预览<br>
+          - 输入框（1-8字符）<br>
+          - 命名建议Chip列表<br>
+          - 实时预览名字效果
+        </div>
+        <div>
+          <strong>优化点：</strong><br>
+          - 根据学生身份提供命名建议<br>
+          - 输入时柯基动画反应<br>
+          - <strong>必须完成，不可跳过</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>阶段2：功能探索（前半）</h3>
+
+  <!-- Step 4: FunctionOverviewPage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="width:120px;flex-shrink:0;text-align:center">
+      <div style="font-size:32px">📱</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 4</div>
+      <div style="font-weight:bold;font-size:13px">功能概览</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">FunctionOverviewPage（新增）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局：</strong><br>
+          - 2x2网格展示4大功能<br>
+          - 待办：📋 拖拽排序/子任务<br>
+          - 灵感：💡 富文本/图片<br>
+          - 日期：📅 倒计时/卡片<br>
+          - 柯基：🐕 等级/装扮
+        </div>
+        <div>
+          <strong>交互：</strong><br>
+          - 点击功能卡片跳转详情<br>
+          - 底部"跳过功能介绍"按钮<br>
+          - 跳过后直接到Step 9（权限）
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 5: TodoFeaturePage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="width:120px;flex-shrink:0;text-align:center">
+      <div style="font-size:32px">📋</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 5</div>
+      <div style="font-weight:bold;font-size:13px">待办+创建</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">TodoFeaturePage（新增）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局（上下分栏）：</strong><br>
+          - 上半：功能介绍<br>
+            "拖拽排序、分区置顶、子任务"<br>
+          - 下半：创建首个待办<br>
+            标题输入框 + 优先级选择<br>
+            + "创建"按钮
+        </div>
+        <div>
+          <strong>交互：</strong><br>
+          - 用户输入待办标题<br>
+          - 选择优先级（低/中/高）<br>
+          - 点击"创建"保存到Room数据库<br>
+          - 可跳过（不创建直接下一步）
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 6: InspirationFeaturePage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="width:120px;flex-shrink:0;text-align:center">
+      <div style="font-size:32px">💡</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 6</div>
+      <div style="font-weight:bold;font-size:13px">灵感+创建</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">InspirationFeaturePage（新增）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局（上下分栏）：</strong><br>
+          - 上半：功能介绍<br>
+            "富文本编辑、图片插入、字数统计"<br>
+          - 下半：创建首个灵感<br>
+            简化编辑器 + 标题输入<br>
+            + "保存"按钮
+        </div>
+        <div>
+          <strong>交互：</strong><br>
+          - 输入灵感标题和内容<br>
+          - 可插入简单文本<br>
+          - 点击"保存"存入Room<br>
+          - 可跳过（不创建直接下一步）
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="subtitle">下一步将展示 Step 7-10 的详细设计</p>
+</div>

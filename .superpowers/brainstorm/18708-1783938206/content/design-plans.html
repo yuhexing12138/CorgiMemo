@@ -1,0 +1,86 @@
+<h2>新引导流程设计方案</h2>
+<p class="subtitle">基于你的需求，提出 3 种方案。点击你倾向的方案（可多选对比）</p>
+
+<div class="section">
+  <div class="options">
+    <div class="option" data-choice="plan-a" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>线性详细流程（11步）</h3>
+        <p>每个功能独立介绍，步骤最多，结构最清晰</p>
+        <div style="margin-top:12px;padding:12px;background:rgba(0,0,0,0.03);border-radius:6px;font-size:13px">
+          <strong>流程：</strong><br>
+          1. 欢迎页 → 2. 身份选择 → 3. 柯基命名 →<br>
+          4. 待办介绍 → 5. 灵感介绍 → 6. 日期介绍(占位) → 7. 柯基养成介绍 →<br>
+          8. 创建首个待办 → 9. 创建首个灵感 →<br>
+          10. 权限请求(通知+存储+麦克风+位置) → 11. 完成
+        </div>
+        <div style="margin-top:8px">
+          <span style="color:#27ae60">✓ 结构清晰</span>
+          <span style="color:#27ae60;margin-left:12px">✓ 功能介绍详细</span>
+          <span style="color:#e74c3c;margin-left:12px">✗ 步骤多易疲劳</span>
+          <span style="color:#e74c3c;margin-left:12px">✗ 介绍与操作分离</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="option" data-choice="plan-b" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>精简整合流程（8步）</h3>
+        <p>功能概览合并为一页，介绍与操作结合</p>
+        <div style="margin-top:12px;padding:12px;background:rgba(0,0,0,0.03);border-radius:6px;font-size:13px">
+          <strong>流程：</strong><br>
+          1. 欢迎页 → 2. 身份选择 → 3. 柯基命名 →<br>
+          4. 功能概览(一页介绍所有功能) →<br>
+          5. 创建首个待办(含待办功能介绍) →<br>
+          6. 创建首个灵感(含灵感功能介绍) →<br>
+          7. 权限请求 → 8. 完成
+        </div>
+        <div style="margin-top:8px">
+          <span style="color:#27ae60">✓ 步骤精简</span>
+          <span style="color:#27ae60">✓ 介绍与操作结合</span>
+          <span style="color:#e74c3c;margin-left:12px">✗ 功能介绍不够详细</span>
+          <span style="color:#e74c3c;margin-left:12px">✗ 缺少柯基养成介绍</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="option" data-choice="plan-c" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>分阶段流程（3阶段10步）<span style="color:#27ae60;font-size:12px;margin-left:8px">推荐</span></h3>
+        <p>分3个阶段：个性化设置 → 功能探索 → 权限完成</p>
+        <div style="margin-top:12px;padding:12px;background:rgba(0,0,0,0.03);border-radius:6px;font-size:13px">
+          <strong>阶段1 - 个性化设置：</strong><br>
+          1. 欢迎页 → 2. 身份选择 → 3. 柯基命名<br><br>
+          <strong>阶段2 - 功能探索：</strong><br>
+          4. 功能概览(快速预览4大功能) →<br>
+          5. 待办功能+创建首个待办 →<br>
+          6. 灵感功能+创建首个灵感 →<br>
+          7. 日期功能介绍(占位) →<br>
+          8. 柯基养成系统介绍<br><br>
+          <strong>阶段3 - 权限与完成：</strong><br>
+          9. 权限请求(通知+存储+麦克风+位置) → 10. 完成总结
+        </div>
+        <div style="margin-top:8px">
+          <span style="color:#27ae60">✓ 分阶段有节奏感</span>
+          <span style="color:#27ae60">✓ 介绍与操作结合</span>
+          <span style="color:#27ae60">✓ 功能覆盖全面</span>
+          <span style="color:#f39c12;margin-left:12px">○ 某些步骤较长</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>跳过策略（所有方案通用）</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <ul style="margin:0;padding-left:20px">
+      <li><strong>必须完成：</strong> 柯基命名、权限请求（不可跳过）</li>
+      <li><strong>可跳过：</strong> 功能介绍、创建首个待办/灵感（可跳过但鼓励完成）</li>
+      <li><strong>跳过方式：</strong> 顶部"跳过"按钮，跳过功能介绍直接到权限请求</li>
+    </ul>
+  </div>
+</div>

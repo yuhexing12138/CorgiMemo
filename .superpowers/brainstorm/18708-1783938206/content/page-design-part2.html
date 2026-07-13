@@ -1,0 +1,158 @@
+<h2>设计章节 2/6：页面详细设计（Step 7-10）</h2>
+<p class="subtitle">阶段2后半 + 阶段3：日期占位、柯基养成占位、权限请求、完成总结</p>
+
+<div class="section">
+  <h3>阶段2：功能探索（后半）</h3>
+
+  <!-- Step 7: DateFeaturePage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:rgba(0,0,0,0.03);border-radius:8px;border-left:4px solid #9b59b6">
+    <div style="width:140px;flex-shrink:0;text-align:center">
+      <div style="font-size:40px">📅</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 7</div>
+      <div style="font-weight:bold;font-size:13px">日期功能（占位）</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">DateFeaturePage（新增-占位）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局：</strong><br>
+          - 顶部：📅 图标 + "特殊日期"<br>
+          - 中部：功能预览（灰度）<br>
+          &nbsp;&nbsp;倒计时卡片样式预览图<br>
+          - 底部："敬请期待"标签<br>
+          - <code>SLEEP</code> 动画（柯基等待）
+        </div>
+        <div>
+          <strong>占位说明：</strong><br>
+          - 日期功能尚不完整<br>
+          - 仅展示功能概念，不可操作<br>
+          - 显示"此功能正在开发中"<br>
+          - 用户点击"下一步"继续<br>
+          - 可跳过
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 8: CorgiSystemPage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:rgba(0,0,0,0.03);border-radius:8px;border-left:4px solid #e74c3c">
+    <div style="width:140px;flex-shrink:0;text-align:center">
+      <div style="font-size:40px">🐕</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 8</div>
+      <div style="font-weight:bold;font-size:13px">柯基养成（占位）</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">CorgiSystemPage（新增-占位）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局：</strong><br>
+          - 顶部：柯基 <code>PROUD</code> 动画<br>
+          - 中部：养成系统概念图（灰度）<br>
+          &nbsp;&nbsp;等级/经验/心情/装扮/成就<br>
+          - 底部："敬请期待"标签<br>
+          - 显示用户命名的柯基名字
+        </div>
+        <div>
+          <strong>占位说明：</strong><br>
+          - 柯基养成系统暂不完善<br>
+          - 仅展示概念，不可操作<br>
+          - 显示"完整系统将在后续版本推出"<br>
+          - 简要介绍已实现部分（等级/经验）<br>
+          - 可跳过
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>阶段3：权限与完成（必须完成）</h3>
+
+  <!-- Step 9: PermissionPage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:linear-gradient(135deg,rgba(224,255,224,0.3),rgba(192,255,192,0.2));border-radius:8px;border-left:4px solid #27ae60">
+    <div style="width:140px;flex-shrink:0;text-align:center">
+      <div style="font-size:40px">🔔</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 9</div>
+      <div style="font-weight:bold;font-size:13px">权限请求（必须）</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">PermissionPage（重构-实际触发）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局（权限列表）：</strong><br>
+          - 🔔 通知权限：待办/日期提醒<br>
+          - 📁 存储权限：图片/备份导出<br>
+          - 🎤 麦克风权限：语音输入待办<br>
+          - 📍 位置权限：位置提醒<br>
+          每项显示状态：未请求/已授权/已拒绝
+        </div>
+        <div>
+          <strong>交互（实际触发）：</strong><br>
+          - 使用 <code>ActivityResultContracts</code><br>
+          - 逐个请求权限（非同时）<br>
+          - 已授权的权限显示 ✓<br>
+          - 已拒绝的显示"稍后设置"<br>
+          - 底部"完成"按钮（必须至少请求过）
+        </div>
+      </div>
+      <div style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.05);border-radius:4px;font-size:12px">
+        <strong>技术实现：</strong><br>
+        <code>rememberLauncherForActivityResult(</code><br>
+        <code>&nbsp;&nbsp;ActivityResultContracts.RequestPermission()</code><br>
+        <code>)</code> - 逐个触发系统权限对话框
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 10: CompletionPage -->
+  <div style="display:flex;gap:16px;margin-bottom:24px;padding:16px;background:linear-gradient(135deg,rgba(255,215,0,0.2),rgba(255,165,0,0.15));border-radius:8px;border-left:4px solid #f39c12">
+    <div style="width:140px;flex-shrink:0;text-align:center">
+      <div style="font-size:40px">🎉</div>
+      <div style="font-size:12px;color:#666;margin-top:4px">Step 10</div>
+      <div style="font-weight:bold;font-size:13px">完成总结</div>
+    </div>
+    <div style="flex:1">
+      <h4 style="margin:0 0 8px 0">CompletionPage（新增）</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div>
+          <strong>布局：</strong><br>
+          - 顶部：柯基 <code>PROUD</code> 动画 + 庆祝特效<br>
+          - 中部："设置完成！"<br>
+          - 总结列表：<br>
+          &nbsp;&nbsp;✓ 柯基名字：XXX<br>
+          &nbsp;&nbsp;✓ 创建了 N 个待办<br>
+          &nbsp;&nbsp;✓ 创建了 N 个灵感<br>
+          &nbsp;&nbsp;✓ 权限已配置
+        </div>
+        <div>
+          <strong>交互：</strong><br>
+          - 底部"进入刻记⁺"按钮<br>
+          - 点击 → 导航到主页<br>
+          - 保存 onboardingCompleted = true<br>
+          - 显示柯基告别语：<br>
+          &nbsp;&nbsp;"很高兴认识你！让我们一起开始吧~"<br>
+          - 触发 <code>setFirstLaunchDone()</code>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>页面底部统一控制栏</h3>
+  <div style="padding:16px;background:rgba(0,0,0,0.03);border-radius:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:#fff;border-radius:6px">
+      <div style="display:flex;gap:6px">
+        <span style="width:8px;height:8px;border-radius:50%;background:#007aff"></span>
+        <span style="width:8px;height:8px;border-radius:50%;background:#ddd"></span>
+        <span style="width:8px;height:8px;border-radius:50%;background:#ddd"></span>
+        <span style="font-size:12px;color:#666;margin-left:8px">1/10</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button style="padding:6px 12px;border:1px solid #ddd;border-radius:16px;background:#fff;font-size:12px">上一步</button>
+        <button style="padding:6px 16px;border:none;border-radius:16px;background:#007aff;color:#fff;font-size:12px">下一步</button>
+      </div>
+    </div>
+    <p style="font-size:12px;color:#666;margin-top:8px">所有页面共享底部控制栏：页码指示器 + 上一步/下一步按钮。功能介绍页（Step 4-8）右上角显示"跳过"按钮。</p>
+  </div>
+</div>
