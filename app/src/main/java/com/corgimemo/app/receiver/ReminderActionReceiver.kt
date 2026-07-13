@@ -105,7 +105,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
 
                 if (todo.status == 1) return@launch
 
-                val category = todo.categoryId?.let { categoryDao.getCategoryById(it) }
+                val category = categoryDao.getCategoryById(todo.categoryId)
 
                 val pendingTodos = todoDao.getTodosByStatus(0).first()
                 val upcomingTodos = pendingTodos.filter { it.reminderTime != null }

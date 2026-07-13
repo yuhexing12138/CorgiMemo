@@ -10,13 +10,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
+import androidx.compose.material.icons.automirrored.filled.FormatAlignRight
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.FormatAlignCenter
-import androidx.compose.material.icons.filled.FormatAlignLeft
-import androidx.compose.material.icons.filled.FormatAlignRight
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
-import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
@@ -123,7 +123,7 @@ fun RichTextFormatToolbar(
         /** ====== 第二组：列表 ====== */
         FormatButtonGroup {
             FormatIconButton(
-                imageVector = Icons.Default.FormatListBulleted,
+                imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
                 isActive = state.isUnorderedList,
                 onClick = onInsertUnorderedList,
                 contentDescription = "无序列表"
@@ -141,7 +141,7 @@ fun RichTextFormatToolbar(
         /** ====== 第三组：对齐方式 ====== */
         FormatButtonGroup {
             FormatIconButton(
-                imageVector = Icons.Default.FormatAlignLeft,
+                imageVector = Icons.AutoMirrored.Filled.FormatAlignLeft,
                 isActive = false,
                 onClick = onAlignLeft,
                 contentDescription = "左对齐"
@@ -153,7 +153,7 @@ fun RichTextFormatToolbar(
                 contentDescription = "居中对齐"
             )
             FormatIconButton(
-                imageVector = Icons.Default.FormatAlignRight,
+                imageVector = Icons.AutoMirrored.Filled.FormatAlignRight,
                 isActive = false,
                 onClick = onAlignRight,
                 contentDescription = "右对齐"

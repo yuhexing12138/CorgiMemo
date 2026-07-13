@@ -52,7 +52,7 @@ class BootReceiver : BroadcastReceiver() {
 
         /** 过滤出有提醒时间且未过期的待办，逐一恢复闹钟 */
         val validReminders = pendingTodos.filter { todo ->
-            todo.reminderTime != null && todo.reminderTime!! > System.currentTimeMillis()
+            todo.reminderTime != null && todo.reminderTime > System.currentTimeMillis()
         }
 
         if (validReminders.isNotEmpty()) {

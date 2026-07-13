@@ -165,7 +165,7 @@ object SolarTermManager {
             minDaysDiff = 365 - calculateDaysDiff(12, 31, 1, 3)
         }
 
-        return nextSolarTerm?.let { Pair(it, minDaysDiff) }
+        return Pair(nextSolarTerm, minDaysDiff)
     }
 
     /** 计算两个日期之间的天数差（近似值）*/

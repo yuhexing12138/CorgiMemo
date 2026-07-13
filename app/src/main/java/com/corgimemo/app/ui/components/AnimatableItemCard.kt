@@ -124,7 +124,7 @@ fun AnimatableItemCard(
 
     /** 最终背景颜色：优先使用参数值，否则根据选中状态决定 */
     val finalBackgroundColor = when {
-        backgroundColor != null -> backgroundColor!!
+        backgroundColor != null -> backgroundColor
         isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
         else -> MaterialTheme.colorScheme.surface
     }

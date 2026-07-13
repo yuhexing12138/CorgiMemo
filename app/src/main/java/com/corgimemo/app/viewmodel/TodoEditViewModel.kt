@@ -314,7 +314,7 @@ class TodoEditViewModel @Inject constructor(
         } else {
             _lineAttachmentsSnapshot.value = null
             // 正常情况：contentFormat 就是纯 Markdown 内容
-            _contentFormat.value = format ?: ""
+            _contentFormat.value = format
         }
     }
 
@@ -652,7 +652,7 @@ class TodoEditViewModel @Inject constructor(
                 _backgroundColor.value = todo.backgroundColor
 
                 /** 加载富文本格式化内容（Markdown 字符串） */
-                _contentFormat.value = todo.contentFormat ?: ""
+                _contentFormat.value = todo.contentFormat
 
                 /** 加载行级附件快照（从 contentFormat 中提取） */
                 loadLineAttachmentsSnapshot(todo)
@@ -687,7 +687,7 @@ class TodoEditViewModel @Inject constructor(
                  * 避免创建重复卡片。
                  */
                 val contentSnapshot = buildString {
-                    appendLine(todo.title ?: "")
+                    appendLine(todo.title)
                     subTasks.forEach { appendLine(it.title) }
                 }.trim()
 
@@ -1727,7 +1727,7 @@ class TodoEditViewModel @Inject constructor(
         if (_undoStack.isNotEmpty()) {
             val previous = _undoStack.removeLast()
             _canUndo.value = _undoStack.isNotEmpty()
-            _redoStack.addLast(previous as androidx.compose.ui.text.AnnotatedString)
+            _redoStack.addLast(previous)
             _canRedo.value = true
             persistUndoRedoStacksAsync()
             return previous
@@ -1770,7 +1770,7 @@ class TodoEditViewModel @Inject constructor(
         if (_redoStack.isNotEmpty()) {
             val restored = _redoStack.removeLast()
             _canRedo.value = _redoStack.isNotEmpty()
-            _undoStack.addLast(restored as androidx.compose.ui.text.AnnotatedString)
+            _undoStack.addLast(restored)
             _canUndo.value = true
             persistUndoRedoStacksAsync()
             return restored

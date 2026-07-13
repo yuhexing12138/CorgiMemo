@@ -172,7 +172,6 @@ fun ZonedReorderableLazyColumn(
                         is DisplayItem.PinnedDivider -> "pinned_divider"
                         is DisplayItem.PendingDivider -> "pending_divider"
                         is DisplayItem.CompletedDivider -> "completed_divider"
-                        else -> error("不可达：外层 when 已过滤非 divider 类型")
                     }
                     ReorderableItem(
                         state = reorderableState,

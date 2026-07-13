@@ -667,10 +667,10 @@ fun HomeScreen(
                                 result = result.filter { todo ->
                                     todo.title.contains(searchQuery, ignoreCase = true) ||
                                     (todo.content?.contains(searchQuery, ignoreCase = true) ?: false) ||
-                                    (todo.contentFormat?.let { format ->
+                                    (todo.contentFormat.let { format ->
                                         com.corgimemo.app.util.MarkdownParser.stripMarkdown(format)
                                             .contains(searchQuery, ignoreCase = true)
-                                    } ?: false)
+                                    })
                                 }
                             }
                             return result
@@ -2437,7 +2437,6 @@ fun GlowOverlay(level: CelebrationLevel) {
             // 超级级别：金色光晕（结合彩虹和金色）
             SuperGlowOverlay(width = glowWidth, alpha = alpha)
         }
-        else -> {}
     }
 }
 

@@ -57,7 +57,7 @@ class AchievementChecker @Inject constructor(
         val unlockedIds = achievementRepository.getUnlockedIds().toSet()
 
         // 获取任务分类类型
-        val category = completedTodo.categoryId?.let {
+        val category = completedTodo.categoryId.let {
             runCatching { categoryRepository.getCategoryById(it) }.getOrNull()
         }
         val categoryType = category?.type ?: CategoryType.LIFE

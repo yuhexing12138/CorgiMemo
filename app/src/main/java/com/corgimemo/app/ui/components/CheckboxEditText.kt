@@ -591,7 +591,7 @@ private fun TodoGroupContainer(
                                 Spacer(modifier = Modifier.width(2.dp))
                                 Box(
                                     modifier = Modifier
-                                        .clickable { onCategoryClear!!.invoke() }
+                                        .clickable { onCategoryClear.invoke() }
                                         .padding(4.dp)
                                 ) {
                                     Text(

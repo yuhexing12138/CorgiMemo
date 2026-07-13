@@ -43,9 +43,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -80,7 +80,7 @@ fun InspirationViewScreen(
     viewModel: InspirationViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -165,8 +165,9 @@ fun InspirationViewScreen(
                     val formattedDate = SimpleDateFormat("yyyy.MM.dd HH:mm", Locale.getDefault())
                         .format(Date(ins.createdAt))
                     val text = InspirationTextUtils.buildInspirationPlainText(ins, formattedDate)
-                    clipboardManager.setText(AnnotatedString(text))
                     coroutineScope.launch {
+                        val clipData = android.content.ClipData.newPlainText("inspiration", text)
+                        clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(clipData))
                         snackbarHostState.showSnackbar("文本内容已复制到剪切板")
                     }
                 },

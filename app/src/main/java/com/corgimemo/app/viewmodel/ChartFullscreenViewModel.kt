@@ -162,7 +162,7 @@ class ChartFullscreenViewModel @Inject constructor(
             val dayStartMs = date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
             val dayEndMs = dayStartMs + oneDay
             val daily = completedTodos.count {
-                it.completedAt != null && it.completedAt!! >= dayStartMs && it.completedAt!! < dayEndMs
+                it.completedAt != null && it.completedAt >= dayStartMs && it.completedAt < dayEndMs
             }
             cumulative += daily
             DailyWordCount(date, daily, cumulative)

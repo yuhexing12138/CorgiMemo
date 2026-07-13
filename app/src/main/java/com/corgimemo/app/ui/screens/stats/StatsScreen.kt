@@ -17,7 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.Button
@@ -203,7 +203,7 @@ private fun StatsCard(
     title: String,
     value: String?,
     onExpand: () -> Unit,
-    expandIcon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.OpenInNew,
+    expandIcon: androidx.compose.ui.graphics.vector.ImageVector = Icons.AutoMirrored.Default.OpenInNew,
     expandDescription: String = "横屏全屏展开",
     chart: @Composable () -> Unit
 ) {

@@ -32,6 +32,8 @@ class LocationViewModel(private val context: Context) : ViewModel() {
                     locationManager?.removeUpdates(this)
                 }
 
+                @Suppress("DEPRECATION")
+                @Deprecated("Use newer location APIs")
                 override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
                 override fun onProviderEnabled(provider: String) {}
                 override fun onProviderDisabled(provider: String) {}

@@ -291,10 +291,10 @@ class HomeViewModel @Inject constructor(
                 result = result.filter { todo ->
                     todo.title.contains(query, ignoreCase = true) ||
                     (todo.content?.contains(query, ignoreCase = true) ?: false) ||
-                    (todo.contentFormat?.let { format ->
+                    (todo.contentFormat.let { format ->
                         com.corgimemo.app.util.MarkdownParser.stripMarkdown(format)
                             .contains(query, ignoreCase = true)
-                    } ?: false)
+                    })
                 }
             }
 

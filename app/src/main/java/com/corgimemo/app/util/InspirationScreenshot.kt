@@ -194,7 +194,7 @@ object InspirationScreenshot {
             val bitmap = suspendCancellableCoroutine<Bitmap?> { continuation ->
                 val timeoutRunnable = Runnable {
                     android.util.Log.w("InspirationScreenshot", "captureHighResBitmap: 渲染超时 ${timeoutMs}ms")
-                    if (continuation.isActive) continuation.resume(null, onCancellation = null)
+                    if (continuation.isActive) continuation.resumeWith(kotlin.Result.success(null))
                 }
                 mainHandler.postDelayed(timeoutRunnable, timeoutMs)
                 // 协程被取消时清理超时定时器
@@ -242,15 +242,15 @@ object InspirationScreenshot {
                                 mainHandler.removeCallbacks(timeoutRunnable)
                                 if (bmp != null) {
                                     android.util.Log.d("InspirationScreenshot", "captureHighResBitmap: 截图成功 ${bmp.width}x${bmp.height} (尝试 $attempts 次)")
-                                    if (continuation.isActive) continuation.resume(bmp, onCancellation = null)
+                                    if (continuation.isActive) continuation.resumeWith(kotlin.Result.success(bmp))
                                 } else {
                                     android.util.Log.e("InspirationScreenshot", "captureHighResBitmap: GraphicsLayer 始终 size=0，已达最大重试次数")
-                                    if (continuation.isActive) continuation.resume(null, onCancellation = null)
+                                    if (continuation.isActive) continuation.resumeWith(kotlin.Result.success(null))
                                 }
                             } catch (e: Exception) {
                                 android.util.Log.e("InspirationScreenshot", "captureHighResBitmap: LaunchedEffect 异常", e)
                                 mainHandler.removeCallbacks(timeoutRunnable)
-                                if (continuation.isActive) continuation.resume(null, onCancellation = null)
+                                if (continuation.isActive) continuation.resumeWith(kotlin.Result.success(null))
                             }
                         }
 
@@ -274,7 +274,7 @@ object InspirationScreenshot {
                 } catch (e: Exception) {
                     android.util.Log.e("InspirationScreenshot", "captureHighResBitmap: setContent 异常", e)
                     mainHandler.removeCallbacks(timeoutRunnable)
-                    if (continuation.isActive) continuation.resume(null, onCancellation = null)
+                    if (continuation.isActive) continuation.resumeWith(kotlin.Result.success(null))
                 }
             }
             bitmap

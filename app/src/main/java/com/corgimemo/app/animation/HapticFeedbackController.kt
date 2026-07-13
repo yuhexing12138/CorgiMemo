@@ -37,7 +37,7 @@ interface HapticFeedbackController {
  */
 @Singleton
 class HapticFeedbackControllerImpl @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : HapticFeedbackController {
 
     override fun perform(type: InteractionType, enabled: Boolean) {

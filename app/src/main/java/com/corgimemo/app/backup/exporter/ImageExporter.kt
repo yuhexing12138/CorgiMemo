@@ -134,7 +134,7 @@ object ImageExporter {
             textSize = (28 * density)
             isAntiAlias = true
         }
-        canvas.drawText("🐕", (padding + 20 * density).toFloat(), (y + headerHeight / 2 + 10 * density).toFloat(), dogEmojiPaint)
+        canvas.drawText("🐕", padding + 20 * density, y + headerHeight / 2 + 10 * density, dogEmojiPaint)
 
         val titlePaint = TextPaint().apply {
             textSize = (16 * density)
@@ -142,14 +142,14 @@ object ImageExporter {
             color = Color.WHITE
             isAntiAlias = true
         }
-        canvas.drawText("CorgiMemo", (padding + 56 * density).toFloat(), (y + 32 * density).toFloat(), titlePaint)
+        canvas.drawText("CorgiMemo", padding + 56 * density, y + 32 * density, titlePaint)
 
         val subtitlePaint = TextPaint().apply {
             textSize = (11 * density)
             color = Color.parseColor("#FFF5E6")
             isAntiAlias = true
         }
-        canvas.drawText("柯基备忘录", (padding + 56 * density).toFloat(), (y + 50 * density).toFloat(), subtitlePaint)
+        canvas.drawText("柯基备忘录", padding + 56 * density, y + 50 * density, subtitlePaint)
 
         val datePaint = TextPaint().apply {
             textSize = (11 * density)
@@ -162,10 +162,10 @@ object ImageExporter {
 
         canvas.drawRoundRect(
             RectF(
-                (width - padding - dateBgWidth).toFloat(),
-                (y + headerHeight - 28 * density).toFloat(),
+                width - padding - dateBgWidth,
+                y + headerHeight - 28 * density,
                 (width - padding).toFloat(),
-                (y + headerHeight - 8 * density).toFloat()
+                y + headerHeight - 8 * density
             ),
             (6 * density),
             (6 * density),
@@ -176,8 +176,8 @@ object ImageExporter {
         )
         canvas.drawText(
             todayText,
-            (width - padding - dateWidth - (10 * density)).toFloat(),
-            (y + headerHeight - 14 * density).toFloat(),
+            width - padding - dateWidth - 10 * density,
+            y + headerHeight - 14 * density,
             datePaint
         )
 
@@ -238,10 +238,10 @@ object ImageExporter {
 
         canvas.drawRoundRect(
             RectF(
-                padding.toFloat() + (16 * density),
+                padding + 16 * density,
                 y.toFloat(),
-                padding.toFloat() + (16 * density) + categoryWidth,
-                y + (24 * density).toFloat()
+                padding + 16 * density + categoryWidth,
+                y + 24 * density
             ),
             (6 * density),
             (6 * density),
@@ -249,8 +249,8 @@ object ImageExporter {
         )
         canvas.drawText(
             categoryName,
-            padding.toFloat() + (26 * density),
-            y + (18 * density).toFloat(),
+            padding + 26 * density,
+            y + 18 * density,
             categoryTextPaint
         )
 
@@ -264,10 +264,10 @@ object ImageExporter {
 
         canvas.drawRoundRect(
             RectF(
-                (width - padding - priorityWidth).toFloat(),
+                width - padding - priorityWidth,
                 y.toFloat(),
                 (width - padding).toFloat(),
-                y + (22 * density).toFloat()
+                y + 22 * density
             ),
             (6 * density),
             (6 * density),
@@ -278,8 +278,8 @@ object ImageExporter {
         )
         canvas.drawText(
             priorityBadge.text,
-            (width - padding - priorityWidth + (8 * density)).toFloat(),
-            y + (16 * density).toFloat(),
+            width - padding - priorityWidth + 8 * density,
+            y + 16 * density,
             priorityPaint
         )
 
@@ -319,7 +319,7 @@ object ImageExporter {
                 .build()
 
             canvas.save()
-            canvas.translate((padding + 16 * density).toFloat(), y.toFloat())
+            canvas.translate(padding + 16 * density, y.toFloat())
             layout.draw(canvas)
             canvas.restore()
 
@@ -327,24 +327,24 @@ object ImageExporter {
         }
 
         if (todo.startDate != null) {
-            val startText = "🕐 开始: ${displayDateFormat.format(Date(todo.startDate!!))}"
+            val startText = "🕐 开始: ${displayDateFormat.format(Date(todo.startDate))}"
             val startPaint = TextPaint().apply {
                 textSize = (13 * density)
                 color = Color.parseColor("#5D4030")
                 isAntiAlias = true
             }
-            canvas.drawText(startText, (padding + (16 * density)).toFloat(), y.toFloat(), startPaint)
+            canvas.drawText(startText, padding + 16 * density, y.toFloat(), startPaint)
             y += (20 * density).toInt()
         }
 
         if (todo.estimatedDurationMinutes != null) {
-            val durationText = "⏱️ 预计: ${formatDuration(todo.estimatedDurationMinutes!!)}"
+            val durationText = "⏱️ 预计: ${formatDuration(todo.estimatedDurationMinutes)}"
             val durationPaint = TextPaint().apply {
                 textSize = (13 * density)
                 color = Color.parseColor("#5D4030")
                 isAntiAlias = true
             }
-            canvas.drawText(durationText, (padding + (16 * density)).toFloat(), y.toFloat(), durationPaint)
+            canvas.drawText(durationText, padding + 16 * density, y.toFloat(), durationPaint)
         }
 
         y += contentHeight - (y - startY)

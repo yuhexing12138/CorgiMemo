@@ -51,6 +51,9 @@ kotlin {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }
+
+        // 启用 Android host tests，避免 commonTest 源目录存在但未启用的警告
+        withHostTest {}
     }
 
     sourceSets.commonMain.dependencies {

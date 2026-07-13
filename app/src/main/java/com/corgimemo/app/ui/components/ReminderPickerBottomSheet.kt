@@ -405,7 +405,7 @@ fun ReminderPickerBottomSheet(
         if (hasPreview) {
             // 日历区/时间区到预览区 4dp 间距（需求2）
             Spacer(modifier = Modifier.height(4.dp))
-            inspirationPreview?.invoke(selectedDate, selectedHour, selectedMinute)
+            inspirationPreview.invoke(selectedDate, selectedHour, selectedMinute)
             // 弹性占位，推底部按钮到底部
             Spacer(modifier = Modifier.weight(1f))
         }

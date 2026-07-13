@@ -251,7 +251,7 @@ object ShareCardComponent {
                 if (!todo.content.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = todo.content!!,
+                        text = todo.content,
                         fontSize = 14.sp,
                         color = Color(0xFF5D4030),
                         lineHeight = 20.sp

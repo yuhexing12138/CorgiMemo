@@ -584,7 +584,7 @@ class InspirationEditViewModel @Inject constructor(
             inspirationRepository.getInspirationById(inspirationId)?.let { inspiration ->
                 existingInspiration = inspiration
                 _title.value = inspiration.title
-                _content.value = inspiration.content ?: ""
+                _content.value = inspiration.content
                 _categoryId.value = inspiration.categoryId
                 _priority.value = inspiration.priority
                 _startDate.value = inspiration.startDate
@@ -618,9 +618,9 @@ class InspirationEditViewModel @Inject constructor(
                 _backgroundColor.value = inspiration.backgroundColor
 
                 /** 加载富文本格式化内容（Markdown 字符串） */
-                _contentFormat.value = inspiration.contentFormat ?: ""
+                _contentFormat.value = inspiration.contentFormat
                 /** 使用库的 setMarkdown 恢复 RichTextState 格式（若已注入） */
-                val markdownToRestore = inspiration.contentFormat ?: ""
+                val markdownToRestore = inspiration.contentFormat
                 _richTextState?.let { state ->
                     if (markdownToRestore.isNotBlank()) {
                         state.setMarkdown(markdownToRestore)
@@ -1263,7 +1263,7 @@ class InspirationEditViewModel @Inject constructor(
         if (_undoStack.isNotEmpty()) {
             val previous = _undoStack.removeLast()
             _canUndo.value = _undoStack.isNotEmpty()
-            _redoStack.addLast(previous as androidx.compose.ui.text.AnnotatedString)
+            _redoStack.addLast(previous)
             _canRedo.value = true
             persistUndoRedoStacksAsync()
             return previous
@@ -1306,7 +1306,7 @@ class InspirationEditViewModel @Inject constructor(
         if (_redoStack.isNotEmpty()) {
             val restored = _redoStack.removeLast()
             _canRedo.value = _redoStack.isNotEmpty()
-            _undoStack.addLast(restored as androidx.compose.ui.text.AnnotatedString)
+            _undoStack.addLast(restored)
             _canUndo.value = true
             persistUndoRedoStacksAsync()
             return restored

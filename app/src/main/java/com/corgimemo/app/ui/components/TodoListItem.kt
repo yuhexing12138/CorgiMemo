@@ -355,7 +355,7 @@ fun TodoListItem(
                                 // 分类（内联展示，带阴影效果）— 简化模式下隐藏
                                 if (!isSimpleMode && categoryName != null) {
                                     CategoryTagWithShadow(
-                                        categoryName = categoryName!!,
+                                        categoryName = categoryName,
                                         isCompleted = todo.status == 1
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))

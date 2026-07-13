@@ -216,8 +216,8 @@ fun FloatingCorgiButton(
             paddingStartDp = targetStart
 
             // 保存位置（百分比坐标）
-            val percentX = targetStart.value.toFloat() / screenWidthDp.value
-            val percentY = 1f - (paddingBottomDp.value.toFloat() / screenHeightDp.value)
+            val percentX = targetStart.value / screenWidthDp.value
+            val percentY = 1f - (paddingBottomDp.value / screenHeightDp.value)
             onPositionChanged(percentX, percentY)
         }
     }

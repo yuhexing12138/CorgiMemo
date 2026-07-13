@@ -2,9 +2,9 @@ package com.corgimemo.app.ui.components
 
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.Label
 import androidx.compose.material.icons.outlined.Mail
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Share
@@ -75,7 +75,7 @@ fun InspirationMenuDropdown(
             },
             leadingIcon = {
                 Icon(
-                    imageVector = Icons.Outlined.Label,
+                    imageVector = Icons.AutoMirrored.Outlined.Label,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp)
                 )

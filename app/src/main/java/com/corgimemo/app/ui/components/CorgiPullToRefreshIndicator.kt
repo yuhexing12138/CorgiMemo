@@ -86,7 +86,7 @@ fun CorgiPullRefreshIndicator(
         // 5. 提示文字（位于柯基上方）
         if (layout.tipText != null) {
             Text(
-                text = layout.tipText!!,
+                text = layout.tipText,
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )

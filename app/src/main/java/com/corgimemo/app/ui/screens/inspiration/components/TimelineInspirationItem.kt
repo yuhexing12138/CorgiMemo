@@ -473,7 +473,7 @@ private fun InspirationTimelineImage(
                     )
                 }
                 is AsyncImagePainter.State.Success -> {
-                    val painterSize = state.painter?.intrinsicSize
+                    val painterSize = state.painter.intrinsicSize
                     android.util.Log.d(
                         "InspirationImage",
                         "Success: $path | file.exists=$exists | painterSize=$painterSize"
