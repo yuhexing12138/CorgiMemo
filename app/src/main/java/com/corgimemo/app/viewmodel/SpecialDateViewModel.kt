@@ -218,6 +218,44 @@ class SpecialDateViewModel @Inject constructor(
     }
 
     /**
+     * 取消归档（2026-07-13 新增）
+     *
+     * 与 archiveDate 的区别：
+     * - archiveDate 会缓存 SpecialDate 快照到 _pendingArchive（用于 Snackbar 撤回）
+     * - 本函数不缓存快照，不触发"已归档" Snackbar（因为是反向操作）
+     *
+     * 副作用：
+     * 1. repository.unarchive(id)         将 isArchived 设为 false
+     * 2. 清空 _pendingArchive             防止归档时遗留的快照误触 Snackbar
+     * 3. 恢复 _pinnedDateId               重新读库 isPinned 字段：
+     *                                      - 若该卡原本是置顶卡，archiveDate 时已被清掉，现在恢复
+     *                                      - 若该卡原本未置顶，保持 _pinnedDateId 不变
+     *
+     * @param id 特殊日期 id
+     */
+    fun unarchiveDate(id: Long) {
+        viewModelScope.launch {
+            try {
+                // 1. 先读当前 SpecialDate（用于恢复 pinned 状态）
+                val current = repository.getById(id)
+                // 2. 取消归档
+                repository.unarchive(id)
+                // 3. 清空 pendingArchive（防止旧快照触发 Snackbar）
+                _pendingArchive.value = null
+                // 4. 恢复 pinnedDateId 状态
+                //    - archiveDate 时若该卡是置顶卡会清掉 _pinnedDateId
+                //    - 取消归档时根据数据库 isPinned 字段恢复（如果其他置顶操作未改变状态）
+                if (current?.isPinned == true && _pinnedDateId.value == null) {
+                    _pinnedDateId.value = id
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SpecialDateVM", "取消归档失败: id=$id", e)
+                _pendingArchive.value = null
+            }
+        }
+    }
+
+    /**
      * 撤回归档（恢复 SpecialDate 到 isArchived=false）
      * 必须在 Snackbar 显示的 3 秒内由 UI 触发
      */

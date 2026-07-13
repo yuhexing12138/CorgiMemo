@@ -14,8 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Inventory
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -192,6 +192,7 @@ fun SpecialDateScreen(
                     onPin = viewModel::pinDate,
                     onUnpin = viewModel::unpinDate,
                     onArchive = viewModel::archiveDate,
+                    onUnarchive = viewModel::unarchiveDate,
                     onDelete = viewModel::deleteDate,
                     onCardClick = { date ->
                         navController.navigate(Screen.SpecialDateDetailWithId.createRoute(date.id))
@@ -236,6 +237,7 @@ private fun DateSectionsList(
     onPin: (Long) -> Unit,
     onUnpin: (Long) -> Unit,
     onArchive: (Long) -> Unit,
+    onUnarchive: (Long) -> Unit,
     onDelete: (Long) -> Unit,
     onCardClick: (com.corgimemo.app.viewmodel.DisplayDate) -> Unit
 ) {
@@ -301,7 +303,12 @@ private fun DateSectionsList(
                         onPinClick = {
                             if (date.isPinned) onUnpin(date.id) else onPin(date.id)
                         },
-                        onArchiveClick = { onArchive(date.id) },
+                        // 2026-07-13：根据 date.isArchived 分发到归档/取消归档
+                        // - 未归档卡片：onArchive → archiveDate，触发"已归档" Snackbar
+                        // - 已归档卡片：onUnarchive → unarchiveDate，静默取消归档，不弹 Snackbar
+                        onArchiveClick = {
+                            if (date.isArchived) onUnarchive(date.id) else onArchive(date.id)
+                        },
                         onDeleteClick = { onDelete(date.id) },
                         // 卡片水平 1dp 缩进(与待办页 SwipeableTodoBox 一致: Modifier.padding(1.dp))
                         // 配合 LazyColumn.padding(horizontal = 8.dp):
@@ -320,14 +327,13 @@ private fun DateSectionsList(
                                 actionType = SwipeActionType.PIN
                             ),
                             // 归档按钮（中间）
-                            // 2026-07-13 优化：根据卡片是否已归档切换文案与图标：
-                            //   - 未归档 → "归档" + Archive 图标
-                            //   - 已归档 → "已归档" + Inventory 库存箱图标（明确状态语义）
-                            // 点击行为保持不变（仍调用 onArchive → viewModel.archiveDate，幂等操作）
+                            // 2026-07-13 优化：根据卡片是否已归档切换文案、图标与行为：
+                            //   - 未归档 → 标签"归档"，图标 Archive，点击调用 onArchive(归档 + Snackbar 撤回)
+                            //   - 已归档 → 标签"取消归档"，图标 Unarchive，点击调用 onUnarchive(静默取消归档)
                             SwipeButtonConfig(
-                                label = if (date.isArchived) "已归档" else "归档",
+                                label = if (date.isArchived) "取消归档" else "归档",
                                 backgroundColorRes = R.color.ui_archive,
-                                icon = if (date.isArchived) Icons.Outlined.Inventory else Icons.Outlined.Archive,
+                                icon = if (date.isArchived) Icons.Outlined.Unarchive else Icons.Outlined.Archive,
                                 zIndex = 2f,
                                 shape = RoundedCornerShape(0.dp),
                                 actionType = SwipeActionType.ARCHIVE
