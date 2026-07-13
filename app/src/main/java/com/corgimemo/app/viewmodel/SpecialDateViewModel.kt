@@ -1,5 +1,6 @@
 package com.corgimemo.app.viewmodel
 
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
@@ -186,6 +187,69 @@ class SpecialDateViewModel @Inject constructor(
             val withoutPinned = filtered.filter { !it.isPinned }
             groupByDisplayDates(withoutPinned)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /**
+     * 获取指定月份各日期的圆点颜色映射（用于日期页日历弹窗）
+     *
+     * 匹配规则：SpecialDate.targetDate 的 (year, month) == 入参
+     * 同一日期有多张卡时，按 targetDate 升序排序后取首张 category.color
+     * （保证相同数据下圆点色稳定）
+     *
+     * 注意：与 groupedDates 不同，此处按原始 targetDate 匹配（不考虑 repeatType 重复规则），
+     *      严格遵循设计文档"完全匹配年月日"决策。
+     *
+     * @param year 年
+     * @param month 月（1-12）
+     * @return Map<dayOfMonth, Color>，无数据时返回空 Map
+     */
+    fun getCalendarDateColor(year: Int, month: Int): Map<Int, Color> {
+        return specialDates.value
+            .filter { item ->
+                val cal = Calendar.getInstance().apply { timeInMillis = item.targetDate }
+                cal.get(Calendar.YEAR) == year &&
+                (cal.get(Calendar.MONTH) + 1) == month
+            }
+            .groupBy { item ->
+                Calendar.getInstance().apply { timeInMillis = item.targetDate }
+                    .get(Calendar.DAY_OF_MONTH)
+            }
+            .mapValues { (_, list) ->
+                list.sortedBy { it.targetDate }.first().category.let { categoryName ->
+                    try { DateCategory.valueOf(categoryName).color } catch (e: Exception) { DateCategory.OTHER.color }
+                }
+            }
+    }
+
+    /**
+     * 获取完全匹配年月日的纪念日列表（用于日期页日历弹窗卡片区）
+     *
+     * 匹配规则：SpecialDate.targetDate 的 (year, month, day) == 入参（完全相等，不考虑 repeatType）
+     * 返回数据已通过 toDisplayDateOrNull 转换为 DisplayDate，
+     * 保证字段（effectiveDate / daysDiff / dayColor / displayText 等）与 SpecialDateScreen 列表一致。
+     *
+     * @param year 年
+     * @param month 月（1-12）
+     * @param day 日
+     * @return List<DisplayDate>，按 originalTargetDate 升序排序，转换失败项被过滤
+     */
+    fun getDatesByDate(year: Int, month: Int, day: Int): List<DisplayDate> {
+        val todayStart = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        return specialDates.value
+            .filter { item ->
+                val cal = Calendar.getInstance().apply { timeInMillis = item.targetDate }
+                cal.get(Calendar.YEAR) == year &&
+                (cal.get(Calendar.MONTH) + 1) == month &&
+                cal.get(Calendar.DAY_OF_MONTH) == day
+            }
+            .sortedBy { it.targetDate }
+            .mapNotNull { item -> toDisplayDateOrNull(item, todayStart) }
+    }
 
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query
@@ -663,68 +727,84 @@ class SpecialDateViewModel @Inject constructor(
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
             }.timeInMillis
-            val msPerDay = 24 * 60 * 60 * 1000L
 
-            return dates.mapNotNull { date ->
-                try {
-                    val effectiveDate = computeEffectiveDate(date, todayStart)
-                    val daysDiff = ((effectiveDate - todayStart) / msPerDay)
-                    val daysAbs = kotlin.math.abs(daysDiff)
+            // 2026-07-14 Task 2：复用 toDisplayDateOrNull，避免转换逻辑重复（DRY）
+            return dates.mapNotNull { date -> toDisplayDateOrNull(date, todayStart) }
+                .groupBy { it.groupType }
+        }
 
-                    /**
-                     * 分组规则（2026-07-13 重构，参考用户最新需求）：
-                     * - isArchived = true                    → EXPIRED（已归档，最优先）
-                     * - 未归档 且 targetDate >  today         → COUNTDOWN（倒计时）
-                     * - 未归档 且 targetDate <= today         → COUNTUP（正计时）
-                     *
-                     * 字段 countMode 不再影响分组归属（已移除旧逻辑）。
-                     */
-                    val groupType = when {
-                        date.isArchived -> DateGroup.EXPIRED
-                        daysDiff > 0 -> DateGroup.COUNTDOWN
-                        else -> DateGroup.COUNTUP
-                    }
+        /**
+         * 将 SpecialDate 转换为 DisplayDate（DRY 抽取，2026-07-14 Task 2）
+         *
+         * 抽取自 groupByDisplayDates 原 mapNotNull lambda 体，供：
+         * - [groupByDisplayDates]：按 groupType 分组返回 Map
+         * - [getDatesByDate]：按精确年月日匹配返回扁平 List
+         * 共享转换逻辑，保证 effectiveDate / daysDiff / dayColor / displayText 等字段一致。
+         *
+         * @param date 原始 SpecialDate
+         * @param todayStart 今日 0 点的时间戳（由调用方计算并传入，避免每条数据重复计算）
+         * @return 转换后的 DisplayDate；转换失败返回 null（被 mapNotNull 过滤）
+         */
+        internal fun toDisplayDateOrNull(date: SpecialDate, todayStart: Long): DisplayDate? {
+            return try {
+                val msPerDay = 24 * 60 * 60 * 1000L
+                val effectiveDate = computeEffectiveDate(date, todayStart)
+                val daysDiff = ((effectiveDate - todayStart) / msPerDay)
+                val daysAbs = kotlin.math.abs(daysDiff)
 
-                    val dayColor = when (groupType) {
-                        DateGroup.COUNTUP -> DayColor.GREEN
-                        DateGroup.EXPIRED -> DayColor.GRAY
-                        else -> when {
-                            daysAbs <= 3L -> DayColor.RED
-                            daysAbs <= 30L -> DayColor.ORANGE
-                            else -> DayColor.GRAY
-                        }
-                    }
-
-                    val displayText = when (groupType) {
-                        DateGroup.COUNTDOWN -> "${daysAbs}天后"
-                        DateGroup.COUNTUP -> "${daysAbs}天"
-                        DateGroup.EXPIRED -> "${daysAbs}天前"
-                    }
-
-                    DisplayDate(
-                        id = date.id,
-                        title = date.title,
-                        targetDate = effectiveDate,
-                        originalTargetDate = date.targetDate,
-                        category = try { DateCategory.valueOf(date.category) } catch (e: Exception) { DateCategory.OTHER },
-                        countMode = date.countMode,
-                        daysRemaining = daysDiff,
-                        daysAbsolute = daysAbs,
-                        dayColor = dayColor,
-                        groupType = groupType,
-                        displayText = displayText,
-                        content = date.content,
-                        tags = decodeTagsSafe(date.tags),
-                        hasImage = decodePathsSafe(date.imagePaths).isNotEmpty(),
-                        relationHint = null,
-                        isPinned = date.isPinned,
-                        // 透传 isArchived 字段，供 UI 层（SpecialDateCard）独立判断降权显示
-                        isArchived = date.isArchived
-                    )
-                } catch (e: Exception) {
-                    null
+                /**
+                 * 分组规则（2026-07-13 重构，参考用户最新需求）：
+                 * - isArchived = true                    → EXPIRED（已归档，最优先）
+                 * - 未归档 且 targetDate >  today         → COUNTDOWN（倒计时）
+                 * - 未归档 且 targetDate <= today         → COUNTUP（正计时）
+                 *
+                 * 字段 countMode 不再影响分组归属（已移除旧逻辑）。
+                 */
+                val groupType = when {
+                    date.isArchived -> DateGroup.EXPIRED
+                    daysDiff > 0 -> DateGroup.COUNTDOWN
+                    else -> DateGroup.COUNTUP
                 }
-            }.groupBy { it.groupType }
+
+                val dayColor = when (groupType) {
+                    DateGroup.COUNTUP -> DayColor.GREEN
+                    DateGroup.EXPIRED -> DayColor.GRAY
+                    else -> when {
+                        daysAbs <= 3L -> DayColor.RED
+                        daysAbs <= 30L -> DayColor.ORANGE
+                        else -> DayColor.GRAY
+                    }
+                }
+
+                val displayText = when (groupType) {
+                    DateGroup.COUNTDOWN -> "${daysAbs}天后"
+                    DateGroup.COUNTUP -> "${daysAbs}天"
+                    DateGroup.EXPIRED -> "${daysAbs}天前"
+                }
+
+                DisplayDate(
+                    id = date.id,
+                    title = date.title,
+                    targetDate = effectiveDate,
+                    originalTargetDate = date.targetDate,
+                    category = try { DateCategory.valueOf(date.category) } catch (e: Exception) { DateCategory.OTHER },
+                    countMode = date.countMode,
+                    daysRemaining = daysDiff,
+                    daysAbsolute = daysAbs,
+                    dayColor = dayColor,
+                    groupType = groupType,
+                    displayText = displayText,
+                    content = date.content,
+                    tags = decodeTagsSafe(date.tags),
+                    hasImage = decodePathsSafe(date.imagePaths).isNotEmpty(),
+                    relationHint = null,
+                    isPinned = date.isPinned,
+                    // 透传 isArchived 字段，供 UI 层（SpecialDateCard）独立判断降权显示
+                    isArchived = date.isArchived
+                )
+            } catch (e: Exception) {
+                null
+            }
         }
 
         private fun computeEffectiveDate(date: SpecialDate, todayStart: Long): Long {
@@ -850,14 +930,17 @@ enum class DayColor { RED, ORANGE, GRAY, GREEN }
  * 1. 新增枚举值时必须放在 OTHER 之前，OTHER 必须保持最末尾
  * 2. 枚举的 ordinal 不保证稳定，数据库存的是 name() 字符串，不是 ordinal
  * 3. 自定义类型在数据库中存为 "CUSTOM:xxx" 格式字符串，不属于本枚举
+ * 4. color 字段用于日历弹窗圆点配色（2026-07-14 Task 2 新增）：
+ *    - 取色参考 DateScreen.kt 占位符版本 + 项目主题色调
+ *    - 同一 category 在日历圆点和卡片图标处保持视觉一致
  */
-enum class DateCategory(val displayName: String, val emoji: String) {
-    BIRTHDAY("生日", "\uD83C\uDF82"),
-    ANNIVERSARY("纪念日", "\uD83D\uDC95"),
-    HOLIDAY("节日", "\uD83C\uDF89"),
-    LIFE("生活", "🌱"),
-    STUDY("学习", "📚"),
-    WORK("工作", "💼"),
-    ENTERTAINMENT("娱乐", "🎮"),
-    OTHER("其他", "\uD83D\uDCC5")
+enum class DateCategory(val displayName: String, val emoji: String, val color: Color) {
+    BIRTHDAY("生日", "\uD83C\uDF82", Color(0xFFFF6B9D)),
+    ANNIVERSARY("纪念日", "\uD83D\uDC95", Color(0xFFFF9A5C)),
+    HOLIDAY("节日", "\uD83C\uDF89", Color(0xFF4ECDC4)),
+    LIFE("生活", "🌱", Color(0xFF66BB6A)),
+    STUDY("学习", "📚", Color(0xFF42A5F5)),
+    WORK("工作", "💼", Color(0xFF8D6E63)),
+    ENTERTAINMENT("娱乐", "🎮", Color(0xFFAB47BC)),
+    OTHER("其他", "\uD83D\uDCC5", Color(0xFF95E1D3))
 }
