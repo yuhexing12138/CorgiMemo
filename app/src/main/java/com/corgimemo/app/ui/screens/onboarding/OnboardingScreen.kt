@@ -17,6 +17,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,11 +29,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -44,7 +47,11 @@ import kotlinx.coroutines.launch
 /**
  * 首次引导主页面
  *
- * 使用 HorizontalPager 实现 5 个引导页面的滑动翻页
+ * 使用 HorizontalPager 实现 10 个引导页面的滑动翻页
+ * 分为 3 个阶段：
+ * - 阶段1（Step 1-3）：个性化设置（欢迎/身份选择/柯基命名）
+ * - 阶段2（Step 4-8）：功能探索（功能概览/待办/灵感/日期/柯基养成）
+ * - 阶段3（Step 9-10）：权限与完成（权限请求/完成总结）
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -52,17 +59,22 @@ fun OnboardingScreen(
     navController: NavController,
     viewModel: OnboardingViewModel = hiltViewModel()
 ) {
-    val pagerState = rememberPagerState(pageCount = { 5 })
+    val pagerState = rememberPagerState(pageCount = { 10 })
     val currentPage by viewModel.currentPage.collectAsState()
     val isCompleting by viewModel.isCompleting.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
+    // 跳过确认对话框状态
+    var showSkipDialog by remember { mutableStateOf(false) }
+
+    // 同步 ViewModel 页面索引到 PagerState
     LaunchedEffect(currentPage) {
         if (pagerState.currentPage != currentPage) {
             pagerState.animateScrollToPage(currentPage)
         }
     }
 
+    // 同步 PagerState 滑动到 ViewModel
     LaunchedEffect(pagerState.currentPage) {
         viewModel.goToPage(pagerState.currentPage)
     }
@@ -75,7 +87,8 @@ fun OnboardingScreen(
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            if (currentPage > 0) {
+            // 顶部区域：Step 4-8 显示"跳过功能介绍"按钮
+            if (currentPage in 3..7) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -83,19 +96,10 @@ fun OnboardingScreen(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(
-                        onClick = {
-                            viewModel.skipOnboarding {
-                                navController.navigate(Screen.Home.route) {
-                                    popUpTo(Screen.Onboarding.route) {
-                                        inclusive = true
-                                    }
-                                }
-                            }
-                        },
-                        enabled = !isCompleting
+                        onClick = { showSkipDialog = true }
                     ) {
                         Text(
-                            text = "跳过",
+                            text = "跳过功能介绍",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -104,16 +108,34 @@ fun OnboardingScreen(
                 Spacer(modifier = Modifier.height(48.dp))
             }
 
+            // HorizontalPager 主体
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.weight(1f)
             ) { page ->
                 when (page) {
+                    // 阶段1：个性化设置（Step 1-3）
                     0 -> WelcomePage()
                     1 -> UserTypePage(viewModel = viewModel)
                     2 -> CorgiNamingPage(viewModel = viewModel)
-                    3 -> GreetingPage(corgiName = viewModel.corgiName.value)
-                    4 -> PermissionPage(
+                    // 阶段2：功能探索（Step 4-8）
+                    3 -> FunctionOverviewPage(
+                        onSkip = { showSkipDialog = true }
+                    )
+                    4 -> TodoFeaturePage(viewModel = viewModel)
+                    5 -> InspirationFeaturePage(viewModel = viewModel)
+                    6 -> DateFeaturePage()
+                    7 -> CorgiSystemPage(viewModel = viewModel)
+                    // 阶段3：权限与完成（Step 9-10）
+                    8 -> PermissionPage(
+                        viewModel = viewModel,
+                        onComplete = {
+                            viewModel.nextPage()
+                        },
+                        isCompleting = isCompleting
+                    )
+                    9 -> CompletionPage(
+                        viewModel = viewModel,
                         onComplete = {
                             viewModel.completeOnboarding {
                                 navController.navigate(Screen.Home.route) {
@@ -128,6 +150,7 @@ fun OnboardingScreen(
                 }
             }
 
+            // 底部控制栏
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -138,9 +161,10 @@ fun OnboardingScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // 页码指示器
                     PageIndicator(
                         currentPage = currentPage,
-                        totalPages = 5
+                        totalPages = 10
                     )
 
                     if (isCompleting) {
@@ -150,7 +174,8 @@ fun OnboardingScreen(
                         )
                     } else {
                         Row {
-                            if (currentPage > 0) {
+                            // 上一步按钮（非第一页显示，最后一页由 CompletionPage 自己处理）
+                            if (currentPage > 0 && currentPage < 9) {
                                 OutlinedButton(
                                     onClick = {
                                         coroutineScope.launch {
@@ -164,35 +189,67 @@ fun OnboardingScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                             }
 
-                            val canGoNext = viewModel.canGoNext()
-                            val isLast = currentPage == 4
+                            // 下一步按钮（最后一页由 CompletionPage 自己处理）
+                            if (currentPage < 9) {
+                                val canGoNext = viewModel.canGoNext()
 
-                            Button(
-                                onClick = {
-                                    coroutineScope.launch {
-                                        viewModel.nextPage()
-                                    }
-                                },
-                                enabled = canGoNext && !isLast,
-                                shape = RoundedCornerShape(24.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (canGoNext && !isLast) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant
-                                    }
-                                )
-                            ) {
-                                Text(
-                                    text = if (isLast) "完成" else "下一步",
-                                    fontWeight = FontWeight.Medium
-                                )
+                                Button(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            viewModel.nextPage()
+                                        }
+                                    },
+                                    enabled = canGoNext,
+                                    shape = RoundedCornerShape(24.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (canGoNext) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                        }
+                                    )
+                                ) {
+                                    Text(
+                                        text = "下一步",
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    // 跳过功能介绍确认对话框
+    if (showSkipDialog) {
+        AlertDialog(
+            onDismissRequest = { showSkipDialog = false },
+            title = { Text("跳过功能介绍？") },
+            text = {
+                Text("你可以随时在APP中探索这些功能。跳过后将直接进入权限设置。")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showSkipDialog = false
+                        coroutineScope.launch {
+                            viewModel.skipToPermission()
+                        }
+                    }
+                ) {
+                    Text("跳过")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showSkipDialog = false }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
     }
 }
 
