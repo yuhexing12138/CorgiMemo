@@ -2,15 +2,18 @@ package com.corgimemo.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CardSearchResult
 import com.corgimemo.app.data.model.SpecialDate
 import com.corgimemo.app.data.repository.CardRelationRepository
+import com.corgimemo.app.data.repository.DeletedSpecialDateRepository
 import com.corgimemo.app.data.repository.SpecialDateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -24,7 +27,9 @@ import javax.inject.Inject
 @HiltViewModel
 class SpecialDateViewModel @Inject constructor(
     private val repository: SpecialDateRepository,
-    private val cardRelationRepository: CardRelationRepository
+    private val cardRelationRepository: CardRelationRepository,
+    private val deletedSpecialDateRepository: DeletedSpecialDateRepository,
+    private val corgiPreferences: CorgiPreferences
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -54,6 +59,71 @@ class SpecialDateViewModel @Inject constructor(
     /** Snackbar 撤回缓存（归档时的 SpecialDate 快照） */
     private val _pendingArchive = MutableStateFlow<SpecialDate?>(null)
     val pendingArchive: StateFlow<SpecialDate?> = _pendingArchive
+
+    // ========== 下拉刷新相关（2026-07-14 新增，参考 InspirationViewModel）==========
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing
+
+    /**
+     * 下拉刷新
+     *
+     * 特殊日期数据源是 Room Flow（响应式），理论上不需要重新订阅。
+     * 此方法主要用于：
+     * 1. 触发柯基刷新动画至少显示 800ms
+     * 2. 业务上对外暴露"下拉可刷新"的语义入口
+     * 3. 后续如需添加远程同步等耗时操作可在此扩展
+     */
+    fun onRefresh() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            kotlinx.coroutines.delay(800) // 确保柯基动画至少显示 800ms
+            _isRefreshing.value = false
+        }
+    }
+
+    /** 菜单弹窗展开状态 */
+    private val _menuExpanded = MutableStateFlow(false)
+    val menuExpanded: StateFlow<Boolean> = _menuExpanded.asStateFlow()
+
+    /** 隐藏详情（持久化到 DataStore） */
+    private val _hideDetails = MutableStateFlow(false)
+    val hideDetails: StateFlow<Boolean> = _hideDetails.asStateFlow()
+
+    /** 隐藏已归档（持久化到 DataStore） */
+    private val _hideArchivedItems = MutableStateFlow(false)
+    val hideArchivedItems: StateFlow<Boolean> = _hideArchivedItems.asStateFlow()
+
+    /** 批量选择模式 */
+    private val _isBatchMode = MutableStateFlow(false)
+    val isBatchMode: StateFlow<Boolean> = _isBatchMode.asStateFlow()
+
+    /** 选中的日期 ID 集合 */
+    private val _selectedDateIds = MutableStateFlow<Set<Long>>(emptySet())
+    val selectedDateIds: StateFlow<Set<Long>> = _selectedDateIds.asStateFlow()
+
+    /** 单条删除撤回缓存（软删除快照，供 Snackbar 撤回） */
+    private val _pendingDeletedDate = MutableStateFlow<SpecialDate?>(null)
+    val pendingDeletedDate: StateFlow<SpecialDate?> = _pendingDeletedDate.asStateFlow()
+
+    /** 批量删除撤回缓存 */
+    private val _pendingBatchDeletes = MutableStateFlow<List<SpecialDate>>(emptyList())
+    val pendingBatchDeletes: StateFlow<List<SpecialDate>> = _pendingBatchDeletes.asStateFlow()
+
+    init {
+        // 订阅持久化的隐藏详情状态
+        viewModelScope.launch {
+            corgiPreferences.hideSpecialDateDetails.collect { hide ->
+                _hideDetails.value = hide
+            }
+        }
+        // 订阅持久化的隐藏已归档状态
+        viewModelScope.launch {
+            corgiPreferences.hideArchivedDateItems.collect { hide ->
+                _hideArchivedItems.value = hide
+            }
+        }
+    }
 
     /** 原始数据流（在 stateIn 之前通过 onEach 监听初始化状态） */
     val specialDates: StateFlow<List<SpecialDate>> = repository.allDates
@@ -93,14 +163,16 @@ class SpecialDateViewModel @Inject constructor(
      * 这样"用户设置的日期是未来/过去"即可直接决定分区，符合用户对日期页的预期。
      */
     val groupedDates: StateFlow<Map<DateGroup, List<DisplayDate>>> =
-        combine(specialDates, _searchQuery) { dates, query ->
-            // 1. 搜索过滤（已归档与未归档都允许搜索）
+        combine(specialDates, _searchQuery, _hideArchivedItems) { dates, query, hideArchived ->
+            // 1. 隐藏已归档过滤
+            val afterHideFilter = if (hideArchived) dates.filter { !it.isArchived } else dates
+            // 2. 搜索过滤（已归档与未归档都允许搜索）
             val filtered = if (query.isBlank()) {
-                dates
+                afterHideFilter
             } else {
-                dates.filter { it.title.contains(query, ignoreCase = true) }
+                afterHideFilter.filter { it.title.contains(query, ignoreCase = true) }
             }
-            // 2. 2026-07-14 新增：过滤掉已置顶卡，避免与 PinnedDateCard 重复显示
+            // 3. 过滤掉已置顶卡，避免与 PinnedDateCard 重复显示
             val withoutPinned = filtered.filter { !it.isPinned }
             groupByDisplayDates(withoutPinned)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
@@ -181,10 +253,58 @@ class SpecialDateViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 删除日期（软删除到回收站）
+     *
+     * 流程：
+     * 1. 从 special_dates 读取完整数据
+     * 2. 插入 deleted_special_dates 表
+     * 3. 从 special_dates 删除
+     * 4. 缓存到 _pendingDeletedDate 供 Snackbar 撤回
+     *
+     * @param id 待删除日期 ID
+     */
     fun deleteDate(id: Long) {
         viewModelScope.launch {
-            repository.getById(id)?.let { repository.delete(it) }
+            try {
+                val date = repository.getById(id) ?: return@launch
+                deletedSpecialDateRepository.insertDeletedDate(date)
+                repository.delete(date)
+                _pendingDeletedDate.value = date
+                // 若删除的是置顶卡，同步清空 _pinnedDateId
+                if (_pinnedDateId.value == id) {
+                    _pinnedDateId.value = null
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SpecialDateVM", "软删除失败: id=$id", e)
+            }
         }
+    }
+
+    /**
+     * 撤回删除（从回收站恢复）
+     * 必须在 Snackbar 显示的 3 秒内由 UI 触发
+     */
+    fun undoDelete() {
+        val snapshot = _pendingDeletedDate.value ?: return
+        viewModelScope.launch {
+            try {
+                deletedSpecialDateRepository.permanentlyDelete(snapshot.id)
+                repository.insert(snapshot)
+                _pendingDeletedDate.value = null
+            } catch (e: Exception) {
+                android.util.Log.e("SpecialDateVM", "撤回删除失败: id=${snapshot.id}", e)
+                _pendingDeletedDate.value = null
+            }
+        }
+    }
+
+    /**
+     * 仅清空 pendingDeletedDate 缓存（不调用恢复）
+     * 用途：Snackbar 3s 后无操作时调用
+     */
+    fun clearPendingDeletedDate() {
+        _pendingDeletedDate.value = null
     }
 
     fun togglePin(id: Long) {
@@ -233,6 +353,154 @@ class SpecialDateViewModel @Inject constructor(
      */
     fun clearPendingArchive() {
         _pendingArchive.value = null
+    }
+
+    /** 设置菜单展开状态 */
+    fun setMenuExpanded(expanded: Boolean) {
+        _menuExpanded.value = expanded
+    }
+
+    /** 切换隐藏详情（持久化到 DataStore） */
+    fun toggleHideDetails() {
+        viewModelScope.launch {
+            corgiPreferences.setHideSpecialDateDetails(!_hideDetails.value)
+        }
+    }
+
+    /** 切换隐藏已归档（持久化到 DataStore） */
+    fun toggleHideArchivedItems() {
+        viewModelScope.launch {
+            corgiPreferences.setHideArchivedDateItems(!_hideArchivedItems.value)
+        }
+    }
+
+    /** 进入批量选择模式 */
+    fun enterBatchMode() {
+        _isBatchMode.value = true
+        _selectedDateIds.value = emptySet()
+    }
+
+    /** 退出批量选择模式 */
+    fun exitBatchMode() {
+        _isBatchMode.value = false
+        _selectedDateIds.value = emptySet()
+    }
+
+    /** 切换选中状态 */
+    fun toggleSelection(id: Long) {
+        val current = _selectedDateIds.value.toMutableSet()
+        if (current.contains(id)) {
+            current.remove(id)
+        } else {
+            current.add(id)
+        }
+        _selectedDateIds.value = current
+    }
+
+    /** 全选（当前可见的所有日期） */
+    fun selectAll() {
+        _selectedDateIds.value = specialDates.value.map { it.id }.toSet()
+    }
+
+    /** 取消全选 */
+    fun clearSelection() {
+        _selectedDateIds.value = emptySet()
+    }
+
+    /**
+     * 批量删除（软删除到回收站）
+     * 流程：取快照 → 批量插入回收站 → 逐条从主表删除 → 缓存快照 → 退出批量模式
+     */
+    fun batchDelete() {
+        viewModelScope.launch {
+            try {
+                val ids = _selectedDateIds.value.toList()
+                val dates = ids.mapNotNull { id ->
+                    repository.getById(id)
+                }
+                if (dates.isEmpty()) return@launch
+                deletedSpecialDateRepository.insertDeletedDates(dates)
+                dates.forEach { date ->
+                    repository.delete(date)
+                }
+                _pendingBatchDeletes.value = dates
+                // 若批量删除包含置顶卡，同步清空 _pinnedDateId
+                if (_pinnedDateId.value in ids) {
+                    _pinnedDateId.value = null
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SpecialDateVM", "批量删除失败", e)
+            }
+            exitBatchMode()
+        }
+    }
+
+    /**
+     * 撤回批量删除
+     * 必须在 Snackbar 显示的 3 秒内由 UI 触发
+     */
+    fun undoBatchDelete() {
+        val dates = _pendingBatchDeletes.value
+        if (dates.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                dates.forEach { date ->
+                    deletedSpecialDateRepository.permanentlyDelete(date.id)
+                    repository.insert(date)
+                }
+                _pendingBatchDeletes.value = emptyList()
+            } catch (e: Exception) {
+                android.util.Log.e("SpecialDateVM", "撤回批量删除失败", e)
+                _pendingBatchDeletes.value = emptyList()
+            }
+        }
+    }
+
+    /** 仅清空 pendingBatchDeletes 缓存 */
+    fun clearPendingBatchDeletes() {
+        _pendingBatchDeletes.value = emptyList()
+    }
+
+    /**
+     * 批量归档
+     */
+    fun batchArchive() {
+        viewModelScope.launch {
+            try {
+                _selectedDateIds.value.forEach { id ->
+                    repository.archive(id)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SpecialDateVM", "批量归档失败", e)
+            }
+            exitBatchMode()
+        }
+    }
+
+    /**
+     * 批量创建副本
+     * 复制选中的日期卡片，新副本标题后缀"(副本)"，重置置顶和归档状态
+     */
+    fun batchDuplicate() {
+        viewModelScope.launch {
+            try {
+                _selectedDateIds.value.forEach { id ->
+                    val original = repository.getById(id) ?: return@forEach
+                    val copy = original.copy(
+                        id = 0,  // 让自增主键生成新 ID
+                        title = "${original.title}(副本)",
+                        isPinned = false,
+                        isArchived = false,
+                        createdAt = System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    repository.insert(copy)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SpecialDateVM", "批量创建副本失败", e)
+            }
+            exitBatchMode()
+        }
     }
 
     /**
