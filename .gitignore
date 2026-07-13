@@ -25,3 +25,6 @@ Thumbs.db
 
 # 日志文件
 *.log
+
+# Visual companion mockups（brainstorming skill 临时产物）
+.superpowers/
