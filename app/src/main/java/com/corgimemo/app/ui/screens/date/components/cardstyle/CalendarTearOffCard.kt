@@ -26,6 +26,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corgimemo.app.data.model.DateCardColor
+import com.corgimemo.app.data.model.DateCardStyle
+import com.corgimemo.app.data.model.backgroundColor
+import com.corgimemo.app.data.model.bigNumberColor
+import com.corgimemo.app.data.model.targetRingColor
 import com.corgimemo.app.ui.theme.UiColors
 import java.time.Instant
 import java.time.ZoneId
@@ -46,6 +51,7 @@ import java.time.ZoneId
  * @param title 标题(空时显示 "未命名")
  * @param targetDateMillis 目标日期时间戳(毫秒)
  * @param isThumbnail 是否为缩略图(默认 false)
+ * @param cardColor 卡片颜色(默认 DEFAULT,使用样式原色;由 DateCardColor 透传)
  * @param onCardClick 整个卡片点击(可选)
  */
 @Composable
@@ -54,6 +60,7 @@ fun CalendarTearOffCard(
     targetDateMillis: Long,
     modifier: Modifier = Modifier,
     isThumbnail: Boolean = false,
+    cardColor: DateCardColor = DateCardColor.DEFAULT,  // ← 新增
     onCardClick: (() -> Unit)? = null
 ) {
     val displayTitle = title.ifBlank { "未命名" }
@@ -69,13 +76,17 @@ fun CalendarTearOffCard(
     val calendarTextSize = if (isThumbnail) 8.sp else 14.sp
     val cornerRadius = if (isThumbnail) 8.dp else 20.dp
     val shadowElevation = if (isThumbnail) 0.dp else 4.dp
-    val cardBackground = Color(0xFFFFF8F0)  // 米色
+
+    // 颜色源(全部走 helper 函数;DEFAULT 时输出与现有硬编码完全一致)
+    val bgColor = backgroundColor(cardColor, DateCardStyle.CalendarTearOff)
+    val numberColor = bigNumberColor(cardColor, DateCardStyle.CalendarTearOff)
+    val ringColor = targetRingColor(cardColor)
 
     Box(
         modifier = modifier
             .shadow(shadowElevation, RoundedCornerShape(cornerRadius))
             .clip(WavyBottomShape(waveHeightPx = if (isThumbnail) 3f else 8f))
-            .background(cardBackground)
+            .background(bgColor)                          // ← 原 cardBackground (Color(0xFFFFF8F0))
             .then(if (onCardClick != null) Modifier.clickable { onCardClick() } else Modifier)
     ) {
         Column(
@@ -127,7 +138,7 @@ fun CalendarTearOffCard(
                     Text(
                         text = targetDay.toString(),
                         fontSize = 10.sp,
-                        color = UiColors.Primary,
+                        color = numberColor,  // ← 原 UiColors.Primary (缩略图版大数字)
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -138,6 +149,7 @@ fun CalendarTearOffCard(
                     month = targetMonth,
                     targetDay = targetDay,
                     textSize = calendarTextSize,
+                    targetRingColor = ringColor,  // ← 新增(透传 cardColor 派生的目标日红圈色)
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -167,7 +179,7 @@ fun CalendarTearOffCard(
                     text = daysUntil(targetDateMillis).toString(),
                     fontSize = numberFontSize,
                     fontWeight = FontWeight.Bold,
-                    color = UiColors.Primary,
+                    color = numberColor,  // ← 原 UiColors.Primary
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
