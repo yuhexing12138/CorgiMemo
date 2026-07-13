@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.screens.date
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,13 +39,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import androidx.core.view.WindowCompat
 import com.corgimemo.app.data.model.DateCardColor
 import com.corgimemo.app.data.model.DateCardStyle
+import com.corgimemo.app.data.model.topBarColor
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.screens.date.components.cardstyle.DateCardColorPicker
 import com.corgimemo.app.ui.screens.date.components.cardstyle.DateCardStyleRenderer
@@ -106,6 +113,46 @@ fun SpecialDateCardStyleScreen(
     var selectedTab by remember { mutableStateOf(DateCardStyleTab.STYLE) }
     /** 用户当前选中的卡片颜色（本地状态，初始为 DateCardColor.DEFAULT） */
     var selectedCardColor by remember { mutableStateOf<DateCardColor>(DateCardColor.DEFAULT) }
+
+    /**
+     * 主屏背景色预览(实时跟随 [selectedCardColor] 变化)
+     *
+     * 设计目标:让用户在选择颜色时,当前页背景立刻变化,直观预览"如果保存后主屏会变成什么色"。
+     * - DEFAULT:用主题默认背景色(Lavender 淡紫),保持与未选颜色前一致
+     * - 选中具体颜色:用 [topBarColor] 派生调色板色,叠加 30% 透明度(alpha=0.3f),
+     *   既能看出颜色变化,又不至于太刺眼影响卡片阅读
+     */
+    val screenBackgroundColor = if (selectedCardColor == DateCardColor.DEFAULT) {
+        MaterialTheme.colorScheme.background
+    } else {
+        topBarColor(selectedCardColor).copy(alpha = 0.3f)
+    }
+
+    /**
+     * 状态栏颜色实时跟随 [screenBackgroundColor] 变化
+     *
+     * 实现:
+     * - `window.statusBarColor`:直接设为当前主屏背景色
+     * - `isAppearanceLightStatusBars`:根据背景色亮度(luminance)自动决定状态栏图标用深色或浅色,
+     *   浅色背景(>0.5)→ 深色图标,深色背景(≤0.5)→ 浅色图标
+     *
+     * 注意:Android 15+ 上 `statusBarColor` 已 deprecated,系统强制 edge-to-edge,
+     * 但作为过渡期方案仍可工作。后续可改为 `WindowCompat.setDecorFitsSystemWindows(false)`
+     * + `SystemBarStyle.auto(...)` 配合透明状态栏。
+     *
+     * 使用 SideEffect:Compose 每次 recompose 后都会执行,确保状态栏颜色与 UI 同步。
+     * `view.isInEditMode` 守卫:IDE 预览时不执行(避免崩溃)。
+     */
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            @Suppress("DEPRECATION")
+            window.statusBarColor = screenBackgroundColor.toArgb()
+            WindowCompat.getInsetsController(window, view)
+                .isAppearanceLightStatusBars = screenBackgroundColor.luminance() > 0.5f
+        }
+    }
 
     /**
      * 返回上一页辅助函数
@@ -189,7 +236,7 @@ fun SpecialDateCardStyleScreen(
             )
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = screenBackgroundColor
     ) { paddingValues ->
         Column(
             modifier = Modifier

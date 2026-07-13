@@ -78,9 +78,12 @@ fun CalendarTearOffCard(
     val shadowElevation = if (isThumbnail) 0.dp else 4.dp
 
     // 颜色源(全部走 helper 函数;DEFAULT 时输出与现有硬编码完全一致)
-    val bgColor = backgroundColor(cardColor, DateCardStyle.CalendarTearOff)
     val numberColor = bigNumberColor(cardColor, DateCardStyle.CalendarTearOff)
     val ringColor = targetRingColor(cardColor)
+    // 卡片自身背景色**永远不跟随 cardColor 变化**,保持 DEFAULT 逻辑(米色 #FFF8F0)—
+    // 设计意图:让 cardColor 只影响主屏背景与目标日圆圈/大数字等"装饰"元素,
+    // 卡片本体始终是米色底,与主屏颜色叠加形成层次感。
+    val bgColor = backgroundColor(DateCardColor.DEFAULT, DateCardStyle.CalendarTearOff)
 
     Box(
         modifier = modifier

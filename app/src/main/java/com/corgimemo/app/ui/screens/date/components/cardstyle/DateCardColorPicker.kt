@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
@@ -22,6 +23,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.corgimemo.app.data.model.DateCardColor
+import com.corgimemo.app.data.model.topBarColor
 
 /**
  * 日期卡片颜色选择器(2×7 网格)
@@ -65,8 +67,13 @@ fun DateCardColorPicker(
     )
 
     Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = modifier
+            .fillMaxWidth()
+            // 固定高度 140dp,与 DateCardStyleSelector 一致 —
+            // 切换 Tab 时,底部选择器区域高度不变化,避免视觉跳动感
+            .height(140.dp),
+        // 两行(各 40dp 圆)+ 8dp 间距 = 88dp 内容,在 140dp 内垂直居中(上下各 26dp 空隙)
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
     ) {
         // 第 1 行
         ColorRow(items = row1, selected = selected, onSelect = onSelect, onRainbowClick = onRainbowClick)
@@ -108,43 +115,53 @@ private fun ColorCircle(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 选中态:用外层 border 绘制 2dp 白色描边圆环,内 padding(2dp)留出间隙
+    // 这样描边在外、圆在内,不会挤压圆自身颜色
+    val selectionModifier = if (isSelected) {
+        Modifier
+            .padding(2.dp)
+            .border(2.dp, Color.White, CircleShape)
+    } else {
+        Modifier
+    }
+
+    // 圆自身颜色(单色情况):Default → 白色,其他单色 → 调色板
+    // Rainbow 设为透明(由内层 Box 的 Brush 渐变覆盖)
+    val solidColor: Color = when (color) {
+        DateCardColor.Default -> Color.White
+        DateCardColor.Rainbow -> Color.Transparent
+        else -> topBarColor(color)
+    }
+
     Box(
         modifier = modifier
             .aspectRatio(1f)
-            .then(
-                if (isSelected) Modifier
-                    .border(2.dp, Color.White, CircleShape)
-                else Modifier
-            )
-            .padding(if (isSelected) 2.dp else 0.dp)
+            .then(selectionModifier)
+            // 圆自身的颜色(用 Color 重载,语义即"卡片自身颜色")
+            .background(color = solidColor, shape = CircleShape)
             .clip(CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        // 内部颜色盘(选中的外圈已留 2dp 间隙)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(CircleShape)
-                .background(
-                    when (color) {
-                        DateCardColor.Default -> Color.White
-                        DateCardColor.Rainbow -> rainbowBrush()
-                        else -> topBarColor(color)
-                    }
+        // Rainbow 渐变:用内部 Box 覆盖外层透明底,绘制 sweepGradient
+        if (color == DateCardColor.Rainbow) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(brush = rainbowBrush(), shape = CircleShape)
+            )
+        }
+
+        // Default 圆:在白底上画一条对角红线
+        if (color == DateCardColor.Default) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeWidth = 2.dp.toPx()
+                drawLine(
+                    color = Color(0xFFFF5252),
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, size.height),
+                    strokeWidth = strokeWidth
                 )
-        ) {
-            // Default 圆:在白底上画一条对角红线
-            if (color == DateCardColor.Default) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val strokeWidth = 2.dp.toPx()
-                    drawLine(
-                        color = Color(0xFFFF5252),
-                        start = Offset(0f, 0f),
-                        end = Offset(size.width, size.height),
-                        strokeWidth = strokeWidth
-                    )
-                }
             }
         }
     }

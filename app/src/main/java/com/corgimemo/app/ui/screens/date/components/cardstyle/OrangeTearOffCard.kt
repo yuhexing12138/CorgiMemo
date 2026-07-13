@@ -78,7 +78,10 @@ fun OrangeTearOffCard(
 
     // 颜色源(全部走 helper 函数;DEFAULT 时输出与现有硬编码完全一致)
     val topColor = topBarColor(cardColor)
-    val bgColor = backgroundColor(cardColor, DateCardStyle.OrangeTearOff)
+    // 卡片自身背景色**永远不跟随 cardColor 变化**,保持 DEFAULT 逻辑(白色)—
+    // 设计意图:让 cardColor 只影响主屏背景与撕页条/数字/目标日圆圈等"装饰"元素,
+    // 卡片本体始终是纯白底,与主屏颜色叠加形成层次感。
+    val bgColor = backgroundColor(DateCardColor.DEFAULT, DateCardStyle.OrangeTearOff)
     val numberColor = bigNumberColor(cardColor, DateCardStyle.OrangeTearOff)
 
     Box(
