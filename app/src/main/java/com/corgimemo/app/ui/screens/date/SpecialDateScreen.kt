@@ -1,5 +1,8 @@
 package com.corgimemo.app.ui.screens.date
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,20 +36,28 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.R
 import com.corgimemo.app.ui.navigation.Screen
+import com.corgimemo.app.ui.components.CorgiPullRefreshIndicator
+import com.corgimemo.app.ui.components.PullRefreshState
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.SwipeActionType
 import com.corgimemo.app.ui.components.SwipeButtonConfig
 import com.corgimemo.app.ui.components.SwipeableTodoBox
 import com.corgimemo.app.ui.components.UnifiedEmptyState
+import com.corgimemo.app.ui.components.rememberPullRefreshStateHolder
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import com.corgimemo.app.ui.screens.date.components.DateSectionHeader
+import com.corgimemo.app.ui.screens.date.components.PinnedDateCard
 import com.corgimemo.app.ui.screens.date.components.SpecialDateCard
 import com.corgimemo.app.viewmodel.DateGroup
 import com.corgimemo.app.viewmodel.SpecialDateViewModel
@@ -91,6 +102,16 @@ fun SpecialDateScreen(
     val pinnedDateId by viewModel.pinnedDateId.collectAsState()
     val pinnedDate by viewModel.pinnedDate.collectAsState()  // 2026-07-14 新增
     val pendingArchive by viewModel.pendingArchive.collectAsState()
+    // 2026-07-14 新增：三点按钮弹窗功能相关状态
+    val hideDetails by viewModel.hideDetails.collectAsState()
+    val isBatchMode by viewModel.isBatchMode.collectAsState()
+    val selectedDateIds by viewModel.selectedDateIds.collectAsState()
+    val pendingDeletedDate by viewModel.pendingDeletedDate.collectAsState()
+
+    // 2026-07-14 新增：批量模式下按返回键退出批量模式
+    BackHandler(enabled = isBatchMode) {
+        viewModel.exitBatchMode()
+    }
 
     /** 协程作用域：用于点击日期卡片时显示"编辑功能开发中" Snackbar */
     val coroutineScope = rememberCoroutineScope()
@@ -139,6 +160,25 @@ fun SpecialDateScreen(
         }
     }
 
+    // 2026-07-14 新增：删除撤回 Snackbar（3 秒内可点"撤回"恢复）
+    // 与归档撤回逻辑结构一致：snapshot 为 null 时直接返回，避免重复弹 Snackbar
+    LaunchedEffect(pendingDeletedDate) {
+        val host = snackbarHostState ?: return@LaunchedEffect
+        val snapshot = pendingDeletedDate ?: return@LaunchedEffect
+        val result = host.showSnackbar(
+            message = "已删除『${snapshot.title}』",
+            actionLabel = "撤回",
+            withDismissAction = true,
+            duration = SnackbarDuration.Short
+        )
+        when (result) {
+            // 用户点"撤回"：恢复数据
+            SnackbarResult.ActionPerformed -> viewModel.undoDelete()
+            // 3s 后超时 / 用户手动关闭：仅清空 pendingDeletedDate（数据已正确删除）
+            SnackbarResult.Dismissed -> viewModel.clearPendingDeletedDate()
+        }
+    }
+
     // 各分组的展开状态：COUNTDOWN + COUNTUP 默认展开，EXPIRED 默认折叠
     val expandState = remember {
         mutableStateMapOf(
@@ -184,6 +224,10 @@ fun SpecialDateScreen(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
+                // 2026-07-14 新增：下拉刷新（参考 InspirationScreen / HomeScreen）
+                // - isRefreshing 状态来自 viewModel
+                // - onRefresh 回调触发 viewModel.onRefresh()
+                val isRefreshing by viewModel.isRefreshing.collectAsState()
                 DateSectionsList(
                     pinnedDate = pinnedDate,  // 2026-07-14 新增
                     groupedDates = groupedDates,
@@ -199,7 +243,14 @@ fun SpecialDateScreen(
                     onDelete = viewModel::deleteDate,
                     onCardClick = { date ->
                         navController.navigate(Screen.SpecialDateDetailWithId.createRoute(date.id))
-                    }
+                    },
+                    // 2026-07-14 新增：三点按钮弹窗功能参数
+                    isSimpleMode = hideDetails,
+                    isBatchMode = isBatchMode,
+                    selectedDateIds = selectedDateIds,
+                    onToggleSelection = { id -> viewModel.toggleSelection(id) },
+                    isRefreshing = isRefreshing,
+                    onRefresh = { viewModel.onRefresh() }
                 )
             }
         }
@@ -243,7 +294,19 @@ private fun DateSectionsList(
     onArchive: (Long) -> Unit,
     onUnarchive: (Long) -> Unit,
     onDelete: (Long) -> Unit,
-    onCardClick: (com.corgimemo.app.viewmodel.DisplayDate) -> Unit
+    onCardClick: (com.corgimemo.app.viewmodel.DisplayDate) -> Unit,
+    // 2026-07-14 新增：三点按钮弹窗功能参数
+    /** 简洁模式：隐藏时间信息行（对应菜单"隐藏详情"） */
+    isSimpleMode: Boolean = false,
+    /** 批量选择模式：卡片显示左侧圆形选择框 */
+    isBatchMode: Boolean = false,
+    /** 批量模式下已选中的日期 id 集合 */
+    selectedDateIds: Set<Long> = emptySet(),
+    /** 批量模式下点击卡片切换选中状态的回调 */
+    onToggleSelection: (Long) -> Unit = {},
+    // 2026-07-14 新增：下拉刷新（参考 InspirationScreen / HomeScreen）
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {}
 ) {
     // 复用 Reorderable 库结构使 DateSectionHeader 与待办页 PinnedSectionHeader
     // 渲染结构完全一致(都用 ReorderableItem 包裹),保证布局对齐。
@@ -251,25 +314,90 @@ private fun DateSectionsList(
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val reorderableState = rememberReorderableLazyListState(listState) { _, _ -> }
 
-    LazyColumn(
-        state = listState,
+    // 2026-07-14 新增：下拉刷新状态（100dp 最大高度，60dp 刷新阈值）
+    val pullRefreshState = rememberPullRefreshStateHolder(
+        maxPullHeight = 100.dp,
+        refreshThreshold = 60.dp,
+        onRefresh = onRefresh
+    )
+
+    // 刷新完成时回弹 pullOffset
+    LaunchedEffect(isRefreshing) {
+        if (!isRefreshing) pullRefreshState.onRefreshComplete()
+    }
+
+    // 兜底超时回弹：监测 PULLING/RELEASING 状态持续 200ms 无新事件
+    // 与 InspirationScreen 完全一致的兜底逻辑
+    LaunchedEffect(pullRefreshState.state, pullRefreshState.pullOffset) {
+        if (pullRefreshState.state == PullRefreshState.PULLING ||
+            pullRefreshState.state == PullRefreshState.RELEASING) {
+            kotlinx.coroutines.delay(200)
+            if (pullRefreshState.state == PullRefreshState.PULLING ||
+                pullRefreshState.state == PullRefreshState.RELEASING) {
+                pullRefreshState.onRelease(forceResetFromReleasing = true)
+            }
+        }
+    }
+
+    // 外层 Box：承载 nestedScrollConnection 与柯基指示器
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            // 与待办页 ZonedReorderableLazyColumn 保持完全一致(都加 8dp 水平 padding)
-            // - 让 SectionHeader 距屏幕左侧 = 8dp = 24px(与 PinnedSectionHeader 一致)
-            // - 卡片距屏幕左侧 = 8dp + SwipeableTodoBox modifier.padding(1.dp) = 9dp(与待办页一致)
-            .padding(horizontal = 8.dp),
-        // 不再加水平 padding(原 20dp),让 SectionHeader 与待办页 PinnedSectionHeader
-        // 距离屏幕左侧完全一致(都是 16dp,来自 CollapsibleSectionHeader 内部 padding)
-        // 卡片(SwipeableTodoBox)的位置通过传 modifier = Modifier.padding(horizontal=20.dp) 保持
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .nestedScroll(pullRefreshState.nestedScrollConnection)
+            // 兜底监听"松手"事件：解决列表底部快速下滑 / 慢速下拉
+            // 放手时 onPreFling 不会被触发的卡住问题
+            .pointerInput(pullRefreshState) {
+                awaitEachGesture {
+                    // 关键：使用 Initial pass 监听 down 事件
+                    awaitFirstDown(
+                        requireUnconsumed = false,
+                        pass = PointerEventPass.Initial
+                    )
+                    // 关键：使用 Final pass 等待 up 事件
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Final)
+                    } while (event.changes.any { it.pressed })
+                    // 手指完全抬起 → 触发松手处理
+                    pullRefreshState.onRelease()
+                }
+            }
     ) {
+        // 空白区 + 居中奔跑柯基（铺满宽度，高度=pullOffset）
+        CorgiPullRefreshIndicator(
+            pullOffset = pullRefreshState.pullOffset,
+            state = pullRefreshState.state,
+            maxPullHeightPx = pullRefreshState.maxPullHeightPx,
+            refreshThresholdPx = pullRefreshState.refreshThresholdPx,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        // 内层 Box：列表整体下移 pullOffset
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { translationY = pullRefreshState.pullOffset }
+        ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    // 与待办页 ZonedReorderableLazyColumn 保持完全一致(都加 8dp 水平 padding)
+                    // - 让 SectionHeader 距屏幕左侧 = 8dp = 24px(与 PinnedSectionHeader 一致)
+                    // - 卡片距屏幕左侧 = 8dp + SwipeableTodoBox modifier.padding(1.dp) = 9dp(与待办页一致)
+                    .padding(horizontal = 8.dp),
+                // 不再加水平 padding(原 20dp),让 SectionHeader 与待办页 PinnedSectionHeader
+                // 距离屏幕左侧完全一致(都是 16dp,来自 CollapsibleSectionHeader 内部 padding)
+                // 卡片(SwipeableTodoBox)的位置通过传 modifier = Modifier.padding(horizontal=20.dp) 保持
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
         // 2026-07-14 新增：置顶卡（仅在 pinnedDate != null 时渲染，位于所有分组之上）
         pinnedDate?.let { pinned ->
             item(key = "pinned_${pinned.id}") {
                 SwipeableTodoBox(
                     isExpanded = expandedDateId == pinned.id,
                     isPinned = true,
+                    // 2026-07-14 新增：批量模式下禁用置顶卡的左滑操作
+                    isEnabled = !isBatchMode,
                     onExpandChange = { expanded ->
                         onSetExpanded(if (expanded) pinned.id else null)
                     },
@@ -351,6 +479,8 @@ private fun DateSectionsList(
                     SwipeableTodoBox(
                         isExpanded = expandedDateId == date.id,
                         isPinned = date.isPinned,
+                        // 2026-07-14 新增：批量模式下禁用普通卡的左滑操作
+                        isEnabled = !isBatchMode,
                         onExpandChange = { expanded ->
                             onSetExpanded(if (expanded) date.id else null)
                         },
@@ -407,11 +537,18 @@ private fun DateSectionsList(
                             date = date,
                             nowMs = nowMs,
                             isClickBlocked = isClickBlocked,
-                            onClick = { onCardClick(date) }
+                            onClick = { onCardClick(date) },
+                            // 2026-07-14 新增：三点按钮弹窗功能参数
+                            isSimpleMode = isSimpleMode,
+                            isBatchMode = isBatchMode,
+                            isSelected = selectedDateIds.contains(date.id),
+                            onSelectClick = { onToggleSelection(date.id) }
                         )
                     }
                 }
             }
         }
-    }
-}
+        }  // 闭合 LazyColumn lambda
+        }  // 闭合内层 Box(graphicsLayer)
+    }  // 闭合外层 Box(nestedScroll)
+}  // 闭合 DateSectionsList 函数
