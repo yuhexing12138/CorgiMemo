@@ -133,7 +133,7 @@ fun SpecialDateCardStyleScreen(
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            imageVector = Icons.Filled.ArrowBack,
                             contentDescription = "返回"
                         )
                     }
@@ -239,6 +239,9 @@ fun SpecialDateCardStyleScreen(
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             }
+
+            // 按钮后底部间距(24dp),与 QuickCreate "下一步" 按钮完全对齐
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
