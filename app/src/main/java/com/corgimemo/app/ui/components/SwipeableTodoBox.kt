@@ -86,7 +86,7 @@ val ElasticOutEasing: Easing = Easing { fraction ->
  * 可见性：必须为 public，因为 SwipeableTodoBox 是 public 函数，
  * 其参数类型 List<SwipeButtonConfig> 间接依赖本枚举。
  */
-enum class SwipeActionType { SHARE, PIN, ARCHIVE, DELETE }
+enum class SwipeActionType { SHARE, PIN, ARCHIVE, UNARCHIVE, DELETE }
 
 /**
  * 左滑操作按钮配置
@@ -502,6 +502,13 @@ fun SwipeableTodoBox(
                             { onPinClick(); onButtonClicked() }
                         }
                         SwipeActionType.ARCHIVE -> {
+                            { onArchiveClick(); onButtonClicked() }
+                        }
+                        // 2026-07-14 新增：UNARCHIVE 复用 onArchiveClick 回调
+                        // 原因：上层（SpecialDateScreen）已根据 isArchived 决定
+                        //       onArchiveClick 是调用 onArchive 还是 onUnarchive
+                        //       SwipeableTodoBox 不需要关心具体业务逻辑
+                        SwipeActionType.UNARCHIVE -> {
                             { onArchiveClick(); onButtonClicked() }
                         }
                         SwipeActionType.DELETE -> {

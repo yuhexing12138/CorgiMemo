@@ -1,12 +1,14 @@
 package com.corgimemo.app.ui.screens.date.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,10 +24,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corgimemo.app.R
 import com.corgimemo.app.viewmodel.DisplayDate
 import kotlin.math.abs
 
@@ -57,12 +62,19 @@ fun PinnedDateCard(
     onClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // 1. 时间差与颜色（与 SpecialDateCard 同样的规则）
+    // 1. 是否已归档（2026-07-14 新增：已归档+置顶时卡片视觉降级）
+    val isArchivedCard = date.isArchived
+
+    // 2. 时间差与颜色
+    //    - 已归档：灰色（与 SpecialDateCard 一致）
+    //    - 未来：主题色 primary（倒计时）
+    //    - 过去：柔和绿（正计时）
     val diff = date.targetDate - nowMs
     val isFuture = diff >= 0
     val daysDiff = diff / 86_400_000L
     val daysAbs = abs(daysDiff)
     val timeColor = when {
+        isArchivedCard -> Color(0xFF999999)
         isFuture -> MaterialTheme.colorScheme.primary
         else -> Color(0xFF7EC8A0)  // 正计时柔和绿
     }
@@ -88,17 +100,24 @@ fun PinnedDateCard(
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        modifier = modifier
-            .fillMaxWidth()
-            .then(
-                if (isClickBlocked) Modifier
-                else Modifier.combinedClickable(onClick = onClick)
-            )
+        // 2026-07-14 修复：用 if-else 直接返回 Modifier，避免 .then() 包裹
+        // 语义与之前完全一致，但更明确：左滑展开时不应用 combinedClickable（避免误触）
+        modifier = if (isClickBlocked) {
+            modifier.fillMaxWidth()
+        } else {
+            modifier
+                .fillMaxWidth()
+                .combinedClickable(onClick = onClick)
+        }
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(16.dp)
+                // 2026-07-14 新增：已归档+置顶的卡片整体降权（仅内容层）
+                // 与 SpecialDateCard 保持一致的设计：alpha 应用在内部 Row，
+                // 避免 SwipeableTodoBox 的左滑按钮区域被 Card 颜色污染
+                .then(if (isArchivedCard) Modifier.alpha(0.6f) else Modifier),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // 左区：标题 + 大数字 + 单位
@@ -137,12 +156,17 @@ fun PinnedDateCard(
                     .fillMaxHeight(),
                 contentAlignment = Alignment.Center
             ) {
-                // 装饰：emoji 大背景（半透）
-                Text(
-                    text = date.category.emoji,
-                    fontSize = 80.sp,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.alpha(0.4f)
+                // 装饰：柯基躺姿图背景（2026-07-14 从 emoji 改为 Image 资源，alpha 调整可靠）
+                // 使用 corgi_lie_3frames_01.png（躺着的柯基）作为装饰背景
+                // ContentScale.Fit 保持原始纵横比，alpha(0.15f) 让背景非常淡
+                // 2026-07-14 二次调整：固定 60dp 尺寸而非 fillMaxSize()，避免撑大 Card 高度
+                Image(
+                    painter = painterResource(id = R.drawable.corgi_lie_3frames_01),
+                    contentDescription = null,  // 装饰性图片，无需无障碍描述
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .size(60.dp)
+                        .alpha(0.15f)
                 )
                 // 倒数文本（后声明，绘制顺序自然在上层）
                 Text(
@@ -155,10 +179,10 @@ fun PinnedDateCard(
                 )
             }
 
-            // 右区：圆形头像
+            // 右区：圆形头像（2026-07-14 适度增大 48dp → 56dp，emoji 24sp → 28sp）
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(56.dp)
                     .background(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = CircleShape
@@ -167,7 +191,7 @@ fun PinnedDateCard(
             ) {
                 Text(
                     text = date.category.emoji,
-                    fontSize = 24.sp
+                    fontSize = 28.sp
                 )
             }
         }

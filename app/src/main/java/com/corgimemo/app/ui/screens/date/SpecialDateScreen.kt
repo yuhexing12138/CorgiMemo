@@ -393,6 +393,8 @@ private fun DateSectionsList(
         // 2026-07-14 新增：置顶卡（仅在 pinnedDate != null 时渲染，位于所有分组之上）
         pinnedDate?.let { pinned ->
             item(key = "pinned_${pinned.id}") {
+                // 2026-07-14 新增：已归档+置顶的卡使用"取消归档"按钮（与 EXPIRED 分组卡片一致）
+                val isPinnedArchived = pinned.isArchived
                 SwipeableTodoBox(
                     isExpanded = expandedDateId == pinned.id,
                     isPinned = true,
@@ -402,7 +404,11 @@ private fun DateSectionsList(
                         onSetExpanded(if (expanded) pinned.id else null)
                     },
                     onPinClick = { onUnpin(pinned.id) },
-                    onArchiveClick = { onArchive(pinned.id) },
+                    // 2026-07-14 修改：已归档+置顶的卡点击"取消归档"按钮调用 onUnarchive
+                    //            未归档+置顶的卡点击"归档"按钮调用 onArchive
+                    onArchiveClick = {
+                        if (isPinnedArchived) onUnarchive(pinned.id) else onArchive(pinned.id)
+                    },
                     onDeleteClick = { onDelete(pinned.id) },
                     modifier = Modifier.padding(1.dp),
                     customButtons = listOf(
@@ -414,13 +420,15 @@ private fun DateSectionsList(
                             shape = RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp),
                             actionType = SwipeActionType.PIN
                         ),
+                        // 2026-07-14 修改：已归档+置顶的卡显示"取消归档"按钮（蓝色 + Unarchive 图标）
+                        //            未归档+置顶的卡显示"归档"按钮（蓝色 + Archive 图标）
                         SwipeButtonConfig(
-                            label = "归档",
+                            label = if (isPinnedArchived) "取消归档" else "归档",
                             backgroundColorRes = R.color.ui_archive,
-                            icon = Icons.Outlined.Archive,
+                            icon = if (isPinnedArchived) Icons.Outlined.Unarchive else Icons.Outlined.Archive,
                             zIndex = 2f,
                             shape = RoundedCornerShape(0.dp),
-                            actionType = SwipeActionType.ARCHIVE
+                            actionType = if (isPinnedArchived) SwipeActionType.UNARCHIVE else SwipeActionType.ARCHIVE
                         ),
                         SwipeButtonConfig(
                             label = "删除",

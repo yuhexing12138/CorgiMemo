@@ -252,6 +252,10 @@ fun FloatingCorgiButton(
                     // 快速滑动阈值：触摸时长 < 200ms 且水平位移 > 50px
                     val SWIPE_TIME_THRESHOLD = 200L
                     val SWIPE_DISTANCE_THRESHOLD = 50f
+                    // 长按拖动启动阈值：100ms（缩短启动阻尼）
+                    val LONG_PRESS_THRESHOLD = 100L
+                    // 单帧最大位移：30px，防止 awaitPointerEvent 丢帧导致按钮瞬移
+                    val MAX_DELTA_PER_FRAME = 30f
 
                     awaitPointerEventScope {
                         while (true) {
@@ -279,8 +283,11 @@ fun FloatingCorgiButton(
                                 // 手动计算位置变化量（Compose 1.7+ 移除了 positionChange()）
                                 val currentX = currentChange.position.x
                                 val currentY = currentChange.position.y
-                                val deltaX = currentX - prevX
-                                val deltaY = currentY - prevY
+                                // 单帧 delta 限制：避免系统丢帧时按钮瞬移
+                                val rawDeltaX = currentX - prevX
+                                val rawDeltaY = currentY - prevY
+                                val deltaX = rawDeltaX.coerceIn(-MAX_DELTA_PER_FRAME, MAX_DELTA_PER_FRAME)
+                                val deltaY = rawDeltaY.coerceIn(-MAX_DELTA_PER_FRAME, MAX_DELTA_PER_FRAME)
                                 prevX = currentX
                                 prevY = currentY
 
@@ -288,9 +295,10 @@ fun FloatingCorgiButton(
                                     totalDragX += deltaX
                                     totalDragY += deltaY
 
-                                    // 长按超过 500ms 且未大幅移动
+                                    // 长按 100ms 即进入拖动模式（不再限制小位移）
+                                    // 这样快速右滑时按钮也能跟手，而不会被 swipe 截胡
                                     val elapsed = System.currentTimeMillis() - longPressStartTime
-                                    if (elapsed > 500L && kotlin.math.abs(totalDragX) < 10f && kotlin.math.abs(totalDragY) < 10f) {
+                                    if (elapsed > LONG_PRESS_THRESHOLD) {
                                         isLongPressed = true
                                         isDragging = true
                                         isLongPressTriggered = true
@@ -316,11 +324,14 @@ fun FloatingCorgiButton(
                                     val totalHorizontalDrag = kotlin.math.abs(totalDragX)
 
                                     if (isDragging) {
+                                        // 已进入拖动模式：松手直接吸附边，跳过 swipe 检测
+                                        // 这样拖动期间右滑不会被 onSwipeRight 截胡
                                         isDragging = false
                                         isLongPressed = false
                                         snapToEdge()
                                     } else if (!isLongPressTriggered) {
                                         // 快速滑动识别：触摸时长 < 200ms 且水平位移 > 阈值
+                                        // 仅在未启动拖动时生效，避免误触 onSwipeRight
                                         if (touchDuration < SWIPE_TIME_THRESHOLD && totalHorizontalDrag > SWIPE_DISTANCE_THRESHOLD) {
                                             if (totalDragX < 0) {
                                                 onSwipeLeft()
