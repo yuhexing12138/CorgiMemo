@@ -42,7 +42,9 @@ fun FunctionOverviewPage(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 24.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        // 垂直居中显示内容
+        verticalArrangement = Arrangement.Center
     ) {
         Text(
             text = "刻记⁺ 功能概览",

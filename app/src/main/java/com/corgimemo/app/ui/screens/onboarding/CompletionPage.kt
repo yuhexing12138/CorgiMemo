@@ -1,6 +1,7 @@
 package com.corgimemo.app.ui.screens.onboarding
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -58,13 +59,19 @@ fun CompletionPage(
 
     val displayName = corgiName.ifEmpty { "小柯基" }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 32.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    // Box 包裹 + Column.align(Center) + verticalScroll：
+    // 内容少时垂直居中显示，内容多时可滚动查看
+    Box(
+        modifier = Modifier.fillMaxSize()
     ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 32.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
         // 柯基 PROUD 动画
         FrameAnimation(
             animationType = AnimationType.PROUD,
@@ -152,7 +159,8 @@ fun CompletionPage(
                 fontSize = 16.sp
             )
         }
-    }
+        } // 关闭 Column
+    } // 关闭 Box
 }
 
 /**

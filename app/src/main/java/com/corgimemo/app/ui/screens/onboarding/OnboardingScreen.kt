@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -62,6 +63,8 @@ fun OnboardingScreen(
     val pagerState = rememberPagerState(pageCount = { 10 })
     val currentPage by viewModel.currentPage.collectAsState()
     val isCompleting by viewModel.isCompleting.collectAsState()
+    // 使用响应式 StateFlow，保证输入变化时按钮能实时更新启用状态
+    val canGoNext by viewModel.canGoNext.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     // 跳过确认对话框状态
@@ -88,11 +91,13 @@ fun OnboardingScreen(
             modifier = Modifier.fillMaxSize()
         ) {
             // 顶部区域：Step 4-8 显示"跳过功能介绍"按钮
+            // 使用 statusBarsPadding 让按钮自动避开系统状态栏，避免重叠
             if (currentPage in 3..7) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp, end = 16.dp),
+                        .statusBarsPadding()
+                        .padding(top = 8.dp, end = 16.dp),
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(
@@ -105,7 +110,8 @@ fun OnboardingScreen(
                     }
                 }
             } else {
-                Spacer(modifier = Modifier.height(48.dp))
+                // 非功能介绍页也预留状态栏高度，保持顶部视觉一致性
+                Spacer(modifier = Modifier.statusBarsPadding())
             }
 
             // HorizontalPager 主体
@@ -151,69 +157,70 @@ fun OnboardingScreen(
             }
 
             // 底部控制栏
+            // 上下两行布局：第一行页面指示器，第二行操作按钮，避免重叠
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 32.dp)
+                    .padding(horizontal = 24.dp, vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // 第一行：页码指示器（居中显示，单独一行）
+                PageIndicator(
+                    currentPage = currentPage,
+                    totalPages = 10
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // 第二行：上一步/下一步按钮（单独一行，靠右对齐）
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 页码指示器
-                    PageIndicator(
-                        currentPage = currentPage,
-                        totalPages = 10
-                    )
-
                     if (isCompleting) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
                             strokeWidth = 2.dp
                         )
                     } else {
-                        Row {
-                            // 上一步按钮（非第一页显示，最后一页由 CompletionPage 自己处理）
-                            if (currentPage > 0 && currentPage < 9) {
-                                OutlinedButton(
-                                    onClick = {
-                                        coroutineScope.launch {
-                                            viewModel.prevPage()
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(24.dp)
-                                ) {
-                                    Text(text = "上一步")
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
+                        // 上一步按钮（非第一页显示，最后一页由 CompletionPage 自己处理）
+                        if (currentPage > 0 && currentPage < 9) {
+                            OutlinedButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        viewModel.prevPage()
+                                    }
+                                },
+                                shape = RoundedCornerShape(24.dp)
+                            ) {
+                                Text(text = "上一步")
                             }
+                            Spacer(modifier = Modifier.width(12.dp))
+                        }
 
-                            // 下一步按钮（最后一页由 CompletionPage 自己处理）
-                            if (currentPage < 9) {
-                                val canGoNext = viewModel.canGoNext()
-
-                                Button(
-                                    onClick = {
-                                        coroutineScope.launch {
-                                            viewModel.nextPage()
-                                        }
-                                    },
-                                    enabled = canGoNext,
-                                    shape = RoundedCornerShape(24.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (canGoNext) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.surfaceVariant
-                                        }
-                                    )
-                                ) {
-                                    Text(
-                                        text = "下一步",
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
+                        // 下一步按钮（最后一页由 CompletionPage 自己处理）
+                        if (currentPage < 9) {
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        viewModel.nextPage()
+                                    }
+                                },
+                                enabled = canGoNext,
+                                shape = RoundedCornerShape(24.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (canGoNext) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    }
+                                )
+                            ) {
+                                Text(
+                                    text = "下一步",
+                                    fontWeight = FontWeight.Medium
+                                )
                             }
                         }
                     }

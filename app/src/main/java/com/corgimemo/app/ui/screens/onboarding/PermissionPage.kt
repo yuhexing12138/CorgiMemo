@@ -7,6 +7,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -99,12 +100,18 @@ fun PermissionPage(
         currentPermissionType = null
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 16.dp)
+    // Box 包裹 + Column.align(Center) + verticalScroll：
+    // 内容少时垂直居中显示，内容多时可滚动查看
+    Box(
+        modifier = Modifier.fillMaxSize()
     ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+        ) {
         Text(
             text = "权限设置",
             style = MaterialTheme.typography.headlineMedium,
@@ -176,7 +183,8 @@ fun PermissionPage(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-    }
+        } // 关闭 Column
+    } // 关闭 Box
 }
 
 /**
@@ -206,6 +214,7 @@ private fun PermissionItem(
         PermissionType.STORAGE -> "📁"
         PermissionType.MICROPHONE -> "🎤"
         PermissionType.LOCATION -> "📍"
+        PermissionType.CAMERA -> "📷"
     }
 
     val description = when (permissionType) {
@@ -213,6 +222,7 @@ private fun PermissionItem(
         PermissionType.STORAGE -> "图片/备份导出"
         PermissionType.MICROPHONE -> "语音输入待办"
         PermissionType.LOCATION -> "位置提醒"
+        PermissionType.CAMERA -> "拍照记录灵感图片"
     }
 
     Card(

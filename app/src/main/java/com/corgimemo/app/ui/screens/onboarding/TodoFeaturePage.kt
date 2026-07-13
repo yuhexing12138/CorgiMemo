@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,13 +57,19 @@ fun TodoFeaturePage(
     var selectedPriority by remember { mutableIntStateOf(1) } // 默认中优先级
     var showSuccessAnimation by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    // Box 包裹 + Column.align(Center) + verticalScroll：
+    // 内容少时垂直居中显示，内容多时可滚动查看
+    Box(
+        modifier = Modifier.fillMaxSize()
     ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
         // 上半：功能介绍
         Text(
             text = "📋 待办功能",
@@ -196,5 +203,6 @@ fun TodoFeaturePage(
                 modifier = Modifier.padding(top = 8.dp)
             )
         }
-    }
+        } // 关闭 Column
+    } // 关闭 Box
 }

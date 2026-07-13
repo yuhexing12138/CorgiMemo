@@ -12,8 +12,11 @@ import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.model.UserType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -29,7 +32,9 @@ enum class PermissionType(val permission: String, val displayName: String) {
     /** 麦克风权限 */
     MICROPHONE(android.Manifest.permission.RECORD_AUDIO, "麦克风权限"),
     /** 位置权限 */
-    LOCATION(android.Manifest.permission.ACCESS_COARSE_LOCATION, "位置权限")
+    LOCATION(android.Manifest.permission.ACCESS_COARSE_LOCATION, "位置权限"),
+    /** 相机权限 */
+    CAMERA(android.Manifest.permission.CAMERA, "相机权限")
 }
 
 /**
@@ -98,8 +103,32 @@ class OnboardingViewModel @Inject constructor(
         get() = _currentPage.value == totalPages - 1
 
     /**
-     * 是否可以进入下一页
-     * 根据当前页面判断前置条件是否满足
+     * 是否可以进入下一页（响应式 StateFlow）
+     * 根据当前页面 + 身份 + 名字 + 权限状态派生
+     * UI 应订阅此 StateFlow 而非调用 canGoNext() 方法
+     */
+    val canGoNext: StateFlow<Boolean> = combine(
+        _currentPage,
+        _selectedUserType,
+        _corgiName,
+        _permissionStates
+    ) { page, userType, name, perms ->
+        when (page) {
+            1 -> userType == UserType.STUDENT  // 身份选择页：仅学生可选
+            2 -> name.isNotEmpty()             // 命名页：需要输入名字
+            8 -> perms.values.all { it != PermissionState.NOT_REQUESTED } // 权限页：所有权限需请求过
+            else -> true
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = false
+    )
+
+    /**
+     * 是否可以进入下一页（同步方法版本）
+     * 内部 nextPage() 使用此方法进行校验
+     * UI 层应使用 canGoNext StateFlow
      *
      * @return true 如果可以进入下一页
      */
