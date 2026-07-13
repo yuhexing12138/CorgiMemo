@@ -1,5 +1,7 @@
 package com.corgimemo.app.data.model
 
+import androidx.compose.ui.graphics.Color
+
 /**
  * 日期卡片颜色(主页/QuickCreate 后的颜色选择)
  *
@@ -71,4 +73,70 @@ sealed class DateCardColor(val serialName: String) {
             else                -> DEFAULT
         }
     }
+}
+
+// ==================== helper 函数 ====================
+
+/**
+ * 顶部条颜色(橙撕 60dp 撕页条)
+ * - DEFAULT → UiColors.Primary (#FF9A5C)
+ * - 非 DEFAULT → 调色板对应色
+ * - RAINBOW → fallback 到 Primary(实际不调用,顶层用 sweepGradient 覆盖)
+ */
+fun topBarColor(color: DateCardColor): Color = when (color) {
+    DateCardColor.Default -> Color(0xFFFF9A5C)
+    DateCardColor.Blue    -> Color(0xFF3F5BFF)
+    DateCardColor.SkyBlue -> Color(0xFF1E9CFF)
+    DateCardColor.Teal    -> Color(0xFF26C7B7)
+    DateCardColor.Green   -> Color(0xFF4CAF50)
+    DateCardColor.Lime    -> Color(0xFF8BC34A)
+    DateCardColor.Orange  -> Color(0xFFFF9A5C)
+    DateCardColor.Red     -> Color(0xFFFF5252)
+    DateCardColor.Pink    -> Color(0xFFEC407A)
+    DateCardColor.Purple  -> Color(0xFF7E57C2)
+    DateCardColor.Navy    -> Color(0xFF1A237E)
+    DateCardColor.Brown   -> Color(0xFF6D4C41)
+    DateCardColor.Black   -> Color(0xFF212121)
+    DateCardColor.Rainbow -> Color(0xFFFF9A5C)
+}
+
+/**
+ * 卡片背景色(两种样式共用)
+ * - DEFAULT:
+ *   - 橙撕 → 白色
+ *   - 日历 → 米色 #FFF8F0
+ * - 非 DEFAULT → 调色板对应色(由 [topBarColor] 提供)
+ */
+fun backgroundColor(color: DateCardColor, style: DateCardStyle): Color = when (color) {
+    DateCardColor.Default -> when (style) {
+        DateCardStyle.OrangeTearOff   -> Color.White
+        DateCardStyle.CalendarTearOff -> Color(0xFFFFF8F0)
+    }
+    else -> topBarColor(color)
+}
+
+/**
+ * 大数字 64sp Bold 文字色
+ * - DEFAULT → UiColors.Primary (#FF9A5C)
+ * - 5 个深色(Navy / Black / Brown / Purple / Red)→ 两种样式都用 White,与同色背景对比
+ * - 其他浅色 → 调色板对应色
+ */
+fun bigNumberColor(color: DateCardColor, style: DateCardStyle): Color = when (color) {
+    DateCardColor.Default -> Color(0xFFFF9A5C)
+    DateCardColor.Navy,
+    DateCardColor.Black,
+    DateCardColor.Brown,
+    DateCardColor.Purple,
+    DateCardColor.Red -> Color.White
+    else -> topBarColor(color)
+}
+
+/**
+ * MiniCalendar 目标日 1.5dp 描边圈颜色
+ * - DEFAULT → 现有红色 #FFFF8A80
+ * - 非 DEFAULT → 调色板对应色
+ */
+fun targetRingColor(color: DateCardColor): Color = when (color) {
+    DateCardColor.Default -> Color(0xFFFF8A80)
+    else -> topBarColor(color)
 }
