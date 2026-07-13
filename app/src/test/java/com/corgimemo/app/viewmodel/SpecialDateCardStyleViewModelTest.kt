@@ -1,5 +1,6 @@
 package com.corgimemo.app.viewmodel
 
+import com.corgimemo.app.data.model.DateCardColor
 import com.corgimemo.app.data.model.DateCardStyle
 import com.corgimemo.app.data.model.SpecialDate
 import com.corgimemo.app.data.repository.SpecialDateRepository
@@ -70,6 +71,7 @@ class SpecialDateCardStyleViewModelTest {
         verify(repository).insert(captor.capture())
         val saved = captor.firstValue
         assertEquals("CALENDAR_TEAR_OFF", saved.cardStyle)
+        assertEquals("DEFAULT", saved.cardColor)  // 默认 DEFAULT
         assertEquals("测试", saved.title)
         assertEquals(1721260800000L, saved.targetDate)
         assertEquals("BIRTHDAY", saved.category)
@@ -130,5 +132,66 @@ class SpecialDateCardStyleViewModelTest {
         assertTrue("createdAt 应在 before 之后", saved.createdAt >= before)
         assertTrue("createdAt 应在 after 之前", saved.createdAt <= after)
         assertEquals(saved.createdAt, saved.updatedAt)
+    }
+
+    @Test
+    fun `saveNewDate constructs SpecialDate with explicit cardColor serialName`() = runTest {
+        whenever(repository.insert(any())).thenReturn(1L)
+
+        viewModel.saveNewDate(
+            title = "测试",
+            dateMillis = 1721260800000L,
+            category = "BIRTHDAY",
+            isPinned = true,
+            cardStyle = DateCardStyle.OrangeTearOff,
+            cardColor = DateCardColor.Blue
+        )
+        advanceUntilIdle()
+
+        val captor = org.mockito.kotlin.argumentCaptor<SpecialDate>()
+        verify(repository).insert(captor.capture())
+        val saved = captor.firstValue
+        assertEquals("BLUE", saved.cardColor)
+        assertEquals("ORANGE_TEAR_OFF", saved.cardStyle)
+    }
+
+    @Test
+    fun `saveNewDate persists Rainbow cardColor as serialName`() = runTest {
+        whenever(repository.insert(any())).thenReturn(1L)
+
+        viewModel.saveNewDate(
+            title = "测试",
+            dateMillis = 1721260800000L,
+            category = "OTHER",
+            isPinned = false,
+            cardStyle = DateCardStyle.OrangeTearOff,
+            cardColor = DateCardColor.Rainbow
+        )
+        advanceUntilIdle()
+
+        val captor = org.mockito.kotlin.argumentCaptor<SpecialDate>()
+        verify(repository).insert(captor.capture())
+        val saved = captor.firstValue
+        assertEquals("RAINBOW", saved.cardColor)
+    }
+
+    @Test
+    fun `saveNewDate without cardColor uses DEFAULT`() = runTest {
+        whenever(repository.insert(any())).thenReturn(1L)
+
+        // 不传 cardColor → 使用默认值 DEFAULT
+        viewModel.saveNewDate(
+            title = "测试",
+            dateMillis = 1721260800000L,
+            category = "OTHER",
+            isPinned = false,
+            cardStyle = DateCardStyle.OrangeTearOff
+        )
+        advanceUntilIdle()
+
+        val captor = org.mockito.kotlin.argumentCaptor<SpecialDate>()
+        verify(repository).insert(captor.capture())
+        val saved = captor.firstValue
+        assertEquals("DEFAULT", saved.cardColor)
     }
 }
