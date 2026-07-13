@@ -158,6 +158,10 @@ class CorgiPreferences(
         const val HIDE_DETAILS = "hide_details"
         /** V2.9: 隐藏所有已完成项 */
         const val HIDE_COMPLETED_ITEMS = "hide_completed_items"
+        /** V2.12: 日期页隐藏详情 */
+        const val HIDE_SPECIAL_DATE_DETAILS = "hide_special_date_details"
+        /** V2.12: 日期页隐藏已归档 */
+        const val HIDE_ARCHIVED_DATE_ITEMS = "hide_archived_date_items"
         /** V2.10: 待办页"置顶"区域展开状态(默认展开) */
         const val SHOW_PINNED = "show_pinned"
         /** V2.11: 待办页"待完成"区域展开状态(默认展开) */
@@ -458,6 +462,20 @@ class CorgiPreferences(
 
     suspend fun setHideCompletedItems(hide: Boolean) = withContext(Dispatchers.IO) {
         esp.edit().putBoolean(Keys.HIDE_COMPLETED_ITEMS, hide).apply()
+    }
+
+    /** V2.12: 日期页隐藏详情 */
+    val hideSpecialDateDetails: Flow<Boolean> = booleanFlow(Keys.HIDE_SPECIAL_DATE_DETAILS, false)
+
+    suspend fun setHideSpecialDateDetails(hide: Boolean) = withContext(Dispatchers.IO) {
+        esp.edit().putBoolean(Keys.HIDE_SPECIAL_DATE_DETAILS, hide).apply()
+    }
+
+    /** V2.12: 日期页隐藏已归档 */
+    val hideArchivedDateItems: Flow<Boolean> = booleanFlow(Keys.HIDE_ARCHIVED_DATE_ITEMS, false)
+
+    suspend fun setHideArchivedDateItems(hide: Boolean) = withContext(Dispatchers.IO) {
+        esp.edit().putBoolean(Keys.HIDE_ARCHIVED_DATE_ITEMS, hide).apply()
     }
 
     /** V2.10: 获取待办页"置顶"区域展开状态的Flow(默认展开) */

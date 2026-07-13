@@ -10,6 +10,7 @@ import com.corgimemo.app.data.local.db.CorgiDao
 import com.corgimemo.app.data.local.db.CorgiMemoDatabase
 import com.corgimemo.app.data.local.db.DeletedTodoDao
 import com.corgimemo.app.data.local.db.DeletedInspirationDao
+import com.corgimemo.app.data.local.db.DeletedSpecialDateDao
 import com.corgimemo.app.data.local.db.InspirationDao
 import com.corgimemo.app.data.local.db.InspirationRelationDao
 import com.corgimemo.app.data.local.db.SpecialDateDao
@@ -96,6 +97,13 @@ object DatabaseModule {
     @Singleton
     fun provideDeletedInspirationDao(database: CorgiMemoDatabase): DeletedInspirationDao {
         return database.deletedInspirationDao()
+    }
+
+    /** 特殊日期回收站 DAO */
+    @Provides
+    @Singleton
+    fun provideDeletedSpecialDateDao(database: CorgiMemoDatabase): DeletedSpecialDateDao {
+        return database.deletedSpecialDateDao()
     }
 
     /** 灵感记录 DAO */
