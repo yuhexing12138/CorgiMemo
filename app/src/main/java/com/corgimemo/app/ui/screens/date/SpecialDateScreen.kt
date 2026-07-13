@@ -89,6 +89,7 @@ fun SpecialDateScreen(
     val isDataInitialized by viewModel.isDataInitialized.collectAsState()
     val expandedDateId by viewModel.expandedDateId.collectAsState()
     val pinnedDateId by viewModel.pinnedDateId.collectAsState()
+    val pinnedDate by viewModel.pinnedDate.collectAsState()  // 2026-07-14 新增
     val pendingArchive by viewModel.pendingArchive.collectAsState()
 
     /** 协程作用域：用于点击日期卡片时显示"编辑功能开发中" Snackbar */
@@ -172,7 +173,8 @@ fun SpecialDateScreen(
             if (!isDataInitialized) {
                 // 数据未初始化：显示页面专属骨架屏，避免从空列表闪烁到有数据
                 SpecialDateSkeleton()
-            } else if (groupedDates.isEmpty()) {
+            } else if (groupedDates.isEmpty() && pinnedDate == null) {
+                // 2026-07-14 修改：仅当没有置顶卡也没有任何分组卡时才显示空态
                 UnifiedEmptyState(
                     icon = "📅",
                     title = "还没有特殊日期~",
@@ -183,6 +185,7 @@ fun SpecialDateScreen(
                 )
             } else {
                 DateSectionsList(
+                    pinnedDate = pinnedDate,  // 2026-07-14 新增
                     groupedDates = groupedDates,
                     nowMs = nowMs,
                     expandedDateId = expandedDateId,
@@ -228,6 +231,7 @@ fun SpecialDateScreen(
  */
 @Composable
 private fun DateSectionsList(
+    pinnedDate: com.corgimemo.app.viewmodel.DisplayDate?,  // 2026-07-14 新增
     groupedDates: Map<DateGroup, List<com.corgimemo.app.viewmodel.DisplayDate>>,
     nowMs: Long,
     expandedDateId: Long?,
@@ -260,6 +264,56 @@ private fun DateSectionsList(
         // 卡片(SwipeableTodoBox)的位置通过传 modifier = Modifier.padding(horizontal=20.dp) 保持
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        // 2026-07-14 新增：置顶卡（仅在 pinnedDate != null 时渲染，位于所有分组之上）
+        pinnedDate?.let { pinned ->
+            item(key = "pinned_${pinned.id}") {
+                SwipeableTodoBox(
+                    isExpanded = expandedDateId == pinned.id,
+                    isPinned = true,
+                    onExpandChange = { expanded ->
+                        onSetExpanded(if (expanded) pinned.id else null)
+                    },
+                    onPinClick = { onUnpin(pinned.id) },
+                    onArchiveClick = { onArchive(pinned.id) },
+                    onDeleteClick = { onDelete(pinned.id) },
+                    modifier = Modifier.padding(1.dp),
+                    customButtons = listOf(
+                        SwipeButtonConfig(
+                            label = "取消置顶",
+                            backgroundColorRes = R.color.ui_primary,
+                            icon = Icons.Outlined.PushPin,
+                            zIndex = 3f,
+                            shape = RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp),
+                            actionType = SwipeActionType.PIN
+                        ),
+                        SwipeButtonConfig(
+                            label = "归档",
+                            backgroundColorRes = R.color.ui_archive,
+                            icon = Icons.Outlined.Archive,
+                            zIndex = 2f,
+                            shape = RoundedCornerShape(0.dp),
+                            actionType = SwipeActionType.ARCHIVE
+                        ),
+                        SwipeButtonConfig(
+                            label = "删除",
+                            backgroundColorRes = R.color.ui_swipe_delete,
+                            icon = Icons.Outlined.Delete,
+                            zIndex = 1f,
+                            shape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
+                            actionType = SwipeActionType.DELETE
+                        )
+                    )
+                ) { isClickBlocked ->
+                    PinnedDateCard(
+                        date = pinned,
+                        nowMs = nowMs,
+                        isClickBlocked = isClickBlocked,
+                        onClick = { onCardClick(pinned) }
+                    )
+                }
+            }
+        }
+
         DateGroup.values().forEach { group ->
             val dates = groupedDates[group].orEmpty()
             if (dates.isEmpty()) return@forEach

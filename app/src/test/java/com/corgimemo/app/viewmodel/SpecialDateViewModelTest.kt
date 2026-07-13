@@ -173,4 +173,83 @@ class SpecialDateViewModelTest {
         // 归档项不应出现在任何分组中
         assertEquals(1, totalCount)
     }
+
+    // ==================== pinnedDate 派生测试 (2026-07-14 新增) ====================
+
+    @Test
+    fun `pinnedDate 无置顶卡时返回 null`() = runTest(testDispatcher) {
+        val active = listOf(
+            mockk<SpecialDate>(relaxed = true) {
+                coEvery { id } returns 1L
+                coEvery { isPinned } returns false
+                coEvery { isArchived } returns false
+            }
+        )
+        every { repository.allDates } returns kotlinx.coroutines.flow.flowOf(active)
+
+        val testVm = SpecialDateViewModel(repository, cardRelationRepository)
+        kotlinx.coroutines.test.runCurrent()
+
+        assertNull(testVm.pinnedDate.value)
+    }
+
+    @Test
+    fun `pinnedDate 单置顶卡时返回该卡 DisplayDate`() = runTest(testDispatcher) {
+        val pinned = mockk<SpecialDate>(relaxed = true) {
+            coEvery { id } returns 42L
+            coEvery { isPinned } returns true
+            coEvery { isArchived } returns false
+            coEvery { title } returns "生日"
+        }
+        every { repository.allDates } returns kotlinx.coroutines.flow.flowOf(listOf(pinned))
+
+        val testVm = SpecialDateViewModel(repository, cardRelationRepository)
+        kotlinx.coroutines.test.runCurrent()
+
+        val pd = testVm.pinnedDate.value
+        assertEquals(42L, pd?.id)
+        assertEquals("生日", pd?.title)
+    }
+
+    @Test
+    fun `pinnedDate 已归档置顶卡不返回`() = runTest(testDispatcher) {
+        val archivedPinned = mockk<SpecialDate>(relaxed = true) {
+            coEvery { id } returns 99L
+            coEvery { isPinned } returns true
+            coEvery { isArchived } returns true
+        }
+        every { repository.allDates } returns kotlinx.coroutines.flow.flowOf(listOf(archivedPinned))
+
+        val testVm = SpecialDateViewModel(repository, cardRelationRepository)
+        kotlinx.coroutines.test.runCurrent()
+
+        assertNull(testVm.pinnedDate.value)
+    }
+
+    // ==================== groupedDates 过滤置顶卡测试 (2026-07-14 新增) ====================
+
+    @Test
+    fun `groupedDates 过滤掉 isPinned 等于 true 的卡`() = runTest(testDispatcher) {
+        val pinned = mockk<SpecialDate>(relaxed = true) {
+            coEvery { id } returns 1L
+            coEvery { isPinned } returns true
+            coEvery { isArchived } returns false
+            coEvery { title } returns "置顶卡"
+        }
+        val normal = mockk<SpecialDate>(relaxed = true) {
+            coEvery { id } returns 2L
+            coEvery { isPinned } returns false
+            coEvery { isArchived } returns false
+            coEvery { title } returns "普通卡"
+        }
+        every { repository.allDates } returns kotlinx.coroutines.flow.flowOf(listOf(pinned, normal))
+
+        val testVm = SpecialDateViewModel(repository, cardRelationRepository)
+        kotlinx.coroutines.test.runCurrent()
+
+        val groups = testVm.groupedDates.value
+        val allDisplayIds = groups.values.flatten().map { it.id }
+        // 置顶卡 1L 不应在任何分组中（避免与 PinnedDateCard 重复）
+        assertEquals(listOf(2L), allDisplayIds)
+    }
 }

@@ -65,6 +65,23 @@ class SpecialDateViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**
+     * 当前置顶的未归档日期（2026-07-14 新增）
+     *
+     * 数据层分离方案：独立 StateFlow 跟踪唯一置顶卡
+     * - 已有置顶卡：返回其 DisplayDate（null 时 UI 不渲染）
+     * - 无置顶卡 / 置顶卡已归档：返回 null
+     * - UI 在所有 DateSectionHeader 之上单独渲染 PinnedDateCard
+     *
+     * 实现说明：复用 `groupByDisplayDates` 的转换逻辑避免代码重复
+     */
+    val pinnedDate: StateFlow<DisplayDate?> = specialDates
+        .map { dates ->
+            val candidates = groupByDisplayDates(dates.filter { it.isPinned && !it.isArchived })
+            candidates.values.flatten().firstOrNull()
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
      * 三组分类后的展示数据
      *
      * 分组规则（2026-07-13 重构，参考用户最新需求）：
@@ -78,13 +95,14 @@ class SpecialDateViewModel @Inject constructor(
     val groupedDates: StateFlow<Map<DateGroup, List<DisplayDate>>> =
         combine(specialDates, _searchQuery) { dates, query ->
             // 1. 搜索过滤（已归档与未归档都允许搜索）
-            if (query.isBlank()) {
+            val filtered = if (query.isBlank()) {
                 dates
             } else {
                 dates.filter { it.title.contains(query, ignoreCase = true) }
             }
-        }.map { dates ->
-            groupByDisplayDates(dates)
+            // 2. 2026-07-14 新增：过滤掉已置顶卡，避免与 PinnedDateCard 重复显示
+            val withoutPinned = filtered.filter { !it.isPinned }
+            groupByDisplayDates(withoutPinned)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     fun updateSearchQuery(query: String) {
