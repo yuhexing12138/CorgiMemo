@@ -86,6 +86,19 @@ data class SpecialDate(
     @ColumnInfo(defaultValue = "ORANGE_TEAR_OFF")
     val cardStyle: String = "ORANGE_TEAR_OFF",
 
+    /**
+     * 卡片颜色(参考"日期卡片颜色选择设计")
+     * - "DEFAULT": 无颜色,使用样式原色
+     * - "BLUE" / "SKY_BLUE" / "TEAL" / "GREEN" / "LIME" / "ORANGE":
+     *   "RED" / "PINK" / "PURPLE" / "NAVY" / "BROWN" / "BLACK": 12 个单色
+     * - "RAINBOW": 彩虹色占位(后续实现)
+     * - 默认 "DEFAULT",与 @ColumnInfo defaultValue 必须完全一致
+     *
+     * 注意:本次主页不读该字段,仅 Entity 持久化。
+     */
+    @ColumnInfo(defaultValue = "DEFAULT")
+    val cardColor: String = "DEFAULT",
+
     /** 创建时间戳(毫秒) */
     val createdAt: Long,
 
