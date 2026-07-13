@@ -7,8 +7,10 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,18 +18,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -217,4 +225,58 @@ fun SkeletonButton(
             .height(height)
             .skeleton(shape = SkeletonDefaults.PillShape)
     )
+}
+
+/**
+ * 可折叠分区头骨架
+ *
+ * 模拟 [com.corgimemo.app.ui.components.CollapsibleSectionHeader] 的布局：
+ * 箭头图标(▼展开态) + 标签文字 + 计数占位块。无点击行为。
+ *
+ * 布局常量（必须与 CollapsibleSectionHeader 保持一致）：
+ * - padding: horizontal=16.dp, vertical=8.dp
+ * - 箭头尺寸: 20.dp
+ * - 箭头→文字间距: 6.dp
+ * - 文字→计数间距: 6.dp
+ *
+ * @param label 区头标签文字（如"置顶"/"待完成"/"已完成"）
+ * @param color 文字与箭头颜色，建议传入 [com.corgimemo.app.ui.components.SectionHeaderColors] 对应常量
+ * @param modifier 修饰符
+ */
+@Composable
+fun SkeletonSectionHeader(
+    label: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 箭头图标（固定展开态 ▼，rotate=0f）
+        Icon(
+            imageVector = Icons.Filled.KeyboardArrowDown,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = color
+        )
+        Spacer(Modifier.width(6.dp))
+        // 标签文字
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = color,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(Modifier.width(6.dp))
+        // 计数占位块 "(▭)"
+        Box(
+            modifier = Modifier
+                .width(28.dp)
+                .height(14.dp)
+                .skeleton()
+        )
+    }
 }
