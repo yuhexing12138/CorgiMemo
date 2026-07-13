@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.screens.onboarding
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,8 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -22,7 +21,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -33,13 +33,15 @@ import com.corgimemo.app.viewmodel.OnboardingViewModel
 /**
  * 身份选择页
  *
- * 让用户选择自己的身份：上班族或学生
+ * 3 卡片横排：学生（可选）、上班族（灰色，后续版本）、老人模式（灰色，后续版本）
+ * 仅学生身份可选，其他点击后显示 Toast 提示
  */
 @Composable
 fun UserTypePage(
     viewModel: OnboardingViewModel
 ) {
     val selectedType by viewModel.selectedUserType.collectAsState()
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -58,7 +60,7 @@ fun UserTypePage(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "我们将为你提供个性化的待办推荐",
+            text = "我们将为你提供个性化体验",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
@@ -66,25 +68,45 @@ fun UserTypePage(
 
         Spacer(modifier = Modifier.height(40.dp))
 
+        // 3 卡片横排
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // 学生卡片（可选）
             UserTypeCard(
-                emoji = "💼",
-                title = "上班族",
-                subtitle = "工作、会议、日程",
-                isSelected = selectedType == UserType.WORKER,
-                onClick = { viewModel.setUserType(UserType.WORKER) },
-                modifier = Modifier.weight(1f)
-            )
-
-            UserTypeCard(
-                emoji = "📚",
+                emoji = "🎓",
                 title = "学生",
                 subtitle = "学习、作业、考试",
                 isSelected = selectedType == UserType.STUDENT,
+                isEnabled = true,
                 onClick = { viewModel.setUserType(UserType.STUDENT) },
+                modifier = Modifier.weight(1f)
+            )
+
+            // 上班族卡片（灰色，后续版本）
+            UserTypeCard(
+                emoji = "💼",
+                title = "上班族",
+                subtitle = "🔒 后续版本实现",
+                isSelected = false,
+                isEnabled = false,
+                onClick = {
+                    Toast.makeText(context, "此模式将在后续版本实现", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.weight(1f)
+            )
+
+            // 老人模式卡片（灰色，后续版本）
+            UserTypeCard(
+                emoji = "👴",
+                title = "老人模式",
+                subtitle = "🔒 后续版本实现",
+                isSelected = false,
+                isEnabled = false,
+                onClick = {
+                    Toast.makeText(context, "此模式将在后续版本实现", Toast.LENGTH_SHORT).show()
+                },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -108,6 +130,7 @@ fun UserTypePage(
  * @param title 身份标题
  * @param subtitle 身份描述
  * @param isSelected 是否被选中
+ * @param isEnabled 是否可用（灰色显示不可用项）
  * @param onClick 点击回调
  * @param modifier 修饰符
  */
@@ -117,13 +140,15 @@ private fun UserTypeCard(
     title: String,
     subtitle: String,
     isSelected: Boolean,
+    isEnabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier
             .height(200.dp)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .alpha(if (isEnabled) 1f else 0.5f),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) {
@@ -150,14 +175,14 @@ private fun UserTypeCard(
         ) {
             Text(
                 text = emoji,
-                fontSize = 48.sp
+                fontSize = 40.sp
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = if (isSelected) {
                     MaterialTheme.colorScheme.onPrimaryContainer
@@ -175,7 +200,8 @@ private fun UserTypeCard(
                     MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
-                }
+                },
+                textAlign = TextAlign.Center
             )
 
             if (isSelected) {

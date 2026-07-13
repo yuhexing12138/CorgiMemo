@@ -1,5 +1,8 @@
 package com.corgimemo.app.ui.screens.onboarding
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -9,15 +12,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -25,26 +31,45 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.corgimemo.app.animation.AnimationType
+import com.corgimemo.app.animation.FrameAnimation
 import com.corgimemo.app.model.UserType
 import com.corgimemo.app.viewmodel.OnboardingViewModel
 
 /**
  * 柯基命名页
  *
- * 让用户为自己的柯基助手起一个名字，
- * 根据用户身份（上班族/学生）提供不同的命名建议
+ * 展示柯基坐立帧动画预览，根据输入状态切换动画反应：
+ * - 默认（空输入）：SIT（坐立）
+ * - 输入中（1-6字符）：TILT（歪头）
+ * - 名字有效（1-8字符）：WINK（眨眼）
+ * - 接近上限（7-8字符）：WORRY（担心）
+ *
+ * 提供命名建议 Chip 列表（学生版）
  */
 @Composable
 fun CorgiNamingPage(
     viewModel: OnboardingViewModel
 ) {
     val name by viewModel.corgiName.collectAsState()
-    /** 获取用户选择的身份类型，用于显示对应的命名建议 */
     val selectedUserType by viewModel.selectedUserType.collectAsState()
     val isValidName = viewModel.isValidName()
 
-    /** 根据身份获取命名建议列表 */
+    // 根据输入状态计算动画类型
+    val animationType by remember {
+        derivedStateOf {
+            when {
+                name.isEmpty() -> AnimationType.SIT
+                name.length in 7..8 -> AnimationType.WORRY
+                name.length in 1..6 -> AnimationType.TILT
+                else -> AnimationType.SIT
+            }
+        }
+    }
+
+    // 名字有效时显示 WINK 动画（短暂反应）
+    val showWinkReaction = isValidName && name.length <= 6
+
     val suggestions = getNameSuggestions(selectedUserType)
 
     Column(
@@ -54,9 +79,12 @@ fun CorgiNamingPage(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = "🐕",
-            fontSize = 80.sp
+        // 柯基帧动画预览
+        FrameAnimation(
+            animationType = if (showWinkReaction) AnimationType.WINK else animationType,
+            fps = 12,
+            isLooping = true,
+            modifier = Modifier.size(100.dp)
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -101,19 +129,24 @@ fun CorgiNamingPage(
                     Text(
                         text = "${name.length}/8",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (name.isNotEmpty() && !isValidName) {
+                        color = if (name.length >= 7) {
                             MaterialTheme.colorScheme.error
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
                 },
-                isError = name.isNotEmpty() && !isValidName
+                isError = name.length >= 7
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (name.isNotEmpty()) {
+            // 名字预览
+            AnimatedVisibility(
+                visible = name.isNotEmpty(),
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
                 Text(
                     text = "你的柯基名字是：${name}",
                     style = MaterialTheme.typography.bodyMedium,
@@ -121,7 +154,7 @@ fun CorgiNamingPage(
                 )
             }
 
-            /** 基于身份的命名建议 Chip 列表 */
+            // 命名建议 Chip 列表
             if (suggestions.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -133,11 +166,9 @@ fun CorgiNamingPage(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                /** 使用 FlowRow 自动换行展示建议 Chip */
                 NameSuggestionChips(
                     suggestions = suggestions,
                     onSelected = { suggestion ->
-                        /** 点击建议后自动填入输入框 */
                         viewModel.setCorgiName(suggestion)
                     }
                 )
@@ -149,16 +180,16 @@ fun CorgiNamingPage(
 /**
  * 根据用户身份类型返回对应的命名建议列表
  *
- * @param userType 用户身份（上班族/学生），默认为上班族
+ * @param userType 用户身份（学生/上班族）
  * @return 命名建议字符串列表
  */
 private fun getNameSuggestions(userType: UserType?): List<String> {
     return when (userType) {
         UserType.STUDENT -> listOf(
             "学霸", "考神", "小团子", "豆豆", "书虫", "小笔",
-            "墨水", "卷王", "学渣逆袭", "小博士"
+            "墨水", "卷王", "小博士"
         )
-        else -> listOf( // 上班族（WORKER 或 null）
+        else -> listOf(
             "旺财", "小柴", "阿橘", "布丁", "发财", "奶茶",
             "摸鱼", "加薪", "周五", "小老板"
         )
@@ -167,8 +198,7 @@ private fun getNameSuggestions(userType: UserType?): List<String> {
 
 /**
  * 命名建议 Chip 列表组件
- * 使用 FlowRow 实现自动换行布局，
- * 用户点击任意建议即可快速填入名字
+ * 使用 FlowRow 实现自动换行布局
  *
  * @param suggestions 建议名称列表
  * @param onSelected 用户点击某个建议时的回调
