@@ -111,7 +111,6 @@ import com.corgimemo.app.backup.exporter.ShareIntentHelper
 import com.corgimemo.app.ui.components.AchievementUnlockDialog
 import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.ui.components.UnifiedEmptyState
-import com.corgimemo.app.ui.components.FirstTimeGuideOverlay
 import com.corgimemo.app.ui.components.SolarTermCard
 import com.corgimemo.app.ui.components.ZonedReorderableLazyColumn
 import com.corgimemo.app.ui.components.zone
@@ -293,12 +292,6 @@ fun HomeScreen(
     /** ReminderPicker 弹窗状态对象（MoreOptions → 提醒时间） */
     val reminderPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    /** 首次引导状态 */
-    var showFirstTimeGuide by remember { mutableStateOf(false) }
-
-    /** A/B 测试组别 */
-    var abGroup by remember { mutableStateOf("A") }
-
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     /**
@@ -345,16 +338,6 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) {
         viewModel.refreshGreetingIfNeeded()
-
-        /** 初始化 A/B 测试分组 */
-        val corgiPrefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
-        abGroup = corgiPrefs.getOrAssignAbGroup()
-
-        /** 检查是否需要显示首次引导 */
-        val isFirstGuideShown = corgiPrefs.getFirstGuideShown()
-        if (!isFirstGuideShown && filteredTodos.isEmpty()) {
-            showFirstTimeGuide = true
-        }
     }
 
     val outfitSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1205,45 +1188,6 @@ fun HomeScreen(
             onDismiss = {
                 viewModel.hideOutfitSheet()
             }
-        )
-    }
-
-    /** 首次使用引导覆盖层 */
-    if (showFirstTimeGuide) {
-        FirstTimeGuideOverlay(
-            onGuideCompleted = {
-                showFirstTimeGuide = false
-                /** 标记首次引导已完成并记录时间戳 */
-                coroutineScope.launch {
-                    val corgiPrefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
-                    corgiPrefs.setFirstGuideShown()
-                    corgiPrefs.saveGuideCompletedAt(System.currentTimeMillis())
-                }
-                /** 触发庆祝动画和成就解锁 */
-                viewModel.completeFirstGuide(context)
-            },
-            onFabClicked = {
-                showFirstTimeGuide = false
-                /** 标记首次引导已完成并导航到待办编辑页 */
-                coroutineScope.launch {
-                    val corgiPrefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
-                    corgiPrefs.setFirstGuideShown()
-                }
-                viewModel.onUserInteraction()
-                viewModel.setPoseForCreating()
-                navController.navigate(Screen.TodoEdit.route)
-            },
-            onTemplateSelected = { template ->
-                showFirstTimeGuide = false
-                /** 标记首次引导已完成并创建模板待办 */
-                coroutineScope.launch {
-                    val corgiPrefs = com.corgimemo.app.data.local.datastore.CorgiPreferences.getInstance(context)
-                    corgiPrefs.setFirstGuideShown()
-                    corgiPrefs.saveGuideCompletedAt(System.currentTimeMillis())
-                }
-                viewModel.createTodosFromTemplate(template)
-            },
-            abGroup = abGroup
         )
     }
 

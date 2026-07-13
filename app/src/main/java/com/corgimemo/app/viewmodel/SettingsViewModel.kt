@@ -124,16 +124,6 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * 重置首次引导状态
-     * 允许用户重新查看首次引导流程
-     */
-    fun resetFirstGuide() {
-        viewModelScope.launch {
-            corgiPreferences.resetFirstGuide()
-        }
-    }
-
-    /**
      * 导出数据
      *
      * @param context 上下文

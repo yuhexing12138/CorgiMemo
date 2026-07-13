@@ -2305,50 +2305,6 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 完成首次引导流程
-     * 触发庆祝动画、成就解锁和经验值奖励
-     *
-     * @param context 应用上下文（用于震动反馈）
-     */
-    fun completeFirstGuide(context: android.content.Context) {
-        viewModelScope.launch {
-            /** 1. 标记引导完成（已在 HomeScreen 中处理）*/
-
-            /** 2. 显示庆祝动画（SUPER 级别）*/
-            _celebrationState.value = com.corgimemo.app.viewmodel.CelebrationState(
-                isShowing = true,
-                level = com.corgimemo.app.viewmodel.CelebrationLevel.SUPER,
-                message = "🎉 欢迎加入 CorgiMemo！"
-            )
-
-            /** 3. 延迟触发成就解锁（在庆祝动画之后）*/
-            kotlinx.coroutines.delay(1500)
-
-            /** 4. 解锁"新手探险家"成就*/
-            achievementChecker.unlockAchievementManual(
-                com.corgimemo.app.animation.AchievementId.FIRST_GUIDE
-            )
-
-            /** 5. 震动反馈（成就解锁长震动）*/
-            hapticFeedbackController.perform(
-                type = InteractionType.ACHIEVEMENT_UNLOCK,
-                enabled = hapticEnabled.value
-            )
-
-            /** 6. 设置庆祝姿态*/
-            setPoseForCelebrating()
-
-            /** 7. 3 秒后自动隐藏庆祝动画*/
-            kotlinx.coroutines.delay(3000)
-            _celebrationState.value = com.corgimemo.app.viewmodel.CelebrationState(
-                isShowing = false,
-                level = com.corgimemo.app.viewmodel.CelebrationLevel.LOW,
-                message = ""
-            )
-        }
-    }
-
     // ==================== 自主行为相关方法 ====================
 
     /**
