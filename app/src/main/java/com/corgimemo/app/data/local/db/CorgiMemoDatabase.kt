@@ -30,7 +30,7 @@ import com.corgimemo.app.data.model.UserTemplateEntity
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class],
-    version = 34,
+    version = 35,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -94,7 +94,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1009,6 +1009,22 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             db.execSQL(
                 "CREATE INDEX IF NOT EXISTS index_special_dates_isArchived " +
                 "ON special_dates(isArchived)"
+            )
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 34 → 35
+     * special_dates 表新增 cardStyle 字段（卡片样式选择）
+     *
+     * 依据 .trae/rules/entity与 migration同步检查.md 规则：
+     * DEFAULT 'ORANGE_TEAR_OFF' 必须与 SpecialDate.cardStyle 的 @ColumnInfo(defaultValue = "ORANGE_TEAR_OFF") 保持一致
+     */
+    internal val MIGRATION_34_35 = object : Migration(34, 35) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // 新增 cardStyle 字段，默认值 'ORANGE_TEAR_OFF'(与 @ColumnInfo defaultValue 一致)
+            db.execSQL(
+                "ALTER TABLE special_dates ADD COLUMN cardStyle TEXT NOT NULL DEFAULT 'ORANGE_TEAR_OFF'"
             )
         }
     }
