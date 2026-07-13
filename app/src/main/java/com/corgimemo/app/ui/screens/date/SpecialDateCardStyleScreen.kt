@@ -2,13 +2,17 @@ package com.corgimemo.app.ui.screens.date
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -132,23 +136,20 @@ fun SpecialDateCardStyleScreen(
      * 状态栏颜色实时跟随 [screenBackgroundColor] 变化
      *
      * 实现:
-     * - `window.statusBarColor`:直接设为当前主屏背景色
-     * - `isAppearanceLightStatusBars`:根据背景色亮度(luminance)自动决定状态栏图标用深色或浅色,
-     *   浅色背景(>0.5)→ 深色图标,深色背景(≤0.5)→ 浅色图标
+     * - 由于 MainActivity 已启用 `enableEdgeToEdge()`(强制状态栏透明 + 内容延伸到状态栏),
+     *   `window.statusBarColor` API 在 Android 15+ (targetSdk=35) 已失效,不能直接改状态栏颜色。
+     * - 正确方案:在 Scaffold 顶部加一个 Box 延伸到状态栏区域(`windowInsetsTopHeight(WindowInsets.statusBars)`),
+     *   背景色 = [screenBackgroundColor] —— 这样状态栏区域被我们绘制的 Box 覆盖,看起来就像状态栏变色。
+     * - `isAppearanceLightStatusBars`:根据背景色亮度自动决定状态栏图标用深色或浅色,
+     *   浅色背景(>0.5)→ 深色图标,深色背景(≤0.5)→ 浅色图标。
      *
-     * 注意:Android 15+ 上 `statusBarColor` 已 deprecated,系统强制 edge-to-edge,
-     * 但作为过渡期方案仍可工作。后续可改为 `WindowCompat.setDecorFitsSystemWindows(false)`
-     * + `SystemBarStyle.auto(...)` 配合透明状态栏。
-     *
-     * 使用 SideEffect:Compose 每次 recompose 后都会执行,确保状态栏颜色与 UI 同步。
+     * 使用 SideEffect:Compose 每次 recompose 后都会执行,确保图标深浅与 UI 同步。
      * `view.isInEditMode` 守卫:IDE 预览时不执行(避免崩溃)。
      */
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            @Suppress("DEPRECATION")
-            window.statusBarColor = screenBackgroundColor.toArgb()
             WindowCompat.getInsetsController(window, view)
                 .isAppearanceLightStatusBars = screenBackgroundColor.luminance() > 0.5f
         }
@@ -218,6 +219,15 @@ fun SpecialDateCardStyleScreen(
         }
     }
 
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            // 状态栏区域颜色:由于 enableEdgeToEdge() 强制状态栏透明,
+            // 用 Box 覆盖整个屏幕(包括状态栏区域)并设背景色 = screenBackgroundColor,
+            // 实现"状态栏颜色跟随主屏背景色"的效果。
+            // Scaffold 自身 containerColor 设为 Color.Transparent,让 Box 背景透出。
+            .background(screenBackgroundColor)
+    ) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -231,12 +241,17 @@ fun SpecialDateCardStyleScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    // 容器透明,让外层 Box 的 screenBackgroundColor 透出,
+                    // 实现"状态栏区域颜色 = 主屏背景色"的效果。
+                    // 注意:BackHandler 时 TopAppBar 不会画 background,只画内容(返回箭头)
+                    containerColor = Color.Transparent
                 )
             )
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        containerColor = screenBackgroundColor
+        // 容器背景透明,让外层 Box 的 screenBackgroundColor 透出,
+        // 同时实现"状态栏区域颜色跟随主屏背景色变"的效果
+        containerColor = Color.Transparent
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -345,5 +360,6 @@ fun SpecialDateCardStyleScreen(
             // 按钮后底部间距(24dp),与 QuickCreate "下一步" 按钮完全对齐
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }  // 关闭外层 Box(用于状态栏区域颜色)
     }
 }
