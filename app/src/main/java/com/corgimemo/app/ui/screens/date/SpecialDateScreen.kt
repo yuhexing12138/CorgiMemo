@@ -98,6 +98,19 @@ fun SpecialDateScreen(
         }
     }
 
+    // 接收 SpecialDateCardStyleScreen 的保存成功信号（通过 SavedStateHandle）
+    // 信号源：SpecialDateCardStyleScreen 在 saveState == Success 时
+    //        调用 previousBackStackEntry.savedStateHandle.set("date_saved", true) 并 popBackStack
+    // 信号消费：此处 LaunchedEffect 监听到 true 时弹"保存成功" Snackbar,并 remove 标记
+    //          防止旋转屏幕 / recompose 重复触发
+    val dateSaved = navController.currentBackStackEntry?.savedStateHandle?.get<Boolean>("date_saved")
+    LaunchedEffect(dateSaved) {
+        if (dateSaved == true) {
+            snackbarHostState?.showSnackbar("保存成功")
+            navController.currentBackStackEntry?.savedStateHandle?.remove<Boolean>("date_saved")
+        }
+    }
+
     // Snackbar：归档后 3 秒内可点"撤回"恢复
     // snackbarHostState 由 MainScreen 顶层 Scaffold 创建并通过参数传入
     // 深链场景下可能为 null，此时跳过 showSnackbar 调用（撤回功能静默失效）

@@ -44,6 +44,33 @@ sealed class Screen(val route: String) {
     // 特殊日期快速创建页面（重构版：4 行核心功能 + 下一步）
     object SpecialDateQuickCreate : Screen("date_create")                  // 日期新建快速创建页
 
+    // 特殊日期卡片样式选择页（新建日期流程第二步：选样式后保存落库）
+    object SpecialDateCardStyle :
+        Screen("date_card_style?title={title}&date={date}&category={category}&pin={pin}") {
+        /**
+         * 构建路由字符串
+         *
+         * - title 走 URL 编码（中文名 / 特殊字符安全）
+         * - category 走 URL 编码（自定义分类可能含特殊字符）
+         * - date / pin 为基础类型直接拼接
+         *
+         * @param title    来自 QuickCreate 的名称（空值兜底为"未命名"）
+         * @param date     来自 QuickCreate 的目标日期时间戳（毫秒）
+         * @param category 来自 QuickCreate 的分类（预设枚举名或自定义字符串，空值兜底为"OTHER"）
+         * @param pin      来自 QuickCreate 的置顶开关
+         */
+        fun createRoute(
+            title: String,
+            date: Long,
+            category: String,
+            pin: Boolean
+        ): String {
+            val encodedTitle = android.net.Uri.encode(title.ifBlank { "未命名" })
+            val encodedCategory = android.net.Uri.encode(category.ifBlank { "OTHER" })
+            return "date_card_style?title=$encodedTitle&date=$date&category=$encodedCategory&pin=$pin"
+        }
+    }
+
     // 图片全屏预览页面
     object ImagePreview : Screen("image_preview")                          // 图片预览（参数通过 NavBackStackEntry 传递）
 

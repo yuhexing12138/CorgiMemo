@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
+import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.screens.date.components.AvatarWithEdit
 import com.corgimemo.app.ui.screens.date.components.DateTypePickerBottomSheet
 import com.corgimemo.app.ui.screens.date.components.SpecialDateFeatureRow
@@ -209,12 +210,28 @@ fun SpecialDateQuickCreateScreen(
             Spacer(modifier = Modifier.weight(1f))
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 底部"下一步"按钮
+            // 底部"下一步"按钮(跳转卡片样式选择页)
             Button(
                 onClick = {
-                    coroutineScope.launch {
-                        snackbarHostState.showSnackbar("下一步页面$developingMessage")
+                    // 防御：必须先选日期,否则给出 Snackbar 提示并终止跳转
+                    if (selectedDateMillis == null) {
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("请先选择日期")
+                        }
+                        return@Button
                     }
+                    // 分类值约定:用户选择自定义时直接存 customCategoryName(如 "旅行"),
+                    // 选择预设时存 DateCategory.name(如 "BIRTHDAY")。不添加任何前缀。
+                    val categoryValue = customCategoryName ?: selectedCategory.name
+                    // 跳转 SpecialDateCardStyleScreen,4 个参数通过 URL Query 传递
+                    navController.navigate(
+                        Screen.SpecialDateCardStyle.createRoute(
+                            title = title.ifBlank { "未命名" },
+                            date = selectedDateMillis!!,
+                            category = categoryValue,
+                            pin = isPinned
+                        )
+                    )
                 },
                 modifier = Modifier
                     .fillMaxWidth()

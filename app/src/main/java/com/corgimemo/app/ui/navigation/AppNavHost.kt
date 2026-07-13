@@ -24,6 +24,7 @@ import com.corgimemo.app.ui.screens.corgi.CorgiDetailScreen
 import com.corgimemo.app.ui.screens.date.DateScreenPlaceholder
 import com.corgimemo.app.ui.screens.date.SpecialDateScreen
 import com.corgimemo.app.ui.screens.date.SpecialDateQuickCreateScreen
+import com.corgimemo.app.ui.screens.date.SpecialDateCardStyleScreen
 import com.corgimemo.app.ui.screens.inspire.InspireScreenPlaceholder
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.inspiration.InspirationEditScreen
@@ -165,6 +166,31 @@ fun AppNavHost(
         // 特殊日期快速创建页面路由（重构版：4 行核心 + 下一步）
         composable(route = Screen.SpecialDateQuickCreate.route) {
             SpecialDateQuickCreateScreen(navController = navController)
+        }
+
+        // 特殊日期卡片样式选择页路由（新建日期流程第二步：选样式 + 保存落库）
+        // 参数：title(String) / date(Long) / category(String) / pin(Boolean)
+        composable(
+            route = Screen.SpecialDateCardStyle.route,
+            arguments = listOf(
+                navArgument("title") { type = NavType.StringType; defaultValue = "" },
+                navArgument("date") { type = NavType.LongType; defaultValue = 0L },
+                navArgument("category") { type = NavType.StringType; defaultValue = "OTHER" },
+                navArgument("pin") { type = NavType.BoolType; defaultValue = false }
+            )
+        ) { entry ->
+            // 从 NavBackStackEntry.arguments 中读取 4 个路由参数
+            val title = entry.arguments?.getString("title").orEmpty()
+            val date = entry.arguments?.getLong("date") ?: 0L
+            val category = entry.arguments?.getString("category") ?: "OTHER"
+            val pin = entry.arguments?.getBoolean("pin") ?: false
+            SpecialDateCardStyleScreen(
+                navController = navController,
+                title = title,
+                dateMillis = date,
+                category = category,
+                isPinned = pin
+            )
         }
 
         // 灵感编辑页面路由
