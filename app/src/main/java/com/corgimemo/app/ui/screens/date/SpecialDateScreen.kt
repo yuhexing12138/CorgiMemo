@@ -42,6 +42,8 @@ import com.corgimemo.app.ui.components.SwipeActionType
 import com.corgimemo.app.ui.components.SwipeButtonConfig
 import com.corgimemo.app.ui.components.SwipeableTodoBox
 import com.corgimemo.app.ui.components.UnifiedEmptyState
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import com.corgimemo.app.ui.screens.date.components.DateSectionHeader
 import com.corgimemo.app.ui.screens.date.components.SpecialDateCard
 import com.corgimemo.app.viewmodel.DateGroup
@@ -241,9 +243,20 @@ private fun DateSectionsList(
     onDelete: (Long) -> Unit,
     onCardClick: (com.corgimemo.app.viewmodel.DisplayDate) -> Unit
 ) {
+    // 复用 Reorderable 库结构使 DateSectionHeader 与待办页 PinnedSectionHeader
+    // 渲染结构完全一致(都用 ReorderableItem 包裹),保证布局对齐。
+    // SectionHeader 不参与拖拽排序,onMove 留空,enabled=false 锁定。
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(listState) { _, _ -> }
+
     LazyColumn(
+        state = listState,
         modifier = Modifier
-            .fillMaxSize(),
+            .fillMaxSize()
+            // 与待办页 ZonedReorderableLazyColumn 保持完全一致(都加 8dp 水平 padding)
+            // - 让 SectionHeader 距屏幕左侧 = 8dp = 24px(与 PinnedSectionHeader 一致)
+            // - 卡片距屏幕左侧 = 8dp + SwipeableTodoBox modifier.padding(1.dp) = 9dp(与待办页一致)
+            .padding(horizontal = 8.dp),
         // 不再加水平 padding(原 20dp),让 SectionHeader 与待办页 PinnedSectionHeader
         // 距离屏幕左侧完全一致(都是 16dp,来自 CollapsibleSectionHeader 内部 padding)
         // 卡片(SwipeableTodoBox)的位置通过传 modifier = Modifier.padding(horizontal=20.dp) 保持
@@ -253,16 +266,32 @@ private fun DateSectionsList(
             val dates = groupedDates[group].orEmpty()
             if (dates.isEmpty()) return@forEach
             val isExpanded = expandState[group] ?: false
-            // 分组头
+            // 分组头 - 用 ReorderableItem 包裹以与待办页 PinnedSectionHeader 完全对齐
             item(key = "header_${group.name}") {
-                DateSectionHeader(
-                    group = group,
-                    count = dates.size,
-                    isExpanded = isExpanded,
-                    onToggle = {
-                        expandState[group] = !isExpanded
+                // 完全模拟待办页 PinnedSectionHeader 渲染结构:
+                //   ReorderableItem(enabled=true) > Box(longPressDraggableHandle enabled=false) > 内容
+                // enabled=true 让 item 加入 reorderableKeys(可作为 onMove 的 to 目标,与其他项跨界时识别边界),
+                // longPressDraggableHandle(enabled=false) 保证 SectionHeader 本身不可被拖拽。
+                ReorderableItem(
+                    state = reorderableState,
+                    key = "date_header_${group.name}",
+                    enabled = true
+                ) {
+                    // longPressDraggableHandle 是 ReorderableCollectionItemScope 接口的
+                    // Modifier 扩展,正确调用方式为 Modifier.longPressDraggableHandle(...)
+                    Box(
+                        modifier = Modifier.longPressDraggableHandle(enabled = false)
+                    ) {
+                        DateSectionHeader(
+                            group = group,
+                            count = dates.size,
+                            isExpanded = isExpanded,
+                            onToggle = {
+                                expandState[group] = !isExpanded
+                            }
+                        )
                     }
-                )
+                }
             }
             // 卡片列表（仅在分组展开时渲染）
             if (isExpanded) {
@@ -278,9 +307,11 @@ private fun DateSectionsList(
                         },
                         onArchiveClick = { onArchive(date.id) },
                         onDeleteClick = { onDelete(date.id) },
-                        // 卡片水平 20dp 缩进(原 LazyColumn 的 padding 移到这里)
-                        // 保持与修复前的卡片视觉位置一致
-                        modifier = Modifier.padding(horizontal = 20.dp),
+                        // 卡片水平 1dp 缩进(与待办页 SwipeableTodoBox 一致: Modifier.padding(1.dp))
+                        // 配合 LazyColumn.padding(horizontal = 8.dp):
+                        //   - 卡片距屏幕左侧 = 8dp + 1dp = 9dp (与待办页完全一致)
+                        //   - SectionHeader 距屏幕左侧 = 8dp = 24px (与 PinnedSectionHeader 一致)
+                        modifier = Modifier.padding(1.dp),
                         customButtons = listOf(
                             // 置顶按钮（最左）
                             SwipeButtonConfig(
