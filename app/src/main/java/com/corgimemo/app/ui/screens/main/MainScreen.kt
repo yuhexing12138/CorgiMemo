@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -349,6 +350,22 @@ fun MainScreen(
                 )
             }
         })
+        TabItem.PROFILE -> listOf({
+            /**
+             * "我的"页设置按钮
+             *
+             * 替代原 ProfileScreen 内部 TopAppBar 的设置入口。
+             * 点击跳转到系统设置页。
+             */
+            IconButton(onClick = { navController.navigate(Screen.Settings.route) }) {
+                Icon(
+                    imageVector = Icons.Filled.Settings,
+                    contentDescription = "设置",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        })
         else -> emptyList()
     }
 
@@ -483,9 +500,8 @@ fun MainScreen(
                             coroutineScope.launch { drawerState.open() }
                         },
                         onCorgiClick = {
-                            if (effectiveMenuEnabled) {
-                                navController.navigate(Screen.CorgiDetail.route)
-                            }
+                            // 柯基互动页暂未完善，点击时弹出 Toast 提示
+                            Toast.makeText(context, "柯基互动页开发中，敬请期待~", Toast.LENGTH_SHORT).show()
                         },
                         actionButtons = effectiveActionButtons,
                         /**
@@ -715,12 +731,13 @@ fun MainScreen(
                 }
 
                 FloatingCorgiButton(
-                    onClick = { navController.navigate(Screen.CorgiDetail.route) },
+                    // 柯基互动页暂未完善，点击和右滑均弹出 Toast 提示
+                    onClick = { Toast.makeText(context, "柯基互动页开发中，敬请期待~", Toast.LENGTH_SHORT).show() },
                     onPositionChanged = { x, y ->
                         coroutineScope.launch { corgiPrefs.saveFloatingCorgiPosition(x, y) }
                     },
                     onSwipeLeft = { navController.navigate("todo_edit") },
-                    onSwipeRight = { navController.navigate(Screen.CorgiDetail.route) },
+                    onSwipeRight = { Toast.makeText(context, "柯基互动页开发中，敬请期待~", Toast.LENGTH_SHORT).show() },
                     initialPosition = corgiButtonPosition,
                     triggerCelebration = celebrationTrigger,
                     currentMood = currentMood,

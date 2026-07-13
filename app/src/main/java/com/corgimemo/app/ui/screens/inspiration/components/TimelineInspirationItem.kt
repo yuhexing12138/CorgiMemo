@@ -163,11 +163,18 @@ fun TimelineInspirationItem(
     val nodeColor = if (isPinnedItem) Color(0xFFFF9A5C) else MaterialTheme.colorScheme.primary
     val timelineLineColor = Color(0xFFEEEEEE)
 
-    // combinedClickable 从外层 Box 移至文本内容区 Column，
-    // 避免与图片区域的点击事件冲突（点击图片应进入预览页，而非触发整行 onClick）
+    // combinedClickable 移至外层 Box，覆盖整张卡片区域，
+    // 解决内容少时卡片空白处无法点击进入详情页的问题。
+    // 图片区域拥有独立的 clickable，会优先消费 tap 事件，
+    // 触发 onImageClick（预览页）而非外层 onClick（详情页）。
+    // 长按事件由外层 combinedClickable 统一处理，弹窗逻辑保持不变。
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             // 竖线贯通整个 Item 高度 + 向上延伸 18dp 覆盖 LazyColumn 间距，实现连续不中断
             // 批量模式下在空心圆节点区域留出间隙，避免竖线穿过空心圆内部
             .drawBehind {
@@ -208,14 +215,12 @@ fun TimelineInspirationItem(
         // - "08" 24sp 宽度约 26dp，56dp 内居中
         // - 两者视觉中心都在 Column 宽度（56dp）的中点 X=28dp
         if (showDate) {
-            // 日期列单独设置 clickable（外层 Box 已移除 combinedClickable），
-            // 点击日期区域同样跳转到灵感详情页
+            // 日期列：外层 Box 已统一处理点击/长按，无需重复设置 clickable
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .width(dateColumnWidth)
                     .align(Alignment.TopStart)
-                    .clickable(onClick = onClick)
             ) {
                 // 年月文本（12sp 灰色）
                 Text(
@@ -272,14 +277,8 @@ fun TimelineInspirationItem(
                 .padding(start = contentStartX)
                 .align(Alignment.TopStart)
         ) {
-            // 文本内容区域：combinedClickable 处理整行的点击和长按
-            // 图片区域在 combinedClickable 外部，拥有独立的点击处理（进入预览页）
-            Column(
-                modifier = Modifier.combinedClickable(
-                    onClick = onClick,
-                    onLongClick = onLongClick
-                )
-            ) {
+            // 文本内容区域：点击/长按由外层 Box 统一处理，水波纹效果保留
+            Column {
                 // 标题（16sp Medium）
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isPinnedItem) {
@@ -369,10 +368,10 @@ fun TimelineInspirationItem(
                         }
                     }
                 } // end if (!hideDetails)
-            } // end combinedClickable Column
+            } // end 文本内容 Column
 
-            // 图片区域：独立于文本内容区的 combinedClickable，
-            // 点击图片触发 onImageClick（进入预览页）而非 onClick（进入详情页）
+            // 图片区域：拥有独立的 clickable，优先消费 tap 事件，
+            // 点击图片触发 onImageClick（进入预览页）而非外层 onClick（进入详情页）
             if (!hideDetails && imagePaths.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(tagToImageGap))
                 /**
@@ -502,8 +501,8 @@ private fun InspirationTimelineImage(
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xFFF5F5F5))
             // 使用 clickable 处理图片点击（进入全屏预览）
-            // 由于图片区域已独立于文本内容区的 combinedClickable，
-            // 不存在手势冲突，clickable 可以正常工作
+            // 图片区域的 clickable 会优先消费 tap 事件，阻止冒泡到外层 combinedClickable，
+            // 从而实现点击图片进入预览页、点击其他位置进入详情页的区分
             .clickable(onClick = onClick)
     )
 }
