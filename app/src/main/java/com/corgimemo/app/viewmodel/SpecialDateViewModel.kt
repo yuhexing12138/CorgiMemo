@@ -135,18 +135,23 @@ class SpecialDateViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**
-     * 当前置顶的未归档日期（2026-07-14 新增）
+     * 当前置顶的日期（2026-07-14 新增；2026-07-14 二次调整）
      *
      * 数据层分离方案：独立 StateFlow 跟踪唯一置顶卡
-     * - 已有置顶卡：返回其 DisplayDate（null 时 UI 不渲染）
-     * - 无置顶卡 / 置顶卡已归档：返回 null
+     * - 已有置顶卡：返回其 DisplayDate
+     * - 无置顶卡：返回 null
      * - UI 在所有 DateSectionHeader 之上单独渲染 PinnedDateCard
+     *
+     * 2026-07-14 二次调整：移除 `!isArchived` 过滤条件
+     * - 让"已归档 + 置顶"的卡也与"未归档 + 置顶"行为完全一致
+     * - 互斥性、显示在最顶部、不在原 EXPIRED 分组显示
+     * - 取消置顶后根据 isArchived 字段返回 EXPIRED/COUNTDOWN/COUNTUP 分组
      *
      * 实现说明：复用 `groupByDisplayDates` 的转换逻辑避免代码重复
      */
     val pinnedDate: StateFlow<DisplayDate?> = specialDates
         .map { dates ->
-            val candidates = groupByDisplayDates(dates.filter { it.isPinned && !it.isArchived })
+            val candidates = groupByDisplayDates(dates.filter { it.isPinned })
             candidates.values.flatten().firstOrNull()
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -172,7 +177,12 @@ class SpecialDateViewModel @Inject constructor(
             } else {
                 afterHideFilter.filter { it.title.contains(query, ignoreCase = true) }
             }
-            // 3. 过滤掉已置顶卡，避免与 PinnedDateCard 重复显示
+            // 2. 2026-07-14 二次调整：过滤掉所有置顶卡（包括已归档+置顶的）
+            //    与"未归档+置顶"行为完全一致：
+            //    - 互斥性
+            //    - 显示在 pinnedDate 顶部
+            //    - 不在原分组（EXPIRED/COUNTDOWN/COUNTUP）显示，避免重复
+            //    取消置顶后根据 isArchived 字段返回对应分组
             val withoutPinned = filtered.filter { !it.isPinned }
             groupByDisplayDates(withoutPinned)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
@@ -362,15 +372,19 @@ class SpecialDateViewModel @Inject constructor(
 
     /** 切换隐藏详情（持久化到 DataStore） */
     fun toggleHideDetails() {
+        val newVal = !_hideDetails.value
+        _hideDetails.value = newVal
         viewModelScope.launch {
-            corgiPreferences.setHideSpecialDateDetails(!_hideDetails.value)
+            corgiPreferences.setHideSpecialDateDetails(newVal)
         }
     }
 
     /** 切换隐藏已归档（持久化到 DataStore） */
     fun toggleHideArchivedItems() {
+        val newVal = !_hideArchivedItems.value
+        _hideArchivedItems.value = newVal
         viewModelScope.launch {
-            corgiPreferences.setHideArchivedDateItems(!_hideArchivedItems.value)
+            corgiPreferences.setHideArchivedDateItems(newVal)
         }
     }
 
@@ -561,6 +575,11 @@ class SpecialDateViewModel @Inject constructor(
 
     /**
      * 置顶特殊日期（单选：自动取消其它卡片的置顶）
+     *
+     * 2026-07-14 业务规则：置顶不改变归档状态
+     * - 已归档 + 置顶 → 仍在 EXPIRED 分组显示（groupedDates 不再过滤 isPinned && !isArchived）
+     * - 已归档卡片置顶后取消置顶 → 仍保持已归档状态
+     * - pinDate 仅设置 isPinned 字段，不动 isArchived 字段
      */
     fun pinDate(id: Long) {
         viewModelScope.launch {
