@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Inventory
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -319,10 +320,14 @@ private fun DateSectionsList(
                                 actionType = SwipeActionType.PIN
                             ),
                             // 归档按钮（中间）
+                            // 2026-07-13 优化：根据卡片是否已归档切换文案与图标：
+                            //   - 未归档 → "归档" + Archive 图标
+                            //   - 已归档 → "已归档" + Inventory 库存箱图标（明确状态语义）
+                            // 点击行为保持不变（仍调用 onArchive → viewModel.archiveDate，幂等操作）
                             SwipeButtonConfig(
-                                label = "归档",
+                                label = if (date.isArchived) "已归档" else "归档",
                                 backgroundColorRes = R.color.ui_archive,
-                                icon = Icons.Outlined.Archive,
+                                icon = if (date.isArchived) Icons.Outlined.Inventory else Icons.Outlined.Archive,
                                 zIndex = 2f,
                                 shape = RoundedCornerShape(0.dp),
                                 actionType = SwipeActionType.ARCHIVE
