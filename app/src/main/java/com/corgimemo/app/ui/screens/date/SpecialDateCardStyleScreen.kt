@@ -215,8 +215,11 @@ fun SpecialDateCardStyleScreen(
                 },
                 // 保存中禁止重复点击
                 enabled = saveState !is SaveState.Saving,
+                // 水平 20dp padding(等同 QuickCreate Column 的 horizontal=20dp),
+                // 使按钮宽度 = Column 宽度 - 40dp,与 QuickCreate "下一步" 按钮大小完全一致
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
                     .height(48.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
