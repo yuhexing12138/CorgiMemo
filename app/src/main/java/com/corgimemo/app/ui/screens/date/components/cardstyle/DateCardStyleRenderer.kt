@@ -2,6 +2,7 @@ package com.corgimemo.app.ui.screens.date.components.cardstyle
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.corgimemo.app.data.model.DateCardColor
 import com.corgimemo.app.data.model.DateCardStyle
 
 /**
@@ -17,6 +18,7 @@ fun DateCardStyleRenderer(
     targetDateMillis: Long,
     modifier: Modifier = Modifier,
     isThumbnail: Boolean = false,
+    cardColor: DateCardColor = DateCardColor.DEFAULT,  // ← 新增
     onShareClick: (() -> Unit)? = null,
     onCalendarClick: (() -> Unit)? = null,
     onCardClick: (() -> Unit)? = null
@@ -27,6 +29,7 @@ fun DateCardStyleRenderer(
             targetDateMillis = targetDateMillis,
             modifier = modifier,
             isThumbnail = isThumbnail,
+            cardColor = cardColor,  // ← 透传
             onShareClick = onShareClick,
             onCalendarClick = onCalendarClick,
             onCardClick = onCardClick
@@ -36,6 +39,7 @@ fun DateCardStyleRenderer(
             targetDateMillis = targetDateMillis,
             modifier = modifier,
             isThumbnail = isThumbnail,
+            cardColor = cardColor,  // ← 透传
             onCardClick = onCardClick
         )
     }
