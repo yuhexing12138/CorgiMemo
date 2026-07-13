@@ -31,6 +31,7 @@ import java.time.YearMonth
  * @param month 月份(1-12)
  * @param targetDay 目标日(高亮显示;0 表示不高亮)
  * @param textSize 单元格数字字号(默认 14sp)
+ * @param targetRingColor 目标日圆圈描边颜色(默认 #FFFF8A80 现有红色;由 DateCardColor 透传)
  */
 @Composable
 fun MiniCalendar(
@@ -38,7 +39,8 @@ fun MiniCalendar(
     month: Int,
     targetDay: Int,
     modifier: Modifier = Modifier,
-    textSize: TextUnit = 14.sp
+    textSize: TextUnit = 14.sp,
+    targetRingColor: Color = Color(0xFFFF8A80)  // ← 新增,默认保持现有红色
 ) {
     // 1 号是星期几(0=周一 ... 6=周日),用于计算上月填充日数
     val firstDayOfWeek = (YearMonth.of(year, month).atDay(1).dayOfWeek.value - 1 + 7) % 7
@@ -96,7 +98,7 @@ fun MiniCalendar(
                             .then(
                                 if (isTarget) Modifier.border(
                                     width = 1.5.dp,
-                                    color = Color(0xFFFF8A80),
+                                    color = targetRingColor,  // ← 改用参数(默认 #FFFF8A80)
                                     shape = CircleShape
                                 ) else Modifier
                             ),
