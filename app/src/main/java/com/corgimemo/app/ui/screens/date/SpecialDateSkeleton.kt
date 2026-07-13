@@ -27,8 +27,10 @@ import com.corgimemo.app.ui.components.SkeletonText
  *
  * 模拟日期页面的完整布局结构，包括：
  * - 搜索栏
- * - 三组分类标题（即将到来/正在纪念/已过期）
+ * - 三组分类标题（倒计时/正计时/已归档）
  * - 日期卡片列表（带优先级圆点、标题、倒计时）
+ *
+ * 2026-07-13 重构：第三组标题由"已过期"改为"已归档"（与 DateSectionHeader 保持一致）。
  *
  * 布局与真实 SpecialDateCard 组件完全一致，
  * 确保从骨架屏到真实内容的平滑过渡。
@@ -58,19 +60,19 @@ fun SpecialDateSkeleton(
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 即将到来分组
-            item { DateGroupTitleSkeleton("即将到来") }
-            items(2, key = { "upcoming_skeleton_$it" }) {
+            // 倒计时分组
+            item { DateGroupTitleSkeleton("倒计时") }
+            items(2, key = { "countdown_skeleton_$it" }) {
                 DateItemSkeleton(color = MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
             }
 
-            // 正在纪念分组
-            item { DateGroupTitleSkeleton("正在纪念") }
+            // 正计时分组
+            item { DateGroupTitleSkeleton("正计时") }
             item { DateItemSkeleton(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)) }
 
-            // 已过期分组
-            item { DateGroupTitleSkeleton("已过期") }
-            items(2, key = { "expired_skeleton_$it" }) {
+            // 已归档分组（2026-07-13：原"已过期"改为"已归档"）
+            item { DateGroupTitleSkeleton("已归档") }
+            items(2, key = { "archived_skeleton_$it" }) {
                 DateItemSkeleton(color = MaterialTheme.colorScheme.surfaceVariant)
             }
         }

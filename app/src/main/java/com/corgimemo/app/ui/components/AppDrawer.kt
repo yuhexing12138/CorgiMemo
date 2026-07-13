@@ -76,7 +76,7 @@ private val categoryIcons = mapOf(
  * 根据当前Tab动态切换内容区域：
  * - 待办页：分组管理（全部/未分类/自定义分组/最近删除）
  * - 灵感页：标签筛选（全部灵感/标签列表）
- * - 日期页：类型筛选（全部/倒计时/正计时/已过期）
+ * - 日期页：类型筛选（全部/倒计时/正计时/已归档）
  * - 我的页：快捷导航
  *
  * 用户区域和底部操作区所有页面共享。
@@ -630,8 +630,9 @@ private fun DateTypeFilterSection(
 
             item {
                 CategoryItem(
-                    icon = "📌",
-                    name = "已过期",
+                    icon = "📦",
+                    // 2026-07-13：原"已过期"改为"已归档"（与 DateSectionHeader、SpecialDateSkeleton 保持一致）
+                    name = "已归档",
                     count = 0,
                     isSelected = selectedDateType == DateGroup.EXPIRED,
                     showMenu = false,

@@ -58,10 +58,13 @@ import kotlinx.coroutines.launch
  * 关键设计：
  * 1. 单一 ticker：顶层 LaunchedEffect 驱动 nowMs 状态，每秒更新一次，
  *    避免每张卡片各自启动 ticker 导致 N 个协程。
- * 2. 三段式布局：搜索框 → 3 个折叠分组头（倒计时/正计时 默认展开；已过期 折叠）
+ * 2. 三段式布局：搜索框 → 3 个折叠分组头（倒计时/正计时 默认展开；已归档 折叠）
  *    → 卡片列表（每张卡片用 SwipeableTodoBox 包裹提供左滑三按钮）
  * 3. 左滑操作：置顶/归档/删除三按钮
  * 4. 归档后 Snackbar 3 秒撤回：点"撤回"恢复数据；超时仅清空缓存（不撤回）
+ *
+ * 2026-07-13 重构：第三段分组语义由"已过期"改为"已归档"，
+ * 分组规则（SpecialDateViewModel.groupByDisplayDates）改为按 isArchived + 日期与今天大小划分。
  *
  * 注意：本页面**不包含** Scaffold / padding(paddingValues) / SnackbarHost。
  * - Scaffold 由 MainScreen 顶层统一管理（与 HomeScreen / InspirationScreen 保持一致）
@@ -215,7 +218,7 @@ fun SpecialDateScreen(
 }
 
 /**
- * 三段式日期列表（倒计时/正计时/已过期）
+ * 三段式日期列表（倒计时/正计时/已归档）
  *
  * 列表结构：
  * - 每一组：DateSectionHeader + N × SwipeableTodoBox(SpecialDateCard)

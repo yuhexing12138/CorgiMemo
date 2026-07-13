@@ -29,7 +29,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.corgimemo.app.viewmodel.DateGroup
 import com.corgimemo.app.viewmodel.DisplayDate
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -96,19 +95,22 @@ fun SpecialDateCard(
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // 1. 是否处于"已过期"分组（决定整体 alpha 0.6 降权）
-    val isExpiredGroup = date.groupType == DateGroup.EXPIRED
+    // 1. 是否处于"已归档"分组（决定整体 alpha 0.6 降权）
+    // 2026-07-13 重构：改用 isArchived 字段判断（原为 groupType == EXPIRED），
+    // 原因：业务侧"已归档"分组（EXPIRED）的语义已变为"归档卡"而非"已过期卡"，
+    // 应当跟随 isArchived 字段独立判断，与分组解耦（未来分组规则再变也不会误判降权）
+    val isArchivedGroup = date.isArchived
 
     // 2. 时间差（毫秒），diff >= 0 表示目标日期未到（未来），否则已过
     val diff = date.targetDate - nowMs
     val isFuture = diff >= 0
 
     // 3. 时间信息颜色：
-    //    - EXPIRED 分组 → 灰色（#999999）
+    //    - 已归档 → 灰色（#999999）
     //    - 未来（倒计时）→ 主色（暖橙）
     //    - 已开始（正计时）→ 柔和绿（#7EC8A0）
     val timeColor = when {
-        isExpiredGroup -> Color(0xFF999999)
+        isArchivedGroup -> Color(0xFF999999)
         isFuture -> MaterialTheme.colorScheme.primary
         else -> Color(0xFF7EC8A0)
     }
@@ -126,9 +128,10 @@ fun SpecialDateCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = modifier
             .fillMaxWidth()
-            // 已过期分组整体降权
-            .then(if (isExpiredGroup) Modifier.alpha(0.6f) else Modifier)
-            // 左滑操作面板展开时屏蔽卡片内的点击/长按
+            // 关键：alpha 不再应用在 Card 上，而是应用在 Card 内部的 Row（内容层）。
+            // 原因：SwipeableTodoBox 将左滑按钮区域绘制在 Card 之后（同一 layout 区域），
+            //       若 alpha 应用在 Card 上，Card 半透会导致左滑按钮被 Card 颜色污染（按钮"透过"卡片显示）。
+            //       把 alpha 下沉到内部 Row 后，Card 背景仍保持完全不透明，左滑按钮正常显示。
             .then(
                 if (isClickBlocked) Modifier
                 else Modifier.combinedClickable(
@@ -140,7 +143,9 @@ fun SpecialDateCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(16.dp)
+                // 已归档分组整体降权（仅内容层），左滑按钮区域仍保持完全不透明
+                .then(if (isArchivedGroup) Modifier.alpha(0.6f) else Modifier),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // 1. 圆形图片区（56dp，emoji 占位）
@@ -169,7 +174,8 @@ fun SpecialDateCard(
                         Icon(
                             imageVector = Icons.Outlined.PushPin,
                             contentDescription = "置顶",
-                            tint = if (isExpiredGroup) Color(0xFF999999) else MaterialTheme.colorScheme.primary,
+                            // 已归档卡片的置顶图标使用灰色（与卡片整体降权风格一致）
+                            tint = if (isArchivedGroup) Color(0xFF999999) else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(Modifier.width(4.dp))
@@ -196,9 +202,17 @@ fun SpecialDateCard(
 
                 Spacer(Modifier.size(4.dp))
 
-                // 2.3 日期标签行：还有/已经/已过 + yyyy年M月d日
+                // 2.3 日期标签行：
+                //    - 已归档 → 显示"已归档 + 日期"，明确归档语义
+                //    - 未来日期 → "还有 + 日期"
+                //    - 过去日期（正计时）→ "已经 + 日期"
+                val prefix = when {
+                    isArchivedGroup -> "已归档"
+                    isFuture -> "还有"
+                    else -> "已经"
+                }
                 Text(
-                    text = "${if (isFuture) "还有" else if (isExpiredGroup) "已过" else "已经"} $formattedDate",
+                    text = "$prefix $formattedDate",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

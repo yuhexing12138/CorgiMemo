@@ -64,16 +64,24 @@ class SpecialDateViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** 三组分类后的展示数据 */
+    /**
+     * 三组分类后的展示数据
+     *
+     * 分组规则（2026-07-13 重构，参考用户最新需求）：
+     * - 已归档（isArchived=true）           → EXPIRED（已归档）
+     * - 未归档 且 未来日期（targetDate>today）→ COUNTDOWN（倒计时）
+     * - 未归档 且 过去日期（targetDate<=today）→ COUNTUP（正计时）
+     *
+     * 字段 countMode 不再影响分组归属，分组完全由"是否归档"+"日期与今天的大小关系"决定。
+     * 这样"用户设置的日期是未来/过去"即可直接决定分区，符合用户对日期页的预期。
+     */
     val groupedDates: StateFlow<Map<DateGroup, List<DisplayDate>>> =
         combine(specialDates, _searchQuery) { dates, query ->
-            // 1. 只取未归档
-            val active = dates.filter { !it.isArchived }
-            // 2. 搜索过滤
+            // 1. 搜索过滤（已归档与未归档都允许搜索）
             if (query.isBlank()) {
-                active
+                dates
             } else {
-                active.filter { it.title.contains(query, ignoreCase = true) }
+                dates.filter { it.title.contains(query, ignoreCase = true) }
             }
         }.map { dates ->
             groupByDisplayDates(dates)
@@ -321,20 +329,22 @@ class SpecialDateViewModel @Inject constructor(
                     val daysAbs = kotlin.math.abs(daysDiff)
 
                     /**
-                     * 分组规则（与 plan 5.2 节一致）：
-                     * - countMode=0 且 targetDate >= today → COUNTDOWN（倒计时）
-                     * - countMode=1 且 targetDate <= today → COUNTUP（正计时）
-                     * - countMode=0 且 targetDate <  today → EXPIRED（已过期）
-                     * - countMode=1 且 targetDate >  today → COUNTUP（正计时，纪念尚未开始）
+                     * 分组规则（2026-07-13 重构，参考用户最新需求）：
+                     * - isArchived = true                    → EXPIRED（已归档，最优先）
+                     * - 未归档 且 targetDate >  today         → COUNTDOWN（倒计时）
+                     * - 未归档 且 targetDate <= today         → COUNTUP（正计时）
+                     *
+                     * 字段 countMode 不再影响分组归属（已移除旧逻辑）。
                      */
                     val groupType = when {
-                        date.countMode == 1 -> DateGroup.COUNTUP
+                        date.isArchived -> DateGroup.EXPIRED
                         daysDiff > 0 -> DateGroup.COUNTDOWN
-                        else -> DateGroup.EXPIRED
+                        else -> DateGroup.COUNTUP
                     }
 
                     val dayColor = when (groupType) {
                         DateGroup.COUNTUP -> DayColor.GREEN
+                        DateGroup.EXPIRED -> DayColor.GRAY
                         else -> when {
                             daysAbs <= 3L -> DayColor.RED
                             daysAbs <= 30L -> DayColor.ORANGE
@@ -364,7 +374,9 @@ class SpecialDateViewModel @Inject constructor(
                         tags = decodeTagsSafe(date.tags),
                         hasImage = decodePathsSafe(date.imagePaths).isNotEmpty(),
                         relationHint = null,
-                        isPinned = date.isPinned
+                        isPinned = date.isPinned,
+                        // 透传 isArchived 字段，供 UI 层（SpecialDateCard）独立判断降权显示
+                        isArchived = date.isArchived
                     )
                 } catch (e: Exception) {
                     null
@@ -449,17 +461,30 @@ data class DisplayDate(
     val tags: List<String>,
     val hasImage: Boolean,
     val relationHint: String?,
-    val isPinned: Boolean
+    val isPinned: Boolean,
+    /**
+     * 是否已归档（2026-07-13 新增字段）
+     *
+     * 来源：SpecialDate.isArchived
+     * 用途：SpecialDateCard 根据该字段独立决定是否降权显示（alpha 0.6f），
+     *      避免将 alpha 应用于整个 Card 导致左滑按钮区域被半透明。
+     * 取值：true → 已归档（显示在 EXPIRED 分组），false → 正常显示
+     */
+    val isArchived: Boolean = false
 )
 
 /**
- * 日期分组：按 countMode + 是否过期划分
- * - COUNTDOWN: 倒计时模式（countMode=0）且未过期
- * - COUNTUP:   正计时模式（countMode=1）（无论是否已开始）
- * - EXPIRED:   倒计时模式（countMode=0）但已过期
+ * 日期分组（2026-07-13 重构，参考用户最新需求）
  *
- * 命名替换自旧版 GroupType（UPCOMING/CELEBRATING/EXPIRED）。
- * 字段名 groupType 暂保留以避免破坏 SpecialDateCard，任务 13 会统一改为 group。
+ * 分组完全由"是否归档"+"日期与今天的大小关系"决定，countMode 字段不再影响分组：
+ * - COUNTDOWN: 未归档 且 未来日期（targetDate > today）→ 倒计时
+ * - COUNTUP:   未归档 且 过去或当天日期（targetDate <= today）→ 正计时
+ * - EXPIRED:   已归档（isArchived = true）→ 已归档
+ *
+ * 字段名 groupType 暂保留以避免破坏 SpecialDateCard 内部对字段名的引用。
+ *
+ * 枚举值命名 EXPIRED 暂保留以避免破坏外部引用（如 AppDrawer 的 onDateTypeClick(DateGroup.EXPIRED)），
+ * UI 层 DateSectionHeader 会将该枚举映射为"已归档"显示文本。
  */
 enum class DateGroup { COUNTDOWN, COUNTUP, EXPIRED }
 

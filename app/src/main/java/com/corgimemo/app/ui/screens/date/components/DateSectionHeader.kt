@@ -7,12 +7,15 @@ import com.corgimemo.app.ui.components.CollapsibleSectionHeader
 import com.corgimemo.app.viewmodel.DateGroup
 
 /**
- * 日期分组折叠按钮（倒计时/正计时/已过期）
+ * 日期分组折叠按钮（倒计时/正计时/已归档）
  *
  * 视觉规范：
  * - COUNTDOWN（倒计时）：主色 #FF9A5C
  * - COUNTUP  （正计时）：柔和绿 #7EC8A0
- * - EXPIRED  （已过期）：提示色 #999999
+ * - EXPIRED  （已归档）：提示色 #999999
+ *
+ * 2026-07-13 重构：原"已过期"分组语义已改为"已归档"分组（按 SpecialDate.isArchived 划分），
+ * 因此 EXPIRED 枚举值映射的显示文本由"已过期"改为"已归档"。
  *
  * 包装 CollapsibleSectionHeader，传入对应的标签、颜色与状态文案。
  * 布局对齐：由调用方通过 ReorderableItem 包裹（与待办页 PinnedSectionHeader 结构完全一致），
@@ -35,7 +38,8 @@ fun DateSectionHeader(
     val (label, color) = when (group) {
         DateGroup.COUNTDOWN -> "倒计时" to Color(0xFFFF9A5C)
         DateGroup.COUNTUP   -> "正计时" to Color(0xFF7EC8A0)
-        DateGroup.EXPIRED   -> "已过期" to Color(0xFF999999)
+        // 2026-07-13：原"已过期" → "已归档"（按用户最新需求：按归档状态划分分组）
+        DateGroup.EXPIRED   -> "已归档" to Color(0xFF999999)
     }
     CollapsibleSectionHeader(
         label = label,
