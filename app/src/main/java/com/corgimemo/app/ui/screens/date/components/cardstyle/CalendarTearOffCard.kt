@@ -113,7 +113,7 @@ fun CalendarTearOffCard(
             if (isThumbnail) {
                 // 缩略图版:只显示目标月+目标日
                 Text(
-                    text = "$targetMonth月",
+                    text = "${targetMonth}月",
                     fontSize = 8.sp,
                     color = Color(0xFF666666)
                 )
