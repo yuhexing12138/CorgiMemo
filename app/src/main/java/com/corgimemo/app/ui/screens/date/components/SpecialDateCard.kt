@@ -3,6 +3,7 @@ package com.corgimemo.app.ui.screens.date.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -112,8 +113,34 @@ fun SpecialDateCard(
         else -> Color(0xFF7EC8A0)
     }
 
-    // 4. 剩余/已过天数（取整除一天），用于右侧大数字
-    val daysAbs = abs(diff) / 86_400_000L
+    // 4. 天数计算：
+    //    - daysDiff：带符号的天数（>0 未来，=0 今天，<0 过去）
+    //    - daysAbs：绝对天数（用于大于 1 天时显示数字）
+    val daysDiff = diff / 86_400_000L
+    val daysAbs = abs(daysDiff)
+
+    // 5. 右侧大数字文案：
+    //    - daysDiff == 0L → "今天"（不显示数字与单位）
+    //    - daysDiff == 1L → "明天"
+    //    - daysDiff == -1L → "昨天"
+    //    - 其他 → daysAbs 的字符串形式
+    val daysLabel = when (daysDiff) {
+        0L -> "今天"
+        1L -> "明天"
+        -1L -> "昨天"
+        else -> daysAbs.toString()
+    }
+
+    // 6. 右侧单位文案（仅 daysAbs > 1 时显示）：
+    //    - 未来（倒计时）→ "剩余天数"
+    //    - 过去/今天（正计时）→ "已过天数"
+    //    - 已归档卡片按 daysDiff 决定（视觉降权后仍能传达剩余/已过信息）
+    //    - 特殊日期（昨天/今天/明天）→ null（不显示单位）
+    val daysUnit = when {
+        daysDiff in listOf(-1L, 0L, 1L) -> null
+        isFuture -> "剩余天数"
+        else -> "已过天数"
+    }
 
     Card(
         shape = RoundedCornerShape(20.dp),
@@ -199,14 +226,29 @@ fun SpecialDateCard(
 
             Spacer(Modifier.width(8.dp))
 
-            // 3. 右侧大数字（剩余/已过天数）
-            // 2026-07-13：右侧大数字字号从 24sp 减小到 22sp，与缩短后的卡片高度匹配
-            Text(
-                text = daysAbs.toString(),
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = timeColor
-            )
+            // 3. 右侧大数字+单位两行布局
+            // 2026-07-13 优化：原仅显示大数字，现按用户需求拆分为两行：
+            //   - 上行：昨天/今天/明天 或 天数数字（22sp Bold）
+            //   - 下行：剩余天数 / 已过天数（11sp，与上行同色，特殊日期时不显示）
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = daysLabel,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = timeColor
+                )
+                // 特殊日期（昨天/今天/明天）不显示单位标签
+                daysUnit?.let { unit ->
+                    Text(
+                        text = unit,
+                        fontSize = 11.sp,
+                        color = timeColor
+                    )
+                }
+            }
         }
     }
 }
