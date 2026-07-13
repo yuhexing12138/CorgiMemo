@@ -28,8 +28,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
@@ -72,12 +74,15 @@ import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.screens.date.SpecialDateScreen
 import com.corgimemo.app.ui.screens.home.HomeBatchActionBar
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationBatchActionBar
+import com.corgimemo.app.ui.components.SpecialDateBatchActionBar
+import com.corgimemo.app.ui.components.SpecialDateMenuDropdown
 import com.corgimemo.app.ui.screens.home.HomeScreen
 import com.corgimemo.app.ui.screens.home.shareTodoAsImage
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.InspirationViewModel
+import com.corgimemo.app.viewmodel.SpecialDateViewModel
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationCalendarDialog
 import com.corgimemo.app.ui.screens.home.components.TodoCalendarDialog
 import com.corgimemo.app.ui.components.calendar.DatePickerRow
@@ -188,6 +193,16 @@ fun MainScreen(
     val homeViewModel: HomeViewModel = hiltViewModel()
     /** 灵感页 ViewModel（用于日历弹窗获取灵感数据，与 InspirationScreen 共享同一实例） */
     val inspirationViewModel: InspirationViewModel = hiltViewModel()
+    /**
+     * 日期页 ViewModel（与 SpecialDateScreen 共享同一实例）
+     *
+     * 2026-07-14 新增：在 MainScreen 层注入，用于：
+     * - 三点菜单弹窗（SpecialDateMenuDropdown）展开状态
+     * - 批量模式（isBatchMode / selectedDateIds）共享
+     * - 批量删除/归档/创建副本操作
+     * 与待办页 homeViewModel、灵感页 inspirationViewModel 同构。
+     */
+    val specialDateViewModel: SpecialDateViewModel = hiltViewModel()
     /** 灵感页标签相关状态（供侧边栏使用） */
     val inspirationTags by inspirationViewModel.savedTags.collectAsState()
     val selectedTags by inspirationViewModel.selectedTags.collectAsState()
@@ -204,6 +219,14 @@ fun MainScreen(
     val inspirationIsBatchMode by inspirationViewModel.isBatchMode.collectAsState()
     val inspirationSelectedIds by inspirationViewModel.selectedInspirationIds.collectAsState()
     val inspirationHideDetails by inspirationViewModel.hideDetails.collectAsState()
+    // 2026-07-14 新增：日期页三点菜单和批量模式状态
+    val specialDateMenuExpanded by specialDateViewModel.menuExpanded.collectAsState()
+    val specialDateHideDetails by specialDateViewModel.hideDetails.collectAsState()
+    val specialDateHideArchivedItems by specialDateViewModel.hideArchivedItems.collectAsState()
+    val specialDateIsBatchMode by specialDateViewModel.isBatchMode.collectAsState()
+    val specialDateSelectedIds by specialDateViewModel.selectedDateIds.collectAsState()
+    val specialDatePendingDeletedDate by specialDateViewModel.pendingDeletedDate.collectAsState()
+    val specialDatePendingBatchDeletes by specialDateViewModel.pendingBatchDeletes.collectAsState()
     /** 用户行为分析器（通过 Hilt 入口点获取 @Singleton 实例，用于记录页面访问） */
     val userBehaviorAnalyzer: UserBehaviorAnalyzer = remember {
         EntryPointAccessors.fromApplication(context, UserBehaviorAnalyzerEntryPoint::class.java).analyzer()
@@ -245,6 +268,8 @@ fun MainScreen(
     var showAddTagDialog by remember { mutableStateOf(false) }
     /** 灵感页批量删除确认弹窗显示状态（由 InspirationBatchActionBar 的删除按钮触发） */
     var showInspirationBatchDeleteDialog by remember { mutableStateOf(false) }
+    /** 日期页批量删除确认弹窗显示状态（由 SpecialDateBatchActionBar 的删除按钮触发） */
+    var showSpecialDateBatchDeleteDialog by remember { mutableStateOf(false) }
     var showRenameCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
     var showDeleteCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
     var showCategorySheet by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
@@ -314,7 +339,7 @@ fun MainScreen(
             { inspirationViewModel.setMenuExpanded(true) }
         }
         TabItem.DATE -> {
-            { Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show() }
+            { specialDateViewModel.setMenuExpanded(true) }
         }
         else -> null
     }
@@ -446,11 +471,13 @@ fun MainScreen(
         val effectiveBatchMode = when (selectedTab) {
             TabItem.TODO -> isBatchMode
             TabItem.INSPIRE -> inspirationIsBatchMode
+            TabItem.DATE -> specialDateIsBatchMode
             else -> false
         }
         val effectiveSelectedCount = when (selectedTab) {
             TabItem.TODO -> selectedTodoIds.size
             TabItem.INSPIRE -> inspirationSelectedIds.size
+            TabItem.DATE -> specialDateSelectedIds.size
             else -> 0
         }
         Box(modifier = Modifier.fillMaxSize()) {
@@ -536,6 +563,27 @@ fun MainScreen(
                                     onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("todo")) }
                                 )
                             }
+                        } else if (selectedTab == TabItem.DATE && !effectiveBatchMode) {
+                            {
+                                /**
+                                 * 日期页三点功能菜单（2026-07-14 新增）
+                                 *
+                                 * 与 TODO / INSPIRE 同构，提供隐藏详情/隐藏已归档/批量选择/回收站入口。
+                                 */
+                                SpecialDateMenuDropdown(
+                                    expanded = specialDateMenuExpanded,
+                                    onDismiss = { specialDateViewModel.setMenuExpanded(false) },
+                                    hideDetails = specialDateHideDetails,
+                                    onToggleHideDetails = { specialDateViewModel.toggleHideDetails() },
+                                    hideArchivedItems = specialDateHideArchivedItems,
+                                    onToggleHideArchivedItems = { specialDateViewModel.toggleHideArchivedItems() },
+                                    onBatchSelectClick = { specialDateViewModel.enterBatchMode() },
+                                    onPlaceholderClick = {
+                                        Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("date")) }
+                                )
+                            }
                         } else if (selectedTab == TabItem.INSPIRE && !effectiveBatchMode) {
                             {
                                 InspirationMenuDropdown(
@@ -559,6 +607,7 @@ fun MainScreen(
                                 when (selectedTab) {
                                     TabItem.TODO -> homeViewModel.exitBatchMode()
                                     TabItem.INSPIRE -> inspirationViewModel.exitBatchMode()
+                                    TabItem.DATE -> specialDateViewModel.exitBatchMode()
                                     else -> {}
                                 }
                             }
@@ -636,6 +685,30 @@ fun MainScreen(
                             onClearSelection = { inspirationViewModel.clearSelection() },
                             onDelete = { showInspirationBatchDeleteDialog = true },
                             onPin = { inspirationViewModel.batchPinInspirations() }
+                        )
+                    }
+                    effectiveBatchMode && selectedTab == TabItem.DATE -> {
+                        /**
+                         * 日期页批量操作栏（2026-07-14 新增）
+                         *
+                         * 仅在 DATE tab 批量模式下显示。
+                         * 回调：
+                         * - 全选/取消全选：specialDateViewModel 直接处理
+                         * - 删除：触发 showSpecialDateBatchDeleteDialog 弹窗确认
+                         * - 归档：调用 specialDateViewModel.batchArchive()
+                         * - 创建副本：调用 specialDateViewModel.batchDuplicate()
+                         */
+                        SpecialDateBatchActionBar(
+                            isBatchMode = specialDateIsBatchMode,
+                            selectedDateIds = specialDateSelectedIds,
+                            totalDateCount = specialDateViewModel.groupedDates.value.values.flatten().size,
+                            onSelectAll = { specialDateViewModel.selectAll() },
+                            onClearSelection = { specialDateViewModel.clearSelection() },
+                            onShare = { Toast.makeText(context, "分享功能开发中...", Toast.LENGTH_SHORT).show() },
+                            onArchive = { specialDateViewModel.batchArchive() },
+                            onDuplicate = { specialDateViewModel.batchDuplicate() },
+                            onDelete = { showSpecialDateBatchDeleteDialog = true },
+                            onMoreOptions = { Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show() }
                         )
                     }
                     else -> {
@@ -723,7 +796,8 @@ fun MainScreen(
                         TabItem.DATE -> SpecialDateScreen(
                             navController = navController,
                             onFabClick = { navController.navigate(Screen.SpecialDateQuickCreate.route) },
-                            snackbarHostState = snackbarHostState
+                            snackbarHostState = snackbarHostState,
+                            viewModel = specialDateViewModel
                         )
                         TabItem.PROFILE -> ProfileScreen(navController)
                         TabItem.EDIT -> { /* 中央编辑按钮不是真实Tab */ }
@@ -939,5 +1013,59 @@ fun MainScreen(
                 }
             }
         )
+    }
+
+    /**
+     * 日期页批量删除确认弹窗（2026-07-14 新增）
+     *
+     * 由 SpecialDateBatchActionBar 的 onDelete 回调触发（showSpecialDateBatchDeleteDialog = true）。
+     * 确认后调用 specialDateViewModel.batchDelete() 执行软删除（写入回收站）并退出批量模式。
+     * 与灵感页批量删除弹窗保持一致：删除按钮使用 Color(0xFFE53935) 红色，
+     * 文案说明"删除后可在回收站恢复"以区分日期页的软删除语义。
+     */
+    if (showSpecialDateBatchDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showSpecialDateBatchDeleteDialog = false },
+            title = { Text("删除选中项") },
+            text = { Text("确定要删除已选择的 ${specialDateSelectedIds.size} 个日期吗？\n删除后可在回收站恢复。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        specialDateViewModel.batchDelete()
+                        showSpecialDateBatchDeleteDialog = false
+                    }
+                ) { Text("删除", color = Color(0xFFE53935)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSpecialDateBatchDeleteDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    /**
+     * 日期批量删除撤回 Snackbar（2026-07-14 新增）
+     *
+     * 监听 specialDatePendingBatchDeletes：
+     * - 非空时弹出"已删除 N 个日期"提示，附"撤回"动作
+     * - 用户点击"撤回" → specialDateViewModel.undoBatchDelete() 从回收站恢复
+     * - 用户无操作 / Snackbar 自动消失 → specialDateViewModel.clearPendingBatchDeletes()
+     *
+     * 注意：使用 snackbarHostState（共享的 Scaffold snackbarHost 槽位），
+     * Snackbar 会自动避开 FAB 与底部导航栏，避免遮挡。
+     */
+    LaunchedEffect(specialDatePendingBatchDeletes) {
+        if (specialDatePendingBatchDeletes.isEmpty()) return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = "已删除 ${specialDatePendingBatchDeletes.size} 个日期",
+            actionLabel = "撤回",
+            withDismissAction = true,
+            duration = SnackbarDuration.Short
+        )
+        when (result) {
+            SnackbarResult.ActionPerformed -> specialDateViewModel.undoBatchDelete()
+            SnackbarResult.Dismissed -> specialDateViewModel.clearPendingBatchDeletes()
+        }
     }
 }
