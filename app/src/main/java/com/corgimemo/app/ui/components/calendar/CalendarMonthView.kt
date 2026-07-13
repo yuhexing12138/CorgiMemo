@@ -50,6 +50,11 @@ import java.util.Locale
  * @param countMap 当月各日期的灵感条数映射
  * @param onMonthChange 月份切换回调（滑动手势触发）
  * @param onDateSelect 日期选择回调
+ * @param dotColorMap 各日期对应的圆点颜色映射（可选）
+ *
+ * key = day of month，value = 该日期圆点颜色。
+ * 不传或对应 key 不存在时，回退到 MaterialTheme.colorScheme.primary（保持原行为）。
+ * 用途：日期页弹窗按 DateCategory 颜色区分生日/纪念日/节日。
  */
 @Composable
 fun CalendarMonthView(
@@ -57,7 +62,8 @@ fun CalendarMonthView(
     selectedDate: LocalDate,
     countMap: Map<Int, Int>,
     onMonthChange: (YearMonth) -> Unit,
-    onDateSelect: (LocalDate) -> Unit
+    onDateSelect: (LocalDate) -> Unit,
+    dotColorMap: Map<Int, Color>? = null
 ) {
     val daysOfWeek = DayOfWeek.entries
     // 当月第一天在网格中的列索引（0-based，周一为首列）
@@ -179,7 +185,8 @@ fun CalendarMonthView(
                                 modifier = Modifier
                                     .size(4.dp)
                                     .background(
-                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.primary,
+                                        color = if (isSelected) Color.White
+                                                else dotColorMap?.get(day) ?: MaterialTheme.colorScheme.primary,
                                         shape = RoundedCornerShape(2.dp)
                                     )
                             )
