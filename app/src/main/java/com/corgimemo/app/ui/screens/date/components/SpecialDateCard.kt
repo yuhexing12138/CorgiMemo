@@ -2,6 +2,7 @@ package com.corgimemo.app.ui.screens.date.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -25,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -91,7 +94,16 @@ fun SpecialDateCard(
     isClickBlocked: Boolean = false,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // 2026-07-14 新增：三点按钮弹窗功能扩展
+    /** 简洁模式：隐藏时间信息行，标题垂直居中（对应菜单"隐藏详情"） */
+    isSimpleMode: Boolean = false,
+    /** 批量选择模式：显示左侧圆形选择框，点击切换选中 */
+    isBatchMode: Boolean = false,
+    /** 是否被选中（批量模式下） */
+    isSelected: Boolean = false,
+    /** 批量模式下点击卡片的回调（切换选中状态） */
+    onSelectClick: () -> Unit = {}
 ) {
     // 1. 是否处于"已归档"分组（决定整体 alpha 0.6 降权）
     // 2026-07-13 重构：改用 isArchived 字段判断（原为 groupType == EXPIRED），
@@ -155,7 +167,8 @@ fun SpecialDateCard(
             .then(
                 if (isClickBlocked) Modifier
                 else Modifier.combinedClickable(
-                    onClick = onClick,
+                    // 2026-07-14：批量模式下点击切换选中，非批量模式进入编辑
+                    onClick = if (isBatchMode) onSelectClick else onClick,
                     onLongClick = onLongClick
                 )
             )
@@ -169,6 +182,33 @@ fun SpecialDateCard(
                 .then(if (isArchivedGroup) Modifier.alpha(0.6f) else Modifier),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 0. 批量选择圆形选择框（仅 isBatchMode=true 时显示）
+            // 2026-07-14 新增：对应菜单"批量选择"功能
+            if (isBatchMode) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                        .border(
+                            width = 2.dp,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray,
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isSelected) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+            }
+
             // 1. 圆形图片区（48dp，emoji 占位）
             // 2026-07-13：图片尺寸从 56dp 减小到 48dp，同步 emoji 字号 28sp→24sp
             Box(
@@ -216,12 +256,15 @@ fun SpecialDateCard(
                 Spacer(Modifier.size(4.dp))
 
                 // 2.2 时间信息行（动态格式：年/天/时/分/秒）
-                Text(
-                    text = formatDuration(abs(diff)),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = timeColor
-                )
+                // 2026-07-14：isSimpleMode=true 时隐藏时间信息行（对应菜单"隐藏详情"）
+                if (!isSimpleMode) {
+                    Text(
+                        text = formatDuration(abs(diff)),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = timeColor
+                    )
+                }
             }
 
             Spacer(Modifier.width(8.dp))
