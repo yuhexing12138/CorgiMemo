@@ -2,6 +2,7 @@ package com.corgimemo.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.corgimemo.app.data.model.DateCardColor
 import com.corgimemo.app.data.model.DateCardStyle
 import com.corgimemo.app.data.model.SpecialDate
 import com.corgimemo.app.data.repository.SpecialDateRepository
@@ -58,7 +59,7 @@ class SpecialDateCardStyleViewModel @Inject constructor(
     /**
      * 保存新日期
      *
-     * 把 QuickCreate 表单数据 + 卡片样式组合成一个完整的 [SpecialDate] 实体并写入 Room。
+     * 把 QuickCreate 表单数据 + 卡片样式 + 卡片颜色组合成一个完整的 [SpecialDate] 实体并写入 Room。
      * 写入过程通过 [SaveState] 暴露,写入期间(状态为 [SaveState.Saving])拒绝重复触发。
      *
      * @param title      名称(来自 QuickCreate)
@@ -66,13 +67,15 @@ class SpecialDateCardStyleViewModel @Inject constructor(
      * @param category   分类(预设枚举名如 "BIRTHDAY",或自定义字符串)
      * @param isPinned   是否置顶(来自 QuickCreate)
      * @param cardStyle  用户在样式选择页选中的 [DateCardStyle](存库时用其 serialName 字符串)
+     * @param cardColor  用户在样式选择页选中的 [DateCardColor](存库时用其 serialName 字符串,默认 DEFAULT)
      */
     fun saveNewDate(
         title: String,
         dateMillis: Long,
         category: String,
         isPinned: Boolean,
-        cardStyle: DateCardStyle
+        cardStyle: DateCardStyle,
+        cardColor: DateCardColor = DateCardColor.DEFAULT  // ← 新增,默认 DEFAULT 保持向后兼容
     ) {
         // 1. 重复触发防护:正在保存时,直接丢弃后续点击,避免重复插入导致数据错乱
         if (_saveState.value is SaveState.Saving) return
@@ -81,7 +84,7 @@ class SpecialDateCardStyleViewModel @Inject constructor(
         viewModelScope.launch {
             _saveState.value = SaveState.Saving
             try {
-                // 3. 构造实体:cardStyle 存 serialName 字符串,createdAt/updatedAt 均取当前时间
+                // 3. 构造实体:cardStyle/cardColor 存 serialName 字符串,createdAt/updatedAt 均取当前时间
                 val now = System.currentTimeMillis()
                 val newDate = SpecialDate(
                     title = title,
@@ -97,6 +100,7 @@ class SpecialDateCardStyleViewModel @Inject constructor(
                     isPinned = isPinned,
                     isArchived = false,
                     cardStyle = cardStyle.serialName,
+                    cardColor = cardColor.serialName,  // ← 新增
                     createdAt = now,
                     updatedAt = now
                 )
