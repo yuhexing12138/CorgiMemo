@@ -152,6 +152,21 @@ class SpecialDateViewModel @Inject constructor(
         _selectedDateCategory.value = category
     }
 
+    /** 每个类型的日期计数 */
+    val dateCountByCategory: StateFlow<Map<String, Int>> =
+        combine(repository.allDates, customDateTypes) { dates, customTypes ->
+            val counts = mutableMapOf<String, Int>()
+            // 内置类型计数
+            DateCategory.entries.forEach { dc ->
+                counts[dc.name] = dates.count { it.category == dc.name }
+            }
+            // 自定义类型计数
+            customTypes.forEach { ct ->
+                counts["CUSTOM:${ct.id}"] = dates.count { it.category == "CUSTOM:${ct.id}" }
+            }
+            counts
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     init {
         // 订阅持久化的隐藏详情状态
         viewModelScope.launch {
@@ -210,22 +225,26 @@ class SpecialDateViewModel @Inject constructor(
      * 这样"用户设置的日期是未来/过去"即可直接决定分区，符合用户对日期页的预期。
      */
     val groupedDates: StateFlow<Map<DateGroup, List<DisplayDate>>> =
-        combine(specialDates, _searchQuery, _hideArchivedItems) { dates, query, hideArchived ->
+        combine(specialDates, _searchQuery, _hideArchivedItems, _selectedDateCategory) { dates, query, hideArchived, selectedCategory ->
             // 1. 隐藏已归档过滤
             val afterHideFilter = if (hideArchived) dates.filter { !it.isArchived } else dates
             // 2. 搜索过滤（已归档与未归档都允许搜索）
-            val filtered = if (query.isBlank()) {
+            val afterSearch = if (query.isBlank()) {
                 afterHideFilter
             } else {
                 afterHideFilter.filter { it.title.contains(query, ignoreCase = true) }
             }
-            // 2. 2026-07-14 二次调整：过滤掉所有置顶卡（包括已归档+置顶的）
+            // 3. 类型筛选（null=全部, "BIRTHDAY"=内置, "CUSTOM:42"=自定义）
+            val afterCategoryFilter = selectedCategory?.let { category ->
+                afterSearch.filter { it.category == category }
+            } ?: afterSearch
+            // 4. 过滤掉所有置顶卡（包括已归档+置顶的）
             //    与"未归档+置顶"行为完全一致：
             //    - 互斥性
             //    - 显示在 pinnedDate 顶部
             //    - 不在原分组（EXPIRED/COUNTDOWN/COUNTUP）显示，避免重复
             //    取消置顶后根据 isArchived 字段返回对应分组
-            val withoutPinned = filtered.filter { !it.isPinned }
+            val withoutPinned = afterCategoryFilter.filter { !it.isPinned }
             groupByDisplayDates(withoutPinned)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 

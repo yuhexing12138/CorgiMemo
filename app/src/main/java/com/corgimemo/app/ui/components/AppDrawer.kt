@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
+import com.corgimemo.app.data.model.CustomDateType
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.theme.UiColors
 import com.corgimemo.app.viewmodel.DateGroup
@@ -981,4 +982,74 @@ sealed class CategoryAction {
     data class Pin(val category: Category) : CategoryAction()
     data class Rename(val category: Category) : CategoryAction()
     data class Delete(val category: Category) : CategoryAction()
+}
+
+/**
+ * 日期类型操作动作密封类
+ */
+sealed class DateTypeAction {
+    data class ShowMenu(val customType: CustomDateType) : DateTypeAction()
+    data class Rename(val customType: CustomDateType) : DateTypeAction()
+    data class Delete(val customType: CustomDateType) : DateTypeAction()
+}
+
+/**
+ * 自定义日期类型操作菜单（BottomSheet）
+ * 仅含编辑/删除两项，不含置顶
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DateTypeOperationSheet(
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    customType: CustomDateType,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color.White
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = customType.emoji, fontSize = 24.sp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = customType.name,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1C1B1F),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            }
+
+            OperationOption(
+                emoji = "✏️",
+                text = "编辑类型",
+                onClick = {
+                    onRename()
+                    onDismiss()
+                }
+            )
+
+            OperationOption(
+                emoji = "🗑️",
+                text = "删除类型",
+                textColor = MaterialTheme.colorScheme.error,
+                onClick = {
+                    onDelete()
+                    onDismiss()
+                }
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
 }
