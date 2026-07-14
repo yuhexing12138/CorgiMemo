@@ -1,29 +1,27 @@
 package com.corgimemo.app.ui.components
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.corgimemo.app.animation.AnimationType
@@ -32,18 +30,21 @@ import com.corgimemo.app.animation.FrameAnimation
 import com.corgimemo.app.ui.theme.UiColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.random.Random
 
 /**
  * 悬浮柯基按钮组件
  *
  * 可拖动的悬浮按钮，显示柯基头像帧动画。
- * 支持呼吸动画、点击缩放、长按拖动、快速滑动识别、贴边吸附、位置记忆、空闲动画、情绪变化和完成庆祝。
+ * 支持呼吸动画、点击缩放、长按拖动、贴边吸附、位置记忆、空闲动画、情绪变化和完成庆祝。
+ *
+ * 手势说明:
+ * - 点击(位移 < 8px 且时长 < 200ms):触发 onClick
+ * - 长按(> 200ms)或拖动(位移 > 8px):进入拖动模式,绝对位置追踪,松手贴边吸附
  *
  * @param onClick 点击回调（进入柯基详情页）
- * @param onPositionChanged 位置变化回调（保存到 DataStore）
- * @param onSwipeLeft 快速左滑回调（快速添加待办）
- * @param onSwipeRight 快速右滑回调（进入柯基详情页）
+ * @param onPositionChanged 位置变化回调（保存到 DataStore,百分比坐标）
  * @param initialPosition 初始位置（从 DataStore 恢复，百分比坐标）
  * @param triggerCelebration 触发庆祝动画的信号（值变化时触发）
  * @param currentMood 当前柯基情绪（用于情绪变化时切换表情）
@@ -53,8 +54,6 @@ import kotlin.random.Random
 fun FloatingCorgiButton(
     onClick: () -> Unit,
     onPositionChanged: (Float, Float) -> Unit,
-    onSwipeLeft: () -> Unit = {},
-    onSwipeRight: () -> Unit = {},
     initialPosition: Pair<Float, Float>? = null,
     triggerCelebration: Long = 0,
     currentMood: CorgiMood = CorgiMood.NORMAL,
@@ -62,35 +61,28 @@ fun FloatingCorgiButton(
 ) {
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val configuration = LocalConfiguration.current
 
-    // 屏幕尺寸（dp）
-    val screenWidthDp = configuration.screenWidthDp.dp
-    val screenHeightDp = configuration.screenHeightDp.dp
-
-    // 按钮尺寸
+    // 按钮尺寸（dp 常量，用于视觉;px 值在 BoxWithConstraints 内计算）
     val buttonSize = 48.dp
 
-    // 安全区域边距（dp）
-    val topSafeMargin = 56.dp
-    val bottomSafeMargin = 88.dp
+    // 安全区域边距（dp 常量）
+    // topSafeMargin: 容器已通过 paddingValues 避开 topBar,留小边距避免按钮紧贴顶部
+    // bottomSafeMargin: 与 FAB 的 bottom padding(16dp)一致,使默认位置与 FAB 等高
+    // horizontalMargin: 左右边距,也是贴边吸附的目标位置
+    val topSafeMargin = 8.dp
+    val bottomSafeMargin = 16.dp
     val horizontalMargin = 16.dp
 
-    // 默认位置（dp）：左下角，避免与FAB重叠
-    val defaultPaddingStart = horizontalMargin
-    val defaultPaddingBottom = bottomSafeMargin
-
-    // 当前位置（dp单位，用于 padding）
-    var paddingStartDp by remember { mutableStateOf(defaultPaddingStart) }
-    var paddingBottomDp by remember { mutableStateOf(defaultPaddingBottom) }
+    // 当前位置（像素 Int，用于 offset）
+    // 初始值 0,在 BoxWithConstraints 内根据实际尺寸初始化为默认左下角
+    var offsetX by remember { mutableStateOf(0) }
+    var offsetY by remember { mutableStateOf(0) }
 
     // 是否已初始化位置
     var isPositionInitialized by remember { mutableStateOf(false) }
 
     // 拖动状态
     var isDragging by remember { mutableStateOf(false) }
-    var isLongPressed by remember { mutableStateOf(false) }
-    var longPressStartTime by remember { mutableLongStateOf(0L) }
 
     // 当前动画类型（默认站立，空闲时切换）
     var currentAnimationType by remember { mutableStateOf(AnimationType.STAND) }
@@ -122,26 +114,8 @@ fun FloatingCorgiButton(
         }
     }
 
-    // 初始化位置（从 DataStore 恢复或使用默认值）
-    LaunchedEffect(initialPosition) {
-        if (!isPositionInitialized) {
-            if (initialPosition != null) {
-                // 将百分比坐标转换为 dp
-                val xPercent = initialPosition.first
-                val yPercent = initialPosition.second
-                val maxX = screenWidthDp - buttonSize - horizontalMargin
-                val maxY = screenHeightDp - buttonSize - bottomSafeMargin
-                val minY = topSafeMargin
-
-                paddingStartDp = (xPercent * screenWidthDp.value).dp.coerceIn(horizontalMargin, maxX)
-                paddingBottomDp = ((1f - yPercent) * screenHeightDp.value).dp.coerceIn(bottomSafeMargin, maxY)
-            } else {
-                paddingStartDp = defaultPaddingStart
-                paddingBottomDp = defaultPaddingBottom
-            }
-            isPositionInitialized = true
-        }
-    }
+    // 初始化位置占位:实际初始化在 BoxWithConstraints 内进行(依赖容器真实尺寸)
+    // 此处仅保留 isPositionInitialized 状态消费方,具体赋值见下方 BoxWithConstraints 块
 
     // 空闲动画：每30秒随机播放（30%概率）
     LaunchedEffect(Unit) {
@@ -199,48 +173,74 @@ fun FloatingCorgiButton(
         )
     }
 
-    // 贴边吸附逻辑
-    fun snapToEdge() {
-        val halfScreenWidth = screenWidthDp / 2
-        val maxX = screenWidthDp - buttonSize - horizontalMargin
+    // 使用 BoxWithConstraints 获取真实可用尺寸(含 insets 处理后的实际宽度)
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        // 容器真实尺寸(像素)
+        val containerWidthPx = with(density) { maxWidth.toPx() }
+        val containerHeightPx = with(density) { maxHeight.toPx() }
 
-        // 根据当前位置判断吸附到左边还是右边
-        val targetStart = if (paddingStartDp < halfScreenWidth) {
-            horizontalMargin  // 吸附到左边缘
-        } else {
-            maxX  // 吸附到右边缘
+        // 像素常量(由 dp 转换,用于边界计算)
+        val buttonSizePx = with(density) { buttonSize.toPx() }
+        val horizontalMarginPx = with(density) { horizontalMargin.toPx() }
+        val topSafeMarginPx = with(density) { topSafeMargin.toPx() }
+        val bottomSafeMarginPx = with(density) { bottomSafeMargin.toPx() }
+
+        // 安全边界(像素)
+        val minX = horizontalMarginPx
+        val maxX = containerWidthPx - buttonSizePx - horizontalMarginPx
+        val minY = topSafeMarginPx
+        val maxY = containerHeightPx - buttonSizePx - bottomSafeMarginPx
+
+        // 初始化位置(在 BoxWithConstraints 内,确保 containerWidthPx/Height 已就绪)
+        LaunchedEffect(initialPosition, containerWidthPx, containerHeightPx) {
+            if (!isPositionInitialized && containerWidthPx > 0f && containerHeightPx > 0f) {
+                if (initialPosition != null) {
+                    val (xPercent, yPercent) = initialPosition
+                    offsetX = (xPercent * containerWidthPx).toInt()
+                        .coerceIn(minX.toInt(), maxX.toInt())
+                    offsetY = ((1f - yPercent) * containerHeightPx).toInt()
+                        .coerceIn(minY.toInt(), maxY.toInt())
+                } else {
+                    // 默认左下角
+                    offsetX = minX.toInt()
+                    offsetY = maxY.toInt()
+                }
+                isPositionInitialized = true
+            }
         }
 
-        coroutineScope.launch {
-            playBounceAnimation()
-            paddingStartDp = targetStart
+        /**
+         * 贴边吸附:根据当前 offsetX 判断吸附到左/右边缘,用 tween 平滑动画过渡
+         * Y 坐标保持不变。完成后持久化百分比坐标到 DataStore。
+         * 动画规格:FastOutSlowInEasing(300ms),Material 标准平滑过渡,无弹跳
+         */
+        fun snapToEdge() {
+            val halfWidth = containerWidthPx / 2
+            val targetX = if (offsetX < halfWidth) minX else maxX
 
-            // 保存位置（百分比坐标）
-            val percentX = targetStart.value / screenWidthDp.value
-            val percentY = 1f - (paddingBottomDp.value / screenHeightDp.value)
-            onPositionChanged(percentX, percentY)
+            coroutineScope.launch {
+                playBounceAnimation()
+                // tween 平滑过渡(无弹跳,避免突兀感)
+                val animX = Animatable(offsetX.toFloat())
+                animX.animateTo(
+                    targetValue = targetX,
+                    animationSpec = tween(
+                        durationMillis = 300,
+                        easing = FastOutSlowInEasing
+                    )
+                )
+                offsetX = animX.value.toInt()
+
+                // 持久化(百分比坐标,与 DataStore 旧格式兼容)
+                val percentX = offsetX / containerWidthPx
+                val percentY = 1f - (offsetY / containerHeightPx)
+                onPositionChanged(percentX, percentY)
+            }
         }
-    }
 
-    // 边界限制（dp单位）
-    fun clampPadding(start: Float, bottom: Float): Pair<Float, Float> {
-        val maxStart = screenWidthDp.value - buttonSize.value - horizontalMargin.value
-        val maxBottom = screenHeightDp.value - buttonSize.value - bottomSafeMargin.value
-        val minBottom = bottomSafeMargin.value
-        return Pair(
-            start.coerceIn(horizontalMargin.value, maxStart),
-            bottom.coerceIn(minBottom, maxBottom)
-        )
-    }
-
-    // 使用 fillMaxSize 的 Box 作为容器，确保正确的布局和命中测试
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.BottomStart
-    ) {
         Surface(
             modifier = Modifier
-                .padding(start = paddingStartDp, bottom = paddingBottomDp)
+                .offset { IntOffset(offsetX, offsetY) }
                 .size(buttonSize)
                 .zIndex(10f)
                 .shadow(
@@ -248,102 +248,85 @@ fun FloatingCorgiButton(
                     shape = CircleShape
                 )
                 .scale(finalScale)
+                // 手势处理:挂在 Surface 上,只覆盖 48dp 按钮区域,不拦截页面其他组件事件
+                // change.position 为相对按钮左上角的局部坐标
                 .pointerInput(Unit) {
-                    // 快速滑动阈值：触摸时长 < 200ms 且水平位移 > 50px
-                    val SWIPE_TIME_THRESHOLD = 200L
-                    val SWIPE_DISTANCE_THRESHOLD = 50f
-                    // 长按拖动启动阈值：100ms（缩短启动阻尼）
-                    val LONG_PRESS_THRESHOLD = 100L
-                    // 单帧最大位移：30px，防止 awaitPointerEvent 丢帧导致按钮瞬移
-                    val MAX_DELTA_PER_FRAME = 30f
+                    // 长按阈值:200ms(不再为快速滑动让步,降低误触)
+                    val LONG_PRESS_THRESHOLD = 200L
+                    // 拖动启动位移阈值:8px(超过即视为拖动,响应更快)
+                    val DRAG_START_THRESHOLD = 8f
+                    // 点击位移阈值:8px(小于此值视为点击)
+                    val CLICK_THRESHOLD = 8f
 
                     awaitPointerEventScope {
                         while (true) {
                             val down = awaitPointerEvent()
-                            val change = down.changes.firstOrNull() ?: continue
+                            val downChange = down.changes.firstOrNull() ?: continue
 
-                            longPressStartTime = System.currentTimeMillis()
-                            isLongPressed = false
+                            // 按下时记录手指相对按钮左上角的偏移(用于绝对位置追踪)
+                            // pointerInput 挂在 Surface 上,position 是局部坐标,无需 insideButton 判断
+                            val touchOffsetX = downChange.position.x
+                            val touchOffsetY = downChange.position.y
 
-                            // 记录上一帧位置（用于计算位移增量）
-                            var prevX = change.position.x
-                            var prevY = change.position.y
-
-                            // 等待长按判定或手指移动
-                            var isLongPressTriggered = false
+                            val dragStartTime = System.currentTimeMillis()
                             var totalDragX = 0f
                             var totalDragY = 0f
+                            // 局部拖动标志:控制手势循环内逻辑流
+                            // 注意:与外层可观察状态 isDragging 同名会遮蔽,故用 isDragActive
+                            var isDragActive = false
 
                             while (true) {
                                 val event = awaitPointerEvent()
-                                val currentChange = event.changes.firstOrNull() ?: break
+                                val change = event.changes.firstOrNull() ?: break
+                                if (change.isConsumed) break
 
-                                if (currentChange.isConsumed) break
+                                // 绝对位置追踪:手指相对按钮局部坐标 + 按钮当前位置 = 手指容器坐标
+                                // 当组件移动时 change.position 反向变化,但 offsetX+change.position 保持不变
+                                // 消除组件移动导致的抖动
+                                val absCurrentX = offsetX + change.position.x
+                                val absCurrentY = offsetY + change.position.y
 
-                                // 手动计算位置变化量（Compose 1.7+ 移除了 positionChange()）
-                                val currentX = currentChange.position.x
-                                val currentY = currentChange.position.y
-                                // 单帧 delta 限制：避免系统丢帧时按钮瞬移
-                                val rawDeltaX = currentX - prevX
-                                val rawDeltaY = currentY - prevY
-                                val deltaX = rawDeltaX.coerceIn(-MAX_DELTA_PER_FRAME, MAX_DELTA_PER_FRAME)
-                                val deltaY = rawDeltaY.coerceIn(-MAX_DELTA_PER_FRAME, MAX_DELTA_PER_FRAME)
-                                prevX = currentX
-                                prevY = currentY
+                                if (!isDragActive) {
+                                    // 累计相对按下点的总位移(用于点击 vs 拖动判定)
+                                    // 在按钮未移动时,change.position - downChange.position 等价于绝对位移
+                                    totalDragX = change.position.x - downChange.position.x
+                                    totalDragY = change.position.y - downChange.position.y
 
-                                if (!isLongPressed) {
-                                    totalDragX += deltaX
-                                    totalDragY += deltaY
-
-                                    // 长按 100ms 即进入拖动模式（不再限制小位移）
-                                    // 这样快速右滑时按钮也能跟手，而不会被 swipe 截胡
-                                    val elapsed = System.currentTimeMillis() - longPressStartTime
-                                    if (elapsed > LONG_PRESS_THRESHOLD) {
-                                        isLongPressed = true
-                                        isDragging = true
-                                        isLongPressTriggered = true
+                                    val elapsed = System.currentTimeMillis() - dragStartTime
+                                    val moved = abs(totalDragX) > DRAG_START_THRESHOLD ||
+                                                abs(totalDragY) > DRAG_START_THRESHOLD
+                                    // 长按超时 或 位移超阈值,任一满足即进入拖动
+                                    if (elapsed > LONG_PRESS_THRESHOLD || moved) {
+                                        isDragActive = true
+                                        isDragging = true  // 同步外层可观察状态,触发 scale/shadow 变化
                                     }
                                 }
 
-                                if (isDragging) {
-                                    // 将像素位移转换为 dp 并更新位置
-                                    val deltaXDp = with(density) { deltaX.toDp() }
-                                    val deltaYDp = with(density) { deltaY.toDp() }
-                                    val (clampedStart, clampedBottom) = clampPadding(
-                                        paddingStartDp.value + deltaXDp.value,
-                                        paddingBottomDp.value - deltaYDp.value
-                                    )
-                                    paddingStartDp = clampedStart.dp
-                                    paddingBottomDp = clampedBottom.dp
-                                    currentChange.consume()
+                                if (isDragActive) {
+                                    // 绝对位置追踪:目标按钮位置 = 手指容器坐标 - 按下偏移(局部)
+                                    // 无截断、无累积误差,丢帧后下一帧立即追上手指
+                                    val targetX = (absCurrentX - touchOffsetX)
+                                        .coerceIn(minX, maxX)
+                                    val targetY = (absCurrentY - touchOffsetY)
+                                        .coerceIn(minY, maxY)
+                                    offsetX = targetX.toInt()
+                                    offsetY = targetY.toInt()
+                                    change.consume()
                                 }
 
-                                if (!currentChange.pressed) {
+                                if (!change.pressed) {
                                     // 手指抬起
-                                    val touchDuration = System.currentTimeMillis() - longPressStartTime
-                                    val totalHorizontalDrag = kotlin.math.abs(totalDragX)
-
-                                    if (isDragging) {
-                                        // 已进入拖动模式：松手直接吸附边，跳过 swipe 检测
-                                        // 这样拖动期间右滑不会被 onSwipeRight 截胡
+                                    if (isDragActive) {
+                                        // 拖动结束:贴边吸附
+                                        isDragActive = false
                                         isDragging = false
-                                        isLongPressed = false
                                         snapToEdge()
-                                    } else if (!isLongPressTriggered) {
-                                        // 快速滑动识别：触摸时长 < 200ms 且水平位移 > 阈值
-                                        // 仅在未启动拖动时生效，避免误触 onSwipeRight
-                                        if (touchDuration < SWIPE_TIME_THRESHOLD && totalHorizontalDrag > SWIPE_DISTANCE_THRESHOLD) {
-                                            if (totalDragX < 0) {
-                                                onSwipeLeft()
-                                            } else {
-                                                onSwipeRight()
-                                            }
-                                        } else {
-                                            // 短按：先播放点击缩放动画，再跳转
-                                            coroutineScope.launch {
-                                                playClickAnimation()
-                                                onClick()
-                                            }
+                                    } else if (abs(totalDragX) < CLICK_THRESHOLD &&
+                                               abs(totalDragY) < CLICK_THRESHOLD) {
+                                        // 点击:先播放缩放动画再回调
+                                        coroutineScope.launch {
+                                            playClickAnimation()
+                                            onClick()
                                         }
                                     }
                                     break
