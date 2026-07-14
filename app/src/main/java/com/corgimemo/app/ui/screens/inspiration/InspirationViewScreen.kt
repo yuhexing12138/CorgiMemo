@@ -52,6 +52,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
+import com.corgimemo.app.ui.components.AppSnackbarHost
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationViewCard
 import com.corgimemo.app.ui.screens.inspiration.components.ShareInspirationSheet
@@ -155,7 +156,7 @@ fun InspirationViewScreen(
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),  // 由各 Composable 自行处理 WindowInsets
         containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopBar(
                 onBack = { navigateBack() },
