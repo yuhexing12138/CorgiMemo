@@ -14,9 +14,10 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun PriorityBadge(priority: Int) {
     val (text, color, backgroundColor) = when (priority) {
-        2 -> Triple("高", PriorityColors.High, Color(0xFFFFE4E6))
-        1 -> Triple("中", PriorityColors.Medium, Color(0xFFFFF3E0))
-        else -> Triple("低", PriorityColors.Low, Color(0xFFECFDF5))
+        3 -> Triple("高", PriorityColors.High, Color(0xFFFFE4E6))
+        2 -> Triple("中", PriorityColors.Medium, Color(0xFFFFF3E0))
+        1 -> Triple("低", PriorityColors.Low, Color(0xFFECFDF5))
+        else -> Triple("无", PriorityColors.None, Color.Transparent)
     }
 
     androidx.compose.material3.Surface(

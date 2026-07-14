@@ -244,13 +244,13 @@ fun SpecialDateDetailScreen(
                                     )
                                 }
 
-                                // 备注行
+                                // 备注行（最多显示6行，超出显示省略号）
                                 if (date.content.isNotBlank()) {
                                     Text(
                                         text = date.content,
                                         modifier = Modifier
                                             .padding(top = 16.dp, start = 32.dp, end = 32.dp),
-                                        maxLines = 1,
+                                        maxLines = 6,
                                         overflow = TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant

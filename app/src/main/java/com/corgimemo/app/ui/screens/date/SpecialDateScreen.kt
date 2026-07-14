@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +44,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.R
@@ -263,6 +266,7 @@ fun SpecialDateScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 20.dp, bottom = 16.dp)
+                .zIndex(10f)
         ) {
             Icon(
                 imageVector = Icons.Default.Edit,
@@ -555,6 +559,12 @@ private fun DateSectionsList(
                     }
                 }
             }
+        }
+
+        // 底部留白：确保列表最后一项可滚动到 FAB 上方（与待办页/灵感页一致）
+        // FAB 高度 56dp + 底部 padding 16dp = 72dp，80dp 留有少量余量
+        item {
+            Spacer(modifier = Modifier.height(80.dp))
         }
         }  // 闭合 LazyColumn lambda
         }  // 闭合内层 Box(graphicsLayer)

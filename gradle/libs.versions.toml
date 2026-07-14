@@ -54,6 +54,7 @@ androidx-navigation-compose = { group = "androidx.navigation", name = "navigatio
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 # Compose BOM（Bill of Materials）：统一管理所有 Compose 库版本
 # 版本: 2026.04.01 | 对应: Foundation 1.11.x / Material3 1.9.x / UI 1.11.x / Animation 1.11.x
 # 升级指南: 仅修改此版本号即可全局升级所有 Compose 库，无需逐个修改

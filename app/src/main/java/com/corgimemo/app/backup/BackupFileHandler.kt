@@ -37,9 +37,9 @@ object BackupFileHandler {
             BackupManager.ExportFormat.IMAGE -> "png"
         }
         val prefix = when (format) {
-            BackupManager.ExportFormat.ICAL -> "CorgiMemo_待办"
-            BackupManager.ExportFormat.IMAGE -> "CorgiMemo_分享"
-            else -> "corgimemo_backup"
+            BackupManager.ExportFormat.ICAL -> "刻记+_待办"
+            BackupManager.ExportFormat.IMAGE -> "刻记+_分享"
+            else -> "刻记+_backup"
         }
         return "${prefix}_$timestamp.$extension"
     }

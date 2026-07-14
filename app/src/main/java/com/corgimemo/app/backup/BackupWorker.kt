@@ -41,7 +41,7 @@ class BackupWorker(
             withContext(Dispatchers.IO) {
                 val timestamp = System.currentTimeMillis()
                 val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-                val fileName = "CorgiMemo_backup_${dateFormat.format(Date(timestamp))}.json"
+                val fileName = "刻记+_backup_${dateFormat.format(Date(timestamp))}.json"
 
                 val fileUri = createFileInDownloads(context, fileName)
 

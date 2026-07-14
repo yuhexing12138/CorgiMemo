@@ -11,6 +11,7 @@ import com.corgimemo.app.analytics.UserBehaviorAnalyzer
 import com.corgimemo.app.data.repository.InspirationRepository
 import com.corgimemo.app.data.repository.SpecialDateRepository
 import com.corgimemo.app.data.repository.TodoRepository
+import com.corgimemo.app.data.seed.DemoDataSeeder
 import com.corgimemo.app.notification.NotificationHelper
 import com.corgimemo.app.widget.WidgetUpdateWorker
 import com.corgimemo.app.worker.ArchiveCleanupScheduler
@@ -37,6 +38,10 @@ class CorgiMemoApplication : Application() {
     /** 用户行为分析器（用于智能预加载） */
     @Inject
     lateinit var userBehaviorAnalyzer: UserBehaviorAnalyzer
+
+    /** 演示种子数据注入器（首次启动时自动注入待办/灵感/日期等演示数据） */
+    @Inject
+    lateinit var demoDataSeeder: DemoDataSeeder
 
     override fun onCreate() {
         super.onCreate()
@@ -74,6 +79,22 @@ class CorgiMemoApplication : Application() {
             }
         } catch (e: Exception) {
             android.util.Log.w("CorgiMemoApplication", "⚠️ 预加载器注册失败（不影响正常使用）: ${e.message}")
+        }
+
+        /**
+         * 演示种子数据注入
+         *
+         * - 首次启动时自动注入待办/灵感/日期/跨模块关联等演示数据
+         * - 通过 SharedPreferences 标志位保证幂等性，避免重复注入
+         * - 整个注入过程包裹在 Room withTransaction 中，任一步骤失败则全部回滚
+         * - 注入失败不影响 APP 正常启动
+         */
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                demoDataSeeder.seedIfNeeded()
+            } catch (e: Exception) {
+                android.util.Log.w("CorgiMemoApplication", "⚠️ 演示数据注入失败: ${e.message}")
+            }
         }
     }
 

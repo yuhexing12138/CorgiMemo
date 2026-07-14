@@ -317,7 +317,7 @@ fun TimelineInspirationItem(
                     // 时分时间 → 正文 间距
                     Spacer(modifier = Modifier.height(timeToContentGap))
 
-                    // 正文（14sp，行高 21sp）
+                    // 正文（14sp，行高 21sp，最多6行超出省略）
                     if (inspiration.content.isNotBlank()) {
                         val plainContent = removeHtmlTags(inspiration.content)
                         Text(
@@ -325,7 +325,9 @@ fun TimelineInspirationItem(
                             fontSize = 14.sp,
                             lineHeight = 21.sp,
                             color = Color(0xFF666666),
-                            letterSpacing = chineseLetterSpacing
+                            letterSpacing = chineseLetterSpacing,
+                            maxLines = 6,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 

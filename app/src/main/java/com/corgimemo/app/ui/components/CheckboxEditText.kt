@@ -375,7 +375,9 @@ fun CheckboxEditText(
                                     }
                                 } else {
                                     // 子待办：仅更新自身
-                                    val targetIndex = updatedLines.indexOfFirst { it.groupId == line.groupId && it.order == line.order }
+                                    // 修复：添加 isSubTask 条件，避免当子任务 order=0 时误匹配到主任务行（groupId=0, order=0）
+                                    // 导致主任务行被子任务内容覆盖、标题消失
+                                    val targetIndex = updatedLines.indexOfFirst { it.groupId == line.groupId && it.order == line.order && it.isSubTask }
                                     if (targetIndex >= 0 && targetIndex < updatedLines.size) {
                                         updatedLines[targetIndex] = line.copy(isChecked = checked)
                                     }

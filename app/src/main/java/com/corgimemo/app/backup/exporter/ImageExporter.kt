@@ -142,7 +142,7 @@ object ImageExporter {
             color = Color.WHITE
             isAntiAlias = true
         }
-        canvas.drawText("CorgiMemo", padding + 56 * density, y + 32 * density, titlePaint)
+        canvas.drawText("刻记+", padding + 56 * density, y + 32 * density, titlePaint)
 
         val subtitlePaint = TextPaint().apply {
             textSize = (11 * density)
@@ -374,9 +374,10 @@ object ImageExporter {
      */
     private fun getPriorityBadge(priority: Int): BadgeConfig {
         return when (priority) {
-            2 -> BadgeConfig("高", PriorityColors.High.toArgb(), Color.parseColor("#FFE4E6"))
-            1 -> BadgeConfig("中", PriorityColors.Medium.toArgb(), Color.parseColor("#FFF3E0"))
-            else -> BadgeConfig("低", PriorityColors.Low.toArgb(), Color.parseColor("#ECFDF5"))
+            3 -> BadgeConfig("高", PriorityColors.High.toArgb(), Color.parseColor("#FFE4E6"))
+            2 -> BadgeConfig("中", PriorityColors.Medium.toArgb(), Color.parseColor("#FFF3E0"))
+            1 -> BadgeConfig("低", PriorityColors.Low.toArgb(), Color.parseColor("#ECFDF5"))
+            else -> BadgeConfig("无", PriorityColors.None.toArgb(), Color.parseColor("#F5F5F5"))
         }
     }
 

@@ -450,8 +450,8 @@ class CorgiPreferences(
         esp.edit().putBoolean(Keys.SHOW_COMPLETED, show).apply()
     }
 
-    /** V2.9: 待办卡片简化显示 */
-    val hideDetails: Flow<Boolean> = booleanFlow(Keys.HIDE_DETAILS, false)
+    /** V2.9: 待办卡片简化显示（默认隐藏详情） */
+    val hideDetails: Flow<Boolean> = booleanFlow(Keys.HIDE_DETAILS, true)
 
     suspend fun setHideDetails(hide: Boolean) = withContext(Dispatchers.IO) {
         esp.edit().putBoolean(Keys.HIDE_DETAILS, hide).apply()

@@ -150,8 +150,8 @@ class HomeViewModel @Inject constructor(
     private val _showPending = MutableStateFlow(true)
     val showPending: StateFlow<Boolean> = _showPending.asStateFlow()
 
-    /** 待办卡片简化显示（隐藏详情） */
-    private val _hideDetails = MutableStateFlow(false)
+    /** 待办卡片简化显示（隐藏详情，默认隐藏） */
+    private val _hideDetails = MutableStateFlow(true)
     val hideDetails: StateFlow<Boolean> = _hideDetails.asStateFlow()
 
     /** 请求滚动到指定待办（消费后自动重置为 null） */

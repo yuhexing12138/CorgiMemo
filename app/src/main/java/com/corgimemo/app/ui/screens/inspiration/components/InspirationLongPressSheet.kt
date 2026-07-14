@@ -34,7 +34,6 @@ import kotlinx.coroutines.launch
  * @param onTagClick 标签点击回调
  * @param onDateClick 改日期点击回调
  * @param onDeleteClick 删除点击回调
- * @param onDebugClick 调试输出 imagePaths 点击回调（仅 DEBUG 模式显示）
  * @param onDismiss 关闭回调
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -45,7 +44,6 @@ fun InspirationLongPressSheet(
     onTagClick: () -> Unit,
     onDateClick: () -> Unit,
     onDeleteClick: () -> Unit,
-    onDebugClick: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState()
@@ -145,28 +143,6 @@ fun InspirationLongPressSheet(
                     }
                 }
             )
-
-            // 临时调试选项：输出当前灵感的 imagePaths 到 logcat
-            // 仅在 onDebugClick 不为空时显示，便于排查图片加载问题
-            if (onDebugClick != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(Color(0xFFEEEEEE))
-                        .padding(horizontal = 16.dp)
-                )
-                LongPressOptionItem(
-                    icon = "🐛",
-                    text = "调试输出 imagePaths",
-                    textColor = Color(0xFF666666),
-                    onClick = {
-                        scope.launch { sheetState.hide() }.invokeOnCompletion {
-                            onDebugClick()
-                        }
-                    }
-                )
-            }
         }
     }
 }

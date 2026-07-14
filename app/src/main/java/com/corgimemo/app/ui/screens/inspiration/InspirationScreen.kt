@@ -98,7 +98,6 @@ fun InspirationScreen(
     /** 灵感删除撤销状态（用于触发 Snackbar 提示） */
     val pendingDeletedInspiration by viewModel.pendingDeletedInspiration.collectAsState()
     val pendingBatchDeletedInspirations by viewModel.pendingBatchDeletedInspirations.collectAsState()
-    val context = androidx.compose.ui.platform.LocalContext.current
 
     // 弹窗状态
     var showLongPressSheet by remember { mutableStateOf(false) }
@@ -391,50 +390,6 @@ fun InspirationScreen(
             onDeleteClick = {
                 showDeleteConfirm = true
                 showLongPressSheet = false
-            },
-            /**
-             * 临时调试回调：输出当前长按选中的灵感的 imagePaths 详情到 logcat
-             * - 包含原始字符串、解析后列表、每个路径文件是否存在及大小
-             * - 便于排查图片加载失败问题
-             * - 通过 "InspirationImage" tag 过滤查看
-             */
-            onDebugClick = {
-                val ins = longPressedInspiration!!
-                val raw = ins.imagePaths
-                val parsed = viewModel.decodePaths(raw)
-                val appFilesDir = context.filesDir.absolutePath
-                android.util.Log.d(
-                    "InspirationImage",
-                    "===== Debug imagePaths for inspiration[id=${ins.id}, title=${ins.title}] ====="
-                )
-                android.util.Log.d("InspirationImage", "raw=$raw")
-                android.util.Log.d("InspirationImage", "parsed.size=${parsed.size}")
-                android.util.Log.d("InspirationImage", "appFilesDir=$appFilesDir")
-                parsed.forEachIndexed { index, path ->
-                    val file = java.io.File(path)
-                    val exists = file.exists()
-                    val length = if (exists) file.length() else -1L
-                    val canonicalPath = try { file.canonicalPath } catch (e: Exception) { "<err:${e.message}>" }
-                    val parent = file.parent
-                    val parentExists = parent?.let { java.io.File(it).exists() } ?: false
-                    val parentCanonical = try { file.parentFile?.canonicalPath } catch (e: Exception) { "<err>" }
-                    val hasLeadingSlash = path.startsWith("/")
-                    val hasBackslash = path.contains('\\')
-                    val hasSpace = path.contains(' ')
-                    val hasControlChar = path.any { it.isISOControl() }
-                    android.util.Log.d(
-                        "InspirationImage",
-                        "[$index] path=\"$path\" len=${path.length} | " +
-                            "exists=$exists length=$length parent=$parent parentExists=$parentExists | " +
-                            "canonical=$canonicalPath | " +
-                            "flags[leading=$hasLeadingSlash backslash=$hasBackslash " +
-                            "space=$hasSpace ctrl=$hasControlChar] | " +
-                            "bytes=${path.toByteArray(Charsets.UTF_8).joinToString(",") { "0x%02x".format(it) }}"
-                    )
-                }
-                android.util.Log.d("InspirationImage", "===== End debug =====")
-                showLongPressSheet = false
-                longPressedInspiration = null
             },
             onDismiss = {
                 showLongPressSheet = false

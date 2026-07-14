@@ -167,7 +167,7 @@ object ShareCardComponent {
                 Spacer(modifier = Modifier.width(8.dp))
                 Column {
                     Text(
-                        text = "CorgiMemo",
+                        text = "刻记+",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = OrangePrimary
