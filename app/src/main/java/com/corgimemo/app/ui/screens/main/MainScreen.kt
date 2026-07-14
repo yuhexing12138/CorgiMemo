@@ -945,7 +945,7 @@ fun MainScreen(
 
     if (showAddCategoryDialog) {
         com.corgimemo.app.ui.components.AddCategoryDialog(
-            onConfirm = { name ->
+            onConfirmName = { name ->
                 homeViewModel.createCategory(name)
                 showAddCategoryDialog = false
             },
@@ -955,7 +955,7 @@ fun MainScreen(
 
     if (showAddTagDialog) {
         com.corgimemo.app.ui.components.AddCategoryDialog(
-            onConfirm = { name ->
+            onConfirmName = { name ->
                 inspirationViewModel.addUserTag(name)
                 showAddTagDialog = false
             },

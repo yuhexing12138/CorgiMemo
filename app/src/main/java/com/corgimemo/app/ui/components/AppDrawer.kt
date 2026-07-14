@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,6 +59,7 @@ import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.CustomDateType
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.theme.UiColors
+import com.corgimemo.app.viewmodel.DateCategory
 import com.corgimemo.app.viewmodel.DateGroup
 import com.corgimemo.app.viewmodel.TagFilterMode
 
@@ -569,11 +571,26 @@ private fun InspirationFilterSection(
 
 /**
  * 日期类型筛选区域
+ *
+ * 展示：全部日期 → 8个内置 DateCategory → 自定义类型列表
+ * 内置类型无菜单(显示箭头)，自定义类型有菜单(可重命名/删除)
+ *
+ * @param selectedDateCategory 当前选中的类型(null=全部, "BIRTHDAY"=内置, "CUSTOM:42"=自定义)
+ * @param dateCountByCategory 每个类型对应的日期计数
+ * @param customDateTypes 自定义类型列表
+ * @param onDateCategoryClick 类型点击回调
+ * @param onAddCustomTypeClick 添加类型按钮回调
+ * @param onCustomTypeAction 自定义类型操作回调
+ * @param modifier 修饰符
  */
 @Composable
 private fun DateTypeFilterSection(
-    selectedDateType: DateGroup?,
-    onDateTypeClick: (DateGroup?) -> Unit,
+    selectedDateCategory: String?,
+    dateCountByCategory: Map<String, Int>,
+    customDateTypes: List<CustomDateType>,
+    onDateCategoryClick: (String?) -> Unit,
+    onAddCustomTypeClick: () -> Unit,
+    onCustomTypeAction: (DateTypeAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -596,52 +613,50 @@ private fun DateTypeFilterSection(
         Spacer(modifier = Modifier.height(8.dp))
 
         LazyColumn(modifier = Modifier.fillMaxWidth()) {
+            // 全部日期
             item {
                 CategoryItem(
                     icon = DRAWER_ICON_ALL,
                     name = "全部日期",
-                    count = 0,
-                    isSelected = selectedDateType == null,
+                    count = dateCountByCategory.values.sum(),
+                    isSelected = selectedDateCategory == null,
                     showMenu = false,
-                    onClick = { onDateTypeClick(null) }
+                    onClick = { onDateCategoryClick(null) }
                 )
             }
 
-            item {
+            // 8 个内置类型
+            items(DateCategory.entries.toList()) { dateCategory ->
                 CategoryItem(
-                    icon = "⏳",
-                    name = "倒计时",
-                    count = 0,
-                    isSelected = selectedDateType == DateGroup.COUNTDOWN,
+                    icon = dateCategory.emoji,
+                    name = dateCategory.displayName,
+                    count = dateCountByCategory[dateCategory.name] ?: 0,
+                    isSelected = selectedDateCategory == dateCategory.name,
                     showMenu = false,
-                    onClick = { onDateTypeClick(DateGroup.COUNTDOWN) }
+                    onClick = { onDateCategoryClick(dateCategory.name) }
                 )
             }
 
-            item {
+            // 自定义类型（有菜单按钮）
+            items(customDateTypes) { customType ->
                 CategoryItem(
-                    icon = "⏱️",
-                    name = "正计时",
-                    count = 0,
-                    isSelected = selectedDateType == DateGroup.COUNTUP,
-                    showMenu = false,
-                    onClick = { onDateTypeClick(DateGroup.COUNTUP) }
-                )
-            }
-
-            item {
-                CategoryItem(
-                    icon = "📦",
-                    // 2026-07-13：原"已过期"改为"已归档"（与 DateSectionHeader、SpecialDateSkeleton 保持一致）
-                    name = "已归档",
-                    count = 0,
-                    isSelected = selectedDateType == DateGroup.EXPIRED,
-                    showMenu = false,
-                    textColor = Color(0xFF79747E),
-                    onClick = { onDateTypeClick(DateGroup.EXPIRED) }
+                    icon = customType.emoji,
+                    name = customType.name,
+                    count = dateCountByCategory["CUSTOM:${customType.id}"] ?: 0,
+                    isSelected = selectedDateCategory == "CUSTOM:${customType.id}",
+                    showMenu = true,
+                    onClick = { onDateCategoryClick("CUSTOM:${customType.id}") },
+                    onMenuClick = {
+                        onCustomTypeAction(DateTypeAction.ShowMenu(customType))
+                    }
                 )
             }
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 添加类型按钮
+        AddCategoryButton(text = "添加类型", onClick = onAddCustomTypeClick)
     }
 }
 
@@ -736,14 +751,28 @@ private fun BottomActionSection(
 
 // ==================== 弹窗组件 ====================
 
+/**
+ * 添加分类/类型对话框
+ *
+ * @param onConfirmName 仅传名称的确认回调（向后兼容，待办分组使用）
+ * @param onConfirm 带名称和 emoji 的确认回调（日期类型使用）
+ * @param showEmojiPicker 是否显示 emoji 选择器（默认 false，待办分组不显示）
+ * @param title 对话框标题
+ * @param label 输入框标签
+ */
 @Composable
 fun AddCategoryDialog(
-    onConfirm: (String) -> Unit,
+    onConfirmName: (String) -> Unit = {},
+    onConfirm: (String, String) -> Unit = { name, _ -> onConfirmName(name) },
     onDismiss: () -> Unit,
     title: String = "新建分组",
-    label: String = "分组名称"
+    label: String = "分组名称",
+    showEmojiPicker: Boolean = false
 ) {
     var name by remember { mutableStateOf("") }
+    var selectedEmoji by remember { mutableStateOf("📅") }
+
+    val presetEmojis = listOf("📅", "🎂", "💕", "🎉", "🌱", "📚", "💼", "🎮", "✈️", "🐹", "🏠", "⭐")
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -754,25 +783,61 @@ fun AddCategoryDialog(
             )
         },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text(label) },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = UiColors.Primary,
-                    focusedLabelColor = UiColors.Primary,
-                    cursorColor = UiColors.Primary
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(label) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = UiColors.Primary,
+                        focusedLabelColor = UiColors.Primary,
+                        cursorColor = UiColors.Primary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (showEmojiPicker) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "选择图标",
+                        fontSize = 14.sp,
+                        color = Color(0xFF79747E),
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    // Emoji 选择网格
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(presetEmojis) { emoji ->
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (emoji == selectedEmoji) UiColors.PrimaryLight
+                                        else Color(0xFFF5F5F5)
+                                    )
+                                    .clickable { selectedEmoji = emoji },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(text = emoji, fontSize = 20.sp)
+                            }
+                        }
+                    }
+                }
+            }
         },
         confirmButton = {
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
-                        onConfirm(name.trim())
+                        if (showEmojiPicker) {
+                            onConfirm(name.trim(), selectedEmoji)
+                        } else {
+                            onConfirmName(name.trim())
+                        }
                     }
                 },
                 enabled = name.isNotBlank(),
@@ -849,24 +914,35 @@ fun RenameCategoryDialog(
     )
 }
 
+/**
+ * 删除分类/类型确认对话框
+ *
+ * @param categoryName 分类/类型名称（用于文案插值）
+ * @param onConfirm 确认回调
+ * @param onDismiss 取消回调
+ * @param title 对话框标题（默认"删除分组"，日期类型调用时传"删除类型"）
+ * @param message 正文提示（默认使用待办分组文案，日期类型调用时传日期专属文案）
+ */
 @Composable
 fun DeleteCategoryConfirmDialog(
     categoryName: String,
     onConfirm: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    title: String = "删除分组",
+    message: String = "确定要删除分组「$categoryName」吗？\n该分组下的待办将变为未分类状态。"
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "删除分组",
+                text = title,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.error
             )
         },
         text = {
             Text(
-                text = "确定要删除分组「$categoryName」吗？\n该分组下的待办将变为未分类状态。",
+                text = message,
                 fontSize = 14.sp,
                 color = Color(0xFF1C1B1F)
             )
