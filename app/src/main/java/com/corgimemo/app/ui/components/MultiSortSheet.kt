@@ -30,9 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import android.widget.Toast
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -85,16 +83,16 @@ fun MultiSortSheet(
     currentConfig: MultiSortConfig,
     onConfigChanged: (MultiSortConfig) -> Unit,
     onApply: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** 统一的 Snackbar 提示回调（由调用方传入） */
+    onShowSnackbar: (String) -> Unit = {}
 ) {
     /** 内部状态：可编辑的配置副本 */
     var editableConfig by remember { mutableStateOf(currentConfig) }
 
+
     /** 建议最大级别数（超过后点击显示提示而非阻止） */
     val maxSuggestedLevels = 5
-
-    /** 获取 Context 用于 Toast 提示 */
-    val context = LocalContext.current
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -174,12 +172,8 @@ fun MultiSortSheet(
                             else "+ 添加第${indexToChinese(currentLevelCount + 1)}级排序条件",
                             onClick = {
                                 if (isAtLimit) {
-                                    /** 达到建议上限时显示 Toast 提示 */
-                                    Toast.makeText(
-                                        context,
-                                        "建议不超过 ${maxSuggestedLevels} 级排序以获得最佳性能",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    /** 达到建议上限时显示 Snackbar 提示 */
+                                    onShowSnackbar("建议不超过 ${maxSuggestedLevels} 级排序以获得最佳性能")
                                 } else {
                                     /** 在列表末尾追加新的默认排序条件 */
                                     val nextDefaultField = when (currentLevelCount) {

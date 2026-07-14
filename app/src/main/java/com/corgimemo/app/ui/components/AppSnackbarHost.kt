@@ -55,7 +55,10 @@ fun AppSnackbarHost(
 ) {
     // SnackbarHost 默认 fillMaxWidth()，外层 Box 配合 widthIn 实现宽度自适应
     Box(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            // 需求 5：与底部导航栏留 16dp 间隙（安卓标准）
+            .padding(bottom = 16.dp),
         contentAlignment = Alignment.Center
     ) {
         SnackbarHost(
@@ -72,8 +75,8 @@ fun AppSnackbarHost(
                 Row(
                     modifier = Modifier.padding(
                         horizontal = 16.dp,
-                        // 带按钮时垂直内边距稍大，让按钮文字与图标垂直居中更协调
-                        vertical = if (hasAction) 6.dp else 8.dp
+                        // 需求 6：减小垂直内边距，降低 Snackbar 整体高度（带按钮时再略小）
+                        vertical = if (hasAction) 2.dp else 4.dp
                     ),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Start

@@ -138,7 +138,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.dimensionResource
@@ -324,14 +323,15 @@ fun HomeScreen(
 
     moodChangeMessage?.let { message ->
         LaunchedEffect(message) {
-            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            snackbarHostState.showSnackbar(message)
             viewModel.clearMoodChangeMessage()
         }
     }
 
+
     todoActionMessage?.let { message ->
         LaunchedEffect(message) {
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            snackbarHostState.showSnackbar(message)
             viewModel.clearTodoActionMessage()
         }
     }
@@ -581,7 +581,7 @@ fun HomeScreen(
                             SolarTermCard(
                                 solarTerm = currentSolarTerm!!,
                                 onShare = {
-                                    Toast.makeText(context, "分享功能开发中...", Toast.LENGTH_SHORT).show()
+                                    coroutineScope.launch { snackbarHostState.showSnackbar("分享功能开发中...") }
                                 },
                                 onDismiss = {
                                     viewModel.dismissSolarTermCard()
@@ -1014,7 +1014,11 @@ fun HomeScreen(
                                                 hapticEnabled = hapticEnabled,
                                                 isDragging = isDragging,
                                                 isDragActive = dragActive,
-                                                isClickBlocked = isClickBlocked
+                                                isClickBlocked = isClickBlocked,
+                                                // 统一 Snackbar 提示回调（替代 Toast）
+                                                onShowSnackbar = { msg ->
+                                                    coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                                                }
                                             )
                                         }
                                     }
@@ -1279,7 +1283,7 @@ fun HomeScreen(
      * - "完成"、"置顶"、"创建副本" 直接触发 ViewModel 对应批量方法，操作完成后退出多选
      * - "优先级" 触发 PriorityPickerSheet
      * - "提醒时间" 触发 ReminderPickerBottomSheet
-     * - "转换为灵感" 暂不实现，弹 Toast 提示
+     * - "转换为灵感" 暂不实现，弹 Snackbar 提示
      *
      * 选中数量为 0 时禁用此弹窗（由 IconButton 的 enabled 控制），但弹窗打开后如
      * 选中项变化，组件重组不会自动关闭——用户可主动点击完成/置顶等按钮继续。
@@ -1349,10 +1353,10 @@ fun HomeScreen(
             },
             onConvertToInspiration = {
                 /**
-                 * "转换为灵感"功能暂不实现，弹 Toast 提示并关闭弹窗，保持多选模式。
+                 * "转换为灵感"功能暂不实现，弹 Snackbar 提示并关闭弹窗，保持多选模式。
                  */
                 viewModel.setShowMoreOptionsSheet(false)
-                Toast.makeText(context, "转换为灵感功能开发中...", Toast.LENGTH_SHORT).show()
+                coroutineScope.launch { snackbarHostState.showSnackbar("转换为灵感功能开发中...") }
             }
         )
     }
@@ -1796,6 +1800,9 @@ fun CorgiDisplayArea(
                 onLongPress = { onLongClick() },
                 soundEnabled = soundEnabled,
                 hapticEnabled = hapticEnabled,
+                // 统一 Snackbar 提示回调（替代 Toast）
+                // 此处非顶层 Composable，改用全局控制器（避免作用域问题）
+                onShowSnackbar = { msg -> com.corgimemo.app.ui.components.GlobalSnackbarController.showMessage(msg) },
                 modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
             )
         }
@@ -3151,13 +3158,8 @@ fun shareTodoAsImage(
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                android.widget.Toast.makeText(
-                    context,
-                    "分享失败：${e.message}",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
-            }
+            // 分享失败：普通函数中无 snackbarHostState 作用域，改用全局控制器
+            com.corgimemo.app.ui.components.GlobalSnackbarController.showMessage("分享失败：${e.message}")
         }
     }
 }

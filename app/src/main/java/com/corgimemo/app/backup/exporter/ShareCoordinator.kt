@@ -2,7 +2,6 @@ package com.corgimemo.app.backup.exporter
 
 import android.content.Context
 import android.content.Intent
-import android.widget.Toast
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.ui.screens.home.shareTodoAsImage
@@ -129,7 +128,8 @@ object ShareCoordinator {
         } catch (e: ImageExporter.TooManyBitmapsException) {
             onShowSnackBar("图片过多，请选择一条条分享")
         } catch (e: Exception) {
-            Toast.makeText(context, "图片生成失败: ${e.message}", Toast.LENGTH_SHORT).show()
+            // 统一通过回调提示（由调用方 Snackbar 展示）
+            onShowSnackBar("图片生成失败：${e.message}")
         }
     }
 
@@ -145,14 +145,16 @@ object ShareCoordinator {
     suspend fun shareOneByOne(
         context: Context,
         todos: List<TodoItem>,
-        categories: List<Category>
+        categories: List<Category>,
+        onShowSnackBar: (String) -> Unit
     ) {
         for (todo in todos) {
             try {
                 shareTodoAsImage(context, todo, categories)
                 delay(800)  // 避免系统分享面板叠加
             } catch (e: Exception) {
-                Toast.makeText(context, "分享失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                // 统一通过回调提示（由调用方 Snackbar 展示）
+                onShowSnackBar("分享失败：${e.message}")
             }
         }
     }

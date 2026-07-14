@@ -2039,7 +2039,10 @@ fun TodoEditScreen(
                     ShareCoordinator.shareOneByOne(
                         context = context,
                         todos = shareTodosSnapshot,
-                        categories = categories
+                        categories = categories,
+                        onShowSnackBar = { msg ->
+                            coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                        }
                     )
                 }
             }

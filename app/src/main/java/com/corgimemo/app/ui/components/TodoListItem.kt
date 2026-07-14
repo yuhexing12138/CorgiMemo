@@ -64,7 +64,6 @@ import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.ui.util.formatReminderDisplay
 import com.corgimemo.app.R
-import android.widget.Toast
 import androidx.compose.ui.res.stringResource
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -130,7 +129,9 @@ fun TodoListItem(
     /** 左滑操作面板是否展开（true 时屏蔽详情点击 / 子待办展开 / 长按 / 复选框） */
     isClickBlocked: Boolean = false,
     /** 简化模式：隐藏分类标签 / 子任务进度文本 / 子任务列表 / 附件数量，仅保留标题/提醒/优先级/置顶/勾选框 */
-    isSimpleMode: Boolean = false
+    isSimpleMode: Boolean = false,
+    /** 统一的 Snackbar 提示回调（由调用方传入，用于替代 Toast） */
+    onShowSnackbar: (String) -> Unit = {}
 ) {
 
     /** 逐区间动画参数：每字符延迟 2ms，最大延迟上限 300ms */
@@ -553,14 +554,10 @@ fun TodoListItem(
                                 // 左滑操作面板展开时也屏蔽（与父卡片保持一致）
                                 isEnabled = !isBatchMode && !isClickBlocked,
                                 onToggleComplete = { onToggleSubTask(subTask.id) },
-                                // 多选模式下长按子任务勾选框，弹 Toast 提示用户先退出多选模式
+                                // 多选模式下长按子任务勾选框，弹 Snackbar 提示用户先退出多选模式
                                 // 文案来自 strings.xml，支持中英文等多语言
                                 onDisabledLongPress = {
-                                    Toast.makeText(
-                                        context,
-                                        exitBatchModeHint,
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    onShowSnackbar(exitBatchModeHint)
                                 }
                             )
                             if (subTask != subTasks.last()) {
@@ -883,7 +880,7 @@ private fun SubTaskCheckbox(
                 onTap = {
                     // 短按：
                     // - 启用态 → 切换完成状态
-                    // - 禁用态 → 弹 Toast 提示（与长按统一反馈）
+                    // - 禁用态 → 弹 Snackbar 提示（与长按统一反馈）
                     if (isEnabled) onClick() else onDisabledLongPress()
                 },
                 onLongClick = {

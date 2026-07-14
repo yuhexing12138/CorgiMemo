@@ -19,6 +19,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.corgimemo.app.backup.BackupHistoryManager
 import com.corgimemo.app.backup.BackupManager
 import com.corgimemo.app.backup.BackupRecord
+import com.corgimemo.app.ui.components.AppSnackbarHost
 import com.corgimemo.app.ui.components.BackupRecordCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -55,6 +57,8 @@ fun BackupHistoryScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // 统一的 Snackbar 状态（用于替换 Toast）
+    val snackbarHostState = remember { SnackbarHostState() }
 
     var backupRecords by remember { mutableStateOf<List<BackupRecord>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -93,7 +97,9 @@ fun BackupHistoryScreen(
                     containerColor = Color(0xFFFF9A5C)
                 )
             )
-        }
+        },
+        // 统一 Snackbar 容器（替代 Toast）
+        snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -155,7 +161,13 @@ fun BackupHistoryScreen(
                                 showDeleteConfirm = record
                             },
                             onShare = {
-                                shareBackup(context, record)
+                                shareBackup(
+                                    context = context,
+                                    record = record,
+                                    onShowSnackbar = { msg ->
+                                        scope.launch { snackbarHostState.showSnackbar(msg) }
+                                    }
+                                )
                             }
                         )
                     }
@@ -208,14 +220,20 @@ fun BackupHistoryScreen(
             confirmButton = {
                 androidx.compose.material3.TextButton(
                     onClick = {
-                        scope.launch {
-                            showRestoreConfirm?.let { record ->
-                                restoreBackup(context, record)
-                                loadRecords(context) { records -> backupRecords = records }
+                                scope.launch {
+                                    showRestoreConfirm?.let { record ->
+                                        restoreBackup(
+                                            context = context,
+                                            record = record,
+                                            onShowSnackbar = { msg ->
+                                                snackbarHostState.showSnackbar(msg)
+                                            }
+                                        )
+                                        loadRecords(context) { records -> backupRecords = records }
+                                    }
+                                    showRestoreConfirm = null
+                                }
                             }
-                            showRestoreConfirm = null
-                        }
-                    }
                 ) {
                     Text("恢复", color = Color(0xFF3B82F6))
                 }
@@ -246,12 +264,17 @@ private suspend fun loadRecords(
 }
 
 /**
- * 分享备份文件
+ * 分享备份
  *
  * @param context 上下文
  * @param record 备份记录
+ * @param onShowSnackbar 统一的 Snackbar 提示回调（由 Composable 传入）
  */
-private fun shareBackup(context: Context, record: BackupRecord) {
+private fun shareBackup(
+    context: Context,
+    record: BackupRecord,
+    onShowSnackbar: (String) -> Unit
+) {
     try {
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "application/json"
@@ -264,11 +287,7 @@ private fun shareBackup(context: Context, record: BackupRecord) {
         context.startActivity(chooserIntent)
     } catch (e: Exception) {
         e.printStackTrace()
-        android.widget.Toast.makeText(
-            context,
-            "分享失败：${e.message}",
-            android.widget.Toast.LENGTH_SHORT
-        ).show()
+        onShowSnackbar("分享失败：${e.message}")
     }
 }
 
@@ -277,11 +296,16 @@ private fun shareBackup(context: Context, record: BackupRecord) {
  *
  * @param context 上下文
  * @param record 备份记录
+ * @param onShowSnackbar 统一的 Snackbar 提示回调（由 Composable 传入）
  */
-private suspend fun restoreBackup(context: Context, record: BackupRecord) {
+private suspend fun restoreBackup(
+    context: Context,
+    record: BackupRecord,
+    onShowSnackbar: suspend (String) -> Unit
+) {
     try {
         val uri = Uri.parse(record.fileUri)
-        
+
         val result = withContext(Dispatchers.IO) {
             BackupManager.restoreData(
                 context = context,
@@ -292,40 +316,20 @@ private suspend fun restoreBackup(context: Context, record: BackupRecord) {
 
         when (result) {
             is BackupManager.RestoreResult.Success -> {
-                android.widget.Toast.makeText(
-                    context,
-                    "恢复成功：${result.todoCount} 条待办",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
+                onShowSnackbar("恢复成功：${result.todoCount} 条待办")
             }
             is BackupManager.RestoreResult.Error -> {
-                android.widget.Toast.makeText(
-                    context,
-                    "恢复失败：${result.message}",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
+                onShowSnackbar("恢复失败：${result.message}")
             }
             is BackupManager.RestoreResult.WrongPassword -> {
-                android.widget.Toast.makeText(
-                    context,
-                    "恢复失败：密码错误",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
+                onShowSnackbar("恢复失败：密码错误")
             }
             is BackupManager.RestoreResult.VersionIncompatible -> {
-                android.widget.Toast.makeText(
-                    context,
-                    "恢复失败：版本不兼容",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
+                onShowSnackbar("恢复失败：版本不兼容")
             }
         }
     } catch (e: Exception) {
         e.printStackTrace()
-        android.widget.Toast.makeText(
-            context,
-            "恢复失败：${e.message}",
-            android.widget.Toast.LENGTH_SHORT
-        ).show()
+        onShowSnackbar("恢复失败：${e.message}")
     }
 }

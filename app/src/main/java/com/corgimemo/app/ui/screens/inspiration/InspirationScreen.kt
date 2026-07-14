@@ -22,6 +22,9 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -71,17 +74,20 @@ import androidx.compose.material3.rememberModalBottomSheetState
  * - 长按操作：置顶/标签/改日期/删除
  * - 日历弹窗：从顶部日期点击展开，查看每天的灵感
  * - FAB按钮：跳转到灵感编辑页
+ * - 删除撤销：删除灵感时显示带撤销的 Snackbar 提示
  *
  * @param navController 导航控制器，用于页面跳转
  * @param onFabClick FAB按钮点击回调（由 MainScreen 传入）
  * @param viewModel 灵感视图模型（通过 Hilt 自动注入）
+ * @param snackbarHostState 共享的 Snackbar 状态（由 MainScreen 顶层 Scaffold 创建并传入）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InspirationScreen(
     navController: NavController,
     onFabClick: () -> Unit = {},
-    viewModel: InspirationViewModel = hiltViewModel()
+    viewModel: InspirationViewModel = hiltViewModel(),
+    snackbarHostState: SnackbarHostState? = null
 ) {
     val displayItems by viewModel.filteredDisplayInspirations.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -89,6 +95,9 @@ fun InspirationScreen(
     val isBatchMode by viewModel.isBatchMode.collectAsState()
     val selectedInspirationIds by viewModel.selectedInspirationIds.collectAsState()
     val hideDetails by viewModel.hideDetails.collectAsState()
+    /** 灵感删除撤销状态（用于触发 Snackbar 提示） */
+    val pendingDeletedInspiration by viewModel.pendingDeletedInspiration.collectAsState()
+    val pendingBatchDeletedInspirations by viewModel.pendingBatchDeletedInspirations.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     // 弹窗状态
@@ -108,6 +117,49 @@ fun InspirationScreen(
     if (isBatchMode) {
         BackHandler {
             viewModel.exitBatchMode()
+        }
+    }
+
+    /**
+     * 监听单个灵感删除事件，显示 Snackbar（带撤销按钮）
+     *
+     * 关键：snackbarHostState 为 null 时（无主 Scaffold）直接 return，不显示提示
+     * 行为：用户点撤销 → undoDeleteInspiration 移回灵感表；否则 5s 后 Snackbar 自动消失
+     */
+    LaunchedEffect(pendingDeletedInspiration) {
+        pendingDeletedInspiration?.let {
+            val host = snackbarHostState ?: return@let
+            val result = host.showSnackbar(
+                message = "已删除 1 条灵感",
+                actionLabel = "撤销",
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.undoDeleteInspiration()
+            } else {
+                viewModel.clearPendingDeletedInspiration()
+            }
+        }
+    }
+
+    /**
+     * 监听批量删除灵感事件，显示 Snackbar（带全部撤销按钮）
+     */
+    LaunchedEffect(pendingBatchDeletedInspirations) {
+        pendingBatchDeletedInspirations?.let { list ->
+            if (list.isNotEmpty()) {
+                val host = snackbarHostState ?: return@let
+                val result = host.showSnackbar(
+                    message = "已删除 ${list.size} 条灵感",
+                    actionLabel = "全部撤销",
+                    duration = SnackbarDuration.Long
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    viewModel.undoBatchDeleteInspiration()
+                } else {
+                    viewModel.clearPendingBatchDeletedInspiration()
+                }
+            }
         }
     }
 

@@ -1,6 +1,5 @@
 package com.corgimemo.app.ui.components
 
-import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -19,7 +18,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,16 +26,17 @@ import com.corgimemo.app.data.model.CorgiData
 
 /**
  * 柯基基础展示组件
- * 显示柯基图片、名字和问候语，点击有Toast反馈
+ * 显示柯基图片、名字和问候语，点击有 Snackbar 反馈
  *
  * @param corgiData 柯基数据
+ * @param onShowSnackbar 统一的 Snackbar 提示回调（由调用方传入，避免直接依赖 SnackbarHostState）
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CorgiCompanion(corgiData: CorgiData?) {
-    // 获取上下文用于显示Toast
-    val context = LocalContext.current
-
+fun CorgiCompanion(
+    corgiData: CorgiData?,
+    onShowSnackbar: (String) -> Unit = {}
+) {
     // 暖橙色渐变背景（FF9A5C 到 FFB366）
     val gradient = Brush.verticalGradient(
         colors = listOf(
@@ -56,15 +55,15 @@ fun CorgiCompanion(corgiData: CorgiData?) {
             .combinedClickable(
                 onClick = {
                     // 单击：柯基摇了摇尾巴
-                    Toast.makeText(context, "柯基摇了摇尾巴~", Toast.LENGTH_SHORT).show()
+                    onShowSnackbar("柯基摇了摇尾巴~")
                 },
                 onDoubleClick = {
                     // 双击：柯基开心地打滚
-                    Toast.makeText(context, "柯基开心地打滚~", Toast.LENGTH_SHORT).show()
+                    onShowSnackbar("柯基开心地打滚~")
                 },
                 onLongClick = {
                     // 长按：柯基很舒服地眯起眼睛
-                    Toast.makeText(context, "柯基很舒服地眯起眼睛~", Toast.LENGTH_SHORT).show()
+                    onShowSnackbar("柯基很舒服地眯起眼睛~")
                 }
             ),
         horizontalAlignment = Alignment.CenterHorizontally,

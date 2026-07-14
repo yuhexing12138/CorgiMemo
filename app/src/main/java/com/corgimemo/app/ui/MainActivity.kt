@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +25,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
+import com.corgimemo.app.ui.components.AppSnackbarHost
+import com.corgimemo.app.ui.components.GlobalSnackbarController
 import com.corgimemo.app.ui.theme.ThemeManager
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -40,6 +44,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
@@ -136,6 +141,9 @@ class MainActivity : ComponentActivity() {
 
     /**
      * 处理导出操作
+     *
+     * 协程完成后通过 [GlobalSnackbarController] 发送 Snackbar 消息，
+     * 由 OnboardingRouter 顶层的 AppSnackbarHost 统一展示。
      */
     private fun handleExport(format: BackupManager.ExportFormat, uri: Uri) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -147,18 +155,10 @@ class MainActivity : ComponentActivity() {
             withContext(Dispatchers.Main) {
                 when (result) {
                     is BackupManager.ExportResult.Success -> {
-                        android.widget.Toast.makeText(
-                            this@MainActivity,
-                            "导出成功！",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
+                        GlobalSnackbarController.showMessage("导出成功！")
                     }
                     is BackupManager.ExportResult.Error -> {
-                        android.widget.Toast.makeText(
-                            this@MainActivity,
-                            "导出失败：${result.message}",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
+                        GlobalSnackbarController.showMessage("导出失败：${result.message}")
                     }
                 }
             }
@@ -167,6 +167,9 @@ class MainActivity : ComponentActivity() {
 
     /**
      * 处理导入操作
+     *
+     * 协程完成后通过 [GlobalSnackbarController] 发送 Snackbar 消息，
+     * 由 OnboardingRouter 顶层的 AppSnackbarHost 统一展示。
      */
     private fun handleImport(uri: Uri) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -177,32 +180,16 @@ class MainActivity : ComponentActivity() {
             withContext(Dispatchers.Main) {
                 when (result) {
                     is BackupManager.RestoreResult.Success -> {
-                        android.widget.Toast.makeText(
-                            this@MainActivity,
-                            "恢复成功！已恢复 ${result.todoCount} 个待办",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
+                        GlobalSnackbarController.showMessage("恢复成功！已恢复 ${result.todoCount} 个待办")
                     }
                     is BackupManager.RestoreResult.Error -> {
-                        android.widget.Toast.makeText(
-                            this@MainActivity,
-                            "恢复失败：${result.message}",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
+                        GlobalSnackbarController.showMessage("恢复失败：${result.message}")
                     }
                     BackupManager.RestoreResult.WrongPassword -> {
-                        android.widget.Toast.makeText(
-                            this@MainActivity,
-                            "密码错误",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
+                        GlobalSnackbarController.showMessage("密码错误")
                     }
                     BackupManager.RestoreResult.VersionIncompatible -> {
-                        android.widget.Toast.makeText(
-                            this@MainActivity,
-                            "备份文件版本过高，请升级应用",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
+                        GlobalSnackbarController.showMessage("备份文件版本过高，请升级应用")
                     }
                 }
             }
@@ -236,6 +223,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** 全局无按钮 Snackbar 显示时长（毫秒） */
+private const val ShortSnackbarTimeoutMs = 2000L
+
 sealed class NavigationTarget {
     object Home : NavigationTarget()
     object CreateTodo : NavigationTarget()
@@ -262,6 +252,37 @@ private fun OnboardingRouter(
 ) {
     var startDestination by remember { mutableStateOf<String?>(null) }
 
+    // 全局 Snackbar 状态（用于接收 Activity 级别的协程消息，如导出/导入结果）
+    val globalSnackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        // 订阅全局消息控制器，差异化处理有无按钮的 duration：
+        // - 无按钮：2 秒（更轻量，避免用户长时间等待）
+        // - 有按钮：10 秒（Long），等待用户点击或超时
+        // - 新消息触发时通过 SnackbarHostState 的 mutex 自动覆盖前一条
+        GlobalSnackbarController.currentMessage.collect { msg ->
+            if (msg != null) {
+                if (msg.actionLabel == null) {
+                    // 无按钮：自定义 2 秒（用 Indefinite + withTimeoutOrNull 实现）
+                    withTimeoutOrNull(ShortSnackbarTimeoutMs) {
+                        globalSnackbarHostState.showSnackbar(
+                            message = msg.text,
+                            duration = SnackbarDuration.Indefinite
+                        )
+                    }
+                } else {
+                    // 有按钮：使用 Material 默认 Long duration（10 秒）
+                    globalSnackbarHostState.showSnackbar(
+                        message = msg.text,
+                        actionLabel = msg.actionLabel,
+                        duration = SnackbarDuration.Long
+                    )
+                }
+                GlobalSnackbarController.consume()
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         val isCompleted = corgiPreferences.isOnboardingCompleted.first()
         startDestination = if (isCompleted) {
@@ -284,12 +305,17 @@ private fun OnboardingRouter(
         }
     } else {
         val navController = rememberNavController()
-        AppNavHost(
-            navController = navController,
-            startDestination = destination,
-            onExportClick = onExportClick,
-            onImportClick = onImportClick
-        )
+
+        // Box 包裹 AppNavHost 与全局 AppSnackbarHost，使 Snackbar 能覆盖到所有页面
+        Box(modifier = Modifier.fillMaxSize()) {
+            AppNavHost(
+                navController = navController,
+                startDestination = destination,
+                onExportClick = onExportClick,
+                onImportClick = onImportClick
+            )
+            AppSnackbarHost(hostState = globalSnackbarHostState)
+        }
 
         LaunchedEffect(pendingNavigation) {
             when (pendingNavigation) {

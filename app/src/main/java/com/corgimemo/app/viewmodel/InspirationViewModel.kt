@@ -13,6 +13,7 @@ import com.corgimemo.app.data.repository.InspirationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -197,6 +198,30 @@ class InspirationViewModel @Inject constructor(
     /** 当前选中的灵感 ID 集合 */
     private val _selectedInspirationIds = MutableStateFlow<Set<Long>>(emptySet())
     val selectedInspirationIds: StateFlow<Set<Long>> = _selectedInspirationIds.asStateFlow()
+
+    // ========== 撤销删除相关 ==========
+
+    /**
+     * 待删除灵感的临时存储（用于显示 Snackbar 和撤销）
+     *
+     * 状态：null = 无待删除；非 null = 灵感已软删除到回收站，等待撤销或 5s 倒计时结束
+     */
+    private val _pendingDeletedInspiration = MutableStateFlow<Inspiration?>(null)
+    val pendingDeletedInspiration: StateFlow<Inspiration?> = _pendingDeletedInspiration.asStateFlow()
+
+    /**
+     * 待批量删除的灵感列表临时存储（用于显示 Snackbar 和撤销）
+     *
+     * 状态：null = 无批量待删除；非 null = 已软删除到回收站的灵感列表
+     */
+    private val _pendingBatchDeletedInspirations = MutableStateFlow<List<Inspiration>?>(null)
+    val pendingBatchDeletedInspirations: StateFlow<List<Inspiration>?> = _pendingBatchDeletedInspirations.asStateFlow()
+
+    /** 删除倒计时任务（可取消） */
+    private var deleteInspirationTimerJob: Job? = null
+
+    /** 删除倒计时时长（5秒），与 HomeViewModel.UNDO_DELETE_DELAY_MS 保持一致 */
+    private val UNDO_DELETE_INSPIRATION_DELAY_MS = 5000L
 
     /** 历史标签列表（从所有灵感聚合去重排序 + 用户自定义标签合并，用于侧边栏和 TagPickerSheet） */
     val savedTags: StateFlow<List<String>> =
@@ -471,7 +496,17 @@ class InspirationViewModel @Inject constructor(
     }
 
     /**
-     * 删除灵感（先插入回收站再删除，软删除流程）
+     * 删除灵感（软删除 + 设置撤销状态 + 启动 5s 撤销倒计时）
+     *
+     * 流程：
+     * 1. 查询灵感实体
+     * 2. 移入回收站（软删除）
+     * 3. 从灵感表删除
+     * 4. 设置 _pendingDeletedInspiration 状态（用于触发 Snackbar）
+     * 5. 启动 5s 倒计时，超时后清除状态（灵感已永久保留在回收站）
+     *
+     * 撤销：用户点 Snackbar "撤销" → undoDeleteInspiration() 从回收站移回灵感表
+     *
      * @param id 灵感ID
      */
     fun deleteInspiration(id: Long) {
@@ -479,9 +514,20 @@ class InspirationViewModel @Inject constructor(
             runCatching {
                 val inspiration = inspirationRepository.getInspirationById(id)
                 if (inspiration != null) {
+                    // 1. 移入回收站
                     deletedInspirationRepository.insertDeletedInspiration(inspiration)
+                    // 2. 从灵感表删除
+                    inspirationRepository.deleteById(id)
+                    // 3. 设置撤销状态
+                    _pendingDeletedInspiration.value = inspiration
+                    // 4. 取消之前的倒计时任务（如果有）
+                    deleteInspirationTimerJob?.cancel()
+                    // 5. 启动新的倒计时（5s 后清除状态，灵感永久保留在回收站）
+                    deleteInspirationTimerJob = launch {
+                        delay(UNDO_DELETE_INSPIRATION_DELAY_MS)
+                        _pendingDeletedInspiration.value = null
+                    }
                 }
-                inspirationRepository.deleteById(id)
             }
         }
     }
@@ -557,21 +603,106 @@ class InspirationViewModel @Inject constructor(
     }
 
     /**
-     * 批量删除选中的灵感（先插入回收站再删除，软删除流程）
+     * 批量删除选中的灵感（软删除 + 设置撤销状态 + 启动 5s 撤销倒计时）
+     *
+     * 流程：
+     * 1. 遍历选中 ID，逐个软删除到回收站
+     * 2. 退出批量模式
+     * 3. 设置 _pendingBatchDeletedInspirations 状态（用于触发 Snackbar）
+     * 4. 启动 5s 倒计时，超时后清除状态（灵感已永久保留在回收站）
+     *
+     * 撤销：用户点 Snackbar "全部撤销" → undoBatchDeleteInspiration() 全部从回收站移回
      */
     fun batchDeleteInspirations() {
         val selectedIds = _selectedInspirationIds.value
         if (selectedIds.isEmpty()) return
         viewModelScope.launch {
+            // 1. 遍历软删除到回收站
+            val deletedList = mutableListOf<Inspiration>()
             selectedIds.forEach { id ->
                 val inspiration = inspirationRepository.getInspirationById(id)
                 if (inspiration != null) {
                     deletedInspirationRepository.insertDeletedInspiration(inspiration)
+                    inspirationRepository.deleteById(id)
+                    deletedList.add(inspiration)
                 }
-                inspirationRepository.deleteById(id)
             }
+            // 2. 退出批量模式
             exitBatchMode()
+            // 3. 设置批量撤销状态
+            _pendingBatchDeletedInspirations.value = deletedList
+            // 4. 取消之前的倒计时任务（如果有）
+            deleteInspirationTimerJob?.cancel()
+            // 5. 启动新的倒计时
+            deleteInspirationTimerJob = launch {
+                delay(UNDO_DELETE_INSPIRATION_DELAY_MS)
+                _pendingBatchDeletedInspirations.value = null
+            }
         }
+    }
+
+    /**
+     * 撤销单个灵感删除（从回收站移回灵感表）
+     *
+     * 调用时机：用户点击 Snackbar "撤销" 按钮
+     * 关键：必须先从回收站永久删除，再重新插入灵感表（id 保持一致）
+     */
+    fun undoDeleteInspiration() {
+        viewModelScope.launch {
+            val inspiration = _pendingDeletedInspiration.value ?: return@launch
+            // 1. 取消倒计时任务
+            deleteInspirationTimerJob?.cancel()
+            deleteInspirationTimerJob = null
+            // 2. 从回收站永久删除
+            deletedInspirationRepository.permanentlyDelete(inspiration.id)
+            // 3. 重新插入灵感表
+            inspirationRepository.insert(inspiration)
+            // 4. 清除状态
+            _pendingDeletedInspiration.value = null
+        }
+    }
+
+    /**
+     * 撤销批量灵感删除
+     *
+     * 调用时机：用户点击 Snackbar "全部撤销" 按钮
+     */
+    fun undoBatchDeleteInspiration() {
+        viewModelScope.launch {
+            val list = _pendingBatchDeletedInspirations.value ?: return@launch
+            // 1. 取消倒计时任务
+            deleteInspirationTimerJob?.cancel()
+            deleteInspirationTimerJob = null
+            // 2. 逐个从回收站移回灵感表
+            list.forEach { inspiration ->
+                deletedInspirationRepository.permanentlyDelete(inspiration.id)
+                inspirationRepository.insert(inspiration)
+            }
+            // 3. 清除状态
+            _pendingBatchDeletedInspirations.value = null
+        }
+    }
+
+    /**
+     * 清除单个待撤销状态
+     *
+     * 调用时机：Snackbar 自动消失（用户未点撤销按钮），清空倒计时和状态
+     */
+    fun clearPendingDeletedInspiration() {
+        deleteInspirationTimerJob?.cancel()
+        deleteInspirationTimerJob = null
+        _pendingDeletedInspiration.value = null
+    }
+
+    /**
+     * 清除批量待撤销状态
+     *
+     * 调用时机：Snackbar 自动消失（用户未点撤销按钮），清空倒计时和状态
+     */
+    fun clearPendingBatchDeletedInspiration() {
+        deleteInspirationTimerJob?.cancel()
+        deleteInspirationTimerJob = null
+        _pendingBatchDeletedInspirations.value = null
     }
 
     /**

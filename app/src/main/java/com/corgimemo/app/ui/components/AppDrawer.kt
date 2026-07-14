@@ -183,10 +183,10 @@ fun AppDrawerContent(
                     dateCountByCategory = dateCountByCategory,
                     customDateTypes = customDateTypes,
                     onDateCategoryClick = onDateCategoryClick,
-                    onAddCustomTypeClick = onAddCustomTypeClick,
                     onCustomTypeAction = onCustomTypeAction,
                     modifier = Modifier.weight(1f)
                 )
+                AddCategoryButton(text = "添加类型", onClick = onAddCustomTypeClick)
             }
             TabItem.PROFILE -> {
                 ProfileQuickNavSection(
@@ -583,11 +583,13 @@ private fun InspirationFilterSection(
  * 展示：全部日期 → 8个内置 DateCategory → 自定义类型列表
  * 内置类型无菜单(显示箭头)，自定义类型有菜单(可重命名/删除)
  *
+ * 注意：添加类型按钮由外层 AppDrawerContent 统一放置（与待办页/灵感页一致），
+ * 避免内部 LazyColumn 无 weight 占据全部空间导致按钮不可见。
+ *
  * @param selectedDateCategory 当前选中的类型(null=全部, "BIRTHDAY"=内置, "CUSTOM:42"=自定义)
  * @param dateCountByCategory 每个类型对应的日期计数
  * @param customDateTypes 自定义类型列表
  * @param onDateCategoryClick 类型点击回调
- * @param onAddCustomTypeClick 添加类型按钮回调
  * @param onCustomTypeAction 自定义类型操作回调
  * @param modifier 修饰符
  */
@@ -597,7 +599,6 @@ private fun DateTypeFilterSection(
     dateCountByCategory: Map<String, Int>,
     customDateTypes: List<CustomDateType>,
     onDateCategoryClick: (String?) -> Unit,
-    onAddCustomTypeClick: () -> Unit,
     onCustomTypeAction: (DateTypeAction) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -660,11 +661,6 @@ private fun DateTypeFilterSection(
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 添加类型按钮
-        AddCategoryButton(text = "添加类型", onClick = onAddCustomTypeClick)
     }
 }
 

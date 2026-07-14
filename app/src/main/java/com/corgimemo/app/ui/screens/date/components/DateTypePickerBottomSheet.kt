@@ -12,23 +12,48 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corgimemo.app.data.model.CustomDateType
 import com.corgimemo.app.viewmodel.DateCategory
 
 /**
- * 类型选择底部弹窗（日期新建页专用）
+ * 类型选择结果密封类
  *
- * 提供 7 个固定类型 + "自定义"输入功能：
- * - 7 个固定类型：纪念日 / 生日 / 节日 / 生活 / 学习 / 工作 / 娱乐
- * - 自定义类型：点击"自定义"行展开输入框，输入后通过 onSelected 回调传出
+ * 统一三种选择场景的回调类型，调用方根据类型分别处理：
+ * - [BuiltIn]：选中内置 DateCategory 枚举类型
+ * - [CustomExisting]：选中已有自定义类型（存储为 "CUSTOM:<id>" 格式）
+ * - [CustomNew]：新建自定义类型（调用方需先创建类型再保存日期）
+ */
+sealed class DateTypePickerResult {
+    /** 选中内置类型 */
+    data class BuiltIn(val category: DateCategory) : DateTypePickerResult()
+    /** 选中已有自定义类型 */
+    data class CustomExisting(val customType: CustomDateType) : DateTypePickerResult()
+    /** 新建自定义类型（返回名称，调用方负责创建） */
+    data class CustomNew(val name: String) : DateTypePickerResult()
+}
+
+/**
+ * 类型选择底部弹窗（日期新建/编辑页专用）
  *
+ * 提供三种类型选择方式：
+ * 1. 7 个固定内置类型：纪念日 / 生日 / 节日 / 生活 / 学习 / 工作 / 娱乐
+ * 2. 已有自定义类型列表（从侧滑栏同步，存储为 "CUSTOM:<id>" 格式）
+ * 3. "自定义"输入功能：输入名称后新建类型
+ *
+ * 数据同步说明：
+ * - 自定义类型列表与侧滑栏、数据统计页共享同一数据源（CustomDateType 表）
+ * - 选中已有自定义类型时存储为 "CUSTOM:<id>" 格式，重命名/删除时自动同步
+ *
+ * @param customDateTypes 已有自定义类型列表（从 ViewModel 获取）
  * @param onDismissRequest 关闭弹窗回调
- * @param onSelected 选中类型回调；customName 为 null 时表示选中固定类型，否则为自定义类型名称
+ * @param onSelected 选中类型回调，返回 [DateTypePickerResult] 三种子类之一
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DateTypePickerBottomSheet(
+    customDateTypes: List<CustomDateType> = emptyList(),
     onDismissRequest: () -> Unit,
-    onSelected: (category: DateCategory, customName: String?) -> Unit
+    onSelected: (DateTypePickerResult) -> Unit
 ) {
     // 弹窗状态：控制滑入/滑出动画与展开高度
     val sheetState = rememberModalBottomSheetState()
@@ -87,17 +112,45 @@ fun DateTypePickerBottomSheet(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 7 个固定类型选项：点击后回调固定枚举值 + null（无自定义名），并关闭弹窗
+            // 7 个固定类型选项：点击后回调 BuiltIn 结果并关闭弹窗
             fixedCategories.forEach { category ->
                 DateTypeOptionRow(
                     emoji = category.emoji,
                     name = category.displayName,
                     onClick = {
-                        onSelected(category, null)
+                        onSelected(DateTypePickerResult.BuiltIn(category))
                         onDismissRequest()
                     }
                 )
             }
+
+            // 已有自定义类型列表（从侧滑栏同步）
+            if (customDateTypes.isNotEmpty()) {
+                // 分隔线
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    thickness = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
+
+                customDateTypes.forEach { customType ->
+                    DateTypeOptionRow(
+                        emoji = customType.emoji,
+                        name = customType.name,
+                        onClick = {
+                            onSelected(DateTypePickerResult.CustomExisting(customType))
+                            onDismissRequest()
+                        }
+                    )
+                }
+            }
+
+            // 分隔线（自定义输入区之前）
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                thickness = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
 
             // "自定义"选项：未展开时显示为普通行；点击后展开为输入区
             if (!showCustomInput) {
@@ -123,12 +176,12 @@ fun DateTypePickerBottomSheet(
                         shape = RoundedCornerShape(12.dp)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    // 添加按钮：仅在输入非空时启用；回调 OTHER 分类 + 自定义名称，由调用方在数据库存为 "CUSTOM:xxx" 格式
+                    // 添加按钮：仅在输入非空时启用；回调 CustomNew 结果，由调用方创建类型
                     Button(
                         onClick = {
                             val trimmed = customName.trim()
                             if (trimmed.isNotEmpty() && trimmed.length <= 10) {
-                                onSelected(DateCategory.OTHER, trimmed)
+                                onSelected(DateTypePickerResult.CustomNew(trimmed))
                                 onDismissRequest()
                             }
                         },

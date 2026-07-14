@@ -48,7 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import android.widget.Toast
+import com.corgimemo.app.ui.components.GlobalSnackbarController
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
@@ -464,7 +464,8 @@ fun ReminderPickerBottomSheet(
                             dueMinute = adjustedDateTime.minute
                             editTarget = EditTarget.DUE_DATE
                             isDueDateAutoFixed = true
-                            Toast.makeText(context, "截止时间已自动调整为提醒时间，请确认", Toast.LENGTH_SHORT).show()
+                            // 截止时间被自动调整：通过全局 Snackbar 提示用户确认
+                            GlobalSnackbarController.showMessage("截止时间已自动调整为提醒时间，请确认")
                             return@clickable
                         }
 

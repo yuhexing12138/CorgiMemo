@@ -1,6 +1,5 @@
 package com.corgimemo.app.ui.screens.onboarding
 
-import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,7 +21,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -34,14 +32,17 @@ import com.corgimemo.app.viewmodel.OnboardingViewModel
  * 身份选择页
  *
  * 3 卡片横排：学生（可选）、上班族（灰色，后续版本）、老人模式（灰色，后续版本）
- * 仅学生身份可选，其他点击后显示 Toast 提示
+ * 仅学生身份可选，其他点击后显示 Snackbar 提示
+ *
+ * @param viewModel 引导页 ViewModel
+ * @param onShowSnackbar 统一的 Snackbar 提示回调（由调用方传入）
  */
 @Composable
 fun UserTypePage(
-    viewModel: OnboardingViewModel
+    viewModel: OnboardingViewModel,
+    onShowSnackbar: (String) -> Unit = {}
 ) {
     val selectedType by viewModel.selectedUserType.collectAsState()
-    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -92,7 +93,7 @@ fun UserTypePage(
                 isSelected = false,
                 isEnabled = false,
                 onClick = {
-                    Toast.makeText(context, "此模式将在后续版本实现", Toast.LENGTH_SHORT).show()
+                    onShowSnackbar("此模式将在后续版本实现")
                 },
                 modifier = Modifier.weight(1f)
             )
@@ -105,7 +106,7 @@ fun UserTypePage(
                 isSelected = false,
                 isEnabled = false,
                 onClick = {
-                    Toast.makeText(context, "此模式将在后续版本实现", Toast.LENGTH_SHORT).show()
+                    onShowSnackbar("此模式将在后续版本实现")
                 },
                 modifier = Modifier.weight(1f)
             )

@@ -433,5 +433,267 @@ Row(
 | 2026-07-09 | v1.12 | **时间栏宽度从 56dp 改为 50dp**：精确匹配"2026.07" 12sp 实际渲染宽度，让"2026.07"在 Column 内水平居中后右边距 = 0。修复 v1.11 6/7/7 布局下两个间距视觉不等问题（之前"2026.07"右边距 3dp，"2026.07"→节点 10dp ≠ 节点→内容区 7dp）。现在节点中心 X = 60dp，内容区起始 X = 70dp |
 | 2026-07-09 | v1.13 | **灵感页导航栏日期字号调整**：`MainScreen.kt` 中大号日期 "09" 20sp → **25sp**（Bold），月份 "07月" 10sp → **16sp**，下拉箭头 "▼" 保持 8sp。Column 宽度保持 wrapContentWidth（自适应内容） |
 | 2026-07-09 | v1.14 | **导航栏日期布局从 Column 改为 Row**：原 Column 垂直布局导致 "07月" 和 "▼" 上下排列，改为纯水平 Row 布局让 "▼" 紧邻 "07月" 右侧。月份与箭头间距 2dp |
-| 2026-07-09 | v1.15 | **导航栏日期水平排列 + 底部对齐**：保持 Row 水平布局，日→月间距从 2dp 改为 **7dp**，子元素对齐改为 **`Alignment.Bottom`**，高度自适应内容（去掉 `fillMaxHeight`），由外层 Box `Alignment.Center` 居中 |
+| 2026-07-09 | v1.15 | **导航栏日期水平排列 + 底部对齐**：保持 Row 水平布局，日→月间距从 2dp 改为 **7dp**，子元素对齐改为 **`Alignment.Bottom`**，高度自适应内容（去掉 `fillMaxHeight`），由外层 Box `Alignment.Center` 居中 ✓ |
+
+### 12.1.9 Snackbar 提示规范
+
+> **适用范围**：全项目所有需要轻量反馈的场景（删除提示、操作完成、错误提示、撤销操作等）
+> **关联文件**：
+> - 组件：[AppSnackbarHost.kt](../../app/src/main/java/com/corgimemo/app/ui/components/AppSnackbarHost.kt)
+> - 设计文档：[Snackbar 格式重设计](file:///c:/Users/EDY/Desktop/CorgiMemo/docs/superpowers/specs/2026-07-14-Snackbar格式重设计-design.md)、[Snackbar 体验优化](file:///c:/Users/EDY/Desktop/CorgiMemo/docs/superpowers/specs/2026-07-14-Snackbar体验优化-design.md)、[Snackbar 统一优化](file:///c:/Users/EDY/Desktop/CorgiMemo/docs/superpowers/specs/2026-07-14-Snackbar统一优化-design.md)
+> - 实施计划：[Snackbar 统一优化 plan](file:///c:/Users/EDY/Desktop/CorgiMemo/docs/superpowers/plans/2026-07-14-Snackbar统一优化.md)
+
+#### 12.1.9.1 核心组件
+
+**统一组件**：`AppSnackbarHost`，是全项目唯一允许的 Snackbar 实现。所有 Scaffold 的 `snackbarHost` 槽位**必须**使用此组件。
+
+**API 签名**：
+```kotlin
+@Composable
+fun AppSnackbarHost(
+    hostState: SnackbarHostState,
+    modifier: Modifier = Modifier
+)
+```
+
+**位置**：`app/src/main/java/com/corgimemo/app/ui/components/AppSnackbarHost.kt`
+
+#### 12.1.9.2 视觉规范
+
+##### 容器规格
+
+| 维度 | 值 | 说明 |
+|------|-----|------|
+| **容器最大宽度** | 560dp | 短文本自适应内容，长文本不超过此值 |
+| **容器对齐** | `Alignment.Center` | 短文本无按钮时居中 |
+| **底部与导航栏间距** | 16dp | 安卓标准间距（`padding(bottom = 16.dp)`） |
+| **圆角** | 20dp | `RoundedCornerShape(20.dp)`，与卡片一致 |
+| **阴影** | elevation 4dp | 明显但不过重 |
+| **背景色** | `MaterialTheme.colorScheme.surface` | 跟随主题 |
+| **整体高度** | 约 36dp | 紧凑型 |
+
+##### 内部布局（Row 水平排列）
+
+```
+[🐕 柯基图标] [12dp] [文字内容] [8dp] [撤销按钮]
+   28dp            14sp                Bold
+```
+
+| 元素 | 规格 | 说明 |
+|------|------|------|
+| **左侧柯基图标** | `Modifier.size(28.dp)` | 直接引用 `R.drawable.corgi_tilt_2frames_01`，无 Box 背景包裹 |
+| **图标 → 文字间距** | 12dp | `Spacer(Modifier.width(12.dp))` |
+| **文字** | `fontSize = 14.sp`，`colorScheme.onSurface`，`maxLines = 1`，`overflow = Ellipsis` | 长文本省略号截断 |
+| **文字 → 按钮间距** | 8dp | 仅在有按钮时显示 |
+| **右侧按钮** | `TextButton`，`contentColor = UiColors.Primary`，`FontWeight.Bold`，`maxLines = 1` | 仅在 `actionLabel != null` 时显示 |
+| **按钮内边距** | horizontal 8dp / vertical 0dp | 紧凑型 |
+| **水平内边距** | 16dp | Row 整体左右内边距 |
+| **垂直内边距** | 4dp（无按钮）/ 2dp（带按钮） | Row 整体上下内边距，控制整体高度 |
+
+##### 无按钮 vs 带按钮
+
+| 类型 | 触发场景 | 文字 | 按钮 |
+|------|---------|------|------|
+| **无按钮** | 简单提示、错误提示、权限提示 | 自适应宽度，居中显示 | 无 |
+| **带按钮** | 删除撤销、批量撤销、错误重试 | `weight(1f, fill = false)` 靠左，末尾省略号 | 靠右对齐，`performAction()` 触发回调 |
+
+#### 12.1.9.3 行为规范
+
+##### 触发方式
+
+- **通过 `SnackbarHostState.showSnackbar(...)`** 触发，**禁止**直接调用 `Snackbar` Composable
+- 调用方：CoroutineScope 中 `snackbarHostState.showSnackbar(message, actionLabel?, duration?)`
+- 返回值：`SnackbarResult`（`Dismissed` / `ActionPerformed`），根据返回值决定撤销/清除
+
+##### 持续时间
+
+| 场景 | duration | 说明 |
+|------|----------|------|
+| 简单提示（如"已保存"） | `SnackbarDuration.Short` | 默认 4s |
+| 重要提示（如"权限不足"） | `SnackbarDuration.Long` | 默认 10s |
+| 撤销操作 | `SnackbarDuration.Long` | 与 5s 倒计时一致，给足撤销时间 |
+
+##### 撤销删除模式（带 5s 倒计时）
+
+适用于：单个删除、批量删除，且灵感/待办/日期等需要可恢复的操作。
+
+**ViewModel 模式**（仿 `HomeViewModel` + `InspirationViewModel`）：
+- 私有 StateFlow `_pendingDeletedXxx: StateFlow<Xxx?>`（单个）/ `_pendingBatchDeletedXxx: StateFlow<List<Xxx>?>`（批量）
+- 私有 Job `deleteXxxTimerJob: Job?`（可取消）
+- 私有常量 `UNDO_DELETE_XXX_DELAY_MS = 5000L`
+- 删除方法：设置状态 + 取消旧 Job + 启动新 Job（`delay(5000)`）
+- undoXxx() 方法：从回收站永久删除 + 重新插入主表 + 清除状态
+- clearPendingXxx() 方法：清除状态（Snackbar 自动消失时调用）
+
+**Composable 模式**（`LaunchedEffect` 监听）：
+- 监听 `pendingXxx.collectAsState()`，key 变化时重新执行
+- `host?.showSnackbar(message, actionLabel, duration)`
+- `result == ActionPerformed` → `viewModel.undoXxx()`
+- 否则 → `viewModel.clearPendingXxx()`
+
+#### 12.1.9.4 调用模式
+
+##### 模式 A：共享 SnackbarHostState（推荐）
+
+由 `MainScreen` 顶层 Scaffold 创建唯一 `SnackbarHostState`，通过参数向下传递。
+
+**优势**：所有 Tab 共享一个 SnackbarHost，避免多 Snackbar 冲突。
+
+```kotlin
+// MainScreen.kt
+val snackbarHostState = remember { SnackbarHostState() }
+Scaffold(
+    snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) },
+    ...
+) {
+    TabItem.HOME -> HomeScreen(
+        ...
+        snackbarHostState = snackbarHostState   // ★ 传递
+    )
+    TabItem.INSPIRE -> InspirationScreen(
+        ...
+        snackbarHostState = snackbarHostState   // ★ 传递
+    )
+    ...
+}
+
+// 子页面
+@Composable
+fun HomeScreen(..., snackbarHostState: SnackbarHostState? = null) {
+    LaunchedEffect(pendingDeletedTodo) {
+        val host = snackbarHostState ?: return@LaunchedEffect
+        val result = host.showSnackbar(
+            message = "已删除 1 个待办",
+            actionLabel = "撤销",
+            duration = SnackbarDuration.Long
+        )
+        if (result == SnackbarResult.ActionPerformed) viewModel.undoDeleteTodo()
+        else viewModel.clearPendingDeletedTodo()
+    }
+}
+```
+
+##### 模式 B：子页面独立 SnackbarHostState
+
+子页面有自己的 Scaffold 时（如 `TodoEditScreen` / `InspirationEditScreen` / `RecycleBinScreen`），使用自己的 `snackbarHostState`。
+
+```kotlin
+val snackbarHostState = remember { SnackbarHostState() }
+Scaffold(
+    snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) },
+    ...
+)
+```
+
+##### 模式 C：特殊对齐场景
+
+需要 Snackbar 离底更远时（如 `InspirationImageGallery` 避开下载按钮）：
+
+```kotlin
+AppSnackbarHost(
+    hostState = snackbarHostState,
+    modifier = Modifier
+        .align(Alignment.BottomCenter)
+        .padding(bottom = 80.dp)  // 离底 80dp + 内部 16dp = 实际 96dp
+)
+```
+
+#### 12.1.9.5 规范的 12 个 Scaffold 调用点
+
+| # | 文件 | 模式 | 行号 |
+|---|------|------|------|
+| 1 | [MainScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/main/MainScreen.kt) | A（顶层共享） | 828-830 |
+| 2 | [TodoEditScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/todo/TodoEditScreen.kt) | B | 942 |
+| 3 | [RecycleBinScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/recyclebin/RecycleBinScreen.kt) | B | 145 |
+| 4 | [SpecialDateScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/date/SpecialDateScreen.kt) | A（通过 MainScreen） | — |
+| 5 | [SpecialDateQuickCreateScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/date/SpecialDateQuickCreateScreen.kt) | B | 226 |
+| 6 | [SpecialDateDetailScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/date/SpecialDateDetailScreen.kt) | B | 175 |
+| 7 | [SpecialDateCardStyleScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/date/SpecialDateCardStyleScreen.kt) | B | 249 |
+| 8 | [InspirationEditScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationEditScreen.kt) | B | 729 |
+| 9 | [InspirationViewScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationViewScreen.kt) | B | 158 |
+| 10 | [InspirationImageGallery.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/components/InspirationImageGallery.kt) | C | 204-208 |
+| 11 | [HomeScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/home/HomeScreen.kt) | A（通过 MainScreen） | — |
+| 12 | [InspirationScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationScreen.kt) | A（通过 MainScreen） | — |
+
+**全项目检查结论（2026-07-14 审计）**：
+- ✅ 所有 12 个 Scaffold 的 `snackbarHost` 槽位均使用 `AppSnackbarHost`
+- ✅ 所有 `showSnackbar(...)` 调用都通过统一的 `SnackbarHostState` 触发
+- ✅ 无直接调用 `androidx.compose.material3.Snackbar` Composable 的违规代码
+- ✅ 无 `Snackbar(...)` 自定义渲染绕过 `AppSnackbarHost` 的情况
+
+#### 12.1.9.6 不允许的用法
+
+| 违规用法 | 原因 | 正确做法 |
+|---------|------|---------|
+| 直接调用 `Snackbar(...)` Composable | 绕过统一组件，破坏全局一致性 | 使用 `AppSnackbarHost` + `showSnackbar()` |
+| 使用 `AlertDialog` 显示短暂提示 | 重量级，破坏 Snackbar 轻量反馈定位 | 改用 Snackbar |
+| 使用 `Text` 覆盖层做提示 | 无法自动消失，无障碍差 | 改用 Snackbar |
+| 每个页面创建独立 `SnackbarHostState` 但不通过顶层 | Tab 切换时 Snackbar 状态丢失 | 使用模式 A 共享 |
+| 撤销操作不使用 5s 倒计时 + StateFlow 模式 | 撤销逻辑散落，难以维护 | 仿 HomeViewModel/InspirationViewModel 模式 |
+| `SnackbarHost` 不用 `AppSnackbarHost` 包装 | 缺少图标、缺少品牌一致性 | 必须用 `AppSnackbarHost` |
+
+#### 12.1.9.7 实施常量参考
+
+`AppSnackbarHost.kt` 中：
+
+```kotlin
+private val SnackbarMaxWidth = 560.dp              // 容器最大宽度
+
+// 外层 Box
+Box(
+    modifier = modifier
+        .fillMaxWidth()
+        .padding(bottom = 16.dp),                  // 与导航栏 16dp 间隙
+    contentAlignment = Alignment.Center
+)
+
+// SnackbarHost 内部
+SnackbarHost(
+    hostState = hostState,
+    modifier = Modifier.widthIn(max = SnackbarMaxWidth)
+) { data ->
+    Surface(
+        shape = RoundedCornerShape(20.dp),         // 圆角
+        color = MaterialTheme.colorScheme.surface, // 背景
+        shadowElevation = 4.dp                     // 阴影
+    ) {
+        val hasAction = data.visuals.actionLabel != null
+        Row(
+            modifier = Modifier.padding(
+                horizontal = 16.dp,
+                vertical = if (hasAction) 2.dp else 4.dp   // 紧凑型垂直内边距
+            )
+        ) {
+            Image(
+                painter = painterResource(R.drawable.corgi_tilt_2frames_01),
+                modifier = Modifier.size(28.dp)    // 图标大小
+            )
+            Spacer(Modifier.width(12.dp))          // 图标 → 文字
+            Text(
+                text = data.visuals.message,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            data.visuals.actionLabel?.let {
+                Spacer(Modifier.width(8.dp))       // 文字 → 按钮
+                TextButton(
+                    onClick = { data.performAction() },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = UiColors.Primary
+                    )
+                ) {
+                    Text(it, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+```
+
+#### 12.1.9.8 排版变更记录
+
+| 日期 | 版本 | 变更 |
+|------|------|------|
+| 2026-07-14 | v1.0 | 初始规范（基于设计文档 [Snackbar 格式重设计](file:///c:/Users/EDY/Desktop/CorgiMemo/docs/superpowers/specs/2026-07-14-Snackbar格式重设计-design.md)、[Snackbar 体验优化](file:///c:/Users/EDY/Desktop/CorgiMemo/docs/superpowers/specs/2026-07-14-Snackbar体验优化-design.md)、[Snackbar 统一优化](file:///c:/Users/EDY/Desktop/CorgiMemo/docs/superpowers/specs/2026-07-14-Snackbar统一优化-design.md)）：全项目统一为 `AppSnackbarHost` 品牌风格；左侧 28dp 柯基图标；16dp 底部间距；vertical padding 4/2dp 紧凑型高度；带按钮左文右按钮；灵感页删除撤销模式 |
 

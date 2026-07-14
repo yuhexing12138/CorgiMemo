@@ -32,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -41,6 +42,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +66,7 @@ import com.corgimemo.app.animation.OutfitId
 import com.corgimemo.app.animation.OutfitManager
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.ui.navigation.Screen
+import com.corgimemo.app.ui.components.AppSnackbarHost
 import com.corgimemo.app.ui.components.MoodHistoryChart
 import com.corgimemo.app.ui.theme.UiColors
 import com.corgimemo.app.viewmodel.HomeViewModel
@@ -99,6 +102,9 @@ fun CorgiDetailScreen(
     val greeting by viewModel.greeting.collectAsState()
     val hapticEnabled by viewModel.hapticEnabled.collectAsState()
     val soundEnabled by viewModel.soundEnabled.collectAsState()
+    // 统一的 Snackbar 状态
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
 
     // 实际显示的装扮：节日装扮优先级高于用户选择的装扮
     val effectiveOutfit = currentHoliday?.outfitId ?: currentOutfit
@@ -149,7 +155,9 @@ fun CorgiDetailScreen(
                     }
                 }
             )
-        }
+        },
+        // 统一 Snackbar 容器（替代 Toast）
+        snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -308,6 +316,9 @@ private fun CorgiAnimationSection(
                     onLongPress = { },
                     soundEnabled = soundEnabled,
                     hapticEnabled = hapticEnabled,
+                    // 统一 Snackbar 提示回调（替代 Toast）
+                    // 此处不是顶层 Composable，改用全局控制器（避免作用域问题）
+                    onShowSnackbar = { msg -> com.corgimemo.app.ui.components.GlobalSnackbarController.showMessage(msg) },
                     modifier = Modifier.size(140.dp)
                 )
             }

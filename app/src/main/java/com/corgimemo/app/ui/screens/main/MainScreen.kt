@@ -1,6 +1,5 @@
 package com.corgimemo.app.ui.screens.main
 
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -363,7 +362,7 @@ fun MainScreen(
      * 三点菜单点击回调
      *
      * - TODO：展开 HomeScreen 的 TodoMenuDropdown（通过 ViewModel 状态触发）
-     * - INSPIRE / DATE：暂未实现，弹 Toast 提示
+     * - INSPIRE / DATE：暂未实现，弹 Snackbar 提示
      * - 其他：无回调（CORGIE 图标走 onCorgiClick）
      */
     val onMoreClick: (() -> Unit)? = when (selectedTab) {
@@ -417,7 +416,10 @@ fun MainScreen(
              * 替代原 ProfileScreen 内部 TopAppBar 的设置入口。
              * 点击跳转到系统设置页。
              */
-            IconButton(onClick = { navController.navigate(Screen.Settings.route) }) {
+            IconButton(onClick = {
+                // 设置页功能暂未完善，点击提示
+                com.corgimemo.app.ui.components.GlobalSnackbarController.showMessage("功能开发中...")
+            }) {
                 Icon(
                     imageVector = Icons.Filled.Settings,
                     contentDescription = "设置",
@@ -504,6 +506,8 @@ fun MainScreen(
                         coroutineScope.launch { drawerState.close() }
                     },
                     onHelpClick = {
+                        // 帮助与反馈功能暂未实现，提示用户
+                        com.corgimemo.app.ui.components.GlobalSnackbarController.showMessage("功能开发中...")
                         coroutineScope.launch { drawerState.close() }
                     }
                 )
@@ -589,8 +593,8 @@ fun MainScreen(
                             coroutineScope.launch { drawerState.open() }
                         },
                         onCorgiClick = {
-                            // 柯基互动页暂未完善，点击时弹出 Toast 提示
-                            Toast.makeText(context, "柯基互动页开发中，敬请期待~", Toast.LENGTH_SHORT).show()
+                            // 柯基互动页暂未完善，点击时弹出 Snackbar 提示
+                            coroutineScope.launch { snackbarHostState.showSnackbar("柯基互动页开发中，敬请期待~") }
                         },
                         actionButtons = effectiveActionButtons,
                         /**
@@ -620,7 +624,7 @@ fun MainScreen(
                                         filteredTodos.firstOrNull()?.let { homeViewModel.enterBatchMode(it.id) }
                                     },
                                     onPlaceholderClick = {
-                                        Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show()
+                                        coroutineScope.launch { snackbarHostState.showSnackbar("功能开发中...") }
                                     },
                                     onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("todo")) }
                                 )
@@ -641,7 +645,7 @@ fun MainScreen(
                                     onToggleHideArchivedItems = { specialDateViewModel.toggleHideArchivedItems() },
                                     onBatchSelectClick = { specialDateViewModel.enterBatchMode() },
                                     onPlaceholderClick = {
-                                        Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show()
+                                        coroutineScope.launch { snackbarHostState.showSnackbar("功能开发中...") }
                                     },
                                     onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("date")) }
                                 )
@@ -654,7 +658,7 @@ fun MainScreen(
                                     hideDetails = inspirationHideDetails,
                                     onToggleHideDetails = { inspirationViewModel.toggleHideDetails() },
                                     onBatchSelectClick = { inspirationViewModel.enterBatchMode() },
-                                    onPlaceholderClick = { Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show() },
+                                    onPlaceholderClick = { coroutineScope.launch { snackbarHostState.showSnackbar("功能开发中...") } },
                                     onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("inspiration")) }
                                 )
                             }
@@ -766,11 +770,11 @@ fun MainScreen(
                             totalDateCount = specialDateViewModel.groupedDates.value.values.flatten().size,
                             onSelectAll = { specialDateViewModel.selectAll() },
                             onClearSelection = { specialDateViewModel.clearSelection() },
-                            onShare = { Toast.makeText(context, "分享功能开发中...", Toast.LENGTH_SHORT).show() },
+                            onShare = { coroutineScope.launch { snackbarHostState.showSnackbar("分享功能开发中...") } },
                             onArchive = { specialDateViewModel.batchArchive() },
                             onDuplicate = { specialDateViewModel.batchDuplicate() },
                             onDelete = { showSpecialDateBatchDeleteDialog = true },
-                            onMoreOptions = { Toast.makeText(context, "功能开发中...", Toast.LENGTH_SHORT).show() }
+                            onMoreOptions = { coroutineScope.launch { snackbarHostState.showSnackbar("功能开发中...") } }
                         )
                     }
                     else -> {
@@ -855,7 +859,8 @@ fun MainScreen(
                         )
                         TabItem.INSPIRE -> InspirationScreen(
                             navController = navController,
-                            onFabClick = { navController.navigate("inspiration_edit") }
+                            onFabClick = { navController.navigate("inspiration_edit") },
+                            snackbarHostState = snackbarHostState
                         )
                         TabItem.DATE -> SpecialDateScreen(
                             navController = navController,
@@ -869,8 +874,8 @@ fun MainScreen(
                 }
 
                 FloatingCorgiButton(
-                    // 柯基互动页暂未完善，点击弹出 Toast 提示
-                    onClick = { Toast.makeText(context, "柯基互动页开发中，敬请期待~", Toast.LENGTH_SHORT).show() },
+                    // 柯基互动页暂未完善，点击弹出 Snackbar 提示
+                    onClick = { coroutineScope.launch { snackbarHostState.showSnackbar("柯基互动页开发中，敬请期待~") } },
                     onPositionChanged = { x, y ->
                         coroutineScope.launch { corgiPrefs.saveFloatingCorgiPosition(x, y) }
                     },
@@ -1101,11 +1106,8 @@ fun MainScreen(
                         todos = shareTodosSnapshot,
                         categories = categories,
                         onShowSnackBar = { msg ->
-                            android.widget.Toast.makeText(
-                                context,
-                                msg,
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
+                            // 统一通过顶层 snackbarHostState 显示
+                            coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
                         }
                     )
                 }
@@ -1116,7 +1118,10 @@ fun MainScreen(
                     ShareCoordinator.shareOneByOne(
                         context = context,
                         todos = shareTodosSnapshot,
-                        categories = categories
+                        categories = categories,
+                        onShowSnackBar = { msg ->
+                            coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                        }
                     )
                 }
             }

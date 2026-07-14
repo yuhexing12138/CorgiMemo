@@ -41,7 +41,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import android.widget.Toast
 import kotlin.random.Random
 
 /**
@@ -407,7 +406,9 @@ fun InteractiveCorgi(
     onLongPress: (() -> Unit)? = null,
     soundEnabled: Boolean = true,
     hapticEnabled: Boolean = true,
-    showText: Boolean = true
+    showText: Boolean = true,
+    /** 统一的 Snackbar 提示回调（由调用方传入，替代 Toast） */
+    onShowSnackbar: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -555,9 +556,9 @@ fun InteractiveCorgi(
                         // 音效反馈：播放汪音效
                         triggerSound()
 
-                        /** 显示随机温馨提示 Toast */
+                        /** 显示随机温馨提示 Snackbar */
                         val toastMsg = SINGLE_CLICK_TOASTS.random()
-                        Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
+                        onShowSnackbar(toastMsg)
 
                         // 单击：随机播放一种动画
                         val randomAnim = getRandomAnimation()
@@ -575,9 +576,9 @@ fun InteractiveCorgi(
                         // 音效反馈：播放汪音效
                         triggerSound()
 
-                        /** 显示双击专属提示 Toast */
+                        /** 显示双击专属提示 Snackbar */
                         val toastMsg = DOUBLE_CLICK_TOASTS.random()
-                        Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
+                        onShowSnackbar(toastMsg)
 
                         // 双击：随机播放两种动画组合
                         val (anim1, anim2) = getTwoRandomAnimations()
@@ -597,9 +598,9 @@ fun InteractiveCorgi(
                         // 音效反馈：播放汪音效
                         triggerSound()
 
-                        /** 显示长按专属提示 Toast */
+                        /** 显示随机温馨提示 Snackbar */
                         val toastMsg = LONG_PRESS_TOASTS.random()
-                        Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
+                        onShowSnackbar(toastMsg)
 
                         // 长按：打滚动画循环 + 位置随机变动
                         isLongPressing = true

@@ -68,7 +68,7 @@ fun BackupRecordCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        painter = painterResource(id = R.drawable.ic_launcher),
+                        painter = painterResource(id = R.drawable.corgi_tilt_2frames_01),
                         contentDescription = null,
                         modifier = Modifier.size(24.dp),
                         tint = Color(0xFFFF9A5C)

@@ -3,6 +3,7 @@ package com.corgimemo.app.viewmodel
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.corgimemo.app.data.model.CustomDateType
 import com.corgimemo.app.data.model.SpecialDate
 import com.corgimemo.app.data.repository.SpecialDateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -69,6 +71,11 @@ data class DateStatsData(
  * - 分组统计：倒计时 / 正计时 / 已归档 的数量和占比
  * - 分类统计：各 DateCategory（含自定义）的数量和占比
  *
+ * 自定义类型同步说明：
+ * - 通过 [specialDateRepository].allCustomDateTypes 响应式监听自定义类型变化
+ * - resolveCategoryDisplay 查询自定义类型列表获取正确的名称和 emoji
+ * - 自定义类型重命名/删除后统计页面自动更新
+ *
  * 分组逻辑复用 [SpecialDateViewModel.groupByDisplayDates]，确保与主页一致。
  */
 @HiltViewModel
@@ -79,6 +86,9 @@ class DateStatsViewModel @Inject constructor(
     /** 全部日期数据（含已归档） */
     private val _allDates = MutableStateFlow<List<SpecialDate>>(emptyList())
 
+    /** 自定义日期类型列表（响应式，与侧滑栏、新建/编辑页共享同一数据源） */
+    private val _customDateTypes = MutableStateFlow<List<CustomDateType>>(emptyList())
+
     /** 加载状态 */
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -88,13 +98,25 @@ class DateStatsViewModel @Inject constructor(
         .map { it.isEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
-    /** 统计数据 */
-    val stats: StateFlow<DateStatsData> = _allDates
-        .map { dates -> computeStats(dates) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DateStatsData())
+    /**
+     * 统计数据
+     *
+     * 使用 combine 合并日期数据和自定义类型列表，确保：
+     * - 自定义类型重命名/删除后统计页面自动更新
+     * - 日期数据变化后统计页面自动更新
+     */
+    val stats: StateFlow<DateStatsData> = combine(_allDates, _customDateTypes) { dates, customTypes ->
+        computeStats(dates, customTypes)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DateStatsData())
 
     init {
         loadStats()
+        // 监听自定义类型变化，自动更新统计
+        viewModelScope.launch {
+            specialDateRepository.allCustomDateTypes.collect { types ->
+                _customDateTypes.value = types
+            }
+        }
     }
 
     /**
@@ -115,9 +137,10 @@ class DateStatsViewModel @Inject constructor(
      * 计算统计数据
      *
      * @param dates 全部特殊日期
+     * @param customTypes 自定义日期类型列表（用于解析 "CUSTOM:<id>" 格式）
      * @return 分组统计 + 分类统计的聚合结果
      */
-    private fun computeStats(dates: List<SpecialDate>): DateStatsData {
+    private fun computeStats(dates: List<SpecialDate>, customTypes: List<CustomDateType>): DateStatsData {
         if (dates.isEmpty()) return DateStatsData()
 
         val totalCount = dates.size
@@ -143,7 +166,7 @@ class DateStatsViewModel @Inject constructor(
         val categoryCounts = dates.groupingBy { it.category }.eachCount()
         val categoryStats = categoryCounts
             .map { (categoryKey, count) ->
-                val (displayName, emoji, color) = resolveCategoryDisplay(categoryKey)
+                val (displayName, emoji, color) = resolveCategoryDisplay(categoryKey, customTypes)
                 DateCategoryStat(
                     categoryKey = categoryKey,
                     displayName = displayName,
@@ -163,20 +186,31 @@ class DateStatsViewModel @Inject constructor(
      *
      * 处理逻辑：
      * 1. 匹配 DateCategory 枚举 → 使用枚举的 displayName / emoji / color
-     * 2. 以 "CUSTOM:" 开头 → 提取名称，使用默认 emoji 和 OTHER 颜色
+     * 2. 以 "CUSTOM:" 开头 → 从 customTypes 列表查询对应 ID 的名称和 emoji
      * 3. 其他未知值 → 使用原始字符串，默认 emoji 和 OTHER 颜色
      *
      * @param categoryKey DB 中的原始分类字符串
+     * @param customTypes 自定义日期类型列表
      * @return Triple(displayName, emoji, color)
      */
-    private fun resolveCategoryDisplay(categoryKey: String): Triple<String, String, Color> {
+    private fun resolveCategoryDisplay(
+        categoryKey: String,
+        customTypes: List<CustomDateType>
+    ): Triple<String, String, Color> {
         return try {
             val cat = DateCategory.valueOf(categoryKey)
             Triple(cat.displayName, cat.emoji, cat.color)
         } catch (e: IllegalArgumentException) {
             if (categoryKey.startsWith("CUSTOM:")) {
-                val name = categoryKey.removePrefix("CUSTOM:")
-                Triple(name, "\uD83D\uDCC5", DateCategory.OTHER.color)
+                // 提取 ID 并查询自定义类型列表
+                val id = categoryKey.removePrefix("CUSTOM:").toLongOrNull()
+                val customType = customTypes.find { it.id == id }
+                if (customType != null) {
+                    Triple(customType.name, customType.emoji, DateCategory.OTHER.color)
+                } else {
+                    // 类型已删除，显示"已删除类型"
+                    Triple("已删除类型", "\uD83D\uDCC5", DateCategory.OTHER.color)
+                }
             } else {
                 Triple(categoryKey, "\uD83D\uDCC5", DateCategory.OTHER.color)
             }
