@@ -376,11 +376,15 @@ fun HomeScreen(
     /** 监听待办完成事件，显示 Snackbar（支持撤销）*/
     LaunchedEffect(pendingCompleteTodo) {
         pendingCompleteTodo?.let { (todo, _) ->
-            val result = snackbarHostState.showSnackbar(
-                message = "✅ '${todo.title}' 已完成",
-                actionLabel = "撤销",
-                duration = SnackbarDuration.Short
-            )
+            val result = try {
+                snackbarHostState.showSnackbar(
+                    message = "✅ '${todo.title}' 已完成",
+                    actionLabel = "撤销",
+                    duration = SnackbarDuration.Short
+                )
+            } catch (e: Throwable) {
+                SnackbarResult.Dismissed
+            }
             if (result == SnackbarResult.ActionPerformed) {
                 viewModel.undoComplete()
             }
@@ -424,10 +428,14 @@ fun HomeScreen(
         }
         val message = "$emoji ${celebrationState.message}"
 
-        snackbarHostState.showSnackbar(
-            message = message,
-            duration = SnackbarDuration.Short
-        )
+        try {
+            snackbarHostState.showSnackbar(
+                message = message,
+                duration = SnackbarDuration.Short
+            )
+        } catch (_: Throwable) {
+            // 静默处理：snackbar 显示失败不应影响主流程
+        }
     }
 
     /**
