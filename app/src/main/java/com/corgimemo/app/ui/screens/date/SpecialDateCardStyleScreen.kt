@@ -246,7 +246,7 @@ fun SpecialDateCardStyleScreen(
                 )
             )
         },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) },
         // 容器背景透明,让外层 Box 的 screenBackgroundColor 透出,
         // 同时实现"状态栏区域颜色跟随主屏背景色变"的效果
         containerColor = Color.Transparent
