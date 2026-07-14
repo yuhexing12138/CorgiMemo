@@ -35,6 +35,9 @@ sealed class Screen(val route: String) {
     // 灵感字数统计页面
     object InspirationStats : Screen("inspiration_stats")
 
+    // 日期数据统计页面
+    object DateStats : Screen("date_stats")
+
     // 灵感图表横屏全屏页面（chartType: line / bar）
     object ChartFullscreen : Screen("chart_fullscreen/{chartType}") {
         /** 带参数的导航路径 */

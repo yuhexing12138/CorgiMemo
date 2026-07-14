@@ -55,6 +55,10 @@ class SpecialDateRepository @Inject constructor(
     /** 获取所有未归档的特殊日期（阻塞方式，撤回快照用） */
     suspend fun getActiveDatesBlocking(): List<SpecialDate> = specialDateDao.getActiveDatesBlocking()
 
+    /** 获取所有特殊日期（阻塞方式，含已归档，统计页用） */
+    suspend fun getAllSpecialDatesBlocking(): List<SpecialDate> =
+        specialDateDao.getAllSpecialDatesBlocking()
+
     /**
      * 归档特殊日期（软删除）
      * - 不动 isPinned（归档态置顶信息保留）

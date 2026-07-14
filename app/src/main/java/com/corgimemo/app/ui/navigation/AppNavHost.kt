@@ -31,6 +31,7 @@ import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.inspiration.InspirationEditScreen
 import com.corgimemo.app.ui.screens.inspiration.stats.ChartFullscreenScreen
 import com.corgimemo.app.ui.screens.inspiration.stats.InspirationStatsScreen
+import com.corgimemo.app.ui.screens.date.stats.DateStatsScreen
 import com.corgimemo.app.ui.screens.common.ImagePreviewScreen
 import kotlinx.coroutines.launch
 
@@ -248,6 +249,11 @@ fun AppNavHost(
         // 灵感字数统计页面路由
         composable(Screen.InspirationStats.route) {
             InspirationStatsScreen(navController = navController)
+        }
+
+        // 日期数据统计页面路由
+        composable(Screen.DateStats.route) {
+            DateStatsScreen(navController = navController)
         }
 
         // 灵感图表横屏全屏页面路由（chartType: line / bar）

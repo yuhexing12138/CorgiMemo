@@ -387,10 +387,10 @@ fun MainScreen(
             }
         })
         TabItem.DATE -> listOf({
-            IconButton(onClick = { /* TODO: 排序选项 */ }) {
+            IconButton(onClick = { navController.navigate(Screen.DateStats.route) }) {
                 Icon(
                     imageVector = Icons.Default.BarChart,
-                    contentDescription = "排序",
+                    contentDescription = "数据统计",
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(24.dp)
                 )
