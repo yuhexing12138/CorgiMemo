@@ -940,7 +940,7 @@ fun TodoEditScreen(
                 }
             }
         },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
             EditToolbar(
                 onPhotoClick = {
