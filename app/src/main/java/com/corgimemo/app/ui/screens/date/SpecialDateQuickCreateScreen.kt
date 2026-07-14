@@ -36,6 +36,7 @@ import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.screens.date.components.AvatarWithEdit
 import com.corgimemo.app.ui.screens.date.components.DateTypePickerBottomSheet
+import com.corgimemo.app.ui.screens.date.components.DateTypePickerResult
 import com.corgimemo.app.ui.screens.date.components.SpecialDateFeatureRow
 import com.corgimemo.app.viewmodel.DateCategory
 import com.corgimemo.app.viewmodel.SaveState
@@ -77,23 +78,40 @@ fun SpecialDateQuickCreateScreen(
     val isEditMode = dateId > 0
     val saveState by viewModel.saveState.collectAsState()
 
+    // 自定义日期类型列表（与侧滑栏、数据统计页共享同一数据源）
+    val customDateTypes by viewModel.customDateTypes.collectAsState()
+
     // 本地状态：名称
     var title by remember { mutableStateOf("") }
     // 本地状态：日期行显示文本（无 / YYYY年M月D日）
     var dateRowText by remember { mutableStateOf("无") }
     // 本地状态：已选日期时间戳（null 表示未选）
     var selectedDateMillis by remember { mutableStateOf<Long?>(null) }
-    // 本地状态：类型行显示文本
-    var typeRowText by remember { mutableStateOf("请选择") }
     // 本地状态：是否置顶
     var isPinned by remember { mutableStateOf(false) }
     // 本地状态：日期选择弹窗显示开关
     var showDatePicker by remember { mutableStateOf(false) }
     // 本地状态：类型选择弹窗显示开关
     var showTypePicker by remember { mutableStateOf(false) }
-    // 已选中的类型（用于持久化时构建 "CUSTOM:xxx" 字符串）
+    // 已选中的内置类型（用于持久化时存储枚举名）
     var selectedCategory by remember { mutableStateOf(DateCategory.OTHER) }
-    var customCategoryName by remember { mutableStateOf<String?>(null) }
+    // 已选中的自定义类型 ID（非 null 时表示选中自定义类型，存储为 "CUSTOM:<id>" 格式）
+    var customCategoryId by remember { mutableStateOf<Long?>(null) }
+
+    // 类型行显示文本（根据 selectedCategory 和 customCategoryId 自动计算）
+    // 使用 derivedStateOf 确保自定义类型列表加载完成后自动更新显示
+    val typeRowText by remember {
+        derivedStateOf {
+            when {
+                customCategoryId != null -> {
+                    val customType = customDateTypes.find { it.id == customCategoryId }
+                    if (customType != null) "${customType.emoji} ${customType.name}"
+                    else "已删除类型"
+                }
+                else -> selectedCategory.displayName
+            }
+        }
+    }
 
     // 编辑模式下加载数据
     LaunchedEffect(dateId) {
@@ -110,19 +128,18 @@ fun SpecialDateQuickCreateScreen(
             selectedDateMillis = date.targetDate
             dateRowText = formatDateText(date.targetDate)
             isPinned = date.isPinned
-            // 解析类型
+            // 解析类型（统一 "CUSTOM:<id>" 格式）
             val categoryName = date.category
-            val presetCategory = DateCategory.values().firstOrNull { cat ->
-                cat.name == categoryName
-            }
-            if (presetCategory != null) {
-                selectedCategory = presetCategory
-                typeRowText = presetCategory.displayName
-                customCategoryName = null
-            } else {
+            if (categoryName.startsWith("CUSTOM:")) {
+                // 自定义类型：提取 ID，typeRowText 由 derivedStateOf 自动计算
+                val id = categoryName.removePrefix("CUSTOM:").toLongOrNull()
                 selectedCategory = DateCategory.OTHER
-                typeRowText = categoryName
-                customCategoryName = categoryName
+                customCategoryId = id
+            } else {
+                // 内置类型：匹配 DateCategory 枚举
+                val presetCategory = DateCategory.entries.firstOrNull { it.name == categoryName }
+                selectedCategory = presetCategory ?: DateCategory.OTHER
+                customCategoryId = null
             }
         }
     }
@@ -205,7 +222,7 @@ fun SpecialDateQuickCreateScreen(
                 )
             )
         },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
         Column(
@@ -314,10 +331,14 @@ fun SpecialDateQuickCreateScreen(
                         }
                         return@Button
                     }
+                    // 统一存储格式：自定义类型用 "CUSTOM:<id>"，内置类型用枚举名
+                    val categoryValue = when {
+                        customCategoryId != null -> "CUSTOM:$customCategoryId"
+                        else -> selectedCategory.name
+                    }
                     if (isEditMode) {
                         // 编辑模式：直接保存更新
                         val currentDate = loadedDate ?: return@Button
-                        val categoryValue = customCategoryName ?: selectedCategory.name
                         viewModel.updateDate(
                             currentDate.copy(
                                 title = title.ifBlank { "未命名" },
@@ -329,7 +350,6 @@ fun SpecialDateQuickCreateScreen(
                         )
                     } else {
                         // 新建模式：跳转样式选择页
-                        val categoryValue = customCategoryName ?: selectedCategory.name
                         // 跳转 SpecialDateCardStyleScreen,4 个参数通过 URL Query 传递
                         navController.navigate(
                             Screen.SpecialDateCardStyle.createRoute(
@@ -469,11 +489,29 @@ fun SpecialDateQuickCreateScreen(
     // 类型选择弹窗
     if (showTypePicker) {
         DateTypePickerBottomSheet(
+            customDateTypes = customDateTypes,
             onDismissRequest = { showTypePicker = false },
-            onSelected = { category, customName ->
-                selectedCategory = category
-                customCategoryName = customName
-                typeRowText = customName ?: category.displayName
+            onSelected = { result ->
+                when (result) {
+                    is DateTypePickerResult.BuiltIn -> {
+                        selectedCategory = result.category
+                        customCategoryId = null
+                    }
+                    is DateTypePickerResult.CustomExisting -> {
+                        selectedCategory = DateCategory.OTHER
+                        customCategoryId = result.customType.id
+                    }
+                    is DateTypePickerResult.CustomNew -> {
+                        // 新建自定义类型：先创建，再选中
+                        // typeRowText 由 derivedStateOf 在 customDateTypes 更新后自动刷新
+                        coroutineScope.launch {
+                            val newId = viewModel.addCustomType(result.name)
+                            selectedCategory = DateCategory.OTHER
+                            customCategoryId = newId
+                        }
+                    }
+                }
+                showTypePicker = false
             }
         )
     }
