@@ -50,6 +50,7 @@ import androidx.navigation.NavController
 import com.corgimemo.app.data.model.DateCardColor
 import com.corgimemo.app.data.model.DateCardStyle
 import com.corgimemo.app.data.model.screenBackgroundColor
+import com.corgimemo.app.ui.components.AppSnackbarHost
 import com.corgimemo.app.ui.components.EnhancedTopBar
 import com.corgimemo.app.ui.components.LeftIconType
 import com.corgimemo.app.ui.components.RightIconType
@@ -172,7 +173,7 @@ fun SpecialDateDetailScreen(
                 onLeftIconClick = navigateBack
             )
         },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) },
         containerColor = Color.Transparent
     ) { paddingValues ->
         Box(
