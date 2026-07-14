@@ -726,7 +726,7 @@ fun InspirationEditScreen(
                 }
             }
         },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
             /** 灵感编辑页底部导航栏（5 按钮 + 可折叠格式工具栏） */
             InspirationEditBottomBar(
