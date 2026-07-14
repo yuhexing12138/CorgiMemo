@@ -1121,11 +1121,9 @@ fun HomeScreen(
                 TextButton(
                     onClick = {
                         viewModel.setShowBatchDeleteDialog(false)
-                        val count = selectedTodoIds.size
+                        // 不再立即显示"已删除" Snackbar，避免与后续 LaunchedEffect(pendingBatchDeletes)
+                        // 触发的"已删除 N 个待办 + 全部撤销"重复（详见 Snackbar 体验优化需求 3）
                         viewModel.batchDelete()
-                        coroutineScope.launch {
-                            snackbarHostState.showSnackbar("已删除 $count 个待办")
-                        }
                     }
                 ) {
                     Text("删除", color = UiColors.Error)
@@ -1154,10 +1152,9 @@ fun HomeScreen(
                 TextButton(
                     onClick = {
                         pendingDeleteId = null
+                        // 不再立即显示"已删除" Snackbar，避免与后续 LaunchedEffect(pendingDeletedTodo)
+                        // 触发的"'XXX' 已删除 + 撤销"重复（详见 Snackbar 体验优化需求 3）
                         viewModel.deleteTodo(targetId)
-                        coroutineScope.launch {
-                            snackbarHostState.showSnackbar("已删除")
-                        }
                     }
                 ) {
                     Text("删除", color = UiColors.Error)
