@@ -5,9 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.Inspiration
+import com.corgimemo.app.data.model.SpecialDate
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.data.repository.CorgiRepository
 import com.corgimemo.app.data.repository.InspirationRepository
+import com.corgimemo.app.data.repository.SpecialDateRepository
 import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.model.UserType
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -62,7 +64,8 @@ class OnboardingViewModel @Inject constructor(
     private val corgiPreferences: CorgiPreferences,
     private val corgiRepository: CorgiRepository,
     private val todoRepository: TodoRepository,
-    private val inspirationRepository: InspirationRepository
+    private val inspirationRepository: InspirationRepository,
+    private val specialDateRepository: SpecialDateRepository
 ) : ViewModel() {
 
     /** 总页面数（10 页，索引 0-9） */
@@ -87,6 +90,10 @@ class OnboardingViewModel @Inject constructor(
     /** 引导中创建的灵感 */
     private val _createdInspirationCount = MutableStateFlow(0)
     val createdInspirationCount: StateFlow<Int> = _createdInspirationCount.asStateFlow()
+
+    /** 引导中创建的日期 */
+    private val _createdDateCount = MutableStateFlow(0)
+    val createdDateCount: StateFlow<Int> = _createdDateCount.asStateFlow()
 
     /** 权限状态映射 */
     private val _permissionStates = MutableStateFlow<Map<PermissionType, PermissionState>>(
@@ -262,6 +269,42 @@ class OnboardingViewModel @Inject constructor(
                 )
                 inspirationRepository.insert(inspiration)
                 _createdInspirationCount.value = _createdInspirationCount.value + 1
+            } catch (e: Exception) {
+                // 创建失败静默处理，用户可跳过
+            }
+        }
+    }
+
+    /**
+     * 创建首个日期
+     * 在引导流程中创建并保存到 Room 数据库
+     *
+     * @param title 日期标题
+     * @param targetDate 目标日期时间戳（毫秒）
+     * @param category 类别名称（BIRTHDAY / ANNIVERSARY / HOLIDAY / OTHER）
+     */
+    fun createFirstDate(title: String, targetDate: Long, category: String) {
+        if (title.isBlank()) return
+
+        viewModelScope.launch {
+            try {
+                val now = System.currentTimeMillis()
+                val date = SpecialDate(
+                    title = title,
+                    targetDate = targetDate,
+                    category = category,
+                    countMode = 0,
+                    repeatType = 0,
+                    reminderDays = 0,
+                    isPinned = false,
+                    isArchived = false,
+                    cardStyle = "ORANGE_TEAR_OFF",
+                    cardColor = "DEFAULT",
+                    createdAt = now,
+                    updatedAt = now
+                )
+                specialDateRepository.insert(date)
+                _createdDateCount.value = _createdDateCount.value + 1
             } catch (e: Exception) {
                 // 创建失败静默处理，用户可跳过
             }
