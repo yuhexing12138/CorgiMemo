@@ -54,13 +54,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corgimemo.app.animation.AnimationType
+import com.corgimemo.app.animation.FrameAnimation
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.CustomDateType
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.theme.UiColors
 import com.corgimemo.app.viewmodel.DateCategory
-import com.corgimemo.app.viewmodel.DateGroup
 import com.corgimemo.app.viewmodel.TagFilterMode
 
 private const val DRAWER_ICON_ALL = "📋"
@@ -94,7 +95,9 @@ private val categoryIcons = mapOf(
  * @param tagFilterMode 标签筛选模式（OR/AND/NOT）
  * @param tagCounts 每个标签对应的灵感数量
  * @param totalInspirationCount 灵感总数（用于"全部灵感"项计数）
- * @param selectedDateType 当前选中的日期类型
+ * @param selectedDateCategory 当前选中的日期类型(null=全部, "BIRTHDAY"=内置, "CUSTOM:42"=自定义)
+ * @param dateCountByCategory 每个类型对应的日期计数
+ * @param customDateTypes 自定义日期类型列表
  * @param onCategoryClick 待办分组点击回调
  * @param onAddCategoryClick 添加分组回调
  * @param onCategoryAction 分组操作回调
@@ -102,7 +105,9 @@ private val categoryIcons = mapOf(
  * @param onTagFilterModeChange 筛选模式切换回调
  * @param onClearTagSelection 清空所有选中标签回调（"全部灵感"点击时调用）
  * @param onAddTagClick 添加标签回调
- * @param onDateTypeClick 日期类型点击回调
+ * @param onDateCategoryClick 日期类型点击回调
+ * @param onAddCustomTypeClick 添加自定义类型回调
+ * @param onCustomTypeAction 自定义类型操作回调
  * @param onSettingsClick 设置点击回调
  * @param onHelpClick 帮助点击回调
  * @param modifier 修饰符
@@ -119,7 +124,9 @@ fun AppDrawerContent(
     tagFilterMode: TagFilterMode = TagFilterMode.OR,
     tagCounts: Map<String, Int> = emptyMap(),
     totalInspirationCount: Int = 0,
-    selectedDateType: DateGroup? = null,
+    selectedDateCategory: String? = null,
+    dateCountByCategory: Map<String, Int> = emptyMap(),
+    customDateTypes: List<CustomDateType> = emptyList(),
     onCategoryClick: (Long?) -> Unit = {},
     onAddCategoryClick: () -> Unit = {},
     onCategoryAction: (CategoryAction) -> Unit = {},
@@ -127,7 +134,9 @@ fun AppDrawerContent(
     onTagFilterModeChange: (TagFilterMode) -> Unit = {},
     onClearTagSelection: () -> Unit = {},
     onAddTagClick: () -> Unit = {},
-    onDateTypeClick: (DateGroup?) -> Unit = {},
+    onDateCategoryClick: (String?) -> Unit = {},
+    onAddCustomTypeClick: () -> Unit = {},
+    onCustomTypeAction: (DateTypeAction) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onHelpClick: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -170,8 +179,12 @@ fun AppDrawerContent(
             }
             TabItem.DATE -> {
                 DateTypeFilterSection(
-                    selectedDateType = selectedDateType,
-                    onDateTypeClick = onDateTypeClick,
+                    selectedDateCategory = selectedDateCategory,
+                    dateCountByCategory = dateCountByCategory,
+                    customDateTypes = customDateTypes,
+                    onDateCategoryClick = onDateCategoryClick,
+                    onAddCustomTypeClick = onAddCustomTypeClick,
+                    onCustomTypeAction = onCustomTypeAction,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -201,18 +214,13 @@ private fun UserProfileSection(corgiData: CorgiData?) {
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(UiColors.PrimaryLight),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "🐕",
-                fontSize = 24.sp
-            )
-        }
+        // 柯基趴卧姿态帧动画（3帧/8fps 循环播放）
+        FrameAnimation(
+            animationType = AnimationType.LIE,
+            fps = 8,
+            isLooping = true,
+            modifier = Modifier.size(48.dp)
+        )
 
         Spacer(modifier = Modifier.width(12.dp))
 
