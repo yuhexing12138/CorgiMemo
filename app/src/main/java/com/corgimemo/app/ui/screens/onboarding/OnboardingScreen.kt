@@ -24,6 +24,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.corgimemo.app.ui.components.AppSnackbarHost
 import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.viewmodel.OnboardingViewModel
 import kotlinx.coroutines.launch
@@ -66,6 +68,8 @@ fun OnboardingScreen(
     // 使用响应式 StateFlow，保证输入变化时按钮能实时更新启用状态
     val canGoNext by viewModel.canGoNext.collectAsState()
     val coroutineScope = rememberCoroutineScope()
+    // 统一的 Snackbar 状态（用于子页面 UserTypePage 等需要轻量提示的场景）
+    val snackbarHostState = remember { SnackbarHostState() }
 
     // 跳过确认对话框状态
     var showSkipDialog by remember { mutableStateOf(false) }
@@ -122,7 +126,10 @@ fun OnboardingScreen(
                 when (page) {
                     // 阶段1：个性化设置（Step 1-3）
                     0 -> WelcomePage()
-                    1 -> UserTypePage(viewModel = viewModel)
+                    1 -> UserTypePage(
+                        viewModel = viewModel,
+                        onShowSnackbar = { msg -> coroutineScope.launch { snackbarHostState.showSnackbar(msg) } }
+                    )
                     2 -> CorgiNamingPage(viewModel = viewModel)
                     // 阶段2：功能探索（Step 4-8）
                     3 -> FunctionOverviewPage(
@@ -130,7 +137,7 @@ fun OnboardingScreen(
                     )
                     4 -> TodoFeaturePage(viewModel = viewModel)
                     5 -> InspirationFeaturePage(viewModel = viewModel)
-                    6 -> DateFeaturePage()
+                    6 -> DateFeaturePage(viewModel = viewModel)
                     7 -> CorgiSystemPage(viewModel = viewModel)
                     // 阶段3：权限与完成（Step 9-10）
                     8 -> PermissionPage(
@@ -227,6 +234,12 @@ fun OnboardingScreen(
                 }
             }
         }
+
+        // 统一 Snackbar 容器（替代 Toast）
+        AppSnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
 
     // 跳过功能介绍确认对话框
