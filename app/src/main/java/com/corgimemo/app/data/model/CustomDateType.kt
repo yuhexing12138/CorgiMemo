@@ -21,6 +21,8 @@ data class CustomDateType(
     val name: String,
     @ColumnInfo(defaultValue = "📅")
     val emoji: String = "📅",
+    @ColumnInfo(defaultValue = "0")
     val sortOrder: Int = 0,
+    @ColumnInfo(defaultValue = "0")
     val createdAt: Long = System.currentTimeMillis()
 )

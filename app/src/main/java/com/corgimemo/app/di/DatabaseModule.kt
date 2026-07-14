@@ -14,6 +14,7 @@ import com.corgimemo.app.data.local.db.DeletedSpecialDateDao
 import com.corgimemo.app.data.local.db.InspirationDao
 import com.corgimemo.app.data.local.db.InspirationRelationDao
 import com.corgimemo.app.data.local.db.SpecialDateDao
+import com.corgimemo.app.data.local.db.CustomDateTypeDao
 import com.corgimemo.app.data.local.db.SpecialDateRelationDao
 import com.corgimemo.app.data.local.db.MoodHistoryDao
 import com.corgimemo.app.data.local.db.OperationLogDao
@@ -125,6 +126,13 @@ object DatabaseModule {
     @Singleton
     fun provideSpecialDateDao(database: CorgiMemoDatabase): SpecialDateDao {
         return database.specialDateDao()
+    }
+
+    /** 自定义日期类型 DAO */
+    @Provides
+    @Singleton
+    fun provideCustomDateTypeDao(database: CorgiMemoDatabase): CustomDateTypeDao {
+        return database.customDateTypeDao()
     }
 
     /** 特殊日期关联关系 DAO */

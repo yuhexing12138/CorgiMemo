@@ -24,14 +24,15 @@ import com.corgimemo.app.data.model.SpecialDate
 import com.corgimemo.app.data.model.SpecialDateRelation
 import com.corgimemo.app.data.model.UserTemplateEntity
 import com.corgimemo.app.data.model.DeletedSpecialDate
+import com.corgimemo.app.data.model.CustomDateType
 
 /**
  * 应用数据库
  * 管理待办事项、柯基数据、任务分类、成就和用户模板
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class],
-    version = 37,
+    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
+    version = 38,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -85,6 +86,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     /** 内容块 DAO（待办事项的混合内容：图片/语音等） */
     abstract fun contentBlockDao(): ContentBlockDao
 
+    /** 自定义日期类型 DAO */
+    abstract fun customDateTypeDao(): CustomDateTypeDao
+
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
 
@@ -98,7 +102,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1079,6 +1083,27 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     updatedAt INTEGER NOT NULL,
                     deletedAt INTEGER NOT NULL,
                     PRIMARY KEY(id)
+                )
+            """.trimIndent())
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 37 → 38
+     * 新增 custom_date_types 表（自定义日期类型）
+     *
+     * 依据 .trae/rules/entity与 migration同步检查.md 规则：
+     * DEFAULT 值必须与 CustomDateType 的 @ColumnInfo(defaultValue) 保持一致
+     */
+    internal val MIGRATION_37_38 = object : Migration(37, 38) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS custom_date_types (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    name TEXT NOT NULL,
+                    emoji TEXT NOT NULL DEFAULT '📅',
+                    sortOrder INTEGER NOT NULL DEFAULT 0,
+                    createdAt INTEGER NOT NULL DEFAULT 0
                 )
             """.trimIndent())
         }
