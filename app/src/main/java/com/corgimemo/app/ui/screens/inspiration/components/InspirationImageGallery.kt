@@ -18,7 +18,6 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +44,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import coil3.compose.AsyncImage
 import coil3.request.crossfade
+import com.corgimemo.app.ui.components.AppSnackbarHost
 import com.corgimemo.app.util.InspirationScreenshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
