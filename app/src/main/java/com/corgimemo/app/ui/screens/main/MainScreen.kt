@@ -29,7 +29,6 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
@@ -89,6 +88,9 @@ import com.corgimemo.app.ui.screens.inspiration.components.InspirationCalendarDi
 import com.corgimemo.app.ui.screens.home.components.TodoCalendarDialog
 import com.corgimemo.app.ui.components.calendar.DatePickerRow
 import com.corgimemo.app.data.model.TodoItem
+import com.corgimemo.app.data.model.CustomDateType
+import com.corgimemo.app.ui.components.DateTypeAction
+import com.corgimemo.app.ui.components.DateTypeOperationSheet
 import com.corgimemo.app.analytics.UserBehaviorAnalyzer
 import com.corgimemo.app.analytics.UserBehaviorAnalyzerEntryPoint
 import com.corgimemo.app.backup.exporter.ShareCoordinator
@@ -249,6 +251,11 @@ fun MainScreen(
     val specialDateSelectedIds by specialDateViewModel.selectedDateIds.collectAsState()
     val specialDatePendingDeletedDate by specialDateViewModel.pendingDeletedDate.collectAsState()
     val specialDatePendingBatchDeletes by specialDateViewModel.pendingBatchDeletes.collectAsState()
+
+    // 2026-07-14 新增：日期类型筛选状态
+    val selectedDateCategory by specialDateViewModel.selectedDateCategory.collectAsState()
+    val dateCountByCategory by specialDateViewModel.dateCountByCategory.collectAsState()
+    val customDateTypes by specialDateViewModel.customDateTypes.collectAsState()
     /** 用户行为分析器（通过 Hilt 入口点获取 @Singleton 实例，用于记录页面访问） */
     val userBehaviorAnalyzer: UserBehaviorAnalyzer = remember {
         EntryPointAccessors.fromApplication(context, UserBehaviorAnalyzerEntryPoint::class.java).analyzer()
@@ -295,6 +302,12 @@ fun MainScreen(
     var showRenameCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
     var showDeleteCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
     var showCategorySheet by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
+
+    // 2026-07-14 新增：日期类型管理弹窗状态
+    var showAddDateTypeDialog by remember { mutableStateOf(false) }
+    var showRenameDateTypeDialog by remember { mutableStateOf<CustomDateType?>(null) }
+    var showDeleteDateTypeDialog by remember { mutableStateOf<CustomDateType?>(null) }
+    var showDateTypeOperationSheet by remember { mutableStateOf<CustomDateType?>(null) }
 
     val corgiPrefs = remember { CorgiPreferences.getInstance(context) }
     var corgiButtonPosition by remember { mutableStateOf<Pair<Float, Float>?>(null) }
@@ -471,6 +484,21 @@ fun MainScreen(
                         inspirationViewModel.clearTagSelection()
                     },
                     onAddTagClick = { showAddTagDialog = true },
+                    selectedDateCategory = selectedDateCategory,
+                    dateCountByCategory = dateCountByCategory,
+                    customDateTypes = customDateTypes,
+                    onDateCategoryClick = { category ->
+                        specialDateViewModel.filterByDateCategory(category)
+                        coroutineScope.launch { drawerState.close() }
+                    },
+                    onAddCustomTypeClick = { showAddDateTypeDialog = true },
+                    onCustomTypeAction = { action ->
+                        when (action) {
+                            is DateTypeAction.ShowMenu -> showDateTypeOperationSheet = action.customType
+                            is DateTypeAction.Rename -> showRenameDateTypeDialog = action.customType
+                            is DateTypeAction.Delete -> showDeleteDateTypeDialog = action.customType
+                        }
+                    },
                     onSettingsClick = {
                         navController.navigate(Screen.Settings.route)
                         coroutineScope.launch { drawerState.close() }
@@ -798,13 +826,7 @@ fun MainScreen(
              * 子页面（HomeScreen）通过参数接收 snackbarHostState，调用 showSnackbar() 即可触发显示。
              */
             snackbarHost = {
-                SnackbarHost(hostState = snackbarHostState) { data ->
-                    CorgiSnackbar(
-                        message = data.visuals.message,
-                        actionLabel = data.visuals.actionLabel,
-                        onAction = { data.performAction() }
-                    )
-                }
+                AppSnackbarHost(hostState = snackbarHostState)
             }
         ) { paddingValues ->
             /**
@@ -847,13 +869,11 @@ fun MainScreen(
                 }
 
                 FloatingCorgiButton(
-                    // 柯基互动页暂未完善，点击和右滑均弹出 Toast 提示
+                    // 柯基互动页暂未完善，点击弹出 Toast 提示
                     onClick = { Toast.makeText(context, "柯基互动页开发中，敬请期待~", Toast.LENGTH_SHORT).show() },
                     onPositionChanged = { x, y ->
                         coroutineScope.launch { corgiPrefs.saveFloatingCorgiPosition(x, y) }
                     },
-                    onSwipeLeft = { navController.navigate("todo_edit") },
-                    onSwipeRight = { Toast.makeText(context, "柯基互动页开发中，敬请期待~", Toast.LENGTH_SHORT).show() },
                     initialPosition = corgiButtonPosition,
                     triggerCelebration = celebrationTrigger,
                     currentMood = currentMood,
@@ -984,6 +1004,63 @@ fun MainScreen(
                 showDeleteCategoryDialog = null
             },
             onDismiss = { showDeleteCategoryDialog = null }
+        )
+    }
+
+    // ==================== 日期类型管理弹窗 ====================
+
+    // 添加日期类型弹窗
+    if (showAddDateTypeDialog) {
+        com.corgimemo.app.ui.components.AddCategoryDialog(
+            onConfirmName = {},
+            onConfirm = { name, emoji ->
+                specialDateViewModel.addCustomType(name, emoji)
+                showAddDateTypeDialog = false
+            },
+            onDismiss = { showAddDateTypeDialog = false },
+            title = "新建类型",
+            label = "类型名称",
+            showEmojiPicker = true
+        )
+    }
+
+    // 重命名日期类型弹窗
+    showRenameDateTypeDialog?.let { customType ->
+        com.corgimemo.app.ui.components.RenameCategoryDialog(
+            currentName = customType.name,
+            onConfirm = { newName ->
+                specialDateViewModel.renameCustomType(customType.id, newName)
+                showRenameDateTypeDialog = null
+            },
+            onDismiss = { showRenameDateTypeDialog = null }
+        )
+    }
+
+    // 删除日期类型确认弹窗
+    showDeleteDateTypeDialog?.let { customType ->
+        com.corgimemo.app.ui.components.DeleteCategoryConfirmDialog(
+            categoryName = "${customType.emoji} ${customType.name}",
+            onConfirm = {
+                specialDateViewModel.deleteCustomType(customType.id)
+                showDeleteDateTypeDialog = null
+            },
+            onDismiss = { showDeleteDateTypeDialog = null },
+            title = "删除类型",
+            message = "确定要删除类型「${customType.emoji} ${customType.name}」吗？\n该类型下的日期将变为'其他'类型。"
+        )
+    }
+
+    // 日期类型操作菜单
+    showDateTypeOperationSheet?.let { customType ->
+        com.corgimemo.app.ui.components.DateTypeOperationSheet(
+            customType = customType,
+            onRename = {
+                showRenameDateTypeDialog = customType
+            },
+            onDelete = {
+                showDeleteDateTypeDialog = customType
+            },
+            onDismiss = { showDateTypeOperationSheet = null }
         )
     }
 
