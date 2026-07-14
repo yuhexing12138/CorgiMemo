@@ -96,16 +96,18 @@ fun OnboardingScreen(
         ) {
             // 顶部区域：Step 4-8 显示"跳过功能介绍"按钮
             // 使用 statusBarsPadding 让按钮自动避开系统状态栏，避免重叠
-            if (currentPage in 3..7) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(top = 8.dp, end = 16.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
+            // 固定高度 56dp，避免显示/隐藏按钮时整个页面跳动
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .height(56.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                if (currentPage in 3..7) {
                     TextButton(
-                        onClick = { showSkipDialog = true }
+                        onClick = { showSkipDialog = true },
+                        modifier = Modifier.padding(end = 8.dp)
                     ) {
                         Text(
                             text = "跳过功能介绍",
@@ -113,9 +115,6 @@ fun OnboardingScreen(
                         )
                     }
                 }
-            } else {
-                // 非功能介绍页也预留状态栏高度，保持顶部视觉一致性
-                Spacer(modifier = Modifier.statusBarsPadding())
             }
 
             // HorizontalPager 主体
