@@ -388,6 +388,49 @@ fun HomeScreen(
     }
 
     /**
+     * 监听 CelebrationState 变化，通过 Snackbar 显示分级鼓励语
+     *
+     * 触发时机：
+     * - 单条完成：handleTaskCompleted 设置 _celebrationState.isShowing = true
+     * - 批量完成：triggerBatchCelebration 设置 _celebrationState.isShowing = true
+     *
+     * 显示策略：
+     * - 等待升级弹窗（showLevelUp）/ 成就弹窗（showAchievementUnlock）关闭后再显示
+     * - 避免与全屏 Dialog 抢占屏幕
+     * - isShowing: false → true 时启动一次 Snackbar；不持续监听
+     *
+     * 关联文件：HomeViewModel.kt 中 _celebrationState 与 getEncouragementMessage
+     */
+    LaunchedEffect(
+        celebrationState.isShowing,
+        celebrationState.message,
+        showLevelUp,
+        showAchievementUnlock
+    ) {
+        // 只在 isShowing 由 false 变 true 时触发
+        if (!celebrationState.isShowing) {
+            return@LaunchedEffect
+        }
+        // 等待弹窗关闭（与 pendingBatchCompleteCount 策略一致）
+        if (showLevelUp != null || showAchievementUnlock != null) {
+            return@LaunchedEffect
+        }
+
+        val emoji = when (celebrationState.level) {
+            CelebrationLevel.LOW -> "😊"
+            CelebrationLevel.MEDIUM -> "⭐"
+            CelebrationLevel.HIGH -> "🎉"
+            CelebrationLevel.SUPER -> "🏆"
+        }
+        val message = "$emoji ${celebrationState.message}"
+
+        snackbarHostState.showSnackbar(
+            message = message,
+            duration = SnackbarDuration.Short
+        )
+    }
+
+    /**
      * 监听批量完成事件，显示 Snackbar "已完成 N 项"
      *
      * 区别于单条完成（pendingCompleteTodo 带撤销）：
@@ -1026,18 +1069,8 @@ fun HomeScreen(
 
         // 对齐组件容器（包裹需要使用 align 的组件）
         Box(modifier = Modifier.fillMaxSize()) {
-            // 庆祝覆盖层
-            AnimatedVisibility(
-                visible = celebrationState.isShowing,
-                enter = fadeIn() + slideInVertically { it / 2 },
-                exit = fadeOut() + slideOutVertically { -it / 2 },
-                modifier = Modifier.align(Alignment.Center)
-            ) {
-                CelebrationOverlay(
-                    level = celebrationState.level,
-                    message = celebrationState.message
-                )
-            }
+            // CelebrationOverlay 已移除：分级鼓励语改由 Snackbar 显示
+            // （见下方 LaunchedEffect(celebrationState)）
 
             /**
              * SnackbarHost 已提升到 MainScreen 顶层 Scaffold 的 snackbarHost 槽位，
