@@ -142,7 +142,7 @@ fun RecycleBinScreen(
                 )
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
