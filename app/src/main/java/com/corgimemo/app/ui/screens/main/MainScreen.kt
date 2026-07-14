@@ -58,8 +58,8 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.ui.components.AppDrawerContent
+import com.corgimemo.app.ui.components.AppSnackbarHost
 import com.corgimemo.app.ui.components.CategoryAction
-import com.corgimemo.app.ui.components.CorgiSnackbar
 import com.corgimemo.app.ui.components.EnhancedTopBar
 import com.corgimemo.app.ui.components.LeftIconType
 import com.corgimemo.app.ui.components.RightIconType

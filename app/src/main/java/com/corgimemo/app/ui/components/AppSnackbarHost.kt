@@ -30,10 +30,12 @@ import com.corgimemo.app.ui.theme.UiColors
 /**
  * 柯基品牌风格 Snackbar Host
  *
- * 统一全项目 9 处 snackbarHost 槽位，风格与 [CorgiSnackbar] 旧实现不同：
- * - 单段式布局：左柯基图 + 中文字 + 右 TextButton（Material 3 原生动效）
- * - 圆角 20dp / 阴影 4dp / 浅色背景
- * - 文字强制 maxLines=1 + Ellipsis（与按钮一行内不换行）
+ * 统一全项目 9 处 snackbarHost 槽位，单段式布局：
+ * - 左侧：柯基图（直接 Image，无 Box 背景包裹）
+ * - 中间：提示文字（maxLines=1 + Ellipsis）
+ * - 右侧：Material 3 原生 TextButton（仅当有 actionLabel 时显示）
+ *
+ * 圆角 20dp / 阴影 4dp / 浅色背景。
  *
  * 设计参照：docs/superpowers/specs/2026-07-14-Snackbar格式重设计-design.md
  *
@@ -59,7 +61,8 @@ fun AppSnackbarHost(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Start
             ) {
-                // 左侧：柯基图（直接图片，无背景包裹，绕开 ic_launcher.xml 的 <bitmap> 包装问题）
+                // 左侧：柯基图（直接引用 PNG，无 Box/圆圈背景包裹）
+                // 资源使用 R.drawable.corgi_tilt_2frames_01（绕开 ic_launcher.xml 的 <bitmap> 包装问题）
                 Image(
                     painter = painterResource(id = R.drawable.corgi_tilt_2frames_01),
                     contentDescription = null,

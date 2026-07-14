@@ -200,7 +200,8 @@ fun InspirationImageGallery(
 
             // Snackbar 提示：底部居中，离底 80dp 避开下载按钮
             // 在 Dialog Window 内显示，z 轴层级高于 Activity 内的柯基悬浮球
-            SnackbarHost(
+            // 使用 AppSnackbarHost 统一全项目 Snackbar 样式（柯基图标 + 文字 + 按钮）
+            AppSnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
