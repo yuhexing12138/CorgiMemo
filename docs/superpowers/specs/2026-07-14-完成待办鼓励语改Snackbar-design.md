@@ -1,5 +1,7 @@
 # 完成待办鼓励语改 Snackbar 设计
 
+> **v2 修订（2026-07-14）**：用户反馈图2 不是 Material 3 默认 Snackbar，而是带 APP 图标 + FAB 图标装饰的三段式品牌 Snackbar。本文档追加 v2 段说明整体方案修订：移除"删除 CelebrationOverlay"的范围，改为"全项目 Snackbar 样式统一"。
+
 ## 背景
 
 待办页（HomeScreen）在用户完成待办时，会通过 `CelebrationOverlay` 全屏居中弹出一句带 emoji 的鼓励语（如 "😊 太棒了！又完成一个！"），同时叠加 `GlowOverlay` 边缘光晕效果。
@@ -355,3 +357,98 @@ LaunchedEffect(
 3. **批量完成特殊体验**：当 N >= 5 时显示更醒目的提示
 4. **可访问性**：为 Snackbar 添加 `TalkBack` 朗读优先级（重要程度）
 5. **配置化**：将 `getEncouragementMessage` 提取到 `R.string`，支持多语言
+
+---
+
+## v2 修订：自定义品牌 Snackbar 样式（2026-07-14）
+
+### 变更背景
+
+用户反馈图2 的 Snackbar **不是 Material 3 默认样式**，而是带 APP 图标 + FAB 图标装饰的三段式品牌 Snackbar。Material 3 默认 Snackbar（深色背景 + 居中文字 + 底部 action 按钮）无法满足品牌一致性。
+
+### v2 设计目标
+
+1. **新建品牌 Snackbar 组件** `CorgiSnackbar`，渲染三段式布局
+2. **全项目统一 Snackbar 样式**：所有 `showSnackbar(...)` 调用自动应用新样式，**无需修改调用点**
+3. **保留 `CelebrationOverlay` 删除 + Snackbar 显示**（沿用 v1）
+
+### CorgiSnackbar 布局规范
+
+| 位置 | 内容 | 尺寸 | 颜色 |
+|------|------|------|------|
+| **左侧** | 圆形容器 + `R.drawable.ic_launcher`（柯基歪头图） | 40dp × 40dp 圆形 | 背景：`UiColors.Primary` (#FF9A5C) |
+| **中间** | 浅色圆角矩形 + 文字（`message`） | 自适应宽度，圆角 20dp | 背景：`UiColors.PrimaryLight` (#FFE0C0)，文字：`onSurface` |
+| **右侧** | 方块容器 + 撤销按钮 或 FAB 装饰 | 默认 40dp × 40dp，长文字时宽度自适应，圆角 12dp | 背景：`UiColors.Primary` (#FF9A5C) |
+
+**右侧动态内容**：
+- 有 `actionLabel`（如"撤销"、"撤回"、"全部撤销"）：显示白色 `Text(actionLabel)`，点击触发 `onAction`
+- 无 `actionLabel`：显示 `Icons.Default.Edit`（铅笔，FAB 图标），仅作装饰（与 `MainScreen` 的中央 FAB 图标一致）
+
+**外层样式**：
+- 整体 `Surface` 容器，圆角 28dp
+- `shadowElevation = 6.dp`（轻投影，提升悬浮感）
+- 内部 `Row` padding 8dp
+
+### 涉及文件（v2 新增）
+
+| 操作 | 文件 | 职责 |
+|------|------|------|
+| 新建 | `app/src/main/java/com/corgimemo/app/ui/components/CorgiSnackbar.kt` | 品牌 Snackbar 组件 |
+| 修改 | `app/src/main/java/com/corgimemo/app/ui/screens/main/MainScreen.kt` | `snackbarHost` 槽位使用自定义 Snackbar |
+
+### MainScreen.kt 集成方案
+
+**改造前**（line 799）：
+```kotlin
+snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+```
+
+**改造后**：
+```kotlin
+snackbarHost = {
+    SnackbarHost(hostState = snackbarHostState) { data ->
+        CorgiSnackbar(
+            message = data.visuals.message,
+            actionLabel = data.visuals.actionLabel,
+            onAction = { data.performAction() }
+        )
+    }
+}
+```
+
+**关键设计点**：
+- 使用 Material 3 `SnackbarHost` 的 `snackbar: @Composable (SnackbarData) -> Unit` lambda
+- 自定义组件接收 `SnackbarData.visuals.message` 和 `visuals.actionLabel`
+- 点击回调直接调用 `data.performAction()`，与 Material 3 默认行为一致
+- **所有 11 个文件中的 `showSnackbar(...)` 调用完全不用改**——`SnackbarHostState` 接口不变
+
+### 影响范围（v2 全面）
+
+所有调用 `snackbarHostState.showSnackbar(...)` 的位置（共 11 个文件）自动应用新样式：
+
+| 文件 | 影响 Snackbar 数量 |
+|------|------|
+| `app/src/main/java/com/corgimemo/app/ui/screens/home/HomeScreen.kt` | 10 处 |
+| `app/src/main/java/com/corgimemo/app/ui/screens/todo/TodoEditScreen.kt` | 6 处 |
+| `app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationEditScreen.kt` | 4 处 |
+| `app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationViewScreen.kt` | 4 处 |
+| `app/src/main/java/com/corgimemo/app/ui/screens/date/SpecialDateScreen.kt` | 3 处 |
+| `app/src/main/java/com/corgimemo/app/ui/screens/date/SpecialDateDetailScreen.kt` | 5 处 |
+| `app/src/main/java/com/corgimemo/app/ui/screens/date/SpecialDateQuickCreateScreen.kt` | 4 处 |
+| `app/src/main/java/com/corgimemo/app/ui/screens/date/SpecialDateCardStyleScreen.kt` | 3 处 |
+| `app/src/main/java/com/corgimemo/app/ui/screens/inspiration/components/InspirationImageGallery.kt` | 1 处 |
+| `app/src/main/java/com/corgimemo/app/ui/screens/recyclebin/RecycleBinScreen.kt` | 2 处 |
+| `app/src/main/java/com/corgimemo/app/ui/screens/main/MainScreen.kt` | 1 处 |
+
+### 关键约束
+
+- `R.drawable.ic_launcher` 引用 `corgi_tilt_2frames_01.png`（柯基歪头图），与 APP 启动图标完全一致
+- 颜色全部走 `UiColors`，**不硬编码** `Color(0xFF...)`（与项目规范一致）
+- `actionLabel` 长度 > 2 字时，右侧方块宽度通过 `defaultMinSize` + `padding(horizontal)` 自适应扩展
+- 文字 `maxLines = 2`，避免长文本撑爆布局
+
+### v1 与 v2 的关系
+
+- v1 的"删除 CelebrationOverlay + Snackbar 显示鼓励语"**保留并实施**（已提交 `498a0952`）
+- v2 **不撤销 v1**，仅在 v1 基础上**升级 Snackbar 视觉样式**
+- v1 的 HomeScreen.kt `LaunchedEffect(celebrationState)` 仍生效，输出通过新 CorgiSnackbar 渲染

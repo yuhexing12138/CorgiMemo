@@ -60,6 +60,7 @@ import androidx.navigation.NavController
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.ui.components.AppDrawerContent
 import com.corgimemo.app.ui.components.CategoryAction
+import com.corgimemo.app.ui.components.CorgiSnackbar
 import com.corgimemo.app.ui.components.EnhancedTopBar
 import com.corgimemo.app.ui.components.LeftIconType
 import com.corgimemo.app.ui.components.RightIconType
@@ -796,7 +797,15 @@ fun MainScreen(
              *
              * 子页面（HomeScreen）通过参数接收 snackbarHostState，调用 showSnackbar() 即可触发显示。
              */
-            snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+            snackbarHost = {
+                SnackbarHost(hostState = snackbarHostState) { data ->
+                    CorgiSnackbar(
+                        message = data.visuals.message,
+                        actionLabel = data.visuals.actionLabel,
+                        onAction = { data.performAction() }
+                    )
+                }
+            }
         ) { paddingValues ->
             /**
              * 动态计算导航栏总高度（含安全区域）
