@@ -1,6 +1,5 @@
 package com.corgimemo.app.ui.screens.profile
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,494 +12,93 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.corgimemo.app.animation.InteractiveCorgi
+import com.corgimemo.app.animation.AnimationType
+import com.corgimemo.app.animation.FrameAnimation
 import com.corgimemo.app.animation.Outfit
 import com.corgimemo.app.animation.OutfitManager
-import com.corgimemo.app.animation.CorgiMood
-import com.corgimemo.app.animation.CorgiPose
-import com.corgimemo.app.animation.PoseManager
 import com.corgimemo.app.animation.OutfitRecommendation
 import com.corgimemo.app.data.model.Achievement as NewAchievement
-import com.corgimemo.app.ui.components.CorgiNamerDialog
 import com.corgimemo.app.viewmodel.ProfileViewModel
 
 @Composable
 fun ProfileScreen(
     navController: NavController,
-    viewModel: ProfileViewModel = hiltViewModel()
+    @Suppress("UNUSED_PARAMETER") viewModel: ProfileViewModel = hiltViewModel()
 ) {
-    val corgiData by viewModel.corgiData.collectAsState()
-    val achievements by viewModel.achievements.collectAsState()
-    val outfits by viewModel.outfits.collectAsState()
-    val levelStage by viewModel.levelStage.collectAsState()
-    val levelProgress by viewModel.levelProgress.collectAsState()
-    val progressText by viewModel.progressText.collectAsState()
-    val isPreviewMode by viewModel.isPreviewMode.collectAsState()
-    val previewOutfit by viewModel.previewOutfit.collectAsState()
-    val recommendedOutfit by viewModel.recommendedOutfit.collectAsState()
-    val moodHistory7Days by viewModel.moodHistory7Days.collectAsState()
-    val hapticEnabled by viewModel.hapticEnabled.collectAsState()
-    val soundEnabled by viewModel.soundEnabled.collectAsState()
-
-    var showAchievementDetail by remember { mutableStateOf<NewAchievement?>(null) }
-    var showRenameDialog by remember { mutableStateOf(false) }
-    var showConfirmDialog by remember { mutableStateOf(false) }
-    var pendingNewName by remember { mutableStateOf("") }
-
-    // 退出页面时取消预览模式，恢复原装扮
-    DisposableEffect(Unit) {
-        onDispose {
-            viewModel.cancelPreview()
-        }
-    }
-
-    LazyColumn(
+    // 「我的」页面功能迭代中，暂时以「开发中敬请期待」占位。
+    // 保留 viewModel 参数以兼容原有调用方，后续优化时直接恢复原实现即可。
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Top
+            .padding(24.dp)
     ) {
-            item {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(80.dp)
-                    ) {
-                        Text(
-                            text = "柯",
-                            fontSize = 32.sp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.padding(top = 18.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                    }
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // 居中显示睡觉中的柯基帧动画，参考引导页 InspirationFeaturePage 的写法
+            FrameAnimation(
+                animationType = AnimationType.SLEEP,
+                fps = 12,
+                isLooping = true,
+                modifier = Modifier.size(160.dp)
+            )
 
-                    Text(
-                        text = corgiData?.name ?: "小柯基",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 12.dp)
-                    )
+            Spacer(modifier = Modifier.height(20.dp))
 
-                    Row(
-                        modifier = Modifier.padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(24.dp)
-                    ) {
-                        StatItem(label = "等级", value = "${corgiData?.level ?: 1}")
-                        StatItem(label = "经验", value = "${corgiData?.experience ?: 0}")
-                        StatItem(label = "情绪", value = "${corgiData?.moodValue ?: 50}%")
-                    }
+            // 提示文字
+            Text(
+                text = "💤 我的页面开发中，敬请期待~",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center
+            )
 
-                    Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = levelStage.displayName,
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = progressText,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        LinearProgressIndicator(
-                            progress = { levelProgress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 4.dp)
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    }
-                }
-            }
+            Spacer(modifier = Modifier.height(8.dp))
 
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-                    .clickable { navController.navigate("stats") }
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "成就统计",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "查看详情 ›",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    StatRow(label = "累计完成任务", value = "${corgiData?.totalCompleted ?: 0} 个")
-                    StatRow(label = "连续完成天数", value = "${corgiData?.consecutiveDays ?: 0} 天")
-                    StatRow(label = "最长连续天数", value = "${corgiData?.maxConsecutiveDays ?: 0} 天")
-                    StatRow(
-                        label = "成就解锁",
-                        value = "${achievements.count { it.second }}/${achievements.size}"
-                    )
-                }
-            }
-
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            ) {
-                com.corgimemo.app.ui.components.MoodHistoryChart(
-                    historyList = moodHistory7Days,
-                    modifier = Modifier.padding(16.dp)
-                )
-            }
-
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🏆 ${achievements.count { it.second }}/${achievements.size}",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "查看全部 ›",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable {
-                                navController.navigate("achievement")
-                            }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(achievements) { (achievement, isUnlocked) ->
-                            AchievementCard(
-                                achievement = achievement,
-                                isUnlocked = isUnlocked,
-                                onClick = { showAchievementDetail = achievement }
-                            )
-                        }
-                    }
-                }
-            }
-
-            recommendedOutfit?.let { recommendation ->
-                OutfitRecommendationBanner(
-                    recommendation = recommendation,
-                    onApply = {
-                        if (isPreviewMode) {
-                            viewModel.previewOutfit(recommendation.outfitId)
-                        } else {
-                            viewModel.selectOutfit(recommendation.outfitId)
-                        }
-                    }
-                )
-            }
-
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = if (recommendedOutfit != null) 12.dp else 16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "装扮",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        if (!isPreviewMode) {
-                            androidx.compose.material3.TextButton(
-                                onClick = { viewModel.enterPreviewMode() }
-                            ) {
-                                Text(
-                                    text = "🎨 预览模式",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    }
-
-                    if (isPreviewMode) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
-                                .padding(8.dp)
-                        ) {
-                            Text(
-                                text = "✨ 预览模式：点击下方装扮卡片即可预览效果，不会立即保存",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = if (isPreviewMode) {
-                            val previewOutfitObj = OutfitManager.getCurrentOutfit(previewOutfit)
-                            "预览装扮: ${previewOutfitObj.name}"
-                        } else {
-                            "当前装扮: ${viewModel.getCurrentOutfit().name}"
-                        },
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
-                    )
-
-                    corgiData?.let { data ->
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isPreviewMode) {
-                                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
-                                } else {
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                }
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 16.dp)
-                        ) {
-                            InteractiveCorgi(
-                                pose = PoseManager.getDefaultPose(),
-                                mood = CorgiMood.NORMAL,
-                                corgiName = data.name,
-                                level = data.level,
-                                outfitId = if (isPreviewMode) previewOutfit else data.currentOutfit,
-                                hapticEnabled = hapticEnabled,
-                                soundEnabled = soundEnabled,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(outfits) { (outfit, isUnlocked) ->
-                            val currentDisplayId = if (isPreviewMode) previewOutfit else corgiData?.currentOutfit
-                            val isSelected = currentDisplayId == outfit.id ||
-                                    (outfit.isDefault && currentDisplayId == null)
-                            OutfitCard(
-                                outfit = outfit,
-                                isUnlocked = isUnlocked,
-                                isSelected = isSelected,
-                                onSelect = {
-                                    if (isUnlocked) {
-                                        val effectiveOutfitId = if (outfit.isDefault) null else outfit.id
-                                        // 点击装扮卡片时自动进入预览模式并预览
-                                        if (!isPreviewMode) {
-                                            viewModel.enterPreviewMode()
-                                        }
-                                        viewModel.previewOutfit(effectiveOutfitId)
-                                    }
-                                }
-                            )
-                        }
-                    }
-
-                    if (isPreviewMode) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            androidx.compose.material3.OutlinedButton(
-                                onClick = { viewModel.cancelPreview() },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text(text = "取消")
-                            }
-                            androidx.compose.material3.Button(
-                                onClick = { viewModel.applyPreview() },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text(text = "应用装扮")
-                            }
-                        }
-                    }
-                }
-            }
-
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "柯基设置",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-
-                    SettingItemCard(
-                        title = "修改名字",
-                        description = "当前名字：${corgiData?.name ?: "小柯基"}",
-                        onClick = { showRenameDialog = true }
-                    )
-                }
-            }
-
-            androidx.compose.material3.Button(
-                onClick = { navController.popBackStack() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text(text = "返回首页")
-            }
+            Text(
+                text = "柯基正在小憩片刻，新功能稍后就来 🐶",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
         }
-    }
 
-    showAchievementDetail?.let { achievement ->
-        AchievementDetailDialog(
-            achievement = achievement,
-            isUnlocked = viewModel.isAchievementUnlocked(achievement.id),
-            onDismiss = { showAchievementDetail = null }
-        )
-    }
-
-    if (showRenameDialog) {
-        CorgiRenameDialog(
-            currentName = corgiData?.name ?: "小柯基",
-            onConfirm = { newName ->
-                val (isValid, _) = viewModel.validateName(newName)
-                if (isValid) {
-                    pendingNewName = newName
-                    showRenameDialog = false
-                    showConfirmDialog = true
-                }
-            },
-            onDismiss = { showRenameDialog = false }
-        )
-    }
-
-    if (showConfirmDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showConfirmDialog = false },
-            title = {
-                Text(
-                    text = "确认修改",
-                    style = MaterialTheme.typography.titleLarge
-                )
-            },
-            text = {
-                Text(
-                    text = "确定要将柯基的名字改为「$pendingNewName」吗？",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        viewModel.updateCorgiName(pendingNewName)
-                        showConfirmDialog = false
-                        pendingNewName = ""
-                    }
-                ) {
-                    Text(text = "确定")
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        showConfirmDialog = false
-                        showRenameDialog = true
-                    }
-                ) {
-                    Text(text = "取消")
-                }
-            }
-        )
+        // 底部返回按钮
+        androidx.compose.material3.Button(
+            onClick = { navController.popBackStack() },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text(text = "返回首页")
+        }
     }
 }
 
