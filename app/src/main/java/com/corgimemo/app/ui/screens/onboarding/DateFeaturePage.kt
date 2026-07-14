@@ -116,19 +116,6 @@ fun DateFeaturePage(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 5 卖点列表
-            FeatureBullet("✨ 记录生日、纪念日、节日")
-            FeatureBullet("⏰ 自动倒计时")
-            FeatureBullet("🎨 多种卡片样式")
-            FeatureBullet("🔔 提前提醒")
-            FeatureBullet("📌 可置顶")
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            HorizontalDivider()
-
-            Spacer(modifier = Modifier.height(24.dp))
-
             // 下半：表单或成功态
             if (showSuccessAnimation && createdDate != null) {
                 // 成功态
@@ -214,21 +201,41 @@ fun DateFeaturePage(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                Row(
+                // 类别选择：2 行 × 2 个居中显示
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf(
-                        DateCategory.BIRTHDAY to "🎂 生日",
-                        DateCategory.ANNIVERSARY to "💝 纪念日",
-                        DateCategory.HOLIDAY to "🎉 节日",
-                        DateCategory.OTHER to "📌 其他"
-                    ).forEach { (cat, label) ->
-                        FilterChip(
-                            selected = selectedCategory == cat,
-                            onClick = { selectedCategory = cat },
-                            label = { Text(label) }
-                        )
+                    // 第一行：生日 + 纪念日
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            DateCategory.BIRTHDAY to "🎂 生日",
+                            DateCategory.ANNIVERSARY to "💝 纪念日"
+                        ).forEach { (cat, label) ->
+                            FilterChip(
+                                selected = selectedCategory == cat,
+                                onClick = { selectedCategory = cat },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+                    // 第二行：节日 + 其他
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            DateCategory.HOLIDAY to "🎉 节日",
+                            DateCategory.OTHER to "📌 其他"
+                        ).forEach { (cat, label) ->
+                            FilterChip(
+                                selected = selectedCategory == cat,
+                                onClick = { selectedCategory = cat },
+                                label = { Text(label) }
+                            )
+                        }
                     }
                 }
 
@@ -315,23 +322,6 @@ fun DateFeaturePage(
             DatePicker(state = datePickerState)
         }
     }
-}
-
-/**
- * 功能要点条目
- *
- * @param text 条目文本（emoji + 文字）
- */
-@Composable
-private fun FeatureBullet(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp)
-    )
 }
 
 /**
