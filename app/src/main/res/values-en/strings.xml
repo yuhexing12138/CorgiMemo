@@ -1,6 +1,7 @@
 <resources>
     <!-- ==================== App Basics ==================== -->
-    <string name="app_name">CorgiMemo</string>
+    <!-- APP name: 刻记⁺, "⁺" is Unicode superscript plus (U+207A), styled like an exponent -->
+    <string name="app_name">刻记⁺</string>
     <string name="app_description">Corgi Todo - Your Helpful Assistant</string>
 
     <!-- ==================== Common Actions ==================== -->

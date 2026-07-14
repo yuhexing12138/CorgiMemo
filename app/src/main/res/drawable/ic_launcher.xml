@@ -1,14 +1,9 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="48dp"
-    android:height="48dp"
-    android:viewportWidth="48"
-    android:viewportHeight="48">
-    <group>
-        <path
-            android:pathData="M24,2 C12.954,2 4,10.954 4,22 c0,11.046 8.954,20 20,20 c11.046,0 20,-8.954 20,-20 C44,10.954 35.046,2 24,2z"
-            android:fillColor="#FF9A5C"/>
-        <path
-            android:pathData="M20,18 L20,30 L28,30 L28,24 L24,24 L24,18 L20,18 z"
-            android:fillColor="#FFFFFF"/>
-    </group>
-</vector>
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    APP 启动图标：引用柯基歪头图（corgi_tilt_2frames_01.png）。
+    通过 <bitmap> 包装 PNG 图片，保持与 AndroidManifest 中
+    @drawable/ic_launcher 引用兼容；该引用同时被 MainActivity、
+    QuickAddWidget/TodoListWidget/TodayPreviewWidget 的 previewImage 复用。
+-->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/corgi_tilt_2frames_01" />
