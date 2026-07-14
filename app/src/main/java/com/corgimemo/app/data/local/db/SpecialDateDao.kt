@@ -89,4 +89,14 @@ interface SpecialDateDao {
     /** 清除除指定 id 外所有卡片的置顶（保证单选置顶） */
     @Query("UPDATE special_dates SET isPinned = 0 WHERE id != :id AND isPinned = 1")
     suspend fun clearPinExcept(id: Long)
+
+    /**
+     * 按旧 category 批量更新为新 category
+     * 用于删除自定义类型时，将关联日期回退为 OTHER
+     *
+     * @param oldCategory 旧 category 值（如 "CUSTOM:42"）
+     * @param newCategory 新 category 值（如 "OTHER"）
+     */
+    @Query("UPDATE special_dates SET category = :newCategory WHERE category = :oldCategory")
+    suspend fun updateCategoryByCategory(oldCategory: String, newCategory: String)
 }

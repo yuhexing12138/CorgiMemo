@@ -4,7 +4,10 @@ import com.corgimemo.app.data.local.db.SpecialDateDao
 import com.corgimemo.app.data.local.db.SpecialDateRelationDao
 import com.corgimemo.app.data.model.SpecialDate
 import com.corgimemo.app.data.model.SpecialDateRelation
+import com.corgimemo.app.data.model.CustomDateType
+import com.corgimemo.app.data.local.db.CustomDateTypeDao
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,8 +19,41 @@ import javax.inject.Singleton
 class SpecialDateRepository @Inject constructor(
     private val specialDateDao: SpecialDateDao,
     private val relationDao: SpecialDateRelationDao,
-    private val cardRelationRepository: CardRelationRepository
+    private val cardRelationRepository: CardRelationRepository,
+    private val customDateTypeDao: CustomDateTypeDao
 ) {
+    // ==================== 自定义日期类型 ====================
+
+    /** 观察所有自定义类型（响应式） */
+    val allCustomDateTypes: Flow<List<CustomDateType>> = customDateTypeDao.getAllCustomDateTypes()
+
+    /** 新增自定义类型 */
+    suspend fun insertCustomDateType(name: String, emoji: String): Long {
+        val sortOrder = (getAllCustomDateTypesList().maxOfOrNull { it.sortOrder } ?: -1) + 1
+        return customDateTypeDao.insert(CustomDateType(name = name, emoji = emoji, sortOrder = sortOrder))
+    }
+
+    /** 重命名自定义类型 */
+    suspend fun renameCustomDateType(id: Long, newName: String) {
+        customDateTypeDao.getById(id)?.let { type ->
+            customDateTypeDao.update(type.copy(name = newName))
+        }
+    }
+
+    /** 删除自定义类型，关联日期回退为 OTHER */
+    suspend fun deleteCustomDateType(id: Long) {
+        val categoryKey = "CUSTOM:$id"
+        // 1. 关联日期回退为 OTHER
+        specialDateDao.updateCategoryByCategory(categoryKey, "OTHER")
+        // 2. 删除类型记录
+        customDateTypeDao.getById(id)?.let { customDateTypeDao.delete(it) }
+    }
+
+    /** 获取所有自定义类型（一次性快照） */
+    private suspend fun getAllCustomDateTypesList(): List<CustomDateType> {
+        return allCustomDateTypes.first()
+    }
+
     /** 获取所有特殊日期（响应式） */
     val allDates: Flow<List<SpecialDate>> = specialDateDao.getAllSpecialDates()
 

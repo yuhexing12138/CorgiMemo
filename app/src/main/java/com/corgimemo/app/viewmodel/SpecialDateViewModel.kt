@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CardSearchResult
+import com.corgimemo.app.data.model.CustomDateType
 import com.corgimemo.app.data.model.SpecialDate
 import com.corgimemo.app.data.repository.CardRelationRepository
 import com.corgimemo.app.data.repository.DeletedSpecialDateRepository
@@ -110,6 +111,46 @@ class SpecialDateViewModel @Inject constructor(
     /** 批量删除撤回缓存 */
     private val _pendingBatchDeletes = MutableStateFlow<List<SpecialDate>>(emptyList())
     val pendingBatchDeletes: StateFlow<List<SpecialDate>> = _pendingBatchDeletes.asStateFlow()
+
+    // ==================== 自定义日期类型管理 ====================
+
+    /** 自定义日期类型列表（响应式） */
+    val customDateTypes: StateFlow<List<CustomDateType>> = repository.allCustomDateTypes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 当前选中的类型筛选（null=全部, "BIRTHDAY"=内置, "CUSTOM:42"=自定义） */
+    private val _selectedDateCategory = MutableStateFlow<String?>(null)
+    val selectedDateCategory: StateFlow<String?> = _selectedDateCategory
+
+    /** 添加自定义类型 */
+    fun addCustomType(name: String, emoji: String) {
+        viewModelScope.launch {
+            repository.insertCustomDateType(name, emoji)
+        }
+    }
+
+    /** 重命名自定义类型 */
+    fun renameCustomType(id: Long, newName: String) {
+        viewModelScope.launch {
+            repository.renameCustomDateType(id, newName)
+        }
+    }
+
+    /** 删除自定义类型（关联日期回退为 OTHER） */
+    fun deleteCustomType(id: Long) {
+        viewModelScope.launch {
+            repository.deleteCustomDateType(id)
+            // 如果当前选中的是被删除的类型，重置筛选
+            if (_selectedDateCategory.value == "CUSTOM:$id") {
+                _selectedDateCategory.value = null
+            }
+        }
+    }
+
+    /** 设置类型筛选 */
+    fun filterByDateCategory(category: String?) {
+        _selectedDateCategory.value = category
+    }
 
     init {
         // 订阅持久化的隐藏详情状态
