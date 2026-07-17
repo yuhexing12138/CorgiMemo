@@ -28,3 +28,14 @@ Thumbs.db
 
 # Visual companion mockups（brainstorming skill 临时产物）
 .superpowers/
+
+# ============================================================
+# Graphify 知识图谱工具的输出与中间产物
+# 说明：graphify 仓库本身位于 ./graphify（Git 子模块，受 .gitmodules 管理），
+#       这里仅排除它运行时在仓库根目录生成的文件，避免误提交。
+# 详细说明见 https://github.com/Graphify-Labs/graphify
+# ============================================================
+graphify-out/        # 默认输出目录（graph.html / GRAPH_REPORT.md / graph.json / cache/）
+.graphify/           # graphify 内部状态目录（增量缓存、版本标记等）
+.graphify_*          # graphify 临时状态文件（如 .graphify_python、增量游标 .graphify_*.json）
+/.graphifyignore.bak # 备份用，正常情况不应存在
