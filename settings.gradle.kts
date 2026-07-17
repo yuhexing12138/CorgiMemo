@@ -22,4 +22,4 @@ dependencyResolutionManagement {
 rootProject.name = "CorgiMemo"
 include(":app")
 include(":richeditor-compose")
-project(":richeditor-compose").projectDir = file("compose-rich-editor-main/richeditor-compose")
+project(":richeditor-compose").projectDir = file("compose-rich-editor/richeditor-compose")
