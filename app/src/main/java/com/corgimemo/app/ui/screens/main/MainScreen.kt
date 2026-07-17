@@ -417,8 +417,7 @@ fun MainScreen(
              * 点击跳转到系统设置页。
              */
             IconButton(onClick = {
-                // 设置页功能暂未完善，点击提示
-                com.corgimemo.app.ui.components.GlobalSnackbarController.showMessage("功能开发中...")
+                navController.navigate(Screen.Settings.route)
             }) {
                 Icon(
                     imageVector = Icons.Filled.Settings,
