@@ -34,8 +34,13 @@ Thumbs.db
 # 说明：graphify 仓库本身位于 ./graphify（Git 子模块，受 .gitmodules 管理），
 #       这里仅排除它运行时在仓库根目录生成的文件，避免误提交。
 # 详细说明见 https://github.com/Graphify-Labs/graphify
+# 规则：每条 pattern 必须独占一行，行内 # 不会被 git 视作注释
 # ============================================================
-graphify-out/        # 默认输出目录（graph.html / GRAPH_REPORT.md / graph.json / cache/）
-.graphify/           # graphify 内部状态目录（增量缓存、版本标记等）
-.graphify_*          # graphify 临时状态文件（如 .graphify_python、增量游标 .graphify_*.json）
-/.graphifyignore.bak # 备份用，正常情况不应存在
+# 默认输出目录（graph.html / GRAPH_REPORT.md / graph.json / cache/）
+graphify-out/
+# graphify 内部状态目录（增量缓存、版本标记等）
+.graphify/
+# graphify 临时状态文件（如 .graphify_python、增量游标 .graphify_*.json）
+.graphify_*
+# 备份用，正常情况不应存在
+/.graphifyignore.bak
