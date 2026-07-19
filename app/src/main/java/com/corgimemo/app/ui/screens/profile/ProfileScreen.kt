@@ -1,445 +1,284 @@
 package com.corgimemo.app.ui.screens.profile
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.corgimemo.app.animation.InteractiveCorgi
 import com.corgimemo.app.animation.Outfit
 import com.corgimemo.app.animation.OutfitManager
-import com.corgimemo.app.animation.CorgiMood
-import com.corgimemo.app.animation.CorgiPose
-import com.corgimemo.app.animation.PoseManager
 import com.corgimemo.app.animation.OutfitRecommendation
 import com.corgimemo.app.data.model.Achievement as NewAchievement
+import com.corgimemo.app.ui.components.MoodHistoryChart
+import com.corgimemo.app.ui.navigation.Screen
+import com.corgimemo.app.ui.screens.profile.components.AchievementSummaryCard
+import com.corgimemo.app.ui.screens.profile.components.OutfitEntryCard
+import com.corgimemo.app.ui.screens.profile.components.ProfileHeroCard
+import com.corgimemo.app.ui.screens.profile.components.SettingItem
+import com.corgimemo.app.ui.screens.profile.components.SettingListCard
+import com.corgimemo.app.ui.screens.profile.components.ThemeQuickSwitch
 import com.corgimemo.app.viewmodel.ProfileViewModel
+import kotlinx.coroutines.launch
 
+/**
+ * 「我的」页面主屏
+ *
+ * Phase 4 Task 9 重构：8 模块单列 LazyColumn 分层布局
+ * ① 柯基展示头卡（ProfileHeroCard）
+ * ② 主题配色快选（ThemeQuickSwitch）
+ * ③ 装扮入口卡（OutfitEntryCard，点击跳 Screen.Outfit）
+ * ④ 成就统计卡（AchievementSummaryCard，点击"查看全部"跳 Screen.Achievement）
+ * ⑤ 7 天情绪图表（内联 Card + MoodHistoryChart）
+ * ⑥ 设置入口组（SettingListCard：通知与提醒/震动与音效/智能分类）
+ * ⑦ 数据备份（SettingListCard：备份与恢复/回收站）
+ * ⑧ 关于与帮助（SettingListCard：使用帮助/意见反馈/隐私与协议）+ 版本号水印
+ *
+ * 已外移内容（迁移到 OutfitScreen 或被新组件替代）：
+ * - DisposableEffect cancelPreview（→ OutfitScreen）
+ * - 装扮推荐横幅（→ OutfitScreen）
+ * - 装扮 Card（柯基动画预览 + 横滑列表 + 预览模式操作栏）（→ OutfitScreen）
+ * - 成就横滑 LazyRow 块（→ AchievementSummaryCard）
+ * - "柯基设置" Card（→ 头卡名字点击）
+ * - "返回首页" Button（→ 底部导航）
+ *
+ * @param navController 导航控制器
+ * @param snackbarHostState 共享 SnackbarHostState（优先用 MainScreen 传入的；为 null 时本页独立创建）
+ * @param viewModel ProfileViewModel（Hilt 注入）
+ */
 @Composable
 fun ProfileScreen(
     navController: NavController,
+    snackbarHostState: SnackbarHostState? = null,
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
+    // ========== 状态收集 ==========
     val corgiData by viewModel.corgiData.collectAsState()
     val achievements by viewModel.achievements.collectAsState()
     val outfits by viewModel.outfits.collectAsState()
     val levelStage by viewModel.levelStage.collectAsState()
     val levelProgress by viewModel.levelProgress.collectAsState()
     val progressText by viewModel.progressText.collectAsState()
-    val isPreviewMode by viewModel.isPreviewMode.collectAsState()
-    val previewOutfit by viewModel.previewOutfit.collectAsState()
-    val recommendedOutfit by viewModel.recommendedOutfit.collectAsState()
     val moodHistory7Days by viewModel.moodHistory7Days.collectAsState()
+    val themeColor by viewModel.themeColor.collectAsState()
     val hapticEnabled by viewModel.hapticEnabled.collectAsState()
     val soundEnabled by viewModel.soundEnabled.collectAsState()
 
+    // ========== 弹窗状态 ==========
     var showAchievementDetail by remember { mutableStateOf<NewAchievement?>(null) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var pendingNewName by remember { mutableStateOf("") }
 
-    // 退出页面时取消预览模式，恢复原装扮
-    DisposableEffect(Unit) {
-        onDispose {
-            viewModel.cancelPreview()
+    // ========== Snackbar 与协程作用域 ==========
+    // 优先复用 MainScreen 传入的共享 SnackbarHostState（由顶层 AppSnackbarHost 渲染）；
+    // 若未传入则本页独立创建（注意：独立创建时无 Host 渲染，showSnackbar 不会有视觉效果，
+    // 因此推荐从 MainScreen 传入共享实例）。
+    val effectiveSnackbarHostState = snackbarHostState ?: remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    // ========== 版本号（PackageManager 读取，try-catch 兜底 "1.0.0"）==========
+    // 适配说明：实现计划原定用 BuildConfig.VERSION_NAME，但 app/build.gradle.kts 未启用
+    // buildFeatures.buildConfig = true（AGP 8.0+ 默认关闭），BuildConfig 类不会生成，
+    // 直接引用会导致编译错误。按"不修改 build.gradle.kts"约束，改用 PackageManager 读取。
+    val context = LocalContext.current
+    val versionName = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
+        } catch (e: Exception) {
+            "1.0.0"
         }
     }
 
+    // ========== 8 模块单列 LazyColumn ==========
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Top
+            .padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(vertical = 16.dp)
     ) {
-            item {
+        // ① 柯基展示头卡
+        item {
+            ProfileHeroCard(
+                corgiData = corgiData,
+                levelStage = levelStage,
+                levelProgress = levelProgress,
+                progressText = progressText,
+                hapticEnabled = hapticEnabled,
+                soundEnabled = soundEnabled,
+                onNameClick = { showRenameDialog = true }
+            )
+        }
+
+        // ② 主题配色快选
+        item {
+            ThemeQuickSwitch(
+                currentColorKey = themeColor,
+                onColorSelected = { colorKey -> viewModel.setThemeColor(colorKey) },
+                onManageClick = { navController.navigate(Screen.Settings.route) }
+            )
+        }
+
+        // ③ 装扮入口卡（点击跳 OutfitScreen）
+        item {
+            OutfitEntryCard(
+                currentOutfitId = corgiData?.currentOutfit,
+                outfitCount = outfits.size,
+                onClick = { navController.navigate(Screen.Outfit.route) }
+            )
+        }
+
+        // ④ 成就统计卡（点击"查看全部"跳 AchievementScreen）
+        item {
+            AchievementSummaryCard(
+                totalCompleted = corgiData?.totalCompleted ?: 0,
+                consecutiveDays = corgiData?.consecutiveDays ?: 0,
+                maxConsecutiveDays = corgiData?.maxConsecutiveDays ?: 0,
+                unlockedCount = achievements.count { it.second },
+                totalCount = achievements.size,
+                achievements = achievements,
+                onAchievementClick = { achievement -> showAchievementDetail = achievement },
+                onViewAllClick = { navController.navigate(Screen.Achievement.route) }
+            )
+        }
+
+        // ⑤ 7 天情绪图表（内联 Card）
+        item {
             Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                shape = RoundedCornerShape(20.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(80.dp)
-                    ) {
-                        Text(
-                            text = "柯",
-                            fontSize = 32.sp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.padding(top = 18.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                    }
-
+                Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = corgiData?.name ?: "小柯基",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
+                        text = "📈 近 7 天情绪",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    MoodHistoryChart(
+                        historyList = moodHistory7Days,
                         modifier = Modifier.padding(top = 12.dp)
                     )
-
-                    Row(
-                        modifier = Modifier.padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(24.dp)
-                    ) {
-                        StatItem(label = "等级", value = "${corgiData?.level ?: 1}")
-                        StatItem(label = "经验", value = "${corgiData?.experience ?: 0}")
-                        StatItem(label = "情绪", value = "${corgiData?.moodValue ?: 50}%")
-                    }
-
-                    Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = levelStage.displayName,
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = progressText,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        LinearProgressIndicator(
-                            progress = { levelProgress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 4.dp)
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    }
                 }
             }
+        }
 
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-                    .clickable { navController.navigate("stats") }
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "成就统计",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "查看详情 ›",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+        // ⑥ 设置入口组
+        item {
+            SettingListCard(
+                items = listOf(
+                    SettingItem(icon = "🔔", title = "通知与提醒") {
+                        navController.navigate(Screen.Settings.route)
+                    },
+                    SettingItem(icon = "📳", title = "震动与音效") {
+                        navController.navigate(Screen.Settings.route)
+                    },
+                    SettingItem(icon = "🗂", title = "智能分类") {
+                        navController.navigate(Screen.SmartCategorySettings.route)
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    StatRow(label = "累计完成任务", value = "${corgiData?.totalCompleted ?: 0} 个")
-                    StatRow(label = "连续完成天数", value = "${corgiData?.consecutiveDays ?: 0} 天")
-                    StatRow(label = "最长连续天数", value = "${corgiData?.maxConsecutiveDays ?: 0} 天")
-                    StatRow(
-                        label = "成就解锁",
-                        value = "${achievements.count { it.second }}/${achievements.size}"
-                    )
-                }
-            }
-
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            ) {
-                com.corgimemo.app.ui.components.MoodHistoryChart(
-                    historyList = moodHistory7Days,
-                    modifier = Modifier.padding(16.dp)
                 )
-            }
+            )
+        }
 
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🏆 ${achievements.count { it.second }}/${achievements.size}",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "查看全部 ›",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable {
-                                navController.navigate("achievement")
-                            }
-                        )
+        // ⑦ 数据备份
+        item {
+            SettingListCard(
+                items = listOf(
+                    SettingItem(icon = "💾", title = "备份与恢复") {
+                        navController.navigate(Screen.BackupHistory.route)
+                    },
+                    SettingItem(icon = "🗑", title = "回收站") {
+                        navController.navigate(Screen.RecycleBin.createRoute("profile"))
                     }
+                )
+            )
+        }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(achievements) { (achievement, isUnlocked) ->
-                            AchievementCard(
-                                achievement = achievement,
-                                isUnlocked = isUnlocked,
-                                onClick = { showAchievementDetail = achievement }
+        // ⑧ 关于与帮助（三个入口点击显示"功能开发中"Snackbar）
+        item {
+            SettingListCard(
+                items = listOf(
+                    SettingItem(icon = "📖", title = "使用帮助") {
+                        scope.launch {
+                            effectiveSnackbarHostState.showSnackbar(
+                                message = "功能开发中",
+                                duration = SnackbarDuration.Short
                             )
                         }
-                    }
-                }
-            }
-
-            recommendedOutfit?.let { recommendation ->
-                OutfitRecommendationBanner(
-                    recommendation = recommendation,
-                    onApply = {
-                        if (isPreviewMode) {
-                            viewModel.previewOutfit(recommendation.outfitId)
-                        } else {
-                            viewModel.selectOutfit(recommendation.outfitId)
+                    },
+                    SettingItem(icon = "💬", title = "意见反馈") {
+                        scope.launch {
+                            effectiveSnackbarHostState.showSnackbar(
+                                message = "功能开发中",
+                                duration = SnackbarDuration.Short
+                            )
+                        }
+                    },
+                    SettingItem(icon = "📄", title = "隐私与协议") {
+                        scope.launch {
+                            effectiveSnackbarHostState.showSnackbar(
+                                message = "功能开发中",
+                                duration = SnackbarDuration.Short
+                            )
                         }
                     }
                 )
-            }
+            )
+        }
 
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        // 版本号水印（关于与帮助的视觉延伸，居中显示）
+        item {
+            Text(
+                text = "CorgiMemo v$versionName · 治愈每一天",
+                fontSize = 10.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = if (recommendedOutfit != null) 12.dp else 16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "装扮",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        if (!isPreviewMode) {
-                            androidx.compose.material3.TextButton(
-                                onClick = { viewModel.enterPreviewMode() }
-                            ) {
-                                Text(
-                                    text = "🎨 预览模式",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    }
-
-                    if (isPreviewMode) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
-                                .padding(8.dp)
-                        ) {
-                            Text(
-                                text = "✨ 预览模式：点击下方装扮卡片即可预览效果，不会立即保存",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = if (isPreviewMode) {
-                            val previewOutfitObj = OutfitManager.getCurrentOutfit(previewOutfit)
-                            "预览装扮: ${previewOutfitObj.name}"
-                        } else {
-                            "当前装扮: ${viewModel.getCurrentOutfit().name}"
-                        },
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
-                    )
-
-                    corgiData?.let { data ->
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isPreviewMode) {
-                                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
-                                } else {
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                }
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 16.dp)
-                        ) {
-                            InteractiveCorgi(
-                                pose = PoseManager.getDefaultPose(),
-                                mood = CorgiMood.NORMAL,
-                                corgiName = data.name,
-                                level = data.level,
-                                outfitId = if (isPreviewMode) previewOutfit else data.currentOutfit,
-                                hapticEnabled = hapticEnabled,
-                                soundEnabled = soundEnabled,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(outfits) { (outfit, isUnlocked) ->
-                            val currentDisplayId = if (isPreviewMode) previewOutfit else corgiData?.currentOutfit
-                            val isSelected = currentDisplayId == outfit.id ||
-                                    (outfit.isDefault && currentDisplayId == null)
-                            OutfitCard(
-                                outfit = outfit,
-                                isUnlocked = isUnlocked,
-                                isSelected = isSelected,
-                                onSelect = {
-                                    if (isUnlocked) {
-                                        val effectiveOutfitId = if (outfit.isDefault) null else outfit.id
-                                        // 点击装扮卡片时自动进入预览模式并预览
-                                        if (!isPreviewMode) {
-                                            viewModel.enterPreviewMode()
-                                        }
-                                        viewModel.previewOutfit(effectiveOutfitId)
-                                    }
-                                }
-                            )
-                        }
-                    }
-
-                    if (isPreviewMode) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            androidx.compose.material3.OutlinedButton(
-                                onClick = { viewModel.cancelPreview() },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text(text = "取消")
-                            }
-                            androidx.compose.material3.Button(
-                                onClick = { viewModel.applyPreview() },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text(text = "应用装扮")
-                            }
-                        }
-                    }
-                }
-            }
-
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "柯基设置",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-
-                    SettingItemCard(
-                        title = "修改名字",
-                        description = "当前名字：${corgiData?.name ?: "小柯基"}",
-                        onClick = { showRenameDialog = true }
-                    )
-                }
-            }
-
-            androidx.compose.material3.Button(
-                onClick = { navController.popBackStack() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text(text = "返回首页")
-            }
+                    .padding(vertical = 8.dp)
+            )
         }
     }
 
+    // ========== 成就详情弹窗 ==========
     showAchievementDetail?.let { achievement ->
         AchievementDetailDialog(
             achievement = achievement,
@@ -448,6 +287,7 @@ fun ProfileScreen(
         )
     }
 
+    // ========== 改名弹窗 ==========
     if (showRenameDialog) {
         CorgiRenameDialog(
             currentName = corgiData?.name ?: "小柯基",
@@ -463,8 +303,9 @@ fun ProfileScreen(
         )
     }
 
+    // ========== 改名确认弹窗 ==========
     if (showConfirmDialog) {
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { showConfirmDialog = false },
             title = {
                 Text(
@@ -479,7 +320,7 @@ fun ProfileScreen(
                 )
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(
+                TextButton(
                     onClick = {
                         viewModel.updateCorgiName(pendingNewName)
                         showConfirmDialog = false
@@ -490,7 +331,7 @@ fun ProfileScreen(
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(
+                TextButton(
                     onClick = {
                         showConfirmDialog = false
                         showRenameDialog = true
@@ -741,7 +582,7 @@ fun AchievementDetailDialog(
                         }
                     }
                 }
-                androidx.compose.material3.Button(
+                Button(
                     onClick = onDismiss,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -855,7 +696,7 @@ fun OutfitRecommendationBanner(
                 }
             }
 
-            androidx.compose.material3.TextButton(
+            TextButton(
                 onClick = onApply,
                 shape = RoundedCornerShape(12.dp)
             ) {
@@ -931,7 +772,7 @@ fun CorgiRenameDialog(
     var name by remember { mutableStateOf(currentName) }
     val isValidName = name.length in 1..8
 
-    androidx.compose.material3.AlertDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Column(
@@ -961,7 +802,7 @@ fun CorgiRenameDialog(
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
 
-                androidx.compose.material3.OutlinedTextField(
+                OutlinedTextField(
                     value = name,
                     onValueChange = {
                         if (it.length <= 8) {
@@ -987,7 +828,7 @@ fun CorgiRenameDialog(
             }
         },
         confirmButton = {
-            androidx.compose.material3.Button(
+            Button(
                 onClick = { onConfirm(name) },
                 enabled = isValidName && name != currentName,
                 modifier = Modifier.padding(end = 8.dp)
@@ -996,7 +837,7 @@ fun CorgiRenameDialog(
             }
         },
         dismissButton = {
-            androidx.compose.material3.OutlinedButton(
+            OutlinedButton(
                 onClick = onDismiss,
                 modifier = Modifier.padding(start = 8.dp)
             ) {
