@@ -60,7 +60,7 @@ fun AchievementBadge(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(0.9f)
+            .aspectRatio(0.72f)
             .clickable {
                 isFlipped = !isFlipped
                 onClick()
@@ -113,13 +113,13 @@ private fun BadgeFrontSide(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(12.dp),
+            .padding(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Box(
             modifier = Modifier
-                .size(64.dp)
+                .size(58.dp)
                 .clip(CircleShape)
                 .background(
                     if (isUnlocked) {
@@ -139,7 +139,7 @@ private fun BadgeFrontSide(
                 // 已完成：装扮图标正常显示（保留原始彩色）
                 Text(
                     text = achievement.icon,
-                    fontSize = 32.sp,
+                    fontSize = 28.sp,
                     modifier = Modifier.align(Alignment.Center)
                 )
             } else {
@@ -147,7 +147,7 @@ private fun BadgeFrontSide(
                 // 视觉上让用户能预览解锁后的装扮样子，但明显是"未获得"状态
                 Text(
                     text = achievement.icon,
-                    fontSize = 32.sp,
+                    fontSize = 28.sp,
                     color = Color.Gray,
                     modifier = Modifier
                         .align(Alignment.Center)
@@ -159,21 +159,21 @@ private fun BadgeFrontSide(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .size(20.dp)
+                        .size(18.dp)
                         .clip(CircleShape)
                         .background(Color(0xFF64748B)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "🔒",
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         textAlign = TextAlign.Center
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         Text(
             text = achievement.name,
