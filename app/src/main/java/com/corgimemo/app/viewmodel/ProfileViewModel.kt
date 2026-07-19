@@ -17,6 +17,7 @@ import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.CorgiRepository
 import com.corgimemo.app.data.repository.MoodHistoryRepository
 import com.corgimemo.app.data.repository.TodoRepository
+import com.corgimemo.app.ui.theme.ThemeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -86,6 +87,38 @@ class ProfileViewModel @Inject constructor(
     val previewOutfit: StateFlow<String?> = _previewOutfit.asStateFlow()
 
     private var originalOutfit: String? = null
+
+    // ========== 主题色（复用 ThemeManager 单例 + CorgiPreferences 持久化）==========
+
+    /**
+     * 当前主题色（值："orange"/"pink"/"green"/"blue"/"purple"/"brown"）
+     *
+     * 直接暴露 ThemeManager 单例的 StateFlow，UI 订阅后即时响应主题切换。
+     * ThemeManager 持有内存态，CorgiPreferences 持有持久化态，二者在
+     * [setThemeColor] 中同步更新。
+     */
+    val themeColor: StateFlow<String> = ThemeManager.themeColor
+
+    /**
+     * 切换主题色
+     *
+     * 双重更新策略：
+     * 1. 立即同步更新 ThemeManager 单例（UI 即时生效，无需等待 DataStore 写入）
+     * 2. 异步持久化到 CorgiPreferences（key: theme_color，默认 "orange"）
+     *
+     * 注意：现有 CorgiPreferences API 中持久化方法名为 `saveThemeColor`，
+     * 与实现计划文档中占位代码的 `setThemeColor` 不同，这里按实际 API 调用。
+     *
+     * @param colorKey 主题色 key（见 ThemeColors 6 种预设）
+     */
+    fun setThemeColor(colorKey: String) {
+        // 立即更新内存态（UI 即时响应）
+        ThemeManager.setThemeColor(colorKey)
+        // 异步持久化到 ESP（不阻塞 UI 线程）
+        viewModelScope.launch {
+            corgiPreferences.saveThemeColor(colorKey)
+        }
+    }
 
     // ========== 装扮推荐 ==========
 

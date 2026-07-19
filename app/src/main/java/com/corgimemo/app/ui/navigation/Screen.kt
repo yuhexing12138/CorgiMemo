@@ -11,6 +11,8 @@ sealed class Screen(val route: String) {
     object Stats : Screen("stats")
     object Achievement : Screen("achievement")
     object CorgiDetail : Screen("corgi_detail")
+    /** 装扮详情页（从"我的"页外移，承载柯基动画+预览模式+横滑列表） */
+    object Outfit : Screen("outfit")
     object OperationHistory : Screen("operation_history")
     /** V2.6: 编辑历史时间线（支持 todoId 参数） */
     object EditHistory : Screen("edit_history?todoId={todoId}") {

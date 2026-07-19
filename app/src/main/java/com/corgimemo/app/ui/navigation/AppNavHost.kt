@@ -97,6 +97,11 @@ fun AppNavHost(
             CorgiDetailScreen(navController = navController)
         }
 
+        /** 装扮详情页（从"我的"页外移，承载柯基动画+预览模式+横滑列表） */
+        composable(Screen.Outfit.route) {
+            com.corgimemo.app.ui.screens.outfit.OutfitScreen(navController = navController)
+        }
+
         composable(Screen.SmartCategorySettings.route) {
             SmartCategorySettingsScreen(navController = navController)
         }
