@@ -135,13 +135,27 @@ private fun BadgeFrontSide(
                 ),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = if (isUnlocked) achievement.icon else "❓",
-                fontSize = 32.sp,
-                modifier = Modifier.align(Alignment.Center),
-                color = if (isUnlocked) Color.Unspecified else Color.Gray
-            )
-            if (!isUnlocked) {
+            if (isUnlocked) {
+                // 已完成：装扮图标正常显示（保留原始彩色）
+                Text(
+                    text = achievement.icon,
+                    fontSize = 32.sp,
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            } else {
+                // 未完成：装扮图标降权显示（半透明 + 灰色着色）
+                // 视觉上让用户能预览解锁后的装扮样子，但明显是"未获得"状态
+                Text(
+                    text = achievement.icon,
+                    fontSize = 32.sp,
+                    color = Color.Gray,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .graphicsLayer {
+                            alpha = 0.35f
+                        }
+                )
+                // 右下角锁标，强化"未解锁"语义
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)

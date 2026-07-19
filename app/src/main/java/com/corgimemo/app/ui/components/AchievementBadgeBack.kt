@@ -17,7 +17,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -95,9 +97,25 @@ fun AchievementBadgeBack(
                     )
                 }
             } else {
+                // 未解锁：装扮图标降权显示（半透明 + 灰色），让用户预览解锁后的装扮
                 Text(
-                    text = "🔒",
-                    fontSize = 28.sp
+                    text = achievement.icon,
+                    fontSize = 28.sp,
+                    color = Color.Gray,
+                    modifier = Modifier
+                        .graphicsLayer {
+                            alpha = 0.4f
+                        }
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "「${achievement.name}」",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -116,6 +134,31 @@ fun AchievementBadgeBack(
                     textAlign = TextAlign.Center,
                     lineHeight = 15.sp
                 )
+
+                // 装扮奖励预览（仅当成就关联装扮时显示）
+                // 让用户提前知道解锁这个成就能获得什么装扮
+                achievement.outfitId?.let {
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "🎁 奖励装扮",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        // 装扮图标降权显示（与正面一致的降权风格）
+                        Text(
+                            text = achievement.icon,
+                            fontSize = 14.sp,
+                            color = Color.Gray,
+                            modifier = Modifier.alpha(0.5f)
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
