@@ -95,11 +95,12 @@ private fun SettingRow(item: SettingItem) {
             .padding(vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 左侧图标背景框（26dp 方形，圆角 8dp）
+        // 左侧图标背景框（26dp 方形，圆角 8dp，surfaceVariant 暖灰背景，深色模式自动适配）
         Row(
             modifier = Modifier
                 .size(26.dp)
                 .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(0.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
