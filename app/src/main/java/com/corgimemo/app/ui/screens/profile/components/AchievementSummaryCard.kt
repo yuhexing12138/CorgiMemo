@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -28,40 +29,42 @@ import androidx.compose.ui.unit.sp
 import com.corgimemo.app.data.model.Achievement as NewAchievement
 
 /**
- * 成就统计卡
- * 2×2 统计网格 + 底部 5 个成就徽章预览
+ * 成就统计卡（精简版）
+ *
+ * 仅显示"成就解锁"统计行 + 至少 6 个成就徽章预览（横向滚动）。
+ * - 已解锁成就：正常显示装扮图标，primaryContainer 背景
+ * - 未解锁成就：降权显示装扮图标（alpha + 灰色着色 + 锁标），surfaceVariant 背景
+ * - 不足 6 个已解锁时，用即将完成的未解锁成就填充至 6 个
  *
  * 视觉规范：
  * - 卡片圆角 20dp、内边距 16dp、elevation 2dp
- * - 统计项 12sp，徽章 44dp 方形圆角 10dp
- * - 已解锁徽章 primaryContainer 背景，未解锁灰锁
+ * - 徽章 44dp 方形圆角 10dp，间距 6dp
  *
- * @param totalCompleted 累计完成任务数
- * @param consecutiveDays 连续完成天数
- * @param maxConsecutiveDays 最长连续天数
  * @param unlockedCount 已解锁成就数
  * @param totalCount 成就总数
- * @param achievements 成就列表（取前 5 个展示徽章）
+ * @param achievements 成就列表（按解锁状态排序，已解锁在前）
  * @param onAchievementClick 点击单个徽章回调
  * @param onViewAllClick 点击"查看全部"回调
  */
 @Composable
 fun AchievementSummaryCard(
-    totalCompleted: Int,
-    consecutiveDays: Int,
-    maxConsecutiveDays: Int,
     unlockedCount: Int,
     totalCount: Int,
     achievements: List<Pair<NewAchievement, Boolean>>,
     onAchievementClick: (NewAchievement) -> Unit,
     onViewAllClick: () -> Unit
 ) {
+    // 取至少 6 个徽章：已解锁全部 + 未解锁中即将完成的填充
+    // 排序逻辑：已解锁在前，未解锁在后（按进度降序，即将完成的优先）
+    val displayAchievements = getDisplayAchievements(achievements, minCount = 6)
+
     Card(
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            // 标题行 + 查看全部
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -82,12 +85,24 @@ fun AchievementSummaryCard(
                 )
             }
 
-            // 2×2 统计网格（4 行左标签右值）
-            Column(modifier = Modifier.padding(top = 12.dp)) {
-                StatRow(label = "累计完成任务", value = "$totalCompleted")
-                StatRow(label = "连续完成天数", value = "$consecutiveDays")
-                StatRow(label = "最长连续天数", value = "$maxConsecutiveDays")
-                StatRow(label = "成就解锁", value = "$unlockedCount/$totalCount")
+            // 成就解锁统计行
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "成就解锁",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "$unlockedCount / $totalCount",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
 
             // 分隔线
@@ -99,14 +114,14 @@ fun AchievementSummaryCard(
                     .background(MaterialTheme.colorScheme.outline)
             )
 
-            // 徽章预览行（取前 5 个）
+            // 徽章预览行（至少 6 个，可横向滚动）
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(achievements.take(5)) { (achievement, isUnlocked) ->
+                items(displayAchievements) { (achievement, isUnlocked) ->
                     AchievementBadge(
                         achievement = achievement,
                         isUnlocked = isUnlocked,
@@ -119,37 +134,27 @@ fun AchievementSummaryCard(
 }
 
 /**
- * 统计行（左标签右值）
+ * 获取展示用的成就列表（至少 minCount 个）
+ * 排序规则：已解锁在前，未解锁在后（保持原列表顺序）
+ * 不足 minCount 时，从未解锁成就中补充
  *
- * @param label 左侧标签
- * @param value 右侧数值
+ * @param achievements 全部成就列表（带解锁状态）
+ * @param minCount 最少展示数量
+ * @return 截取后的展示列表
  */
-@Composable
-private fun StatRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-    }
+private fun getDisplayAchievements(
+    achievements: List<Pair<NewAchievement, Boolean>>,
+    minCount: Int = 6
+): List<Pair<NewAchievement, Boolean>> {
+    // 已解锁在前，未解锁在后
+    val sorted = achievements.sortedByDescending { it.second }
+    return sorted.take(minCount)
 }
 
 /**
  * 成就徽章预览（44dp 方形）
- * 已解锁：显示成就 icon，primaryContainer 背景
- * 未解锁：显示 🔒，surfaceVariant 背景 + 灰色
+ * 已解锁：正常显示装扮图标，primaryContainer 背景
+ * 未解锁：降权显示装扮图标（alpha + 灰色 + 右下角锁标），surfaceVariant 背景
  *
  * @param achievement 成就对象
  * @param isUnlocked 是否已解锁
@@ -172,10 +177,32 @@ private fun AchievementBadge(
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = if (isUnlocked) achievement.icon else "🔒",
-            fontSize = 18.sp,
-            color = if (!isUnlocked) Color.Gray.copy(alpha = 0.5f) else Color.Unspecified
-        )
+        if (isUnlocked) {
+            // 已完成：装扮图标正常显示
+            Text(
+                text = achievement.icon,
+                fontSize = 18.sp
+            )
+        } else {
+            // 未完成：装扮图标降权显示（灰色半透明 + 右下角锁标）
+            Text(
+                text = achievement.icon,
+                fontSize = 18.sp,
+                color = Color.Gray,
+                modifier = Modifier.alpha(0.4f)
+            )
+            // 右下角锁标，强化"未解锁"语义
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 1.dp, end = 1.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "🔒",
+                    fontSize = 8.sp
+                )
+            }
+        }
     }
 }

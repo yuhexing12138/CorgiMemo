@@ -137,9 +137,6 @@ fun ProfileScreen(
         // ④ 成就统计卡（点击"查看全部"跳 AchievementScreen）
         item {
             AchievementSummaryCard(
-                totalCompleted = corgiData?.totalCompleted ?: 0,
-                consecutiveDays = corgiData?.consecutiveDays ?: 0,
-                maxConsecutiveDays = corgiData?.maxConsecutiveDays ?: 0,
                 unlockedCount = achievements.count { it.second },
                 totalCount = achievements.size,
                 achievements = achievements,
