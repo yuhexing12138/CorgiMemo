@@ -7,16 +7,37 @@ plugins {
     id("dagger.hilt.android.plugin")
 }
 
+/**
+ * Release signing is intentionally local-only. Keep the actual values in the
+ * repository-root `keystore.properties` file (which is ignored by Git), for
+ * example by copying `keystore.properties.example`.
+ */
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = java.util.Properties().apply {
+    if (keystorePropertiesFile.isFile) {
+        keystorePropertiesFile.inputStream().use(::load)
+    }
+}
+
+val releaseSigningConfigured = listOf(
+    "storeFile",
+    "storePassword",
+    "keyAlias",
+    "keyPassword"
+).all { keystoreProperties.getProperty(it)?.isNotBlank() == true }
+
 android {
     namespace = "com.corgimemo.app"
     compileSdk = 36
 
-    signingConfigs {
-        create("release") {
-            storeFile = file("../corgimemo-key.jks")
-            storePassword = "yhx31415926@"
-            keyAlias = "corgimemo"
-            keyPassword = "yhx31415926@"
+    if (releaseSigningConfigured) {
+        signingConfigs {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
         }
     }
 
@@ -35,7 +56,9 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
