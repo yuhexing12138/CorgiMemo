@@ -91,9 +91,6 @@ sealed class Screen(val route: String) {
     // 图片全屏预览页面
     object ImagePreview : Screen("image_preview")                          // 图片预览（参数通过 NavBackStackEntry 传递）
 
-    /** 智能分类设置页面 */
-    object SmartCategorySettings : Screen("smart_category_settings")
-
     /** 回收站页面（支持 source 参数指定默认 Tab） */
     object RecycleBin : Screen("recycle_bin?source={source}") {
         fun createRoute(source: String) = "recycle_bin?source=$source"

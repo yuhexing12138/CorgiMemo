@@ -159,14 +159,6 @@ fun SettingsScreen(
             )
 
             SettingItemCard(
-                title = "🧠 智能分类设置",
-                description = "管理智能分类关键词",
-                onClick = {
-                    navController.navigate("smart_category_settings")
-                }
-            )
-
-            SettingItemCard(
                 title = "📋 最近操作",
                 description = "查看和撤销最近的待办操作",
                 onClick = {

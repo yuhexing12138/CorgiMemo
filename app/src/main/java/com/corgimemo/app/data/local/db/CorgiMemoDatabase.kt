@@ -8,7 +8,6 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.corgimemo.app.data.local.db.ContentBlockEntity
 import com.corgimemo.app.data.local.db.AchievementEntity
-import com.corgimemo.app.data.local.db.CategoryKeywordEntity
 import com.corgimemo.app.data.local.db.OperationLogEntity
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CardRelation
@@ -31,8 +30,8 @@ import com.corgimemo.app.data.model.CustomDateType
  * 管理待办事项、柯基数据、任务分类、成就和用户模板
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, CategoryKeywordEntity::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
-    version = 38,
+    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
+    version = 39,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -50,8 +49,6 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     abstract fun achievementDao(): AchievementDao
 
     abstract fun taskDailyStatsDao(): TaskDailyStatsDao
-
-    abstract fun categoryKeywordDao(): CategoryKeywordDao
 
     /** 用户模板 DAO */
     abstract fun templateDao(): TemplateDao
@@ -102,7 +99,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1106,6 +1103,25 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     createdAt INTEGER NOT NULL DEFAULT 0
                 )
             """.trimIndent())
+        }
+    }
+
+    /**
+     * Migration 38→39：删除智能分类功能
+     *
+     * 依据 .trae/rules/entity与 migration同步检查.md 规则：
+     * 删除 Entity 时必须配套 Migration 删除对应表，保持 schema 与 Entity 列表一致。
+     *
+     * 删除内容：
+     * - category_keywords 表（对应已删除的 CategoryKeywordEntity）
+     * - 表上的索引（keyword 索引、categoryType 索引随表删除自动清除）
+     *
+     * 注意：此 Migration 不可逆，已安装用户的智能分类关键词数据将永久丢失。
+     */
+    internal val MIGRATION_38_39 = object : Migration(38, 39) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // 删除智能分类关键词表（含其索引一并清除）
+            db.execSQL("DROP TABLE IF EXISTS category_keywords")
         }
     }
     // companion object 闭合

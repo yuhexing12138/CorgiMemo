@@ -4,7 +4,6 @@ import android.content.Context
 import com.corgimemo.app.data.local.db.AchievementDao
 import com.corgimemo.app.data.local.db.CardRelationDao
 import com.corgimemo.app.data.local.db.CategoryDao
-import com.corgimemo.app.data.local.db.CategoryKeywordDao
 import com.corgimemo.app.data.local.db.ContentBlockDao
 import com.corgimemo.app.data.local.db.CorgiDao
 import com.corgimemo.app.data.local.db.CorgiMemoDatabase
@@ -73,12 +72,6 @@ object DatabaseModule {
     @Singleton
     fun provideTaskDailyStatsDao(database: CorgiMemoDatabase): TaskDailyStatsDao {
         return database.taskDailyStatsDao()
-    }
-
-    @Provides
-    @Singleton
-    fun provideCategoryKeywordDao(database: CorgiMemoDatabase): CategoryKeywordDao {
-        return database.categoryKeywordDao()
     }
 
     @Provides

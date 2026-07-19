@@ -66,7 +66,7 @@ import kotlinx.coroutines.launch
  * ③ 装扮入口卡（OutfitEntryCard，点击跳 Screen.Outfit）
  * ④ 成就统计卡（AchievementSummaryCard，点击"查看全部"跳 Screen.Achievement）
  * ⑤ 7 天情绪图表（内联 Card + MoodHistoryChart）
- * ⑥ 设置入口组（SettingListCard：通知与提醒/震动与音效/智能分类）
+ * ⑥ 设置入口组（SettingListCard：通知与提醒/震动与音效）
  * ⑦ 数据备份（SettingListCard：备份与恢复/回收站）
  * ⑧ 关于与帮助（SettingListCard：使用帮助/意见反馈/隐私与协议）+ 版本号水印
  *
@@ -210,9 +210,6 @@ fun ProfileScreen(
                     },
                     SettingItem(icon = "📳", title = "震动与音效") {
                         navController.navigate(Screen.Settings.route)
-                    },
-                    SettingItem(icon = "🗂", title = "智能分类") {
-                        navController.navigate(Screen.SmartCategorySettings.route)
                     }
                 )
             )

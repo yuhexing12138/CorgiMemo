@@ -4,8 +4,6 @@ import android.content.Context
 import com.corgimemo.app.data.local.db.ContentBlockDao
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.repository.CardRelationRepository
-import com.corgimemo.app.data.repository.CategoryKeywordRepository
-import com.corgimemo.app.data.repository.CategoryMatcher
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.InspirationRepository
 import com.mohamedrejeb.richeditor.model.RichTextState
@@ -31,8 +29,6 @@ class InspirationEditViewModelRichTextTest {
 
     private val inspirationRepository: InspirationRepository = mockk(relaxed = true)
     private val categoryRepository: CategoryRepository = mockk(relaxed = true)
-    private val categoryKeywordRepository: CategoryKeywordRepository = mockk(relaxed = true)
-    private val categoryMatcher: CategoryMatcher = mockk(relaxed = true)
     private val corgiPreferences: CorgiPreferences = mockk(relaxed = true)
     private val cardRelationRepository: CardRelationRepository = mockk(relaxed = true)
     private val contentBlockDao: ContentBlockDao = mockk(relaxed = true)
@@ -43,8 +39,6 @@ class InspirationEditViewModelRichTextTest {
         viewModel = InspirationEditViewModel(
             inspirationRepository = inspirationRepository,
             categoryRepository = categoryRepository,
-            categoryKeywordRepository = categoryKeywordRepository,
-            categoryMatcher = categoryMatcher,
             corgiPreferences = corgiPreferences,
             cardRelationRepository = cardRelationRepository,
             contentBlockDao = contentBlockDao,

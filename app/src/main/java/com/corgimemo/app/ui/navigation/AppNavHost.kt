@@ -17,7 +17,6 @@ import com.corgimemo.app.ui.screens.onboarding.OnboardingScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
 import com.corgimemo.app.ui.screens.settings.OperationHistoryScreen
 import com.corgimemo.app.ui.screens.settings.SettingsScreen
-import com.corgimemo.app.ui.screens.settings.SmartCategorySettingsScreen
 import com.corgimemo.app.ui.screens.stats.StatsScreen
 import com.corgimemo.app.ui.screens.todo.TodoEditScreen
 import com.corgimemo.app.ui.screens.corgi.CorgiDetailScreen
@@ -100,10 +99,6 @@ fun AppNavHost(
         /** 装扮详情页（从"我的"页外移，承载柯基动画+预览模式+横滑列表） */
         composable(Screen.Outfit.route) {
             com.corgimemo.app.ui.screens.outfit.OutfitScreen(navController = navController)
-        }
-
-        composable(Screen.SmartCategorySettings.route) {
-            SmartCategorySettingsScreen(navController = navController)
         }
 
         composable(Screen.OperationHistory.route) {

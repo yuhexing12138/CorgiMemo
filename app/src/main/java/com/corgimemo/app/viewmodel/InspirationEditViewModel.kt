@@ -13,8 +13,6 @@ import com.corgimemo.app.data.model.CategoryType
 import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.repository.CardRelationRepository
-import com.corgimemo.app.data.repository.CategoryKeywordRepository
-import com.corgimemo.app.data.repository.CategoryMatcher
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.InspirationRepository
 import com.corgimemo.app.data.repository.SubTaskManager
@@ -43,8 +41,6 @@ import javax.inject.Inject
 class InspirationEditViewModel @Inject constructor(
     private val inspirationRepository: InspirationRepository,
     private val categoryRepository: CategoryRepository,
-    private val categoryKeywordRepository: CategoryKeywordRepository,
-    private val categoryMatcher: CategoryMatcher,
     private val corgiPreferences: CorgiPreferences,
     private val cardRelationRepository: CardRelationRepository,
     private val contentBlockDao: ContentBlockDao,
