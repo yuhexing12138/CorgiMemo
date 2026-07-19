@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.serialization)
@@ -7,15 +9,19 @@ plugins {
     id("dagger.hilt.android.plugin")
 }
 
-/**
- * Release signing is intentionally local-only. Keep the actual values in the
+/** Release signing is intentionally local-only. Keep the actual values in the
  * repository-root `keystore.properties` file (which is ignored by Git), for
  * example by copying `keystore.properties.example`.
  */
+// 用 bufferedReader().use { load(it) } 而非 inputStream().use(::load)：
+// Properties.load 同时有 load(InputStream) 与 load(Reader) 两个重载，原写法
+// 让 use<T : Closeable?, R> 中 T 可空 + load 重载歧义叠加，Kotlin 2.3 在
+// Gradle 9.6.1 脚本编译中无法推断 R，导致整条类型链断裂（util / getProperty
+// 全部 unresolved）。bufferedReader() 返回 Reader，唯一匹配 load(Reader) 重载。
 val keystorePropertiesFile = rootProject.file("keystore.properties")
-val keystoreProperties = java.util.Properties().apply {
+val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.isFile) {
-        keystorePropertiesFile.inputStream().use(::load)
+        keystorePropertiesFile.bufferedReader().use { load(it) }
     }
 }
 
