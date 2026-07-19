@@ -7,11 +7,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,7 +31,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -49,7 +48,6 @@ import com.corgimemo.app.ui.components.AppSnackbarHost
 import com.corgimemo.app.ui.components.NextAchievementPreview
 import com.corgimemo.app.ui.components.StageProgressSection
 import com.corgimemo.app.viewmodel.AchievementViewModel
-import kotlinx.coroutines.launch
 
 /**
  * 成就墙页面
@@ -74,7 +72,6 @@ fun AchievementScreen(
     val nextProgress by viewModel.nextUnlockableProgress.collectAsState()
     // 统一的 Snackbar 状态
     val snackbarHostState = remember { SnackbarHostState() }
-    val coroutineScope = rememberCoroutineScope()
 
     val bgColor by animateColorAsState(
         targetValue = Color(currentStage.backgroundColor),
@@ -108,120 +105,115 @@ fun AchievementScreen(
         // 统一 Snackbar 容器（替代 Toast）
         snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) }
     ) { innerPadding ->
-        Column(
+        // 统一使用单一 LazyVerticalGrid，所有内容在一个滚动容器内
+        // 顶部卡片用 GridItemSpan(maxLineSpan = 2) 占满整行，成就徽章正常 2 列
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
             modifier = Modifier
-                .fillMaxSize()
                 .padding(innerPadding)
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 整体进度卡片
+            // ========== 1. 整体进度卡片（占满整行）==========
             if (totalCount > 0) {
-                OverallProgressCard(
-                    unlockedCount = unlockedCount,
-                    totalCount = totalCount,
-                    modifier = Modifier.padding(16.dp)
-                )
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    OverallProgressCard(
+                        unlockedCount = unlockedCount,
+                        totalCount = totalCount
+                    )
+                }
             }
 
-            // 阶段进度追踪
-            StageProgressSection(
-                currentStage = currentStage,
-                stageDisplayName = currentStage.displayName,
-                stageUnlockedCount = stageUnlockedCount,
-                stageTotalCount = stageTotalCount,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 柯基展示卡片（根据阶段显示不同姿态）
-            corgiData?.let { data ->
-                CorgiStageCard(
-                    corgiName = data.name,
+            // ========== 2. 阶段进度追踪（占满整行）==========
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                StageProgressSection(
                     currentStage = currentStage,
-                    corgiPose = corgiPose,
-                    currentOutfit = data.currentOutfit,
-                    modifier = Modifier.padding(horizontal = 16.dp)
+                    stageDisplayName = currentStage.displayName,
+                    stageUnlockedCount = stageUnlockedCount,
+                    stageTotalCount = stageTotalCount
                 )
             }
 
-            // 下一成就预览
-            NextAchievementPreview(
-                nextAchievement = nextAchievement,
-                nextProgress = nextProgress,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 成就列表（按阶段分组）
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // 初见阶段成就
-                if (beginnerAchievements.isNotEmpty()) {
-                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                        StageHeader(label = "🌱 初见阶段")
-                    }
-                    items(beginnerAchievements) { (achievement, isUnlocked, progress) ->
-                        AchievementBadge(
-                            achievement = achievement,
-                            isUnlocked = isUnlocked,
-                            currentProgress = progress
-                        )
-                    }
+            // ========== 3. 柯基展示卡片（占满整行）==========
+            corgiData?.let { data ->
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    CorgiStageCard(
+                        corgiName = data.name,
+                        currentStage = currentStage,
+                        corgiPose = corgiPose,
+                        currentOutfit = data.currentOutfit
+                    )
                 }
+            }
 
-                // 成长阶段成就
-                if (growthAchievements.isNotEmpty()) {
-                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                        StageHeader(label = "🌿 成长阶段")
-                    }
-                    items(growthAchievements) { (achievement, isUnlocked, progress) ->
-                        AchievementBadge(
-                            achievement = achievement,
-                            isUnlocked = isUnlocked,
-                            currentProgress = progress
-                        )
-                    }
-                }
+            // ========== 4. 下一成就预览（占满整行）==========
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                NextAchievementPreview(
+                    nextAchievement = nextAchievement,
+                    nextProgress = nextProgress
+                )
+            }
 
-                // 飞跃阶段成就
-                if (leapAchievements.isNotEmpty()) {
-                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                        StageHeader(label = "🚀 飞跃阶段")
-                    }
-                    items(leapAchievements) { (achievement, isUnlocked, progress) ->
-                        AchievementBadge(
-                            achievement = achievement,
-                            isUnlocked = isUnlocked,
-                            currentProgress = progress
-                        )
-                    }
+            // ========== 5. 初见阶段成就 ==========
+            if (beginnerAchievements.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    StageHeader(label = "🌱 初见阶段")
                 }
+                items(beginnerAchievements) { (achievement, isUnlocked, progress) ->
+                    AchievementBadge(
+                        achievement = achievement,
+                        isUnlocked = isUnlocked,
+                        currentProgress = progress
+                    )
+                }
+            }
 
-                // 巅峰阶段成就
-                if (peakAchievements.isNotEmpty()) {
-                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                        StageHeader(label = "🏆 巅峰阶段")
-                    }
-                    items(peakAchievements) { (achievement, isUnlocked, progress) ->
-                        AchievementBadge(
-                            achievement = achievement,
-                            isUnlocked = isUnlocked,
-                            currentProgress = progress
-                        )
-                    }
+            // ========== 6. 成长阶段成就 ==========
+            if (growthAchievements.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    StageHeader(label = "🌿 成长阶段")
                 }
+                items(growthAchievements) { (achievement, isUnlocked, progress) ->
+                    AchievementBadge(
+                        achievement = achievement,
+                        isUnlocked = isUnlocked,
+                        currentProgress = progress
+                    )
+                }
+            }
 
-                // 底部间距
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
+            // ========== 7. 飞跃阶段成就 ==========
+            if (leapAchievements.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    StageHeader(label = "🚀 飞跃阶段")
                 }
+                items(leapAchievements) { (achievement, isUnlocked, progress) ->
+                    AchievementBadge(
+                        achievement = achievement,
+                        isUnlocked = isUnlocked,
+                        currentProgress = progress
+                    )
+                }
+            }
+
+            // ========== 8. 巅峰阶段成就 ==========
+            if (peakAchievements.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    StageHeader(label = "🏆 巅峰阶段")
+                }
+                items(peakAchievements) { (achievement, isUnlocked, progress) ->
+                    AchievementBadge(
+                        achievement = achievement,
+                        isUnlocked = isUnlocked,
+                        currentProgress = progress
+                    )
+                }
+            }
+
+            // ========== 底部间距 ==========
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
