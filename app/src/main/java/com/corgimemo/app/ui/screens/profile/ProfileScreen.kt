@@ -20,8 +20,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -29,14 +27,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -51,26 +46,22 @@ import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.screens.profile.components.AchievementSummaryCard
 import com.corgimemo.app.ui.screens.profile.components.OutfitEntryCard
 import com.corgimemo.app.ui.screens.profile.components.ProfileHeroCard
-import com.corgimemo.app.ui.screens.profile.components.SettingItem
-import com.corgimemo.app.ui.screens.profile.components.SettingListCard
 import com.corgimemo.app.ui.screens.profile.components.ThemeQuickSwitch
 import com.corgimemo.app.viewmodel.ProfileViewModel
-import kotlinx.coroutines.launch
 
 /**
  * 「我的」页面主屏
  *
- * Phase 4 Task 9 重构：8 模块单列 LazyColumn 分层布局
+ * Phase 5 重构：5 模块单列 LazyColumn 分层布局
  * ① 柯基展示头卡（ProfileHeroCard）
  * ② 主题配色快选（ThemeQuickSwitch）
  * ③ 装扮入口卡（OutfitEntryCard，点击跳 Screen.Outfit）
  * ④ 成就统计卡（AchievementSummaryCard，点击"查看全部"跳 Screen.Achievement）
  * ⑤ 7 天情绪图表（内联 Card + MoodHistoryChart）
- * ⑥ 设置入口组（SettingListCard：通知与提醒/震动与音效）
- * ⑦ 数据备份（SettingListCard：备份与恢复/回收站）
- * ⑧ 关于与帮助（SettingListCard：使用帮助/意见反馈/隐私与协议）+ 版本号水印
  *
- * 已外移内容（迁移到 OutfitScreen 或被新组件替代）：
+ * 已外移内容：
+ * - 通知与提醒 / 震动与音效 / 备份与恢复 / 回收站 / 使用帮助 / 意见反馈 / 隐私与协议
+ *   → 全部迁移至 SettingsScreen（设置页），本页不再展示
  * - DisposableEffect cancelPreview（→ OutfitScreen）
  * - 装扮推荐横幅（→ OutfitScreen）
  * - 装扮 Card（柯基动画预览 + 横滑列表 + 预览模式操作栏）（→ OutfitScreen）
@@ -79,13 +70,11 @@ import kotlinx.coroutines.launch
  * - "返回首页" Button（→ 底部导航）
  *
  * @param navController 导航控制器
- * @param snackbarHostState 共享 SnackbarHostState（优先用 MainScreen 传入的；为 null 时本页独立创建）
  * @param viewModel ProfileViewModel（Hilt 注入）
  */
 @Composable
 fun ProfileScreen(
     navController: NavController,
-    snackbarHostState: SnackbarHostState? = null,
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     // ========== 状态收集 ==========
@@ -106,27 +95,7 @@ fun ProfileScreen(
     var showConfirmDialog by remember { mutableStateOf(false) }
     var pendingNewName by remember { mutableStateOf("") }
 
-    // ========== Snackbar 与协程作用域 ==========
-    // 优先复用 MainScreen 传入的共享 SnackbarHostState（由顶层 AppSnackbarHost 渲染）；
-    // 若未传入则本页独立创建（注意：独立创建时无 Host 渲染，showSnackbar 不会有视觉效果，
-    // 因此推荐从 MainScreen 传入共享实例）。
-    val effectiveSnackbarHostState = snackbarHostState ?: remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
-
-    // ========== 版本号（PackageManager 读取，try-catch 兜底 "1.0.0"）==========
-    // 适配说明：实现计划原定用 BuildConfig.VERSION_NAME，但 app/build.gradle.kts 未启用
-    // buildFeatures.buildConfig = true（AGP 8.0+ 默认关闭），BuildConfig 类不会生成，
-    // 直接引用会导致编译错误。按"不修改 build.gradle.kts"约束，改用 PackageManager 读取。
-    val context = LocalContext.current
-    val versionName = remember {
-        try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
-        } catch (e: Exception) {
-            "1.0.0"
-        }
-    }
-
-    // ========== 8 模块单列 LazyColumn ==========
+    // ========== 5 模块单列 LazyColumn ==========
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -199,79 +168,6 @@ fun ProfileScreen(
                     )
                 }
             }
-        }
-
-        // ⑥ 设置入口组
-        item {
-            SettingListCard(
-                items = listOf(
-                    SettingItem(icon = "🔔", title = "通知与提醒") {
-                        navController.navigate(Screen.Settings.route)
-                    },
-                    SettingItem(icon = "📳", title = "震动与音效") {
-                        navController.navigate(Screen.Settings.route)
-                    }
-                )
-            )
-        }
-
-        // ⑦ 数据备份
-        item {
-            SettingListCard(
-                items = listOf(
-                    SettingItem(icon = "💾", title = "备份与恢复") {
-                        navController.navigate(Screen.BackupHistory.route)
-                    },
-                    SettingItem(icon = "🗑", title = "回收站") {
-                        navController.navigate(Screen.RecycleBin.createRoute("profile"))
-                    }
-                )
-            )
-        }
-
-        // ⑧ 关于与帮助（三个入口点击显示"功能开发中"Snackbar）
-        item {
-            SettingListCard(
-                items = listOf(
-                    SettingItem(icon = "📖", title = "使用帮助") {
-                        scope.launch {
-                            effectiveSnackbarHostState.showSnackbar(
-                                message = "功能开发中",
-                                duration = SnackbarDuration.Short
-                            )
-                        }
-                    },
-                    SettingItem(icon = "💬", title = "意见反馈") {
-                        scope.launch {
-                            effectiveSnackbarHostState.showSnackbar(
-                                message = "功能开发中",
-                                duration = SnackbarDuration.Short
-                            )
-                        }
-                    },
-                    SettingItem(icon = "📄", title = "隐私与协议") {
-                        scope.launch {
-                            effectiveSnackbarHostState.showSnackbar(
-                                message = "功能开发中",
-                                duration = SnackbarDuration.Short
-                            )
-                        }
-                    }
-                )
-            )
-        }
-
-        // 版本号水印（关于与帮助的视觉延伸，居中显示）
-        item {
-            Text(
-                text = "CorgiMemo v$versionName · 治愈每一天",
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-            )
         }
     }
 

@@ -1,9 +1,11 @@
 package com.corgimemo.app.ui.screens.settings
 
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,13 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -27,22 +27,26 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -53,11 +57,32 @@ import androidx.navigation.NavController
 import com.corgimemo.app.animation.GreetingManager
 import com.corgimemo.app.backup.BackupManager
 import com.corgimemo.app.model.UserType
+import com.corgimemo.app.ui.navigation.Screen
+import com.corgimemo.app.ui.screens.profile.components.SettingItem
+import com.corgimemo.app.ui.screens.profile.components.SettingListCard
+import com.corgimemo.app.ui.screens.profile.components.SettingSwitchGroupCard
+import com.corgimemo.app.ui.screens.profile.components.SwitchItem
 import com.corgimemo.app.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 
 /**
  * 设置页面
- * 管理音效反馈、触觉反馈、用户身份设置和数据备份
+ *
+ * Phase 5 重构：6 分组 LazyColumn 布局，统一视觉语言（SettingListCard / SettingSwitchGroupCard）
+ * 1. 声音与反馈：音效 + 触觉开关（SettingSwitchGroupCard，直接展开不跳转）
+ * 2. 通知：通知与提醒 → 跳转系统通知设置（SettingListCard）
+ * 3. 身份与偏好：身份设置 + 最近操作（SettingListCard）
+ * 4. 外观：深色模式 + 主题色（内联 Card）
+ * 5. 数据管理：备份与恢复 + 回收站 + 自动备份 + 导出 + 恢复（SettingListCard）
+ * 6. 关于与帮助：使用帮助 + 意见反馈 + 隐私与协议（Snackbar 占位）+ 版本号水印
+ *
+ * 迁移来源：原 ProfileScreen 的 ⑥⑦⑧ 三组入口（通知与提醒/震动与音效/备份与恢复/回收站/
+ * 使用帮助/意见反馈/隐私与协议）已全部合并到本页，"我的"页不再展示这些入口。
+ *
+ * @param navController 导航控制器
+ * @param viewModel SettingsViewModel（Hilt 注入）
+ * @param onExportClick 导出回调
+ * @param onImportClick 恢复回调
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,6 +92,7 @@ fun SettingsScreen(
     onExportClick: (BackupManager.ExportFormat) -> Unit = {},
     onImportClick: () -> Unit = {}
 ) {
+    // ========== 状态收集 ==========
     val soundEnabled by viewModel.soundEnabled.collectAsState()
     val hapticEnabled by viewModel.hapticEnabled.collectAsState()
     val userType by viewModel.userType.collectAsState()
@@ -75,14 +101,31 @@ fun SettingsScreen(
     val themeMode by viewModel.themeMode.collectAsState()
     val themeColor by viewModel.themeColor.collectAsState()
 
+    // ========== 弹窗状态 ==========
     var showUserTypeDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var pendingUserType by remember { mutableStateOf<UserType?>(null) }
-
     var showExportDialog by remember { mutableStateOf(false) }
     var showImportConfirmDialog by remember { mutableStateOf(false) }
     var showAutoBackupDialog by remember { mutableStateOf(false) }
 
+    // ========== Snackbar（用于"关于与帮助"占位提示）==========
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    // ========== 版本号（PackageManager 读取，try-catch 兜底 "1.0.0"）==========
+    // 适配说明：app/build.gradle.kts 未启用 buildFeatures.buildConfig = true，
+    // BuildConfig 类不会生成，改用 PackageManager 读取版本号。
+    val context = LocalContext.current
+    val versionName = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
+        } catch (e: Exception) {
+            "1.0.0"
+        }
+    }
+
+    // ========== 备份消息弹窗 ==========
     if (backupMessage != null) {
         BackupMessageDialog(
             message = backupMessage!!,
@@ -90,6 +133,7 @@ fun SettingsScreen(
         )
     }
 
+    // ========== 处理中弹窗 ==========
     if (isProcessing) {
         ProcessingDialog(message = "处理中...")
     }
@@ -115,207 +159,249 @@ fun SettingsScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { paddingValues ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(vertical = 16.dp)
         ) {
-            Text(
-                text = "应用设置",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            SettingSwitchCard(
-                title = "音效反馈",
-                description = "触摸柯基时播放轻快音效",
-                checked = soundEnabled,
-                onCheckedChange = { enabled ->
-                    viewModel.setSoundEnabled(enabled)
-                }
-            )
-
-            SettingSwitchCard(
-                title = "触觉反馈",
-                description = "触摸柯基时震动",
-                checked = hapticEnabled,
-                onCheckedChange = { enabled ->
-                    viewModel.setHapticEnabled(enabled)
-                }
-            )
-
-            SettingItemCard(
-                title = "身份设置",
-                description = "当前身份：${getUserTypeName(userType)}",
-                onClick = {
-                    showUserTypeDialog = true
-                }
-            )
-
-            SettingItemCard(
-                title = "📋 最近操作",
-                description = "查看和撤销最近的待办操作",
-                onClick = {
-                    navController.navigate("operation_history")
-                }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "🎨 外观设置",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "深色模式",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+            // ========== 分组 1：声音与反馈（直接展开为开关，不跳转）==========
+            item {
+                Column {
+                    SettingSectionTitle("声音与反馈")
+                    SettingSwitchGroupCard(
+                        items = listOf(
+                            SwitchItem(
+                                icon = "🔊",
+                                title = "音效反馈",
+                                description = "触摸柯基时播放轻快音效",
+                                checked = soundEnabled,
+                                onCheckedChange = { viewModel.setSoundEnabled(it) }
+                            ),
+                            SwitchItem(
+                                icon = "📳",
+                                title = "触觉反馈",
+                                description = "触摸柯基时震动",
+                                checked = hapticEnabled,
+                                onCheckedChange = { viewModel.setHapticEnabled(it) }
+                            )
+                        )
                     )
+                }
+            }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        ThemeModeOption(
-                            text = "🌓 跟随系统",
-                            selected = themeMode == "system",
-                            onClick = { viewModel.setThemeMode("system") },
-                            modifier = Modifier.weight(1f)
+            // ========== 分组 2：通知（跳转系统通知设置）==========
+            item {
+                Column {
+                    SettingSectionTitle("通知")
+                    SettingListCard(
+                        items = listOf(
+                            SettingItem(icon = "🔔", title = "通知与提醒") {
+                                // 跳转系统通知设置页（API 26+ 支持 EXTRA_APP_PACKAGE）
+                                val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                }
+                                context.startActivity(intent)
+                            }
                         )
-                        ThemeModeOption(
-                            text = "☀️ 亮色",
-                            selected = themeMode == "light",
-                            onClick = { viewModel.setThemeMode("light") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        ThemeModeOption(
-                            text = "🌙 深色",
-                            selected = themeMode == "dark",
-                            onClick = { viewModel.setThemeMode("dark") },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Text(
-                        text = "主题色",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(top = 8.dp)
                     )
+                }
+            }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+            // ========== 分组 3：身份与偏好 ==========
+            item {
+                Column {
+                    SettingSectionTitle("身份与偏好")
+                    SettingListCard(
+                        items = listOf(
+                            SettingItem(icon = "👤", title = "身份设置") {
+                                showUserTypeDialog = true
+                            },
+                            SettingItem(icon = "📋", title = "最近操作") {
+                                navController.navigate("operation_history")
+                            }
+                        )
+                    )
+                }
+            }
+
+            // ========== 分组 4：外观（深色模式 + 主题色）==========
+            item {
+                Column {
+                    SettingSectionTitle("外观")
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        ThemeColorOption(
-                            color = Color(0xFFFF9A5C),
-                            name = "橙色",
-                            selected = themeColor == "orange",
-                            onClick = { viewModel.setThemeColor("orange") }
-                        )
-                        ThemeColorOption(
-                            color = Color(0xFF4ECDC4),
-                            name = "薄荷",
-                            selected = themeColor == "mint",
-                            onClick = { viewModel.setThemeColor("mint") }
-                        )
-                        ThemeColorOption(
-                            color = Color(0xFF5BA8E0),
-                            name = "天空",
-                            selected = themeColor == "sky",
-                            onClick = { viewModel.setThemeColor("sky") }
-                        )
-                        ThemeColorOption(
-                            color = Color(0xFFFF9AA2),
-                            name = "樱花",
-                            selected = themeColor == "sakura",
-                            onClick = { viewModel.setThemeColor("sakura") }
-                        )
-                        ThemeColorOption(
-                            color = Color(0xFFB39DDB),
-                            name = "薰衣草",
-                            selected = themeColor == "lavender",
-                            onClick = { viewModel.setThemeColor("lavender") }
-                        )
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Text(
+                                text = "深色模式",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ThemeModeOption(
+                                    text = "🌓 跟随系统",
+                                    selected = themeMode == "system",
+                                    onClick = { viewModel.setThemeMode("system") },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                ThemeModeOption(
+                                    text = "☀️ 亮色",
+                                    selected = themeMode == "light",
+                                    onClick = { viewModel.setThemeMode("light") },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                ThemeModeOption(
+                                    text = "🌙 深色",
+                                    selected = themeMode == "dark",
+                                    onClick = { viewModel.setThemeMode("dark") },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            Text(
+                                text = "主题色",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                ThemeColorOption(
+                                    color = Color(0xFFFF9A5C),
+                                    name = "橙色",
+                                    selected = themeColor == "orange",
+                                    onClick = { viewModel.setThemeColor("orange") }
+                                )
+                                ThemeColorOption(
+                                    color = Color(0xFF4ECDC4),
+                                    name = "薄荷",
+                                    selected = themeColor == "mint",
+                                    onClick = { viewModel.setThemeColor("mint") }
+                                )
+                                ThemeColorOption(
+                                    color = Color(0xFF5BA8E0),
+                                    name = "天空",
+                                    selected = themeColor == "sky",
+                                    onClick = { viewModel.setThemeColor("sky") }
+                                )
+                                ThemeColorOption(
+                                    color = Color(0xFFFF9AA2),
+                                    name = "樱花",
+                                    selected = themeColor == "sakura",
+                                    onClick = { viewModel.setThemeColor("sakura") }
+                                )
+                                ThemeColorOption(
+                                    color = Color(0xFFB39DDB),
+                                    name = "薰衣草",
+                                    selected = themeColor == "lavender",
+                                    onClick = { viewModel.setThemeColor("lavender") }
+                                )
+                            }
+                        }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "自动备份",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            SettingItemCard(
-                title = "🔄 自动备份设置",
-                description = "自动备份数据到 Downloads 目录",
-                onClick = {
-                    showAutoBackupDialog = true
+            // ========== 分组 5：数据管理（合并备份与恢复/回收站/自动备份/导出/恢复）==========
+            item {
+                Column {
+                    SettingSectionTitle("数据管理")
+                    SettingListCard(
+                        items = listOf(
+                            SettingItem(icon = "💾", title = "备份与恢复") {
+                                navController.navigate(Screen.BackupHistory.route)
+                            },
+                            SettingItem(icon = "🗑", title = "回收站") {
+                                navController.navigate(Screen.RecycleBin.createRoute("settings"))
+                            },
+                            SettingItem(icon = "🔄", title = "自动备份设置") {
+                                showAutoBackupDialog = true
+                            },
+                            SettingItem(icon = "⬆️", title = "导出数据") {
+                                showExportDialog = true
+                            },
+                            SettingItem(icon = "⬇️", title = "恢复数据") {
+                                showImportConfirmDialog = true
+                            }
+                        )
+                    )
                 }
-            )
+            }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "数据管理",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            SettingItemCard(
-                title = "⬆️ 导出数据",
-                description = "导出为 JSON 或 CSV 格式",
-                onClick = {
-                    showExportDialog = true
+            // ========== 分组 6：关于与帮助（Snackbar 占位）==========
+            item {
+                Column {
+                    SettingSectionTitle("关于与帮助")
+                    SettingListCard(
+                        items = listOf(
+                            SettingItem(icon = "📖", title = "使用帮助") {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        message = "功能开发中",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
+                            },
+                            SettingItem(icon = "💬", title = "意见反馈") {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        message = "功能开发中",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
+                            },
+                            SettingItem(icon = "📄", title = "隐私与协议") {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        message = "功能开发中",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
+                            }
+                        )
+                    )
                 }
-            )
+            }
 
-            SettingItemCard(
-                title = "📚 备份历史",
-                description = "查看和管理自动备份记录",
-                onClick = {
-                    navController.navigate("backup_history")
-                }
-            )
-
-            SettingItemCard(
-                title = "⬇️ 恢复数据",
-                description = "从备份文件恢复数据",
-                onClick = {
-                    showImportConfirmDialog = true
-                }
-            )
+            // ========== 版本号水印 ==========
+            item {
+                Text(
+                    text = "CorgiMemo v$versionName · 治愈每一天",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                )
+            }
         }
     }
 
+    // ========== 导出格式弹窗 ==========
     if (showExportDialog) {
         ExportFormatDialog(
             onDismiss = { showExportDialog = false },
@@ -326,6 +412,7 @@ fun SettingsScreen(
         )
     }
 
+    // ========== 恢复确认弹窗 ==========
     if (showImportConfirmDialog) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showImportConfirmDialog = false },
@@ -362,6 +449,7 @@ fun SettingsScreen(
         )
     }
 
+    // ========== 身份选择弹窗 ==========
     if (showUserTypeDialog) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showUserTypeDialog = false },
@@ -411,6 +499,7 @@ fun SettingsScreen(
         )
     }
 
+    // ========== 身份切换确认弹窗 ==========
     if (showConfirmDialog && pendingUserType != null) {
         val newUserType = pendingUserType!!
         androidx.compose.material3.AlertDialog(
@@ -486,11 +575,29 @@ fun SettingsScreen(
         )
     }
 
+    // ========== 自动备份设置弹窗 ==========
     if (showAutoBackupDialog) {
         AutoBackupSettingsDialog(
             onDismiss = { showAutoBackupDialog = false }
         )
     }
+}
+
+/**
+ * 分组小标题
+ * 用于设置页各分组的顶部标题，统一视觉风格：小字半粗体灰色
+ *
+ * @param title 标题文字
+ */
+@Composable
+private fun SettingSectionTitle(title: String) {
+    Text(
+        text = title,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+    )
 }
 
 /**
@@ -836,6 +943,7 @@ fun ProcessingDialog(message: String) {
 
 /**
  * 设置开关卡片
+ * 单项开关卡片（保留供未来复用，当前主流程由 SettingSwitchGroupCard 替代）
  *
  * @param title 标题
  * @param description 描述
@@ -890,6 +998,7 @@ fun SettingSwitchCard(
 
 /**
  * 设置项卡片
+ * 单项设置卡片（保留供未来复用，当前主流程由 SettingListCard 替代）
  * 显示标题和描述，可点击
  *
  * @param title 标题

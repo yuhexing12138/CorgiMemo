@@ -868,8 +868,7 @@ fun MainScreen(
                             viewModel = specialDateViewModel
                         )
                         TabItem.PROFILE -> ProfileScreen(
-                            navController = navController,
-                            snackbarHostState = snackbarHostState
+                            navController = navController
                         )
                         TabItem.EDIT -> { /* 中央编辑按钮不是真实Tab */ }
                     }
