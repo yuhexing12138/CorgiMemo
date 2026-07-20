@@ -1,5 +1,7 @@
 package com.corgimemo.app.ui.components
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,15 +12,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.corgimemo.app.animation.FrameAnimation
+import com.corgimemo.app.util.AvatarPath
 
 /**
  * 通用用户头像组件
@@ -26,7 +32,12 @@ import coil3.compose.AsyncImage
  * 设计目标：
  * 1. 跨页面统一头像入口（drawer 顶部 / "我的"页头卡 / 后续列表项）
  * 2. 明确视觉差异 — 圆形 + 主色背景 + 白色首字母大写，与柯基形象完全区分
- * 3. 上传功能预留 — 当 `avatarPath` 非空时切换到 Coil AsyncImage 加载
+ * 3. 支持三类头像来源：预设动作帧 / 用户上传 / 首字母占位
+ *
+ * avatarPath 字段三种取值：
+ * - null              → 首字母占位（橙色主色背景 + 白色文字）
+ * - "preset:xxx"      → 预设头像（surfaceVariant 背景 + 柯基动作帧循环动画）
+ * - 绝对路径/URI      → 用户上传（私有目录路径用 BitmapFactory 直解码；其余走 Coil）
  *
  * 占位策略（avatarPath == null 时）：
  * - 取 `nickname` 首字符渲染
@@ -36,11 +47,12 @@ import coil3.compose.AsyncImage
  * - 其它 → uppercase
  *
  * 主题适配：
- * - 背景色用 MaterialTheme.colorScheme.primary（自动跟随 6 色主题）
+ * - 占位 / 上传头像：背景色用 MaterialTheme.colorScheme.primary（自动跟随 6 色主题）
+ * - 预设头像：背景色用 surfaceVariant（浅灰），与柯基图本身的暖色调形成对比
  * - 描边色用 MaterialTheme.colorScheme.surface（与卡片背景区分即可）
  *
  * @param nickname 用户昵称（用于提取首字母占位）
- * @param avatarPath 头像文件绝对路径 / content URI；null 时回退到首字母占位
+ * @param avatarPath 头像文件绝对路径 / content URI / "preset:xxx" 预设标识；null 时回退到首字母占位
  * @param size 头像直径（dp）
  * @param onClick 头像点击回调；null 表示不可点
  * @param onAvatarLongClick 头像长按回调（本期预留，不接；未来接"更换头像"长按入口）
@@ -53,11 +65,20 @@ fun UserAvatar(
     onClick: (() -> Unit)? = null,
     onAvatarLongClick: (() -> Unit)? = null
 ) {
-    // 基础样式：圆形 + 主色背景 + surface 描边
+    // 预设头像：用 surfaceVariant 浅灰底衬托柯基图
+    // 占位 / 用户上传：保留 primary 主色底
+    val isPreset = AvatarPath.isPreset(avatarPath)
+    val containerColor = if (isPreset) {
+        MaterialTheme.colorScheme.surfaceVariant
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
+    // 基础样式：圆形 + 动态背景色 + surface 描边
     val baseModifier = Modifier
         .size(size)
         .clip(CircleShape)
-        .background(MaterialTheme.colorScheme.primary)
+        .background(containerColor)
         .border(
             width = 2.dp,
             color = MaterialTheme.colorScheme.surface,
@@ -78,28 +99,72 @@ fun UserAvatar(
         modifier = clickableModifier,
         contentAlignment = Alignment.Center
     ) {
-        if (avatarPath != null) {
-            // 未来分支：上传功能接入后启用
-            // - Coil AsyncImage 加载本地路径或 content URI
-            // - 圆形裁剪，ContentScale.Crop 避免变形
-            AsyncImage(
-                model = avatarPath,
-                contentDescription = "用户头像",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(CircleShape),
-                contentScale = ContentScale.Crop
-            )
+        if (isPreset) {
+            // 预设头像：查表找到 AnimationType + fps，用 FrameAnimation 循环播放柯基动作帧
+            // 找不到对应预设时（如历史脏数据）回退到首字母占位
+            val presetKey = AvatarPath.extractPresetKey(avatarPath)
+            val preset = corgiPresets.firstOrNull { it.key == presetKey }
+            if (preset != null) {
+                FrameAnimation(
+                    animationType = preset.animationType,
+                    fps = preset.fps,
+                    isLooping = true,
+                    isPlaying = true,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit
+                )
+            } else {
+                AvatarInitialText(nickname = nickname, size = size)
+            }
+        } else if (avatarPath != null) {
+            // 用户上传头像：私有目录绝对路径用 BitmapFactory 直接解码（绕开 Coil 3
+            // 对私有目录绝对路径的兼容性问题 [coil-kt/coil#2273]）；其余路径
+            // （content URI / HTTP URL）保留 Coil AsyncImage
+            if (avatarPath.startsWith("/")) {
+                val bitmap = remember(avatarPath) {
+                    runCatching { BitmapFactory.decodeFile(avatarPath) }.getOrNull()
+                }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "用户头像",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            } else {
+                AsyncImage(
+                    model = avatarPath,
+                    contentDescription = "用户头像",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+            }
         } else {
-            // 当前分支：首字母占位徽章
-            Text(
-                text = pickInitial(nickname),
-                color = MaterialTheme.colorScheme.onPrimary,
-                fontSize = (size.value * 0.42f).sp,
-                fontWeight = FontWeight.Bold
-            )
+            // 首字母占位徽章
+            AvatarInitialText(nickname = nickname, size = size)
         }
     }
+}
+
+/**
+ * 首字母占位文字（统一处理 emoji / 汉字 / ASCII / 空串）
+ *
+ * @param nickname 用户昵称
+ * @param size     头像直径，用于计算字号
+ */
+@Composable
+private fun AvatarInitialText(nickname: String, size: Dp) {
+    Text(
+        text = pickInitial(nickname),
+        color = MaterialTheme.colorScheme.onPrimary,
+        fontSize = (size.value * 0.42f).sp,
+        fontWeight = FontWeight.Bold
+    )
 }
 
 /**
