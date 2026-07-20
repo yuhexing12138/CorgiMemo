@@ -472,9 +472,12 @@ fun MainScreen(
             // 屏宽 < 360dp → 固定 280dp
             // 屏宽 360-450dp → 80% 屏宽
             // 屏宽 > 450dp → 上限 360dp,避免遮挡主内容
+            // 注意:coerceIn 是 Dp 的扩展(Comparable<Dp>),
+            // 必须在 Modifier.width 之前对 Dp 调用,否则会被解析成 Modifier 的方法(不存在)
             val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+            val drawerWidth = (screenWidth * 0.8f).coerceIn(280.dp, 360.dp)
             ModalDrawerSheet(
-                modifier = Modifier.width(screenWidth * 0.8f).coerceIn(280.dp, 360.dp)
+                modifier = Modifier.width(drawerWidth)
             ) {
                 AppDrawerContent(
                     currentTab = selectedTab,
