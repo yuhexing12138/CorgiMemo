@@ -1,6 +1,5 @@
 package com.corgimemo.app.data.repository
 
-import android.util.Log
 import com.corgimemo.app.data.local.db.CorgiDao
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.di.IoDispatcher
@@ -103,10 +102,7 @@ class CorgiRepository @Inject constructor(
      * @param path 头像文件绝对路径 / content URI；传 null 表示清除
      */
     suspend fun updateAvatarPath(path: String?) = withContext(ioDispatcher) {
-        Log.d("AvatarDebug", "CorgiRepository.updateAvatarPath: 开始更新数据库, path=$path")
         corgiDao.updateAvatarPath(path)
-        val verify = corgiDao.getCorgiData()
-        Log.d("AvatarDebug", "CorgiRepository.updateAvatarPath: 验证数据库结果, avatarPath=${verify?.avatarPath}, name=${verify?.name}")
     }
 
     /**
@@ -120,5 +116,14 @@ class CorgiRepository @Inject constructor(
      */
     suspend fun updateGender(gender: String?) = withContext(ioDispatcher) {
         corgiDao.updateGender(gender)
+    }
+
+    /**
+     * 更新用户签名
+     *
+     * @param signature 签名文本
+     */
+    suspend fun updateSignature(signature: String) = withContext(ioDispatcher) {
+        corgiDao.updateSignature(signature)
     }
 }

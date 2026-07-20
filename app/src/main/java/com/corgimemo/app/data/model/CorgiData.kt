@@ -90,5 +90,19 @@ data class CorgiData(
      * `DEFAULT NULL` SQL 严格保持一致。
      */
     @ColumnInfo(defaultValue = "NULL")
-    val gender: String? = null
+    val gender: String? = null,
+
+    /**
+     * 用户签名
+     *
+     * - 默认值："记录生活，刻下美好"
+     * - 显示位置：个人信息页名字下方、侧滑栏名字下方
+     * - 用户可在个人信息页点击修改
+     *
+     * 依据 .trae/rules/entity与 migration同步检查.md 规则：
+     * `@ColumnInfo(defaultValue = "记录生活，刻下美好")` 必须与 MIGRATION_41_42 的
+     * `DEFAULT '记录生活，刻下美好'` SQL 严格保持一致。
+     */
+    @ColumnInfo(defaultValue = "记录生活，刻下美好")
+    val signature: String = "记录生活，刻下美好"
 )

@@ -3,7 +3,8 @@ package com.corgimemo.app.ui.components
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -21,13 +22,16 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.sqrt
 
 /**
  * 圆形图片裁剪组件
@@ -37,11 +41,17 @@ import kotlin.math.max
  * - 双指捏合：缩放（0.5x ~ 5x）
  * - 双指拖动：平移（与单指一致）
  * - 圆形遮罩 + 半透明黑色背景突出裁剪区
+ * - 裁剪框内 4x4 九宫格辅助线（高对比度，不超出圆形范围）
  *
- * 输出：调用方传入 onCropComplete，组件内部按裁剪框区域生成正方形 Bitmap
+ * 状态提升：scale/offsetX/offsetY/canvasSize 通过 MutableState 暴露给调用方，
+ * 调用方可在"确认裁剪"时读取这些值，确保用户手势实际生效。
  *
  * @param sourceBitmap 待裁剪的源图片
  * @param cropSize    圆形裁剪框直径（dp，默认 280dp）
+ * @param scaleState  用户缩放比例（共享状态，外部可读）
+ * @param offsetXState 用户水平偏移（共享状态，外部可读）
+ * @param offsetYState 用户垂直偏移（共享状态，外部可读）
+ * @param canvasSizeState 画布尺寸（共享状态，外部可读，用于裁剪计算）
  * @param onCropComplete 裁剪确认回调（裁剪后的 Bitmap）
  * @param onCancel 取消回调
  */
@@ -49,14 +59,18 @@ import kotlin.math.max
 fun CircularImageCropper(
     sourceBitmap: Bitmap,
     cropSize: Dp = 280.dp,
+    scaleState: androidx.compose.runtime.MutableState<Float>,
+    offsetXState: androidx.compose.runtime.MutableState<Float>,
+    offsetYState: androidx.compose.runtime.MutableState<Float>,
+    canvasSizeState: androidx.compose.runtime.MutableState<IntSize>,
     onCropComplete: (Bitmap) -> Unit,
     onCancel: () -> Unit
 ) {
-    // ===== 状态 =====
-    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
+    // ===== 状态（提升到调用方，确保裁剪时用用户实际手势值）=====
+    var scale by scaleState
+    var offsetX by offsetXState
+    var offsetY by offsetYState
+    var canvasSize by canvasSizeState
 
     val density = LocalDensity.current
     val cropSizePx = with(density) { cropSize.toPx() }
@@ -88,12 +102,59 @@ fun CircularImageCropper(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        val newScale = (scale * zoom).coerceIn(0.5f, 5f)
-                        // 简单的边界约束（够用，不做精细 clamp）
-                        scale = newScale
-                        offsetX += pan.x
-                        offsetY += pan.y
+                    // 计算 fitScale 作为 scale 的下限，确保用户最多缩小到初始尺寸
+                    // （避免硬编码下限导致大图缩小不到初始 fit 状态）
+                    val sw = sourceBitmap.width.toFloat()
+                    val sh = sourceBitmap.height.toFloat()
+                    val minScale = max(cropSizePx / sw, cropSizePx / sh)
+
+                    // 自定义手势检测：严格区分单指/双指
+                    // - 单指：只平移，不缩放（避免点击误触放大）
+                    // - 双指：平移 + 缩放
+                    awaitEachGesture {
+                        val first = awaitFirstDown()
+                        var prevCenter = first.position
+                        var prevDist = 0f  // 0 表示单指状态，双指到来时才计算首帧基准
+                        first.consume()
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val active = event.changes.filter { it.pressed }
+                            if (active.isEmpty()) break
+
+                            when {
+                                active.size >= 2 -> {
+                                    val a = active[0].position
+                                    val b = active[1].position
+                                    val currentDist = (a - b).getDistance()
+                                    val currentCenter = Offset(
+                                        (a.x + b.x) / 2f,
+                                        (a.y + b.y) / 2f
+                                    )
+                                    if (prevDist > 0f) {
+                                        // 避免首帧 zoom 跳变：只在 prevDist 有效时才更新 scale
+                                        val zoom = (currentDist / prevDist).coerceIn(0.5f, 2f)
+                                        // 下限用 minScale（fitScale），确保能缩小回初始尺寸
+                                        scale = (scale * zoom).coerceIn(minScale, 5f)
+                                        offsetX += currentCenter.x - prevCenter.x
+                                        offsetY += currentCenter.y - prevCenter.y
+                                    }
+                                    prevDist = currentDist
+                                    prevCenter = currentCenter
+                                }
+                                active.size == 1 -> {
+                                    // 单指：只平移，重置 prevDist（切回双指时重新计算基准）
+                                    val current = active[0].position
+                                    if (active[0].positionChanged()) {
+                                        offsetX += current.x - prevCenter.x
+                                        offsetY += current.y - prevCenter.y
+                                    }
+                                    prevCenter = current
+                                    prevDist = 0f
+                                }
+                            }
+                            event.changes.forEach { it.consume() }
+                        }
                     }
                 }
         ) {
@@ -135,6 +196,59 @@ fun CircularImageCropper(
                 center = Offset(cx, cy),
                 style = Stroke(width = 4f)
             )
+
+            // 绘制 4x4 九宫格辅助线（高对比度：黑色底+白色面，限制在圆形内）
+            // 4等分 = 3条线，间距 = 2r/4 = r/2
+            val gridStrokeW = 1.5f
+            val gridShadowW = 3.5f
+            val gridStep = r * 2f / 4f
+            // 竖线
+            for (i in 1 until 4) {
+                val x = cx - r + gridStep * i
+                val dx = x - cx
+                // 圆内 y 范围：|dx| <= r 时才有交点
+                if (abs(dx) < r) {
+                    val halfChord = sqrt(r * r - dx * dx)
+                    val yStart = cy - halfChord
+                    val yEnd = cy + halfChord
+                    // 黑色阴影底（提升任意背景对比度）
+                    drawLine(
+                        color = Color.Black.copy(alpha = 0.6f),
+                        start = Offset(x, yStart),
+                        end = Offset(x, yEnd),
+                        strokeWidth = gridShadowW
+                    )
+                    // 白色主线
+                    drawLine(
+                        color = Color.White.copy(alpha = 0.85f),
+                        start = Offset(x, yStart),
+                        end = Offset(x, yEnd),
+                        strokeWidth = gridStrokeW
+                    )
+                }
+            }
+            // 横线
+            for (i in 1 until 4) {
+                val y = cy - r + gridStep * i
+                val dy = y - cy
+                if (abs(dy) < r) {
+                    val halfChord = sqrt(r * r - dy * dy)
+                    val xStart = cx - halfChord
+                    val xEnd = cx + halfChord
+                    drawLine(
+                        color = Color.Black.copy(alpha = 0.6f),
+                        start = Offset(xStart, y),
+                        end = Offset(xEnd, y),
+                        strokeWidth = gridShadowW
+                    )
+                    drawLine(
+                        color = Color.White.copy(alpha = 0.85f),
+                        start = Offset(xStart, y),
+                        end = Offset(xEnd, y),
+                        strokeWidth = gridStrokeW
+                    )
+                }
+            }
         }
     }
 
@@ -143,6 +257,8 @@ fun CircularImageCropper(
     // 调用方应在裁剪框下方放置两个按钮：
     //   "取消" → onCancel()
     //   "使用" → 计算最终 Bitmap → onCropComplete(bitmap)
+    // 裁剪时读取 scaleState/offsetXState/offsetYState/canvasSizeState 的值
+    // （这些值随用户手势实时更新，确保裁剪结果与预览一致）
 }
 
 /**

@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.corgimemo.app.data.model.CorgiData
@@ -17,7 +16,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -50,9 +48,6 @@ class ProfileDetailViewModel @Inject constructor(
      * （UI 用 collectAsState 订阅此 StateFlow，自动重组）
      */
     val corgiData: StateFlow<CorgiData?> = repository.getCorgiDataFlow()
-        .onEach { data ->
-            Log.d("AvatarDebug", "ViewModel.corgiData flow收到新值: avatarPath=${data?.avatarPath}, name=${data?.name}, id=${data?.id}")
-        }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**
@@ -69,13 +64,7 @@ class ProfileDetailViewModel @Inject constructor(
     val avatarBitmap: StateFlow<Bitmap?> = corgiData
         .map { data -> data?.avatarPath }
         .distinctUntilChanged()
-        .onEach { path ->
-            Log.d("AvatarDebug", "ViewModel.avatarBitmap: path变化=$path, 开始解码...")
-        }
         .map { path -> decodeAvatarBitmap(path) }
-        .onEach { bitmap ->
-            Log.d("AvatarDebug", "ViewModel.avatarBitmap: 解码完成, bitmap=${bitmap != null}, 宽=${bitmap?.width}, 高=${bitmap?.height}")
-        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
@@ -127,11 +116,8 @@ class ProfileDetailViewModel @Inject constructor(
     fun saveAvatarPath(context: Context, newPath: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
             val oldPath = corgiData.value?.avatarPath
-            Log.d("AvatarDebug", "ViewModel.saveAvatarPath: 旧路径=$oldPath, 新路径=$newPath")
-            val deleted = AvatarStorage.deleteAvatar(oldPath)
-            Log.d("AvatarDebug", "ViewModel.saveAvatarPath: 删除旧头像结果=$deleted")
+            AvatarStorage.deleteAvatar(oldPath)
             repository.updateAvatarPath(newPath)
-            Log.d("AvatarDebug", "ViewModel.saveAvatarPath: 数据库更新完成, corgiData.value.avatarPath=${corgiData.value?.avatarPath}")
             onSuccess()
         }
     }
@@ -178,6 +164,17 @@ class ProfileDetailViewModel @Inject constructor(
     fun updateGender(gender: String?) {
         viewModelScope.launch {
             repository.updateGender(gender)
+        }
+    }
+
+    /**
+     * 更新用户签名
+     *
+     * @param signature 签名文本
+     */
+    fun updateSignature(signature: String) {
+        viewModelScope.launch {
+            repository.updateSignature(signature)
         }
     }
 }

@@ -1,7 +1,6 @@
 package com.corgimemo.app.ui.components
 
 import android.graphics.BitmapFactory
-import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -86,15 +85,6 @@ fun UserAvatar(
         MaterialTheme.colorScheme.primary
     }
 
-    val renderBranch = when {
-        isPreset -> "BRANCH_PRESET"
-        avatarPath == null -> "BRANCH_INITIAL"
-        preloadedBitmap != null -> "BRANCH_PRELOADED_BITMAP"
-        avatarPath.startsWith("/") -> "BRANCH_LOCAL_PATH"
-        else -> "BRANCH_COIL"
-    }
-    Log.d("AvatarDebug", "UserAvatar重组: avatarPath=$avatarPath, preloadedBitmap=${preloadedBitmap != null}, 分支=$renderBranch")
-
     // 基础样式：圆形 + 动态背景色 + surface 描边
     val baseModifier = Modifier
         .size(size)
@@ -158,11 +148,9 @@ fun UserAvatar(
                     mutableStateOf<android.graphics.Bitmap?>(null)
                 }
                 LaunchedEffect(avatarPath) {
-                    Log.d("AvatarDebug", "UserAvatar本地解码: 开始解码 path=$avatarPath")
                     loadedBitmap = withContext(Dispatchers.IO) {
                         runCatching { BitmapFactory.decodeFile(avatarPath) }.getOrNull()
                     }
-                    Log.d("AvatarDebug", "UserAvatar本地解码: 结果=${loadedBitmap != null}, 宽=${loadedBitmap?.width}, 高=${loadedBitmap?.height}")
                 }
                 val bm = loadedBitmap
                 if (bm != null) {

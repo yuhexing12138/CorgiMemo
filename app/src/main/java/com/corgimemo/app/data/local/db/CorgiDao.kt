@@ -74,4 +74,12 @@ interface CorgiDao {
      */
     @Query("UPDATE corgi_data SET gender = :gender WHERE id = (SELECT id FROM corgi_data LIMIT 1)")
     suspend fun updateGender(gender: String?)
+
+    /**
+     * 更新用户签名
+     *
+     * @param signature 签名文本
+     */
+    @Query("UPDATE corgi_data SET signature = :signature WHERE id = (SELECT id FROM corgi_data LIMIT 1)")
+    suspend fun updateSignature(signature: String)
 }

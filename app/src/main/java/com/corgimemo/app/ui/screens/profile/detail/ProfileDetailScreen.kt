@@ -1,7 +1,10 @@
 package com.corgimemo.app.ui.screens.profile.detail
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -29,6 +32,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,6 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -91,6 +97,7 @@ fun ProfileDetailScreen(
     var sourceBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var showNameDialog by remember { mutableStateOf(false) }
     var showGenderDialog by remember { mutableStateOf(false) }
+    var showSignatureDialog by remember { mutableStateOf(false) }
 
     // ===== UI =====
     Scaffold(
@@ -122,7 +129,8 @@ fun ProfileDetailScreen(
                     corgiData = corgiData,
                     avatarBitmap = avatarBitmap,
                     onAvatarClick = { showAvatarSourceSheet = true },
-                    onNameClick = { showNameDialog = true }
+                    onNameClick = { showNameDialog = true },
+                    onSignatureClick = { showSignatureDialog = true }
                 )
             }
             // ② 性别（可设置）
@@ -210,6 +218,18 @@ fun ProfileDetailScreen(
         )
     }
 
+    // ===== 签名编辑对话框 =====
+    if (showSignatureDialog) {
+        SignatureEditDialog(
+            currentSignature = corgiData?.signature ?: "记录生活，刻下美好",
+            onConfirm = { newSignature ->
+                viewModel.updateSignature(newSignature)
+                showSignatureDialog = false
+            },
+            onDismiss = { showSignatureDialog = false }
+        )
+    }
+
     // ===== 性别选择对话框 =====
     if (showGenderDialog) {
         GenderPickerDialog(
@@ -229,18 +249,20 @@ fun ProfileDetailScreen(
  * 大头像卡片
  *
  * 视觉：20dp 圆角卡片，elevation 2dp，居中布局
- * 头像 120dp + 名字 20sp Bold + 操作提示 11sp
+ * 头像 120dp + 名字 20sp Bold + 签名 13sp
  *
  * @param corgiData 当前柯基数据（null 时显示占位）
  * @param onAvatarClick 点击头像回调
  * @param onNameClick 点击名字回调
+ * @param onSignatureClick 点击签名回调
  */
 @Composable
 private fun BigAvatarCard(
     corgiData: CorgiData?,
     avatarBitmap: Bitmap?,
     onAvatarClick: () -> Unit,
-    onNameClick: () -> Unit
+    onNameClick: () -> Unit,
+    onSignatureClick: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(20.dp),
@@ -264,17 +286,31 @@ private fun BigAvatarCard(
                 onClick = onAvatarClick
             )
             Spacer(Modifier.height(12.dp))
+            // 名字：占满宽度 + TextAlign.Center，确保长名字/换行时也始终居中显示
             Text(
                 text = corgiData?.name ?: "未设置",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onNameClick)
             )
+            // 签名：同样占满宽度 + 居中，与名字视觉对齐
             Text(
-                text = "点击头像更换 · 点击名字修改",
-                fontSize = 11.sp,
+                text = corgiData?.signature ?: "记录生活，刻下美好",
+                fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onSignatureClick)
+                    .padding(top = 4.dp)
             )
         }
     }
@@ -303,41 +339,64 @@ private fun CropperDialog(
     onCancel: () -> Unit
 ) {
     val density = LocalDensity.current
-    val cropSizePx = with(density) { 280.dp.toPx() }
+    val cropSizePx = with(density) { 320.dp.toPx() }
 
-    // 计算 fitScale（与 CircularImageCropper 内部 LaunchedEffect 逻辑保持一致）：
-    // 取图片长宽中较大者缩放到裁剪框尺寸
-    val fitScale = remember(sourceBitmap, cropSizePx) {
-        val sw = sourceBitmap.width.toFloat()
-        val sh = sourceBitmap.height.toFloat()
-        max(cropSizePx / sw, cropSizePx / sh)
-    }
+    // 共享状态：CircularImageCropper 写入，"使用"按钮读取
+    // 确保用户缩放/拖动后的实际值用于裁剪
+    val scaleState = remember { mutableFloatStateOf(1f) }
+    val offsetXState = remember { mutableFloatStateOf(0f) }
+    val offsetYState = remember { mutableFloatStateOf(0f) }
+    val canvasSizeState = remember { mutableStateOf(IntSize.Zero) }
 
     Dialog(onDismissRequest = onCancel) {
-        Card(shape = RoundedCornerShape(20.dp)) {
-            Column {
-                CircularImageCropper(
-                    sourceBitmap = sourceBitmap,
-                    cropSize = 280.dp,
-                    onCropComplete = {},
-                    onCancel = onCancel
-                )
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // 裁剪区域：增大到 440dp，裁剪框 320dp
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(440.dp)
+                ) {
+                    CircularImageCropper(
+                        sourceBitmap = sourceBitmap,
+                        cropSize = 320.dp,
+                        scaleState = scaleState,
+                        offsetXState = offsetXState,
+                        offsetYState = offsetYState,
+                        canvasSizeState = canvasSizeState,
+                        onCropComplete = {},
+                        onCancel = onCancel
+                    )
+                }
+                // 按钮区域：不透明背景 + 降低高度，确保不被图片覆盖
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     TextButton(onClick = onCancel) { Text("取消") }
                     TextButton(
                         onClick = {
-                            // 用 fitScale + 0 偏移 + cropSizePx 方形虚拟画布，裁出"完整 fit"区域
+                            // 使用用户实际手势值（scale/offset）裁剪，与预览一致
+                            // canvasSize 用真实画布尺寸，确保裁剪框位置计算正确
+                            val canvasSize = canvasSizeState.value
+                            val safeCanvasSize = if (canvasSize.width > 0 && canvasSize.height > 0) {
+                                canvasSize
+                            } else {
+                                // 兜底：画布尺寸未就绪时用方形虚拟画布
+                                IntSize(cropSizePx.toInt(), cropSizePx.toInt())
+                            }
                             val cropped = cropCircularBitmap(
                                 source = sourceBitmap,
-                                scale = fitScale,
-                                offsetX = 0f,
-                                offsetY = 0f,
-                                canvasSize = IntSize(cropSizePx.toInt(), cropSizePx.toInt()),
+                                scale = scaleState.value,
+                                offsetX = offsetXState.value,
+                                offsetY = offsetYState.value,
+                                canvasSize = safeCanvasSize,
                                 cropSizePx = cropSizePx
                             )
                             onConfirm(cropped)
@@ -375,6 +434,46 @@ private fun NameEditDialog(
                 onValueChange = { text = it.take(20) },
                 singleLine = true,
                 label = { Text("昵称（最多 20 字）") }
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (text.isNotBlank()) onConfirm(text) },
+                enabled = text.isNotBlank()
+            ) { Text("确定") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
+/**
+ * 签名编辑对话框
+ *
+ * 限制：最多 30 字符
+ * 验证：非空白才能确认
+ *
+ * @param currentSignature 当前签名（对话框初始值）
+ * @param onConfirm 确认回调，传入新签名
+ * @param onDismiss 取消回调
+ */
+@Composable
+private fun SignatureEditDialog(
+    currentSignature: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(currentSignature) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("修改签名") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.take(30) },
+                singleLine = true,
+                label = { Text("签名（最多 30 字）") }
             )
         },
         confirmButton = {

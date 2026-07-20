@@ -251,9 +251,11 @@ private fun DrawerUserHeader(
             )
             if (corgiData != null) {
                 Text(
-                    text = "Lv.${corgiData.level} 柯基少年",
+                    text = corgiData.signature,
                     fontSize = 13.sp,
-                    color = Color(0xFF79747E)
+                    color = Color(0xFF79747E),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

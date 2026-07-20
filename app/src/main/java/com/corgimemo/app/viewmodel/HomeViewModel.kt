@@ -1134,7 +1134,20 @@ class HomeViewModel @Inject constructor(
      */
     private fun initCorgiData() {
         viewModelScope.launch {
-            loadCorgiData()
+            // 订阅数据库 Flow，头像/名字等字段变化时自动推送，侧滑栏实时更新
+            corgiRepository.getCorgiDataFlow().collect { data ->
+                _corgiData.value = data
+
+                data?.let { corgi ->
+                    _currentOutfit.value = corgi.currentOutfit
+                    _levelStage.value = LevelManager.getLevelStage(corgi.level)
+
+                    val mood = MoodManager.getMoodFromValue(corgi.moodValue)
+                    _currentMood.value = mood
+                }
+
+                updateGreeting()
+            }
         }
     }
 
