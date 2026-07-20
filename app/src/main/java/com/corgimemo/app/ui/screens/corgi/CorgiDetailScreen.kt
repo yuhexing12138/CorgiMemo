@@ -2,9 +2,7 @@ package com.corgimemo.app.ui.screens.corgi
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,12 +41,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -56,23 +52,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.corgimemo.app.animation.AnimationType
-import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.CorgiPose
-import com.corgimemo.app.animation.FrameAnimation
 import com.corgimemo.app.animation.HolidayOutfitId
-import com.corgimemo.app.animation.InteractiveCorgi
-import com.corgimemo.app.animation.LevelManager
 import com.corgimemo.app.animation.OutfitId
 import com.corgimemo.app.animation.OutfitManager
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.components.AppSnackbarHost
+import com.corgimemo.app.ui.components.CorgiDesktopPet
 import com.corgimemo.app.ui.components.MissedYouDialog
 import com.corgimemo.app.ui.components.MoodHistoryChart
 import com.corgimemo.app.ui.components.OutfitQuickSwitchSheet
-import com.corgimemo.app.ui.components.YawnOverlay
 import com.corgimemo.app.ui.theme.UiColors
 import com.corgimemo.app.viewmodel.HomeViewModel
 import kotlinx.coroutines.delay
@@ -81,14 +72,19 @@ import org.json.JSONArray
 /**
  * 柯基详情页
  *
- * 展示柯基的完整信息和互动功能，包含：
+ * v1.3 桌宠改造：柯基不再局限于固定动画区，而是以桌宠形式覆盖整页自由活动。
+ *
+ * 页面结构：
  * - 顶部导航栏（返回按钮 + 柯基名字 + 等级标签）
- * - 柯基动画展示区（200dp）
- * - 情绪状态区（进度条 + 百分比 + 状态文字）
- * - 数据统计区（今日完成数、本周完成数、连续天数）
- * - 成就预览区（已解锁成就徽章网格）
- * - 装扮预览区（当前装扮 + 切换按钮）
- * - 互动按钮区（抚摸/喂食/玩耍）
+ * - 下层滚动 Column（情绪/统计/成就/装扮/互动各 Section）
+ * - 上层桌宠层（CorgiDesktopPet 覆盖整页，柯基自由活动，事件穿透到下层）
+ *
+ * 桌宠交互：
+ * - 拖动：跟随手指移动，松手后保留位置
+ * - 单击：抚摸（PETTING 1s）
+ * - 双击：喂食（EATING 1.5s）
+ * - 长按：弹出菜单（抚摸/喂食/玩耍/睡觉）
+ * - 30s 无互动：自动进入 SLEEPING 状态
  *
  * @param navController 导航控制器
  * @param viewModel 首页 ViewModel（复用柯基数据）
@@ -104,26 +100,18 @@ fun CorgiDetailScreen(
     val currentMood by viewModel.currentMood.collectAsState()
     val currentOutfit by viewModel.currentOutfit.collectAsState()
     val currentHoliday by viewModel.currentHoliday.collectAsState()
-    val greeting by viewModel.greeting.collectAsState()
     val hapticEnabled by viewModel.hapticEnabled.collectAsState()
     val soundEnabled by viewModel.soundEnabled.collectAsState()
-    // ===== 自主行为状态（P0 接入）=====
-    // 5 种行为（YAWNING/SLEEPING_NIGHT/WORRIED/MISSED_YOU/HAPPY_STREAK）的来源，
-    // 其中 3 种（SLEEPING_NIGHT/WORRIED/HAPPY_STREAK）已通过 greeting 隐式覆盖，
-    // 本页新增：YAWNING 浮层 + MISSED_YOU Dialog。
-    val currentBehavior by viewModel.currentBehavior.collectAsState()
+    // v1.3 桌宠改造：原 greeting / currentBehavior 状态已移除，
+    // 桌宠的自主行为由 CorgiDesktopPet 内部状态机管理
     val showMissedYouDialog by viewModel.showMissedYouDialog.collectAsState()
     val missedYouDays by viewModel.missedYouDays.collectAsState()
     val showOutfitSheet by viewModel.showOutfitSheet.collectAsState()
     // 统一的 Snackbar 状态
     val snackbarHostState = remember { SnackbarHostState() }
-    val coroutineScope = rememberCoroutineScope()
 
     // 实际显示的装扮：节日装扮优先级高于用户选择的装扮
     val effectiveOutfit = currentHoliday?.outfitId ?: currentOutfit
-
-    // 互动动画状态
-    var interactionAnimation by remember { mutableStateOf<AnimationType?>(null) }
 
     // 本周完成数
     var weeklyCompleted by remember { mutableStateOf(0) }
@@ -172,77 +160,101 @@ fun CorgiDetailScreen(
         // 统一 Snackbar 容器（替代 Toast）
         snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) }
     ) { paddingValues ->
-        Column(
+        // ===== v1.3 桌宠改造：用 Box 包裹下层内容 + 上层桌宠 =====
+        // 下层：Column 滚动展示情绪/统计/成就/装扮/互动各 Section
+        // 上层：CorgiDesktopPet 覆盖整页，柯基以桌宠形式自由活动
+        //       仅柯基本体(96dp)消耗事件，其他区域事件穿透到下层
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            corgiData?.let { data ->
-                // ===== 5.2 柯基动画展示区（200dp）=====
-                CorgiAnimationSection(
-                    corgiData = data,
-                    currentPose = currentPose,
-                    currentMood = currentMood,
-                    currentOutfit = effectiveOutfit,
-                    greeting = greeting,
-                    interactionAnimation = interactionAnimation,
-                    currentBehavior = currentBehavior,   // P0 接入：用于在 Box 内挂 YawnOverlay
-                    onInteraction = { viewModel.onUserInteraction() },
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                corgiData?.let { data ->
+                    // 顶部预留 16dp 间距（原 CorgiAnimationSection 200dp 已移除）
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // ===== 5.3 情绪状态区 =====
+                    MoodStatusSection(corgiData = data, currentMood = currentMood)
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // ===== 5.4 数据统计区 =====
+                    StatsSection(
+                        corgiData = data,
+                        weeklyCompleted = weeklyCompleted,
+                        onStatsClick = { navController.navigate(Screen.Stats.route) }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // ===== 5.5 成就预览区 =====
+                    AchievementSection(
+                        corgiData = data,
+                        onAchievementClick = { navController.navigate(Screen.Achievement.route) }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // ===== 5.6 装扮预览区 =====
+                    OutfitSection(
+                        currentOutfit = effectiveOutfit,
+                        onSwitchOutfit = { viewModel.toggleOutfitSheet() }
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // ===== 5.7 互动按钮区（与桌宠并存：底部按钮可触发互动经验）=====
+                    InteractionSection(
+                        onPet = {
+                            viewModel.addInteractionExperience(3)
+                            viewModel.onUserInteraction()
+                        },
+                        onFeed = {
+                            viewModel.addInteractionExperience(5)
+                            viewModel.onUserInteraction()
+                        },
+                        onPlay = {
+                            viewModel.addInteractionExperience(8)
+                            viewModel.onUserInteraction()
+                        }
+                    )
+                }
+            }
+
+            // ===== 桌宠层：覆盖整页，柯基自由活动 =====
+            // corgiData 为 null 时不渲染（首次加载占位）
+            if (corgiData != null) {
+                CorgiDesktopPet(
+                    pose = currentPose,
+                    mood = currentMood,
+                    outfitId = effectiveOutfit,
                     soundEnabled = soundEnabled,
-                    hapticEnabled = hapticEnabled
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // ===== 5.3 情绪状态区 =====
-                MoodStatusSection(corgiData = data, currentMood = currentMood)
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // ===== 5.4 数据统计区 =====
-                StatsSection(
-                    corgiData = data,
-                    weeklyCompleted = weeklyCompleted,
-                    onStatsClick = { navController.navigate(Screen.Stats.route) }
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // ===== 5.5 成就预览区 =====
-                AchievementSection(
-                    corgiData = data,
-                    onAchievementClick = { navController.navigate(Screen.Achievement.route) }
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // ===== 5.6 装扮预览区 =====
-                OutfitSection(
-                    currentOutfit = effectiveOutfit,
-                    onSwitchOutfit = { viewModel.toggleOutfitSheet() }
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // ===== 5.7 互动按钮区 =====
-                InteractionSection(
+                    hapticEnabled = hapticEnabled,
                     onPet = {
-                        interactionAnimation = AnimationType.WAG
                         viewModel.addInteractionExperience(3)
                         viewModel.onUserInteraction()
                     },
                     onFeed = {
-                        interactionAnimation = AnimationType.PROUD
                         viewModel.addInteractionExperience(5)
                         viewModel.onUserInteraction()
                     },
                     onPlay = {
-                        interactionAnimation = AnimationType.RUN
                         viewModel.addInteractionExperience(8)
                         viewModel.onUserInteraction()
-                    }
+                    },
+                    onSleep = {
+                        viewModel.onUserInteraction()
+                    },
+                    onShowSnackbar = { msg ->
+                        com.corgimemo.app.ui.components.GlobalSnackbarController.showMessage(msg)
+                    },
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }
@@ -279,119 +291,8 @@ fun CorgiDetailScreen(
         )
     }
 
-    // 互动动画播放后恢复默认（差异化时长：抚摸800ms/喂食1000ms/玩耍1200ms）
-    LaunchedEffect(interactionAnimation) {
-        if (interactionAnimation != null) {
-            val duration = when (interactionAnimation) {
-                AnimationType.WAG -> 800L    // 抚摸：眯眼享受+摇尾巴 800ms
-                AnimationType.PROUD -> 1000L  // 喂食：张嘴吃东西+满足表情 1000ms
-                AnimationType.RUN -> 1200L    // 玩耍：追逐玩具+跳跃 1200ms
-                else -> 1000L
-            }
-            delay(duration)
-            interactionAnimation = null
-        }
-    }
-}
-
-/**
- * 柯基动画展示区
- *
- * @param corgiData 柯基数据
- * @param currentPose 当前姿态
- * @param currentMood 当前情绪
- * @param currentOutfit 当前装扮 ID
- * @param greeting 问候语
- * @param interactionAnimation 互动触发的临时动画类型
- * @param currentBehavior 当前行为类型（P0 接入：用于在 Box 内挂 YawnOverlay 等行为视觉）
- * @param onInteraction 触摸互动回调
- * @param soundEnabled 音效开关
- * @param hapticEnabled 触觉反馈开关
- */
-@Composable
-private fun CorgiAnimationSection(
-    corgiData: CorgiData,
-    currentPose: CorgiPose,
-    currentMood: CorgiMood,
-    currentOutfit: String?,
-    greeting: String,
-    interactionAnimation: AnimationType?,
-    currentBehavior: BehaviorType,
-    onInteraction: () -> Unit,
-    soundEnabled: Boolean,
-    hapticEnabled: Boolean
-) {
-    val gradient = Brush.verticalGradient(
-        colors = listOf(
-            UiColors.Primary,
-            UiColors.Primary.copy(alpha = 0.7f)
-        )
-    )
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(200.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(gradient),
-            contentAlignment = Alignment.Center
-        ) {
-            // 互动动画或默认柯基动画
-            if (interactionAnimation != null) {
-                FrameAnimation(
-                    animationType = interactionAnimation,
-                    fps = 8,
-                    isLooping = true,
-                    modifier = Modifier.size(140.dp)
-                )
-            } else {
-                InteractiveCorgi(
-                    pose = currentPose,
-                    mood = currentMood,
-                    corgiName = corgiData.name,
-                    level = corgiData.level,
-                    outfitId = currentOutfit,
-                    onInteraction = { onInteraction() },
-                    onLongPress = { },
-                    soundEnabled = soundEnabled,
-                    hapticEnabled = hapticEnabled,
-                    // 统一 Snackbar 提示回调（替代 Toast）
-                    // 此处不是顶层 Composable，改用全局控制器（避免作用域问题）
-                    onShowSnackbar = { msg -> com.corgimemo.app.ui.components.GlobalSnackbarController.showMessage(msg) },
-                    modifier = Modifier.size(140.dp)
-                )
-            }
-
-            // P0：YAWNING 浮层（区分于 SLEEPING_NIGHT，两者都使用 SLEEP 姿态）
-            // 仅在空闲打哈欠（10 秒无操作后）显示在 Box 右上角（TopEnd）
-            if (currentBehavior == BehaviorType.YAWNING) {
-                YawnOverlay(modifier = Modifier.align(Alignment.TopEnd))
-            }
-
-            // 问候语气泡
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 8.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = Color.White.copy(alpha = 0.9f)
-            ) {
-                Text(
-                    text = greeting,
-                    fontSize = 13.sp,
-                    color = Color(0xFF333333),
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                )
-            }
-        }
-    }
+    // v1.3 桌宠改造：原 interactionAnimation 恢复逻辑已移除，
+    // 桌宠内部根据 CorgiPetState 自动管理状态时长（PETTING 1s / EATING 1.5s / PLAYING 1.2s）
 }
 
 /**

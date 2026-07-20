@@ -314,7 +314,12 @@ private fun OnboardingRouter(
                 onExportClick = onExportClick,
                 onImportClick = onImportClick
             )
-            AppSnackbarHost(hostState = globalSnackbarHostState)
+            // 关键：必须 align(Alignment.BottomCenter)，否则 Box 默认 TopStart 对齐
+            // 会导致 Snackbar 显示在屏幕顶部（参照 OnboardingScreen.kt L240 的正确用法）
+            AppSnackbarHost(
+                hostState = globalSnackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
 
         LaunchedEffect(pendingNavigation) {
