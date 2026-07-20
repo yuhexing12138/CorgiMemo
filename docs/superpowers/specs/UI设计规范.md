@@ -717,7 +717,7 @@ SnackbarHost(
 |------|------|------|----------|
 | **左侧竖条** | 4dp 宽，自适应卡片高度 | 卡片左边缘 | `PriorityVisual.bar` |
 | **卡片边框** | 1.5dp + alpha 0.6f | 卡片 4 边 | `PriorityVisual.border.copy(alpha=0.6f)` |
-| **卡片阴影** | elevation 2dp + alpha 0.3f | 卡片背后 | `PriorityVisual.shadow` |
+| **卡片阴影** | elevation **4dp（默认）/ 8dp（长按）** + alpha **0.3f（默认）/ 0.5f（长按）** | 卡片背后 | `PriorityVisual.shadow` |
 
 **设计意图**：
 - 三处视觉同色系（仅 alpha 不同），形成统一的"任务重要性"语言
@@ -819,6 +819,75 @@ val borderColor = when (priority) {
 
 > **编辑页仅改边框颜色，不加阴影**（按用户确认）：编辑页是信息密集的编辑环境，多重装饰会过重。
 
+#### 12.1.10.4.1 首页 Card 悬浮效果（v2026-07-20 增强）
+
+> **关联文件**：[PressFeedback.kt](../../app/src/main/java/com/corgimemo/app/ui/components/PressFeedback.kt)、[TodoListItem.kt](../../app/src/main/java/com/corgimemo/app/ui/components/TodoListItem.kt)
+
+首页 `TodoListItem` 在 v2026-07-20 引入**"悬浮效果"**：默认静态 4dp 阴影（v2026-07-20 从 2dp 提升），长按（>= 500ms）抬升至 8dp 阴影 + 颜色 alpha 从 0.3f 加深到 0.5f，营造"卡片被长按抬升"的物理感。
+
+**状态机**：
+
+| 状态 | 阴影 elevation | 阴影 alpha | 触发条件 |
+|------|----------------|------------|----------|
+| **默认** | 4dp | 0.3f | 静止 / 短按抬起后 |
+| **按下** | 4dp | 0.3f | 按下 < 500ms（未触发长按） |
+| **长按中** | 8dp | 0.5f | 持续按下 >= 500ms |
+| **抬起** | 平滑过渡回 4dp + 0.3f | — | 手指抬起 / 移动 / 拖拽让位 |
+
+**关键实现要点**：
+
+1. **Modifier 顺序关键**（v2026-07-20 修正）：
+   ```kotlin
+   Card(
+       modifier = Modifier
+           .fillMaxWidth()
+           .pressFeedback(...)         // ← 必须在前：内部 graphicsLayer 缩放
+           .border(1.5.dp, ...)        // ← 跟随 graphicsLayer 一起缩放
+           .shadow(elevation = shadowElevation, ...)  // ← 跟随 graphicsLayer 一起缩放
+   )
+   ```
+   原顺序 `.border() → .shadow() → .pressFeedback()` 会导致"内容缩小但边框/阴影不缩"的违和感。修正后边框/阴影都在 graphicsLayer 内部，跟着 scale 一起缩放。
+
+2. **`PressFeedback.isLongPressed` 状态参数**（v2026-07-20 新增）：
+   - `Modifier.pressFeedback()` 新增 `isLongPressed: MutableState<Boolean> = remember { mutableStateOf(false) }` 参数
+   - 内部在 >= 500ms 时 set true，抬起/移动/cancel/拖拽让位时 set false
+   - 外部用 `animateDpAsState(isLongPressed.value)` 平滑过渡阴影 elevation
+
+3. **阴影动画参数**：
+   ```kotlin
+   val shadowElevation by animateDpAsState(
+       targetValue = if (isLongPressed.value) 8.dp else 4.dp,
+       animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+       label = "todoCardShadowElevation"
+   )
+   ```
+   duration 200ms 与 `pressFeedback.scaleUpDurationMs` 同步，回弹节奏一致。
+
+#### 12.1.10.4.2 编辑页优先级选择弹窗圆点（v2026-07-20 修正）
+
+> **关联文件**：[TodoEditScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/todo/TodoEditScreen.kt) L1851 附近
+
+优先级选择弹窗（`AlertDialog`）中，"无优先级"选项的圆点原为 `Color.Gray` 透明圆环，与其他 3 个优先级（低/中/高）实心圆点不一致。v2026-07-20 修正为 `PriorityColors.None` 浅绿实心圆点，与首页/回收站/编辑页边框"无优先级浅绿"视觉统一。
+
+**修正后**：
+
+```kotlin
+val options = listOf(
+    Triple(0, "无优先级", com.corgimemo.app.ui.components.PriorityColors.None),  // ← 浅绿实心
+    Triple(1, "低优先级", com.corgimemo.app.ui.components.PriorityColors.Low),
+    Triple(2, "中优先级", com.corgimemo.app.ui.components.PriorityColors.Medium),
+    Triple(3, "高优先级", com.corgimemo.app.ui.components.PriorityColors.High)
+)
+
+// 圆点渲染：去掉 value==0 的"透明 + 灰边"特殊分支，统一用 [color] 填充
+Box(
+    modifier = Modifier
+        .size(12.dp)
+        .clip(CircleShape)
+        .background(color)  // value=0 时为 None 浅绿，1/2/3 为 Low/Medium/High
+)
+```
+
 #### 12.1.10.5 关键技术决策
 
 | 决策点 | 选择 | 原因 |
@@ -829,11 +898,16 @@ val borderColor = when (priority) {
 | 已完成态全部同步降权 | 必要 | 与现有竖条降权规则一致，建立"完成项更弱"层级 |
 | 回收站 `isCompleted=false` | 必要 | 回收站待办是"已删除"非"已完成"，保持原始优先级色 |
 | 暗色模式 | 暂不区分亮/暗色 | 与现有 `PriorityColors` 行为一致；后续可优化 |
+| **首页阴影动态化（4↔8dp）** | 必要 | 长按抬升作为"可拖拽"视觉预告；与项目"治愈、温暖"理念一致（避免突然的弹跳） |
+| **Modifier 顺序：pressFeedback 在前** | 必要 | 让 `.border()` 和 `.shadow()` 都在 graphicsLayer 内部，缩放时一起缩放，避免"内容缩小但边框/阴影不缩"的违和感 |
+| **PressFeedback 新增 isLongPressed 状态** | 必要 | 复用现有长按检测逻辑（500ms）暴露给调用方；不引入双 pointerInput；不修改状态机内部逻辑 |
+| **优先级选择弹窗圆点统一** | 必要 | 4 个选项都是实心圆点，无优先级用 `PriorityColors.None` 浅绿，与三联视觉统一 |
 
 #### 12.1.10.6 排版变更记录
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
 | 2026-07-20 | v1.0 | 初始规范：所有待办卡片统一三联视觉（竖条 + 边框 + 阴影），无优先级新增浅绿 #C8E6C9 / dim #E8F5E9；编辑页仅改边框颜色（无阴影）；`PriorityColors` 新增 `PriorityVisual` 数据类与 `priorityVisualOf()` 组合查询函数 |
+| 2026-07-20 | v1.1 | **悬浮效果增强**：首页 `TodoListItem` 阴影静态 2dp → 4dp（默认）/ 8dp（长按）；阴影 alpha 0.3f → 0.3f/0.5f；`PressFeedback` 新增 `isLongPressed: MutableState<Boolean>` 状态参数；`Modifier` 顺序调整为 `pressFeedback → border → shadow` 让边框/阴影跟随 graphicsLayer 一起缩放；优先级选择弹窗无优先级圆点由 `Color.Gray` 透明圆环改为 `PriorityColors.None` 浅绿实心 |
 
 

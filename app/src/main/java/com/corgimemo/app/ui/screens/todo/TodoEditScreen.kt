@@ -1848,7 +1848,9 @@ fun TodoEditScreen(
                 Column {
                     /** 优先级选项列表 */
                     val options = listOf(
-                        Triple(0, "无优先级", androidx.compose.ui.graphics.Color.Gray),
+                        // v2026-07-20 修正：无优先级圆点由 Color.Gray 透明圆环改为 PriorityColors.None 浅绿实心圆点，
+                        // 与首页/回收站/编辑页边框统一"无优先级也用浅绿色"视觉。
+                        Triple(0, "无优先级", com.corgimemo.app.ui.components.PriorityColors.None),
                         Triple(1, "低优先级", com.corgimemo.app.ui.components.PriorityColors.Low),
                         Triple(2, "中优先级", com.corgimemo.app.ui.components.PriorityColors.Medium),
                         Triple(3, "高优先级", com.corgimemo.app.ui.components.PriorityColors.High)
@@ -1869,20 +1871,13 @@ fun TodoEditScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             // 优先级颜色圆点
+                            // v2026-07-20 改动：去掉 value==0 的"透明 + 灰边"特殊分支，
+                            // 统一用 [color] 填充（无优先级时为 PriorityColors.None 浅绿实心点）
                             Box(
                                 modifier = Modifier
                                     .size(12.dp)
                                     .clip(androidx.compose.foundation.shape.CircleShape)
-                                    .background(if (value == 0) androidx.compose.ui.graphics.Color.Transparent else color)
-                                    .then(
-                                        if (value == 0) {
-                                            Modifier.border(
-                                                width = 1.dp,
-                                                color = androidx.compose.ui.graphics.Color.Gray,
-                                                shape = androidx.compose.foundation.shape.CircleShape
-                                            )
-                                        } else Modifier
-                                    )
+                                    .background(color)
                             )
                             Text(
                                 text = label,

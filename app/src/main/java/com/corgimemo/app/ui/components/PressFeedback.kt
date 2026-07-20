@@ -9,7 +9,9 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableFloatState
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -67,6 +69,9 @@ import androidx.compose.ui.input.pointer.pointerInput
  * @param scaleUpDurationMs 恢复动画时长（毫秒，默认 200ms）—— 用户反馈 80ms 太快，调慢至 200ms
  * @param pressDelayMs 保留参数以备扩展（已不再发射 Press）
  * @param isDragActive 让位协调 lambda（默认 false）
+ * @param isLongPressed 长按过程状态（>= 500ms 持续按下时为 true，抬起/移动/cancel/拖拽让位时为 false）。
+ *                      外部 Composable 可用 `animateDpAsState(isLongPressed.value)` 平滑过渡阴影 elevation 等视觉属性。
+ *                      默认 `remember { mutableStateOf(false) }`。
  * @return 包装了 graphicsLayer + pointerInput 的 Modifier
  */
 @Suppress("LongParameterList", "LongMethod", "UNUSED_PARAMETER")
@@ -82,10 +87,23 @@ fun Modifier.pressFeedback(
     scaleDownDurationMs: Int = 60,
     scaleUpDurationMs: Int = 200,
     pressDelayMs: Long = 16L,
-    isDragActive: () -> Boolean = { false }
+    isDragActive: () -> Boolean = { false },
+    /**
+     * 长按过程状态（>= 500ms 持续按下时为 true，抬起/移动/cancel/拖拽让位时为 false）。
+     *
+     * v2026-07-20 新增：用于让外部 Composable（如 TodoListItem）根据长按状态
+     * 动态调整阴影 elevation / 边框等视觉属性，实现"长按抬升"效果。
+     *
+     * 默认 remember 一个新的 MutableState<Boolean>(false)，与 Modifier.pressFeedback 同生命周期。
+     */
+    isLongPressed: MutableState<Boolean> = remember { mutableStateOf(false) }
 ): Modifier {
     // 禁用态：直接返回原 Modifier（无任何反馈叠加）
-    if (!enabled) return this
+    // 同时把 isLongPressed 重置为 false，避免外部 Composable 阴影卡在"长按态"
+    if (!enabled) {
+        isLongPressed.value = false
+        return this
+    }
 
     // 用 animateFloatAsState 包装 scale.floatValue
     // - 目标值 < 1f（缩小方向）→ 用 scaleDownDurationMs（快速按下反馈）
@@ -116,7 +134,8 @@ fun Modifier.pressFeedback(
             onTap,
             onLongClick,
             scaleDown,
-            isDragActive
+            isDragActive,
+            isLongPressed
         ) {
             // 注意：awaitEachGesture 的 block 是 restricted suspend code
             // （AwaitPointerEventScope 有 @RestrictsSuspension 标注），
@@ -176,8 +195,11 @@ fun Modifier.pressFeedback(
                         val now = System.currentTimeMillis()
 
                         // 长按检测：>= 500ms（替代原 scope.launch + delay 协程）
+                        // v2026-07-20 改动：触发时同步将 isLongPressed 暴露给外部，
+                        // 用于实现"长按抬升"视觉（阴影/边框加深等）
                         if (!longPressTriggered && now - downTime >= 500L) {
                             longPressTriggered = true
+                            isLongPressed.value = true
                         }
 
                         // 拖拽让位：长按已触发 + 拖拽容器接管
@@ -186,6 +208,7 @@ fun Modifier.pressFeedback(
                             terminalEmitted = true
                             // 恢复 scale 让拖拽容器接管视觉
                             scale.floatValue = 1f
+                            isLongPressed.value = false
                             break
                         }
 
@@ -193,6 +216,7 @@ fun Modifier.pressFeedback(
                         if (change.changedToUp()) {
                             terminalEmitted = true
                             scale.floatValue = 1f
+                            isLongPressed.value = false
                             if (longPressTriggered) {
                                 onLongClick()
                             } else {
@@ -208,6 +232,7 @@ fun Modifier.pressFeedback(
                             terminalEmitted = true
                             // 滑动接触：scale 立即恢复（设计要求"缩小后立即恢复"）
                             scale.floatValue = 1f
+                            isLongPressed.value = false
                             break
                         }
                     }
@@ -216,6 +241,9 @@ fun Modifier.pressFeedback(
                     if (!terminalEmitted) {
                         scale.floatValue = 1f
                     }
+                    // 异常路径：无论何种异常退出，都确保 isLongPressed 重置，
+                    // 避免阴影 elevation 卡在长按态（v2026-07-20 防护）
+                    isLongPressed.value = false
                 }
             }
         }

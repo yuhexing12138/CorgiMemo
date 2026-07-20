@@ -2,6 +2,8 @@ package com.corgimemo.app.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -41,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -196,6 +199,15 @@ fun TodoListItem(
     val cardScale = remember { mutableFloatStateOf(1f) }
 
     /**
+     * 长按过程状态（v2026-07-20 新增）
+     *
+     * 由 [pressFeedback] 内部维护：>= 500ms 持续按下时为 true，
+     * 抬起/移动/拖拽让位/异常退出时为 false。
+     * 这里传给 [pressFeedback] 让其内部维护状态，外部读取同步。
+     */
+    val isLongPressed = remember { mutableStateOf(false) }
+
+    /**
      * 优先级三联视觉（v2026-07-20 新增）
      *
      * 统一获取竖条/边框/阴影三处视觉元素的颜色源。
@@ -209,30 +221,30 @@ fun TodoListItem(
         )
     }
 
+    /**
+     * 优先级阴影 elevation（v2026-07-20 悬浮效果）
+     *
+     * - 默认 4dp（v2026-07-20 改动：从 2dp 提升一倍，静态"浮起"感）
+     * - 长按中（isLongPressed=true）抬升至 8dp + 优先级色 alpha 0.5f（更饱和）
+     * - 用 animateDpAsState 平滑过渡，duration 200ms 与 pressFeedback 回弹同步
+     */
+    val shadowElevation by animateDpAsState(
+        targetValue = if (isLongPressed.value) 8.dp else 4.dp,
+        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+        label = "todoCardShadowElevation"
+    )
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            // 优先级边框：1.5dp + 优先级色 alpha 0.6f
-            // v2026-07-20 新增：与竖条/阴影形成三联视觉
-            .border(
-                width = 1.5.dp,
-                color = priorityVisual.border.copy(alpha = 0.6f),
-                shape = RoundedCornerShape(16.dp)
-            )
-            // 优先级阴影：2dp + 优先级色 alpha 0.3f
-            // 与 CenterEditButton.kt L92-96 的彩色阴影模式同源（ambientColor + spotColor）
-            .shadow(
-                elevation = 2.dp,
-                shape = RoundedCornerShape(16.dp),
-                ambientColor = priorityVisual.shadow,
-                spotColor = priorityVisual.shadow
-            )
-            // 统一的按压反馈：滑动接触缩放 + 点击水波纹 + 长按检测 + 拖拽让位
+            // 顺序关键：pressFeedback 必须放在最前（v2026-07-20 改动）
+            // 内部 graphicsLayer { scaleX = scaleY = animatedScale } 才能把
+            // 后续的 .border() 和 .shadow() 一起缩放，避免"内容缩小但边框不缩"的违和感
             .pressFeedback(
                 interactionSource = interactionSource,
                 scale = cardScale,
                 isBatchMode = isBatchMode,
-                enabled = !isClickBlocked,   // ← 新增：左滑操作面板展开时屏蔽整个按压反馈
+                enabled = !isClickBlocked,   // 左滑操作面板展开时屏蔽整个按压反馈
                 onTap = {
                     // 短按：根据批量模式分发
                     if (isBatchMode) {
@@ -256,7 +268,31 @@ fun TodoListItem(
                 scaleDownDurationMs = 60,
                 scaleUpDurationMs = 200,
                 // 拖拽协调：ReorderableLazyColumn 启动拖拽时让位
-                isDragActive = { isDragActive }
+                isDragActive = { isDragActive },
+                // 长按状态：传给 pressFeedback 内部维护，外部读取用于阴影抬升
+                isLongPressed = isLongPressed
+            )
+            // 优先级边框：1.5dp + 优先级色 alpha 0.6f
+            // v2026-07-20 改动：移到 pressFeedback 之后，让边框跟着 graphicsLayer 一起缩放
+            .border(
+                width = 1.5.dp,
+                color = priorityVisual.border.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(16.dp)
+            )
+            // 优先级阴影：4dp（默认）/ 8dp（长按）+ 优先级色 alpha 0.3f（默认）/ 0.5f（长按）
+            // v2026-07-20 改动：
+            //   1) 移到 pressFeedback 之后，让阴影跟着 graphicsLayer 一起缩放
+            //   2) elevation 从静态 2dp 升级为动态 [shadowElevation]（4↔8dp 悬浮效果）
+            //   3) alpha 跟随长按状态加深（0.3f ↔ 0.5f），实现"长按抬升"视觉
+            .shadow(
+                elevation = shadowElevation,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = priorityVisual.shadow.copy(
+                    alpha = if (isLongPressed.value) 0.5f else 0.3f
+                ),
+                spotColor = priorityVisual.shadow.copy(
+                    alpha = if (isLongPressed.value) 0.5f else 0.3f
+                )
             ),
         // v2026-07-20 改动：让出默认阴影给外层 Modifier.shadow，避免双层阴影叠加
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
