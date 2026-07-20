@@ -36,6 +36,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.animation.AnimationType
+import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.CorgiPose
 import com.corgimemo.app.animation.FrameAnimation
@@ -301,6 +303,7 @@ fun CorgiDetailScreen(
  * @param currentOutfit 当前装扮 ID
  * @param greeting 问候语
  * @param interactionAnimation 互动触发的临时动画类型
+ * @param currentBehavior 当前行为类型（P0 接入：用于在 Box 内挂 YawnOverlay 等行为视觉）
  * @param onInteraction 触摸互动回调
  * @param soundEnabled 音效开关
  * @param hapticEnabled 触觉反馈开关
@@ -313,6 +316,7 @@ private fun CorgiAnimationSection(
     currentOutfit: String?,
     greeting: String,
     interactionAnimation: AnimationType?,
+    currentBehavior: BehaviorType,
     onInteraction: () -> Unit,
     soundEnabled: Boolean,
     hapticEnabled: Boolean
