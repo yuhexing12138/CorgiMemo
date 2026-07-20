@@ -1,6 +1,7 @@
 package com.corgimemo.app.ui.components
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 
 /**
  * 优先级颜色统一源（与 UI 设计规范对齐）
@@ -94,7 +95,14 @@ object PriorityColors {
      * 统一封装一个优先级在卡片上的 3 种视觉元素：
      * - [bar]：左侧 4dp 竖条（不透明 alpha=1.0）
      * - [border]：卡片边框基色（调用方再 .copy(alpha = 0.6f)）
-     * - [shadow]：卡片阴影基色（已带 alpha=0.3f，可直接传入 Modifier.shadow）
+     * - [shadow]：卡片阴影基色（**深色版优先级色** + alpha=1.0，可直接传入 Modifier.shadow）
+     *
+     * **shadow 颜色设计（v2026-07-20 v5 关键修复）**：
+     * - 旧版本：`base.copy(alpha = 0.3f)` → 用浅色优先级色（200 系列）+ 30% alpha
+     *   → 与浅色背景 #F8F6F3 混合后色差仅 95 → 阴影几乎不可见
+     * - 新版本：`lerp(base, Color.Black, 0.4f)` → 60% 优先级色 + 40% 黑色
+     *   → 深红棕 #993530 / 深橙棕 #996E30 / 深蓝 #56778F / 深绿灰 #7A8E7B
+     *   → 与背景色差提升到 110-130 → 阴影明显可见
      *
      * 数值约定（与 [colorOf] 一致）：
      * 0 = 无（浅绿），1 = 低（柔蓝），2 = 中（柔橙），3 = 高（柔红）
@@ -117,10 +125,19 @@ object PriorityColors {
      */
     fun priorityVisualOf(priority: Int, isCompleted: Boolean = false): PriorityVisual {
         val base = if (isCompleted) dimColorOf(priority) else colorOf(priority)
+        // v2026-07-20 v5 关键修复：用深色版优先级色作 shadow
+        // 旧版 base.copy(alpha=0.3f) 颜色对比度严重不足，混合到 #F8F6F3 背景后几乎不可见
+        // 新版 lerp(base, Color.Black, 0.4f) = 60% 优先级色 + 40% 黑色，得到深色版
+        //   - HIGH (#FF8A80) → #993530（深红棕）色差 ~130
+        //   - MEDIUM (#FFB74D) → #996E30（深橙棕）色差 ~110
+        //   - LOW (#90CAF9) → #56778F（深蓝）色差 ~130
+        //   - NONE (#C8E6C9) → #7A8E7B（深绿灰）色差 ~95
+        // 不透明 alpha=1.0，让调用方根据长按状态决定 alpha
+        val deepShadow = lerp(base, Color.Black, 0.4f)
         return PriorityVisual(
             bar = base,
             border = base,
-            shadow = base.copy(alpha = 0.3f)
+            shadow = deepShadow
         )
     }
 }

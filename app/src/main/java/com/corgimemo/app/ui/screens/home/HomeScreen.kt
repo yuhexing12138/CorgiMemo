@@ -885,7 +885,15 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(horizontal = 8.dp),
-                                itemSpacing = 8.dp,
+                                // v2026-07-20 v4 调整：卡片间距 24dp→8dp
+                                // - 原 v3：itemSpacing 8dp + contentPadding vertical 8dp = 卡片之间 24dp（过稀）
+                                // - 现 v4：itemSpacing 0dp + contentPadding vertical 4dp = 卡片之间 8dp
+                                //   0(spacedBy) + 4(上 padding) + 4(下 padding) = 8dp ✓
+                                // - 阴影影响：
+                                //   · 默认 4dp shadow：刚好填满 4dp padding，完整显示
+                                //   · 长按 8dp shadow：超出 4dp padding 部分被外层 16dp clip 轻微裁切
+                                //     但 Compose 阴影 alpha 是中心深边缘浅渐变，主体仍可见
+                                itemSpacing = 0.dp,
                                 /**
                                  * 列表底部 80dp 留白
                                  *
@@ -956,21 +964,18 @@ fun HomeScreen(
                                             }
                                         }
                                         SwipeableTodoBox(
-                                            // v2026-07-20 v3 改动：
-                                            // - 阴影空间由 SwipeableTodoBox 内部的 contentPadding 提供
-                                            // - vertical=8dp：完整容纳 8dp 长按阴影（v3 提升）
-                                            //   4dp 默认阴影 + 8dp 长按阴影均可完整显示
-                                            // - 卡片间距：spacedBy 8 + contentPadding 8×2 = 24dp（与原间距接近）
-                                            // - v3 同步：TodoListItem 内 shadow 已移到最外层
-                                            //   （不再被 graphicsLayer 裁切），此处 8dp padding
-                                            //   保证 8dp 长按 shadow 不会被外层 16dp clip 裁切
+                                            // v2026-07-20 v4 调整：配合 itemSpacing 0dp，保证卡片之间 8dp
+                                            // - v3 阴影空间 8dp → v4 改为 4dp（与默认 4dp shadow 刚好匹配）
+                                            // - 卡片视觉间距：0(spacedBy) + 4(contentPadding 上) + 4(下) = 8dp
+                                            // - 阴影影响：默认 4dp 完整显示；长按 8dp 超出 4dp 部分被外层 16dp clip
+                                            //   轻微裁切（约 2-3dp），但 alpha 渐变主体仍可见
                                             modifier = Modifier,
                                             isEnabled = !isBatchMode && !dragActive,
                                             isExpanded = swipeExpandedTodoId == todo.id,
                                             isPinned = todo.isPinned,
                                             contentPadding = PaddingValues(
                                                 horizontal = 0.dp,
-                                                vertical = 8.dp   // v3: 4→8dp，给长按 8dp shadow 留出空间
+                                                vertical = 4.dp   // v4: 8→4dp，配合 spacedBy 0dp 保证 8dp 间距
                                             ),
                                             onExpandChange = { expanded ->
                                                 swipeExpandedTodoId = if (expanded) todo.id else null

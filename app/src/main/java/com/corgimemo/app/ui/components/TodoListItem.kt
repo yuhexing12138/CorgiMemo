@@ -236,30 +236,23 @@ fun TodoListItem(
     )
 
     /**
-     * 阴影 alpha（v2026-07-20 v3 调整：根治"看不到阴影"问题）
+     * 阴影 alpha（v2026-07-20 v5 修复：spot color 改用深色版后调整 alpha）
      *
-     * 根因分析（前两次修复都未彻底解决）：
-     * 1. **Modifier 顺序错误**：旧顺序 `.pressFeedback().border().shadow()`，
-     *    shadow 在 pressFeedback 的 graphicsLayer 内绘制，被 graphicsLayer
-     *    边界裁切 → 阴影外溢部分全部丢失，用户完全看不到
-     * 2. **alpha 偏低**：浅色优先级色 #FF8A80 等在 alpha 0.4f 下混到白底几乎无对比度
-     * 3. **contentPadding 不够**：长按 8dp shadow 超出 4dp padding 被外层 clip 裁切
-     *
-     * 本次修复（三件套）：
-     * ① Modifier 顺序调整为 `.shadow().pressFeedback().border()`（shadow 在最外层）
-     * ② ambientColor 0.06→0.12，spotColor 默认 0.4→0.6 / 长按 0.7→0.9
-     * ③ HomeScreen 的 contentPadding 4→8dp（给长按 8dp shadow 留出空间）
-     *
-     * 新视觉效果：
-     * - 静态：卡片周围有明显的优先级色边缘阴影（4dp elevation + spot alpha 0.6）
-     * - 按压：卡片缩小 0.94 + shadow 不被 graphicsLayer 缩放（"露出来"）+ elevation
-     *   抬升到 8dp + spot alpha 0.9 → "陷下去又浮起来"的双重视觉
+     * **v5 关键修复链**：
+     * 1. **PriorityColors.priorityVisualOf**：shadow 从 `base.copy(alpha=0.3f)`（浅色优先级色 + 30% alpha）
+     *    改为 `lerp(base, Color.Black, 0.4f)`（60% 优先级色 + 40% 黑色 = 深色版）
+     *    → 解决了 v1-v4 看不到阴影的根本问题（浅色 + 低 alpha 混合到浅色背景对比度严重不足）
+     * 2. **本文件 alpha 调整**：
+     *    - ambientColor 0.12→0.20：底色加深，让阴影更有"重量感"
+     *    - spotColor 默认 0.6→0.85 / 长按 0.9→1.0：边缘阴影更明显
+     *    - 注：现在 priorityVisual.shadow 已经是深色不透明色（alpha 1.0），
+     *      .copy(alpha=0.85) 让默认阴影留 15% 透明空间，长按时 100% 不透明
      *
      * ambientColor：环境光阴影（卡片周围一圈"软"阴影），用浅黑色保证有底
-     * spotColor：聚光阴影（卡片下边缘"硬"阴影），用优先级色（更明显）
+     * spotColor：聚光阴影（卡片下边缘"硬"阴影），用**深色版优先级色**（v5 重要变更）
      */
-    val shadowAmbientColor = Color.Black.copy(alpha = 0.12f)   // 加深环境阴影
-    val shadowSpotAlpha = if (isLongPressed.value) 0.9f else 0.6f  // spot 阴影 alpha
+    val shadowAmbientColor = Color.Black.copy(alpha = 0.20f)   // v5: 0.12→0.20，底色加深
+    val shadowSpotAlpha = if (isLongPressed.value) 1.0f else 0.85f  // v5: 默认 0.6→0.85 / 长按 0.9→1.0
 
     Card(
         modifier = Modifier

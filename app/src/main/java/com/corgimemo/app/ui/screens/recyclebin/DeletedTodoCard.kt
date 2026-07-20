@@ -81,8 +81,12 @@ fun DeletedTodoCard(
             .shadow(
                 elevation = 4.dp,
                 shape = RoundedCornerShape(12.dp),
-                ambientColor = Color.Black.copy(alpha = 0.12f),  // v3: 与首页同源
-                spotColor = priorityVisual.shadow.copy(alpha = 0.6f)  // v3: 与首页同源
+                // v2026-07-20 v5 同步修复：spot color 现在是深色版优先级色（lerp 40% 黑色）
+                // - 旧版 priorityVisual.shadow 是浅色 + 30% alpha，对比度严重不足
+                // - 新版 priorityVisual.shadow 已经是深色不透明色，直接用 alpha 0.85 即可
+                // - ambientColor 0.12→0.20 与首页同步
+                ambientColor = Color.Black.copy(alpha = 0.20f),
+                spotColor = priorityVisual.shadow.copy(alpha = 0.85f)  // v5: 0.6→0.85
             ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(

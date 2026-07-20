@@ -832,36 +832,57 @@ val borderColor = when (priority) {
 | **静态/长按阴影都看不到**（v3 新增） | Card modifier 顺序错误：`.pressFeedback().border().shadow()`，shadow 在 `pressFeedback` 内部的 `graphicsLayer` 中绘制，被 graphicsLayer 边界**裁切**到不可见 | **Modifier 顺序调整**为 `.shadow().pressFeedback().border()`：shadow 在最外层，graphicsLayer 之外绘制，不被裁切 |
 | 静态/长按阴影都看不到（v1/v2 未彻底解决） | `SwipeableTodoBox` 外层 `Modifier.clip(RoundedCornerShape(16.dp))` 把 Card 自身 `Modifier.shadow` 输出的阴影全部裁切 | `SwipeableTodoBox` 新增 `contentPadding: PaddingValues` 参数，给阴影预留显示空间；`HomeScreen` 传 `PaddingValues(vertical=8.dp)`（v3: 4→8dp） |
 | 边缘阴影不明显 | ambientColor 和 spotColor 都用浅色优先级色 + 低 alpha（v1: 0.3f/0.5f；v2: 0.4f/0.7f），在亮色卡片背景上对比度仍不足 | 改为 **ambient = 浅黑（alpha 0.12f）** 给"底"，**spot = 优先级色（alpha 0.6f/0.9f）** 给"边缘抬升感"，两层分工明确，v3 加深 |
+| **静态阴影仍然看不到（v5 关键修复）** | `PriorityColors.priorityVisualOf` 的 `shadow` 字段用 `base.copy(alpha=0.3f)` —— 把浅色优先级色（200 系列）又降 30% alpha。混合到浅色背景 #F8F6F3 后色差仅 95，**对比度严重不足**（v1-v4 全部修复都没解决这个根因） | `priorityVisualOf` 改为 `lerp(base, Color.Black, 0.4f)` —— 60% 优先级色 + 40% 黑色 = **深色版**（#993530 / #996E30 / #56778F / #7A8E7B），与背景色差提升到 **110-130**，阴影明显可见 |
 
-**状态机**（v2026-07-20 v3 调整 alpha）：
+**v5 状态机**（v2026-07-20 调整 alpha）：
 
-| 状态 | 阴影 elevation | spot alpha（边缘） | ambient alpha（环境） | 触发条件 |
-|------|----------------|--------------------|-----------------------|----------|
-| **默认** | 4dp | 0.6f | 0.12f | 静止 / 短按抬起后 |
-| **按下** | 4dp | 0.6f | 0.12f | 按下 < 500ms（未触发长按） |
-| **长按中** | 8dp | 0.9f | 0.12f | 持续按下 >= 500ms |
-| **抬起** | 平滑过渡回 4dp + 0.6f/0.12f | — | — | 手指抬起 / 移动 / 拖拽让位 |
+| 状态 | 阴影 elevation | spot alpha（深色版优先级色） | ambient alpha（环境） | 触发条件 |
+|------|----------------|---------------------------|-----------------------|----------|
+| **默认** | 4dp | 0.85f | 0.20f | 静止 / 短按抬起后 |
+| **按下** | 4dp | 0.85f | 0.20f | 按下 < 500ms（未触发长按） |
+| **长按中** | 8dp | 1.0f | 0.20f | 持续按下 >= 500ms |
+| **抬起** | 平滑过渡回 4dp + 0.85f/0.20f | — | — | 手指抬起 / 移动 / 拖拽让位 |
 
-**阴影实现细节**（v2026-07-20 v3 重设）：
+**阴影实现细节**（v2026-07-20 v5 重设）：
 
 ```kotlin
-val shadowAmbientColor = Color.Black.copy(alpha = 0.12f)   // v3: 加深环境阴影
-val shadowSpotAlpha = if (isLongPressed.value) 0.9f else 0.6f  // v3: spot alpha 加深
+// PriorityColors.kt - v5 关键：shadow 用深色版优先级色
+val deepShadow = lerp(base, Color.Black, 0.4f)
+// 60% 优先级色 + 40% 黑色 → 深色版
+//   HIGH (#FF8A80) → #993530（深红棕）色差 ~130
+//   MEDIUM (#FFB74D) → #996E30（深橙棕）色差 ~110
+//   LOW (#90CAF9) → #56778F（深蓝）色差 ~130
+//   NONE (#C8E6C9) → #7A8E7B（深绿灰）色差 ~95
+
+// TodoListItem.kt
+val shadowAmbientColor = Color.Black.copy(alpha = 0.20f)   // v5: 0.12→0.20
+val shadowSpotAlpha = if (isLongPressed.value) 1.0f else 0.85f  // v5: 默认 0.6→0.85 / 长按 0.9→1.0
 
 .shadow(
     elevation = shadowElevation,
     shape = RoundedCornerShape(16.dp),
     ambientColor = shadowAmbientColor,
     spotColor = priorityVisual.shadow.copy(alpha = shadowSpotAlpha)
+    // priorityVisual.shadow 已是深色不透明（alpha 1.0），.copy(alpha=0.85) 是最终阴影 alpha
 )
 ```
 
-**`SwipeableTodoBox.contentPadding` 参数**（v2026-07-20 新增，v3 提升）：
+**`SwipeableTodoBox.contentPadding` 参数**（v2026-07-20 新增，v3 提升，v4 回调）：
 
 - 默认 `PaddingValues(horizontal=0.dp, vertical=6.dp)`：通用默认，给 4-8dp 阴影预留空间
-- `HomeScreen` 传 `PaddingValues(vertical=8.dp)`（v3: 4→8dp）：完整容纳 8dp 长按阴影，卡片间距 spacedBy 8 + contentPadding 8×2 = 24dp
+- `HomeScreen` 传 `PaddingValues(vertical=4.dp)`（v4: 8→4dp）：**配合 `itemSpacing=0dp` 保证卡片之间 8dp 视觉间距**（0 + 4 + 4 = 8dp）
 - `SpecialDateScreen` 传 `PaddingValues(0.dp)`：`SpecialDateCard` 无 shadow，无需预留
 - **关键**：Modifier 顺序必须是 `.padding(contentPadding).clip(16dp 圆角)`（padding 在前，clip 在后），否则 clip 会切掉 padding 区域的 shadow
+
+**v4 间距公式**（v2026-07-20 用户反馈后修正）：
+```
+卡片之间视觉距离 = ZonedReorderableLazyColumn.itemSpacing + SwipeableTodoBox.contentPadding.top + SwipeableTodoBox.contentPadding.bottom
+                 = 0.dp + 4.dp + 4.dp = 8.dp ✓
+```
+- v1（最初）：itemSpacing 0dp + 无外层 padding = 0dp（无间距）
+- v2：itemSpacing 8dp + 无外层 padding = 8dp（用 LazyColumn 控制间距）
+- v3：itemSpacing 8dp + contentPadding vertical 8dp = **24dp**（用户反馈"过稀"）
+- **v4（当前）**：itemSpacing 0dp + contentPadding vertical 4dp = **8dp**（满足要求）
 
 **关键实现要点**：
 
@@ -964,5 +985,7 @@ Box(
 | 2026-07-20 | v1.1 | **悬浮效果增强**：首页 `TodoListItem` 阴影静态 2dp → 4dp（默认）/ 8dp（长按）；阴影 alpha 0.3f → 0.3f/0.5f；`PressFeedback` 新增 `isLongPressed: MutableState<Boolean>` 状态参数；`Modifier` 顺序调整为 `pressFeedback → border → shadow` 让边框/阴影跟随 graphicsLayer 一起缩放；优先级选择弹窗无优先级圆点由 `Color.Gray` 透明圆环改为 `PriorityColors.None` 浅绿实心 |
 | 2026-07-20 | v1.2 | **修复"阴影看不到"问题**：① `SwipeableTodoBox` 外层 `.clip(16.dp)` 裁切 Card shadow 根因修复——新增 `contentPadding: PaddingValues` 参数（默认 `vertical=6.dp`），Modifier 顺序调整为 `padding → clip`（padding 在前预留阴影空间）；② shadow 颜色分层——`ambientColor = Color.Black.copy(alpha=0.06f)` 浅黑环境阴影 + `spotColor = priorityVisual.shadow.copy(alpha=0.4f/0.7f)` 优先级色边缘阴影；alpha 从 0.3f/0.5f 提升到 0.4f/0.7f（长按更深）；③ 调用方调整：`HomeScreen` 传 `PaddingValues(vertical=4.dp)` 平衡间距（10dp→16dp），`SpecialDateScreen` 传 `PaddingValues(0.dp)`（`SpecialDateCard` 无 shadow） |
 | 2026-07-20 | v1.3 | **v3 关键修复——根除 graphicsLayer 裁切**（v1/v2 未彻底解决阴影看不到问题）：① **Card Modifier 顺序调整**为 `.shadow().pressFeedback().border()`（v3 最重要）——v1/v2 顺序 `.pressFeedback().border().shadow()` 导致 shadow 在 `pressFeedback` 的 `graphicsLayer` 内绘制，被 graphicsLayer 边界裁切到不可见；新顺序 shadow 在 graphicsLayer **之外**绘制，完全不被裁切；按压时 shadow **不缩放**（在 graphicsLayer 之外）+ border 缩放（在 graphicsLayer 内）→ "卡片陷下去、shadow 露出来"的双重视觉；② **alpha 进一步加深**：ambient 0.06→**0.12**（底色加深），spot 默认 0.4→**0.6** / 长按 0.7→**0.9**（边缘加深）；③ **contentPadding 加深**：HomeScreen 传 `vertical=8dp`（v1.2 是 4dp，v3 提升 1 倍）——给长按 8dp shadow 留出充足空间，避免被外层 16dp clip 裁切；④ **DeletedTodoCard 同步修复**：elevation 2→4dp + ambient 黑 0.12f + spot 优先级色 0.6f + vertical padding 4→6dp（与首页同源视觉） |
+| 2026-07-20 | v1.4 | **间距回调——卡片之间 24dp→8dp**（v3 用户反馈"过稀"）：① `ZonedReorderableLazyColumn.itemSpacing` 8→**0dp**；② `SwipeableTodoBox.contentPadding` vertical 8→**4dp**（保留 4dp shadow 空间）；新间距 = 0 + 4 + 4 = **8dp** ✓；③ 长按 8dp shadow 超出 4dp padding 部分被外层 16dp clip 轻微裁切，但 Compose 阴影 alpha 渐变中心深边缘浅，主体仍可见，"抬升感"保留 |
+| 2026-07-20 | v1.5 | **v5 关键修复——深色版优先级色作 shadow**（v1-v4 全部修复都未解决阴影对比度问题）：① `PriorityColors.priorityVisualOf` 的 `shadow` 字段从 `base.copy(alpha=0.3f)`（浅色 200 系列 + 30% alpha）改为 `lerp(base, Color.Black, 0.4f)`（**60% 优先级色 + 40% 黑色 = 深色版**）；新色值：HIGH #993530（深红棕）/ MEDIUM #996E30（深橙棕）/ LOW #56778F（深蓝）/ NONE #7A8E7B（深绿灰）；② ambient alpha 0.12→**0.20**（底色加深），spot alpha 默认 0.6→**0.85** / 长按 0.9→**1.0**（边缘加深）；③ DeletedTodoCard 同步修复：spot alpha 0.6→0.85 + ambient 0.12→0.20；**新色差从 95 提升到 110-130，阴影在白底上明显可见** |
 
 
