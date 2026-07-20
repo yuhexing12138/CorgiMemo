@@ -66,4 +66,12 @@ interface CorgiDao {
      */
     @Query("UPDATE corgi_data SET avatarPath = :path WHERE id = (SELECT id FROM corgi_data LIMIT 1)")
     suspend fun updateAvatarPath(path: String?)
+
+    /**
+     * 更新性别字段
+     *
+     * @param gender 性别值（"MALE" / "FEMALE" / "OTHER"）；传 null 表示未设置
+     */
+    @Query("UPDATE corgi_data SET gender = :gender WHERE id = (SELECT id FROM corgi_data LIMIT 1)")
+    suspend fun updateGender(gender: String?)
 }

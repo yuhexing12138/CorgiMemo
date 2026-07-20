@@ -1143,6 +1143,25 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             db.execSQL("ALTER TABLE corgi_data ADD COLUMN avatarPath TEXT DEFAULT NULL")
         }
     }
+
+    /**
+     * 数据库迁移：版本 40 → 41
+     * corgi_data 表新增 gender 字段（柯基性别）
+     *
+     * 依据 .trae/rules/entity与 migration同步检查.md 规则：
+     * SQL 的 `DEFAULT NULL` 必须与 CorgiData.gender 的
+     * `@ColumnInfo(defaultValue = "NULL")` 严格保持一致。
+     *
+     * 字段语义：
+     * - TEXT 类型：取值 "MALE" / "FEMALE" / "OTHER" / NULL
+     * - 允许 NULL：未设置时不显示性别图标，UI 用中性占位
+     * - 本次仅持久化能力上传，UI 入口在后续 Task 接入
+     */
+    internal val MIGRATION_40_41 = object : Migration(40, 41) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE corgi_data ADD COLUMN gender TEXT DEFAULT NULL")
+        }
+    }
     // companion object 闭合
 }
 }

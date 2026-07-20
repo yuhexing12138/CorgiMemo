@@ -24,6 +24,7 @@ import androidx.room.PrimaryKey
  * @property consecutiveEarlyDays 连续早起天数
  * @property lastEarlyDate 最后一次早起日期（格式：yyyy-MM-dd）
  * @property avatarPath 用户头像文件路径（null = 使用首字母占位徽章）
+ * @property gender 性别（MALE / FEMALE / OTHER / null）
  */
 @Entity(
     tableName = "corgi_data",
@@ -70,5 +71,24 @@ data class CorgiData(
      * `DEFAULT NULL` SQL 严格保持一致。
      */
     @ColumnInfo(defaultValue = "NULL")
-    val avatarPath: String? = null
+    val avatarPath: String? = null,
+
+    /**
+     * 性别字段
+     *
+     * 合法取值：
+     * - "MALE"   → 雄性柯基
+     * - "FEMALE" → 雌性柯基
+     * - "OTHER"  → 其他 / 不区分
+     * - null     → 未设置（默认值）
+     *
+     * UI 侧根据该字段决定头像徽章的配色与图标（详见计划文档）。
+     * 上传头像后可在个人资料页修改。
+     *
+     * 依据 .trae/rules/entity与 migration同步检查.md 规则：
+     * `@ColumnInfo(defaultValue = "NULL")` 必须与 MIGRATION_40_41 的
+     * `DEFAULT NULL` SQL 严格保持一致。
+     */
+    @ColumnInfo(defaultValue = "NULL")
+    val gender: String? = null
 )

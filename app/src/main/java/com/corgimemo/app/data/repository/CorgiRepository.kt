@@ -104,4 +104,17 @@ class CorgiRepository @Inject constructor(
     suspend fun updateAvatarPath(path: String?) = withContext(ioDispatcher) {
         corgiDao.updateAvatarPath(path)
     }
+
+    /**
+     * 更新性别字段
+     *
+     * 字段语义：详见 CorgiData.gender 注释。
+     * - gender = "MALE" / "FEMALE" / "OTHER" → UI 展示对应性别徽章
+     * - gender = null                          → UI 用中性占位
+     *
+     * @param gender 性别值；传 null 表示清除（恢复未设置）
+     */
+    suspend fun updateGender(gender: String?) = withContext(ioDispatcher) {
+        corgiDao.updateGender(gender)
+    }
 }
