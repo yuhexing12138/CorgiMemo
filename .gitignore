@@ -8,6 +8,7 @@ local.properties
 # IDE 文件
 .idea/
 *.iml
+.kotlin/
 
 # 编译输出
 app/build/
