@@ -41,6 +41,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -126,7 +128,16 @@ fun MainScreen(
     navController: NavController,
     backStackEntry: NavBackStackEntry? = null
 ) {
-    var selectedTab by remember { mutableStateOf(TabItem.TODO) }
+    /**
+     * 当前选中的底部 Tab
+     *
+     * 使用 `rememberSaveable` 跨导航 / 跨配置变更保留状态：
+     * - 导航到 SettingsScreen / StatsScreen / SpecialDateDetail 等子页面再返回时，
+     *   用户之前选中的 tab（PROFILE / INSPIRE / DATE）会被恢复
+     * - 配合自定义 [TabItemSaver] 把 enum 转 String 写入 Bundle，restore 时用 valueOf 还原
+     * - 默认值 TabItem.TODO 兼容首次进入和 Bundle 缺失场景
+     */
+    var selectedTab by rememberSaveable(stateSaver = TabItemSaver) { mutableStateOf(TabItem.TODO) }
     var isBubbleExpanded by remember { mutableStateOf(false) }
     var isFastCollapse by remember { mutableStateOf(false) }
     var lastClickTime by remember { mutableLongStateOf(0L) }
