@@ -409,7 +409,6 @@ private fun GenderPickerDialog(
                 listOf(
                     "MALE" to "男",
                     "FEMALE" to "女",
-                    "OTHER" to "其他",
                     null to "保密"
                 ).forEach { (key, label) ->
                     TextButton(
