@@ -15,6 +15,7 @@ import com.corgimemo.app.ui.screens.home.HomeScreen
 import com.corgimemo.app.ui.screens.main.MainScreen
 import com.corgimemo.app.ui.screens.onboarding.OnboardingScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
+import com.corgimemo.app.ui.screens.profile.detail.ProfileDetailScreen
 import com.corgimemo.app.ui.screens.settings.OperationHistoryScreen
 import com.corgimemo.app.ui.screens.settings.SettingsScreen
 import com.corgimemo.app.ui.screens.stats.StatsScreen
@@ -106,6 +107,13 @@ fun AppNavHost(
 
         composable(Screen.CorgiDetail.route) {
             CorgiDetailScreen(navController = navController)
+        }
+
+        /** 个人详情页（头像上传 / 名称 / 性别编辑，承接 T9 拆分） */
+        composable(Screen.ProfileDetail.route) {
+            ProfileDetailScreen(
+                onBack = { navController.popBackStack() }
+            )
         }
 
         /** 装扮详情页（从"我的"页外移，承载柯基动画+预览模式+横滑列表） */

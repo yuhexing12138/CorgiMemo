@@ -21,6 +21,8 @@ sealed class Screen(val route: String) {
     object CorgiDetail : Screen("corgi_detail")
     /** 装扮详情页（从"我的"页外移，承载柯基动画+预览模式+横滑列表） */
     object Outfit : Screen("outfit")
+    /** 个人详情页（头像上传 / 名称 / 性别编辑） */
+    object ProfileDetail : Screen("profile_detail")
     object OperationHistory : Screen("operation_history")
     /** V2.6: 编辑历史时间线（支持 todoId 参数） */
     object EditHistory : Screen("edit_history?todoId={todoId}") {
