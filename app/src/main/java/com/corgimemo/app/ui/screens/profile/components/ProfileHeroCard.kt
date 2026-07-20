@@ -38,7 +38,7 @@ import com.corgimemo.app.ui.components.UserAvatar
  *
  * @param corgiData 柯基数据（null 时显示占位）
  * @param consecutiveDays 连续活跃天数（用于副标题"陪伴 N 天"）
- * @param onNameClick 头像/名字点击回调（触发改名弹窗）
+ * @param onNameClick 头像/名字点击回调（Task 11 起改为跳 ProfileDetail 路由，由调用方 ProfileScreen 传入 navigate lambda）
  */
 @Composable
 fun ProfileHeroCard(
@@ -70,7 +70,7 @@ fun ProfileHeroCard(
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 // 用户头像 72dp（首字母占位 / Coil 加载真实头像）
-                // 点击头像触发改名弹窗（与改造前语义一致：名字/头像是一个整体）
+                // Task 11: 点击头像/名字跳 ProfileDetail 路由（头像/名字整体作为入口）
                 UserAvatar(
                     nickname = corgiData?.name ?: "小柯基",
                     avatarPath = corgiData?.avatarPath,

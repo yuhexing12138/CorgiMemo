@@ -12,14 +12,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -96,10 +92,8 @@ fun ProfileScreen(
     val soundEnabled by viewModel.soundEnabled.collectAsState()
 
     // ========== 弹窗状态 ==========
+    // Task 11: 改名弹窗已迁到 ProfileDetailScreen,本页仅保留成就详情弹窗
     var showAchievementDetail by remember { mutableStateOf<NewAchievement?>(null) }
-    var showRenameDialog by remember { mutableStateOf(false) }
-    var showConfirmDialog by remember { mutableStateOf(false) }
-    var pendingNewName by remember { mutableStateOf("") }
 
     // ========== 5 模块单列 LazyColumn ==========
     LazyColumn(
@@ -110,11 +104,12 @@ fun ProfileScreen(
         contentPadding = PaddingValues(vertical = 16.dp)
     ) {
         // ① 用户信息头卡（v1.2 改造：从柯基头卡 → 用户信息卡）
+        // Task 11: 点击头像/名字不再弹改名框,改为跳 ProfileDetail(头像上传/昵称/性别)
         item {
             ProfileHeroCard(
                 corgiData = corgiData,
                 consecutiveDays = corgiData?.consecutiveDays ?: 0,
-                onNameClick = { showRenameDialog = true }
+                onNameClick = { navController.navigate(Screen.ProfileDetail.route) }
             )
         }
 
@@ -187,64 +182,7 @@ fun ProfileScreen(
         )
     }
 
-    // ========== 改名弹窗 ==========
-    if (showRenameDialog) {
-        CorgiRenameDialog(
-            currentName = corgiData?.name ?: "小柯基",
-            onConfirm = { newName ->
-                val (isValid, _) = viewModel.validateName(newName)
-                if (isValid) {
-                    pendingNewName = newName
-                    showRenameDialog = false
-                    showConfirmDialog = true
-                }
-            },
-            onDismiss = { showRenameDialog = false }
-        )
-    }
-
-    // ========== 改名确认弹窗 ==========
-    if (showConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showConfirmDialog = false },
-            title = {
-                Text(
-                    text = "确认修改",
-                    style = MaterialTheme.typography.titleLarge
-                )
-            },
-            text = {
-                Text(
-                    // v1.2 文案调整：原"柯基的名字"改为"昵称"，
-                    // 因为 Profile 页头卡现在显示的是用户头像 + 昵称，
-                    // 柯基元素已迁出到 CorgiDetailScreen。
-                    text = "确定要将昵称改为「$pendingNewName」吗？",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.updateCorgiName(pendingNewName)
-                        showConfirmDialog = false
-                        pendingNewName = ""
-                    }
-                ) {
-                    Text(text = "确定")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showConfirmDialog = false
-                        showRenameDialog = true
-                    }
-                ) {
-                    Text(text = "取消")
-                }
-            }
-        )
-    }
+    // ========== 改名弹窗已迁到 ProfileDetailScreen（Task 11） ==========
 }
 
 /**
@@ -656,97 +594,4 @@ fun SettingItemCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
-}
-
-/**
- * 柯基改名对话框
- *
- * @param currentName 当前柯基名字
- * @param onConfirm 确认回调，返回新名字
- * @param onDismiss 取消回调
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun CorgiRenameDialog(
-    currentName: String,
-    onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var name by remember { mutableStateOf(currentName) }
-    val isValidName = name.length in 1..8
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = "\uD83D\uDC3A",
-                    style = MaterialTheme.typography.displayLarge
-                )
-                Text(
-                    // v1.2 文案调整：原"修改柯基名字" → "修改昵称"
-                    text = "修改昵称",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "当前名字：$currentName",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = {
-                        if (it.length <= 8) {
-                            name = it
-                        }
-                    },
-                    placeholder = { Text(text = "请输入新名字（1-8个字符）") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    supportingText = {
-                        Text(
-                            text = "${name.length}/8",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (name.isNotEmpty() && !isValidName) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    },
-                    isError = name.isNotEmpty() && !isValidName
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(name) },
-                enabled = isValidName && name != currentName,
-                modifier = Modifier.padding(end = 8.dp)
-            ) {
-                Text(text = "确认")
-            }
-        },
-        dismissButton = {
-            OutlinedButton(
-                onClick = onDismiss,
-                modifier = Modifier.padding(start = 8.dp)
-            ) {
-                Text(text = "取消")
-            }
-        }
-    )
 }

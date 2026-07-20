@@ -532,11 +532,11 @@ fun MainScreen(
                         navController.navigate(Screen.Settings.route)
                         coroutineScope.launch { drawerState.close() }
                     },
-                    // v1.2: 顶部用户头像点击 → 切到 PROFILE tab + 关 drawer
-                    // 顺序：先改 selectedTab 再关 drawer —— 抽屉关闭动画期内
-                    // tab 已切换,AnimatedContent 已渲染好新内容,关闭后视觉上无缝衔接
-                    onProfileClick = {
-                        selectedTab = TabItem.PROFILE
+                    // Task 11: 顶部用户头像点击 → 跳 ProfileDetail 路由 + 关 drawer
+                    // 原行为是切到 PROFILE tab,ProfileDetail 化后改为独立路由(便于保留"我的"页 tab 位置)
+                    // 顺序：先 navigate 再关 drawer,符合 lambda 捕获防御规则——无外部可变引用
+                    onUserAreaClick = {
+                        navController.navigate(Screen.ProfileDetail.route)
                         coroutineScope.launch { drawerState.close() }
                     }
                 )

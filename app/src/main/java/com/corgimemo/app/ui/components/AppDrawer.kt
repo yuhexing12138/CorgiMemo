@@ -108,7 +108,7 @@ private val categoryIcons = mapOf(
  * @param onCustomTypeAction 自定义类型操作回调
  * @param onSettingsClick 设置点击回调
  * @param onHelpClick 帮助点击回调
- * @param onProfileClick 顶部用户头像/名称区域点击回调（跳"我的"页）
+ * @param onUserAreaClick 顶部用户头像/名称区域点击回调（Task 11 起跳 ProfileDetail 路由,语义更准）
  * @param modifier 修饰符
  */
 @Composable
@@ -137,7 +137,7 @@ fun AppDrawerContent(
     onAddCustomTypeClick: () -> Unit = {},
     onCustomTypeAction: (DateTypeAction) -> Unit = {},
     onSettingsClick: () -> Unit = {},
-    onProfileClick: () -> Unit = {},
+    onUserAreaClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -148,7 +148,7 @@ fun AppDrawerContent(
     ) {
         DrawerUserHeader(
             corgiData = corgiData,
-            onClick = onProfileClick
+            onClick = onUserAreaClick
         )
 
         Spacer(modifier = Modifier.height(16.dp))
