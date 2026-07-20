@@ -47,9 +47,9 @@ import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.ui.components.AvatarSourceSheet
 import com.corgimemo.app.ui.components.CircularImageCropper
 import com.corgimemo.app.ui.components.UserAvatar
+import com.corgimemo.app.ui.components.cropCircularBitmap
 import com.corgimemo.app.ui.screens.profile.detail.components.ProfileDetailRow
 import com.corgimemo.app.util.AvatarStorage
-import com.corgimemo.app.util.cropCircularBitmap
 import kotlinx.coroutines.launch
 import kotlin.math.max
 

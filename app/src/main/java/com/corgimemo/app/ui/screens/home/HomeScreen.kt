@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import com.corgimemo.app.ui.components.safeAreaForBottomBar /** 安全区域内边距：底栏导航栏*/
@@ -955,10 +956,22 @@ fun HomeScreen(
                                             }
                                         }
                                         SwipeableTodoBox(
-                                            modifier = Modifier.padding(1.dp),
+                                            // v2026-07-20 v3 改动：
+                                            // - 阴影空间由 SwipeableTodoBox 内部的 contentPadding 提供
+                                            // - vertical=8dp：完整容纳 8dp 长按阴影（v3 提升）
+                                            //   4dp 默认阴影 + 8dp 长按阴影均可完整显示
+                                            // - 卡片间距：spacedBy 8 + contentPadding 8×2 = 24dp（与原间距接近）
+                                            // - v3 同步：TodoListItem 内 shadow 已移到最外层
+                                            //   （不再被 graphicsLayer 裁切），此处 8dp padding
+                                            //   保证 8dp 长按 shadow 不会被外层 16dp clip 裁切
+                                            modifier = Modifier,
                                             isEnabled = !isBatchMode && !dragActive,
                                             isExpanded = swipeExpandedTodoId == todo.id,
                                             isPinned = todo.isPinned,
+                                            contentPadding = PaddingValues(
+                                                horizontal = 0.dp,
+                                                vertical = 8.dp   // v3: 4→8dp，给长按 8dp shadow 留出空间
+                                            ),
                                             onExpandChange = { expanded ->
                                                 swipeExpandedTodoId = if (expanded) todo.id else null
                                                 viewModel.setSwipeActionExpanded(expanded)

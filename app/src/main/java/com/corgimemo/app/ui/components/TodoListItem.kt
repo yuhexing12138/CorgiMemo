@@ -148,10 +148,11 @@ fun TodoListItem(
     /**
      * 子任务展开的有效状态
      *
-     * 简化模式下强制收起（即使 isExpanded=true 也不展开子任务列表），
-     * 用于 AnimatedVisibility 的 visible 判断及展开按钮图标方向。
+     * 当存在子任务时，展开按钮始终可见（简化模式下也可见），
+     * 用户点击展开按钮可展开/收起子任务列表（不受简化模式限制）。
+     * 仅当子任务列表为空时强制隐藏。
      */
-    val effectiveExpanded = isExpanded && !isSimpleMode
+    val effectiveExpanded = isExpanded && subTasks.isNotEmpty()
 
     /**
      * 卡片背景色：始终使用 surface，不随选中态变色
@@ -225,7 +226,7 @@ fun TodoListItem(
      * 优先级阴影 elevation（v2026-07-20 悬浮效果）
      *
      * - 默认 4dp（v2026-07-20 改动：从 2dp 提升一倍，静态"浮起"感）
-     * - 长按中（isLongPressed=true）抬升至 8dp + 优先级色 alpha 0.5f（更饱和）
+     * - 长按中（isLongPressed=true）抬升至 8dp + 优先级色 alpha 0.7f（更饱和）
      * - 用 animateDpAsState 平滑过渡，duration 200ms 与 pressFeedback 回弹同步
      */
     val shadowElevation by animateDpAsState(
@@ -234,12 +235,60 @@ fun TodoListItem(
         label = "todoCardShadowElevation"
     )
 
+    /**
+     * 阴影 alpha（v2026-07-20 v3 调整：根治"看不到阴影"问题）
+     *
+     * 根因分析（前两次修复都未彻底解决）：
+     * 1. **Modifier 顺序错误**：旧顺序 `.pressFeedback().border().shadow()`，
+     *    shadow 在 pressFeedback 的 graphicsLayer 内绘制，被 graphicsLayer
+     *    边界裁切 → 阴影外溢部分全部丢失，用户完全看不到
+     * 2. **alpha 偏低**：浅色优先级色 #FF8A80 等在 alpha 0.4f 下混到白底几乎无对比度
+     * 3. **contentPadding 不够**：长按 8dp shadow 超出 4dp padding 被外层 clip 裁切
+     *
+     * 本次修复（三件套）：
+     * ① Modifier 顺序调整为 `.shadow().pressFeedback().border()`（shadow 在最外层）
+     * ② ambientColor 0.06→0.12，spotColor 默认 0.4→0.6 / 长按 0.7→0.9
+     * ③ HomeScreen 的 contentPadding 4→8dp（给长按 8dp shadow 留出空间）
+     *
+     * 新视觉效果：
+     * - 静态：卡片周围有明显的优先级色边缘阴影（4dp elevation + spot alpha 0.6）
+     * - 按压：卡片缩小 0.94 + shadow 不被 graphicsLayer 缩放（"露出来"）+ elevation
+     *   抬升到 8dp + spot alpha 0.9 → "陷下去又浮起来"的双重视觉
+     *
+     * ambientColor：环境光阴影（卡片周围一圈"软"阴影），用浅黑色保证有底
+     * spotColor：聚光阴影（卡片下边缘"硬"阴影），用优先级色（更明显）
+     */
+    val shadowAmbientColor = Color.Black.copy(alpha = 0.12f)   // 加深环境阴影
+    val shadowSpotAlpha = if (isLongPressed.value) 0.9f else 0.6f  // spot 阴影 alpha
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            // 顺序关键：pressFeedback 必须放在最前（v2026-07-20 改动）
-            // 内部 graphicsLayer { scaleX = scaleY = animatedScale } 才能把
-            // 后续的 .border() 和 .shadow() 一起缩放，避免"内容缩小但边框不缩"的违和感
+            // v2026-07-20 v3 关键修复：Modifier 顺序调整，shadow 必须在最外层
+            // - 旧顺序：.pressFeedback().border().shadow()
+            //   shadow 在 pressFeedback 的 graphicsLayer 内绘制，被 graphicsLayer
+            //   边界裁切 → 阴影外溢部分全部丢失（用户完全看不到阴影）
+            // - 新顺序：.shadow().pressFeedback().border()
+            //   shadow 在 graphicsLayer 外绘制，不被裁切；pressFeedback 的
+            //   graphicsLayer 包裹 border + content，按压时一起缩放
+            // - 视觉效果：按压时 shadow 不缩放（"露出来"） + border 缩放 +
+            //   content 缩放 → "卡片陷下去、shadow 浮起来"的双重视觉
+            //
+            // 优先级阴影：4dp（默认）/ 8dp（长按）
+            // v2026-07-20 v3 改动：
+            //   1) 移到 pressFeedback 之前（最外层），根除 graphicsLayer 裁切
+            //   2) elevation 从静态 2dp 升级为动态 [shadowElevation]（4↔8dp 悬浮效果）
+            //   3) ambientColor 0.06→0.12（v3 加深），保证"底"阴影明显
+            //   4) spotColor 默认 0.4→0.6 / 长按 0.7→0.9（v3 加深）形成"边缘阴影"
+            //   5) ambient 与 spot 解耦：原代码两者都是 priorityVisual.shadow.copy(alpha=...)
+            //      导致在亮色卡片上几乎看不见阴影（用户反馈"看不到阴影"）
+            //      修复后 ambient 给"底"、spot 给"边缘抬升感"，视觉上能明显看到两层阴影
+            .shadow(
+                elevation = shadowElevation,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = shadowAmbientColor,
+                spotColor = priorityVisual.shadow.copy(alpha = shadowSpotAlpha)
+            )
             .pressFeedback(
                 interactionSource = interactionSource,
                 scale = cardScale,
@@ -273,26 +322,12 @@ fun TodoListItem(
                 isLongPressed = isLongPressed
             )
             // 优先级边框：1.5dp + 优先级色 alpha 0.6f
-            // v2026-07-20 改动：移到 pressFeedback 之后，让边框跟着 graphicsLayer 一起缩放
+            // v2026-07-20 改动：放在 pressFeedback 之后（在 graphicsLayer 内），
+            // 让边框跟着 content 一起缩放，避免"内容缩小但边框不缩"的违和感
             .border(
                 width = 1.5.dp,
                 color = priorityVisual.border.copy(alpha = 0.6f),
                 shape = RoundedCornerShape(16.dp)
-            )
-            // 优先级阴影：4dp（默认）/ 8dp（长按）+ 优先级色 alpha 0.3f（默认）/ 0.5f（长按）
-            // v2026-07-20 改动：
-            //   1) 移到 pressFeedback 之后，让阴影跟着 graphicsLayer 一起缩放
-            //   2) elevation 从静态 2dp 升级为动态 [shadowElevation]（4↔8dp 悬浮效果）
-            //   3) alpha 跟随长按状态加深（0.3f ↔ 0.5f），实现"长按抬升"视觉
-            .shadow(
-                elevation = shadowElevation,
-                shape = RoundedCornerShape(16.dp),
-                ambientColor = priorityVisual.shadow.copy(
-                    alpha = if (isLongPressed.value) 0.5f else 0.3f
-                ),
-                spotColor = priorityVisual.shadow.copy(
-                    alpha = if (isLongPressed.value) 0.5f else 0.3f
-                )
             ),
         // v2026-07-20 改动：让出默认阴影给外层 Modifier.shadow，避免双层阴影叠加
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -314,11 +349,28 @@ fun TodoListItem(
 
                     /** 内容区域，占满除竖条外的宽度；paddingEnd=24dp 为右上角置顶图标预留空间避免重叠 */
                     Column(modifier = Modifier.fillMaxWidth().padding(end = 24.dp)) {
-                // 顶部 Row：复选框 + start 槽位 + 内容 + 展开按钮
+                // 聚合附件数量（提前计算，供元数据布局判断使用）
+                val aggregateCounts = aggregateAttachmentCounts(todo, subTasks)
+                /** 是否存在分类标签（详情模式且categoryName不为空） */
+                val hasCategory = !isSimpleMode && categoryName != null
+                /** 是否存在提醒时间 */
+                val hasReminder = todo.reminderTime != null
+                /** 是否存在附件（详情模式下图片或语音数量>0） */
+                val hasAttachment = !isSimpleMode && (aggregateCounts.first > 0 || aggregateCounts.second > 0)
+                /**
+                 * 元数据是否"拥挤"：分类+提醒+附件三者同时存在
+                 * 拥挤时采用两行布局：第一行分类+附件，第二行提醒单独一行突出显示
+                 * 非拥挤时（缺少任一元素）：所有可见元数据同一行显示
+                 */
+                val isMetaCrowded = hasCategory && hasReminder && hasAttachment
+
+                // 主区域行：复选框 + (标题+元数据列) + 展开区域
+                // 复选框通过 Row(verticalAlignment=CenterVertically) 相对于"标题+元数据"整体垂直居中
+                // 关联提示/进度条/子任务在该行下方单独渲染，不影响复选框垂直居中位置
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 0.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // 复选框区域
@@ -340,16 +392,24 @@ fun TodoListItem(
                         modifier = Modifier.padding(end = 12.dp)
                     )
 
-                    // 标题 + 分类 + 时间等内容 Column
+                    // 标题 + 完成时间 + 元数据 Column
+                    // 这是复选框垂直居中对齐的参照区域（包含标题行+元数据，不含关联提示/进度条/子任务）
                     Column(modifier = Modifier.weight(1f)) {
-                        // 标题行
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        // ========== 标题行：标题文本 + 进度文本 + 展开/收起按钮 ==========
+                        // 标题文本占据剩余空间（weight=1f），单行省略；进度文本和展开按钮在右侧
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             /**
                              * 标题文本（支持逐区间交错淡入高亮）
                              *
                              * V2.5 改造：使用 buildHighlightRanges() 拆分为独立区间列表，
                              * 每个高亮区间拥有独立的 animateFloatAsState + 延迟，
                              * 实现从左到右的波浪式淡入效果。
+                             *
+                             * 父标题始终单行显示，超长时末尾截断为"..."省略号，
+                             * 确保不会与右侧进度文本和展开按钮重叠。
                              */
                             if (isHighlightActive) {
                                 val (titleRanges, titleHighlightColor) =
@@ -360,7 +420,9 @@ fun TodoListItem(
                                             Color(todo.backgroundColor) else null
                                     )
                                 /** 逐区间渲染：每个 HighlightRange 独立动画 */
-                                androidx.compose.foundation.layout.Row {
+                                androidx.compose.foundation.layout.Row(
+                                    modifier = Modifier.weight(1f)
+                                ) {
                                     titleRanges.forEach { range ->
                                         val rangeAlpha by androidx.compose.animation.core.animateFloatAsState(
                                             targetValue = 1f,
@@ -378,6 +440,8 @@ fun TodoListItem(
                                             textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
                                             color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
                                             else MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.graphicsLayer { alpha = rangeAlpha },
                                             style = if (range.isHighlight) androidx.compose.ui.text.TextStyle(
                                                 background = titleHighlightColor
@@ -392,12 +456,51 @@ fun TodoListItem(
                                     fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                                     textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
                                     color = if (todo.status == 1) MaterialTheme.colorScheme.onSurfaceVariant
-                                    else MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
                                 )
+                            }
+
+                            // 子任务进度文本：详情模式显示，简化模式隐藏
+                            if (subTasks.isNotEmpty() && !isSimpleMode && subTaskProgress != null) {
+                                Text(
+                                    text = "($subTaskProgress)",
+                                    fontSize = 13.sp,
+                                    // 已完成态视觉降权：使用 CompletedColors.Text 而非 primary 橙色
+                                    color = if (todo.status == 1) CompletedColors.Text
+                                            else MaterialTheme.colorScheme.primary,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+
+                            // 展开/收起按钮：Surface 圆形阴影 2dp，两种模式下都保留显示
+                            if (subTasks.isNotEmpty()) {
+                                Surface(
+                                    onClick = { if (!isClickBlocked) onToggleExpand() },
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shadowElevation = 2.dp,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = if (effectiveExpanded) {
+                                                Icons.Default.ExpandLess
+                                            } else {
+                                                Icons.Default.ExpandMore
+                                            },
+                                            contentDescription = if (effectiveExpanded) "收起" else "展开",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
                             }
                         }
 
-                        // 完成时间
+                        // 完成时间（已完成待办显示"X分钟前完成"）
                         if (todo.status == 1 && todo.completedAt != null) {
                             Text(
                                 text = formatCompletedTime(todo.completedAt),
@@ -408,196 +511,137 @@ fun TodoListItem(
                             )
                         }
 
-                        // 提醒时间 + 附件数量（聚合：父 + 所有子任务）
-                        val aggregateCounts = aggregateAttachmentCounts(todo, subTasks)
-                        // 简化模式下仅保留提醒时间，分类标签与附件数量均隐藏
-                        if (todo.reminderTime != null || (!isSimpleMode && (aggregateCounts.first > 0 || aggregateCounts.second > 0 || categoryName != null))) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(top = 2.dp)
-                            ) {
-                                // 分类（内联展示，带阴影效果）— 简化模式下隐藏
-                                if (!isSimpleMode && categoryName != null) {
+                        // ========== 元数据智能布局 ==========
+                        // 判断是否有任何元数据需要显示
+                        val hasAnyMeta = hasReminder || hasAttachment || hasCategory
+                        if (hasAnyMeta) {
+                            // 附件图标颜色（已完成态视觉降权）
+                            val attachmentColor = if (todo.status == 1) CompletedColors.Text
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                            // 提醒时间相关数据
+                            val reminderData = if (hasReminder) {
+                                val reminder = formatReminderDisplay(todo.reminderTime!!)
+                                val reminderColor = if (todo.status == 1) {
+                                    CompletedColors.Text
+                                } else if (reminder.isOverdue) {
+                                    Color(0xFFDC2626)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                                Triple(reminder, reminderColor, reminder.isOverdue)
+                            } else null
+
+                            if (isMetaCrowded) {
+                                // ---- 拥挤模式（tag+reminder+attach三者都有）：两行布局 ----
+                                // 第一行：分类标签 + 附件计数
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                ) {
+                                    // 分类标签
                                     CategoryTagWithShadow(
-                                        categoryName = categoryName,
+                                        categoryName = categoryName!!,
                                         isCompleted = todo.status == 1
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                }
-
-                                if (todo.reminderTime != null) {
-                                    val reminder = formatReminderDisplay(todo.reminderTime)
-                                    // 已完成态视觉降权：强制使用 CompletedColors.Text 灰色，
-                                    // 覆盖"已过期"场景下的红色（Color(0xFFDC2626)）
-                                    val reminderColor = if (todo.status == 1) {
-                                        CompletedColors.Text
-                                    } else if (reminder.isOverdue) {
-                                        Color(0xFFDC2626)
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                    Icon(
-                                        imageVector = Icons.Default.Alarm,
-                                        contentDescription = if (reminder.isOverdue) "已过期提醒" else "提醒",
-                                        tint = reminderColor,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = reminder.text,
-                                        fontSize = 12.sp,
-                                        color = reminderColor,
-                                        fontWeight = if (reminder.isOverdue && todo.status != 1)
-                                            androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))   // 提醒与附件间 1 个空格的间距
-                                }
-
-                                // 附件计数（图片 + 语音）— 简化模式下隐藏
-                                if (!isSimpleMode && (aggregateCounts.first > 0 || aggregateCounts.second > 0)) {
-                                    // 附件图标颜色（已完成态视觉降权）
-                                    val attachmentColor = if (todo.status == 1) CompletedColors.Text
-                                            else MaterialTheme.colorScheme.onSurfaceVariant
-
-                                    // 语音附件
-                                    if (aggregateCounts.second > 0) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Mic,
-                                            contentDescription = "语音附件",
-                                            tint = attachmentColor,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                        Text(
-                                            text = "×${aggregateCounts.second}",
-                                            fontSize = 12.sp,
-                                            color = attachmentColor
-                                        )
-                                        // 两种附件间 1 个空格的间距
-                                        if (aggregateCounts.first > 0) {
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                        }
-                                    }
-
-                                    // 图片附件
-                                    if (aggregateCounts.first > 0) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Image,
-                                            contentDescription = "图片附件",
-                                            tint = attachmentColor,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                        Text(
-                                            text = "×${aggregateCounts.first}",
-                                            fontSize = 12.sp,
+                                    // 附件计数（语音+图片）
+                                    if (hasAttachment) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        AttachmentCountsRow(
+                                            imageCount = aggregateCounts.first,
+                                            voiceCount = aggregateCounts.second,
                                             color = attachmentColor
                                         )
                                     }
                                 }
-                            }
-                        }
-
-                        // 分类行已删除（迁移到提醒行左侧，详见下方 CategoryTagWithShadow）
-
-                        // 关联提示
-                        if (relationHint != null) {
-                            Text(
-                                text = relationHint,
-                                fontSize = 12.sp,
-                                color = Color(0xFF999999),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-
-                        // 进度条
-                        if (todo.status != 1 && todo.content.isNullOrBlank() && subTaskProgress != null) {
-                            SubTaskProgressBar(
-                                progress = parseProgress(subTaskProgress),
-                                modifier = Modifier.padding(top = 6.dp)
-                            )
-                        }
-                    }
-
-                    // 子任务进度（移至展开按钮左侧）+ 展开/收起按钮（带阴影）
-                    //
-                    // 多选模式保留显示的原因：
-                    // 1. 进度文本 "(0/1)" 是信息性 UI，不影响多选操作
-                    // 2. 展开/收起按钮是独立 Surface(onClick = onToggleExpand)，
-                    //    点击事件会被 Surface 消费，不会冒泡到外层 Card 的
-                    //    onTap（多选点击），所以两个操作互不干扰
-                    // 3. 保持 UI 一性：进入多选模式后所有 UI 元素不"凭空消失"
-                    // 简化模式下隐藏子任务进度文本与展开按钮
-                    if (!isSimpleMode && subTaskProgress != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            // 子任务进度文本：紧贴展开按钮左侧
-                            Text(
-                                text = "($subTaskProgress)",
-                                fontSize = 13.sp,
-                                // 已完成态视觉降权：使用 CompletedColors.Text 而非 primary 橙色
-                                color = if (todo.status == 1) CompletedColors.Text
-                                        else MaterialTheme.colorScheme.primary,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            // 展开/收起按钮：Surface 圆形阴影 2dp
-                            Surface(
-                                onClick = { if (!isClickBlocked) onToggleExpand() },
-                                shape = androidx.compose.foundation.shape.CircleShape,
-                                color = MaterialTheme.colorScheme.surface,
-                                shadowElevation = 2.dp,
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = if (effectiveExpanded) {
-                                            Icons.Default.ExpandLess
-                                        } else {
-                                            Icons.Default.ExpandMore
-                                        },
-                                        contentDescription = if (effectiveExpanded) "收起" else "展开",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                // 第二行：提醒时间单独一行（突出显示，过期时红色醒目）
+                                if (reminderData != null) {
+                                    val (reminder, reminderColor, isOverdue) = reminderData
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    ) {
+                                        ReminderInfoRow(
+                                            text = reminder.text,
+                                            color = reminderColor,
+                                            isOverdue = isOverdue && todo.status != 1
+                                        )
+                                    }
+                                }
+                            } else {
+                                // ---- 非拥挤模式：所有可见元数据同一行 ----
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                ) {
+                                    // 分类标签
+                                    if (hasCategory) {
+                                        CategoryTagWithShadow(
+                                            categoryName = categoryName!!,
+                                            isCompleted = todo.status == 1
+                                        )
+                                    }
+                                    // 提醒时间
+                                    if (reminderData != null) {
+                                        if (hasCategory) Spacer(modifier = Modifier.width(8.dp))
+                                        val (reminder, reminderColor, isOverdue) = reminderData
+                                        ReminderInfoRow(
+                                            text = reminder.text,
+                                            color = reminderColor,
+                                            isOverdue = isOverdue && todo.status != 1
+                                        )
+                                    }
+                                    // 附件计数
+                                    if (hasAttachment) {
+                                        if (hasReminder) Spacer(modifier = Modifier.width(8.dp))
+                                        AttachmentCountsRow(
+                                            imageCount = aggregateCounts.first,
+                                            voiceCount = aggregateCounts.second,
+                                            color = attachmentColor
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
+                // 关联提示（在主区域行下方，缩进对齐标题文本）
+                if (relationHint != null) {
+                    Text(
+                        text = relationHint,
+                        fontSize = 12.sp,
+                        color = Color(0xFF999999),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 52.dp, end = 16.dp, top = 4.dp)
+                    )
+                }
+
+                // 进度条（在主区域行下方，缩进对齐标题文本）
+                if (todo.status != 1 && todo.content.isNullOrBlank() && subTaskProgress != null) {
+                    SubTaskProgressBar(
+                        progress = parseProgress(subTaskProgress),
+                        modifier = Modifier.padding(start = 52.dp, end = 16.dp, top = 6.dp)
+                    )
+                }
+
                 // 展开时显示子任务列表
-                // 使用 AnimatedVisibility 包裹，提供平滑的展开/收起过渡动画
-                //
-                // 设计要点：
-                // - 默认 enter = expandVertically() + fadeIn()，从顶部展开 + 淡入
-                // - 默认 exit = shrinkVertically() + fadeOut()，从顶部收起 + 淡出
-                // - 触发场景：用户点击"展开子待办"按钮（手动展开）+ 全部子任务完成时自动收起
-                //   （自动收起由 HomeViewModel.toggleSubTaskCompletion 在 parentTodoCompleted = true 时
-                //   调用 toggleExpand(todoId) 触发，isExpanded 从 true 变 false，AnimatedVisibility 自动播放 exit 动画）
                 AnimatedVisibility(
-                    visible = effectiveExpanded && subTasks.isNotEmpty(),
+                    visible = effectiveExpanded,
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut()
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 60.dp, end = 16.dp, bottom = 16.dp)
+                            .padding(start = 52.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)
                     ) {
                         subTasks.forEach { subTask ->
                             SubTaskInTodoListItem(
                                 subTask = subTask,
                                 isParentCompleted = todo.status == 1,
-                                // 关键：多选模式下子任务勾选框不可点击
-                                // - 仅可查看，不可切换完成状态
-                                // - 视觉上 alpha 降低，提供 disabled 反馈
-                                // 左滑操作面板展开时也屏蔽（与父卡片保持一致）
                                 isEnabled = !isBatchMode && !isClickBlocked,
                                 onToggleComplete = { onToggleSubTask(subTask.id) },
-                                // 多选模式下长按子任务勾选框，弹 Snackbar 提示用户先退出多选模式
-                                // 文案来自 strings.xml，支持中英文等多语言
                                 onDisabledLongPress = {
                                     onShowSnackbar(exitBatchModeHint)
                                 }
@@ -608,7 +652,15 @@ fun TodoListItem(
                         }
                     }
                 }
-            }
+
+                // 底部兜底间距：当主区域行下方没有任何内容时，提供 16dp 底部内边距
+                val hasBelowContent = relationHint != null ||
+                    (todo.status != 1 && todo.content.isNullOrBlank() && subTaskProgress != null) ||
+                    effectiveExpanded
+                if (!hasBelowContent) {
+                    Spacer(modifier = Modifier.height(16.dp).fillMaxWidth())
+                }
+                    }
             },
             // 关键 measurePolicy：先测量 Column 拿到实际渲染高度，
             // 再用 Constraints.fixed(width=4dp, height=columnHeight) 测量 PriorityBar，
@@ -1100,6 +1152,92 @@ private fun CategoryTagWithShadow(
             modifier = Modifier
                 .background(color = bgColor, shape = RoundedCornerShape(4.dp))
                 .padding(horizontal = 8.dp, vertical = 2.dp)
+        )
+    }
+}
+
+/**
+ * 提醒时间显示组件（闹钟图标 + 时间文本）
+ *
+ * 用于元数据行中渲染提醒时间，支持过期红色高亮。
+ * 从原内联代码提取，避免拥挤/非拥挤两种布局下的代码重复。
+ *
+ * @param text 格式化后的提醒时间文字（如 "7月15日 20:00"、"明天09:00"）
+ * @param color 文字和图标颜色（过期为红色，已完成为灰色，普通为 onSurfaceVariant）
+ * @param isOverdue 是否已过期（true 时使用 SemiBold 字重增强视觉权重）
+ */
+@Composable
+private fun ReminderInfoRow(
+    text: String,
+    color: Color,
+    isOverdue: Boolean
+) {
+    Icon(
+        imageVector = Icons.Default.Alarm,
+        contentDescription = if (isOverdue) "已过期提醒" else "提醒",
+        tint = color,
+        modifier = Modifier.size(14.dp)
+    )
+    Spacer(modifier = Modifier.width(4.dp))
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        color = color,
+        fontWeight = if (isOverdue)
+            androidx.compose.ui.text.font.FontWeight.SemiBold
+        else
+            androidx.compose.ui.text.font.FontWeight.Normal
+    )
+}
+
+/**
+ * 附件计数行（语音 + 图片附件数量显示）
+ *
+ * 从原内联代码提取，避免拥挤/非拥挤两种布局下的代码重复。
+ * 当两种附件都有时，语音在前图片在后，中间留 6dp 间距。
+ *
+ * @param imageCount 图片附件数量
+ * @param voiceCount 语音附件数量
+ * @param color 图标和文字颜色（已完成态使用灰色降权）
+ */
+@Composable
+private fun AttachmentCountsRow(
+    imageCount: Int,
+    voiceCount: Int,
+    color: Color
+) {
+    // 语音附件
+    if (voiceCount > 0) {
+        Icon(
+            imageVector = Icons.Outlined.Mic,
+            contentDescription = "语音附件",
+            tint = color,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(2.dp))
+        Text(
+            text = "×$voiceCount",
+            fontSize = 12.sp,
+            color = color
+        )
+        // 两种附件间间距
+        if (imageCount > 0) {
+            Spacer(modifier = Modifier.width(6.dp))
+        }
+    }
+    // 图片附件
+    if (imageCount > 0) {
+        Icon(
+            imageVector = Icons.Outlined.Image,
+            contentDescription = "图片附件",
+            tint = color,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(2.dp))
+        Text(
+            text = "×$imageCount",
+            fontSize = 12.sp,
+            color = color
         )
     }
 }

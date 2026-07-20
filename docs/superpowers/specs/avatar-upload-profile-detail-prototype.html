@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>头像上传 + 个人信息页 - UI 原型</title>
+<style>
+  :root {
+    --bg: #F8F6F3;
+    --surface: #FFFFFF;
+    --primary: #FF9A5C;
+    --primary-light: #FFE4CC;
+    --primary-on: #FFFFFF;
+    --success: #7EC8A0;
+    --text-primary: #2D2D2D;
+    --text-secondary: #666666;
+    --text-hint: #999999;
+    --divider: #EEEEEE;
+    --black-overlay: rgba(0,0,0,0.6);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #2D2D2D;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    padding: 24px 16px;
+    color: var(--text-primary);
+  }
+  h1 {
+    color: #fff;
+    text-align: center;
+    font-size: 22px;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    color: #999;
+    text-align: center;
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+  .row {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .phone-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .phone-label {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .phone-label .badge {
+    display: inline-block;
+    background: var(--primary);
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .phone {
+    width: 340px;
+    height: 620px;
+    background: var(--bg);
+    border-radius: 24px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  /* ===== Screen 1: ProfileDetailScreen ===== */
+  .topbar {
+    height: 56px;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    position: relative;
+  }
+  .back-btn {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+  .topbar-title {
+    flex: 1;
+    text-align: center;
+    font-size: 17px;
+    font-weight: 600;
+    margin-right: 40px; /* 平衡 back 按钮宽度 */
+  }
+  .content {
+    height: calc(100% - 56px);
+    overflow-y: auto;
+    padding: 16px 20px;
+  }
+  .big-avatar-card {
+    background: linear-gradient(135deg, var(--primary-light) 0%, var(--surface) 100%);
+    border-radius: 20px;
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .big-avatar {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--primary-on);
+    font-size: 50px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 12px;
+    border: 3px solid var(--surface);
+    box-shadow: 0 4px 12px rgba(255,154,92,0.3);
+  }
+  .big-name {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+  .big-hint {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  /* ===== 7 行表项 ===== */
+  .row-item {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 0 16px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .row-label {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+  .row-spacer { flex: 1; }
+  .row-value {
+    font-size: 14px;
+    color: var(--text-primary);
+    margin-right: 4px;
+  }
+  .row-value.placeholder {
+    color: var(--text-hint);
+  }
+  .row-arrow {
+    color: var(--text-hint);
+    font-size: 16px;
+    line-height: 1;
+  }
+  .row-item.disabled {
+    opacity: 0.85;
+  }
+  .row-item.disabled .row-arrow {
+    visibility: hidden;
+  }
+
+  /* ===== Screen 2: AvatarSourceSheet ===== */
+  .scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+  }
+  .sheet {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+    padding: 16px 24px 24px;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.1);
+  }
+  .sheet-handle {
+    width: 36px;
+    height: 4px;
+    background: var(--divider);
+    border-radius: 2px;
+    margin: 0 auto 12px;
+  }
+  .sheet-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+  .source-row {
+    display: flex;
+    align-items: center;
+    padding: 12px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .source-row:hover {
+    background: rgba(0,0,0,0.04);
+  }
+  .source-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--primary-light);
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    margin-right: 16px;
+  }
+  .source-text { flex: 1; }
+  .source-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+  .source-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+  .source-divider {
+    height: 1px;
+    background: var(--divider);
+    margin: 0 8px;
+  }
+
+  /* ===== Screen 3: 预设库 (Sheet 内嵌) ===== */
+  .preset-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 4px 0;
+  }
+  .preset-item {
+    text-align: center;
+    cursor: pointer;
+  }
+  .preset-circle {
+    width: 100%;
+    aspect-ratio: 1;
+    background: #F0E6D8;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    margin-bottom: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+  .preset-circle.selected {
+    border: 3px solid var(--primary);
+  }
+  .preset-name {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  .preset-circle img {
+    width: 80%;
+    height: 80%;
+    object-fit: contain;
+  }
+
+  /* ===== Screen 4: CircularImageCropper ===== */
+  .cropper-bg {
+    position: absolute;
+    inset: 0;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .crop-image {
+    position: absolute;
+    width: 80%;
+    height: 80%;
+    background: linear-gradient(45deg, #FF9A5C, #7EB8DA, #7EC8A0);
+    opacity: 0.5;
+  }
+  .crop-overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--black-overlay);
+  }
+  .crop-circle {
+    position: absolute;
+    width: 280px;
+    height: 280px;
+    border-radius: 50%;
+    background: transparent;
+    border: 4px solid #FFF;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.6);
+  }
+  .crop-controls {
+    position: absolute;
+    bottom: 24px;
+    left: 24px;
+    right: 24px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .crop-btn {
+    padding: 10px 24px;
+    border-radius: 24px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .crop-btn.cancel {
+    background: rgba(255,255,255,0.15);
+    color: #FFF;
+  }
+  .crop-btn.confirm {
+    background: var(--primary);
+    color: var(--primary-on);
+  }
+  .crop-hint {
+    position: absolute;
+    top: 16px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    color: #FFF;
+    font-size: 13px;
+    opacity: 0.85;
+  }
+
+  /* ====== 注释侧边栏 ====== */
+  .annotations {
+    margin-top: 24px;
+    background: #1a1a1a;
+    border-radius: 16px;
+    padding: 16px 20px;
+    color: #aaa;
+    font-size: 12px;
+    line-height: 1.7;
+    max-width: 1200px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .annotations h3 {
+    color: var(--primary);
+    font-size: 14px;
+    margin: 12px 0 6px;
+  }
+  .annotations ul { padding-left: 20px; }
+  .annotations li { margin-bottom: 4px; }
+  .tag {
+    display: inline-block;
+    background: var(--primary);
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-right: 4px;
+  }
+  .tag.gray { background: #555; }
+</style>
+</head>
+<body>
+
+<h1>头像上传 + 个人信息页 — UI 原型</h1>
+<p class="subtitle">3 屏展示：ProfileDetailScreen / AvatarSourceSheet / CircularImageCropper</p>
+
+<div class="row">
+
+  <!-- ===== Screen 1: ProfileDetailScreen ===== -->
+  <div class="phone-wrap">
+    <div class="phone-label">① 个人信息页 <span class="badge">主页</span></div>
+    <div class="phone">
+      <div class="topbar">
+        <div class="back-btn">←</div>
+        <div class="topbar-title">个人信息</div>
+      </div>
+      <div class="content">
+        <!-- 大头像卡片 -->
+        <div class="big-avatar-card">
+          <div class="big-avatar">柯</div>
+          <div class="big-name">小柯基</div>
+          <div class="big-hint">点击头像更换 · 点击名字修改</div>
+        </div>
+
+        <!-- 性别（可设置） -->
+        <div class="row-item">
+          <div class="row-label">性别</div>
+          <div class="row-spacer"></div>
+          <div class="row-value">男</div>
+          <div class="row-arrow">›</div>
+        </div>
+
+        <!-- 占位项（4 项） -->
+        <div class="row-item disabled">
+          <div class="row-label">手机号</div>
+          <div class="row-spacer"></div>
+          <div class="row-value placeholder">暂未设置</div>
+          <div class="row-arrow">›</div>
+        </div>
+        <div class="row-item disabled">
+          <div class="row-label">设置邮箱</div>
+          <div class="row-spacer"></div>
+          <div class="row-value placeholder">暂未设置</div>
+          <div class="row-arrow">›</div>
+        </div>
+        <div class="row-item disabled">
+          <div class="row-label">修改密码</div>
+          <div class="row-spacer"></div>
+          <div class="row-value placeholder">暂未设置</div>
+          <div class="row-arrow">›</div>
+        </div>
+        <div class="row-item disabled">
+          <div class="row-label">登录设备管理</div>
+          <div class="row-spacer"></div>
+          <div class="row-value placeholder">暂未设置</div>
+          <div class="row-arrow">›</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Screen 2: AvatarSourceSheet ===== -->
+  <div class="phone-wrap">
+    <div class="phone-label">② 头像源选择 <span class="badge">BottomSheet</span></div>
+    <div class="phone">
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">选择头像来源</div>
+
+        <div class="source-row">
+          <div class="source-icon">📷</div>
+          <div class="source-text">
+            <div class="source-title">拍照</div>
+            <div class="source-desc">使用摄像头拍摄新头像</div>
+          </div>
+        </div>
+        <div class="source-divider"></div>
+
+        <div class="source-row">
+          <div class="source-icon">🖼️</div>
+          <div class="source-text">
+            <div class="source-title">从相册选择</div>
+            <div class="source-desc">Android 13+ 使用 PhotoPicker，无需权限</div>
+          </div>
+        </div>
+        <div class="source-divider"></div>
+
+        <div class="source-row">
+          <div class="source-icon">🐕</div>
+          <div class="source-text">
+            <div class="source-title">预设头像库</div>
+            <div class="source-desc">从 13 种柯基动作中选择</div>
+          </div>
+        </div>
+        <div class="source-divider"></div>
+
+        <div class="source-row">
+          <div class="source-icon">📁</div>
+          <div class="source-text">
+            <div class="source-title">从文件选择（兼容）</div>
+            <div class="source-desc">Android 12 及以下使用</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Screen 3: PresetAvatarGrid（嵌入 Sheet） ===== -->
+  <div class="phone-wrap">
+    <div class="phone-label">③ 预设头像库 <span class="badge">内嵌</span></div>
+    <div class="phone">
+      <div class="scrim"></div>
+      <div class="sheet" style="height: 80%; overflow-y: auto;">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">选择预设头像</div>
+
+        <div class="preset-grid">
+          <div class="preset-item">
+            <div class="preset-circle">🪑</div>
+            <div class="preset-name">坐下</div>
+          </div>
+          <div class="preset-item">
+            <div class="preset-circle selected">🐕</div>
+            <div class="preset-name">站立</div>
+          </div>
+          <div class="preset-item">
+            <div class="preset-circle">😉</div>
+            <div class="preset-name">眨眼</div>
+          </div>
+          <div class="preset-item">
+            <div class="preset-circle">🎾</div>
+            <div class="preset-name">摇尾</div>
+          </div>
+          <div class="preset-item">
+            <div class="preset-circle">🤔</div>
+            <div class="preset-name">歪头</div>
+          </div>
+          <div class="preset-item">
+            <div class="preset-circle">😴</div>
+            <div class="preset-name">睡觉</div>
+          </div>
+          <div class="preset-item">
+            <div class="preset-circle">😢</div>
+            <div class="preset-name">难过</div>
+          </div>
+          <div class="preset-item">
+            <div class="preset-circle">😎</div>
+            <div class="preset-name">骄傲</div>
+          </div>
+          <div class="preset-item">
+            <div class="preset-circle">😊</div>
+            <div class="preset-name">害羞</div>
+          </div>
+          <div class="preset-item">
+            <div class="preset-circle">😰</div>
+            <div class="preset-name">焦虑</div>
+          </div>
+          <div class="preset-item">
+            <div class="preset-circle">🌀</div>
+            <div class="preset-name">打滚</div>
+          </div>
+          <div class="preset-item">
+            <div class="preset-circle">🏃</div>
+            <div class="preset-name">奔跑</div>
+          </div>
+          <div class="preset-item">
+            <div class="preset-circle">🛌</div>
+            <div class="preset-name">趴卧</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Screen 4: CircularImageCropper ===== -->
+  <div class="phone-wrap">
+    <div class="phone-label">④ 圆形裁剪 <span class="badge">Dialog</span></div>
+    <div class="phone">
+      <div class="cropper-bg">
+        <!-- 模拟图片背景（彩色渐变占位） -->
+        <div class="crop-image"></div>
+        <div class="crop-overlay"></div>
+        <div class="crop-circle"></div>
+        <div class="crop-hint">拖动图片 · 双指缩放</div>
+        <div class="crop-controls">
+          <div class="crop-btn cancel">取消</div>
+          <div class="crop-btn confirm">使用</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="annotations">
+  <h3>设计要点</h3>
+  <ul>
+    <li><span class="tag">大头像</span>120dp 圆形 + 主色背景 + 白色首字母（与改造前 72dp 同 UserAvatar 组件，缩放一致）</li>
+    <li><span class="tag">表项</span>56dp 高 + 12dp 圆角 + 1dp 阴影 + 主色文字标签 + 灰色占位（已对齐 UI设计规范 §12.1.2）</li>
+    <li><span class="tag">BottomSheet</span>4 个来源横向等宽，主色圆形图标 + 中文标题 + 灰色描述</li>
+    <li><span class="tag">预设库</span>3 列网格复用柯基动作帧，selected 状态用主色 3dp 边框</li>
+    <li><span class="tag">裁剪</span>半透明黑色蒙版 + 白色圆形边框（box-shadow 9999px 实现穿透蒙版）</li>
+  </ul>
+  <h3>交互流</h3>
+  <ul>
+    <li>屏幕 ①: 抽屉/Profile 头卡头像 → 跳本页</li>
+    <li>屏幕 ①: 点击大头像 → 弹屏幕 ②</li>
+    <li>屏幕 ②: 选"拍照"或"相册" → 弹屏幕 ④ 裁剪</li>
+    <li>屏幕 ②: 选"预设库" → 弹屏幕 ③</li>
+    <li>屏幕 ④: 拖动/缩放 → 点"使用" → 头像更新 + 关闭所有弹层</li>
+  </ul>
+  <h3>响应式</h3>
+  <ul>
+    <li>屏幕宽度 ≥ 360dp：底部导航 4 项完整显示</li>
+    <li>屏幕宽度 &lt; 360dp：BottomSheet 改为全屏 Dialog</li>
+    <li>预设库网格：宽度 &lt; 360dp 时降为 2 列（本期固定 3 列，后续优化）</li>
+  </ul>
+</div>
+
+</body>
+</html>

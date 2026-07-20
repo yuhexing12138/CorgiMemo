@@ -11,9 +11,11 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -160,6 +162,12 @@ internal fun defaultTodoButtons(
  * @param staggerRatio 级联延迟比例（默认 0.00，同步移动）
  * @param thresholdRatio 吸附比例（默认 0.20）
  * @param easing 缓动函数（默认弹性效果，对应 Web 原型 cubic-bezier(0.34, 1.56, 0.64, 1)）
+ * @param contentPadding 内容区内边距（v2026-07-20 新增）
+ *        - 默认 PaddingValues(horizontal=0.dp, vertical=6.dp)
+ *        - 给 Card 的 Modifier.shadow 预留空间，否则阴影会被外层 .clip(16.dp) 裁切
+ *        - vertical 6dp 至少要 ≥ shadow.elevation 才能完整显示阴影
+ *          （TodoListItem 默认 shadow=4dp / 长按 8dp，6dp vertical 留 4dp 给默认阴影、1dp 给长按阴影溢出）
+ *        - horizontal 仍为 0dp，避免影响左滑手势判定区
  * @param content 卡片内容（通常是 TodoListItem）
  */
 @Composable
@@ -183,6 +191,12 @@ fun SwipeableTodoBox(
     staggerRatio: Float = 0.00f,
     thresholdRatio: Float = 0.20f,
     easing: Easing = ElasticOutEasing,
+    /**
+     * 内容区内边距（v2026-07-20 新增）
+     * 给 Card shadow 预留显示空间，避免被外层 .clip(RoundedCornerShape) 裁切
+     * 默认上下 6dp，左右 0dp（不影响左滑手势）
+     */
+    contentPadding: PaddingValues = PaddingValues(horizontal = 0.dp, vertical = 6.dp),
     content: @Composable (isClickBlocked: Boolean) -> Unit
 ) {
     val density = LocalDensity.current
@@ -280,6 +294,11 @@ fun SwipeableTodoBox(
     // 双层叠加 Layout：内容层(z=10) + 操作层(z=1)
     Layout(
         modifier = modifier
+            // v2026-07-20：先 padding 再 clip
+            // - padding(contentPadding) 给 Card 的 Modifier.shadow 预留空间
+            // - 否则 Card 周围画出的 shadow 会被外层 .clip(RoundedCornerShape) 裁切
+            // - padding 在 clip 之前：clip 的形状只裁切 padding 内的内容，padding 区域的 shadow 不会被切
+            .padding(contentPadding)
             .clip(RoundedCornerShape(cornerRadiusDp))
             // 第一层防护：在外层拦截 down 事件，阻止父级 ModalNavigationDrawer
             // 看到 down 后启动 Drawer 打开手势

@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color  // v3 新增：与首页 ambient shadow 同步使用 Color.Black
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,20 +65,24 @@ fun DeletedTodoCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)  // v3: vertical 4→6dp 给 4dp shadow 留空间
             // 优先级边框：1.5dp + 优先级色 alpha 0.6f
             .border(
                 width = 1.5.dp,
                 color = priorityVisual.border.copy(alpha = 0.6f),
                 shape = RoundedCornerShape(12.dp)
             )
-            // 优先级阴影：2dp + 优先级色 alpha 0.3f
-            // 与 CenterEditButton.kt L92-96 的彩色阴影模式同源
+            // 优先级阴影：4dp + 浅黑环境阴影 + 优先级色 spot 阴影
+            // v2026-07-20 v3 改动（与 TodoListItem 保持一致）：
+            //   1) elevation 2→4dp，与首页 TodoListItem 静态阴影保持一致
+            //   2) ambientColor 改为浅黑（alpha 0.12f）保证基础"底"阴影
+            //   3) spotColor 用优先级色 alpha 0.6f 形成明显"边缘抬升感"
+            //   4) ambient 与 spot 解耦（与首页同源）→ 阴影在浅色卡片上可见
             .shadow(
-                elevation = 2.dp,
+                elevation = 4.dp,
                 shape = RoundedCornerShape(12.dp),
-                ambientColor = priorityVisual.shadow,
-                spotColor = priorityVisual.shadow
+                ambientColor = Color.Black.copy(alpha = 0.12f),  // v3: 与首页同源
+                spotColor = priorityVisual.shadow.copy(alpha = 0.6f)  // v3: 与首页同源
             ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(

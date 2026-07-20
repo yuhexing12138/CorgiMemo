@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CorgiMemo 待办卡片布局重设计原型 v12</title>
+<style>
+  :root {
+    --primary: #FF9A5C;
+    --primary-light: #FFE4CC;
+    --primary-dark: #E88A4D;
+    --bg: #F8F6F3;
+    --card-bg: #FFFFFF;
+    --text-main: #2D2D2D;
+    --text-sub: #666666;
+    --text-hint: #999999;
+    --divider: #EEEEEE;
+    --danger: #DC2626;
+    --success: #7EC8A0;
+    --high-priority: #FF8A80;
+    --medium-priority: #FFB74D;
+    --low-priority: #90CAF9;
+    --none-priority: #C8E6C9;
+    --card-radius: 18px;
+    --tag-radius: 6px;
+    --transition: 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #E8E2DB;
+    color: var(--text-main);
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+  }
+
+  .phone-frame {
+    width: 390px;
+    background: var(--bg);
+    border-radius: 40px;
+    padding: 0 0 20px 0;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* 状态栏 */
+  .status-bar {
+    height: 44px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 24px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-main);
+  }
+  .status-bar .right { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+
+  /* 顶部导航 */
+  .nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 20px 12px;
+    position: relative;
+  }
+  .nav-left { display: flex; align-items: center; gap: 12px; }
+  .nav-bar .title-wrap { display: flex; align-items: baseline; gap: 6px; }
+  .nav-bar .title { font-size: 28px; font-weight: 700; }
+  .nav-bar .title-sub { font-size: 20px; color: var(--text-sub); }
+  .menu-btn {
+    width: 36px; height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    cursor: pointer;
+    border-radius: 50%;
+    transition: background 0.2s;
+    position: relative;
+  }
+  .menu-btn:hover { background: rgba(0,0,0,0.05); }
+
+  /* 三点菜单下拉 */
+  .dropdown-menu {
+    position: absolute;
+    top: 50px;
+    right: 20px;
+    background: var(--card-bg);
+    border-radius: 14px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    padding: 6px 0;
+    z-index: 100;
+    min-width: 160px;
+    opacity: 0;
+    transform: scale(0.9) translateY(-8px);
+    transform-origin: top right;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s cubic-bezier(0.4,0,0.2,1);
+  }
+  .dropdown-menu.show {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    pointer-events: auto;
+  }
+  .dropdown-item {
+    padding: 12px 18px;
+    font-size: 15px;
+    color: var(--text-main);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.15s;
+  }
+  .dropdown-item:hover { background: var(--bg); }
+  .dropdown-item .icon { font-size: 18px; width: 22px; text-align: center; }
+  .dropdown-divider { height: 1px; background: var(--divider); margin: 4px 0; }
+
+  /* 搜索框 */
+  .search-bar {
+    margin: 0 20px 16px;
+    height: 44px;
+    background: rgba(255,154,92,0.1);
+    border-radius: 22px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 8px;
+    color: var(--text-hint);
+    font-size: 15px;
+  }
+
+  /* 模式切换提示条 */
+  .mode-indicator {
+    text-align: center;
+    padding: 4px 20px 8px;
+    font-size: 13px;
+    color: var(--primary);
+    font-weight: 500;
+    transition: color var(--transition);
+  }
+
+  /* 区域折叠标题 */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 20px 12px;
+    font-size: 16px;
+    color: var(--primary);
+    font-weight: 500;
+    transition: opacity var(--transition);
+  }
+  .section-header.pending { color: #6B8EDB; }
+  .section-header .count { font-weight: 400; }
+
+  /* 卡片列表 */
+  .card-list {
+    padding: 0 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* ====== 核心：待办卡片 ====== */
+  .todo-card {
+    background: var(--card-bg);
+    border-radius: var(--card-radius);
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06), 0 0 0 1.5px rgba(255,183,77,0.5);
+    transition: box-shadow 0.25s ease, transform 0.2s ease;
+  }
+  .todo-card.high { box-shadow: 0 4px 12px rgba(0,0,0,0.06), 0 0 0 1.5px rgba(255,138,128,0.55); }
+  .todo-card.low  { box-shadow: 0 4px 12px rgba(0,0,0,0.06), 0 0 0 1.5px rgba(144,202,249,0.55); }
+  .todo-card.none { box-shadow: 0 4px 12px rgba(0,0,0,0.06), 0 0 0 1.5px rgba(200,230,201,0.7); }
+
+  .priority-bar {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+  }
+  .priority-bar.high { background: var(--high-priority); }
+  .priority-bar.medium { background: var(--medium-priority); }
+  .priority-bar.low { background: var(--low-priority); }
+  .priority-bar.none { background: var(--none-priority); }
+
+  .pin-icon {
+    position: absolute;
+    top: 10px; right: 12px;
+    width: 16px; height: 16px;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    z-index: 3;
+    pointer-events: none;
+    transition: opacity var(--transition);
+  }
+
+  /* 卡片内容区 */
+  .card-inner {
+    padding: 14px 16px 14px 20px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 主区域行：复选框 + 主内容列（标题+元数据）
+   * 布局与Compose源码一致：Row(verticalAlignment=CenterVertically) { checkbox, Column { title, meta } }
+   * 复选框通过align-items:center相对于"标题+元数据"整体垂直居中
+   * 注意：CSS中max-height过渡不如Compose animateContentSize()平滑，
+   *       实际Compose实现中高度动画会自然带动复选框位置平滑移动，不会跳动 */
+  .main-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-right: 22px; /* 留空间给置顶图标 */
+  }
+
+  /* 主内容列：标题行 + 元数据行 */
+  .main-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 标题行：标题 + 进度 + 展开按钮 */
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 28px;
+  }
+
+  .checkbox {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    border: 2px solid var(--text-hint);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background var(--transition),
+                border-color var(--transition);
+    background: transparent;
+  }
+  .checkbox.checked {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+  .checkbox.checked::after {
+    content: "✓";
+    color: white;
+    font-size: 13px;
+    font-weight: bold;
+  }
+
+  .title-text {
+    flex: 1;
+    font-size: 16sp;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-main);
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    transition: color var(--transition);
+  }
+  .title-text.done {
+    text-decoration: line-through;
+    color: var(--text-sub);
+  }
+
+  /* 进度文本：简化模式下隐藏，详情模式下显示 */
+  .subtask-progress {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    transition: opacity var(--transition),
+                max-width var(--transition),
+                margin var(--transition),
+                color var(--transition);
+    opacity: 1;
+  }
+  body.simple-mode .subtask-progress {
+    display: none;
+  }
+
+  /* 展开按钮：两种模式下都保留显示，方便用户随时展开/收起子任务 */
+  .expand-btn {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: var(--card-bg);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0; /* 防止被长标题压缩 */
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1),
+                background 0.2s,
+                box-shadow 0.2s;
+    border: none;
+    color: var(--text-sub);
+    font-size: 16px;
+    transform: rotate(0deg);
+    opacity: 1;
+    overflow: hidden;
+  }
+  .expand-btn:hover { background: #f5f5f5; }
+  .expand-btn.expanded { transform: rotate(180deg); }
+  /* 无子任务时隐藏展开按钮（内联 style 控制，不是模式切换导致的） */
+
+  /* 元数据行：智能布局
+   * - meta-crowded（tag+reminder+attach三者都有）：第一行tag+attach，第二行reminder单独一行
+   * - 普通（只有reminder或reminder+一个元素）：所有元素同一行
+   * - 简化模式：仅显示reminder，tag/attach隐藏 */
+  .meta-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    row-gap: 4px;
+    padding-left: 0;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    margin-top: 0;
+    transition: max-height var(--transition),
+                opacity 0.25s ease 0.05s,
+                margin-top var(--transition);
+  }
+  body.show-details .meta-row {
+    max-height: 60px;
+    opacity: 1;
+    margin-top: 6px;
+  }
+  /* 三者都有时，提醒时间单独占第二行（order:2让它换行到第二行） */
+  body.show-details .meta-row.meta-crowded {
+    max-height: 50px;
+  }
+  .meta-row.meta-crowded .reminder {
+    flex-basis: 100%;
+    order: 2;
+  }
+  body.simple-mode .meta-row {
+    max-height: 0;
+    opacity: 0;
+    margin-top: 0;
+  }
+  /* 简化模式下，如果有提醒时间则保留显示 */
+  body.simple-mode .meta-row.has-reminder {
+    max-height: 30px;
+    opacity: 1;
+    margin-top: 4px;
+    flex-wrap: nowrap;
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: var(--tag-radius);
+    line-height: 1.5;
+    flex-shrink: 0;
+    box-shadow: 2px 2px 4px rgba(0,0,0,0.08);
+    transition: opacity var(--transition), transform var(--transition), max-width var(--transition), padding var(--transition);
+  }
+  .tag.done {
+    background: rgba(136,136,136,0.12);
+    color: #888;
+  }
+  body.simple-mode .tag {
+    display: none;
+  }
+
+  .reminder {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12px;
+    color: var(--text-sub);
+    line-height: 1.5;
+    flex-shrink: 1;
+    min-width: 0;
+    white-space: nowrap;
+  }
+  .reminder .icon { font-size: 13px; flex-shrink: 0; }
+  .reminder.overdue { color: var(--danger); font-weight: 600; }
+  .reminder .status-dot {
+    display: inline-block;
+    width: 3px; height: 3px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.5;
+    margin: 0 2px;
+    flex-shrink: 0;
+  }
+  .reminder .status-text {
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  /* 简化模式下仅保留提醒时间，隐藏分类标签和附件（在 meta-row 级别控制） */
+  body.simple-mode .reminder {
+    font-size: 12px;
+  }
+
+  .attach {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 12px;
+    color: var(--text-sub);
+    line-height: 1.5;
+    flex-shrink: 0;
+    transition: opacity var(--transition), max-width var(--transition);
+  }
+  .attach .icon { font-size: 13px; }
+  body.simple-mode .attach {
+    display: none;
+  }
+
+  /* 关联提示（在 main-row 外，需要缩进对齐标题） */
+  .relation-hint {
+    padding-left: 34px;
+    font-size: 12px;
+    color: var(--text-hint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-height: 0;
+    opacity: 0;
+    margin-top: 0;
+    transition: max-height var(--transition),
+                opacity 0.25s ease,
+                margin-top var(--transition);
+  }
+  body.show-details .relation-hint.show {
+    max-height: 24px;
+    opacity: 1;
+    margin-top: 4px;
+  }
+
+  /* 进度条（在 main-row 外，缩进对齐标题） */
+  .progress-bar-wrap {
+    padding-left: 34px;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    margin-top: 0;
+    transition: max-height var(--transition),
+                opacity 0.25s ease,
+                margin-top var(--transition);
+  }
+  body.show-details .progress-bar-wrap.show {
+    max-height: 20px;
+    opacity: 1;
+    margin-top: 6px;
+  }
+  .progress-bar {
+    height: 4px;
+    background: var(--divider);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-bar .fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+  }
+
+  /* 子任务列表（展开区域）
+   * 简化模式下子任务默认收起，但用户点击展开按钮仍可展开查看 */
+  .subtasks-wrap {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.32s cubic-bezier(0.4,0,0.2,1),
+                opacity 0.25s ease,
+                margin-top 0.32s cubic-bezier(0.4,0,0.2,1);
+    opacity: 0;
+    margin-top: 0;
+  }
+  .subtasks-wrap.open {
+    max-height: 500px;
+    opacity: 1;
+    margin-top: 8px;
+  }
+  /* 简化模式下切换到详情模式时不强制隐藏已展开的子任务 */
+  .subtasks-inner {
+    padding-left: 34px;
+    padding-bottom: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .subtask-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--text-main);
+  }
+  .subtask-checkbox {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    border: 1.5px solid var(--divider);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .subtask-checkbox.done {
+    background: var(--primary-light);
+    border-color: var(--primary-light);
+  }
+  .subtask-checkbox.done::after {
+    content: "✓";
+    color: white;
+    font-size: 10px;
+    font-weight: bold;
+  }
+  /* 子待办标题：允许换行显示（与父待办的单行省略不同） */
+  .subtask-title {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.4;
+    word-break: break-word;
+    padding: 2px 0; /* 多行时上下留适当间距 */
+  }
+  .subtask-title.done {
+    text-decoration: line-through;
+    color: var(--text-hint);
+  }
+  .subtask-attach {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 12px;
+    color: var(--text-sub);
+    flex-shrink: 0;
+  }
+
+  /* 底部提示 */
+  .prototype-hint {
+    text-align: center;
+    padding: 20px 20px 0;
+    font-size: 13px;
+    color: var(--text-hint);
+    line-height: 1.7;
+  }
+  .prototype-hint strong { color: var(--primary); }
+  .prototype-hint kbd {
+    background: var(--card-bg);
+    border: 1px solid var(--divider);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 12px;
+    font-family: inherit;
+  }
+
+  /* 底部导航 */
+  .bottom-nav {
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 0 12px;
+    margin-top: 16px;
+    border-top: 1px solid var(--divider);
+    background: var(--card-bg);
+  }
+  .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    font-size: 11px;
+    color: var(--text-hint);
+  }
+  .nav-item.active { color: var(--primary); }
+  .nav-item .nav-icon { font-size: 22px; }
+  .nav-fab {
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    margin-top: -20px;
+    box-shadow: 0 4px 12px rgba(255,154,92,0.4);
+  }
+
+  .corgi-fab {
+    position: absolute;
+    bottom: 76px;
+    left: 16px;
+    width: 56px; height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    transition: transform var(--transition);
+  }
+
+  /* 模式切换按钮演示区 */
+  .mode-toggle-bar {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    padding: 8px 20px 4px;
+  }
+  .mode-toggle {
+    padding: 8px 20px;
+    border: 1.5px solid var(--primary);
+    background: var(--card-bg);
+    color: var(--primary);
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.25s ease;
+  }
+  .mode-toggle:first-child { border-radius: 20px 0 0 20px; }
+  .mode-toggle:last-child { border-radius: 0 20px 20px 0; border-left: none; }
+  .mode-toggle.active {
+    background: var(--primary);
+    color: white;
+  }
+
+  /* 卡片入场动画 */
+  @keyframes cardEnter {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .todo-card {
+    animation: cardEnter 0.4s ease backwards;
+  }
+  .todo-card:nth-child(1) { animation-delay: 0.05s; }
+  .todo-card:nth-child(2) { animation-delay: 0.1s; }
+  .todo-card:nth-child(3) { animation-delay: 0.15s; }
+  .todo-card:nth-child(4) { animation-delay: 0.2s; }
+  .todo-card:nth-child(5) { animation-delay: 0.25s; }
+  .todo-card:nth-child(6) { animation-delay: 0.3s; }
+
+</style>
+</head>
+<body class="show-details">
+
+<div class="phone-frame">
+  <!-- 状态栏 -->
+  <div class="status-bar">
+    <span>13:46</span>
+    <span class="right"><span>0.13</span><span>5G</span><span>100</span></span>
+  </div>
+
+  <!-- 顶部导航 -->
+  <div class="nav-bar">
+    <div class="nav-left">
+      <span style="font-size:22px;cursor:pointer;">☰</span>
+      <div class="title-wrap">
+        <span class="title">待办</span>
+        <span class="title-sub">20 07月 ▾</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:4px;align-items:center;">
+      <span style="font-size:22px;cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;">📶</span>
+      <div class="menu-btn" id="menuBtn" onclick="toggleMenu()">⋮</div>
+    </div>
+    <!-- 下拉菜单 -->
+    <div class="dropdown-menu" id="dropdownMenu">
+      <div class="dropdown-item" onclick="setMode('simple');toggleMenu();">
+        <span class="icon">👁</span>
+        <span id="menuItemText">隐藏详情</span>
+      </div>
+      <div class="dropdown-item"><span class="icon">✓</span>隐藏已完成</div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-item"><span class="icon">↕</span>待办排序</div>
+      <div class="dropdown-item"><span class="icon">🏷</span>分类管理</div>
+      <div class="dropdown-item"><span class="icon">📤</span>批量操作</div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-item"><span class="icon">📊</span>数据统计</div>
+    </div>
+  </div>
+
+  <!-- 搜索框 -->
+  <div class="search-bar">
+    <span>🔍</span>
+    <span>搜索待办...</span>
+  </div>
+
+  <!-- 模式切换演示条 -->
+  <div class="mode-toggle-bar">
+    <button class="mode-toggle" id="btnSimple" onclick="setMode('simple')">隐藏详情</button>
+    <button class="mode-toggle active" id="btnDetails" onclick="setMode('details')">显示详情</button>
+  </div>
+
+  <div class="mode-indicator" id="modeIndicator">▼ 显示详情模式（点击右上角 ⋮ 或上方按钮切换模式）</div>
+
+  <!-- 置顶区 -->
+  <div class="section-header">
+    <span>▾</span>
+    <span>收起置顶</span>
+    <span class="count">(2)</span>
+  </div>
+
+  <div class="card-list">
+
+    <!-- 卡片1：高优先级 + 分类 + 过期提醒 + 语音附件 + 子任务，初始收起 -->
+    <div class="todo-card high" id="card1">
+      <div class="priority-bar high"></div>
+      <div class="pin-icon">📌</div>
+      <div class="card-inner">
+        <div class="main-row">
+          <div class="checkbox" onclick="this.classList.toggle('checked')"></div>
+          <div class="main-content">
+            <div class="title-row">
+              <div class="title-text">TRAE 初赛参赛贴撰写</div>
+              <div class="subtask-progress">(0/5)</div>
+              <button class="expand-btn" onclick="toggleCard('card1')">▾</button>
+            </div>
+            <div class="meta-row has-reminder meta-crowded">
+              <span class="tag">工作</span>
+              <span class="reminder overdue">
+                <span class="icon">⏰</span>
+                <span>7月15日 20:00</span>
+                <span class="status-dot"></span>
+                <span class="status-text">已过期</span>
+              </span>
+              <span class="attach"><span class="icon">🎤</span>×1</span>
+            </div>
+          </div>
+        </div>
+        <div class="subtasks-wrap">
+          <div class="subtasks-inner">
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">撰写作品概述</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">整理核心功能亮点截图</div>
+              <div class="subtask-attach"><span>🖼</span>×2</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">撰写技术架构说明</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">录制演示视频</div>
+              <div class="subtask-attach"><span>🎤</span>×1</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">最终排版校对与提交</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片2：中优先级(置顶) + 过期提醒 + 图片附件，初始展开 -->
+    <div class="todo-card" id="card2">
+      <div class="priority-bar medium"></div>
+      <div class="pin-icon">📌</div>
+      <div class="card-inner">
+        <div class="main-row">
+          <div class="checkbox" onclick="this.classList.toggle('checked')"></div>
+          <div class="main-content">
+            <div class="title-row">
+              <div class="title-text">演示种子数据注入机制</div>
+              <div class="subtask-progress">(1/3)</div>
+              <button class="expand-btn expanded" onclick="toggleCard('card2')">▾</button>
+            </div>
+            <div class="meta-row has-reminder meta-crowded">
+              <span class="tag">工作</span>
+              <span class="reminder overdue">
+                <span class="icon">⏰</span>
+                <span>7月14日 15:00</span>
+                <span class="status-dot"></span>
+                <span class="status-text">已过期</span>
+              </span>
+              <span class="attach"><span class="icon">🖼</span>×3</span>
+            </div>
+          </div>
+        </div>
+        <div class="subtasks-wrap open">
+          <div class="subtasks-inner">
+            <div class="subtask-item">
+              <div class="subtask-checkbox done" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title done">设计种子数据JSON结构</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">编写Repository注入逻辑</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">首次启动幂等检测</div>
+              <div class="subtask-attach"><span>🖼</span>×1</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 待完成区 -->
+  <div class="section-header pending">
+    <span>▾</span>
+    <span>收起待完成</span>
+    <span class="count">(4)</span>
+  </div>
+
+  <div class="card-list">
+
+    <!-- 卡片3：中优先级 + 长标题 + 过期 + 图片附件，初始收起 -->
+    <div class="todo-card" id="card3">
+      <div class="priority-bar medium"></div>
+      <div class="card-inner">
+        <div class="main-row">
+          <div class="checkbox" onclick="this.classList.toggle('checked')"></div>
+          <div class="main-content">
+            <div class="title-row">
+              <div class="title-text">刻记+ 数据库架构设计与版本迁移方案编写</div>
+              <div class="subtask-progress">(0/3)</div>
+              <button class="expand-btn" onclick="toggleCard('card3')">▾</button>
+            </div>
+            <div class="meta-row has-reminder meta-crowded">
+              <span class="tag">学习</span>
+              <span class="reminder overdue">
+                <span class="icon">⏰</span>
+                <span>6月20日 09:00</span>
+                <span class="status-dot"></span>
+                <span class="status-text">已过期</span>
+              </span>
+              <span class="attach"><span class="icon">🖼</span>×2</span>
+            </div>
+          </div>
+        </div>
+        <div class="progress-bar-wrap show">
+          <div class="progress-bar"><div class="fill" style="width:0%"></div></div>
+        </div>
+        <div class="subtasks-wrap">
+          <div class="subtasks-inner">
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">设计Room Entity关系</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">编写Migration从版本8到9</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">测试数据库升级路径</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片4：低优先级 + 未来日期（明天）+ 双附件 -->
+    <div class="todo-card low" id="card4">
+      <div class="priority-bar low"></div>
+      <div class="card-inner">
+        <div class="main-row">
+          <div class="checkbox" onclick="this.classList.toggle('checked')"></div>
+          <div class="main-content">
+            <div class="title-row">
+              <div class="title-text">灵感页富文本编辑器集成</div>
+              <div class="subtask-progress">(0/2)</div>
+              <button class="expand-btn" onclick="toggleCard('card4')">▾</button>
+            </div>
+            <div class="meta-row has-reminder meta-crowded">
+              <span class="tag">学习</span>
+              <span class="reminder">
+                <span class="icon">⏰</span>
+                <span>明天09:00</span>
+              </span>
+              <span class="attach"><span class="icon">🎤</span>×1</span>
+              <span class="attach"><span class="icon">🖼</span>×2</span>
+            </div>
+          </div>
+        </div>
+        <div class="relation-hint show">🔗 关联到：富文本编辑器调研</div>
+        <div class="subtasks-wrap">
+          <div class="subtasks-inner">
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">引入compose-rich-editor依赖</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">配置工具栏与样式</div>
+              <div class="subtask-attach"><span>🖼</span>×1</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片5：无优先级 + 今天提醒 + 无附件无子任务 -->
+    <div class="todo-card none" id="card5">
+      <div class="priority-bar none"></div>
+      <div class="card-inner">
+        <div class="main-row">
+          <div class="checkbox" onclick="this.classList.toggle('checked')"></div>
+          <div class="main-content">
+            <div class="title-row">
+              <div class="title-text">今天下午三点的团队周会</div>
+              <div class="subtask-progress" style="opacity:0;max-width:0;"></div>
+              <button class="expand-btn" style="opacity:0;width:0;height:0;box-shadow:none;padding:0;"></button>
+            </div>
+            <div class="meta-row has-reminder">
+              <span class="reminder">
+                <span class="icon">⏰</span>
+                <span>今天15:00</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片6：已完成态 -->
+    <div class="todo-card" id="card6" style="opacity:0.75;">
+      <div class="priority-bar medium" style="opacity:0.5;"></div>
+      <div class="card-inner">
+        <div class="main-row">
+          <div class="checkbox checked" onclick="this.classList.toggle('checked')"></div>
+          <div class="main-content">
+            <div class="title-row">
+              <div class="title-text done">已完成的示例任务标题</div>
+              <div class="subtask-progress" style="color:#888;">(3/3)</div>
+              <button class="expand-btn" onclick="toggleCard('card6')">▾</button>
+            </div>
+            <div class="meta-row has-reminder">
+              <span class="tag done">工作</span>
+              <span class="reminder" style="color:#888;">
+                <span class="icon">⏰</span>
+                <span>7月12日 10:00</span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="subtasks-wrap">
+          <div class="subtasks-inner">
+            <div class="subtask-item">
+              <div class="subtask-checkbox done" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title done">子任务一</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox done" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title done">子任务二</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox done" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title done">子任务三</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片7：超长标题测试 + 长文本子任务换行测试
+         父标题超长时自动在末尾省略号截断，子任务标题超长时自动换行显示 -->
+    <div class="todo-card high" id="card7">
+      <div class="priority-bar high"></div>
+      <div class="pin-icon">📌</div>
+      <div class="card-inner">
+        <div class="main-row">
+          <div class="checkbox" onclick="this.classList.toggle('checked')"></div>
+          <div class="main-content">
+            <div class="title-row">
+              <div class="title-text">这是一个非常非常非常非常非常长的待办事项标题用来测试文本溢出省略号显示效果</div>
+              <div class="subtask-progress">(2/4)</div>
+              <button class="expand-btn expanded" onclick="toggleCard('card7')">▾</button>
+            </div>
+            <div class="meta-row has-reminder meta-crowded">
+              <span class="tag">重要紧急</span>
+              <span class="reminder overdue">
+                <span class="icon">⏰</span>
+                <span>7月18日 10:00</span>
+                <span class="status-dot"></span>
+                <span class="status-text">已过期</span>
+              </span>
+              <span class="attach"><span class="icon">🎤</span>×2</span>
+              <span class="attach"><span class="icon">🖼</span>×5</span>
+            </div>
+          </div>
+        </div>
+        <div class="subtasks-wrap open">
+          <div class="subtasks-inner">
+            <div class="subtask-item">
+              <div class="subtask-checkbox done" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title done">完成产品需求文档（PRD）的撰写，包括功能概述、用户故事、交互流程和验收标准</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox done" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title done">与设计团队确认UI视觉稿，包括配色方案、组件规范和交互动效细节</div>
+              <div class="subtask-attach"><span>🖼</span>×3</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">编写详细的技术方案文档，涵盖架构设计、数据模型、API接口定义和性能优化策略</div>
+            </div>
+            <div class="subtask-item">
+              <div class="subtask-checkbox" onclick="this.classList.toggle('done')"></div>
+              <div class="subtask-title">组织团队召开技术评审会议，邀请后端、前端、测试同事参加，确保方案可行性</div>
+              <div class="subtask-attach"><span>🎤</span>×1</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="prototype-hint">
+    <strong>设计要点：</strong><br>
+    ① 标题行结构固定：<kbd>☐</kbd> 标题(自适应flex:1) <kbd>(0/5)</kbd> <kbd>▾</kbd>，复选框与标题<strong>永不位移</strong><br>
+    ② 父待办标题超长时自动截断显示"..."省略号（<code>overflow:hidden; text-overflow:ellipsis; white-space:nowrap</code>），不与右侧进度/按钮重叠<br>
+    ③ 子待办标题<strong>允许换行</strong>显示（<code>word-break:break-word</code>），完整展示长文本<br>
+    ④ 元数据智能布局：
+    <ul style="margin:4px 0 0 16px;padding:0;">
+      <li><b>三者都有</b>（tag+reminder+attach）：第一行 tag+attach，第二行 reminder 单独一行突出显示</li>
+      <li><b>缺少任一元数据</b>（只有reminder或reminder+一个元素）：所有元素同一行显示</li>
+      <li><b>简化模式</b>：仅显示reminder，tag/attach/进度文本隐藏</li>
+    </ul>
+    ⑤ 简化模式保留<strong>提醒时间</strong>和展开按钮，隐藏分类标签/附件/进度文本<br>
+    ⑥ 复选框始终相对于"标题+元数据"两行主区域垂直居中（与现有Compose代码布局一致）<br>
+    ⑦ 最后一张卡片（卡片7）为<strong>超长标题+多元数据测试</strong>，演示省略号截断、子任务换行、元数据分行效果
+  </div>
+
+  <!-- 柯基 FAB -->
+  <div class="corgi-fab">🐕</div>
+
+  <!-- 底部导航 -->
+  <div class="bottom-nav">
+    <div class="nav-item active">
+      <span class="nav-icon">📝</span>
+      <span>待办</span>
+    </div>
+    <div class="nav-item">
+      <span class="nav-icon">💡</span>
+      <span>灵感</span>
+    </div>
+    <div class="nav-fab">+</div>
+    <div class="nav-item">
+      <span class="nav-icon">📅</span>
+      <span>日期</span>
+    </div>
+    <div class="nav-item">
+      <span class="nav-icon">👤</span>
+      <span>我的</span>
+    </div>
+  </div>
+</div>
+
+<script>
+/**
+ * 切换卡片子任务展开/收起
+ */
+function toggleCard(cardId) {
+  const card = document.getElementById(cardId);
+  const subtasks = card.querySelector('.subtasks-wrap');
+  const btn = card.querySelector('.expand-btn');
+  if (!subtasks) return;
+  const isOpen = subtasks.classList.contains('open');
+  if (isOpen) {
+    subtasks.classList.remove('open');
+    btn.classList.remove('expanded');
+  } else {
+    subtasks.classList.add('open');
+    btn.classList.add('expanded');
+  }
+}
+
+/**
+ * 切换下拉菜单显示/隐藏
+ */
+function toggleMenu() {
+  const menu = document.getElementById('dropdownMenu');
+  menu.classList.toggle('show');
+}
+
+/**
+ * 点击页面其他地方关闭下拉菜单
+ */
+document.addEventListener('click', function(e) {
+  const menu = document.getElementById('dropdownMenu');
+  const btn = document.getElementById('menuBtn');
+  if (!menu.contains(e.target) && !btn.contains(e.target)) {
+    menu.classList.remove('show');
+  }
+});
+
+/**
+ * 全局切换「隐藏详情 / 显示详情」模式
+ *
+ * 核心思路：
+ * 1. 在 body 上切换 simple-mode / show-details class
+ * 2. 所有过渡效果由 CSS transition 驱动，无需 JS 动画
+ * 3. 标题行的复选框和标题位置保持不变（它们在两种模式下都存在）
+ * 4. 进度文本、展开按钮、元数据、附件、子任务等使用 max-height/opacity/max-width 平滑过渡
+ */
+function setMode(mode) {
+  const body = document.body;
+  const btnSimple = document.getElementById('btnSimple');
+  const btnDetails = document.getElementById('btnDetails');
+  const indicator = document.getElementById('modeIndicator');
+  const menuItemText = document.getElementById('menuItemText');
+
+  if (mode === 'simple') {
+    body.classList.remove('show-details');
+    body.classList.add('simple-mode');
+    btnSimple.classList.add('active');
+    btnDetails.classList.remove('active');
+    indicator.textContent = '▼ 隐藏详情模式（元数据已收起，仅保留标题与提醒时间）';
+    indicator.style.color = 'var(--text-sub)';
+    menuItemText.textContent = '显示详情';
+  } else {
+    body.classList.remove('simple-mode');
+    body.classList.add('show-details');
+    btnDetails.classList.add('active');
+    btnSimple.classList.remove('active');
+    indicator.textContent = '▼ 显示详情模式（点击右上角 ⋮ 或上方按钮切换模式）';
+    indicator.style.color = 'var(--primary)';
+    menuItemText.textContent = '隐藏详情';
+  }
+}
+</script>
+
+</body>
+</html>

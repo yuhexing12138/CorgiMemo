@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
@@ -414,7 +415,13 @@ private fun DateSectionsList(
                         if (isPinnedArchived) onUnarchive(pinned.id) else onArchive(pinned.id)
                     },
                     onDeleteClick = { onDelete(pinned.id) },
-                    modifier = Modifier.padding(1.dp),
+                    // v2026-07-20 改动：
+                    // - 移除原 Modifier.padding(1.dp)（无 shadow 无意义）
+                    // - SpecialDateCard 本身没有 Modifier.shadow，新增 padding 不会显示阴影
+                    // - 传 contentPadding(0,0) 显式表达"不预留阴影空间"
+                    // - 保持原 LazyColumn 项间距 8dp + Modifier.padding 1×2 = 10dp 不变
+                    modifier = Modifier.padding(horizontal = 1.dp),
+                    contentPadding = PaddingValues(0.dp),
                     customButtons = listOf(
                         SwipeButtonConfig(
                             label = "取消置顶",
@@ -506,11 +513,14 @@ private fun DateSectionsList(
                             if (date.isArchived) onUnarchive(date.id) else onArchive(date.id)
                         },
                         onDeleteClick = { onDelete(date.id) },
-                        // 卡片水平 1dp 缩进(与待办页 SwipeableTodoBox 一致: Modifier.padding(1.dp))
-                        // 配合 LazyColumn.padding(horizontal = 8.dp):
-                        //   - 卡片距屏幕左侧 = 8dp + 1dp = 9dp (与待办页完全一致)
-                        //   - SectionHeader 距屏幕左侧 = 8dp = 24px (与 PinnedSectionHeader 一致)
-                        modifier = Modifier.padding(1.dp),
+                    // 卡片水平 1dp 缩进(与待办页 SwipeableTodoBox 一致: Modifier.padding(1.dp))
+                    // 配合 LazyColumn.padding(horizontal = 8.dp):
+                    //   - 卡片距屏幕左侧 = 8dp + 1dp = 9dp (与待办页完全一致)
+                    //   - SectionHeader 距屏幕左侧 = 8dp = 24px (与 PinnedSectionHeader 一致)
+                    // v2026-07-20 改动：与置顶卡一致，传 contentPadding(0,0) 保持原 10dp 项间距
+                    //                 （SpecialDateCard 无 shadow，无需预留阴影空间）
+                    modifier = Modifier.padding(horizontal = 1.dp),
+                    contentPadding = PaddingValues(0.dp),
                         customButtons = listOf(
                             // 置顶按钮（最左）
                             SwipeButtonConfig(

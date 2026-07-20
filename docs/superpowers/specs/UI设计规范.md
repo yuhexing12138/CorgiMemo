@@ -819,41 +819,84 @@ val borderColor = when (priority) {
 
 > **编辑页仅改边框颜色，不加阴影**（按用户确认）：编辑页是信息密集的编辑环境，多重装饰会过重。
 
-#### 12.1.10.4.1 首页 Card 悬浮效果（v2026-07-20 增强）
+#### 12.1.10.4.1 首页 Card 悬浮效果（v2026-07-20 增强，v3 关键修复）
 
-> **关联文件**：[PressFeedback.kt](../../app/src/main/java/com/corgimemo/app/ui/components/PressFeedback.kt)、[TodoListItem.kt](../../app/src/main/java/com/corgimemo/app/ui/components/TodoListItem.kt)
+> **关联文件**：[PressFeedback.kt](../../app/src/main/java/com/corgimemo/app/ui/components/PressFeedback.kt)、[TodoListItem.kt](../../app/src/main/java/com/corgimemo/app/ui/components/TodoListItem.kt)、[SwipeableTodoBox.kt](../../app/src/main/java/com/corgimemo/app/ui/components/SwipeableTodoBox.kt)、[HomeScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/home/HomeScreen.kt)
 
-首页 `TodoListItem` 在 v2026-07-20 引入**"悬浮效果"**：默认静态 4dp 阴影（v2026-07-20 从 2dp 提升），长按（>= 500ms）抬升至 8dp 阴影 + 颜色 alpha 从 0.3f 加深到 0.5f，营造"卡片被长按抬升"的物理感。
+首页 `TodoListItem` 在 v2026-07-20 引入**"悬浮效果"**：默认静态 4dp 阴影（v2026-07-20 从 2dp 提升），长按（>= 500ms）抬升至 8dp 阴影 + 颜色 alpha 从 0.6f 加深到 0.9f，营造"卡片被长按抬升"的物理感。
 
-**状态机**：
+**v2026-07-20 v3 关键修复（彻底解决"看不到阴影"问题）**：
 
-| 状态 | 阴影 elevation | 阴影 alpha | 触发条件 |
-|------|----------------|------------|----------|
-| **默认** | 4dp | 0.3f | 静止 / 短按抬起后 |
-| **按下** | 4dp | 0.3f | 按下 < 500ms（未触发长按） |
-| **长按中** | 8dp | 0.5f | 持续按下 >= 500ms |
-| **抬起** | 平滑过渡回 4dp + 0.3f | — | 手指抬起 / 移动 / 拖拽让位 |
+| 问题 | 根因 | 修复 |
+|------|------|------|
+| **静态/长按阴影都看不到**（v3 新增） | Card modifier 顺序错误：`.pressFeedback().border().shadow()`，shadow 在 `pressFeedback` 内部的 `graphicsLayer` 中绘制，被 graphicsLayer 边界**裁切**到不可见 | **Modifier 顺序调整**为 `.shadow().pressFeedback().border()`：shadow 在最外层，graphicsLayer 之外绘制，不被裁切 |
+| 静态/长按阴影都看不到（v1/v2 未彻底解决） | `SwipeableTodoBox` 外层 `Modifier.clip(RoundedCornerShape(16.dp))` 把 Card 自身 `Modifier.shadow` 输出的阴影全部裁切 | `SwipeableTodoBox` 新增 `contentPadding: PaddingValues` 参数，给阴影预留显示空间；`HomeScreen` 传 `PaddingValues(vertical=8.dp)`（v3: 4→8dp） |
+| 边缘阴影不明显 | ambientColor 和 spotColor 都用浅色优先级色 + 低 alpha（v1: 0.3f/0.5f；v2: 0.4f/0.7f），在亮色卡片背景上对比度仍不足 | 改为 **ambient = 浅黑（alpha 0.12f）** 给"底"，**spot = 优先级色（alpha 0.6f/0.9f）** 给"边缘抬升感"，两层分工明确，v3 加深 |
+
+**状态机**（v2026-07-20 v3 调整 alpha）：
+
+| 状态 | 阴影 elevation | spot alpha（边缘） | ambient alpha（环境） | 触发条件 |
+|------|----------------|--------------------|-----------------------|----------|
+| **默认** | 4dp | 0.6f | 0.12f | 静止 / 短按抬起后 |
+| **按下** | 4dp | 0.6f | 0.12f | 按下 < 500ms（未触发长按） |
+| **长按中** | 8dp | 0.9f | 0.12f | 持续按下 >= 500ms |
+| **抬起** | 平滑过渡回 4dp + 0.6f/0.12f | — | — | 手指抬起 / 移动 / 拖拽让位 |
+
+**阴影实现细节**（v2026-07-20 v3 重设）：
+
+```kotlin
+val shadowAmbientColor = Color.Black.copy(alpha = 0.12f)   // v3: 加深环境阴影
+val shadowSpotAlpha = if (isLongPressed.value) 0.9f else 0.6f  // v3: spot alpha 加深
+
+.shadow(
+    elevation = shadowElevation,
+    shape = RoundedCornerShape(16.dp),
+    ambientColor = shadowAmbientColor,
+    spotColor = priorityVisual.shadow.copy(alpha = shadowSpotAlpha)
+)
+```
+
+**`SwipeableTodoBox.contentPadding` 参数**（v2026-07-20 新增，v3 提升）：
+
+- 默认 `PaddingValues(horizontal=0.dp, vertical=6.dp)`：通用默认，给 4-8dp 阴影预留空间
+- `HomeScreen` 传 `PaddingValues(vertical=8.dp)`（v3: 4→8dp）：完整容纳 8dp 长按阴影，卡片间距 spacedBy 8 + contentPadding 8×2 = 24dp
+- `SpecialDateScreen` 传 `PaddingValues(0.dp)`：`SpecialDateCard` 无 shadow，无需预留
+- **关键**：Modifier 顺序必须是 `.padding(contentPadding).clip(16dp 圆角)`（padding 在前，clip 在后），否则 clip 会切掉 padding 区域的 shadow
 
 **关键实现要点**：
 
-1. **Modifier 顺序关键**（v2026-07-20 修正）：
+1. **Card Modifier 顺序关键（v3 重要修正）**：
    ```kotlin
    Card(
        modifier = Modifier
            .fillMaxWidth()
-           .pressFeedback(...)         // ← 必须在前：内部 graphicsLayer 缩放
-           .border(1.5.dp, ...)        // ← 跟随 graphicsLayer 一起缩放
-           .shadow(elevation = shadowElevation, ...)  // ← 跟随 graphicsLayer 一起缩放
+           .shadow(elevation = shadowElevation, ...)  // ← v3: 必须在最外层
+           .pressFeedback(...)                        // graphicsLayer 缩放内部
+           .border(1.5.dp, ...)                       // 跟随 graphicsLayer 一起缩放
    )
    ```
-   原顺序 `.border() → .shadow() → .pressFeedback()` 会导致"内容缩小但边框/阴影不缩"的违和感。修正后边框/阴影都在 graphicsLayer 内部，跟着 scale 一起缩放。
+   **v3 重要发现**：原顺序 `.pressFeedback().border().shadow()` 导致 shadow 在 graphicsLayer 内绘制，被 graphicsLayer 边界裁切到不可见。修正后 shadow 在 graphicsLayer 之外绘制：
+   - 静态：shadow 完整显示
+   - 按压：shadow **不缩放**（在 graphicsLayer 之外）+ border 缩放（在 graphicsLayer 内）→ "卡片陷下去、shadow 露出来"的双重视觉
+   - 长按：shadow elevation 4→8dp、alpha 0.6→0.9 → 明显的"抬升感"
 
-2. **`PressFeedback.isLongPressed` 状态参数**（v2026-07-20 新增）：
+2. **`SwipeableTodoBox` 外层 Modifier 顺序关键**：
+   ```kotlin
+   Layout(
+       modifier = modifier
+           .padding(contentPadding)    // ← 必须在前：给阴影预留空间
+           .clip(RoundedCornerShape(cornerRadiusDp))  // ← 在后：只裁切 padding 内
+           .pointerInput(...)
+   )
+   ```
+   原顺序 `.clip() 在前、padding 在后` 会让 padding 区域被 clip 切掉，shadow 仍被裁。
+
+3. **`PressFeedback.isLongPressed` 状态参数**（v2026-07-20 新增）：
    - `Modifier.pressFeedback()` 新增 `isLongPressed: MutableState<Boolean> = remember { mutableStateOf(false) }` 参数
    - 内部在 >= 500ms 时 set true，抬起/移动/cancel/拖拽让位时 set false
    - 外部用 `animateDpAsState(isLongPressed.value)` 平滑过渡阴影 elevation
 
-3. **阴影动画参数**：
+4. **阴影动画参数**：
    ```kotlin
    val shadowElevation by animateDpAsState(
        targetValue = if (isLongPressed.value) 8.dp else 4.dp,
@@ -862,6 +905,12 @@ val borderColor = when (priority) {
    )
    ```
    duration 200ms 与 `pressFeedback.scaleUpDurationMs` 同步，回弹节奏一致。
+
+5. **回收站 DeletedTodoCard 同步修复（v3）**：
+   - 原 shadow：elevation 2dp + ambient/spot 都用 priorityVisual.shadow（alpha 0.3f）→ 几乎不可见
+   - 修复后：elevation **2→4dp** + ambient 黑 0.12f + spot 优先级色 0.6f（与首页同源）
+   - vertical padding **4→6dp** 给 4dp shadow 留空间
+   - 与首页无 Modifier 顺序问题（无 pressFeedback，无 graphicsLayer）
 
 #### 12.1.10.4.2 编辑页优先级选择弹窗圆点（v2026-07-20 修正）
 
@@ -899,9 +948,13 @@ Box(
 | 回收站 `isCompleted=false` | 必要 | 回收站待办是"已删除"非"已完成"，保持原始优先级色 |
 | 暗色模式 | 暂不区分亮/暗色 | 与现有 `PriorityColors` 行为一致；后续可优化 |
 | **首页阴影动态化（4↔8dp）** | 必要 | 长按抬升作为"可拖拽"视觉预告；与项目"治愈、温暖"理念一致（避免突然的弹跳） |
-| **Modifier 顺序：pressFeedback 在前** | 必要 | 让 `.border()` 和 `.shadow()` 都在 graphicsLayer 内部，缩放时一起缩放，避免"内容缩小但边框/阴影不缩"的违和感 |
+| **Modifier 顺序：shadow 在最外层（v3 修正）** | 必要 | 必须在 `pressFeedback` 之前，否则 shadow 会被 pressFeedback 的 graphicsLayer 边界裁切到不可见 |
+| **border 在 pressFeedback 之后** | 必要 | 让 border 跟随 graphicsLayer 一起缩放，避免"内容缩小但边框不缩"的违和感 |
 | **PressFeedback 新增 isLongPressed 状态** | 必要 | 复用现有长按检测逻辑（500ms）暴露给调用方；不引入双 pointerInput；不修改状态机内部逻辑 |
 | **优先级选择弹窗圆点统一** | 必要 | 4 个选项都是实心圆点，无优先级用 `PriorityColors.None` 浅绿，与三联视觉统一 |
+| **HomeScreen contentPadding vertical 8dp** | 必要 | v3: 4→8dp，给长按 8dp shadow 留出充足空间，避免被外层 16dp clip 裁切 |
+| **alpha 加深（ambient 0.12 / spot 0.6→0.9）** | 必要 | v3: 浅色优先级色 + 低 alpha 在白底卡片上对比度极低，必须加深到可见阈值 |
+| **DeletedTodoCard shadow 同源修复（v3）** | 必要 | elevation 2→4dp + ambient 0.12 + spot 0.6，与首页保持视觉一致 |
 
 #### 12.1.10.6 排版变更记录
 
@@ -909,5 +962,7 @@ Box(
 |------|------|------|
 | 2026-07-20 | v1.0 | 初始规范：所有待办卡片统一三联视觉（竖条 + 边框 + 阴影），无优先级新增浅绿 #C8E6C9 / dim #E8F5E9；编辑页仅改边框颜色（无阴影）；`PriorityColors` 新增 `PriorityVisual` 数据类与 `priorityVisualOf()` 组合查询函数 |
 | 2026-07-20 | v1.1 | **悬浮效果增强**：首页 `TodoListItem` 阴影静态 2dp → 4dp（默认）/ 8dp（长按）；阴影 alpha 0.3f → 0.3f/0.5f；`PressFeedback` 新增 `isLongPressed: MutableState<Boolean>` 状态参数；`Modifier` 顺序调整为 `pressFeedback → border → shadow` 让边框/阴影跟随 graphicsLayer 一起缩放；优先级选择弹窗无优先级圆点由 `Color.Gray` 透明圆环改为 `PriorityColors.None` 浅绿实心 |
+| 2026-07-20 | v1.2 | **修复"阴影看不到"问题**：① `SwipeableTodoBox` 外层 `.clip(16.dp)` 裁切 Card shadow 根因修复——新增 `contentPadding: PaddingValues` 参数（默认 `vertical=6.dp`），Modifier 顺序调整为 `padding → clip`（padding 在前预留阴影空间）；② shadow 颜色分层——`ambientColor = Color.Black.copy(alpha=0.06f)` 浅黑环境阴影 + `spotColor = priorityVisual.shadow.copy(alpha=0.4f/0.7f)` 优先级色边缘阴影；alpha 从 0.3f/0.5f 提升到 0.4f/0.7f（长按更深）；③ 调用方调整：`HomeScreen` 传 `PaddingValues(vertical=4.dp)` 平衡间距（10dp→16dp），`SpecialDateScreen` 传 `PaddingValues(0.dp)`（`SpecialDateCard` 无 shadow） |
+| 2026-07-20 | v1.3 | **v3 关键修复——根除 graphicsLayer 裁切**（v1/v2 未彻底解决阴影看不到问题）：① **Card Modifier 顺序调整**为 `.shadow().pressFeedback().border()`（v3 最重要）——v1/v2 顺序 `.pressFeedback().border().shadow()` 导致 shadow 在 `pressFeedback` 的 `graphicsLayer` 内绘制，被 graphicsLayer 边界裁切到不可见；新顺序 shadow 在 graphicsLayer **之外**绘制，完全不被裁切；按压时 shadow **不缩放**（在 graphicsLayer 之外）+ border 缩放（在 graphicsLayer 内）→ "卡片陷下去、shadow 露出来"的双重视觉；② **alpha 进一步加深**：ambient 0.06→**0.12**（底色加深），spot 默认 0.4→**0.6** / 长按 0.7→**0.9**（边缘加深）；③ **contentPadding 加深**：HomeScreen 传 `vertical=8dp`（v1.2 是 4dp，v3 提升 1 倍）——给长按 8dp shadow 留出充足空间，避免被外层 16dp clip 裁切；④ **DeletedTodoCard 同步修复**：elevation 2→4dp + ambient 黑 0.12f + spot 优先级色 0.6f + vertical padding 4→6dp（与首页同源视觉） |
 
 
