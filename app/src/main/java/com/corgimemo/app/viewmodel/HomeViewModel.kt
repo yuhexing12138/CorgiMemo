@@ -44,6 +44,7 @@ import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.ui.components.TodoZone
 import com.corgimemo.app.ui.components.ZoneDragResult
 import com.corgimemo.app.util.FileCopyManager
+import com.corgimemo.app.util.HomeBootTrace
 import com.corgimemo.app.animation.BehaviorType
 import com.corgimemo.app.animation.CorgiBehaviorManager
 import com.corgimemo.app.animation.DynamicGreetingManager
@@ -630,6 +631,9 @@ class HomeViewModel @Inject constructor(
     private val recentCompletedTimes = mutableListOf<Long>()
 
     init {
+        // ━━━ 启动追踪：标记 ViewModel 初始化起点 ━━━
+        HomeBootTrace.t("VM_init_start")
+
         loadTodos()
         initCorgiData()
         initPoseAndMood()
@@ -645,16 +649,28 @@ class HomeViewModel @Inject constructor(
         initAchievements()
 
         viewModelScope.launch {
-            corgiPreferences.showCompleted.collect { _showCompleted.value = it }
+            corgiPreferences.showCompleted.collect {
+                HomeBootTrace.t("VM_pref_showCompleted_emit", "value=$it")
+                _showCompleted.value = it
+            }
         }
         viewModelScope.launch {
-            corgiPreferences.showPinned.collect { _showPinned.value = it }
+            corgiPreferences.showPinned.collect {
+                HomeBootTrace.t("VM_pref_showPinned_emit", "value=$it")
+                _showPinned.value = it
+            }
         }
         viewModelScope.launch {
-            corgiPreferences.hideDetails.collect { _hideDetails.value = it }
+            corgiPreferences.hideDetails.collect {
+                HomeBootTrace.t("VM_pref_hideDetails_emit", "value=$it")
+                _hideDetails.value = it
+            }
         }
         viewModelScope.launch {
-            corgiPreferences.hideCompletedItems.collect { _hideCompletedItems.value = it }
+            corgiPreferences.hideCompletedItems.collect {
+                HomeBootTrace.t("VM_pref_hideCompletedItems_emit", "value=$it")
+                _hideCompletedItems.value = it
+            }
         }
 
         // 订阅全局待办事件：编辑页保存/删除后自动刷新首页数据
@@ -1066,13 +1082,17 @@ class HomeViewModel @Inject constructor(
      */
     private fun loadTodos() {
         viewModelScope.launch {
+            // ━━━ 启动追踪：标记 Room Flow 第一次发射前 ━━━
+            var isFirstEmit = true
             todoRepository.observeAllSorted().collect { allTodos ->
-                _todos.value = allTodos
-
-                // 标记数据已初始化完成（首次加载后不再重置，避免闪烁）
-                if (!_isDataInitialized.value) {
-                    _isDataInitialized.value = true
+                // ━━━ 启动追踪：每次发射都打点（首次进入时会从空 → 多项） ━━━
+                if (isFirstEmit) {
+                    HomeBootTrace.t("VM_loadTodos_first_emit", "size=${allTodos.size}")
+                    isFirstEmit = false
+                } else {
+                    HomeBootTrace.t("VM_loadTodos_re_emit", "size=${allTodos.size}")
                 }
+                _todos.value = allTodos
 
                 // 加载所有待办的子任务进度和子任务列表
                 val progressMap = mutableMapOf<Long, String>()
@@ -1088,6 +1108,19 @@ class HomeViewModel @Inject constructor(
                 }
                 _subTaskProgressMap.value = progressMap
                 _subTasksMap.value = subTasksMap
+
+                // v2026-07-20 v7 关键修复：把 _isDataInitialized.value = true 移到所有依赖 Flow emit 之后
+                // - 旧逻辑：todos emit 后立即设 isDataInitialized = true，
+                //   HomeScreen 立即显示真实列表，但 subTaskProgressMap / subTasksMap 还在同步计算中
+                //   → 几百毫秒后 subTaskProgressMap emit → TodoListItem 重组 → 展开按钮/进度文本出现
+                //   → 卡片高度变化 → 用户看到"每张卡片向下微微伸缩"（跳动根因）
+                // - 新逻辑：等 subTaskProgressMap / subTasksMap 都 emit 完再设 isDataInitialized = true
+                //   → HomeScreen 显示真实列表时，所有依赖数据已就绪，layout 稳定，无跳动
+                // - 副作用：用户多等几百毫秒（同步 IO 时间），由 TodoSkeleton 占位，体验可接受
+                if (!_isDataInitialized.value) {
+                    _isDataInitialized.value = true
+                    HomeBootTrace.t("VM_isDataInitialized_true", "size=${allTodos.size}, progressMapSize=${progressMap.size}, subTasksMapSize=${subTasksMap.size}")
+                }
 
                 // 待办列表变化后检查待办堆积
                 checkWorriedBehavior()

@@ -23,6 +23,7 @@ import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.screens.home.DisplayItem
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import com.corgimemo.app.util.HomeBootTrace
 
 /**
  * 基于 Zone 状态机的可拖拽排序 LazyColumn
@@ -84,8 +85,13 @@ fun ZonedReorderableLazyColumn(
 ) {
     val context = LocalContext.current
 
+    // ━━━ 启动追踪：ZonedReorderableLazyColumn 每次组合时打点（外部 items 引用） ━━━
+    HomeBootTrace.t("ZRLC_compose", "items_size=${items.size}, items_hash=${items.hashCode()}")
+
     // ━━━ 拖拽状态 ━━━
     var displayItems by remember { mutableStateOf(items) }
+    // ━━━ 启动追踪：内部 displayItems 初始化时的值 ━━━
+    HomeBootTrace.t("ZRLC_init_displayItems", "value_size=${items.size}, value_hash=${items.hashCode()}")
     var isDragActive by remember { mutableStateOf(false) }
     var draggedOriginalIndex by remember { mutableIntStateOf(-1) }
     val dragZoneState = remember { DragZoneStateMachine() }
@@ -93,13 +99,20 @@ fun ZonedReorderableLazyColumn(
     // ━━━ 同步外部 items 变更 ━━━
     // 拖拽中 items 被外部变更 → 取消拖拽（防御性处理）
     LaunchedEffect(items) {
+        // ━━━ 启动追踪：LaunchedEffect 启动 = 外部 items 引用变化 ━━━
+        HomeBootTrace.t(
+            "ZRLC_launchedEffect_start",
+            "new_size=${items.size}, new_hash=${items.hashCode()}, old_size=${displayItems.size}, old_hash=${displayItems.hashCode()}, isDragActive=$isDragActive"
+        )
         if (!isDragActive) {
             displayItems = items
+            HomeBootTrace.t("ZRLC_sync_to_new_items", "size=${items.size}")
         } else {
             displayItems = items
             isDragActive = false
             draggedOriginalIndex = -1
             dragZoneState.reset()
+            HomeBootTrace.t("ZRLC_sync_force_drag_cancel", "size=${items.size}")
         }
     }
 
@@ -148,6 +161,11 @@ fun ZonedReorderableLazyColumn(
     )
 
     // ━━━ 渲染 ━━━
+    // ━━━ 启动追踪：LazyColumn 渲染时使用的 displayItems（重要：与外部 items 可能不一致） ━━━
+    HomeBootTrace.t(
+        "ZRLC_lazyColumn_render",
+        "displayItems_size=${displayItems.size}, displayItems_hash=${displayItems.hashCode()}, external_items_size=${items.size}, external_items_hash=${items.hashCode()}, consistent=${displayItems === items}"
+    )
     LazyColumn(
         state = listState,
         modifier = modifier,

@@ -3,7 +3,6 @@ package com.corgimemo.app.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -223,36 +222,22 @@ fun TodoListItem(
     }
 
     /**
-     * 优先级阴影 elevation（v2026-07-20 悬浮效果）
+     * 优先级阴影（v2026-07-20 v7 彻底根除"首次渲染跳动"）
      *
-     * - 默认 4dp（v2026-07-20 改动：从 2dp 提升一倍，静态"浮起"感）
-     * - 长按中（isLongPressed=true）抬升至 8dp + 优先级色 alpha 0.7f（更饱和）
-     * - 用 animateDpAsState 平滑过渡，duration 200ms 与 pressFeedback 回弹同步
+     * 历史变更链：
+     * - v1-v4: animateDpAsState 初始值 0.dp → 0→4dp 弹跳
+     * - v5: 加深 shadowAmbientColor / shadowSpotAlpha（v5 视觉优化）
+     * - v6: 改用 Animatable 初始 4.dp，根除 0→4 弹跳
+     * - **v7（本次）**：完全去掉 Animatable + 改用静态 4.dp
+     *   - 根因新发现：Modifier.shadow 通过 RenderEffect/BlurEffect 渲染，
+     *     首次 frame 时 RenderNode 初始化需要额外一帧，导致首帧阴影 = 0、第二帧阴影 = 4dp，
+     *     视觉上"阴影从无到有"再次形成 0→4 弹跳（即使 Animatable 初始 = 4dp 也无济于事）
+     *   - 修复：直接传 `elevation = 4.dp`（无 State/Dp 读取），让 Compose 编译期确定 elevation，
+     *     跳过可能的 RenderNode 初始化延迟
+     *   - 副作用：失去"长按时 4→8dp 阴影抬升"效果（用 border 加深 0.6f→0.8f 补偿）
      */
-    val shadowElevation by animateDpAsState(
-        targetValue = if (isLongPressed.value) 8.dp else 4.dp,
-        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
-        label = "todoCardShadowElevation"
-    )
-
-    /**
-     * 阴影 alpha（v2026-07-20 v5 修复：spot color 改用深色版后调整 alpha）
-     *
-     * **v5 关键修复链**：
-     * 1. **PriorityColors.priorityVisualOf**：shadow 从 `base.copy(alpha=0.3f)`（浅色优先级色 + 30% alpha）
-     *    改为 `lerp(base, Color.Black, 0.4f)`（60% 优先级色 + 40% 黑色 = 深色版）
-     *    → 解决了 v1-v4 看不到阴影的根本问题（浅色 + 低 alpha 混合到浅色背景对比度严重不足）
-     * 2. **本文件 alpha 调整**：
-     *    - ambientColor 0.12→0.20：底色加深，让阴影更有"重量感"
-     *    - spotColor 默认 0.6→0.85 / 长按 0.9→1.0：边缘阴影更明显
-     *    - 注：现在 priorityVisual.shadow 已经是深色不透明色（alpha 1.0），
-     *      .copy(alpha=0.85) 让默认阴影留 15% 透明空间，长按时 100% 不透明
-     *
-     * ambientColor：环境光阴影（卡片周围一圈"软"阴影），用浅黑色保证有底
-     * spotColor：聚光阴影（卡片下边缘"硬"阴影），用**深色版优先级色**（v5 重要变更）
-     */
-    val shadowAmbientColor = Color.Black.copy(alpha = 0.20f)   // v5: 0.12→0.20，底色加深
-    val shadowSpotAlpha = if (isLongPressed.value) 1.0f else 0.85f  // v5: 默认 0.6→0.85 / 长按 0.9→1.0
+    val shadowAmbientColor = Color.Black.copy(alpha = 0.20f)
+    val shadowSpotAlpha = if (isLongPressed.value) 1.0f else 0.85f
 
     Card(
         modifier = Modifier
@@ -267,17 +252,13 @@ fun TodoListItem(
             // - 视觉效果：按压时 shadow 不缩放（"露出来"） + border 缩放 +
             //   content 缩放 → "卡片陷下去、shadow 浮起来"的双重视觉
             //
-            // 优先级阴影：4dp（默认）/ 8dp（长按）
-            // v2026-07-20 v3 改动：
-            //   1) 移到 pressFeedback 之前（最外层），根除 graphicsLayer 裁切
-            //   2) elevation 从静态 2dp 升级为动态 [shadowElevation]（4↔8dp 悬浮效果）
-            //   3) ambientColor 0.06→0.12（v3 加深），保证"底"阴影明显
-            //   4) spotColor 默认 0.4→0.6 / 长按 0.7→0.9（v3 加深）形成"边缘阴影"
-            //   5) ambient 与 spot 解耦：原代码两者都是 priorityVisual.shadow.copy(alpha=...)
-            //      导致在亮色卡片上几乎看不见阴影（用户反馈"看不到阴影"）
-            //      修复后 ambient 给"底"、spot 给"边缘抬升感"，视觉上能明显看到两层阴影
+            // v2026-07-20 v7 关键修复：阴影 elevation 改为静态 4.dp
+            // - 不用 shadowElevation.value (State 读取)，因为 State 读取在首次 frame
+            //   时可能未完成，导致首帧阴影 = 0（RenderNode 初始化延迟）
+            // - 直接传 4.dp（编译期常量），根除"首帧无阴影"问题
+            // - 代价：失去长按时 4→8dp 阴影抬升效果（用 border 加深补偿）
             .shadow(
-                elevation = shadowElevation,
+                elevation = 4.dp,
                 shape = RoundedCornerShape(16.dp),
                 ambientColor = shadowAmbientColor,
                 spotColor = priorityVisual.shadow.copy(alpha = shadowSpotAlpha)

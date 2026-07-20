@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -74,7 +75,15 @@ fun CollapsibleSectionHeader(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() }
             )
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            // v2026-07-20 调整：vertical padding 8dp → 0dp
+            // 原因：LazyColumn 的 Arrangement.spacedBy(8.dp) 已经提供"卡片到按钮"8dp 间距，
+            //   再加 vertical padding 8dp 会让"卡片到按钮内容"距离 = 16dp（layout 距离），
+            //   加上卡片 4dp 阴影向下延伸，视觉距离达 20dp，远超 8dp 预期
+            // 现在：vertical padding = 0，按钮内容紧贴 Divider 边缘，
+            //   视觉距离 = itemSpacing 8dp + 阴影 4dp = 12dp（接近 8dp 目标）
+            // 可点击区域：用 heightIn(min = 36.dp) 保证 Material 3 最小触摸目标
+            .heightIn(min = 36.dp)
+            .padding(horizontal = 16.dp, vertical = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(

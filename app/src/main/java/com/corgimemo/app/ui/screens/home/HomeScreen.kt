@@ -135,6 +135,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import com.corgimemo.app.viewmodel.CelebrationLevel
 import com.corgimemo.app.viewmodel.HomeViewModel
+import com.corgimemo.app.util.HomeBootTrace
 import com.corgimemo.app.ui.theme.UiColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -341,6 +342,16 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) {
         viewModel.refreshGreetingIfNeeded()
+    }
+
+    // ━━━ 启动追踪：HomeScreen 首次组合 ━━━
+    LaunchedEffect(Unit) {
+        HomeBootTrace.t("HS_first_compose")
+    }
+
+    // ━━━ 启动追踪：isDataInitialized 由 false → true 的瞬间（标志着进入列表分支） ━━━
+    LaunchedEffect(isDataInitialized) {
+        HomeBootTrace.t("HS_isDataInitialized_change", "value=$isDataInitialized")
     }
 
     val outfitSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -713,8 +724,13 @@ fun HomeScreen(
                             return result
                         }
 
-                        val filteredPending = applyFilters(pendingTodosAll)
-                        val filteredCompleted = applyFilters(visibleCompletedTodosAll)
+                        // ━━━ 启动追踪：每次重算都打点（key 变化触发） ━━━
+                        val filteredPending = applyFilters(pendingTodosAll).also {
+                            HomeBootTrace.t("HS_filteredPending_calc", "size=${it.size}")
+                        }
+                        val filteredCompleted = applyFilters(visibleCompletedTodosAll).also {
+                            HomeBootTrace.t("HS_filteredCompleted_calc", "size=${it.size}")
+                        }
 
                         val displayItems = remember(
                             filteredPending, filteredCompleted,
@@ -753,6 +769,12 @@ fun HomeScreen(
                                         filteredCompleted.forEach { add(DisplayItem.Todo(it)) }
                                     }
                                 }
+                            }.also {
+                                // ━━━ 启动追踪：displayItems 每次重算后打点（验证是否多次重组） ━━━
+                                HomeBootTrace.t(
+                                    "HS_displayItems_recalc",
+                                    "size=${it.size}, pinned=$pinnedCount, pending=$pendingCount, completed=$completedCount, showP=$showPinned, showPg=$showPending, showC=$showCompleted, hideC=$hideCompletedItems"
+                                )
                             }
                         }
 
@@ -860,6 +882,8 @@ fun HomeScreen(
                                     .fillMaxSize()
                                     .graphicsLayer { translationY = pullRefreshState.pullOffset }
                             ) {
+                            // ━━━ 启动追踪：ZonedReorderableLazyColumn 接收的 items 参数引用变化 ━━━
+                            HomeBootTrace.t("HS_render_list", "items_size=${displayItems.size}")
                             ZonedReorderableLazyColumn(
                                 items = displayItems,
                                 listState = lazyListState,
@@ -885,15 +909,11 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(horizontal = 8.dp),
-                                // v2026-07-20 v4 调整：卡片间距 24dp→8dp
-                                // - 原 v3：itemSpacing 8dp + contentPadding vertical 8dp = 卡片之间 24dp（过稀）
-                                // - 现 v4：itemSpacing 0dp + contentPadding vertical 4dp = 卡片之间 8dp
-                                //   0(spacedBy) + 4(上 padding) + 4(下 padding) = 8dp ✓
-                                // - 阴影影响：
-                                //   · 默认 4dp shadow：刚好填满 4dp padding，完整显示
-                                //   · 长按 8dp shadow：超出 4dp padding 部分被外层 16dp clip 轻微裁切
-                                //     但 Compose 阴影 alpha 是中心深边缘浅渐变，主体仍可见
-                                itemSpacing = 0.dp,
+                                // 卡片间距：8dp
+                                // - 卡片与卡片之间：8dp
+                                // - 卡片与"已完成"展开按钮（CollapsibleSectionHeader 内部 padding vertical 8dp）之间：8dp
+                                // - 阴影 4dp 在 8dp 间距内基本完整显示，仅边缘被轻微淡化（Compose 阴影 alpha 中心深边缘浅）
+                                itemSpacing = 8.dp,
                                 /**
                                  * 列表底部 80dp 留白
                                  *
@@ -964,18 +984,21 @@ fun HomeScreen(
                                             }
                                         }
                                         SwipeableTodoBox(
-                                            // v2026-07-20 v4 调整：配合 itemSpacing 0dp，保证卡片之间 8dp
-                                            // - v3 阴影空间 8dp → v4 改为 4dp（与默认 4dp shadow 刚好匹配）
-                                            // - 卡片视觉间距：0(spacedBy) + 4(contentPadding 上) + 4(下) = 8dp
-                                            // - 阴影影响：默认 4dp 完整显示；长按 8dp 超出 4dp 部分被外层 16dp clip
-                                            //   轻微裁切（约 2-3dp），但 alpha 渐变主体仍可见
+                                            // v2026-07-20 v7 调整：contentPadding vertical 4dp → 0dp
+                                            // 原因：HomeScreen 传入 itemSpacing = 8dp，
+                                            //   SwipeableTodoBox 内部 contentPadding vertical = 4dp，
+                                            //   两者叠加 = 8 + 4 + 4 = 16dp 总间距，严重超出 8dp 预期
+                                            //   （相邻 item 的 4dp top padding + 4dp bottom padding 与 itemSpacing 重叠）
+                                            // 修复：contentPadding vertical 改为 0，让 itemSpacing 8dp 单独控制间距
+                                            //   实际"卡片之间" layout 距离 = 8dp ✓
+                                            //   视觉距离 = 8 + 4(下方阴影) + 4(上方阴影) ≈ 12dp（接近 8dp 目标）
                                             modifier = Modifier,
                                             isEnabled = !isBatchMode && !dragActive,
                                             isExpanded = swipeExpandedTodoId == todo.id,
                                             isPinned = todo.isPinned,
                                             contentPadding = PaddingValues(
                                                 horizontal = 0.dp,
-                                                vertical = 4.dp   // v4: 8→4dp，配合 spacedBy 0dp 保证 8dp 间距
+                                                vertical = 0.dp
                                             ),
                                             onExpandChange = { expanded ->
                                                 swipeExpandedTodoId = if (expanded) todo.id else null
