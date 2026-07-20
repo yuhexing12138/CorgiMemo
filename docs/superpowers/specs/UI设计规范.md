@@ -43,6 +43,7 @@
 | **高优先级** | #FF8A80 | 柔和红色，避免焦虑 |
 | **中优先级** | #FFB74D | 柔和橙色 |
 | **低优先级** | #90CAF9 | 柔和蓝色 |
+| **无优先级** | #C8E6C9 | 浅绿（Material Green 200），区别于高/中/低，传递"无需特殊处理"的低压力感 [v2026-07-20] |
 
 #### 12.1.2.4 状态色 - 已完成（视觉降权）
 
@@ -55,16 +56,17 @@
 | **已完成-优先级竖线（高）** | #FFCDD2 | (浅色系列自动派生) | 浅红，原 #FF8A80 淡化（Material Red 200） |
 | **已完成-优先级竖线（中）** | #FFE0B2 | 同上 | 浅橙，原 #FFB74D 淡化（Material Orange 200） |
 | **已完成-优先级竖线（低）** | #BBDEFB | 同上 | 浅蓝，原 #90CAF9 淡化（Material Blue 200） |
+| **已完成-优先级竖线（无）** | #E8F5E9 | 同上 | 极浅绿，原 #C8E6C9 淡化（Material Green 50）[v2026-07-20] |
 
 **降权原则**：
 - 所有彩色（红/橙/蓝/绿）替换为灰色系或同色系浅色版
 - 删除线颜色 = 文字色（自动保持一致）
 - 勾选 "✓" 符号保持白色不变
-- 已完成态无优先级时，竖线仍保持透明
+- 已完成态无优先级时，竖线使用 #E8F5E9 极浅绿（与未完成态的 #C8E6C9 区分）[v2026-07-20]
 
 **实现参考**：
 - 文字/勾选灰：`CompletedColors.kt` 中的 `Text` / `CheckboxBg` 常量
-- 优先级竖线浅色：`PriorityColors.kt` 中的 `HighDim` / `MediumDim` / `LowDim` 常量 + `dimColorOf(priority)` 函数
+- 优先级竖线浅色：`PriorityColors.kt` 中的 `HighDim` / `MediumDim` / `LowDim` / `NoneDim` 常量 + `dimColorOf(priority)` 函数
 
 ### 12.1.3 主题配色方案（6种）
 
@@ -696,4 +698,142 @@ SnackbarHost(
 | 日期 | 版本 | 变更 |
 |------|------|------|
 | 2026-07-14 | v1.0 | 初始规范（基于设计文档 [Snackbar 格式重设计](file:///c:/Users/EDY/Desktop/CorgiMemo/docs/superpowers/specs/2026-07-14-Snackbar格式重设计-design.md)、[Snackbar 体验优化](file:///c:/Users/EDY/Desktop/CorgiMemo/docs/superpowers/specs/2026-07-14-Snackbar体验优化-design.md)、[Snackbar 统一优化](file:///c:/Users/EDY/Desktop/CorgiMemo/docs/superpowers/specs/2026-07-14-Snackbar统一优化-design.md)）：全项目统一为 `AppSnackbarHost` 品牌风格；左侧 28dp 柯基图标；16dp 底部间距；vertical padding 4/2dp 紧凑型高度；带按钮左文右按钮；灵感页删除撤销模式 |
+
+### 12.1.10 待办卡片优先级视觉标识
+
+> **适用范围**：首页 `TodoListItem`、回收站 `DeletedTodoCard`、编辑页 `TodoGroupContainer`（仅边框）
+> **关联文件**：
+> - 色源：[PriorityColors.kt](../../app/src/main/java/com/corgimemo/app/ui/components/PriorityColors.kt)
+> - 首页卡片：[TodoListItem.kt](../../app/src/main/java/com/corgimemo/app/ui/components/TodoListItem.kt)
+> - 回收站卡片：[DeletedTodoCard.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/recyclebin/DeletedTodoCard.kt)
+> - 编辑页：[CheckboxEditText.kt](../../app/src/main/java/com/corgimemo/app/ui/components/CheckboxEditText.kt) `TodoGroupContainer`
+> - 设计文档：待办卡片优先级视觉标识增强（v2026-07-20）
+
+#### 12.1.10.1 视觉三联
+
+每个待办卡片同时具备 **3 种优先级视觉元素**（"三联"），共同传达任务重要性：
+
+| 元素 | 规格 | 位置 | 颜色来源 |
+|------|------|------|----------|
+| **左侧竖条** | 4dp 宽，自适应卡片高度 | 卡片左边缘 | `PriorityVisual.bar` |
+| **卡片边框** | 1.5dp + alpha 0.6f | 卡片 4 边 | `PriorityVisual.border.copy(alpha=0.6f)` |
+| **卡片阴影** | elevation 2dp + alpha 0.3f | 卡片背后 | `PriorityVisual.shadow` |
+
+**设计意图**：
+- 三处视觉同色系（仅 alpha 不同），形成统一的"任务重要性"语言
+- 用户扫视列表时可"一眼"识别每个任务的重要性等级
+- 整体视觉更精致、有层次感
+
+#### 12.1.10.2 颜色映射
+
+| 优先级 | 竖条/边框基色 | 已完成态 dim | 情感联想 |
+|--------|--------------|--------------|----------|
+| 高 (3) | #FF8A80 | #FFCDD2 | 柔红，避免焦虑 |
+| 中 (2) | #FFB74D | #FFE0B2 | 柔橙 |
+| 低 (1) | #90CAF9 | #BBDEFB | 柔蓝 |
+| 无 (0) | #C8E6C9 | #E8F5E9 | 浅绿，传递"无需特殊处理"的低压力感 [v2026-07-20] |
+
+**应用规则**：
+- **未完成态**（status=0）：使用基色
+- **已完成态**（status=1）：三处颜色**全部同步降权**为 dim 版（与现有竖线降权规则一致）
+- **回收站**：`isCompleted=false`，保持原始优先级色（已删除非主页完成态）
+
+#### 12.1.10.3 实施常量
+
+[PriorityColors.kt](../../app/src/main/java/com/corgimemo/app/ui/components/PriorityColors.kt) 新增：
+
+```kotlin
+// 基色（v2026-07-20 新增：None 从 Color.Transparent 改为 #C8E6C9）
+val None = Color(0xFFC8E6C9)        // 无优先级浅绿
+
+// dim 版
+val NoneDim = Color(0xFFE8F5E9)     // 无优先级极浅绿（已完成态用）
+
+// 三联视觉数据类
+data class PriorityVisual(
+    val bar: Color,     // 4dp 竖条（不透明）
+    val border: Color,  // 边框基色（调用方 .copy(alpha=0.6f)）
+    val shadow: Color   // 阴影基色（已带 alpha=0.3f）
+)
+
+// 组合查询函数（已完成态自动降权为 dim）
+fun priorityVisualOf(priority: Int, isCompleted: Boolean = false): PriorityVisual
+```
+
+#### 12.1.10.4 实施代码模式
+
+**首页 Card（TodoListItem.kt L196-265）**：
+
+```kotlin
+val priorityVisual = remember(todo.priority, todo.status) {
+    PriorityColors.priorityVisualOf(
+        priority = todo.priority,
+        isCompleted = todo.status == 1
+    )
+}
+
+Card(
+    modifier = Modifier
+        .fillMaxWidth()
+        .border(1.5.dp, priorityVisual.border.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+        .shadow(2.dp, RoundedCornerShape(16.dp), ambientColor = priorityVisual.shadow, spotColor = priorityVisual.shadow)
+        .pressFeedback(...),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),  // 让出阴影给外层 Modifier
+    shape = RoundedCornerShape(16.dp),
+    colors = CardDefaults.cardColors(containerColor = cardBackground)
+) { ... }
+```
+
+**回收站 Card（DeletedTodoCard.kt）**：
+
+```kotlin
+val priorityVisual = PriorityColors.priorityVisualOf(priority = item.priority, isCompleted = false)
+
+Card(
+    modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 4.dp)
+        .border(1.5.dp, priorityVisual.border.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+        .shadow(2.dp, RoundedCornerShape(12.dp), ambientColor = priorityVisual.shadow, spotColor = priorityVisual.shadow),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    shape = RoundedCornerShape(12.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+) {
+    Row {
+        Box(Modifier.width(4.dp).fillMaxHeight().background(priorityVisual.bar))  // 左侧竖条
+        Column(Modifier.weight(1f).padding(16.dp)) { ... }                         // 右侧内容
+    }
+}
+```
+
+**编辑页 TodoGroupContainer（CheckboxEditText.kt）**：
+
+```kotlin
+val borderColor = when (priority) {
+    3 -> PriorityColors.colorOf(3)
+    2 -> PriorityColors.colorOf(2)
+    1 -> PriorityColors.colorOf(1)
+    else -> PriorityColors.colorOf(0)  // ← v2026-07-20：无优先级也显示浅绿色边框
+}
+```
+
+> **编辑页仅改边框颜色，不加阴影**（按用户确认）：编辑页是信息密集的编辑环境，多重装饰会过重。
+
+#### 12.1.10.5 关键技术决策
+
+| 决策点 | 选择 | 原因 |
+|--------|------|------|
+| 阴影实现方式 | Card modifier 上 `Modifier.shadow` + `elevation=0dp` | 不增加布局层级；与 `pressFeedback` 缩放动画兼容；与 `CenterEditButton.kt` 模式同源 |
+| Card `elevation` 改为 0dp | 必要 | 让出默认阴影给外层 Modifier，避免双层阴影叠加 |
+| 竖条/边框/阴影同色（仅 alpha 不同） | 必要 | 三联视觉一致性，避免视觉混乱 |
+| 已完成态全部同步降权 | 必要 | 与现有竖条降权规则一致，建立"完成项更弱"层级 |
+| 回收站 `isCompleted=false` | 必要 | 回收站待办是"已删除"非"已完成"，保持原始优先级色 |
+| 暗色模式 | 暂不区分亮/暗色 | 与现有 `PriorityColors` 行为一致；后续可优化 |
+
+#### 12.1.10.6 排版变更记录
+
+| 日期 | 版本 | 变更 |
+|------|------|------|
+| 2026-07-20 | v1.0 | 初始规范：所有待办卡片统一三联视觉（竖条 + 边框 + 阴影），无优先级新增浅绿 #C8E6C9 / dim #E8F5E9；编辑页仅改边框颜色（无阴影）；`PriorityColors` 新增 `PriorityVisual` 数据类与 `priorityVisualOf()` 组合查询函数 |
+
 

@@ -1,13 +1,18 @@
 // 最近删除单条卡片
 package com.corgimemo.app.ui.screens.recyclebin
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -17,20 +22,25 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corgimemo.app.ui.components.PriorityColors
 
 /**
  * 最近删除单条卡片
  *
  * 展示：标题 / 分组 + 相对时间 / 行内显式按钮（恢复 + 永久删除）
  *
- * 设计要点：
- * - 卡片圆角 12dp，阴影 1dp（与 HomeScreen 卡片风格保持一致）
+ * 视觉设计要点（v2026-07-20 升级）：
+ * - 卡片圆角 12dp，1.5dp 优先级边框 + 2dp 彩色阴影
+ * - 左侧 4dp 优先级竖条（与首页 TodoListItem 完全一致）
  * - 标题最多 2 行，超出 ellipsis
  * - 按钮靠右对齐，使用 spacedBy 8dp 间距
  * - 永久删除按钮使用 error 红色
+ *
+ * 优先级三联视觉来源：详见 [PriorityColors.priorityVisualOf]
  */
 @Composable
 fun DeletedTodoCard(
@@ -38,46 +48,91 @@ fun DeletedTodoCard(
     onRestore: () -> Unit,
     onPermanentDelete: () -> Unit
 ) {
+    /**
+     * 优先级三联视觉（v2026-07-20 新增）
+     *
+     * 回收站待办视为未完成态（已删除非主页完成态），保持原始优先级色。
+     */
+    val priorityVisual = PriorityColors.priorityVisualOf(
+        priority = item.priority,
+        isCompleted = false
+    )
+
+    /** 左侧竖条宽度，与首页 PriorityBar 保持一致的 4dp */
+    val barWidth = 4.dp
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            // 优先级边框：1.5dp + 优先级色 alpha 0.6f
+            .border(
+                width = 1.5.dp,
+                color = priorityVisual.border.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            // 优先级阴影：2dp + 优先级色 alpha 0.3f
+            // 与 CenterEditButton.kt L92-96 的彩色阴影模式同源
+            .shadow(
+                elevation = 2.dp,
+                shape = RoundedCornerShape(12.dp),
+                ambientColor = priorityVisual.shadow,
+                spotColor = priorityVisual.shadow
+            ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        // v2026-07-20 改动：让出默认阴影给外层 Modifier.shadow，避免双层阴影叠加
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // 标题
-            Text(
-                text = item.title,
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+        // 内部布局：左侧 4dp 竖条 + 右侧内容
+        // v2026-07-20 新增：与首页 TodoListItem 形成统一的"竖条+内容"结构
+        Row(modifier = Modifier.fillMaxWidth()) {
+            // 左侧 4dp 竖条（自适应卡片高度）
+            Box(
+                modifier = Modifier
+                    .width(barWidth)
+                    .fillMaxHeight()
+                    .background(priorityVisual.bar)
             )
-            Spacer(Modifier.height(4.dp))
-            // 副标题：分组 + 相对时间
-            Text(
-                text = buildSubtitle(item),
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(12.dp))
-            // 行内显式按钮
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+
+            // 右侧内容区
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(16.dp)
             ) {
-                TextButton(onClick = onRestore) {
-                    Text("↩ 恢复")
-                }
-                TextButton(onClick = onPermanentDelete) {
-                    Text(
-                        "🗑 永久删除",
-                        color = MaterialTheme.colorScheme.error
-                    )
+                // 标题
+                Text(
+                    text = item.title,
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(4.dp))
+                // 副标题：分组 + 相对时间
+                Text(
+                    text = buildSubtitle(item),
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                // 行内显式按钮
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                ) {
+                    TextButton(onClick = onRestore) {
+                        Text("↩ 恢复")
+                    }
+                    TextButton(onClick = onPermanentDelete) {
+                        Text(
+                            "🗑 永久删除",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         }

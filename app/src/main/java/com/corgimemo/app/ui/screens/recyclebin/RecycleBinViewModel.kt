@@ -140,7 +140,9 @@ class RecycleBinViewModel @Inject constructor(
                 originalCategoryId = if (d.categoryId == 0L) null else d.categoryId,
                 categoryName = d.categoryId.takeIf { it != 0L }?.let { categoryMap[it]?.name },
                 deletedAt = d.deletedAt,
-                relativeTime = TimeClassifier.formatRelativeTime(d.deletedAt, now)
+                relativeTime = TimeClassifier.formatRelativeTime(d.deletedAt, now),
+                // v2026-07-20 新增：从 DeletedTodo 透传 priority，用于回收站卡片视觉标识
+                priority = d.priority
             )
         }
 

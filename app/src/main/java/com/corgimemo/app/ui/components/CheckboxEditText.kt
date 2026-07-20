@@ -458,16 +458,16 @@ private fun TodoGroupContainer(
 ) {
     /**
      * 根据优先级计算边框颜色
-     * - 3=高 → 红色
-     * - 2=中 → 黄色
-     * - 1=低 → 绿色
-     * - 0=无 → 无边框
+     * - 3=高 → 柔红
+     * - 2=中 → 柔橙
+     * - 1=低 → 柔蓝
+     * - 0=无 → 浅绿 #C8E6C9（v2026-07-20 新增，与首页/回收站统一"无优先级也显示边框"的视觉）
      */
     val borderColor = when (priority) {
         3 -> PriorityColors.colorOf(3)  // 高优先级
         2 -> PriorityColors.colorOf(2)  // 中优先级
         1 -> PriorityColors.colorOf(1)  // 低优先级
-        else -> null                     // 无优先级：无边框
+        else -> PriorityColors.colorOf(0)  // 无优先级：浅绿色边框（v2026-07-20）
     }
 
     /** 优先级按钮显示文字 */

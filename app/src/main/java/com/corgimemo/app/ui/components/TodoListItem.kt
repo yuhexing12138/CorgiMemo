@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextDecoration
@@ -193,9 +195,38 @@ fun TodoListItem(
     val interactionSource = remember { MutableInteractionSource() }
     val cardScale = remember { mutableFloatStateOf(1f) }
 
+    /**
+     * 优先级三联视觉（v2026-07-20 新增）
+     *
+     * 统一获取竖条/边框/阴影三处视觉元素的颜色源。
+     * - 用 remember 缓存避免重组时重复计算（同时降低 lambda 捕获陷阱风险）
+     * - 已完成态（status=1）时三联颜色同步降权为 dim 版
+     */
+    val priorityVisual = remember(todo.priority, todo.status) {
+        PriorityColors.priorityVisualOf(
+            priority = todo.priority,
+            isCompleted = todo.status == 1
+        )
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            // 优先级边框：1.5dp + 优先级色 alpha 0.6f
+            // v2026-07-20 新增：与竖条/阴影形成三联视觉
+            .border(
+                width = 1.5.dp,
+                color = priorityVisual.border.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(16.dp)
+            )
+            // 优先级阴影：2dp + 优先级色 alpha 0.3f
+            // 与 CenterEditButton.kt L92-96 的彩色阴影模式同源（ambientColor + spotColor）
+            .shadow(
+                elevation = 2.dp,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = priorityVisual.shadow,
+                spotColor = priorityVisual.shadow
+            )
             // 统一的按压反馈：滑动接触缩放 + 点击水波纹 + 长按检测 + 拖拽让位
             .pressFeedback(
                 interactionSource = interactionSource,
@@ -227,7 +258,8 @@ fun TodoListItem(
                 // 拖拽协调：ReorderableLazyColumn 启动拖拽时让位
                 isDragActive = { isDragActive }
             ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        // v2026-07-20 改动：让出默认阴影给外层 Modifier.shadow，避免双层阴影叠加
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = cardBackground)
     ) {

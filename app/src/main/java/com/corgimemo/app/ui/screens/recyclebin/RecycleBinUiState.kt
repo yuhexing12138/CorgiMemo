@@ -56,7 +56,14 @@ data class DeletedTodoListItem(
     val originalCategoryId: Long?,
     val categoryName: String?,
     val deletedAt: Long,
-    val relativeTime: String
+    val relativeTime: String,
+    /**
+     * 优先级数值（0=无、1=低、2=中、3=高），用于卡片视觉标识
+     *
+     * v2026-07-20 新增：与首页 TodoListItem 视觉标识体系保持一致。
+     * 默认值 = 0 保证向后兼容（如有任何其他代码构造此数据类不会编译失败）。
+     */
+    val priority: Int = 0
 )
 
 /** 灵感列表项 */
