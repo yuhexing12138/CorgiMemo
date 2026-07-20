@@ -1,6 +1,11 @@
 package com.corgimemo.app.ui.screens.main
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -462,7 +468,14 @@ fun MainScreen(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.width(280.dp)) {
+            // v1.2: 抽屉宽度响应式
+            // 屏宽 < 360dp → 固定 280dp
+            // 屏宽 360-450dp → 80% 屏宽
+            // 屏宽 > 450dp → 上限 360dp,避免遮挡主内容
+            val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+            ModalDrawerSheet(
+                modifier = Modifier.width(screenWidth * 0.8f).coerceIn(280.dp, 360.dp)
+            ) {
                 AppDrawerContent(
                     currentTab = selectedTab,
                     corgiData = corgiData,
@@ -514,6 +527,13 @@ fun MainScreen(
                     },
                     onSettingsClick = {
                         navController.navigate(Screen.Settings.route)
+                        coroutineScope.launch { drawerState.close() }
+                    },
+                    // v1.2: 顶部用户头像点击 → 切到 PROFILE tab + 关 drawer
+                    // 顺序：先改 selectedTab 再关 drawer —— 抽屉关闭动画期内
+                    // tab 已切换,AnimatedContent 已渲染好新内容,关闭后视觉上无缝衔接
+                    onProfileClick = {
+                        selectedTab = TabItem.PROFILE
                         coroutineScope.launch { drawerState.close() }
                     }
                 )
@@ -599,8 +619,9 @@ fun MainScreen(
                             coroutineScope.launch { drawerState.open() }
                         },
                         onCorgiClick = {
-                            // 柯基互动页暂未完善，点击时弹出 Snackbar 提示
-                            coroutineScope.launch { snackbarHostState.showSnackbar("柯基互动页开发中，敬请期待~") }
+                            // v1.2: 接通柯基互动页（CorgiDetailScreen）
+                            // 移除"开发中"snackbar,柯基互动页已实现
+                            navController.navigate(Screen.CorgiDetail.route)
                         },
                         actionButtons = effectiveActionButtons,
                         /**
@@ -852,38 +873,53 @@ fun MainScreen(
                         .fillMaxSize()
                         .padding(paddingValues)
                 ) {
-                    when (selectedTab) {
-                        TabItem.TODO -> HomeScreen(
-                            navController = navController,
-                            onFabClick = {
-                                homeViewModel.onUserInteraction()
-                                homeViewModel.setPoseForCreating()
-                                navController.navigate("todo_edit")
-                            },
-                            viewModel = homeViewModel,
-                            snackbarHostState = snackbarHostState
-                        )
-                        TabItem.INSPIRE -> InspirationScreen(
-                            navController = navController,
-                            onFabClick = { navController.navigate("inspiration_edit") },
-                            snackbarHostState = snackbarHostState
-                        )
-                        TabItem.DATE -> SpecialDateScreen(
-                            navController = navController,
-                            onFabClick = { navController.navigate(Screen.SpecialDateQuickCreate.route) },
-                            snackbarHostState = snackbarHostState,
-                            viewModel = specialDateViewModel
-                        )
-                        TabItem.PROFILE -> ProfileScreen(
-                            navController = navController
-                        )
-                        TabItem.EDIT -> { /* 中央编辑按钮不是真实Tab */ }
+                    // v1.2: Tab 切换淡入淡出动画
+                    // - targetState=selectedTab 触发重组
+                    // - fadeIn(180ms) 略慢于 fadeOut(140ms) 避免新内容被旧内容挡
+                    // - keepCurrentState=true 保护已访问 tab 的内部状态
+                    //   (如 HomeScreen 滚动位置、InspirationScreen 选中标签等)
+                    // - label="tab-switch" 便于 Compose Layout Inspector 调试
+                    AnimatedContent(
+                        targetState = selectedTab,
+                        transitionSpec = {
+                            fadeIn(animationSpec = tween(180)) togetherWith
+                                fadeOut(animationSpec = tween(140))
+                        },
+                        label = "tab-switch"
+                    ) { tab ->
+                        when (tab) {
+                            TabItem.TODO -> HomeScreen(
+                                navController = navController,
+                                onFabClick = {
+                                    homeViewModel.onUserInteraction()
+                                    homeViewModel.setPoseForCreating()
+                                    navController.navigate("todo_edit")
+                                },
+                                viewModel = homeViewModel,
+                                snackbarHostState = snackbarHostState
+                            )
+                            TabItem.INSPIRE -> InspirationScreen(
+                                navController = navController,
+                                onFabClick = { navController.navigate("inspiration_edit") },
+                                snackbarHostState = snackbarHostState
+                            )
+                            TabItem.DATE -> SpecialDateScreen(
+                                navController = navController,
+                                onFabClick = { navController.navigate(Screen.SpecialDateQuickCreate.route) },
+                                snackbarHostState = snackbarHostState,
+                                viewModel = specialDateViewModel
+                            )
+                            TabItem.PROFILE -> ProfileScreen(
+                                navController = navController
+                            )
+                            TabItem.EDIT -> { /* 中央编辑按钮不是真实Tab */ }
+                        }
                     }
                 }
 
                 FloatingCorgiButton(
-                    // 柯基互动页暂未完善，点击弹出 Snackbar 提示
-                    onClick = { coroutineScope.launch { snackbarHostState.showSnackbar("柯基互动页开发中，敬请期待~") } },
+                    // v1.2: 接通柯基互动页
+                    onClick = { navController.navigate(Screen.CorgiDetail.route) },
                     onPositionChanged = { x, y ->
                         coroutineScope.launch { corgiPrefs.saveFloatingCorgiPosition(x, y) }
                     },

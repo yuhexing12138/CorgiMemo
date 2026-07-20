@@ -1,72 +1,52 @@
 package com.corgimemo.app.ui.screens.profile.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.corgimemo.app.animation.LevelStage
 import com.corgimemo.app.data.model.CorgiData
+import com.corgimemo.app.ui.components.UserAvatar
 
 /**
- * 柯基展示头卡
+ * "我的"页用户信息头卡
  *
- * 视觉规范：
+ * 视觉规范（v1.2 用户化改造）：
  * - 主色浅渐变背景（primaryContainer → surface，135°）
  * - 圆角 20dp，elevation 2dp
- * - 柯基头像 72dp 圆形，白色背景
- * - 名字 20sp Bold + Lv 徽章 10sp Bold 胶囊
- * - 经验进度条 6dp 高，圆角 3dp
- * - 底部三栏快捷统计（累计/连续/情绪）
+ * - 72dp 圆形用户头像（与 drawer 顶部 48dp 同 UserAvatar 组件，缩放一致）
+ * - 名字 20sp Bold
+ * - 副标题 11sp Medium 主色："Lv.X · 柯基陪伴 N 天"
  *
- * API 适配说明：
- * 计划原定在 72dp 圆形头像内嵌入 InteractiveCorgi，但 InteractiveCorgi 内部强制
- * `modifier.fillMaxWidth().padding(16.dp)` 且 baseSize=120dp，无法约束到 72dp 小尺寸
- * （会撑破头卡布局）。按计划"可降级为静态 emoji 🐕"的约定，此处头像降级为静态 emoji。
- * hapticEnabled / soundEnabled 参数保留以维持计划定义的公开签名，便于后续 ProfileScreen
- * 调用与未来 InteractiveCorgi 重新接入。
+ * 改造前：🐕 emoji 头像 + 柯基名字 + 等级徽章 + 经验条 + 三栏统计（累计/连续/情绪）
+ * 改造后：用户头像（首字母徽章）+ 昵称 + "陪伴天数"副标题
+ * 柯基相关内容（等级/经验/统计）已迁出到 CorgiDetailScreen 柯基互动页
  *
  * @param corgiData 柯基数据（null 时显示占位）
- * @param levelStage 等级阶段
- * @param levelProgress 进度 0..1
- * @param progressText 进度文字（如 "62/100"）
- * @param hapticEnabled 触觉反馈开关（降级后暂未使用，保留签名）
- * @param soundEnabled 音效开关（降级后暂未使用，保留签名）
- * @param onNameClick 点击名字回调（触发改名弹窗）
+ * @param consecutiveDays 连续活跃天数（用于副标题"陪伴 N 天"）
+ * @param onNameClick 头像/名字点击回调（触发改名弹窗）
  */
-@Suppress("UNUSED_PARAMETER")
 @Composable
 fun ProfileHeroCard(
     corgiData: CorgiData?,
-    levelStage: LevelStage,
-    levelProgress: Float,
-    progressText: String,
-    hapticEnabled: Boolean,
-    soundEnabled: Boolean,
+    consecutiveDays: Int,
     onNameClick: () -> Unit
 ) {
-    // 渐变背景：primaryContainer → surface（营造柔和过渡）
+    // 渐变背景：primaryContainer → surface（营造柔和过渡，与改造前保持视觉锚点一致）
     val gradientBrush = Brush.linearGradient(
         colors = listOf(
             MaterialTheme.colorScheme.primaryContainer,
@@ -85,149 +65,39 @@ fun ProfileHeroCard(
                 .background(gradientBrush)
                 .padding(16.dp)
         ) {
-            Column {
-                // 顶部：柯基头像 + 名字/等级/进度
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    // 柯基头像（72dp 圆形，白色背景）
-                    // 原计划嵌入 InteractiveCorgi，因小尺寸不兼容降级为静态 emoji 🐕
-                    Box(
-                        modifier = Modifier
-                            .size(72.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface)
-                            .clickable(onClick = onNameClick),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = "🐕", fontSize = 32.sp)
-                    }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = corgiData?.name ?: "小柯基",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.clickable(onClick = onNameClick)
-                            )
-                            // 等级徽章
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.primary)
-                                    .padding(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "Lv.${corgiData?.level ?: 1}",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            }
-                        }
-                        Text(
-                            text = levelStage.displayName,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
-                        // 经验进度条标签
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "经验",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = progressText,
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        // 经验进度条（Compose 1.9.x 用 lambda 形式 progress = { value }）
-                        LinearProgressIndicator(
-                            progress = { levelProgress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 4.dp)
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surface
-                        )
-                    }
-                }
-
-                // 分隔虚线（柯基信息 ↔ 统计）
-                Spacer(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 14.dp)
-                        .height(1.dp)
-                        .background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                            shape = RoundedCornerShape(0.5.dp)
-                        )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // 用户头像 72dp（首字母占位 / Coil 加载真实头像）
+                // 点击头像触发改名弹窗（与改造前语义一致：名字/头像是一个整体）
+                UserAvatar(
+                    nickname = corgiData?.name ?: "小柯基",
+                    avatarPath = corgiData?.avatarPath,
+                    size = 72.dp,
+                    onClick = onNameClick
                 )
 
-                // 底部三栏快捷统计
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceAround
-                ) {
-                    HeroStat(
-                        value = "${corgiData?.totalCompleted ?: 0}",
-                        label = "累计完成"
+                // 右侧：昵称 + 副标题
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = corgiData?.name ?: "小柯基",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                    HeroStat(
-                        value = "${corgiData?.consecutiveDays ?: 0}",
-                        label = "连续天数"
-                    )
-                    HeroStat(
-                        value = "${corgiData?.moodValue ?: 50}%",
-                        label = "情绪值"
+                    Text(
+                        // 文案规则：
+                        // - 默认昵称"小柯基"时,cor.level=1,consecutiveDays=0 → "Lv.1 · 柯基陪伴 0 天"
+                        // - 普通用户：取等级和连续天数("陪伴"语义取 consecutiveDays,因字段已存在且语义贴切)
+                        text = "Lv.${corgiData?.level ?: 1} · 柯基陪伴 ${consecutiveDays} 天",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
             }
         }
-    }
-}
-
-/**
- * 头卡底部统计项
- * 上方数值（16sp Bold 主色），下方标签（10sp 次要色）
- *
- * @param value 数值文本
- * @param label 标签文本
- */
-@Composable
-private fun HeroStat(value: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = label,
-            fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 2.dp)
-        )
     }
 }

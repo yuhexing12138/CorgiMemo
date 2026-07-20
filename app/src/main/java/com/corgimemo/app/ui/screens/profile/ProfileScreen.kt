@@ -109,15 +109,11 @@ fun ProfileScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(vertical = 16.dp)
     ) {
-        // ① 柯基展示头卡
+        // ① 用户信息头卡（v1.2 改造：从柯基头卡 → 用户信息卡）
         item {
             ProfileHeroCard(
                 corgiData = corgiData,
-                levelStage = levelStage,
-                levelProgress = levelProgress,
-                progressText = progressText,
-                hapticEnabled = hapticEnabled,
-                soundEnabled = soundEnabled,
+                consecutiveDays = corgiData?.consecutiveDays ?: 0,
                 onNameClick = { showRenameDialog = true }
             )
         }
@@ -219,7 +215,10 @@ fun ProfileScreen(
             },
             text = {
                 Text(
-                    text = "确定要将柯基的名字改为「$pendingNewName」吗？",
+                    // v1.2 文案调整：原"柯基的名字"改为"昵称"，
+                    // 因为 Profile 页头卡现在显示的是用户头像 + 昵称，
+                    // 柯基元素已迁出到 CorgiDetailScreen。
+                    text = "确定要将昵称改为「$pendingNewName」吗？",
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
@@ -688,7 +687,8 @@ fun CorgiRenameDialog(
                     style = MaterialTheme.typography.displayLarge
                 )
                 Text(
-                    text = "修改柯基名字",
+                    // v1.2 文案调整：原"修改柯基名字" → "修改昵称"
+                    text = "修改昵称",
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
