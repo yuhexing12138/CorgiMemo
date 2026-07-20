@@ -7,4 +7,13 @@
     <!-- 灵感卡片截图保存到 getExternalFilesDir(Environment.DIRECTORY_PICTURES)，
          需通过 external-files-path 让 FileProvider 识别该路径下的文件用于分享 -->
     <external-files-path name="external_pictures" path="Pictures/" />
+
+    <!-- 头像拍照临时文件：保存在 cacheDir/（ActivityForResult.contracts.TakePicture 写入位置）-->
+    <cache-path
+        name="avatar_capture"
+        path="." />
+    <!-- 头像持久化文件：保存到 filesDir/avatars/，与 AvatarPath.kt 注释保持一致 -->
+    <files-path
+        name="avatars"
+        path="avatars/" />
 </paths>
