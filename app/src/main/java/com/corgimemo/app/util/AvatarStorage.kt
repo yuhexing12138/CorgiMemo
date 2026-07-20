@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -55,9 +56,11 @@ object AvatarStorage {
     suspend fun saveAvatar(context: Context, bitmap: Bitmap): String =
         withContext(Dispatchers.IO) {
             val file = File(getAvatarDir(context), "${UUID.randomUUID()}$EXT")
-            FileOutputStream(file).use { out ->
+            Log.d("AvatarDebug", "saveAvatar: 准备保存到 ${file.absolutePath}, bitmap宽=${bitmap.width}, 高=${bitmap.height}")
+            val success = FileOutputStream(file).use { out ->
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
             }
+            Log.d("AvatarDebug", "saveAvatar: 压缩结果=$success, 文件存在=${file.exists()}, 文件大小=${file.length()} bytes")
             file.absolutePath
         }
 
@@ -89,8 +92,11 @@ object AvatarStorage {
      */
     suspend fun decodeBitmap(context: Context, uri: Uri, maxSize: Int = 2048): Bitmap? =
         withContext(Dispatchers.IO) {
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            Log.d("AvatarDebug", "decodeBitmap: 开始解码 URI=$uri")
+            val bitmap = context.contentResolver.openInputStream(uri)?.use { input ->
                 BitmapFactory.decodeStream(input)
             }
+            Log.d("AvatarDebug", "decodeBitmap: 解码结果=${bitmap != null}, 宽=${bitmap?.width}, 高=${bitmap?.height}")
+            bitmap
         }
 }

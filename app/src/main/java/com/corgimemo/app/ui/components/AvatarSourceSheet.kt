@@ -89,6 +89,8 @@ fun AvatarSourceSheet(
 
     // ===== ActivityResult：拍照 =====
     // 回调 success=true 时回传临时 URI；false（用户取消）时清理 pendingCameraUri
+    // 关键：回调里再关闭 BottomSheet，避免 launch 后立即 onDismiss 导致组件离开
+    // Composition、launcher 被 unregister、系统相册返回结果丢失
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
@@ -96,14 +98,19 @@ fun AvatarSourceSheet(
             pendingCameraUri?.let { onPhotoTaken(it) }
         }
         pendingCameraUri = null
+        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
     }
 
     // ===== ActivityResult：选图 =====
     // Android 13+ 使用系统 PhotoPicker；4.4+ 走向后兼容 Activity 透明壳
+    // 关键：回调里再关闭 BottomSheet，原因同上
     val pickMediaLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        uri?.let { onPhotoPicked(it) }
+        if (uri != null) {
+            onPhotoPicked(uri)
+        }
+        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
     }
 
     // ===== 主体 ModalBottomSheet =====
@@ -162,8 +169,8 @@ fun AvatarSourceSheet(
                     pendingCameraUri = uri
                     // 触发系统相机；URI 已被授权，可直接写入
                     takePictureLauncher.launch(uri)
-                    // 关闭 BottomSheet（hide + onDismiss 顺序：动画完再回调）
-                    scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+                    // 不在此处关闭 BottomSheet：等 launcher 回调后再关闭
+                    // 否则组件离开 Composition 会导致 launcher 被 unregister，结果丢失
                 }
 
                 Spacer(Modifier.height(8.dp))
@@ -180,7 +187,7 @@ fun AvatarSourceSheet(
                             ActivityResultContracts.PickVisualMedia.ImageOnly
                         )
                     )
-                    scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+                    // 不在此处关闭 BottomSheet，原因同上
                 }
 
                 Spacer(Modifier.height(8.dp))
