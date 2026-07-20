@@ -67,7 +67,10 @@ import com.corgimemo.app.animation.OutfitManager
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.ui.components.AppSnackbarHost
+import com.corgimemo.app.ui.components.MissedYouDialog
 import com.corgimemo.app.ui.components.MoodHistoryChart
+import com.corgimemo.app.ui.components.OutfitQuickSwitchSheet
+import com.corgimemo.app.ui.components.YawnOverlay
 import com.corgimemo.app.ui.theme.UiColors
 import com.corgimemo.app.viewmodel.HomeViewModel
 import kotlinx.coroutines.delay
@@ -102,6 +105,14 @@ fun CorgiDetailScreen(
     val greeting by viewModel.greeting.collectAsState()
     val hapticEnabled by viewModel.hapticEnabled.collectAsState()
     val soundEnabled by viewModel.soundEnabled.collectAsState()
+    // ===== 自主行为状态（P0 接入）=====
+    // 5 种行为（YAWNING/SLEEPING_NIGHT/WORRIED/MISSED_YOU/HAPPY_STREAK）的来源，
+    // 其中 3 种（SLEEPING_NIGHT/WORRIED/HAPPY_STREAK）已通过 greeting 隐式覆盖，
+    // 本页新增：YAWNING 浮层 + MISSED_YOU Dialog。
+    val currentBehavior by viewModel.currentBehavior.collectAsState()
+    val showMissedYouDialog by viewModel.showMissedYouDialog.collectAsState()
+    val missedYouDays by viewModel.missedYouDays.collectAsState()
+    val showOutfitSheet by viewModel.showOutfitSheet.collectAsState()
     // 统一的 Snackbar 状态
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -175,6 +186,7 @@ fun CorgiDetailScreen(
                     currentOutfit = effectiveOutfit,
                     greeting = greeting,
                     interactionAnimation = interactionAnimation,
+                    currentBehavior = currentBehavior,   // P0 接入：用于在 Box 内挂 YawnOverlay
                     onInteraction = { viewModel.onUserInteraction() },
                     soundEnabled = soundEnabled,
                     hapticEnabled = hapticEnabled
@@ -206,7 +218,6 @@ fun CorgiDetailScreen(
 
                 // ===== 5.6 装扮预览区 =====
                 OutfitSection(
-                    _corgiData = data,
                     currentOutfit = effectiveOutfit,
                     onSwitchOutfit = { viewModel.toggleOutfitSheet() }
                 )
@@ -233,6 +244,37 @@ fun CorgiDetailScreen(
                 )
             }
         }
+    }
+
+    // ===== P0 修复：快速换装 BottomSheet（解决"切换装扮"死按钮）=====
+    // 复用 `com.corgimemo.app.ui.components.OutfitQuickSwitchSheet`（与 HomeScreen 长按柯基同 UX）
+    val outfitSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    LaunchedEffect(showOutfitSheet) {
+        if (showOutfitSheet) {
+            outfitSheetState.show()
+        } else if (outfitSheetState.isVisible) {
+            outfitSheetState.hide()
+        }
+    }
+    if (showOutfitSheet) {
+        OutfitQuickSwitchSheet(
+            sheetState = outfitSheetState,
+            // 注意：传 currentOutfit（不叠加节日 effectiveOutfit），
+            // 与 HomeScreen L1226 保持一致，避免节日期间高亮错位
+            currentOutfitId = currentOutfit,
+            unlockedOutfitsJson = corgiData?.unlockedOutfits ?: "[]",
+            onSelect = { outfitId -> viewModel.quickSwitchOutfit(outfitId) },
+            onDismiss = { viewModel.hideOutfitSheet() }
+        )
+    }
+
+    // ===== P0 修复：MISSED_YOU Dialog 挂载（HomeViewModel 启动时可能触发）=====
+    // 正常流程下 HomeScreen 已 dismiss，这里挂载仅为完整性
+    if (showMissedYouDialog) {
+        MissedYouDialog(
+            daysAway = missedYouDays,
+            onDismiss = { viewModel.dismissMissedYouDialog() }
+        )
     }
 
     // 互动动画播放后恢复默认（差异化时长：抚摸800ms/喂食1000ms/玩耍1200ms）
@@ -321,6 +363,12 @@ private fun CorgiAnimationSection(
                     onShowSnackbar = { msg -> com.corgimemo.app.ui.components.GlobalSnackbarController.showMessage(msg) },
                     modifier = Modifier.size(140.dp)
                 )
+            }
+
+            // P0：YAWNING 浮层（区分于 SLEEPING_NIGHT，两者都使用 SLEEP 姿态）
+            // 仅在空闲打哈欠（10 秒无操作后）显示在 Box 右上角（TopEnd）
+            if (currentBehavior == BehaviorType.YAWNING) {
+                YawnOverlay(modifier = Modifier.align(Alignment.TopEnd))
             }
 
             // 问候语气泡
@@ -646,13 +694,11 @@ private fun AchievementSection(
 /**
  * 装扮预览区
  *
- * @param corgiData 柯基数据
  * @param currentOutfit 当前装扮 ID
  * @param onSwitchOutfit 切换装扮回调
  */
 @Composable
 private fun OutfitSection(
-    _corgiData: CorgiData,
     currentOutfit: String?,
     onSwitchOutfit: () -> Unit
 ) {
