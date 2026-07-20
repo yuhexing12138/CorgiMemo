@@ -12,25 +12,34 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
+import coil3.compose.SubcomposeAsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.corgimemo.app.animation.FrameAnimation
 import com.corgimemo.app.util.AvatarPath
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 通用用户头像组件
  *
  * 设计目标：
- * 1. 跨页面统一头像入口（drawer 顶部 / "我的"页头卡 / 后续列表项）
+ * 1. 跨页面统一头像入口（drawer 顶部 / "我的"页头卡 / 个人信息页）
  * 2. 明确视觉差异 — 圆形 + 主色背景 + 白色首字母大写，与柯基形象完全区分
  * 3. 支持三类头像来源：预设动作帧 / 用户上传 / 首字母占位
  *
@@ -53,6 +62,7 @@ import com.corgimemo.app.util.AvatarPath
  *
  * @param nickname 用户昵称（用于提取首字母占位）
  * @param avatarPath 头像文件绝对路径 / content URI / "preset:xxx" 预设标识；null 时回退到首字母占位
+ * @param preloadedBitmap 预加载的 Bitmap（推荐从 ViewModel 传入，可避免 Compose 内 IO 阻塞）
  * @param size 头像直径（dp）
  * @param onClick 头像点击回调；null 表示不可点
  * @param onAvatarLongClick 头像长按回调（本期预留，不接；未来接"更换头像"长按入口）
@@ -62,6 +72,7 @@ fun UserAvatar(
     nickname: String,
     avatarPath: String?,
     size: Dp,
+    preloadedBitmap: android.graphics.Bitmap? = null,
     onClick: (() -> Unit)? = null,
     onAvatarLongClick: (() -> Unit)? = null
 ) {
@@ -117,31 +128,57 @@ fun UserAvatar(
                 AvatarInitialText(nickname = nickname, size = size)
             }
         } else if (avatarPath != null) {
-            // 用户上传头像：私有目录绝对路径用 BitmapFactory 直接解码（绕开 Coil 3
-            // 对私有目录绝对路径的兼容性问题 [coil-kt/coil#2273]）；其余路径
-            // （content URI / HTTP URL）保留 Coil AsyncImage
-            if (avatarPath.startsWith("/")) {
-                val bitmap = remember(avatarPath) {
-                    runCatching { BitmapFactory.decodeFile(avatarPath) }.getOrNull()
+            // 用户上传头像：
+            // 优先级 1：caller 预加载的 Bitmap（避免 Compose 内 IO 与 Coil 兼容问题）
+            // 优先级 2：私有目录绝对路径，LaunchedEffect 异步 BitmapFactory 解码
+            // 优先级 3：其他路径（content:// / http），Coil SubcomposeAsyncImage
+            // 加载失败统一 fallback 到首字母占位
+            val bitmap = preloadedBitmap
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "用户头像",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+            } else if (avatarPath.startsWith("/")) {
+                var loadedBitmap by remember(avatarPath) {
+                    mutableStateOf<android.graphics.Bitmap?>(null)
                 }
-                if (bitmap != null) {
+                LaunchedEffect(avatarPath) {
+                    loadedBitmap = withContext(Dispatchers.IO) {
+                        runCatching { BitmapFactory.decodeFile(avatarPath) }.getOrNull()
+                    }
+                }
+                val bm = loadedBitmap
+                if (bm != null) {
                     Image(
-                        bitmap = bitmap.asImageBitmap(),
+                        bitmap = bm.asImageBitmap(),
                         contentDescription = "用户头像",
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(CircleShape),
                         contentScale = ContentScale.Crop
                     )
+                } else {
+                    AvatarInitialText(nickname = nickname, size = size)
                 }
             } else {
-                AsyncImage(
-                    model = avatarPath,
+                val context = LocalContext.current
+                SubcomposeAsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(avatarPath)
+                        .crossfade(true)
+                        .build(),
                     contentDescription = "用户头像",
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(CircleShape),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    loading = { AvatarInitialText(nickname = nickname, size = size) },
+                    error = { AvatarInitialText(nickname = nickname, size = size) }
                 )
             }
         } else {

@@ -2,6 +2,7 @@ package com.corgimemo.app.ui.screens.profile.detail
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,10 +11,14 @@ import com.corgimemo.app.data.repository.CorgiRepository
 import com.corgimemo.app.util.AvatarPath
 import com.corgimemo.app.util.AvatarStorage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -46,6 +51,36 @@ class ProfileDetailViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**
+     * 头像预加载 Bitmap
+     *
+     * 派生自 corgiData.avatarPath：
+     * - null/preset：保持 null（UserAvatar 用 FrameAnimation / 占位）
+     * - 私有目录绝对路径：用 BitmapFactory 在 IO 线程解码后推送
+     *
+     * 使用 WhileSubscribed(5s) 启动，UI 退到后台 5 秒内不重启收集协程
+     * 避免短暂进入页面触发多余 IO。distinctUntilChanged 按 path 去重，
+     * 相同 path 不重新解码。
+     */
+    val avatarBitmap: StateFlow<Bitmap?> = corgiData
+        .map { data -> data?.avatarPath }
+        .distinctUntilChanged()
+        .map { path -> decodeAvatarBitmap(path) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * 异步解码头像 Bitmap
+     *
+     * @param path 头像路径；null / preset / 非绝对路径 返回 null
+     * @return 解码后的 Bitmap，失败返回 null
+     */
+    private suspend fun decodeAvatarBitmap(path: String?): Bitmap? {
+        if (path == null || AvatarPath.isPreset(path) || !path.startsWith("/")) return null
+        return withContext(Dispatchers.IO) {
+            runCatching { BitmapFactory.decodeFile(path) }.getOrNull()
+        }
+    }
+
+    /**
      * 处理拍照/选图 URI，进入裁剪环节
      *
      * 调用 AvatarStorage.decodeBitmap 在 IO 线程解码图片，
@@ -70,6 +105,9 @@ class ProfileDetailViewModel @Inject constructor(
      * 1. 删除旧头像文件（仅用户上传类型，预设不删）
      * 2. repository.updateAvatarPath(newPath) 写入新路径
      * 3. onSuccess 回调关闭裁剪界面
+     *
+     * avatarBitmap 派生自 corgiData.avatarPath，会随 corgi_data 表更新自动重解码，
+     * 无需手动通知。
      *
      * @param context   Android Context
      * @param newPath   新的 avatarPath（绝对路径 /data/.../avatars/xxx.png）

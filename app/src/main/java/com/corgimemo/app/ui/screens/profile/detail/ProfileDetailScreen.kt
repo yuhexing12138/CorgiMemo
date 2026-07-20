@@ -81,6 +81,7 @@ fun ProfileDetailScreen(
     viewModel: ProfileDetailViewModel = hiltViewModel()
 ) {
     val corgiData by viewModel.corgiData.collectAsState()
+    val avatarBitmap by viewModel.avatarBitmap.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -119,6 +120,7 @@ fun ProfileDetailScreen(
             item {
                 BigAvatarCard(
                     corgiData = corgiData,
+                    avatarBitmap = avatarBitmap,
                     onAvatarClick = { showAvatarSourceSheet = true },
                     onNameClick = { showNameDialog = true }
                 )
@@ -236,6 +238,7 @@ fun ProfileDetailScreen(
 @Composable
 private fun BigAvatarCard(
     corgiData: CorgiData?,
+    avatarBitmap: Bitmap?,
     onAvatarClick: () -> Unit,
     onNameClick: () -> Unit
 ) {
@@ -256,6 +259,7 @@ private fun BigAvatarCard(
             UserAvatar(
                 nickname = corgiData?.name ?: "用户",
                 avatarPath = corgiData?.avatarPath,
+                preloadedBitmap = avatarBitmap,
                 size = 120.dp,
                 onClick = onAvatarClick
             )
