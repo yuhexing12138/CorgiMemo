@@ -513,7 +513,8 @@ fun TodoListItem(
                                     else MaterialTheme.colorScheme.onSurfaceVariant
                             // 提醒时间相关数据
                             val reminderData = if (hasReminder) {
-                                val reminder = formatReminderDisplay(todo.reminderTime!!)
+                                // reminderTime 在 hasReminder 分支内已智能转换为非空 Long，移除冗余 !! 2026-07-20
+                                val reminder = formatReminderDisplay(todo.reminderTime)
                                 val reminderColor = if (todo.status == 1) {
                                     CompletedColors.Text
                                 } else if (reminder.isOverdue) {
@@ -533,7 +534,8 @@ fun TodoListItem(
                                 ) {
                                     // 分类标签
                                     CategoryTagWithShadow(
-                                        categoryName = categoryName!!,
+                                        // isMetaCrowded 分支内 categoryName 已智能转换为非空 String，移除冗余 !! 2026-07-20
+                                        categoryName = categoryName,
                                         isCompleted = todo.status == 1
                                     )
                                     // 附件计数（语音+图片）
@@ -568,8 +570,9 @@ fun TodoListItem(
                                 ) {
                                     // 分类标签
                                     if (hasCategory) {
+                                        // hasCategory 分支内 categoryName 已智能转换为非空 String，移除冗余 !! 2026-07-20
                                         CategoryTagWithShadow(
-                                            categoryName = categoryName!!,
+                                            categoryName = categoryName,
                                             isCompleted = todo.status == 1
                                         )
                                     }

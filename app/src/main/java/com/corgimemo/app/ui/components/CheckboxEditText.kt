@@ -484,16 +484,12 @@ private fun TodoGroupContainer(
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surface)
             .then(
-                // 优先级边框颜色
-                if (borderColor != null) {
-                    Modifier.border(
-                        width = 1.5.dp,
-                        color = borderColor.copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                } else {
-                    Modifier
-                }
+                // 优先级边框颜色（borderColor 来自 when 表达式必返回非空 Color，移除冗余空判断 2026-07-20）
+                Modifier.border(
+                    width = 1.5.dp,
+                    color = borderColor.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(12.dp)
+                )
             )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -528,19 +524,17 @@ private fun TodoGroupContainer(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            // 优先级颜色圆点
-                            if (borderColor != null) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(androidx.compose.foundation.shape.CircleShape)
-                                        .background(borderColor)
-                                )
-                            }
+                            // 优先级颜色圆点（borderColor 必非空，移除冗余空判断 2026-07-20）
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(borderColor)
+                            )
                             Text(
                                 text = priorityLabel,
                                 fontSize = 13.sp,
-                                color = borderColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = borderColor,
                                 fontWeight = if (priority > 0) androidx.compose.ui.text.font.FontWeight.SemiBold
                                              else androidx.compose.ui.text.font.FontWeight.Normal
                             )
