@@ -38,6 +38,20 @@ enum class TabItem {
 }
 
 /**
+ * TabItem 的 Saver（配合 rememberSaveable 跨导航/跨配置变更持久化状态）
+ *
+ * 解决：用户从 PROFILE/INSPIRE/DATE tab 跳转到子页面再返回时，selectedTab 被重置的 bug。
+ * 实现：把 enum 转成 String 写入 Bundle，restore 时用 valueOf 反序列化。
+ * 兜底：name 解析失败时回退到 TabItem.TODO（兼容首次进入 / Bundle 缺失 / enum 值被移除场景）。
+ */
+internal val TabItemSaver: Saver<TabItem, String> = Saver(
+    save = { it.name },
+    restore = { name ->
+        runCatching { TabItem.valueOf(name) }.getOrDefault(TabItem.TODO)
+    }
+)
+
+/**
  * 气泡类型枚举
  * 定义中央编辑按钮展开的三个气泡选项
  */
