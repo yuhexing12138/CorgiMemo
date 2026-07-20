@@ -53,11 +53,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.corgimemo.app.animation.AnimationType
-import com.corgimemo.app.animation.FrameAnimation
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.CustomDateType
+import com.corgimemo.app.ui.components.UserAvatar
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.theme.UiColors
 import com.corgimemo.app.viewmodel.DateCategory
@@ -109,6 +108,7 @@ private val categoryIcons = mapOf(
  * @param onCustomTypeAction 自定义类型操作回调
  * @param onSettingsClick 设置点击回调
  * @param onHelpClick 帮助点击回调
+ * @param onProfileClick 顶部用户头像/名称区域点击回调（跳"我的"页）
  * @param modifier 修饰符
  */
 @Composable
@@ -137,6 +137,7 @@ fun AppDrawerContent(
     onAddCustomTypeClick: () -> Unit = {},
     onCustomTypeAction: (DateTypeAction) -> Unit = {},
     onSettingsClick: () -> Unit = {},
+    onProfileClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -145,7 +146,10 @@ fun AppDrawerContent(
             .background(Color.White)
             .padding(top = 48.dp)
     ) {
-        UserProfileSection(corgiData = corgiData)
+        DrawerUserHeader(
+            corgiData = corgiData,
+            onClick = onProfileClick
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -200,20 +204,38 @@ fun AppDrawerContent(
     }
 }
 
+/**
+ * 侧滑栏顶部用户头（统一版）
+ *
+ * 视觉规范：
+ * - 48dp 圆形头像 + 用户昵称 + 副标题"Lv.X 柯基少年"
+ * - 头像用 UserAvatar 组件（与"我的"页头卡保持视觉一致）
+ * - 整行可点击，点击后切到"我的"页
+ *
+ * 改造前：渲染柯基趴卧 FrameAnimation + 柯基名字（视觉上是柯基，不是用户）
+ * 改造后：渲染 UserAvatar 48dp（首字母占位徽章）+ 用户昵称
+ * 副标题仍保留 "Lv.X 柯基少年"（drawer 信息密度要求快速知道等级）
+ *
+ * @param corgiData 柯基数据（昵称 / 等级 / 头像路径）
+ * @param onClick 整行点击回调（MainScreen 传切到 PROFILE tab + 关 drawer）
+ */
 @Composable
-private fun UserProfileSection(corgiData: CorgiData?) {
+private fun DrawerUserHeader(
+    corgiData: CorgiData?,
+    onClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 柯基趴卧姿态帧动画（3帧/8fps 循环播放）
-        FrameAnimation(
-            animationType = AnimationType.LIE,
-            fps = 8,
-            isLooping = true,
-            modifier = Modifier.size(48.dp)
+        // 用户头像 48dp（首字母占位或 Coil 加载真实头像）
+        UserAvatar(
+            nickname = corgiData?.name ?: "柯基",
+            avatarPath = corgiData?.avatarPath,
+            size = 48.dp
         )
 
         Spacer(modifier = Modifier.width(12.dp))
