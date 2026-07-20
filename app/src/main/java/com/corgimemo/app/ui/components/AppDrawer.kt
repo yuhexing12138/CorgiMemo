@@ -29,7 +29,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -138,7 +137,6 @@ fun AppDrawerContent(
     onAddCustomTypeClick: () -> Unit = {},
     onCustomTypeAction: (DateTypeAction) -> Unit = {},
     onSettingsClick: () -> Unit = {},
-    onHelpClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -197,12 +195,8 @@ fun AppDrawerContent(
             TabItem.EDIT -> { /* 中央编辑按钮不是真实Tab */ }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        BottomActionSection(
-            onSettingsClick = onSettingsClick,
-            onHelpClick = onHelpClick
-        )
+        // 底部留白：避免添加按钮贴底，同时让布局在视觉上更透气
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
@@ -715,39 +709,6 @@ private fun ProfileQuickNavSection(
                 isSelected = false,
                 showMenu = false,
                 onClick = onSettingsClick
-            )
-        }
-    }
-}
-
-@Composable
-private fun BottomActionSection(
-    onSettingsClick: () -> Unit,
-    onHelpClick: () -> Unit
-) {
-    HorizontalDivider(
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-        color = Color(0xFFE0E0E0)
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly
-    ) {
-        TextButton(onClick = onSettingsClick) {
-            Text(
-                text = "⚙️ 设置",
-                fontSize = 14.sp,
-                color = Color(0xFF79747E)
-            )
-        }
-        TextButton(onClick = onHelpClick) {
-            Text(
-                text = "❓ 帮助与反馈",
-                fontSize = 14.sp,
-                color = Color(0xFF79747E)
             )
         }
     }

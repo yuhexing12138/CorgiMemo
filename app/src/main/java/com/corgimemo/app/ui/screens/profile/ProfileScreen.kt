@@ -52,12 +52,17 @@ import com.corgimemo.app.viewmodel.ProfileViewModel
 /**
  * 「我的」页面主屏
  *
- * Phase 5 重构：5 模块单列 LazyColumn 分层布局
+ * Phase 5 重构 + v1.1 调整：5 模块单列 LazyColumn 分层布局
  * ① 柯基展示头卡（ProfileHeroCard）
- * ② 主题配色快选（ThemeQuickSwitch）
+ * ② 主题配色卡（ThemeQuickSwitch，v1.1 起**只读展示**当前主题，整卡点击跳 `Screen.Appearance.route`）
  * ③ 装扮入口卡（OutfitEntryCard，点击跳 Screen.Outfit）
  * ④ 成就统计卡（AchievementSummaryCard，点击"查看全部"跳 Screen.Achievement）
  * ⑤ 7 天情绪图表（内联 Card + MoodHistoryChart）
+ *
+ * v1.1 调整说明：
+ * - 主题配色卡移除 6 色快选 + "管理 ›" 入口，改为"大色点 + 主题名 + 描述"的只读展示
+ * - 切换主题已统一收敛到 `AppearanceScreen`（深色模式 + 6 色主题色）
+ * - 整卡可点击，行为更明确
  *
  * 已外移内容：
  * - 通知与提醒 / 震动与音效 / 备份与恢复 / 回收站 / 使用帮助 / 意见反馈 / 隐私与协议
@@ -68,6 +73,7 @@ import com.corgimemo.app.viewmodel.ProfileViewModel
  * - 成就横滑 LazyRow 块（→ AchievementSummaryCard）
  * - "柯基设置" Card（→ 头卡名字点击）
  * - "返回首页" Button（→ 底部导航）
+ * - 外观切换（深色模式 + 主题色）（→ AppearanceScreen）
  *
  * @param navController 导航控制器
  * @param viewModel ProfileViewModel（Hilt 注入）
@@ -116,12 +122,12 @@ fun ProfileScreen(
             )
         }
 
-        // ② 主题配色快选
+        // ② 主题配色卡（v1.1：只读展示 + 整卡点击跳外观页）
+        // 切换主题已统一收敛到 AppearanceScreen，本卡不再承担切换职责
         item {
             ThemeQuickSwitch(
                 currentColorKey = themeColor,
-                onColorSelected = { colorKey -> viewModel.setThemeColor(colorKey) },
-                onManageClick = { navController.navigate(Screen.Settings.route) }
+                onCardClick = { navController.navigate(Screen.Appearance.route) }
             )
         }
 

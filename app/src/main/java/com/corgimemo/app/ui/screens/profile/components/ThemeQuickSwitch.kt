@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.sp
  * 主题色预设定义
  * 对应 UI设计规范 12.1.3 的 6 种主题配色方案
  *
- * @param key 持久化 key（与 ThemeManager / CorgiPreferences 一致）
+ * @param key 持久化 key（与 ThemeManager / CorgiPreferences / Color.kt getColorScheme 一致）
  * @param name 显示名
  * @param color 色块展示色
  */
@@ -42,7 +42,18 @@ data class ThemePreset(
 /**
  * 6 种主题色预设
  * key 顺序：orange / pink / green / blue / purple / brown
- * 与 ThemeManager.themeColor 及 CorgiPreferences（DataStore key: theme_color）的取值完全一致
+ * 与 ThemeManager.themeColor、CorgiPreferences（DataStore key: theme_color）、
+ * Color.kt#getColorScheme 的取值完全一致。
+ *
+ * 名称映射（与 UI 设计规范 12.1.3 一致）：
+ * | key    | 名称   | 主色     |
+ * |--------|--------|----------|
+ * | orange | 暖阳橙 | #FF9A5C |
+ * | pink   | 樱花粉 | #FFB5C2 |
+ * | green  | 薄荷绿 | #7EC8A0 |
+ * | blue   | 天空蓝 | #7EB8DA |
+ * | purple | 薰衣紫 | #B8A0D4 |
+ * | brown  | 奶茶棕 | #C4A882 |
  */
 val ThemePresets = listOf(
     ThemePreset("orange", "暖阳橙", Color(0xFFFF9A5C)),
@@ -54,34 +65,81 @@ val ThemePresets = listOf(
 )
 
 /**
- * 主题配色快选卡
- * 6 色圆点横排，当前选中带主色环，点击即切
+ * 主题配色卡（"我的"页）
+ *
+ * 行为变更（v1.0 → v1.1）：
+ * - 旧版：展示 6 个色点供快速切换，点击"管理 ›"跳整页设置
+ * - 新版：**只读展示当前主题**（大色点 + 名称 + 描述），整卡可点击跳转 `Screen.Appearance`
+ *
+ * 切换主题已统一收敛到 `AppearanceScreen`，本页不再承担切换职责，保持"我的"页的简洁与只读语义。
  *
  * 视觉规范：
- * - 卡片圆角 20dp、内边距 16dp
- * - 色点 32dp 圆形，间距 10dp（用 Arrangement.spacedBy + weight 均分）
- * - 选中态：色点外 4dp 主色环（2dp border + 3dp padding）
+ * - 卡片圆角 20dp、elevation 2dp、内边距 16dp
+ * - 左侧 56dp 圆形大色点（3dp 主色环 + 48dp 色点），右侧 主题名 + 描述，右上"›"箭头
+ * - 整卡 `clickable`，统一触觉/视觉反馈
  *
  * @param currentColorKey 当前主题色 key
- * @param onColorSelected 点击色点回调
- * @param onManageClick 点击"管理 ›"回调
+ * @param onCardClick 点击整卡回调（跳转外观页）
  */
 @Composable
 fun ThemeQuickSwitch(
     currentColorKey: String,
-    onColorSelected: (String) -> Unit,
-    onManageClick: () -> Unit
+    onCardClick: () -> Unit
 ) {
+    // 当前主题色预设（找不到时兜底为 orange）
+    val currentPreset = ThemePresets.firstOrNull { it.key == currentColorKey }
+        ?: ThemePresets.first()
+
     Card(
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        modifier = Modifier.fillMaxWidth()
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onCardClick)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // 左侧：大色点（56dp 主色环 + 48dp 色点）
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(56.dp)
+            ) {
+                // 主色环（始终显示，强化"这是当前主题"的语义）
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .border(
+                            width = 3.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = CircleShape
+                        )
+                )
+                // 色点
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(currentPreset.color)
+                        .border(
+                            width = 1.dp,
+                            color = Color.Black.copy(alpha = 0.06f),
+                            shape = CircleShape
+                        )
+                )
+            }
+
+            // 中间：标题 + 描述
+            Column(
+                modifier = Modifier.weight(1f)
             ) {
                 Text(
                     text = "🎨 主题配色",
@@ -90,61 +148,26 @@ fun ThemeQuickSwitch(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "管理 ›",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.primary,
+                    text = "当前：${currentPreset.name}",
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clickable(onClick = onManageClick)
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                Text(
+                    text = "点击切换 6 种主题色或深色模式",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
                 )
             }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                ThemePresets.forEach { preset ->
-                    ThemeDot(
-                        preset = preset,
-                        isSelected = preset.key == currentColorKey,
-                        onClick = { onColorSelected(preset.key) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
+
+            // 右侧：箭头
+            Text(
+                text = "›",
+                fontSize = 22.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
-}
-
-/**
- * 单个主题色圆点
- * 选中态：2dp 主色 border + 3dp 内边距，形成主色环效果
- *
- * @param preset 主题色预设
- * @param isSelected 是否当前选中
- * @param onClick 点击回调
- * @param modifier 外部修饰符（用于 weight 均分）
- */
-@Composable
-private fun ThemeDot(
-    preset: ThemePreset,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .size(32.dp)
-            .then(
-                if (isSelected) {
-                    Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                        .padding(3.dp)
-                } else {
-                    Modifier
-                }
-            )
-            .clip(CircleShape)
-            .background(preset.color)
-            .clickable(onClick = onClick)
-    )
 }

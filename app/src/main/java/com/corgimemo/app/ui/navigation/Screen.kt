@@ -7,6 +7,14 @@ sealed class Screen(val route: String) {
     object TodoEditWithId : Screen("todo_edit/{todoId}")
     object Profile : Screen("profile")
     object Settings : Screen("settings")
+    /**
+     * 外观设置页（深色模式 + 主题色）
+     *
+     * 从 SettingsScreen 拆出独立页，由"我的"页 ThemeQuickSwitch 入口直达。
+     * 6 色主题配色方案 key：orange / pink / green / blue / purple / brown
+     * （详见 `app/ui/screens/profile/components/ThemeQuickSwitch.kt` 的 `ThemePresets`）
+     */
+    object Appearance : Screen("appearance")
     object BackupHistory : Screen("backup_history")
     object Stats : Screen("stats")
     object Achievement : Screen("achievement")

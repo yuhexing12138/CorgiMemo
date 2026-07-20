@@ -78,6 +78,18 @@ fun AppNavHost(
             )
         }
 
+        /**
+         * 外观设置页（v1.1 新增）
+         *
+         * 从 SettingsScreen 拆出独立路由，由"我的"页主题配色卡直达。
+         * 承载深色模式 + 6 色主题色切换。
+         */
+        composable(Screen.Appearance.route) {
+            com.corgimemo.app.ui.screens.settings.AppearanceScreen(
+                navController = navController
+            )
+        }
+
         composable(Screen.BackupHistory.route) {
             BackupHistoryScreen(
                 onBack = { navController.popBackStack() }

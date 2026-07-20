@@ -514,11 +514,6 @@ fun MainScreen(
                     onSettingsClick = {
                         navController.navigate(Screen.Settings.route)
                         coroutineScope.launch { drawerState.close() }
-                    },
-                    onHelpClick = {
-                        // 帮助与反馈功能暂未实现，提示用户
-                        com.corgimemo.app.ui.components.GlobalSnackbarController.showMessage("功能开发中...")
-                        coroutineScope.launch { drawerState.close() }
                     }
                 )
             }
