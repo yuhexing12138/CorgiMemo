@@ -58,4 +58,12 @@ interface CorgiDao {
 
     @Query("UPDATE corgi_data SET name = :name WHERE id = (SELECT id FROM corgi_data LIMIT 1)")
     suspend fun updateName(name: String)
+
+    /**
+     * 更新用户头像路径
+     *
+     * @param path 头像文件绝对路径 / content URI；传 null 表示清除（恢复首字母占位）
+     */
+    @Query("UPDATE corgi_data SET avatarPath = :path WHERE id = (SELECT id FROM corgi_data LIMIT 1)")
+    suspend fun updateAvatarPath(path: String?)
 }

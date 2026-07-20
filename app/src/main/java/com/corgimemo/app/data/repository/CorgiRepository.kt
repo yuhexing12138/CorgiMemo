@@ -91,4 +91,17 @@ class CorgiRepository @Inject constructor(
     suspend fun updateCorgiName(name: String) = withContext(ioDispatcher) {
         corgiDao.updateName(name)
     }
+
+    /**
+     * 更新用户头像路径
+     *
+     * 字段语义：详见 CorgiData.avatarPath 注释。
+     * - path 非空：UI 用 Coil AsyncImage 加载（本期上传未接，调用方不传非空）
+     * - path 为 null：UI 回退到首字母占位徽章
+     *
+     * @param path 头像文件绝对路径 / content URI；传 null 表示清除
+     */
+    suspend fun updateAvatarPath(path: String?) = withContext(ioDispatcher) {
+        corgiDao.updateAvatarPath(path)
+    }
 }

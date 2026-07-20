@@ -23,6 +23,7 @@ import androidx.room.PrimaryKey
  * @property maxConsecutiveDays 历史最长连续天数
  * @property consecutiveEarlyDays 连续早起天数
  * @property lastEarlyDate 最后一次早起日期（格式：yyyy-MM-dd）
+ * @property avatarPath 用户头像文件路径（null = 使用首字母占位徽章）
  */
 @Entity(
     tableName = "corgi_data",
@@ -56,5 +57,18 @@ data class CorgiData(
     val consecutiveDays: Int = 0,
     val maxConsecutiveDays: Int = 0,
     val consecutiveEarlyDays: Int = 0,
-    val lastEarlyDate: String = ""
+    val lastEarlyDate: String = "",
+
+    /**
+     * 用户头像文件路径（绝对路径 / content URI）
+     *
+     * - null  → UI 用首字母占位徽章（见 ui/components/UserAvatar.kt）
+     * - 非空 → UI 用 Coil AsyncImage 加载（本期上传功能未接，永远为 null）
+     *
+     * 依据 .trae/rules/entity与 migration同步检查.md 规则：
+     * `@ColumnInfo(defaultValue = "NULL")` 必须与 Migration_39_40 的
+     * `DEFAULT NULL` SQL 严格保持一致。
+     */
+    @ColumnInfo(defaultValue = "NULL")
+    val avatarPath: String? = null
 )

@@ -31,7 +31,7 @@ import com.corgimemo.app.data.model.CustomDateType
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
-    version = 39,
+    version = 40,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -99,7 +99,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1122,6 +1122,25 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
         override fun migrate(db: SupportSQLiteDatabase) {
             // 删除智能分类关键词表（含其索引一并清除）
             db.execSQL("DROP TABLE IF EXISTS category_keywords")
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 39 → 40
+     * corgi_data 表新增 avatarPath 字段（用户头像文件路径）
+     *
+     * 依据 .trae/rules/entity与 migration同步检查.md 规则：
+     * SQL 的 `DEFAULT NULL` 必须与 CorgiData.avatarPath 的
+     * `@ColumnInfo(defaultValue = "NULL")` 严格保持一致。
+     *
+     * 字段语义：
+     * - TEXT 类型：存储头像文件的绝对路径或 content URI
+     * - 允许 NULL：UI 检测到 null 时回退到首字母占位徽章
+     * - 上传功能本期未接，数据库内永远为 NULL
+     */
+    internal val MIGRATION_39_40 = object : Migration(39, 40) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE corgi_data ADD COLUMN avatarPath TEXT DEFAULT NULL")
         }
     }
     // companion object 闭合
