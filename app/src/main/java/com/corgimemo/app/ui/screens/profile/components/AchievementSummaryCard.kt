@@ -58,9 +58,17 @@ fun AchievementSummaryCard(
     // 排序逻辑：已解锁在前，未解锁在后（按进度降序，即将完成的优先）
     val displayAchievements = getDisplayAchievements(achievements, minCount = 6)
 
+    // 显式声明 containerColor = MaterialTheme.colorScheme.surface
+    // 亮色模式 surface = Color.White (6 种主题色统一)，深色模式 surface = 深灰
+    // 用 surface 显式声明而非硬编码 Color.White，是为了遵循 UI 设计规范 12.1.2.2：
+    //   - 亮色模式卡片背景 = #FFFFFF
+    //   - 深色模式卡片背景 = #2A2A2A
     Card(
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {

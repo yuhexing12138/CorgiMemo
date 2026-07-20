@@ -47,9 +47,17 @@ fun OutfitEntryCard(
     val currentOutfit = OutfitManager.getCurrentOutfit(currentOutfitId)
     val outfitIcon = getOutfitIconEmoji(currentOutfit)
 
+    // 显式声明 containerColor = MaterialTheme.colorScheme.surface
+    // 亮色模式 surface = Color.White (6 种主题色统一)，深色模式 surface = 深灰
+    // 用 surface 显式声明而非硬编码 Color.White，是为了遵循 UI 设计规范 12.1.2.2：
+    //   - 亮色模式卡片背景 = #FFFFFF
+    //   - 深色模式卡片背景 = #2A2A2A
     Card(
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)

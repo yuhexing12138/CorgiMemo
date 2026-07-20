@@ -55,9 +55,18 @@ data class SettingItem(
 fun SettingListCard(
     items: List<SettingItem>
 ) {
+    // 显式声明 containerColor = MaterialTheme.colorScheme.surface
+    // 亮色模式 surface = Color.White (6 种主题色统一)，深色模式 surface = 深灰
+    // 用 surface 显式声明而非硬编码 Color.White，是为了遵循 UI 设计规范 12.1.2.2：
+    //   - 亮色模式卡片背景 = #FFFFFF
+    //   - 深色模式卡片背景 = #2A2A2A
+    // 此 Card 被设置页 4 个分组共用（通知/身份与偏好/数据管理/关于与帮助）
     Card(
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
