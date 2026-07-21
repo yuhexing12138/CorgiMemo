@@ -1,9 +1,8 @@
 package com.corgimemo.app.ui.screens.date.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +23,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableFloatState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -33,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corgimemo.app.ui.components.pressFeedback
 import com.corgimemo.app.viewmodel.DisplayDate
 import kotlin.math.abs
 
@@ -85,8 +88,10 @@ internal fun formatDuration(millis: Long): String {
  * @param onClick 卡片整体点击回调（进入编辑）
  * @param onLongClick 卡片整体长按回调（预留）
  * @param modifier 外部 Modifier
+ * @param cardScale 卡片缩放状态（v2026-07-21 新增，用于左滑按钮同步卡片"先缩后放"）
+ *        - null（默认）：内部 remember 独立 state
+ *        - 非 null：与外层 SwipeableTodoBox 共享，按钮完全跟随 pressFeedback 实时缩放
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SpecialDateCard(
     date: DisplayDate,
@@ -103,7 +108,9 @@ fun SpecialDateCard(
     /** 是否被选中（批量模式下） */
     isSelected: Boolean = false,
     /** 批量模式下点击卡片的回调（切换选中状态） */
-    onSelectClick: () -> Unit = {}
+    onSelectClick: () -> Unit = {},
+    /** 卡片缩放状态（v2026-07-21 新增，与 SwipeableTodoBox 共享） */
+    cardScale: MutableFloatState? = null
 ) {
     // 1. 是否处于"已归档"分组（决定整体 alpha 0.6 降权）
     // 2026-07-13 重构：改用 isArchived 字段判断（原为 groupType == EXPIRED），
@@ -154,23 +161,34 @@ fun SpecialDateCard(
         else -> "已过天数"
     }
 
+    // 7. 按压交互状态 + 缩放状态（v2026-07-21 新增）
+    //    - 与 PinnedDateCard 一致：effectiveCardScale 优先使用外部传入的 cardScale
+    //    - pressFeedback 的 onTap 根据 isBatchMode 决定调 onSelectClick 或 onClick，
+    //      完全复刻 combinedClickable 的语义（保证行为兼容）
+    val interactionSource = remember { MutableInteractionSource() }
+    val internalCardScale = remember { mutableFloatStateOf(1f) }
+    val effectiveCardScale: MutableFloatState = cardScale ?: internalCardScale
+
     Card(
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        // v2026-07-21 改造：把 combinedClickable 替换为 pressFeedback
+        // 原因：参考待办页 TodoListItem 的实现，按下时卡片缩小到 0.94f（与左滑按钮同步缩放），
+        //       抬起/移动超过 touchSlop 时恢复 1f（200ms 缓慢回弹）。
+        // onTap / onLongClick 语义完全复刻 combinedClickable：
+        //   - isBatchMode=true：onTap 调 onSelectClick（切换选中）
+        //   - isBatchMode=false：onTap 调 onClick（进入编辑）
+        //   - onLongClick 始终调外部传入的 onLongClick
+        // isClickBlocked 为 true 时禁用 pressFeedback（左滑面板展开时不响应按压）
         modifier = modifier
             .fillMaxWidth()
-            // 关键：alpha 不再应用在 Card 上，而是应用在 Card 内部的 Row（内容层）。
-            // 原因：SwipeableTodoBox 将左滑按钮区域绘制在 Card 之后（同一 layout 区域），
-            //       若 alpha 应用在 Card 上，Card 半透会导致左滑按钮被 Card 颜色污染（按钮"透过"卡片显示）。
-            //       把 alpha 下沉到内部 Row 后，Card 背景仍保持完全不透明，左滑按钮正常显示。
-            .then(
-                if (isClickBlocked) Modifier
-                else Modifier.combinedClickable(
-                    // 2026-07-14：批量模式下点击切换选中，非批量模式进入编辑
-                    onClick = if (isBatchMode) onSelectClick else onClick,
-                    onLongClick = onLongClick
-                )
+            .pressFeedback(
+                interactionSource = interactionSource,
+                scale = effectiveCardScale,
+                enabled = !isClickBlocked,
+                onTap = if (isBatchMode) onSelectClick else onClick,
+                onLongClick = onLongClick
             )
     ) {
         Row(

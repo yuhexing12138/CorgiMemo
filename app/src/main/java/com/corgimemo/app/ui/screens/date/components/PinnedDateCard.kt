@@ -1,9 +1,8 @@
 package com.corgimemo.app.ui.screens.date.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +19,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableFloatState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -31,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.corgimemo.app.R
+import com.corgimemo.app.ui.components.pressFeedback
 import com.corgimemo.app.viewmodel.DisplayDate
 import kotlin.math.abs
 
@@ -52,15 +55,18 @@ import kotlin.math.abs
  * @param isClickBlocked 左滑操作面板是否展开（true 时屏蔽卡片内点击）
  * @param onClick 卡片整体点击回调（进入编辑）
  * @param modifier 外部 Modifier
+ * @param cardScale 卡片缩放状态（v2026-07-21 新增，用于左滑按钮同步卡片"先缩后放"）
+ *        - null（默认）：内部 remember 独立 state
+ *        - 非 null：与外层 SwipeableTodoBox 共享，按钮完全跟随 pressFeedback 实时缩放
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PinnedDateCard(
     date: DisplayDate,
     nowMs: Long,
     isClickBlocked: Boolean = false,
     onClick: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    cardScale: MutableFloatState? = null
 ) {
     // 1. 是否已归档（2026-07-14 新增：已归档+置顶时卡片视觉降级）
     val isArchivedCard = date.isArchived
@@ -78,6 +84,14 @@ fun PinnedDateCard(
         isFuture -> MaterialTheme.colorScheme.primary
         else -> Color(0xFF7EC8A0)  // 正计时柔和绿
     }
+
+    // 3. 按压交互状态 + 缩放状态（v2026-07-21 新增）
+    //    - interactionSource：保留参数以兼容 PressFeedback API
+    //    - effectiveCardScale：与外层 SwipeableTodoBox 共享（如果传入），或内部 remember
+    //    - pressFeedback 内部同步修改 scale 目标值，Composable 层 animateFloatAsState 自动动画过渡
+    val interactionSource = remember { MutableInteractionSource() }
+    val internalCardScale = remember { mutableFloatStateOf(1f) }
+    val effectiveCardScale: MutableFloatState = cardScale ?: internalCardScale
 
     // 2. 数字 + 单位（"昨天/今天/明天" 特殊处理 + 1年分界）
     val (labelText: String, unitText: String?) = when (daysDiff) {
@@ -100,15 +114,21 @@ fun PinnedDateCard(
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        // 2026-07-14 修复：用 if-else 直接返回 Modifier，避免 .then() 包裹
-        // 语义与之前完全一致，但更明确：左滑展开时不应用 combinedClickable（避免误触）
-        modifier = if (isClickBlocked) {
-            modifier.fillMaxWidth()
-        } else {
-            modifier
-                .fillMaxWidth()
-                .combinedClickable(onClick = onClick)
-        }
+        // v2026-07-21 改造：把 combinedClickable 替换为 pressFeedback
+        // 原因：参考待办页 TodoListItem 的实现，按下时卡片缩小到 0.94f（与左滑按钮同步缩放），
+        //       抬起/移动超过 touchSlop 时恢复 1f（200ms 缓慢回弹）。
+        // Modifier 顺序：fillMaxWidth() -> pressFeedback
+        // - pressFeedback 内部已包含 graphicsLayer，无需外层再包
+        // - isClickBlocked 为 true 时禁用 pressFeedback（左滑面板展开时不响应按压）
+        // - onTap 替代 combinedClickable.onClick：< 500ms 抬起触发 onClick
+        modifier = modifier
+            .fillMaxWidth()
+            .pressFeedback(
+                interactionSource = interactionSource,
+                scale = effectiveCardScale,
+                enabled = !isClickBlocked,
+                onTap = onClick
+            )
     ) {
         Row(
             modifier = Modifier
