@@ -29,8 +29,14 @@ import com.corgimemo.app.animation.OutfitManager
  * 装扮入口卡
  * 展示当前装扮图标+名称+总数，点击跳转 OutfitScreen
  *
+ * v1.4 视觉统一：与柯基互动页情绪值/互动卡片完全一致
+ * - 圆角 16dp（原 20dp，与情绪值/互动卡片对齐）
+ * - 水平 padding 16dp（原 fillMaxWidth 占满屏幕，与两侧保留 16dp 间距）
+ * - containerColor 继承 Card 默认值（不显式设置 surface，与情绪值/互动卡片颜色一致）
+ * - 标题 15sp SemiBold（保持原有"我的"页风格，未与 16sp Bold 对齐，因为本卡也可作"我的"页装扮入口）
+ *
  * 视觉规范：
- * - 卡片圆角 20dp、内边距 16dp、elevation 2dp
+ * - 卡片圆角 16dp、内边距 16dp、elevation 2dp
  * - 装扮预览框 48dp 方形，圆角 12dp，primaryContainer 背景
  *
  * @param currentOutfitId 当前装扮 id（null = 默认装扮）
@@ -47,19 +53,14 @@ fun OutfitEntryCard(
     val currentOutfit = OutfitManager.getCurrentOutfit(currentOutfitId)
     val outfitIcon = getOutfitIconEmoji(currentOutfit)
 
-    // 显式声明 containerColor = MaterialTheme.colorScheme.surface
-    // 亮色模式 surface = Color.White (6 种主题色统一)，深色模式 surface = 深灰
-    // 用 surface 显式声明而非硬编码 Color.White，是为了遵循 UI 设计规范 12.1.2.2：
-    //   - 亮色模式卡片背景 = #FFFFFF
-    //   - 深色模式卡片背景 = #2A2A2A
+    // v1.4 视觉统一：移除显式 containerColor，继承 Card 默认值（与情绪值/互动卡片一致）
+    // 圆角 20dp → 16dp，水平 padding 16dp（与两侧屏幕距离统一）
     Card(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp)
             .clickable(onClick = onClick)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
