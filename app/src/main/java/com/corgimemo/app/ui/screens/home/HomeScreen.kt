@@ -75,6 +75,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -983,6 +984,12 @@ fun HomeScreen(
                                                 else -> "📋"
                                             }
                                         }
+                                        // v2026-07-21 新增：左滑按钮与卡片共享缩放状态
+                                        // - SwipeableTodoBox.cardScale + TodoListItem.cardScale 共享同一个 MutableFloatState
+                                        // - pressFeedback 修改 scale 时，左滑按钮的 graphicsLayer 实时跟随
+                                        // - 实现"卡片按下缩小放大时，三个左滑按钮也同步先缩小再放大"
+                                        // - remember 在 items() lambda 内，每张卡片独立一份 state（不互相干扰）
+                                        val cardScale = remember { mutableFloatStateOf(1f) }
                                         SwipeableTodoBox(
                                             // v2026-07-20 v7 调整：contentPadding vertical 4dp → 0dp
                                             // 原因：HomeScreen 传入 itemSpacing = 8dp，
@@ -1000,6 +1007,8 @@ fun HomeScreen(
                                                 horizontal = 0.dp,
                                                 vertical = 0.dp
                                             ),
+                                            // v2026-07-21 新增：与 TodoListItem 共享 cardScale
+                                            cardScale = cardScale,
                                             onExpandChange = { expanded ->
                                                 swipeExpandedTodoId = if (expanded) todo.id else null
                                                 viewModel.setSwipeActionExpanded(expanded)
@@ -1061,7 +1070,11 @@ fun HomeScreen(
                                                 // 统一 Snackbar 提示回调（替代 Toast）
                                                 onShowSnackbar = { msg ->
                                                     coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
-                                                }
+                                                },
+                                                // v2026-07-21 新增：与上方 SwipeableTodoBox 共享 cardScale
+                                                // - pressFeedback 修改 scale 时，左滑按钮实时跟随
+                                                // - 必须在同一作用域创建同一个 state 才能共享
+                                                cardScale = cardScale
                                             )
                                         }
                                     }

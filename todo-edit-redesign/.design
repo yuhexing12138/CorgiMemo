@@ -1,0 +1,21 @@
+{
+  "name": "待办编辑页按钮重设计",
+  "version": "1.0.0",
+  "designLibrary": {
+    "name": "苹果",
+    "id": "dl_builtin_apple",
+    "version": "1.0.0",
+    "scope": "reference",
+    "path": "c:\\Users\\EDY\\.trae-cn\\design_libraries\\dl_builtin_apple"
+  },
+  "data": [
+    {
+      "id": "page-prototype",
+      "type": "page",
+      "title": "按钮重设计原型",
+      "devMetadata": {
+        "htmlSrc": "pages/index.html"
+      }
+    }
+  ]
+}

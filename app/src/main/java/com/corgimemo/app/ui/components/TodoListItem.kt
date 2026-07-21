@@ -40,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -130,7 +131,21 @@ fun TodoListItem(
     /** 简化模式：隐藏分类标签 / 子任务进度文本 / 子任务列表 / 附件数量，仅保留标题/提醒/优先级/置顶/勾选框 */
     isSimpleMode: Boolean = false,
     /** 统一的 Snackbar 提示回调（由调用方传入，用于替代 Toast） */
-    onShowSnackbar: (String) -> Unit = {}
+    onShowSnackbar: (String) -> Unit = {},
+    /**
+     * 卡片缩放状态（v2026-07-21 新增）
+     *
+     * 设计目的：让左滑操作层（SwipeableTodoBox 的三个按钮）与卡片本体共享 pressFeedback 的实时 scale，
+     * 实现"卡片按下缩小放大时，按钮也同步先缩小再放大"的视觉一致性。
+     *
+     * 两种用法：
+     * 1. **外部共享**（推荐 for SwipeableTodoBox 场景）：调用方（如 HomeScreen）创建并传入同一个
+     *    MutableFloatState，分别给 SwipeableTodoBox.cardScale 和 TodoListItem.cardScale，
+     *    两边共享同一份 scale 状态，pressFeedback 修改时 SwipeActionButton 实时跟随。
+     * 2. **内部独立**（默认，向后兼容）：不传时 TodoListItem 内部 remember 一个新的 MutableFloatState，
+     *    与 SwipeableTodoBox 不共享，左滑时按钮不缩放（保持原行为）。
+     */
+    cardScale: MutableFloatState? = null
 ) {
 
     /** 逐区间动画参数：每字符延迟 2ms，最大延迟上限 300ms */
@@ -196,7 +211,19 @@ fun TodoListItem(
      *   详细原因见 PressFeedback.kt KDoc。
      */
     val interactionSource = remember { MutableInteractionSource() }
-    val cardScale = remember { mutableFloatStateOf(1f) }
+    /**
+     * 卡片缩放状态（v2026-07-21 改造）
+     *
+     * - externalCardScale（参数）：调用方传入的共享 scale，用于与 SwipeableTodoBox 联动
+     * - internalCardScale（本函数内）：当 externalCardScale 为 null 时，remember 独立的 state
+     * - effectiveCardScale：实际传给 pressFeedback 的 scale 状态
+     *
+     * 设计：保持 Modifier.pressFeedback 的 scale 参数语义不变（必须是 MutableFloatState），
+     * 只在 TodoListItem 函数顶部做一个"外部传入 or 内部默认"的合并，
+     * 这样对 pressFeedback 完全透明，无需修改 PressFeedback.kt。
+     */
+    val internalCardScale = remember { mutableFloatStateOf(1f) }
+    val effectiveCardScale: MutableFloatState = cardScale ?: internalCardScale
 
     /**
      * 长按过程状态（v2026-07-20 新增）
@@ -265,7 +292,10 @@ fun TodoListItem(
             )
             .pressFeedback(
                 interactionSource = interactionSource,
-                scale = cardScale,
+                // v2026-07-21 改造：使用 effectiveCardScale 替代 cardScale
+                // - 当外部传入 cardScale 时（如 SwipeableTodoBox 场景），与外层共享同一份 scale 状态
+                // - 当外部未传入时，使用内部 remember 的 state（向后兼容）
+                scale = effectiveCardScale,
                 isBatchMode = isBatchMode,
                 enabled = !isClickBlocked,   // 左滑操作面板展开时屏蔽整个按压反馈
                 onTap = {

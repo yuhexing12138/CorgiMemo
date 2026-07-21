@@ -50,12 +50,16 @@ fun PriorityPickerSheet(
     /**
      * 优先级选项列表（id, 名称）
      * 注意：保持 0/1/2/3 数值语义，与 TodoItem.priority 字段一致。
+     *
+     * v2026-07-21 统一：文案从「无/低/中/高」改为「无优先级/低优先级/中优先级/高优先级」，
+     * 与 TodoEditScreen.kt 内的 [showPriorityDialog] 弹窗选项文案保持一致，
+     * 避免用户在两个弹窗中看到不同长度的标签产生认知负担。
      */
     val priorities = listOf(
-        0 to "无",
-        1 to "低",
-        2 to "中",
-        3 to "高"
+        0 to "无优先级",
+        1 to "低优先级",
+        2 to "中优先级",
+        3 to "高优先级"
     )
 
     ModalBottomSheet(

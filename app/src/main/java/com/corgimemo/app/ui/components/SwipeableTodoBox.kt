@@ -1,7 +1,10 @@
 package com.corgimemo.app.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,7 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -168,6 +173,11 @@ internal fun defaultTodoButtons(
  *        - vertical 6dp 至少要 ≥ shadow.elevation 才能完整显示阴影
  *          （TodoListItem 默认 shadow=4dp / 长按 8dp，6dp vertical 留 4dp 给默认阴影、1dp 给长按阴影溢出）
  *        - horizontal 仍为 0dp，避免影响左滑手势判定区
+ * @param cardScale 卡片缩放状态（可选，用于让三个按钮同步卡片的"先缩小再放大"动画）
+ *        - null（默认）：内部自动维护，onDragStart 触发一次"先缩后放"动画（与 TodoListItem.pressFeedback 节奏一致）
+ *        - 非 null：使用外部传入的 scale（典型用法：与 TodoListItem.pressFeedback 的 cardScale 共享），
+ *          三个按钮**完全复用**卡片的缩放曲线（包括 down→0.94f 60ms 缩、移动>touchSlop→1f 200ms 放），
+ *          实现真正"按下→跟手"的同步反馈
  * @param content 卡片内容（通常是 TodoListItem）
  */
 @Composable
@@ -197,6 +207,20 @@ fun SwipeableTodoBox(
      * 默认上下 6dp，左右 0dp（不影响左滑手势）
      */
     contentPadding: PaddingValues = PaddingValues(horizontal = 0.dp, vertical = 6.dp),
+    /**
+     * 卡片缩放状态（v2026-07-21 新增）
+     *
+     * 设计目的：让左滑操作层的三个按钮与卡片本体共享"按压→缩小→放大"动画，
+     * 解决"卡片按下缩小放大时，按钮是冷启动渐入，看起来脱节"的问题。
+     *
+     * 两种用法：
+     * 1. **外部共享**（推荐 for 待办页）：传入与 TodoListItem.pressFeedback 共享的 cardScale，
+     *    按钮完全跟随卡片的实时 scale 状态，包括 down→0.94f、移动>touchSlop→1f 等所有节点。
+     * 2. **内部自动**（for 日期页等无 pressFeedback 的卡片）：传 null，
+     *    SwipeableTodoBox 内部在 onDragStart 时触发一次"先缩后放"动画（60ms 缩 + 200ms 放），
+     *    与卡片的"跟手"过程同时进行。
+     */
+    cardScale: MutableFloatState? = null,
     content: @Composable (isClickBlocked: Boolean) -> Unit
 ) {
     val density = LocalDensity.current
@@ -240,6 +264,50 @@ fun SwipeableTodoBox(
     // 恢复动画协程引用：用于在右滑首帧后跟踪正在跑的 animateTo(0f) 协程，
     // 防止 drag / onDragEnd / onDragCancel 重复启动新协程
     val restoreJob = remember { mutableStateOf<Job?>(null) }
+
+    /**
+     * 缩放状态（v2026-07-21 新增）
+     *
+     * 设计目标：让左滑按钮与卡片共享"按压→缩→放"动画，提升视觉一致性。
+     *
+     * 实现：
+     * - effectiveScale 决定最终使用哪个 MutableFloatState
+     * - 当 cardScale == null（外部未传入）时，SwipeableTodoBox 内部创建一个 internalPressScale，
+     *   并在 onDragStart 时主动触发"先缩后放"动画（60ms 缩 + 200ms 放，节奏与 TodoListItem.pressFeedback 一致）
+     * - 当 cardScale != null（外部传入）时，使用外部传入的（如 HomeScreen 共享 TodoListItem 的 cardScale），
+     *   此时 SwipeableTodoBox 不再主动触发任何 scale 动画——所有缩放由调用方（TodoListItem.pressFeedback）控制
+     *
+     * 动画曲线（与 PressFeedback.kt 保持完全一致）：
+     * - targetValue < 1f → 60ms 缩小
+     * - targetValue = 1f → 200ms 放大
+     * - easing = FastOutSlowInEasing
+     */
+    val internalPressScale = remember { mutableFloatStateOf(1f) }
+    val effectiveScale: MutableFloatState = cardScale ?: internalPressScale
+    val targetScaleValue = effectiveScale.floatValue
+    val scaleAnimationSpec: AnimationSpec<Float> = remember(targetScaleValue) {
+        tween(
+            // v2026-07-21 优化：改用 PressFeedback 顶层 public const，
+            // 避免硬编码 60 / 200 在多处不同步（修改时漏改）
+            durationMillis = if (targetScaleValue < 1f) DEFAULT_SCALE_DOWN_DURATION_MS else DEFAULT_SCALE_UP_DURATION_MS,
+            easing = FastOutSlowInEasing
+        )
+    }
+    val animatedPressScale by animateFloatAsState(
+        targetValue = targetScaleValue,
+        animationSpec = scaleAnimationSpec,
+        label = "swipeActionPressScale"
+    )
+
+    /**
+     * 内部"先缩后放"动画协程引用（仅当 cardScale == null 时使用）
+     *
+     * 作用：跟踪正在跑的"先设 0.94f → 60ms 后设 1f"协程，
+     * 防止 onDragStart 重复触发时新旧协程争抢 scale 状态。
+     */
+    val pressAnimationJob = remember { mutableStateOf<Job?>(null) }
+    /** "先缩后放"动画的 scale 下限，与 TodoListItem.pressFeedback 默认值一致（DEFAULT_SCALE_DOWN_VALUE） */
+    val pressScaleDown = DEFAULT_SCALE_DOWN_VALUE
 
     // 速度跟踪器：用于检测"快速右滑"（fling right）手势以关闭已展开的卡片
     val velocityTracker = remember { VelocityTracker() }
@@ -338,6 +406,19 @@ fun SwipeableTodoBox(
                                 restoreJob.value?.cancel()
                                 restoreJob.value = null
                                 isDragging = true
+                                // 4. 触发按钮"先缩后放"动画（仅当 cardScale 由内部自动维护时）
+                                //    - 与 TodoListItem.pressFeedback 节奏完全一致：60ms 缩 + 200ms 放
+                                //    - cancel 上一次的协程，避免连续左滑时新旧动画争抢 scale 状态
+                                //    - 当 cardScale 由外部传入时（如 HomeScreen），TodoListItem.pressFeedback
+                                //      会同时被 down 事件触发，按钮通过共享 scale 与卡片天然同步
+                                if (cardScale == null) {
+                                    pressAnimationJob.value?.cancel()
+                                    internalPressScale.floatValue = pressScaleDown
+                                    pressAnimationJob.value = coroutineScope.launch {
+                                        delay(60L)  // 等 60ms 让缩小动画完成
+                                        internalPressScale.floatValue = 1f  // 触发放大动画
+                                    }
+                                }
                             },
                             onDragEnd = {
                                 // 关键：恢复动画进行中，仅等待其完成，不要启动新动画
@@ -540,6 +621,11 @@ fun SwipeableTodoBox(
                         translateX = translateX,
                         alpha = alpha,
                         onClick = clickAction,
+                        // v2026-07-21 新增：传入"按压缩放"动画值
+                        // - 当外部传入 cardScale 时（如 HomeScreen），此值为 TodoListItem.pressFeedback 的实时 scale
+                        // - 当 cardScale == null 时（如 SpecialDateScreen），此值为 SwipeableTodoBox 内部触发的"先缩后放"动画值
+                        // - 两种情况下，按钮都跟着卡片视觉同步缩放
+                        pressScale = animatedPressScale,
                         modifier = Modifier.zIndex(btnConfig.zIndex)
                     )
                 }
@@ -583,6 +669,10 @@ fun SwipeableTodoBox(
  * @param translateX 横向偏移量（级联堆叠动画）
  * @param alpha 透明度（二元化）
  * @param onClick 点击回调
+ * @param pressScale 按压缩放值（v2026-07-21 新增）
+ *        - 默认 1f（不缩放，保持向后兼容）
+ *        - 由 SwipeableTodoBox 传入的动画值（0.94f~1f）
+ *        - 通过 graphicsLayer 应用到整个按钮，让按钮和卡片视觉上同步"先缩后放"
  * @param modifier 修饰符
  */
 @Composable
@@ -591,6 +681,7 @@ private fun SwipeActionButton(
     translateX: Float,
     alpha: Float,
     onClick: () -> Unit,
+    pressScale: Float = 1f,
     modifier: Modifier = Modifier
 ) {
     val backgroundColor = colorResource(id = config.backgroundColorRes)
@@ -600,6 +691,11 @@ private fun SwipeActionButton(
             .graphicsLayer {
                 this.translationX = translateX
                 this.alpha = alpha
+                // v2026-07-21 新增：按压缩放，与卡片同步"先缩后放"
+                // - scaleX/scaleY 同时应用，确保按钮等比例缩放（不变成椭圆/矩形）
+                // - graphicsLayer 的缩放不影响 clickable 命中区（命中区由 Box 实际尺寸决定）
+                this.scaleX = pressScale
+                this.scaleY = pressScale
             }
             .background(backgroundColor, shape = config.shape)
             .clickable(onClick = onClick),

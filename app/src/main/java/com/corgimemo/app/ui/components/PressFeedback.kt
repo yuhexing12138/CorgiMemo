@@ -64,9 +64,9 @@ import androidx.compose.ui.input.pointer.pointerInput
  * @param isBatchMode 保留参数以备扩展
  * @param onTap 短按回调（< 500ms 抬起时触发）
  * @param onLongClick 长按回调（>= 500ms 抬起时触发）
- * @param scaleDown 缩小后的目标值，默认 0.88f
- * @param scaleDownDurationMs 缩小动画时长（毫秒，默认 60ms）
- * @param scaleUpDurationMs 恢复动画时长（毫秒，默认 200ms）—— 用户反馈 80ms 太快，调慢至 200ms
+ * @param scaleDown 缩小后的目标值，默认 [DEFAULT_SCALE_DOWN_VALUE]
+ * @param scaleDownDurationMs 缩小动画时长（毫秒，默认 [DEFAULT_SCALE_DOWN_DURATION_MS]）
+ * @param scaleUpDurationMs 恢复动画时长（毫秒，默认 [DEFAULT_SCALE_UP_DURATION_MS]）—— 用户反馈 80ms 太快，调慢至 200ms
  * @param pressDelayMs 保留参数以备扩展（已不再发射 Press）
  * @param isDragActive 让位协调 lambda（默认 false）
  * @param isLongPressed 长按过程状态（>= 500ms 持续按下时为 true，抬起/移动/cancel/拖拽让位时为 false）。
@@ -74,6 +74,32 @@ import androidx.compose.ui.input.pointer.pointerInput
  *                      默认 `remember { mutableStateOf(false) }`。
  * @return 包装了 graphicsLayer + pointerInput 的 Modifier
  */
+
+/**
+ * 默认按压"缩小"动画时长（毫秒）
+ *
+ * 设计目的：v2026-07-21 把此值从 PressFeedback 内部默认值提升为顶层 public const，
+ * 让 SwipeableTodoBox 等共享卡片缩放状态的组件能复用同一套时长常量，
+ * 避免硬编码 60 / 200 在多处不同步（修改时漏改）。
+ *
+ * 与 [Modifier.pressFeedback] 的 `scaleDownDurationMs` 参数默认值保持一致：60ms 快速按下反馈。
+ */
+const val DEFAULT_SCALE_DOWN_DURATION_MS: Int = 60
+
+/**
+ * 默认按压"放大回弹"动画时长（毫秒）
+ *
+ * 与 [Modifier.pressFeedback] 的 `scaleUpDurationMs` 参数默认值保持一致：200ms 缓慢回弹。
+ */
+const val DEFAULT_SCALE_UP_DURATION_MS: Int = 200
+
+/**
+ * 默认按压"缩小"后的目标 scale 值
+ *
+ * 与 [Modifier.pressFeedback] 的 `scaleDown` 参数默认值保持一致：0.94f。
+ */
+const val DEFAULT_SCALE_DOWN_VALUE: Float = 0.94f
+
 @Suppress("LongParameterList", "LongMethod", "UNUSED_PARAMETER")
 @Composable
 fun Modifier.pressFeedback(
@@ -83,9 +109,9 @@ fun Modifier.pressFeedback(
     isBatchMode: Boolean = false,
     onTap: () -> Unit = {},
     onLongClick: () -> Unit = {},
-    scaleDown: Float = 0.94f,
-    scaleDownDurationMs: Int = 60,
-    scaleUpDurationMs: Int = 200,
+    scaleDown: Float = DEFAULT_SCALE_DOWN_VALUE,
+    scaleDownDurationMs: Int = DEFAULT_SCALE_DOWN_DURATION_MS,
+    scaleUpDurationMs: Int = DEFAULT_SCALE_UP_DURATION_MS,
     pressDelayMs: Long = 16L,
     isDragActive: () -> Boolean = { false },
     /**

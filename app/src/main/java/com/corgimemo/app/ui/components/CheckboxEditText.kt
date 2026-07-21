@@ -56,7 +56,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.ui.platform.LocalContext
 import com.corgimemo.app.ui.model.TodoLine
 import com.corgimemo.app.ui.util.formatReminderDisplay
@@ -436,8 +435,16 @@ fun CheckboxEditText(
 /**
  * 单个待办组的圆角容器（含底部操作栏）
  *
+ * 底部操作栏采用Chips标签布局（v2026-07-21 重新设计）：
+ * - Chips行：[🔔提醒] [●优先级] [📁分组] 三个圆角胶囊标签水平排列
+ * - 按钮行：[↩撤销] [↪恢复] ... [完成] 撤销/恢复在左，完成在右
+ *
  * @param priority 优先级 (0=无, 1=低, 2=中, 3=高)
  * @param onPriorityClick 优先级按钮点击回调（触发弹窗）
+ * @param onUndoClick 撤销按钮点击回调
+ * @param onRedoClick 恢复按钮点击回调
+ * @param canUndo 是否可撤销（控制撤销按钮启用/禁用状态）
+ * @param canRedo 是否可恢复（控制恢复按钮启用/禁用状态）
  */
 @Composable
 private fun TodoGroupContainer(
@@ -454,6 +461,10 @@ private fun TodoGroupContainer(
     priority: Int = 0,
     onPriorityClick: (() -> Unit)? = null,
     onSaveClick: (() -> Unit)? = null,
+    onUndoClick: (() -> Unit)? = null,
+    onRedoClick: (() -> Unit)? = null,
+    canUndo: Boolean = false,
+    canRedo: Boolean = false,
     content: @Composable () -> Unit
 ) {
     /**
@@ -471,16 +482,22 @@ private fun TodoGroupContainer(
     }
 
     /**
-     * 优先级按钮显示文字
-     *
-     * v2026-07-21 修复：priority=0（无）状态下的文字从「优先级」改为「无优先级」，
-     * 明确表达"无优先级"语义，与弹窗选项文案「无优先级/低优先级/中优先级/高优先级」保持一致。
+     * 优先级单字显示（v2026-07-21 Chips新设计：只显示无/低/中/高单字）
      */
-    val priorityLabel = when (priority) {
-        3 -> "高优先级"
-        2 -> "中优先级"
-        1 -> "低优先级"
-        else -> "无优先级"
+    val prioritySingleChar = when (priority) {
+        3 -> "高"
+        2 -> "中"
+        1 -> "低"
+        else -> "无"
+    }
+
+    /**
+     * 分组名称截断显示：超长时只显示前两个字+省略号
+     */
+    val groupDisplayText = if (categoryName != null) {
+        if (categoryName.length > 2) categoryName.take(2) + "…" else categoryName
+    } else {
+        "分组"
     }
 
     Column(
@@ -501,198 +518,274 @@ private fun TodoGroupContainer(
     ) {
         content()
 
-        // 底部操作栏：两行布局
-        // Row1：[优先级按钮] [8dp间距] [分类按钮]
-        // Row2：[提醒按钮] ... [完成按钮]
+        // 底部操作栏：Chips标签布局（v2026-07-21 重新设计）
+        // 结构：分割线 / Chips行([🔔提醒][●优先级][📁分组]) / 分割线 / 按钮行([↩撤销][↪恢复]...[完成])
         if (showBottomBar) {
+            // 实时刷新当前时间（30s轮询检测过期）
+            var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+            LaunchedEffect(reminderTime) {
+                now = System.currentTimeMillis()
+                while (true) {
+                    val nextTick = ((System.currentTimeMillis() / 30_000L) + 1L) * 30_000L
+                    kotlinx.coroutines.delay(nextTick - System.currentTimeMillis())
+                    now = System.currentTimeMillis()
+                }
+            }
+
+            // 提醒相关状态
+            val isOverdue = reminderTime != null && reminderTime < now
+            val reminderText = reminderTime?.let { formatReminderDisplay(it, now).text } ?: "提醒"
+            val reminderChipColor = if (isOverdue) Color(0xFFDC2626) else Color(0xFFFF9A5C)
+            val reminderChipBg = if (isOverdue) Color(0xFFFFF5F5) else Color(0xFFFFF5EE)
+            val reminderChipBorder = if (isOverdue) Color(0xFFDC2626) else Color(0xFFFF9A5C)
+
+            // 优先级chip背景色
+            val priorityChipBg = when (priority) {
+                3 -> Color(0xFFFFF5F5)
+                2 -> Color(0xFFFFF8EB)
+                1 -> Color(0xFFF0F7FC)
+                else -> Color(0xFFF5F5F5)
+            }
+
+            // 分组chip颜色
+            val groupChipColor = if (categoryName != null) Color(0xFFFF9A5C) else Color(0xFF999999)
+            val groupChipBorder = if (categoryName != null) Color(0xFFFF9A5C) else Color(0xFFEEEEEE)
+            val groupChipBg = if (categoryName != null) Color(0xFFFFF5EE) else Color.Transparent
+
+            // 未设置chip默认颜色
+            val defaultChipBorder = Color(0xFFEEEEEE)
+            val defaultChipText = Color(0xFF999999)
+
+            // 分割线颜色
+            val dividerColor = Color(0xFFEEEEEE)
+
+            // 撤销/恢复按钮颜色（与编辑区底部工具栏图标颜色一致：onSurfaceVariant #666666）
+            val historyEnabledColor = Color(0xFF666666)
+            val historyDisabledColor = Color(0xFF999999)
+
+            // 完成按钮颜色（柔和绿#7EC8A0代替刺眼绿#4CAF50）
+            val saveTextColor = if (isSaved) Color(0xFF7EC8A0) else Color(0xFFFF9A5C)
+            val saveText = if (isSaved) "已保存" else "完成"
+
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth()
             ) {
-                // ===== Row1: 优先级 + 分类 =====
+                // 顶部分割线
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(dividerColor)
+                )
+
+                // Chips行：固定高度36dp，内容垂直居中
+                // 宽度策略（v2026-07-21 调整）：
+                // - 优先级chip：固定宽度44dp（只显示圆点+单字）
+                // - 分组chip：自适应内容宽度（分组名已两字截断，内容固定较短）
+                // - 提醒chip：weight(1f, fill=false) 占据剩余空间，默认按内容宽度，长文本时在剩余空间内ellipsis
+                // 顺序：[提醒] [分组] [优先级]
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // 优先级按钮（保持原有视觉与交互）
+                    // Chip1: 设置提醒（weight(1f,fill=false) 占据剩余空间，文本超长ellipsis）
                     Box(
                         modifier = Modifier
-                            .clickable(enabled = onPriorityClick != null) { onPriorityClick?.invoke() }
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFF5F5F5))
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                            .weight(1f, fill = false)
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .then(
+                                if (reminderTime != null) {
+                                    Modifier
+                                        .background(reminderChipBg)
+                                        .border(1.dp, reminderChipBorder, RoundedCornerShape(14.dp))
+                                } else {
+                                    Modifier.border(1.dp, defaultChipBorder, RoundedCornerShape(14.dp))
+                                }
+                            )
+                            .clickable(enabled = onReminderClick != null) { onReminderClick?.invoke() },
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = if (reminderTime != null) "已设置提醒" else "设置提醒",
+                                tint = if (reminderTime != null) reminderChipColor else defaultChipText,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = reminderText,
+                                fontSize = 12.sp,
+                                color = if (reminderTime != null) reminderChipColor else defaultChipText,
+                                fontWeight = if (reminderTime != null) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                // weight(1f,fill=false) 让Text在有×按钮时仍能正确ellipsis，默认状态按内容宽度
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            if (reminderTime != null && onReminderDelete != null) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "×",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF666666),
+                                    modifier = Modifier.clickable { onReminderDelete() }
+                                )
+                            }
+                        }
+                    }
+
+                    // Chip2: 分组（自适应内容宽度，因为分组名已两字截断）
+                    Box(
+                        modifier = Modifier
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(groupChipBg)
+                            .border(1.dp, groupChipBorder, RoundedCornerShape(14.dp))
+                            .clickable(enabled = onCategoryClick != null) { onCategoryClick?.invoke() },
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp)
+                        ) {
+                            // 文件夹图标📁
+                            Text(
+                                text = "📁",
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = groupDisplayText,
+                                fontSize = 12.sp,
+                                color = if (categoryName != null) groupChipColor else defaultChipText,
+                                fontWeight = if (categoryName != null) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (categoryName != null && onCategoryClear != null) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "×",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF666666),
+                                    modifier = Modifier.clickable { onCategoryClear() }
+                                )
+                            }
+                        }
+                    }
+
+                    // Chip3: 优先级（固定宽度44dp，只显示圆点+单字）
+                    Box(
+                        modifier = Modifier
+                            .width(44.dp)
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(priorityChipBg)
+                            .border(1.dp, borderColor.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+                            .clickable(enabled = onPriorityClick != null) { onPriorityClick?.invoke() },
                         contentAlignment = Alignment.Center
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.Center
                         ) {
-                            // 优先级颜色圆点（borderColor 必非空，移除冗余空判断 2026-07-20）
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(androidx.compose.foundation.shape.CircleShape)
                                     .background(borderColor)
                             )
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = priorityLabel,
-                                fontSize = 13.sp,
+                                text = prioritySingleChar,
+                                fontSize = 12.sp,
                                 color = borderColor,
-                                fontWeight = if (priority > 0) androidx.compose.ui.text.font.FontWeight.SemiBold
-                                             else androidx.compose.ui.text.font.FontWeight.Normal
+                                fontWeight = if (priority > 0) FontWeight.SemiBold else FontWeight.Normal
                             )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    // 分类按钮
-                    if (onCategoryClick != null) {
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFF5F5F5))
-                                .widthIn(max = 120.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // 分类点击区域：图标 + 名称
-                            Row(
-                                modifier = Modifier
-                                    .clickable { onCategoryClick() }
-                                    .padding(start = 10.dp, top = 6.dp, bottom = 6.dp, end = if (categoryName != null && onCategoryClear != null) 4.dp else 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "📋",
-                                    fontSize = 13.sp
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = categoryName ?: "分类",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = if (categoryName != null) androidx.compose.ui.text.font.FontWeight.SemiBold
-                                                 else androidx.compose.ui.text.font.FontWeight.Normal,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false)
-                                )
-                            }
-                            // × 按钮：仅当已设置分类时显示，复刻"设置提醒"×按钮交互
-                            if (categoryName != null && onCategoryClear != null) {
-                                // 1px 垂直分割线
-                                Box(
-                                    modifier = Modifier
-                                        .width(1.dp)
-                                        .height(14.dp)
-                                        .background(Color(0xFFCCCCCC))
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .clickable { onCategoryClear.invoke() }
-                                        .padding(4.dp)
-                                ) {
-                                    Text(
-                                        text = "×",
-                                        fontSize = 16.sp,
-                                        color = Color(0xFF666666)
-                                    )
-                                }
-                            }
                         }
                     }
                 }
 
-                // ===== Row2: 提醒 + 完成 =====
+                // 底部分割线
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(dividerColor)
+                )
+
+                // 按钮行：固定高度36dp，与Chips行等高，撤销/恢复在左，完成在右
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 实时刷新当前时间：进入页面时取一次，对齐到下一个 30s 整数倍开始轮询，
-                    // 最迟 30s 内必然跨分钟，"已过期/未过期"自动切换。
-                    // reminderTime 变化时（用户改时间 / × 删除）LaunchedEffect 重启，立刻按新值重算。
-                    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-                    LaunchedEffect(reminderTime) {
-                        now = System.currentTimeMillis()
-                        while (true) {
-                            // 对齐到下一个 30s 整数倍边界，最大漂移 30s
-                            val nextTick = ((System.currentTimeMillis() / 30_000L) + 1L) * 30_000L
-                            kotlinx.coroutines.delay(nextTick - System.currentTimeMillis())
-                            now = System.currentTimeMillis()
-                        }
+                    // 撤销按钮
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(enabled = canUndo && onUndoClick != null) { onUndoClick?.invoke() }
+                            .padding(horizontal = 6.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "↩",
+                            fontSize = 14.sp,
+                            color = if (canUndo) historyEnabledColor else historyDisabledColor
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "撤销",
+                            fontSize = 14.sp,
+                            color = if (canUndo) historyEnabledColor else historyDisabledColor,
+                            fontWeight = FontWeight.Normal
+                        )
                     }
 
-                    // 已过期判定：reminderTime 严格小于 now（等于当前时刻视为未过期）
-                    val isOverdue = reminderTime != null && reminderTime < now
-                    val displayText = reminderTime?.let { formatReminderDisplay(it, now).text } ?: "设置提醒"
-                    val iconTint: Color = if (isOverdue) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurfaceVariant
-                    val textColor: Color = if (isOverdue) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurfaceVariant
+                    Spacer(modifier = Modifier.width(12.dp))
 
+                    // 恢复按钮
                     Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .clickable(enabled = onReminderClick != null) { onReminderClick?.invoke() }
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFF5F5F5))
-                            .padding(
-                                start = 10.dp,
-                                top = 6.dp,
-                                end = if (reminderTime != null) 6.dp else 10.dp,
-                                bottom = 6.dp
-                            ),
-                        verticalAlignment = Alignment.CenterVertically
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(enabled = canRedo && onRedoClick != null) { onRedoClick?.invoke() }
+                            .padding(horizontal = 6.dp, vertical = 6.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = if (reminderTime != null) "已设置提醒" else "设置提醒",
-                            tint = iconTint,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
                         Text(
-                            text = displayText,
-                            fontSize = 13.sp,
-                            color = textColor,
-                            fontWeight = if (isOverdue) FontWeight.SemiBold else FontWeight.Normal
+                            text = "↪",
+                            fontSize = 14.sp,
+                            color = if (canRedo) historyEnabledColor else historyDisabledColor
                         )
-                        if (reminderTime != null) {
-                            Spacer(Modifier.width(6.dp))
-                            // 1px 垂直分割线
-                            Box(
-                                modifier = Modifier
-                                    .width(1.dp)
-                                    .height(14.dp)
-                                    .background(Color(0xFFCCCCCC))
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            // × 按钮：独立点击区域，不冒泡到 onReminderClick
-                            Box(
-                                modifier = Modifier
-                                    .clickable(enabled = onReminderDelete != null) { onReminderDelete?.invoke() }
-                                    .padding(4.dp)
-                            ) {
-                                Text(
-                                    text = "×",
-                                    fontSize = 16.sp,
-                                    color = Color(0xFF666666)
-                                )
-                            }
-                        }
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "恢复",
+                            fontSize = 14.sp,
+                            color = if (canRedo) historyEnabledColor else historyDisabledColor,
+                            fontWeight = FontWeight.Normal
+                        )
                     }
 
                     Spacer(modifier = Modifier.weight(1f))
 
-                    // 右侧：完成 / 已保存 按钮
+                    // 完成按钮（纯文字，无箭头无背景无阴影）
                     Text(
-                        text = if (isSaved) "已保存 ✓" else "完成",
+                        text = saveText,
+                        color = saveTextColor,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
                         modifier = Modifier
                             .clickable(enabled = onSaveClick != null && !isSaved) { onSaveClick?.invoke() }
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        color = if (isSaved) androidx.compose.ui.graphics.Color(0xFF4CAF50) else Color(0xFFFF9A5C),
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                        fontSize = 14.sp
+                            .padding(horizontal = 6.dp, vertical = 6.dp)
                     )
                 }
             }

@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -400,11 +401,17 @@ private fun DateSectionsList(
             item(key = "pinned_${pinned.id}") {
                 // 2026-07-14 新增：已归档+置顶的卡使用"取消归档"按钮（与 EXPIRED 分组卡片一致）
                 val isPinnedArchived = pinned.isArchived
+                // v2026-07-21 新增：与 PinnedDateCard.pressFeedback 共享 cardScale
+                // - 左滑按钮 graphicsLayer 实时跟随卡片 pressFeedback 缩放
+                // - 实现"卡片先缩小再放大时，按钮也同步先缩小再放大"
+                val pinnedCardScale = remember { mutableFloatStateOf(1f) }
                 SwipeableTodoBox(
                     isExpanded = expandedDateId == pinned.id,
                     isPinned = true,
                     // 2026-07-14 新增：批量模式下禁用置顶卡的左滑操作
                     isEnabled = !isBatchMode,
+                    // v2026-07-21 新增：共享 cardScale
+                    cardScale = pinnedCardScale,
                     onExpandChange = { expanded ->
                         onSetExpanded(if (expanded) pinned.id else null)
                     },
@@ -455,7 +462,11 @@ private fun DateSectionsList(
                         date = pinned,
                         nowMs = nowMs,
                         isClickBlocked = isClickBlocked,
-                        onClick = { onCardClick(pinned) }
+                        onClick = { onCardClick(pinned) },
+                        // v2026-07-21 新增：与外层 SwipeableTodoBox 共享 cardScale
+                        // - pressFeedback 修改 scale 时，左滑按钮实时跟随
+                        // - 必须在同一作用域创建同一个 state 才能共享
+                        cardScale = pinnedCardScale
                     )
                 }
             }
@@ -495,11 +506,18 @@ private fun DateSectionsList(
             // 卡片列表（仅在分组展开时渲染）
             if (isExpanded) {
                 items(dates, key = { "date_${it.id}" }) { date ->
+                    // v2026-07-21 新增：与 SpecialDateCard.pressFeedback 共享 cardScale
+                    // - 左滑按钮 graphicsLayer 实时跟随卡片 pressFeedback 缩放
+                    // - 实现"卡片先缩小再放大时，按钮也同步先缩小再放大"
+                    // - 每个 item 独立一份 state（item key 已保证隔离）
+                    val dateCardScale = remember { mutableFloatStateOf(1f) }
                     SwipeableTodoBox(
                         isExpanded = expandedDateId == date.id,
                         isPinned = date.isPinned,
                         // 2026-07-14 新增：批量模式下禁用普通卡的左滑操作
                         isEnabled = !isBatchMode,
+                        // v2026-07-21 新增：共享 cardScale
+                        cardScale = dateCardScale,
                         onExpandChange = { expanded ->
                             onSetExpanded(if (expanded) date.id else null)
                         },
@@ -564,7 +582,9 @@ private fun DateSectionsList(
                             isSimpleMode = isSimpleMode,
                             isBatchMode = isBatchMode,
                             isSelected = selectedDateIds.contains(date.id),
-                            onSelectClick = { onToggleSelection(date.id) }
+                            onSelectClick = { onToggleSelection(date.id) },
+                            // v2026-07-21 新增：与外层 SwipeableTodoBox 共享 cardScale
+                            cardScale = dateCardScale
                         )
                     }
                 }
