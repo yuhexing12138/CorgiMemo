@@ -139,6 +139,17 @@ fun CheckboxEditText(
     groupPriorities: Map<Int, Int> = emptyMap(),
     /** 优先级按钮点击回调（参数=groupId） */
     onPriorityButtonClick: ((Int) -> Unit)? = null,
+    // 🆕 关联功能相关参数（v2026-07-21 新增）
+    /** 各分组的关联列表（key=groupId, value=该分组的关联列表） */
+    groupRelations: Map<Int, List<com.corgimemo.app.data.model.CardRelation>> = emptyMap(),
+    /** 关联ID → 标题的映射（由 ViewModel 异步加载） */
+    relationTitles: Map<Long, String> = emptyMap(),
+    /** 点击 ＋ 添加关联按钮的回调（参数=groupId） */
+    onAddRelationClick: ((Int) -> Unit)? = null,
+    /** 点击 Chip 弹预览的回调（参数=关联实体） */
+    onPreviewRelation: ((com.corgimemo.app.data.model.CardRelation) -> Unit)? = null,
+    /** 点击 × 删除关联的回调（参数=relationId, groupId） */
+    onDeleteRelation: ((Long, Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     placeholder: String = "回车可连续添加子待办，输入 / 可新建待办"
@@ -242,7 +253,13 @@ fun CheckboxEditText(
                 onCategoryClear = { onCategoryClear?.invoke(0) },
                 priority = priority,
                 onPriorityClick = { onPriorityButtonClick?.invoke(0) },
-                onSaveClick = { onSaveClick?.invoke(0) }
+                onSaveClick = { onSaveClick?.invoke(0) },
+                // 🆕 关联功能参数（v2026-07-21 新增）
+                groupRelations = groupRelations[0] ?: emptyList(),
+                relationTitles = relationTitles,
+                onAddRelationClick = onAddRelationClick?.let { cb -> { cb(0) } },
+                onPreviewRelation = onPreviewRelation,
+                onDeleteRelation = onDeleteRelation
             ) {
                 CheckboxEditRow(
                     lineIndex = 0,
@@ -306,7 +323,13 @@ fun CheckboxEditText(
                 onCategoryClick = { onCategoryClick?.invoke(groupId) },
                 onCategoryClear = { onCategoryClear?.invoke(groupId) },
                 onPriorityClick = { onPriorityButtonClick?.invoke(groupId) },
-                    onSaveClick = { onSaveClick?.invoke(groupId) }
+                    onSaveClick = { onSaveClick?.invoke(groupId) },
+                    // 🆕 关联功能参数（v2026-07-21 新增）
+                    groupRelations = groupRelations[groupId] ?: emptyList(),
+                    relationTitles = relationTitles,
+                    onAddRelationClick = onAddRelationClick?.let { cb -> { cb(groupId) } },
+                    onPreviewRelation = onPreviewRelation,
+                    onDeleteRelation = onDeleteRelation
                 ) {
                     groupLines.forEachIndexed { localIndex, line ->
                         val currentIndex = globalIndex++
@@ -465,6 +488,17 @@ private fun TodoGroupContainer(
     onRedoClick: (() -> Unit)? = null,
     canUndo: Boolean = false,
     canRedo: Boolean = false,
+    // 🆕 关联功能相关参数（v2026-07-21 新增）
+    /** 当前分组的关联列表 */
+    groupRelations: List<com.corgimemo.app.data.model.CardRelation> = emptyList(),
+    /** 关联ID → 标题的映射 */
+    relationTitles: Map<Long, String> = emptyMap(),
+    /** 点击 ＋ 添加关联按钮的回调 */
+    onAddRelationClick: (() -> Unit)? = null,
+    /** 点击 Chip 弹预览的回调 */
+    onPreviewRelation: ((com.corgimemo.app.data.model.CardRelation) -> Unit)? = null,
+    /** 点击 × 删除关联的回调（参数=relationId, groupId） */
+    onDeleteRelation: ((Long, Int) -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     /**
@@ -714,13 +748,35 @@ private fun TodoGroupContainer(
                     }
                 }
 
-                // 底部分割线
+                // 底部分割线（Chips 行下方）
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(1.dp)
                         .background(dividerColor)
                 )
+
+                // 🆕 已关联区域：横向 Chip 流（v2026-07-21 新增）
+                // 仅当 onAddRelationClick 不为空时渲染（即编辑模式，预览模式不显示）
+                if (onAddRelationClick != null) {
+                    LinkedCardsRow(
+                        relations = groupRelations,
+                        groupId = groupId,
+                        relationTitles = relationTitles,
+                        onAddClick = { onAddRelationClick?.invoke() },
+                        onChipClick = { relation -> onPreviewRelation?.invoke(relation) },
+                        onChipDelete = { relationId, gid -> onDeleteRelation?.invoke(relationId, gid) },
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+
+                    // 已关联区域下方分割线
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(dividerColor)
+                    )
+                }
 
                 // 按钮行：固定高度36dp，与Chips行等高，撤销/恢复在左，完成在右
                 Row(

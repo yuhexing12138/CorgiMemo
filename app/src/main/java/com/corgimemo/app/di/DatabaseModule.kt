@@ -17,6 +17,7 @@ import com.corgimemo.app.data.local.db.CustomDateTypeDao
 import com.corgimemo.app.data.local.db.SpecialDateRelationDao
 import com.corgimemo.app.data.local.db.MoodHistoryDao
 import com.corgimemo.app.data.local.db.OperationLogDao
+import com.corgimemo.app.data.local.db.SubTaskDao
 import com.corgimemo.app.data.local.db.TaskDailyStatsDao
 import com.corgimemo.app.data.local.db.TodoDao
 import dagger.Module
@@ -147,5 +148,12 @@ object DatabaseModule {
     @Singleton
     fun provideContentBlockDao(database: CorgiMemoDatabase): ContentBlockDao {
         return database.contentBlockDao()
+    }
+
+    /** 子任务 DAO（用于 CardRelationRepository 加载待办子任务进度） */
+    @Provides
+    @Singleton
+    fun provideSubTaskDao(database: CorgiMemoDatabase): SubTaskDao {
+        return database.subTaskDao()
     }
 }

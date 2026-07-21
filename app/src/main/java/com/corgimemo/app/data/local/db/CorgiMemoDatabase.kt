@@ -31,7 +31,7 @@ import com.corgimemo.app.data.model.CustomDateType
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
-    version = 42,
+    version = 44,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -99,7 +99,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1179,6 +1179,91 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     internal val MIGRATION_41_42 = object : Migration(41, 42) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE corgi_data ADD COLUMN signature TEXT NOT NULL DEFAULT '记录生活，刻下美好'")
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 42 → 43
+     * card_relations 表新增 groupId 字段（分组级别关联）
+     *
+     * 依据 .trae/rules/entity与migration同步检查.md 规则：
+     * SQL 的 `DEFAULT 0` 必须与 CardRelation.groupId 的
+     * `@ColumnInfo(defaultValue = "0")` 严格保持一致。
+     *
+     * 字段语义：
+     * - INTEGER 类型，默认值 0（主分组）
+     * - 多分组架构下，每个分组独立维护自己的关联列表
+     * - 旧数据迁移后默认为 0（主分组），用户视觉无感知差异
+     *
+     * 索引变更：
+     * - 删除旧索引 index_card_relations_sourceType_sourceId
+     * - 删除旧唯一索引 index_card_relations_sourceType_sourceId_targetType_targetId
+     * - 新建索引 index_card_relations_sourceType_sourceId_groupId
+     * - 新建唯一索引 index_card_relations_sourceType_sourceId_groupId_targetType_targetId
+     */
+    internal val MIGRATION_42_TO_43 = object : Migration(42, 43) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // 1. 新增 groupId 字段，默认值 0（兼容旧数据）
+            database.execSQL("ALTER TABLE card_relations ADD COLUMN groupId INTEGER NOT NULL DEFAULT 0")
+
+            // 2. 重建索引（删除旧索引 + 创建新索引）
+            database.execSQL("DROP INDEX IF EXISTS index_card_relations_sourceType_sourceId")
+            database.execSQL("DROP INDEX IF EXISTS index_card_relations_sourceType_sourceId_targetType_targetId")
+
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId_groupId ON card_relations(sourceType, sourceId, groupId)")
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_card_relations_sourceType_sourceId_groupId_targetType_targetId ON card_relations(sourceType, sourceId, groupId, targetType, targetId)")
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 43 → 44
+     * card_relations 表历史数据双向关联补全（v2026-07-21 新增）
+     *
+     * **背景**：
+     * v44 之前 addRelation 仅插入单向 A→B 记录。改造为双向后，历史数据中
+     * 存在大量"单向关联"（A→B 但缺少 B→A）。此 Migration 扫描所有历史记录，
+     * 为每条 A→B 补充反向 B→A（如不存在），使历史数据与新的双向逻辑一致。
+     *
+     * **SQL 逻辑**：
+     * - 遍历 card_relations 每条记录 cr（A→B）
+     * - 检查反向记录 B→A（groupId=0）是否已存在
+     * - 如不存在，插入反向记录（sourceType/target 互换，groupId=0）
+     * - 使用 INSERT ... SELECT + NOT EXISTS 一次性批量补全，避免游标循环
+     *
+     * **反向 groupId 固定为 0 的原因**：
+     * - 与 [CardRelationRepository.addRelation] 的反向插入逻辑保持一致
+     * - inspiration/date 的 groupId 本就是 0；todo 反向归属主分组
+     *
+     * **幂等性**：
+     * - NOT EXISTS 子查询保证不会重复插入
+     * - 重复运行此 Migration 安全（已存在的反向记录会被跳过）
+     *
+     * 依据 .trae/rules/entity与migration同步检查.md 规则：
+     * 此 Migration 不新增字段，仅插入数据，无 DEFAULT 值需对齐。
+     */
+    internal val MIGRATION_43_TO_44 = object : Migration(43, 44) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // 为每条历史单向关联 A→B 补充反向 B→A（groupId=0，如不存在）
+            // 字段映射：sourceType↔targetType, sourceId↔targetId, groupId 固定 0
+            database.execSQL("""
+                INSERT INTO card_relations (sourceType, sourceId, groupId, targetType, targetId, createdAt)
+                SELECT
+                    cr.targetType AS sourceType,
+                    cr.targetId AS sourceId,
+                    0 AS groupId,
+                    cr.sourceType AS targetType,
+                    cr.sourceId AS targetId,
+                    cr.createdAt
+                FROM card_relations cr
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM card_relations r2
+                    WHERE r2.sourceType = cr.targetType
+                      AND r2.sourceId = cr.targetId
+                      AND r2.groupId = 0
+                      AND r2.targetType = cr.sourceType
+                      AND r2.targetId = cr.sourceId
+                )
+            """.trimIndent())
         }
     }
     // companion object 闭合

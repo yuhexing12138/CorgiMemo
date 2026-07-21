@@ -13,9 +13,11 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "card_relations",
     indices = [
-        Index(value = ["sourceType", "sourceId"]),
+        // 修改：source 索引加上 groupId，支持按分组查询
+        Index(value = ["sourceType", "sourceId", "groupId"]),
         Index(value = ["targetType", "targetId"]),
-        Index(value = ["sourceType", "sourceId", "targetType", "targetId"], unique = true)
+        // 修改：唯一约束加上 groupId，同一分组内不能重复关联
+        Index(value = ["sourceType", "sourceId", "groupId", "targetType", "targetId"], unique = true)
     ]
 )
 data class CardRelation(
@@ -27,6 +29,14 @@ data class CardRelation(
 
     /** 关联发起方ID */
     val sourceId: Long,
+
+    /**
+     * 关联发起方分组ID（仅 todo 类型有意义；inspiration/date 默认 0）
+     * - 多分组架构下，每个分组独立维护自己的关联列表
+     * - 旧数据迁移后默认为 0（主分组）
+     */
+    @ColumnInfo(defaultValue = "0")
+    val groupId: Int = 0,
 
     /** 关联目标方类型: "todo" | "inspiration" | "date" */
     val targetType: String,

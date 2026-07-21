@@ -8,6 +8,7 @@ import com.corgimemo.app.data.event.TodoEventBus
 import com.corgimemo.app.data.local.db.ContentBlockDao
 import com.corgimemo.app.data.local.db.ContentBlockEntity
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
+import com.corgimemo.app.data.model.CardDetail
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CardSearchResult
 import com.corgimemo.app.data.model.Category
@@ -25,8 +26,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import com.corgimemo.app.util.TagUtils
@@ -43,6 +47,18 @@ import javax.inject.Inject
  * @property savedTodoId 已保存的 TodoItem 数据库 ID（isSaved=true 时有效）
  * @property savedAt 最后保存时间戳
  * @property contentSnapshot 保存时的内容快照（用于检测是否真正被编辑）
+ * @property editStateHash 保存时的完整编辑状态指纹（v2026-07-21 新增）
+ *
+ * editStateHash 覆盖以下元素的变化检测：
+ * - 文本内容（todoLines 的 text 拼接）
+ * - 附件（每行的 imagePaths / voiceAttachments）
+ * - 提醒时间（reminderTime）
+ * - 分类（categoryId）
+ * - 优先级（priority）
+ * - 关联（该分组的关联数量）
+ *
+ * 撤销/恢复操作会改变 todoLines 的 text 或附件，自动反映在 editStateHash 中。
+ * 分组本身的增删会触发 groupSaveStates 整体重置。
  */
 data class GroupSaveState(
     val groupId: Int,
@@ -50,7 +66,9 @@ data class GroupSaveState(
     val savedTodoId: Long? = null,
     val savedAt: Long? = null,
     /** 保存时该组所有行的文本拼接（用于比较是否发生变化） */
-    val contentSnapshot: String = ""
+    val contentSnapshot: String = "",
+    /** 保存时的完整编辑状态指纹（覆盖文字/附件/提醒/分类/优先级/关联） */
+    val editStateHash: String = ""
 )
 
 /**
@@ -379,9 +397,30 @@ class TodoEditViewModel @Inject constructor(
     private val _canRedo = MutableStateFlow(false)
     val canRedo: StateFlow<Boolean> = _canRedo.asStateFlow()
 
-    /** 关联列表 */
-    private val _relations = MutableStateFlow<List<CardRelation>>(emptyList())
-    val relations: StateFlow<List<CardRelation>> = _relations.asStateFlow()
+    /** 各分组的关联映射（key=groupId, value=该分组的关联列表） */
+    private val _groupRelations = MutableStateFlow<Map<Int, List<CardRelation>>>(emptyMap())
+    val groupRelations: StateFlow<Map<Int, List<CardRelation>>> = _groupRelations.asStateFlow()
+
+    /** 关联ID → 标题的缓存映射（用于 LinkedCardsRow 显示 Chip 标题） */
+    private val _relationTitles = MutableStateFlow<Map<Long, String>>(emptyMap())
+    val relationTitles: StateFlow<Map<Long, String>> = _relationTitles.asStateFlow()
+
+    /**
+     * 当前预览的卡片详情（用于 LinkedCardPreviewDialog 按类型差异化展示）
+     *
+     * 用户点击 Chip 时由 [loadCardDetail] 异步加载，Dialog 关闭时由 [clearCardDetail] 清空。
+     * 加载期间 [_cardDetailLoading] 为 true，UI 显示 CircularProgressIndicator。
+     */
+    private val _cardDetail = MutableStateFlow<CardDetail?>(null)
+    val cardDetail: StateFlow<CardDetail?> = _cardDetail.asStateFlow()
+
+    /** 卡片详情加载中标志（用于 Dialog 显示进度指示器） */
+    private val _cardDetailLoading = MutableStateFlow(false)
+    val cardDetailLoading: StateFlow<Boolean> = _cardDetailLoading.asStateFlow()
+
+    /** 关联操作错误事件（用于 Snackbar 提示） */
+    private val _errorEvent = MutableSharedFlow<String>()
+    val errorEvent: SharedFlow<String> = _errorEvent.asSharedFlow()
 
     /**
      * 数据加载完成标志
@@ -394,6 +433,22 @@ class TodoEditViewModel @Inject constructor(
      */
     private val _isLoaded = MutableStateFlow(false)
     val isLoaded: StateFlow<Boolean> = _isLoaded.asStateFlow()
+
+    /**
+     * 关联数据加载完成标志（v2026-07-21 新增）
+     *
+     * 用于解决 editStateHash 初始化时序问题：
+     * - false：关联尚未加载（_groupRelations 为空 map）
+     * - true：loadGroupRelations() 已完成，_groupRelations 已填充实际数据
+     *
+     * UI 层应在 isRelationsLoaded=true 且 todoLines 初始化完成后，
+     * 调用 [markGroupSaveStateBaseline] 建立基线指纹，避免 checkAndResetGroupSavedState
+     * 因 editStateHash 仍为 "loading" 占位而错误重置保存状态。
+     *
+     * 重置时机：loadTodo() 启动时重置为 false，确保切换 todo 时基线重建。
+     */
+    private val _isRelationsLoaded = MutableStateFlow(false)
+    val isRelationsLoaded: StateFlow<Boolean> = _isRelationsLoaded.asStateFlow()
 
     private var existingTodo: TodoItem? = null
 
@@ -629,6 +684,9 @@ class TodoEditViewModel @Inject constructor(
      */
     fun loadTodo(todoId: Long) {
         viewModelScope.launch {
+            // v2026-07-21：重置关联加载标志，确保切换 todo 时基线重建
+            _isRelationsLoaded.value = false
+
             todoRepository.getTodoById(todoId)?.let { todo ->
                 existingTodo = todo
                 _title.value = todo.title
@@ -672,9 +730,6 @@ class TodoEditViewModel @Inject constructor(
                 /** 从 DataStore 恢复跨会话的 Undo/Redo 栈（如有） */
                 restoreUndoStacks(todoId)
 
-                // 加载关联关系
-                _relations.value = cardRelationRepository.getRelationsBlocking("todo", todoId)
-
                 val subTasks = SubTaskManager.getSubTasks(context, todoId)
                 _subTasks.value = subTasks
 
@@ -697,6 +752,13 @@ class TodoEditViewModel @Inject constructor(
                  * 必须将此 ID 记录到 _groupSaveStates 中，
                  * 这样后续 saveGroup() 才能执行 UPDATE 而非 INSERT，
                  * 避免创建重复卡片。
+                 *
+                 * v2026-07-21：editStateHash 初始化为 "loading" 占位，
+                 * 等 loadGroupRelations 完成 + UI 层构造 todoLines 后，
+                 * 由 UI 层调用 [markGroupSaveStateBaseline] 用真实 hash 覆盖。
+                 * 这避免了"loadTodo 时 _groupRelations 还为空 → relationsCount=0"
+                 * 与"后续 _groupRelations 加载完成 → relationsCount=N"的指纹差异
+                 * 错误触发 [checkAndResetGroupSavedState] 重置保存状态。
                  */
                 val contentSnapshot = buildString {
                     appendLine(todo.title)
@@ -709,12 +771,24 @@ class TodoEditViewModel @Inject constructor(
                         isSaved = true,
                         savedTodoId = todo.id,  // 关键：记录已有 ID
                         savedAt = System.currentTimeMillis(),
-                        contentSnapshot = contentSnapshot
+                        contentSnapshot = contentSnapshot,
+                        editStateHash = "loading"  // 占位，等基线建立后覆盖
                     )
                 )
 
                 /** 初始化 groupId=0 的优先级 */
                 _groupPriorities.value = mapOf(0 to todo.priority)
+
+                /**
+                 * 加载关联关系（v2026-07-21 修复时序 bug）
+                 *
+                 * 原实现：在 _groupSaveStates 初始化前调用 loadGroupRelations，
+                 *   传入 groupIds = _groupSaveStates.value.keys.toList() = []，导致关联从不被加载。
+                 * 现实现：在 _groupSaveStates 初始化后调用，传入正确的 listOf(0)。
+                 *
+                 * 其他分组的关联由 UI 层初始化 todoLines 后主动调用 loadGroupRelations 加载。
+                 */
+                loadGroupRelations(todoId, listOf(0))
 
                 android.util.Log.w("TodoEditVM", "从列表加载: 初始化 groupSaveStates[0], savedTodoId=${todo.id}, priority=${todo.priority}")
             }
@@ -865,9 +939,9 @@ class TodoEditViewModel @Inject constructor(
                 saveContentBlocks(todoId, _currentContentBlocks.value)
             }
 
-            // 保存关联关系（新建时将临时关联绑定到新ID）
+            // 保存关联关系（新建时将各分组的临时关联绑定到新ID）
             if (existingTodo == null) {
-                _relations.value.forEach { relation ->
+                _groupRelations.value.values.flatten().forEach { relation ->
                     cardRelationRepository.addRelation(relation.copy(sourceId = todoId))
                 }
             }
@@ -1066,14 +1140,16 @@ class TodoEditViewModel @Inject constructor(
                     com.corgimemo.app.notification.AlarmScheduler.scheduleReminder(context, todoItem.copy(id = newTodoId))
                 }
 
-                // 9. 更新保存状态（包含内容快照，用于后续变化检测）
+                // 9. 更新保存状态（包含内容快照和完整编辑状态指纹，用于后续变化检测）
                 val contentSnapshot = groupLines.joinToString("\n") { it.text }
+                val editStateHash = computeGroupEditStateHash(targetGroupId, allLines)
                 val newState = GroupSaveState(
                     groupId = targetGroupId,
                     isSaved = true,
                     savedTodoId = newTodoId,
                     savedAt = System.currentTimeMillis(),
-                    contentSnapshot = contentSnapshot  // 记录保存时的内容
+                    contentSnapshot = contentSnapshot,  // 记录保存时的内容（向后兼容）
+                    editStateHash = editStateHash      // 记录保存时的完整编辑状态指纹
                 )
                 _groupSaveStates.value = _groupSaveStates.value + (targetGroupId to newState)
 
@@ -1196,18 +1272,99 @@ class TodoEditViewModel @Inject constructor(
      * - 内容不同 → 重置为未保存（用户编辑了该容器的内容）
      *
      * @param groupId 要检查的分组 ID
-     * @param currentContent 当前该组的文本内容
+     * @param todoLines 当前所有 todoLines（用于提取该分组的文本和附件状态）
      */
-    fun checkAndResetGroupSavedState(groupId: Int, currentContent: String) {
+    fun checkAndResetGroupSavedState(groupId: Int, todoLines: List<com.corgimemo.app.ui.model.TodoLine>) {
         val current = _groupSaveStates.value[groupId]
         if (current != null && current.isSaved) {
-            // 只有当内容真正发生变化时才重置
-            if (current.contentSnapshot != currentContent) {
+            // v2026-07-21：基线尚未建立（"loading" 占位）时跳过比较，
+            // 避免 loadTodo 完成但 loadGroupRelations 尚未完成的时序窗口内错误重置。
+            // UI 层会在 isRelationsLoaded=true 后调用 markGroupSaveStateBaseline 建立基线。
+            if (current.editStateHash == "loading") return
+            // 计算当前完整编辑状态指纹（覆盖文字/附件/提醒/分类/优先级/关联）
+            val currentHash = computeGroupEditStateHash(groupId, todoLines)
+            // 只有当任意元素真正发生变化时才重置
+            if (current.editStateHash != currentHash) {
                 val newState = current.copy(isSaved = false)
                 _groupSaveStates.value = _groupSaveStates.value + (groupId to newState)
-                android.util.Log.w("TodoEditVM", "分组 $groupId 内容已变化，重置为未保存状态")
+                android.util.Log.w("TodoEditVM", "分组 $groupId 编辑状态已变化，重置为未保存状态")
             }
-            // 内容未变化则保持 isSaved=true
+            // 状态未变化则保持 isSaved=true
+        }
+    }
+
+    /**
+     * 标记分组的保存状态基线（v2026-07-21 新增）
+     *
+     * 在数据加载完成（todoLines 初始化 + 关联加载完成）后调用，
+     * 用当前的完整编辑状态指纹覆盖 [GroupSaveState.editStateHash]，
+     * **不触发**"未保存"重置。
+     *
+     * 解决的时序问题：
+     * 1. loadTodo 完成 → _groupSaveStates[0].editStateHash = "loading"（占位）
+     * 2. UI 层基于 _isLoaded=true 构造 todoLines（首次）
+     * 3. loadGroupRelations 完成 → _isRelationsLoaded=true
+     * 4. UI 层观察到 isRelationsLoaded=true → 调用本方法建立基线
+     * 5. 之后用户编辑 → checkAndResetGroupSavedState 正确比较 hash
+     *
+     * 如果当前 editStateHash 已是真实指纹（非 "loading"），则跳过更新，
+     * 避免用户编辑后的实时变化被基线覆盖。
+     *
+     * @param groupId 分组 ID
+     * @param todoLines 当前所有 todoLines
+     */
+    fun markGroupSaveStateBaseline(groupId: Int, todoLines: List<com.corgimemo.app.ui.model.TodoLine>) {
+        val current = _groupSaveStates.value[groupId] ?: return
+        // 仅在 "loading" 占位阶段建立基线，避免覆盖已建立的真实指纹
+        if (current.editStateHash != "loading") return
+        val currentHash = computeGroupEditStateHash(groupId, todoLines)
+        val newState = current.copy(editStateHash = currentHash)
+        _groupSaveStates.value = _groupSaveStates.value + (groupId to newState)
+        android.util.Log.w("TodoEditVM", "分组 $groupId 基线已建立: editStateHash 长度=${currentHash.length}")
+    }
+
+    /**
+     * 计算指定分组的完整编辑状态指纹
+     *
+     * 将以下元素序列化为字符串，用于检测任意变化：
+     * - 文本内容（todoLines 中该 groupId 的所有行 text 拼接）
+     * - 勾选状态（todoLines 中该 groupId 的所有行 isChecked 拼接）
+     * - 图片附件（todoLines 中该 groupId 的所有行 imagePaths 拼接）
+     * - 语音附件（todoLines 中该 groupId 的所有行 voiceAttachments 拼接）
+     * - 提醒时间（_groupReminders[groupId]）
+     * - 分类（_groupCategoryIds[groupId]）
+     * - 优先级（_groupPriorities[groupId]）
+     * - 关联数量（_groupRelations[groupId]?.size）
+     *
+     * 撤销/恢复操作会改变 todoLines 的 text/imagePaths/voiceAttachments，自动反映在指纹中。
+     *
+     * @param groupId 分组 ID
+     * @param todoLines 当前所有 todoLines
+     * @return 状态指纹字符串
+     */
+    fun computeGroupEditStateHash(
+        groupId: Int,
+        todoLines: List<com.corgimemo.app.ui.model.TodoLine>
+    ): String {
+        val groupLines = todoLines.filter { it.groupId == groupId }
+        val text = groupLines.joinToString("\n") { it.text }
+        val checked = groupLines.joinToString(",") { it.isChecked.toString() }
+        val images = groupLines.flatMap { it.imagePaths }.joinToString(",")
+        val voices = groupLines.flatMap { it.voiceAttachments }.joinToString(",") { it.path }
+        val reminder = _groupReminders.value[groupId]
+        val category = _groupCategoryIds.value[groupId]
+        val priority = _groupPriorities.value[groupId]
+        val relationsCount = _groupRelations.value[groupId]?.size ?: 0
+
+        return buildString {
+            append("text=").append(text).append("|")
+            append("checked=").append(checked).append("|")
+            append("images=").append(images).append("|")
+            append("voices=").append(voices).append("|")
+            append("reminder=").append(reminder).append("|")
+            append("category=").append(category).append("|")
+            append("priority=").append(priority).append("|")
+            append("relations=").append(relationsCount)
         }
     }
 
@@ -2411,34 +2568,200 @@ class TodoEditViewModel @Inject constructor(
     // ========== 关联管理方法 ==========
 
     /**
-     * 添加关联关系
-     * @param targetType 目标类型
+     * 添加关联关系（分组级别）
+     *
+     * 业务规则：
+     * - todoId 必须已保存（> 0），否则提示用户先保存
+     * - 同分组内同 target 不能重复（Repository 去重）
+     * - 单分组关联上限 10 张（Repository 限制）
+     *
+     * ⚠️ 注意：此方法每次调用都会启动新协程，多次连续调用会并发执行，
+     * 可能出现 _groupRelations 读改写覆盖问题。批量添加场景请使用 [addRelations]。
+     *
+     * @param targetType 目标类型 ("todo" | "inspiration" | "date")
      * @param targetId 目标ID
+     * @param groupId 当前分组ID
      */
-    fun addRelation(targetType: String, targetId: Long) {
+    fun addRelation(targetType: String, targetId: Long, groupId: Int) {
         viewModelScope.launch {
             val todoId = existingTodo?.id ?: 0L
+            if (todoId == 0L) {
+                _errorEvent.emit("请先保存待办再添加关联")
+                return@launch
+            }
             val relation = CardRelation(
                 sourceType = "todo",
                 sourceId = todoId,
+                groupId = groupId,
                 targetType = targetType,
                 targetId = targetId
             )
             val result = cardRelationRepository.addRelation(relation)
-            if (result > 0) {
-                _relations.value = (_relations.value + relation.copy(id = result)).distinctBy { "${it.targetType}_${it.targetId}" }
+            when (result) {
+                -1L -> _errorEvent.emit("该卡片已关联")
+                -2L -> _errorEvent.emit("每组最多关联 10 张卡片")
+                else -> {
+                    if (result > 0) {
+                        val currentList = _groupRelations.value[groupId] ?: emptyList()
+                        val updatedList = (currentList + relation.copy(id = result))
+                            .distinctBy { "${it.targetType}_${it.targetId}" }
+                        _groupRelations.value = _groupRelations.value + (groupId to updatedList)
+                        // 新增关联后立即加载其标题到缓存
+                        val title = cardRelationRepository.getCardTitle(targetType, targetId)
+                        if (title != null) {
+                            _relationTitles.value = _relationTitles.value + (result to title)
+                        } else {
+                            _relationTitles.value = _relationTitles.value + (result to "已删除")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 批量添加关联关系（分组级别，串行处理）
+     *
+     * 解决 [addRelation] 在循环调用时的并发覆盖问题：
+     * 单次 launch 内串行处理所有卡片，避免多个协程同时读改写 [_groupRelations]。
+     *
+     * 业务规则：
+     * - todoId 必须已保存（> 0），否则提示用户先保存
+     * - 同分组内同 target 不能重复（Repository 去重，重复时静默跳过）
+     * - 单分组关联上限 10 张（达到上限时停止添加并提示）
+     * - 一次性更新 [_groupRelations] 和 [_relationTitles]，避免多次 emit 导致 UI 抖动
+     *
+     * @param cards 待添加的卡片列表 (targetType, targetId)
+     * @param groupId 当前分组ID
+     */
+    fun addRelations(cards: List<Pair<String, Long>>, groupId: Int) {
+        if (cards.isEmpty()) return
+        viewModelScope.launch {
+            val todoId = existingTodo?.id ?: 0L
+            if (todoId == 0L) {
+                _errorEvent.emit("请先保存待办再添加关联")
+                return@launch
+            }
+            // 串行处理所有卡片，累积结果后一次性更新
+            val currentList = (_groupRelations.value[groupId] ?: emptyList()).toMutableList()
+            val newTitles = mutableMapOf<Long, String>()
+            var reachedLimit = false
+            var addedCount = 0
+
+            cards.forEach { (targetType, targetId) ->
+                if (reachedLimit) return@forEach
+                // 跳过已在内存列表中的（避免无谓 DB 调用）
+                val existsInMemory = currentList.any {
+                    it.targetType == targetType && it.targetId == targetId
+                }
+                if (existsInMemory) return@forEach
+
+                val relation = CardRelation(
+                    sourceType = "todo",
+                    sourceId = todoId,
+                    groupId = groupId,
+                    targetType = targetType,
+                    targetId = targetId
+                )
+                val result = cardRelationRepository.addRelation(relation)
+                when (result) {
+                    -1L -> { /* 已关联，静默跳过 */ }
+                    -2L -> {
+                        _errorEvent.emit("每组最多关联 10 张卡片")
+                        reachedLimit = true
+                    }
+                    else -> {
+                        if (result > 0) {
+                            currentList.add(relation.copy(id = result))
+                            val title = cardRelationRepository.getCardTitle(targetType, targetId)
+                            newTitles[result] = title ?: "已删除"
+                            addedCount++
+                        }
+                    }
+                }
+            }
+
+            // 一次性更新状态（避免多次 emit 导致 UI 抖动）
+            if (addedCount > 0) {
+                val distinctList = currentList.distinctBy { "${it.targetType}_${it.targetId}" }
+                _groupRelations.value = _groupRelations.value + (groupId to distinctList)
+                if (newTitles.isNotEmpty()) {
+                    _relationTitles.value = _relationTitles.value + newTitles
+                }
             }
         }
     }
 
     /**
      * 删除关联关系
+     *
+     * 同时更新内存中的 _groupRelations Map，移除指定 relationId。
+     *
      * @param relationId 关联ID
+     * @param groupId 关联所属的分组ID（用于定位 Map 中的列表）
      */
-    fun deleteRelation(relationId: Long) {
+    fun deleteRelation(relationId: Long, groupId: Int) {
         viewModelScope.launch {
             cardRelationRepository.removeRelationById(relationId)
-            _relations.value = _relations.value.filter { it.id != relationId }
+            val currentList = _groupRelations.value[groupId] ?: emptyList()
+            val updatedList = currentList.filter { it.id != relationId }
+            _groupRelations.value = _groupRelations.value + (groupId to updatedList)
+        }
+    }
+
+    /**
+     * 加载某 todo 的所有分组的关联
+     *
+     * 在 loadTodo() 完成后调用，初始化 _groupRelations Map。
+     * 对于新建的 todo（todoId=0），Map 为空。
+     *
+     * @param todoId 待办ID
+     * @param groupIds 所有分组ID列表（从 _groupSaveStates 等 Map 的 keys 提取）
+     */
+    fun loadGroupRelations(todoId: Long, groupIds: List<Int>) {
+        viewModelScope.launch {
+            if (todoId == 0L) {
+                _groupRelations.value = emptyMap()
+                _isRelationsLoaded.value = true  // v2026-07-21：标记加载完成（即使为空）
+                return@launch
+            }
+            val relationsMap = mutableMapOf<Int, List<CardRelation>>()
+            groupIds.forEach { gid ->
+                relationsMap[gid] = cardRelationRepository.getRelationsBlocking("todo", todoId, gid)
+            }
+            _groupRelations.value = relationsMap
+            _isRelationsLoaded.value = true  // v2026-07-21：标记加载完成，触发 UI 层建立基线
+            // 异步加载关联标题缓存
+            refreshRelationTitles()
+        }
+    }
+
+    /**
+     * 刷新关联标题缓存
+     *
+     * 在 _groupRelations 变化时调用，异步加载每个关联目标卡片的标题。
+     * 已缓存的标题不会重复加载（增量更新）。
+     * 标题为 null 的卡片（已删除）不会写入缓存，UI 会显示"已删除"。
+     */
+    private fun refreshRelationTitles() {
+        viewModelScope.launch {
+            val allRelations = _groupRelations.value.values.flatten()
+            val existingTitles = _relationTitles.value
+            val newTitles = mutableMapOf<Long, String>()
+            allRelations.forEach { relation ->
+                if (relation.id !in existingTitles) {
+                    val title = cardRelationRepository.getCardTitle(relation.targetType, relation.targetId)
+                    if (title != null) {
+                        newTitles[relation.id] = title
+                    } else {
+                        // 卡片已删除，用占位文字
+                        newTitles[relation.id] = "已删除"
+                    }
+                }
+            }
+            if (newTitles.isNotEmpty()) {
+                _relationTitles.value = existingTitles + newTitles
+            }
         }
     }
 
@@ -2452,5 +2775,36 @@ class TodoEditViewModel @Inject constructor(
             val results = cardRelationRepository.searchCards(query)
             callback(results)
         }
+    }
+
+    /**
+     * 加载卡片详情（用于关联预览 Dialog 按类型差异化展示）
+     *
+     * 调用时机：用户点击 LinkedCardsRow 中的 Chip，Dialog 弹出前。
+     * 并发保护：每次调用重置 [_cardDetail] 为 null，[_cardDetailLoading] 为 true，
+     * 然后异步加载。UI 层观察这两个 StateFlow 切换显示状态。
+     *
+     * @param cardType 卡片类型（"todo" / "inspiration" / "date"）
+     * @param cardId 卡片数据库 ID
+     */
+    fun loadCardDetail(cardType: String, cardId: Long) {
+        viewModelScope.launch {
+            _cardDetailLoading.value = true
+            _cardDetail.value = null
+            val detail = cardRelationRepository.loadCardDetail(cardType, cardId)
+            _cardDetail.value = detail
+            _cardDetailLoading.value = false
+        }
+    }
+
+    /**
+     * 清空卡片详情状态
+     *
+     * 调用时机：用户关闭预览 Dialog（点击 × / 关闭按钮 / 取消关联 / 跳转详情）。
+     * 防止下次打开 Dialog 时短暂显示旧数据。
+     */
+    fun clearCardDetail() {
+        _cardDetail.value = null
+        _cardDetailLoading.value = false
     }
 }

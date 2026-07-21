@@ -3,6 +3,7 @@ package com.corgimemo.app.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.corgimemo.app.data.model.CardDetail
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CardSearchResult
 import com.corgimemo.app.data.model.Inspiration
@@ -128,6 +129,18 @@ class InspirationViewModel @Inject constructor(
     /** 所有灵感列表（按置顶+时间排序） */
     private val _inspirations = MutableStateFlow<List<Inspiration>>(emptyList())
     val inspirations: StateFlow<List<Inspiration>> = _inspirations.asStateFlow()
+
+    /**
+     * 各灵感的关联卡片数量映射（v2026-07-21 新增，供首页卡片显示 🔗×N）
+     *
+     * - key: inspirationId
+     * - value: 该灵感作为 source 的 groupId=0 关联数量
+     *
+     * 数据来源：[refreshRelationCounts] 在灵感列表加载时批量查询。
+     * 仅缓存数量 > 0 的项，减少 UI 层判断。
+     */
+    private val _relationCountMap = MutableStateFlow<Map<Long, Int>>(emptyMap())
+    val relationCountMap: StateFlow<Map<Long, Int>> = _relationCountMap.asStateFlow()
 
     /** 按日期分组后的灵感列表（用于时间线展示） */
     val groupedInspirations: StateFlow<Map<String, List<Inspiration>>> =
@@ -293,6 +306,32 @@ class InspirationViewModel @Inject constructor(
     private val _relations = MutableStateFlow<List<CardRelation>>(emptyList())
     val relations: StateFlow<List<CardRelation>> = _relations.asStateFlow()
 
+    /**
+     * 关联ID → 标题的映射（v2026-07-22 新增，供详情页/编辑页 Chip 显示）
+     *
+     * - key: CardRelation.id
+     * - value: 目标卡片的标题（异步加载并缓存，已删除卡片显示"已删除"）
+     *
+     * 数据来源：[refreshRelationTitles] 在关联列表变化时增量加载。
+     */
+    private val _relationTitles = MutableStateFlow<Map<Long, String>>(emptyMap())
+    val relationTitles: StateFlow<Map<Long, String>> = _relationTitles.asStateFlow()
+
+    /**
+     * 当前预览卡片的详情（v2026-07-22 新增，供 LinkedCardPreviewDialog 按类型差异化展示）
+     *
+     * - null：未加载或已清空
+     * - 非null：已加载完成，UI 显示详情内容
+     *
+     * 加载期间 [_cardDetailLoading] 为 true。
+     */
+    private val _cardDetail = MutableStateFlow<CardDetail?>(null)
+    val cardDetail: StateFlow<CardDetail?> = _cardDetail.asStateFlow()
+
+    /** 卡片详情加载中标志（控制预览 Dialog 内 CircularProgressIndicator） */
+    private val _cardDetailLoading = MutableStateFlow(false)
+    val cardDetailLoading: StateFlow<Boolean> = _cardDetailLoading.asStateFlow()
+
     // ========== 下拉刷新相关 ==========
 
     private val _isRefreshing = MutableStateFlow(false)
@@ -434,12 +473,40 @@ class InspirationViewModel @Inject constructor(
             try {
                 inspirationRepository.getAllInspirations().collect { list ->
                     _inspirations.value = list
+                    // v2026-07-21 新增：刷新关联数量映射（供首页卡片显示 🔗×N）
+                    refreshRelationCounts(list)
                 }
             } catch (e: Exception) {
                 // 异常时仅记录，不再设置 _isLoading（已移除该状态）
                 // isDataInitialized 已在 filteredDisplayInspirations.onEach 中维护
             }
         }
+    }
+
+    /**
+     * 批量刷新灵感的关联数量映射（v2026-07-21 新增）
+     *
+     * 遍历所有灵感，查询每条灵感作为 source（groupId=0）的关联数量，
+     * 仅缓存数量 > 0 的项到 [_relationCountMap]，供 UI 层显示 🔗×N。
+     *
+     * **调用时机**：灵感列表加载/刷新时（[startCollect] 内）
+     *
+     * **性能考量**：串行查询避免并发覆盖，灵感数量通常 < 100，可接受。
+     * 后续如需优化可改为 DAO 批量查询。
+     *
+     * @param allInspirations 当前所有灵感列表
+     */
+    private suspend fun refreshRelationCounts(allInspirations: List<Inspiration>) {
+        val relationCountMap = mutableMapOf<Long, Int>()
+        for (inspiration in allInspirations) {
+            if (inspiration.id <= 0L) continue
+            // 查询该灵感作为 source（groupId=0，主分组）的关联数量
+            val count = cardRelationRepository.getRelationCount("inspiration", inspiration.id, 0)
+            if (count > 0) {
+                relationCountMap[inspiration.id] = count
+            }
+        }
+        _relationCountMap.value = relationCountMap
     }
 
     /**
@@ -754,18 +821,87 @@ class InspirationViewModel @Inject constructor(
 
     /**
      * 加载指定灵感的关联关系
+     *
+     * v2026-07-22 增强：关联列表变化时自动调用 [refreshRelationTitles] 增量加载标题，
+     * 供详情页/编辑页的 Chip 显示。
+     *
      * @param inspirationId 灵感ID
      */
     fun loadRelations(inspirationId: Long) {
         viewModelScope.launch {
-            cardRelationRepository.getRelations("inspiration", inspirationId).collect { relations ->
+            cardRelationRepository.getRelations("inspiration", inspirationId, 0).collect { relations ->
                 _relations.value = relations
+                // v2026-07-22 新增：关联列表变化时增量刷新标题缓存
+                refreshRelationTitles()
             }
         }
     }
 
     /**
+     * 刷新关联标题缓存（v2026-07-22 新增）
+     *
+     * 在 [_relations] 变化时调用，异步加载每个关联目标卡片的标题。
+     * 已缓存的标题不会重复加载（增量更新）。
+     * 标题为 null 的卡片（已删除）显示"已删除"占位。
+     */
+    private fun refreshRelationTitles() {
+        viewModelScope.launch {
+            val allRelations = _relations.value
+            val existingTitles = _relationTitles.value
+            val newTitles = mutableMapOf<Long, String>()
+            allRelations.forEach { relation ->
+                if (relation.id !in existingTitles) {
+                    val title = cardRelationRepository.getCardTitle(relation.targetType, relation.targetId)
+                    if (title != null) {
+                        newTitles[relation.id] = title
+                    } else {
+                        // 卡片已删除，用占位文字
+                        newTitles[relation.id] = "已删除"
+                    }
+                }
+            }
+            if (newTitles.isNotEmpty()) {
+                _relationTitles.value = existingTitles + newTitles
+            }
+        }
+    }
+
+    /**
+     * 加载卡片详情（v2026-07-22 新增，供 LinkedCardPreviewDialog 按类型差异化展示）
+     *
+     * 调用时机：用户点击关联 Chip，Dialog 弹出前。
+     * 并发保护：每次调用重置 [_cardDetail] 为 null，[_cardDetailLoading] 为 true。
+     *
+     * @param cardType 卡片类型（"todo" / "inspiration" / "date"）
+     * @param cardId 卡片数据库 ID
+     */
+    fun loadCardDetail(cardType: String, cardId: Long) {
+        viewModelScope.launch {
+            _cardDetailLoading.value = true
+            _cardDetail.value = null
+            val detail = cardRelationRepository.loadCardDetail(cardType, cardId)
+            _cardDetail.value = detail
+            _cardDetailLoading.value = false
+        }
+    }
+
+    /**
+     * 清空卡片详情状态（v2026-07-22 新增）
+     *
+     * 调用时机：用户关闭预览 Dialog。
+     * 防止下次打开 Dialog 时短暂显示旧数据。
+     */
+    fun clearCardDetail() {
+        _cardDetail.value = null
+        _cardDetailLoading.value = false
+    }
+
+    /**
      * 添加关联关系
+     *
+     * v2026-07-22 增强：添加成功后立即加载新关联的标题并写入 [_relationTitles] 缓存，
+     * 避免 Chip 显示"加载中…"。
+     *
      * @param inspirationId 灵感ID
      * @param targetType 目标类型 ("todo" | "date" | "inspiration")
      * @param targetId 目标实体ID
@@ -780,19 +916,84 @@ class InspirationViewModel @Inject constructor(
             )
             val result = cardRelationRepository.addRelation(relation)
             if (result > 0) {
-                _relations.value = _relations.value + relation.copy(id = result)
+                val newRelation = relation.copy(id = result)
+                _relations.value = _relations.value + newRelation
+                // v2026-07-22 新增：立即加载新关联的标题，避免 Chip 显示"加载中…"
+                val title = cardRelationRepository.getCardTitle(targetType, targetId)
+                _relationTitles.value = _relationTitles.value + (result to (title ?: "已删除"))
+            }
+        }
+    }
+
+    /**
+     * 批量添加关联关系（v2026-07-22 新增，供详情页 RelationPickerBottomSheet 使用）
+     *
+     * 串行处理所有卡片，累积结果后一次性更新 [_relations] 和 [_relationTitles]，
+     * 避免多次 emit 导致 UI 抖动。
+     *
+     * @param inspirationId 灵感ID
+     * @param cards 待添加的卡片列表（Pair<targetType, targetId>）
+     */
+    fun addRelations(inspirationId: Long, cards: List<Pair<String, Long>>) {
+        if (cards.isEmpty()) return
+        viewModelScope.launch {
+            val currentList = _relations.value.toMutableList()
+            val newTitles = mutableMapOf<Long, String>()
+            var addedCount = 0
+
+            cards.forEach { (targetType, targetId) ->
+                // 跳过已在内存列表中的（避免无谓 DB 调用）
+                val existsInMemory = currentList.any {
+                    it.targetType == targetType && it.targetId == targetId
+                }
+                if (existsInMemory) return@forEach
+
+                val relation = CardRelation(
+                    sourceType = "inspiration",
+                    sourceId = inspirationId,
+                    groupId = 0,
+                    targetType = targetType,
+                    targetId = targetId
+                )
+                val result = cardRelationRepository.addRelation(relation)
+                when (result) {
+                    -1L -> { /* 已关联，静默跳过 */ }
+                    -2L -> { /* 超过上限，静默跳过 */ }
+                    else -> {
+                        if (result > 0) {
+                            currentList.add(relation.copy(id = result))
+                            val title = cardRelationRepository.getCardTitle(targetType, targetId)
+                            newTitles[result] = title ?: "已删除"
+                            addedCount++
+                        }
+                    }
+                }
+            }
+
+            // 一次性更新状态（避免多次 emit 导致 UI 抖动）
+            if (addedCount > 0) {
+                val distinctList = currentList.distinctBy { "${it.targetType}_${it.targetId}" }
+                _relations.value = distinctList
+                if (newTitles.isNotEmpty()) {
+                    _relationTitles.value = _relationTitles.value + newTitles
+                }
             }
         }
     }
 
     /**
      * 删除关联关系
+     *
+     * v2026-07-22 增强：同步清理 [_relationTitles] 中对应的标题缓存。
+     *
      * @param relationId 关联ID
      */
     fun deleteRelation(relationId: Long) {
         viewModelScope.launch {
             cardRelationRepository.removeRelationById(relationId)
             _relations.value = _relations.value.filter { it.id != relationId }
+            // v2026-07-22 新增：清理已删除关联的标题缓存
+            _relationTitles.value = _relationTitles.value.filter { it.key != relationId }
         }
     }
 
@@ -804,7 +1005,7 @@ class InspirationViewModel @Inject constructor(
      */
     fun deleteRelation(inspirationId: Long, targetType: String, targetId: Long) {
         viewModelScope.launch {
-            cardRelationRepository.removeRelation("inspiration", inspirationId, targetType, targetId)
+            cardRelationRepository.removeRelation("inspiration", inspirationId, 0, targetType, targetId)
             _relations.value = _relations.value.filter { !(it.targetType == targetType && it.targetId == targetId) }
         }
     }

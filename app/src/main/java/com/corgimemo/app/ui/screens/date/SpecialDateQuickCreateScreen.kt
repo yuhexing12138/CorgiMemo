@@ -31,7 +31,11 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.ui.components.AppSnackbarHost
+import com.corgimemo.app.ui.components.LinkedCardsRow /** v2026-07-22 新增：关联卡片 Chip 流展示组件 */
+import com.corgimemo.app.ui.components.LinkedCardPreviewDialog /** v2026-07-22 新增：关联卡片预览弹窗 */
+import com.corgimemo.app.ui.components.RelationPickerBottomSheet /** v2026-07-22 新增：多选关联选择 BottomSheet */
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.navigation.Screen
@@ -157,6 +161,32 @@ fun SpecialDateQuickCreateScreen(
                 viewModel.resetSaveState()
             }
             else -> {}
+        }
+    }
+
+    // ========== v2026-07-22 新增：关联管理状态 ==========
+    /** 关联列表（编辑模式下按当前日期 id 加载） */
+    val relations by viewModel.relations.collectAsState()
+    /** 关联ID → 标题映射（由 ViewModel 异步加载并缓存） */
+    val relationTitles by viewModel.relationTitles.collectAsState()
+    /** 当前预览卡片的详情（供 LinkedCardPreviewDialog 展示） */
+    val cardDetail by viewModel.cardDetail.collectAsState()
+    /** 卡片详情加载中标志 */
+    val cardDetailLoading by viewModel.cardDetailLoading.collectAsState()
+    /** 关联预览 Dialog 状态（null=关闭，非null=显示该关联的预览） */
+    var previewingRelation by remember { mutableStateOf<CardRelation?>(null) }
+    /** 关联选择 BottomSheet 状态 */
+    var showRelationPicker by remember { mutableStateOf(false) }
+
+    /**
+     * v2026-07-22 新增：监听 previewingRelation 变化，自动加载/清空卡片详情
+     */
+    LaunchedEffect(previewingRelation) {
+        val relation = previewingRelation
+        if (relation != null) {
+            viewModel.loadCardDetail(relation.targetType, relation.targetId)
+        } else {
+            viewModel.clearCardDetail()
         }
     }
 
@@ -308,16 +338,25 @@ fun SpecialDateQuickCreateScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 关联行
+            // 关联行（v2026-07-22 开放关联功能）
             SpecialDateFeatureRow(
                 title = "关联",
-                trailingText = "+ 添加",
-                onClick = {
-                    coroutineScope.launch {
-                        snackbarHostState.showSnackbar("关联$developingMessage")
-                    }
-                }
+                trailingText = if (relations.isEmpty()) "+ 添加" else "🔗×${relations.size}",
+                onClick = { showRelationPicker = true }
             )
+
+            // v2026-07-22 新增：关联 Chip 流展示（关联行下方）
+            if (relations.isNotEmpty()) {
+                LinkedCardsRow(
+                    relations = relations,
+                    groupId = 0,
+                    relationTitles = relationTitles,
+                    onAddClick = { showRelationPicker = true },
+                    onChipClick = { relation -> previewingRelation = relation },
+                    onChipDelete = { relationId, _ -> viewModel.deleteRelation(relationId) },
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
 
             Spacer(modifier = Modifier.weight(1f))
             Spacer(modifier = Modifier.height(24.dp))
@@ -513,6 +552,49 @@ fun SpecialDateQuickCreateScreen(
                     }
                 }
                 showTypePicker = false
+            }
+        )
+    }
+
+    // v2026-07-22 新增：关联选择 BottomSheet（多选模式，跨待办/灵感/日期三种类型）
+    if (showRelationPicker) {
+        // 排除已关联的卡片，避免重复添加
+        val excludeIds = relations
+            .map { it.targetType to it.targetId }
+            .toSet()
+        RelationPickerBottomSheet(
+            visible = true,
+            excludeIds = excludeIds,
+            onDismiss = { showRelationPicker = false },
+            onConfirm = { selectedCards ->
+                // 批量添加选中的关联（ViewModel 已知当前日期 id）
+                val cards = selectedCards.map { it.cardType to it.cardId }
+                viewModel.addRelations(cards)
+                showRelationPicker = false
+            },
+            searchCards = { query, callback -> viewModel.searchCards(query, callback) }
+        )
+    }
+
+    // v2026-07-22 新增：关联预览 Dialog（点击 Chip 后弹出，按类型差异化展示详情）
+    previewingRelation?.let { relation ->
+        LinkedCardPreviewDialog(
+            relation = relation,
+            cardDetail = cardDetail,
+            isLoading = cardDetailLoading,
+            onDismiss = { previewingRelation = null },
+            onUnlink = { relationId ->
+                viewModel.deleteRelation(relationId)
+                previewingRelation = null
+            },
+            onJumpToDetail = { cardType, cardId ->
+                // 根据卡片类型路由到对应详情/编辑页
+                when (cardType) {
+                    "todo" -> navController.navigate("todo_edit/$cardId")
+                    "inspiration" -> navController.navigate("inspiration_edit/$cardId")
+                    "date" -> navController.navigate("date_detail/$cardId")
+                }
+                previewingRelation = null
             }
         )
     }

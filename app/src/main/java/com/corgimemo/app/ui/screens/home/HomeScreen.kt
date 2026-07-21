@@ -219,6 +219,9 @@ fun HomeScreen(
     // 子任务列表映射
     val subTasksMap by viewModel.subTasksMap.collectAsState()
 
+    // 各待办的关联卡片数量映射（v2026-07-21 新增，用于首页卡片附件行右侧展示）
+    val relationCountMap by viewModel.relationCountMap.collectAsState()
+
     // 待办列表 LazyColumn 状态（用于滚动位置记忆与下拉刷新联动）
     val lazyListState = rememberLazyListState()
 
@@ -1062,6 +1065,8 @@ fun HomeScreen(
                                                     viewModel.toggleSubTaskCompletion(subTaskId)
                                                 },
                                                 relationHint = null,
+                                                // v2026-07-21：传入关联卡片数量，用于附件行右侧展示
+                                                relationCount = relationCountMap[todo.id] ?: 0,
                                                 searchQuery = searchQuery,
                                                 hapticEnabled = hapticEnabled,
                                                 isDragging = isDragging,

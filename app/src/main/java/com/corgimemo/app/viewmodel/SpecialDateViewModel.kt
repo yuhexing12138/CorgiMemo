@@ -319,7 +319,7 @@ class SpecialDateViewModel @Inject constructor(
         _editingDate.value = date
         if (date != null) {
             viewModelScope.launch {
-                _relations.value = cardRelationRepository.getRelationsBlocking("date", date.id)
+                _relations.value = cardRelationRepository.getRelationsBlocking("date", date.id, 0)
             }
         } else {
             _relations.value = emptyList()
@@ -747,7 +747,7 @@ class SpecialDateViewModel @Inject constructor(
     fun removeRelation(targetType: String, targetId: Long) {
         viewModelScope.launch {
             val dateId = _editingDate.value?.id ?: return@launch
-            cardRelationRepository.removeRelation("date", dateId, targetType, targetId)
+            cardRelationRepository.removeRelation("date", dateId, 0, targetType, targetId)
             _relations.value = _relations.value.filter { !(it.targetType == targetType && it.targetId == targetId) }
         }
     }

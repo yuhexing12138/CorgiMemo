@@ -95,6 +95,8 @@ fun InspirationScreen(
     val isBatchMode by viewModel.isBatchMode.collectAsState()
     val selectedInspirationIds by viewModel.selectedInspirationIds.collectAsState()
     val hideDetails by viewModel.hideDetails.collectAsState()
+    /** 各灵感的关联数量映射（v2026-07-21 新增，供首页卡片显示 🔗×N） */
+    val relationCountMap by viewModel.relationCountMap.collectAsState()
     /** 灵感删除撤销状态（用于触发 Snackbar 提示） */
     val pendingDeletedInspiration by viewModel.pendingDeletedInspiration.collectAsState()
     val pendingBatchDeletedInspirations by viewModel.pendingBatchDeletedInspirations.collectAsState()
@@ -290,6 +292,8 @@ fun InspirationScreen(
                                     hideDetails = hideDetails,
                                     isBatchMode = isBatchMode,
                                     isSelected = selectedInspirationIds.contains(inspiration.id),
+                                    /** v2026-07-21 新增：传入关联数量，在标签右侧显示 🔗×N */
+                                    relationCount = relationCountMap[inspiration.id] ?: 0,
                                     onClick = {
                                         if (isBatchMode) {
                                             viewModel.toggleSelection(inspiration.id)

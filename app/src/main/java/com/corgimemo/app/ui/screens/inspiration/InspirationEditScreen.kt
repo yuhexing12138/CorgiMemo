@@ -97,6 +97,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.ui.components.AppSnackbarHost
+import com.corgimemo.app.ui.components.LinkedCardsRow /** v2026-07-22 新增：关联卡片 Chip 流展示组件 */
+import com.corgimemo.app.ui.components.LinkedCardPreviewDialog /** v2026-07-22 新增：关联卡片预览弹窗 */
+import com.corgimemo.app.ui.components.RelationPickerBottomSheet /** v2026-07-22 新增：多选关联选择 BottomSheet */
 import com.corgimemo.app.ui.components.LocationPicker
 import com.corgimemo.app.ui.components.MentionTriggerPopup
 import com.corgimemo.app.ui.components.VoiceRecordBottomSheet
@@ -394,6 +397,35 @@ fun InspirationEditScreen(
     var showTagPicker by remember { mutableStateOf(false) }
     /** 待删除的标签（长按标签后弹出确认对话框，null=不显示） */
     var pendingDeleteTag by remember { mutableStateOf<String?>(null) }
+
+    // ========== v2026-07-22 新增：关联管理状态 ==========
+    /** 关联列表（按当前灵感 id 加载） */
+    val relations by viewModel.relations.collectAsState()
+    /** 关联ID → 标题映射（由 ViewModel 异步加载并缓存） */
+    val relationTitles by viewModel.relationTitles.collectAsState()
+    /** 当前预览卡片的详情（供 LinkedCardPreviewDialog 展示） */
+    val cardDetail by viewModel.cardDetail.collectAsState()
+    /** 卡片详情加载中标志 */
+    val cardDetailLoading by viewModel.cardDetailLoading.collectAsState()
+    /** 关联预览 Dialog 状态（null=关闭，非null=显示该关联的预览） */
+    var previewingRelation by remember { mutableStateOf<CardRelation?>(null) }
+    /** 关联选择 BottomSheet 状态 */
+    var showRelationPicker by remember { mutableStateOf(false) }
+
+    /**
+     * v2026-07-22 新增：监听 previewingRelation 变化，自动加载/清空卡片详情
+     *
+     * - 非null：用户点击 Chip 弹出 Dialog → 调用 loadCardDetail 异步加载详情
+     * - null：用户关闭 Dialog → 调用 clearCardDetail 清空状态
+     */
+    LaunchedEffect(previewingRelation) {
+        val relation = previewingRelation
+        if (relation != null) {
+            viewModel.loadCardDetail(relation.targetType, relation.targetId)
+        } else {
+            viewModel.clearCardDetail()
+        }
+    }
     /** @搜索关键词状态 */
     var mentionQuery by remember { mutableStateOf("") }
     /** #触发位置提醒弹窗状态 */
@@ -858,29 +890,58 @@ fun InspirationEditScreen(
                 enabled = !isLocked
             )
 
-            /** ===== 标签区（标题下方：标签按钮 + 已添加标签展示）===== */
+            /** ===== 标签区（标题下方：标签按钮 + 关联按钮 + 已添加标签展示 + 关联 Chip 流）===== */
             Column(modifier = Modifier.padding(top = 8.dp)) {
-                /** 标签按钮：点击触发标签选择弹窗 */
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    enabled = !isLocked,
-                    onClick = { showTagPicker = true }
+                /** 按钮行：标签按钮 + 关联按钮（v2026-07-22 新增 +关联 按钮） */
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    /** 标签按钮：点击触发标签选择弹窗 */
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        enabled = !isLocked,
+                        onClick = { showTagPicker = true }
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "添加标签",
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "标签",
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "添加标签",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "标签",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                    /** v2026-07-22 新增：关联按钮，点击弹出关联选择 BottomSheet */
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        enabled = !isLocked,
+                        onClick = { showRelationPicker = true }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "添加关联",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "关联",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
 
@@ -916,6 +977,17 @@ fun InspirationEditScreen(
                         }
                     }
                 }
+
+                /** v2026-07-22 新增：关联卡片 Chip 流展示（位于标签 FlowRow 下方） */
+                LinkedCardsRow(
+                    relations = relations,
+                    groupId = 0,
+                    relationTitles = relationTitles,
+                    onAddClick = { showRelationPicker = true },
+                    onChipClick = { relation -> previewingRelation = relation },
+                    onChipDelete = { relationId, _ -> viewModel.deleteRelation(relationId) },
+                    modifier = Modifier.padding(top = 8.dp)
+                )
             }
 
             /** ===== 动态内容流编辑器区域（支持拖拽排序 + 两步删除） ===== */
@@ -1325,6 +1397,49 @@ fun InspirationEditScreen(
             savedTags = savedTags,
             onTagsChange = { newTags -> viewModel.updateTags(newTags) },
             onDismiss = { showTagPicker = false }
+        )
+    }
+
+    // v2026-07-22 新增：关联选择 BottomSheet（多选模式，跨待办/灵感/日期三种类型）
+    if (showRelationPicker) {
+        // 排除已关联的卡片，避免重复添加
+        val excludeIds = relations
+            .map { it.targetType to it.targetId }
+            .toSet()
+        RelationPickerBottomSheet(
+            visible = true,
+            excludeIds = excludeIds,
+            onDismiss = { showRelationPicker = false },
+            onConfirm = { selectedCards ->
+                // 批量添加选中的关联（编辑页 ViewModel 已知当前 inspirationId）
+                val cards = selectedCards.map { it.cardType to it.cardId }
+                viewModel.addRelations(cards)
+                showRelationPicker = false
+            },
+            searchCards = { query, callback -> viewModel.searchCards(query, callback) }
+        )
+    }
+
+    // v2026-07-22 新增：关联预览 Dialog（点击 Chip 后弹出，按类型差异化展示详情）
+    previewingRelation?.let { relation ->
+        LinkedCardPreviewDialog(
+            relation = relation,
+            cardDetail = cardDetail,
+            isLoading = cardDetailLoading,
+            onDismiss = { previewingRelation = null },
+            onUnlink = { relationId ->
+                viewModel.deleteRelation(relationId)
+                previewingRelation = null
+            },
+            onJumpToDetail = { cardType, cardId ->
+                // 根据卡片类型路由到对应详情/编辑页（压栈跳转，返回时回到灵感编辑页）
+                when (cardType) {
+                    "todo" -> navController.navigate("todo_edit/$cardId")
+                    "inspiration" -> navController.navigate("inspiration_edit/$cardId")
+                    "date" -> navController.navigate("date_detail/$cardId")
+                }
+                previewingRelation = null
+            }
         )
     }
 

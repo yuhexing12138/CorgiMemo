@@ -98,6 +98,9 @@ import com.corgimemo.app.backup.exporter.ShareCoordinator
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.ui.components.*
+// 🆕 v2026-07-21 关联功能组件（需显式 import 因与通配符 import 同包但用于明确性）
+import com.corgimemo.app.ui.components.RelationPickerBottomSheet
+import com.corgimemo.app.ui.components.LinkedCardPreviewDialog
 import com.corgimemo.app.ui.model.ContentBlock
 import com.corgimemo.app.ui.model.TodoLine
 import com.corgimemo.app.util.ImageUtils
@@ -402,11 +405,53 @@ fun TodoEditScreen(
 
     var showLocationPopup by remember { mutableStateOf(false) }
 
-    // @触发关联弹窗状态
-    var showMentionPopup by remember { mutableStateOf(false) }
-    var mentionQuery by remember { mutableStateOf("") }
+    // 🆕 关联选择 BottomSheet 状态（v2026-07-21 重构，替换原 MentionTriggerPopup）
+    var showRelationPicker by remember { mutableStateOf(false) }
+    /** 当前要添加关联的目标分组ID（null=未指定，默认0） */
+    var pickerTargetGroupId by remember { mutableStateOf<Int?>(null) }
+    // 🆕 关联预览 Dialog 状态（null=关闭，非null=显示该关联的预览）
+    var previewingRelation by remember { mutableStateOf<com.corgimemo.app.data.model.CardRelation?>(null) }
+
+    /** 🆕 各分组的关联列表（key=groupId, value=关联列表） */
+    val groupRelations by viewModel.groupRelations.collectAsState()
+    /** 🆕 关联ID → 标题的映射（用于 Chip 显示） */
+    val relationTitles by viewModel.relationTitles.collectAsState()
+    /** 🆕 当前预览卡片的详情（按类型差异化展示，由 ViewModel 异步加载） */
+    val cardDetail by viewModel.cardDetail.collectAsState()
+    /** 🆕 卡片详情加载中标志（控制 Dialog 内进度指示器） */
+    val cardDetailLoading by viewModel.cardDetailLoading.collectAsState()
+
+    /**
+     * 🆕 监听 previewingRelation 变化，自动加载/清空卡片详情
+     *
+     * - 非null：用户点击 Chip 弹出 Dialog → 调用 loadCardDetail 异步加载详情
+     * - null：用户关闭 Dialog → 调用 clearCardDetail 清空状态，避免下次打开时显示旧数据
+     */
+    LaunchedEffect(previewingRelation) {
+        val relation = previewingRelation
+        if (relation != null) {
+            viewModel.loadCardDetail(relation.targetType, relation.targetId)
+        } else {
+            viewModel.clearCardDetail()
+        }
+    }
+
     /** #搜索关键词状态 */
     var locationQuery by remember { mutableStateOf("") }
+
+    /**
+     * 🆕 收集 ViewModel 的关联操作错误事件，显示 Snackbar
+     *
+     * 用于提示用户：
+     * - "请先保存待办再添加关联"（新建未保存场景）
+     * - "该卡片已关联"（重复添加，理论上批量 API 已静默跳过）
+     * - "每组最多关联 10 张卡片"（超过上限）
+     */
+    LaunchedEffect(Unit) {
+        viewModel.errorEvent.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
 
     /** 权限引导状态（提前声明，供 notificationPermissionLauncher 回调使用） */
     var permissionGuideState by remember { mutableStateOf<PermissionGuideState>(PermissionGuideState.Idle) }
@@ -512,6 +557,24 @@ fun TodoEditScreen(
 
     /** 从 ViewModel 获取数据加载完成标志 */
     val isLoaded by viewModel.isLoaded.collectAsState()
+
+    /**
+     * 关联数据加载完成标志（v2026-07-21 新增）
+     *
+     * 用于驱动 [markGroupSaveStateBaseline] 建立保存状态基线：
+     * - 编辑模式下 loadTodo 完成时 _groupSaveStates[0].editStateHash = "loading" 占位
+     * - loadGroupRelations 完成后 isRelationsLoaded 变为 true
+     * - 此时配合 todoLines 已初始化完成，可建立真实基线指纹
+     */
+    val isRelationsLoaded by viewModel.isRelationsLoaded.collectAsState()
+
+    /**
+     * 基线是否已建立的本地标志（v2026-07-21 新增）
+     *
+     * 避免每次 todoLines 变化都重新建立基线，覆盖用户编辑后的实时指纹。
+     * 切换 todo（todoId 变化）时自动重置为 false。
+     */
+    var baselineEstablished by remember(todoId) { mutableStateOf(false) }
 
     /** 从 content 文本和 subTasks 初始化复选框行数据 */
     val subTasks by viewModel.subTasks.collectAsState()
@@ -651,6 +714,33 @@ fun TodoEditScreen(
         }
     }
 
+    /**
+     * 建立保存状态基线（v2026-07-21 新增）
+     *
+     * 触发条件：
+     * 1. isRelationsLoaded = true（loadGroupRelations 完成，_groupRelations 已填充实际关联数）
+     * 2. baselineEstablished = false（尚未建立基线，避免覆盖用户编辑后的实时指纹）
+     * 3. todoLines 非空（UI 层初始化完成，能计算出真实的 text/images/voices 指纹）
+     *
+     * 满足条件后，对所有 editStateHash 仍为 "loading" 占位的已保存分组建立真实基线指纹。
+     * 之后用户编辑任意元素（文字/附件/提醒/分类/优先级/关联/撤销/恢复）时，
+     * [checkAndResetGroupSavedState] 才会正确比较 hash 并重置为未保存状态。
+     *
+     * 切换 todo（todoId 变化）时 baselineEstablished 自动重置为 false，
+     * 触发新一轮基线建立。
+     */
+    LaunchedEffect(isRelationsLoaded, baselineEstablished, todoLines) {
+        if (!isRelationsLoaded || baselineEstablished || todoLines.isEmpty()) return@LaunchedEffect
+        // 对所有 editStateHash 仍为 "loading" 占位的已保存分组建立基线
+        groupSaveStates.forEach { (groupId, state) ->
+            if (state.isSaved && state.editStateHash == "loading") {
+                viewModel.markGroupSaveStateBaseline(groupId, todoLines)
+            }
+        }
+        baselineEstablished = true
+        android.util.Log.w("TodoEditBaseline", "保存状态基线已建立: 分组数=${groupSaveStates.size}, todoId=$todoId")
+    }
+
     /** 行数据变更时同步到 ViewModel 的 content 和 title 字段（混合存储） */
     LaunchedEffect(todoLines) {
         if (hasInitializedLines) {
@@ -732,23 +822,19 @@ fun TodoEditScreen(
             /**
              * 【多卡片】检测内容变化，智能重置已保存分组的编辑状态
              *
-             * 比较每个已保存分组的当前内容与保存时的快照：
-             * - 内容相同 → 不重置（如只是添加了新容器"/"或新行）
-             * - 内容不同 → 重置为未保存（用户真正编辑了该容器的内容）
+             * v2026-07-21：签名升级，直接传 todoLines，由 ViewModel 内部按 groupId 过滤
+             * 计算完整编辑状态指纹（覆盖文字/附件/提醒/分类/优先级/关联）。
+             *
+             * 比较每个已保存分组的当前指纹与保存时的基线：
+             * - editStateHash == "loading"（基线未建立）→ 跳过，等 markGroupSaveStateBaseline 触发
+             * - 指纹相同 → 保持已保存状态
+             * - 指纹不同 → 重置为未保存（用户真正编辑了该分组的任意元素）
              */
             if (groupSaveStates.isNotEmpty()) {
-                // 按分组聚合当前行
-                val currentGroupContents = todoLines
-                    .groupBy { it.groupId }
-                    .mapValues { (_, lines) ->
-                        lines.joinToString("\n") { it.text }
-                    }
-
                 // 只检查已保存的分组
                 groupSaveStates.forEach { (groupId, state) ->
                     if (state.isSaved) {
-                        val currentContent = currentGroupContents[groupId] ?: ""
-                        viewModel.checkAndResetGroupSavedState(groupId, currentContent)
+                        viewModel.checkAndResetGroupSavedState(groupId, todoLines)
                     }
                 }
             }
@@ -804,6 +890,35 @@ fun TodoEditScreen(
                     android.util.Log.w("TodoEditSync", "同步录音: ${firstVoice.path}")
                     viewModel.setVoiceNotePath(firstVoice.path)
                 }
+            }
+        }
+    }
+
+    /**
+     * 监听非 todoLines 状态变化，检测已保存分组的编辑状态（v2026-07-21 新增）
+     *
+     * 背景：[checkAndResetGroupSavedState] 之前只在 LaunchedEffect(todoLines) 中调用，
+     * 导致修改提醒时间/分类/优先级/关联时，虽然 editStateHash 实际已变化，
+     * 但因 todoLines 未变 → LaunchedEffect 不触发 → "已保存"按钮无法变成"保存"。
+     *
+     * 本 LaunchedEffect 专门覆盖那些不改变 todoLines 但改变 editStateHash 的状态：
+     * - [groupReminders]：修改提醒时间
+     * - [groupCategoryIds]：修改分类（用户反馈中的"修改分组"）
+     * - [groupPriorities]：修改优先级
+     * - [groupRelations]：增删关联
+     *
+     * 触发条件：
+     * 1. hasInitializedLines = true（todoLines 已初始化，能计算真实指纹）
+     * 2. baselineEstablished = true（基线已建立，editStateHash 非 "loading" 占位）
+     *
+     * 注：todoLines 的变化由 L745 的 LaunchedEffect(todoLines) 处理，避免冗余调用。
+     */
+    LaunchedEffect(groupReminders, groupCategoryIds, groupPriorities, groupRelations, baselineEstablished) {
+        if (!hasInitializedLines || !baselineEstablished) return@LaunchedEffect
+        // 对所有已保存分组检测编辑状态变化
+        groupSaveStates.forEach { (groupId, state) ->
+            if (state.isSaved) {
+                viewModel.checkAndResetGroupSavedState(groupId, todoLines)
             }
         }
     }
@@ -952,12 +1067,14 @@ fun TodoEditScreen(
                     showColorPicker = true
                 },
                 /**
-                 * @按钮点击回调：直接打开关联弹窗。
-                 * mentionQuery 为屏幕级 remember 状态，关闭弹窗时不会被重置，
-                 * 因此再次打开时会自动恢复上一次的搜索关键词。
+                 * @按钮点击回调：直接打开关联选择 BottomSheet。
+                 * 🆕 v2026-07-21 改造：从 MentionTriggerPopup 单选升级为 RelationPickerBottomSheet 多选
+                 * 关联添加到当前聚焦行所在的分组（focusedLineIndex 对应的 groupId）
                  */
                 onMentionClick = {
-                    showMentionPopup = true
+                    val currentGroupId = todoLines.getOrNull(focusedLineIndex)?.groupId ?: 0
+                    pickerTargetGroupId = currentGroupId
+                    showRelationPicker = true
                 },
                 /**
                  * #按钮点击回调：直接打开位置提醒弹窗。
@@ -1163,11 +1280,11 @@ fun TodoEditScreen(
                 onSpecialCharDetected = { type, query ->
                     when (type) {
                         "@" -> {
+                            // 🆕 v2026-07-21 改造：@触发打开 BottomSheet，记录当前聚焦行的 groupId
                             if (query != null) {
-                                if (!showMentionPopup) showMentionPopup = true
-                                mentionQuery = query
-                            } else {
-                                showMentionPopup = false
+                                val currentGroupId = todoLines.getOrNull(focusedLineIndex)?.groupId ?: 0
+                                pickerTargetGroupId = currentGroupId
+                                showRelationPicker = true
                             }
                         }
                         "#" -> {
@@ -1346,6 +1463,19 @@ fun TodoEditScreen(
                 onRowBoundsChanged = { lineIndex, rect ->
                     rowBoundsMap[lineIndex] = rect
                 },
+                // 🆕 关联功能参数（v2026-07-21 新增）
+                groupRelations = groupRelations,
+                relationTitles = relationTitles,
+                onAddRelationClick = { groupId ->
+                    pickerTargetGroupId = groupId
+                    showRelationPicker = true
+                },
+                onPreviewRelation = { relation ->
+                    previewingRelation = relation
+                },
+                onDeleteRelation = { relationId, groupId ->
+                    viewModel.deleteRelation(relationId, groupId)
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 200.dp),
@@ -1396,19 +1526,54 @@ fun TodoEditScreen(
                 )
             }
 
-            // @触发关联选择弹窗
-            MentionTriggerPopup(
-                visible = showMentionPopup,
-                searchQuery = mentionQuery,
-                onDismiss = { showMentionPopup = false },
-                onCardSelected = { cardType, cardId, cardTitle ->
-                    showMentionPopup = false
-                    viewModel.addRelation(cardType, cardId)
-                },
-                searchCards = { query, callback -> viewModel.searchCards(query, callback) },
-                sourceType = "todo",
-                sourceId = todoId ?: 0L
-            )
+            // 🆕 关联选择 BottomSheet（v2026-07-21 替换 MentionTriggerPopup）
+            // 多选模式：支持跨三种类型（待办/灵感/日期）多选关联
+            if (showRelationPicker) {
+                val targetGid = pickerTargetGroupId ?: 0
+                // 排除已关联的卡片，避免重复添加
+                val excludeIds = (groupRelations[targetGid] ?: emptyList())
+                    .map { it.targetType to it.targetId }
+                    .toSet()
+                RelationPickerBottomSheet(
+                    visible = true,
+                    excludeIds = excludeIds,
+                    onDismiss = {
+                        showRelationPicker = false
+                        pickerTargetGroupId = null
+                    },
+                    onConfirm = { selectedCards ->
+                        // 批量添加选中的关联到目标分组（使用批量 API 避免并发覆盖）
+                        val cards = selectedCards.map { it.cardType to it.cardId }
+                        viewModel.addRelations(cards, targetGid)
+                        showRelationPicker = false
+                        pickerTargetGroupId = null
+                    },
+                    searchCards = { query, callback -> viewModel.searchCards(query, callback) }
+                )
+            }
+
+            // 🆕 关联预览 Dialog（点击 Chip 后弹出，按类型差异化展示详情）
+            previewingRelation?.let { relation ->
+                LinkedCardPreviewDialog(
+                    relation = relation,
+                    cardDetail = cardDetail,
+                    isLoading = cardDetailLoading,
+                    onDismiss = { previewingRelation = null },
+                    onUnlink = { relationId ->
+                        viewModel.deleteRelation(relationId, relation.groupId)
+                        previewingRelation = null
+                    },
+                    onJumpToDetail = { cardType, cardId ->
+                        // 根据卡片类型路由到对应详情/编辑页
+                        when (cardType) {
+                            "todo" -> navController.navigate("todo_edit/$cardId")
+                            "inspiration" -> navController.navigate("inspiration_edit/$cardId")
+                            "date" -> navController.navigate("date_detail/$cardId")
+                        }
+                        previewingRelation = null
+                    }
+                )
+            }
 
             val autoDuration = remember(startDate, dueDate) {
                 val start = startDate

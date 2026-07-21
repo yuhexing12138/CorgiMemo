@@ -43,7 +43,9 @@ import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.corgimemo.app.R
+import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.Inspiration
+import com.corgimemo.app.ui.components.LinkedCardsRow
 import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils
 import com.corgimemo.app.ui.theme.UiColors
 import java.text.SimpleDateFormat
@@ -53,16 +55,24 @@ import java.util.Locale
 /**
  * 灵感展示页卡片内容
  *
- * 渲染单条灵感的完整内容：标题、日期时间、正文、图片、标签、字数徽章、Logo
+ * 渲染单条灵感的完整内容：标题、日期时间、正文、图片、标签、关联卡片、字数徽章、Logo
  * 不包含 TopBar 和 HorizontalPager 容器（由父级 InspirationViewScreen 负责）
  *
  * 截图说明：分享截图由父级 InspirationViewScreen 通过
  * `InspirationScreenshot.captureAsBitmap` 对当前 page 的 GraphicsLayer 截图完成（位图放大 2x）。
  * 本组件支持传入可选的 GraphicsLayer，启用 Card 内容的录制。
  *
+ * v2026-07-22 新增：支持在标签下方显示关联卡片 Chip 流（类似待办编辑页），
+ * 由父级传入 [relations] / [relationTitles] 和三个回调。
+ *
  * @param inspiration 灵感实体
  * @param onImageClick 图片点击回调，参数为图片索引
  * @param graphicsLayer 可选的 GraphicsLayer（启用时录制 Card 内容，用于截图分享）
+ * @param relations 关联卡片列表（默认空，详情页传入以显示 Chip 流）
+ * @param relationTitles 关联ID → 标题映射（由 ViewModel 异步加载）
+ * @param onChipClick Chip 点击回调（弹出预览 Dialog）
+ * @param onChipDelete Chip × 删除回调
+ * @param onAddRelationClick ＋ 添加按钮点击回调
  * @param modifier Modifier（用于外部控制尺寸、padding 等）
  */
 @Composable
@@ -70,6 +80,11 @@ fun InspirationViewCard(
     inspiration: Inspiration,
     onImageClick: (Int) -> Unit = {},
     graphicsLayer: GraphicsLayer? = null,
+    relations: List<CardRelation> = emptyList(),
+    relationTitles: Map<Long, String> = emptyMap(),
+    onChipClick: (CardRelation) -> Unit = {},
+    onChipDelete: (relationId: Long, groupId: Int) -> Unit = { _, _ -> },
+    onAddRelationClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // 缓存：标签列表
@@ -191,6 +206,17 @@ fun InspirationViewCard(
                             }
                         }
                     }
+                    // v2026-07-22 新增：关联卡片 Chip 流（类似待办编辑页）
+                    // 始终显示，让用户可以查看关联和点击 + 添加新关联
+                    Spacer(modifier = Modifier.height(12.dp))
+                    LinkedCardsRow(
+                        relations = relations,
+                        groupId = 0,
+                        relationTitles = relationTitles,
+                        onAddClick = onAddRelationClick,
+                        onChipClick = onChipClick,
+                        onChipDelete = onChipDelete
+                    )
                     // Logo 居中区
                     Spacer(modifier = Modifier.height(32.dp))
                     Row(

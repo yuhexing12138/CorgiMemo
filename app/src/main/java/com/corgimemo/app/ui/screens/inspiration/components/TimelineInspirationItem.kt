@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -118,6 +119,14 @@ fun TimelineInspirationItem(
     hideDetails: Boolean = false,
     isBatchMode: Boolean = false,
     isSelected: Boolean = false,
+    /**
+     * 关联卡片数量（v2026-07-21 新增）
+     *
+     * 该灵感作为源卡片（sourceType="inspiration"）的 groupId=0 关联数量。
+     * 当值 > 0 时，在标签右侧显示 Link 图标 + ×N（简略信息）。
+     * 由 InspirationScreen 从 [InspirationViewModel.relationCountMap] 传入。
+     */
+    relationCount: Int = 0,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
     onImageClick: (Int) -> Unit = {},
@@ -332,9 +341,13 @@ fun TimelineInspirationItem(
                     }
 
                     // 正文 → 标签 间距
-                    if (tags.isNotEmpty()) {
+                    // v2026-07-21: 条件增加 relationCount > 0，无标签但有关联时也显示关联数量
+                    if (tags.isNotEmpty() || relationCount > 0) {
                         Spacer(modifier = Modifier.height(contentToTagGap))
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             // 最多显示 3 个标签
                             tags.take(3).forEach { tag ->
                                 Text(
@@ -366,6 +379,28 @@ fun TimelineInspirationItem(
                                         )
                                         .padding(horizontal = 1.dp, vertical = 0.dp)
                                 )
+                            }
+                            // v2026-07-21 新增：关联数量简略显示（🔗×N）
+                            // 用独立 Row 包裹 Icon+Text，内部 2dp 间距，与标签间 4dp 间距
+                            if (relationCount > 0) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Link,
+                                        contentDescription = "关联卡片",
+                                        tint = Color(0xFF999999),
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                    Text(
+                                        text = "×$relationCount",
+                                        fontSize = 11.sp,
+                                        lineHeight = 11.sp,
+                                        color = Color(0xFF999999),
+                                        letterSpacing = chineseLetterSpacing
+                                    )
+                                }
                             }
                         }
                     }

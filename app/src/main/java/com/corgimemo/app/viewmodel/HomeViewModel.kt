@@ -32,6 +32,7 @@ import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.model.UserType
 import com.corgimemo.app.data.repository.AchievementChecker
 import com.corgimemo.app.data.repository.AchievementRepository
+import com.corgimemo.app.data.repository.CardRelationRepository
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.CorgiRepository
 import com.corgimemo.app.data.repository.MoodHistoryRepository
@@ -127,6 +128,8 @@ class HomeViewModel @Inject constructor(
     private val taskDailyStatsRepository: TaskDailyStatsRepository,
     private val fileCopyManager: FileCopyManager,
     private val hapticFeedbackController: HapticFeedbackController,
+    /** v2026-07-21 新增：用于查询待办卡片的关联数量（首页卡片展示） */
+    private val cardRelationRepository: CardRelationRepository,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -314,6 +317,23 @@ class HomeViewModel @Inject constructor(
     // 子任务列表映射：todoId -> 子任务列表
     private val _subTasksMap = MutableStateFlow<Map<Long, List<SubTask>>>(emptyMap())
     val subTasksMap: StateFlow<Map<Long, List<SubTask>>> = _subTasksMap.asStateFlow()
+
+    /**
+     * 各待办的关联卡片数量映射（v2026-07-21 新增）
+     *
+     * key = todoId (Long)，value = 该待办作为源卡片（sourceType="todo"）的 groupId=0 关联数量
+     *
+     * 用于首页 TodoListItem 卡片在附件行右侧显示关联数量（图标 + ×N 格式），
+     * 与附件计数（图片/语音）保持视觉一致性。
+     *
+     * 更新时机：
+     * - [loadTodos] 初始加载 / Flow 重发
+     * - [refreshAllData] 编辑页保存/删除后全量刷新
+     * - [refreshSubTaskProgress] 编辑页返回时刷新
+     * - [toggleSubTaskCompletion] 切换子任务完成状态时刷新
+     */
+    private val _relationCountMap = MutableStateFlow<Map<Long, Int>>(emptyMap())
+    val relationCountMap: StateFlow<Map<Long, Int>> = _relationCountMap.asStateFlow()
 
     // 展开状态集：已展开的待办 ID 集合
     private val _expandedTodos = MutableStateFlow<Set<Long>>(emptySet())
@@ -1109,6 +1129,9 @@ class HomeViewModel @Inject constructor(
                 _subTaskProgressMap.value = progressMap
                 _subTasksMap.value = subTasksMap
 
+                // v2026-07-21：刷新关联数量映射（首页卡片附件行右侧展示）
+                refreshRelationCounts(allTodos)
+
                 // v2026-07-20 v7 关键修复：把 _isDataInitialized.value = true 移到所有依赖 Flow emit 之后
                 // - 旧逻辑：todos emit 后立即设 isDataInitialized = true，
                 //   HomeScreen 立即显示真实列表，但 subTaskProgressMap / subTasksMap 还在同步计算中
@@ -1126,6 +1149,31 @@ class HomeViewModel @Inject constructor(
                 checkWorriedBehavior()
             }
         }
+    }
+
+    /**
+     * 批量刷新关联数量映射（v2026-07-21 新增）
+     *
+     * 查询每个待办作为源卡片（sourceType="todo"）的 groupId=0 关联数量，
+     * 结果存入 [_relationCountMap]，供首页 TodoListItem 卡片展示。
+     *
+     * 设计说明：
+     * - 只查询 groupId=0（主卡片）的关联，与首页"一张卡片代表一个待办"的展示模型一致
+     * - 使用 suspend [CardRelationRepository.getRelationCount]，必须在协程中调用
+     * - 调用方需自行确保在 viewModelScope.launch 内
+     *
+     * @param allTodos 当前所有待办列表
+     */
+    private suspend fun refreshRelationCounts(allTodos: List<TodoItem>) {
+        val relationCountMap = mutableMapOf<Long, Int>()
+        for (todo in allTodos) {
+            if (todo.id <= 0L) continue
+            val count = cardRelationRepository.getRelationCount("todo", todo.id, 0)
+            if (count > 0) {
+                relationCountMap[todo.id] = count
+            }
+        }
+        _relationCountMap.value = relationCountMap
     }
 
     /**
@@ -1710,6 +1758,8 @@ class HomeViewModel @Inject constructor(
             }
             _subTaskProgressMap.value = progressMap
             _subTasksMap.value = subTasksMap
+            // v2026-07-21：同步刷新关联数量（用户可能在编辑页修改了关联）
+            refreshRelationCounts(allTodos)
         }
     }
 
@@ -1747,6 +1797,8 @@ class HomeViewModel @Inject constructor(
             }
             _subTaskProgressMap.value = progressMap
             _subTasksMap.value = subTasksMap
+            // v2026-07-21：同步刷新关联数量（编辑页保存/删除后关联可能变化）
+            refreshRelationCounts(allTodos)
         }
     }
 
@@ -1803,6 +1855,8 @@ class HomeViewModel @Inject constructor(
             }
             _subTaskProgressMap.value = progressMap
             _subTasksMap.value = subTasksMap
+            // v2026-07-21：同步刷新关联数量（保持数据一致性）
+            refreshRelationCounts(allTodos)
 
             // 自动收起：所有子任务都完成时收起子待办列表
             //

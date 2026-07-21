@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.Card
@@ -118,6 +119,18 @@ fun TodoListItem(
     onToggleExpand: () -> Unit = {},
     onToggleSubTask: (Long) -> Unit = {},
     relationHint: String? = null,
+    /**
+     * 关联卡片数量（v2026-07-21 新增）
+     *
+     * 该待办作为源卡片（sourceType="todo"）的 groupId=0 关联数量。
+     * 当值 > 0 时，在附件行右侧显示 Link 图标 + ×N（参考附件计数格式）。
+     * 由 HomeScreen 从 [HomeViewModel.relationCountMap] 传入。
+     *
+     * 显示规则：
+     * - isSimpleMode=true 时不显示（与附件计数保持一致的隐藏策略）
+     * - 已完成态视觉降权（使用 CompletedColors.Text）
+     */
+    relationCount: Int = 0,
     /** 搜索关键词（非空时对标题和内容进行高亮显示） */
     searchQuery: String = "",
     /** 是否启用触觉震动反馈 */
@@ -361,10 +374,15 @@ fun TodoListItem(
                 val hasReminder = todo.reminderTime != null
                 /** 是否存在附件（详情模式下图片或语音数量>0） */
                 val hasAttachment = !isSimpleMode && (aggregateCounts.first > 0 || aggregateCounts.second > 0)
+                /** 是否存在关联卡片（v2026-07-21 新增，详情模式下 relationCount>0） */
+                val hasRelation = !isSimpleMode && relationCount > 0
                 /**
                  * 元数据是否"拥挤"：分类+提醒+附件三者同时存在
                  * 拥挤时采用两行布局：第一行分类+附件，第二行提醒单独一行突出显示
                  * 非拥挤时（缺少任一元素）：所有可见元数据同一行显示
+                 *
+                 * v2026-07-21：关联数量不影响拥挤模式判断，始终跟在附件计数之后，
+                 * 避免布局逻辑复杂化。
                  */
                 val isMetaCrowded = hasCategory && hasReminder && hasAttachment
 
@@ -516,8 +534,8 @@ fun TodoListItem(
                         }
 
                         // ========== 元数据智能布局 ==========
-                        // 判断是否有任何元数据需要显示
-                        val hasAnyMeta = hasReminder || hasAttachment || hasCategory
+                        // 判断是否有任何元数据需要显示（v2026-07-21：包含关联数量）
+                        val hasAnyMeta = hasReminder || hasAttachment || hasCategory || hasRelation
                         if (hasAnyMeta) {
                             // 附件图标颜色（已完成态视觉降权）
                             val attachmentColor = if (todo.status == 1) CompletedColors.Text
@@ -538,7 +556,7 @@ fun TodoListItem(
 
                             if (isMetaCrowded) {
                                 // ---- 拥挤模式（tag+reminder+attach三者都有）：两行布局 ----
-                                // 第一行：分类标签 + 附件计数
+                                // 第一行：分类标签 + 附件计数 + 关联数量
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(top = 4.dp)
@@ -555,6 +573,14 @@ fun TodoListItem(
                                         AttachmentCountsRow(
                                             imageCount = aggregateCounts.first,
                                             voiceCount = aggregateCounts.second,
+                                            color = attachmentColor
+                                        )
+                                    }
+                                    // 关联数量（v2026-07-21 新增，跟在附件计数之后）
+                                    if (hasRelation) {
+                                        if (hasAttachment) Spacer(modifier = Modifier.width(6.dp))
+                                        RelationCountBadge(
+                                            count = relationCount,
                                             color = attachmentColor
                                         )
                                     }
@@ -599,10 +625,22 @@ fun TodoListItem(
                                     }
                                     // 附件计数
                                     if (hasAttachment) {
-                                        if (hasReminder) Spacer(modifier = Modifier.width(8.dp))
+                                        if (hasReminder || hasCategory) Spacer(modifier = Modifier.width(8.dp))
                                         AttachmentCountsRow(
                                             imageCount = aggregateCounts.first,
                                             voiceCount = aggregateCounts.second,
+                                            color = attachmentColor
+                                        )
+                                    }
+                                    // 关联数量（v2026-07-21 新增，跟在附件计数之后）
+                                    if (hasRelation) {
+                                        if (hasAttachment) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                        } else if (hasReminder || hasCategory) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                        }
+                                        RelationCountBadge(
+                                            count = relationCount,
                                             color = attachmentColor
                                         )
                                     }
@@ -1247,4 +1285,39 @@ private fun AttachmentCountsRow(
             color = color
         )
     }
+}
+
+/**
+ * 关联卡片数量徽章（v2026-07-21 新增）
+ *
+ * 在附件行右侧展示关联卡片的数量，格式与附件计数保持一致：
+ * Link 图标 + ×N（例如 "🔗×3"）。
+ *
+ * 设计说明：
+ * - 图标选用 Material Icons 的 [Icons.Outlined.Link]，语义直观（关联/链接）
+ * - 字号 12sp，图标 14dp，与 [AttachmentCountsRow] 完全对齐
+ * - 颜色复用附件计数色（已完成态视觉降权）
+ * - 当 count <= 0 时不渲染（由调用方 hasRelation 守卫，这里仅作防御）
+ *
+ * @param count 关联卡片数量
+ * @param color 图标和文字颜色（已完成态使用灰色降权）
+ */
+@Composable
+private fun RelationCountBadge(
+    count: Int,
+    color: Color
+) {
+    if (count <= 0) return
+    Icon(
+        imageVector = Icons.Outlined.Link,
+        contentDescription = "关联卡片",
+        tint = color,
+        modifier = Modifier.size(14.dp)
+    )
+    Spacer(modifier = Modifier.width(2.dp))
+    Text(
+        text = "×$count",
+        fontSize = 12.sp,
+        color = color
+    )
 }
