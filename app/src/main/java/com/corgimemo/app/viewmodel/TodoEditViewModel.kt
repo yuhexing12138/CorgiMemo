@@ -90,7 +90,19 @@ class TodoEditViewModel @Inject constructor(
     /** 暴露分组分类 ID 供 UI 层收集 */
     val groupCategoryIds: StateFlow<Map<Int, Long>> = _groupCategoryIds.asStateFlow()
 
-    private val _priority = MutableStateFlow(1)
+    /**
+     * 优先级状态（0=无, 1=低, 2=中, 3=高）
+     *
+     * v2026-07-21 修复：默认值从 1（低优先级）改为 0（无优先级）。
+     * 新建待办时按钮应该显示「无优先级」而不是「低优先级」，
+     * 避免用户每次新建都误以为已经设置了优先级。
+     *
+     * v2026-07-21 二次修复：保存路径（[saveActiveTodo] 内的 [TodoItem.priority]）
+     * 已统一为读取 [_groupPriorities]，[_priority] 仅作为旧 setPriority() 入口的
+     * 兼容状态保留。CheckboxEditText 实际只读 [_groupPriorities]，
+     * 故 [_priority] 已不影响任何 UI 显示与最终落库。
+     */
+    private val _priority = MutableStateFlow(0)
     val priority: StateFlow<Int> = _priority.asStateFlow()
 
     private val _startDate = MutableStateFlow<Long?>(null)
@@ -780,7 +792,14 @@ class TodoEditViewModel @Inject constructor(
                     /** 使用派生的 content，确保与 subTasks 一致 */
                     content = derivedContent.ifBlank { null },
                     categoryId = _groupCategoryIds.value[0] ?: 0L,
-                    priority = _priority.value,
+                    /**
+                     * v2026-07-21 修复：保存时改用分组独立优先级 [_groupPriorities]，
+                     * 与下方 [buildTodoItemForGroup] 保持一致。
+                     * 原 [setPriority] / [_priority] 是早期单容器模式残留，
+                     * [CheckboxEditText] 实际只读 [_groupPriorities]，导致旧逻辑保存
+                     * 的是未变化的 [_priority]，与 UI 显示的优先级不一致。
+                     */
+                    priority = _groupPriorities.value[0] ?: 0,
                     startDate = _startDate.value,
                     dueDate = _dueDate.value,
                     estimatedDurationMinutes = _estimatedDurationMinutes.value,
@@ -808,7 +827,13 @@ class TodoEditViewModel @Inject constructor(
                     /** 使用派生的 content，确保与 subTasks 一致 */
                     content = derivedContent.ifBlank { null },
                     categoryId = _groupCategoryIds.value[0] ?: 0L,
-                    priority = _priority.value,
+                    /**
+                     * v2026-07-21 修复：保存时改用分组独立优先级 [_groupPriorities]，
+                     * 与 [buildTodoItemForGroup] / 已有 todo 更新路径保持一致。
+                     * 新建模式下 _groupPriorities[0] 为 null 时回退 0（无优先级），
+                     * 后续用户修改 groupId=0 的优先级时已通过 [setGroupPriority] 写入。
+                     */
+                    priority = _groupPriorities.value[0] ?: 0,
                     status = 0,
                     startDate = _startDate.value,
                     dueDate = _dueDate.value,

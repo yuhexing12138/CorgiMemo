@@ -470,12 +470,17 @@ private fun TodoGroupContainer(
         else -> PriorityColors.colorOf(0)  // 无优先级：浅绿色边框（v2026-07-20）
     }
 
-    /** 优先级按钮显示文字 */
+    /**
+     * 优先级按钮显示文字
+     *
+     * v2026-07-21 修复：priority=0（无）状态下的文字从「优先级」改为「无优先级」，
+     * 明确表达"无优先级"语义，与弹窗选项文案「无优先级/低优先级/中优先级/高优先级」保持一致。
+     */
     val priorityLabel = when (priority) {
         3 -> "高优先级"
         2 -> "中优先级"
         1 -> "低优先级"
-        else -> "优先级"
+        else -> "无优先级"
     }
 
     Column(
