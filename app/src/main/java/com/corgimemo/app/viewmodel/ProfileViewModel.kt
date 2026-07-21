@@ -11,11 +11,9 @@ import com.corgimemo.app.animation.SeasonalOutfitRecommender
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.Achievement
 import com.corgimemo.app.data.model.CorgiData
-import com.corgimemo.app.data.model.MoodHistory
 import com.corgimemo.app.data.repository.AchievementRepository
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.CorgiRepository
-import com.corgimemo.app.data.repository.MoodHistoryRepository
 import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.ui.theme.ThemeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +26,8 @@ import javax.inject.Inject
 
 /**
  * 个人中心视图模型
+ *
+ * v1.4 简化：删除 moodHistory7Days（已迁出"我的"页到柯基互动页）
  * 管理成就展示、装扮选择、柯基名字修改等功能
  */
 @HiltViewModel
@@ -36,15 +36,11 @@ class ProfileViewModel @Inject constructor(
     private val corgiPreferences: CorgiPreferences,
     private val todoRepository: TodoRepository,
     private val categoryRepository: CategoryRepository,
-    private val moodHistoryRepository: MoodHistoryRepository,
     private val achievementRepository: AchievementRepository
 ) : ViewModel() {
 
     private val _corgiData = MutableStateFlow<CorgiData?>(null)
     val corgiData: StateFlow<CorgiData?> = _corgiData.asStateFlow()
-
-    private val _moodHistory7Days = MutableStateFlow<List<MoodHistory>>(emptyList())
-    val moodHistory7Days: StateFlow<List<MoodHistory>> = _moodHistory7Days.asStateFlow()
 
     private val _achievements = MutableStateFlow<List<Pair<Achievement, Boolean>>>(emptyList())
     val achievements: StateFlow<List<Pair<Achievement, Boolean>>> = _achievements.asStateFlow()
@@ -159,8 +155,6 @@ class ProfileViewModel @Inject constructor(
                     unlockedOutfitsJson = it.unlockedOutfits
                 )
             }
-
-            _moodHistory7Days.value = moodHistoryRepository.getLast7Days()
         }
     }
 

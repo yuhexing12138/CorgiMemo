@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -54,8 +54,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.animation.CorgiMood
 import com.corgimemo.app.animation.CorgiPose
-import com.corgimemo.app.animation.HolidayOutfitId
-import com.corgimemo.app.animation.OutfitId
+import com.corgimemo.app.animation.LevelManager
+import com.corgimemo.app.animation.LevelStage
 import com.corgimemo.app.animation.OutfitManager
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.ui.navigation.Screen
@@ -64,20 +64,23 @@ import com.corgimemo.app.ui.components.CorgiDesktopPet
 import com.corgimemo.app.ui.components.MissedYouDialog
 import com.corgimemo.app.ui.components.MoodHistoryChart
 import com.corgimemo.app.ui.components.OutfitQuickSwitchSheet
+import com.corgimemo.app.ui.screens.profile.components.OutfitEntryCard
 import com.corgimemo.app.ui.theme.UiColors
 import com.corgimemo.app.viewmodel.HomeViewModel
 import kotlinx.coroutines.delay
-import org.json.JSONArray
 
 /**
  * 柯基详情页
  *
- * v1.3 桌宠改造：柯基不再局限于固定动画区，而是以桌宠形式覆盖整页自由活动。
- *
- * 页面结构：
+ * v1.4 简化版（柯基互动页）：
  * - 顶部导航栏（返回按钮 + 柯基名字 + 等级标签）
- * - 下层滚动 Column（情绪/统计/成就/装扮/互动各 Section）
+ * - 下层滚动 Column：柯基卡牌区 / 情绪 / 装扮 / 互动 各 Section
  * - 上层桌宠层（CorgiDesktopPet 覆盖整页，柯基自由活动，事件穿透到下层）
+ *
+ * v1.4 变更：
+ * - 新增柯基卡牌区（从"我的"页 ProfileHeroCard 旧版迁入，含等级、经验、累计/连续/情绪统计）
+ * - 删除原 StatsSection（今日数据）和 AchievementSection（成就进度）
+ * - 装扮入口从"我的"页 OutfitEntryCard 迁入
  *
  * 桌宠交互：
  * - 拖动：跟随手指移动，松手后保留位置
@@ -112,12 +115,6 @@ fun CorgiDetailScreen(
 
     // 实际显示的装扮：节日装扮优先级高于用户选择的装扮
     val effectiveOutfit = currentHoliday?.outfitId ?: currentOutfit
-
-    // 本周完成数
-    var weeklyCompleted by remember { mutableStateOf(0) }
-    LaunchedEffect(Unit) {
-        weeklyCompleted = viewModel.getWeeklyCompletedCount()
-    }
 
     Scaffold(
         topBar = {
@@ -161,7 +158,7 @@ fun CorgiDetailScreen(
         snackbarHost = { AppSnackbarHost(hostState = snackbarHostState) }
     ) { paddingValues ->
         // ===== v1.3 桌宠改造：用 Box 包裹下层内容 + 上层桌宠 =====
-        // 下层：Column 滚动展示情绪/统计/成就/装扮/互动各 Section
+        // 下层：Column 滚动展示卡牌区/情绪/装扮/互动各 Section
         // 上层：CorgiDesktopPet 覆盖整页，柯基以桌宠形式自由活动
         //       仅柯基本体(96dp)消耗事件，其他区域事件穿透到下层
         Box(
@@ -176,35 +173,29 @@ fun CorgiDetailScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 corgiData?.let { data ->
-                    // 顶部预留 16dp 间距（原 CorgiAnimationSection 200dp 已移除）
-                    Spacer(modifier = Modifier.height(16.dp))
+                    // 顶部预留 12dp 间距
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // ===== v1.4 新增：柯基卡牌区 =====
+                    // 从"我的"页 ProfileHeroCard 旧版迁入（含 Lv 徽章、经验进度条、三栏统计）
+                    // 等级/进度通过 LevelManager 实时计算（避免在 HomeViewModel 增加 state）
+                    CorgiHeroCard(
+                        corgiData = data,
+                        onNameClick = { /* 互动页内不响应改名（避免与 ProfileDetail 跳转冲突） */ }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // ===== 5.3 情绪状态区 =====
                     MoodStatusSection(corgiData = data, currentMood = currentMood)
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // ===== 5.4 数据统计区 =====
-                    StatsSection(
-                        corgiData = data,
-                        weeklyCompleted = weeklyCompleted,
-                        onStatsClick = { navController.navigate(Screen.Stats.route) }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // ===== 5.5 成就预览区 =====
-                    AchievementSection(
-                        corgiData = data,
-                        onAchievementClick = { navController.navigate(Screen.Achievement.route) }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // ===== 5.6 装扮预览区 =====
-                    OutfitSection(
-                        currentOutfit = effectiveOutfit,
-                        onSwitchOutfit = { viewModel.toggleOutfitSheet() }
+                    // ===== v1.4 迁入：装扮入口卡（原"我的"页 OutfitEntryCard）=====
+                    OutfitEntryCard(
+                        currentOutfitId = data.currentOutfit,
+                        outfitCount = OutfitManager.getOutfitsWithStatus(data.unlockedOutfits).size,
+                        onClick = { navController.navigate(Screen.Outfit.route) }
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -224,6 +215,8 @@ fun CorgiDetailScreen(
                             viewModel.onUserInteraction()
                         }
                     )
+
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
 
@@ -293,6 +286,195 @@ fun CorgiDetailScreen(
 
     // v1.3 桌宠改造：原 interactionAnimation 恢复逻辑已移除，
     // 桌宠内部根据 CorgiPetState 自动管理状态时长（PETTING 1s / EATING 1.5s / PLAYING 1.2s）
+}
+
+/**
+ * 柯基卡牌区（v1.4 从"我的"页 ProfileHeroCard 旧版迁入）
+ *
+ * 视觉规范：
+ * - 主色浅渐变背景（primaryContainer → surface，135°）
+ * - 圆角 20dp，elevation 2dp
+ * - 柯基头像 72dp 圆形（静态 emoji 🐕）
+ * - 名字 20sp Bold + Lv 徽章 10sp Bold
+ * - 等级阶段副标题（11sp Medium 主色）
+ * - 经验进度条（6dp 高，圆角 3dp）
+ * - 底部三栏统计（累计完成 / 连续天数 / 情绪值）
+ *
+ * 等级 / 进度 / 文案通过 LevelManager 实时计算（不依赖 ProfileViewModel）
+ *
+ * @param corgiData 柯基数据
+ * @param onNameClick 点击名字/头像回调（互动页内暂不响应改名，预留接口）
+ */
+@Composable
+private fun CorgiHeroCard(
+    corgiData: CorgiData,
+    onNameClick: () -> Unit
+) {
+    // 等级 / 进度 / 文案实时计算（无 ViewModel state 依赖）
+    val (level, levelProgress) = remember(corgiData.experience) {
+        LevelManager.getCurrentLevelAndProgress(corgiData.experience)
+    }
+    val levelStage: LevelStage = remember(level) { LevelManager.getLevelStage(level) }
+    val progressText: String = remember(corgiData.experience) {
+        LevelManager.getProgressText(corgiData.experience)
+    }
+
+    // 渐变背景：primaryContainer → surface（与"我的"页 ProfileHeroCard 视觉锚点一致）
+    val gradientBrush = Brush.linearGradient(
+        colors = listOf(
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.surface
+        )
+    )
+
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(gradientBrush)
+                .padding(16.dp)
+        ) {
+            Column {
+                // 顶部：柯基头像 + 名字/Lv/经验进度
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // 柯基头像 72dp 圆形（静态 emoji）
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surface)
+                            .clickable(onClick = onNameClick),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = "🐕", fontSize = 32.sp)
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = corgiData.name,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.clickable(onClick = onNameClick)
+                            )
+                            // Lv 徽章
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.primary)
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "Lv.$level",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                        Text(
+                            text = levelStage.displayName,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                        // 经验标尺 + 进度文本
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "经验",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = progressText,
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        // 经验进度条
+                        LinearProgressIndicator(
+                            progress = { levelProgress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surface
+                        )
+                    }
+                }
+
+                // 分隔细线（柯基信息 → 统计）
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 14.dp)
+                        .height(1.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(0.5.dp)
+                        )
+                )
+
+                // 底部三栏统计：累计完成 / 连续天数 / 情绪值
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceAround
+                ) {
+                    HeroStat(value = "${corgiData.totalCompleted}", label = "累计完成")
+                    HeroStat(value = "${corgiData.consecutiveDays}", label = "连续天数")
+                    HeroStat(value = "${corgiData.moodValue}%", label = "情绪值")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 卡牌区底部统计项
+ * 上方数值（16sp Bold 主色），下方标签（10sp 次要色）
+ *
+ * @param value 数值文本
+ * @param label 标签文本
+ */
+@Composable
+private fun HeroStat(value: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp)
+        )
+    }
 }
 
 /**
@@ -414,262 +596,6 @@ private fun MoodStatusSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(120.dp)
-                )
-            }
-        }
-    }
-}
-
-/**
- * 数据统计区
- *
- * @param corgiData 柯基数据
- * @param onStatsClick 点击跳转统计详情页回调
- */
-@Composable
-private fun StatsSection(
-    corgiData: CorgiData,
-    weeklyCompleted: Int = 0,
-    onStatsClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clickable { onStatsClick() },
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Text(
-                text = "📊 今日数据",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                StatItem(label = "今日完成", value = "${corgiData.totalCompleted}")
-                StatItem(label = "本周完成", value = "$weeklyCompleted")
-                StatItem(label = "连续天数", value = "🔥${corgiData.consecutiveDays}天")
-            }
-        }
-    }
-}
-
-/**
- * 统计项组件
- *
- * @param label 标签文字
- * @param value 数值文字
- */
-@Composable
-private fun StatItem(
-    label: String,
-    value: String
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = value,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = UiColors.Primary
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-/**
- * 成就预览区
- *
- * @param corgiData 柯基数据
- * @param onAchievementClick 点击跳转成就墙回调
- */
-@Composable
-private fun AchievementSection(
-    corgiData: CorgiData,
-    onAchievementClick: () -> Unit
-) {
-    // 解析已解锁成就
-    val unlockedIds = try {
-        val json = corgiData.unlockedAchievements
-        if (json.isNotBlank()) {
-            JSONArray(json).let { arr ->
-                (0 until arr.length()).map { arr.getString(it) }
-            }
-        } else {
-            emptyList()
-        }
-    } catch (_: Exception) {
-        emptyList()
-    }
-
-    val totalAchievements = 8  // 总成就数
-    val unlockedCount = unlockedIds.size.coerceAtMost(totalAchievements)
-
-    // 成就图标映射
-    val achievementIcons = listOf("🌱", "🔥", "⚡", "👑", "📚", "💼", "🏠", "🏃")
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clickable { onAchievementClick() },
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "🏆 成就进度",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "已解锁 $unlockedCount/$totalAchievements",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 成就徽章网格（2行4列）
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (row in 0..1) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        for (col in 0..3) {
-                            val index = row * 4 + col
-                            val isUnlocked = index < unlockedCount
-                            val icon = achievementIcons.getOrElse(index) { "🏆" }
-
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (isUnlocked) UiColors.Primary.copy(alpha = 0.15f)
-                                        else MaterialTheme.colorScheme.surfaceVariant
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = icon,
-                                    fontSize = 18.sp,
-                                    color = if (isUnlocked) Color.Unspecified
-                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * 装扮预览区
- *
- * @param currentOutfit 当前装扮 ID
- * @param onSwitchOutfit 切换装扮回调
- */
-@Composable
-private fun OutfitSection(
-    currentOutfit: String?,
-    onSwitchOutfit: () -> Unit
-) {
-    val outfit = currentOutfit?.let { OutfitManager.getOutfitById(it) }
-    val outfitName = outfit?.name ?: "默认"
-    val outfitEmoji = when (currentOutfit) {
-        OutfitId.SCHOLAR_HAT -> "🎓"
-        OutfitId.TIE -> "👔"
-        OutfitId.CROWN -> "👑"
-        OutfitId.ANGEL_WINGS -> "🪽"
-        OutfitId.CAPE -> "🧥"
-        HolidayOutfitId.CHRISTMAS_HAT -> "🎅"
-        HolidayOutfitId.NEW_YEAR_HAT -> "🎉"
-        HolidayOutfitId.RED_SCARF -> "🧣"
-        HolidayOutfitId.LANTERN -> "🏮"
-        else -> "🐕"
-    }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "🎨 当前装扮",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Text(
-                text = outfitEmoji,
-                fontSize = 24.sp
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Text(
-                text = outfitName,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // 切换装扮按钮
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = UiColors.Primary,
-                modifier = Modifier.clickable { onSwitchOutfit() }
-            ) {
-                Text(
-                    text = "切换装扮",
-                    fontSize = 12.sp,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
             }
         }
