@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,10 +79,17 @@ fun EditToolbar(
         tonalElevation = 1.dp
     ) {
         Column {
-            /** 工具栏图标行 - 使用 SpaceEvenly 实现均匀分布 */
+            /**
+             * 工具栏图标行 - 使用 SpaceEvenly 实现均匀分布
+             *
+             * v2026-07-22 改造：Row 内部加 navigationBarsPadding()，
+             * 让按钮自动上移避开系统手势条（与 safeAreaForEditBar 配套）。
+             * Surface 容器本身紧贴屏幕底端，圆角矩形（米黄色背景）填满到屏幕底边缘。
+             */
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically

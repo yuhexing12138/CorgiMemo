@@ -38,8 +38,24 @@ fun Modifier.safeAreaForTopBar(): Modifier = this.statusBarsPadding()
 /** 为底部导航栏添加系统导航栏内边距（适配手势导航/三键导航） */
 fun Modifier.safeAreaForBottomBar(): Modifier = this.navigationBarsPadding()
 
-/** 为编辑页底部工具栏添加导航栏 + 软键盘内边距 */
-fun Modifier.safeAreaForEditBar(): Modifier = this.navigationBarsPadding().imePadding()
+/**
+ * 为编辑页底部工具栏添加软键盘内边距
+ *
+ * v2026-07-22 改造：移除 navigationBarsPadding()，让 Surface 紧贴屏幕底端。
+ * 改为在工具栏内部 Row 加 .navigationBarsPadding()（让按钮避开系统手势条），
+ * 这是 Android 10+ edge-to-edge 的标准模式。
+ *
+ * 历史问题：
+ * - 原本同时调用 navigationBarsPadding() + imePadding()，
+ *   导致整个 Surface 容器被往上推 navigation bar 高度
+ * - 圆角矩形与屏幕底端产生米黄色空隙（背景填充但无按钮）
+ *
+ * 修复原理：
+ * - Surface 容器本身紧贴屏幕底端 → 圆角矩形背景完整铺到屏幕底
+ * - 内容区（Row）加 navigationBarsPadding → 按钮自动上移避开手势条
+ * - 软键盘弹起时，imePadding 仍把工具栏整体上移到键盘上方
+ */
+fun Modifier.safeAreaForEditBar(): Modifier = this.imePadding()
 
 /** 为全屏内容区域同时添加状态栏和导航栏内边距 */
 fun Modifier.safeAreaForContent(): Modifier = this.statusBarsPadding().navigationBarsPadding()
