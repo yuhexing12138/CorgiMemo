@@ -91,6 +91,10 @@ import com.corgimemo.app.util.VoicePlayer
  * @param onImageClick 某一行图片被点击的回调（查看大图）
  * @param onDeleteImage 删除某一行某张图片的回调，参数为 (行索引, 图片路径)
  * @param onDeleteVoice 删除某一行某条语音的回调，参数为 (行索引, 语音路径)
+ * @param canUndo 是否可撤销（控制撤销按钮启用/禁用状态）
+ * @param canRedo 是否可恢复（控制恢复按钮启用/禁用状态）
+ * @param onUndoClick 撤销按钮点击回调
+ * @param onRedoClick 恢复按钮点击回调
  * @param modifier 容器修饰符
  * @param enabled 是否启用编辑
  * @param placeholder 占位提示文字
@@ -150,6 +154,10 @@ fun CheckboxEditText(
     onPreviewRelation: ((com.corgimemo.app.data.model.CardRelation) -> Unit)? = null,
     /** 点击 × 删除关联的回调（参数=relationId, groupId） */
     onDeleteRelation: ((Long, Int) -> Unit)? = null,
+    canUndo: Boolean = false,
+    canRedo: Boolean = false,
+    onUndoClick: (() -> Unit)? = null,
+    onRedoClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     placeholder: String = "回车可连续添加子待办，输入 / 可新建待办"
@@ -259,7 +267,11 @@ fun CheckboxEditText(
                 relationTitles = relationTitles,
                 onAddRelationClick = onAddRelationClick?.let { cb -> { cb(0) } },
                 onPreviewRelation = onPreviewRelation,
-                onDeleteRelation = onDeleteRelation
+                onDeleteRelation = onDeleteRelation,
+                canUndo = canUndo,
+                canRedo = canRedo,
+                onUndoClick = onUndoClick,
+                onRedoClick = onRedoClick
             ) {
                 CheckboxEditRow(
                     lineIndex = 0,
@@ -329,7 +341,11 @@ fun CheckboxEditText(
                     relationTitles = relationTitles,
                     onAddRelationClick = onAddRelationClick?.let { cb -> { cb(groupId) } },
                     onPreviewRelation = onPreviewRelation,
-                    onDeleteRelation = onDeleteRelation
+                    onDeleteRelation = onDeleteRelation,
+                    canUndo = canUndo,
+                    canRedo = canRedo,
+                    onUndoClick = onUndoClick,
+                    onRedoClick = onRedoClick
                 ) {
                     groupLines.forEachIndexed { localIndex, line ->
                         val currentIndex = globalIndex++

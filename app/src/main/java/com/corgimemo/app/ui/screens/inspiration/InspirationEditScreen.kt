@@ -103,6 +103,7 @@ import com.corgimemo.app.ui.components.RelationPickerBottomSheet /** v2026-07-22
 import com.corgimemo.app.ui.components.LocationPicker
 import com.corgimemo.app.ui.components.VoiceRecordBottomSheet
 import com.corgimemo.app.ui.components.DeleteConfirmDialog /** 删除确认对话框（防误触）*/
+import com.corgimemo.app.ui.components.DeleteDialogMode /** 删除/放弃确认对话框模式枚举（v2026-07-22 新增）*/
 import com.corgimemo.app.ui.components.safeAreaForTopBar /** 安全区域内边距：顶栏状态栏*/
 import com.corgimemo.app.ui.components.safeAreaForEditBar /** 安全区域内边距：编辑栏导航栏+软键盘*/
 import com.corgimemo.app.ui.components.EditToolbar
@@ -426,8 +427,11 @@ fun InspirationEditScreen(
      *
      * v2026-07-22 改造：从直接调用 navigateBack 改为 attemptBack
      * 统一所有退出方式（应用内 ← 按钮、系统返回键）都经过未保存检查
+     *
+     * 注意：BackHandler 必须在 attemptBack 定义之后调用，
+     * 否则 Kotlin 编译器会报 "Unresolved reference 'attemptBack'"。
+     * 实际 BackHandler 代码已移至 attemptBack 定义之后。
      */
-    BackHandler { attemptBack() }
 
     /**
      * "安全返回"：检查 viewModel.isDirty，若有未保存修改则弹"放弃编辑"确认框（v2026-07-22 新增）
@@ -454,6 +458,14 @@ fun InspirationEditScreen(
             navigateBack()
         }
     }
+
+    /**
+     * 拦截系统返回事件（实际定义放在 attemptBack 之后以满足 Kotlin val 顺序敏感）
+     *
+     * v2026-07-22 改造：从直接调用 navigateBack 改为 attemptBack
+     * 统一所有退出方式（应用内 ← 按钮、系统返回键）都经过未保存检查
+     */
+    BackHandler { attemptBack() }
     /** 标签选择弹窗显示状态（由顶部标签按钮触发） */
     var showTagPicker by remember { mutableStateOf(false) }
     /** 待删除的标签（长按标签后弹出确认对话框，null=不显示） */

@@ -308,6 +308,12 @@ fun TodoEditScreen(
      */
     val hasAnyUnsavedChanges by viewModel.hasAnyUnsavedChanges.collectAsState()
 
+    /** 撤销/恢复状态收集 */
+    val canUndo by viewModel.canUndo.collectAsState()
+    val canRedo by viewModel.canRedo.collectAsState()
+    val isRestoring by viewModel.isRestoring.collectAsState()
+    val restoreEvent by viewModel.restoreEvent.collectAsState()
+
     /**
      * 待分享的 todo 列表快照（在弹窗打开时填充）
      *
@@ -823,6 +829,11 @@ fun TodoEditScreen(
     /** 行数据变更时同步到 ViewModel 的 content 和 title 字段（混合存储） */
     LaunchedEffect(todoLines) {
         if (hasInitializedLines) {
+            // 防循环：恢复快照时不推入新快照
+            if (!isRestoring) {
+                viewModel.pushSnapshotDebounced()
+            }
+
             val plainText = todoLines
                 .filter { it.text.isNotBlank() || todoLines.size == 1 }
                 .joinToString("\n") { it.toPlainText() }
@@ -970,6 +981,40 @@ fun TodoEditScreen(
                     viewModel.setVoiceNotePath(firstVoice.path)
                 }
             }
+        }
+    }
+
+    /** 监听恢复事件，从快照重建 todoLines */
+    LaunchedEffect(restoreEvent) {
+        restoreEvent?.let { snapshot ->
+            // 从快照重建 todoLines
+            val titleLine = com.corgimemo.app.ui.model.TodoLine(
+                text = snapshot.title,
+                isChecked = false,
+                isSubTask = false,
+                imagePaths = snapshot.imagePaths,
+                voiceAttachments = snapshot.voiceNotePath?.let { listOf(com.corgimemo.app.ui.model.VoiceAttachment(path = it)) } ?: emptyList(),
+            )
+
+            val subTaskLines = snapshot.subTasks.mapIndexed { index, subTask ->
+                com.corgimemo.app.ui.model.TodoLine(
+                    text = subTask.title,
+                    isChecked = subTask.isCompleted,
+                    isSubTask = true,
+                    subTaskId = subTask.id,
+                    order = subTask.order,
+                )
+            }
+
+            var restoredLines = listOf(titleLine) + subTaskLines
+
+            // 使用 LineSnapshotUtils 恢复行级附件（图片、语音）
+            val lineSnapshots = com.corgimemo.app.ui.model.LineSnapshotUtils.deserialize(snapshot.lineAttachmentsSnapshot)
+            if (lineSnapshots != null) {
+                restoredLines = com.corgimemo.app.ui.model.LineSnapshotUtils.restoreAttachmentsToLines(restoredLines, lineSnapshots)
+            }
+
+            todoLines = restoredLines
         }
     }
 
@@ -1662,6 +1707,10 @@ fun TodoEditScreen(
                 onDeleteRelation = { relationId, groupId ->
                     viewModel.deleteRelation(relationId, groupId)
                 },
+                canUndo = canUndo,
+                canRedo = canRedo,
+                onUndoClick = { viewModel.undo() },
+                onRedoClick = { viewModel.redo() },
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 200.dp),
