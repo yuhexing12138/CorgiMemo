@@ -1039,8 +1039,15 @@ fun HomeScreen(
                                             onPinClick = {
                                                 viewModel.togglePin(todo.id)
                                             },
+                                            // v2026-07-22 改造：左滑删除不再走 pendingDeleteId 二次确认弹窗
+                                            // 改为直接调用 viewModel.deleteTodo，依赖现有 Snackbar "已删除 + 撤销" 机制
+                                            // 原因：左滑手势本身就是明确的"删除"意图（红色背景 + 垃圾桶图标），
+                                            // 加上 Snackbar 撤销兜底（HomeScreen.kt LaunchedEffect pendingDeletedTodo），
+                                            // 用户随时可撤销，二次确认弹窗属于冗余交互
+                                            // 注意：长按面板的"删除"选项（TodoListItem.onDelete）仍保留二次确认
                                             onDeleteClick = {
-                                                pendingDeleteId = todo.id
+                                                viewModel.onUserInteraction()
+                                                viewModel.deleteTodo(todo.id)
                                             }
                                         ) { isClickBlocked ->
                                             TodoListItem(
