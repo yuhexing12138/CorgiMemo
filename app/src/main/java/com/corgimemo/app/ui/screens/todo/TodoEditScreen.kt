@@ -257,17 +257,29 @@ fun TodoEditScreen(
     /**
      * 删除确认弹窗状态
      *
-     * 底部工具栏的垃圾桶图标属于破坏性操作，
+     * 顶部工具栏的垃圾桶图标属于破坏性操作，
      * 点击后不能立即删除——必须先弹 DeleteConfirmDialog 让用户二次确认，
      * 防止用户误触导致待办（含子任务、附件、关联）被永久删除。
      *
      * - true  = 打开 DeleteConfirmDialog
      * - false = 关闭弹窗（取消、点遮罩、按返回键、确认删除后）
      *
-     * 仅在编辑模式（todoId != null && todoId > 0）下打开，
-     * 新建模式（todoId == null）无可删除数据，仍保持静默无操作。
+     * v2026-07-22 改造：去掉"仅在 todoId != null 时打开"的限制。
+     * 新建模式（todoId == null）下点击垃圾桶也会打开弹窗，但弹窗走"放弃编辑"模式，
+     * 提示用户"未保存的内容将永久丢失"，确认后直接 popBackStack 关闭页面。
+     * 弹窗的具体行为由 [deleteDialogMode] 决定。
      */
     var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    /**
+     * 删除确认弹窗的当前模式（v2026-07-22 新增）
+     *
+     * 与 [showDeleteConfirm] 配对使用：开弹窗前先 set 模式，再 show=true。
+     * 模式决定弹窗文案和确认后的行为：
+     * - [DeleteDialogMode.Delete]：编辑模式弹窗，确认后执行 homeViewModel.deleteTodo + popBackStack
+     * - [DeleteDialogMode.Discard]：新建模式弹窗，确认后仅 popBackStack（无 DB 数据可删）
+     */
+    var deleteDialogMode by remember { mutableStateOf(DeleteDialogMode.Delete) }
 
     /**
      * 待分享的 todo 列表快照（在弹窗打开时填充）
@@ -343,6 +355,32 @@ fun TodoEditScreen(
             )
             todoLines = updatedLines
         }
+    }
+
+    /**
+     * 🆕 v2026-07-22 在指定行下方创建新待办容器（newGroupId）
+     *
+     * 复用于两个入口：
+     * 1. 用户在文本编辑器中输入 "/" 触发 onNewGroupRequested
+     * 2. 用户点击底部工具栏的"/"图标按钮触发 onNewTodoClick
+     *
+     * 行为契约：
+     * - 取 todoLines 中最大的 groupId + 1 作为新 groupId（保证不冲突）
+     * - 在指定行索引的下方插入一个空白 TodoLine
+     * - 新行的 order 字段设置为插入位置
+     *
+     * @param lineIndex 在哪一行下方插入；-1 或越界时 fallback 到末尾
+     */
+    fun createNewTodoAfterLine(lineIndex: Int) {
+        val maxGroupId = todoLines.maxOfOrNull { it.groupId } ?: 0
+        val newGroupId = maxGroupId + 1
+        val updatedLines = todoLines.toMutableList()
+        // 越界保护：lineIndex 超出范围时插入到末尾
+        val safeIndex = if (lineIndex < 0) updatedLines.size - 1 else lineIndex
+        val insertIndex = (safeIndex + 1).coerceAtMost(updatedLines.size)
+        val newLine = TodoLine(groupId = newGroupId, order = insertIndex)
+        updatedLines.add(insertIndex, newLine)
+        todoLines = updatedLines
     }
 
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -1140,13 +1178,23 @@ fun TodoEditScreen(
                 //
                 // 🆕 v2026-07-22 二次确认改造：
                 // - 旧行为：onClick 内直接 homeViewModel.deleteTodo + popBackStack（误触立即丢失数据）
-                // - 新行为：仅置 showDeleteConfirm = true，由 DeleteConfirmDialog 接管"是否真的要删"的询问
-                // - 仅在编辑模式（todoId != null && todoId > 0）下打开确认弹窗
+                // - 新行为：先 set deleteDialogMode，再 showDeleteConfirm = true，
+                //          由 DeleteConfirmDialog 接管"是否真的要删/放弃"的询问
+                //
+                // 🆕 v2026-07-22 新建模式适配：
+                // - 旧实现：if (todoId != null && todoId > 0) 才执行，导致新建模式点击无任何反应
+                // - 新实现：去掉 if 条件，新建模式点击也开弹窗（走 Discard 模式）
+                //   让用户明确知道"放弃编辑 = 关闭页面且丢失草稿"
                 IconButton(
                     onClick = {
-                        if (todoId != null && todoId > 0) {
-                            showDeleteConfirm = true
+                        // 根据当前是否有持久化的 todoId 决定弹窗模式
+                        val isEditMode = todoId != null && todoId > 0
+                        deleteDialogMode = if (isEditMode) {
+                            DeleteDialogMode.Delete
+                        } else {
+                            DeleteDialogMode.Discard
                         }
+                        showDeleteConfirm = true
                     },
                     modifier = Modifier.size(36.dp)
                 ) {
@@ -1207,6 +1255,17 @@ fun TodoEditScreen(
                     val currentGroupId = todoLines.getOrNull(focusedLineIndex)?.groupId ?: 0
                     pickerTargetGroupId = currentGroupId
                     showRelationPicker = true
+                },
+                /**
+                 * 🆕 v2026-07-22 "/"按钮点击回调：在当前聚焦行下方创建新待办容器
+                 *
+                 * 与用户输入 "/" 触发的 onNewGroupRequested 行为完全一致：
+                 * - 工具栏入口：点击工具栏"/"图标按钮 → 工具栏场景的"主动新建"
+                 * - 输入入口：在 CheckboxEditText 中输入 "/" → 编辑场景的"命令式新建"
+                 * 两个入口共用本地函数 createNewTodoAfterLine()，行为契约 100% 一致。
+                 */
+                onNewTodoClick = {
+                    createNewTodoAfterLine(focusedLineIndex)
                 },
                 /**
                  * 位置按钮（底部工具栏）点击回调：直接打开位置提醒弹窗。
@@ -1371,13 +1430,9 @@ fun TodoEditScreen(
                 },
                 onNewGroupRequested = { currentIndex, currentText ->
                     // 用户输入 "/"：在当前行下方创建新待办容器（新 groupId）
-                    val maxGroupId = todoLines.maxOfOrNull { it.groupId } ?: 0
-                    val newGroupId = maxGroupId + 1
-                    val updatedLines = todoLines.toMutableList()
-                    val insertIndex = (currentIndex + 1).coerceAtMost(updatedLines.size)
-                    val newLine = TodoLine(groupId = newGroupId, order = insertIndex)
-                    updatedLines.add(insertIndex, newLine)
-                    todoLines = updatedLines
+                    // 🆕 v2026-07-22 抽取为本地函数 createNewTodoAfterLine，
+                    // 工具栏"/"按钮也复用同一逻辑
+                    createNewTodoAfterLine(currentIndex)
                 },
                 onReminderClick = { groupId ->
                     /**
@@ -2307,34 +2362,55 @@ fun TodoEditScreen(
     }
 
     /**
-     * 删除待办二次确认弹窗（v2026-07-22 新增）
+     * 删除/放弃确认弹窗（v2026-07-22 新增，二次升级）
+     *
+     * v2026-07-22 首次新增：垃圾桶二次确认，防止误删
+     * v2026-07-22 二次升级：支持 [DeleteDialogMode.Discard] 模式，覆盖新建待办的"放弃编辑"场景
      *
      * 触发链路：
-     * 1. 用户点击顶部导航栏的垃圾桶图标 → onDeleteClick → showDeleteConfirm = true
-     * 2. 本弹窗被打开，显示当前 todo 标题 + "此操作无法撤销"警告文案
+     * 1. 用户点击顶部导航栏的垃圾桶图标 → onDeleteClick：
+     *    - 编辑模式（todoId != null）→ deleteDialogMode = Delete
+     *    - 新建模式（todoId == null）→ deleteDialogMode = Discard
+     *    → 然后 showDeleteConfirm = true
+     * 2. 本弹窗被打开，根据 deleteDialogMode 渲染不同文案
      * 3. 用户选择：
-     *    - 点击"确认删除" → 真正调用 homeViewModel.deleteTodo(todoId) + popBackStack
+     *    - 点击"确认删除" / "放弃编辑" → 根据 mode 走不同分支
      *    - 点击"取消" / 点击遮罩 / 按返回键 → 仅关闭弹窗，数据无任何变化
+     *
+     * 行为差异：
+     * - Delete 模式：调用 homeViewModel.deleteTodo(todoId) + popBackStack
+     * - Discard 模式：仅 navController.popBackStack()（无 DB 删除，因为新建待办未持久化）
      *
      * 设计要点：
      * - 复用项目已有的 [com.corgimemo.app.ui.components.DeleteConfirmDialog] 组件
-     *   （警告图标 + 标题高亮 + 红色"确认删除"按钮），与其他页面删除交互一致
-     * - itemTitle 优先使用当前 todo 标题（title 来自 ViewModel.title StateFlow），
-     *   若为空（极少见：刚 loadTodo 完但 UI 尚未渲染）则 fallback 为"此待办"
+     *   通过 mode 参数切换文案，共享同一套警告图标 + 红色按钮样式
+     * - itemTitle 仅在 Delete 模式使用（高亮显示），Discard 模式被组件内部忽略
      * - todoId 二次校验：即使 showDeleteConfirm 在 todoId 变更后仍为 true（理论不会发生），
-     *   也要在 onConfirm 内重新判空，避免对错误的 ID 调用 deleteTodo
+     *   也要在 Delete 分支内重新判空，避免对错误的 ID 调用 deleteTodo
      */
     DeleteConfirmDialog(
         showDialog = showDeleteConfirm,
         itemTitle = title.ifBlank { "此待办" },
+        mode = deleteDialogMode,
         onConfirm = {
             // 1. 先关闭弹窗（避免 popBackStack 时弹窗仍在屏幕上闪烁）
             showDeleteConfirm = false
-            // 2. 二次校验 todoId 有效性
-            val targetId = todoId
-            if (targetId != null && targetId > 0) {
-                homeViewModel.deleteTodo(targetId)
-                navController.popBackStack()
+            // 2. 根据 mode 走不同分支
+            when (deleteDialogMode) {
+                DeleteDialogMode.Delete -> {
+                    // 删除模式：二次校验 todoId 有效性后真正删除 + 返回
+                    val targetId = todoId
+                    if (targetId != null && targetId > 0) {
+                        homeViewModel.deleteTodo(targetId)
+                        navController.popBackStack()
+                    }
+                }
+                DeleteDialogMode.Discard -> {
+                    // 放弃编辑模式：直接关闭页面，丢弃未保存草稿
+                    // 不调用任何 viewModel 方法，因为新建待办尚未持久化到 DB，
+                    // 没有任何"删除"动作需要执行
+                    navController.popBackStack()
+                }
             }
         },
         onDismiss = {

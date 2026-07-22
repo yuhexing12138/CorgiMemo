@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.sp
  * 可选按钮（仅在调用方传入对应回调时渲染）：
  * - 背景色按钮（Icons.Default.Palette）：传入 onBackgroundClick 时显示
  * - 关联按钮（@, Icons.Default.AlternateEmail）：传入 onMentionClick 时显示，触发卡片关联弹窗
+ * - 新建待办按钮（/, 纯文本 "/"）：传入 onNewTodoClick 时显示，在当前聚焦行下方创建新待办容器
+ *   v2026-07-22 改动：新增该按钮，逻辑与用户在文本框输入 "/" 触发的 onNewGroupRequested 一致
  * - 位置按钮（#, Icons.Default.LocationOn）：传入 onLocationClick 时显示，触发位置提醒弹窗
  *   v2026-07-22 改动：图标从 Icons.Default.Tag 改为 Icons.Default.LocationOn，语义更清晰
  * - 分享按钮（Icons.Default.Share）：传入 onShareClick 时显示
@@ -46,8 +48,10 @@ import androidx.compose.ui.unit.sp
  * 设计原则：
  * - 未传回调时不渲染对应按钮，让 SpaceEvenly 仅基于可见按钮做均匀分布，
  *   避免占位按钮挤压其他图标的间距
- * - 待办编辑页：传所有回调 → 渲染 7 个按钮（相机/麦克风/背景/@/#/分享/删除）
- * - 灵感编辑页：仅传相机/麦克风 → 2 按钮布局（画板/分享/删除已移至顶部工具栏）
+ * - 待办编辑页（v2026-07-22）：传 5 个回调 → 渲染 5 个按钮
+ *     （相机/麦克风/关联@/新建/位置）；画板/分享/删除已移至顶部工具栏
+ * - 灵感编辑页：仅传相机/麦克风 → 2 按钮布局
+ *     （画板/分享/删除已移至顶部工具栏，且无新建待办需求）
  *
  * 已移除的功能：
  * - 字体格式（A/A）和列表格式按钮（富文本编辑功能）
@@ -64,6 +68,13 @@ fun EditToolbar(
     onVoiceClick: () -> Unit,
     onBackgroundClick: (() -> Unit)? = null,
     onMentionClick: (() -> Unit)? = null,
+    /**
+     * 🆕 v2026-07-22 新建待办回调：
+     * - 调用方传入时渲染"纯文本 /"按钮
+     * - 行为契约：在当前聚焦行下方创建新待办容器（newGroupId）
+     * - 灵感编辑页不需要该功能，不传即可
+     */
+    onNewTodoClick: (() -> Unit)? = null,
     onLocationClick: (() -> Unit)? = null,
     onShareClick: (() -> Unit)? = null,
     onDeleteClick: (() -> Unit)? = null,
@@ -116,6 +127,20 @@ fun EditToolbar(
                         imageVector = Icons.Default.AlternateEmail,
                         contentDescription = "关联",
                         onClick = onMentionClick
+                    )
+                }
+                /**
+                 * 新建待办按钮（/, 纯文本 "/"）：
+                 * - 调用方传入 onNewTodoClick 时才渲染（待办编辑页）
+                 * - 未传时不渲染（灵感编辑页）
+                 * - 纯文本 "/" 图标与"用户在文本框输入 / 触发新建待办容器"的行为形成统一隐喻
+                 * - 与 @ 按钮形成视觉对称的"命令入口"风格
+                 */
+                if (onNewTodoClick != null) {
+                    ToolbarIconBtn(
+                        icon = "/",
+                        contentDescription = "新建待办",
+                        onClick = onNewTodoClick
                     )
                 }
                 /**
