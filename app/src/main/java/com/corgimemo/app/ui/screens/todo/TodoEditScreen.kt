@@ -314,6 +314,24 @@ fun TodoEditScreen(
     val isRestoring by viewModel.isRestoring.collectAsState()
     val restoreEvent by viewModel.restoreEvent.collectAsState()
 
+    // v2026-07-22 埋点：监听 canUndo / canRedo 状态变化，打印按钮可点击性
+    LaunchedEffect(canUndo, canRedo) {
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[UI] canUndo / canRedo 变化: canUndo=$canUndo, canRedo=$canRedo, " +
+            "isRestoring=$isRestoring"
+        )
+    }
+
+    // ==================== 行级数据 StateFlow 收集（v2026-07-22 改造）====================
+    // todoLines 与 focusedLineIndex 已迁入 TodoEditViewModel 的 StateFlow。
+    // UI 层只读不写，所有修改通过 viewModel.setTodoLines / setFocusedLineIndex 等 API。
+    // 这样做的好处：undo()/redo() 直接同步更新 _todoLines.value，
+    // UI 通过 collectAsState 自动收到新值，无需经过 LaunchedEffect 副作用块，
+    // 彻底根除原"恢复快照时推入新快照导致恢复按钮变灰"的时序 bug。
+    val todoLines by viewModel.todoLines.collectAsState()
+    val focusedLineIndex by viewModel.focusedLineIndex.collectAsState()
+
     /**
      * 待分享的 todo 列表快照（在弹窗打开时填充）
      *
@@ -327,11 +345,12 @@ fun TodoEditScreen(
     val blockVisibilityStates = remember { mutableStateMapOf<Int, Boolean>() }
     var isLocked by remember { mutableStateOf(false) }
 
-    /** 复选框编辑器的行数据列表 */
-    var todoLines by remember { mutableStateOf(listOf(TodoLine())) }
-
-    /** 当前聚焦的行索引（用于确定附件插入目标） */
-    var focusedLineIndex by remember { mutableIntStateOf(0) }
+    // 复选框编辑器的行数据列表（todoLines）和当前聚焦行索引（focusedLineIndex）
+    // v2026-07-22 改造：已迁入 TodoEditViewModel 的 StateFlow，UI 层只读不写。
+    // 读取入口已上移到 L323-324：
+    //   val todoLines by viewModel.todoLines.collectAsState()
+    //   val focusedLineIndex by viewModel.focusedLineIndex.collectAsState()
+    // 修改入口必须通过 viewModel.setTodoLines / viewModel.setFocusedLineIndex 等命令式 API。
 
     /**
      * 跨行拖拽状态管理器实例
@@ -354,66 +373,37 @@ fun TodoEditScreen(
     val rowBoundsMap = remember { mutableMapOf<Int, androidx.compose.ui.geometry.Rect>() }
 
     /**
-     * 向当前聚焦行添加图片附件
+     * 向当前聚焦行添加图片附件（v2026-07-22 改为 viewModel API）
+     *
+     * 委托给 viewModel.addImageToFocusedLine 内部处理（更新 _todoLines + 推快照）。
      *
      * @param imagePath 图片的本地存储路径
      */
     fun addImageToFocusedLine(imagePath: String) {
-        val updatedLines = todoLines.toMutableList()
-        if (focusedLineIndex in updatedLines.indices) {
-            val currentLine = updatedLines[focusedLineIndex]
-            updatedLines[focusedLineIndex] = currentLine.copy(
-                imagePaths = currentLine.imagePaths + imagePath
-            )
-            todoLines = updatedLines
-        }
+        viewModel.addImageToFocusedLine(imagePath)
     }
 
     /**
-     * 向当前聚焦行添加语音附件
+     * 向当前聚焦行添加语音附件（v2026-07-22 改为 viewModel API）
      *
      * @param voicePath 语音文件的本地存储路径
      * @param duration 语音时长（秒）
      */
     fun addVoiceToFocusedLine(voicePath: String, duration: Int?) {
-        val updatedLines = todoLines.toMutableList()
-        if (focusedLineIndex in updatedLines.indices) {
-            val currentLine = updatedLines[focusedLineIndex]
-            val newVoiceAttachment = com.corgimemo.app.ui.model.VoiceAttachment(
-                path = voicePath,
-                duration = duration
-            )
-            updatedLines[focusedLineIndex] = currentLine.copy(
-                voiceAttachments = currentLine.voiceAttachments + newVoiceAttachment
-            )
-            todoLines = updatedLines
-        }
+        viewModel.addVoiceToFocusedLine(voicePath, duration)
     }
 
     /**
-     * 🆕 v2026-07-22 在指定行下方创建新待办容器（newGroupId）
+     * 🆕 v2026-07-22 在指定行下方创建新待办容器（newGroupId）（改为 viewModel API）
      *
      * 复用于两个入口：
      * 1. 用户在文本编辑器中输入 "/" 触发 onNewGroupRequested
      * 2. 用户点击底部工具栏的"/"图标按钮触发 onNewTodoClick
      *
-     * 行为契约：
-     * - 取 todoLines 中最大的 groupId + 1 作为新 groupId（保证不冲突）
-     * - 在指定行索引的下方插入一个空白 TodoLine
-     * - 新行的 order 字段设置为插入位置
-     *
      * @param lineIndex 在哪一行下方插入；-1 或越界时 fallback 到末尾
      */
     fun createNewTodoAfterLine(lineIndex: Int) {
-        val maxGroupId = todoLines.maxOfOrNull { it.groupId } ?: 0
-        val newGroupId = maxGroupId + 1
-        val updatedLines = todoLines.toMutableList()
-        // 越界保护：lineIndex 超出范围时插入到末尾
-        val safeIndex = if (lineIndex < 0) updatedLines.size - 1 else lineIndex
-        val insertIndex = (safeIndex + 1).coerceAtMost(updatedLines.size)
-        val newLine = TodoLine(groupId = newGroupId, order = insertIndex)
-        updatedLines.add(insertIndex, newLine)
-        todoLines = updatedLines
+        viewModel.createNewTodoAfterLine(lineIndex)
     }
 
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -711,7 +701,7 @@ fun TodoEditScreen(
                 "subTasks=${subTasks.map { it.title }}"
             )
 
-            todoLines = if (subTasks.isNotEmpty()) {
+            var initialLines = if (subTasks.isNotEmpty()) {
                 // 优先从子任务表恢复结构化数据，第一行用已加载的标题填充
                 val result = listOf(TodoLine(text = title)) + TodoLine.fromSubTasks(subTasks)
                 android.util.Log.w("TodoEditInit", "使用 fromSubTasks: $result")
@@ -758,16 +748,16 @@ fun TodoEditScreen(
              * - 如果有行级快照数据，使用 LineSnapshotUtils 精确恢复到对应行
              * - 否则回退到旧逻辑，将全局附件放到第一行
              */
-            if (todoLines.isNotEmpty()) {
+            if (initialLines.isNotEmpty()) {
                 // 尝试从行级快照恢复（新方式：支持多行）
                 val snapshots = com.corgimemo.app.ui.model.LineSnapshotUtils.deserialize(lineAttachmentsSnapshot)
                 if (snapshots.isNotEmpty()) {
                     // 使用行级快照精确恢复每行的附件
-                    todoLines = com.corgimemo.app.ui.model.LineSnapshotUtils.restoreAttachmentsToLines(todoLines, snapshots)
+                    initialLines = com.corgimemo.app.ui.model.LineSnapshotUtils.restoreAttachmentsToLines(initialLines, snapshots)
                     android.util.Log.w("TodoEditInit", "使用行级快照恢复附件: ${snapshots.size}个行快照")
                 } else {
                     // 回退到旧逻辑：将全局附件放到第一行（兼容无快照的旧数据）
-                    val firstLine = todoLines[0]
+                    val firstLine = initialLines[0]
                     var updatedLine = firstLine
 
                     // 恢复图片到第一行
@@ -789,23 +779,28 @@ fun TodoEditScreen(
 
                     // 如果有更新，替换第一行
                     if (updatedLine != firstLine) {
-                        todoLines = todoLines.toMutableList().also { it[0] = updatedLine }
+                        initialLines = initialLines.toMutableList().also { it[0] = updatedLine }
                         android.util.Log.w("TodoEditInit", "附件恢复完成: 第一行=$updatedLine")
                     }
                 }
             }
+
+            // v2026-07-22 撤销/恢复改造：初始化通过 viewModel.initializeTodoLines 触发
+            // 内部会 _hasInitializedLines = false → 写 _todoLines → 同步结构化状态
+            viewModel.initializeTodoLines(initialLines)
+            // 初始化完成后才允许 setTodoLines 推快照
+            viewModel.markTodoLinesInitialized()
 
             hasInitializedLines = true
         }
     }
 
     /**
-     * 建立保存状态基线（v2026-07-21 新增）
+     * 建立保存状态基线（v2026-07-21 新增，v2026-07-22 改造）
      *
      * 触发条件：
      * 1. isRelationsLoaded = true（loadGroupRelations 完成，_groupRelations 已填充实际关联数）
      * 2. baselineEstablished = false（尚未建立基线，避免覆盖用户编辑后的实时指纹）
-     * 3. todoLines 非空（UI 层初始化完成，能计算出真实的 text/images/voices 指纹）
      *
      * 满足条件后，对所有 editStateHash 仍为 "loading" 占位的已保存分组建立真实基线指纹。
      * 之后用户编辑任意元素（文字/附件/提醒/分类/优先级/关联/撤销/恢复）时，
@@ -813,208 +808,63 @@ fun TodoEditScreen(
      *
      * 切换 todo（todoId 变化）时 baselineEstablished 自动重置为 false，
      * 触发新一轮基线建立。
+     *
+     * v2026-07-22 改造：markGroupSaveStateBaseline 内部直接读 _todoLines.value，
+     * 本 LaunchedEffect 不再需要 todoLines 作为 key。
      */
-    LaunchedEffect(isRelationsLoaded, baselineEstablished, todoLines) {
-        if (!isRelationsLoaded || baselineEstablished || todoLines.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(isRelationsLoaded, baselineEstablished) {
+        if (!isRelationsLoaded || baselineEstablished) return@LaunchedEffect
         // 对所有 editStateHash 仍为 "loading" 占位的已保存分组建立基线
         groupSaveStates.forEach { (groupId, state) ->
             if (state.isSaved && state.editStateHash == "loading") {
-                viewModel.markGroupSaveStateBaseline(groupId, todoLines)
+                viewModel.markGroupSaveStateBaseline(groupId)
             }
         }
         baselineEstablished = true
         android.util.Log.w("TodoEditBaseline", "保存状态基线已建立: 分组数=${groupSaveStates.size}, todoId=$todoId")
     }
 
-    /** 行数据变更时同步到 ViewModel 的 content 和 title 字段（混合存储） */
-    LaunchedEffect(todoLines) {
-        if (hasInitializedLines) {
-            // 防循环：恢复快照时不推入新快照
-            if (!isRestoring) {
-                viewModel.pushSnapshotDebounced()
-            }
+    /**
+     * 行数据变更时不再需要 LaunchedEffect(todoLines) 副作用块
+     *
+     * v2026-07-22 撤销/恢复 bug 修复：
+     * 原实现 todoLines 是 UI 层本地状态，文本编辑/勾选切换等操作通过
+     * LaunchedEffect(todoLines) 把变化推入 ViewModel（包括 setContent、setTitle、
+     * replaceSubTasks、setImagePaths、saveLineAttachmentsSnapshot、checkAndResetGroupSavedState、
+     * pushSnapshotDebounced 等）。该副作用是异步触发的，与 undo()/redo() 中
+     * 同步设置/清空 _isRestoring 存在时序错位。
+     *
+     * 现 todoLines 已迁入 ViewModel 的 StateFlow，上述所有副作用都已在
+     * TodoEditViewModel.setTodoLines 内部同步完成（见 [syncStructuredStateFromTodoLines]），
+     * UI 层不再需要此 LaunchedEffect 块。
+     *
+     * 关键修改：
+     * - pushSnapshotDebounced → 由 setTodoLines 内部调用（防抖 500ms）
+     * - setContent + setTitle + replaceSubTasks → 由 syncStructuredStateFromTodoLines 同步
+     * - saveLineAttachmentsSnapshot → 由 syncStructuredStateFromTodoLines 同步
+     * - setImagePaths / setVoiceNotePath → 由 syncStructuredStateFromTodoLines 同步
+     * - checkAndResetGroupSavedState → 由 setTodoLines 内部调用
+     */
 
-            val plainText = todoLines
-                .filter { it.text.isNotBlank() || todoLines.size == 1 }
-                .joinToString("\n") { it.toPlainText() }
 
-            /** 诊断日志：追踪同步过程 */
-            android.util.Log.w(
-                "TodoEditSync",
-                "todoLines 变化触发同步: lines=$todoLines, plainText='$plainText'"
-            )
-
-            viewModel.setContent(plainText)
-
-            /** 将第一行（主任务行）的文本同步为标题，确保 saveTodo() 校验通过 */
-            val firstLineText = todoLines.firstOrNull()?.text ?: ""
-            /**
-             * 同步标题到 ViewModel
-             *
-             * 注：原 setTitleWithRecommendation()（含分类推荐）已被替换为 setTitle()。
-             * 待办编辑页不再做关键词推荐分类，分类推荐仅在灵感编辑页保留。
-             */
-            viewModel.setTitle(firstLineText)
-
-            /**
-             * 同步子任务数据到 ViewModel（整体替换策略）
-             *
-             * 【关键 Bug 修复】解决用户输入时子任务重复累积问题
-             *
-             * 问题背景（已通过日志验证）：
-             * - 用户输入 "测试2" 时，会经过 "2" → "23" → "237" → ... → "测试" → "测试2"
-             * - 旧逻辑（增量添加）：每个中间状态都调用 addSubTask()，导致累积大量无效子任务
-             * - 结果：_subTasks = ["2", "23", "237", ..., "测试", "测试2"] （应该只有 ["测试2"]）
-             *
-             * 新策略（整体替换）：
-             * - 每次 todoLines 变化时，从 UI 层的行数据重新构建完整的子任务列表
-             * - 调用 viewModel.replaceSubTasks() 整体替换，而非逐个增量添加
-             * - 这样无论用户如何修改文本，最终只保留当前可见的子任务
-             */
-            val currentSubTaskLines = todoLines.filter { it.isSubTask && it.text.isNotBlank() }
-
-            /**
-             * 构建新的子任务列表
-             *
-             * 策略：
-             * - 如果行有 subTaskId > 0（来自数据库），保留其 ID 以便后续更新
-             * - 如果行是新建的 (subTaskId == 0)，生成临时子任务对象
-             */
-            val newSubTasks = currentSubTaskLines.map { line ->
-                if (line.subTaskId > 0L) {
-                    // 已有数据库 ID 的子任务：保留 ID，更新文本
-                    com.corgimemo.app.data.model.SubTask(
-                        id = line.subTaskId,
-                        todoId = viewModel.currentTodo?.id ?: 0,
-                        title = line.text,
-                        isCompleted = line.isChecked,
-                        order = line.order
-                    )
-                } else {
-                    // 新建子任务：ID 为 0
-                    com.corgimemo.app.data.model.SubTask(
-                        id = 0,
-                        todoId = viewModel.currentTodo?.id ?: 0,
-                        title = line.text,
-                        isCompleted = line.isChecked,
-                        order = line.order
-                    )
-                }
-            }
-
-            /** 整体替换 ViewModel 中的子任务列表 */
-            android.util.Log.w(
-                "TodoEditSync",
-                "整体替换子任务: ${newSubTasks.map { it.title }}"
-            )
-            viewModel.replaceSubTasks(newSubTasks)
-
-            /**
-             * 【多卡片】检测内容变化，智能重置已保存分组的编辑状态
-             *
-             * v2026-07-21：签名升级，直接传 todoLines，由 ViewModel 内部按 groupId 过滤
-             * 计算完整编辑状态指纹（覆盖文字/附件/提醒/分类/优先级/关联）。
-             *
-             * 比较每个已保存分组的当前指纹与保存时的基线：
-             * - editStateHash == "loading"（基线未建立）→ 跳过，等 markGroupSaveStateBaseline 触发
-             * - 指纹相同 → 保持已保存状态
-             * - 指纹不同 → 重置为未保存（用户真正编辑了该分组的任意元素）
-             */
-            if (groupSaveStates.isNotEmpty()) {
-                // 只检查已保存的分组
-                groupSaveStates.forEach { (groupId, state) ->
-                    if (state.isSaved) {
-                        viewModel.checkAndResetGroupSavedState(groupId, todoLines)
-                    }
-                }
-            }
-
-            /**
-             * 【多行附件支持】序列化当前 todoLines 的完整状态（包括每行附件）
-             *
-             * 将当前的 todoLines 列表（包含每行的 imagePaths/voiceAttachments）
-             * 与原始的 Markdown 富文本内容合并序列化。
-             *
-             * 存储格式："{Markdown内容}|||LINE_ATTACHMENTS|||[{JSON}]"
-             *
-             * 数据流：
-             * todoLines → LineSnapshotUtils.fromTodoLines() → LineSnapshot 列表
-             *           + _contentFormat (原始 Markdown)
-             *           → LineSnapshotUtils.serialize(snapshots, originalContent) → 合并字符串
-             *           → viewModel.saveLineAttachmentsSnapshot() → 存入 StateFlow
-             *           → performSave() 读取 → 写入 DB.contentFormat 字段
-             */
-            val snapshots = com.corgimemo.app.ui.model.LineSnapshotUtils.fromTodoLines(todoLines)
-            val snapshotJson = com.corgimemo.app.ui.model.LineSnapshotUtils.serialize(
-                snapshots = snapshots,
-                originalContent = content  // 使用当前 ViewModel 中的 content 值作为原始内容
-            )
-            if (snapshotJson.isNotBlank()) {
-                viewModel.saveLineAttachmentsSnapshot(snapshotJson)
-                android.util.Log.w("TodoEditSync", "序列化行级快照: ${snapshots.size}个行, 长度=${snapshotJson.length}")
-            }
-
-            /**
-             * 【关键修复】同步行级附件到 ViewModel
-             *
-             * 问题背景：
-             * - 用户通过 addImageToFocusedLine() 添加的图片存储在 todoLines[].imagePaths（行级）
-             * - 但保存时使用的是 viewModel._imagePaths（全局）
-             * - 如果不同步，行级附件不会被持久化，导致重新打开时丢失
-             *
-             * 解决方案：
-             * - 从所有 todoLines 中收集图片路径和录音附件
-             * - 调用 viewModel 的 setImagePaths/setVoiceNotePath 方法更新全局状态
-             */
-            val allImagePaths = todoLines.flatMap { it.imagePaths }.distinct()
-            if (allImagePaths != imagePaths) {
-                android.util.Log.w("TodoEditSync", "同步图片: $allImagePaths")
-                viewModel.setImagePaths(allImagePaths)
-            }
-
-            // 同步行级录音附件（取第一个非空的录音）
-            val allVoiceAttachments = todoLines.flatMap { it.voiceAttachments }.distinct()
-            if (allVoiceAttachments.isNotEmpty()) {
-                val firstVoice = allVoiceAttachments.first()
-                if (firstVoice.path != voiceNotePath) {
-                    android.util.Log.w("TodoEditSync", "同步录音: ${firstVoice.path}")
-                    viewModel.setVoiceNotePath(firstVoice.path)
-                }
-            }
-        }
-    }
-
-    /** 监听恢复事件，从快照重建 todoLines */
+    /**
+     * 监听恢复事件（v2026-07-22 改造）
+     *
+     * todoLines 重建已迁移到 ViewModel.restoreFromSnapshot() 内部（同步更新 _todoLines.value），
+     * UI 层只需通过 collectAsState 自动接收新值。
+     *
+     * 本 LaunchedEffect 仅保留供调试日志使用（未来如需在恢复后做额外副作用可在此扩展）。
+     * 不再做任何 todoLines 写入操作。
+     */
     LaunchedEffect(restoreEvent) {
         restoreEvent?.let { snapshot ->
-            // 从快照重建 todoLines
-            val titleLine = com.corgimemo.app.ui.model.TodoLine(
-                text = snapshot.title,
-                isChecked = false,
-                isSubTask = false,
-                imagePaths = snapshot.imagePaths,
-                voiceAttachments = snapshot.voiceNotePath?.let { listOf(com.corgimemo.app.ui.model.VoiceAttachment(path = it)) } ?: emptyList(),
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[UI LaunchedEffect(restoreEvent)] 触发: snapshot.title='${snapshot.title}', " +
+                "subTasks=${snapshot.subTasks.map { it.title }}, " +
+                "todoLinesAtTrigger.size=${todoLines.size}, " +
+                "todoLinesAtTrigger.texts=${todoLines.map { it.text }}"
             )
-
-            val subTaskLines = snapshot.subTasks.mapIndexed { index, subTask ->
-                com.corgimemo.app.ui.model.TodoLine(
-                    text = subTask.title,
-                    isChecked = subTask.isCompleted,
-                    isSubTask = true,
-                    subTaskId = subTask.id,
-                    order = subTask.order,
-                )
-            }
-
-            var restoredLines = listOf(titleLine) + subTaskLines
-
-            // 使用 LineSnapshotUtils 恢复行级附件（图片、语音）
-            val lineSnapshots = com.corgimemo.app.ui.model.LineSnapshotUtils.deserialize(snapshot.lineAttachmentsSnapshot)
-            if (lineSnapshots != null) {
-                restoredLines = com.corgimemo.app.ui.model.LineSnapshotUtils.restoreAttachmentsToLines(restoredLines, lineSnapshots)
-            }
-
-            todoLines = restoredLines
         }
     }
 
@@ -1040,9 +890,10 @@ fun TodoEditScreen(
     LaunchedEffect(groupReminders, groupCategoryIds, groupPriorities, groupRelations, baselineEstablished) {
         if (!hasInitializedLines || !baselineEstablished) return@LaunchedEffect
         // 对所有已保存分组检测编辑状态变化
+        // v2026-07-22 改造：checkAndResetGroupSavedState 内部读 _todoLines.value
         groupSaveStates.forEach { (groupId, state) ->
             if (state.isSaved) {
-                viewModel.checkAndResetGroupSavedState(groupId, todoLines)
+                viewModel.checkAndResetGroupSavedState(groupId)
             }
         }
     }
@@ -1496,7 +1347,14 @@ fun TodoEditScreen(
                     /** 打开优先级选择弹窗 */
                     showPriorityDialog = groupId
                 },
-                onLinesChange = { newLines -> todoLines = newLines },
+                onLinesChange = { newLines ->
+                    android.util.Log.w(
+                        "UndoRedoTrace",
+                        "[UI onLinesChange] 触发: newLines.size=${newLines.size}, " +
+                        "newLines.texts=${newLines.map { it.text }}"
+                    )
+                    viewModel.setTodoLines(newLines)
+                },
                 onLineCheckToggle = { index, isChecked ->
                     val line = todoLines.getOrNull(index) ?: return@CheckboxEditText
                     if (line.isSubTask && line.subTaskId > 0) {
@@ -1558,9 +1416,9 @@ fun TodoEditScreen(
                 onReminderDelete = { groupId ->
                     viewModel.clearGroupReminder(groupId)
                 },
-                /** 当前聚焦行索引变化回调：更新 focusedLineIndex 状态 */
+                /** 当前聚焦行索引变化回调：更新 focusedLineIndex 状态（v2026-07-22 改为 viewModel API） */
                 onFocusedLineChange = { newIndex ->
-                    focusedLineIndex = newIndex
+                    viewModel.setFocusedLineIndex(newIndex)
                 },
                 groupCategoryIds = groupCategoryIds,
                 groupCategoryNames = groupCategoryNames,
@@ -1578,27 +1436,13 @@ fun TodoEditScreen(
                 onImageClick = { lineIndex, imagePath ->
                     // TODO: 实现图片大图预览功能
                 },
-                /** 删除某行某张图片的回调 */
+                /** 删除某行某张图片的回调（v2026-07-22 改为 viewModel API） */
                 onDeleteImage = { lineIndex, imagePath ->
-                    val updatedLines = todoLines.toMutableList()
-                    if (lineIndex in updatedLines.indices) {
-                        val currentLine = updatedLines[lineIndex]
-                        updatedLines[lineIndex] = currentLine.copy(
-                            imagePaths = currentLine.imagePaths.filter { it != imagePath }
-                        )
-                        todoLines = updatedLines
-                    }
+                    viewModel.removeImageFromLine(lineIndex, imagePath)
                 },
-                /** 删除某行某条语音的回调 */
+                /** 删除某行某条语音的回调（v2026-07-22 改为 viewModel API） */
                 onDeleteVoice = { lineIndex, voicePath ->
-                    val updatedLines = todoLines.toMutableList()
-                    if (lineIndex in updatedLines.indices) {
-                        val currentLine = updatedLines[lineIndex]
-                        updatedLines[lineIndex] = currentLine.copy(
-                            voiceAttachments = currentLine.voiceAttachments.filter { it.path != voicePath }
-                        )
-                        todoLines = updatedLines
-                    }
+                    viewModel.removeVoiceFromLine(lineIndex, voicePath)
                 },
                 /**
                  * 🆕 拖拽状态：传递 CrossLineDragManager 的当前状态给子组件
@@ -1671,11 +1515,13 @@ fun TodoEditScreen(
                         val imagePath = sourceLine?.imagePaths?.getOrNull(sourceImgIdx)
 
                         if (imagePath != null) {
-                            todoLines = crossLineDragManager.applyDragResult(
+                            // v2026-07-22 改造：调用 viewModel.applyDragResult 内部更新 _todoLines
+                            val newLines = crossLineDragManager.applyDragResult(
                                 lines = todoLines,
                                 result = result,
                                 imagePath = imagePath
                             )
+                            viewModel.applyDragResult(newLines)
                         }
                     }
 
@@ -1709,8 +1555,22 @@ fun TodoEditScreen(
                 },
                 canUndo = canUndo,
                 canRedo = canRedo,
-                onUndoClick = { viewModel.undo() },
-                onRedoClick = { viewModel.redo() },
+                onUndoClick = {
+                    android.util.Log.w(
+                        "UndoRedoTrace",
+                        "[UI] 撤销按钮点击: canUndo=$canUndo, canRedo=$canRedo, " +
+                        "current todoLines.texts=${todoLines.map { it.text }}"
+                    )
+                    viewModel.undo()
+                },
+                onRedoClick = {
+                    android.util.Log.w(
+                        "UndoRedoTrace",
+                        "[UI] 恢复按钮点击: canUndo=$canUndo, canRedo=$canRedo, " +
+                        "current todoLines.texts=${todoLines.map { it.text }}"
+                    )
+                    viewModel.redo()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 200.dp),
@@ -2133,20 +1993,23 @@ fun TodoEditScreen(
                         /**
                          * 确认回调：把 picker 选中的 (date, hour, minute, repeatType, dueDate) 路由回指定分组
                          *  - gid 来自当前编辑态：picker 打开期间不应被外部改写，但为防御性仍做 null 检查
-                         *  - 调用新 API：setGroupReminder / setGroupRepeatType（按 groupId 维度）
+                         *  - 调用新批量 API：setGroupReminderBatch（v2026-07-22 新增）——
+                         *    把原本的 setGroupReminder + setGroupRepeatType + setDueDate 3 个 setter
+                         *    合并为单个原子操作，只推 1 个快照。
+                         *    解决"设置提醒后需撤销 3 次才生效"的 bug。
                          *  - calendarEnabled 暂不处理（与日历功能相关，本期未接入）
                          *  - dueDateMillis：截止日期时间戳，来自 ReminderPickerBottomSheet
                          */
                         onConfirm = { dateMillis, hour, minute, repeatTypeNew, calendarEnabled, dueDateMillis ->
                             val gid = editingReminderGroupId ?: return@ReminderPickerBottomSheet
-                            if (dateMillis != null) {
-                                viewModel.setGroupReminder(gid, dateMillis)
-                                viewModel.setGroupRepeatType(gid, repeatTypeNew)
-                            } else {
-                                // 提醒时间未设置（用户清除了提醒），清除该分组的提醒
-                                viewModel.clearGroupReminder(gid)
-                            }
-                            viewModel.setDueDate(dueDateMillis)
+                            // 统一通过批量 setter 更新 reminder / repeatType / dueDate，
+                            // 一次性推一个快照，避免 undoStack 堆积
+                            viewModel.setGroupReminderBatch(
+                                groupId = gid,
+                                reminderTime = dateMillis,
+                                repeatType = repeatTypeNew,
+                                dueDateMillis = dueDateMillis
+                            )
                             editingReminderGroupId = null
 
                             /** 仅在设置了提醒时间时才引导通知权限和精确闹钟权限 */

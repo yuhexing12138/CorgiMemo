@@ -21,7 +21,10 @@ import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.data.repository.SubTaskManager
 import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.domain.ReminderRecommender
+import com.corgimemo.app.ui.components.CrossLineDragManager
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
+import com.corgimemo.app.ui.model.LineSnapshotUtils
+import com.corgimemo.app.ui.model.TodoLine /** v2026-07-22 撤销/恢复改造：todoLines 迁入 ViewModel，需 TodoLine 类型直接 import */
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -209,6 +212,14 @@ class TodoEditViewModel @Inject constructor(
     /**
      * 编辑状态全量快照，用于撤销/恢复功能
      * 记录编辑页某一时刻的所有可编辑字段状态（排除背景色）
+     *
+     * v2026-07-22 重大改造：新增 [lines] 字段，保存完整的行级数据（包括空白子任务占位行）。
+     * 原实现只通过 [subTasks] 字段重建行级数据，但 [subTasks] 不包含空白子任务行
+     * （空白行不算"有效子任务"），导致撤销时丢失空白子任务行占位，用户需多按 1 次撤销。
+     *
+     * 重建策略（v2026-07-22）：
+     * 1. 优先用 [lines] 字段直接恢复（包含所有行，包括空白占位行）
+     * 2. 兼容老快照（无 [lines] 字段）：fallback 到 [subTasks] 重建（可能丢失空白行）
      */
     data class EditSnapshot(
         // 文本内容
@@ -217,6 +228,10 @@ class TodoEditViewModel @Inject constructor(
         val contentFormat: String,
         val subTasks: List<SubTask>,
         val contentBlocks: List<ContentBlock>,
+
+        // v2026-07-22 新增：完整的行级数据（包含空白子任务占位行）
+        // 用于撤销/恢复时精确重建 _todoLines，保留行结构和空白占位行
+        val lines: List<TodoLine> = emptyList(),
 
         // 单值元数据
         val startDate: Long?,
@@ -455,6 +470,12 @@ class TodoEditViewModel @Inject constructor(
             contentFormat = _contentFormat.value,
             subTasks = _subTasks.value,
             contentBlocks = _currentContentBlocks.value,
+            // v2026-07-22 bug 修复：深拷贝 _todoLines.value，确保快照独立于外部状态，
+            // 防止后续修改 _todoLines 时影响已推入的快照。
+            // 注：TodoLine 是 data class，.map { it.copy() } 实现浅深拷贝（List 字段如
+            // imagePaths/voiceAttachments 是新引用，但内部元素仍是同一对象）。
+            // 对当前场景足够（这些 List 在 setTodoLines 中是整体替换的）。
+            lines = _todoLines.value.map { it.copy() },
             startDate = _startDate.value,
             dueDate = _dueDate.value,
             geofenceLat = _geofenceLat.value,
@@ -487,27 +508,65 @@ class TodoEditViewModel @Inject constructor(
 
     /** 带防抖的快照推入（用于文本编辑） */
     fun pushSnapshotDebounced() {
-        if (isDebouncing) return  // 冷却期内，不推入
-        if (_isRestoring.value) return  // 恢复中，不推入
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[pushSnapshotDebounced] 入口: isDebouncing=$isDebouncing, " +
+            "isRestoring=${_isRestoring.value}"
+        )
+        if (isDebouncing) {
+            android.util.Log.w("UndoRedoTrace", "[pushSnapshotDebounced] ⏭ 跳过：冷却期内")
+            return
+        }
+        if (_isRestoring.value) {
+            android.util.Log.w("UndoRedoTrace", "[pushSnapshotDebounced] ⛔ 跳过：恢复快照中")
+            return
+        }
         isDebouncing = true
         pushSnapshot()  // 立即推入当前快照
         snapshotDebounceJob?.cancel()
         snapshotDebounceJob = viewModelScope.launch {
             delay(500)
             isDebouncing = false  // 冷却期结束
+            android.util.Log.w("UndoRedoTrace", "[pushSnapshotDebounced] 冷却期结束")
         }
     }
 
     /** 即时推入当前快照（用于元数据变更） */
     fun pushSnapshot() {
-        if (_isRestoring.value) return  // 恢复中，不推入
-        undoRedoStack.push(currentSnapshot)
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[pushSnapshot] 入口: isRestoring=${_isRestoring.value}, " +
+            "stackBefore: undo=${undoRedoStack.canUndo}, redo=${undoRedoStack.canRedo}"
+        )
+        if (_isRestoring.value) {
+            android.util.Log.w("UndoRedoTrace", "[pushSnapshot] ⛔ 跳过：恢复快照中")
+            return
+        }
+        val beforeUndo = undoRedoStack.canUndo
+        val snapshotToPush = currentSnapshot
+        undoRedoStack.push(snapshotToPush)
         _canUndo.value = undoRedoStack.canUndo
         _canRedo.value = undoRedoStack.canRedo
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[pushSnapshot] ✅ 已推入: before undo=$beforeUndo, " +
+            "after undo=${undoRedoStack.canUndo}, redo=${undoRedoStack.canRedo}, " +
+            "snapshotTitle='${snapshotToPush.title}', " +
+            "subTasks=${snapshotToPush.subTasks.size}, " +
+            "lines.size=${snapshotToPush.lines.size}, " +
+            "lines.texts=${snapshotToPush.lines.map { it.text }}"
+        )
     }
 
     /** 从快照恢复编辑状态，将所有字段值写回 StateFlow */
     private fun restoreFromSnapshot(snapshot: EditSnapshot) {
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[restoreFromSnapshot] 入口: snapshot.title='${snapshot.title}', " +
+            "subTasks=${snapshot.subTasks.map { it.title }}, " +
+            "todoLinesBefore.size=${_todoLines.value.size}, " +
+            "todoLinesBefore.texts=${_todoLines.value.map { it.text }}"
+        )
         _title.value = snapshot.title
         _content.value = snapshot.content
         _contentFormat.value = snapshot.contentFormat
@@ -531,30 +590,185 @@ class TodoEditViewModel @Inject constructor(
         _groupRepeatTypes.value = snapshot.groupRepeatTypes
         _groupRelations.value = snapshot.groupRelations
 
-        // 通知 UI 层重建 todoLines
+        // v2026-07-22 撤销/恢复 bug 修复：
+        // 原实现只通过 _restoreEvent 通知 UI 层重建 todoLines，但 LaunchedEffect 异步触发
+        // 与 _isRestoring 同步清除存在时序错位，导致恢复后误推入新快照。
+        // 现直接在 restoreFromSnapshot 中重建 _todoLines，UI 层 collectAsState 自动收到新值，
+        // 彻底根除时序问题。
+        _todoLines.value = rebuildTodoLinesFromSnapshot(snapshot)
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[restoreFromSnapshot] _todoLines 已更新: size=${_todoLines.value.size}, " +
+            "texts=${_todoLines.value.map { it.text }}"
+        )
+
+        // 通知 UI 层本次恢复已完成（保留供 UI 层做行级附件重建等副作用）
         _restoreEvent.value = snapshot
     }
 
-    /** 撤销上一次操作 */
-    fun undo() {
-        val current = currentSnapshot
-        val previous = undoRedoStack.undo(current) ?: return
-        _isRestoring.value = true
-        restoreFromSnapshot(previous)
-        _isRestoring.value = false
-        _canUndo.value = undoRedoStack.canUndo
-        _canRedo.value = undoRedoStack.canRedo
+    /**
+     * 从 EditSnapshot 重建 todoLines（v2026-07-22 新增）
+     *
+     * undo/redo 时由 [restoreFromSnapshot] 调用，同步更新 _todoLines.value。
+     *
+     * v2026-07-22 重大改造：优先用 [EditSnapshot.lines] 字段直接恢复
+     * （包含所有行，包括空白子任务占位行），解决"撤销时丢失空白子待办行"bug。
+     *
+     * 重建规则（按优先级）：
+     * 1. 若 snapshot.lines 非空（v2026-07-22 后新快照）：直接深拷贝返回
+     * 2. 否则（兼容老快照）fallback 到"title + subTasks"重建（可能丢失空白行）
+     *
+     * @param snapshot 完整快照
+     * @return 重建后的 todoLines
+     */
+    private fun rebuildTodoLinesFromSnapshot(snapshot: EditSnapshot): List<TodoLine> {
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[rebuildTodoLinesFromSnapshot] 入口: " +
+            "snapshot.title='${snapshot.title}', " +
+            "snapshot.lines.size=${snapshot.lines.size}, " +
+            "snapshot.lines.texts=${snapshot.lines.map { it.text }}, " +
+            "snapshot.subTasks.size=${snapshot.subTasks.size}, " +
+            "snapshot.subTasks.titles=${snapshot.subTasks.map { it.title }}"
+        )
+        // v2026-07-22 新增：优先用 lines 字段恢复（保留空白子任务占位行）
+        if (snapshot.lines.isNotEmpty()) {
+            val restoredLines = snapshot.lines.map { it.copy() }
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[rebuildTodoLinesFromSnapshot] ✅ 优先用 snapshot.lines 恢复: " +
+                "size=${restoredLines.size}, " +
+                "texts=${restoredLines.map { it.text }}, " +
+                "title='${snapshot.title}', " +
+                "snapshot.lines.size=${snapshot.lines.size}"
+            )
+            // 恢复行级附件
+            val lineSnapshots = LineSnapshotUtils.deserialize(snapshot.lineAttachmentsSnapshot)
+            if (lineSnapshots != null) {
+                return LineSnapshotUtils.restoreAttachmentsToLines(restoredLines, lineSnapshots)
+            }
+            return restoredLines
+        }
+
+        // 兼容老快照：fallback 到"title + subTasks"重建
+        val mainGroupId = snapshot.groupPriorities.keys.firstOrNull()
+            ?: snapshot.groupReminders.keys.firstOrNull()
+            ?: snapshot.groupRepeatTypes.keys.firstOrNull()
+            ?: 0
+
+        val titleLine = TodoLine(
+            text = snapshot.title,
+            isChecked = false,
+            isSubTask = false,
+            subTaskId = 0L,
+            groupId = mainGroupId,
+            order = 0
+        )
+        val subTaskLines = snapshot.subTasks.mapIndexed { index, subTask ->
+            TodoLine(
+                text = subTask.title,
+                isChecked = subTask.isCompleted,
+                isSubTask = true,
+                subTaskId = subTask.id,
+                groupId = mainGroupId,
+                order = index + 1
+            )
+        }
+        var restoredLines = listOf(titleLine) + subTaskLines
+
+        // 恢复行级附件（图片、语音）
+        val lineSnapshots = LineSnapshotUtils.deserialize(snapshot.lineAttachmentsSnapshot)
+        if (lineSnapshots != null) {
+            restoredLines = LineSnapshotUtils.restoreAttachmentsToLines(restoredLines, lineSnapshots)
+        }
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[rebuildTodoLinesFromSnapshot] ⚠️ 老快照 fallback：size=${restoredLines.size}, " +
+            "texts=${restoredLines.map { it.text }}, " +
+            "title='${snapshot.title}', " +
+            "snapshot.subTasks.size=${snapshot.subTasks.size}, " +
+            "snapshot.subTasks.titles=${snapshot.subTasks.map { it.title }}, " +
+            "mainGroupId=$mainGroupId, " +
+            "⚠️ 注意：snapshot.subTasks 不包含空白子任务行，" +
+            "若用户撤销时正在编辑空白子待办行，重建后会丢失占位行"
+        )
+        return restoredLines
     }
 
-    /** 恢复上一次撤销的操作 */
-    fun redo() {
+    /**
+     * 撤销上一次操作
+     *
+     * v2026-07-22 关键修复：原 bug 是 _isRestoring 在 restoreFromSnapshot() 同步完成后立即置回 false，
+     * 但 UI 层 LaunchedEffect(restoreEvent) 是异步触发的，等它真正跑起来重建 todoLines 时，
+     * 触发的 LaunchedEffect(todoLines) 已经读到 isRestoring=false → 错误推入新快照并清空 redoStack。
+     *
+     * 现修复：restoreFromSnapshot 内部已直接同步更新 _todoLines.value，
+     * UI 层 collectAsState 立即收到新值，无需经过 LaunchedEffect 副作用块，
+     * 从根本上消除时序错位。_isRestoring 仍保留作为外部 API 兼容性，但不再起关键作用。
+     */
+    fun undo() {
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[undo] 入口: isRestoring=${_isRestoring.value}, " +
+            "canUndo=${undoRedoStack.canUndo}, canRedo=${undoRedoStack.canRedo}"
+        )
         val current = currentSnapshot
-        val next = undoRedoStack.redo(current) ?: return
+        val previous = undoRedoStack.undo(current) ?: run {
+            android.util.Log.w("UndoRedoTrace", "[undo] ⛔ undoStack 为空，无法撤销")
+            return
+        }
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[undo] 准备恢复: current.title='${current.title}' → previous.title='${previous.title}', " +
+            "current.subTasks=${current.subTasks.size} → previous.subTasks=${previous.subTasks.size}"
+        )
         _isRestoring.value = true
-        restoreFromSnapshot(next)
+        android.util.Log.w("UndoRedoTrace", "[undo] _isRestoring = true")
+        restoreFromSnapshot(previous)
         _isRestoring.value = false
+        android.util.Log.w("UndoRedoTrace", "[undo] _isRestoring = false")
         _canUndo.value = undoRedoStack.canUndo
         _canRedo.value = undoRedoStack.canRedo
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[undo] ✅ 完成: canUndo=${_canUndo.value}, canRedo=${_canRedo.value}, " +
+            "todoLinesAfter.texts=${_todoLines.value.map { it.text }}"
+        )
+    }
+
+    /**
+     * 恢复上一次撤销的操作
+     *
+     * 与 [undo] 同样原理：[restoreFromSnapshot] 内部已直接同步更新 _todoLines.value。
+     */
+    fun redo() {
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[redo] 入口: isRestoring=${_isRestoring.value}, " +
+            "canUndo=${undoRedoStack.canUndo}, canRedo=${undoRedoStack.canRedo}"
+        )
+        val current = currentSnapshot
+        val next = undoRedoStack.redo(current) ?: run {
+            android.util.Log.w("UndoRedoTrace", "[redo] ⛔ redoStack 为空，无法恢复")
+            return
+        }
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[redo] 准备恢复: current.title='${current.title}' → next.title='${next.title}', " +
+            "current.subTasks=${current.subTasks.size} → next.subTasks=${next.subTasks.size}"
+        )
+        _isRestoring.value = true
+        android.util.Log.w("UndoRedoTrace", "[redo] _isRestoring = true")
+        restoreFromSnapshot(next)
+        _isRestoring.value = false
+        android.util.Log.w("UndoRedoTrace", "[redo] _isRestoring = false")
+        _canUndo.value = undoRedoStack.canUndo
+        _canRedo.value = undoRedoStack.canRedo
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[redo] ✅ 完成: canUndo=${_canUndo.value}, canRedo=${_canRedo.value}, " +
+            "todoLinesAfter.texts=${_todoLines.value.map { it.text }}"
+        )
     }
 
     /** 各分组的关联映射（key=groupId, value=该分组的关联列表） */
@@ -610,6 +824,48 @@ class TodoEditViewModel @Inject constructor(
     private val _isRelationsLoaded = MutableStateFlow(false)
     val isRelationsLoaded: StateFlow<Boolean> = _isRelationsLoaded.asStateFlow()
 
+    // ==================== 行级数据（todoLines）迁入 ViewModel ====================
+    // v2026-07-22 撤销/恢复功能 bug 修复：
+    // 原 todoLines 是 UI 层本地状态，文本编辑/勾选切换等操作通过
+    // LaunchedEffect(todoLines) 副作用块把变化推入 ViewModel。
+    // 该副作用是异步触发的，与 undo()/redo() 中同步设置/清空 _isRestoring
+    // 存在时序错位，导致恢复快照后误推入新快照并清空 redoStack，使恢复按钮变灰。
+    //
+    // 现将 todoLines 迁入 ViewModel 的 StateFlow，所有变更通过 [setTodoLines] 同步写入，
+    // undo()/redo() 直接恢复 _todoLines.value，UI 层只需 collectAsState 即可。
+    // 这样彻底根除 LaunchedEffect 时序陷阱，是撤销/恢复功能正常工作的前提。
+
+    /**
+     * 复选框编辑器的行数据列表（v2026-07-22 从 UI 层迁入 ViewModel）
+     *
+     * - 数据源唯一：所有 todoLines 修改必须通过 [setTodoLines] 等命令式 API
+     * - undo/redo 直接写回：undo/redo 完成后 _todoLines 自动反映新状态
+     * - UI 层读取：val todoLines by viewModel.todoLines.collectAsState()
+     */
+    private val _todoLines = MutableStateFlow<List<TodoLine>>(listOf(TodoLine()))
+    val todoLines: StateFlow<List<TodoLine>> = _todoLines.asStateFlow()
+
+    /**
+     * 当前聚焦行索引（v2026-07-22 从 UI 层迁入 ViewModel）
+     *
+     * 行级操作 API（[addImageToFocusedLine] / [addVoiceToFocusedLine]）依赖此状态。
+     * BasicTextField 的焦点变化通过 [setFocusedLineIndex] 同步到 ViewModel。
+     */
+    private val _focusedLineIndex = MutableStateFlow(0)
+    val focusedLineIndex: StateFlow<Int> = _focusedLineIndex.asStateFlow()
+
+    /**
+     * 行级数据是否已初始化（v2026-07-22 新增）
+     *
+     * 用于控制 [setTodoLines] 是否触发推快照：
+     * - false（默认）：首次初始化阶段，setTodoLines 不推快照（避免初始化数据污染撤销栈）
+     * - true：初始化完成后，setTodoLines 正常推快照
+     *
+     * 由 UI 层在 todoLines 首次构造完成后调用 [markTodoLinesInitialized] 切换为 true。
+     * 切换 todo 时由 [resetForNewTodo] 重置为 false。
+     */
+    private val _hasInitializedLines = MutableStateFlow(false)
+
     private var existingTodo: TodoItem? = null
 
     fun setTitle(title: String) {
@@ -626,13 +882,361 @@ class TodoEditViewModel @Inject constructor(
         _content.value = content
     }
 
+    // ==================== 行级数据命令式 API（v2026-07-22 todoLines 迁入 ViewModel）====================
+
+    /**
+     * 设置 todoLines 的整体替换（v2026-07-22 新增）
+     *
+     * 这是 todoLines 的**唯一**写入入口。UI 层的 CheckboxEditText.onLinesChange 回调
+     * 只需调用本方法，ViewModel 内部完成：
+     * 1. 同步更新 _todoLines.value
+     * 2. 推入快照（首次初始化阶段不推，详见 [_hasInitializedLines]）
+     * 3. 同步结构化状态到 _content / _subTasks / _contentBlocks / _lineAttachmentsSnapshot
+     * 4. 触发各分组的 checkAndResetGroupSavedState（"已保存"按钮变"未保存"）
+     *
+     * @param newLines 新的 todoLines 列表
+     */
+    /**
+     * 推入快照（v2026-07-22 埋点版 + 修复版）
+     *
+     * **v2026-07-22 bug 修复**：
+     *
+     * 原实现把 push 时机放在"更新 _todoLines 之后"，导致 push 推入的是"操作后"的状态。
+     * 撤销时弹出栈顶 = currentSnapshot，导致撤销无变化（用户报告的 bug）。
+     *
+     * 现修复为：
+     * 1. **push 时机改为"操作前"**：先推入 currentSnapshot（此时还是旧状态），再更新 _todoLines
+     * 2. **加变化检查**：如果 newLines == _todoLines.value（用户没改），直接 return，不推空快照
+     * 3. **deferred 推快照**：推入时机提前到 syncStructuredStateFromTodoLines 之前，确保 pushSnapshot 拿到的是"操作前"currentSnapshot
+     *
+     * 语义对照：
+     * - 修复前：undoStack 保存"操作后"状态，撤销 = 弹出"操作后"状态 = 无变化
+     * - 修复后：undoStack 保存"操作前"状态，撤销 = 弹出"操作前"状态 = 真正回到上一状态
+     *
+     * 调试时在 Logcat 用 tag "UndoRedoTrace" 过滤，可看到完整的推快照链。
+     * 输出字段：isDebouncing、_isRestoring、_hasInitializedLines、undoStack.size、redoStack.size
+     */
+    fun setTodoLines(newLines: List<TodoLine>) {
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[setTodoLines] 入口: isRestoring=${_isRestoring.value}, " +
+            "isDebouncing=$isDebouncing, hasInitializedLines=${_hasInitializedLines.value}, " +
+            "oldLines.size=${_todoLines.value.size}, newLines.size=${newLines.size}, " +
+            "newLines.texts=${newLines.map { it.text }}"
+        )
+        if (_isRestoring.value) {
+            android.util.Log.w("UndoRedoTrace", "[setTodoLines] ⛔ 跳过：正在恢复快照中")
+            return
+        }
+        // v2026-07-22 bug 修复：加变化检查，避免无操作触发推入
+        if (newLines == _todoLines.value) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setTodoLines] ⏭ 跳过：newLines 与 _todoLines.value 相同（无实际变化）"
+            )
+            return
+        }
+        // v2026-07-22 bug 修复：push 时机改为"操作前"——先推入 currentSnapshot（此时还是旧状态），再更新 _todoLines
+        if (_hasInitializedLines.value) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setTodoLines] → 触发 pushSnapshot（操作前）: " +
+                "currentStack: undo=${undoRedoStack.canUndo}, redo=${undoRedoStack.canRedo}, " +
+                "beforeSnapshot.title='${currentSnapshot.title}'"
+            )
+            pushSnapshot()
+        } else {
+            android.util.Log.w("UndoRedoTrace", "[setTodoLines] ⏭ 跳过推快照：hasInitializedLines=false")
+        }
+        _todoLines.value = newLines
+        // 同步结构化状态（content / subTasks / contentBlocks / lineAttachmentsSnapshot）
+        // 注：放在 push 之后，确保 currentSnapshot 在 push 时拿到的还是"操作前"状态
+        syncStructuredStateFromTodoLines(newLines)
+        // 触发各分组的保存状态重置检查
+        // v2026-07-22 改造：checkAndResetGroupSavedState 内部读 _todoLines.value
+        newLines.map { it.groupId }.distinct().forEach { groupId ->
+            checkAndResetGroupSavedState(groupId)
+        }
+    }
+
+    /**
+     * 内部方法：从 todoLines 同步结构化状态到 _content / _subTasks / _contentBlocks / _lineAttachmentsSnapshot / _imagePaths / _voiceNotePath
+     *
+     * 与 UI 层 LaunchedEffect(todoLines) 中的原同步逻辑保持一致，
+     * 但改为在 ViewModel 内部同步执行，避免 LaunchedEffect 时序问题。
+     *
+     * 注意：此方法**不**推快照，由 [setTodoLines] 统一处理推快照时机。
+     */
+    private fun syncStructuredStateFromTodoLines(lines: List<TodoLine>) {
+        // 1. 同步 plainText → _content
+        val plainText = lines
+            .filter { it.text.isNotBlank() || lines.size == 1 }
+            .joinToString("\n") { it.toPlainText() }
+        _content.value = plainText
+
+        // 2. 同步标题 → _title（首行文本）
+        val firstLineText = lines.firstOrNull()?.text ?: ""
+        _title.value = firstLineText
+
+        // 3. 同步子任务 → _subTasks
+        // v2026-07-22 bug 修复：让 _subTasks 包含所有子任务行（含空白占位行），
+        // 作为 fallback 重建路径的补充，确保即使 snapshot.lines 丢失，
+        // rebuildTodoLinesFromSnapshot 走 subTasks fallback 也能恢复空白子待办行。
+        // 注：saveSubTasks 中会过滤掉空白行，避免污染数据库。
+        val newSubTaskList = if (firstLineText.isNotBlank()) {
+            val currentSubTaskLines = lines.filter { it.isSubTask }
+            val currentTodoId = existingTodo?.id ?: 0L
+            currentSubTaskLines.map { line ->
+                SubTask(
+                    id = if (line.subTaskId > 0L) line.subTaskId else 0L,
+                    todoId = currentTodoId,
+                    title = line.text.trim(),
+                    isCompleted = line.isChecked,
+                    order = line.order
+                )
+            }
+        } else {
+            emptyList()
+        }
+        _subTasks.value = newSubTaskList
+
+        // 4. 同步行级附件快照 → _lineAttachmentsSnapshot
+        val snapshots = LineSnapshotUtils.fromTodoLines(lines)
+        val currentTodoIdForSnapshot = existingTodo?.id ?: 0L
+        val snapshotJson = LineSnapshotUtils.serialize(
+            snapshots = snapshots,
+            originalContent = if (currentTodoIdForSnapshot > 0) _content.value else plainText
+        )
+        _lineAttachmentsSnapshot.value = snapshotJson.ifBlank { null }
+
+        // 5. 同步全局图片路径 → _imagePaths（从所有行的 imagePaths 聚合）
+        val allImagePaths = lines.flatMap { it.imagePaths }.distinct()
+        _imagePaths.value = allImagePaths
+
+        // 6. 同步全局语音备注 → _voiceNotePath / _voiceDuration（取第一个非空语音）
+        val firstVoice = lines.flatMap { it.voiceAttachments }.distinct().firstOrNull()
+        _voiceNotePath.value = firstVoice?.path
+        _voiceDuration.value = firstVoice?.duration
+    }
+
+    /**
+     * 设置当前聚焦行索引（v2026-07-22 新增）
+     *
+     * UI 层 BasicTextField 焦点变化时调用，行级操作 API 依赖此状态。
+     *
+     * @param index 新的聚焦行索引（clamp 到合法范围）
+     */
+    fun setFocusedLineIndex(index: Int) {
+        val clamped = index.coerceAtLeast(0)
+        _focusedLineIndex.value = clamped
+    }
+
+    /**
+     * 标记 todoLines 首次初始化已完成（v2026-07-22 新增）
+     *
+     * UI 层在 todoLines 首次构造（来自 loadTodo 或新建）完成后调用，
+     * 之后 [setTodoLines] 才会触发推快照。
+     *
+     * 避免：loadTodo 后第一次 setTodoLines 误把"从 DB 加载的初始数据"作为新快照推入，
+     * 进而把用户最初的初始状态错认为"可被撤销的"历史记录。
+     */
+    fun markTodoLinesInitialized() {
+        _hasInitializedLines.value = true
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[markTodoLinesInitialized] _hasInitializedLines = true (从此刻起，setTodoLines 才会推快照)"
+        )
+    }
+
+    /**
+     * 重置 todoLines 初始化标志（v2026-07-22 新增）
+     *
+     * 切换 todo（loadTodo 重新调用）或清空编辑页时调用，
+     * 配合 [initializeTodoLines] 使用。
+     */
+    private fun resetTodoLinesInitialized() {
+        _hasInitializedLines.value = false
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[resetTodoLinesInitialized] _hasInitializedLines = false"
+        )
+    }
+
+    /**
+     * 初始化 todoLines（v2026-07-22 新增）
+     *
+     * 由 UI 层在 loadTodo 完成后调用，构造初始 todoLines：
+     * - 首行：父待办行（标题）
+     * - 后续行：子任务行
+     * - 行级附件：从 _lineAttachmentsSnapshot 恢复
+     *
+     * **不会**推快照，因为调用前应先 [resetTodoLinesInitialized] 把 _hasInitializedLines=false。
+     * 调用完成后应 [markTodoLinesInitialized] 切换标志。
+     *
+     * @param initialLines 构造好的初始 todoLines
+     */
+    fun initializeTodoLines(initialLines: List<TodoLine>) {
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[initializeTodoLines] 入口: size=${initialLines.size}, " +
+            "texts=${initialLines.map { it.text }}, " +
+            "hasInitializedLines_before=${_hasInitializedLines.value}"
+        )
+        resetTodoLinesInitialized()
+        _todoLines.value = initialLines
+        // 同步结构化状态（不推快照）
+        syncStructuredStateFromTodoLines(initialLines)
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[initializeTodoLines] 完成: _todoLines.size=${_todoLines.value.size}, " +
+            "texts=${_todoLines.value.map { it.text }}, " +
+            "_title='${_title.value}'"
+        )
+    }
+
+    /**
+     * 向当前聚焦行添加图片附件（v2026-07-22 新增）
+     *
+     * 替代原 UI 层 addImageToFocusedLine 内部直接 todoLines = ... 的写法。
+     * 内部会触发快照推入。
+     */
+    fun addImageToFocusedLine(imagePath: String) {
+        val current = _todoLines.value
+        val idx = _focusedLineIndex.value
+        if (idx !in current.indices) return
+        val newList = current.toMutableList()
+        val oldLine = newList[idx]
+        newList[idx] = oldLine.copy(imagePaths = oldLine.imagePaths + imagePath)
+        setTodoLines(newList)
+    }
+
+    /**
+     * 向当前聚焦行添加语音附件（v2026-07-22 新增）
+     *
+     * 替代原 UI 层 addVoiceToFocusedLine 内部直接 todoLines = ... 的写法。
+     */
+    fun addVoiceToFocusedLine(voicePath: String, duration: Int?) {
+        val current = _todoLines.value
+        val idx = _focusedLineIndex.value
+        if (idx !in current.indices) return
+        val newList = current.toMutableList()
+        val oldLine = newList[idx]
+        val newAttachment = com.corgimemo.app.ui.model.VoiceAttachment(
+            path = voicePath,
+            duration = duration
+        )
+        newList[idx] = oldLine.copy(voiceAttachments = oldLine.voiceAttachments + newAttachment)
+        setTodoLines(newList)
+    }
+
+    /**
+     * 在指定行下方创建新待办容器（newGroupId）（v2026-07-22 新增）
+     *
+     * 复用于两个入口：
+     * 1. 用户在文本编辑器中输入 "/" 触发 onNewGroupRequested
+     * 2. 用户点击底部工具栏的"/"图标按钮触发 onNewTodoClick
+     */
+    fun createNewTodoAfterLine(lineIndex: Int) {
+        val current = _todoLines.value
+        val maxGroupId = current.maxOfOrNull { it.groupId } ?: 0
+        val newGroupId = maxGroupId + 1
+        val newList = current.toMutableList()
+        val safeIndex = if (lineIndex < 0) newList.size - 1 else lineIndex
+        val insertIndex = (safeIndex + 1).coerceAtMost(newList.size)
+        newList.add(insertIndex, TodoLine(groupId = newGroupId, order = insertIndex))
+        setTodoLines(newList)
+    }
+
+    /**
+     * 删除指定行（v2026-07-22 新增）
+     *
+     * 长按 TodoLine 弹出"删除行"菜单时调用。
+     */
+    fun deleteLine(lineIndex: Int) {
+        val current = _todoLines.value
+        if (lineIndex !in current.indices) return
+        val newList = current.toMutableList()
+        newList.removeAt(lineIndex)
+        setTodoLines(newList)
+    }
+
+    /**
+     * 合并指定行到下一行（v2026-07-22 新增）
+     *
+     * 长按 TodoLine 弹出"合并到下一行"菜单时调用。
+     */
+    fun mergeLineDown(lineIndex: Int) {
+        val current = _todoLines.value
+        if (lineIndex < 0 || lineIndex >= current.size - 1) return
+        val newList = current.toMutableList()
+        val currentLine = newList[lineIndex]
+        val nextLine = newList[lineIndex + 1]
+        val merged = currentLine.copy(
+            text = currentLine.text + nextLine.text,
+            imagePaths = currentLine.imagePaths + nextLine.imagePaths,
+            voiceAttachments = currentLine.voiceAttachments + nextLine.voiceAttachments
+        )
+        newList[lineIndex] = merged
+        newList.removeAt(lineIndex + 1)
+        setTodoLines(newList)
+    }
+
+    /**
+     * 应用跨行拖拽结果（v2026-07-22 新增）
+     *
+     * 用户在行内/跨行拖拽图片或语音附件结束时调用。
+     * 由 UI 层的 crossLineDragManager.applyDragResult() 产生结果后传入。
+     */
+    fun applyDragResult(newLines: List<TodoLine>) {
+        setTodoLines(newLines)
+    }
+
+    /**
+     * 从指定行删除指定图片（v2026-07-22 新增）
+     *
+     * CheckboxEditText 内部图片附件的"删除"按钮回调时调用。
+     * 注：物理文件删除由 UI 层负责（避免 ViewModel 涉及 IO 副作用）。
+     */
+    fun removeImageFromLine(lineIndex: Int, imagePath: String) {
+        val current = _todoLines.value
+        if (lineIndex !in current.indices) return
+        val newList = current.toMutableList()
+        val line = newList[lineIndex]
+        if (imagePath !in line.imagePaths) return
+        newList[lineIndex] = line.copy(imagePaths = line.imagePaths - imagePath)
+        setTodoLines(newList)
+    }
+
+    /**
+     * 从指定行删除指定语音附件（v2026-07-22 新增）
+     *
+     * CheckboxEditText 内部语音附件的"删除"按钮回调时调用。
+     */
+    fun removeVoiceFromLine(lineIndex: Int, voicePath: String) {
+        val current = _todoLines.value
+        if (lineIndex !in current.indices) return
+        val newList = current.toMutableList()
+        val line = newList[lineIndex]
+        val newVoices = line.voiceAttachments.filter { it.path != voicePath }
+        if (newVoices.size == line.voiceAttachments.size) return
+        newList[lineIndex] = line.copy(voiceAttachments = newVoices)
+        setTodoLines(newList)
+    }
+
     /**
      * 设置指定分组的分类 ID
      *
-     * @param groupId 分组 ID
-     * @param categoryId 分类 ID（0L = 未分类）
+     * v2026-07-22 bug 修复：加变化检查——新值与当前值相同时跳过 pushSnapshot，
+     * 避免 UI 层在一次操作中调用多个 setter 时推入重复快照（如 picker 联动）。
      */
     fun setGroupCategory(groupId: Int, categoryId: Long) {
+        if (_groupCategoryIds.value[groupId] == categoryId) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setGroupCategory] ⏭ 跳过：值未变化 groupId=$groupId, categoryId=$categoryId"
+            )
+            return
+        }
         pushSnapshot()
         _groupCategoryIds.value = _groupCategoryIds.value + (groupId to categoryId)
     }
@@ -640,19 +1244,40 @@ class TodoEditViewModel @Inject constructor(
     /**
      * 清除指定分组的分类（置为 0L 未分类）
      *
-     * @param groupId 分组 ID
+     * v2026-07-22 bug 修复：加变化检查。
      */
     fun clearGroupCategory(groupId: Int) {
+        if (_groupCategoryIds.value[groupId] == 0L) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[clearGroupCategory] ⏭ 跳过：已是未分类 groupId=$groupId"
+            )
+            return
+        }
         pushSnapshot()
         _groupCategoryIds.value = _groupCategoryIds.value + (groupId to 0L)
     }
 
     fun setPriority(priority: Int) {
+        if (_priority.value == priority) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setPriority] ⏭ 跳过：值未变化 priority=$priority"
+            )
+            return
+        }
         pushSnapshot()
         _priority.value = priority
     }
 
     fun setStartDate(startDate: Long?) {
+        if (_startDate.value == startDate) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setStartDate] ⏭ 跳过：值未变化 startDate=$startDate"
+            )
+            return
+        }
         pushSnapshot()
         _startDate.value = startDate
     }
@@ -661,9 +1286,18 @@ class TodoEditViewModel @Inject constructor(
      * 设置截止时间
      * 用户在时间选择器中确认后调用
      *
+     * v2026-07-22 bug 修复：加变化检查。
+     *
      * @param dueDate 截止时间（毫秒时间戳）
      */
     fun setDueDate(dueDate: Long?) {
+        if (_dueDate.value == dueDate) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setDueDate] ⏭ 跳过：值未变化 dueDate=$dueDate"
+            )
+            return
+        }
         pushSnapshot()
         _dueDate.value = dueDate
         // 注：旧实现里"联动设置 _reminderTime"逻辑已移除，reminderTime 由各分组独立管理
@@ -684,10 +1318,19 @@ class TodoEditViewModel @Inject constructor(
      *
      * 用户在时间选择器中确认后调用。
      *
+     * v2026-07-22 bug 修复：加变化检查。
+     *
      * @param groupId 分组 ID
      * @param time 提醒时间（毫秒时间戳）
      */
     fun setGroupReminder(groupId: Int, time: Long) {
+        if (_groupReminders.value[groupId] == time) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setGroupReminder] ⏭ 跳过：值未变化 groupId=$groupId, time=$time"
+            )
+            return
+        }
         pushSnapshot()
         _groupReminders.value = _groupReminders.value + (groupId to time)
     }
@@ -697,9 +1340,18 @@ class TodoEditViewModel @Inject constructor(
      *
      * 用户点击 × 按钮时调用。幂等：groupId 不存在时无副作用。
      *
+     * v2026-07-22 bug 修复：加变化检查。
+     *
      * @param groupId 分组 ID
      */
     fun clearGroupReminder(groupId: Int) {
+        if (_groupReminders.value[groupId] == null) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[clearGroupReminder] ⏭ 跳过：未设置提醒 groupId=$groupId"
+            )
+            return
+        }
         pushSnapshot()
         _groupReminders.value = _groupReminders.value - groupId
     }
@@ -717,10 +1369,19 @@ class TodoEditViewModel @Inject constructor(
     /**
      * 设置指定分组的重复类型
      *
+     * v2026-07-22 bug 修复：加变化检查。
+     *
      * @param groupId 分组 ID
      * @param type 重复类型（0=不重复, 1=每天, 2=每周, 3=每月, 4=周一至周五, 5=每年）
      */
     fun setGroupRepeatType(groupId: Int, type: Int) {
+        if (_groupRepeatTypes.value[groupId] == type) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setGroupRepeatType] ⏭ 跳过：值未变化 groupId=$groupId, type=$type"
+            )
+            return
+        }
         pushSnapshot()
         _groupRepeatTypes.value = _groupRepeatTypes.value + (groupId to type)
     }
@@ -737,36 +1398,155 @@ class TodoEditViewModel @Inject constructor(
 
     // 地理围栏相关方法
     fun setGeofenceLat(lat: Double?) {
+        if (_geofenceLat.value == lat) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setGeofenceLat] ⏭ 跳过：值未变化 lat=$lat"
+            )
+            return
+        }
         pushSnapshot()
         _geofenceLat.value = lat
     }
 
     fun setGeofenceLng(lng: Double?) {
+        if (_geofenceLng.value == lng) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setGeofenceLng] ⏭ 跳过：值未变化 lng=$lng"
+            )
+            return
+        }
         pushSnapshot()
         _geofenceLng.value = lng
     }
 
     fun setGeofenceRadius(radius: Float) {
+        if (_geofenceRadius.value == radius) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setGeofenceRadius] ⏭ 跳过：值未变化 radius=$radius"
+            )
+            return
+        }
         pushSnapshot()
         _geofenceRadius.value = radius
     }
 
     fun setGeofenceType(type: Int) {
+        if (_geofenceType.value == type) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setGeofenceType] ⏭ 跳过：值未变化 type=$type"
+            )
+            return
+        }
         pushSnapshot()
         _geofenceType.value = type
     }
 
     fun setGeofenceEnabled(enabled: Boolean) {
+        if (_geofenceEnabled.value == enabled) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setGeofenceEnabled] ⏭ 跳过：值未变化 enabled=$enabled"
+            )
+            return
+        }
         pushSnapshot()
         _geofenceEnabled.value = enabled
     }
 
     fun setGeofenceAddress(address: String?) {
+        if (_geofenceAddress.value == address) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setGeofenceAddress] ⏭ 跳过：值未变化 address=$address"
+            )
+            return
+        }
         pushSnapshot()
         _geofenceAddress.value = address
     }
 
     // 子任务相关方法
+
+    /**
+     * 批量设置分组的提醒 + 重复类型 + 截止时间（v2026-07-22 新增）
+     *
+     * 背景：UI 层 reminder picker 的 onConfirm 回调中原本连续调用
+     *   setGroupReminder(gid, time)
+     *   setGroupRepeatType(gid, repeatType)
+     *   setDueDate(dueDateMillis)
+     * 三个 setter，每个 setter 内部都会 pushSnapshot()。
+     * 即使加了变化检查，"reminder 时间"和"dueDate"在 picker 选完时几乎必然变化，
+     * 仍会推入 2 个"操作前"快照，导致用户撤销一次设置提醒需按 2 次撤销键。
+     *
+     * 本方法把上述 3 个 setter 的更新合并为**单个原子操作**：
+     * 1. 先计算"哪些字段会变化"
+     * 2. 若至少有一个字段变化 → 推入 1 个"操作前"快照（代表"批量操作前的完整状态"）
+     * 3. 再统一更新所有字段
+     * 4. 若所有字段都没变化 → 跳过整个操作
+     *
+     * 这样无论 picker 同时更新多少字段，undoStack 中只多 1 个快照。
+     *
+     * @param groupId 分组 ID
+     * @param reminderTime 提醒时间戳（null 表示清除提醒）
+     * @param repeatType 重复类型（0=不重复, 1=每天, …）
+     * @param dueDateMillis 截止日期（null 表示不设置截止）
+     */
+    fun setGroupReminderBatch(
+        groupId: Int,
+        reminderTime: Long?,
+        repeatType: Int,
+        dueDateMillis: Long?
+    ) {
+        val currentReminder = _groupReminders.value[groupId]
+        val currentRepeat = _groupRepeatTypes.value[groupId] ?: 0
+        val currentDue = _dueDate.value
+
+        // 计算"哪个字段会变"
+        val reminderChanged = (reminderTime != null) && (currentReminder != reminderTime)
+        val reminderCleared = (reminderTime == null) && (currentReminder != null)
+        val repeatChanged = (currentRepeat != repeatType)
+        val dueChanged = (currentDue != dueDateMillis)
+
+        val anyChanged = reminderChanged || reminderCleared || repeatChanged || dueChanged
+
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[setGroupReminderBatch] 入口: groupId=$groupId, " +
+            "reminderTime=$reminderTime, repeatType=$repeatType, dueDateMillis=$dueDateMillis, " +
+            "anyChanged=$anyChanged " +
+            "(reminderChanged=$reminderChanged, reminderCleared=$reminderCleared, " +
+            "repeatChanged=$repeatChanged, dueChanged=$dueChanged)"
+        )
+
+        if (!anyChanged) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setGroupReminderBatch] ⏭ 跳过：所有字段均未变化"
+            )
+            return
+        }
+
+        // 关键：先推入"批量操作前"的完整快照，1 次即可代表整个 picker 操作
+        pushSnapshot()
+
+        // 统一更新所有字段
+        if (reminderTime != null) {
+            _groupReminders.value = _groupReminders.value + (groupId to reminderTime)
+        } else {
+            _groupReminders.value = _groupReminders.value - groupId
+        }
+        _groupRepeatTypes.value = _groupRepeatTypes.value + (groupId to repeatType)
+        _dueDate.value = dueDateMillis
+
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[setGroupReminderBatch] ✅ 完成: 已更新 reminder / repeatType / dueDate"
+        )
+    }
 
     /**
      * 添加子任务
@@ -1425,10 +2205,19 @@ class TodoEditViewModel @Inject constructor(
     /**
      * 设置指定分组的优先级
      *
+     * v2026-07-22 bug 修复：加变化检查。
+     *
      * @param groupId 分组 ID
      * @param priority 优先级 (0=无, 1=低, 2=中, 3=高)
      */
     fun setGroupPriority(groupId: Int, priority: Int) {
+        if (_groupPriorities.value[groupId] == priority) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setGroupPriority] ⏭ 跳过：值未变化 groupId=$groupId, priority=$priority"
+            )
+            return
+        }
         pushSnapshot()
         _groupPriorities.value = _groupPriorities.value + (groupId to priority)
     }
@@ -1450,10 +2239,12 @@ class TodoEditViewModel @Inject constructor(
      * - 内容相同 → 不重置（如只是添加了新容器/新行）
      * - 内容不同 → 重置为未保存（用户编辑了该容器的内容）
      *
+     * v2026-07-22 改造：todoLines 已迁入 ViewModel，本方法内部直接读 _todoLines.value，
+     * 无需 UI 层传入 todoLines 参数。
+     *
      * @param groupId 要检查的分组 ID
-     * @param todoLines 当前所有 todoLines（用于提取该分组的文本和附件状态）
      */
-    fun checkAndResetGroupSavedState(groupId: Int, todoLines: List<com.corgimemo.app.ui.model.TodoLine>) {
+    fun checkAndResetGroupSavedState(groupId: Int) {
         val current = _groupSaveStates.value[groupId]
         if (current != null && current.isSaved) {
             // v2026-07-21：基线尚未建立（"loading" 占位）时跳过比较，
@@ -1461,7 +2252,7 @@ class TodoEditViewModel @Inject constructor(
             // UI 层会在 isRelationsLoaded=true 后调用 markGroupSaveStateBaseline 建立基线。
             if (current.editStateHash == "loading") return
             // 计算当前完整编辑状态指纹（覆盖文字/附件/提醒/分类/优先级/关联）
-            val currentHash = computeGroupEditStateHash(groupId, todoLines)
+            val currentHash = computeGroupEditStateHash(groupId, _todoLines.value)
             // 只有当任意元素真正发生变化时才重置
             if (current.editStateHash != currentHash) {
                 val newState = current.copy(isSaved = false)
@@ -1473,7 +2264,7 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
-     * 标记分组的保存状态基线（v2026-07-21 新增）
+     * 标记分组的保存状态基线（v2026-07-21 新增，v2026-07-22 改造）
      *
      * 在数据加载完成（todoLines 初始化 + 关联加载完成）后调用，
      * 用当前的完整编辑状态指纹覆盖 [GroupSaveState.editStateHash]，
@@ -1486,17 +2277,19 @@ class TodoEditViewModel @Inject constructor(
      * 4. UI 层观察到 isRelationsLoaded=true → 调用本方法建立基线
      * 5. 之后用户编辑 → checkAndResetGroupSavedState 正确比较 hash
      *
+     * v2026-07-22 改造：todoLines 已迁入 ViewModel，本方法直接读 _todoLines.value，
+     * 无需 UI 层传入 todoLines 参数，UI 层 LaunchedEffect 不再依赖 todoLines。
+     *
      * 如果当前 editStateHash 已是真实指纹（非 "loading"），则跳过更新，
      * 避免用户编辑后的实时变化被基线覆盖。
      *
      * @param groupId 分组 ID
-     * @param todoLines 当前所有 todoLines
      */
-    fun markGroupSaveStateBaseline(groupId: Int, todoLines: List<com.corgimemo.app.ui.model.TodoLine>) {
+    fun markGroupSaveStateBaseline(groupId: Int) {
         val current = _groupSaveStates.value[groupId] ?: return
         // 仅在 "loading" 占位阶段建立基线，避免覆盖已建立的真实指纹
         if (current.editStateHash != "loading") return
-        val currentHash = computeGroupEditStateHash(groupId, todoLines)
+        val currentHash = computeGroupEditStateHash(groupId, _todoLines.value)
         val newState = current.copy(editStateHash = currentHash)
         _groupSaveStates.value = _groupSaveStates.value + (groupId to newState)
         android.util.Log.w("TodoEditVM", "分组 $groupId 基线已建立: editStateHash 长度=${currentHash.length}")
@@ -1577,12 +2370,18 @@ class TodoEditViewModel @Inject constructor(
     private suspend fun saveSubTasks(todoId: Long) {
         val currentSubTasks = _subTasks.value
 
+        // v2026-07-22 bug 修复：过滤掉空白子任务行。
+        // 原因：syncStructuredStateFromTodoLines 现在让 _subTasks 包含所有子任务行
+        // （含空白占位行）作为 fallback 重建路径的补充。
+        // 但持久化到 DB 时不应包含空白行，否则会污染 sub_tasks 表。
+        val subTasksToSave = currentSubTasks.filter { it.title.isNotBlank() }
+
         if (existingTodo != null) {
             SubTaskManager.deleteAllSubTasks(context, todoId)
         }
 
-        if (currentSubTasks.isNotEmpty()) {
-            SubTaskManager.addSubTasks(context, todoId, currentSubTasks)
+        if (subTasksToSave.isNotEmpty()) {
+            SubTaskManager.addSubTasks(context, todoId, subTasksToSave)
         }
     }
 
@@ -1943,9 +2742,18 @@ class TodoEditViewModel @Inject constructor(
      * 更新待办项的 contentFormat 状态，
      * 在保存时将此 Markdown 文本持久化到数据库的 contentFormat 字段。
      *
+     * v2026-07-22 bug 修复：加变化检查。
+     *
      * @param markdown Markdown 格式的字符串（由 MarkdownParser.export() 生成）
      */
     fun setContentFormat(markdown: String) {
+        if (_contentFormat.value == markdown) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[setContentFormat] ⏭ 跳过：值未变化 length=${markdown.length}"
+            )
+            return
+        }
         pushSnapshot()
         _contentFormat.value = markdown
     }
@@ -2010,9 +2818,41 @@ class TodoEditViewModel @Inject constructor(
      * @param groupId 当前分组ID
      */
     fun addRelation(targetType: String, targetId: Long, groupId: Int) {
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[addRelation] 入口: targetType=$targetType, targetId=$targetId, groupId=$groupId, " +
+            "existingTodoId=${existingTodo?.id}, " +
+            "currentGroupRelations[groupId].size=${_groupRelations.value[groupId]?.size ?: 0}"
+        )
+        // v2026-07-22 bug 修复：主调用栈同步做变化检查 + pushSnapshot
+        // 原因：协程内 pushSnapshot 是异步的，与"操作前/操作后"语义不符；
+        // 主调用栈同步推入能保证 undoStack 拿到的是真正的"操作前"快照。
+        val currentList = _groupRelations.value[groupId] ?: emptyList()
+        val alreadyExists = currentList.any {
+            it.targetType == targetType && it.targetId == targetId
+        }
+        if (alreadyExists) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[addRelation] ⏭ 跳过：内存中已存在 targetType=$targetType, targetId=$targetId"
+            )
+            // 注：emit() 是 suspend 函数，不能在主调用栈调用。
+            // "已关联"提示由协程内 DB 返回 -1L 时统一 emit，避免重复代码。
+            return
+        }
+        // 操作前推入快照（即便协程内 todoId=0 失败，也只是多 1 个无视觉变化的快照，不影响正确性）
+        pushSnapshot()
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[addRelation] → 主调用栈已推入 1 个快照（操作前），即将进入协程"
+        )
         viewModelScope.launch {
             val todoId = existingTodo?.id ?: 0L
             if (todoId == 0L) {
+                android.util.Log.w(
+                    "UndoRedoTrace",
+                    "[addRelation] ⛔ 协程内 todoId=0，提示用户先保存"
+                )
                 _errorEvent.emit("请先保存待办再添加关联")
                 return@launch
             }
@@ -2024,12 +2864,21 @@ class TodoEditViewModel @Inject constructor(
                 targetId = targetId
             )
             val result = cardRelationRepository.addRelation(relation)
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[addRelation] DB addRelation 返回: result=$result"
+            )
             when (result) {
-                -1L -> _errorEvent.emit("该卡片已关联")
-                -2L -> _errorEvent.emit("每组最多关联 10 张卡片")
+                -1L -> {
+                    android.util.Log.w("UndoRedoTrace", "[addRelation] ⛔ 已关联")
+                    _errorEvent.emit("该卡片已关联")
+                }
+                -2L -> {
+                    android.util.Log.w("UndoRedoTrace", "[addRelation] ⛔ 达上限")
+                    _errorEvent.emit("每组最多关联 10 张卡片")
+                }
                 else -> {
                     if (result > 0) {
-                        val currentList = _groupRelations.value[groupId] ?: emptyList()
                         val updatedList = (currentList + relation.copy(id = result))
                             .distinctBy { "${it.targetType}_${it.targetId}" }
                         _groupRelations.value = _groupRelations.value + (groupId to updatedList)
@@ -2040,6 +2889,11 @@ class TodoEditViewModel @Inject constructor(
                         } else {
                             _relationTitles.value = _relationTitles.value + (result to "已删除")
                         }
+                        android.util.Log.w(
+                            "UndoRedoTrace",
+                            "[addRelation] ✅ 完成: 更新后 groupRelations[groupId].size=" +
+                            "${_groupRelations.value[groupId]?.size ?: 0}"
+                        )
                     }
                 }
             }
@@ -2063,6 +2917,33 @@ class TodoEditViewModel @Inject constructor(
      */
     fun addRelations(cards: List<Pair<String, Long>>, groupId: Int) {
         if (cards.isEmpty()) return
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[addRelations] 入口: cards.size=${cards.size}, groupId=$groupId, " +
+            "existingTodoId=${existingTodo?.id}, " +
+            "currentGroupRelations[groupId].size=${_groupRelations.value[groupId]?.size ?: 0}"
+        )
+        // v2026-07-22 bug 修复：主调用栈同步做变化检查 + pushSnapshot
+        // 即使后续协程内 todoId=0 失败 / 全部 -1 已关联，最多推 1 个空快照，不影响正确性
+        val existingList = _groupRelations.value[groupId] ?: emptyList()
+        val hasAnyNew = cards.any { (targetType, targetId) ->
+            existingList.none {
+                it.targetType == targetType && it.targetId == targetId
+            }
+        }
+        if (!hasAnyNew) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[addRelations] ⏭ 跳过：所有卡片都已关联"
+            )
+            return
+        }
+        // 操作前推入 1 个快照（批量只推 1 次，与 setGroupReminderBatch 一致）
+        pushSnapshot()
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[addRelations] → 主调用栈已推入 1 个快照（操作前），即将进入协程"
+        )
         viewModelScope.launch {
             val todoId = existingTodo?.id ?: 0L
             if (todoId == 0L) {
@@ -2115,6 +2996,12 @@ class TodoEditViewModel @Inject constructor(
                 if (newTitles.isNotEmpty()) {
                     _relationTitles.value = _relationTitles.value + newTitles
                 }
+                android.util.Log.w(
+                    "UndoRedoTrace",
+                    "[addRelations] ✅ 完成: addedCount=$addedCount, " +
+                    "更新后 groupRelations[groupId].size=" +
+                    "${_groupRelations.value[groupId]?.size ?: 0}"
+                )
             }
         }
     }
@@ -2128,11 +3015,36 @@ class TodoEditViewModel @Inject constructor(
      * @param groupId 关联所属的分组ID（用于定位 Map 中的列表）
      */
     fun deleteRelation(relationId: Long, groupId: Int) {
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[deleteRelation] 入口: relationId=$relationId, groupId=$groupId, " +
+            "currentGroupRelations[groupId].size=${_groupRelations.value[groupId]?.size ?: 0}"
+        )
+        // v2026-07-22 bug 修复：主调用栈同步做变化检查 + pushSnapshot
+        val currentList = _groupRelations.value[groupId] ?: emptyList()
+        val exists = currentList.any { it.id == relationId }
+        if (!exists) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[deleteRelation] ⏭ 跳过：关系不存在 relationId=$relationId"
+            )
+            return
+        }
+        // 操作前推入快照
+        pushSnapshot()
+        android.util.Log.w(
+            "UndoRedoTrace",
+            "[deleteRelation] → 主调用栈已推入 1 个快照（操作前），即将进入协程"
+        )
         viewModelScope.launch {
             cardRelationRepository.removeRelationById(relationId)
-            val currentList = _groupRelations.value[groupId] ?: emptyList()
             val updatedList = currentList.filter { it.id != relationId }
             _groupRelations.value = _groupRelations.value + (groupId to updatedList)
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[deleteRelation] ✅ 完成: 更新后 groupRelations[groupId].size=" +
+                "${_groupRelations.value[groupId]?.size ?: 0}"
+            )
         }
     }
 
