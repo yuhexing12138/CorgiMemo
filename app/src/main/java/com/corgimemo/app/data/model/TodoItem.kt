@@ -13,7 +13,12 @@ import androidx.room.PrimaryKey
         Index(value = ["priority", "startDate"]),
         Index(value = ["hasSubTasks"]),
         Index(value = ["dueDate", "status"]),
-        Index(value = ["isPinned"])
+        Index(value = ["isPinned"]),
+        // v2026-07-22 新增：title 索引
+        // 注：SQLite LIKE '%x%' 实际无法走 B-Tree 索引，但为后续 FTS5 切换铺垫
+        // 必须与 MIGRATION_44_TO_45 中创建的 index_todo_items_title 保持一致
+        // （参见 .trae/rules/entity与migration同步检查.md）
+        Index(value = ["title"])
     ]
 )
 data class TodoItem(

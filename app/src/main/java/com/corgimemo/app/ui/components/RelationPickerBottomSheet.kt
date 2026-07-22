@@ -195,7 +195,9 @@ fun RelationPickerBottomSheet(
                 )
             } else {
                 // 按 cardType 分组
-                val grouped = searchResults.groupBy { it.cardType }
+                // v2026-07-22 新增：take(50) 显示层兜底。搜索底层 (CardRelationRepository.searchCards)
+                // 不做 LIMIT，按用户意图"上限只限制显示不限制搜索"。
+                val grouped = searchResults.take(50).groupBy { it.cardType }
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()

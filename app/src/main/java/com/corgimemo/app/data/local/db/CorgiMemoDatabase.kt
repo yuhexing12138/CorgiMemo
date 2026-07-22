@@ -31,7 +31,7 @@ import com.corgimemo.app.data.model.CustomDateType
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
-    version = 44,
+    version = 45,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -99,7 +99,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1264,6 +1264,31 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                       AND r2.targetId = cr.sourceId
                 )
             """.trimIndent())
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 44 → 45（v2026-07-22 新增）
+     * 三表 title 字段加索引（为后续 FTS5 切换铺垫 + 加速 ORDER BY title）
+     *
+     * **依据 .trae/rules/entity与migration同步检查.md 规则**：
+     * - `Index(value = ["title"])` 必须与 Entity 注解保持一致
+     * - 已同步修改 TodoItem / Inspiration / SpecialDate 三个 Entity
+     *
+     * **关于 LIKE '%x%' 性能**：
+     * SQLite B-Tree 索引无法加速 LIKE '%x%'（前缀通配符），
+     * 本次性能提升主要来自 CardRelationRepository.searchCards 改用 SQL 层过滤
+     * + 三查询并发执行。title 索引仅为未来 FTS5 切换和 ORDER BY 加速铺垫。
+     *
+     * **幂等性**：
+     * - CREATE INDEX IF NOT EXISTS 重复运行安全
+     * - 从 v44 升级的旧设备会执行此 Migration；新建数据库会由 Room 自动建索引
+     */
+    internal val MIGRATION_44_TO_45 = object : Migration(44, 45) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_title ON todo_items(title)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_title ON inspirations(title)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_special_dates_title ON special_dates(title)")
         }
     }
     // companion object 闭合

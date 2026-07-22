@@ -18,7 +18,12 @@ import androidx.room.PrimaryKey
         // isArchived 索引：主页查询常态按 isArchived=0 过滤未归档日期
         // 注意：必须与 MIGRATION_33_34 中创建的 index_special_dates_isArchived 保持一致
         // （参见 .trae/rules/entity与migration同步检查.md）
-        Index(value = ["isArchived"])
+        Index(value = ["isArchived"]),
+        // v2026-07-22 新增：title 索引
+        // 注：SQLite LIKE '%x%' 实际无法走 B-Tree 索引，但为后续 FTS5 切换铺垫
+        // 必须与 MIGRATION_44_TO_45 中创建的 index_special_dates_title 保持一致
+        // （参见 .trae/rules/entity与migration同步检查.md）
+        Index(value = ["title"])
     ]
 )
 data class SpecialDate(

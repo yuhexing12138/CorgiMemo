@@ -131,6 +131,8 @@ import com.corgimemo.app.ui.components.PendingSectionHeader
 import com.corgimemo.app.ui.components.PinnedSectionHeader
 import com.corgimemo.app.ui.components.PriorityPickerSheet
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
+// v2026-07-22 新增：关联列表 BottomSheet
+import com.corgimemo.app.ui.components.RelationListBottomSheet
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -280,6 +282,21 @@ fun HomeScreen(
 
     /** 快速添加待办 BottomSheet 状态 */
     var showQuickAddSheet by remember { mutableStateOf(false) }
+
+    /**
+     * 关联列表 BottomSheet 状态（v2026-07-22 新增）
+     *
+     * - showRelationListSheet: true 时显示 BottomSheet
+     * - relationListSourceId: 当前展示的源 todo.id（null = 关闭中）
+     *
+     * 触发链路：
+     * 1. TodoListItem.onRelationCountClick → 设置 sourceId + show=true
+     * 2. RelationListBottomSheet 弹出 → 调 RelationListViewModel.loadRelations
+     * 3. 用户点 × 解绑 → onUnlinked() 回调 → viewModel.refreshRelationCountsOnDemand()
+     * 4. 用户关闭弹窗 → onDismiss() 回调 → show=false + sourceId=null
+     */
+    var showRelationListSheet by remember { mutableStateOf(false) }
+    var relationListSourceId by remember { mutableStateOf<Long?>(null) }
 
     /**
      * 排序弹窗显示状态（已提升至 ViewModel，供 MainScreen.dropdownContent 触发）
@@ -1072,6 +1089,13 @@ fun HomeScreen(
                                                 isDragging = isDragging,
                                                 isDragActive = dragActive,
                                                 isClickBlocked = isClickBlocked,
+                                                // v2026-07-22 新增：点击 🔗×N 徽章弹出关联列表 BottomSheet
+                                                // - 设置 sourceId + 打开弹窗
+                                                // - 关闭/解绑回调在外层统一处理
+                                                onRelationCountClick = {
+                                                    relationListSourceId = todo.id
+                                                    showRelationListSheet = true
+                                                },
                                                 // 统一 Snackbar 提示回调（替代 Toast）
                                                 onShowSnackbar = { msg ->
                                                     coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
@@ -1310,6 +1334,51 @@ fun HomeScreen(
                 onDismiss = { showQuickAddSheet = false }
             )
         }
+    }
+
+    /**
+     * 关联列表 BottomSheet（v2026-07-22 新增）
+     *
+     * 触发链路：
+     * - TodoListItem.onRelationCountClick → relationListSourceId = todo.id + show=true
+     * - 弹窗内点列表项 → onItemClick(cardType, cardId) 跳详情
+     * - 弹窗内点 × 解绑 → onUnlinked() → viewModel.refreshRelationCountsOnDemand()
+     * - 弹窗关闭 → onDismiss() → show=false + sourceId=null
+     *
+     * 只在 sourceId 非空时渲染（避免关闭后还残留弹窗实例）。
+     */
+    relationListSourceId?.let { sourceId ->
+        RelationListBottomSheet(
+            visible = showRelationListSheet,
+            sourceType = "todo",
+            sourceId = sourceId,
+            groupId = 0,
+            onItemClick = { cardType, cardId ->
+                // 关闭弹窗后跳转目标详情
+                showRelationListSheet = false
+                relationListSourceId = null
+                when (cardType) {
+                    "todo" -> navController.navigate(
+                        Screen.TodoEditWithId.withArgs(cardId.toString())
+                    )
+                    "inspiration" -> navController.navigate(
+                        Screen.InspirationViewWithId.createRoute(cardId)
+                    )
+                    "date" -> navController.navigate(
+                        Screen.SpecialDateDetailWithId.createRoute(cardId)
+                    )
+                }
+            },
+            onUnlinked = {
+                // 解除关联后重新查询首页 relationCountMap
+                // 列表内部已从 StateFlow 过滤该条，UI 立即消失
+                viewModel.refreshRelationCountsOnDemand()
+            },
+            onDismiss = {
+                showRelationListSheet = false
+                relationListSourceId = null
+            }
+        )
     }
 
     /** 排序弹窗 */

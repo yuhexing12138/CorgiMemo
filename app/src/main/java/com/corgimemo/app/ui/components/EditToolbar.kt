@@ -10,11 +10,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,7 +37,8 @@ import androidx.compose.ui.unit.sp
  * 可选按钮（仅在调用方传入对应回调时渲染）：
  * - 背景色按钮（Icons.Default.Palette）：传入 onBackgroundClick 时显示
  * - 关联按钮（@, Icons.Default.AlternateEmail）：传入 onMentionClick 时显示，触发卡片关联弹窗
- * - 位置按钮（#, Icons.Default.Tag）：传入 onLocationClick 时显示，触发位置提醒弹窗
+ * - 位置按钮（#, Icons.Default.LocationOn）：传入 onLocationClick 时显示，触发位置提醒弹窗
+ *   v2026-07-22 改动：图标从 Icons.Default.Tag 改为 Icons.Default.LocationOn，语义更清晰
  * - 分享按钮（Icons.Default.Share）：传入 onShareClick 时显示
  * - 删除按钮（Icons.Default.Delete）：传入 onDeleteClick 时显示
  *
@@ -110,11 +111,13 @@ fun EditToolbar(
                     )
                 }
                 /**
-                 * 位置按钮（#）：同上，调用方未传 onLocationClick 时不渲染。
+                 * 位置按钮（#, Icons.Default.LocationOn）：传入 onLocationClick 时显示，触发位置提醒弹窗
+                 *  v2026-07-22 改动：图标从 Icons.Default.Tag 改为 Icons.Default.LocationOn，
+                 *  语义更清晰（地图标记点 = 位置），与功能"设置位置提醒"对齐。
                  */
                 if (onLocationClick != null) {
                     ToolbarIconBtn(
-                        imageVector = Icons.Default.Tag,
+                        imageVector = Icons.Default.LocationOn,
                         contentDescription = "位置",
                         onClick = onLocationClick
                     )

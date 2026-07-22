@@ -436,9 +436,6 @@ fun TodoEditScreen(
         }
     }
 
-    /** #搜索关键词状态 */
-    var locationQuery by remember { mutableStateOf("") }
-
     /**
      * 🆕 收集 ViewModel 的关联操作错误事件，显示 Snackbar
      *
@@ -1077,8 +1074,12 @@ fun TodoEditScreen(
                     showRelationPicker = true
                 },
                 /**
-                 * #按钮点击回调：直接打开位置提醒弹窗。
-                 * locationQuery 同理保留上一次状态。
+                 * 位置按钮（底部工具栏）点击回调：直接打开位置提醒弹窗。
+                 *
+                 * v2026-07-22 改动：
+                 * - 入口从"输入 # 触发"迁移到"点击位置图标按钮"（更主动、可发现性更强）
+                 * - 不再需要 locationQuery 状态（弹窗打开时无需预填搜索词）
+                 * - 图标由 Icons.Default.Tag 改为 Icons.Default.LocationOn（语义更清晰）
                  */
                 onLocationClick = {
                     showLocationPopup = true
@@ -1277,6 +1278,14 @@ fun TodoEditScreen(
                         )
                     }
                 },
+                /**
+                 * 特殊字符回调：仅保留 @ 触发的关联选择功能。
+                 * 原 # 触发的位置提醒功能已移除（v2026-07-22），用户需通过底部工具栏的
+                 * "位置"按钮主动打开位置提醒弹窗，避免在输入文本时频繁弹窗打断思路。
+                 *
+                 * 注意：本调整仅针对待办编辑页，灵感编辑页（InspirationEditScreen）
+                 *   仍保留 # 触发位置提醒的行为，因其富文本编辑器交互习惯不同。
+                 */
                 onSpecialCharDetected = { type, query ->
                     when (type) {
                         "@" -> {
@@ -1287,14 +1296,7 @@ fun TodoEditScreen(
                                 showRelationPicker = true
                             }
                         }
-                        "#" -> {
-                            if (query != null) {
-                                if (!showLocationPopup) showLocationPopup = true
-                                locationQuery = query
-                            } else {
-                                showLocationPopup = false
-                            }
-                        }
+                        // "#" 分支已移除：原行为是输入 # 时弹位置提醒弹窗，现已迁移到 EditToolbar 按钮
                     }
                 },
                 onNewGroupRequested = { currentIndex, currentText ->
@@ -1489,7 +1491,7 @@ fun TodoEditScreen(
                     text = {
                         Column {
                             Text(
-                                text = "输入 # 后可搜索地点设置提醒",
+                                text = "开启后将在到达/离开指定位置时提醒此待办",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

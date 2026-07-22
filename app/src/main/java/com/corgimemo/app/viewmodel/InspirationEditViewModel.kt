@@ -849,6 +849,10 @@ class InspirationEditViewModel @Inject constructor(
             _relations.value.forEach { relation ->
                 cardRelationRepository.addRelation(relation.copy(sourceId = inspirationId))
             }
+            // v2026-07-22 新增：修复"新建模式提前 addRelation"导致的 sourceId=0 脏数据。
+            // 同步迁移 card_relations 表中所有 sourceType=inspiration AND sourceId=0 的占位关联，
+            // 以及对应的反向记录 (targetType=inspiration AND targetId=0)。
+            cardRelationRepository.fixupZeroSourceRelations("inspiration", inspirationId)
         }
 
         /** 保存成功后清除当前灵感的持久化 Undo 栈（按 inspirationId 隔离清除） */

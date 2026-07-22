@@ -368,6 +368,10 @@ class SpecialDateViewModel @Inject constructor(
                 _relations.value.forEach { relation ->
                     cardRelationRepository.addRelation(relation.copy(sourceId = newId))
                 }
+                // v2026-07-22 新增：修复"新建模式提前 addRelation"导致的 sourceId=0 脏数据。
+                // 同步迁移 card_relations 表中所有 sourceType=date AND sourceId=0 的占位关联，
+                // 以及对应的反向记录 (targetType=date AND targetId=0)。
+                cardRelationRepository.fixupZeroSourceRelations("date", newId)
             } else {
                 val existing = repository.getById(id) ?: return@launch
                 val updated = existing.copy(

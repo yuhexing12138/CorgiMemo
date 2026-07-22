@@ -162,4 +162,52 @@ interface CardRelationDao {
      */
     @Query("SELECT COUNT(*) FROM card_relations WHERE sourceType = :sourceType AND sourceId = :sourceId AND groupId = :groupId")
     suspend fun countBySource(sourceType: String, sourceId: Long, groupId: Int): Int
+
+    /**
+     * 把所有 sourceId=0 的"占位关联"批量改写为新建卡片的实际 ID（v2026-07-22 新增）
+     *
+     * **背景**：
+     * 新建模式下用户在卡片尚未入库时打开"关联选择器"添加关联，
+     * [com.corgimemo.app.data.repository.CardRelationRepository.addRelation] 会立即把
+     * sourceId=0 写入 card_relations 表。本方法在新建保存成功后被调用，
+     * 把所有"卡片 0 发起"的脏数据迁移到真实 ID。
+     *
+     * **触发方**：
+     * - [com.corgimemo.app.viewmodel.InspirationEditViewModel.performSave]
+     * - [com.corgimemo.app.viewmodel.SpecialDateViewModel.saveDate]
+     * - [com.corgimemo.app.viewmodel.TodoEditViewModel.performSave]
+     *
+     * **幂等性**：
+     * - 重复运行安全（只命中 sourceId=0 的行，运行后无 sourceId=0 残留）
+     * - 与 [fixupZeroTargetId] 配合使用，两个 UPDATE 各自独立
+     *
+     * @param newSourceType 新卡片类型 ("todo" | "inspiration" | "date")
+     * @param newSourceId   新卡片实际 ID
+     * @return 影响的行数
+     */
+    @Query("UPDATE card_relations SET sourceId = :newSourceId WHERE sourceType = :newSourceType AND sourceId = 0")
+    suspend fun fixupZeroSourceId(newSourceType: String, newSourceId: Long): Int
+
+    /**
+     * 把所有 targetId=0 的"占位关联"批量改写为新建卡片的实际 ID（v2026-07-22 新增）
+     *
+     * **背景**：
+     * [com.corgimemo.app.data.repository.CardRelationRepository.addRelation] 在插入正向 A→B
+     * 后会自动插入反向 B→A。当 A 还在新建模式时，targetId=A.id=0，所以反向记录的
+     * targetId 也是 0。本方法与 [fixupZeroSourceId] 配对，把反向记录的 targetId 修复为真实 ID。
+     *
+     * **典型使用**（在 [com.corgimemo.app.data.repository.CardRelationRepository.fixupZeroSourceRelations]）：
+     * ```kotlin
+     * suspend fun fixupZeroSourceRelations(type: String, id: Long) {
+     *     cardRelationDao.fixupZeroSourceId(type, id)
+     *     cardRelationDao.fixupZeroTargetId(type, id)
+     * }
+     * ```
+     *
+     * @param newSourceType 新卡片类型
+     * @param newSourceId   新卡片实际 ID（同时作为反向记录的 targetId）
+     * @return 影响的行数
+     */
+    @Query("UPDATE card_relations SET targetId = :newSourceId WHERE targetType = :newSourceType AND targetId = 0")
+    suspend fun fixupZeroTargetId(newSourceType: String, newSourceId: Long): Int
 }

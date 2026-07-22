@@ -335,6 +335,30 @@ class HomeViewModel @Inject constructor(
     private val _relationCountMap = MutableStateFlow<Map<Long, Int>>(emptyMap())
     val relationCountMap: StateFlow<Map<Long, Int>> = _relationCountMap.asStateFlow()
 
+    /**
+     * 按需刷新所有可见待办的关联数量（v2026-07-22 新增）
+     *
+     * **触发场景**：
+     * 首页关联列表 BottomSheet 解除关联后，外层 RelationListBottomSheet.onUnlinked 回调触发。
+     * DB 写入已成功，但 [_relationCountMap] 是 StateFlow 缓存不会自动更新，
+     * 需要手动调一次。
+     *
+     * **数据源**：
+     * 直接从 4 个 public StateFlow 拼接当前所有可见待办，
+     * 确保与 UI 列表完全一致。
+     *
+     * **性能考量**：
+     * 串行 SQL 查询，每次调用 N 次（典型 N < 100）。可接受。
+     * 后续如需优化可改 DAO `GROUP BY` 聚合查询。
+     */
+    fun refreshRelationCountsOnDemand() {
+        val allTodos = pinnedPendingTodos.value +
+            pendingTodos.value +
+            pinnedCompletedTodos.value +
+            completedTodos.value
+        viewModelScope.launch { refreshRelationCounts(allTodos) }
+    }
+
     // 展开状态集：已展开的待办 ID 集合
     private val _expandedTodos = MutableStateFlow<Set<Long>>(emptySet())
     val expandedTodos: StateFlow<Set<Long>> = _expandedTodos.asStateFlow()

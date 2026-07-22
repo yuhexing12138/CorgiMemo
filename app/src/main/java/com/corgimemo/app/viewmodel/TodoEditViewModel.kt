@@ -929,7 +929,13 @@ class TodoEditViewModel @Inject constructor(
                     backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
                     contentFormat = finalContentFormat /** 持久化：行级快照或富文本内容*/
                 )
-                todoRepository.insertTodo(todo)
+                // v2026-07-22 新增：修复"新建模式提前 addRelation"导致的 sourceId=0 脏数据。
+                // 同步迁移 card_relations 表中所有 sourceType=todo AND sourceId=0 的占位关联，
+                // 以及对应的反向记录 (targetType=todo AND targetId=0)。
+                // 注：当前 if/else 表达式要求最后一句为 Long，所以这里接住 insertTodo 返回值再显式 return。
+                val insertedId = todoRepository.insertTodo(todo)
+                cardRelationRepository.fixupZeroSourceRelations("todo", insertedId)
+                insertedId
             }
 
             saveSubTasks(todoId)

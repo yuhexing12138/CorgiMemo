@@ -55,6 +55,22 @@ interface SpecialDateDao {
     @Query("SELECT * FROM special_dates WHERE title LIKE '%' || :query || '%' ORDER BY isPinned DESC, targetDate ASC")
     fun searchSpecialDates(query: String): Flow<List<SpecialDate>>
 
+    /**
+     * 搜索特殊日期（阻塞方式，v2026-07-22 新增）
+     *
+     * 与 [searchSpecialDates] 等价但返回 `List<SpecialDate>`，供 [com.corgimemo.app.data.repository.CardRelationRepository.searchCards]
+     * 等需要一次性返回结果的场景使用。
+     *
+     * 性能说明：
+     * - 相比"全表加载 + 内存过滤"方案，SQL 层 LIKE 过滤由数据库引擎执行
+     * - LIKE '%x%' 走全表扫描，但 special_dates 表通常 < 100 条，性能优秀
+     *
+     * @param query 搜索关键词
+     * @return 匹配的特殊日期列表（按 isPinned DESC, targetDate ASC 排序）
+     */
+    @Query("SELECT * FROM special_dates WHERE title LIKE '%' || :query || '%' ORDER BY isPinned DESC, targetDate ASC")
+    suspend fun searchSpecialDatesBlocking(query: String): List<SpecialDate>
+
     /** 获取总数 */
     @Query("SELECT COUNT(*) FROM special_dates")
     suspend fun getCount(): Int

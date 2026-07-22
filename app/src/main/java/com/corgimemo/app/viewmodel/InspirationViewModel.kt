@@ -142,6 +142,27 @@ class InspirationViewModel @Inject constructor(
     private val _relationCountMap = MutableStateFlow<Map<Long, Int>>(emptyMap())
     val relationCountMap: StateFlow<Map<Long, Int>> = _relationCountMap.asStateFlow()
 
+    /**
+     * 按需刷新所有灵感的关联数量（v2026-07-22 新增）
+     *
+     * **触发场景**：
+     * 灵感页关联列表 BottomSheet 解除关联后，
+     * 外层 RelationListBottomSheet.onUnlinked 回调触发。
+     * DB 写入已成功，但 [_relationCountMap] 是 StateFlow 缓存不会自动更新，
+     * 需要手动调一次。
+     *
+     * **数据源**：
+     * 从 [inspirations] 当前快照取数，确保与 UI 列表完全一致。
+     *
+     * **性能考量**：
+     * 串行 SQL 查询，灵感数量通常 < 200。可接受。
+     * 后续如需优化可改 DAO `GROUP BY` 聚合查询。
+     */
+    fun refreshRelationCountsOnDemand() {
+        val allInspirations = _inspirations.value
+        viewModelScope.launch { refreshRelationCounts(allInspirations) }
+    }
+
     /** 按日期分组后的灵感列表（用于时间线展示） */
     val groupedInspirations: StateFlow<Map<String, List<Inspiration>>> =
         _inspirations.map { list ->

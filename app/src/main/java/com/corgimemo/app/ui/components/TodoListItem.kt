@@ -158,7 +158,16 @@ fun TodoListItem(
      * 2. **内部独立**（默认，向后兼容）：不传时 TodoListItem 内部 remember 一个新的 MutableFloatState，
      *    与 SwipeableTodoBox 不共享，左滑时按钮不缩放（保持原行为）。
      */
-    cardScale: MutableFloatState? = null
+    cardScale: MutableFloatState? = null,
+    /**
+     * 关联数量徽章点击回调（v2026-07-22 新增）
+     *
+     * 当 [relationCount] > 0 时显示 🔗×N 徽章；点击徽章时触发此回调，
+     * 由父级决定如何展示关联列表（通常是弹出 [com.corgimemo.app.ui.components.RelationListBottomSheet]）。
+     *
+     * 不传时徽章仍可显示但不可点击（保持向后兼容）。
+     */
+    onRelationCountClick: () -> Unit = {}
 ) {
 
     /** 逐区间动画参数：每字符延迟 2ms，最大延迟上限 300ms */
@@ -639,9 +648,10 @@ fun TodoListItem(
                                         } else if (hasReminder || hasCategory) {
                                             Spacer(modifier = Modifier.width(8.dp))
                                         }
-                                        RelationCountBadge(
+                                        RelationCountChip(
                                             count = relationCount,
-                                            color = attachmentColor
+                                            color = attachmentColor,
+                                            onClick = onRelationCountClick
                                         )
                                     }
                                 }
@@ -1288,7 +1298,7 @@ private fun AttachmentCountsRow(
 }
 
 /**
- * 关联卡片数量徽章（v2026-07-21 新增）
+ * 关联卡片数量徽章（v2026-07-21 新增，v2026-07-22 升级为可点击 Chip）
  *
  * 在附件行右侧展示关联卡片的数量，格式与附件计数保持一致：
  * Link 图标 + ×N（例如 "🔗×3"）。
@@ -1298,26 +1308,41 @@ private fun AttachmentCountsRow(
  * - 字号 12sp，图标 14dp，与 [AttachmentCountsRow] 完全对齐
  * - 颜色复用附件计数色（已完成态视觉降权）
  * - 当 count <= 0 时不渲染（由调用方 hasRelation 守卫，这里仅作防御）
+ * - v2026-07-22 升级：提升为顶层 Composable + 加 [onClick] 回调，让用户点击徽章即可弹出
+ *   [com.corgimemo.app.ui.components.RelationListBottomSheet] 跳转到关联详情。
+ *   点击区通过 padding(4.dp) 扩大至 22dp × 14dp，满足触摸目标。
  *
  * @param count 关联卡片数量
  * @param color 图标和文字颜色（已完成态使用灰色降权）
+ * @param onClick 徽章点击回调（父级传入）
+ * @param modifier 外部 Modifier
  */
 @Composable
-private fun RelationCountBadge(
+fun RelationCountChip(
     count: Int,
-    color: Color
+    color: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     if (count <= 0) return
-    Icon(
-        imageVector = Icons.Outlined.Link,
-        contentDescription = "关联卡片",
-        tint = color,
-        modifier = Modifier.size(14.dp)
-    )
-    Spacer(modifier = Modifier.width(2.dp))
-    Text(
-        text = "×$count",
-        fontSize = 12.sp,
-        color = color
-    )
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Link,
+            contentDescription = "关联卡片（点击查看）",
+            tint = color,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(2.dp))
+        Text(
+            text = "×$count",
+            fontSize = 12.sp,
+            color = color
+        )
+    }
 }

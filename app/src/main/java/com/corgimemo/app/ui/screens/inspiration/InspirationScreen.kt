@@ -52,6 +52,8 @@ import com.corgimemo.app.ui.components.CorgiPullRefreshIndicator
 import com.corgimemo.app.ui.components.PullRefreshState
 import com.corgimemo.app.ui.components.SearchBar
 import com.corgimemo.app.ui.components.UnifiedEmptyState
+// v2026-07-22 新增：关联列表 BottomSheet
+import com.corgimemo.app.ui.components.RelationListBottomSheet
 import com.corgimemo.app.ui.components.rememberPullRefreshStateHolder
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationDateTimePickerDialog
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery
@@ -108,6 +110,21 @@ fun InspirationScreen(
     var showDateTimePicker by remember { mutableStateOf(false) }
     var showTagPicker by remember { mutableStateOf(false) }
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
+
+    /**
+     * 关联列表 BottomSheet 状态（v2026-07-22 新增）
+     *
+     * - showRelationListSheet: true 时显示 BottomSheet
+     * - relationListSourceId: 当前展示的源 inspiration.id（null = 关闭中）
+     *
+     * 触发链路与 HomeScreen 一致：
+     * 1. TimelineInspirationItem.onRelationCountClick → sourceId + show=true
+     * 2. RelationListBottomSheet 弹出 → RelationListViewModel.loadRelations
+     * 3. 用户点 × 解绑 → onUnlinked() → viewModel.refreshRelationCountsOnDemand()
+     * 4. 关闭弹窗 → onDismiss() → 状态清空
+     */
+    var showRelationListSheet by remember { mutableStateOf(false) }
+    var relationListSourceId by remember { mutableStateOf<Long?>(null) }
 
     // 图片全屏预览状态
     var showImageGallery by remember { mutableStateOf(false) }
@@ -294,6 +311,11 @@ fun InspirationScreen(
                                     isSelected = selectedInspirationIds.contains(inspiration.id),
                                     /** v2026-07-21 新增：传入关联数量，在标签右侧显示 🔗×N */
                                     relationCount = relationCountMap[inspiration.id] ?: 0,
+                                    /** v2026-07-22 新增：点击 🔗×N 徽章弹出关联列表 BottomSheet */
+                                    onRelationCountClick = {
+                                        relationListSourceId = inspiration.id
+                                        showRelationListSheet = true
+                                    },
                                     onClick = {
                                         if (isBatchMode) {
                                             viewModel.toggleSelection(inspiration.id)
@@ -485,6 +507,48 @@ fun InspirationScreen(
                 viewModel.updateInspirationDateTime(inspiration.id, dateMillis)
                 showDateTimePicker = false
                 longPressedInspiration = null
+            }
+        )
+    }
+
+    /**
+     * 关联列表 BottomSheet（v2026-07-22 新增）
+     *
+     * 与 HomeScreen 的 RelationListBottomSheet 共用同一组件：
+     * - sourceType = "inspiration"（灵感作为关联源）
+     * - 跳详情时 inspiration → InspirationView，其他类型复用同样路由
+     *
+     * 注意：因 InspirationScreen 是 Box(fillMaxSize) 结构，BottomSheet
+     * 通过 Portal 自动覆盖整个屏幕，无需额外包 Box。
+     */
+    relationListSourceId?.let { sourceId ->
+        RelationListBottomSheet(
+            visible = showRelationListSheet,
+            sourceType = "inspiration",
+            sourceId = sourceId,
+            groupId = 0,
+            onItemClick = { cardType, cardId ->
+                showRelationListSheet = false
+                relationListSourceId = null
+                when (cardType) {
+                    "todo" -> navController.navigate(
+                        com.corgimemo.app.ui.navigation.Screen.TodoEditWithId.withArgs(cardId.toString())
+                    )
+                    "inspiration" -> navController.navigate(
+                        com.corgimemo.app.ui.navigation.Screen.InspirationViewWithId.createRoute(cardId)
+                    )
+                    "date" -> navController.navigate(
+                        com.corgimemo.app.ui.navigation.Screen.SpecialDateDetailWithId.createRoute(cardId)
+                    )
+                }
+            },
+            onUnlinked = {
+                // 解除关联后重新查询灵感页 relationCountMap
+                viewModel.refreshRelationCountsOnDemand()
+            },
+            onDismiss = {
+                showRelationListSheet = false
+                relationListSourceId = null
             }
         )
     }

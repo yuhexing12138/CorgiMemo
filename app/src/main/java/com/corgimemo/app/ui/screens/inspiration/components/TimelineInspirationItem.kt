@@ -130,6 +130,18 @@ fun TimelineInspirationItem(
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
     onImageClick: (Int) -> Unit = {},
+    /**
+     * 关联数量徽章点击回调（v2026-07-22 新增）
+     *
+     * 当 [relationCount] > 0 时，标签行右侧的 🔗×N 区域变成可点击入口。
+     * 点击后弹出 [com.corgimemo.app.ui.components.RelationListBottomSheet]，
+     * 由父级 InspirationScreen 决定如何展示。
+     *
+     * 实现细节：在标签行 Row 内对 Icon+Text 包一层 clickable。
+     * 外层 combinedClickable 仍负责卡片整体的长按/单击，
+     * 内层 clickable 局部消费 tap 事件避免冒泡。
+     */
+    onRelationCountClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // ===== 横向布局常量 =====
@@ -382,22 +394,28 @@ fun TimelineInspirationItem(
                             }
                             // v2026-07-21 新增：关联数量简略显示（🔗×N）
                             // 用独立 Row 包裹 Icon+Text，内部 2dp 间距，与标签间 4dp 间距
+                            // v2026-07-22 增强：Row 整体可点击，触发 onRelationCountClick
+                            // - 使用 Modifier.clickable 局部消费 tap 事件
+                            // - 外层 combinedClickable 不会同时触发（事件已被消费）
                             if (relationCount > 0) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    modifier = Modifier
+                                        .clickable { onRelationCountClick() }
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.Link,
-                                        contentDescription = "关联卡片",
-                                        tint = Color(0xFF999999),
+                                        contentDescription = "关联卡片（点击查看）",
+                                        tint = Color(0xFFFF9A5C),
                                         modifier = Modifier.size(10.dp)
                                     )
                                     Text(
                                         text = "×$relationCount",
                                         fontSize = 11.sp,
                                         lineHeight = 11.sp,
-                                        color = Color(0xFF999999),
+                                        color = Color(0xFFFF9A5C),
                                         letterSpacing = chineseLetterSpacing
                                     )
                                 }

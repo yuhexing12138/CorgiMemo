@@ -85,12 +85,33 @@ interface InspirationDao {
      * @param query 搜索关键词
      * @return 匹配的灵感列表流
      */
-    @Query("""SELECT * FROM inspirations 
-              WHERE title LIKE '%' || :query || '%' 
+    @Query("""SELECT * FROM inspirations
+              WHERE title LIKE '%' || :query || '%'
                  OR content LIKE '%' || :query || '%'
                  OR tags LIKE '%' || :query || '%'
               ORDER BY isPinned DESC, createdAt DESC""")
     fun searchInspirations(query: String): Flow<List<Inspiration>>
+
+    /**
+     * 搜索灵感（阻塞方式，v2026-07-22 新增）
+     *
+     * 与 [searchInspirations] 等价但返回 `List<Inspiration>`，供 [com.corgimemo.app.data.repository.CardRelationRepository.searchCards]
+     * 等需要一次性返回结果的场景使用。
+     *
+     * 性能说明：
+     * - 相比"全表加载 + 内存过滤"方案，SQL 层 LIKE 过滤由数据库引擎执行，避免大表 OOM
+     * - LIKE '%x%' 走全表扫描，但 inspirations 表通常 < 1000 条，性能可接受
+     * - 若数据量上升，可后续切换到 FTS5 全文搜索
+     *
+     * @param query 搜索关键词
+     * @return 匹配的灵感列表（按 isPinned DESC, createdAt DESC 排序）
+     */
+    @Query("""SELECT * FROM inspirations
+              WHERE title LIKE '%' || :query || '%'
+                 OR content LIKE '%' || :query || '%'
+                 OR tags LIKE '%' || :query || '%'
+              ORDER BY isPinned DESC, createdAt DESC""")
+    suspend fun searchInspirationsBlocking(query: String): List<Inspiration>
     
     /**
      * 获取灵感总数

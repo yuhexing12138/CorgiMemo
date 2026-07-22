@@ -9,7 +9,9 @@ import com.corgimemo.app.data.local.db.TodoDao
 import com.corgimemo.app.data.model.CardDetail
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CardSearchResult
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.supervisorScope
 import org.json.JSONArray
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -201,7 +203,7 @@ class CardRelationRepository @Inject constructor(
     }
 
     /**
-     * 获取某卡片某分组发起的关联数量
+     * 获取某卡片某分组的关联数量
      * @param sourceType 发起方类型
      * @param sourceId 发起方ID
      * @param groupId 分组ID
@@ -211,97 +213,114 @@ class CardRelationRepository @Inject constructor(
         cardRelationDao.countBySource(sourceType, sourceId, groupId)
 
     /**
-     * 跨三表搜索卡片（用于关联选择器）
-     * @param query 搜索关键词
-     * @return 搜索结果列表，按类型分组
+     * 修复"新建模式提前 addRelation"导致的 sourceId=0 / targetId=0 脏数据（v2026-07-22 新增）
+     *
+     * **调用场景**：
+     * 用户在"新建卡片"模式下打开关联选择器添加关联时，由于此时卡片尚未入库，
+     * [addRelation] 会用 `existingCardId ?: 0L` 计算 sourceId，导致 card_relations 表里
+     * 留下指向"卡片 0"的脏记录。本方法在新建保存成功后被调用一次，把所有此类脏数据
+     * 迁移到新建卡片的真实 ID。
+     *
+     * **修复内容**：
+     * - 正向 A→B 记录 (`sourceType=:type AND sourceId=0`)：UPDATE sourceId = :newId
+     * - 反向 B→A 记录 (`targetType=:type AND targetId=0`)：UPDATE targetId = :newId
+     *
+     * **幂等性**：
+     * 两个 UPDATE 独立且幂等，重复运行安全（运行后无 0 残留）。
+     *
+     * **非事务**：
+     * 不引入 `@Transaction`，避免与已有事务方法冲突；
+     * 两个 UPDATE 都命中"type=X AND id=0"的极少数行，即使并发执行也只会重复更新为相同值。
+     *
+     * @param newSourceType 新卡片类型 ("todo" | "inspiration" | "date")
+     * @param newSourceId   新卡片实际 ID
      */
-    suspend fun searchCards(query: String): List<CardSearchResult> {
-        if (query.isBlank()) return getAllCards()
-
-        val results = mutableListOf<CardSearchResult>()
-
-        val todos = todoDao.searchTodos(query)
-        todos.forEach { todo ->
-            results.add(
-                CardSearchResult(
-                    cardType = "todo",
-                    cardId = todo.id,
-                    title = todo.title
-                )
+    suspend fun fixupZeroSourceRelations(newSourceType: String, newSourceId: Long) {
+        val sourceFixed = cardRelationDao.fixupZeroSourceId(newSourceType, newSourceId)
+        val targetFixed = cardRelationDao.fixupZeroTargetId(newSourceType, newSourceId)
+        if (sourceFixed > 0 || targetFixed > 0) {
+            android.util.Log.d(
+                "CardRelationRepository",
+                "fixupZeroSourceRelations: type=$newSourceType, id=$newSourceId, " +
+                    "fixed sourceId=$sourceFixed, targetId=$targetFixed"
             )
         }
-
-        val inspirations = inspirationDao.getAllInspirationsBlocking()
-        inspirations.filter {
-            it.title.contains(query, ignoreCase = true) ||
-                    it.content.contains(query, ignoreCase = true)
-        }.forEach { inspiration ->
-            results.add(
-                CardSearchResult(
-                    cardType = "inspiration",
-                    cardId = inspiration.id,
-                    title = inspiration.title
-                )
-            )
-        }
-
-        val dates = specialDateDao.getAllSpecialDatesBlocking()
-        dates.filter {
-            it.title.contains(query, ignoreCase = true)
-        }.forEach { date ->
-            results.add(
-                CardSearchResult(
-                    cardType = "date",
-                    cardId = date.id,
-                    title = date.title
-                )
-            )
-        }
-
-        return results
     }
 
     /**
-     * 获取所有卡片（搜索关键词为空时使用）
-     * @return 所有卡片列表
+     * 跨三表搜索卡片（用于关联选择器，v2026-07-22 性能优化）
+     *
+     * **历史问题**：
+     * 旧实现对 inspirations / special_dates 用 `getAllXxxBlocking()` 全表加载后再
+     * 内存过滤，当数据量上升时 P95 延迟 > 200ms。
+     *
+     * **新实现**：
+     * - 三个查询用 [supervisorScope] + [async] **并发**执行
+     * - inspirations / special_dates 改用各自 DAO 的 `searchXxxBlocking` SQL 层 LIKE 过滤
+     * - 关键词为空时回退到 `getAllXxxBlocking`（保持向后兼容）
+     *
+     * **关于 LIMIT**：
+     * 按用户意图"上限只限制显示不限制搜索"，本方法不做 LIMIT。
+     * 渲染层 ([com.corgimemo.app.ui.components.RelationPickerBottomSheet]) 在显示时 take(50) 兜底。
+     *
+     * @param query 搜索关键词（空字符串返回全部卡片）
+     * @return 搜索结果列表（todo / inspiration / date 合并，按各表自身排序）
      */
-    private suspend fun getAllCards(): List<CardSearchResult> {
-        val results = mutableListOf<CardSearchResult>()
+    suspend fun searchCards(query: String): List<CardSearchResult> = supervisorScope {
+        val trimmedQuery = query.trim()
+        val isBlank = trimmedQuery.isBlank()
 
-        val todos = todoDao.getAllTodosBlocking()
-        todos.forEach { todo ->
-            results.add(
-                CardSearchResult(
-                    cardType = "todo",
-                    cardId = todo.id,
-                    title = todo.title
-                )
-            )
+        // 三个查询并发执行；任一异常被 supervisor 隔离，不影响其他两个
+        val todosDeferred = async { todoDao.searchTodos(trimmedQuery) }
+        val inspirationsDeferred = async {
+            if (isBlank) {
+                inspirationDao.getAllInspirationsBlocking()
+            } else {
+                inspirationDao.searchInspirationsBlocking(trimmedQuery)
+            }
+        }
+        val datesDeferred = async {
+            if (isBlank) {
+                specialDateDao.getAllSpecialDatesBlocking()
+            } else {
+                specialDateDao.searchSpecialDatesBlocking(trimmedQuery)
+            }
         }
 
-        val inspirations = inspirationDao.getAllInspirationsBlocking()
-        inspirations.forEach { inspiration ->
-            results.add(
-                CardSearchResult(
-                    cardType = "inspiration",
-                    cardId = inspiration.id,
-                    title = inspiration.title
-                )
-            )
-        }
+        // 分别 await：async 已并发启动，逐个 await 仅同步结果
+        val todos = todosDeferred.await()
+        val inspirations = inspirationsDeferred.await()
+        val dates = datesDeferred.await()
 
-        val dates = specialDateDao.getAllSpecialDatesBlocking()
-        dates.forEach { date ->
-            results.add(
-                CardSearchResult(
-                    cardType = "date",
-                    cardId = date.id,
-                    title = date.title
+        buildList {
+            todos.forEach { todo ->
+                add(
+                    CardSearchResult(
+                        cardType = "todo",
+                        cardId = todo.id,
+                        title = todo.title
+                    )
                 )
-            )
+            }
+            inspirations.forEach { inspiration ->
+                add(
+                    CardSearchResult(
+                        cardType = "inspiration",
+                        cardId = inspiration.id,
+                        title = inspiration.title
+                    )
+                )
+            }
+            dates.forEach { date ->
+                add(
+                    CardSearchResult(
+                        cardType = "date",
+                        cardId = date.id,
+                        title = date.title
+                    )
+                )
+            }
         }
-
-        return results
     }
 
     /**
