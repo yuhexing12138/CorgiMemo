@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AlternateEmail
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -33,11 +34,12 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  *
  * 布局结构：
  * - 上行（可折叠）：RichTextFormatToolbar（仅当 isFormatExpanded=true 时显示）
- * - 下行（始终显示）：5 个核心按钮
+ * - 下行（始终显示）：6 个核心按钮
  *   - 📷 相机（onPhotoClick）
  *   - 🎤 麦克风（onVoiceClick）
- *   - # 位置（onLocationClick）
- *   - @ 关联（onMentionClick）
+ *   - # 标签（onTagClick）—— v2026-07-22 改造：原"位置"按钮改为"添加标签"功能
+ *   - @ 关联（onMentionClick）—— v2026-07-22 改造：触发 RelationPickerBottomSheet 多选弹窗（与待办编辑页一致）
+ *   - 📍 位置（onLocationClick）—— v2026-07-22 新增：独立位置按钮，使用 Icons.Default.LocationOn 图标
  *   - ⋮ 格式（onFormatToggleClick，切换上行展开/折叠）
  *
  * **交互规则**：
@@ -49,8 +51,9 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * @param richTextState 库的 RichTextState 实例（传给 RichTextFormatToolbar）
  * @param onPhotoClick 相机按钮回调
  * @param onVoiceClick 麦克风按钮回调
- * @param onLocationClick 位置按钮回调
- * @param onMentionClick 关联按钮回调
+ * @param onTagClick 标签按钮回调（v2026-07-22 新增：原 onLocationClick 拆分而来，触发 TagPickerSheet）
+ * @param onMentionClick 关联按钮回调（v2026-07-22 改造：触发 RelationPickerBottomSheet）
+ * @param onLocationClick 位置按钮回调（v2026-07-22 新增：触发位置提醒弹窗）
  * @param onFormatToggleClick 格式按钮回调（切换展开/折叠）
  * @param onToggleBold 加粗回调
  * @param onToggleItalic 斜体回调
@@ -72,8 +75,9 @@ fun InspirationEditBottomBar(
     richTextState: RichTextState,
     onPhotoClick: () -> Unit,
     onVoiceClick: () -> Unit,
-    onLocationClick: () -> Unit,
+    onTagClick: () -> Unit,
     onMentionClick: () -> Unit,
+    onLocationClick: () -> Unit,
     onFormatToggleClick: () -> Unit,
     onToggleBold: () -> Unit,
     onToggleItalic: () -> Unit,
@@ -119,7 +123,7 @@ fun InspirationEditBottomBar(
                 )
             }
 
-            /** 下行：5 个核心按钮（始终显示） */
+            /** 下行：6 个核心按钮（始终显示） */
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -137,15 +141,36 @@ fun InspirationEditBottomBar(
                     contentDescription = "语音",
                     onClick = onVoiceClick
                 )
+                /**
+                 * # 标签按钮（v2026-07-22 改造）：
+                 * - 原"位置"按钮：图标沿用 Icons.Default.Tag，contentDescription 由"位置"改为"标签"
+                 * - 回调由 onLocationClick 重命名为 onTagClick
+                 * - 触发灵感独有功能 TagPickerSheet（添加/编辑标签）
+                 */
                 BottomBarButton(
                     imageVector = Icons.Default.Tag,
-                    contentDescription = "位置",
-                    onClick = onLocationClick
+                    contentDescription = "标签",
+                    onClick = onTagClick
                 )
+                /**
+                 * @ 关联按钮（v2026-07-22 改造）：
+                 * - 由 MentionTriggerPopup（单选）升级为 RelationPickerBottomSheet（多选）
+                 * - 行为与待办编辑页 @ 按钮保持一致
+                 */
                 BottomBarButton(
                     imageVector = Icons.Default.AlternateEmail,
                     contentDescription = "关联",
                     onClick = onMentionClick
+                )
+                /**
+                 * 📍 位置按钮（v2026-07-22 新增）：
+                 * - 从原 # 位置按钮中独立出来，使用 Icons.Default.LocationOn
+                 * - 触发位置提醒弹窗（LocationPicker + Geofence）
+                 */
+                BottomBarButton(
+                    imageVector = Icons.Default.LocationOn,
+                    contentDescription = "位置",
+                    onClick = onLocationClick
                 )
                 /** 格式按钮：高亮显示当工具栏展开时 */
                 BottomBarButton(
