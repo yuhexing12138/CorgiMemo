@@ -42,7 +42,9 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -251,6 +253,21 @@ fun TodoEditScreen(
      * 让用户选择"仅分享已保存的 N 条"还是"先去保存"。
      */
     var showPartialSaveDialog by remember { mutableStateOf(false) }
+
+    /**
+     * 删除确认弹窗状态
+     *
+     * 底部工具栏的垃圾桶图标属于破坏性操作，
+     * 点击后不能立即删除——必须先弹 DeleteConfirmDialog 让用户二次确认，
+     * 防止用户误触导致待办（含子任务、附件、关联）被永久删除。
+     *
+     * - true  = 打开 DeleteConfirmDialog
+     * - false = 关闭弹窗（取消、点遮罩、按返回键、确认删除后）
+     *
+     * 仅在编辑模式（todoId != null && todoId > 0）下打开，
+     * 新建模式（todoId == null）无可删除数据，仍保持静默无操作。
+     */
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     /**
      * 待分享的 todo 列表快照（在弹窗打开时填充）
@@ -1002,6 +1019,9 @@ fun TodoEditScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // 🆕 v2026-07-22 顶部导航栏背景色跟随页面背景色
+                    // 放在 safeAreaForTopBar() 之前，使背景色延伸到状态栏区域（沉浸式体验）
+                    .background(contentBackgroundColor)
                     .safeAreaForTopBar()
                     .padding(horizontal = 4.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -1022,6 +1042,117 @@ fun TodoEditScreen(
                 }
 
                 Spacer(modifier = Modifier.weight(1f))
+
+                // 🆕 v2026-07-22 画板按钮：从底部工具栏上移到顶部导航栏
+                // 点击触发背景色选择器（与原 EditToolbar 行为一致）
+                // 尺寸 36dp / 18dp 与灵感编辑页顶部画板按钮保持统一
+                IconButton(
+                    onClick = { showColorPicker = true },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Palette,
+                        contentDescription = "背景色",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // 🆕 v2026-07-22 分享按钮：从底部工具栏上移到顶部导航栏
+                // 点击行为完全保持原 EditToolbar 分享按钮的逻辑（ShareCoordinator + 多卡片判断）
+                // 尺寸 36dp / 18dp 与灵感编辑页顶部同款按钮保持统一
+                IconButton(
+                    onClick = {
+                        /**
+                         * 分享按钮点击：
+                         * 1. 获取主 todo（编辑模式走 currentTodo，新建模式走 groupSaveStates[0] 兜底）
+                         * 2. 拉取已保存的子 todo 列表
+                         * 3. 判断是否有未保存分组
+                         * 4. 决策树：
+                         *    - mainTodo == null → SnackBar "请先保存"
+                         *    - 总数 (主+已保存子) == 1 → 直接分享
+                         *    - hasUnsavedGroups && 总数 > 1 → 弹 PartialSaveConfirmDialog
+                         *    - !hasUnsavedGroups && 总数 > 1 → 弹 ShareModeDialog
+                         */
+                        coroutineScope.launch {
+                            /**
+                             * 主 todo 来源说明：
+                             * - 编辑模式（todoId != null）：viewModel.currentTodo 必有值
+                             * - 新建模式但已保存 groupId=0：getMainTodoForShare() 兜底从 DB 拉取
+                             *   （修复"已保存仍误判未保存"问题）
+                             */
+                            val mainTodo = viewModel.getMainTodoForShare()
+                            val savedSubTodos = viewModel.getSavedSubTodos()
+                            val groupSaveStatesSnapshot = viewModel.groupSaveStates.value
+                            val unsavedCount = groupSaveStatesSnapshot.count { !it.value.isSaved }
+                            val hasUnsavedGroups = unsavedCount > 0
+
+                            if (mainTodo == null) {
+                                // 主 todo 真正未保存（groupId=0 没存）：提示用户先保存
+                                snackbarHostState.showSnackbar("请先保存待办再分享")
+                                return@launch
+                            }
+
+                            val savedOnlyList = listOf(mainTodo) + savedSubTodos
+                            val totalCount = savedOnlyList.size
+
+                            if (totalCount == 1) {
+                                // 只有一个已保存 todo：直接走单张分享（不弹选择）
+                                ShareCoordinator.shareTodosFromEdit(
+                                    context = context,
+                                    mainTodo = mainTodo,
+                                    savedSubTodos = savedSubTodos,
+                                    categories = categories,
+                                    hasUnsavedGroups = false,
+                                    onShowSnackBar = { msg ->
+                                        coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                                    },
+                                    onShowDialog = null
+                                )
+                                return@launch
+                            }
+
+                            // totalCount > 1：
+                            if (hasUnsavedGroups) {
+                                // 有未保存分组：弹"是否仅分享已保存"确认弹窗
+                                shareTodosSnapshot = savedOnlyList
+                                showPartialSaveDialog = true
+                            } else {
+                                // 全部已保存：直接弹 ShareModeDialog
+                                shareTodosSnapshot = savedOnlyList
+                                showShareModeDialog = true
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "分享",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // 🆕 v2026-07-22 删除按钮：从底部工具栏上移到顶部导航栏
+                // 点击行为完全保持原 EditToolbar 删除按钮的逻辑（仅在已保存时执行删除 + 返回）
+                // 尺寸 36dp / 18dp 与灵感编辑页顶部同款按钮保持统一
+                IconButton(
+                    onClick = {
+                        if (todoId != null && todoId > 0) {
+                            homeViewModel.deleteTodo(todoId)
+                            navController.popBackStack()
+                        }
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "删除",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
 
                 Spacer(modifier = Modifier.width(8.dp))
 
@@ -1060,9 +1191,9 @@ fun TodoEditScreen(
                 onVoiceClick = {
                     showVoiceRecordSheet = true
                 },
-                onBackgroundClick = {
-                    showColorPicker = true
-                },
+                // 🆕 v2026-07-22 onBackgroundClick 已不再传入：
+                // 画板按钮从底部工具栏上移到顶部导航栏，EditToolbar 不再渲染 Palette 按钮
+                // （EditToolbar 内部已支持 onBackgroundClick == null 时跳过该按钮）
                 /**
                  * @按钮点击回调：直接打开关联选择 BottomSheet。
                  * 🆕 v2026-07-21 改造：从 MentionTriggerPopup 单选升级为 RelationPickerBottomSheet 多选
@@ -1084,74 +1215,9 @@ fun TodoEditScreen(
                 onLocationClick = {
                     showLocationPopup = true
                 },
-                onShareClick = {
-                    /**
-                     * 分享按钮点击：
-                     * 1. 获取主 todo（编辑模式走 currentTodo，新建模式走 groupSaveStates[0] 兜底）
-                     * 2. 拉取已保存的子 todo 列表
-                     * 3. 判断是否有未保存分组
-                     * 4. 决策树：
-                     *    - mainTodo == null → SnackBar "请先保存"
-                     *    - 总数 (主+已保存子) == 1 → 直接分享
-                     *    - hasUnsavedGroups && 总数 > 1 → 弹 PartialSaveConfirmDialog
-                     *    - !hasUnsavedGroups && 总数 > 1 → 弹 ShareModeDialog
-                     */
-                    coroutineScope.launch {
-                        /**
-                         * 主 todo 来源说明：
-                         * - 编辑模式（todoId != null）：viewModel.currentTodo 必有值
-                         * - 新建模式但已保存 groupId=0：getMainTodoForShare() 兜底从 DB 拉取
-                         *   （修复"已保存仍误判未保存"问题）
-                         */
-                        val mainTodo = viewModel.getMainTodoForShare()
-                        val savedSubTodos = viewModel.getSavedSubTodos()
-                        val groupSaveStates = viewModel.groupSaveStates.value
-                        val unsavedCount = groupSaveStates.count { !it.value.isSaved }
-                        val hasUnsavedGroups = unsavedCount > 0
-
-                        if (mainTodo == null) {
-                            // 主 todo 真正未保存（groupId=0 没存）：提示用户先保存
-                            snackbarHostState.showSnackbar("请先保存待办再分享")
-                            return@launch
-                        }
-
-                        val savedOnlyList = listOf(mainTodo) + savedSubTodos
-                        val totalCount = savedOnlyList.size
-
-                        if (totalCount == 1) {
-                            // 只有一个已保存 todo：直接走单张分享（不弹选择）
-                            ShareCoordinator.shareTodosFromEdit(
-                                context = context,
-                                mainTodo = mainTodo,
-                                savedSubTodos = savedSubTodos,
-                                categories = categories,
-                                hasUnsavedGroups = false,
-                                onShowSnackBar = { msg ->
-                                    coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
-                                },
-                                onShowDialog = null
-                            )
-                            return@launch
-                        }
-
-                        // totalCount > 1：
-                        if (hasUnsavedGroups) {
-                            // 有未保存分组：弹"是否仅分享已保存"确认弹窗
-                            shareTodosSnapshot = savedOnlyList
-                            showPartialSaveDialog = true
-                        } else {
-                            // 全部已保存：直接弹 ShareModeDialog
-                            shareTodosSnapshot = savedOnlyList
-                            showShareModeDialog = true
-                        }
-                    }
-                },
-                onDeleteClick = {
-                    if (todoId != null && todoId > 0) {
-                        homeViewModel.deleteTodo(todoId)
-                        navController.popBackStack()
-                    }
-                },
+                // 🆕 v2026-07-22 onShareClick / onDeleteClick 已不再传入：
+                // 分享/删除按钮也从底部工具栏上移到顶部导航栏（与画板按钮一起迁移）
+                // 顶部导航栏中的 3 个 IconButton 复用了原本传给 EditToolbar 的全部点击逻辑
                 modifier = Modifier.safeAreaForEditBar()
             )
         }
