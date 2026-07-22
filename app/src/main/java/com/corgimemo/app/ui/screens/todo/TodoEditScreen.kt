@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -280,6 +281,32 @@ fun TodoEditScreen(
      * - [DeleteDialogMode.Discard]：新建模式弹窗，确认后仅 popBackStack（无 DB 数据可删）
      */
     var deleteDialogMode by remember { mutableStateOf(DeleteDialogMode.Delete) }
+
+    /**
+     * 返回时"未保存"确认弹窗状态（v2026-07-22 新增）
+     *
+     * 当用户点击顶部 ← 或触发系统返回键时，若 viewModel.hasAnyUnsavedChanges == true，
+     * 则拦截返回并弹 DeleteConfirmDialog (Discard 模式) 询问用户是否真的要放弃未保存内容。
+     *
+     * 触发链路：
+     * 1. 用户点 ← 或按系统返回键 → attemptBack
+     * 2. 检查 viewModel.hasAnyUnsavedChanges：
+     *    - false → 直接 navController.popBackStack（无内容丢失）
+     *    - true → showDiscardConfirm = true（拦截）
+     * 3. DeleteConfirmDialog (Discard 模式) 弹窗显示
+     * 4. 用户选择：
+     *    - 确认放弃 → navController.popBackStack
+     *    - 取消 → 仅关闭弹窗
+     */
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+
+    /**
+     * ViewModel 未保存状态（v2026-07-22 新增）
+     *
+     * 从 viewModel.hasAnyUnsavedChanges StateFlow 派生，UI 层用于判断是否拦截返回。
+     * 复用 TodoEditViewModel 已有的 groupSaveStates 派生机制（不需要新增 isDirty API）。
+     */
+    val hasAnyUnsavedChanges by viewModel.hasAnyUnsavedChanges.collectAsState()
 
     /**
      * 待分享的 todo 列表快照（在弹窗打开时填充）
@@ -1048,6 +1075,38 @@ fun TodoEditScreen(
         }
     }
 
+    /**
+     * "安全返回"：检查 viewModel.hasAnyUnsavedChanges，若有未保存修改则弹"放弃编辑"确认框（v2026-07-22 新增）
+     *
+     * 调用场景：
+     * - 顶部 ← 按钮 onClick
+     * - BackHandler（系统返回键 / 手势返回）
+     *
+     * 行为：
+     * - hasAnyUnsavedChanges == false → 直接 navController.popBackStack（无内容丢失，无需确认）
+     * - hasAnyUnsavedChanges == true → 弹 DeleteConfirmDialog (Discard 模式) 询问，确认后 popBackStack
+     *
+     * 设计要点：
+     * - 不阻塞 UI 线程（hasAnyUnsavedChanges 是 StateFlow 同步读取）
+     * - 与 DeleteConfirmDialog 复用同一组件（Discard 模式），保持 UI 一致性
+     */
+    val attemptBack: () -> Unit = {
+        if (hasAnyUnsavedChanges) {
+            // 有未保存修改：拦截返回，弹"放弃编辑"确认框
+            showDiscardConfirm = true
+        } else {
+            // 无未保存：直接退出
+            navController.popBackStack()
+        }
+    }
+
+    /**
+     * 拦截系统返回事件（侧滑返回 / 系统返回键）（v2026-07-22 新增）
+     *
+     * 统一所有退出方式（应用内 ← 按钮、系统返回键）都经过 attemptBack
+     */
+    BackHandler { attemptBack() }
+
     // 外层 Box：确保弹窗遮罩覆盖 topBar 和 bottomBar（解决层级穿透问题）
     Box(modifier = Modifier.fillMaxSize()) {
 
@@ -1065,7 +1124,7 @@ fun TodoEditScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
-                    onClick = { navController.popBackStack() },
+                    onClick = attemptBack,
                     modifier = Modifier.size(40.dp)
                 ) {
                     // 颜色与尺寸与 EnhancedTopBar 多选模式的 LeftIconType.BACK 保持完全一致
@@ -2416,6 +2475,36 @@ fun TodoEditScreen(
         onDismiss = {
             // 取消路径（点遮罩/返回键/取消按钮）：仅关闭弹窗，不修改数据
             showDeleteConfirm = false
+        }
+    )
+
+    /**
+     * 放弃编辑确认弹窗（v2026-07-22 新增）
+     *
+     * 当用户从待办编辑页触发返回（顶部 ← / 系统返回键 / 手势返回）时，
+     * 若 viewModel.hasAnyUnsavedChanges == true，弹此弹窗询问用户是否真的要放弃未保存内容。
+     *
+     * 复用 DeleteConfirmDialog 的 Discard 模式：
+     * - 弹窗标题"放弃编辑"，按钮"放弃编辑"
+     * - 警告"未保存的内容将永久丢失，无法恢复"
+     * - 不显示 itemTitle 高亮（因为未保存内容没有"标题"概念）
+     *
+     * onConfirm 行为：仅 navController.popBackStack（无 DB 操作）
+     * onDismiss 行为：仅关闭弹窗，留在编辑页
+     */
+    DeleteConfirmDialog(
+        showDialog = showDiscardConfirm,
+        itemTitle = "",
+        mode = DeleteDialogMode.Discard,
+        onConfirm = {
+            // 1. 先关闭弹窗
+            showDiscardConfirm = false
+            // 2. 执行返回（无 DB 操作，直接关闭页面）
+            navController.popBackStack()
+        },
+        onDismiss = {
+            // 取消路径：仅关闭弹窗，留在编辑页
+            showDiscardConfirm = false
         }
     )
 }

@@ -60,6 +60,23 @@ class InspirationEditViewModel @Inject constructor(
     private val _content = MutableStateFlow("")
     val content: StateFlow<String> = _content.asStateFlow()
 
+    /**
+     * 当前编辑页是否有未保存的修改（v2026-07-22 新增）
+     *
+     * 用途：编辑页 UI 拦截"返回"操作（顶部 ← 按钮 / 系统返回键）时判断是否需要弹"放弃编辑"确认框，
+     * 避免用户误触返回导致未保存草稿被静默丢失。
+     *
+     * 同步规则：
+     * - 任何 setXxx() 调用（除内部初始化）→ `_isDirty.value = true`
+     * - loadInspiration() 成功加载已保存数据后 → `_isDirty.value = false`（重置为干净基线）
+     * - saveInspiration() 成功持久化后 → `_isDirty.value = false`（已保存）
+     *
+     * 不需要追踪"原始加载值 vs 当前值"的精确对比——只要 setXxx 触发过就认为脏，
+     * 这是性能与精度的折中（用户也可能把内容改回去，但只要改过就认为有未保存意图）。
+     */
+    private val _isDirty = MutableStateFlow(false)
+    val isDirty: StateFlow<Boolean> = _isDirty.asStateFlow()
+
     private val _categoryId = MutableStateFlow(0L)
     val categoryId: StateFlow<Long> = _categoryId.asStateFlow()
 
@@ -390,6 +407,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setTitle(title: String) {
         _title.value = title
+        _isDirty.value = true
     }
 
     /**
@@ -398,6 +416,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setTitleWithRecommendation(title: String) {
         _title.value = title
+        _isDirty.value = true
     }
 
     /**
@@ -406,6 +425,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setContent(content: String) {
         _content.value = content
+        _isDirty.value = true
     }
 
     /**
@@ -415,6 +435,7 @@ class InspirationEditViewModel @Inject constructor(
     fun setCategoryId(categoryId: Long) {
         _categoryId.value = categoryId
         updateReminderRecommendation()
+        _isDirty.value = true
     }
 
     /**
@@ -423,6 +444,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setPriority(priority: Int) {
         _priority.value = priority
+        _isDirty.value = true
     }
 
     /**
@@ -432,6 +454,7 @@ class InspirationEditViewModel @Inject constructor(
     fun setStartDate(startDate: Long?) {
         _startDate.value = startDate
         updateReminderRecommendation()
+        _isDirty.value = true
     }
 
     /**
@@ -447,6 +470,7 @@ class InspirationEditViewModel @Inject constructor(
         if (dueDate != null && _reminderTime.value == null) {
             _reminderTime.value = dueDate
         }
+        _isDirty.value = true
     }
 
     /**
@@ -456,6 +480,7 @@ class InspirationEditViewModel @Inject constructor(
     fun setEstimatedDurationMinutes(minutes: Int?) {
         _estimatedDurationMinutes.value = minutes
         updateReminderRecommendation()
+        _isDirty.value = true
     }
 
     /**
@@ -464,6 +489,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setRepeatType(repeatType: Int) {
         _repeatType.value = repeatType
+        _isDirty.value = true
     }
 
     // 地理围栏相关方法
@@ -474,6 +500,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setGeofenceLat(lat: Double?) {
         _geofenceLat.value = lat
+        _isDirty.value = true
     }
 
     /**
@@ -482,6 +509,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setGeofenceLng(lng: Double?) {
         _geofenceLng.value = lng
+        _isDirty.value = true
     }
 
     /**
@@ -490,6 +518,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setGeofenceRadius(radius: Float) {
         _geofenceRadius.value = radius
+        _isDirty.value = true
     }
 
     /**
@@ -498,6 +527,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setGeofenceType(type: Int) {
         _geofenceType.value = type
+        _isDirty.value = true
     }
 
     /**
@@ -506,6 +536,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setGeofenceEnabled(enabled: Boolean) {
         _geofenceEnabled.value = enabled
+        _isDirty.value = true
     }
 
     /**
@@ -514,6 +545,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setGeofenceAddress(address: String?) {
         _geofenceAddress.value = address
+        _isDirty.value = true
     }
 
     // 子任务相关方法
@@ -534,6 +566,7 @@ class InspirationEditViewModel @Inject constructor(
             order = currentList.size + 1
         )
         _subTasks.value = currentList + newSubTask
+        _isDirty.value = true
     }
 
     /**
@@ -544,6 +577,7 @@ class InspirationEditViewModel @Inject constructor(
     fun removeSubTask(subTask: SubTask) {
         val currentList = _subTasks.value
         _subTasks.value = currentList.filter { it.id != subTask.id || it.order != subTask.order }
+        _isDirty.value = true
     }
 
     /**
@@ -562,6 +596,7 @@ class InspirationEditViewModel @Inject constructor(
             }
         }
         _subTasks.value = updatedList
+        _isDirty.value = true
 
         if (existingInspiration != null && subTask.id > 0) {
             viewModelScope.launch {
@@ -580,6 +615,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun updateTags(newTags: List<String>) {
         _tags.value = newTags
+        _isDirty.value = true
     }
 
     // ==================== 加载方法 ====================
@@ -661,6 +697,15 @@ class InspirationEditViewModel @Inject constructor(
                 _subTasks.value = subTasks
             }
         }
+
+        /**
+         * 加载完成 → 重置 _isDirty 为 false（v2026-07-22 新增）
+         *
+         * 必须在所有 _xxx.value 赋值结束后设置，确保 setXxx 函数体内的
+         * _isDirty=true 不会污染基线状态。这里用 viewModelScope.launch 异步置 false
+         * 即可，因为 _isDirty 本身就是个简单的 MutableStateFlow，无需精确同步。
+         */
+        _isDirty.value = false
     }
 
     // ==================== 保存方法 ====================
@@ -839,6 +884,15 @@ class InspirationEditViewModel @Inject constructor(
 
         saveSubTasks(inspirationId)
 
+        /**
+         * 保存成功 → 重置 _isDirty 为 false（v2026-07-22 新增）
+         *
+         * 必须放在 saveSubTasks 之后，因为子任务的 saveSubTasks 内部可能调用
+         * toggleSubTaskCompletion → _subTasks.value = updatedList → 内部 _isDirty=true
+         * （实际上 saveSubTasks 不会走 UI 的 toggleSubTaskCompletion，但这里保险起见放在最后）
+         */
+        _isDirty.value = false
+
         /** 保存内容块到独立表（图片/语音等混合内容） */
         if (_currentContentBlocks.value.isNotEmpty()) {
             saveContentBlocks(inspirationId, _currentContentBlocks.value)
@@ -987,6 +1041,7 @@ class InspirationEditViewModel @Inject constructor(
     fun setVoiceNote(path: String?, duration: Int?) {
         _voiceNotePath.value = path
         _voiceDuration.value = duration
+        _isDirty.value = true
     }
 
     /**
@@ -995,6 +1050,7 @@ class InspirationEditViewModel @Inject constructor(
     fun clearVoiceNote() {
         _voiceNotePath.value = null
         _voiceDuration.value = null
+        _isDirty.value = true
     }
 
     // ==================== 图片管理相关方法 ====================
@@ -1009,6 +1065,7 @@ class InspirationEditViewModel @Inject constructor(
         if (path !in currentList) {
             currentList.add(path)
             _imagePaths.value = currentList
+            _isDirty.value = true
         }
     }
 
@@ -1022,6 +1079,7 @@ class InspirationEditViewModel @Inject constructor(
         val currentList = _imagePaths.value.toMutableList()
         currentList.remove(path)
         _imagePaths.value = currentList
+        _isDirty.value = true
 
         /** 异步删除物理文件 */
         viewModelScope.launch {
@@ -1036,6 +1094,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun reorderImagePaths(newPaths: List<String>) {
         _imagePaths.value = newPaths
+        _isDirty.value = true
     }
 
     /**
@@ -1045,6 +1104,7 @@ class InspirationEditViewModel @Inject constructor(
     fun clearImagePaths() {
         val pathsToRemove = _imagePaths.value.toList()
         _imagePaths.value = emptyList()
+        _isDirty.value = true
 
         /** 批量删除物理文件 */
         viewModelScope.launch {
@@ -1352,6 +1412,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setBackgroundColor(colorInt: Int) {
         _backgroundColor.value = colorInt
+        _isDirty.value = true
     }
 
     /**
@@ -1364,6 +1425,7 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setContentFormat(markdown: String) {
         _contentFormat.value = markdown
+        _isDirty.value = true
     }
 
     /**
@@ -1375,6 +1437,8 @@ class InspirationEditViewModel @Inject constructor(
      * @param state 由 rememberRichTextState() 创建的 RichTextState 实例
      */
     fun setRichTextState(state: RichTextState) {
+        // 注意：setRichTextState 只在 UI 初始化时调用一次（rememberRichTextState 注入），
+        // 不视为用户编辑，**不**标记 _isDirty=true，避免编辑页进入时误判脏
         _richTextState = state
     }
 

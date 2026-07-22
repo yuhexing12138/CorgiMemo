@@ -234,6 +234,42 @@ fun InspirationEditScreen(
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     /**
+     * 删除确认弹窗的当前模式（v2026-07-22 同步 TodoEditScreen 改造）
+     *
+     * 与 [showDeleteConfirmDialog] 配对使用：开弹窗前先 set 模式，再 show=true。
+     * 模式决定弹窗文案和确认后的行为：
+     * - [DeleteDialogMode.Delete]：编辑模式弹窗，确认后执行 viewModel.deleteInspiration + navigateBack
+     * - [DeleteDialogMode.Discard]：新建模式弹窗，确认后仅 navigateBack（无 DB 数据可删）
+     */
+    var deleteDialogMode by remember { mutableStateOf(DeleteDialogMode.Delete) }
+
+    /**
+     * 返回时"未保存"确认弹窗状态（v2026-07-22 新增）
+     *
+     * 当用户点击顶部 ← 或触发系统返回键时，若 viewModel.isDirty == true，
+     * 则拦截返回并弹 DeleteConfirmDialog (Discard 模式) 询问用户是否真的要放弃未保存内容。
+     *
+     * 触发链路：
+     * 1. 用户点 ← 或按系统返回键 → attemptBack
+     * 2. 检查 viewModel.isDirty：
+     *    - false → 直接 navigateBack（无内容丢失）
+     *    - true → showDiscardConfirm = true（拦截）
+     * 3. DeleteConfirmDialog (Discard 模式) 弹窗显示
+     * 4. 用户选择：
+     *    - 确认放弃 → navigateBack
+     *    - 取消 → 仅关闭弹窗
+     */
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+
+    /**
+     * ViewModel 未保存状态（v2026-07-22 新增）
+     *
+     * 从 viewModel.isDirty StateFlow 派生，UI 层用于判断是否拦截返回。
+     * 注意：不直接 read isDirty.value（避免每次重组都查询），用 collectAsState 转 Composable state。
+     */
+    val isDirty by viewModel.isDirty.collectAsState()
+
+    /**
      * 相机拍照 Launcher
      *
      * 使用 ActivityResultContracts.TakePicture() 契约，
@@ -371,11 +407,14 @@ fun InspirationEditScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     /**
-     * 返回上一页辅助函数
+     * 返回上一页辅助函数（无未保存检查的纯退出）
      *
      * 在 popBackStack 之前设置 savedStateHandle["targetTab"] = "INSPIRE"，
      * 让 MainScreen 接收到返回事件后切换到灵感 tab，
      * 确保从灵感编辑页退出后始终回到灵感页（而非待办页等其他 tab）。
+     *
+     * 命名说明：navigateBack 是"无脑退出"，不带任何确认；
+     * 涉及未保存拦截的"安全返回"请使用 [attemptBack]。
      */
     val navigateBack: () -> Unit = {
         navController.previousBackStackEntry?.savedStateHandle?.set("targetTab", "INSPIRE")
@@ -385,11 +424,36 @@ fun InspirationEditScreen(
     /**
      * 拦截系统返回事件（侧滑返回 / 系统返回键）
      *
-     * 确保所有退出方式（应用内返回按钮、完成按钮、删除确认、系统返回）
-     * 都经过 navigateBack()，统一设置 targetTab=INSPIRE，
-     * 让 MainScreen 切换到灵感 tab。
+     * v2026-07-22 改造：从直接调用 navigateBack 改为 attemptBack
+     * 统一所有退出方式（应用内 ← 按钮、系统返回键）都经过未保存检查
      */
-    BackHandler { navigateBack() }
+    BackHandler { attemptBack() }
+
+    /**
+     * "安全返回"：检查 viewModel.isDirty，若有未保存修改则弹"放弃编辑"确认框（v2026-07-22 新增）
+     *
+     * 调用场景：
+     * - 顶部 ← 按钮 onClick
+     * - BackHandler（系统返回键 / 手势返回）
+     * - 完成按钮保存失败后保留在编辑页，用户再点返回时
+     *
+     * 行为：
+     * - isDirty == false → 直接 navigateBack（无内容丢失，无需确认）
+     * - isDirty == true → 弹 DeleteConfirmDialog (Discard 模式) 询问，确认后 navigateBack
+     *
+     * 设计要点：
+     * - 不阻塞 UI 线程（isDirty 是 StateFlow 同步读取）
+     * - 与 DeleteConfirmDialog 复用同一组件（Discard 模式），保持 UI 一致性
+     */
+    val attemptBack: () -> Unit = {
+        if (isDirty) {
+            // 有未保存修改：拦截返回，弹"放弃编辑"确认框
+            showDiscardConfirm = true
+        } else {
+            // 无未保存：直接退出
+            navigateBack()
+        }
+    }
     /** 标签选择弹窗显示状态（由顶部标签按钮触发） */
     var showTagPicker by remember { mutableStateOf(false) }
     /** 待删除的标签（长按标签后弹出确认对话框，null=不显示） */
@@ -586,9 +650,14 @@ fun InspirationEditScreen(
                     .padding(horizontal = 4.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                /** 返回按钮：颜色与尺寸与 TodoEditScreen / EnhancedTopBar 统一 */
+                /**
+                 * 返回按钮：颜色与尺寸与 TodoEditScreen / EnhancedTopBar 统一
+                 *
+                 * v2026-07-22 改造：onClick 从 navigateBack 改为 attemptBack
+                 * 拦截未保存编辑，避免用户误触 ← 按钮导致草稿丢失
+                 */
                 IconButton(
-                    onClick = navigateBack,
+                    onClick = attemptBack,
                     modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
@@ -669,12 +738,26 @@ fun InspirationEditScreen(
                     )
                 }
 
-                /** 删除按钮：弹出删除确认对话框（仅已保存灵感可删除） */
+                /**
+                 * 删除按钮：弹出删除/放弃确认对话框
+                 *
+                 * v2026-07-22 同步 TodoEditScreen 改造：
+                 * - 旧行为：if (inspirationId != null && inspirationId > 0) 才执行，
+                 *   新建模式（inspirationId == null）下点击垃圾桶完全无反应
+                 * - 新行为：去掉 if 条件，新建模式点击也开弹窗（走 Discard 模式），
+                 *   弹窗提示"放弃编辑？未保存内容将永久丢失"
+                 * - 二次确认：先 set deleteDialogMode，再 showDeleteConfirmDialog = true
+                 */
                 IconButton(
                     onClick = {
-                        if (inspirationId != null && inspirationId > 0) {
-                            showDeleteConfirmDialog = true
+                        // 根据当前是否有持久化的 inspirationId 决定弹窗模式
+                        val isEditMode = inspirationId != null && inspirationId > 0
+                        deleteDialogMode = if (isEditMode) {
+                            DeleteDialogMode.Delete
+                        } else {
+                            DeleteDialogMode.Discard
                         }
+                        showDeleteConfirmDialog = true
                     },
                     enabled = !isLocked,
                     modifier = Modifier.size(36.dp)
@@ -1517,22 +1600,81 @@ fun InspirationEditScreen(
     } // showVoiceRecordSheet
 
     /**
-     * 删除灵感确认对话框
+     * 删除/放弃确认对话框
      *
-     * 使用已有的 DeleteConfirmDialog 组件，
-     * 用户确认后才执行删除操作并返回上一页。
+     * v2026-07-22 首次新增：垃圾桶二次确认，防止误删
+     * v2026-07-22 同步 TodoEditScreen 升级：支持 [DeleteDialogMode.Discard] 模式，
+     *     覆盖新建灵感（inspirationId == null）的"放弃编辑"场景
+     *
+     * 触发链路：
+     * 1. 用户点击顶部垃圾桶 → onClick：
+     *    - 编辑模式（inspirationId != null）→ deleteDialogMode = Delete
+     *    - 新建模式（inspirationId == null）→ deleteDialogMode = Discard
+     *    → 然后 showDeleteConfirmDialog = true
+     * 2. 弹窗根据 deleteDialogMode 渲染不同文案
+     * 3. 用户选择：
+     *    - Delete 模式确认 → viewModel.deleteInspiration(inspirationId) + navigateBack
+     *    - Discard 模式确认 → 仅 navigateBack（无 DB 操作）
+     *    - 取消/遮罩/返回键 → 仅关闭弹窗
      */
     DeleteConfirmDialog(
         showDialog = showDeleteConfirmDialog,
         itemTitle = title.ifBlank { "无标题灵感" },
+        mode = deleteDialogMode,
         onConfirm = {
-            /** 用户确认删除：执行删除并返回 */
-            if (inspirationId != null && inspirationId > 0) {
-                viewModel.deleteInspiration(inspirationId)
-                navigateBack()
+            // 1. 先关闭弹窗（避免 navigateBack 时弹窗仍在屏幕上闪烁）
+            showDeleteConfirmDialog = false
+            // 2. 根据 mode 走不同分支
+            when (deleteDialogMode) {
+                DeleteDialogMode.Delete -> {
+                    // 删除模式：二次校验 inspirationId 有效性后真正删除 + 返回
+                    val targetId = inspirationId
+                    if (targetId != null && targetId > 0) {
+                        viewModel.deleteInspiration(targetId)
+                        navigateBack()
+                    }
+                }
+                DeleteDialogMode.Discard -> {
+                    // 放弃编辑模式：直接关闭页面，丢弃未保存草稿
+                    // 不调用任何 viewModel 方法，因为新建灵感尚未持久化到 DB
+                    navigateBack()
+                }
             }
         },
-        onDismiss = { showDeleteConfirmDialog = false }
+        onDismiss = {
+            // 取消路径（点遮罩/返回键/取消按钮）：仅关闭弹窗，不修改数据
+            showDeleteConfirmDialog = false
+        }
+    )
+
+    /**
+     * 放弃编辑确认弹窗（v2026-07-22 新增）
+     *
+     * 当用户从灵感编辑页触发返回（顶部 ← / 系统返回键 / 手势返回）时，
+     * 若 viewModel.isDirty == true，弹此弹窗询问用户是否真的要放弃未保存内容。
+     *
+     * 复用 DeleteConfirmDialog 的 Discard 模式：
+     * - 弹窗标题"放弃编辑"，按钮"放弃编辑"
+     * - 警告"未保存的内容将永久丢失，无法恢复"
+     * - 不显示 itemTitle 高亮（因为未保存内容没有"标题"概念）
+     *
+     * onConfirm 行为：仅 navigateBack（无 DB 操作）
+     * onDismiss 行为：仅关闭弹窗，留在编辑页
+     */
+    DeleteConfirmDialog(
+        showDialog = showDiscardConfirm,
+        itemTitle = "",
+        mode = DeleteDialogMode.Discard,
+        onConfirm = {
+            // 1. 先关闭弹窗
+            showDiscardConfirm = false
+            // 2. 执行返回（无 DB 操作，直接关闭页面）
+            navigateBack()
+        },
+        onDismiss = {
+            // 取消路径：仅关闭弹窗，留在编辑页
+            showDiscardConfirm = false
+        }
     )
 } // main content Column
 } // InspirationEditScreen

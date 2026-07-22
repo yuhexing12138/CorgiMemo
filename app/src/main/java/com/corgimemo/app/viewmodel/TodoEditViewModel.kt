@@ -299,6 +299,27 @@ class TodoEditViewModel @Inject constructor(
     val groupSaveStates: kotlinx.coroutines.flow.StateFlow<Map<Int, GroupSaveState>> = _groupSaveStates.asStateFlow()
 
     /**
+     * 当前编辑页是否有任何未保存的分组（v2026-07-22 新增）
+     *
+     * 用途：编辑页 UI 拦截"返回"操作（顶部 ← 按钮 / 系统返回键）时判断是否需要弹"放弃编辑"确认框，
+     * 避免用户误触返回导致未保存草稿被静默丢失。
+     *
+     * 实现：从 [_groupSaveStates] 派生（map 内任意分组的 isSaved == false 即视为有未保存）。
+     * - 编辑模式（已 loadTodo）：所有分组初始 isSaved=true，用户修改后会重置为 false
+     * - 新建模式（loadTodo 未调用）：所有分组初始 isSaved=false → 此值直接为 true（视为有未保存）
+     * - 保存后：所有分组 isSaved=true → 此值为 false
+     *
+     * 复用现有 groupSaveStates 机制（不需要新加 _isDirty StateFlow），保持单一数据源。
+     */
+    val hasAnyUnsavedChanges: StateFlow<Boolean> = _groupSaveStates
+        .map { states -> states.values.any { !it.isSaved } }
+        .stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.Eagerly,
+            initialValue = true  // 默认视为有未保存（保守策略，避免新建模式漏拦）
+        )
+
+    /**
      * 各分组的优先级状态
      *
      * key = groupId (Int), value = 优先级 (0=无, 1=低, 2=中, 3=高)
