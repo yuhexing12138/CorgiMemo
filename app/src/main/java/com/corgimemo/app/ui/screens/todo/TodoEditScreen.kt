@@ -1137,11 +1137,15 @@ fun TodoEditScreen(
                 // 🆕 v2026-07-22 删除按钮：从底部工具栏上移到顶部导航栏
                 // 点击行为完全保持原 EditToolbar 删除按钮的逻辑（仅在已保存时执行删除 + 返回）
                 // 尺寸 36dp / 18dp 与灵感编辑页顶部同款按钮保持统一
+                //
+                // 🆕 v2026-07-22 二次确认改造：
+                // - 旧行为：onClick 内直接 homeViewModel.deleteTodo + popBackStack（误触立即丢失数据）
+                // - 新行为：仅置 showDeleteConfirm = true，由 DeleteConfirmDialog 接管"是否真的要删"的询问
+                // - 仅在编辑模式（todoId != null && todoId > 0）下打开确认弹窗
                 IconButton(
                     onClick = {
                         if (todoId != null && todoId > 0) {
-                            homeViewModel.deleteTodo(todoId)
-                            navController.popBackStack()
+                            showDeleteConfirm = true
                         }
                     },
                     modifier = Modifier.size(36.dp)
@@ -2301,6 +2305,43 @@ fun TodoEditScreen(
             }
         )
     }
+
+    /**
+     * 删除待办二次确认弹窗（v2026-07-22 新增）
+     *
+     * 触发链路：
+     * 1. 用户点击顶部导航栏的垃圾桶图标 → onDeleteClick → showDeleteConfirm = true
+     * 2. 本弹窗被打开，显示当前 todo 标题 + "此操作无法撤销"警告文案
+     * 3. 用户选择：
+     *    - 点击"确认删除" → 真正调用 homeViewModel.deleteTodo(todoId) + popBackStack
+     *    - 点击"取消" / 点击遮罩 / 按返回键 → 仅关闭弹窗，数据无任何变化
+     *
+     * 设计要点：
+     * - 复用项目已有的 [com.corgimemo.app.ui.components.DeleteConfirmDialog] 组件
+     *   （警告图标 + 标题高亮 + 红色"确认删除"按钮），与其他页面删除交互一致
+     * - itemTitle 优先使用当前 todo 标题（title 来自 ViewModel.title StateFlow），
+     *   若为空（极少见：刚 loadTodo 完但 UI 尚未渲染）则 fallback 为"此待办"
+     * - todoId 二次校验：即使 showDeleteConfirm 在 todoId 变更后仍为 true（理论不会发生），
+     *   也要在 onConfirm 内重新判空，避免对错误的 ID 调用 deleteTodo
+     */
+    DeleteConfirmDialog(
+        showDialog = showDeleteConfirm,
+        itemTitle = title.ifBlank { "此待办" },
+        onConfirm = {
+            // 1. 先关闭弹窗（避免 popBackStack 时弹窗仍在屏幕上闪烁）
+            showDeleteConfirm = false
+            // 2. 二次校验 todoId 有效性
+            val targetId = todoId
+            if (targetId != null && targetId > 0) {
+                homeViewModel.deleteTodo(targetId)
+                navController.popBackStack()
+            }
+        },
+        onDismiss = {
+            // 取消路径（点遮罩/返回键/取消按钮）：仅关闭弹窗，不修改数据
+            showDeleteConfirm = false
+        }
+    )
 }
 
 private fun hasRecordAudioPermission(context: Context): Boolean {
