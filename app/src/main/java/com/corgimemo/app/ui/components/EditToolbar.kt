@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,14 +21,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 /**
  * 编辑页底部工具栏组件
@@ -178,6 +179,12 @@ fun EditToolbar(
  * 工具栏图标按钮
  *
  * 支持 ImageVector 图标或纯文字标签（如 "A/A"）
+ *
+ * 🆕 v2026-07-22 文字分支改造：
+ * - 原 14sp Text 在 IconButton 容器内"小而细"，与 22dp Material Icons 视觉不统一
+ * - 现改用 Canvas 自定义绘制斜杠（支持 imageVector=文字斜杠），
+ *   笔画粗细 2.5dp + Round 端点，与 Material Icons 的"实心"风格对齐
+ * - 占用空间 22.dp×22.dp，与图标分支完全一致
  */
 @Composable
 private fun ToolbarIconBtn(
@@ -199,14 +206,28 @@ private fun ToolbarIconBtn(
                 modifier = Modifier.size(22.dp)
             )
         } else if (icon != null) {
-            Text(
-                text = icon,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = androidx.compose.ui.text.TextStyle(
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+            /**
+             * 自定义文字图标（Canvas 绘制）
+             *
+             * 当前唯一用例是斜杠 "/"（新建待办按钮）。
+             * 用 Canvas 而非 Text 的原因：
+             * 1. 精确控制笔画粗细（2.5dp），与 Material Icons 线条粗细一致
+             * 2. Round 端点让斜杠两端"圆头"，与图标的"实心"风格统一
+             * 3. 不受设备字体/字号影响，跨设备视觉一致
+             *
+             * 占用 22.dp × 22.dp 的固定画布，斜杠留 3dp padding 避免贴边。
+             */
+            Canvas(modifier = Modifier.size(22.dp)) {
+                val stroke = 2.5.dp.toPx()
+                val pad = 3.dp.toPx()
+                drawLine(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    start = Offset(size.width - pad, pad),
+                    end = Offset(pad, size.height - pad),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
                 )
-            )
+            }
         }
     }
 }
