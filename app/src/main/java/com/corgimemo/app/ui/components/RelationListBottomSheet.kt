@@ -90,7 +90,7 @@ fun RelationListBottomSheet(
     sourceType: String,
     sourceId: Long,
     groupId: Int = 0,
-    onItemClick: (cardType: String, cardId: Long) -> Unit = {},
+    onItemClick: (cardType: String, cardId: Long) -> Unit = { _, _ -> },
     onDismiss: () -> Unit = {},
     onUnlinked: () -> Unit = {},
     viewModel: RelationListViewModel = hiltViewModel()

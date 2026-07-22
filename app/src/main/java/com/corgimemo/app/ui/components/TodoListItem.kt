@@ -11,6 +11,9 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+// v2026-07-22 修复编译错误：RelationCountChip 使用了 Modifier.clickable
+// 旧版只有 MutableInteractionSource import，缺 clickable 本身
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -586,11 +589,14 @@ fun TodoListItem(
                                         )
                                     }
                                     // 关联数量（v2026-07-21 新增，跟在附件计数之后）
+                                    // v2026-07-22 升级为可点击的 RelationCountChip
+                                    // 旧 RelationCountBadge 已废弃，统一改用 Chip
                                     if (hasRelation) {
                                         if (hasAttachment) Spacer(modifier = Modifier.width(6.dp))
-                                        RelationCountBadge(
+                                        RelationCountChip(
                                             count = relationCount,
-                                            color = attachmentColor
+                                            color = attachmentColor,
+                                            onClick = onRelationCountClick
                                         )
                                     }
                                 }
