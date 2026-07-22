@@ -216,12 +216,19 @@ private fun ToolbarIconBtn(
              * 3. 不受设备字体/字号影响，跨设备视觉一致
              *
              * 占用 22.dp × 22.dp 的固定画布，斜杠留 3dp padding 避免贴边。
+             *
+             * 🆕 v2026-07-22 编译修复：
+             * `MaterialTheme.colorScheme.onSurfaceVariant` 是 @Composable 读取，
+             * 必须在 @Composable 上下文中取值，**不能**在 Canvas 的 onDraw lambda
+             * （DrawScope，非 @Composable）中调用。
+             * 修复方法：在 Canvas 之前先把 color 提取为本地 val，再传入 drawLine。
              */
+            val slashColor = MaterialTheme.colorScheme.onSurfaceVariant
             Canvas(modifier = Modifier.size(22.dp)) {
                 val stroke = 2.5.dp.toPx()
                 val pad = 3.dp.toPx()
                 drawLine(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = slashColor,
                     start = Offset(size.width - pad, pad),
                     end = Offset(pad, size.height - pad),
                     strokeWidth = stroke,
