@@ -253,9 +253,12 @@ object ImageExporter {
         val bottomCardPadding = (16 * density).toInt() // 底部 16dp
         val leftOffset = (20 * density).toInt() // 竖条4dp + 内容padding16dp
         val textAreaWidth = contentWidth - leftOffset - bottomCardPadding
-        // 卡片圆角 = 角标最大可装圆角（= 角标 height / 2 = 9.5dp），保证圆角视觉一致
-        // 注意：9.5f 必须用 Float literal，否则 9.5 * density 推断为 Double，drawRoundRect 会报类型不匹配
-        val cornerRadius = (9.5f * density)
+        // 卡片主圆角 9dp（与角标圆角一致）
+        // 边框 path 圆角 = 主圆角 - stroke/2 = 9 - 0.75 = 8.25dp，
+        //   让边框外侧 = path + 0.75 = 9dp（与角标视觉一致）
+        // 原因：Android Canvas 的 stroke 是中心线（half in / half out），与 HTML/CSS border 外侧不同
+        val cornerRadius = (9f * density)
+        val borderRadius = (8.25f * density)
         val imageCount = imagePaths.size
 
         // 测量内容高度
@@ -283,7 +286,7 @@ object ImageExporter {
         canvas.drawRoundRect(
             RectF(padding.toFloat(), startY.toFloat(),
                 (width - padding).toFloat(), (startY + contentHeight).toFloat()),
-            cornerRadius, cornerRadius, borderPaint
+            borderRadius, borderRadius, borderPaint
         )
 
         // 左侧 4dp 优先级竖条（不内缩，用卡片圆角 clipPath 自动裁剪上下超出部分）
@@ -311,7 +314,8 @@ object ImageExporter {
         canvas.restore()
 
         // ===== 顶部两角角标 =====
-        // 用卡片圆角矩形作为 clipPath，让两个角标超出卡片圆角范围的部分被自动裁剪
+        // 用卡片视觉外轮廓（cornerRadius 9dp）作为 clipPath，让角标"贴边"超出部分被自然裁剪
+        // 这是"贴片"设计：角标顶/外/底 贴边 → 被卡片圆角切掉；角标圆角侧 → 在卡片内完整显示
         canvas.save()
         val badgeClipPath = android.graphics.Path().apply {
             addRoundRect(
@@ -619,9 +623,8 @@ object ImageExporter {
         density: Float
     ) {
         if (category == null) return
-        // 角标圆角与卡片严格一致（= 9.5dp = 角标 height/2，保证完整 90° 圆弧）
-        // 注意：9.5f 必须用 Float literal，否则 9.5 * density 推断为 Double
-        val cornerRadius = (9.5f * density)
+        // 角标圆角与卡片严格一致（9dp，与边框外侧圆角视觉一致）
+        val cornerRadius = (9f * density)
         val badgePaddingH = (10 * density)
         val badgePaddingV = (4 * density)
         val barWidth = 4 * density // 左侧竖条宽度，分类角标从竖条内侧开始
@@ -642,12 +645,17 @@ object ImageExporter {
         val bottom = top + badgeHeight
 
         // 背景路径：仅右下角圆角
+        // 关键：Path.arcTo(left, top, right, bottom, ...) 的 (left, top, right, bottom)
+        //   是椭圆的边界框，椭圆半径 = (width/2, height/2)。
+        //   要让圆角半径 = cornerRadius = 9dp，椭圆边界框必须是 2*cornerRadius × 2*cornerRadius = 18×18。
+        //   原 bug：椭圆边界框 = cornerRadius × cornerRadius = 9×9，实际圆角 = 4.5dp（半圆），
+        //   这就是为什么角标圆角视觉上比卡片小一半的原因。
         val bgPath = android.graphics.Path().apply {
             moveTo(left, top)
             lineTo(right, top)
             lineTo(right, bottom - cornerRadius)
             arcTo(
-                right - cornerRadius, bottom - cornerRadius,
+                right - 2 * cornerRadius, bottom - 2 * cornerRadius,
                 right, bottom,
                 0f, 90f, false
             )
@@ -686,9 +694,8 @@ object ImageExporter {
         priority: Int,
         density: Float
     ) {
-        // 角标圆角与卡片严格一致（= 9.5dp = 角标 height/2，保证完整 90° 圆弧）
-        // 注意：9.5f 必须用 Float literal，否则 9.5 * density 推断为 Double
-        val cornerRadius = (9.5f * density)
+        // 角标圆角与卡片严格一致（9dp，与边框外侧圆角视觉一致）
+        val cornerRadius = (9f * density)
         val badgePaddingH = (10 * density)
         val badgePaddingV = (4 * density)
         val dotRadius = (3 * density)
@@ -710,14 +717,17 @@ object ImageExporter {
         val bottom = top + badgeHeight
 
         // 背景路径：仅左下角圆角
+        // 关键：Path.arcTo 的椭圆边界框必须是 2*cornerRadius × 2*cornerRadius = 18×18，
+        //   这样椭圆半径 = cornerRadius = 9dp，圆角与卡片严格一致。
+        //   原 bug：椭圆边界框 = cornerRadius × cornerRadius = 9×9，实际圆角 = 4.5dp。
         val bgPath = android.graphics.Path().apply {
             moveTo(left, top)
             lineTo(right, top)
             lineTo(right, bottom)
             lineTo(left + cornerRadius, bottom)
             arcTo(
-                left, bottom - cornerRadius,
-                left + cornerRadius, bottom,
+                left, bottom - 2 * cornerRadius,
+                left + 2 * cornerRadius, bottom,
                 90f, 90f, false
             )
             lineTo(left, top)
