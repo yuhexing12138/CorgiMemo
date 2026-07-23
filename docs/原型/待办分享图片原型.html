@@ -176,11 +176,11 @@
     padding: 36px 16px 16px 22px; /* 顶部 36dp 给分类角标留白；左侧 22dp 给竖条+复选框空间 */
   }
 
-  /* 分类角标（仿灵感详情页字数徽章）—— 卡片左上角贴边 */
+  /* 分类角标（仿灵感详情页字数徽章）—— 卡片左上角贴边，从竖条内侧开始（不覆盖竖条） */
   .category-badge {
     position: absolute;
     top: 0;
-    left: 0;
+    left: var(--bar-width);  /* 从竖条内侧（4dp）开始，不再覆盖竖条 */
     z-index: 3;
     background: rgba(224, 224, 224, 0.6);
     color: var(--text-secondary);
@@ -562,7 +562,7 @@
 <body>
 
 <div class="page-header">
-  <h1>待办分享图片原型 <span style="color:#FF9A5C;">v5.1</span> · 优先级角标左下圆角 + 圆角统一为 16dp</h1>
+  <h1>待办分享图片原型 <span style="color:#FF9A5C;">v5.2</span> · 角标卡片内裁剪 + 分类角标避开竖条</h1>
   <p>CorgiMemo · ImageExporter 重设计迭代 · 分类与优先级角标圆角与卡片一致（16dp）</p>
   <p style="color:#C62828;font-weight:600;margin-top:8px;">⚠️ 请按 Ctrl+F5 强制刷新（清除浏览器缓存）</p>
 </div>

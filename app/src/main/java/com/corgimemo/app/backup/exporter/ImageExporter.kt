@@ -309,10 +309,21 @@ object ImageExporter {
         canvas.restore()
 
         // ===== 顶部两角角标 =====
-        // 分类角标：左上角，三边贴边 + 右下圆角（与卡片圆角一致 16dp）
+        // 用卡片圆角矩形作为 clipPath，让两个角标超出卡片圆角范围的部分被自动裁剪
+        canvas.save()
+        val badgeClipPath = android.graphics.Path().apply {
+            addRoundRect(
+                RectF(padding.toFloat(), startY.toFloat(),
+                    (width - padding).toFloat(), (startY + contentHeight).toFloat()),
+                cornerRadius, cornerRadius, android.graphics.Path.Direction.CW
+            )
+        }
+        canvas.clipPath(badgeClipPath)
+        // 分类角标：左上角贴边（从竖条内侧开始），clipPath 自动裁剪顶部超出
         drawCategoryBadge(canvas, padding, startY, category, density)
-        // 优先级角标：右上角，三边贴边 + 左下圆角（与卡片圆角一致 16dp）
+        // 优先级角标：右上角贴边，clipPath 自动裁剪右/顶部超出
         drawPriorityBadge(canvas, width, padding, startY, todo.priority, density)
+        canvas.restore()
 
         // ===== 内容区域 =====
         var y = startY + topCardPadding
@@ -588,8 +599,9 @@ object ImageExporter {
     /**
      * 绘制分类角标（卡片左上角贴边）
      *
-     * 圆角设计：三边贴边（顶/左/底 0 圆角）+ 仅右下角加圆角（与卡片圆角一致 16dp）
+     * 圆角设计：左边贴边于竖条内侧（不覆盖竖条）+ 仅右下角加圆角（与卡片圆角一致 16dp）
      * 仿灵感详情页字数徽章风格：半透明灰背景 + 11sp 文字 + 4×10dp 内边距
+     * 由 drawTodoCard 中的卡片圆角 clipPath 自动裁剪顶部超出部分
      *
      * @param canvas 画布
      * @param padding 卡片左外边距
@@ -608,6 +620,7 @@ object ImageExporter {
         val cornerRadius = (16 * density)
         val badgePaddingH = (10 * density)
         val badgePaddingV = (4 * density)
+        val barWidth = 4 * density // 左侧竖条宽度，分类角标从竖条内侧开始
         val textPaint = TextPaint().apply {
             textSize = (11 * density)
             color = Color.parseColor("#666666")
@@ -618,7 +631,8 @@ object ImageExporter {
         val textWidth = textPaint.measureText(text)
         val badgeWidth = textWidth + badgePaddingH * 2
         val badgeHeight = (11 * density) + badgePaddingV * 2
-        val left = padding.toFloat()
+        // left 从竖条内侧（padding + 4dp）开始，不再覆盖竖条
+        val left = padding + barWidth
         val top = startY.toFloat()
         val right = left + badgeWidth
         val bottom = top + badgeHeight
@@ -803,7 +817,7 @@ object ImageExporter {
     }
 
     /**
-     * 获取优先级标签背景色（与原型一致）
+     * 获取优先级标签背景色（与原型 rgba(..., 0.85) 一致）
      */
     private fun getPriorityBgColor(priority: Int): Int {
         val baseColor = when (priority) {
@@ -812,11 +826,11 @@ object ImageExporter {
             1 -> Color.parseColor("#90CAF9")
             else -> Color.parseColor("#C8E6C9")
         }
-        // 应用 0.15 alpha 模拟 rgba(..., 0.15)
+        // 应用 0.85 alpha 与原型 rgba(..., 0.85) 一致
         val r = android.graphics.Color.red(baseColor)
         val g = android.graphics.Color.green(baseColor)
         val b = android.graphics.Color.blue(baseColor)
-        return android.graphics.Color.argb((255 * 0.15f).toInt(), r, g, b)
+        return android.graphics.Color.argb((255 * 0.85f).toInt(), r, g, b)
     }
 
     /**
