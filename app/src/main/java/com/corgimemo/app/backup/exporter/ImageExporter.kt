@@ -102,6 +102,10 @@ object ImageExporter {
 
     /**
      * 测量卡片内容高度（第一遍扫描）
+     *
+     * v5 改造：分类/优先级角标移至卡片顶部两角，底部仅留时间标签。
+     * - 顶部 padding 36dp（给两角角标留白）
+     * - 末尾元数据区简化为底部时间标签（无分割线，无 chip 高度）
      */
     private fun measureCardContent(
         canvas: Canvas,
@@ -115,46 +119,17 @@ object ImageExporter {
         density: Float
     ): Int {
         val contentWidth = width - padding * 2
-        val cardPadding = (16 * density).toInt()
-        val leftOffset = (20 * density).toInt() // 竖条 4dp + 内容 padding 16dp
-        val textAreaWidth = contentWidth - leftOffset - cardPadding
+        val topCardPadding = (36 * density).toInt()   // 顶部 36dp（角标占位）
+        val bottomCardPadding = (16 * density).toInt() // 底部 16dp
 
-        var y = cardPadding // 顶部 padding
+        var y = topCardPadding
 
         // 标题行
         y += (24 * density).toInt()
 
-        // 元数据行（分类/附件/关联）
-        val hasCategory = category != null
-        val hasAttachment = imageCount > 0
-        val hasRelation = relationCount > 0
-        if (hasCategory || hasAttachment || hasRelation) {
-            y += (28 * density).toInt()
-        }
-
-        // 时间行
-        val hasReminder = todo.reminderTime != null
-        val hasDueDate = todo.dueDate != null
-        if (hasReminder || hasDueDate) {
-            y += (28 * density).toInt()
-        }
-
-        // 内容文本
-        if (!todo.content.isNullOrBlank()) {
-            val contentPaint = TextPaint().apply {
-                textSize = (14 * density)
-                color = Color.parseColor("#2D2D2D")
-                isAntiAlias = true
-            }
-            val layout = StaticLayout.Builder.obtain(
-                todo.content, 0, todo.content.length,
-                contentPaint, textAreaWidth
-            )
-                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-                .setLineSpacing((4 * density), 1.0f)
-                .setIncludePad(false)
-                .build()
-            y += layout.height + (8 * density).toInt()
+        // 主待办图片（行内联，紧跟标题下方）
+        if (imageCount > 0) {
+            y += (8 * density).toInt() + (56 * density).toInt() + (8 * density).toInt()
         }
 
         // 子待办列表
@@ -162,15 +137,23 @@ object ImageExporter {
             y += (8 * density).toInt() // 顶部间距
             for (sub in subTodos) {
                 y += (32 * density).toInt() // 每项高度
+                // 子待办附件（行内联）
+                val subImageCount = parseImagePaths(sub.imagePaths).size
+                if (subImageCount > 0) {
+                    y += (4 * density).toInt() + (56 * density).toInt() + (4 * density).toInt()
+                }
             }
         }
 
-        // 图片缩略图行
-        if (imageCount > 0) {
-            y += (8 * density).toInt() + (72 * density).toInt() + (8 * density).toInt()
+        // 底部时间标签（独立靠左显示，无分割线）
+        val hasReminder = todo.reminderTime != null
+        val hasDueDate = todo.dueDate != null
+        if (hasReminder || hasDueDate) {
+            y += (10 * density).toInt()  // 顶部间距
+            y += (20 * density).toInt()  // 时间芯片高度
         }
 
-        y += cardPadding // 底部 padding
+        y += bottomCardPadding // 底部 padding
 
         return y
     }
@@ -266,9 +249,10 @@ object ImageExporter {
         density: Float
     ): Int {
         val contentWidth = width - padding * 2
-        val cardPadding = (16 * density).toInt()
+        val topCardPadding = (36 * density).toInt()   // 顶部 36dp（给两角角标留白）
+        val bottomCardPadding = (16 * density).toInt() // 底部 16dp
         val leftOffset = (20 * density).toInt() // 竖条4dp + 内容padding16dp
-        val textAreaWidth = contentWidth - leftOffset - cardPadding
+        val textAreaWidth = contentWidth - leftOffset - bottomCardPadding
         val cornerRadius = (16 * density)
         val imageCount = imagePaths.size
 
@@ -300,30 +284,48 @@ object ImageExporter {
             cornerRadius, cornerRadius, borderPaint
         )
 
-        // 左侧 4dp 优先级竖条
+        // 左侧 4dp 优先级竖条（不内缩，用卡片圆角 clipPath 自动裁剪上下超出部分）
         val barColor = getPriorityBarColor(todo.priority)
         val barPaint = Paint().apply {
             color = barColor
             isAntiAlias = true
         }
-        canvas.drawRoundRect(
-            RectF(padding.toFloat(), startY.toFloat(),
-                (padding + 4 * density).toFloat(), (startY + contentHeight).toFloat()),
-            (4 * density), 0f, barPaint
-        )
-        // 竖条左侧圆角修正：画一个矩形覆盖左下角的圆角
+        // 用卡片圆角矩形作为 clipPath，竖条会被自然裁剪
+        canvas.save()
+        val cardClipPath = android.graphics.Path().apply {
+            addRoundRect(
+                RectF(padding.toFloat(), startY.toFloat(),
+                    (width - padding).toFloat(), (startY + contentHeight).toFloat()),
+                cornerRadius, cornerRadius, android.graphics.Path.Direction.CW
+            )
+        }
+        canvas.clipPath(cardClipPath)
+        // 竖条充满整个卡片高度（左右边缘会与卡片圆角自然对齐）
         canvas.drawRect(
-            RectF(padding.toFloat(), (startY + contentHeight - 4 * density).toFloat(),
+            RectF(padding.toFloat(), startY.toFloat(),
                 (padding + 4 * density).toFloat(), (startY + contentHeight).toFloat()),
             barPaint
         )
+        canvas.restore()
+
+        // ===== 顶部两角角标 =====
+        // 分类角标：左上角，三边贴边 + 右下圆角（与卡片圆角一致 16dp）
+        drawCategoryBadge(canvas, padding, startY, category, density)
+        // 优先级角标：右上角，三边贴边 + 左下圆角（与卡片圆角一致 16dp）
+        drawPriorityBadge(canvas, width, padding, startY, todo.priority, density)
 
         // ===== 内容区域 =====
-        var y = startY + cardPadding
+        var y = startY + topCardPadding
 
         // 标题行：圆形复选框 + 标题 + 进度
-        val checkboxRadius = (11 * density)
-        val checkboxCenterX = padding + leftOffset.toFloat() - cardPadding + (11 * density)
+        // 布局：竖条(4dp) + 间距(6dp) + 复选框(22dp) + 间距(12dp) + 标题
+        val checkboxDiameter = 22 * density
+        val checkboxRadius = checkboxDiameter / 2
+        val checkboxGap = 6 * density
+        val titleGap = 12 * density
+        val barInsetF = 1.5f * density
+        // 复选框中心 X = padding + 竖条内缩 + 竖条宽度 + 间距 + 复选框半径
+        val checkboxCenterX = padding + barInsetF + (4 * density) + checkboxGap + checkboxRadius
         val checkboxCenterY = y + (12 * density)
 
         // 圆形复选框
@@ -353,7 +355,7 @@ object ImageExporter {
         }
 
         // 标题
-        val titleX = padding + leftOffset.toFloat()
+        val titleX = checkboxCenterX + checkboxRadius + titleGap
         val titlePaint = TextPaint().apply {
             textSize = (16 * density)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -387,128 +389,20 @@ object ImageExporter {
                 isAntiAlias = true
             }
             val progressWidth = progressPaint.measureText(progressText)
-            canvas.drawText(progressText, (width - padding - cardPadding - progressWidth).toFloat(), y + (16 * density), progressPaint)
+            // 进度文本右对齐到卡片右内边缘（width - padding - bottomCardPadding）
+            canvas.drawText(progressText, (width - padding - bottomCardPadding - progressWidth).toFloat(), y + (16 * density), progressPaint)
         }
 
         y += (24 * density).toInt()
 
-        // 元数据行：分类 + 附件数 + 关联数
-        val hasCategory = category != null
-        val hasAttachment = imageCount > 0
-        val hasRelation = relationCount > 0
-        if (hasCategory || hasAttachment || hasRelation) {
-            var metaX = titleX
-            val metaPaint = TextPaint().apply {
-                textSize = (12 * density)
-                color = Color.parseColor("#666666")
-                isAntiAlias = true
-            }
-            val metaBgPaint = Paint().apply { isAntiAlias = true }
-            val metaChipPadding = (8 * density)
-
-            // 分类胶囊
-            if (hasCategory) {
-                val catName = category!!.name
-                val catWidth = metaPaint.measureText(catName) + metaChipPadding * 2
-                metaBgPaint.color = Color.parseColor("#F5F5F5")
-                canvas.drawRoundRect(
-                    RectF(metaX, (y - 4 * density).toFloat(), metaX + catWidth, (y + 20 * density).toFloat()),
-                    (8 * density), (8 * density), metaBgPaint
-                )
-                canvas.drawText(catName, metaX + metaChipPadding, y + (14 * density), metaPaint)
-                metaX += catWidth + (8 * density).toInt()
-            }
-
-            // 附件数
-            if (hasAttachment) {
-                val attachText = "📎 $imageCount"
-                val attachWidth = metaPaint.measureText(attachText) + metaChipPadding * 2
-                metaBgPaint.color = Color.parseColor("#FFE4CC")
-                canvas.drawRoundRect(
-                    RectF(metaX, (y - 4 * density).toFloat(), metaX + attachWidth, (y + 20 * density).toFloat()),
-                    (8 * density), (8 * density), metaBgPaint
-                )
-                canvas.drawText(attachText, metaX + metaChipPadding, y + (14 * density), metaPaint)
-                metaX += attachWidth + (8 * density).toInt()
-            }
-
-            // 关联数
-            if (hasRelation) {
-                val relText = "🔗 $relationCount"
-                val relWidth = metaPaint.measureText(relText) + metaChipPadding * 2
-                metaBgPaint.color = Color.parseColor("#FFE4CC")
-                canvas.drawRoundRect(
-                    RectF(metaX, (y - 4 * density).toFloat(), metaX + relWidth, (y + 20 * density).toFloat()),
-                    (8 * density), (8 * density), metaBgPaint
-                )
-                canvas.drawText(relText, metaX + metaChipPadding, y + (14 * density), metaPaint)
-            }
-
-            y += (28 * density).toInt()
+        // 主待办图片（行内联，紧跟标题下方，与待办编辑页一致）
+        if (imagePaths.isNotEmpty()) {
+            y += (8 * density).toInt()
+            y = drawImageRow(canvas, titleX, y, imagePaths, density)
+            y += (8 * density).toInt()
         }
 
-        // 时间行：提醒📅 + 截止🏁
-        val hasReminder = todo.reminderTime != null
-        val hasDueDate = todo.dueDate != null
-        if (hasReminder || hasDueDate) {
-            var timeX = titleX
-            val timeChipPaint = TextPaint().apply {
-                textSize = (12 * density)
-                color = Color.parseColor("#2D2D2D")
-                isAntiAlias = true
-            }
-            val timeChipPadding = (10 * density)
-            val timeBgPaint = Paint().apply { isAntiAlias = true }
-
-            if (hasReminder) {
-                val reminderText = "📅 ${shortDateFormat.format(Date(todo.reminderTime!!))}"
-                val reminderWidth = timeChipPaint.measureText(reminderText) + timeChipPadding * 2
-                timeBgPaint.color = Color.parseColor("#FFE4CC")
-                canvas.drawRoundRect(
-                    RectF(timeX, (y - 4 * density).toFloat(), timeX + reminderWidth, (y + 20 * density).toFloat()),
-                    (8 * density), (8 * density), timeBgPaint
-                )
-                canvas.drawText(reminderText, timeX + timeChipPadding, y + (14 * density), timeChipPaint)
-                timeX += reminderWidth + (8 * density).toInt()
-            }
-
-            if (hasDueDate) {
-                val dueText = "🏁 ${shortDateFormat.format(Date(todo.dueDate!!))}"
-                val dueWidth = timeChipPaint.measureText(dueText) + timeChipPadding * 2
-                timeBgPaint.color = Color.parseColor("#FFF0E0")
-                canvas.drawRoundRect(
-                    RectF(timeX, (y - 4 * density).toFloat(), timeX + dueWidth, (y + 20 * density).toFloat()),
-                    (8 * density), (8 * density), timeBgPaint
-                )
-                canvas.drawText(dueText, timeX + timeChipPadding, y + (14 * density), timeChipPaint)
-            }
-
-            y += (28 * density).toInt()
-        }
-
-        // 内容文本
-        if (!todo.content.isNullOrBlank()) {
-            val contentPaint = TextPaint().apply {
-                textSize = (14 * density)
-                color = Color.parseColor("#2D2D2D")
-                isAntiAlias = true
-            }
-            val layout = StaticLayout.Builder.obtain(
-                todo.content, 0, todo.content.length,
-                contentPaint, textAreaWidth
-            )
-                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-                .setLineSpacing((4 * density), 1.0f)
-                .setIncludePad(false)
-                .build()
-            canvas.save()
-            canvas.translate(titleX, y.toFloat())
-            layout.draw(canvas)
-            canvas.restore()
-            y += layout.height + (8 * density).toInt()
-        }
-
-        // 子待办列表
+        // 子待办列表（每个子待办可独立 inline 图片）
         if (subTodos.isNotEmpty()) {
             y += (8 * density).toInt()
 
@@ -563,6 +457,18 @@ object ImageExporter {
                     canvas.drawLine(stStartX, y + (10 * density), stStartX + subTitleWidth, y + (10 * density), strikethroughPaint2)
                 }
 
+                y += (32 * density).toInt()
+
+                // 子待办附件（行内联，紧跟子待办标题下方，与待办编辑页一致）
+                val subImagePaths = parseImagePaths(sub.imagePaths)
+                if (subImagePaths.isNotEmpty()) {
+                    // 缩进对齐：子待办缩进 28dp
+                    val subImageX = titleX + (28 * density)
+                    y += (4 * density).toInt()
+                    y = drawImageRow(canvas, subImageX, y, subImagePaths, density)
+                    y += (4 * density).toInt()
+                }
+
                 // 分割线（非最后一项）
                 if (sub != subTodos.last()) {
                     val divPaint = Paint().apply {
@@ -570,91 +476,359 @@ object ImageExporter {
                         isAntiAlias = true
                     }
                     canvas.drawLine(
-                        titleX.toFloat(), (y + 32 * density).toFloat(),
-                        (width - padding - cardPadding).toFloat(), (y + 32 * density).toFloat(),
+                        titleX.toFloat(), y.toFloat(),
+                        (width - padding - bottomCardPadding).toFloat(), y.toFloat(),
                         divPaint
                     )
                 }
-
-                y += (32 * density).toInt()
             }
         }
 
-        // 图片缩略图行（加载真实图片，最多显示3张，超过显示"+N"）
-        if (imageCount > 0) {
-            y += (8 * density).toInt()
-            val thumbSize = (72 * density).toInt()   // 与编辑页一致 72dp
-            val thumbSpacing = (8 * density).toInt()
-            val thumbRadius = (8 * density)
-            val fallbackPaint = Paint().apply {
-                color = Color.parseColor("#F5F5F5")
-                isAntiAlias = true
-            }
-            val morePaint = TextPaint().apply {
-                textSize = (14 * density)
-                color = Color.parseColor("#999999")
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                isAntiAlias = true
-            }
-
-            val displayCount = minOf(imageCount, 3)
-            for (i in 0 until displayCount) {
-                val thumbX = titleX + i * (thumbSize + thumbSpacing)
-
-                if (i < imagePaths.size) {
-                    // 尝试加载真实图片
-                    val imagePath = imagePaths[i]
-                    val imageFile = java.io.File(imagePath)
-                    val srcBitmap = if (imageFile.exists()) {
-                        try {
-                            android.graphics.BitmapFactory.decodeFile(imageFile.absolutePath, android.graphics.BitmapFactory.Options().apply {
-                                inSampleSize = 2  // 降采样节省内存
-                                inJustDecodeBounds = false
-                            })
-                        } catch (_: Exception) { null }
-                    } else null
-
-                    if (srcBitmap != null) {
-                        // 居中裁剪（CenterCrop）后绘制
-                        val cropBitmap = centerCropBitmap(srcBitmap, thumbSize, thumbSize)
-                        val srcRect = android.graphics.Rect(0, 0, cropBitmap.width, cropBitmap.height)
-                        val dstRect = RectF(thumbX.toFloat(), y.toFloat(), (thumbX + thumbSize).toFloat(), (y + thumbSize).toFloat())
-                        // 先绘制圆角裁剪背景
-                        canvas.drawRoundRect(dstRect, thumbRadius, thumbRadius, fallbackPaint)
-                        // 用 Canvas.save/restore + clipPath 实现圆角裁剪
-                        canvas.save()
-                        val clipPath = android.graphics.Path().apply {
-                            addRoundRect(dstRect, thumbRadius, thumbRadius, android.graphics.Path.Direction.CW)
-                        }
-                        canvas.clipPath(clipPath)
-                        canvas.drawBitmap(cropBitmap, srcRect, dstRect, Paint().apply { isAntiAlias = true })
-                        canvas.restore()
-                        if (cropBitmap != srcBitmap) cropBitmap.recycle()
-                        srcBitmap.recycle()
-                    } else {
-                        // 加载失败：显示灰色占位
-                        canvas.drawRoundRect(
-                            RectF(thumbX.toFloat(), y.toFloat(), (thumbX + thumbSize).toFloat(), (y + thumbSize).toFloat()),
-                            thumbRadius, thumbRadius, fallbackPaint
-                        )
-                    }
-                } else {
-                    // 超过图片数量：显示"+N"
-                    val moreText = "+${imageCount - 2}"
-                    canvas.drawRoundRect(
-                        RectF(thumbX.toFloat(), y.toFloat(), (thumbX + thumbSize).toFloat(), (y + thumbSize).toFloat()),
-                        thumbRadius, thumbRadius, fallbackPaint
-                    )
-                    val moreWidth = morePaint.measureText(moreText)
-                    canvas.drawText(moreText, thumbX + (thumbSize - moreWidth) / 2, y + thumbSize / 2 + (5 * density), morePaint)
-                }
-            }
-            y += thumbSize + (8 * density).toInt()
-        }
-
-        y += cardPadding // 底部 padding
+        // 底部时间标签（独立靠左显示，无分割线，无分类/优先级 chip）
+        y = drawBottomTimeChip(canvas, padding, startY, contentHeight, y, todo, density)
 
         return startY + contentHeight
+    }
+
+    /**
+     * 绘制图片缩略图行（行内联）
+     *
+     * @param canvas 画布
+     * @param x 起始 X 坐标
+     * @param y 起始 Y 坐标
+     * @param imagePaths 图片路径列表
+     * @param density 屏幕密度
+     * @return 绘制结束后的 Y 坐标（已加上行高）
+     */
+    private fun drawImageRow(
+        canvas: Canvas,
+        x: Float,
+        y: Int,
+        imagePaths: List<String>,
+        density: Float
+    ): Int {
+        val thumbSize = (56 * density).toInt()   // 行内联缩略图 56dp
+        val thumbSpacing = (6 * density).toInt()
+        val thumbRadius = (6 * density)
+        val fallbackPaint = Paint().apply {
+            color = Color.parseColor("#F5F5F5")
+            isAntiAlias = true
+        }
+        val morePaint = TextPaint().apply {
+            textSize = (12 * density)
+            color = Color.parseColor("#999999")
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+
+        val imageCount = imagePaths.size
+        val displayCount = minOf(imageCount, 3)
+        var currentX = x
+        for (i in 0 until displayCount) {
+            val imagePath = imagePaths[i]
+            val imageFile = java.io.File(imagePath)
+            val srcBitmap = if (imageFile.exists()) {
+                try {
+                    android.graphics.BitmapFactory.decodeFile(imageFile.absolutePath)
+                } catch (_: Exception) { null }
+            } else null
+
+            if (srcBitmap != null) {
+                val cropBitmap = centerCropBitmap(srcBitmap, thumbSize, thumbSize)
+                val srcRect = android.graphics.Rect(0, 0, cropBitmap.width, cropBitmap.height)
+                val dstRect = RectF(currentX, y.toFloat(), (currentX + thumbSize).toFloat(), (y + thumbSize).toFloat())
+                canvas.drawRoundRect(dstRect, thumbRadius, thumbRadius, fallbackPaint)
+                canvas.save()
+                val clipPath = android.graphics.Path().apply {
+                    addRoundRect(dstRect, thumbRadius, thumbRadius, android.graphics.Path.Direction.CW)
+                }
+                canvas.clipPath(clipPath)
+                canvas.drawBitmap(cropBitmap, srcRect, dstRect, Paint().apply { isAntiAlias = true })
+                canvas.restore()
+                if (cropBitmap != srcBitmap) cropBitmap.recycle()
+                srcBitmap.recycle()
+            } else {
+                // 加载失败：灰色占位
+                canvas.drawRoundRect(
+                    RectF(currentX, y.toFloat(), (currentX + thumbSize).toFloat(), (y + thumbSize).toFloat()),
+                    thumbRadius, thumbRadius, fallbackPaint
+                )
+            }
+            currentX += thumbSize + thumbSpacing
+        }
+
+        // 超过 3 张：显示 "+N"
+        if (imageCount > 3) {
+            val moreText = "+${imageCount - 3}"
+            val moreWidth = morePaint.measureText(moreText)
+            canvas.drawRoundRect(
+                RectF(currentX, y.toFloat(), (currentX + thumbSize).toFloat(), (y + thumbSize).toFloat()),
+                thumbRadius, thumbRadius, fallbackPaint
+            )
+            canvas.drawText(moreText, currentX + (thumbSize - moreWidth) / 2, y + thumbSize / 2 + (4 * density), morePaint)
+        }
+
+        return y + thumbSize
+    }
+
+    /**
+     * 解析 imagePaths JSON 字符串为 List<String>
+     *
+     * @param imagePathsJson JSON 数组字符串，空字符串返回空列表
+     * @return 图片路径列表
+     */
+    private fun parseImagePaths(imagePathsJson: String?): List<String> {
+        if (imagePathsJson.isNullOrBlank()) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(imagePathsJson)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /**
+     * 绘制分类角标（卡片左上角贴边）
+     *
+     * 圆角设计：三边贴边（顶/左/底 0 圆角）+ 仅右下角加圆角（与卡片圆角一致 16dp）
+     * 仿灵感详情页字数徽章风格：半透明灰背景 + 11sp 文字 + 4×10dp 内边距
+     *
+     * @param canvas 画布
+     * @param padding 卡片左外边距
+     * @param startY 卡片顶部 Y 坐标
+     * @param category 分类（null 时跳过绘制）
+     * @param density 屏幕密度
+     */
+    private fun drawCategoryBadge(
+        canvas: Canvas,
+        padding: Int,
+        startY: Int,
+        category: Category?,
+        density: Float
+    ) {
+        if (category == null) return
+        val cornerRadius = (16 * density)
+        val badgePaddingH = (10 * density)
+        val badgePaddingV = (4 * density)
+        val textPaint = TextPaint().apply {
+            textSize = (11 * density)
+            color = Color.parseColor("#666666")
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            isAntiAlias = true
+        }
+        val text = category.name
+        val textWidth = textPaint.measureText(text)
+        val badgeWidth = textWidth + badgePaddingH * 2
+        val badgeHeight = (11 * density) + badgePaddingV * 2
+        val left = padding.toFloat()
+        val top = startY.toFloat()
+        val right = left + badgeWidth
+        val bottom = top + badgeHeight
+
+        // 背景路径：仅右下角圆角
+        val bgPath = android.graphics.Path().apply {
+            moveTo(left, top)
+            lineTo(right, top)
+            lineTo(right, bottom - cornerRadius)
+            arcTo(
+                right - cornerRadius, bottom - cornerRadius,
+                right, bottom,
+                0f, 90f, false
+            )
+            lineTo(left, bottom)
+            lineTo(left, top)
+            close()
+        }
+        val bgPaint = Paint().apply {
+            color = Color.argb((255 * 0.6f).toInt(), 224, 224, 224)
+            isAntiAlias = true
+        }
+        canvas.drawPath(bgPath, bgPaint)
+
+        // 文字
+        canvas.drawText(text, left + badgePaddingH, top + badgePaddingV + (11 * density) - (1 * density), textPaint)
+    }
+
+    /**
+     * 绘制优先级角标（卡片右上角贴边）
+     *
+     * 圆角设计：三边贴边（顶/右/底 0 圆角）+ 仅左下角加圆角（与卡片圆角一致 16dp）
+     * 背景色随优先级变化：半透明 + 圆点 + 完整优先级文字
+     *
+     * @param canvas 画布
+     * @param width 卡片外宽
+     * @param padding 卡片右外边距（即 width - rightOffset）
+     * @param startY 卡片顶部 Y 坐标
+     * @param priority 优先级（0=无, 1=低, 2=中, 3=高）
+     * @param density 屏幕密度
+     */
+    private fun drawPriorityBadge(
+        canvas: Canvas,
+        width: Int,
+        padding: Int,
+        startY: Int,
+        priority: Int,
+        density: Float
+    ) {
+        val cornerRadius = (16 * density)
+        val badgePaddingH = (10 * density)
+        val badgePaddingV = (4 * density)
+        val dotRadius = (3 * density)
+        val dotGap = (4 * density)
+        val textPaint = TextPaint().apply {
+            textSize = (11 * density)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+        val priorityName = getPriorityName(priority)
+        textPaint.color = getPriorityTextColor(priority)
+        val textWidth = textPaint.measureText(priorityName)
+        val badgeWidth = badgePaddingH * 2 + dotRadius * 2 + dotGap + textWidth
+        val badgeHeight = (11 * density) + badgePaddingV * 2
+
+        val right = (width - padding).toFloat()
+        val left = right - badgeWidth
+        val top = startY.toFloat()
+        val bottom = top + badgeHeight
+
+        // 背景路径：仅左下角圆角
+        val bgPath = android.graphics.Path().apply {
+            moveTo(left, top)
+            lineTo(right, top)
+            lineTo(right, bottom)
+            lineTo(left + cornerRadius, bottom)
+            arcTo(
+                left, bottom - cornerRadius,
+                left + cornerRadius, bottom,
+                90f, 90f, false
+            )
+            lineTo(left, top)
+            close()
+        }
+        val bgColor = getPriorityBgColor(priority)
+        val bgPaint = Paint().apply {
+            color = bgColor
+            isAntiAlias = true
+        }
+        canvas.drawPath(bgPath, bgPaint)
+
+        // 圆点
+        val dotCenterX = left + badgePaddingH + dotRadius
+        val dotCenterY = top + badgeHeight / 2
+        val dotColor = getPriorityBarColor(priority)
+        val dotPaint = Paint().apply {
+            color = dotColor
+            isAntiAlias = true
+        }
+        canvas.drawCircle(dotCenterX, dotCenterY, dotRadius, dotPaint)
+
+        // 文字
+        canvas.drawText(
+            priorityName,
+            dotCenterX + dotRadius + dotGap,
+            top + badgePaddingV + (11 * density) - (1 * density),
+            textPaint
+        )
+    }
+
+    /**
+     * 绘制底部时间标签（卡片底部靠左显示）
+     *
+     * 显示提醒时间或截止时间（优先显示提醒时间），无分割线、无分类/优先级 chip
+     *
+     * @param canvas 画布
+     * @param padding 卡片左外边距
+     * @param cardStartY 卡片顶部 Y 坐标
+     * @param contentHeight 卡片内容高度
+     * @param startY 当前 Y 坐标（子待办列表末尾）
+     * @param todo 待办项
+     * @param density 屏幕密度
+     * @return 绘制结束后的 Y 坐标
+     */
+    private fun drawBottomTimeChip(
+        canvas: Canvas,
+        padding: Int,
+        cardStartY: Int,
+        contentHeight: Int,
+        startY: Int,
+        todo: TodoItem,
+        density: Float
+    ): Int {
+        val hasReminder = todo.reminderTime != null
+        val hasDueDate = todo.dueDate != null
+        if (!hasReminder && !hasDueDate) return startY
+
+        val barInset = 1.5f * density
+        val leftOffset = padding + barInset + (4 * density)  // 与标题对齐
+
+        val chipHeight = (20 * density)
+        val chipPaddingH = (10 * density)
+        val chipRadius = (8 * density)
+        var y = startY + (10 * density).toInt()
+
+        val textPaint = TextPaint().apply {
+            textSize = (12 * density)
+            color = Color.parseColor("#2D2D2D")
+            isAntiAlias = true
+        }
+        val text = if (hasReminder) {
+            "📅 ${shortDateFormat.format(Date(todo.reminderTime!!))}"
+        } else {
+            "🏁 ${shortDateFormat.format(Date(todo.dueDate!!))}"
+        }
+        val textWidth = textPaint.measureText(text)
+        val chipWidth = textWidth + chipPaddingH * 2
+
+        val bgPaint = Paint().apply {
+            color = if (hasReminder) Color.parseColor("#FFE4CC") else Color.parseColor("#FFF0E0")
+            isAntiAlias = true
+        }
+        canvas.drawRoundRect(
+            RectF(leftOffset, y.toFloat(), (leftOffset + chipWidth).toFloat(), (y + chipHeight)),
+            chipRadius, chipRadius, bgPaint
+        )
+        canvas.drawText(text, (leftOffset + chipPaddingH).toFloat(), y + (14 * density), textPaint)
+
+        return y + chipHeight.toInt()
+    }
+
+    /**
+     * 获取优先级完整文字（与原型一致）
+     */
+    private fun getPriorityName(priority: Int): String {
+        return when (priority) {
+            3 -> "高优先级"
+            2 -> "中优先级"
+            1 -> "低优先级"
+            else -> "无优先级"
+        }
+    }
+
+    /**
+     * 获取优先级标签背景色（与原型一致）
+     */
+    private fun getPriorityBgColor(priority: Int): Int {
+        val baseColor = when (priority) {
+            3 -> Color.parseColor("#FF8A80")
+            2 -> Color.parseColor("#FFB74D")
+            1 -> Color.parseColor("#90CAF9")
+            else -> Color.parseColor("#C8E6C9")
+        }
+        // 应用 0.15 alpha 模拟 rgba(..., 0.15)
+        val r = android.graphics.Color.red(baseColor)
+        val g = android.graphics.Color.green(baseColor)
+        val b = android.graphics.Color.blue(baseColor)
+        return android.graphics.Color.argb((255 * 0.15f).toInt(), r, g, b)
+    }
+
+    /**
+     * 获取优先级文字颜色
+     */
+    private fun getPriorityTextColor(priority: Int): Int {
+        return when (priority) {
+            3 -> Color.parseColor("#C62828")
+            2 -> Color.parseColor("#E65100")
+            1 -> Color.parseColor("#1565C0")
+            else -> Color.parseColor("#2E7D32")
+        }
     }
 
     /**

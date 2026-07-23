@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>待办分享图片原型 — 还原 App 卡片样式</title>
+<title>待办分享图片原型 — 还原 App 卡片样式 v5</title>
 <style>
   /* ============ 配色（严格遵循 UI设计规范 12.1.2 + 12.1.10）============ */
   :root {
@@ -151,13 +151,15 @@
     margin-bottom: 12px;
   }
 
-  /* 优先级竖条 */
+  /* 优先级竖条 —— 不内缩，用卡片圆角 clipPath 自动裁剪上下超出部分 */
   .priority-bar {
     position: absolute;
     left: 0;
     top: 0;
     bottom: 0;
     width: var(--bar-width);
+    border-radius: 0;
+    z-index: 2;
   }
   .priority-bar.high { background: var(--priority-high); }
   .priority-bar.medium { background: var(--priority-medium); }
@@ -171,22 +173,91 @@
   .todo-card.none-p { border: 1.5px solid rgba(200,230,201,0.6); }
 
   .card-content {
-    padding: 16px 16px 16px 20px; /* 左侧留竖条空间 */
+    padding: 36px 16px 16px 22px; /* 顶部 36dp 给分类角标留白；左侧 22dp 给竖条+复选框空间 */
   }
 
-  /* 卡片标题行 */
+  /* 分类角标（仿灵感详情页字数徽章）—— 卡片左上角贴边 */
+  .category-badge {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 3;
+    background: rgba(224, 224, 224, 0.6);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: var(--card-radius);
+    line-height: 1;
+    white-space: nowrap;
+    letter-spacing: 0.3px;
+  }
+
+  /* 优先级角标 —— 卡片右上角贴边（仅左下角圆角，与卡片圆角一致） */
+  .priority-badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 3;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-top-left-radius: 0;        /* 左上角：贴卡片外边框（0 圆角） */
+    border-top-right-radius: 0;       /* 右上角：贴卡片外边框（0 圆角） */
+    border-bottom-right-radius: 0;    /* 右下角：贴卡片外边框（0 圆角） */
+    border-bottom-left-radius: var(--card-radius);  /* 左下角：与卡片圆角一致（16dp） */
+    line-height: 1;
+    white-space: nowrap;
+    letter-spacing: 0.3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .priority-badge .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .priority-badge.high { background: rgba(255, 138, 128, 0.85); color: #C62828; }
+  .priority-badge.high .dot { background: #C62828; }
+  .priority-badge.medium { background: rgba(255, 183, 77, 0.85); color: #E65100; }
+  .priority-badge.medium .dot { background: #E65100; }
+  .priority-badge.low { background: rgba(144, 202, 249, 0.85); color: #1565C0; }
+  .priority-badge.low .dot { background: #1565C0; }
+  .priority-badge.none-p { background: rgba(200, 230, 201, 0.85); color: #2E7D32; }
+  .priority-badge.none-p .dot { background: #2E7D32; }
+
+  /* 底部时间标签 —— 卡片底部靠左显示（独立于元数据区） */
+  .bottom-time {
+    margin-top: 10px;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: var(--chip-radius);
+    background: var(--primary-light);
+    color: var(--text-main);
+    display: inline-block;
+    white-space: nowrap;
+  }
+  .bottom-time.due { background: #FFF0E0; }
+
+  /* 卡片标题行 —— 修复：标题与复选框不再重叠 */
   .card-title-row {
     display: flex;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
+    gap: 12px;          /* 复选框与标题之间固定 12dp 间距 */
   }
   .checkbox-circle {
     width: 22px;
     height: 22px;
     border-radius: 50%;
     border: 2px solid #CCCCCC;
-    margin-right: 12px;
     flex-shrink: 0;
+    margin-left: 6px;    /* 距竖条 6dp */
   }
   .checkbox-circle.checked {
     background: var(--primary);
@@ -200,13 +271,13 @@
   }
   .card-title {
     font-size: 16px;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-main);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 220px; /* 进度文本预留空间 */
+    min-width: 0;        /* flex 子项溢出省略必要 */
   }
   .card-title.completed {
     text-decoration: line-through;
@@ -214,19 +285,20 @@
   }
   .subtask-progress {
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--primary);
     margin-left: 8px;
     white-space: nowrap;
+    flex-shrink: 0;
   }
 
-  /* 元数据行 */
+  /* 元数据行 —— 修改：增加优先级标识（最右） */
   .meta-row {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-top: 8px;
-    padding-left: 34px; /* 与标题对齐（checkbox 22 + gap 12）*/
+    margin-left: 40px;   /* 与标题对齐（22 复选框 + 12 间距 + 6 左间距）*/
     flex-wrap: wrap;
   }
   .meta-chip {
@@ -248,13 +320,39 @@
     color: var(--text-secondary);
   }
 
+  /* 优先级标识（放在原附件标签位置，紧跟分类标签）*/
+  .priority-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: var(--chip-radius);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .priority-tag .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .priority-tag.high { background: rgba(255,138,128,0.15); color: #C62828; }
+  .priority-tag.high .dot { background: var(--priority-high); }
+  .priority-tag.medium { background: rgba(255,183,77,0.15); color: #E65100; }
+  .priority-tag.medium .dot { background: var(--priority-medium); }
+  .priority-tag.low { background: rgba(144,202,249,0.15); color: #1565C0; }
+  .priority-tag.low .dot { background: var(--priority-low); }
+  .priority-tag.none-p { background: rgba(200,230,201,0.15); color: #2E7D32; }
+  .priority-tag.none-p .dot { background: var(--priority-none); }
+
   /* 时间信息行 */
   .time-row {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-top: 8px;
-    padding-left: 34px;
+    margin-left: 40px;
   }
   .time-chip {
     display: inline-flex;
@@ -271,12 +369,14 @@
   /* 子待办列表 */
   .subtask-list {
     margin-top: 12px;
-    padding-left: 34px;
+    margin-left: 40px;
   }
   .subtask-item {
+    padding: 6px 0;
+  }
+  .subtask-row {
     display: flex;
     align-items: center;
-    padding: 6px 0;
     gap: 10px;
   }
   .subtask-item + .subtask-item {
@@ -300,37 +400,54 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
   }
   .subtask-title.completed {
     text-decoration: line-through;
     color: #888;
   }
 
-  /* 图片附件区 */
+  /* 图片附件区 —— 行内联（与待办编辑页一致） */
   .image-row {
     display: flex;
-    gap: 8px;
-    margin-top: 10px;
-    padding-left: 34px;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .image-row.subtask {
+    margin-top: 4px;
   }
   .image-thumb {
-    width: 72px;
-    height: 72px;
-    border-radius: 8px;
+    width: 56px;
+    height: 56px;
+    border-radius: 6px;
     overflow: hidden;
     object-fit: cover;
     display: block;
   }
   .image-more {
-    width: 72px;
-    height: 72px;
-    border-radius: 8px;
+    width: 56px;
+    height: 56px;
+    border-radius: 6px;
     background: #F0F0F0;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 12px;
     color: #999;
+  }
+
+  /* 末尾元数据区：分类 + 优先级 + 时间（统一在卡片末尾） */
+  .footer-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--divider);
+    flex-wrap: wrap;
+  }
+  .footer-meta .time-chip {
+    margin-left: auto;
   }
 
   /* 品牌水印底部 */
@@ -348,7 +465,7 @@
 
   /* ============ 说明面板 ============ */
   .info-panel {
-    width: 400px;
+    width: 420px;
     background: var(--bg-card);
     border-radius: 20px;
     padding: 24px;
@@ -401,8 +518,8 @@
     font-weight: 600;
     margin-right: 6px;
   }
-  .badge-before { background: #FFE0E0; color: #C62828; }
-  .badge-after { background: #E8F5E9; color: #2E7D32; }
+  .badge-fix { background: #FFE0E0; color: #C62828; }
+  .badge-new { background: #E8F5E9; color: #2E7D32; }
   .hint-bubble {
     margin-top: 12px;
     padding: 10px 12px;
@@ -445,8 +562,9 @@
 <body>
 
 <div class="page-header">
-  <h1>待办分享图片原型 · 还原 App 卡片样式</h1>
-  <p>CorgiMemo · ImageExporter 重设计 · 主卡片 + 子待办列表</p>
+  <h1>待办分享图片原型 <span style="color:#FF9A5C;">v5.1</span> · 优先级角标左下圆角 + 圆角统一为 16dp</h1>
+  <p>CorgiMemo · ImageExporter 重设计迭代 · 分类与优先级角标圆角与卡片一致（16dp）</p>
+  <p style="color:#C62828;font-weight:600;margin-top:8px;">⚠️ 请按 Ctrl+F5 强制刷新（清除浏览器缓存）</p>
 </div>
 
 <!-- 优先级切换 -->
@@ -483,53 +601,72 @@
 
     <!-- ====== 主待办卡片 ====== -->
     <div class="todo-card none-p" id="main-card">
+      <!-- 分类角标（仿灵感详情页字数徽章）—— 卡片左上角贴边 -->
+      <span class="category-badge" id="main-category-badge">工作</span>
+      <!-- 优先级角标 —— 卡片右上角贴边（与分类角标对称） -->
+      <span class="priority-badge none-p" id="priority-badge">
+        <span class="dot"></span><span id="priority-badge-text">无优先级</span>
+      </span>
       <div class="priority-bar none" id="main-bar"></div>
       <div class="card-content">
         <div class="card-title-row">
           <div class="checkbox-circle" id="main-check"></div>
-          <span class="card-title" id="main-title">准备周末露营</span>
-          <span class="subtask-progress" id="main-progress">(2/4)</span>
+          <span class="card-title" id="main-title">演示种子数据注入机制</span>
+          <span class="subtask-progress" id="main-progress">(0/5)</span>
         </div>
 
-        <!-- 元数据行 -->
-        <div class="meta-row" id="main-meta">
-          <span class="category-chip meta-chip">生活</span>
-          <span class="meta-chip"><span class="icon">📎</span> 3</span>
-          <span class="meta-chip"><span class="icon">🔗</span> 2</span>
+        <!-- 元数据行 + 时间行：统一移到末尾 -->
+
+        <!-- 主待办图片（行内联，紧跟主待办下方，与待办编辑页一致） -->
+        <div class="image-row" id="main-image-row" style="margin-left: 40px; margin-top: 8px;">
+          <img class="image-thumb" src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=cute%20corgi%20puppy%20portrait%20cartoon&image_size=square_hd" alt="主待办附件1">
         </div>
 
-        <!-- 时间信息行 -->
-        <div class="time-row">
-          <span class="time-chip">📅 07/26 09:00</span>
-          <span class="time-chip due">🏁 07/27 18:00</span>
-        </div>
-
-        <!-- 子待办列表 -->
+        <!-- 子待办列表（唯一的内容区，删除重复的方形复选框列表） -->
         <div class="subtask-list" id="subtask-list">
           <div class="subtask-item">
-            <div class="subtask-checkbox checked"></div>
-            <span class="subtask-title completed">购买帐篷和睡袋</span>
+            <div class="subtask-row">
+              <div class="subtask-checkbox"></div>
+              <span class="subtask-title">设计分层 Seeder 架构</span>
+            </div>
           </div>
           <div class="subtask-item">
-            <div class="subtask-checkbox checked"></div>
-            <span class="subtask-title completed">准备食材和饮水</span>
+            <div class="subtask-row">
+              <div class="subtask-checkbox"></div>
+              <span class="subtask-title">实现资源管理器</span>
+            </div>
+            <!-- 子待办附件（行内联，紧跟子待办标题下方） -->
+            <div class="image-row subtask" style="margin-left: 28px; margin-top: 4px;">
+              <img class="image-thumb" src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=resource%20manager%20icon%20blue&image_size=square_hd" alt="子待办附件1">
+            </div>
           </div>
           <div class="subtask-item">
-            <div class="subtask-checkbox"></div>
-            <span class="subtask-title">查天气预报</span>
+            <div class="subtask-row">
+              <div class="subtask-checkbox"></div>
+              <span class="subtask-title">编写待办种子数据</span>
+            </div>
+            <!-- 子待办附件（行内联） -->
+            <div class="image-row subtask" style="margin-left: 28px; margin-top: 4px;">
+              <img class="image-thumb" src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=database%20seed%20data%20icon&image_size=square_hd" alt="子待办附件2">
+              <img class="image-thumb" src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=todo%20list%20icon%20green&image_size=square_hd" alt="子待办附件3">
+            </div>
           </div>
           <div class="subtask-item">
-            <div class="subtask-checkbox"></div>
-            <span class="subtask-title">通知朋友集合时间</span>
+            <div class="subtask-row">
+              <div class="subtask-checkbox"></div>
+              <span class="subtask-title">编写灵感种子数据</span>
+            </div>
+          </div>
+          <div class="subtask-item">
+            <div class="subtask-row">
+              <div class="subtask-checkbox"></div>
+              <span class="subtask-title">编写日期种子数据</span>
+            </div>
           </div>
         </div>
 
-        <!-- 图片附件（真实图片缩略图，与编辑页位置一致） -->
-        <div class="image-row" id="image-row">
-          <img class="image-thumb" src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=camping%20tent%20in%20forest%20sunset&image_size=square_hd" alt="露营照片1">
-          <img class="image-thumb" src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=camping%20food%20bbq%20outdoor&image_size=square_hd" alt="露营照片2">
-          <div class="image-more">+1</div>
-        </div>
+        <!-- 底部时间标签（独立靠左显示，优先级角标已移至卡片右上角） -->
+        <div class="bottom-time due" id="bottom-time">📅 08/01 15:00</div>
       </div>
     </div>
 
@@ -542,69 +679,44 @@
 
   <!-- ============ 说明面板 ============ -->
   <div class="info-panel">
-    <h2>重设计说明</h2>
+    <h2>v5 新增：优先级角标 + 时间标签位置调整</h2>
 
-    <h3>核心改动</h3>
     <table class="change-table">
       <tr>
-        <th>维度</th>
-        <th><span class="badge badge-before">旧版</span></th>
-        <th><span class="badge badge-after">新版</span></th>
+        <th>变更点</th>
+        <th>说明</th>
       </tr>
       <tr>
-        <td>视觉风格</td>
-        <td>橙色渐变 header + 暖色内容区</td>
-        <td>还原 App 白色卡片 + 优先级竖条 + 边框</td>
+        <td><span class="badge badge-new">新增</span> 优先级角标</td>
+        <td>从末尾元数据区移至<b>卡片右上角</b>，与分类角标左右对称：右侧两条边贴边（右上、右下 0），仅左下角 16dp 圆角。背景色随优先级变化（高=粉/中=橙/低=蓝/无=绿），6dp 色点 + 完整文字</td>
       </tr>
       <tr>
-        <td>优先级</td>
-        <td>文字徽章（高/中/低/无）</td>
-        <td>左侧 4dp 竖条 + 1.5dp 边框（三联视觉）</td>
+        <td><span class="badge badge-fix">调整</span> 时间标签</td>
+        <td>从末尾元数据区独立，移至<b>卡片底部靠左</b>显示，使用浅色背景 + 圆角胶囊样式</td>
       </tr>
       <tr>
-        <td>标题</td>
-        <td>22sp 居中粗体</td>
-        <td>16sp 左对齐 Medium + 圆形复选框</td>
+        <td><span class="badge badge-fix">移除</span> 末尾元数据区</td>
+        <td>移除 <code>.footer-meta</code> 整块，分类/优先级/时间分散到顶部两角 + 底部</td>
       </tr>
       <tr>
-        <td>子待办</td>
-        <td>❌ 无</td>
-        <td>✅ 展开列表（复选框+标题+进度）</td>
-      </tr>
-      <tr>
-        <td>时间信息</td>
-        <td>只有 startDate</td>
-        <td>提醒时间 + 截止日期（芯片样式）</td>
-      </tr>
-      <tr>
-        <td>图片附件</td>
-        <td>❌ 无</td>
-        <td>✅ 缩略图行（最多3张 + "+N"）</td>
-      </tr>
-      <tr>
-        <td>品牌区</td>
-        <td>header 大面积渐变</td>
-        <td>顶部精简品牌条 + 底部水印</td>
-      </tr>
-      <tr>
-        <td>尺寸</td>
-        <td>360×560 dp（固定高度）</td>
-        <td>360 宽 × 自适应高度（内容决定）</td>
+        <td><span class="badge badge-fix">保留</span> 分类角标</td>
+        <td>保留卡片左上角，三边贴边 + 仅右下角 16dp 圆角</td>
       </tr>
     </table>
 
     <h3>布局结构（从上到下）</h3>
     <ul>
       <li><b>品牌顶部条</b>：🐕 logo + "刻记+" + "柯基备忘录" + 日期胶囊</li>
-      <li><b>主待办卡片</b>：还原 App 内 TodoListItem 样式
+      <li><b>主待办卡片</b>：
         <ul style="margin-top:4px;">
-          <li>左侧 4dp 优先级竖条</li>
+          <li><b>分类角标</b>（卡片左上角贴边，仅右下圆角 16dp）</li>
+          <li><b>优先级角标</b>（卡片右上角贴边，仅左下圆角 16dp，与分类对称）</li>
+          <li>左侧 4dp 优先级竖条（充满卡片高度，clipPath 自动裁剪）</li>
           <li>1.5dp 优先级边框</li>
-          <li>圆形复选框 + 标题 + 进度(2/4)</li>
-          <li>元数据行：分类 + 附件数 + 关联数</li>
-          <li>时间行：提醒📅 + 截止🏁（芯片样式）</li>
-          <li>子待办列表：复选框 + 标题</li>
-          <li>图片缩略图行</li>
+          <li>圆形复选框 + 标题 + 进度</li>
+          <li>主待办图片（行内联）</li>
+          <li>子待办列表（唯一内容区）</li>
+          <li><b>底部时间标签</b>（靠左显示）</li>
         </ul>
       </li>
       <li><b>品牌水印</b>：分割线 + "🐕来自 CorgiMemo · 让待办变得可爱"</li>
@@ -612,12 +724,12 @@
 
     <h3>交互演示</h3>
     <p>
-      <b>优先级切换</b>：点击上方圆点切换，竖条和边框颜色同步变化<br>
-      <b>场景切换</b>：有子待办 / 无子待办 / 已完成态
+      <b>优先级切换</b>：点击上方圆点切换，竖条、边框、<b>右上角优先级角标</b>颜色同步变化<br>
+      <b>场景切换</b>：有子待办 / 无子待办 / 已完成态 / 超长标题截断
     </p>
 
     <div class="hint-bubble">
-      <b>设计原则</b>：分享图片 = 品牌条 + App 卡片原样复刻 + 水印。让接收者看到和 App 内完全一致的卡片样式，降低认知差异。图片宽度 360dp（1080px @3x），高度随内容自适应。
+      <b>设计要点</b>：分类角标（左上）与优先级角标（右上）形成<b>对称呼应</b>：分类角标三边贴边+右下圆角，优先级角标右/上/下三边贴边+左下圆角，视觉上形成"双角标"布局。时间标签独立到卡片底部，避免与优先级信息混淆。
     </div>
   </div>
 
@@ -628,15 +740,38 @@
   const pBtns = document.querySelectorAll('.p-btn');
   const mainCard = document.getElementById('main-card');
   const mainBar = document.getElementById('main-bar');
+  const priorityBadge = document.getElementById('priority-badge');
+  const priorityBadgeText = document.getElementById('priority-badge-text');
+
+  function getPriorityName(p) {
+    return p === 'none-p' ? '无优先级' : p === 'high' ? '高优先级' : p === 'medium' ? '中优先级' : '低优先级';
+  }
+  function getCurrentPriorityClass() {
+    return mainCard.classList.contains('high') ? 'high' :
+           mainCard.classList.contains('medium') ? 'medium' :
+           mainCard.classList.contains('low') ? 'low' : 'none-p';
+  }
+  function getCurrentPriorityName() {
+    const c = getCurrentPriorityClass();
+    return c === 'high' ? '高优先级' : c === 'medium' ? '中优先级' : c === 'low' ? '低优先级' : '无优先级';
+  }
 
   pBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       pBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       const p = btn.dataset.priority;
+      const pName = getPriorityName(p);
       // 清除所有优先级 class
       mainCard.className = 'todo-card ' + p;
       mainBar.className = 'priority-bar ' + (p === 'none-p' ? 'none' : p);
+      // 同步右上角优先级角标
+      if (priorityBadge) {
+        priorityBadge.className = 'priority-badge ' + p;
+      }
+      if (priorityBadgeText) {
+        priorityBadgeText.textContent = pName;
+      }
     });
   });
 
@@ -647,7 +782,47 @@
   const mainTitle = document.getElementById('main-title');
   const mainCheck = document.getElementById('main-check');
   const mainProgress = document.getElementById('main-progress');
-  const mainMeta = document.getElementById('main-meta');
+  const bottomTime = document.getElementById('bottom-time');
+
+  function resetSubtasks() {
+    const checks = document.querySelectorAll('.subtask-checkbox');
+    const titles = document.querySelectorAll('.subtask-title');
+    const defaultTitles = [
+      '设计分层 Seeder 架构',
+      '实现资源管理器',
+      '编写待办种子数据',
+      '编写灵感种子数据',
+      '编写日期种子数据'
+    ];
+    checks.forEach(c => c.className = 'subtask-checkbox');
+    titles.forEach((t, i) => {
+      t.className = 'subtask-title';
+      t.textContent = defaultTitles[i] || t.textContent;
+    });
+  }
+
+  function syncPriorityBadge() {
+    // 场景切换时同步右上角优先级角标的当前 class/文字
+    const pClass = getCurrentPriorityClass();
+    const pName = getCurrentPriorityName();
+    if (priorityBadge) priorityBadge.className = 'priority-badge ' + pClass;
+    if (priorityBadgeText) priorityBadgeText.textContent = pName;
+  }
+
+  // 更新分类角标（卡片左上角）
+  function updateCategoryBadge(categoryName) {
+    const badge = document.getElementById('main-category-badge');
+    if (badge) {
+      badge.textContent = categoryName;
+    }
+  }
+
+  // 更新底部时间标签
+  function updateBottomTime(text, type) {
+    if (!bottomTime) return;
+    bottomTime.textContent = text;
+    bottomTime.className = 'bottom-time ' + (type || 'due');
+  }
 
   stateBtns.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -659,12 +834,15 @@
         subtaskList.style.display = 'block';
         imageRow.style.display = 'flex';
         mainTitle.className = 'card-title';
-        mainTitle.textContent = '准备周末露营';
+        mainTitle.textContent = '演示种子数据注入机制';
         mainCheck.className = 'checkbox-circle';
         mainCheck.innerHTML = '';
-        mainProgress.textContent = '(2/4)';
+        mainProgress.textContent = '(0/5)';
         mainProgress.style.display = '';
-        mainMeta.style.display = 'flex';
+        updateCategoryBadge('工作');
+        syncPriorityBadge();
+        updateBottomTime('📅 08/01 15:00', 'due');
+        resetSubtasks();
       } else if (state === 'no-subtasks') {
         subtaskList.style.display = 'none';
         imageRow.style.display = 'flex';
@@ -673,62 +851,51 @@
         mainCheck.className = 'checkbox-circle';
         mainCheck.innerHTML = '';
         mainProgress.style.display = 'none';
-        mainMeta.innerHTML = '<span class="category-chip meta-chip">生活</span>';
+        updateCategoryBadge('生活');
+        syncPriorityBadge();
+        updateBottomTime('⏰ 08/05 10:00', 'reminder');
       } else if (state === 'completed') {
         subtaskList.style.display = 'block';
         imageRow.style.display = 'flex';
         mainTitle.className = 'card-title completed';
-        mainTitle.textContent = '准备周末露营';
+        mainTitle.textContent = '演示种子数据注入机制';
         mainCheck.className = 'checkbox-circle checked';
         mainCheck.innerHTML = '✓';
-        mainProgress.textContent = '(4/4)';
+        mainProgress.textContent = '(5/5)';
         mainProgress.style.display = '';
+        updateCategoryBadge('工作');
+        syncPriorityBadge();
+        updateBottomTime('📅 08/01 15:00', 'due');
         // 所有子待办标记完成
-        document.querySelectorAll('.subtask-checkbox').forEach(cb => {
-          cb.className = 'subtask-checkbox checked';
-        });
-        document.querySelectorAll('.subtask-title').forEach(t => {
-          t.className = 'subtask-title completed';
-        });
+        const checks = document.querySelectorAll('.subtask-checkbox');
+        const titles = document.querySelectorAll('.subtask-title');
+        checks.forEach(cb => cb.className = 'subtask-checkbox checked');
+        titles.forEach(t => t.className = 'subtask-title completed');
       } else if (state === 'long-title') {
         subtaskList.style.display = 'block';
         imageRow.style.display = 'flex';
         mainTitle.className = 'card-title';
-        mainTitle.textContent = '准备周末去城郊森林公园露营并邀请所有大学室友一起烧烤聚会';
+        mainTitle.textContent = '演示完整种子数据注入机制（涵盖待办/灵感/日期）并验证各模块联合运行';
         mainCheck.className = 'checkbox-circle';
         mainCheck.innerHTML = '';
-        mainProgress.textContent = '(2/4)';
+        mainProgress.textContent = '(0/5)';
         mainProgress.style.display = '';
-        mainMeta.innerHTML = '<span class="category-chip meta-chip">生活</span><span class="meta-chip"><span class="icon">📎</span> 3</span><span class="meta-chip"><span class="icon">🔗</span> 2</span>';
-        // 恢复子待办默认状态
+        updateCategoryBadge('工作');
+        syncPriorityBadge();
+        updateBottomTime('🏁 08/15 23:59', 'due');
         const checks = document.querySelectorAll('.subtask-checkbox');
         const titles = document.querySelectorAll('.subtask-title');
-        checks[0].className = 'subtask-checkbox checked';
-        checks[1].className = 'subtask-checkbox checked';
-        checks[2].className = 'subtask-checkbox';
-        checks[3].className = 'subtask-checkbox';
-        titles[0].className = 'subtask-title completed';
-        titles[0].textContent = '购买帐篷和睡袋以及防潮垫和野餐垫';
-        titles[1].className = 'subtask-title completed';
-        titles[1].textContent = '准备食材和饮水以及烧烤碳和调料';
+        checks.forEach(c => c.className = 'subtask-checkbox');
+        titles[0].className = 'subtask-title';
+        titles[0].textContent = '设计分层 Seeder 架构并定义统一接口';
+        titles[1].className = 'subtask-title';
+        titles[1].textContent = '实现资源管理器（按模块加载种子）';
         titles[2].className = 'subtask-title';
-        titles[2].textContent = '查天气预报并准备雨具备用方案';
+        titles[2].textContent = '编写待办种子数据并校验字段';
         titles[3].className = 'subtask-title';
-        titles[3].textContent = '通知朋友集合时间和具体地点';
-      }
-
-      // 恢复子待办默认状态（非已完成且非超长标题）
-      if (state !== 'completed' && state !== 'long-title') {
-        const checks = document.querySelectorAll('.subtask-checkbox');
-        const titles = document.querySelectorAll('.subtask-title');
-        checks[0].className = 'subtask-checkbox checked';
-        checks[1].className = 'subtask-checkbox checked';
-        checks[2].className = 'subtask-checkbox';
-        checks[3].className = 'subtask-checkbox';
-        titles[0].className = 'subtask-title completed';
-        titles[1].className = 'subtask-title completed';
-        titles[2].className = 'subtask-title';
-        titles[3].className = 'subtask-title';
+        titles[3].textContent = '编写灵感种子数据并校验字段';
+        titles[4].className = 'subtask-title';
+        titles[4].textContent = '编写日期种子数据并校验字段';
       }
     });
   });
