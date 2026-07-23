@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>待办分享图片原型 — 还原 App 卡片样式</title>
+<style>
+  /* ============ 配色（严格遵循 UI设计规范 12.1.2 + 12.1.10）============ */
+  :root {
+    --primary: #FF9A5C;
+    --primary-light: #FFE4CC;
+    --primary-dark: #E88A4D;
+    --bg-page: #F8F6F3;
+    --bg-card: #FFFFFF;
+    --text-main: #2D2D2D;
+    --text-secondary: #666666;
+    --text-hint: #999999;
+    --divider: #EEEEEE;
+    --cancel-bg: #F8F6F3;
+    /* 优先级色 */
+    --priority-high: #FF8A80;
+    --priority-medium: #FFB74D;
+    --priority-low: #90CAF9;
+    --priority-none: #C8E6C9;
+    /* 竖条宽度 */
+    --bar-width: 4px;
+    /* 圆角 */
+    --card-radius: 16px;
+    --chip-radius: 8px;
+    --tag-radius: 10px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg-page);
+    color: var(--text-main);
+    min-height: 100vh;
+    padding: 32px 16px 64px;
+  }
+
+  .page-header {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+  .page-header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-main);
+  }
+  .page-header p {
+    font-size: 13px;
+    color: var(--text-hint);
+    margin-top: 6px;
+  }
+
+  /* ============ 状态切换器 ============ */
+  .state-switcher {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+  }
+  .state-btn {
+    padding: 9px 18px;
+    border: 1.5px solid var(--primary-light);
+    background: var(--bg-card);
+    border-radius: 22px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 500;
+  }
+  .state-btn:hover { border-color: var(--primary); }
+  .state-btn.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+
+  .main-layout {
+    display: flex;
+    gap: 32px;
+    justify-content: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  /* ============ 分享图片容器 ============ */
+  .share-card-frame {
+    width: 360px;
+    background: var(--bg-page);
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+  }
+
+  /* ============ 品牌顶部条 ============ */
+  .brand-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 0 4px;
+  }
+  .brand-logo {
+    width: 32px;
+    height: 32px;
+    background: var(--primary);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    margin-right: 10px;
+    flex-shrink: 0;
+  }
+  .brand-text {
+    display: flex;
+    flex-direction: column;
+  }
+  .brand-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-main);
+  }
+  .brand-sub {
+    font-size: 11px;
+    color: var(--text-hint);
+  }
+  .brand-date {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-hint);
+    background: #FFF0E0;
+    padding: 4px 10px;
+    border-radius: 12px;
+    white-space: nowrap;
+  }
+
+  /* ============ 待办卡片（还原 App 样式）============ */
+  .todo-card {
+    background: var(--bg-card);
+    border-radius: var(--card-radius);
+    overflow: hidden;
+    position: relative;
+    margin-bottom: 12px;
+  }
+
+  /* 优先级竖条 */
+  .priority-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--bar-width);
+  }
+  .priority-bar.high { background: var(--priority-high); }
+  .priority-bar.medium { background: var(--priority-medium); }
+  .priority-bar.low { background: var(--priority-low); }
+  .priority-bar.none { background: var(--priority-none); }
+
+  /* 优先级边框 */
+  .todo-card.high { border: 1.5px solid rgba(255,138,128,0.6); }
+  .todo-card.medium { border: 1.5px solid rgba(255,183,77,0.6); }
+  .todo-card.low { border: 1.5px solid rgba(144,202,249,0.6); }
+  .todo-card.none-p { border: 1.5px solid rgba(200,230,201,0.6); }
+
+  .card-content {
+    padding: 16px 16px 16px 20px; /* 左侧留竖条空间 */
+  }
+
+  /* 卡片标题行 */
+  .card-title-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .checkbox-circle {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid #CCCCCC;
+    margin-right: 12px;
+    flex-shrink: 0;
+  }
+  .checkbox-circle.checked {
+    background: var(--primary);
+    border-color: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .card-title {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-main);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 220px; /* 进度文本预留空间 */
+  }
+  .card-title.completed {
+    text-decoration: line-through;
+    color: #888;
+  }
+  .subtask-progress {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--primary);
+    margin-left: 8px;
+    white-space: nowrap;
+  }
+
+  /* 元数据行 */
+  .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding-left: 34px; /* 与标题对齐（checkbox 22 + gap 12）*/
+    flex-wrap: wrap;
+  }
+  .meta-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    padding: 3px 8px;
+    border-radius: var(--chip-radius);
+    background: var(--primary-light);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .meta-chip .icon {
+    font-size: 12px;
+  }
+  .category-chip {
+    background: #F5F5F5;
+    color: var(--text-secondary);
+  }
+
+  /* 时间信息行 */
+  .time-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding-left: 34px;
+  }
+  .time-chip {
+    display: inline-flex;
+    align-items: center;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: var(--chip-radius);
+    background: var(--primary-light);
+    color: var(--text-main);
+    white-space: nowrap;
+  }
+  .time-chip.due { background: #FFF0E0; }
+
+  /* 子待办列表 */
+  .subtask-list {
+    margin-top: 12px;
+    padding-left: 34px;
+  }
+  .subtask-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 0;
+    gap: 10px;
+  }
+  .subtask-item + .subtask-item {
+    border-top: 1px solid var(--divider);
+  }
+  .subtask-checkbox {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1.5px solid #CCCCCC;
+    flex-shrink: 0;
+  }
+  .subtask-checkbox.checked {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+  .subtask-title {
+    font-size: 14px;
+    color: var(--text-main);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .subtask-title.completed {
+    text-decoration: line-through;
+    color: #888;
+  }
+
+  /* 图片附件区 */
+  .image-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    padding-left: 34px;
+  }
+  .image-thumb {
+    width: 72px;
+    height: 72px;
+    border-radius: 8px;
+    overflow: hidden;
+    object-fit: cover;
+    display: block;
+  }
+  .image-more {
+    width: 72px;
+    height: 72px;
+    border-radius: 8px;
+    background: #F0F0F0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #999;
+  }
+
+  /* 品牌水印底部 */
+  .brand-footer {
+    text-align: center;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--divider);
+  }
+  .brand-footer-text {
+    font-size: 11px;
+    color: var(--text-hint);
+  }
+  .brand-footer-text .dog { margin-right: 4px; }
+
+  /* ============ 说明面板 ============ */
+  .info-panel {
+    width: 400px;
+    background: var(--bg-card);
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+  }
+  .info-panel h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 14px;
+    color: var(--text-main);
+  }
+  .info-panel h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary);
+    margin: 18px 0 8px;
+  }
+  .info-panel p, .info-panel li {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+  }
+  .info-panel ul {
+    padding-left: 18px;
+    margin: 6px 0;
+  }
+  .change-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 12.5px;
+  }
+  .change-table th,
+  .change-table td {
+    border: 1px solid var(--divider);
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .change-table th {
+    background: var(--bg-page);
+    color: var(--text-main);
+    font-weight: 600;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .badge-before { background: #FFE0E0; color: #C62828; }
+  .badge-after { background: #E8F5E9; color: #2E7D32; }
+  .hint-bubble {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #FFF3E8;
+    border-left: 3px solid var(--primary);
+    border-radius: 6px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  /* ============ 优先级切换 ============ */
+  .priority-selector {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    justify-content: center;
+  }
+  .p-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .p-btn:hover { transform: scale(1.1); }
+  .p-btn.active { border-color: var(--text-main); box-shadow: 0 0 0 2px rgba(0,0,0,0.1); }
+  .p-btn.high { background: var(--priority-high); }
+  .p-btn.medium { background: var(--priority-medium); }
+  .p-btn.low { background: var(--priority-low); }
+  .p-btn.none-p { background: var(--priority-none); }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>待办分享图片原型 · 还原 App 卡片样式</h1>
+  <p>CorgiMemo · ImageExporter 重设计 · 主卡片 + 子待办列表</p>
+</div>
+
+<!-- 优先级切换 -->
+<div class="priority-selector">
+  <span style="font-size:13px;color:var(--text-hint);margin-right:8px;align-self:center;">优先级：</span>
+  <div class="p-btn high" data-priority="high" title="高优先级">高</div>
+  <div class="p-btn medium" data-priority="medium" title="中优先级">中</div>
+  <div class="p-btn low" data-priority="low" title="低优先级">低</div>
+  <div class="p-btn none-p active" data-priority="none-p" title="无优先级">无</div>
+</div>
+
+<!-- 场景切换 -->
+<div class="state-switcher">
+  <button class="state-btn active" data-state="with-subtasks">有子待办</button>
+  <button class="state-btn" data-state="no-subtasks">无子待办</button>
+  <button class="state-btn" data-state="completed">已完成态</button>
+  <button class="state-btn" data-state="long-title">超长标题截断</button>
+</div>
+
+<div class="main-layout">
+
+  <!-- ============ 分享图片 ============ -->
+  <div class="share-card-frame">
+
+    <!-- 品牌顶部 -->
+    <div class="brand-header">
+      <div class="brand-logo">🐕</div>
+      <div class="brand-text">
+        <span class="brand-name">刻记+</span>
+        <span class="brand-sub">柯基备忘录</span>
+      </div>
+      <span class="brand-date">2026-07-23</span>
+    </div>
+
+    <!-- ====== 主待办卡片 ====== -->
+    <div class="todo-card none-p" id="main-card">
+      <div class="priority-bar none" id="main-bar"></div>
+      <div class="card-content">
+        <div class="card-title-row">
+          <div class="checkbox-circle" id="main-check"></div>
+          <span class="card-title" id="main-title">准备周末露营</span>
+          <span class="subtask-progress" id="main-progress">(2/4)</span>
+        </div>
+
+        <!-- 元数据行 -->
+        <div class="meta-row" id="main-meta">
+          <span class="category-chip meta-chip">生活</span>
+          <span class="meta-chip"><span class="icon">📎</span> 3</span>
+          <span class="meta-chip"><span class="icon">🔗</span> 2</span>
+        </div>
+
+        <!-- 时间信息行 -->
+        <div class="time-row">
+          <span class="time-chip">📅 07/26 09:00</span>
+          <span class="time-chip due">🏁 07/27 18:00</span>
+        </div>
+
+        <!-- 子待办列表 -->
+        <div class="subtask-list" id="subtask-list">
+          <div class="subtask-item">
+            <div class="subtask-checkbox checked"></div>
+            <span class="subtask-title completed">购买帐篷和睡袋</span>
+          </div>
+          <div class="subtask-item">
+            <div class="subtask-checkbox checked"></div>
+            <span class="subtask-title completed">准备食材和饮水</span>
+          </div>
+          <div class="subtask-item">
+            <div class="subtask-checkbox"></div>
+            <span class="subtask-title">查天气预报</span>
+          </div>
+          <div class="subtask-item">
+            <div class="subtask-checkbox"></div>
+            <span class="subtask-title">通知朋友集合时间</span>
+          </div>
+        </div>
+
+        <!-- 图片附件（真实图片缩略图，与编辑页位置一致） -->
+        <div class="image-row" id="image-row">
+          <img class="image-thumb" src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=camping%20tent%20in%20forest%20sunset&image_size=square_hd" alt="露营照片1">
+          <img class="image-thumb" src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=camping%20food%20bbq%20outdoor&image_size=square_hd" alt="露营照片2">
+          <div class="image-more">+1</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 品牌水印 -->
+    <div class="brand-footer">
+      <span class="brand-footer-text"><span class="dog">🐕</span>来自 CorgiMemo · 让待办变得可爱</span>
+    </div>
+
+  </div>
+
+  <!-- ============ 说明面板 ============ -->
+  <div class="info-panel">
+    <h2>重设计说明</h2>
+
+    <h3>核心改动</h3>
+    <table class="change-table">
+      <tr>
+        <th>维度</th>
+        <th><span class="badge badge-before">旧版</span></th>
+        <th><span class="badge badge-after">新版</span></th>
+      </tr>
+      <tr>
+        <td>视觉风格</td>
+        <td>橙色渐变 header + 暖色内容区</td>
+        <td>还原 App 白色卡片 + 优先级竖条 + 边框</td>
+      </tr>
+      <tr>
+        <td>优先级</td>
+        <td>文字徽章（高/中/低/无）</td>
+        <td>左侧 4dp 竖条 + 1.5dp 边框（三联视觉）</td>
+      </tr>
+      <tr>
+        <td>标题</td>
+        <td>22sp 居中粗体</td>
+        <td>16sp 左对齐 Medium + 圆形复选框</td>
+      </tr>
+      <tr>
+        <td>子待办</td>
+        <td>❌ 无</td>
+        <td>✅ 展开列表（复选框+标题+进度）</td>
+      </tr>
+      <tr>
+        <td>时间信息</td>
+        <td>只有 startDate</td>
+        <td>提醒时间 + 截止日期（芯片样式）</td>
+      </tr>
+      <tr>
+        <td>图片附件</td>
+        <td>❌ 无</td>
+        <td>✅ 缩略图行（最多3张 + "+N"）</td>
+      </tr>
+      <tr>
+        <td>品牌区</td>
+        <td>header 大面积渐变</td>
+        <td>顶部精简品牌条 + 底部水印</td>
+      </tr>
+      <tr>
+        <td>尺寸</td>
+        <td>360×560 dp（固定高度）</td>
+        <td>360 宽 × 自适应高度（内容决定）</td>
+      </tr>
+    </table>
+
+    <h3>布局结构（从上到下）</h3>
+    <ul>
+      <li><b>品牌顶部条</b>：🐕 logo + "刻记+" + "柯基备忘录" + 日期胶囊</li>
+      <li><b>主待办卡片</b>：还原 App 内 TodoListItem 样式
+        <ul style="margin-top:4px;">
+          <li>左侧 4dp 优先级竖条</li>
+          <li>1.5dp 优先级边框</li>
+          <li>圆形复选框 + 标题 + 进度(2/4)</li>
+          <li>元数据行：分类 + 附件数 + 关联数</li>
+          <li>时间行：提醒📅 + 截止🏁（芯片样式）</li>
+          <li>子待办列表：复选框 + 标题</li>
+          <li>图片缩略图行</li>
+        </ul>
+      </li>
+      <li><b>品牌水印</b>：分割线 + "🐕来自 CorgiMemo · 让待办变得可爱"</li>
+    </ul>
+
+    <h3>交互演示</h3>
+    <p>
+      <b>优先级切换</b>：点击上方圆点切换，竖条和边框颜色同步变化<br>
+      <b>场景切换</b>：有子待办 / 无子待办 / 已完成态
+    </p>
+
+    <div class="hint-bubble">
+      <b>设计原则</b>：分享图片 = 品牌条 + App 卡片原样复刻 + 水印。让接收者看到和 App 内完全一致的卡片样式，降低认知差异。图片宽度 360dp（1080px @3x），高度随内容自适应。
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // 优先级切换
+  const pBtns = document.querySelectorAll('.p-btn');
+  const mainCard = document.getElementById('main-card');
+  const mainBar = document.getElementById('main-bar');
+
+  pBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      pBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const p = btn.dataset.priority;
+      // 清除所有优先级 class
+      mainCard.className = 'todo-card ' + p;
+      mainBar.className = 'priority-bar ' + (p === 'none-p' ? 'none' : p);
+    });
+  });
+
+  // 场景切换
+  const stateBtns = document.querySelectorAll('.state-btn');
+  const subtaskList = document.getElementById('subtask-list');
+  const imageRow = document.getElementById('image-row');
+  const mainTitle = document.getElementById('main-title');
+  const mainCheck = document.getElementById('main-check');
+  const mainProgress = document.getElementById('main-progress');
+  const mainMeta = document.getElementById('main-meta');
+
+  stateBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      stateBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const state = btn.dataset.state;
+
+      if (state === 'with-subtasks') {
+        subtaskList.style.display = 'block';
+        imageRow.style.display = 'flex';
+        mainTitle.className = 'card-title';
+        mainTitle.textContent = '准备周末露营';
+        mainCheck.className = 'checkbox-circle';
+        mainCheck.innerHTML = '';
+        mainProgress.textContent = '(2/4)';
+        mainProgress.style.display = '';
+        mainMeta.style.display = 'flex';
+      } else if (state === 'no-subtasks') {
+        subtaskList.style.display = 'none';
+        imageRow.style.display = 'flex';
+        mainTitle.className = 'card-title';
+        mainTitle.textContent = '买生日蛋糕';
+        mainCheck.className = 'checkbox-circle';
+        mainCheck.innerHTML = '';
+        mainProgress.style.display = 'none';
+        mainMeta.innerHTML = '<span class="category-chip meta-chip">生活</span>';
+      } else if (state === 'completed') {
+        subtaskList.style.display = 'block';
+        imageRow.style.display = 'flex';
+        mainTitle.className = 'card-title completed';
+        mainTitle.textContent = '准备周末露营';
+        mainCheck.className = 'checkbox-circle checked';
+        mainCheck.innerHTML = '✓';
+        mainProgress.textContent = '(4/4)';
+        mainProgress.style.display = '';
+        // 所有子待办标记完成
+        document.querySelectorAll('.subtask-checkbox').forEach(cb => {
+          cb.className = 'subtask-checkbox checked';
+        });
+        document.querySelectorAll('.subtask-title').forEach(t => {
+          t.className = 'subtask-title completed';
+        });
+      } else if (state === 'long-title') {
+        subtaskList.style.display = 'block';
+        imageRow.style.display = 'flex';
+        mainTitle.className = 'card-title';
+        mainTitle.textContent = '准备周末去城郊森林公园露营并邀请所有大学室友一起烧烤聚会';
+        mainCheck.className = 'checkbox-circle';
+        mainCheck.innerHTML = '';
+        mainProgress.textContent = '(2/4)';
+        mainProgress.style.display = '';
+        mainMeta.innerHTML = '<span class="category-chip meta-chip">生活</span><span class="meta-chip"><span class="icon">📎</span> 3</span><span class="meta-chip"><span class="icon">🔗</span> 2</span>';
+        // 恢复子待办默认状态
+        const checks = document.querySelectorAll('.subtask-checkbox');
+        const titles = document.querySelectorAll('.subtask-title');
+        checks[0].className = 'subtask-checkbox checked';
+        checks[1].className = 'subtask-checkbox checked';
+        checks[2].className = 'subtask-checkbox';
+        checks[3].className = 'subtask-checkbox';
+        titles[0].className = 'subtask-title completed';
+        titles[0].textContent = '购买帐篷和睡袋以及防潮垫和野餐垫';
+        titles[1].className = 'subtask-title completed';
+        titles[1].textContent = '准备食材和饮水以及烧烤碳和调料';
+        titles[2].className = 'subtask-title';
+        titles[2].textContent = '查天气预报并准备雨具备用方案';
+        titles[3].className = 'subtask-title';
+        titles[3].textContent = '通知朋友集合时间和具体地点';
+      }
+
+      // 恢复子待办默认状态（非已完成且非超长标题）
+      if (state !== 'completed' && state !== 'long-title') {
+        const checks = document.querySelectorAll('.subtask-checkbox');
+        const titles = document.querySelectorAll('.subtask-title');
+        checks[0].className = 'subtask-checkbox checked';
+        checks[1].className = 'subtask-checkbox checked';
+        checks[2].className = 'subtask-checkbox';
+        checks[3].className = 'subtask-checkbox';
+        titles[0].className = 'subtask-title completed';
+        titles[1].className = 'subtask-title completed';
+        titles[2].className = 'subtask-title';
+        titles[3].className = 'subtask-title';
+      }
+    });
+  });
+</script>
+
+</body>
+</html>

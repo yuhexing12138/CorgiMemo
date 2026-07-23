@@ -3063,10 +3063,27 @@ fun shareTodoAsImage(
         try {
             val category = categories.find { it.id == todo.categoryId }
 
+            // 异步查询子待办列表
+            val subTasks = com.corgimemo.app.data.repository.SubTaskManager.getSubTasks(context, todo.id)
+
+            // 解析图片附件路径列表
+            val imagePaths = if (todo.imagePaths.isNotBlank()) {
+                try {
+                    val arr = org.json.JSONArray(todo.imagePaths)
+                    (0 until arr.length()).map { arr.getString(it) }
+                } catch (_: Exception) { emptyList<String>() }
+            } else emptyList()
+
+            // 关联数（暂无轻量查询方法，传 0）
+            val relationCount = 0
+
             val bitmap = ImageExporter.createTodoShareCard(
                 context = context,
                 todo = todo,
-                category = category
+                category = category,
+                subTodos = subTasks,
+                imagePaths = imagePaths,
+                relationCount = relationCount
             )
 
             val imageFile = ImageExporter.saveBitmapToCache(context, bitmap)

@@ -104,10 +104,25 @@ object ShareCoordinator {
     ) {
         try {
             withContext(Dispatchers.IO) {
-                // 1. 为每个 todo 生成单张分享卡片
+                // 1. 为每个 todo 生成单张分享卡片（含子待办和图片）
                 val bitmaps = todos.map { todo ->
                     val category = categories.find { it.id == todo.categoryId }
-                    ImageExporter.createTodoShareCard(context, todo, category)
+                    // 异步查询子待办
+                    val subTasks = com.corgimemo.app.data.repository.SubTaskManager.getSubTasks(context, todo.id)
+                    // 解析图片路径
+                    val imagePaths = if (todo.imagePaths.isNotBlank()) {
+                        try {
+                            val arr = org.json.JSONArray(todo.imagePaths)
+                            (0 until arr.length()).map { arr.getString(it) }
+                        } catch (_: Exception) { emptyList<String>() }
+                    } else emptyList()
+                    ImageExporter.createTodoShareCard(
+                        context = context,
+                        todo = todo,
+                        category = category,
+                        subTodos = subTasks,
+                        imagePaths = imagePaths
+                    )
                 }
 
                 // 2. 合并为 1 张（mergeBitmaps 内部已处理 >10 张的 TooManyBitmapsException）
