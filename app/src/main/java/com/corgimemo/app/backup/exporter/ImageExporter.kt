@@ -253,7 +253,9 @@ object ImageExporter {
         val bottomCardPadding = (16 * density).toInt() // 底部 16dp
         val leftOffset = (20 * density).toInt() // 竖条4dp + 内容padding16dp
         val textAreaWidth = contentWidth - leftOffset - bottomCardPadding
-        val cornerRadius = (16 * density)
+        // 卡片圆角 = 角标最大可装圆角（= 角标 height / 2 = 9.5dp），保证圆角视觉一致
+        // 注意：9.5f 必须用 Float literal，否则 9.5 * density 推断为 Double，drawRoundRect 会报类型不匹配
+        val cornerRadius = (9.5f * density)
         val imageCount = imagePaths.size
 
         // 测量内容高度
@@ -617,7 +619,9 @@ object ImageExporter {
         density: Float
     ) {
         if (category == null) return
-        val cornerRadius = (16 * density)
+        // 角标圆角与卡片严格一致（= 9.5dp = 角标 height/2，保证完整 90° 圆弧）
+        // 注意：9.5f 必须用 Float literal，否则 9.5 * density 推断为 Double
+        val cornerRadius = (9.5f * density)
         val badgePaddingH = (10 * density)
         val badgePaddingV = (4 * density)
         val barWidth = 4 * density // 左侧竖条宽度，分类角标从竖条内侧开始
@@ -682,7 +686,9 @@ object ImageExporter {
         priority: Int,
         density: Float
     ) {
-        val cornerRadius = (16 * density)
+        // 角标圆角与卡片严格一致（= 9.5dp = 角标 height/2，保证完整 90° 圆弧）
+        // 注意：9.5f 必须用 Float literal，否则 9.5 * density 推断为 Double
+        val cornerRadius = (9.5f * density)
         val badgePaddingH = (10 * density)
         val badgePaddingV = (4 * density)
         val dotRadius = (3 * density)
@@ -817,7 +823,7 @@ object ImageExporter {
     }
 
     /**
-     * 获取优先级标签背景色（与原型 rgba(..., 0.85) 一致）
+     * 获取优先级标签背景色（与原型 rgba(..., 0.15) 一致）
      */
     private fun getPriorityBgColor(priority: Int): Int {
         val baseColor = when (priority) {
@@ -826,11 +832,11 @@ object ImageExporter {
             1 -> Color.parseColor("#90CAF9")
             else -> Color.parseColor("#C8E6C9")
         }
-        // 应用 0.85 alpha 与原型 rgba(..., 0.85) 一致
+        // 应用 0.15 alpha 与原型 rgba(..., 0.15) 一致
         val r = android.graphics.Color.red(baseColor)
         val g = android.graphics.Color.green(baseColor)
         val b = android.graphics.Color.blue(baseColor)
-        return android.graphics.Color.argb((255 * 0.85f).toInt(), r, g, b)
+        return android.graphics.Color.argb((255 * 0.15f).toInt(), r, g, b)
     }
 
     /**

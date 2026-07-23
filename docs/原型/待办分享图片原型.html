@@ -25,7 +25,7 @@
     /* 竖条宽度 */
     --bar-width: 4px;
     /* 圆角 */
-    --card-radius: 16px;
+    --card-radius: 9.5px;  /* 改为 9.5dp：与角标最大可装圆角严格一致（角标 height=19dp, 19/2=9.5） */
     --chip-radius: 8px;
     --tag-radius: 10px;
   }
@@ -222,13 +222,13 @@
     border-radius: 50%;
     display: inline-block;
   }
-  .priority-badge.high { background: rgba(255, 138, 128, 0.85); color: #C62828; }
+  .priority-badge.high { background: rgba(255, 138, 128, 0.15); color: #C62828; }
   .priority-badge.high .dot { background: #C62828; }
-  .priority-badge.medium { background: rgba(255, 183, 77, 0.85); color: #E65100; }
+  .priority-badge.medium { background: rgba(255, 183, 77, 0.15); color: #E65100; }
   .priority-badge.medium .dot { background: #E65100; }
-  .priority-badge.low { background: rgba(144, 202, 249, 0.85); color: #1565C0; }
+  .priority-badge.low { background: rgba(144, 202, 249, 0.15); color: #1565C0; }
   .priority-badge.low .dot { background: #1565C0; }
-  .priority-badge.none-p { background: rgba(200, 230, 201, 0.85); color: #2E7D32; }
+  .priority-badge.none-p { background: rgba(200, 230, 201, 0.15); color: #2E7D32; }
   .priority-badge.none-p .dot { background: #2E7D32; }
 
   /* 底部时间标签 —— 卡片底部靠左显示（独立于元数据区） */
@@ -562,8 +562,8 @@
 <body>
 
 <div class="page-header">
-  <h1>待办分享图片原型 <span style="color:#FF9A5C;">v5.2</span> · 角标卡片内裁剪 + 分类角标避开竖条</h1>
-  <p>CorgiMemo · ImageExporter 重设计迭代 · 分类与优先级角标圆角与卡片一致（16dp）</p>
+  <h1>待办分享图片原型 <span style="color:#FF9A5C;">v5.4</span> · 卡片与角标圆角统一 9.5dp</h1>
+  <p>CorgiMemo · ImageExporter 重设计迭代 · 分类与优先级角标圆角与卡片一致（9.5dp）</p>
   <p style="color:#C62828;font-weight:600;margin-top:8px;">⚠️ 请按 Ctrl+F5 强制刷新（清除浏览器缓存）</p>
 </div>
 
