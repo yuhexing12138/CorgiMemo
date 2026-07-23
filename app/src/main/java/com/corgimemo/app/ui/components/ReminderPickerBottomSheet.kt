@@ -904,7 +904,13 @@ private fun CalendarGridView(
         emptyMap()
     }
 
-    // 构建完整的5行×7列网格数据（固定5行以保持布局稳定）
+    // 计算需要的行数：当月首日偏移 + 天数 > 35 时需要 6 行，否则 5 行
+    // 例：2026/08 首日周六(firstDayOfMonth=5) + 31天 = 36 > 35 → 需 6 行(42格)
+    // 最大 firstDayOfMonth(6) + daysInMonth(31) = 37 ≤ 42，6 行(42格)足够覆盖
+    val rowsNeeded = if (firstDayOfMonth + daysInMonth > 35) 6 else 5
+    val targetCells = rowsNeeded * 7
+
+    // 构建完整的网格数据（rowsNeeded 行 × 7 列）
     val gridItems = mutableListOf<Triple<Int, Boolean, Boolean>>()
     // 上月填充日期
     for (i in firstDayOfMonth downTo 1) {
@@ -914,15 +920,16 @@ private fun CalendarGridView(
     for (day in 1..daysInMonth) {
         gridItems.add(Triple(day, false, day == selectedDate.dayOfMonth && navMonth == YearMonth.from(selectedDate)))
     }
-    // 下月填充日期（补齐到35项=5行×7列，使用正数表示下月日期）
+    // 下月填充日期（补齐到 targetCells 项 = rowsNeeded 行 × 7 列）
     var nextMonthDay = 1
-    while (gridItems.size < 35) {
+    while (gridItems.size < targetCells) {
         gridItems.add(Triple(nextMonthDay++, true, false))
     }
 
     /**
-     * 日历内容区：星期行 + 5行日期网格
-     * 所有子项（共7行：1星期+5日期）自动等间距分布
+     * 日历内容区：星期行 + 日期网格（5或6行）
+     * 行数动态：首日偏移+当月天数 > 35 时为 6 行（如 2026/08），否则 5 行
+     * 所有子项自动等间距分布
      */
     // 灵感场景：日历区水平边距 16dp（与 InspirationCalendarDialog 一致）
     // 主 Column padding 24dp，需要每侧溢出 8dp（24-16=8）实现 16dp 边距
@@ -1000,9 +1007,10 @@ private fun CalendarGridView(
                 }
         }
 
-        // ===== 第2-6行：日期网格（5行×7列）=====
+        // ===== 日期网格（rowsNeeded 行 × 7 列）=====
         // 每行作为一个独立的 Row 子项，参与 SpaceEvenly 等间距布局
-        repeat(5) { weekIndex ->
+        // 行数动态：5 行或 6 行（当首日偏移+天数 > 35 时，如 2026/08）
+        repeat(rowsNeeded) { weekIndex ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround
@@ -1110,9 +1118,12 @@ private fun buildMonthLunarCache(navMonth: YearMonth): Map<LocalDate, String?> {
         cache[date] = computeLunarText(date)
     }
 
-    // 下月填充日期（补齐到35项）
+    // 下月填充日期（补齐到 targetCells，与 CalendarGridView 的 rowsNeeded 保持一致）
+    // 当 firstDayOfWeek + 当月天数 > 35 时需 6 行(42格)，否则 5 行(35格)
+    val daysInMonth = navMonth.lengthOfMonth()
+    val targetCells = if (firstDayOfWeek + daysInMonth > 35) 42 else 35
     var nextDay = 1
-    while (cache.size < 35) {
+    while (cache.size < targetCells) {
         val date = nextMonth.atDay(nextDay++)
         cache[date] = computeLunarText(date)
     }
