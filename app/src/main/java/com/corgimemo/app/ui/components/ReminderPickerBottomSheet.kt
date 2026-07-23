@@ -137,6 +137,9 @@ fun ReminderPickerBottomSheet(
     }
 
     // ===== 截止日期状态 =====
+    // 截止日期开关：默认关闭（不选择截止日期）；仅当传入已有截止日期时默认打开
+    var dueDateEnabled by remember { mutableStateOf(initialDueDateMillis != null) }
+
     // 截止时间默认与提醒时间一致（日期 + 时分完全相同）
     val initDueZoned = if (initialDueDateMillis != null) {
         java.time.Instant.ofEpochMilli(initialDueDateMillis)
@@ -205,25 +208,82 @@ fun ReminderPickerBottomSheet(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ===== 截止日期行 =====
-        DateTimeRow(
-            label = "截止日期",
-            isActive = editTarget == EditTarget.DUE_DATE,
-            dateText = "${dueDate.year}/${String.format("%02d", dueDate.monthValue)}/${String.format("%02d", dueDate.dayOfMonth)}",
-            timeText = "${String.format("%02d", dueHour)}:${String.format("%02d", dueMinute)}",
-            isCalendarActive = viewMode == "calendar",
-            isTimeActive = viewMode == "time",
-            onDateClick = {
-                editTarget = EditTarget.DUE_DATE
-                viewMode = "calendar"
-            },
-            onTimeClick = {
-                editTarget = EditTarget.DUE_DATE
-                viewMode = "time"
-            },
-            onClear = null,
-            highlightEnabled = isDueDateAutoFixed
-        )
+        // ===== 截止日期行（开关滑块，农历同款）=====
+        // 默认关闭：不选择截止日期；打开后下方展开日期+时间芯片供用户选择
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "截止日期",
+                fontSize = 15.sp,
+                color = Color(0xFF2D2D2D),
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Switch(
+                checked = dueDateEnabled,
+                onCheckedChange = { newValue ->
+                    dueDateEnabled = newValue
+                    if (newValue) {
+                        // 打开：激活截止日期编辑，切换到日历视图供用户选择
+                        editTarget = EditTarget.DUE_DATE
+                        viewMode = "calendar"
+                    } else {
+                        // 关闭：清空已设截止日期（重置为提醒时间），切回提醒时间编辑
+                        dueDate = initLocalDate
+                        dueHour = initialHour
+                        dueMinute = initialMinute
+                        isDueDateAutoFixed = false
+                        if (editTarget == EditTarget.DUE_DATE) {
+                            editTarget = EditTarget.REMINDER
+                            viewMode = "calendar"
+                        }
+                    }
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color(0xFFFFFFFF),
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    uncheckedThumbColor = Color(0xFFFFFFFF),
+                    uncheckedTrackColor = Color(0xFFE0E0E0)
+                ),
+                modifier = Modifier.height(28.dp)
+            )
+        }
+
+        // ===== 截止日期展开区（开关打开时显示日期+时间芯片）=====
+        // 复用 DateTimeRow，label 留空让芯片右对齐与上方提醒时间行对齐
+        androidx.compose.animation.AnimatedVisibility(
+            visible = dueDateEnabled,
+            enter = androidx.compose.animation.expandVertically(
+                expandFrom = androidx.compose.ui.Alignment.Top
+            ) + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.shrinkVertically(
+                shrinkTowards = androidx.compose.ui.Alignment.Top
+            ) + androidx.compose.animation.fadeOut()
+        ) {
+            Column {
+                Spacer(modifier = Modifier.height(12.dp))
+                DateTimeRow(
+                    label = "",
+                    isActive = editTarget == EditTarget.DUE_DATE,
+                    dateText = "${dueDate.year}/${String.format("%02d", dueDate.monthValue)}/${String.format("%02d", dueDate.dayOfMonth)}",
+                    timeText = "${String.format("%02d", dueHour)}:${String.format("%02d", dueMinute)}",
+                    isCalendarActive = viewMode == "calendar",
+                    isTimeActive = viewMode == "time",
+                    onDateClick = {
+                        editTarget = EditTarget.DUE_DATE
+                        viewMode = "calendar"
+                    },
+                    onTimeClick = {
+                        editTarget = EditTarget.DUE_DATE
+                        viewMode = "time"
+                    },
+                    onClear = null,
+                    highlightEnabled = isDueDateAutoFixed
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -449,34 +509,47 @@ fun ReminderPickerBottomSheet(
                             .atZone(java.time.ZoneId.systemDefault())
                             .toInstant().toEpochMilli()
 
-                        // 计算截止日期时间戳（始终有值，默认等于提醒时间）
-                        val dueDateMillis = dueDate.atTime(dueHour, dueMinute)
-                            .atZone(java.time.ZoneId.systemDefault())
-                            .toInstant().toEpochMilli()
-
-                        // 截止时间自动修正：早于提醒时间时自动调整为提醒时间
-                        // 修正后不立即提交，切换到截止日期行高亮让用户确认
-                        if (dueDateMillis < reminderMillis) {
-                            val adjustedDateTime = java.time.Instant.ofEpochMilli(reminderMillis)
+                        // 截止日期：开关关闭时不设置（传 null）；打开时计算时间戳并校验
+                        if (dueDateEnabled) {
+                            // 计算截止日期时间戳
+                            val dueDateMillis = dueDate.atTime(dueHour, dueMinute)
                                 .atZone(java.time.ZoneId.systemDefault())
-                            dueDate = adjustedDateTime.toLocalDate()
-                            dueHour = adjustedDateTime.hour
-                            dueMinute = adjustedDateTime.minute
-                            editTarget = EditTarget.DUE_DATE
-                            isDueDateAutoFixed = true
-                            // 截止时间被自动调整：通过全局 Snackbar 提示用户确认
-                            GlobalSnackbarController.showMessage("截止时间已自动调整为提醒时间，请确认")
-                            return@clickable
-                        }
+                                .toInstant().toEpochMilli()
 
-                        onConfirm(
-                            reminderMillis,
-                            selectedHour,
-                            selectedMinute,
-                            repeatType,
-                            calendarEnabled && showAdvancedOptions,
-                            dueDateMillis
-                        )
+                            // 截止时间自动修正：早于提醒时间时自动调整为提醒时间
+                            // 修正后不立即提交，切换到截止日期行高亮让用户确认
+                            if (dueDateMillis < reminderMillis) {
+                                val adjustedDateTime = java.time.Instant.ofEpochMilli(reminderMillis)
+                                    .atZone(java.time.ZoneId.systemDefault())
+                                dueDate = adjustedDateTime.toLocalDate()
+                                dueHour = adjustedDateTime.hour
+                                dueMinute = adjustedDateTime.minute
+                                editTarget = EditTarget.DUE_DATE
+                                isDueDateAutoFixed = true
+                                // 截止时间被自动调整：通过全局 Snackbar 提示用户确认
+                                GlobalSnackbarController.showMessage("截止时间已自动调整为提醒时间，请确认")
+                                return@clickable
+                            }
+
+                            onConfirm(
+                                reminderMillis,
+                                selectedHour,
+                                selectedMinute,
+                                repeatType,
+                                calendarEnabled && showAdvancedOptions,
+                                dueDateMillis
+                            )
+                        } else {
+                            // 截止日期开关关闭：传 null 表示不设置截止日期
+                            onConfirm(
+                                reminderMillis,
+                                selectedHour,
+                                selectedMinute,
+                                repeatType,
+                                calendarEnabled && showAdvancedOptions,
+                                null
+                            )
+                        }
                     },
                 contentAlignment = Alignment.Center
             ) {
