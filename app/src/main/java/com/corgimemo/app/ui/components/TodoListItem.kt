@@ -1216,7 +1216,12 @@ private fun aggregateAttachmentCounts(
  * @param isCompleted 是否已完成（视觉降权）
  * @param onClick 点击回调
  * @param modifier 外部传入的 modifier（位置/对齐/层级）
+ *
+ * v2026-07-24 编译修复：rememberRipple 已被 deprecated（但项目其他文件 AccessibilityExtensions.kt
+ * 仍使用同一 API 保持一致性），用 @Suppress("DEPRECATION") 抑制警告以通过编译。
+ * 后续若全项目统一迁移到 material3.ripple，可移除此 Suppress。
  */
+@Suppress("DEPRECATION")
 @Composable
 private fun CategoryBadge(
     categoryName: String,
