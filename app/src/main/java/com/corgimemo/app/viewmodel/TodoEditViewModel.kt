@@ -1014,6 +1014,13 @@ class TodoEditViewModel @Inject constructor(
      */
     fun setFocusedLineIndex(index: Int) {
         val clamped = index.coerceAtLeast(0)
+        // 🆕 v2026-07-25 诊断日志：排查 focusedLineIdx 越界根因
+        android.util.Log.i(
+            "TodoEditDelete",
+            "setFocusedLineIndex($index) → clamped=$clamped, " +
+            "currentTodoLinesSize=${_todoLines.value.size}, " +
+            "stack=${android.util.Log.getStackTraceString(Throwable().fillInStackTrace()).lineSequence().take(8).joinToString(" | ")}"
+        )
         _focusedLineIndex.value = clamped
     }
 
