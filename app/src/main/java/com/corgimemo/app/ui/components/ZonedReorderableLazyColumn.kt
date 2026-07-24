@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.screens.home.DisplayItem
@@ -230,6 +231,10 @@ fun ZonedReorderableLazyColumn(
                     }
                 }
                 is DisplayItem.Todo -> {
+                    // v2026-07-24 提取：item 是否展开（含子待办展开 / 左滑操作区展开）。
+                    // 展开中的 item 需要应用 zIndex=1f，绘制在所有未展开 item 之上，
+                    // 避免被下方卡片"压住"。详见下方 Box 的 zIndex 注释。
+                    val isItemExpanded = item.isExpanded
                     ReorderableItem(
                         state = reorderableState,
                         key = item.item.id,
@@ -237,19 +242,24 @@ fun ZonedReorderableLazyColumn(
                     ) { isDragging ->
                         Box(
                             modifier = Modifier
-                                // v2026-07-24 修复子待办展开时下方卡片"遮挡"
-                                // - 现象：TodoListItem 的 AnimatedVisibility(expandVertically() + fadeIn()) 使用
-                                //   Compose 默认 spring（弹性 ~400ms 完成）展开，而 LazyColumn 列表项位置变化时
-                                //   底层用 graphicsLayer.translationY 实现 placement 动画，与展开动画是**两个独立 spring**，
-                                //   即使 placementSpec = spring(MediumBouncy, Medium) 也存在 ~5-10% overshoot
-                                //   （弹性回弹会让 item 短暂"超调"到目标位置之上），导致展开过程中下方卡片穿过
-                                //   展开中的卡片，造成瞬间遮挡
-                                // - 修复：用 tween(200, FastOutSlowInEasing) 替代 spring 作为 placementSpec
-                                //   - tween 无 overshoot，确定性 200ms 时长
-                                //   - 200ms < 子待办展开的 ~400ms spring，下方卡片**先到位**（200ms 时已在目标位置），
-                                //     子待办**后展开**，整个过程中下方卡片始终在最终位置，**保证不互相遮挡**
-                                // - 第三方库（Reorderable）会同时管理拖拽时位置过渡，
-                                //   animateItem 与之兼容（参见 Compose 文档 LazyItemScope.animateItem）
+                                // v2026-07-24 修复：绘制顺序（Z-order）问题
+                                // - 现象：用户在子待办展开时，**展开中的卡片会被下方卡片"压住"**瞬间
+                                //   截图证实：第一个 todo 展开子待办时，其下半部分（子待办区域）
+                                //   被第二个 todo 卡片的顶部"覆盖"
+                                // - 根因（与之前 spring overshoot 完全是不同的问题）：
+                                //   - `Modifier.animateItem(placementSpec = tween(200))` 用 graphicsLayer.translationY
+                                //     实现 item 位置退让，**但不影响 item 之间的绘制顺序**
+                                //   - LazyColumn 默认按 item index 顺序绘制：item 0 先，item 1 后
+                                //   - 当 item 0 高度增加时，item 1 仍按 index 顺序绘制在 item 0 之上
+                                //   - 即便 item 1 已通过 translationY 退让到新位置，**绘制顺序没变**，
+                                //     item 1 仍然绘制在 item 0 之上，造成视觉上 item 1 "压住" item 0
+                                // - 修复：给展开中的 item 应用 zIndex=1f
+                                //   - `Modifier.zIndex` 是 LazyColumn 1.9+ 识别 item 绘制顺序的机制
+                                //   - zIndex=1f 的 item 绘制在 zIndex=0f 的所有 item 之上
+                                //   - 收起时恢复 zIndex=0f，其他 item 顺序不变
+                                //   - 配合 animateItem 的 placementSpec = tween(200) 让位置变化更平滑
+                                // - 不影响拖拽：拖拽中由 Reorderable 库管理位置，zIndex 与其兼容
+                                .zIndex(if (isItemExpanded) 1f else 0f)
                                 .animateItem(
                                     fadeInSpec = tween(durationMillis = 150),
                                     fadeOutSpec = tween(durationMillis = 150),
