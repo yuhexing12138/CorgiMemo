@@ -95,6 +95,9 @@ class CorgiMemoApplication : Application() {
                 // v2026-07-25 单一数据源重构：迁移旧字段附件到 content_blocks 表
                 // 处理已有用户的附件迁移（种子数据已注入但 content_blocks 表为空的情况）
                 demoDataSeeder.migrateAttachmentsIfNeeded()
+                // v2026-07-25 新增：迁移 SubTask 附件到 content_blocks 表
+                // 修复旧版 migrateAttachmentsIfNeeded 漏掉 SubTask 附件导致编辑页子任务行无图片的问题
+                demoDataSeeder.migrateSubTaskAttachmentsIfNeeded()
             } catch (e: Exception) {
                 android.util.Log.w("CorgiMemoApplication", "⚠️ 演示数据注入失败: ${e.message}")
             }

@@ -1062,7 +1062,8 @@ class InspirationEditViewModel @Inject constructor(
      * @return ContentBlock 列表（按 orderIndex 排序）
      */
     suspend fun loadContentBlocks(inspirationId: Long): List<ContentBlock> {
-        val entities = contentBlockDao.getBlocksByTodoId(inspirationId)
+        // v2026-07-25 ownerType 过滤：灵感查询传 "inspiration"，避免与待办 ID 冲突
+        val entities = contentBlockDao.getBlocksByTodoId(inspirationId, ownerType = "inspiration")
         return entities.map { entity ->
             when (entity.type) {
                 "image" -> ContentBlock.Image(entity.filePath)
@@ -1096,11 +1097,13 @@ class InspirationEditViewModel @Inject constructor(
         val entities = blocks.mapIndexed { index, block ->
             when (block) {
                 is ContentBlock.Image -> ContentBlockEntity(
-                    todoId = inspirationId, type = "image", filePath = block.path,
+                    todoId = inspirationId, ownerType = "inspiration",
+                    type = "image", filePath = block.path,
                     orderIndex = index, subTaskId = subTaskId, lineIndex = lineIndex
                 )
                 is ContentBlock.Voice -> ContentBlockEntity(
-                    todoId = inspirationId, type = "voice", filePath = block.path,
+                    todoId = inspirationId, ownerType = "inspiration",
+                    type = "voice", filePath = block.path,
                     duration = block.duration, orderIndex = index,
                     subTaskId = subTaskId, lineIndex = lineIndex
                 )
@@ -1108,7 +1111,7 @@ class InspirationEditViewModel @Inject constructor(
             }
         }.filterNotNull()
 
-        contentBlockDao.replaceBlocksForTodo(inspirationId, entities)
+        contentBlockDao.replaceBlocksForTodo(inspirationId, entities, ownerType = "inspiration")
     }
 
     /**
@@ -1120,8 +1123,9 @@ class InspirationEditViewModel @Inject constructor(
      * @param inspirationId 灵感事项 ID
      */
     suspend fun deleteAllContentBlocks(inspirationId: Long) {
-        val entities = contentBlockDao.getBlocksByTodoId(inspirationId)
-        contentBlockDao.deleteByTodoId(inspirationId)
+        // v2026-07-25 ownerType 过滤：灵感查询/删除传 "inspiration"
+        val entities = contentBlockDao.getBlocksByTodoId(inspirationId, ownerType = "inspiration")
+        contentBlockDao.deleteByTodoId(inspirationId, ownerType = "inspiration")
 
         /** 异步删除物理文件 */
         entities.forEach { entity ->

@@ -22,16 +22,31 @@ import androidx.room.PrimaryKey
  * - content_blocks 表现作为附件的**唯一权威源**，
  *   TodoItem.imagePaths/voiceNotePath 和 SubTask.imagePaths/voicePaths 字段保留但不再写入（置空）
  * - contentFormat 中的行级附件快照（|||LINE_ATTACHMENTS|||）不再写入数据库
+ *
+ * **v2026-07-25 ownerType 字段（解决灵感 ID 污染待办查询）**:
+ * - 新增 [ownerType] 字段：区分 "todo"（待办附件）和 "inspiration"（灵感附件）
+ * - 原因：content_blocks 表用 todoId 字段统一存储待办和灵感附件，
+ *   但灵感 ID 和待办 ID 都从 1 开始自增，查询 todoId=1 时会把灵感图片也查出来
+ * - 解决：所有查询加 ownerType 过滤，待办查询用 "todo"，灵感查询用 "inspiration"
  */
 @Entity(
     tableName = "content_blocks",
-    indices = [Index(value = ["todoId"]), Index(value = ["subTaskId"]), Index(value = ["lineIndex"])]
+    indices = [Index(value = ["todoId"]), Index(value = ["subTaskId"]), Index(value = ["lineIndex"]), Index(value = ["ownerType"])]
 )
 data class ContentBlockEntity(
     /** 主键，自增 */
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     /** 关联的待办事项 ID（父待办 ID，即使附件属于子任务也存父待办 ID，便于批量查询） */
     val todoId: Long,
+    /**
+     * 所有者类型（v2026-07-25 新增）
+     *
+     * - "todo"：待办附件（默认值，兼容旧数据）
+     * - "inspiration"：灵感附件
+     *
+     * 用于区分待办和灵感的附件，避免 ID 冲突导致查询污染
+     */
+    @ColumnInfo(defaultValue = "todo") val ownerType: String = "todo",
     /** 内容块类型: "image" | "voice" */
     val type: String,
     /** 文件存储路径（绝对路径） */

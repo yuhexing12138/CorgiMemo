@@ -236,10 +236,15 @@ class FileCopyManager @Inject constructor(
                                     ContentBlockEntity(
                                         id = 0, // Room 自增
                                         todoId = newTodoId,
+                                        // v2026-07-25 保留原 ownerType（待办复制场景默认 "todo"）
+                                        ownerType = originalBlock.ownerType,
                                         type = originalType,
                                         filePath = newPath,
                                         duration = originalBlock.duration,
-                                        orderIndex = originalBlock.orderIndex
+                                        orderIndex = originalBlock.orderIndex,
+                                        // 保留原 subTaskId 和 lineIndex（待办复制时结构应一致）
+                                        subTaskId = originalBlock.subTaskId,
+                                        lineIndex = originalBlock.lineIndex
                                     )
                                 )
                             }

@@ -31,7 +31,7 @@ import com.corgimemo.app.data.model.CustomDateType
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
-    version = 48,
+    version = 49,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -99,7 +99,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1671,6 +1671,49 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             database.execSQL("CREATE INDEX IF NOT EXISTS index_content_blocks_todoId ON content_blocks(todoId)")
             database.execSQL("CREATE INDEX IF NOT EXISTS index_content_blocks_subTaskId ON content_blocks(subTaskId)")
             database.execSQL("CREATE INDEX IF NOT EXISTS index_content_blocks_lineIndex ON content_blocks(lineIndex)")
+        }
+    }
+
+    /**
+     * v48 → v49 Migration：content_blocks 表新增 ownerType 字段
+     *
+     * ## 背景
+     *
+     * content_blocks 表用 `todoId` 字段统一存储待办和灵感附件，
+     * 但灵感 ID 和待办 ID 都从 1 开始自增，查询 `todoId=1` 时会把灵感图片也查出来。
+     *
+     * ## 迁移步骤
+     *
+     * 1. ALTER TABLE 添加 ownerType 列（默认 'todo'，兼容旧数据）
+     * 2. 回填灵感附件的 ownerType='inspiration'（通过 inspirationId 反查）
+     * 3. 创建 ownerType 索引
+     *
+     * ## 回填策略
+     *
+     * 旧数据中灵感的附件是通过 DemoDataSeeder.migrateAttachmentsIfNeeded 或种子流程写入的，
+     * 它们的 todoId 字段存的是 inspirationId（与待办 ID 空间冲突）。
+     *
+     * 回填 SQL：把 content_blocks 中 todoId 在 inspirations 表中存在的记录标记为 'inspiration'。
+     *
+     * 项目规则：@ColumnInfo(defaultValue = "todo") 与此处 DEFAULT 'todo' 必须一致
+     */
+    internal val MIGRATION_48_TO_49 = object : Migration(48, 49) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // Step 1: 添加 ownerType 列，默认 'todo'（与 Entity 的 @ColumnInfo defaultValue 一致）
+            database.execSQL("ALTER TABLE content_blocks ADD COLUMN ownerType TEXT NOT NULL DEFAULT 'todo'")
+
+            // Step 2: 回填灵感附件的 ownerType='inspiration'
+            // 通过子查询：如果 content_blocks.todoId 在 inspirations.id 中存在，则标记为 'inspiration'
+            database.execSQL(
+                """
+                UPDATE content_blocks
+                SET ownerType = 'inspiration'
+                WHERE todoId IN (SELECT id FROM inspirations)
+                """.trimIndent()
+            )
+
+            // Step 3: 创建 ownerType 索引（与 Entity 的 @Index 注解一致）
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_content_blocks_ownerType ON content_blocks(ownerType)")
         }
     }
     // companion object 闭合

@@ -10,6 +10,11 @@ import androidx.room.Transaction
  *
  * 提供 content_blocks 表的 CRUD 操作，
  * 支持按待办 ID 批量查询、插入、删除和排序更新。
+ *
+ * **v2026-07-25 ownerType 过滤**:
+ * 所有查询/删除方法新增 `ownerType` 参数（默认 "todo"），
+ * 避免灵感附件（ownerType="inspiration"）污染待办查询结果。
+ * 灵感相关调用需显式传 `ownerType = "inspiration"`。
  */
 @Dao
 interface ContentBlockDao {
@@ -18,10 +23,11 @@ interface ContentBlockDao {
      * 查询某待办的所有内容块（按排序索引升序）
      *
      * @param todoId 待办事项 ID
+     * @param ownerType 所有者类型（默认 "todo"，灵感查询传 "inspiration"）
      * @return 排序后的内容块列表
      */
-    @Query("SELECT * FROM content_blocks WHERE todoId = :todoId ORDER BY orderIndex ASC")
-    suspend fun getBlocksByTodoId(todoId: Long): List<ContentBlockEntity>
+    @Query("SELECT * FROM content_blocks WHERE todoId = :todoId AND ownerType = :ownerType ORDER BY orderIndex ASC")
+    suspend fun getBlocksByTodoId(todoId: Long, ownerType: String = "todo"): List<ContentBlockEntity>
 
     /**
      * 批量查询多个待办的所有内容块（v2026-07-25 单一数据源重构新增）
@@ -31,10 +37,25 @@ interface ContentBlockDao {
      * - 阶段2 重构后这些字段已被置空，content_blocks 表成为单一权威源
      *
      * @param todoIds 待办 ID 列表（空列表返回空结果）
+     * @param ownerType 所有者类型（默认 "todo"，灵感查询传 "inspiration"）
      * @return 所有匹配的内容块列表（按 todoId 分组、orderIndex 升序）
      */
-    @Query("SELECT * FROM content_blocks WHERE todoId IN (:todoIds) ORDER BY todoId ASC, orderIndex ASC")
-    suspend fun getBlocksByTodoIds(todoIds: List<Long>): List<ContentBlockEntity>
+    @Query("SELECT * FROM content_blocks WHERE todoId IN (:todoIds) AND ownerType = :ownerType ORDER BY todoId ASC, orderIndex ASC")
+    suspend fun getBlocksByTodoIds(todoIds: List<Long>, ownerType: String = "todo"): List<ContentBlockEntity>
+
+    /**
+     * 按子任务 ID 查询内容块（v2026-07-25 新增）
+     *
+     * 用于 [DemoDataSeeder.migrateSubTaskAttachmentsIfNeeded] 中的幂等检查：
+     * 迁移 SubTask 附件前先查询是否已有该子任务的 content_blocks 记录，
+     * 避免重复迁移导致数据冗余。
+     *
+     * @param subTaskId 子任务 ID
+     * @param ownerType 所有者类型（默认 "todo"，与待办附件一致）
+     * @return 该子任务的所有内容块列表（按 orderIndex 升序）
+     */
+    @Query("SELECT * FROM content_blocks WHERE subTaskId = :subTaskId AND ownerType = :ownerType ORDER BY orderIndex ASC")
+    suspend fun getBlocksBySubTaskId(subTaskId: Long, ownerType: String = "todo"): List<ContentBlockEntity>
 
     /**
      * 删除某待办的所有内容块
@@ -42,9 +63,10 @@ interface ContentBlockDao {
      * 保存时先清后写，确保数据一致性
      *
      * @param todoId 待办事项 ID
+     * @param ownerType 所有者类型（默认 "todo"，灵感查询传 "inspiration"）
      */
-    @Query("DELETE FROM content_blocks WHERE todoId = :todoId")
-    suspend fun deleteByTodoId(todoId: Long)
+    @Query("DELETE FROM content_blocks WHERE todoId = :todoId AND ownerType = :ownerType")
+    suspend fun deleteByTodoId(todoId: Long, ownerType: String = "todo")
 
     /**
      * 删除单个内容块
@@ -63,9 +85,10 @@ interface ContentBlockDao {
      *
      * @param todoId 待办事项 ID
      * @param filePath 图片绝对路径
+     * @param ownerType 所有者类型（默认 "todo"，灵感查询传 "inspiration"）
      */
-    @Query("DELETE FROM content_blocks WHERE todoId = :todoId AND filePath = :filePath AND type = 'image'")
-    suspend fun deleteImageBlockByPath(todoId: Long, filePath: String)
+    @Query("DELETE FROM content_blocks WHERE todoId = :todoId AND filePath = :filePath AND type = 'image' AND ownerType = :ownerType")
+    suspend fun deleteImageBlockByPath(todoId: Long, filePath: String, ownerType: String = "todo")
 
     /**
      * 删除某待办的指定语音内容块
@@ -76,9 +99,10 @@ interface ContentBlockDao {
      *
      * @param todoId 待办事项 ID
      * @param filePath 语音文件绝对路径
+     * @param ownerType 所有者类型（默认 "todo"，灵感查询传 "inspiration"）
      */
-    @Query("DELETE FROM content_blocks WHERE todoId = :todoId AND filePath = :filePath AND type = 'voice'")
-    suspend fun deleteVoiceBlockByPath(todoId: Long, filePath: String)
+    @Query("DELETE FROM content_blocks WHERE todoId = :todoId AND filePath = :filePath AND type = 'voice' AND ownerType = :ownerType")
+    suspend fun deleteVoiceBlockByPath(todoId: Long, filePath: String, ownerType: String = "todo")
 
     /**
      * 批量插入内容块
@@ -112,10 +136,11 @@ interface ContentBlockDao {
      *
      * @param todoId 待办事项 ID
      * @param blocks 新的内容块列表（需包含正确的 orderIndex）
+     * @param ownerType 所有者类型（默认 "todo"，灵感查询传 "inspiration"）
      */
     @Transaction
-    suspend fun replaceBlocksForTodo(todoId: Long, blocks: List<ContentBlockEntity>) {
-        deleteByTodoId(todoId)
+    suspend fun replaceBlocksForTodo(todoId: Long, blocks: List<ContentBlockEntity>, ownerType: String = "todo") {
+        deleteByTodoId(todoId, ownerType)
         if (blocks.isNotEmpty()) {
             insertBlocks(blocks)
         }

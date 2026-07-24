@@ -45,6 +45,9 @@ class DemoDataSeeder @Inject constructor(
         private const val KEY_SEEDED = "demo_data_seeded"
         // v2026-07-25 单一数据源重构：标记旧字段附件是否已迁移到 content_blocks 表
         private const val KEY_ATTACHMENTS_MIGRATED = "attachments_migrated_to_content_blocks"
+        // v2026-07-25 新增：标记 SubTask 附件是否已迁移到 content_blocks 表
+        // 独立于 KEY_ATTACHMENTS_MIGRATED，因为旧版 migrateAttachmentsIfNeeded 漏掉了 SubTask
+        private const val KEY_SUBTASK_ATTACHMENTS_MIGRATED = "subtask_attachments_migrated_to_content_blocks"
     }
 
     /**
@@ -261,7 +264,8 @@ class DemoDataSeeder @Inject constructor(
                     if (!hasImages) continue
 
                     // 检查 content_blocks 表是否已有该 Inspiration 的记录（幂等）
-                    val existingBlocks = contentBlockDao.getBlocksByTodoId(inspiration.id)
+                    // v2026-07-25 ownerType='inspiration' 过滤，避免与待办 ID 冲突
+                    val existingBlocks = contentBlockDao.getBlocksByTodoId(inspiration.id, ownerType = "inspiration")
                     if (existingBlocks.isNotEmpty()) {
                         Log.d(tag, "Inspiration ${inspiration.id} 已有 ${existingBlocks.size} 条 content_blocks 记录，跳过")
                         continue
@@ -276,6 +280,7 @@ class DemoDataSeeder @Inject constructor(
                                 entities.add(
                                     ContentBlockEntity(
                                         todoId = inspiration.id, // content_blocks 表用 todoId 字段统一存储
+                                        ownerType = "inspiration", // v2026-07-25 新增：标记为灵感附件
                                         type = "image",
                                         filePath = path,
                                         orderIndex = i,
@@ -301,6 +306,121 @@ class DemoDataSeeder @Inject constructor(
             Log.d(tag, "✅ 附件迁移完成（共迁移 $migratedCount 条记录到 content_blocks 表）")
         } catch (e: Exception) {
             Log.e(tag, "❌ 附件迁移失败: ${e.message}", e)
+            // 不抛出异常，避免阻塞 APP 启动；下次启动会重试
+        }
+    }
+
+    /**
+     * 迁移 SubTask 附件到 content_blocks 表（v2026-07-25 新增）
+     *
+     * ## 背景
+     *
+     * 旧版本 [migrateAttachmentsIfNeeded] 只迁移了 TodoItem 和 Inspiration 附件，
+     * **漏掉了 SubTask 附件**。从旧版本升级的用户，子任务图片仍存在
+     * `SubTask.imagePaths` 字段（JSON 数组字符串），没写入 content_blocks 表，
+     * 导致编辑页加载时子任务行无图片显示。
+     *
+     * ## 触发条件
+     *
+     * - `KEY_SUBTASK_ATTACHMENTS_MIGRATED = false`（未迁移过）
+     *
+     * ## 迁移逻辑
+     *
+     * 1. 遍历所有 TodoItem
+     * 2. 查询每个 TodoItem 下的 SubTask（按 `order` 升序排序）
+     * 3. 解析 `SubTask.imagePaths`（JSON 数组）
+     * 4. 写入 content_blocks 表：
+     *    - todoId = 父待办 ID
+     *    - ownerType = "todo"（默认）
+     *    - type = "image"
+     *    - subTaskId = 子任务 ID
+     *    - lineIndex = 子任务在列表中的位置 + 1（0 = 父行，1+ = 子任务行）
+     * 5. 幂等检查：通过 [ContentBlockDao.getBlocksBySubTaskId] 查询是否已有记录
+     * 6. 迁移完成后设置 `KEY_SUBTASK_ATTACHMENTS_MIGRATED = true`
+     *
+     * ## lineIndex 映射规则
+     *
+     * 编辑页 [TodoEditScreen] 加载时根据 entity.lineIndex 把附件分配到 todoLines 对应行：
+     * - lineIndex=0 → resultLines[0]（父待办行）
+     * - lineIndex=1 → resultLines[1]（第一个子任务行）
+     * - lineIndex=2 → resultLines[2]（第二个子任务行）
+     *
+     * 因此 lineIndex 必须与子任务在 sub_tasks 表中的 order 顺序一致。
+     *
+     * ## 调用时机
+     *
+     * APP 启动时调用，紧随 [migrateAttachmentsIfNeeded] 之后。
+     */
+    suspend fun migrateSubTaskAttachmentsIfNeeded() {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_SUBTASK_ATTACHMENTS_MIGRATED, false)) {
+            Log.d(tag, "SubTask 附件已迁移到 content_blocks，跳过")
+            return
+        }
+
+        Log.d(tag, "🔄 开始迁移 SubTask 附件到 content_blocks 表...")
+
+        try {
+            val contentBlockDao = database.contentBlockDao()
+            val todoDao = database.todoDao()
+            val subTaskDao = database.subTaskDao()
+            var migratedCount = 0
+
+            database.withTransaction {
+                // 遍历所有 TodoItem，查询其下的 SubTask
+                val todos = todoDao.getAllTodosBlocking()
+                for (todo in todos) {
+                    // 按 order 升序获取子任务列表（与编辑页 initialLines 构造逻辑一致）
+                    val subTasks = subTaskDao.getSubTasksByTodoId(todo.id)
+                    subTasks.forEachIndexed { index, subTask ->
+                        // 跳过没有图片附件的 SubTask
+                        val hasImages = subTask.imagePaths.isNotBlank() && subTask.imagePaths != "[]"
+                        if (!hasImages) return@forEachIndexed
+
+                        // 幂等检查：通过 subTaskId 查询是否已有 content_blocks 记录
+                        val existingBlocks = contentBlockDao.getBlocksBySubTaskId(subTask.id)
+                        if (existingBlocks.isNotEmpty()) {
+                            Log.d(tag, "SubTask ${subTask.id} 已有 ${existingBlocks.size} 条 content_blocks 记录，跳过")
+                            return@forEachIndexed
+                        }
+
+                        val entities = mutableListOf<ContentBlockEntity>()
+                        try {
+                            val jsonArray = org.json.JSONArray(subTask.imagePaths)
+                            for (i in 0 until jsonArray.length()) {
+                                val path = jsonArray.optString(i)
+                                if (path.isNotBlank()) {
+                                    entities.add(
+                                        ContentBlockEntity(
+                                            todoId = todo.id,
+                                            type = "image",
+                                            filePath = path,
+                                            orderIndex = i,
+                                            subTaskId = subTask.id,
+                                            // lineIndex = 子任务位置 + 1（0 = 父行，1+ = 子任务行）
+                                            // 与 TodoEditScreen 中 initialLines = [父行] + TodoLine.fromSubTasks(subTasks) 的结构对齐
+                                            lineIndex = index + 1
+                                        )
+                                    )
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(tag, "解析 SubTask ${subTask.id} 的 imagePaths 失败: ${subTask.imagePaths}", e)
+                        }
+
+                        if (entities.isNotEmpty()) {
+                            contentBlockDao.insertBlocks(entities)
+                            migratedCount += entities.size
+                        }
+                    }
+                }
+            }
+
+            // 迁移成功后更新标志位
+            prefs.edit().putBoolean(KEY_SUBTASK_ATTACHMENTS_MIGRATED, true).apply()
+            Log.d(tag, "✅ SubTask 附件迁移完成（共迁移 $migratedCount 条记录到 content_blocks 表）")
+        } catch (e: Exception) {
+            Log.e(tag, "❌ SubTask 附件迁移失败: ${e.message}", e)
             // 不抛出异常，避免阻塞 APP 启动；下次启动会重试
         }
     }
@@ -423,6 +543,7 @@ class DemoDataSeeder @Inject constructor(
         }
 
         // 3. 同步 Inspiration 附件（仅图片，灵感种子数据无语音）
+        // v2026-07-25 ownerType='inspiration'：避免灵感 ID 与待办 ID 冲突导致查询污染
         inspirationIds.forEach { (inspirationKey, inspirationId) ->
             val images = imagePaths[inspirationKey] ?: emptyList()
 
@@ -431,6 +552,7 @@ class DemoDataSeeder @Inject constructor(
                 entities.add(
                     ContentBlockEntity(
                         todoId = inspirationId, // content_blocks 表用 todoId 字段统一存储（待办/灵感共用）
+                        ownerType = "inspiration", // v2026-07-25 新增：标记为灵感附件
                         type = "image",
                         filePath = path,
                         orderIndex = index,
