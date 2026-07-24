@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.components
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -441,10 +442,16 @@ fun TodoListItem(
                 // 主区域行：复选框 + (标题+元数据列) + 展开区域
                 // 复选框通过 Row(verticalAlignment=CenterVertically) 相对于"标题+元数据"整体垂直居中
                 // 关联提示/进度条/子任务在该行下方单独渲染，不影响复选框垂直居中位置
+                // v2026-07-25 改造：动态 padding-top 解决角标与复选框/标题重叠问题
+                // - 有角标时 top = 19 + 8 = 27dp（19dp 角标高度 + 8dp 间距）
+                // - 无角标时 top = 16dp（保持原状，紧贴卡片上边缘留 16dp）
+                // - 角标仍可点击（z 轴在上），内容区让位避免视觉重叠
+                val contentTopPadding = if (hasCategory || hasAttachmentBadge || hasRelationBadge)
+                    27.dp else 16.dp
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 0.dp),
+                        .padding(start = 16.dp, top = contentTopPadding, end = 16.dp, bottom = 0.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // 复选框区域
@@ -713,6 +720,19 @@ fun TodoListItem(
                     // 右侧 Column 内容
                     columnPlaceable.placeRelative(x = barWidthPx, y = 0)
                 }
+                // v2026-07-25 临时埋点：诊断子待办展开时 LazyColumn item 间位置/绘制问题
+                // - 目的：看 measure 阶段 Column 实际高度（含 AnimatedVisibility 动画进度），
+                //   以及 LazyColumn 同一帧内测量的 item 数量
+                // - 输出：id, effectiveExpanded, columnHeight, barHeight, hasSubTasks, time
+                // - 过滤命令：adb logcat -s TodoItem_Measure:D
+                Log.d(
+                    "TodoItem_Measure",
+                    "id=${todo.id}, effectiveExpanded=$effectiveExpanded, " +
+                        "subTaskCount=${subTasks.size}, " +
+                        "columnHeight=${columnPlaceable.height}px, " +
+                        "layoutHeight=${columnPlaceable.height}px, " +
+                        "t=${System.currentTimeMillis()}"
+                )
             }
             )
 
