@@ -1260,6 +1260,43 @@ fun TodoEditScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
 
+            // 🆕 v2026-07-25 改造：把"⏱️ 预计时长"从外层全局显示迁移到每个容器底部左下角
+            // 计算逻辑保持不变（基于全局 startDate/dueDate），结果通过 groupEstimatedDurations
+            // 传给 CheckboxEditText，由每个 TodoGroupContainer 在按钮行下方左对齐渲染。
+            //
+            // ⚠️ 必须在 CheckboxEditText 调用之前声明（原代码声明在调用之后导致 Unresolved reference）
+            val autoDurationText = remember(startDate, dueDate) {
+                val start = startDate
+                val due = dueDate
+                if (start != null && due != null && due > start) {
+                    val diffMs = due - start
+                    val totalMinutes = diffMs / 1000 / 60
+                    val hours = totalMinutes / 60
+                    val minutes = totalMinutes % 60
+                    when {
+                        hours > 24 -> "${hours / 24}天${hours % 24}小时"
+                        hours > 0 -> "${hours}小时${if (minutes > 0) "${minutes}分" else ""}"
+                        minutes > 0 -> "${minutes}分钟"
+                        else -> null
+                    }
+                } else null
+            }
+
+            /**
+             * 按 groupId 分发预计时长文本
+             *
+             * 数据层（_startDate/_dueDate）当前仍是全局单值，因此多容器场景下
+             * 所有 groupId 共享同一个 autoDurationText。
+             * 后续若改造为按 groupId 独立的 startDate/dueDate，仅需改本 Map 构造即可。
+             */
+            val groupEstimatedDurations = remember(todoLines, autoDurationText) {
+                if (autoDurationText == null) {
+                    emptyMap()
+                } else {
+                    todoLines.map { it.groupId }.toSet().associateWith { autoDurationText }
+                }
+            }
+
             // v2026-07-25 优化：删除【已废弃】全局 contentBlocks 渲染区域注释块
             // 附件现在改为行级存储，在每个 CheckboxEditRow 内部渲染（支持子任务缩进）
             // 旧 ReorderableColumn 已被替换为 TodoLine.imagePaths / voiceAttachments 字段
@@ -1603,40 +1640,9 @@ fun TodoEditScreen(
                 )
             }
 
-            // v2026-07-25 改造：把"⏱️ 预计时长"从外层全局显示迁移到每个容器底部左下角
-            // 计算逻辑保持不变（基于全局 startDate/dueDate），结果通过 groupEstimatedDurations
-            // 传给 CheckboxEditText，由每个 TodoGroupContainer 在按钮行下方左对齐渲染。
-            val autoDurationText = remember(startDate, dueDate) {
-                val start = startDate
-                val due = dueDate
-                if (start != null && due != null && due > start) {
-                    val diffMs = due - start
-                    val totalMinutes = diffMs / 1000 / 60
-                    val hours = totalMinutes / 60
-                    val minutes = totalMinutes % 60
-                    when {
-                        hours > 24 -> "${hours / 24}天${hours % 24}小时"
-                        hours > 0 -> "${hours}小时${if (minutes > 0) "${minutes}分" else ""}"
-                        minutes > 0 -> "${minutes}分钟"
-                        else -> null
-                    }
-                } else null
-            }
-
-            /**
-             * 按 groupId 分发预计时长文本
-             *
-             * 数据层（_startDate/_dueDate）当前仍是全局单值，因此多容器场景下
-             * 所有 groupId 共享同一个 autoDurationText。
-             * 后续若改造为按 groupId 独立的 startDate/dueDate，仅需改本 Map 构造即可。
-             */
-            val groupEstimatedDurations = remember(todoLines, autoDurationText) {
-                if (autoDurationText == null) {
-                    emptyMap()
-                } else {
-                    todoLines.map { it.groupId }.toSet().associateWith { autoDurationText }
-                }
-            }
+            // v2026-07-25 改造：原 autoDurationText/groupEstimatedDurations 声明位置
+            // 已上移至 Column 开始处（CheckboxEditText 调用之前），否则编译器解析
+            // CheckboxEditText 调用时会报 Unresolved reference 'groupEstimatedDurations'
 
             /**
              * 推荐提醒时间提示条
