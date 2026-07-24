@@ -223,15 +223,20 @@ class DemoResourceManager(private val context: Context) {
         // 子任务图片（v2026-07-25 新增）
         // 文件名格式：demo_subtask_t1_s1_1.png → key = "T1-S1"
         val subTaskGroups = subTaskImageMap.entries.groupBy { entry ->
-            // 提取 "t1_s1" 部分，然后转成 "T1-S1"
-            val tPart = entry.key.substringAfter("demo_subtask_").substringBefore("_s")  // "t1"
-            val sPart = entry.key.substringAfter("_s").substringBefore("_")  // "1"
+            // 先去掉前缀 "demo_subtask_"，得到 "t1_s1_1.png"
+            // 再从 "t1_s1_1.png" 中解析 tPart 和 sPart
+            // 注意：不能直接从原始 entry.key 找 "_s"，因为 "demo_subtask" 中也包含 "_s"
+            // 会导致 sPart 错误解析为 "ubtask"，subTaskKey 变成 "T1-Subtask" 而非 "T1-S1"
+            val nameWithoutPrefix = entry.key.substringAfter("demo_subtask_")  // "t1_s1_1.png"
+            val tPart = nameWithoutPrefix.substringBefore("_s")  // "t1"
+            val sPart = nameWithoutPrefix.substringAfter("_s").substringBefore("_")  // "1"
             "${tPart.uppercase()}-S$sPart"
         }
         subTaskGroups.forEach { (subTaskKey, entries) ->
             result[subTaskKey] = entries.map { (fileName, drawableId) ->
                 copyDrawableToInternal(drawableId, fileName)
             }
+            Log.d(tag, "🔑 子任务图片分组: $subTaskKey → ${entries.size} 张图片")
         }
 
         // 灵感图片
