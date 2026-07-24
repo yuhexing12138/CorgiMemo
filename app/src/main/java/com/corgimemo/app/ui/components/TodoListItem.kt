@@ -719,20 +719,21 @@ fun TodoListItem(
                     barPlaceable.placeRelative(x = 0, y = 0)
                     // 右侧 Column 内容
                     columnPlaceable.placeRelative(x = barWidthPx, y = 0)
+                    // v2026-07-25 临时埋点：诊断子待办展开时 LazyColumn item 间位置/绘制问题
+                    // - 目的：看 measure 阶段 Column 实际高度（含 AnimatedVisibility 动画进度），
+                    //   以及 LazyColumn 同一帧内测量的 item 数量
+                    // - 输出：id, effectiveExpanded, columnHeight, barHeight, hasSubTasks, time
+                    // - 过滤命令：adb logcat -s TodoItem_Measure:D
+                    // - 位置：layout 块内部，确保 measurePolicy 返回类型为 MeasureResult
+                    Log.d(
+                        "TodoItem_Measure",
+                        "id=${todo.id}, effectiveExpanded=$effectiveExpanded, " +
+                            "subTaskCount=${subTasks.size}, " +
+                            "columnHeight=${columnPlaceable.height}px, " +
+                            "layoutHeight=${columnPlaceable.height}px, " +
+                            "t=${System.currentTimeMillis()}"
+                    )
                 }
-                // v2026-07-25 临时埋点：诊断子待办展开时 LazyColumn item 间位置/绘制问题
-                // - 目的：看 measure 阶段 Column 实际高度（含 AnimatedVisibility 动画进度），
-                //   以及 LazyColumn 同一帧内测量的 item 数量
-                // - 输出：id, effectiveExpanded, columnHeight, barHeight, hasSubTasks, time
-                // - 过滤命令：adb logcat -s TodoItem_Measure:D
-                Log.d(
-                    "TodoItem_Measure",
-                    "id=${todo.id}, effectiveExpanded=$effectiveExpanded, " +
-                        "subTaskCount=${subTasks.size}, " +
-                        "columnHeight=${columnPlaceable.height}px, " +
-                        "layoutHeight=${columnPlaceable.height}px, " +
-                        "t=${System.currentTimeMillis()}"
-                )
             }
             )
 
