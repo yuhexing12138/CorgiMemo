@@ -1089,7 +1089,12 @@ fun HomeScreen(
                                                 viewModel.setSwipeActionExpanded(expanded)
                                             },
                                             onShareClick = {
-                                                shareTodoAsImage(context, todo, categories)
+                                                // v2026-07-25 单一数据源修复：左滑分享按钮也需传入图片附件路径
+                                                // 旧代码只传 (context, todo, categories)，导致 imagePaths 走默认值 emptyList()
+                                                // 分享卡片里所有图片附件都不显示
+                                                val imgPaths = todoAttachmentsMap[todo.id]?.first ?: emptyList()
+                                                val subImgPaths = subTaskAttachmentsMap.mapValues { it.value.first }
+                                                shareTodoAsImage(context, todo, categories, imgPaths, subImgPaths)
                                             },
                                             onPinClick = {
                                                 viewModel.togglePin(todo.id)
@@ -1134,15 +1139,15 @@ fun HomeScreen(
                                                     viewModel.toggleSelection(todo.id)
                                                 },
                                                 onShareAsImage = {
-                                                    // v2026-07-25 单一数据源：从 todoAttachmentsMap 获取主待办图片路径
-                                                    // （替代旧的从 todo.imagePaths 字段解析）
-                                                    val imgPaths = todoAttachmentsMap[todo.id]?.first ?: emptyList()
-                                                    // v2026-07-25 新增：从 subTaskAttachmentsMap 提取子任务图片路径映射
-                                                    // （替代旧的 ImageExporter 内部从 sub.imagePaths 字段解析）
-                                                    val subImgPaths = subTaskAttachmentsMap
-                                                        .mapValues { it.value.first }
-                                                    shareTodoAsImage(context, todo, categories, imgPaths, subImgPaths)
-                                                },
+                                    // v2026-07-25 单一数据源：从 todoAttachmentsMap 获取主待办图片路径
+                                    // （替代旧的从 todo.imagePaths 字段解析）
+                                    val imgPaths = todoAttachmentsMap[todo.id]?.first ?: emptyList()
+                                    // v2026-07-25 新增：从 subTaskAttachmentsMap 提取子任务图片路径映射
+                                    // （替代旧的 ImageExporter 内部从 sub.imagePaths 字段解析）
+                                    val subImgPaths = subTaskAttachmentsMap
+                                        .mapValues { it.value.first }
+                                    shareTodoAsImage(context, todo, categories, imgPaths, subImgPaths)
+                                },
                                                 onToggleExpand = {
                                                     viewModel.toggleExpand(todo.id)
                                                 },
