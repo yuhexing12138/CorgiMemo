@@ -128,8 +128,8 @@ class TodoEditViewModel @Inject constructor(
     private val _priority = MutableStateFlow(0)
     val priority: StateFlow<Int> = _priority.asStateFlow()
 
-    private val _startDate = MutableStateFlow<Long?>(null)
-    val startDate: StateFlow<Long?> = _startDate.asStateFlow()
+    // v2026-07-25 改造：移除 _startDate StateFlow 和 startDate 暴露
+    // 原因：开始时间字段已废弃，预计时长改由 groupReminders[groupId]+dueDate 派生计算
 
     /** 截止时间状态（时间戳，毫秒） */
     private val _dueDate = MutableStateFlow<Long?>(null)
@@ -234,7 +234,7 @@ class TodoEditViewModel @Inject constructor(
         val lines: List<TodoLine> = emptyList(),
 
         // 单值元数据
-        val startDate: Long?,
+        // v2026-07-25 改造：移除 startDate 字段，预计时长改由 reminder+due 派生
         val dueDate: Long?,
 
         // 位置
@@ -461,7 +461,7 @@ class TodoEditViewModel @Inject constructor(
             // imagePaths/voiceAttachments 是新引用，但内部元素仍是同一对象）。
             // 对当前场景足够（这些 List 在 setTodoLines 中是整体替换的）。
             lines = _todoLines.value.map { it.copy() },
-            startDate = _startDate.value,
+            // v2026-07-25 改造：移除 startDate 快照字段
             dueDate = _dueDate.value,
             geofenceLat = _geofenceLat.value,
             geofenceLng = _geofenceLng.value,
@@ -558,7 +558,7 @@ class TodoEditViewModel @Inject constructor(
         _subTasks.value = snapshot.subTasks
         // v2026-07-25 优化：不再恢复 _currentContentBlocks（已删除）
         // 附件信息通过 snapshot.lines 恢复到 _todoLines（见下方 setTodoLines 调用）
-        _startDate.value = snapshot.startDate
+        // v2026-07-25 改造：移除 _startDate 恢复逻辑
         _dueDate.value = snapshot.dueDate
         _geofenceLat.value = snapshot.geofenceLat
         _geofenceLng.value = snapshot.geofenceLng
@@ -1458,17 +1458,7 @@ class TodoEditViewModel @Inject constructor(
         _priority.value = priority
     }
 
-    fun setStartDate(startDate: Long?) {
-        if (_startDate.value == startDate) {
-            android.util.Log.w(
-                "UndoRedoTrace",
-                "[setStartDate] ⏭ 跳过：值未变化 startDate=$startDate"
-            )
-            return
-        }
-        pushSnapshot()
-        _startDate.value = startDate
-    }
+    // v2026-07-25 改造：移除 setStartDate 方法（字段已废弃）
 
     /**
      * 设置截止时间
@@ -1836,7 +1826,7 @@ class TodoEditViewModel @Inject constructor(
                 // 单容器场景：groupId=0 持有该 todo 的分类
                 _groupCategoryIds.value = mapOf(0 to todo.categoryId)
                 _priority.value = todo.priority
-                _startDate.value = todo.startDate
+                // v2026-07-25 改造：不再加载 startDate（字段已废弃）
                 _dueDate.value = todo.dueDate
                 _estimatedDurationMinutes.value = todo.estimatedDurationMinutes
                 // 把"全局 reminderTime/repeatType"映射到"分组 0"，实现向后兼容
@@ -1974,7 +1964,8 @@ class TodoEditViewModel @Inject constructor(
             categoryId = _groupCategoryIds.value[targetGroupId] ?: 0L,
             priority = _groupPriorities.value[targetGroupId] ?: 0,  // 使用分组独立优先级
             status = 0,
-            startDate = _startDate.value,
+            // v2026-07-25 改造：startDate 置 null（字段已废弃，预计时长改由 reminder+due 派生）
+            startDate = null,
             dueDate = _dueDate.value,
             estimatedDurationMinutes = _estimatedDurationMinutes.value,
             reminderTime = _groupReminders.value[targetGroupId],
