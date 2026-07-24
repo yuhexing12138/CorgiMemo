@@ -92,6 +92,9 @@ class CorgiMemoApplication : Application() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 demoDataSeeder.seedIfNeeded()
+                // v2026-07-25 单一数据源重构：迁移旧字段附件到 content_blocks 表
+                // 处理已有用户的附件迁移（种子数据已注入但 content_blocks 表为空的情况）
+                demoDataSeeder.migrateAttachmentsIfNeeded()
             } catch (e: Exception) {
                 android.util.Log.w("CorgiMemoApplication", "⚠️ 演示数据注入失败: ${e.message}")
             }
