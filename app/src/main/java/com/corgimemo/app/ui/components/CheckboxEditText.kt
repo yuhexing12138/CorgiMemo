@@ -83,6 +83,11 @@ import com.corgimemo.app.util.VoicePlayer
  * @param onLineCheckToggle 某一行复选框被点击时的回调
  * @param onSpecialCharDetected 特殊字符（@/#）检测回调
  * @param onNewGroupRequested 用户输入 "/" 时请求创建新分组的回调
+ * @param onNewSubTaskRequested 用户按下回车新建子待办后的回调（v2026-07-25 新增）
+ *   参数是新子待办行的全局索引（lineIndex + 1），用于 UI 层触发 externalPendingFocus 焦点转移
+ *   背景：原 handleKeyEvent 内 onLinesChange + onFocusChange 已同步 ViewModel 状态，
+ *   但 CheckboxEditRow 内 LaunchedEffect(isFocused) 触发 requestFocus() 存在时序竞态
+ *   （新行 BasicTextField 可能未完全渲染好）。本回调让 UI 层用 externalPendingFocus 机制兜底。
  * @param onReminderClick 当前容器提醒按钮点击回调，参数为 groupId
  * @param onFocusedLineChange 当前聚焦行索引变化回调（用于确定附件插入目标）
  * @param priority 当前优先级值（0=低, 1=中, 2=高）
@@ -106,6 +111,16 @@ fun CheckboxEditText(
     onLineCheckToggle: (index: Int, isChecked: Boolean) -> Unit,
     onSpecialCharDetected: ((String, String?) -> Unit)? = null,
     onNewGroupRequested: ((index: Int, currentText: String) -> Unit)? = null,
+    /**
+     * 🆕 v2026-07-25 回车新建子待办后的回调
+     *
+     * 参数：新子待办行的全局索引（lineIndex + 1）
+     *
+     * 触发时机：handleKeyEvent 的 KEYCODE_ENTER 分支处理完 onLinesChange + onFocusChange 后调用
+     * 用途：UI 层据此触发 externalPendingFocus 焦点转移，复用删除分组场景的成熟机制，
+     *      避免新行 BasicTextField 未渲染完成时 requestFocus() 失败的时序竞态
+     */
+    onNewSubTaskRequested: ((newSubTaskIndex: Int) -> Unit)? = null,
     onReminderClick: ((Int) -> Unit)? = null,
     /** 各分组的提醒时间映射（key=groupId, value=提醒时间戳或 null） */
     groupReminders: Map<Int, Long?> = emptyMap(),
@@ -327,7 +342,7 @@ fun CheckboxEditText(
                 ) {
                     CheckboxEditRow(
                         lineIndex = 0,
-                        line = TodoLine(groupId = 0),
+                        line = TodoLine(stableId = TodoLine.generateStableId(), groupId = 0),
                     isEnabled = enabled,
                     isFocused = true,
                     placeholder = placeholder,
@@ -336,12 +351,13 @@ fun CheckboxEditText(
                                 // "/" 检测：输入 "/" 时在当前行下方创建新待办容器
                                 if (newText.endsWith("/")) {
                                     val textWithoutSlash = newText.removeSuffix("/")
-                                    val newLine = TodoLine(text = textWithoutSlash, groupId = 0)
+                                    // 🆕 v2026-07-25 架构根治：新建 TodoLine 时分配 stableId
+                                    val newLine = TodoLine(stableId = TodoLine.generateStableId(), text = textWithoutSlash, groupId = 0)
                                     onLinesChange(listOf(newLine))
                                     onNewGroupRequested?.invoke(0, textWithoutSlash)
                                     pendingFocusIndex = 1 // 新行插入在 index 1
                                 } else {
-                                    val newLine = TodoLine(text = newText, groupId = 0)
+                                    val newLine = TodoLine(stableId = TodoLine.generateStableId(), text = newText, groupId = 0)
                                     onLinesChange(listOf(newLine))
                                 }
                                 detectSpecialChars(newText, onSpecialCharDetected)
@@ -505,32 +521,43 @@ fun CheckboxEditText(
                                         onFocusedLineChange?.invoke(newFocusIdx)
                                     },
                                     focusManager = focusManager,
-                                    onNewGroupRequested = onNewGroupRequested
+                                    onNewGroupRequested = onNewGroupRequested,
+                                    onNewSubTaskRequested = onNewSubTaskRequested
                                 )
                             },
                             onFocusChange = { isFocused ->
                                 if (isFocused) {
-                                    // 🆕 v2026-07-25 第三轮修复（关键）：不使用 lambda 闭包捕获的 currentIndex
-                                    // 根因：Compose 的 onFocusChanged modifier 回调可能在重组后还被旧 lambda 触发，
+                                    // 🆕 v2026-07-25 架构根治：onFocusChange 用 stableId 反查 freshIndex
+                                    //
+                                    // 根因（已通过日志确认）：
+                                    // Compose 的 onFocusChanged modifier 回调可能在重组后还被旧 lambda 触发，
                                     // 旧 lambda 捕获的 currentIndex 是上次重组时 globalIndex 计算的结果，
                                     // 与当前 lines 列表不匹配（如 lines.size=3 但 currentIndex=5）。
-                                    // 修复：每次触发时从当前 lines 中按 line 引用反查最新 index，
-                                    // 若 line 引用已不在当前 lines 中（旧引用），则用 groupId 反查首行 index，
-                                    // 确保焦点索引与实际行位置一致。
-                                    val freshIndex = lines.indexOfFirst { it === line }
-                                    val safeIndex = when {
-                                        freshIndex >= 0 -> freshIndex
-                                        else -> {
-                                            // line 引用已过期（旧重组的 line），用 groupId 在当前 lines 中反查首行
-                                            val byGroupId = lines.indexOfFirst { it.groupId == line.groupId }
-                                            if (byGroupId >= 0) byGroupId else currentIndex
-                                        }
+                                    //
+                                    //根治方案：
+                                    // 1. TodoLine 新增 stableId 字段（跨重组稳定，copy 时保留）
+                                    // 2. onFocusChange 触发时，通过 line.stableId 在当前 lines 中反查最新 index
+                                    // 3. 即使旧 lambda 被触发，line.stableId 仍能找到当前 lines 中正确的位置
+                                    //
+                                    // 优势（相比之前的 line 引用反查）：
+                                    // - line 引用（===）在 copy() 后会失效，需要 fallback 到 groupId
+                                    // - stableId 在 copy() 后保留，反查更可靠
+                                    // - stableId 全局唯一，不会出现多个 line 命中同一反查的情况
+                                    val freshIndex = lines.indexOfFirst { it.stableId == line.stableId }
+                                    val safeIndex = if (freshIndex >= 0) {
+                                        freshIndex
+                                    } else {
+                                        // 兜底：stableId 未找到（理论不会发生，除非 line 是完全过期的引用）
+                                        // 用 groupId 反查首行作为最后防线
+                                        val byGroupId = lines.indexOfFirst { it.groupId == line.groupId }
+                                        if (byGroupId >= 0) byGroupId else currentIndex
                                     }
                                     if (safeIndex != currentIndex) {
                                         android.util.Log.w(
                                             "TodoEditDelete",
                                             "onFocusChange 闭包 currentIndex=$currentIndex 已过期，" +
-                                            "反查 safeIndex=$safeIndex (freshIndex=$freshIndex, groupId=${line.groupId}, size=${lines.size})"
+                                            "stableId=${line.stableId} 反查 safeIndex=$safeIndex " +
+                                            "(freshIndex=$freshIndex, groupId=${line.groupId}, size=${lines.size})"
                                         )
                                     }
                                     focusedLineIndex = safeIndex
@@ -1452,14 +1479,24 @@ private fun handleKeyEvent(
     onLinesChange: (List<TodoLine>) -> Unit,
     onFocusChange: (Int) -> Unit,
     focusManager: Any,
-    onNewGroupRequested: ((index: Int, currentText: String) -> Unit)?
+    onNewGroupRequested: ((index: Int, currentText: String) -> Unit)?,
+    /**
+     * 🆕 v2026-07-25 回车新建子待办后的回调
+     *
+     * 参数：新子待办行的全局索引（lineIndex + 1）
+     * 用途：让 UI 层据此触发 externalPendingFocus 焦点转移，
+     *      兜底 LaunchedEffect(isFocused) 在新行未完全渲染时 requestFocus() 失败的时序竞态
+     */
+    onNewSubTaskRequested: ((newSubTaskIndex: Int) -> Unit)?
 ): Boolean {
     if (keyEvent.action != android.view.KeyEvent.ACTION_DOWN) return false
 
     return when (keyEvent.keyCode) {
         android.view.KeyEvent.KEYCODE_ENTER -> {
             // 回车：在当前行下方插入子任务行（同 groupId，带缩进）
+            // 🆕 v2026-07-25 架构根治：回车新建子任务行时分配 stableId
             val newLine = TodoLine(
+                stableId = TodoLine.generateStableId(),
                 isSubTask = true,
                 groupId = line.groupId,
                 order = index + 1
@@ -1470,6 +1507,9 @@ private fun handleKeyEvent(
             reindexOrders(updatedLines)
             onLinesChange(updatedLines)
             onFocusChange(index + 1)
+            // 🆕 v2026-07-25 通知 UI 层触发 externalPendingFocus 焦点转移
+            // 复用删除分组场景的成熟机制，避免 LaunchedEffect(isFocused) 时序竞态
+            onNewSubTaskRequested?.invoke(insertIndex)
             true
         }
         android.view.KeyEvent.KEYCODE_DEL -> {

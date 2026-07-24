@@ -425,15 +425,29 @@ fun TodoEditScreen(
 
     /**
      * 🆕 v2026-07-22 在指定行下方创建新待办容器（newGroupId）（改为 viewModel API）
+     * v2026-07-25 升级：通过 externalPendingFocus 机制触发焦点转移到新容器首行
      *
      * 复用于两个入口：
      * 1. 用户在文本编辑器中输入 "/" 触发 onNewGroupRequested
      * 2. 用户点击底部工具栏的"/"图标按钮触发 onNewTodoClick
      *
+     * v2026-07-25 修复：
+     * - 原"工具栏按钮"入口完全没有焦点转移逻辑，光标停留在原行
+     * - 原"输入/"入口仅靠 CheckboxEditText 内部 pendingFocusIndex，100ms 不够时失败
+     * - 现在 ViewModel 同步 _focusedLineIndex 后返回新行索引，
+     *   本函数拿到返回值后通过 [externalPendingFocus] + [externalPendingFocusTrigger]
+     *   统一触发 CheckboxEditText 的 LaunchedEffect 焦点转移（复用删除分组场景的成熟机制）
+     *
      * @param lineIndex 在哪一行下方插入；-1 或越界时 fallback 到末尾
      */
     fun createNewTodoAfterLine(lineIndex: Int) {
-        viewModel.createNewTodoAfterLine(lineIndex)
+        val newFocusIdx = viewModel.createNewTodoAfterLine(lineIndex)
+        // 🆕 v2026-07-25 触发 CheckboxEditText 内 externalPendingFocus LaunchedEffect 转移焦点到新容器首行
+        // 配合 externalPendingFocusTrigger 递增触发器，避免连续两次返回相同行索引时不触发
+        if (newFocusIdx >= 0) {
+            externalPendingFocus = newFocusIdx
+            externalPendingFocusTrigger++
+        }
     }
 
     // v2026-07-25 移到 launcher 之前声明：launcher 回调中需要引用 snackbarHostState 做配额提示
@@ -739,7 +753,8 @@ fun TodoEditScreen(
              */
             var initialLines = if (subTasks.isNotEmpty()) {
                 // 优先从子任务表恢复结构化数据，第一行用已加载的标题填充
-                val result = listOf(TodoLine(text = title)) + TodoLine.fromSubTasks(subTasks)
+                // 🆕 v2026-07-25 架构根治：第一行（titleLine）分配 stableId
+                val result = listOf(TodoLine(stableId = TodoLine.generateStableId(), text = title)) + TodoLine.fromSubTasks(subTasks)
                 result
             } else if (content.isNotBlank()) {
                 // 从纯文本解析（回退方案，用于无子任务的旧数据）
@@ -757,14 +772,15 @@ fun TodoEditScreen(
                  * 解决方案：
                  * - 如果解析结果有多行，且第一行文本与当前 title 不一致，
                  *   则用 title 替换第一行的文本，确保显示最新数据
+                 * - copy() 时 stableId 自动保留，不需要重新分配
                  */
                 if (parsedLines.isNotEmpty() && parsedLines[0].text != title) {
                     listOf(parsedLines[0].copy(text = title)) + parsedLines.drop(1)
                 } else {
                     parsedLines
-                }.ifEmpty { listOf(TodoLine()) }
+                }.ifEmpty { listOf(TodoLine(stableId = TodoLine.generateStableId())) }
             } else {
-                listOf(TodoLine())
+                listOf(TodoLine(stableId = TodoLine.generateStableId()))
             }
 
             /**
@@ -1344,6 +1360,22 @@ fun TodoEditScreen(
                     // 🆕 v2026-07-22 抽取为本地函数 createNewTodoAfterLine，
                     // 工具栏"/"按钮也复用同一逻辑
                     createNewTodoAfterLine(currentIndex)
+                },
+                /**
+                 * 🆕 v2026-07-25 回车新建子待办后的回调
+                 *
+                 * 触发时机：handleKeyEvent 的 KEYCODE_ENTER 分支处理完 onLinesChange + onFocusChange 后
+                 * 参数：新子待办行的全局索引（lineIndex + 1）
+                 *
+                 * 用途：触发 externalPendingFocus 焦点转移，复用删除分组场景的成熟机制，
+                 *      兜底 CheckboxEditRow 内 LaunchedEffect(isFocused) 在新行未完全渲染时
+                 *      requestFocus() 失败的时序竞态
+                 */
+                onNewSubTaskRequested = { newSubTaskIndex ->
+                    if (newSubTaskIndex >= 0) {
+                        externalPendingFocus = newSubTaskIndex
+                        externalPendingFocusTrigger++
+                    }
                 },
                 onReminderClick = { groupId ->
                     /**

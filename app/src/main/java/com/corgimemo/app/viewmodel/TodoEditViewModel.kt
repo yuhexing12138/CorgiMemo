@@ -686,6 +686,8 @@ class TodoEditViewModel @Inject constructor(
             ?: 0
 
         val titleLine = TodoLine(
+            // 🆕 v2026-07-25 架构根治：为恢复快照的 titleLine 分配 stableId
+            stableId = com.corgimemo.app.ui.model.TodoLine.generateStableId(),
             text = snapshot.title,
             isChecked = false,
             isSubTask = false,
@@ -695,6 +697,8 @@ class TodoEditViewModel @Inject constructor(
         )
         val subTaskLines = snapshot.subTasks.mapIndexed { index, subTask ->
             TodoLine(
+                // 🆕 v2026-07-25 架构根治：从快照恢复 subTask 行时，用 subTaskId 派生 stableId（跨会话稳定）
+                stableId = com.corgimemo.app.ui.model.TodoLine.stableIdFromSubTaskId(subTask.id),
                 text = subTask.title,
                 isChecked = subTask.isCompleted,
                 isSubTask = true,
@@ -871,7 +875,7 @@ class TodoEditViewModel @Inject constructor(
      * - undo/redo 直接写回：undo/redo 完成后 _todoLines 自动反映新状态
      * - UI 层读取：val todoLines by viewModel.todoLines.collectAsState()
      */
-    private val _todoLines = MutableStateFlow<List<TodoLine>>(listOf(TodoLine()))
+    private val _todoLines = MutableStateFlow<List<TodoLine>>(listOf(TodoLine(stableId = com.corgimemo.app.ui.model.TodoLine.generateStableId())))
     val todoLines: StateFlow<List<TodoLine>> = _todoLines.asStateFlow()
 
     /**
@@ -1211,21 +1215,42 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
-     * 在指定行下方创建新待办容器（newGroupId）（v2026-07-22 新增）
+     * 在指定行下方创建新待办容器（newGroupId）（v2026-07-22 新增，v2026-07-25 升级）
      *
      * 复用于两个入口：
      * 1. 用户在文本编辑器中输入 "/" 触发 onNewGroupRequested
      * 2. 用户点击底部工具栏的"/"图标按钮触发 onNewTodoClick
+     *
+     * v2026-07-25 修复：同步更新 [_focusedLineIndex] 至新容器首行，并返回新行索引。
+     *
+     * 修复动机：
+     * - 原实现仅插入新行，未更新 [_focusedLineIndex]，
+     *   导致 [addImageToFocusedLine] / [addVoiceToFocusedLine] 等行级操作仍写到旧行。
+     * - 工具栏"/"按钮入口完全无焦点转移逻辑，光标停留在原行不动。
+     * - 输入"/"入口依赖 CheckboxEditText 内部 pendingFocusIndex 机制，100ms 延迟不够时焦点转移失败。
+     *
+     * 修复后行为：
+     * - ViewModel 的 [_focusedLineIndex] 立即同步到新行索引，行级操作目标正确
+     * - 返回新行索引，由 UI 层通过 externalPendingFocus 机制触发 CheckboxEditText 焦点转移
+     *   （复用删除分组场景已有的成熟机制，行为契约 100% 一致）
+     *
+     * @param lineIndex 触发新建时的光标所在行索引；-1 或越界时 fallback 到末尾
+     * @return 新插入行的全局索引（用于 UI 层触发焦点转移）
      */
-    fun createNewTodoAfterLine(lineIndex: Int) {
+    fun createNewTodoAfterLine(lineIndex: Int): Int {
         val current = _todoLines.value
         val maxGroupId = current.maxOfOrNull { it.groupId } ?: 0
         val newGroupId = maxGroupId + 1
         val newList = current.toMutableList()
         val safeIndex = if (lineIndex < 0) newList.size - 1 else lineIndex
         val insertIndex = (safeIndex + 1).coerceAtMost(newList.size)
-        newList.add(insertIndex, TodoLine(groupId = newGroupId, order = insertIndex))
+        newList.add(insertIndex, TodoLine(stableId = com.corgimemo.app.ui.model.TodoLine.generateStableId(), groupId = newGroupId, order = insertIndex))
         setTodoLines(newList)
+        // 🆕 v2026-07-25 同步焦点到新行索引，确保行级操作目标正确
+        // 注：直接赋值而非走 setFocusedLineIndex()，因为 setFocusedLineIndex 越界时会忽略
+        // 此时 _todoLines.value 已是最新（setTodoLines 内部已更新），insertIndex 必在合法范围
+        _focusedLineIndex.value = insertIndex
+        return insertIndex
     }
 
     /**
