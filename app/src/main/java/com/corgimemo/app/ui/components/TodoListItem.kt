@@ -66,6 +66,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.Layout
@@ -585,16 +586,11 @@ fun TodoListItem(
                         }
 
                         // ========== 元数据智能布局 ==========
-                        // 判断是否有任何元数据需要显示（v2026-07-24 改造：移除 hasCategory）
+                        // v2026-07-25 简化：附件/关联已迁出到多角标行，元数据行仅显示提醒时间
                         // - 旧：hasReminder || hasAttachment || hasCategory || hasRelation
-                        // - 新：hasReminder || hasAttachment || hasRelation
-                        //   因为分组标签已从元数据行迁出到卡片左上角角标（CategoryBadge），
-                        //   不再参与元数据行是否有内容的判断
-                        val hasAnyMeta = hasReminder || hasAttachment || hasRelation
+                        // - 新：仅 hasReminder
+                        val hasAnyMeta = hasReminder
                         if (hasAnyMeta) {
-                            // 附件图标颜色（已完成态视觉降权）
-                            val attachmentColor = if (todo.status == 1) CompletedColors.Text
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
                             // 提醒时间相关数据
                             val reminderData = if (hasReminder) {
                                 // reminderTime 在 hasReminder 分支内已智能转换为非空 Long，移除冗余 !! 2026-07-20
@@ -609,69 +605,23 @@ fun TodoListItem(
                                 Triple(reminder, reminderColor, reminder.isOverdue)
                             } else null
 
-                            if (isMetaCrowded) {
-                                // ---- 拥挤模式（reminder+attach两者都有）：两行布局 ----
-                                // 第一行：附件计数 + 关联数量
-                                // v2026-07-24 改造：移除分类标签（已迁出为左上角角标 CategoryBadge）
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                ) {
-                                    // 附件计数（语音+图片）
-                                    if (hasAttachment) {
-                                        AttachmentCountsRow(
-                                            imageCount = aggregateCounts.first,
-                                            voiceCount = aggregateCounts.second,
-                                            color = attachmentColor
-                                        )
-                                    }
-                                    // 关联数量（v2026-07-21 新增，跟在附件计数之后）
-                                    // v2026-07-22 升级为可点击的 RelationCountChip
-                                    // 旧 RelationCountBadge 已废弃，统一改用 Chip
-                                    if (hasRelation) {
-                                        if (hasAttachment) Spacer(modifier = Modifier.width(6.dp))
-                                        RelationCountChip(
-                                            count = relationCount,
-                                            color = attachmentColor,
-                                            onClick = onRelationCountClick
-                                        )
-                                    }
-                                }
-                                // 第二行：提醒时间单独一行（突出显示，过期时红色醒目）
+                            // v2026-07-25 简化：原本 isMetaCrowded 会让"提醒+附件"分两行显示，
+                            // 但附件已迁出到多角标行，元数据行永远只有提醒时间一行，
+                            // 不再需要双行/单行分支判断，统一为单行渲染。
+                            // 保留 if/else 框架便于未来扩展。
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(top = 4.dp)
+                            ) {
                                 if (reminderData != null) {
                                     val (reminder, reminderColor, isOverdue) = reminderData
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(top = 4.dp)
-                                    ) {
-                                        ReminderInfoRow(
-                                            text = reminder.text,
-                                            color = reminderColor,
-                                            isOverdue = isOverdue && todo.status != 1
-                                        )
-                                    }
-                                }
-                            } else {
-                                // ---- 非拥挤模式：所有可见元数据同一行 ----
-                                // v2026-07-24 改造：移除分类标签（已迁出为左上角角标 CategoryBadge）
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                ) {
-                                    // 提醒时间
-                                    if (reminderData != null) {
-                                        val (reminder, reminderColor, isOverdue) = reminderData
-                                        // v2026-07-24 新增：传入 repeatType 显示「，🔁 循环名」
-                                        ReminderInfoRow(
-                                            text = reminder.text,
-                                            color = reminderColor,
-                                            isOverdue = isOverdue && todo.status != 1,
-                                            repeatType = todo.repeatType
-                                        )
-                                    }
-                                    // v2026-07-25 改造：附件计数 + 关联数量已从元数据行迁出至卡片左上角多角标行
-                                    // (CategoryBadge / AttachmentBadge / RelationBadge)，由 Box 顶部 Row 统一渲染
-                                    // 元数据行现在只保留：提醒时间（+ 循环信息）
+                                    // v2026-07-24 新增：传入 repeatType 显示「，🔁 循环名」
+                                    ReminderInfoRow(
+                                        text = reminder.text,
+                                        color = reminderColor,
+                                        isOverdue = isOverdue && todo.status != 1,
+                                        repeatType = todo.repeatType
+                                    )
                                 }
                             }
                         }
