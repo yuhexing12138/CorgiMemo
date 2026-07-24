@@ -1254,7 +1254,35 @@ class TodoEditViewModel @Inject constructor(
         }.mapIndexed { idx, line -> line.copy(order = idx) }
 
         // 7. 推快照 + 更新 _todoLines（setTodoLines 内部触发 syncStructuredStateFromTodoLines）
+        // 🆕 v2026-07-25 修复 Bug：setTodoLines 可能因 _isRestoring 或 newList == _todoLines.value 被跳过
+        // 导致删除后 UI 不更新。这里在调用前先记录预期状态，调用后验证是否真的更新了。
+        val beforeSize = current.size
+        val expectedAfterSize = newList.size
+        android.util.Log.i(
+            "TodoEditDelete",
+            "deleteGroupByLineIndex 调用前: lineIndex=$lineIndex, targetGroupId=$targetGroupId, " +
+            "isMainGroup=$isMainGroup, promotedSubGroupId=$promotedSubGroupId, " +
+            "beforeSize=$beforeSize, expectedAfterSize=$expectedAfterSize, " +
+            "isRestoring=${_isRestoring.value}"
+        )
         setTodoLines(newList)
+
+        // 验证 _todoLines 是否真的更新了
+        val actualAfterSize = _todoLines.value.size
+        if (actualAfterSize != expectedAfterSize) {
+            // setTodoLines 被跳过了（可能是 _isRestoring 或 newList == _todoLines.value）
+            // 强制直接赋值，确保删除生效
+            android.util.Log.w(
+                "TodoEditDelete",
+                "setTodoLines 被跳过！actualAfterSize=$actualAfterSize != expectedAfterSize=$expectedAfterSize，" +
+                "强制直接赋值 _todoLines.value"
+            )
+            _todoLines.value = newList
+            syncStructuredStateFromTodoLines(newList)
+            newList.map { it.groupId }.distinct().forEach { groupId ->
+                checkAndResetGroupSavedState(groupId)
+            }
+        }
 
         // 8. 状态映射清理 / 迁移
         if (promotedSubGroupId != null) {
@@ -1344,6 +1372,13 @@ class TodoEditViewModel @Inject constructor(
         if (newFocusedIndex >= 0) {
             _focusedLineIndex.value = newFocusedIndex
         }
+
+        android.util.Log.i(
+            "TodoEditDelete",
+            "deleteGroupByLineIndex 完成: newFocusedIndex=$newFocusedIndex, " +
+            "newList.size=${newList.size}, newList.groupIds=${newList.map { it.groupId }}, " +
+            "newList.texts=${newList.map { it.text }}"
+        )
 
         return newFocusedIndex
     }

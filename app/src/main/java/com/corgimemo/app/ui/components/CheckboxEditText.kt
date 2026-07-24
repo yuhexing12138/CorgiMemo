@@ -496,7 +496,14 @@ fun CheckboxEditText(
                                     lines = lines,
                                     line = line,
                                     onLinesChange = onLinesChange,
-                                    onFocusChange = { newFocusIdx -> focusedLineIndex = newFocusIdx },
+                                    // 🆕 v2026-07-25 修复 Bug：handleKeyEvent 的 onFocusChange 也需要通知 ViewModel
+                                    // 之前只更新局部 focusedLineIndex，导致 ViewModel 的 focusedLineIndex 与内部不同步
+                                    // 表现：用户用键盘删除行后，ViewModel 不知道焦点已转移，删除按钮 onClick 用旧值
+                                    // 修复：在更新内部状态的同时也调用 onFocusedLineChange 回调
+                                    onFocusChange = { newFocusIdx ->
+                                        focusedLineIndex = newFocusIdx
+                                        onFocusedLineChange?.invoke(newFocusIdx)
+                                    },
                                     focusManager = focusManager,
                                     onNewGroupRequested = onNewGroupRequested
                                 )
