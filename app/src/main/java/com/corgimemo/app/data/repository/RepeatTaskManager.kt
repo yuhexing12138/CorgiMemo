@@ -21,8 +21,10 @@ object RepeatType {
     const val MONTHLY = 3
     /** 工作日（周一到周五） */
     const val WEEKDAYS = 4
-    /** 周末（周六、周日） */
-    const val WEEKENDS = 5
+    /** 每年同月同日 */
+    const val YEARLY = 5
+    /** 周末（周六、周日）— UI 当前未提供此选项，保留常量以备扩展 */
+    const val WEEKENDS = 6
 }
 
 /**
@@ -43,6 +45,7 @@ object RepeatTaskManager {
             RepeatType.WEEKLY -> "每周"
             RepeatType.MONTHLY -> "每月"
             RepeatType.WEEKDAYS -> "工作日"
+            RepeatType.YEARLY -> "每年"
             RepeatType.WEEKENDS -> "周末"
             else -> "不重复"
         }
@@ -60,6 +63,7 @@ object RepeatTaskManager {
             RepeatType.WEEKLY to "每周",
             RepeatType.MONTHLY to "每月",
             RepeatType.WEEKDAYS to "工作日",
+            RepeatType.YEARLY to "每年",
             RepeatType.WEEKENDS to "周末"
         )
     }
@@ -86,6 +90,11 @@ object RepeatTaskManager {
             }
             RepeatType.MONTHLY -> {
                 calendar.add(Calendar.MONTH, 1)
+            }
+            RepeatType.YEARLY -> {
+                // 每年同月同日同时分重复（如生日、纪念日）
+                // 使用 Calendar.YEAR + 1，可自动处理闰年 2/29 → 2/28 的回退（Kotlin/Java Calendar 行为）
+                calendar.add(Calendar.YEAR, 1)
             }
             RepeatType.WEEKDAYS -> {
                 calendar.add(Calendar.DAY_OF_YEAR, 1)
@@ -221,6 +230,12 @@ object RepeatTaskManager {
             RepeatType.MONTHLY -> {
                 val dayOfMonth = calendar.get(Calendar.DAY_OF_MONTH)
                 "$baseName（每月${dayOfMonth}日）"
+            }
+            RepeatType.YEARLY -> {
+                // 每年同月同日重复（如生日），显示「每年（月X日）」
+                val month = calendar.get(Calendar.MONTH) + 1
+                val dayOfMonth = calendar.get(Calendar.DAY_OF_MONTH)
+                "$baseName（${month}月${dayOfMonth}日）"
             }
             else -> baseName
         }
