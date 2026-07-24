@@ -1129,19 +1129,22 @@ fun TodoEditScreen(
                 //   让用户明确知道"放弃编辑 = 关闭页面且丢失草稿"
                 //
                 // 🆕 v2026-07-25 多容器光标感知改造：
-                // - 单容器场景（光标在 groupId=0）→ 维持原行为：删整个 todo
-                // - 多容器场景 + 光标在 groupId>0 → 走"删当前容器"路径：只删该子分组
-                //   保留其他分组，由 viewModel.deleteGroupByLineIndex 处理
-                //   路径选择通过 pendingDeleteGroupLineIndex 标记，DeleteConfirmDialog.onConfirm 据此分支
+                // - 单容器场景（仅主分组，无子分组）→ 维持原行为：删整个 todo
+                // - 多容器场景 + 光标在任意分组（包括主分组）→ 走"删当前容器"路径
+                //   - 删主分组时，viewModel.deleteGroupByLineIndex 内部会把最小子分组提升为新主分组
+                //   - 删子分组时，保留其他分组（原行为）
+                // 路径选择通过 pendingDeleteGroupLineIndex 标记，DeleteConfirmDialog.onConfirm 据此分支
                 IconButton(
                     onClick = {
-                        // 根据光标所在行的 groupId 决定走哪条删除路径
+                        // 根据光标所在行的 groupId + 是否多容器 决定走哪条删除路径
                         val currentLineIdx = focusedLineIndex
                         val currentLine = todoLines.getOrNull(currentLineIdx)
                         val currentGroupId = currentLine?.groupId ?: 0
+                        // 判断多容器场景：todoLines 中存在 >1 个不同的 groupId
+                        val hasMultipleGroups = todoLines.map { it.groupId }.distinct().size > 1
 
-                        if (currentGroupId == 0) {
-                            // 主分组（groupId=0）：走原"删整个 todo"路径
+                        if (currentGroupId == 0 && !hasMultipleGroups) {
+                            // 单容器场景（仅主分组）：走原"删整个 todo"路径
                             // - 编辑模式（todoId != null）→ Delete 模式（删 DB + popBackStack）
                             // - 新建模式（todoId == null）→ Discard 模式（仅 popBackStack，无 DB 删除）
                             val isEditMode = todoId != null && todoId > 0
@@ -1153,9 +1156,10 @@ fun TodoEditScreen(
                             // 标记走原路径（-1 表示不走"删当前容器"分支）
                             pendingDeleteGroupLineIndex = -1
                         } else {
-                            // 子分组（groupId>0）：走"删当前容器"路径
-                            // - 暂存 lineIndex 供 onConfirm 调用 viewModel.deleteGroupByLineIndex
-                            // - deleteDialogMode 固定 Delete（弹窗显示"确认删除"提示）
+                            // 多容器场景 + 光标在任意分组（包括主分组）：
+                            // 走"删当前容器"路径，由 viewModel.deleteGroupByLineIndex 处理
+                            // - 删主分组时，viewModel 内部会把最小子分组提升为新主分组
+                            // - 删子分组时，保留其他分组
                             pendingDeleteGroupLineIndex = currentLineIdx
                             deleteDialogMode = DeleteDialogMode.Delete
                         }

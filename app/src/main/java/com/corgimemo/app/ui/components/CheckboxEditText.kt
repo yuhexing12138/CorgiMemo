@@ -273,7 +273,9 @@ fun CheckboxEditText(
         }
     }
 
-    // 🆕 v2026-07-25 外部触发的焦点转移（删除分组后转移到上一分组首行）
+    // 🆕 v2026-07-25 外部触发的焦点转移（删除分组后转移到目标聚焦行）
+    // - 子分组删除：转移到上一分组首行（原行为）
+    // - 主分组删除（多容器场景）：转移到下一分组首行（即提升后的新主分组首行，索引 0）
     // 监听 externalPendingFocusTrigger 递增触发器，确保连续两次返回相同行索引时仍能触发
     // （只监听 externalPendingFocus 会有 key 相同不触发的边界问题）
     LaunchedEffect(externalPendingFocusTrigger) {
@@ -297,35 +299,35 @@ fun CheckboxEditText(
     ) {
         if (groups.isEmpty()) {
             // 无任何内容时显示占位容器
-            TodoGroupContainer(
-                groupId = 0,
-                showBottomBar = true,
-                onReminderClick = { onReminderClick?.invoke(0) },
-                reminderTime = groupReminders[0],
-                onReminderDelete = { onReminderDelete?.invoke(0) },
-                categoryId = groupCategoryIds[0] ?: 0L,
-                categoryName = groupCategoryNames[0],
-                onCategoryClick = { onCategoryClick?.invoke(0) },
-                onCategoryClear = { onCategoryClear?.invoke(0) },
-                priority = priority,
-                onPriorityClick = { onPriorityButtonClick?.invoke(0) },
-                onSaveClick = { onSaveClick?.invoke(0) },
-                // 🆕 关联功能参数（v2026-07-21 新增）
-                groupRelations = groupRelations[0] ?: emptyList(),
-                relationTitles = relationTitles,
-                onAddRelationClick = onAddRelationClick?.let { cb -> { cb(0) } },
-                onPreviewRelation = onPreviewRelation,
-                onDeleteRelation = onDeleteRelation,
-                canUndo = canUndo,
-                canRedo = canRedo,
-                onUndoClick = onUndoClick,
-                onRedoClick = onRedoClick,
-                // 🆕 v2026-07-25 透传该容器的预计时长（空状态占位也支持显示）
-                estimatedDurationText = groupEstimatedDurations[0]
-            ) {
-                CheckboxEditRow(
-                    lineIndex = 0,
-                    line = TodoLine(groupId = 0),
+            // 用 Column 包裹"容器+预计时长"作为一组，组内紧贴，组间由外层 spacedBy(8.dp) 控制
+            Column {
+                TodoGroupContainer(
+                    groupId = 0,
+                    showBottomBar = true,
+                    onReminderClick = { onReminderClick?.invoke(0) },
+                    reminderTime = groupReminders[0],
+                    onReminderDelete = { onReminderDelete?.invoke(0) },
+                    categoryId = groupCategoryIds[0] ?: 0L,
+                    categoryName = groupCategoryNames[0],
+                    onCategoryClick = { onCategoryClick?.invoke(0) },
+                    onCategoryClear = { onCategoryClear?.invoke(0) },
+                    priority = priority,
+                    onPriorityClick = { onPriorityButtonClick?.invoke(0) },
+                    onSaveClick = { onSaveClick?.invoke(0) },
+                    // 🆕 关联功能参数（v2026-07-21 新增）
+                    groupRelations = groupRelations[0] ?: emptyList(),
+                    relationTitles = relationTitles,
+                    onAddRelationClick = onAddRelationClick?.let { cb -> { cb(0) } },
+                    onPreviewRelation = onPreviewRelation,
+                    onDeleteRelation = onDeleteRelation,
+                    canUndo = canUndo,
+                    canRedo = canRedo,
+                    onUndoClick = onUndoClick,
+                    onRedoClick = onRedoClick
+                ) {
+                    CheckboxEditRow(
+                        lineIndex = 0,
+                        line = TodoLine(groupId = 0),
                     isEnabled = enabled,
                     isFocused = true,
                     placeholder = placeholder,
@@ -361,6 +363,19 @@ fun CheckboxEditText(
                     context = context,
                     pauseAllOtherVoices = ::pauseAllOtherVoices
                 )
+                }
+
+                // 🆕 v2026-07-25 容器外左下角预计时长显示
+                // 位置：紧贴容器底部外侧，左对齐（start=4dp 与容器内边距对齐）
+                // 由 TodoEditScreen 根据 startDate/dueDate 计算后按 groupId 传入
+                groupEstimatedDurations[0]?.let { duration ->
+                    Text(
+                        text = "⏱️ 预计时长: $duration",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                    )
+                }
             }
         } else {
             var globalIndex = 0
@@ -372,6 +387,8 @@ fun CheckboxEditText(
                 /** 获取当前分组的优先级（0=无,1=低,2=中,3=高） */
                 val groupPriority = groupPriorities[groupId] ?: 0
 
+                // 用 Column 包裹"容器+预计时长"作为一组，组内紧贴，组间由外层 spacedBy(8.dp) 控制
+                Column {
                 TodoGroupContainer(
                     groupId = groupId,
                     showBottomBar = true,
@@ -395,9 +412,7 @@ fun CheckboxEditText(
                     canUndo = canUndo,
                     canRedo = canRedo,
                     onUndoClick = onUndoClick,
-                    onRedoClick = onRedoClick,
-                    // 🆕 v2026-07-25 透传该容器的预计时长（按 groupId 取）
-                    estimatedDurationText = groupEstimatedDurations[groupId]
+                    onRedoClick = onRedoClick
                 ) {
                     groupLines.forEachIndexed { localIndex, line ->
                         val currentIndex = globalIndex++
@@ -518,6 +533,19 @@ fun CheckboxEditText(
                         )
                     }
                 }
+
+                // 🆕 v2026-07-25 容器外左下角预计时长显示
+                // 位置：紧贴容器底部外侧，左对齐（start=4dp 与容器内边距对齐）
+                // 由 TodoEditScreen 根据 startDate/dueDate 计算后按 groupId 传入
+                groupEstimatedDurations[groupId]?.let { duration ->
+                    Text(
+                        text = "⏱️ 预计时长: $duration",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                    )
+                }
+                } // Column（容器+预计时长一组）结尾
             }
         }
     }
@@ -567,13 +595,6 @@ private fun TodoGroupContainer(
     onPreviewRelation: ((com.corgimemo.app.data.model.CardRelation) -> Unit)? = null,
     /** 点击 × 删除关联的回调（参数=relationId, groupId） */
     onDeleteRelation: ((Long, Int) -> Unit)? = null,
-    /**
-     * 🆕 v2026-07-25 该容器的预计时长文本（null=不显示）
-     *
-     * 由外部根据 startDate/dueDate 计算（格式如 "1小时30分"），
-     * 在容器底部左下角显示。null 时该行隐藏。
-     */
-    estimatedDurationText: String? = null,
     content: @Composable () -> Unit
 ) {
     /**
@@ -918,24 +939,6 @@ private fun TodoGroupContainer(
                             .clickable(enabled = onSaveClick != null && !isSaved) { onSaveClick?.invoke() }
                             .padding(horizontal = 6.dp, vertical = 6.dp)
                     )
-                }
-
-                // 🆕 v2026-07-25 容器底部左下角预计时长显示
-                // 由外部根据 startDate/dueDate 计算，null 时不渲染
-                // 位置：按钮行下方、容器底部内边距内，左对齐
-                if (estimatedDurationText != null) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "⏱️ 预计时长: $estimatedDurationText",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
             }
         }

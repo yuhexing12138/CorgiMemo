@@ -1166,30 +1166,36 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
-     * 删除光标所在的分组容器（v2026-07-25 新增）
+     * 删除光标所在的分组容器（v2026-07-25 新增，v2026-07-25 二次升级支持主分组删除）
      *
      * 用户点击顶部删除按钮时，由 UI 层根据光标位置决定调用入口：
-     * - 光标在 groupId=0（主分组）→ 走原"删整个 todo"路径（不调用本方法）
-     * - 光标在 groupId>0（子分组）→ 调用本方法删除该分组容器
+     * - 光标在主分组（groupId=0）且存在其他子分组 → 调用本方法删主分组容器
+     *   - 同时把剩余子分组中 groupId 最小的那个提升为新的主分组（重写 groupId=0）
+     *   - 焦点跳到下一分组首行（即提升后的新主分组首行，索引 0）
+     * - 光标在子分组（groupId>0）→ 调用本方法删该子分组容器
+     *   - 焦点跳到上一分组首行（原行为）
+     * - 光标在主分组且无其他子分组（单容器场景）→ UI 层应走"删整个 todo"路径，不调用本方法
      *
      * 本方法的行为：
-     * 1. 根据 lineIndex 找到对应的 groupId
+     * 1. 根据 lineIndex 找到对应的 groupId，判断是否为主分组（targetGroupId == 0）
      * 2. 如果该分组已保存（_groupSaveStates[groupId].savedTodoId != null），
      *    异步从 DB 删除对应 todo（让首页列表自动刷新）
-     * 3. 从 _todoLines 移除该 groupId 的所有行，并重排 order 保持连续性
-     * 4. 清理该 groupId 在以下状态映射中的条目：
-     *    _groupSaveStates / _groupReminders / _groupRepeatTypes /
-     *    _groupCategoryIds / _groupPriorities / _groupRelations
-     * 5. 计算删除后的目标聚焦行索引（上一分组首行 index），
-     *    更新 _focusedLineIndex 并返回该值（让 UI 层触发 focusRequesters[it]?.requestFocus()）
+     * 3. 从 _todoLines 移除该 groupId 的所有行
+     * 4. 如果删除的是主分组 + 剩余列表非空：把最小 groupId 的子分组重写为 groupId=0
+     *    同时把该子分组在状态映射中的条目从原 groupId 迁移到 groupId=0
+     * 5. 重排 order 保持连续性
+     * 6. 推快照 + 更新 _todoLines（setTodoLines 内部触发 syncStructuredStateFromTodoLines）
+     * 7. 清理该 groupId 在所有状态映射中的条目（主分组删除时跳过，因为已被新主分组"继承"）
+     * 8. 计算删除后的目标聚焦行索引：
+     *    - 主分组删除 → 0（新的主分组首行位置）
+     *    - 子分组删除 → 上一分组首行 index（原行为）
      *
      * 边界处理：
      * - lineIndex 越界 → 返回 -1（无操作）
-     * - 目标 groupId == 0（主分组）→ 返回 -1（UI 层应走"删整个 todo"路径，本方法拒绝处理）
-     * - 删除后列表为空 → 返回 -1（无需转移焦点，理论上不会发生，因为主分组必然保留）
+     * - 删除后列表为空 → 返回 -1（UI 层应自行 popBackStack）
      *
      * @param lineIndex 触发删除时的光标所在行索引
-     * @return 删除后应聚焦的行索引（-1 表示无需转移焦点）
+     * @return 删除后应聚焦的行索引（-1 表示列表已空或无需转移焦点）
      */
     fun deleteGroupByLineIndex(lineIndex: Int): Int {
         val current = _todoLines.value
@@ -1197,14 +1203,12 @@ class TodoEditViewModel @Inject constructor(
         if (lineIndex !in current.indices) return -1
 
         val targetGroupId = current[lineIndex].groupId
+        val isMainGroup = targetGroupId == 0
 
-        // 2. 主分组拒绝处理（UI 层应走"删整个 todo"路径）
-        if (targetGroupId == 0) return -1
-
-        // 3. 收集该分组涉及的所有行（用于推算删除后的新聚焦行索引）
+        // 2. 收集该分组首行索引（用于推算删除后的新聚焦行索引）
         val firstGroupLineIndex = current.indexOfFirst { it.groupId == targetGroupId }
 
-        // 4. 如果该分组已保存（有 savedTodoId），异步从 DB 删除 todo
+        // 3. 如果该分组已保存（有 savedTodoId），异步从 DB 删除 todo
         //    注意：DB 删除与 UI 状态更新解耦，避免阻塞主线程
         val savedTodoId = _groupSaveStates.value[targetGroupId]?.savedTodoId
         if (savedTodoId != null) {
@@ -1225,43 +1229,118 @@ class TodoEditViewModel @Inject constructor(
             }
         }
 
-        // 5. 从 _todoLines 移除该 groupId 的所有行，并重排 order
-        val newList = current.filterNot { it.groupId == targetGroupId }
-            .mapIndexed { idx, line -> line.copy(order = idx) }
+        // 4. 从 _todoLines 移除该 groupId 的所有行
+        val filteredList = current.filterNot { it.groupId == targetGroupId }
 
-        // 6. 推快照 + 更新 _todoLines（setTodoLines 内部触发 syncStructuredStateFromTodoLines）
+        // 5. 如果删除的是主分组 + 剩余列表非空：把最小 groupId 的子分组提升为新主分组
+        //    - 找出剩余列表中 groupId 最小的子分组（必然 > 0，因为主分组已被过滤掉）
+        //    - 将该子分组所有行的 groupId 重写为 0
+        //    - 同时在状态映射中把原 groupId 的条目迁移到 groupId=0
+        val promotedSubGroupId: Int? = if (isMainGroup && filteredList.isNotEmpty()) {
+            val minSubGroupId = filteredList.minOf { it.groupId }
+            // 仅当最小 groupId > 0 时才需要提升（否则说明已有其他 groupId=0 的行，理论上不会发生）
+            if (minSubGroupId > 0) minSubGroupId else null
+        } else {
+            null
+        }
+
+        // 6. 应用 groupId 提升 + 重排 order
+        val newList = filteredList.map { line ->
+            if (promotedSubGroupId != null && line.groupId == promotedSubGroupId) {
+                line.copy(groupId = 0)
+            } else {
+                line
+            }
+        }.mapIndexed { idx, line -> line.copy(order = idx) }
+
+        // 7. 推快照 + 更新 _todoLines（setTodoLines 内部触发 syncStructuredStateFromTodoLines）
         setTodoLines(newList)
 
-        // 7. 清理该 groupId 在所有状态映射中的条目
-        _groupSaveStates.value = _groupSaveStates.value - targetGroupId
-        _groupReminders.value = _groupReminders.value - targetGroupId
-        _groupRepeatTypes.value = _groupRepeatTypes.value - targetGroupId
-        _groupCategoryIds.value = _groupCategoryIds.value - targetGroupId
-        _groupPriorities.value = _groupPriorities.value - targetGroupId
-        _groupRelations.value = _groupRelations.value - targetGroupId
-
-        // 8. 计算新的聚焦行索引：删除前的"上一分组首行"对应删除后的新索引
-        //    - 上一分组首行 = 从 firstGroupLineIndex-1 往前找，第一个 groupId != targetGroupId 的行
-        //    - 因为该行位于删除区域之前，删除后其新索引 == 原索引
-        val newFocusedIndex = if (newList.isEmpty()) {
-            -1  // 列表已空（理论不会发生，主分组必然保留）
-        } else {
-            var prevIndex = -1
-            for (i in (firstGroupLineIndex - 1) downTo 0) {
-                if (current[i].groupId != targetGroupId) {
-                    prevIndex = i
-                    break
+        // 8. 状态映射清理 / 迁移
+        if (promotedSubGroupId != null) {
+            // 主分组删除 + 子分组提升：把 promotedSubGroupId 的状态迁移到 0
+            // 然后清理被删除的 targetGroupId=0 的原条目（已被 promotedSubGroupId 的值覆盖）
+            _groupSaveStates.value = _groupSaveStates.value.let { map ->
+                val subState = map[promotedSubGroupId]
+                (map - 0 - promotedSubGroupId).let { rest ->
+                    if (subState != null) rest + (0 to subState) else rest
                 }
             }
-            if (prevIndex == -1) {
-                // 没有上一分组：聚焦到 newList 的首行（即下一分组的首行）
+            _groupReminders.value = _groupReminders.value.let { map ->
+                val subReminder = map[promotedSubGroupId]
+                (map - 0 - promotedSubGroupId).let { rest ->
+                    if (subReminder != null) rest + (0 to subReminder) else rest
+                }
+            }
+            _groupRepeatTypes.value = _groupRepeatTypes.value.let { map ->
+                val subRepeat = map[promotedSubGroupId]
+                (map - 0 - promotedSubGroupId).let { rest ->
+                    if (subRepeat != null) rest + (0 to subRepeat) else rest
+                }
+            }
+            _groupCategoryIds.value = _groupCategoryIds.value.let { map ->
+                val subCategory = map[promotedSubGroupId]
+                (map - 0 - promotedSubGroupId).let { rest ->
+                    if (subCategory != null) rest + (0 to subCategory) else rest
+                }
+            }
+            _groupPriorities.value = _groupPriorities.value.let { map ->
+                val subPriority = map[promotedSubGroupId]
+                (map - 0 - promotedSubGroupId).let { rest ->
+                    if (subPriority != null) rest + (0 to subPriority) else rest
+                }
+            }
+            _groupRelations.value = _groupRelations.value.let { map ->
+                val subRelations = map[promotedSubGroupId]
+                (map - 0 - promotedSubGroupId).let { rest ->
+                    if (subRelations != null) rest + (0 to subRelations) else rest
+                }
+            }
+            android.util.Log.i(
+                "TodoEditVM",
+                "主分组已删除，子分组 $promotedSubGroupId 提升为新主分组（groupId=0）"
+            )
+        } else {
+            // 普通子分组删除 / 主分组删除但无子分组可提升：直接清理 targetGroupId 条目
+            _groupSaveStates.value = _groupSaveStates.value - targetGroupId
+            _groupReminders.value = _groupReminders.value - targetGroupId
+            _groupRepeatTypes.value = _groupRepeatTypes.value - targetGroupId
+            _groupCategoryIds.value = _groupCategoryIds.value - targetGroupId
+            _groupPriorities.value = _groupPriorities.value - targetGroupId
+            _groupRelations.value = _groupRelations.value - targetGroupId
+        }
+
+        // 9. 计算新的聚焦行索引
+        //    - 主分组删除 + 子分组提升：新主分组占据原主分组的位置（索引 0）
+        //    - 子分组删除：上一分组首行 index（原行为）
+        //    - 列表空：返回 -1
+        val newFocusedIndex = when {
+            newList.isEmpty() -> -1
+            isMainGroup -> {
+                // 主分组删除：焦点跳到下一分组首行
+                // - 若有子分组提升，新主分组（即原下一分组）首行位于索引 0
+                // - 若无子分组（理论不会发生，因为外层 UI 会走原"删整个 todo"路径），返回 0 兜底
                 0
-            } else {
-                prevIndex
+            }
+            else -> {
+                // 子分组删除：找上一分组首行（原行为）
+                var prevIndex = -1
+                for (i in (firstGroupLineIndex - 1) downTo 0) {
+                    if (current[i].groupId != targetGroupId) {
+                        prevIndex = i
+                        break
+                    }
+                }
+                if (prevIndex == -1) {
+                    // 没有上一分组：聚焦到 newList 的首行（即下一分组的首行）
+                    0
+                } else {
+                    prevIndex
+                }
             }
         }
 
-        // 9. 更新 _focusedLineIndex（让 UI 层通过 externalPendingFocus 触发 requestFocus）
+        // 10. 更新 _focusedLineIndex（让 UI 层通过 externalPendingFocus 触发 requestFocus）
         if (newFocusedIndex >= 0) {
             _focusedLineIndex.value = newFocusedIndex
         }
