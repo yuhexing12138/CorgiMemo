@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.components
 
+import android.util.Log
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -18,6 +19,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -224,6 +227,25 @@ fun ZonedReorderableLazyColumn(
                             easing = FastOutSlowInEasing
                         )
                     )
+                    // v2026-07-25 临时埋点：诊断 LazyColumn 给 item 分配的 y 位置与渲染时机
+                    // - onPlaced 在每次 placeRelative 后回调（每帧最多一次）
+                    // - 报告 item 的"逻辑 y 位置"（positionInRoot）和"渲染 y 位置"
+                    //   注意：animateItem 用 graphicsLayer.translationY 偏移，
+                    //   视觉位置 = 逻辑位置 + translationY，
+                    //   而 positionInRoot 是**逻辑位置**（未经 translationY 偏移）
+                    // - 通过对比 TodoItem_Measure 的 columnHeight 与此处的 layoutHeight，
+                    //   可以判断 LazyColumn 是否正确响应高度变化
+                    .onPlaced { coords ->
+                        val y = coords.positionInRoot().y
+                        val height = coords.size.height
+                        Log.d(
+                            "TodoBox_Placed",
+                            "key=${key(item)}, y=${y.toInt()}px, height=${height}px, " +
+                                "isItemExpanded=$isItemExpanded, " +
+                                "itemType=${item::class.simpleName}, " +
+                                "t=${System.currentTimeMillis()}"
+                        )
+                    }
             ) {
                 when (item) {
                     is DisplayItem.PinnedDivider,
@@ -260,6 +282,13 @@ fun ZonedReorderableLazyColumn(
                         ) { isDragging ->
                             Box(
                                 modifier = Modifier
+                                    // v2026-07-25 双重保险：在 inner Box（ReorderableItem 内部）
+                                    // 也加 zIndex，防止 ReorderableItem 包裹层影响 LazyItemScope.zIndex 的传播
+                                    // - 外层 Box（LazyItemScope）已有 zIndex=1f
+                                    // - 这里再加一层 1f，确保任何渲染层（即使 ReorderableItem 创建了
+                                    //   独立 RenderNode 隔离 LazyColumn item Z 序）也能将展开中的
+                                    //   todo 绘制在所有未展开 todo 之上
+                                    .zIndex(if (isItemExpanded) 1f else 0f)
                                     .longPressDraggableHandle(
                                         enabled = isDragEnabled,
                                         onDragStarted = {
