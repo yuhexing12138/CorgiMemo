@@ -36,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -111,6 +112,9 @@ fun VoicePreviewDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // Snackbar 状态：用于下载成功/失败反馈（参考 InspirationImageGallery 实现）
+    val snackbarHostState = remember { SnackbarHostState() }
+
     // 可变路径列表（删除后实时更新）
     val mutablePaths = remember { mutableStateListOf(*voicePaths.toTypedArray()) }
 
@@ -161,7 +165,8 @@ fun VoicePreviewDialog(
         mutablePaths.map { generateAmplitudes(it) }
     }
 
-    // 下载当前录音到系统 Music 目录
+    // 下载当前录音到系统 Music 目录（参考 InspirationImageGallery.downloadCurrentImage）
+    // IO 线程执行避免主线程阻塞，Snackbar 反馈结果（项目规则：禁用 Toast，统一使用 AppSnackbarHost）
     fun downloadCurrentRecording() {
         val path = mutablePaths.getOrNull(currentIndex) ?: return
         scope.launch {
@@ -211,8 +216,10 @@ fun VoicePreviewDialog(
                     false
                 }
             }
-            // 下载结果反馈（使用 Toast 替代方案：暂时只打日志，后续可接入 Snackbar）
-            Log.i("VoicePreviewDialog", if (saved) "录音已保存到 Music/CorgiMemo" else "保存失败")
+            // 下载结果反馈：使用 Snackbar 替代 Log 输出（与图片预览页面行为一致）
+            snackbarHostState.showSnackbar(
+                if (saved) "已保存到 Music/CorgiMemo" else "保存失败"
+            )
         }
     }
 
@@ -674,6 +681,16 @@ fun VoicePreviewDialog(
                     }
                 )
             }
+
+            // Snackbar 提示：底部居中，离底 80dp 避开底栏按钮
+            // 在 Dialog Window 内显示，z 轴层级高于 Activity 内的柯基悬浮球
+            // 使用 AppSnackbarHost 统一全项目 Snackbar 样式（柯基图标 + 文字 + 按钮）
+            AppSnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 80.dp)
+            )
         }
     }
 }
