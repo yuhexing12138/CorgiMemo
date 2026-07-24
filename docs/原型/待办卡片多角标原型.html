@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>待办卡片多角标原型 v1.0 · 分组+附件+关联统一为顶部角标</title>
+<title>待办卡片多角标原型 v1.2 · 分组+附件+关联统一为顶部角标</title>
+<!-- 引入 Material Symbols 字体（Google Web 字体版） -->
+<!-- 与 Android 端 Material Icons 一致：folder / attach_file / link -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,0,0&display=block">
 <style>
   /* ============ 配色（遵循 UI设计规范 12.1.2 + 12.1.10）============ */
   :root {
@@ -25,8 +28,7 @@
     /* 竖条宽度 */
     --bar-width: 4px;
     /* 圆角 */
-    --card-radius: 16px;        /* TodoListItem 实际圆角 16dp */
-    --badge-radius: 16px;        /* 角标仅右下圆角 16dp，与卡片一致 */
+    --card-radius: 16px;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -76,7 +78,7 @@
     min-height: 80px;
   }
 
-  /* 优先级竖条 —— 4dp 宽，跨越卡片全高 */
+  /* 优先级竖条 */
   .priority-bar {
     position: absolute;
     left: 0;
@@ -89,14 +91,11 @@
   .priority-bar.low { background: var(--priority-low); }
   .priority-bar.none { background: var(--priority-none); }
 
-  /* ===== 顶部角标行（v1.1 新增） ===== */
-  /* 从竖条右侧 4dp 开始，水平排列分组/附件/关联角标 */
-  /* 紧贴卡片上边缘 */
+  /* ===== 顶部角标行 ===== */
   .badge-row {
     position: relative;
     display: flex;
-    align-items: stretch;  /* 子元素 stretch 到行高 */
-    margin-left: 0;        /* 紧贴竖条（4dp 由 padding 提供） */
+    align-items: stretch;
     margin-bottom: 8px;
     height: 19px;
     z-index: 3;
@@ -114,24 +113,37 @@
     font-weight: 500;
     color: #666666;
     background: rgba(0, 0, 0, 0.05);
-    border-radius: 0 0 0 0;  /* 默认全 0 圆角 */
+    border-radius: 0;
     white-space: nowrap;
+    gap: 3px;  /* 图标与文字间距 */
   }
 
-  /* 角标图标 */
+  /* Material Symbols 角标图标 */
   .badge-icon {
+    font-family: "Material Symbols Outlined";
     font-size: 12px;
-    margin-right: 3px;
     line-height: 1;
-  }
-  .badge-icon-only {
-    margin-right: 0;
+    font-weight: normal;
+    font-style: normal;
+    display: inline-block;
+    text-transform: none;
+    letter-spacing: normal;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "liga";
+    /* 关键：让图标与文字基线对齐 */
+    vertical-align: middle;
   }
 
-  /* 角标背景变体 —— 中性灰（普通待办） */
-  .badge-category { background: rgba(0, 0, 0, 0.05); color: #666666; }
-  .badge-attachment { background: rgba(0, 0, 0, 0.05); color: #666666; }
-  .badge-relation { background: rgba(0, 0, 0, 0.05); color: #666666; }
+  /* 角标背景统一（不分类型变体） */
+  .badge-category, .badge-attachment, .badge-relation {
+    background: rgba(0, 0, 0, 0.05);
+    color: #666666;
+  }
 
   /* 最后一个角标：右下圆角（与卡片 16dp 圆角一致） */
   .badge-row > .badge:last-child {
@@ -172,7 +184,7 @@
     background: var(--primary);
   }
 
-  /* ==================== 元数据行（保留提醒时间） ==================== */
+  /* ==================== 元数据行 ==================== */
   .meta-row {
     display: flex;
     align-items: center;
@@ -258,7 +270,7 @@
 <body>
 
 <div class="page-header">
-  <h1>待办卡片多角标原型 <span style="color:#FF9A5C;">v1.1</span> · 分组+附件+关联统一为顶部角标</h1>
+  <h1>待办卡片多角标原型 <span style="color:#FF9A5C;">v1.2</span> · 分组+附件+关联统一为顶部角标</h1>
   <p>CorgiMemo · TodoListItem 重设计迭代 · 附件/关联从元数据行迁到分组角标右侧</p>
   <p style="color:#C62828;font-weight:600;margin-top:8px;">⚠️ 请按 Ctrl+F5 强制刷新（清除浏览器缓存）</p>
 </div>
@@ -266,10 +278,15 @@
 <!-- ============ 设计说明 ============ -->
 <div class="section-title">📐 设计说明</div>
 <div class="annotation">
-  <strong>核心改动</strong>：将「附件」（图片/语音计数）和「关联」（🔗N）从元数据行迁出，作为角标贴在「分组角标」右侧。<br>
-  <strong>角标高度</strong>：19dp（11sp lineHeight + 4dp×2 padding），与分享图分类角标严格一致。<br>
-  <strong>圆角策略</strong>：仅<strong>最右</strong>角标右下角圆角 16dp（与卡片圆角一致），其他角标全 0 圆角（无缝拼接）。<br>
-  <strong>起点</strong>：从竖条右侧 4dp 开始（与分组角标 left=4dp 一致），<code>margin-bottom: 8dp</code> 隔开标题。
+  <strong>v1.2 更新</strong>（基于用户反馈）：<br>
+  ① 所有角标都隐藏时，<code>badge-row</code> 不保留（<code>display: none</code>）<br>
+  ② 图片/语音合并为单一附件数角标（<code>attach_file + N</code>），不再分两个<br>
+  ③ 分组角标用 <strong>Material Icons</strong>（folder）替代 emoji，与 Android 端 Material Icons 严格一致<br><br>
+  <strong>图标选择</strong>（来自 Material Symbols / Material Icons）：<br>
+  • 分组 → <code>folder</code>（文件夹，最直观表达"分组/分类"）<br>
+  • 附件 → <code>attach_file</code>（回形针，通用附件图标）<br>
+  • 关联 → <code>link</code>（链接，关联卡片）<br>
+  • Android 端对应：<code>Icons.Default.Folder</code> / <code>Icons.Default.AttachFile</code> / <code>Icons.Outlined.Link</code>
 </div>
 
 <!-- ============ 对比：旧 vs 新 ============ -->
@@ -278,7 +295,7 @@
 
   <!-- 旧版 -->
   <div class="compare-col">
-    <h3>❌ 旧版（分组角标 v1.0）</h3>
+    <h3>❌ 旧版（v1.0）</h3>
     <div class="todo-card old">
       <div class="priority-bar medium"></div>
       <div class="badge-row" style="margin-bottom:0;">
@@ -297,20 +314,25 @@
       </div>
     </div>
     <p style="font-size:12px;color:#999;text-align:center;margin-top:4px;">
-      附件/关联挤在元数据行末尾，视觉混乱
+      附件/关联挤在元数据行末尾
     </p>
   </div>
 
   <!-- 新版 -->
   <div class="compare-col">
-    <h3>✅ 新版（多角标 v1.1）</h3>
+    <h3>✅ 新版（v1.2）</h3>
     <div class="todo-card">
       <div class="priority-bar medium"></div>
       <div class="badge-row">
-        <span class="badge badge-category">📂 工作</span>
-        <span class="badge badge-attachment"><span class="badge-icon">🖼️</span>2</span>
-        <span class="badge badge-attachment"><span class="badge-icon">🎤</span>1</span>
-        <span class="badge badge-relation"><span class="badge-icon">🔗</span>3</span>
+        <span class="badge badge-category">
+          <span class="badge-icon">folder</span>工作
+        </span>
+        <span class="badge badge-attachment">
+          <span class="badge-icon">attach_file</span>3
+        </span>
+        <span class="badge badge-relation">
+          <span class="badge-icon">link</span>3
+        </span>
       </div>
       <div class="card-title">
         <span class="checkbox"></span>
@@ -322,7 +344,7 @@
       </div>
     </div>
     <p style="font-size:12px;color:#999;text-align:center;margin-top:4px;">
-      附件/关联上移到角标行，元数据行只剩时间/循环
+      附件/关联合并上移，元数据行只剩时间/循环
     </p>
   </div>
 
@@ -333,7 +355,9 @@
 <div class="todo-card">
   <div class="priority-bar none"></div>
   <div class="badge-row">
-    <span class="badge badge-category">📂 生活</span>
+    <span class="badge badge-category">
+      <span class="badge-icon">folder</span>生活
+    </span>
   </div>
   <div class="card-title">
     <span class="checkbox"></span>
@@ -341,14 +365,17 @@
   </div>
 </div>
 
-<!-- ============ 场景 2：分组 + 附件 ============ -->
-<div class="section-title">场景 2 · 分组 + 附件（图片+语音）</div>
+<!-- ============ 场景 2：分组 + 附件（图片+语音合并为 3） ============ -->
+<div class="section-title">场景 2 · 分组 + 附件（图片+语音合并为总数 3）</div>
 <div class="todo-card">
   <div class="priority-bar low"></div>
   <div class="badge-row">
-    <span class="badge badge-category">📂 工作</span>
-    <span class="badge badge-attachment"><span class="badge-icon">🖼️</span>2</span>
-    <span class="badge badge-attachment"><span class="badge-icon">🎤</span>1</span>
+    <span class="badge badge-category">
+      <span class="badge-icon">folder</span>工作
+    </span>
+    <span class="badge badge-attachment">
+      <span class="badge-icon">attach_file</span>3
+    </span>
   </div>
   <div class="card-title">
     <span class="checkbox"></span>
@@ -364,8 +391,12 @@
 <div class="todo-card">
   <div class="priority-bar medium"></div>
   <div class="badge-row">
-    <span class="badge badge-category">📂 学习</span>
-    <span class="badge badge-relation"><span class="badge-icon">🔗</span>3</span>
+    <span class="badge badge-category">
+      <span class="badge-icon">folder</span>学习
+    </span>
+    <span class="badge badge-relation">
+      <span class="badge-icon">link</span>3
+    </span>
   </div>
   <div class="card-title">
     <span class="checkbox"></span>
@@ -381,8 +412,12 @@
 <div class="todo-card">
   <div class="priority-bar high"></div>
   <div class="badge-row">
-    <span class="badge badge-attachment"><span class="badge-icon">🖼️</span>1</span>
-    <span class="badge badge-relation"><span class="badge-icon">🔗</span>2</span>
+    <span class="badge badge-attachment">
+      <span class="badge-icon">attach_file</span>1
+    </span>
+    <span class="badge badge-relation">
+      <span class="badge-icon">link</span>2
+    </span>
   </div>
   <div class="card-title">
     <span class="checkbox"></span>
@@ -393,12 +428,14 @@
   </div>
 </div>
 
-<!-- ============ 场景 5：仅有关联（最左贴竖条） ============ -->
+<!-- ============ 场景 5：仅有关联 ============ -->
 <div class="section-title">场景 5 · 仅关联（最左角标，紧贴竖条 4dp）</div>
 <div class="todo-card">
   <div class="priority-bar low"></div>
   <div class="badge-row">
-    <span class="badge badge-relation"><span class="badge-icon">🔗</span>5</span>
+    <span class="badge badge-relation">
+      <span class="badge-icon">link</span>5
+    </span>
   </div>
   <div class="card-title">
     <span class="checkbox"></span>
@@ -406,14 +443,20 @@
   </div>
 </div>
 
-<!-- ============ 场景 6：已完成态（视觉降权） ============ -->
+<!-- ============ 场景 6：已完成态 ============ -->
 <div class="section-title">场景 6 · 已完成态（角标浅灰化）</div>
 <div class="todo-card completed">
   <div class="priority-bar none"></div>
   <div class="badge-row">
-    <span class="badge badge-category">📂 已归档</span>
-    <span class="badge badge-attachment"><span class="badge-icon">🖼️</span>1</span>
-    <span class="badge badge-relation"><span class="badge-icon">🔗</span>1</span>
+    <span class="badge badge-category">
+      <span class="badge-icon">folder</span>已归档
+    </span>
+    <span class="badge badge-attachment">
+      <span class="badge-icon">attach_file</span>1
+    </span>
+    <span class="badge badge-relation">
+      <span class="badge-icon">link</span>1
+    </span>
   </div>
   <div class="card-title">
     <span class="checkbox"></span>
@@ -421,15 +464,20 @@
   </div>
 </div>
 
-<!-- ============ 场景 7：三者齐全（最复杂） ============ -->
-<div class="section-title">场景 7 · 分组 + 图片 + 语音 + 关联（三者齐全）</div>
+<!-- ============ 场景 7：三者齐全 ============ -->
+<div class="section-title">场景 7 · 分组 + 附件 + 关联（三者齐全，最复杂）</div>
 <div class="todo-card">
   <div class="priority-bar high"></div>
   <div class="badge-row">
-    <span class="badge badge-category">📂 重要</span>
-    <span class="badge badge-attachment"><span class="badge-icon">🖼️</span>3</span>
-    <span class="badge badge-attachment"><span class="badge-icon">🎤</span>2</span>
-    <span class="badge badge-relation"><span class="badge-icon">🔗</span>4</span>
+    <span class="badge badge-category">
+      <span class="badge-icon">folder</span>重要
+    </span>
+    <span class="badge badge-attachment">
+      <span class="badge-icon">attach_file</span>5
+    </span>
+    <span class="badge badge-relation">
+      <span class="badge-icon">link</span>4
+    </span>
   </div>
   <div class="card-title">
     <span class="checkbox"></span>
@@ -444,28 +492,44 @@
   </div>
 </div>
 
+<!-- ============ 场景 8：无任何角标（badge-row 不显示） ============ -->
+<div class="section-title">场景 8 · 无任何角标（badge-row 不保留）</div>
+<div class="todo-card">
+  <div class="priority-bar none"></div>
+  <!-- badge-row 完全省略 -->
+  <div class="card-title">
+    <span class="checkbox"></span>
+    简单待办，无分组/附件/关联
+  </div>
+  <div class="meta-row">
+    <span class="meta-item"><span class="meta-icon">🕐</span> <span class="meta-reminder">今天 12:00</span></span>
+  </div>
+</div>
+
 <!-- ============ 关键设计细节 ============ -->
 <div class="section-title">🔑 关键设计细节</div>
 <div class="annotation">
   <strong>1. 角标高度统一为 19dp</strong>：<code>height: 19px</code> + <code>font-size: 11px</code> + <code>line-height: 11px</code>，与分享图分类角标严格一致。<br><br>
-  <strong>2. 起点为竖条右侧 4dp</strong>：<code>padding-left: 20px</code>（卡片） = <code>4dp 竖条</code> + <code>16dp 内容</code>，所以角标行 <code>margin-left: 0</code> 即可。<br><br>
-  <strong>3. 圆角仅给最右</strong>：通过 <code>.badge-row > .badge:last-child { border-bottom-right-radius: 16px; }</code> 实现，中间角标全 0 圆角以无缝拼接。<br><br>
-  <strong>4. 视觉降权（已完成态）</strong>：背景 <code>rgba(0,0,0,0.03)</code> + 文字 <code>#AAAAAA</code>，与分享图分类角标一致。<br><br>
-  <strong>5. 角标顺序固定</strong>：<code>分组 → 图片 → 语音 → 关联</code>（图片在语音前，与元数据行旧版保持一致）。<br><br>
-  <strong>6. 移除元数据行附件/关联</strong>：v1.1 起，<code>AttachmentCountsRow</code> 和 <code>RelationCountChip</code> 不再在元数据行渲染，统一由角标行接管。
+  <strong>2. Material Icons 选择</strong>（避免 emoji 跨平台不一致）：<br>
+  • 分组 → <code>Icons.Default.Folder</code>（文件夹）<br>
+  • 附件 → <code>Icons.Default.AttachFile</code>（回形针，图片+语音合并计数）<br>
+  • 关联 → <code>Icons.Outlined.Link</code>（链接）<br><br>
+  <strong>3. 起点为竖条右侧 4dp</strong>：<code>padding-left: 20px</code>（卡片） = <code>4dp 竖条</code> + <code>16dp 内容</code>。<br><br>
+  <strong>4. 圆角仅给最右</strong>：<code>.badge-row > .badge:last-child { border-bottom-right-radius: 16px; }</code>。<br><br>
+  <strong>5. 视觉降权（已完成态）</strong>：背景 <code>rgba(0,0,0,0.03)</code> + 文字 <code>#AAAAAA</code>。<br><br>
+  <strong>6. 角标顺序固定</strong>：<code>分组 → 附件 → 关联</code>（图片+语音合并后顺序更简洁）。<br><br>
+  <strong>7. 空态处理</strong>：所有角标都隐藏时，<code>badge-row</code> 完全不渲染（<code>display: none</code>），不留空白。
 </div>
 
-<!-- ============ 待确认问题 ============ -->
-<div class="section-title">❓ 待确认问题</div>
+<!-- ============ 决策记录 ============ -->
+<div class="section-title">✅ v1.2 决策记录（基于用户反馈）</div>
 <div class="annotation">
-  <strong>Q1</strong>：当 todo 没有任何分组/附件/关联时，<code>badge-row</code> 是否需要保留？<br>
-  → 建议：所有角标都隐藏时，<code>badge-row</code> 也隐藏（<code>display: none</code>），不留空隙。<br><br>
-  <strong>Q2</strong>：附件角标的"图片"和"语音"是分两个独立角标还是合并？<br>
-  → 当前设计：分两个角标（<code>🖼️2</code> 和 <code>🎤1</code>），更清晰。<br>
-  → 备选：合并为 <code>📎3</code> 一个角标（占用空间更小）。<br><br>
-  <strong>Q3</strong>：分组角标 emoji（<code>📂</code>）是否保留？<br>
-  → 当前设计：保留（视觉更直观）。<br>
-  → 备选：去掉 emoji，只显示文字（如 v1.0 旧版）。
+  <strong>Q1（已确认）</strong>：所有角标都隐藏时，<code>badge-row</code> 不保留 ✓<br>
+  → 实现：<code>if (anyBadge) { Row(...) }</code><br><br>
+  <strong>Q2（已确认）</strong>：图片/语音合并为单一附件数角标（<code>attach_file + N</code>）✓<br>
+  → 实现：<code>val totalAttachment = imageCount + voiceCount</code>，仅当 <code>totalAttachment > 0</code> 时渲染<br><br>
+  <strong>Q3（已确认）</strong>：分组角标用 Material Icons（folder）替代 emoji ✓<br>
+  → 实现：<code>Image(painter = painterResource(R.drawable.ic_folder), ...)</code> 或 <code>Icon(Icons.Default.Folder, ...)</code>
 </div>
 
 </body>
