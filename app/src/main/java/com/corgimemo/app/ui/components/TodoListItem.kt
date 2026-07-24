@@ -1245,9 +1245,11 @@ private fun CategoryBadge(
             .background(bgColor, badgeShape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                // v2026-07-24 修复：使用 material3.ripple.ripple() 替代已 deprecated 的 material.ripple.rememberRipple
+                // v2026-07-24 修复：使用 material3.ripple() 替代已 deprecated 的 material.ripple.rememberRipple
                 // 参考项目其他文件（CorgiBottomNavigationBar.kt:248）的实现方式
-                indication = androidx.compose.material3.ripple.ripple(
+                // - 通过 `import androidx.compose.material3.ripple` 导入
+                // - 直接使用 ripple() 函数调用
+                indication = ripple(
                     bounded = false,
                     radius = 24.dp
                 ),
