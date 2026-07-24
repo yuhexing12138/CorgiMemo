@@ -77,6 +77,7 @@ alwaysApply: true
 | 11 | `.trae/rules/git提交.md` | 任务后询问 commit，提交信息用中文 |
 | 12 | `.trae/rules/graphify知识图谱优先.md` | 架构问题走图谱 |
 | 13 | `.trae/rules/安卓应用开发.md` | Android 开发规范 |
+| 14 | `.trae/rules/巨石组件拆分规范.md` | 单文件 ≥ 800 行时按 model/sections/dialogs 拆分，薄壳保 API 兼容 |
 
 ## 6. 主要命令
 
