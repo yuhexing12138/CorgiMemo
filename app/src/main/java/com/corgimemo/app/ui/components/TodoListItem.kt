@@ -378,8 +378,15 @@ fun TodoListItem(
         // 避免 Row.height(IntrinsicSize.Max) 的 max 取值（max 子项 intrinsic）远小于
         // Column 实际内容总高度（sum）导致 Card 高度被低估、内容被裁剪的问题
         //
-        // 外层 Box 用于承载右上角置顶图标（align(Alignment.TopEnd)），
+        // 外层 Box 用于承载右上角置顶图标（align(Alignment.TopEnd)）和
+        // 左上角分组角标（align(Alignment.TopStart)），
         // Layout 内 measurePolicy 返回的尺寸会撑满 Box，Icon 浮于其上。
+        //
+        // v2026-07-24 改动：把 hasCategory 提取到 Box 之外，让 Box 内的 CategoryBadge
+        // 和 Box 内的 Column 内容都能访问，避免重复定义。
+        /** 是否存在分组角标（详情模式且categoryName不为空） */
+        // Box 和 Column 都会引用，提取到外层避免作用域限制
+        val hasCategory = !isSimpleMode && categoryName != null
         Box {
             Layout(
                 content = {
@@ -390,8 +397,7 @@ fun TodoListItem(
                     Column(modifier = Modifier.fillMaxWidth().padding(end = 24.dp)) {
                 // 聚合附件数量（提前计算，供元数据布局判断使用）
                 val aggregateCounts = aggregateAttachmentCounts(todo, subTasks)
-                /** 是否存在分类标签（详情模式且categoryName不为空） */
-                val hasCategory = !isSimpleMode && categoryName != null
+                // hasCategory 已在 Box 之外定义（v2026-07-24 提取），此处直接引用
                 /** 是否存在提醒时间 */
                 val hasReminder = todo.reminderTime != null
                 /** 是否存在附件（详情模式下图片或语音数量>0） */
@@ -764,11 +770,17 @@ fun TodoListItem(
             // - z 顺序：在内容之上、pin icon 之下（zIndex = 3f）
             // - 可点击：点击触发 onCategoryClick 回调，跳转到该分组的待办列表
             // - 与 pin icon 不冲突：分组在左上，置顶在右上，水平分隔
+            //
+            // v2026-07-24 编译修复：
+            // hasCategory = !isSimpleMode && categoryName != null
+            // Kotlin 不能在 if(hasCategory) 内对 categoryName 智能转换为非空 String，
+            // 因为 hasCategory 不是简单的 null 检查。这里用 !! 强制解包是安全的：
+            // hasCategory 为 true 时 categoryName 必非空（line 393 定义保证）。
             if (hasCategory) {
                 CategoryBadge(
-                    categoryName = categoryName,
+                    categoryName = categoryName!!,
                     isCompleted = todo.status == 1,
-                    onClick = { onCategoryClick(categoryName) },
+                    onClick = { onCategoryClick(categoryName!!) },
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(start = 4.dp)
