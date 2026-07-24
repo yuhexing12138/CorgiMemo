@@ -1013,14 +1013,22 @@ class TodoEditViewModel @Inject constructor(
      * @param index 新的聚焦行索引（clamp 到合法范围）
      */
     fun setFocusedLineIndex(index: Int) {
-        val clamped = index.coerceAtLeast(0)
-        // 🆕 v2026-07-25 诊断日志：排查 focusedLineIdx 越界根因
-        android.util.Log.i(
-            "TodoEditDelete",
-            "setFocusedLineIndex($index) → clamped=$clamped, " +
-            "currentTodoLinesSize=${_todoLines.value.size}, " +
-            "stack=${android.util.Log.getStackTraceString(Throwable().fillInStackTrace()).lineSequence().take(8).joinToString(" | ")}"
-        )
+        // 🆕 v2026-07-25 修复 Bug：添加上界 clamp 防御越界传入
+        // 根因：CheckboxEditText 的 onFocusChange 闭包捕获旧布局的 currentIndex，
+        // 删除/插入行后旧闭包仍然会触发，传入越界值（如 size=3 时传入 5）。
+        // 修复：在 ViewModel 层做最后防线，clamp 到 [0, lastIndex]。
+        val maxSize = _todoLines.value.size
+        val clamped = if (maxSize == 0) {
+            0
+        } else {
+            index.coerceIn(0, maxSize - 1)
+        }
+        if (clamped != index) {
+            android.util.Log.w(
+                "TodoEditDelete",
+                "setFocusedLineIndex($index) 越界被 clamp 到 $clamped (size=$maxSize)"
+            )
+        }
         _focusedLineIndex.value = clamped
     }
 
@@ -1263,15 +1271,7 @@ class TodoEditViewModel @Inject constructor(
         // 7. 推快照 + 更新 _todoLines（setTodoLines 内部触发 syncStructuredStateFromTodoLines）
         // 🆕 v2026-07-25 修复 Bug：setTodoLines 可能因 _isRestoring 或 newList == _todoLines.value 被跳过
         // 导致删除后 UI 不更新。这里在调用前先记录预期状态，调用后验证是否真的更新了。
-        val beforeSize = current.size
         val expectedAfterSize = newList.size
-        android.util.Log.i(
-            "TodoEditDelete",
-            "deleteGroupByLineIndex 调用前: lineIndex=$lineIndex, targetGroupId=$targetGroupId, " +
-            "isMainGroup=$isMainGroup, promotedSubGroupId=$promotedSubGroupId, " +
-            "beforeSize=$beforeSize, expectedAfterSize=$expectedAfterSize, " +
-            "isRestoring=${_isRestoring.value}"
-        )
         setTodoLines(newList)
 
         // 验证 _todoLines 是否真的更新了
@@ -1379,13 +1379,6 @@ class TodoEditViewModel @Inject constructor(
         if (newFocusedIndex >= 0) {
             _focusedLineIndex.value = newFocusedIndex
         }
-
-        android.util.Log.i(
-            "TodoEditDelete",
-            "deleteGroupByLineIndex 完成: newFocusedIndex=$newFocusedIndex, " +
-            "newList.size=${newList.size}, newList.groupIds=${newList.map { it.groupId }}, " +
-            "newList.texts=${newList.map { it.text }}"
-        )
 
         return newFocusedIndex
     }

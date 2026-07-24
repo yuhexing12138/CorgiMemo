@@ -1125,31 +1125,13 @@ fun TodoEditScreen(
                 IconButton(
                     onClick = {
                         // 根据光标所在行的 groupId + 是否多容器 决定走哪条删除路径
-                        // 🆕 v2026-07-25 修复 Bug：添加 fallback 防止 focusedLineIndex 越界
-                        // 之前如果 ViewModel 的 focusedLineIndex 与 CheckboxEditText 内部不同步，
-                        // 可能导致 currentLine 为 null，currentGroupId 默认为 0，误走单容器路径
-                        var currentLineIdx = focusedLineIndex
-                        // 边界保护：如果 focusedLineIdx 越界，使用 todoLines.lastIndex 作为 fallback
-                        if (currentLineIdx !in todoLines.indices && todoLines.isNotEmpty()) {
-                            currentLineIdx = todoLines.lastIndex
-                            android.util.Log.w(
-                                "TodoEditDelete",
-                                "focusedLineIdx=$focusedLineIndex 越界，fallback 到 lastIndex=$currentLineIdx"
-                            )
-                        }
+                        // 🆕 v2026-07-25 修复 Bug：ViewModel.setFocusedLineIndex 已做 clamp，
+                        // focusedLineIndex 不会越界，无需再做 fallback
+                        val currentLineIdx = focusedLineIndex
                         val currentLine = todoLines.getOrNull(currentLineIdx)
                         val currentGroupId = currentLine?.groupId ?: 0
                         // 判断多容器场景：todoLines 中存在 >1 个不同的 groupId
                         val hasMultipleGroups = todoLines.map { it.groupId }.distinct().size > 1
-
-                        android.util.Log.i(
-                            "TodoEditDelete",
-                            "点击删除按钮: focusedLineIdx=$focusedLineIndex, " +
-                            "currentLineIdx=$currentLineIdx, currentGroupId=$currentGroupId, " +
-                            "hasMultipleGroups=$hasMultipleGroups, todoLines.size=${todoLines.size}, " +
-                            "todoLines.groupIds=${todoLines.map { it.groupId }}, " +
-                            "todoLines.texts=${todoLines.map { it.text }}"
-                        )
 
                         if (currentGroupId == 0 && !hasMultipleGroups) {
                             // 单容器场景（仅主分组）：走原"删整个 todo"路径
