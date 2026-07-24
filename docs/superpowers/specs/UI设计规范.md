@@ -988,4 +988,313 @@ Box(
 | 2026-07-20 | v1.4 | **间距回调——卡片之间 24dp→8dp**（v3 用户反馈"过稀"）：① `ZonedReorderableLazyColumn.itemSpacing` 8→**0dp**；② `SwipeableTodoBox.contentPadding` vertical 8→**4dp**（保留 4dp shadow 空间）；新间距 = 0 + 4 + 4 = **8dp** ✓；③ 长按 8dp shadow 超出 4dp padding 部分被外层 16dp clip 轻微裁切，但 Compose 阴影 alpha 渐变中心深边缘浅，主体仍可见，"抬升感"保留 |
 | 2026-07-20 | v1.5 | **v5 关键修复——深色版优先级色作 shadow**（v1-v4 全部修复都未解决阴影对比度问题）：① `PriorityColors.priorityVisualOf` 的 `shadow` 字段从 `base.copy(alpha=0.3f)`（浅色 200 系列 + 30% alpha）改为 `lerp(base, Color.Black, 0.4f)`（**60% 优先级色 + 40% 黑色 = 深色版**）；新色值：HIGH #993530（深红棕）/ MEDIUM #996E30（深橙棕）/ LOW #56778F（深蓝）/ NONE #7A8E7B（深绿灰）；② ambient alpha 0.12→**0.20**（底色加深），spot alpha 默认 0.6→**0.85** / 长按 0.9→**1.0**（边缘加深）；③ DeletedTodoCard 同步修复：spot alpha 0.6→0.85 + ambient 0.12→0.20；**新色差从 95 提升到 110-130，阴影在白底上明显可见** |
 
+### 12.1.11 二次确认弹窗规范
+
+> **视觉样板**：[InspirationImageGallery.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/components/InspirationImageGallery.kt) L285-322（图片附件页删除确认弹窗）
+>
+> **适用范围**：项目内所有破坏性操作前的二次确认弹窗（删除、清空、覆盖恢复、放弃编辑等）。
+
+#### 12.1.11.1 设计原则
+
+| 原则 | 说明 |
+|------|------|
+| **治愈不焦虑** | 用"先确认再执行"防止破坏性误操作，但避免过度警告（与 12.1.1「减少焦虑」一致） |
+| **轻量克制** | 默认用极简视觉（仅标题 + 正文 + 删除/取消按钮），不堆叠图标和高亮区 |
+| **与 Snackbar 撤销互补** | 不可恢复走二次确认弹窗，可恢复走 Snackbar 撤销（参考 12.1.9.3） |
+| **全局一致** | 所有二次确认弹窗视觉/文案/交互统一，避免每页各写一套 |
+
+#### 12.1.11.2 适用边界：二次确认弹窗 vs Snackbar 撤销
+
+| 维度 | 二次确认弹窗 | Snackbar 撤销 |
+|------|-------------|---------------|
+| 操作可恢复性 | **不可恢复**（物理删除文件、清空记录、覆盖数据） | **可恢复**（移入回收站、状态变更） |
+| 数据影响范围 | 单条永久丢失 / 批量永久丢失 / 覆盖全量数据 | 软删除（可在回收站找回） |
+| 用户代价 | 高（一旦确认不可逆） | 低（5s 内可撤销） |
+| 视觉重量 | 中（弹窗遮罩 + 居中聚焦） | 轻（底部 Snackbar） |
+| 交互打断 | 强打断（必须先决策） | 弱打断（不阻塞） |
+| 典型示例 | 删除图片附件、删除录音、清空回收站、清空历史、恢复备份 | 删除待办（移入回收站）、删除灵感、删除特殊日期 |
+
+**与 12.1.9.6「禁止 AlertDialog 显示短暂提示」的协调**：
+
+- 该禁令针对**事后短暂提示**（如"已保存""操作成功"），二次确认弹窗不属于此类
+- 二次确认弹窗是**事前拦截**，与 Snackbar 的"事后反馈"职责完全不同
+- 凡是符合"不可恢复 / 高代价"特征的操作，**必须**使用二次确认弹窗，不得用 Snackbar 替代
+- 凡是可恢复的操作，**必须**使用 Snackbar 5s 撤销模式，不得用二次确认弹窗替代
+
+#### 12.1.11.3 视觉规范
+
+##### 容器规格
+
+| 属性 | 值 | 说明 |
+|------|------|------|
+| 容器组件 | `AlertDialog`（Material3） | 不用 `BasicAlertDialog` / 自定义 `Dialog` |
+| 容器颜色 | 默认（不显式指定 `containerColor`） | 跟随 `MaterialTheme.colorScheme.surface`，亮/暗色自动切换 |
+| 容器圆角 | 默认（不显式指定 `shape`） | 跟随 `MaterialTheme.shapes.large`（约 16dp） |
+| 容器阴影 | Material3 默认（elevation 8dp，与 12.1.6 一致） | 不自定义 |
+| icon 槽位 | **不使用** | 简化版无 Warning 图标，避免过度警示 |
+| 标题高亮区 | **不使用** | 不在弹窗内显示待删除对象的标题/缩略图 |
+
+##### 标题（title）
+
+| 属性 | 值 |
+|------|------|
+| 字号 | 默认（Material3 AlertDialog title 默认值） |
+| 字重 | `FontWeight.SemiBold` |
+| 颜色 | 默认（`onSurface`，不显式指定） |
+| 内容 | 4-8 字短语，描述操作对象（"删除图片" / "清空回收站" / "删除录音"） |
+
+##### 正文（text）
+
+| 属性 | 值 |
+|------|------|
+| 字号 | 默认（约 16sp） |
+| 字重 | 默认（Normal） |
+| 颜色 | 默认（`onSurfaceVariant`，不显式指定） |
+| 内容 | 一句话询问 + 一句话后果说明 |
+| 行高 | 默认 |
+
+##### 确认按钮（confirmButton）
+
+| 属性 | 值 |
+|------|------|
+| 组件 | `TextButton` |
+| 文字 | 动词 + 对象（"删除" / "清空" / "恢复" / "放弃编辑"） |
+| 文字颜色 | `Color(0xFFFF6B6B)`（破坏性操作专用警示色，柔和粉红） |
+| 字重 | 默认（Normal） |
+
+##### 取消按钮（dismissButton）
+
+| 属性 | 值 |
+|------|------|
+| 组件 | `TextButton` |
+| 文字 | "取消" |
+| 文字颜色 | 默认（`onSurfaceVariant`，不显式指定） |
+| 字重 | 默认（Normal） |
+
+##### 警示色说明
+
+`Color(0xFFFF6B6B)` 是项目内"破坏性操作确认按钮"专用警示色：
+
+- 与 12.1.2.3「高优先级 #FF8A80 柔和红色」同源（均偏粉红，避免焦虑）
+- 比 #FF8A80 略饱和，用于"即将执行破坏性操作"的按钮文字
+- **适用于**：删除、清空、放弃编辑、覆盖恢复
+- **不适用于**：状态切换、临时警告、Snackbar 反馈、卡片优先级条
+
+#### 12.1.11.4 文案规范
+
+##### 标题模板
+
+| 操作类型 | 标题模板 | 示例 |
+|---------|---------|------|
+| 删除单条 | `删除<对象>` | "删除图片" / "删除录音" / "删除模板" |
+| 批量删除 | `批量删除<对象>` | "批量删除待办" / "批量删除灵感" |
+| 清空 | `清空<对象>` | "清空回收站" / "清空操作历史" / "清空编辑历史" |
+| 覆盖/恢复 | `<动作>` | "恢复备份" / "恢复数据" |
+| 放弃编辑 | `放弃编辑` | — |
+
+##### 正文模板
+
+公式：`确定要<动作>这<量词><对象>吗？<后果说明>。`
+
+| 操作类型 | 正文模板 | 示例 |
+|---------|---------|------|
+| 删除单条 | `确定要删除这<量词><对象>吗？删除后不可恢复。` | "确定要删除这张图片吗？删除后不可恢复。" |
+| 批量删除 | `确定要删除选中的 N 个<对象>吗？删除后不可恢复。` | "确定要删除选中的 3 个待办吗？删除后不可恢复。" |
+| 清空 | `确定要清空所有<对象>吗？清空后不可恢复。` | "确定要清空所有回收站内容吗？清空后不可恢复。" |
+| 覆盖/恢复 | `确定要<动作>吗？当前所有<对象>将被覆盖。` | "确定要恢复备份吗？当前所有数据将被覆盖。" |
+| 放弃编辑 | `确定要放弃编辑吗？未保存的内容将永久丢失。` | — |
+
+##### 按钮文案
+
+| 按钮 | 文字 | 颜色 |
+|------|------|------|
+| 确认 | 与标题动词一致（"删除" / "清空" / "恢复" / "放弃编辑"） | `Color(0xFFFF6B6B)` |
+| 取消 | "取消" | 默认 |
+
+#### 12.1.11.5 交互规范
+
+##### 触发与关闭
+
+| 操作 | 行为 |
+|------|------|
+| 触发 | 用户点击破坏性操作入口 → `showXxxConfirm = true` |
+| 点确认 | `showXxxConfirm = false` → 执行破坏性操作 |
+| 点取消 | `showXxxConfirm = false` → 不执行任何操作 |
+| 点遮罩 | `showXxxConfirm = false` → 不执行任何操作（与取消等价） |
+| 按返回键 | `showXxxConfirm = false` → 不执行任何操作（与取消等价） |
+
+##### 状态管理
+
+- 使用 `var showXxxConfirm by remember { mutableStateOf(false) }` 管理弹窗显示
+- 弹窗内**不持有业务状态**，仅做"确认/取消"二选一决策
+- 确认后的业务逻辑由调用方传入的 `onConfirm` 回调执行
+- 批量删除场景可额外使用 `pendingDeleteIndex: Int` 标记待删除项索引（参考 [VoicePreviewDialog.kt](../../app/src/main/java/com/corgimemo/app/ui/components/VoicePreviewDialog.kt) L133-134）
+
+##### 动效
+
+- 弹窗出现/消失使用 Material3 `AlertDialog` 默认动画（淡入淡出 + 轻微缩放）
+- **不自定义** enter/exit transitions
+
+#### 12.1.11.6 实施代码模式（标准样板）
+
+##### 标准样板（单条删除）
+
+```kotlin
+// 状态：是否显示二次确认弹窗
+var showDeleteConfirm by remember { mutableStateOf(false) }
+
+// 触发：用户点击删除入口
+IconButton(onClick = { showDeleteConfirm = true }) {
+    Icon(Icons.Outlined.Delete, contentDescription = "删除")
+}
+
+// 弹窗：极简 AlertDialog，无 icon，无标题高亮
+if (showDeleteConfirm) {
+    AlertDialog(
+        onDismissRequest = { showDeleteConfirm = false },
+        title = {
+            Text(
+                text = "删除图片",
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Text("确定要删除这张图片吗？删除后不可恢复。")
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    showDeleteConfirm = false
+                    onDeleteClick()  // 调用方执行实际删除
+                }
+            ) {
+                Text("删除", color = Color(0xFFFF6B6B))
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = { showDeleteConfirm = false }
+            ) {
+                Text("取消")
+            }
+        }
+    )
+}
+```
+
+##### 批量删除样板
+
+```kotlin
+var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+val selectedCount = selectedIds.size
+
+if (showBatchDeleteConfirm) {
+    AlertDialog(
+        onDismissRequest = { showBatchDeleteConfirm = false },
+        title = {
+            Text(
+                text = "批量删除待办",
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Text("确定要删除选中的 $selectedCount 个待办吗？删除后不可恢复。")
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    showBatchDeleteConfirm = false
+                    onBatchDelete()
+                }
+            ) {
+                Text("删除 $selectedCount 项", color = Color(0xFFFF6B6B))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { showBatchDeleteConfirm = false }) {
+                Text("取消")
+            }
+        }
+    )
+}
+```
+
+##### 关键约束
+
+- **不使用 `Icons.Default.Warning` 等 icon**：简化版无 icon 槽位
+- **不自定义 `containerColor` / `titleContentColor` / `textContentColor`**：跟随 Material3 主题
+- **不自定义 `shape`**：使用 `MaterialTheme.shapes.large` 默认值
+- **不在弹窗内显示待删除对象标题/缩略图**：保持极简
+
+#### 12.1.11.7 现有调用点清单（25 处，2026-07-25 审计）
+
+##### A. 符合简化版规范的调用点（21 处）
+
+| # | 文件 | 行号 | 用途 |
+|---|------|------|------|
+| 1 | [TodoEditScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/todo/TodoEditScreen.kt) | L2154-2201 | 删除自定义分组 |
+| 2 | [BackupHistoryScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/backup/BackupHistoryScreen.kt) | L185-211 | 删除备份记录 |
+| 3 | [BackupHistoryScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/backup/BackupHistoryScreen.kt) | L216-248 | 恢复备份（覆盖当前数据） |
+| 4 | [HomeScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/home/HomeScreen.kt) | L1393-1418 | 批量删除待办 |
+| 5 | [HomeScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/home/HomeScreen.kt) | L1424-1449 | 删除单个待办 |
+| 6 | [TemplateManageScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/settings/TemplateManageScreen.kt) | L193-214 | 删除模板 |
+| 7 | [SettingsScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt) | L330-361 | 恢复数据（覆盖当前数据） |
+| 8 | [RecycleBinScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/recyclebin/RecycleBinScreen.kt) | L421-437 | 清空回收站 |
+| 9 | [OperationHistoryScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/settings/OperationHistoryScreen.kt) | L194-213 | 清空操作历史 |
+| 10 | [EditHistoryScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/settings/EditHistoryScreen.kt) | L204-223 | 清空编辑历史 |
+| 11 | [MainScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/main/MainScreen.kt) | L1200-1219 | 灵感批量删除 |
+| 12 | [MainScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/main/MainScreen.kt) | L1231-1248 | 日期批量删除 |
+| 13 | [InspirationScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationScreen.kt) | L429-447 | 删除单条灵感 |
+| 14 | [InspirationScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationScreen.kt) | L452-471 | 批量删除灵感 |
+| 15 | [InspirationEditScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationEditScreen.kt) | L1523-1550 | 删除标签 |
+| 16 | [SpecialDateDetailScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/date/SpecialDateDetailScreen.kt) | L337-355 | 删除特殊日期 |
+| 17 | [VoicePlayerComponent.kt](../../app/src/main/java/com/corgimemo/app/ui/components/VoicePlayerComponent.kt) | L304-323 | 删除语音备注 |
+| 18 | [VoicePreviewDialog.kt](../../app/src/main/java/com/corgimemo/app/ui/components/VoicePreviewDialog.kt) | L642-682 | 删除录音 |
+| 19 | [InspirationImageGallery.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/components/InspirationImageGallery.kt) | L286-322 | 删除图片（**规范样板**） |
+| 20 | [MainScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/main/MainScreen.kt) | L1057-1064 | 删除待办分组（使用 `DeleteCategoryConfirmDialog`） |
+| 21 | [MainScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/main/MainScreen.kt) | L1098-1107 | 删除日期类型（使用 `DeleteCategoryConfirmDialog`） |
+
+##### B. 不符合简化版规范的调用点（4 处，使用通用组件 `DeleteConfirmDialog`）
+
+> 这 4 处使用了带 Warning 图标 + 标题高亮区的完整版 `DeleteConfirmDialog` 组件，**不符合本规范**。
+> 但因组件已封装且测试通过，**暂不强制迁移**，后续迭代时优先改为简化版。
+
+| # | 文件 | 行号 | 用途 | 偏离点 |
+|---|------|------|------|--------|
+| 22 | [TodoEditScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/todo/TodoEditScreen.kt) | L2314-2381 | 删除待办 / 放弃编辑 | 使用 `DeleteConfirmDialog`（Delete + Discard 模式） |
+| 23 | [TodoEditScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/todo/TodoEditScreen.kt) | L2397-2411 | 放弃编辑（系统返回键触发） | 使用 `DeleteConfirmDialog`（Discard 模式） |
+| 24 | [InspirationEditScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationEditScreen.kt) | L1628-1656 | 删除灵感 / 放弃编辑 | 使用 `DeleteConfirmDialog`（Delete + Discard 模式） |
+| 25 | [InspirationEditScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationEditScreen.kt) | L1672-1686 | 放弃编辑灵感 | 使用 `DeleteConfirmDialog`（Discard 模式） |
+
+##### C. 视觉不一致项（待后续迁移时统一）
+
+| 不一致点 | 涉及调用点 | 应迁移至 |
+|---------|-----------|---------|
+| 删除按钮红色色值散落 `0xFFFF6B6B` / `0xFFE53935` / `0xFFDC2626` / `0xFFEF4444` / `UiColors.Error` / `MaterialTheme.colorScheme.error` | 序号 1-19 中部分调用点 | 统一为 `Color(0xFFFF6B6B)` |
+| "清空"按钮文字写作"确定" | 序号 9、10 | 改为"清空" |
+| 删除按钮无红色 | 序号 16（SpecialDateDetailScreen） | 补 `color = Color(0xFFFF6B6B)` |
+| 使用 `Button` + `OutlinedButton` 而非 `TextButton` | 序号 6、7 | 改为 `TextButton` |
+| `BatchDeleteConfirmDialog` 通用组件未被使用 | 序号 4、11、12、14 | 后续可考虑迁移复用，或保留各自 `AlertDialog` 实现 |
+
+#### 12.1.11.8 不允许的用法
+
+| 违规用法 | 原因 | 正确做法 |
+|---------|------|---------|
+| 自定义 `Dialog` 实现删除确认 | 绕过 Material3 `AlertDialog` 一致性 | 使用 `AlertDialog` |
+| 在弹窗内加 `Icons.Default.Warning` 等图标 | 简化版无 icon 槽位，过度警示违反"减少焦虑"原则 | 不加 icon |
+| 在弹窗内高亮待删除对象标题/缩略图 | 增加视觉重量，违反"轻量克制"原则 | 仅用文字描述（"这张图片"/"这条录音"） |
+| 自定义 `containerColor` / `shape` | 破坏 Material3 主题一致性 | 跟随主题默认值 |
+| 删除按钮使用 `Color.Red` / `0xFFDC2626` / `0xFFE53935` | 过于刺眼，违反"减少焦虑"原则 | 使用 `Color(0xFFFF6B6B)` |
+| 删除按钮文字写作"OK" / "确定" / "Yes" | 语义模糊，无法直接看出是破坏性操作 | 用动词："删除" / "清空" / "放弃编辑" |
+| 用 Snackbar 替代二次确认弹窗执行不可恢复操作 | Snackbar 是事后反馈，无法事前拦截 | 不可恢复操作必须用 `AlertDialog` |
+| 用二次确认弹窗执行可恢复操作（如移入回收站） | 与 Snackbar 撤销模式职责重叠，过度打断 | 改用 Snackbar 5s 撤销（参考 12.1.9.3） |
+| 弹窗内持有业务状态（如待删除对象引用） | 弹窗应仅做"确认/取消"决策 | 状态由调用方持有，弹窗仅触发回调 |
+| 未使用 `var showXxxConfirm by remember { mutableStateOf(false) }` 模式 | 状态管理混乱 | 统一使用 `remember + mutableStateOf` |
+
+#### 12.1.11.9 排版变更记录
+
+| 日期 | 版本 | 变更 |
+|------|------|------|
+| 2026-07-25 | v1.0 | 初始规范：以 [InspirationImageGallery.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/components/InspirationImageGallery.kt) L285-322 为视觉样板，确立"极简 `AlertDialog`（title + text + 删除/取消按钮）"为项目统一标准；明确与 Snackbar 撤销模式的适用边界（不可恢复走弹窗 / 可恢复走 Snackbar）；审计项目内 25 处二次确认弹窗调用点（21 处符合 / 4 处不符合，暂不强制迁移）；统一删除按钮警示色为 `Color(0xFFFF6B6B)` |
+
 
