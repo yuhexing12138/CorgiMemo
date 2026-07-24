@@ -126,9 +126,18 @@ object RepeatTaskManager {
      * 处理重复任务完成
      * 当重复任务完成时，创建下一个周期的新任务
      *
+     * **v2026-07-24 新增过期守卫**：
+     * 计算出的 nextReminderTime 必须未过期（> currentTime）才会生成新待办。
+     * 避免在历史时间上设置提醒（用户已"错过"那个时间点，生成无意义）。
+     *
+     * 典型触发场景：
+     * - DAILY + 提醒时间是昨天 → 完成时 nextReminderTime = 昨天 14:00（已过期）→ 不生成
+     * - MONTHLY + 提醒时间是 2 个月前 → nextReminderTime = 上月同日（已过期）→ 不生成
+     * - 正常场景：DAILY + 提醒时间是今天 14:00，完成于 10:00 → nextReminderTime = 明天 14:00（未过期）→ 生成
+     *
      * @param context 上下文
      * @param completedTodo 已完成的重复任务
-     * @return 创建的新任务，如果不重复返回 null
+     * @return 创建的新任务，如果不重复或下次提醒时间已过期则返回 null
      */
     suspend fun handleRepeatTaskCompletion(
         context: Context,
@@ -148,6 +157,26 @@ object RepeatTaskManager {
         }
 
         if (nextStartDate == null && nextReminderTime == null) {
+            return null
+        }
+
+        // ===== v2026-07-24 新增：下次提醒时间过期守卫 =====
+        // 如果计算出的下次提醒时间已过期（< currentTime），则不生成新待办
+        // 严格用 < 而非 <=，与 formatReminderDisplay 的 isOverdue 判定保持一致
+        // （reminderTime == now 不算"过期"，允许临界点生成）
+        //
+        // 示例：
+        // - 原提醒：2026-07-23 14:00（已过）
+        // - 完成时间：2026-07-24 10:00
+        // - nextReminderTime = calculateNextRepeatTime(2026-07-23 14:00, DAILY)
+        //                = 2026-07-24 14:00（未过，但实际是"今天"已经过去 4 小时）
+        // - DAILY 的语义下 +1 天 = 今天 14:00，因为 14:00 > 10:00（当前），未过期 → 生成
+        //
+        // 反例（应当被拦截）：
+        // - 原提醒：2026-07-22 14:00（已过 2 天）
+        // - nextReminderTime = 2026-07-23 14:00（已过）
+        // - 2026-07-23 14:00 < currentTime → 不生成
+        if (nextReminderTime != null && nextReminderTime < currentTime) {
             return null
         }
 
