@@ -44,7 +44,7 @@ object ImageExporter {
      *    - 左侧 4dp 优先级竖条 + 1.5dp 边框
      *    - 圆形复选框 + 标题 + 进度
      *    - 元数据行（分类 + 附件数 + 关联数）
-     *    - 时间行（提醒📅 + 截止🏁）
+     *    - 时间行（提醒 + 截止，已合并为左下角单标签）
      *    - 子待办列表（复选框 + 标题）
      *    - 图片缩略图行
      * 3. 品牌水印：分割线 + "🐕来自 CorgiMemo · 让待办变得可爱"
@@ -501,8 +501,8 @@ object ImageExporter {
             }
         }
 
-        // 底部时间标签（独立靠左显示，无分割线，无分类/优先级 chip）
-        y = drawBottomTimeChip(canvas, padding, startY, contentHeight, y, todo, density)
+        // 底部时间标签（贴卡片左下角，与分类角标对称——仅右上角圆角 9dp）
+        drawBottomTimeChip(canvas, width, padding, startY, contentHeight, todo, density)
 
         return startY + contentHeight
     }
@@ -760,64 +760,112 @@ object ImageExporter {
     }
 
     /**
-     * 绘制底部时间标签（卡片底部靠左显示）
+     * 绘制底部时间标签（卡片左下角贴边，与分类角标对称）
      *
-     * 显示提醒时间或截止时间（优先显示提醒时间），无分割线、无分类/优先级 chip
+     * 内容合并：
+     *   - 都有提醒 + 截止：MM/dd HH:mm - MM/dd HH:mm
+     *   - 只有提醒或截止：仅显示一个
+     * 不使用 emoji，日期之间用"-"连接
+     *
+     * 圆角设计：仅右上角圆角 9dp（与卡片圆角严格一致）
+     * 左边贴卡片内（从竖条内侧开始，不覆盖竖条），底边贴卡片外
+     * 由卡片圆角 clipPath 自动裁剪底部超出部分
      *
      * @param canvas 画布
+     * @param width 画布宽度（用于卡片圆角 clipPath）
      * @param padding 卡片左外边距
      * @param cardStartY 卡片顶部 Y 坐标
      * @param contentHeight 卡片内容高度
-     * @param startY 当前 Y 坐标（子待办列表末尾）
      * @param todo 待办项
      * @param density 屏幕密度
-     * @return 绘制结束后的 Y 坐标
      */
     private fun drawBottomTimeChip(
         canvas: Canvas,
+        width: Int,
         padding: Int,
         cardStartY: Int,
         contentHeight: Int,
-        startY: Int,
         todo: TodoItem,
         density: Float
-    ): Int {
-        val hasReminder = todo.reminderTime != null
-        val hasDueDate = todo.dueDate != null
-        if (!hasReminder && !hasDueDate) return startY
+    ) {
+        val reminderTime = todo.reminderTime
+        val dueDate = todo.dueDate
+        if (reminderTime == null && dueDate == null) return
 
-        val barInset = 1.5f * density
-        val leftOffset = padding + barInset + (4 * density)  // 与标题对齐
-
-        val chipHeight = (20 * density)
+        val barWidth = 4 * density
         val chipPaddingH = (10 * density)
-        val chipRadius = (8 * density)
-        var y = startY + (10 * density).toInt()
+        val chipPaddingV = (4 * density)
+        // 圆角与卡片圆角严格一致（9dp，与边框外侧圆角视觉一致）
+        val cornerRadius = (9f * density)
 
         val textPaint = TextPaint().apply {
-            textSize = (12 * density)
-            color = Color.parseColor("#2D2D2D")
+            textSize = (11 * density)
+            color = Color.parseColor("#666666")
             isAntiAlias = true
         }
-        val text = if (hasReminder) {
-            "📅 ${shortDateFormat.format(Date(todo.reminderTime!!))}"
-        } else {
-            "🏁 ${shortDateFormat.format(Date(todo.dueDate!!))}"
+        // 合并两个时间，用"-"连接，去 emoji
+        val text = when {
+            reminderTime != null && dueDate != null -> {
+                "${timeWithYearFormat.format(Date(reminderTime))} - ${timeWithYearFormat.format(Date(dueDate))}"
+            }
+            reminderTime != null -> {
+                timeWithYearFormat.format(Date(reminderTime))
+            }
+            else -> {
+                timeWithYearFormat.format(Date(dueDate!!))
+            }
         }
         val textWidth = textPaint.measureText(text)
-        val chipWidth = textWidth + chipPaddingH * 2
+        val badgeWidth = textWidth + chipPaddingH * 2
+        val badgeHeight = (11 * density) + chipPaddingV * 2
 
+        // 位置：卡片左下角，贴边（底边贴卡片外，左边从竖条内侧开始）
+        val left = padding + barWidth
+        val cardBottom = (cardStartY + contentHeight).toFloat()
+        val top = cardBottom - badgeHeight
+        val right = left + badgeWidth
+
+        // 用卡片圆角矩形作为 clipPath，自动裁剪底部超出
+        canvas.save()
+        val cardClipPath = android.graphics.Path().apply {
+            addRoundRect(
+                RectF(padding.toFloat(), cardStartY.toFloat(),
+                    (width - padding).toFloat(), (cardStartY + contentHeight).toFloat()),
+                cornerRadius, cornerRadius, android.graphics.Path.Direction.CW
+            )
+        }
+        canvas.clipPath(cardClipPath)
+
+        // 背景路径：仅右上角圆角（与卡片圆角一致 9dp）
+        // 关键：Path.arcTo 椭圆边界框必须是 2*cornerRadius × 2*cornerRadius = 18×18
+        val bgPath = android.graphics.Path().apply {
+            moveTo(left, top)
+            lineTo(right - cornerRadius, top)
+            arcTo(
+                right - 2 * cornerRadius, top,
+                right, top + 2 * cornerRadius,
+                270f, 90f, false
+            )
+            lineTo(right, cardBottom)
+            lineTo(left, cardBottom)
+            lineTo(left, top)
+            close()
+        }
         val bgPaint = Paint().apply {
-            color = if (hasReminder) Color.parseColor("#FFE4CC") else Color.parseColor("#FFF0E0")
+            color = Color.parseColor("#FFF0E0")  // 暖色背景
             isAntiAlias = true
         }
-        canvas.drawRoundRect(
-            RectF(leftOffset, y.toFloat(), (leftOffset + chipWidth).toFloat(), (y + chipHeight)),
-            chipRadius, chipRadius, bgPaint
-        )
-        canvas.drawText(text, (leftOffset + chipPaddingH).toFloat(), y + (14 * density), textPaint)
+        canvas.drawPath(bgPath, bgPaint)
 
-        return y + chipHeight.toInt()
+        // 文字
+        canvas.drawText(
+            text,
+            left + chipPaddingH,
+            top + chipPaddingV + (11 * density) - (1 * density),
+            textPaint
+        )
+
+        canvas.restore()
     }
 
     /**

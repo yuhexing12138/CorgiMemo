@@ -231,16 +231,23 @@
   .priority-badge.none-p { background: rgba(200, 230, 201, 0.15); color: #2E7D32; }
   .priority-badge.none-p .dot { background: #2E7D32; }
 
-  /* 底部时间标签 —— 卡片底部靠左显示（独立于元数据区） */
+  /* 底部时间标签 —— 卡片左下角贴边（与分类角标对称，仅右上角圆角 9dp） */
   .bottom-time {
-    margin-top: 10px;
-    font-size: 12px;
+    position: absolute;
+    bottom: 0;
+    left: var(--bar-width);  /* 从竖条内侧开始，不覆盖竖条 */
+    z-index: 3;
+    font-size: 11px;
     padding: 4px 10px;
-    border-radius: var(--chip-radius);
-    background: var(--primary-light);
-    color: var(--text-main);
+    border-top-left-radius: 0;
+    border-top-right-radius: var(--card-radius);  /* 仅右上角 9dp */
+    border-bottom-right-radius: 0;
+    border-bottom-left-radius: 0;
+    background: #FFF0E0;
+    color: var(--text-secondary);
     display: inline-block;
     white-space: nowrap;
+    letter-spacing: 0.3px;
   }
   .bottom-time.due { background: #FFF0E0; }
 
@@ -562,8 +569,8 @@
 <body>
 
 <div class="page-header">
-  <h1>待办分享图片原型 <span style="color:#FF9A5C;">v5.5</span> · 圆角统一 9dp（边框外侧=背景=角标）</h1>
-  <p>CorgiMemo · ImageExporter 重设计迭代 · 边框外侧=背景=角标圆角一致（9dp）</p>
+  <h1>待办分享图片原型 <span style="color:#FF9A5C;">v5.6</span> · 时间标签左下角贴边 + 合并提醒/截止</h1>
+  <p>CorgiMemo · ImageExporter 重设计迭代 · 时间标签作为左下角角标（与分类角标对称），合并提醒/截止时间用"-"连接，去 emoji</p>
   <p style="color:#C62828;font-weight:600;margin-top:8px;">⚠️ 请按 Ctrl+F5 强制刷新（清除浏览器缓存）</p>
 </div>
 
@@ -665,8 +672,8 @@
           </div>
         </div>
 
-        <!-- 底部时间标签（独立靠左显示，优先级角标已移至卡片右上角） -->
-        <div class="bottom-time due" id="bottom-time">📅 08/01 15:00</div>
+        <!-- 底部时间标签（贴卡片左下角，与分类角标对称；提醒-截止合并，去 emoji） -->
+        <div class="bottom-time due" id="bottom-time">2026/07/25 10:00 - 2026/08/01 15:00</div>
       </div>
     </div>
 
@@ -679,7 +686,7 @@
 
   <!-- ============ 说明面板 ============ -->
   <div class="info-panel">
-    <h2>v5 新增：优先级角标 + 时间标签位置调整</h2>
+    <h2>v5.6 时间标签：合并 + 左下角角标化 + 去 emoji</h2>
 
     <table class="change-table">
       <tr>
@@ -687,20 +694,28 @@
         <th>说明</th>
       </tr>
       <tr>
-        <td><span class="badge badge-new">新增</span> 优先级角标</td>
-        <td>从末尾元数据区移至<b>卡片右上角</b>，与分类角标左右对称：右侧两条边贴边（右上、右下 0），仅左下角 16dp 圆角。背景色随优先级变化（高=粉/中=橙/低=蓝/无=绿），6dp 色点 + 完整文字</td>
+        <td><span class="badge badge-new">合并</span> 提醒/截止时间</td>
+        <td>两个时间合并为一个标签，<b>日期之间用"-"连接</b>：<code>MM/dd HH:mm - MM/dd HH:mm</code>。仅有一个时只显示一个</td>
       </tr>
       <tr>
-        <td><span class="badge badge-fix">调整</span> 时间标签</td>
-        <td>从末尾元数据区独立，移至<b>卡片底部靠左</b>显示，使用浅色背景 + 圆角胶囊样式</td>
+        <td><span class="badge badge-fix">调整</span> 位置</td>
+        <td>从底部靠左移至<b>卡片左下角贴边</b>（与分类角标左右对称），由卡片 <code>overflow:hidden</code> + 圆角自动裁剪底部超出</td>
       </tr>
       <tr>
-        <td><span class="badge badge-fix">移除</span> 末尾元数据区</td>
-        <td>移除 <code>.footer-meta</code> 整块，分类/优先级/时间分散到顶部两角 + 底部</td>
+        <td><span class="badge badge-fix">调整</span> 圆角</td>
+        <td>从 <code>8px 全部圆角</code> 改为<b>仅右上角 9dp</b>（与卡片圆角严格一致），左/下两边贴边</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-fix">移除</span> Emoji</td>
+        <td>移除 📅 / ⏰ / 🏁 图标，仅保留纯文本时间</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-fix">保留</span> 优先级角标</td>
+        <td>保留卡片右上角贴边，仅左下角 9dp 圆角</td>
       </tr>
       <tr>
         <td><span class="badge badge-fix">保留</span> 分类角标</td>
-        <td>保留卡片左上角，三边贴边 + 仅右下角 16dp 圆角</td>
+        <td>保留卡片左上角贴边，仅右下角 9dp 圆角</td>
       </tr>
     </table>
 
@@ -709,18 +724,27 @@
       <li><b>品牌顶部条</b>：🐕 logo + "刻记+" + "柯基备忘录" + 日期胶囊</li>
       <li><b>主待办卡片</b>：
         <ul style="margin-top:4px;">
-          <li><b>分类角标</b>（卡片左上角贴边，仅右下圆角 16dp）</li>
-          <li><b>优先级角标</b>（卡片右上角贴边，仅左下圆角 16dp，与分类对称）</li>
+          <li><b>分类角标</b>（卡片左上角贴边，仅右下圆角 9dp）</li>
+          <li><b>优先级角标</b>（卡片右上角贴边，仅左下圆角 9dp）</li>
+          <li><b>时间标签</b>（卡片左下角贴边，仅右上圆角 9dp，与分类对称）</li>
           <li>左侧 4dp 优先级竖条（充满卡片高度，clipPath 自动裁剪）</li>
           <li>1.5dp 优先级边框</li>
           <li>圆形复选框 + 标题 + 进度</li>
           <li>主待办图片（行内联）</li>
           <li>子待办列表（唯一内容区）</li>
-          <li><b>底部时间标签</b>（靠左显示）</li>
         </ul>
       </li>
       <li><b>品牌水印</b>：分割线 + "🐕来自 CorgiMemo · 让待办变得可爱"</li>
     </ul>
+
+    <h3>设计要点</h3>
+    <p>
+      三个角标（左上分类 + 右上优先级 + 左下时间）形成"三角对称"布局：
+      <b>分类角标</b>三边贴边 + 仅右下圆角；
+      <b>优先级角标</b>右/上/下三边贴边 + 仅左下圆角；
+      <b>时间标签</b>左/下两边贴边 + 仅右上圆角；
+      三个角标的圆角与卡片圆角均严格一致（9dp）。
+    </p>
 
     <h3>交互演示</h3>
     <p>
@@ -841,7 +865,7 @@
         mainProgress.style.display = '';
         updateCategoryBadge('工作');
         syncPriorityBadge();
-        updateBottomTime('📅 08/01 15:00', 'due');
+        updateBottomTime('2026/07/25 10:00 - 2026/08/01 15:00', 'due');
         resetSubtasks();
       } else if (state === 'no-subtasks') {
         subtaskList.style.display = 'none';
@@ -853,7 +877,7 @@
         mainProgress.style.display = 'none';
         updateCategoryBadge('生活');
         syncPriorityBadge();
-        updateBottomTime('⏰ 08/05 10:00', 'reminder');
+        updateBottomTime('2026/08/05 10:00', 'reminder');
       } else if (state === 'completed') {
         subtaskList.style.display = 'block';
         imageRow.style.display = 'flex';
@@ -865,7 +889,7 @@
         mainProgress.style.display = '';
         updateCategoryBadge('工作');
         syncPriorityBadge();
-        updateBottomTime('📅 08/01 15:00', 'due');
+        updateBottomTime('2026/08/01 15:00', 'due');
         // 所有子待办标记完成
         const checks = document.querySelectorAll('.subtask-checkbox');
         const titles = document.querySelectorAll('.subtask-title');
@@ -882,7 +906,7 @@
         mainProgress.style.display = '';
         updateCategoryBadge('工作');
         syncPriorityBadge();
-        updateBottomTime('🏁 08/15 23:59', 'due');
+        updateBottomTime('2026/08/15 23:59', 'due');
         const checks = document.querySelectorAll('.subtask-checkbox');
         const titles = document.querySelectorAll('.subtask-title');
         checks.forEach(c => c.className = 'subtask-checkbox');
