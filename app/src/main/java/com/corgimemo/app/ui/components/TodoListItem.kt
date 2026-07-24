@@ -1263,6 +1263,10 @@ private fun CategoryBadge(
         Text(
             text = categoryName,
             fontSize = 11.sp,
+            // v2026-07-24 调整：显式设置 lineHeight = 11.sp，使角标总高度 = 11 + 8 = 19dp
+            // 与待办分享图分类角标严格一致（分享图用 Canvas drawText，lineHeight ≈ fontSize）
+            // 否则 Material 3 默认 lineHeight = fontSize × 1.5 = 16.5dp，总高度 ≈ 24.5dp
+            lineHeight = 11.sp,
             color = textColor,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
             maxLines = 1,
