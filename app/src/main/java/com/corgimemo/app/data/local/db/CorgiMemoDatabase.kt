@@ -1575,10 +1575,12 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
 
                 // Step 5: 从 sub_tasks.imagePaths 迁移图片（subTaskId=子任务ID, lineIndex=子任务行号）
                 // lineIndex 用子任务的 order 字段近似（order 从 1 开始，lineIndex 从 0 开始，所以减 1）
+                // ⚠️ "order" 是 SQL 保留关键字（ORDER BY），必须用反引号转义：`order`
+                // 修复 v2026-07-25 启动闪退：未转义导致 SQLiteException: near "order": syntax error
                 database.execSQL(
                     """
                     INSERT INTO content_blocks_new (todoId, type, filePath, orderIndex, subTaskId, lineIndex)
-                    SELECT s.todoId, 'image', je.value, 0, s.id, MAX(0, s.order - 1)
+                    SELECT s.todoId, 'image', je.value, 0, s.id, MAX(0, s.`order` - 1)
                     FROM sub_tasks s, json_each(s.imagePaths) je
                     WHERE s.imagePaths IS NOT NULL
                       AND s.imagePaths != ''
@@ -1589,10 +1591,11 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 )
 
                 // Step 6: 从 sub_tasks.voicePaths 迁移语音
+                // ⚠️ 同样需要转义 `order` 关键字
                 database.execSQL(
                     """
                     INSERT INTO content_blocks_new (todoId, type, filePath, orderIndex, subTaskId, lineIndex)
-                    SELECT s.todoId, 'voice', je.value, 0, s.id, MAX(0, s.order - 1)
+                    SELECT s.todoId, 'voice', je.value, 0, s.id, MAX(0, s.`order` - 1)
                     FROM sub_tasks s, json_each(s.voicePaths) je
                     WHERE s.voicePaths IS NOT NULL
                       AND s.voicePaths != ''
