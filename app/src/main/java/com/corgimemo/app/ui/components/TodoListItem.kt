@@ -1556,7 +1556,8 @@ private fun RelationBadge(
  *
  * @param text 格式化后的提醒时间文字（如 "7月15日 20:00"、"明天09:00"）
  * @param color 文字和图标颜色（过期为红色，已完成为灰色，普通为 onSurfaceVariant）
- * @param isOverdue 是否已过期（true 时使用 SemiBold 字重增强视觉权重）
+ * @param isOverdue 是否已过期（v2026-07-25 用户反馈：过期不粗体，仅靠红色表达视觉权重）
+ *                   旧版用 FontWeight.SemiBold 增强视觉权重；新版统一为 FontWeight.Normal
  * @param repeatType 重复类型（0=不重复，1=每天，2=每周，3=每月，4=周一至周五，5=每年，6=周六至周日）
  *                   不为 0 时在提醒时间后追加显示「，🔁 循环类型」信息
  */
@@ -1568,6 +1569,9 @@ private fun ReminderInfoRow(
     repeatType: Int = 0
 ) {
     // ===== 闹钟图标 + 提醒时间文本 =====
+    // v2026-07-25 用户反馈：已过期不粗体
+    // 旧版: isOverdue=true 时用 FontWeight.SemiBold 增强视觉权重
+    // 新版: 统一用 FontWeight.Normal，仅靠红色（color）区分视觉权重
     Icon(
         imageVector = Icons.Default.Alarm,
         contentDescription = if (isOverdue) "已过期提醒" else "提醒",
@@ -1579,10 +1583,7 @@ private fun ReminderInfoRow(
         text = text,
         fontSize = 12.sp,
         color = color,
-        fontWeight = if (isOverdue)
-            androidx.compose.ui.text.font.FontWeight.SemiBold
-        else
-            androidx.compose.ui.text.font.FontWeight.Normal
+        fontWeight = androidx.compose.ui.text.font.FontWeight.Normal
     )
 
     // ===== 循环信息（v2026-07-24 新增）=====
