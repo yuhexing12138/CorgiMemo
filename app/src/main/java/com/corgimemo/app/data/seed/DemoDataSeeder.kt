@@ -317,8 +317,9 @@ class DemoDataSeeder @Inject constructor(
      * ## 处理逻辑
      *
      * 1. 遍历 TodoItem（T1-T7），把图片和语音写入 `content_blocks` 表
-     * 2. 遍历 Inspiration（I1-I7），把图片写入 `content_blocks` 表
-     * 3. 语音时长从硬编码映射获取（与 TodoSeedData 保持一致）
+     * 2. 遍历 SubTask（T1-S1 ... T7-S1），把子任务图片写入 `content_blocks` 表（v2026-07-25 新增）
+     * 3. 遍历 Inspiration（I1-I7），把图片写入 `content_blocks` 表
+     * 4. 语音时长从硬编码映射获取（与 TodoSeedData 保持一致）
      *
      * ## 注意
      *
@@ -327,7 +328,7 @@ class DemoDataSeeder @Inject constructor(
      *
      * @param todoIds TodoItem ID 映射（T1-T7 → todoId）
      * @param inspirationIds Inspiration ID 映射（I1-I7 → inspirationId）
-     * @param imagePaths 图片路径映射（数据编号 → 路径列表）
+     * @param imagePaths 图片路径映射（数据编号 → 路径列表，包含 "T1-S1" 形式的子任务 key）
      * @param voicePaths 语音路径映射（数据编号 → 路径）
      */
     private suspend fun syncSeedAttachmentsToContentBlocks(
@@ -337,6 +338,7 @@ class DemoDataSeeder @Inject constructor(
         voicePaths: Map<String, String>
     ) {
         val contentBlockDao = database.contentBlockDao()
+        val subTaskDao = database.subTaskDao()
 
         // 种子数据的语音时长（硬编码，与 TodoSeedData 中的 voiceDuration 保持一致）
         // T1=8s, T2=28s, T3=65s, T4=5s, T5=32s, T6=70s, T7 无语音
@@ -391,7 +393,36 @@ class DemoDataSeeder @Inject constructor(
             }
         }
 
-        // 2. 同步 Inspiration 附件（仅图片，灵感种子数据无语音）
+        // 2. 同步 SubTask 附件（仅图片）（v2026-07-25 新增）
+        // 查询每个 Todo 下的所有子任务，按顺序匹配 imagePaths 中的 "T1-S1"、"T1-S2" 等 key
+        todoIds.forEach { (todoKey, todoId) ->
+            val subTasks = subTaskDao.getSubTasksByTodoId(todoId)
+            subTasks.forEachIndexed { index, subTask ->
+                val subTaskKey = "${todoKey}-S${index + 1}"  // S1, S2, ...
+                val images = imagePaths[subTaskKey] ?: emptyList()
+                if (images.isEmpty()) return@forEachIndexed
+
+                val entities = mutableListOf<ContentBlockEntity>()
+                images.forEachIndexed { imgIdx, path ->
+                    entities.add(
+                        ContentBlockEntity(
+                            todoId = todoId,
+                            type = "image",
+                            filePath = path,
+                            orderIndex = imgIdx,
+                            subTaskId = subTask.id,  // 关联子任务 ID
+                            lineIndex = index + 1  // lineIndex 从 1 开始（0 = 父行）
+                        )
+                    )
+                }
+                if (entities.isNotEmpty()) {
+                    contentBlockDao.insertBlocks(entities)
+                    totalSynced += entities.size
+                }
+            }
+        }
+
+        // 3. 同步 Inspiration 附件（仅图片，灵感种子数据无语音）
         inspirationIds.forEach { (inspirationKey, inspirationId) ->
             val images = imagePaths[inspirationKey] ?: emptyList()
 

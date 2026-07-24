@@ -198,7 +198,7 @@ class TodoSeedData(
         todoIds["T7"] = todoDao.insert(t7)
 
         // ========== 注入子任务 ==========
-        seedSubTasks(todoIds)
+        seedSubTasks(todoIds, imagePaths)
 
         Log.d(tag, "✅ 步骤 3/7 待办注入完成（7 条 + 子任务）")
         return todoIds
@@ -206,79 +206,92 @@ class TodoSeedData(
 
     /**
      * 注入子任务
+     *
+     * v2026-07-25 新增 imagePaths 参数：为部分子任务注入图片附件（每行 ≤ 3 张）
+     * 图片路径通过 key "T{父编号}-S{子任务序号}" 从 imagePaths 映射获取
+     * 同时写入 SubTask.imagePaths 字段（旧字段，向后兼容）和 content_blocks 表（由 DemoDataSeeder 同步）
+     *
+     * @param todoIds 父待办 ID 映射
+     * @param imagePaths 图片路径映射（包含 "T1-S1" 形式的子任务 key）
      */
-    private suspend fun seedSubTasks(todoIds: Map<String, Long>) {
+    private suspend fun seedSubTasks(
+        todoIds: Map<String, Long>,
+        imagePaths: Map<String, List<String>>
+    ) {
         val now = System.currentTimeMillis()
 
-        // T1 的 5 个子任务
-        val t1Id = todoIds["T1"]!!
-        listOf(
-            "整理 Session ID 列表" to 0,
-            "撰写产品概述" to 1,
-            "补充主要功能" to 2,
-            "完善创作思路" to 3,
-            "校验经验总结" to 4
-        ).forEach { (title, order) ->
-            subTaskDao.insert(SubTask(todoId = t1Id, title = title, order = order, createdAt = now))
+        /**
+         * 子任务定义：title / order / subTaskKey
+         * subTaskKey 非空时从 imagePaths 取图片（如 "T1-S1"）
+         * isCompleted 控制是否标记为已完成
+         */
+        data class SubTaskDef(
+            val title: String,
+            val order: Int,
+            val subTaskKey: String? = null,
+            val isCompleted: Boolean = false
+        )
+
+        /** 插入子任务列表的通用方法 */
+        suspend fun insertList(todoId: Long, defs: List<SubTaskDef>) {
+            defs.forEach { def ->
+                val imgPaths = def.subTaskKey?.let { imagePaths[it] ?: emptyList() } ?: emptyList()
+                subTaskDao.insert(SubTask(
+                    todoId = todoId,
+                    title = def.title,
+                    order = def.order,
+                    isCompleted = def.isCompleted,
+                    createdAt = now,
+                    completedAt = if (def.isCompleted) now else null,
+                    imagePaths = toJsonArray(imgPaths)
+                ))
+            }
         }
 
-        // T2 的 3 个子任务
-        val t2Id = todoIds["T2"]!!
-        listOf(
-            "定义 Entity 字段" to 0,
-            "编写 DAO 接口" to 1,
-            "设计 Migration 路径" to 2
-        ).forEach { (title, order) ->
-            subTaskDao.insert(SubTask(todoId = t2Id, title = title, order = order, createdAt = now))
-        }
+        // T1 的 5 个子任务（S1=2张, S2=1张）
+        insertList(todoIds["T1"]!!, listOf(
+            SubTaskDef("整理 Session ID 列表", 0, "T1-S1"),
+            SubTaskDef("撰写产品概述", 1, "T1-S2"),
+            SubTaskDef("补充主要功能", 2),
+            SubTaskDef("完善创作思路", 3),
+            SubTaskDef("校验经验总结", 4)
+        ))
 
-        // T3 的 4 个子任务
-        val t3Id = todoIds["T3"]!!
-        listOf(
-            "分析触摸事件逻辑" to 0,
-            "重写手势处理" to 1,
-            "调整动画参数" to 2,
-            "验证边界约束" to 3
-        ).forEach { (title, order) ->
-            subTaskDao.insert(SubTask(
-                todoId = t3Id,
-                title = title,
-                isCompleted = true,
-                createdAt = now,
-                completedAt = now,
-                order = order
-            ))
-        }
+        // T2 的 3 个子任务（S1=1张, S2=2张）
+        insertList(todoIds["T2"]!!, listOf(
+            SubTaskDef("定义 Entity 字段", 0, "T2-S1"),
+            SubTaskDef("编写 DAO 接口", 1, "T2-S2"),
+            SubTaskDef("设计 Migration 路径", 2)
+        ))
 
-        // T5 的 2 个子任务
-        val t5Id = todoIds["T5"]!!
-        listOf(
-            "调研 Compose 富文本方案" to 0,
-            "实现 Markdown 解析器" to 1
-        ).forEach { (title, order) ->
-            subTaskDao.insert(SubTask(todoId = t5Id, title = title, order = order, createdAt = now))
-        }
+        // T3 的 4 个子任务（S1=1张, S2=2张；全部已完成）
+        insertList(todoIds["T3"]!!, listOf(
+            SubTaskDef("分析触摸事件逻辑", 0, "T3-S1", isCompleted = true),
+            SubTaskDef("重写手势处理", 1, "T3-S2", isCompleted = true),
+            SubTaskDef("调整动画参数", 2, isCompleted = true),
+            SubTaskDef("验证边界约束", 3, isCompleted = true)
+        ))
 
-        // T6 的 5 个子任务
-        val t6Id = todoIds["T6"]!!
-        listOf(
-            "设计分层 Seeder 架构" to 0,
-            "实现资源管理器" to 1,
-            "编写待办种子数据" to 2,
-            "编写灵感种子数据" to 3,
-            "编写日期种子数据" to 4
-        ).forEach { (title, order) ->
-            subTaskDao.insert(SubTask(todoId = t6Id, title = title, order = order, createdAt = now))
-        }
+        // T5 的 2 个子任务（S1=1张）
+        insertList(todoIds["T5"]!!, listOf(
+            SubTaskDef("调研 Compose 富文本方案", 0, "T5-S1"),
+            SubTaskDef("实现 Markdown 解析器", 1)
+        ))
 
-        // T7 的 2 个子任务
-        val t7Id = todoIds["T7"]!!
-        listOf(
-            "检查格式与排版一致性" to 0,
-            "替换演示截图与校验链接" to 1
-        ).forEach { (title, order) ->
-            subTaskDao.insert(SubTask(todoId = t7Id, title = title, order = order, createdAt = now))
-        }
+        // T6 的 5 个子任务（S1=2张, S2=1张）
+        insertList(todoIds["T6"]!!, listOf(
+            SubTaskDef("设计分层 Seeder 架构", 0, "T6-S1"),
+            SubTaskDef("实现资源管理器", 1, "T6-S2"),
+            SubTaskDef("编写待办种子数据", 2),
+            SubTaskDef("编写灵感种子数据", 3),
+            SubTaskDef("编写日期种子数据", 4)
+        ))
+
+        // T7 的 2 个子任务（S1=3张）
+        insertList(todoIds["T7"]!!, listOf(
+            SubTaskDef("检查格式与排版一致性", 0, "T7-S1"),
+            SubTaskDef("替换演示截图与校验链接", 1)
+        ))
     }
 
     /**

@@ -97,9 +97,21 @@ class DemoResourceManager(private val context: Context) {
 
     // ========== 图片资源 ID 映射 ==========
 
-    /** 待办图片资源映射（文件名 → drawableId） */
+    /** 待办图片资源映射（文件名 → drawableId）
+     *
+     * v2026-07-25 调整：每个父待办行图片数 ≤ 3（与 TodoEditViewModel.MAX_IMAGES_PER_LINE 一致）
+     * - T1: 3 张（原 1 张 → 增至 3 张）
+     * - T2: 2 张（保持）
+     * - T3: 3 张（保持）
+     * - T4: 1 张（保持）
+     * - T5: 2 张（保持）
+     * - T6: 3 张（保持）
+     * - T7: 0 张（保持，无图片）
+     */
     val todoImageMap: Map<String, Int> = mapOf(
         "demo_todo_t1_1.png" to R.drawable.corgi_proud_2frames_01,
+        "demo_todo_t1_2.png" to R.drawable.corgi_proud_2frames_02,
+        "demo_todo_t1_3.png" to R.drawable.corgi_tilt_2frames_01,
         "demo_todo_t2_1.png" to R.drawable.corgi_run_4frames_01,
         "demo_todo_t2_2.png" to R.drawable.corgi_run_4frames_02,
         "demo_todo_t3_1.png" to R.drawable.corgi_lie_3frames_01,
@@ -111,6 +123,45 @@ class DemoResourceManager(private val context: Context) {
         "demo_todo_t6_1.png" to R.drawable.corgi_lie_3frames_01,
         "demo_todo_t6_2.png" to R.drawable.corgi_lie_3frames_02,
         "demo_todo_t6_3.png" to R.drawable.corgi_proud_2frames_01
+    )
+
+    /** 子任务图片资源映射（文件名 → drawableId）
+     *
+     * v2026-07-25 新增：为子任务行注入图片附件（每行 ≤ 3 张）
+     * 命名规则：demo_subtask_{父待办编号}_{子任务序号}_{图片序号}.png
+     * 例：demo_subtask_t1_s1_1.png = T1 的第 1 个子任务的第 1 张图片
+     *
+     * 分配方案：
+     * - T1-S1: 2 张, T1-S2: 1 张
+     * - T2-S1: 1 张, T2-S2: 2 张
+     * - T3-S1: 1 张, T3-S2: 2 张
+     * - T5-S1: 1 张
+     * - T6-S1: 2 张, T6-S2: 1 张
+     * - T7-S1: 3 张
+     */
+    val subTaskImageMap: Map<String, Int> = mapOf(
+        // T1 子任务
+        "demo_subtask_t1_s1_1.png" to R.drawable.corgi_wag_4frames_01,
+        "demo_subtask_t1_s1_2.png" to R.drawable.corgi_wag_4frames_02,
+        "demo_subtask_t1_s2_1.png" to R.drawable.corgi_wink_2frames_01,
+        // T2 子任务
+        "demo_subtask_t2_s1_1.png" to R.drawable.corgi_shy_2frames_01,
+        "demo_subtask_t2_s2_1.png" to R.drawable.corgi_shy_2frames_02,
+        "demo_subtask_t2_s2_2.png" to R.drawable.corgi_tilt_2frames_02,
+        // T3 子任务
+        "demo_subtask_t3_s1_1.png" to R.drawable.corgi_wink_2frames_02,
+        "demo_subtask_t3_s2_1.png" to R.drawable.corgi_wag_4frames_03,
+        "demo_subtask_t3_s2_2.png" to R.drawable.corgi_wag_4frames_04,
+        // T5 子任务
+        "demo_subtask_t5_s1_1.png" to R.drawable.corgi_sleep_2frames_01,
+        // T6 子任务
+        "demo_subtask_t6_s1_1.png" to R.drawable.corgi_sit_2frames_01,
+        "demo_subtask_t6_s1_2.png" to R.drawable.corgi_sit_2frames_02,
+        "demo_subtask_t6_s2_1.png" to R.drawable.corgi_stand_2frames_01,
+        // T7 子任务
+        "demo_subtask_t7_s1_1.png" to R.drawable.corgi_stand_2frames_02,
+        "demo_subtask_t7_s1_2.png" to R.drawable.corgi_sleep_2frames_02,
+        "demo_subtask_t7_s1_3.png" to R.drawable.corgi_tilt_2frames_01
     )
 
     /** 灵感图片资源映射（文件名 → drawableId） */
@@ -153,7 +204,10 @@ class DemoResourceManager(private val context: Context) {
     /**
      * 准备所有图片资源，返回按数据编号分组的路径映射
      *
-     * @return Map<String, List<String>> key=数据编号(如"T1"), value=图片路径列表
+     * v2026-07-25 新增子任务图片资源处理：将子任务图片复制到内部存储，
+     * 并以 "T1-S1" 形式的 key 加入返回映射，供 DemoDataSeeder 同步到 content_blocks 表。
+     *
+     * @return Map<String, List<String>> key=数据编号(如"T1"或"T1-S1"), value=图片路径列表
      */
     fun prepareAllImages(): Map<String, List<String>> {
         val result = mutableMapOf<String, List<String>>()
@@ -162,6 +216,20 @@ class DemoResourceManager(private val context: Context) {
         val todoGroups = todoImageMap.entries.groupBy { it.key.substringAfter("demo_todo_").substringBefore("_") }
         todoGroups.forEach { (todoKey, entries) ->
             result[todoKey.uppercase()] = entries.map { (fileName, drawableId) ->
+                copyDrawableToInternal(drawableId, fileName)
+            }
+        }
+
+        // 子任务图片（v2026-07-25 新增）
+        // 文件名格式：demo_subtask_t1_s1_1.png → key = "T1-S1"
+        val subTaskGroups = subTaskImageMap.entries.groupBy { entry ->
+            // 提取 "t1_s1" 部分，然后转成 "T1-S1"
+            val tPart = entry.key.substringAfter("demo_subtask_").substringBefore("_s")  // "t1"
+            val sPart = entry.key.substringAfter("_s").substringBefore("_")  // "1"
+            "${tPart.uppercase()}-S$sPart"
+        }
+        subTaskGroups.forEach { (subTaskKey, entries) ->
+            result[subTaskKey] = entries.map { (fileName, drawableId) ->
                 copyDrawableToInternal(drawableId, fileName)
             }
         }

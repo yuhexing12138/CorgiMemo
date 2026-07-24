@@ -76,11 +76,12 @@ class CrossLineDragManager {
         private set
 
     /**
-     * 图片附件实际宽度（单位：dp）
+     * 图片附件实际边长（单位：dp）
      *
-     * 必须与 DraggableImageAttachment.attachmentWidth 保持一致（100dp）。
+     * v2026-07-25 改造：与 DraggableImageAttachment.attachmentSize 保持一致（80dp 方形）
+     * 原 100dp 是宽度（高度自适应），现 80dp 是方形边长。
      */
-    val ATTACHMENT_WIDTH_DP = 100f
+    val ATTACHMENT_WIDTH_DP = 80f
 
     /**
      * 图片之间的间距（单位：dp）

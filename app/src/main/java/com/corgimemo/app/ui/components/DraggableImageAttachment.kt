@@ -178,13 +178,18 @@ fun DraggableImageAttachment(
      */
 
     /**
-     * 图片附件显示宽度
+     * 图片附件显示尺寸（方形缩略图）
      *
-     * 此宽度同时作用于：
-     * 1. 外层 Box 容器
+     * v2026-07-25 改造：从原 100dp 宽 + 自适应高度（4:3）改为 80dp × 80dp 方形缩略图
+     * - 尺寸缩小：单行可容纳更多图片（与 MAX_IMAGES_PER_LINE = 3 配合）
+     * - 方形：视觉统一，避免不同比例图片导致高度参差不齐
+     * - ContentScale.Crop：填充整个容器，保留视觉焦点
+     *
+     * 此尺寸同时作用于：
+     * 1. 外层 Box 容器（size = attachmentSize × attachmentSize）
      * 2. 行内排序的边缘检测计算（CrossLineDragManager.ATTACHMENT_WIDTH_DP）
      */
-    val attachmentWidth = 100.dp
+    val attachmentSize = 80.dp
 
     /**
      * 优化3：长按检测阶段的缩放反馈
@@ -268,22 +273,19 @@ fun DraggableImageAttachment(
     Box(
         modifier = Modifier
             /**
-             * V2.8.4 改造：移除 .aspectRatio(imageAspectRatio)，
-             * 改用 .widthIn(max = attachmentWidth).wrapContentHeight() +
-             * ContentScale.Fit，让高度由 Coil 加载后的 drawable intrinsic 决定
+             * v2026-07-25 改造：从 widthIn + wrapContentHeight 改为固定方形尺寸
              *
-             * 之前的问题：
-             * - imageAspectRatio 默认 4/3，预读完成前容器被强制 4:3 渲染
-             * - 真实比例到达后容器跳变，对横向图片（16:9）尤为明显
+             * 原方案（V2.8.4）：宽度 100dp + 高度按图片宽高比自适应
+             * - 问题：不同比例图片高度参差不齐，视觉不齐
+             * - 加载时高度从 0 跳到真实值，有视觉跳变
              *
-             * 现在的行为：
-             * - 加载过程中宽度 = attachmentWidth，高度 = 0（wrapContentHeight 等待 drawable）
-             * - drawable 加载完成 → 高度 = (width / intrinsicWidth) × intrinsicHeight
-             * - ContentScale.Fit 保证 drawable 在容器内按比例缩放
+             * 新方案：80dp × 80dp 方形缩略图
+             * - 尺寸固定，无视觉跳变
+             * - ContentScale.Crop 填充整个容器，保留视觉焦点
+             * - 圆角 8dp（与卡片圆角风格一致）
              */
-            .widthIn(max = attachmentWidth)
-            .wrapContentHeight()
-            .clip(RoundedCornerShape(4.dp))
+            .size(attachmentSize)
+            .clip(RoundedCornerShape(8.dp))
             .onGloballyPositioned { coordinates ->
                 /** 记录组件尺寸 */
                 componentSize = coordinates.size
@@ -376,15 +378,18 @@ fun DraggableImageAttachment(
                 )
             }
     ) {
-        /** 图片：始终渲染（拖拽时半透明，正常时完整显示） */
+        /** 图片：始终渲染（拖拽时半透明，正常时完整显示）
+         * v2026-07-25 改造：Scale.FIT → Scale.FILL + ContentScale.Crop
+         * 配合方形容器实现方形缩略图效果（填充整个容器，裁剪超出部分）
+         */
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(imagePath)
                 .crossfade(true)
-                .scale(Scale.FIT)
+                .scale(Scale.FILL)
                 .build(),
             contentDescription = "图片附件",
-            contentScale = ContentScale.Fit,
+            contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxSize()
                 .then(if (!isDragging) Modifier.clickable { onClick(imagePath) } else Modifier)
@@ -473,11 +478,11 @@ fun DraggableImageAttachment(
                     )
                     .shadow(
                         elevation = 6.dp,
-                        shape = RoundedCornerShape(4.dp),
+                        shape = RoundedCornerShape(8.dp),
                         ambientColor = Color.Black.copy(alpha = 0.15f),
                         spotColor = Color.Black.copy(alpha = 0.08f)
                     )
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(RoundedCornerShape(8.dp))
                     .graphicsLayer {
                         scaleX = currentScale
                         scaleY = currentScale
@@ -485,13 +490,14 @@ fun DraggableImageAttachment(
                         alpha = popupAlpha
                     }
             ) {
+                // v2026-07-25 与主图保持一致：Scale.FILL + ContentScale.Crop
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(imagePath)
-                        .scale(Scale.FIT)
+                        .scale(Scale.FILL)
                         .build(),
                     contentDescription = "拖拽中的图片",
-                    contentScale = ContentScale.Fit,
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -561,40 +567,28 @@ private fun CursorIndicator(
  * 当图片被拖拽离开原位置时，
  * 在原位置显示此占位符以保持布局稳定。
  *
- * 尺寸与 DraggableImageAttachment 保持一致：
- * - 宽度固定 width（默认 100dp）
- * - 高度按图片宽高比自适应（V2.8.4：依赖 DraggableImageAttachment 内部 drawable 决定）
- *
- * **V2.8.4 改造**：移除 BitmapFactory 预读代码和 placeholderAspectRatio 状态
- * - 占位符期间不显示图片（图片在 Popup 浮层中），仅需稳定布局
- * - 改为固定尺寸（width × 100dp / ratio，但简化为 width × 100dp 与原默认 4:3 一致）
- * - 实际图片位置（DraggableImageAttachment）已改为 wrapContentHeight，由 drawable 决定真实比例
+ * v2026-07-25 改造：与 DraggableImageAttachment 保持一致的方形尺寸
+ * - 原方案：width × (width*3/4) 矩形（4:3 比例）
+ * - 新方案：size × size 方形（与主图 attachmentSize 一致）
  *
  * @param imagePath 图片路径（已不再使用，保留参数兼容旧调用）
- * @param width 占位符宽度（dp，默认 100）
+ * @param size 占位符边长（dp，默认 80，与 DraggableImageAttachment.attachmentSize 一致）
  */
 @Composable
 fun ImagePlaceholder(
     imagePath: String = "",
-    width: Int = 100
+    size: Int = 80
 ) {
     /**
-     * V2.8.4 改造：移除 BitmapFactory 预读和 placeholderAspectRatio
+     * v2026-07-25 改造：方形占位符
      *
-     * 原因：占位符期间图片不在原位置（已拖拽到 Popup 浮层），
-     * 无需保证占位符与图片尺寸严格一致（用户主要关注浮动的 Popup）。
-     * 简化为固定尺寸，避免 IO 预读的开销和默认 4:3 跳变问题。
-     *
-     * 高度计算：用与原默认 4:3 一致的 75dp（width=100 时），
-     * 保持与原占位符视觉相近，避免布局突变。
+     * 原方案：width × (width*3/4) 矩形
+     * 新方案：size × size 方形（与主图保持一致，避免拖拽时布局跳变）
      */
-    val placeholderHeight = (width * 3) / 4
-
     Box(
         modifier = Modifier
-            .width(width.dp)
-            .height(placeholderHeight.dp)
-            .clip(RoundedCornerShape(4.dp))
+            .size(size.dp)
+            .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFFF3F4F6).copy(alpha = 0.5f)),
         contentAlignment = Alignment.Center
     ) {
