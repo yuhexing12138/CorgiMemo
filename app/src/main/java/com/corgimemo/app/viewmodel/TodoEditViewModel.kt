@@ -1166,6 +1166,110 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
+     * 删除光标所在的分组容器（v2026-07-25 新增）
+     *
+     * 用户点击顶部删除按钮时，由 UI 层根据光标位置决定调用入口：
+     * - 光标在 groupId=0（主分组）→ 走原"删整个 todo"路径（不调用本方法）
+     * - 光标在 groupId>0（子分组）→ 调用本方法删除该分组容器
+     *
+     * 本方法的行为：
+     * 1. 根据 lineIndex 找到对应的 groupId
+     * 2. 如果该分组已保存（_groupSaveStates[groupId].savedTodoId != null），
+     *    异步从 DB 删除对应 todo（让首页列表自动刷新）
+     * 3. 从 _todoLines 移除该 groupId 的所有行，并重排 order 保持连续性
+     * 4. 清理该 groupId 在以下状态映射中的条目：
+     *    _groupSaveStates / _groupReminders / _groupRepeatTypes /
+     *    _groupCategoryIds / _groupPriorities / _groupRelations
+     * 5. 计算删除后的目标聚焦行索引（上一分组首行 index），
+     *    更新 _focusedLineIndex 并返回该值（让 UI 层触发 focusRequesters[it]?.requestFocus()）
+     *
+     * 边界处理：
+     * - lineIndex 越界 → 返回 -1（无操作）
+     * - 目标 groupId == 0（主分组）→ 返回 -1（UI 层应走"删整个 todo"路径，本方法拒绝处理）
+     * - 删除后列表为空 → 返回 -1（无需转移焦点，理论上不会发生，因为主分组必然保留）
+     *
+     * @param lineIndex 触发删除时的光标所在行索引
+     * @return 删除后应聚焦的行索引（-1 表示无需转移焦点）
+     */
+    fun deleteGroupByLineIndex(lineIndex: Int): Int {
+        val current = _todoLines.value
+        // 1. 越界保护
+        if (lineIndex !in current.indices) return -1
+
+        val targetGroupId = current[lineIndex].groupId
+
+        // 2. 主分组拒绝处理（UI 层应走"删整个 todo"路径）
+        if (targetGroupId == 0) return -1
+
+        // 3. 收集该分组涉及的所有行（用于推算删除后的新聚焦行索引）
+        val firstGroupLineIndex = current.indexOfFirst { it.groupId == targetGroupId }
+
+        // 4. 如果该分组已保存（有 savedTodoId），异步从 DB 删除 todo
+        //    注意：DB 删除与 UI 状态更新解耦，避免阻塞主线程
+        val savedTodoId = _groupSaveStates.value[targetGroupId]?.savedTodoId
+        if (savedTodoId != null) {
+            viewModelScope.launch {
+                try {
+                    todoRepository.deleteTodoById(savedTodoId)
+                    android.util.Log.i(
+                        "TodoEditVM",
+                        "分组 $targetGroupId 的已保存 todo ($savedTodoId) 已从 DB 删除"
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e(
+                        "TodoEditVM",
+                        "删除分组 $targetGroupId 已保存 todo 失败",
+                        e
+                    )
+                }
+            }
+        }
+
+        // 5. 从 _todoLines 移除该 groupId 的所有行，并重排 order
+        val newList = current.filterNot { it.groupId == targetGroupId }
+            .mapIndexed { idx, line -> line.copy(order = idx) }
+
+        // 6. 推快照 + 更新 _todoLines（setTodoLines 内部触发 syncStructuredStateFromTodoLines）
+        setTodoLines(newList)
+
+        // 7. 清理该 groupId 在所有状态映射中的条目
+        _groupSaveStates.value = _groupSaveStates.value - targetGroupId
+        _groupReminders.value = _groupReminders.value - targetGroupId
+        _groupRepeatTypes.value = _groupRepeatTypes.value - targetGroupId
+        _groupCategoryIds.value = _groupCategoryIds.value - targetGroupId
+        _groupPriorities.value = _groupPriorities.value - targetGroupId
+        _groupRelations.value = _groupRelations.value - targetGroupId
+
+        // 8. 计算新的聚焦行索引：删除前的"上一分组首行"对应删除后的新索引
+        //    - 上一分组首行 = 从 firstGroupLineIndex-1 往前找，第一个 groupId != targetGroupId 的行
+        //    - 因为该行位于删除区域之前，删除后其新索引 == 原索引
+        val newFocusedIndex = if (newList.isEmpty()) {
+            -1  // 列表已空（理论不会发生，主分组必然保留）
+        } else {
+            var prevIndex = -1
+            for (i in (firstGroupLineIndex - 1) downTo 0) {
+                if (current[i].groupId != targetGroupId) {
+                    prevIndex = i
+                    break
+                }
+            }
+            if (prevIndex == -1) {
+                // 没有上一分组：聚焦到 newList 的首行（即下一分组的首行）
+                0
+            } else {
+                prevIndex
+            }
+        }
+
+        // 9. 更新 _focusedLineIndex（让 UI 层通过 externalPendingFocus 触发 requestFocus）
+        if (newFocusedIndex >= 0) {
+            _focusedLineIndex.value = newFocusedIndex
+        }
+
+        return newFocusedIndex
+    }
+
+    /**
      * 合并指定行到下一行（v2026-07-22 新增）
      *
      * 长按 TodoLine 弹出"合并到下一行"菜单时调用。

@@ -71,6 +71,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.ui.layout.layout
@@ -278,6 +279,42 @@ fun TodoEditScreen(
      * - [DeleteDialogMode.Discard]：新建模式弹窗，确认后仅 popBackStack（无 DB 数据可删）
      */
     var deleteDialogMode by remember { mutableStateOf(DeleteDialogMode.Delete) }
+
+    /**
+     * 待删除分组的目标行索引（v2026-07-25 新增）
+     *
+     * 用于区分删除按钮点击后的两种执行路径：
+     * - **>= 0**：走"删当前容器"路径 → 调用 viewModel.deleteGroupByLineIndex(lineIndex)
+     *   只删除光标所在的子分组容器，保留其他分组。适用于多容器场景下光标在 groupId>0 时。
+     * - **-1**：走"删整个 todo"原路径 → 调用 homeViewModel.deleteTodo(todoId) + popBackStack
+     *   适用于光标在主分组（groupId=0）或仅剩主分组的场景。
+     *
+     * 工作流：
+     * 1. 点击顶部删除按钮 → 根据 focusedLineIndex 所在行的 groupId 决定本值
+     * 2. 设置 deleteDialogMode = Delete + showDeleteConfirm = true → 弹出 DeleteConfirmDialog
+     * 3. 用户确认后，DeleteConfirmDialog.onConfirm 检查本值决定走哪条路径
+     * 4. 执行完毕后重置为 -1
+     */
+    var pendingDeleteGroupLineIndex by remember { mutableIntStateOf(-1) }
+
+    /**
+     * 删除分组后的目标聚焦行索引（v2026-07-25 新增）
+     *
+     * 由 viewModel.deleteGroupByLineIndex() 返回值填充，
+     * 配合 [externalPendingFocusTrigger] 传给 CheckboxEditText 触发焦点转移到上一分组首行。
+     *
+     * - 默认 -1：无操作
+     * - 非负整数：触发 focusRequesters[it]?.requestFocus()
+     */
+    var externalPendingFocus by remember { mutableIntStateOf(-1) }
+
+    /**
+     * 焦点转移触发器（v2026-07-25 新增）
+     *
+     * 每次删除分组后递增本值，强制 CheckboxEditText 的 LaunchedEffect 触发，
+     * 避免连续两次返回相同行索引时不执行焦点转移。
+     */
+    var externalPendingFocusTrigger by remember { mutableIntStateOf(0) }
 
     /**
      * 返回时"未保存"确认弹窗状态（v2026-07-22 新增）
@@ -1090,14 +1127,37 @@ fun TodoEditScreen(
                 // - 旧实现：if (todoId != null && todoId > 0) 才执行，导致新建模式点击无任何反应
                 // - 新实现：去掉 if 条件，新建模式点击也开弹窗（走 Discard 模式）
                 //   让用户明确知道"放弃编辑 = 关闭页面且丢失草稿"
+                //
+                // 🆕 v2026-07-25 多容器光标感知改造：
+                // - 单容器场景（光标在 groupId=0）→ 维持原行为：删整个 todo
+                // - 多容器场景 + 光标在 groupId>0 → 走"删当前容器"路径：只删该子分组
+                //   保留其他分组，由 viewModel.deleteGroupByLineIndex 处理
+                //   路径选择通过 pendingDeleteGroupLineIndex 标记，DeleteConfirmDialog.onConfirm 据此分支
                 IconButton(
                     onClick = {
-                        // 根据当前是否有持久化的 todoId 决定弹窗模式
-                        val isEditMode = todoId != null && todoId > 0
-                        deleteDialogMode = if (isEditMode) {
-                            DeleteDialogMode.Delete
+                        // 根据光标所在行的 groupId 决定走哪条删除路径
+                        val currentLineIdx = focusedLineIndex
+                        val currentLine = todoLines.getOrNull(currentLineIdx)
+                        val currentGroupId = currentLine?.groupId ?: 0
+
+                        if (currentGroupId == 0) {
+                            // 主分组（groupId=0）：走原"删整个 todo"路径
+                            // - 编辑模式（todoId != null）→ Delete 模式（删 DB + popBackStack）
+                            // - 新建模式（todoId == null）→ Discard 模式（仅 popBackStack，无 DB 删除）
+                            val isEditMode = todoId != null && todoId > 0
+                            deleteDialogMode = if (isEditMode) {
+                                DeleteDialogMode.Delete
+                            } else {
+                                DeleteDialogMode.Discard
+                            }
+                            // 标记走原路径（-1 表示不走"删当前容器"分支）
+                            pendingDeleteGroupLineIndex = -1
                         } else {
-                            DeleteDialogMode.Discard
+                            // 子分组（groupId>0）：走"删当前容器"路径
+                            // - 暂存 lineIndex 供 onConfirm 调用 viewModel.deleteGroupByLineIndex
+                            // - deleteDialogMode 固定 Delete（弹窗显示"确认删除"提示）
+                            pendingDeleteGroupLineIndex = currentLineIdx
+                            deleteDialogMode = DeleteDialogMode.Delete
                         }
                         showDeleteConfirm = true
                     },
@@ -1438,6 +1498,12 @@ fun TodoEditScreen(
                     )
                     viewModel.redo()
                 },
+                // 🆕 v2026-07-25 多容器删除后焦点转移：把删除分组后的目标聚焦行索引传给 CheckboxEditText
+                // 配合 externalPendingFocusTrigger 递增触发器，强制 LaunchedEffect 触发 requestFocus()
+                externalPendingFocus = externalPendingFocus,
+                externalPendingFocusTrigger = externalPendingFocusTrigger,
+                // 🆕 v2026-07-25 传入各容器的预计时长文本，由 TodoGroupContainer 在底部左下角渲染
+                groupEstimatedDurations = groupEstimatedDurations,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 200.dp),
@@ -1537,7 +1603,10 @@ fun TodoEditScreen(
                 )
             }
 
-            val autoDuration = remember(startDate, dueDate) {
+            // v2026-07-25 改造：把"⏱️ 预计时长"从外层全局显示迁移到每个容器底部左下角
+            // 计算逻辑保持不变（基于全局 startDate/dueDate），结果通过 groupEstimatedDurations
+            // 传给 CheckboxEditText，由每个 TodoGroupContainer 在按钮行下方左对齐渲染。
+            val autoDurationText = remember(startDate, dueDate) {
                 val start = startDate
                 val due = dueDate
                 if (start != null && due != null && due > start) {
@@ -1554,18 +1623,18 @@ fun TodoEditScreen(
                 } else null
             }
 
-            AnimatedVisibility(visible = autoDuration != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "⏱️ 预计时长: $autoDuration",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            /**
+             * 按 groupId 分发预计时长文本
+             *
+             * 数据层（_startDate/_dueDate）当前仍是全局单值，因此多容器场景下
+             * 所有 groupId 共享同一个 autoDurationText。
+             * 后续若改造为按 groupId 独立的 startDate/dueDate，仅需改本 Map 构造即可。
+             */
+            val groupEstimatedDurations = remember(todoLines, autoDurationText) {
+                if (autoDurationText == null) {
+                    emptyMap()
+                } else {
+                    todoLines.map { it.groupId }.toSet().associateWith { autoDurationText }
                 }
             }
 
@@ -2238,32 +2307,70 @@ fun TodoEditScreen(
      */
     DeleteConfirmDialog(
         showDialog = showDeleteConfirm,
-        itemTitle = title.ifBlank { "此待办" },
+        // 🆕 v2026-07-25 多容器光标感知：itemTitle 根据删除路径动态选择
+        // - 走"删整个 todo"路径（pendingDeleteGroupLineIndex == -1）→ 显示 todo 标题
+        // - 走"删当前容器"路径（pendingDeleteGroupLineIndex >= 0）→ 显示目标分组首行文本
+        itemTitle = if (pendingDeleteGroupLineIndex >= 0) {
+            // 多容器场景：取目标分组首行文本作为标题（让用户看清要删的是哪个分组）
+            val targetLineIdx = pendingDeleteGroupLineIndex
+            val targetLine = todoLines.getOrNull(targetLineIdx)
+            val targetGroupId = targetLine?.groupId ?: 0
+            // 找到该分组的首行文本（非空优先）
+            val firstLineText = todoLines
+                .getOrNull(todoLines.indexOfFirst { it.groupId == targetGroupId })
+                ?.text
+                ?.ifBlank { null }
+                ?: "此分组"
+            firstLineText
+        } else {
+            // 单容器场景：使用 todo 标题（原行为）
+            title.ifBlank { "此待办" }
+        },
         mode = deleteDialogMode,
         onConfirm = {
             // 1. 先关闭弹窗（避免 popBackStack 时弹窗仍在屏幕上闪烁）
             showDeleteConfirm = false
-            // 2. 根据 mode 走不同分支
-            when (deleteDialogMode) {
-                DeleteDialogMode.Delete -> {
-                    // 删除模式：二次校验 todoId 有效性后真正删除 + 返回
-                    val targetId = todoId
-                    if (targetId != null && targetId > 0) {
-                        homeViewModel.deleteTodo(targetId)
+            // 2. 根据 pendingDeleteGroupLineIndex 决定走哪条路径
+            if (pendingDeleteGroupLineIndex >= 0) {
+                // 🆕 v2026-07-25 多容器场景：走"删当前容器"路径
+                // 调用 viewModel.deleteGroupByLineIndex 删除光标所在的子分组
+                // - 从 todoLines 移除该 groupId 的所有行
+                // - 清理 group* 状态映射中的对应条目
+                // - 如果该分组已保存（有 savedTodoId）→ 异步从 DB 删除对应 todo
+                // - 返回删除后的目标聚焦行索引（-1 表示列表已空，无需转移焦点）
+                val newFocusIdx = viewModel.deleteGroupByLineIndex(pendingDeleteGroupLineIndex)
+                // 重置标记，避免下次误入此分支
+                pendingDeleteGroupLineIndex = -1
+                // 触发焦点转移到上一分组首行（递增 trigger 保证 LaunchedEffect 必触发）
+                if (newFocusIdx >= 0) {
+                    externalPendingFocus = newFocusIdx
+                    externalPendingFocusTrigger++
+                }
+            } else {
+                // 走原"删整个 todo"路径：根据 mode 走不同分支
+                when (deleteDialogMode) {
+                    DeleteDialogMode.Delete -> {
+                        // 删除模式：二次校验 todoId 有效性后真正删除 + 返回
+                        val targetId = todoId
+                        if (targetId != null && targetId > 0) {
+                            homeViewModel.deleteTodo(targetId)
+                            navController.popBackStack()
+                        }
+                    }
+                    DeleteDialogMode.Discard -> {
+                        // 放弃编辑模式：直接关闭页面，丢弃未保存草稿
+                        // 不调用任何 viewModel 方法，因为新建待办尚未持久化到 DB，
+                        // 没有任何"删除"动作需要执行
                         navController.popBackStack()
                     }
-                }
-                DeleteDialogMode.Discard -> {
-                    // 放弃编辑模式：直接关闭页面，丢弃未保存草稿
-                    // 不调用任何 viewModel 方法，因为新建待办尚未持久化到 DB，
-                    // 没有任何"删除"动作需要执行
-                    navController.popBackStack()
                 }
             }
         },
         onDismiss = {
             // 取消路径（点遮罩/返回键/取消按钮）：仅关闭弹窗，不修改数据
+            // 同时重置 pendingDeleteGroupLineIndex，避免下次误入"删当前容器"分支
             showDeleteConfirm = false
+            pendingDeleteGroupLineIndex = -1
         }
     )
 

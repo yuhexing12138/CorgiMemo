@@ -158,6 +158,41 @@ fun CheckboxEditText(
     canRedo: Boolean = false,
     onUndoClick: (() -> Unit)? = null,
     onRedoClick: (() -> Unit)? = null,
+    /**
+     * 外部触发的焦点转移目标行索引（v2026-07-25 新增）
+     *
+     * - 默认 -1：无操作
+     * - 非负整数：触发 focusRequesters[it]?.requestFocus()
+     *
+     * 与内部 [pendingFocusIndex] 区别：
+     * - [pendingFocusIndex] 由"/"新建行触发，是组件内部 state
+     * - [externalPendingFocus] 由外部（如删除分组后焦点转移）触发，
+     *   修改后通过 LaunchedEffect 同步到内部 pendingFocusIndex，复用同一套焦点转移机制
+     *
+     * 使用方：[com.corgimemo.app.ui.screens.todo.TodoEditScreen] 在调用
+     * [com.corgimemo.app.viewmodel.TodoEditViewModel.deleteGroupByLineIndex] 后，
+     * 将返回的新聚焦行索引写入本参数，触发焦点转移到上一分组首行。
+     *
+     * 注意：连续两次返回相同的索引值时，需配合 [externalPendingFocusTrigger] 递增触发器
+     * 才能保证 LaunchedEffect 一定执行。
+     */
+    externalPendingFocus: Int = -1,
+    /**
+     * 外部焦点转移触发器（v2026-07-25 新增）
+     *
+     * 配合 [externalPendingFocus] 使用：每次调用 deleteGroupByLineIndex 后递增本值，
+     * 强制 LaunchedEffect 触发，避免连续两次返回相同行索引时不执行焦点转移。
+     */
+    externalPendingFocusTrigger: Int = 0,
+    /**
+     * 🆕 v2026-07-25 各容器的预计时长文本（key=groupId, value=格式化字符串如"1小时30分"）
+     *
+     * - null 或不存在：该容器底部不显示预计时长行
+     * - 非空字符串：在容器底部左下角渲染 "⏱️ 预计时长: $value"
+     *
+     * 由 TodoEditScreen 根据 startDate/dueDate 计算后按 groupId 传入。
+     */
+    groupEstimatedDurations: Map<Int, String?> = emptyMap(),
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     placeholder: String = "回车可连续添加子待办，输入 / 可新建待办"
@@ -238,6 +273,19 @@ fun CheckboxEditText(
         }
     }
 
+    // 🆕 v2026-07-25 外部触发的焦点转移（删除分组后转移到上一分组首行）
+    // 监听 externalPendingFocusTrigger 递增触发器，确保连续两次返回相同行索引时仍能触发
+    // （只监听 externalPendingFocus 会有 key 相同不触发的边界问题）
+    LaunchedEffect(externalPendingFocusTrigger) {
+        if (externalPendingFocusTrigger > 0 && externalPendingFocus >= 0) {
+            // 等待删除后 todoLines 重新渲染完成（focusRequesters 注册回调先于本 LaunchedEffect 执行）
+            kotlinx.coroutines.delay(100)
+            focusRequesters[externalPendingFocus]?.requestFocus()
+            // 同步局部 focusedLineIndex，避免后续 onFocusedLineChange 回调时与 ViewModel 不一致
+            focusedLineIndex = externalPendingFocus
+        }
+    }
+
     // 按 groupId 分组
     val groups = remember(lines) {
         lines.groupBy { it.groupId }.toSortedMap()
@@ -271,7 +319,9 @@ fun CheckboxEditText(
                 canUndo = canUndo,
                 canRedo = canRedo,
                 onUndoClick = onUndoClick,
-                onRedoClick = onRedoClick
+                onRedoClick = onRedoClick,
+                // 🆕 v2026-07-25 透传该容器的预计时长（空状态占位也支持显示）
+                estimatedDurationText = groupEstimatedDurations[0]
             ) {
                 CheckboxEditRow(
                     lineIndex = 0,
@@ -345,7 +395,9 @@ fun CheckboxEditText(
                     canUndo = canUndo,
                     canRedo = canRedo,
                     onUndoClick = onUndoClick,
-                    onRedoClick = onRedoClick
+                    onRedoClick = onRedoClick,
+                    // 🆕 v2026-07-25 透传该容器的预计时长（按 groupId 取）
+                    estimatedDurationText = groupEstimatedDurations[groupId]
                 ) {
                     groupLines.forEachIndexed { localIndex, line ->
                         val currentIndex = globalIndex++
@@ -515,6 +567,13 @@ private fun TodoGroupContainer(
     onPreviewRelation: ((com.corgimemo.app.data.model.CardRelation) -> Unit)? = null,
     /** 点击 × 删除关联的回调（参数=relationId, groupId） */
     onDeleteRelation: ((Long, Int) -> Unit)? = null,
+    /**
+     * 🆕 v2026-07-25 该容器的预计时长文本（null=不显示）
+     *
+     * 由外部根据 startDate/dueDate 计算（格式如 "1小时30分"），
+     * 在容器底部左下角显示。null 时该行隐藏。
+     */
+    estimatedDurationText: String? = null,
     content: @Composable () -> Unit
 ) {
     /**
@@ -859,6 +918,24 @@ private fun TodoGroupContainer(
                             .clickable(enabled = onSaveClick != null && !isSaved) { onSaveClick?.invoke() }
                             .padding(horizontal = 6.dp, vertical = 6.dp)
                     )
+                }
+
+                // 🆕 v2026-07-25 容器底部左下角预计时长显示
+                // 由外部根据 startDate/dueDate 计算，null 时不渲染
+                // 位置：按钮行下方、容器底部内边距内，左对齐
+                if (estimatedDurationText != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "⏱️ 预计时长: $estimatedDurationText",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
