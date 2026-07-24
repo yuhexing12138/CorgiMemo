@@ -49,12 +49,8 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.animation.ExperimentalAnimationApi
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -62,10 +58,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -139,9 +132,9 @@ fun TodoEditScreen(
     val title by viewModel.title.collectAsState()
     val content by viewModel.content.collectAsState()
     val priority by viewModel.priority.collectAsState()
-    val startDate by viewModel.startDate.collectAsState()
+    // v2026-07-25 改造：移除 startDate 收集，预计时长改由 reminder+due 计算
     val dueDate by viewModel.dueDate.collectAsState()
-    val estimatedDurationMinutes by viewModel.estimatedDurationMinutes.collectAsState()
+    // v2026-07-25 改造：estimatedDurationMinutes 不再在 UI 层使用（预计时长纯由 reminder+due 派生显示）
 
     val geofenceLat by viewModel.geofenceLat.collectAsState()
     val geofenceLng by viewModel.geofenceLng.collectAsState()
@@ -511,15 +504,14 @@ fun TodoEditScreen(
         rawBackgroundColor
     }
 
-    var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDatePickerState()
-    var selectedDateMillis by remember { mutableStateOf<Long?>(null) }
-    var showStartTimePicker by remember { mutableStateOf(false) }
-    val startTimePickerState = rememberTimePickerState(
-        initialHour = 9,
-        initialMinute = 0,
-        is24Hour = true
-    )
+    // v2026-07-25 改造：移除开始时间相关状态与弹窗
+    // 原因：开始时间设置入口已在之前改造中移除（showDatePicker 无任何赋值入口），
+    //       预计时长现在根据「提醒时间 + 截止日期」计算，不再依赖 startDate。
+    // 以下残留代码全部清理：
+    // - showDatePicker / selectedDateMillis / showStartTimePicker / startTimePickerState 状态
+    // - showDatePicker 弹窗（DatePickerDialog）
+    // - showStartTimePicker 弹窗（TimePicker AlertDialog）
+
     /**
      * 当前正在编辑哪个分组的提醒
      *
@@ -937,14 +929,9 @@ fun TodoEditScreen(
     // 附件权威源已迁移到 _todoLines，在 L740 附近的 LaunchedEffect 中
     // 从 content_blocks 表加载到 initialLines（即 _todoLines），无需单独初始化 contentBlocks 列表
 
-    LaunchedEffect(startDate, dueDate) {
-        val start = startDate
-        val due = dueDate
-        if (start != null && due != null && due > start) {
-            val totalMinutes = (due - start) / 1000 / 60
-            viewModel.setEstimatedDurationMinutes(totalMinutes.toInt())
-        }
-    }
+    // v2026-07-25 改造：移除 LaunchedEffect(startDate, dueDate) 同步 estimatedDurationMinutes 逻辑
+    // 预计时长现在纯由 groupReminders[groupId] + dueDate 派生显示，不再写入 ViewModel 状态
+    // 数据库 estimatedDurationMinutes 字段保留但暂不同步（冗余字段，可由 reminder+due 派生）
 
     if (speechError.isNotEmpty()) {
         coroutineScope.launch {
@@ -1264,40 +1251,30 @@ fun TodoEditScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
 
-            // 🆕 v2026-07-25 改造：把"⏱️ 预计时长"从外层全局显示迁移到每个容器底部左下角
-            // 计算逻辑保持不变（基于全局 startDate/dueDate），结果通过 groupEstimatedDurations
-            // 传给 CheckboxEditText，由每个 TodoGroupContainer 在按钮行下方左对齐渲染。
-            //
-            // ⚠️ 必须在 CheckboxEditText 调用之前声明（原代码声明在调用之后导致 Unresolved reference）
-            val autoDurationText = remember(startDate, dueDate) {
-                val start = startDate
+            // 🆕 v2026-07-25 改造：预计时长根据「提醒时间」和「截止日期」计算
+            // - 提醒时间（groupReminders）按 groupId 分组，每个容器有独立的提醒时间
+            // - 截止日期（dueDate）当前仍是全局单值
+            // - 时长 = dueDate - groupReminders[groupId]，每个容器可显示独立的预计时长
+            // - 任一字段为空或 due <= reminder 时不显示
+            val groupEstimatedDurations = remember(groupReminders, dueDate) {
                 val due = dueDate
-                if (start != null && due != null && due > start) {
-                    val diffMs = due - start
-                    val totalMinutes = diffMs / 1000 / 60
-                    val hours = totalMinutes / 60
-                    val minutes = totalMinutes % 60
-                    when {
-                        hours > 24 -> "${hours / 24}天${hours % 24}小时"
-                        hours > 0 -> "${hours}小时${if (minutes > 0) "${minutes}分" else ""}"
-                        minutes > 0 -> "${minutes}分钟"
-                        else -> null
-                    }
-                } else null
-            }
-
-            /**
-             * 按 groupId 分发预计时长文本
-             *
-             * 数据层（_startDate/_dueDate）当前仍是全局单值，因此多容器场景下
-             * 所有 groupId 共享同一个 autoDurationText。
-             * 后续若改造为按 groupId 独立的 startDate/dueDate，仅需改本 Map 构造即可。
-             */
-            val groupEstimatedDurations = remember(todoLines, autoDurationText) {
-                if (autoDurationText == null) {
+                if (due == null) {
                     emptyMap()
                 } else {
-                    todoLines.map { it.groupId }.toSet().associateWith { autoDurationText }
+                    groupReminders.mapValues { (_, reminder) ->
+                        if (reminder != null && due > reminder) {
+                            val diffMs = due - reminder
+                            val totalMinutes = diffMs / 1000 / 60
+                            val hours = totalMinutes / 60
+                            val minutes = totalMinutes % 60
+                            when {
+                                hours > 24 -> "${hours / 24}天${hours % 24}小时"
+                                hours > 0 -> "${hours}小时${if (minutes > 0) "${minutes}分" else ""}"
+                                minutes > 0 -> "${minutes}分钟"
+                                else -> null
+                            }
+                        } else null
+                    }
                 }
             }
 
@@ -1705,64 +1682,8 @@ fun TodoEditScreen(
             )
         }
 
-        if (showDatePicker) {
-            DatePickerDialog(
-                onDismissRequest = { showDatePicker = false },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            val selectedDate = datePickerState.selectedDateMillis
-                            if (selectedDate != null) {
-                                selectedDateMillis = selectedDate
-                                showDatePicker = false
-                                showStartTimePicker = true
-                            }
-                        }
-                    ) {
-                        Text("确定")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDatePicker = false }) {
-                        Text("取消")
-                    }
-                }
-            ) {
-                DatePicker(state = datePickerState)
-            }
-        }
-
-        if (showStartTimePicker) {
-            AlertDialog(
-                onDismissRequest = { showStartTimePicker = false },
-                title = { Text("选择开始时间") },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            val cal = Calendar.getInstance()
-                            cal.timeInMillis = selectedDateMillis ?: System.currentTimeMillis()
-                            cal.set(Calendar.HOUR_OF_DAY, startTimePickerState.hour)
-                            cal.set(Calendar.MINUTE, startTimePickerState.minute)
-                            cal.set(Calendar.SECOND, 0)
-                            cal.set(Calendar.MILLISECOND, 0)
-                            viewModel.setStartDate(cal.timeInMillis)
-                            showStartTimePicker = false
-                            selectedDateMillis = null
-                        }
-                    ) {
-                        Text("确定")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showStartTimePicker = false }) {
-                        Text("取消")
-                    }
-                },
-                text = {
-                    TimePicker(state = startTimePickerState)
-                }
-            )
-        }
+        // v2026-07-25 改造：showDatePicker / showStartTimePicker 弹窗已移除
+        // 原因：开始时间字段已废弃，预计时长改由「提醒时间 + 截止日期」计算
 
         /**
          * 旧"快速设置提醒时间"弹窗（showTimePicker）已整体移除
