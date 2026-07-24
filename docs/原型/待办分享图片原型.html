@@ -110,14 +110,14 @@
   .brand-logo {
     width: 32px;
     height: 32px;
-    background: var(--primary);
+    background: #FFFFFF;
     border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
     margin-right: 10px;
     flex-shrink: 0;
+    background-image: url('https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20cute%20cartoon%20corgi%20dog%20tilt%20head%20with%20curious%20sparkly%20eyes%2C%20orange%20and%20white%20fur%2C%20big%20pointy%20ears%2C%20white%20paws%20and%20chest%2C%20flat%20icon%20style%2C%20simple%20clean%20background&image_size=square_hd');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
   }
   .brand-text {
     display: flex;
@@ -585,8 +585,8 @@
 <body>
 
 <div class="page-header">
-  <h1>待办分享图片原型 <span style="color:#FF9A5C;">v5.9</span> · 竖条圆心与边框外侧圆心对齐</h1>
-  <p>CorgiMemo · ImageExporter 重设计迭代 · 源代码 Canvas 修复：clipPath 圆心 Y 从 (startY+9dp) 改为 (startY+8.25dp) = 边框外侧圆心，竖条在圆角处紧贴外侧边缘</p>
+  <h1>待办分享图片原型 <span style="color:#FF9A5C;">v6.0</span> · 品牌顶部条 / 分享时间 / 水印 升级</h1>
+  <p>CorgiMemo · ImageExporter 重设计迭代 · 头部 logo 改为 App 启动图标（柯基歪头图），app 名称用上标 "⁺"，副标题改为 "治愈系柯基记录应用"，分享时间加年份，底部水印删除 emoji 改用 "刻记⁺"</p>
   <p style="color:#C62828;font-weight:600;margin-top:8px;">⚠️ 请按 Ctrl+F5 强制刷新（清除浏览器缓存）</p>
 </div>
 
@@ -614,12 +614,12 @@
 
     <!-- 品牌顶部 -->
     <div class="brand-header">
-      <div class="brand-logo">🐕</div>
+      <div class="brand-logo"></div>
       <div class="brand-text">
-        <span class="brand-name">刻记+</span>
-        <span class="brand-sub">柯基备忘录</span>
+        <span class="brand-name">刻记<span class="sup">⁺</span></span>
+        <span class="brand-sub">治愈系柯基记录应用</span>
       </div>
-      <span class="brand-date">2026-07-23</span>
+      <span class="brand-date">2026/07/24 21:00</span>
     </div>
 
     <!-- ====== 主待办卡片 ====== -->
@@ -695,13 +695,42 @@
 
     <!-- 品牌水印 -->
     <div class="brand-footer">
-      <span class="brand-footer-text"><span class="dog">🐕</span>来自 CorgiMemo · 让待办变得可爱</span>
+      <span class="brand-footer-text">来自 刻记<span style="font-size:9px;vertical-align:super;line-height:0;">⁺</span> · 让待办变得可爱</span>
     </div>
 
   </div>
 
   <!-- ============ 说明面板 ============ -->
   <div class="info-panel">
+    <h2>v6.0 品牌区升级：App 图标 + 上标 "⁺" + 含年分享时间 + 干净水印</h2>
+
+    <table class="change-table">
+      <tr>
+        <th>变更点</th>
+        <th>说明</th>
+      </tr>
+      <tr>
+        <td><span class="badge badge-new">头部</span> App 启动图标</td>
+        <td>原：🐕 emoji + 橙色底块（与 app 实际图标不一致）。<br>现：加载 <code>R.drawable.corgi_tilt_2frames_01</code>（柯基歪头图），白底圆角矩形容器，<b>与 app 启动图标严格一致</b>。</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-new">名称</span> 上标 "+"</td>
+        <td>原：<code>drawText("刻记+", ...)</code>，"+" 与 "记" 同字号同一基线。<br>现：<code>drawText("刻记⁺", ...)</code>，使用 Unicode U+207A 上标 "⁺"，与 <code>strings.xml app_name</code> 严格一致。</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-new">副标题</span> 应用定位</td>
+        <td>原："柯基备忘录"。<br>现："<b>治愈系柯基记录应用</b>"（突出治愈系品牌定位）。</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-new">时间胶囊</span> 含年份</td>
+        <td>原：<code>SimpleDateFormat("MM/dd HH:mm")</code>，无年份。<br>现：<code>SimpleDateFormat("yyyy/MM/dd HH:mm")</code>，日期胶囊显示完整时间（含年份）。</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-fix">水印</span> 删除 emoji</td>
+        <td>原："🐕 来自 CorgiMemo · 让待办变得可爱"（emoji + 英文 app 名）。<br>现："来自 刻记⁺ · 让待办变得可爱"（无 emoji，app 名用上标中文 "刻记⁺"），<b>与头部品牌一致</b>。</td>
+      </tr>
+    </table>
+
     <h2>v5.9 源代码修复：竖条 clipPath 圆心与边框外侧圆心严格对齐</h2>
 
     <table class="change-table">
@@ -804,7 +833,7 @@
 
     <h3>布局结构（从上到下）</h3>
     <ul>
-      <li><b>品牌顶部条</b>：🐕 logo + "刻记+" + "柯基备忘录" + 日期胶囊</li>
+      <li><b>品牌顶部条</b>：App 启动图标（柯基歪头图 32dp）+ "刻记⁺"（上标）+ "治愈系柯基记录应用" + 分享时间胶囊（含年）</li>
       <li><b>主待办卡片</b>：
         <ul style="margin-top:4px;">
           <li><b>分类角标</b>（卡片左上角贴边，仅右下圆角 9dp）</li>
@@ -817,7 +846,7 @@
           <li>子待办列表（唯一内容区）</li>
         </ul>
       </li>
-      <li><b>品牌水印</b>：分割线 + "🐕来自 CorgiMemo · 让待办变得可爱"</li>
+      <li><b>品牌水印</b>：分割线 + "来自 刻记⁺ · 让待办变得可爱"</li>
     </ul>
 
     <h3>Z 顺序（从下到上）</h3>

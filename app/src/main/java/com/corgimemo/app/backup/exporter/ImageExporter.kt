@@ -2,6 +2,7 @@ package com.corgimemo.app.backup.exporter
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -10,6 +11,7 @@ import android.graphics.Typeface
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import com.corgimemo.app.R
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
@@ -40,7 +42,7 @@ object ImageExporter {
      * 创建待办分享卡片图片（v2 重设计）
      *
      * 布局结构（从上到下）：
-     * 1. 品牌顶部条：🐕 logo + "刻记+" + "柯基备忘录" + 日期胶囊
+     * 1. 品牌顶部条：App 启动图标（柯基歪头图）+ "刻记⁺"（上标+）+ "治愈系柯基记录应用" + 分享时间胶囊（含年份）
      * 2. 主待办卡片：还原 App TodoListItem 样式
      *    - 左侧 4dp 优先级竖条 + 1.5dp 边框
      *    - 圆形复选框 + 标题 + 进度
@@ -48,7 +50,7 @@ object ImageExporter {
      *    - 时间行（提醒 + 截止，已合并为左下角单标签）
      *    - 子待办列表（复选框 + 标题）
      *    - 图片缩略图行
-     * 3. 品牌水印：分割线 + "🐕来自 CorgiMemo · 让待办变得可爱"
+     * 3. 品牌水印：分割线 + "来自 刻记⁺ · 让待办变得可爱"
      *
      * @param context 上下文
      * @param todo 主待办项
@@ -70,6 +72,9 @@ object ImageExporter {
         val width = (360 * density).toInt()
         val padding = (16 * density).toInt()
 
+        // 预加载 App 启动图标（corgi_tilt_2frames_01.png），用于品牌顶部条
+        val appIconBitmap = loadAppIconBitmap(context, density)
+
         // ===== 第一遍：测量内容高度（不绘制） =====
         val measureCanvas = Canvas()
         val contentHeight = measureCardContent(measureCanvas, width, padding, todo, category, subTodos, imagePaths.size, relationCount, density)
@@ -86,7 +91,7 @@ object ImageExporter {
         var currentY = padding
 
         // 1. 品牌顶部条
-        currentY = drawBrandHeader(canvas, width, padding, currentY, density)
+        currentY = drawBrandHeader(canvas, width, padding, currentY, density, appIconBitmap)
 
         currentY += cardSpacing
 
@@ -99,6 +104,26 @@ object ImageExporter {
         drawBrandFooter(canvas, width, padding, currentY, density)
 
         bitmap
+    }
+
+    /**
+     * 加载 App 启动图标（corgi_tilt_2frames_01.png）并缩放至目标尺寸
+     * 共享给品牌头部条使用
+     */
+    private fun loadAppIconBitmap(context: Context, density: Float): Bitmap? {
+        return try {
+            val options = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val original = BitmapFactory.decodeResource(context.resources, R.drawable.corgi_tilt_2frames_01, options)
+                ?: return null
+            val targetSize = (32 * density).toInt()
+            val scaled = Bitmap.createScaledBitmap(original, targetSize, targetSize, true)
+            if (scaled !== original) original.recycle()
+            scaled
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /**
@@ -162,59 +187,86 @@ object ImageExporter {
     /**
      * 绘制品牌顶部条
      *
-     * 布局：[🐕 logo 32dp] [10dp] ["刻记+" + "柯基备忘录"] ... [日期胶囊]
+     * 布局：[App 启动图标 32dp] [10dp] ["刻记⁺" + "治愈系柯基记录应用"] ... [分享时间胶囊(含年)]
      */
     private fun drawBrandHeader(
         canvas: Canvas,
         width: Int,
         padding: Int,
         startY: Int,
-        density: Float
+        density: Float,
+        appIconBitmap: Bitmap?
     ): Int {
         val headerHeight = (44 * density).toInt()
         val y = startY
 
-        // 🐕 logo 圆角矩形
+        // App 启动图标容器（圆角矩形）
         val logoSize = (32 * density).toInt()
-        val logoPaint = Paint().apply {
-            color = Color.parseColor("#FF9A5C") // 主色
+        val logoLeft = padding
+        val logoTop = (y + 6 * density).toInt()
+        val logoRight = logoLeft + logoSize
+        val logoBottom = logoTop + logoSize
+        val logoBgRadius = (10 * density)
+
+        // 1. 画白色背景圆角矩形（避免透明 PNG 区域透出页面背景）
+        val logoBgPaint = Paint().apply {
+            color = Color.WHITE
             isAntiAlias = true
         }
         canvas.drawRoundRect(
-            RectF(padding.toFloat(), (y + 6 * density).toFloat(),
-                (padding + logoSize).toFloat(), (y + 6 * density + logoSize).toFloat()),
-            (10 * density), (10 * density), logoPaint
+            RectF(logoLeft.toFloat(), logoTop.toFloat(),
+                logoRight.toFloat(), logoBottom.toFloat()),
+            logoBgRadius, logoBgRadius, logoBgPaint
         )
-        // 🐕 emoji
-        val emojiPaint = TextPaint().apply { textSize = (18 * density); isAntiAlias = true }
-        canvas.drawText("🐕", padding + 5 * density, y + 28 * density, emojiPaint)
 
-        // "刻记+"
-        val nameX = padding + logoSize + (10 * density)
+        // 2. 叠加 App 启动图标（corgi_tilt_2frames_01.png，柯基歪头图）
+        if (appIconBitmap != null) {
+            val iconSrcRect = android.graphics.Rect(0, 0, appIconBitmap.width, appIconBitmap.height)
+            val iconDstRect = android.graphics.Rect(logoLeft, logoTop, logoRight, logoBottom)
+            canvas.drawBitmap(appIconBitmap, iconSrcRect, iconDstRect, null)
+        } else {
+            // 兜底：图标加载失败时显示文字
+            val fallbackPaint = TextPaint().apply {
+                textSize = (18 * density)
+                color = Color.parseColor("#FF9A5C")
+                isAntiAlias = true
+            }
+            val fallbackText = "柯"
+            val textWidth = fallbackPaint.measureText(fallbackText)
+            canvas.drawText(
+                fallbackText,
+                logoLeft + (logoSize - textWidth) / 2,
+                logoTop + (logoSize / 2 + 6 * density),
+                fallbackPaint
+            )
+        }
+
+        // "刻记⁺"（+ 号用上标 Unicode U+207A，与 strings.xml app_name 严格一致）
+        val nameX = logoRight + (10 * density)
         val namePaint = TextPaint().apply {
             textSize = (15 * density)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             color = Color.parseColor("#2D2D2D")
             isAntiAlias = true
         }
-        canvas.drawText("刻记+", nameX.toFloat(), (y + 22 * density).toFloat(), namePaint)
+        canvas.drawText("刻记\u207A", nameX.toFloat(), (y + 22 * density).toFloat(), namePaint)
 
-        // "柯基备忘录"
+        // 副标题："治愈系柯基记录应用"
         val subPaint = TextPaint().apply {
             textSize = (11 * density)
             color = Color.parseColor("#999999")
             isAntiAlias = true
         }
-        canvas.drawText("柯基备忘录", nameX.toFloat(), (y + 36 * density).toFloat(), subPaint)
+        canvas.drawText("治愈系柯基记录应用", nameX.toFloat(), (y + 36 * density).toFloat(), subPaint)
 
-        // 日期胶囊
-        val todayText = shortDateFormat.format(Date())
+        // 分享时间胶囊（含年份，MM/dd HH:mm + 年份副标）
+        val timeText = timeWithYearFormat.format(Date())
         val datePaint = TextPaint().apply {
             textSize = (11 * density)
             color = Color.parseColor("#5D4030")
             isAntiAlias = true
         }
-        val dateWidth = datePaint.measureText(todayText)
+        val dateWidth = datePaint.measureText(timeText)
         val dateBgWidth = dateWidth + (20 * density)
         val dateRight = (width - padding).toFloat()
         val dateBgPaint = Paint().apply {
@@ -226,7 +278,7 @@ object ImageExporter {
                 dateRight, (y + 30 * density).toFloat()),
             (12 * density), (12 * density), dateBgPaint
         )
-        canvas.drawText(todayText, dateRight - dateWidth - 10 * density, (y + 23 * density).toFloat(), datePaint)
+        canvas.drawText(timeText, dateRight - dateWidth - 10 * density, (y + 23 * density).toFloat(), datePaint)
 
         return y + headerHeight
     }
@@ -1003,7 +1055,9 @@ object ImageExporter {
     /**
      * 绘制品牌水印
      *
-     * 分割线 + "🐕来自 CorgiMemo · 让待办变得可爱"
+     * 布局：分割线 + "来自 刻记⁺ · 让待办变得可爱"
+     * - 删除 emoji 柯基图标
+     * - "CorgiMemo" 改为 "刻记⁺"（"+" 在右上角，用 Unicode U+207A 上标）
      */
     private fun drawBrandFooter(
         canvas: Canvas,
@@ -1022,13 +1076,13 @@ object ImageExporter {
         canvas.drawLine(padding.toFloat(), y.toFloat(), (width - padding).toFloat(), y.toFloat(), divPaint)
         y += (16 * density).toInt()
 
-        // 水印文字
+        // 水印文字（无 emoji 柯基图标，app 名称用上标 "⁺"）
         val footerPaint = TextPaint().apply {
             textSize = (11 * density)
             color = Color.parseColor("#999999")
             isAntiAlias = true
         }
-        val footerText = "🐕 来自 CorgiMemo · 让待办变得可爱"
+        val footerText = "来自 刻记\u207A · 让待办变得可爱"
         val footerWidth = footerPaint.measureText(footerText)
         canvas.drawText(footerText, ((width - footerWidth) / 2).toFloat(), y.toFloat(), footerPaint)
 
