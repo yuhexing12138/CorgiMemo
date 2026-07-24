@@ -134,7 +134,8 @@ fun TodoEditScreen(
     val content by viewModel.content.collectAsState()
     val priority by viewModel.priority.collectAsState()
     // v2026-07-25 改造：移除 startDate 收集，预计时长改由 reminder+due 计算
-    val dueDate by viewModel.dueDate.collectAsState()
+    // v2026-07-25 改造：截止时间按 groupId 分组收集，每个待办容器独立
+    val groupDueDates by viewModel.groupDueDates.collectAsState()
     // v2026-07-25 改造：estimatedDurationMinutes 不再在 UI 层使用（预计时长纯由 reminder+due 派生显示）
 
     val geofenceLat by viewModel.geofenceLat.collectAsState()
@@ -1125,8 +1126,8 @@ fun TodoEditScreen(
                 IconButton(
                     onClick = {
                         // 根据光标所在行的 groupId + 是否多容器 决定走哪条删除路径
-                        // 🆕 v2026-07-25 修复 Bug：ViewModel.setFocusedLineIndex 已做 clamp，
-                        // focusedLineIndex 不会越界，无需再做 fallback
+                        // 🆕 v2026-07-25 第二轮修复：ViewModel.setFocusedLineIndex 越界时直接 return 保持原值，
+                        // 避免 CheckboxEditText 旧 onFocusChange 闭包传入过期 currentIndex 覆盖正确焦点
                         val currentLineIdx = focusedLineIndex
                         val currentLine = todoLines.getOrNull(currentLineIdx)
                         val currentGroupId = currentLine?.groupId ?: 0
@@ -1256,28 +1257,27 @@ fun TodoEditScreen(
 
             // 🆕 v2026-07-25 改造：预计时长根据「提醒时间」和「截止日期」计算
             // - 提醒时间（groupReminders）按 groupId 分组，每个容器有独立的提醒时间
-            // - 截止日期（dueDate）当前仍是全局单值
-            // - 时长 = dueDate - groupReminders[groupId]，每个容器可显示独立的预计时长
+            // - 截止日期（groupDueDates）按 groupId 分组，每个容器有独立的截止时间
+            // - 时长 = groupDueDates[groupId] - groupReminders[groupId]
             // - 任一字段为空或 due <= reminder 时不显示
-            val groupEstimatedDurations = remember(groupReminders, dueDate) {
-                val due = dueDate
-                if (due == null) {
-                    emptyMap()
-                } else {
-                    groupReminders.mapValues { (_, reminder) ->
-                        if (reminder != null && due > reminder) {
-                            val diffMs = due - reminder
-                            val totalMinutes = diffMs / 1000 / 60
-                            val hours = totalMinutes / 60
-                            val minutes = totalMinutes % 60
-                            when {
-                                hours > 24 -> "${hours / 24}天${hours % 24}小时"
-                                hours > 0 -> "${hours}小时${if (minutes > 0) "${minutes}分" else ""}"
-                                minutes > 0 -> "${minutes}分钟"
-                                else -> null
-                            }
-                        } else null
-                    }
+            val groupEstimatedDurations = remember(groupReminders, groupDueDates) {
+                // 合并所有 groupId（提醒或截止时间存在的 group），逐 group 计算时长
+                val allGroupIds = (groupReminders.keys + groupDueDates.keys).toSet()
+                allGroupIds.associateWith { gid ->
+                    val reminder = groupReminders[gid]
+                    val due = groupDueDates[gid]
+                    if (reminder != null && due != null && due > reminder) {
+                        val diffMs = due - reminder
+                        val totalMinutes = diffMs / 1000 / 60
+                        val hours = totalMinutes / 60
+                        val minutes = totalMinutes % 60
+                        when {
+                            hours > 24 -> "${hours / 24}天${hours % 24}小时"
+                            hours > 0 -> "${hours}小时${if (minutes > 0) "${minutes}分" else ""}"
+                            minutes > 0 -> "${minutes}分钟"
+                            else -> null
+                        }
+                    } else null
                 }
             }
 
@@ -1853,8 +1853,14 @@ fun TodoEditScreen(
                          * 没有则 fallback 为 0（不重复）
                          */
                         initialRepeatType = editingReminderGroupId?.let { groupRepeatTypes[it] } ?: 0,
-                        /** 初始截止日期：从 ViewModel 获取当前 todo 的 dueDate */
-                        initialDueDateMillis = dueDate,
+                        /**
+                         * 初始截止日期：从 ViewModel 获取当前编辑分组的截止时间
+                         *  - 已设置：groupDueDates[gid] 是该分组的截止时间
+                         *  - 未设置 / 无该 group：fallback 为 null（picker 用今天作为默认日期）
+                         *
+                         * v2026-07-25 改造：dueDate 全局单值 → groupDueDates 按 groupId 分组
+                         */
+                        initialDueDateMillis = editingReminderGroupId?.let { groupDueDates[it] },
                         /**
                          * 关闭 picker：清空 editingReminderGroupId，
                          * 下游 showReminderPicker 自动变 false

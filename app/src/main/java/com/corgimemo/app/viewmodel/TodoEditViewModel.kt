@@ -131,9 +131,30 @@ class TodoEditViewModel @Inject constructor(
     // v2026-07-25 改造：移除 _startDate StateFlow 和 startDate 暴露
     // 原因：开始时间字段已废弃，预计时长改由 groupReminders[groupId]+dueDate 派生计算
 
-    /** 截止时间状态（时间戳，毫秒） */
+    /**
+     * 截止时间状态（时间戳，毫秒）—— v2026-07-25 改造：兼容保留字段
+     *
+     * ⚠️ 此字段仅用于：
+     * - 向后兼容旧 EditSnapshot 反序列化
+     * - 单容器场景（groupId=0）的 fallback 显示
+     *
+     * UI 层应改用 [groupDueDates]（按 groupId 分组），
+     * 写入应改用 [setGroupDueDate] / [setGroupReminderBatch]。
+     */
     private val _dueDate = MutableStateFlow<Long?>(null)
     val dueDate: StateFlow<Long?> = _dueDate.asStateFlow()
+
+    /**
+     * 各分组的截止时间映射（v2026-07-25 新增）
+     *
+     * - key: groupId（与 [_groupReminders] / [_groupRepeatTypes] 完全对称）
+     * - value: 截止时间戳（毫秒），null 表示该容器未设置截止时间
+     *
+     * 设计理由：每个待办容器（多卡片待办组）应有独立的截止时间，
+     * 与已经按 groupId 分组的提醒时间、重复类型保持一致。
+     */
+    private val _groupDueDates = MutableStateFlow<Map<Int, Long?>>(emptyMap())
+    val groupDueDates: StateFlow<Map<Int, Long?>> = _groupDueDates.asStateFlow()
 
     private val _estimatedDurationMinutes = MutableStateFlow<Int?>(null)
     val estimatedDurationMinutes: StateFlow<Int?> = _estimatedDurationMinutes.asStateFlow()
@@ -235,7 +256,9 @@ class TodoEditViewModel @Inject constructor(
 
         // 单值元数据
         // v2026-07-25 改造：移除 startDate 字段，预计时长改由 reminder+due 派生
-        val dueDate: Long?,
+        // v2026-07-25 改造：dueDate 保留用于向后兼容旧快照反序列化，新快照写入 groupDueDates
+        @Deprecated("使用 groupDueDates 替代，仅用于旧快照兼容读取")
+        val dueDate: Long? = null,
 
         // 位置
         val geofenceLat: Double?,
@@ -257,6 +280,10 @@ class TodoEditViewModel @Inject constructor(
         val groupReminders: Map<Int, Long?>,
         val groupRepeatTypes: Map<Int, Int>,
         val groupRelations: Map<Int, List<CardRelation>>,
+
+        // v2026-07-25 新增：按 groupId 分组的截止时间（与 groupReminders 对称）
+        // 默认 emptyMap() 以兼容旧快照反序列化（旧快照无此字段时为空）
+        val groupDueDates: Map<Int, Long?> = emptyMap(),
     )
 
     /**
@@ -446,6 +473,7 @@ class TodoEditViewModel @Inject constructor(
     val restoreEvent: StateFlow<EditSnapshot?> = _restoreEvent.asStateFlow()
 
     /** 从当前 StateFlow 值构建全量快照 */
+    @Suppress("DEPRECATION")  // EditSnapshot.dueDate 字段已 @Deprecated，仅用于旧快照兼容读取
     private val currentSnapshot: EditSnapshot
         get() = EditSnapshot(
             title = _title.value,
@@ -462,6 +490,7 @@ class TodoEditViewModel @Inject constructor(
             // 对当前场景足够（这些 List 在 setTodoLines 中是整体替换的）。
             lines = _todoLines.value.map { it.copy() },
             // v2026-07-25 改造：移除 startDate 快照字段
+            // v2026-07-25 改造：同时写入 dueDate（兼容旧快照读取）和 groupDueDates（新权威源）
             dueDate = _dueDate.value,
             geofenceLat = _geofenceLat.value,
             geofenceLng = _geofenceLng.value,
@@ -478,6 +507,8 @@ class TodoEditViewModel @Inject constructor(
             groupReminders = _groupReminders.value,
             groupRepeatTypes = _groupRepeatTypes.value,
             groupRelations = _groupRelations.value,
+            // v2026-07-25 新增：按 groupId 分组的截止时间（权威源）
+            groupDueDates = _groupDueDates.value,
         )
 
     /** 是否可以撤销（Undo 栈非空时为 true） */
@@ -559,7 +590,19 @@ class TodoEditViewModel @Inject constructor(
         // v2026-07-25 优化：不再恢复 _currentContentBlocks（已删除）
         // 附件信息通过 snapshot.lines 恢复到 _todoLines（见下方 setTodoLines 调用）
         // v2026-07-25 改造：移除 _startDate 恢复逻辑
-        _dueDate.value = snapshot.dueDate
+        // v2026-07-25 改造：截止时间按 groupId 分组恢复，兼容旧快照
+        @Suppress("DEPRECATION")
+        val restoredGroupDueDates: Map<Int, Long?> = if (snapshot.groupDueDates.isNotEmpty()) {
+            // 新快照：直接使用 groupDueDates
+            snapshot.groupDueDates
+        } else {
+            // 旧快照 fallback：把单值 dueDate 映射到 groupId=0
+            // dueDate 为 null 时不放入 Map（与 _groupDueDates 语义一致：null = 未设置 = 无 key）
+            if (snapshot.dueDate != null) mapOf(0 to snapshot.dueDate) else emptyMap()
+        }
+        _groupDueDates.value = restoredGroupDueDates
+        // 兼容字段：从恢复后的 groupDueDates[0] 取值，保持单值字段同步
+        _dueDate.value = restoredGroupDueDates[0]
         _geofenceLat.value = snapshot.geofenceLat
         _geofenceLng.value = snapshot.geofenceLng
         _geofenceRadius.value = snapshot.geofenceRadius
@@ -1010,26 +1053,44 @@ class TodoEditViewModel @Inject constructor(
      *
      * UI 层 BasicTextField 焦点变化时调用，行级操作 API 依赖此状态。
      *
-     * @param index 新的聚焦行索引（clamp 到合法范围）
+     * **v2026-07-25 第二轮修复（关键）：越界时直接 return，不 clamp 覆盖原值。**
+     *
+     * 根因（来自用户日志）：
+     * - CheckboxEditText 的 onFocusChange 闭包会捕获旧布局的 currentIndex
+     * - 删除/插入行后旧闭包仍会触发，传入越界值
+     * - 例如：4 个容器 (size=5)，删除容器3 后 size=3，旧闭包传入 5（越界）
+     *   - 旧逻辑：clamp 到 2，恰好等于删除后正确值，看似正常
+     * - 紧接着用户点删除4 时，旧闭包又触发传入 2（上次删除后的旧索引）
+     *   - 旧逻辑：clamp 到 1（size=2），覆盖了 deleteGroupByLineIndex 设置的正确焦点值 4
+     *   - 结果：弹窗错显示"删除待办1吗？"，删除失败
+     *
+     * 修复方案：
+     * - 越界时不再 clamp 覆盖，直接 return 保持 [_focusedLineIndex] 当前值
+     * - 这样 deleteGroupByLineIndex 设置的正确焦点不会被过期闭包破坏
+     * - 合法值正常写入
+     *
+     * @param index 新的聚焦行索引（越界时忽略，保持原值不变）
      */
     fun setFocusedLineIndex(index: Int) {
-        // 🆕 v2026-07-25 修复 Bug：添加上界 clamp 防御越界传入
-        // 根因：CheckboxEditText 的 onFocusChange 闭包捕获旧布局的 currentIndex，
-        // 删除/插入行后旧闭包仍然会触发，传入越界值（如 size=3 时传入 5）。
-        // 修复：在 ViewModel 层做最后防线，clamp 到 [0, lastIndex]。
         val maxSize = _todoLines.value.size
-        val clamped = if (maxSize == 0) {
-            0
-        } else {
-            index.coerceIn(0, maxSize - 1)
+        // 边界 1：todoLines 为空，强制置 0（防御性）
+        if (maxSize == 0) {
+            if (_focusedLineIndex.value != 0) {
+                _focusedLineIndex.value = 0
+            }
+            return
         }
-        if (clamped != index) {
+        // 边界 2：越界 → 直接 return，不覆盖原值
+        // （过期 onFocusChange 闭包传入的越界值不应破坏正确的焦点位置）
+        if (index < 0 || index >= maxSize) {
             android.util.Log.w(
                 "TodoEditDelete",
-                "setFocusedLineIndex($index) 越界被 clamp 到 $clamped (size=$maxSize)"
+                "setFocusedLineIndex($index) 越界被忽略，保持原值 ${_focusedLineIndex.value} (size=$maxSize)"
             )
+            return
         }
-        _focusedLineIndex.value = clamped
+        // 合法值：正常写入
+        _focusedLineIndex.value = index
     }
 
     /**
@@ -1496,24 +1557,83 @@ class TodoEditViewModel @Inject constructor(
     // v2026-07-25 改造：移除 setStartDate 方法（字段已废弃）
 
     /**
-     * 设置截止时间
-     * 用户在时间选择器中确认后调用
+     * 设置截止时间（已废弃，保留向后兼容）
      *
-     * v2026-07-22 bug 修复：加变化检查。
+     * v2026-07-25 改造：截止时间已迁移到按 groupId 分组的 [_groupDueDates]。
+     * 此方法现在仅作为单容器场景（groupId=0）的兼容入口，
+     * 内部转发到 [setGroupDueDate]。
      *
      * @param dueDate 截止时间（毫秒时间戳）
      */
+    @Deprecated("使用 setGroupDueDate(groupId, dueDate) 替代", ReplaceWith("setGroupDueDate(0, dueDate)"))
     fun setDueDate(dueDate: Long?) {
-        if (_dueDate.value == dueDate) {
+        setGroupDueDate(0, dueDate)
+    }
+
+    /**
+     * 设置指定分组的截止时间（v2026-07-25 新增）
+     *
+     * 用户在 ReminderPickerBottomSheet 中确认截止日期后调用。
+     * 与 [setGroupReminder] / [setGroupRepeatType] 完全对称，按 groupId 独立管理。
+     *
+     * 变化检查 + 单次推快照：避免无变化时污染撤销栈。
+     *
+     * @param groupId 分组 ID
+     * @param dueDate 截止时间戳（毫秒），null 表示清除该分组的截止时间
+     */
+    fun setGroupDueDate(groupId: Int, dueDate: Long?) {
+        val current = _groupDueDates.value[groupId]
+        if (current == dueDate) {
             android.util.Log.w(
                 "UndoRedoTrace",
-                "[setDueDate] ⏭ 跳过：值未变化 dueDate=$dueDate"
+                "[setGroupDueDate] ⏭ 跳过：值未变化 groupId=$groupId, dueDate=$dueDate"
             )
             return
         }
         pushSnapshot()
-        _dueDate.value = dueDate
-        // 注：旧实现里"联动设置 _reminderTime"逻辑已移除，reminderTime 由各分组独立管理
+        // 与 _groupReminders 一致：null 时从 Map 中移除键，避免 key 累积
+        _groupDueDates.value = if (dueDate == null) {
+            _groupDueDates.value - groupId
+        } else {
+            _groupDueDates.value + (groupId to dueDate)
+        }
+        // 同步兼容字段（仅 groupId=0 时同步，避免被多容器覆盖）
+        if (groupId == 0) {
+            _dueDate.value = dueDate
+        }
+    }
+
+    /**
+     * 清除指定分组的截止时间（v2026-07-25 新增）
+     *
+     * 与 [clearGroupReminder] 对称：用户在 picker 中清空截止日期时调用。
+     * 注意：[clearGroupReminder] 不会联动调用此方法（按用户决策，字段独立）。
+     *
+     * @param groupId 分组 ID
+     */
+    fun clearGroupDueDate(groupId: Int) {
+        if (_groupDueDates.value[groupId] == null) {
+            android.util.Log.w(
+                "UndoRedoTrace",
+                "[clearGroupDueDate] ⏭ 跳过：未设置截止时间 groupId=$groupId"
+            )
+            return
+        }
+        pushSnapshot()
+        _groupDueDates.value = _groupDueDates.value - groupId
+        if (groupId == 0) {
+            _dueDate.value = null
+        }
+    }
+
+    /**
+     * 获取指定分组的截止时间
+     *
+     * @param groupId 分组 ID
+     * @return 截止时间戳；未设置返回 null
+     */
+    fun getGroupDueDate(groupId: Int): Long? {
+        return _groupDueDates.value[groupId]
     }
 
     fun setEstimatedDurationMinutes(minutes: Int?) {
@@ -1716,7 +1836,8 @@ class TodoEditViewModel @Inject constructor(
     ) {
         val currentReminder = _groupReminders.value[groupId]
         val currentRepeat = _groupRepeatTypes.value[groupId] ?: 0
-        val currentDue = _dueDate.value
+        // v2026-07-25 改造：截止时间已按 groupId 分组，与 reminder/repeatType 完全对称
+        val currentDue = _groupDueDates.value[groupId]
 
         // 计算"哪个字段会变"
         val reminderChanged = (reminderTime != null) && (currentReminder != reminderTime)
@@ -1753,11 +1874,20 @@ class TodoEditViewModel @Inject constructor(
             _groupReminders.value = _groupReminders.value - groupId
         }
         _groupRepeatTypes.value = _groupRepeatTypes.value + (groupId to repeatType)
-        _dueDate.value = dueDateMillis
+        // v2026-07-25 改造：截止时间按 groupId 独立存储
+        _groupDueDates.value = if (dueDateMillis == null) {
+            _groupDueDates.value - groupId
+        } else {
+            _groupDueDates.value + (groupId to dueDateMillis)
+        }
+        // 兼容字段：仅 groupId=0 时同步，避免被多容器覆盖
+        if (groupId == 0) {
+            _dueDate.value = dueDateMillis
+        }
 
         android.util.Log.w(
             "UndoRedoTrace",
-            "[setGroupReminderBatch] ✅ 完成: 已更新 reminder / repeatType / dueDate"
+            "[setGroupReminderBatch] ✅ 完成: 已更新 reminder / repeatType / groupDueDate"
         )
     }
 
@@ -1862,7 +1992,14 @@ class TodoEditViewModel @Inject constructor(
                 _groupCategoryIds.value = mapOf(0 to todo.categoryId)
                 _priority.value = todo.priority
                 // v2026-07-25 改造：不再加载 startDate（字段已废弃）
+                // v2026-07-25 改造：截止时间按 groupId 分组存储
+                // 单容器场景：groupId=0 持有该 todo 的截止时间
                 _dueDate.value = todo.dueDate
+                _groupDueDates.value = if (todo.dueDate != null) {
+                    mapOf(0 to todo.dueDate)
+                } else {
+                    emptyMap()
+                }
                 _estimatedDurationMinutes.value = todo.estimatedDurationMinutes
                 // 把"全局 reminderTime/repeatType"映射到"分组 0"，实现向后兼容
                 // 历史 todo 在旧实现里 reminderTime/repeatType 只有一份，对应第一个分组
@@ -2000,7 +2137,8 @@ class TodoEditViewModel @Inject constructor(
             priority = _groupPriorities.value[targetGroupId] ?: 0,  // 使用分组独立优先级
             status = 0,
             // v2026-07-25 改造：startDate 字段已删除，不再设置
-            dueDate = _dueDate.value,
+            // v2026-07-25 改造：截止时间按 groupId 取（与 reminder/repeatType 对称）
+            dueDate = _groupDueDates.value[targetGroupId],
             estimatedDurationMinutes = _estimatedDurationMinutes.value,
             reminderTime = _groupReminders.value[targetGroupId],
             repeatType = _groupRepeatTypes.value[targetGroupId] ?: 0,
