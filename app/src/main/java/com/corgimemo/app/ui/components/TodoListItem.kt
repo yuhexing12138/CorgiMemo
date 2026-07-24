@@ -36,6 +36,10 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 // v2026-07-24 新增：分组角标 Material Icons（替代 emoji 📂）
 import androidx.compose.material.icons.filled.Folder
+// v2026-07-25 v1.3 新增：图片附件角标 Material Icons（filled 版本）
+import androidx.compose.material.icons.filled.Image
+// v2026-07-25 v1.3 新增：语音附件角标 Material Icons（filled 版本）
+import androidx.compose.material.icons.filled.Mic
 // v2026-07-24 新增：循环提醒图标（周一至周五 / 每天 / 每周 / 每月 / 每年 / 周六至周日）
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.outlined.Image
@@ -397,18 +401,18 @@ fun TodoListItem(
         // v2026-07-24 改动：把 hasCategory 提取到 Box 之外，让 Box 内的 CategoryBadge
         // 和 Box 内的 Column 内容都能访问，避免重复定义。
         //
-        // v2026-07-25 改造：把 aggregateCounts / hasAttachmentBadge / hasRelationBadge / totalAttachment
+        // v2026-07-25 改造：把 aggregateCounts / hasImageAttachment / hasVoiceAttachment / hasRelationBadge
         // 也提升到 Box 之外，让 Box 第二段（多角标 Row）也能访问这些变量。
         // Box 内部 Layout 的 Column 仍然可以直接引用这些外层变量。
         /** 是否存在分组角标（详情模式且categoryName不为空） */
         val hasCategory = !isSimpleMode && categoryName != null
         /** 聚合附件数量（图片+语音总数），供多角标布局和元数据行使用 */
         val aggregateCounts = aggregateAttachmentCounts(todo, subTasks)
-        /** 是否存在附件角标（详情模式下图片或语音数量>0） */
-        val hasAttachmentBadge = !isSimpleMode && (aggregateCounts.first > 0 || aggregateCounts.second > 0)
-        /** 总附件数（图片+语音合并），用于显示在附件角标上 */
-        val totalAttachment = if (hasAttachmentBadge)
-            aggregateCounts.first + aggregateCounts.second else 0
+        /** v1.3 改造：图片/语音分开展示为两个独立角标 */
+        /** 是否存在图片附件角标（详情模式下图片数量>0） */
+        val hasImageAttachment = !isSimpleMode && aggregateCounts.first > 0
+        /** 是否存在语音附件角标（详情模式下语音数量>0） */
+        val hasVoiceAttachment = !isSimpleMode && aggregateCounts.second > 0
         /** 是否存在关联卡片角标（v2026-07-25 升级，详情模式下 relationCount>0） */
         val hasRelationBadge = !isSimpleMode && relationCount > 0
         Box {
@@ -446,7 +450,7 @@ fun TodoListItem(
                 // - 有角标时 top = 19 + 8 = 27dp（19dp 角标高度 + 8dp 间距）
                 // - 无角标时 top = 16dp（保持原状，紧贴卡片上边缘留 16dp）
                 // - 角标仍可点击（z 轴在上），内容区让位避免视觉重叠
-                val contentTopPadding = if (hasCategory || hasAttachmentBadge || hasRelationBadge)
+                val contentTopPadding = if (hasCategory || hasImageAttachment || hasVoiceAttachment || hasRelationBadge)
                     27.dp else 16.dp
                 Row(
                     modifier = Modifier
@@ -656,10 +660,36 @@ fun TodoListItem(
                 }
 
                 // 展开时显示子任务列表
+                // v2026-07-25 关键修复：动画规格必须与 ZonedReorderableLazyColumn.animateItem 的
+                // placementSpec（tween(200ms, FastOutSlowInEasing)）完全一致。
+                // 旧版本使用 expandVertically() 默认参数（300ms + FastOutLinearInEasing），
+                // 导致两个动画时长和缓动函数都不同，展开过程中第二个 todo 退让速度跟不上
+                // 第一个 todo 高度增长，从而出现"第一个 todo 被第二个 todo 遮挡"的 bug。
+                // 同步后两者完全一致：第一个 todo 高度增长与第二个 todo 位置退让同步进行。
                 AnimatedVisibility(
                     visible = effectiveExpanded,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
+                    enter = expandVertically(
+                        animationSpec = tween(
+                            durationMillis = 200,
+                            easing = FastOutSlowInEasing
+                        )
+                    ) + fadeIn(
+                        animationSpec = tween(
+                            durationMillis = 150,
+                            easing = FastOutSlowInEasing
+                        )
+                    ),
+                    exit = shrinkVertically(
+                        animationSpec = tween(
+                            durationMillis = 200,
+                            easing = FastOutSlowInEasing
+                        )
+                    ) + fadeOut(
+                        animationSpec = tween(
+                            durationMillis = 150,
+                            easing = FastOutSlowInEasing
+                        )
+                    )
                 ) {
                     Column(
                         modifier = Modifier
@@ -752,11 +782,16 @@ fun TodoListItem(
             // Kotlin 不能在 if(hasCategory) 内对 categoryName 智能转换为非空 String，
             // 因为 hasCategory 不是简单的 null 检查。这里用 !! 强制解包是安全的：
             // hasCategory 为 true 时 categoryName 必非空（line 399 定义保证）。
-            if (hasCategory || hasAttachmentBadge || hasRelationBadge) {
+            //
+            // v2026-07-25 v1.3 升级：图片/语音分开展示为两个独立角标
+            // 顺序固定：分组 → 图片 → 语音 → 关联
+            if (hasCategory || hasImageAttachment || hasVoiceAttachment || hasRelationBadge) {
                 // 计算最右角标索引（用于 isLastBadge 参数，控制右下圆角位置）
+                // v1.3 顺序：分组=0, 图片=1, 语音=2, 关联=3
                 val lastBadgeIndex = when {
-                    hasRelationBadge -> 2
-                    hasAttachmentBadge -> 1
+                    hasRelationBadge -> 3
+                    hasVoiceAttachment -> 2
+                    hasImageAttachment -> 1
                     hasCategory -> 0
                     else -> -1
                 }
@@ -775,11 +810,19 @@ fun TodoListItem(
                             isLastBadge = lastBadgeIndex == 0
                         )
                     }
-                    if (hasAttachmentBadge) {
-                        AttachmentBadge(
-                            count = totalAttachment,
+                    // v1.3 改造：图片/语音分开为两个独立角标
+                    if (hasImageAttachment) {
+                        ImageAttachmentBadge(
+                            count = aggregateCounts.first,
                             isCompleted = todo.status == 1,
                             isLastBadge = lastBadgeIndex == 1
+                        )
+                    }
+                    if (hasVoiceAttachment) {
+                        VoiceAttachmentBadge(
+                            count = aggregateCounts.second,
+                            isCompleted = todo.status == 1,
+                            isLastBadge = lastBadgeIndex == 2
                         )
                     }
                     if (hasRelationBadge) {
@@ -787,7 +830,7 @@ fun TodoListItem(
                             count = relationCount,
                             isCompleted = todo.status == 1,
                             onClick = onRelationCountClick,
-                            isLastBadge = lastBadgeIndex == 2
+                            isLastBadge = lastBadgeIndex == 3
                         )
                     }
                 }
@@ -1297,10 +1340,10 @@ private fun CategoryBadge(
 }
 
 /**
- * 附件数量角标（v2026-07-25 新增）
+ * 图片附件数量角标（v2026-07-25 新增，v1.3 改造）
  *
- * 替换旧版 [AttachmentCountsRow]（元数据行内嵌的图片+语音分两个图标）
- * v1.2 升级：图片+语音合并为单一角标（attach_file + 总数），节省视觉空间
+ * v1.2 旧版 [AttachmentBadge]：图片+语音合并为单一角标（attach_file + 总数）
+ * v1.3 升级：图片/语音分开展示为两个独立角标（image + 图片数 / mic + 语音数）
  *
  * 设计要点：
  * - 位置：位于 [CategoryBadge] 右侧（如有），从竖条内侧 4dp 紧贴
@@ -1308,14 +1351,15 @@ private fun CategoryBadge(
  * - 样式：与 [CategoryBadge] 完全一致（11sp + 浅灰背景 + 灰文字 + Material Icons）
  * - 高度：19dp（11sp lineHeight + 4dp×2 padding），与分享图分类角标严格一致
  * - 不可点击：纯展示性角标（与分组角标不同，分组可点击跳转）
+ * - 图标：Material Icons `Icons.Default.Image`
  *
- * @param count 总附件数（图片+语音合并）
+ * @param count 图片附件数量
  * @param isCompleted 是否已完成（视觉降权）
  * @param modifier 外部 modifier（一般由调用方控制）
  * @param isLastBadge 是否是最右角标（true 时右下 16dp 圆角，否则全 0 圆角）
  */
 @Composable
-private fun AttachmentBadge(
+private fun ImageAttachmentBadge(
     count: Int,
     isCompleted: Boolean,
     modifier: Modifier = Modifier,
@@ -1344,8 +1388,67 @@ private fun AttachmentBadge(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                imageVector = Icons.Default.AttachFile,
-                contentDescription = "附件",
+                imageVector = Icons.Default.Image,
+                contentDescription = "图片附件",
+                tint = textColor,
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(3.dp))
+            Text(
+                text = count.toString(),
+                fontSize = 11.sp,
+                lineHeight = 11.sp,
+                color = textColor,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                maxLines = 1,
+                letterSpacing = 0.3.sp
+            )
+        }
+    }
+}
+
+/**
+ * 语音附件数量角标（v2026-07-25 v1.3 新增）
+ *
+ * 与 [ImageAttachmentBadge] 完全对称的设计，但使用 `mic` 图标表示语音附件
+ *
+ * @param count 语音附件数量
+ * @param isCompleted 是否已完成（视觉降权）
+ * @param modifier 外部 modifier（一般由调用方控制）
+ * @param isLastBadge 是否是最右角标（true 时右下 16dp 圆角，否则全 0 圆角）
+ */
+@Composable
+private fun VoiceAttachmentBadge(
+    count: Int,
+    isCompleted: Boolean,
+    modifier: Modifier = Modifier,
+    isLastBadge: Boolean = false
+) {
+    if (count <= 0) return
+    val bgColor = if (isCompleted)
+        Color(0x66E0E0E0)
+    else
+        Color(0x99E0E0E0)
+    val textColor = if (isCompleted) Color(0xFF999999)
+                    else Color(0xFF666666)
+
+    val badgeShape = RoundedCornerShape(
+        topStart = 0.dp,
+        topEnd = 0.dp,
+        bottomEnd = if (isLastBadge) 16.dp else 0.dp,
+        bottomStart = 0.dp
+    )
+
+    Box(
+        modifier = modifier
+            .clip(badgeShape)
+            .background(bgColor, badgeShape)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = "语音附件",
                 tint = textColor,
                 modifier = Modifier.size(12.dp)
             )

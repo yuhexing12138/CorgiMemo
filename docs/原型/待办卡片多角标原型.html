@@ -270,23 +270,25 @@
 <body>
 
 <div class="page-header">
-  <h1>待办卡片多角标原型 <span style="color:#FF9A5C;">v1.2</span> · 分组+附件+关联统一为顶部角标</h1>
-  <p>CorgiMemo · TodoListItem 重设计迭代 · 附件/关联从元数据行迁到分组角标右侧</p>
+  <h1>待办卡片多角标原型 <span style="color:#FF9A5C;">v1.3</span> · 分组+图片+语音+关联统一为顶部角标</h1>
+  <p>CorgiMemo · TodoListItem 重设计迭代 · 语音/图片附件分开展示（独立角标）</p>
   <p style="color:#C62828;font-weight:600;margin-top:8px;">⚠️ 请按 Ctrl+F5 强制刷新（清除浏览器缓存）</p>
 </div>
 
 <!-- ============ 设计说明 ============ -->
 <div class="section-title">📐 设计说明</div>
 <div class="annotation">
-  <strong>v1.2 更新</strong>（基于用户反馈）：<br>
-  ① 所有角标都隐藏时，<code>badge-row</code> 不保留（<code>display: none</code>）<br>
-  ② 图片/语音合并为单一附件数角标（<code>attach_file + N</code>），不再分两个<br>
-  ③ 分组角标用 <strong>Material Icons</strong>（folder）替代 emoji，与 Android 端 Material Icons 严格一致<br><br>
+  <strong>v1.3 更新</strong>（基于用户反馈，语音/图片附件分开展示）：<br>
+  ① 图片/语音不再合并为单一角标，分为两个独立角标<br>
+  ② 顺序固定：<code>分组 → 图片 → 语音 → 关联</code>（图片在语音前，与元数据行旧版保持一致）<br>
+  ③ 所有角标都隐藏时，<code>badge-row</code> 不保留（<code>display: none</code>）<br>
+  ④ 分组角标用 <strong>Material Icons</strong>（folder）替代 emoji，与 Android 端 Material Icons 严格一致<br><br>
   <strong>图标选择</strong>（来自 Material Symbols / Material Icons）：<br>
   • 分组 → <code>folder</code>（文件夹，最直观表达"分组/分类"）<br>
-  • 附件 → <code>attach_file</code>（回形针，通用附件图标）<br>
+  • 图片 → <code>image</code>（图片，附件类型）<br>
+  • 语音 → <code>mic</code>（麦克风，语音附件）<br>
   • 关联 → <code>link</code>（链接，关联卡片）<br>
-  • Android 端对应：<code>Icons.Default.Folder</code> / <code>Icons.Default.AttachFile</code> / <code>Icons.Outlined.Link</code>
+  • Android 端对应：<code>Icons.Default.Folder</code> / <code>Icons.Default.Image</code> / <code>Icons.Default.Mic</code> / <code>Icons.Outlined.Link</code>
 </div>
 
 <!-- ============ 对比：旧 vs 新 ============ -->
@@ -365,16 +367,19 @@
   </div>
 </div>
 
-<!-- ============ 场景 2：分组 + 附件（图片+语音合并为 3） ============ -->
-<div class="section-title">场景 2 · 分组 + 附件（图片+语音合并为总数 3）</div>
+<!-- ============ 场景 2：分组 + 图片 + 语音（分开） ============ -->
+<div class="section-title">场景 2 · 分组 + 图片 + 语音（分开两个独立角标）</div>
 <div class="todo-card">
   <div class="priority-bar low"></div>
   <div class="badge-row">
     <span class="badge badge-category">
       <span class="badge-icon">folder</span>工作
     </span>
-    <span class="badge badge-attachment">
-      <span class="badge-icon">attach_file</span>3
+    <span class="badge badge-image">
+      <span class="badge-icon">image</span>2
+    </span>
+    <span class="badge badge-voice">
+      <span class="badge-icon">mic</span>1
     </span>
   </div>
   <div class="card-title">
@@ -407,13 +412,16 @@
   </div>
 </div>
 
-<!-- ============ 场景 4：仅有附件 + 关联（无分组） ============ -->
-<div class="section-title">场景 4 · 附件 + 关联（无分组，从竖条内侧 4dp 开始）</div>
+<!-- ============ 场景 4：图片+语音+关联（无分组） ============ -->
+<div class="section-title">场景 4 · 图片 + 语音 + 关联（无分组，从竖条内侧 4dp 开始）</div>
 <div class="todo-card">
   <div class="priority-bar high"></div>
   <div class="badge-row">
-    <span class="badge badge-attachment">
-      <span class="badge-icon">attach_file</span>1
+    <span class="badge badge-image">
+      <span class="badge-icon">image</span>1
+    </span>
+    <span class="badge badge-voice">
+      <span class="badge-icon">mic</span>1
     </span>
     <span class="badge badge-relation">
       <span class="badge-icon">link</span>2
@@ -451,8 +459,11 @@
     <span class="badge badge-category">
       <span class="badge-icon">folder</span>已归档
     </span>
-    <span class="badge badge-attachment">
-      <span class="badge-icon">attach_file</span>1
+    <span class="badge badge-image">
+      <span class="badge-icon">image</span>1
+    </span>
+    <span class="badge badge-voice">
+      <span class="badge-icon">mic</span>1
     </span>
     <span class="badge badge-relation">
       <span class="badge-icon">link</span>1
@@ -464,16 +475,19 @@
   </div>
 </div>
 
-<!-- ============ 场景 7：三者齐全 ============ -->
-<div class="section-title">场景 7 · 分组 + 附件 + 关联（三者齐全，最复杂）</div>
+<!-- ============ 场景 7：四者齐全 ============ -->
+<div class="section-title">场景 7 · 分组 + 图片 + 语音 + 关联（四者齐全，最复杂）</div>
 <div class="todo-card">
   <div class="priority-bar high"></div>
   <div class="badge-row">
     <span class="badge badge-category">
       <span class="badge-icon">folder</span>重要
     </span>
-    <span class="badge badge-attachment">
-      <span class="badge-icon">attach_file</span>5
+    <span class="badge badge-image">
+      <span class="badge-icon">image</span>3
+    </span>
+    <span class="badge badge-voice">
+      <span class="badge-icon">mic</span>2
     </span>
     <span class="badge badge-relation">
       <span class="badge-icon">link</span>4
@@ -511,25 +525,27 @@
 <div class="annotation">
   <strong>1. 角标高度统一为 19dp</strong>：<code>height: 19px</code> + <code>font-size: 11px</code> + <code>line-height: 11px</code>，与分享图分类角标严格一致。<br><br>
   <strong>2. Material Icons 选择</strong>（避免 emoji 跨平台不一致）：<br>
-  • 分组 → <code>Icons.Default.Folder</code>（文件夹）<br>
-  • 附件 → <code>Icons.Default.AttachFile</code>（回形针，图片+语音合并计数）<br>
-  • 关联 → <code>Icons.Outlined.Link</code>（链接）<br><br>
+  • 分组 → <code>folder</code>（文件夹）<br>
+  • 图片 → <code>image</code>（图片附件）<br>
+  • 语音 → <code>mic</code>（语音附件）<br>
+  • 关联 → <code>link</code>（链接）<br>
+  • Android 端对应：<code>Icons.Default.Folder</code> / <code>Icons.Default.Image</code> / <code>Icons.Default.Mic</code> / <code>Icons.Outlined.Link</code><br><br>
   <strong>3. 起点为竖条右侧 4dp</strong>：<code>padding-left: 20px</code>（卡片） = <code>4dp 竖条</code> + <code>16dp 内容</code>。<br><br>
   <strong>4. 圆角仅给最右</strong>：<code>.badge-row > .badge:last-child { border-bottom-right-radius: 16px; }</code>。<br><br>
   <strong>5. 视觉降权（已完成态）</strong>：背景 <code>rgba(0,0,0,0.03)</code> + 文字 <code>#AAAAAA</code>。<br><br>
-  <strong>6. 角标顺序固定</strong>：<code>分组 → 附件 → 关联</code>（图片+语音合并后顺序更简洁）。<br><br>
+  <strong>6. 角标顺序固定</strong>：<code>分组 → 图片 → 语音 → 关联</code>（图片在语音前）。<br><br>
   <strong>7. 空态处理</strong>：所有角标都隐藏时，<code>badge-row</code> 完全不渲染（<code>display: none</code>），不留空白。
 </div>
 
 <!-- ============ 决策记录 ============ -->
-<div class="section-title">✅ v1.2 决策记录（基于用户反馈）</div>
+<div class="section-title">✅ v1.3 决策记录（基于用户反馈）</div>
 <div class="annotation">
-  <strong>Q1（已确认）</strong>：所有角标都隐藏时，<code>badge-row</code> 不保留 ✓<br>
-  → 实现：<code>if (anyBadge) { Row(...) }</code><br><br>
-  <strong>Q2（已确认）</strong>：图片/语音合并为单一附件数角标（<code>attach_file + N</code>）✓<br>
-  → 实现：<code>val totalAttachment = imageCount + voiceCount</code>，仅当 <code>totalAttachment > 0</code> 时渲染<br><br>
-  <strong>Q3（已确认）</strong>：分组角标用 Material Icons（folder）替代 emoji ✓<br>
-  → 实现：<code>Image(painter = painterResource(R.drawable.ic_folder), ...)</code> 或 <code>Icon(Icons.Default.Folder, ...)</code>
+  <strong>Q1（v1.2 确认）</strong>：所有角标都隐藏时，<code>badge-row</code> 不保留 ✓<br>
+  → 实现：<code>if (hasCategory || hasImageAttachment || hasVoiceAttachment || hasRelationBadge) { Row(...) }</code><br><br>
+  <strong>Q2（v1.3 调整）</strong>：图片/语音<strong>分开</strong>为两个独立角标（<code>image + N</code> 和 <code>mic + N</code>）✓<br>
+  → 实现：<code>if (imageCount > 0) ImageAttachmentBadge(...)</code> + <code>if (voiceCount > 0) VoiceAttachmentBadge(...)</code><br><br>
+  <strong>Q3（v1.2 确认）</strong>：分组角标用 Material Icons（folder）替代 emoji ✓<br>
+  → 实现：<code>Icon(Icons.Default.Folder, ...)</code>
 </div>
 
 </body>
