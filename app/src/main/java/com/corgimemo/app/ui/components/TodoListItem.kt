@@ -43,6 +43,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+// v2026-07-24 修复：用 material3.ripple 替代已 deprecated 的 material.ripple.rememberRipple
+// 参考项目其他文件（AnimatableItemCard.kt:145, CorgiBottomNavigationBar.kt:20）的实现方式
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.getValue
