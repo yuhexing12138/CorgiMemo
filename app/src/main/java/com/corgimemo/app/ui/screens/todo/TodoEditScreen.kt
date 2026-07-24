@@ -1126,8 +1126,9 @@ fun TodoEditScreen(
                 IconButton(
                     onClick = {
                         // 根据光标所在行的 groupId + 是否多容器 决定走哪条删除路径
-                        // 🆕 v2026-07-25 第二轮修复：ViewModel.setFocusedLineIndex 越界时直接 return 保持原值，
-                        // 避免 CheckboxEditText 旧 onFocusChange 闭包传入过期 currentIndex 覆盖正确焦点
+                        // 🆕 v2026-07-25 修复：ViewModel.setFocusedLineIndex 越界时直接 return 保持原值，
+                        // CheckboxEditText.onFocusChange 实时按 line 引用反查 freshIndex，
+                        // 避免旧 onFocusChange 闭包传入过期 currentIndex 覆盖正确焦点
                         val currentLineIdx = focusedLineIndex
                         val currentLine = todoLines.getOrNull(currentLineIdx)
                         val currentGroupId = currentLine?.groupId ?: 0

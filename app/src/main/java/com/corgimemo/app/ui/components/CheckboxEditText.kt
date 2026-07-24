@@ -510,8 +510,31 @@ fun CheckboxEditText(
                             },
                             onFocusChange = { isFocused ->
                                 if (isFocused) {
-                                    focusedLineIndex = currentIndex
-                                    onFocusedLineChange?.invoke(currentIndex)
+                                    // 🆕 v2026-07-25 第三轮修复（关键）：不使用 lambda 闭包捕获的 currentIndex
+                                    // 根因：Compose 的 onFocusChanged modifier 回调可能在重组后还被旧 lambda 触发，
+                                    // 旧 lambda 捕获的 currentIndex 是上次重组时 globalIndex 计算的结果，
+                                    // 与当前 lines 列表不匹配（如 lines.size=3 但 currentIndex=5）。
+                                    // 修复：每次触发时从当前 lines 中按 line 引用反查最新 index，
+                                    // 若 line 引用已不在当前 lines 中（旧引用），则用 groupId 反查首行 index，
+                                    // 确保焦点索引与实际行位置一致。
+                                    val freshIndex = lines.indexOfFirst { it === line }
+                                    val safeIndex = when {
+                                        freshIndex >= 0 -> freshIndex
+                                        else -> {
+                                            // line 引用已过期（旧重组的 line），用 groupId 在当前 lines 中反查首行
+                                            val byGroupId = lines.indexOfFirst { it.groupId == line.groupId }
+                                            if (byGroupId >= 0) byGroupId else currentIndex
+                                        }
+                                    }
+                                    if (safeIndex != currentIndex) {
+                                        android.util.Log.w(
+                                            "TodoEditDelete",
+                                            "onFocusChange 闭包 currentIndex=$currentIndex 已过期，" +
+                                            "反查 safeIndex=$safeIndex (freshIndex=$freshIndex, groupId=${line.groupId}, size=${lines.size})"
+                                        )
+                                    }
+                                    focusedLineIndex = safeIndex
+                                    onFocusedLineChange?.invoke(safeIndex)
                                 }
                             },
                             onRegisterFocusRequester = { idx, fr -> focusRequesters[idx] = fr },

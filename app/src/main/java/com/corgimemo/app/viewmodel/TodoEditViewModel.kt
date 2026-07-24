@@ -1276,7 +1276,13 @@ class TodoEditViewModel @Inject constructor(
     fun deleteGroupByLineIndex(lineIndex: Int): Int {
         val current = _todoLines.value
         // 1. 越界保护
-        if (lineIndex !in current.indices) return -1
+        if (lineIndex !in current.indices) {
+            android.util.Log.w(
+                "TodoEditDelete",
+                "deleteGroupByLineIndex(lineIndex=$lineIndex) 越界，直接返回 -1 (size=${current.size})"
+            )
+            return -1
+        }
 
         val targetGroupId = current[lineIndex].groupId
         val isMainGroup = targetGroupId == 0
