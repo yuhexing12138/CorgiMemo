@@ -837,6 +837,26 @@ fun TodoEditScreen(
             viewModel.markTodoLinesInitialized()
 
             hasInitializedLines = true
+
+            // 🆕 v2026-07-25 进入编辑页时聚焦父待办行（lineIndex=0）
+            //
+            // 触发时机：todoLines 初始化完成后
+            // 机制：通过 externalPendingFocus + externalPendingFocusTrigger 触发 CheckboxEditText
+            //      内的 LaunchedEffect(externalPendingFocusTrigger) 转移焦点到第 0 行
+            //      （复用删除分组场景的成熟机制，delay 100ms 等渲染完成）
+            //
+            // 修复动机：
+            // - 原实现 _focusedLineIndex 默认值=0，但只更新 ViewModel 状态不会真正触发 TextField 聚焦
+            // - CheckboxEditRow 内 LaunchedEffect(isFocused) 依赖 isFocused=true 触发 requestFocus()，
+            //   但首次渲染时 LaunchedEffect 启动 key=false→true 触发条件不稳，存在时序竞态
+            // - 用户需求：进入编辑页时光标默认显示在父待办的行尾
+            //   （BasicTextField 用 String value 重载，requestFocus 后光标自动落在文本末尾）
+            //
+            // 适用场景：
+            // - 编辑模式（todoId != null）：点击首页待办卡片进入 → 聚焦到父待办行尾
+            // - 新建模式（todoId == null）：进入编辑页即可直接输入 → 聚焦空行
+            externalPendingFocus = 0
+            externalPendingFocusTrigger++
         }
     }
 
