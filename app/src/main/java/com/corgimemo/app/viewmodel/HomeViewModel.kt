@@ -1630,15 +1630,38 @@ class HomeViewModel @Inject constructor(
         // 按 subTaskId 聚合（子任务自身角标）
         val subTaskMap = mutableMapOf<Long, Pair<MutableList<String>, MutableList<String>>>()
         for (block in blocks) {
-            val targetMap = if (block.subTaskId != null) subTaskMap else todoMap
-            val key = if (block.subTaskId != null) block.subTaskId else block.todoId
-            val entry = targetMap.getOrPut(key) {
+            /**
+             * v2026-07-25 修复：子任务附件应同时进入两个 map
+             *
+             * 旧逻辑（bug）：
+             * - 子任务附件只进 subTaskMap，不进 todoMap
+             * - 导致父卡片角标总数不包含子任务附件
+             * - 与 HomeScreen 注释"聚合父待办 + 所有子任务的图片路径"不符
+             *
+             * 新逻辑：
+             * - 所有附件按 todoId 聚合到 todoMap（父卡片角标总数）
+             * - 子任务附件额外按 subTaskId 聚合到 subTaskMap（子任务自身角标）
+             * - 两个 map 不互斥，子任务附件同时出现在两个 map 中
+             */
+            val todoEntry = todoMap.getOrPut(block.todoId) {
                 mutableListOf<String>() to mutableListOf<String>()
             }
             when (block.type) {
-                "image" -> entry.first.add(block.filePath)
-                "voice" -> entry.second.add(block.filePath)
+                "image" -> todoEntry.first.add(block.filePath)
+                "voice" -> todoEntry.second.add(block.filePath)
                 else -> { /* 文本块等不参与附件聚合 */ }
+            }
+
+            // 子任务附件额外聚合到 subTaskMap（用于子任务列表展开时显示子任务自身角标）
+            if (block.subTaskId != null) {
+                val subEntry = subTaskMap.getOrPut(block.subTaskId) {
+                    mutableListOf<String>() to mutableListOf<String>()
+                }
+                when (block.type) {
+                    "image" -> subEntry.first.add(block.filePath)
+                    "voice" -> subEntry.second.add(block.filePath)
+                    else -> { /* 文本块等不参与附件聚合 */ }
+                }
             }
         }
         // 转为不可变 List，避免外部误修改
