@@ -1,5 +1,6 @@
 package com.corgimemo.app.data.local.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -37,8 +38,8 @@ data class ContentBlockEntity(
     val filePath: String,
     /** 语音时长（秒），仅 type="voice" 时有效 */
     val duration: Int? = null,
-    /** 排序索引，决定在内容流中的显示顺序 */
-    val orderIndex: Int = 0,
+    /** 排序索引，决定在内容流中的显示顺序（@ColumnInfo defaultValue 与 Migration DEFAULT 0 保持一致） */
+    @ColumnInfo(defaultValue = "0") val orderIndex: Int = 0,
     /**
      * 子任务 ID（v2026-07-25 新增）
      *
@@ -57,6 +58,8 @@ data class ContentBlockEntity(
      *
      * - 0：第一行（通常是父待办标题行）
      * - 1, 2, ...：后续子任务行
+     *
+     * @ColumnInfo defaultValue 与 Migration DEFAULT 0 保持一致（项目规则：entity与migration同步检查）
      */
-    val lineIndex: Int = 0
+    @ColumnInfo(defaultValue = "0") val lineIndex: Int = 0
 )

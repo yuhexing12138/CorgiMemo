@@ -31,7 +31,7 @@ import com.corgimemo.app.data.model.CustomDateType
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
-    version = 47,
+    version = 48,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -99,7 +99,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1606,6 +1606,18 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 database.execSQL("DROP TABLE IF EXISTS content_blocks")
                 database.execSQL("ALTER TABLE content_blocks_new RENAME TO content_blocks")
 
+                // Step 7.1: 重建索引（修复 v2026-07-25 闪退问题）
+                // 原因：SQLite 的 ALTER TABLE RENAME 不会自动重命名关联索引，
+                // 旧索引名仍是 `index_content_blocks_new_*`，
+                // 但 Room 期望 `index_content_blocks_*`（基于 Entity 中 @Index 注解生成）。
+                // 索引名不匹配会导致 Room schema hash 校验失败，启动时闪退。
+                database.execSQL("DROP INDEX IF EXISTS index_content_blocks_new_todoId")
+                database.execSQL("DROP INDEX IF EXISTS index_content_blocks_new_subTaskId")
+                database.execSQL("DROP INDEX IF EXISTS index_content_blocks_new_lineIndex")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_content_blocks_todoId ON content_blocks(todoId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_content_blocks_subTaskId ON content_blocks(subTaskId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_content_blocks_lineIndex ON content_blocks(lineIndex)")
+
                 // Step 8: 清空 todo_items 和 inspirations 的旧字段（保留字段但置空，避免回退读取）
                 database.execSQL("UPDATE todo_items SET imagePaths = '', voiceNotePath = NULL, voiceDuration = NULL")
                 database.execSQL("UPDATE inspirations SET imagePaths = '', voiceNotePath = NULL, voiceDuration = NULL")
@@ -1615,6 +1627,47 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             } finally {
                 database.endTransaction()
             }
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 47 → 48
+     *
+     * **修复 v47 索引名错误导致的启动闪退问题**（v2026-07-25 紧急修复）
+     *
+     * ## 背景
+     *
+     * v46→v47 的 [MIGRATION_46_TO_47] 在执行 `ALTER TABLE content_blocks_new RENAME TO content_blocks`
+     * 后，未重建索引。SQLite 的 RENAME 不会自动重命名关联索引，导致：
+     * - 实际索引名：`index_content_blocks_new_*`
+     * - Room 期望索引名：`index_content_blocks_*`（基于 [ContentBlockEntity] 的 @Index 注解）
+     *
+     * Room 在打开数据库时校验 schema hash 失败，抛出 `IllegalStateException` 导致启动闪退。
+     *
+     * ## 修复策略
+     *
+     * 此 Migration 是**幂等**的：
+     * - 如果索引名已经是正确的（用户从修复后的 v46→v47 升级），`DROP IF EXISTS` 和 `CREATE IF NOT EXISTS` 不会报错
+     * - 如果索引名是错误的（用户从有问题的 v47 升级），删除旧索引并创建正确索引
+     *
+     * ## 覆盖场景
+     *
+     * 1. 用户从 v46 升级到 v48：先走 [MIGRATION_46_TO_47]（已修复，索引名正确），再走此 Migration（幂等，无副作用）
+     * 2. 用户从有问题的 v47 升级到 v48：直接走此 Migration 修复索引名
+     * 3. 全新安装 v48：不走 Migration，Room 直接用 Entity 创建表，索引名正确
+     */
+    internal val MIGRATION_47_TO_48 = object : Migration(47, 48) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // 删除 v46→v47 Migration 遗留的错误命名索引（如果存在）
+            database.execSQL("DROP INDEX IF EXISTS index_content_blocks_new_todoId")
+            database.execSQL("DROP INDEX IF EXISTS index_content_blocks_new_subTaskId")
+            database.execSQL("DROP INDEX IF EXISTS index_content_blocks_new_lineIndex")
+
+            // 创建 Room 期望命名的索引（如果不存在）
+            // 索引名与 [ContentBlockEntity] 的 @Index 注解生成的名称一致
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_content_blocks_todoId ON content_blocks(todoId)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_content_blocks_subTaskId ON content_blocks(subTaskId)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_content_blocks_lineIndex ON content_blocks(lineIndex)")
         }
     }
     // companion object 闭合
