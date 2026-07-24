@@ -1015,12 +1015,17 @@ fun TodoEditScreen(
 
                             if (totalCount == 1) {
                                 // 只有一个已保存 todo：直接走单张分享（不弹选择）
+                                // v2026-07-25 单一数据源：预查 content_blocks 表获取图片附件路径
+                                val todoIds = listOf(mainTodo.id)
+                                val (todoImgMap, subTaskImgMap) = viewModel.getAttachmentsForShare(todoIds)
                                 ShareCoordinator.shareTodosFromEdit(
                                     context = context,
                                     mainTodo = mainTodo,
                                     savedSubTodos = savedSubTodos,
                                     categories = categories,
                                     hasUnsavedGroups = false,
+                                    todoImagePaths = todoImgMap,
+                                    subTaskImagePaths = subTaskImgMap,
                                     onShowSnackBar = { msg ->
                                         coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
                                     },
@@ -2122,10 +2127,15 @@ fun TodoEditScreen(
             onMerge = {
                 showShareModeDialog = false
                 coroutineScope.launch {
+                    // v2026-07-25 单一数据源：预查 content_blocks 表获取图片附件路径
+                    val todoIds = shareTodosSnapshot.map { it.id }
+                    val (todoImgMap, subTaskImgMap) = viewModel.getAttachmentsForShare(todoIds)
                     ShareCoordinator.shareMerged(
                         context = context,
                         todos = shareTodosSnapshot,
                         categories = categories,
+                        todoImagePaths = todoImgMap,
+                        subTaskImagePaths = subTaskImgMap,
                         onShowSnackBar = { msg ->
                             coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
                         }
@@ -2135,10 +2145,15 @@ fun TodoEditScreen(
             onOneByOne = {
                 showShareModeDialog = false
                 coroutineScope.launch {
+                    // v2026-07-25 单一数据源：预查 content_blocks 表获取图片附件路径
+                    val todoIds = shareTodosSnapshot.map { it.id }
+                    val (todoImgMap, subTaskImgMap) = viewModel.getAttachmentsForShare(todoIds)
                     ShareCoordinator.shareOneByOne(
                         context = context,
                         todos = shareTodosSnapshot,
                         categories = categories,
+                        todoImagePaths = todoImgMap,
+                        subTaskImagePaths = subTaskImgMap,
                         onShowSnackBar = { msg ->
                             coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
                         }

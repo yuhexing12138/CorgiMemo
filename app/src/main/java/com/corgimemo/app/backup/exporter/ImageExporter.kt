@@ -56,7 +56,9 @@ object ImageExporter {
      * @param todo 主待办项
      * @param category 分类
      * @param subTodos 子待办列表（默认空）
-     * @param imageCount 图片附件数量（默认0）
+     * @param imagePaths 主待办图片附件路径列表（从 content_blocks 表派生，由调用方传入）
+     * @param subTaskImagePaths 子待办图片附件映射（key = subTaskId, value = 图片路径列表）
+     *        v2026-07-25 单一数据源重构新增：替代旧的 sub.imagePaths 字段（已置空）
      * @param relationCount 关联数量（默认0）
      * @return Bitmap 对象
      */
@@ -66,6 +68,7 @@ object ImageExporter {
         category: Category?,
         subTodos: List<SubTask> = emptyList(),
         imagePaths: List<String> = emptyList(),
+        subTaskImagePaths: Map<Long, List<String>> = emptyMap(),
         relationCount: Int = 0
     ): Bitmap = withContext(Dispatchers.Default) {
         val density = context.resources.displayMetrics.density
@@ -77,7 +80,7 @@ object ImageExporter {
 
         // ===== 第一遍：测量内容高度（不绘制） =====
         val measureCanvas = Canvas()
-        val contentHeight = measureCardContent(measureCanvas, width, padding, todo, category, subTodos, imagePaths.size, relationCount, density)
+        val contentHeight = measureCardContent(measureCanvas, width, padding, todo, category, subTodos, imagePaths.size, subTaskImagePaths, relationCount, density)
         val headerHeight = (44 * density).toInt()    // 品牌条高度
         val footerHeight = (40 * density).toInt()    // 水印区高度
         val cardSpacing = (12 * density).toInt()     // 品牌条/卡片/水印间距
@@ -96,7 +99,7 @@ object ImageExporter {
         currentY += cardSpacing
 
         // 2. 主待办卡片
-        currentY = drawTodoCard(canvas, width, padding, currentY, todo, category, subTodos, imagePaths, relationCount, density)
+        currentY = drawTodoCard(canvas, width, padding, currentY, todo, category, subTodos, imagePaths, subTaskImagePaths, relationCount, density)
 
         currentY += cardSpacing
 
@@ -141,6 +144,7 @@ object ImageExporter {
         category: Category?,
         subTodos: List<SubTask>,
         imageCount: Int,
+        subTaskImagePaths: Map<Long, List<String>>,
         relationCount: Int,
         density: Float
     ): Int {
@@ -164,7 +168,8 @@ object ImageExporter {
             for (sub in subTodos) {
                 y += (32 * density).toInt() // 每项高度
                 // 子待办附件（行内联）
-                val subImageCount = parseImagePaths(sub.imagePaths).size
+                // v2026-07-25 单一数据源重构：从 subTaskImagePaths 映射查询（替代旧的 sub.imagePaths 字段）
+                val subImageCount = (subTaskImagePaths[sub.id] ?: emptyList()).size
                 if (subImageCount > 0) {
                     y += (4 * density).toInt() + (56 * density).toInt() + (4 * density).toInt()
                 }
@@ -298,6 +303,7 @@ object ImageExporter {
         category: Category?,
         subTodos: List<SubTask>,
         imagePaths: List<String>,
+        subTaskImagePaths: Map<Long, List<String>>,
         relationCount: Int,
         density: Float
     ): Int {
@@ -319,7 +325,7 @@ object ImageExporter {
         val imageCount = imagePaths.size
 
         // 测量内容高度
-        val contentHeight = measureCardContent(canvas, width, padding, todo, category, subTodos, imageCount, relationCount, density)
+        val contentHeight = measureCardContent(canvas, width, padding, todo, category, subTodos, imageCount, subTaskImagePaths, relationCount, density)
 
         // 卡片白色背景
         val cardBgPaint = Paint().apply {
@@ -497,7 +503,8 @@ object ImageExporter {
                 y += (32 * density).toInt()
 
                 // 子待办附件（行内联，紧跟子待办标题下方，与待办编辑页一致）
-                val subImagePaths = parseImagePaths(sub.imagePaths)
+                // v2026-07-25 单一数据源重构：从 subTaskImagePaths 映射查询（替代旧的 sub.imagePaths 字段）
+                val subImagePaths = subTaskImagePaths[sub.id] ?: emptyList()
                 if (subImagePaths.isNotEmpty()) {
                     // 缩进对齐：子待办缩进 28dp
                     val subImageX = titleX + (28 * density)
@@ -665,20 +672,6 @@ object ImageExporter {
         }
 
         return y + thumbSize
-    }
-
-    /**
-     * 解析 imagePaths JSON 字符串为 List<String>
-     *
-     * @param imagePathsJson JSON 数组字符串，空字符串返回空列表
-     * @return 图片路径列表
-     */
-    private fun parseImagePaths(imagePathsJson: String?): List<String> {
-        if (imagePathsJson.isNullOrBlank()) return emptyList()
-        return try {
-            val arr = org.json.JSONArray(imagePathsJson)
-            (0 until arr.length()).map { arr.getString(it) }
-        } catch (_: Exception) { emptyList() }
     }
 
     /**

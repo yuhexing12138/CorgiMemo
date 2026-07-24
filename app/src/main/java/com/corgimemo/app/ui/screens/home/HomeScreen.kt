@@ -1134,10 +1134,14 @@ fun HomeScreen(
                                                     viewModel.toggleSelection(todo.id)
                                                 },
                                                 onShareAsImage = {
-                                                    // v2026-07-25 单一数据源：从 todoAttachmentsMap 获取图片路径
+                                                    // v2026-07-25 单一数据源：从 todoAttachmentsMap 获取主待办图片路径
                                                     // （替代旧的从 todo.imagePaths 字段解析）
                                                     val imgPaths = todoAttachmentsMap[todo.id]?.first ?: emptyList()
-                                                    shareTodoAsImage(context, todo, categories, imgPaths)
+                                                    // v2026-07-25 新增：从 subTaskAttachmentsMap 提取子任务图片路径映射
+                                                    // （替代旧的 ImageExporter 内部从 sub.imagePaths 字段解析）
+                                                    val subImgPaths = subTaskAttachmentsMap
+                                                        .mapValues { it.value.first }
+                                                    shareTodoAsImage(context, todo, categories, imgPaths, subImgPaths)
                                                 },
                                                 onToggleExpand = {
                                                     viewModel.toggleExpand(todo.id)
@@ -3225,19 +3229,22 @@ private fun QuickAddTodoContent(
 /**
  * 分享待办为图片
  *
- * v2026-07-25 单一数据源重构：新增 imagePaths 参数，由调用方从 content_blocks 表派生
- * 旧的从 `todo.imagePaths` 字段解析的方案已废弃（阶段2 重构后该字段已被置空）
+ * v2026-07-25 单一数据源重构：新增 imagePaths 和 subTaskImagePaths 参数，由调用方从 content_blocks 表派生
+ * 旧的从 `todo.imagePaths` / `sub.imagePaths` 字段解析的方案已废弃（阶段2 重构后该字段已被置空）
  *
  * @param context 上下文
  * @param todo 待办项
  * @param categories 分类列表
- * @param imagePaths 图片附件路径列表（从 content_blocks 表派生，由调用方传入）
+ * @param imagePaths 主待办图片附件路径列表（从 content_blocks 表派生，由调用方传入）
+ * @param subTaskImagePaths 子待办图片附件映射（key = subTaskId, value = 图片路径列表）
+ *        v2026-07-25 新增：替代旧的 ImageExporter 内部从 sub.imagePaths 字段解析的方案
  */
 fun shareTodoAsImage(
     context: android.content.Context,
     todo: TodoItem,
     categories: List<Category>,
-    imagePaths: List<String> = emptyList()
+    imagePaths: List<String> = emptyList(),
+    subTaskImagePaths: Map<Long, List<String>> = emptyMap()
 ) {
     val coroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
     coroutineScope.launch {
@@ -3259,6 +3266,7 @@ fun shareTodoAsImage(
                 category = category,
                 subTodos = subTasks,
                 imagePaths = imagePaths,
+                subTaskImagePaths = subTaskImagePaths,
                 relationCount = relationCount
             )
 

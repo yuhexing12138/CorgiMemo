@@ -2045,6 +2045,40 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
+     * 批量查询待办和子任务的图片附件路径（用于分享卡片）
+     *
+     * v2026-07-25 单一数据源重构新增：
+     * - 从 content_blocks 表批量查询图片附件路径
+     * - 替代旧的从 `todo.imagePaths` / `sub.imagePaths` 字段解析的方案（已置空）
+     * - 供 ShareCoordinator.shareTodosFromEdit / shareMerged / shareOneByOne 使用
+     *
+     * 聚合规则：
+     * - 按 todoId 聚合：所有附件（含父待办和子任务）按 todoId 归入 todoImagePaths（用于父卡片图片总数）
+     * - 按 subTaskId 聚合：仅子任务附件按 subTaskId 归入 subTaskImagePaths（用于子任务图片绘制）
+     *
+     * @param todoIds 待查询的待办 ID 列表
+     * @return Pair(todoImagePaths, subTaskImagePaths)
+     *         - todoImagePaths: Map<todoId, List<图片路径>>
+     *         - subTaskImagePaths: Map<subTaskId, List<图片路径>>
+     */
+    suspend fun getAttachmentsForShare(todoIds: List<Long>): Pair<Map<Long, List<String>>, Map<Long, List<String>>> {
+        if (todoIds.isEmpty()) return emptyMap<Long, List<String>>() to emptyMap()
+        val blocks = contentBlockDao.getBlocksByTodoIds(todoIds)
+        val todoMap = mutableMapOf<Long, MutableList<String>>()
+        val subTaskMap = mutableMapOf<Long, MutableList<String>>()
+        for (block in blocks) {
+            if (block.type != "image") continue
+            // 按 todoId 聚合（父卡片图片总数）
+            todoMap.getOrPut(block.todoId) { mutableListOf() }.add(block.filePath)
+            // 子任务附件额外按 subTaskId 聚合
+            if (block.subTaskId != null) {
+                subTaskMap.getOrPut(block.subTaskId) { mutableListOf() }.add(block.filePath)
+            }
+        }
+        return todoMap.mapValues { it.value.toList() } to subTaskMap.mapValues { it.value.toList() }
+    }
+
+    /**
      * 保存所有未保存的分组
      *
      * 遍历所有 groupId，对未保存的分组逐一调用 saveGroup()。

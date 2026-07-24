@@ -19,6 +19,10 @@ import kotlinx.coroutines.withContext
  * - 未保存分组：通过 onShowSnackBar 提示用户先保存
  *
  * 本身不持有 UI 状态，UI 层传入回调即可。
+ *
+ * v2026-07-25 单一数据源重构：所有方法新增 todoImagePaths 和 subTaskImagePaths 参数
+ * - 由调用方从 content_blocks 表预查并传入
+ * - 替代旧的从 `todo.imagePaths` / `sub.imagePaths` 字段解析的方案（阶段2 重构后字段已置空）
  */
 object ShareCoordinator {
 
@@ -30,6 +34,10 @@ object ShareCoordinator {
      * @param savedSubTodos 已保存的子 todo 列表（按 sortOrder/groupId 拆分）
      * @param categories 分类列表
      * @param hasUnsavedGroups 是否有未保存的分组（true 时不进入分享流程）
+     * @param todoImagePaths 各待办的图片路径映射（key = todoId, value = 图片路径列表）
+     *        v2026-07-25 单一数据源重构：从 content_blocks 表派生，替代旧的 todo.imagePaths 字段
+     * @param subTaskImagePaths 各子任务的图片路径映射（key = subTaskId, value = 图片路径列表）
+     *        v2026-07-25 单一数据源重构：从 content_blocks 表派生，替代旧的 sub.imagePaths 字段
      * @param onShowSnackBar 显示 SnackBar（用于未保存提示）
      * @param onShowDialog 显示分享方式选择弹窗（参数为待分享数量）
      */
@@ -39,6 +47,8 @@ object ShareCoordinator {
         savedSubTodos: List<TodoItem>,
         categories: List<Category>,
         hasUnsavedGroups: Boolean,
+        todoImagePaths: Map<Long, List<String>>,
+        subTaskImagePaths: Map<Long, List<String>>,
         onShowSnackBar: (String) -> Unit,
         onShowDialog: ((count: Int) -> Unit)?
     ) {
@@ -54,7 +64,9 @@ object ShareCoordinator {
 
         // 3. 单个：直接调 shareTodoAsImage（fire-and-forget，由其内部协程完成分享）
         if (allTodos.size == 1) {
-            shareTodoAsImage(context, allTodos[0], categories)
+            // v2026-07-25 单一数据源：从映射查询图片路径，替代旧的 todo.imagePaths 字段
+            val imgPaths = todoImagePaths[allTodos[0].id] ?: emptyList()
+            shareTodoAsImage(context, allTodos[0], categories, imgPaths, subTaskImagePaths)
             return
         }
 
@@ -68,18 +80,26 @@ object ShareCoordinator {
      * @param context 上下文
      * @param todos 选中的 todo 列表
      * @param categories 分类列表
+     * @param todoImagePaths 各待办的图片路径映射（key = todoId, value = 图片路径列表）
+     *        v2026-07-25 单一数据源重构：从 content_blocks 表派生
+     * @param subTaskImagePaths 各子任务的图片路径映射（key = subTaskId, value = 图片路径列表）
+     *        v2026-07-25 单一数据源重构：从 content_blocks 表派生
      * @param onShowDialog 显示分享方式选择弹窗
      */
     suspend fun shareTodos(
         context: Context,
         todos: List<TodoItem>,
         categories: List<Category>,
+        todoImagePaths: Map<Long, List<String>>,
+        subTaskImagePaths: Map<Long, List<String>>,
         onShowDialog: ((count: Int) -> Unit)?
     ) {
         if (todos.isEmpty()) return
 
         if (todos.size == 1) {
-            shareTodoAsImage(context, todos[0], categories)
+            // v2026-07-25 单一数据源：从映射查询图片路径
+            val imgPaths = todoImagePaths[todos[0].id] ?: emptyList()
+            shareTodoAsImage(context, todos[0], categories, imgPaths, subTaskImagePaths)
             return
         }
 
@@ -94,12 +114,18 @@ object ShareCoordinator {
      * @param context 上下文
      * @param todos 待分享的 todo 列表
      * @param categories 分类列表
+     * @param todoImagePaths 各待办的图片路径映射（key = todoId, value = 图片路径列表）
+     *        v2026-07-25 单一数据源重构：从 content_blocks 表派生，替代旧的 todo.imagePaths 字段
+     * @param subTaskImagePaths 各子任务的图片路径映射（key = subTaskId, value = 图片路径列表）
+     *        v2026-07-25 单一数据源重构：从 content_blocks 表派生，替代旧的 sub.imagePaths 字段
      * @param onShowSnackBar 用于错误提示
      */
     suspend fun shareMerged(
         context: Context,
         todos: List<TodoItem>,
         categories: List<Category>,
+        todoImagePaths: Map<Long, List<String>>,
+        subTaskImagePaths: Map<Long, List<String>>,
         onShowSnackBar: (String) -> Unit
     ) {
         try {
@@ -109,19 +135,16 @@ object ShareCoordinator {
                     val category = categories.find { it.id == todo.categoryId }
                     // 异步查询子待办
                     val subTasks = com.corgimemo.app.data.repository.SubTaskManager.getSubTasks(context, todo.id)
-                    // 解析图片路径
-                    val imagePaths = if (todo.imagePaths.isNotBlank()) {
-                        try {
-                            val arr = org.json.JSONArray(todo.imagePaths)
-                            (0 until arr.length()).map { arr.getString(it) }
-                        } catch (_: Exception) { emptyList<String>() }
-                    } else emptyList()
+                    // v2026-07-25 单一数据源：从映射查询图片路径，替代旧的 todo.imagePaths 字段解析
+                    val imagePaths = todoImagePaths[todo.id] ?: emptyList()
                     ImageExporter.createTodoShareCard(
                         context = context,
                         todo = todo,
                         category = category,
                         subTodos = subTasks,
-                        imagePaths = imagePaths
+                        imagePaths = imagePaths,
+                        subTaskImagePaths = subTaskImagePaths,
+                        relationCount = 0
                     )
                 }
 
@@ -156,16 +179,25 @@ object ShareCoordinator {
      * @param context 上下文
      * @param todos 待分享的 todo 列表
      * @param categories 分类列表
+     * @param todoImagePaths 各待办的图片路径映射（key = todoId, value = 图片路径列表）
+     *        v2026-07-25 单一数据源重构：从 content_blocks 表派生
+     * @param subTaskImagePaths 各子任务的图片路径映射（key = subTaskId, value = 图片路径列表）
+     *        v2026-07-25 单一数据源重构：从 content_blocks 表派生
+     * @param onShowSnackBar 用于错误提示
      */
     suspend fun shareOneByOne(
         context: Context,
         todos: List<TodoItem>,
         categories: List<Category>,
+        todoImagePaths: Map<Long, List<String>>,
+        subTaskImagePaths: Map<Long, List<String>>,
         onShowSnackBar: (String) -> Unit
     ) {
         for (todo in todos) {
             try {
-                shareTodoAsImage(context, todo, categories)
+                // v2026-07-25 单一数据源：从映射查询图片路径
+                val imgPaths = todoImagePaths[todo.id] ?: emptyList()
+                shareTodoAsImage(context, todo, categories, imgPaths, subTaskImagePaths)
                 delay(800)  // 避免系统分享面板叠加
             } catch (e: Exception) {
                 // 统一通过回调提示（由调用方 Snackbar 展示）
