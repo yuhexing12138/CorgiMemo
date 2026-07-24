@@ -51,6 +51,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
@@ -222,6 +224,19 @@ fun CheckboxEditText(
 
     /** 收集每行的 FocusRequester，用于 "/" 新建后转移焦点 */
     val focusRequesters = remember { mutableStateMapOf<Int, FocusRequester>() }
+
+    /**
+     * 🆕 v2026-07-25 各行"光标置末尾"触发器（key=lineIndex, value=trigger 计数）
+     *
+     * 用途：当 handleKeyEvent 在 KEYCODE_DEL 分支删除空行后，
+     * 需要把上一行光标强制设置到文本末尾（满足"删除到上一行时光标从上一行行尾开始往前删"的需求）。
+     *
+     * 机制：对上一行 lineIndex 递增本 map 对应 value，
+     * 由 CheckboxEditRow 内 LaunchedEffect(cursorAtEndTrigger) 监听并设置光标位置。
+     *
+     * 用 SnapshotStateMap 而非普通 Map 是为了让 CheckboxEditRow 能感知变化并触发 LaunchedEffect。
+     */
+    val cursorAtEndTriggers = remember { mutableStateMapOf<Int, Int>() }
 
     /**
      * 🆕 语音播放器实例管理
@@ -522,7 +537,19 @@ fun CheckboxEditText(
                                     },
                                     focusManager = focusManager,
                                     onNewGroupRequested = onNewGroupRequested,
-                                    onNewSubTaskRequested = onNewSubTaskRequested
+                                    onNewSubTaskRequested = onNewSubTaskRequested,
+                                    /**
+                                     * 🆕 v2026-07-25 光标置末尾回调
+                                     *
+                                     * handleKeyEvent 在 KEYCODE_DEL 分支删除空行后调用，
+                                     * 参数是上一行的新索引（index - 1）。
+                                     * 本回调对 cursorAtEndTriggers map 中对应行的计数 +1，
+                                     * 触发 CheckboxEditRow 内 LaunchedEffect(cursorAtEndTrigger) 设置光标到末尾。
+                                     */
+                                    onCursorAtEndRequested = { targetIdx ->
+                                        cursorAtEndTriggers[targetIdx] =
+                                            (cursorAtEndTriggers[targetIdx] ?: 0) + 1
+                                    }
                                 )
                             },
                             onFocusChange = { isFocused ->
@@ -586,7 +613,15 @@ fun CheckboxEditText(
                             /** 🆕 传入语音播放器相关参数 */
                             voicePlayerMap = voicePlayerMap,
                             context = context,
-                            pauseAllOtherVoices = ::pauseAllOtherVoices
+                            pauseAllOtherVoices = ::pauseAllOtherVoices,
+                            /**
+                             * 🆕 v2026-07-25 光标置末尾触发器
+                             *
+                             * 从 cursorAtEndTriggers map 读取当前行的触发器计数，
+                             * 当 handleKeyEvent 删除空行后对上一行触发计数 +1，
+                             * 本行 LaunchedEffect 监听到变化后把光标设置到文本末尾。
+                             */
+                            cursorAtEndTrigger = cursorAtEndTriggers[currentIndex] ?: 0
                         )
                     }
                 }
@@ -1042,7 +1077,18 @@ private fun CheckboxEditRow(
     /** 🆕 Android Context（用于创建 VoicePlayer 实例）*/
     context: android.content.Context,
     /** 🆕 多语音互斥播放控制函数*/
-    pauseAllOtherVoices: (String) -> Unit
+    pauseAllOtherVoices: (String) -> Unit,
+    /**
+     * 🆕 v2026-07-25 光标置末尾触发器
+     *
+     * 用途：当外部需要强制把该行的光标位置设置到文本末尾时，递增本值即可触发。
+     * 典型场景：用户在子待办行按 Backspace 删除空行后，焦点转移到上一行，
+     * 此时上一行的光标必须落在文本末尾，用户继续按 Backspace 才能从行尾往前删除。
+     *
+     * 实现：LaunchedEffect(cursorAtEndTrigger) 监听本值变化，
+     * 触发时把本地 TextFieldValue.selection 设置为 TextRange(text.length)。
+     */
+    cursorAtEndTrigger: Int = 0
 ) {
     /** 复选框颜色动画 */
     val checkboxColor by animateColorAsState(
@@ -1061,6 +1107,68 @@ private fun CheckboxEditRow(
 
     // 注册 FocusRequester 到外层 map，用于 "/" 新建后转移焦点
     onRegisterFocusRequester(lineIndex, focusRequester)
+
+    /**
+     * 🆕 v2026-07-25 本地 TextFieldValue 状态
+     *
+     * 改造动机：原 BasicTextField 用 String 重载（value = line.text），
+     * Compose 内部维护 TextFieldValue 状态。当通过 requestFocus() 转移焦点到
+     * 一行从未被聚焦过的 BasicTextField 时，光标位置默认是 0（行首），
+     * 导致用户按 Backspace 删除空行后转到上一行时，光标在上一行行首，
+     * 继续按 Backspace 无法删除任何字符。
+     *
+     * 改造为 TextFieldValue 重载后，可显式控制光标位置：
+     * - 正常输入：onValueChange 同步更新本地状态 + 调用 onTextChange
+     * - 外部 line.text 变化（撤销/恢复/DB 加载）：LaunchedEffect 同步本地状态，保持光标位置合理
+     * - cursorAtEndTrigger 触发：强制把光标设置到文本末尾
+     *
+     * 用 stableId 作为 remember key：行删除时 stableId 消失，避免状态错位到其他行
+     */
+    var textFieldValue by remember(line.stableId) {
+        mutableStateOf(TextFieldValue(text = line.text, selection = TextRange(line.text.length)))
+    }
+
+    /**
+     * 同步外部 line.text 变化到本地 TextFieldValue
+     *
+     * 触发场景：
+     * - 撤销/恢复操作后 line.text 从快照恢复
+     * - 从 DB 加载初始数据
+     * - 外部代码直接修改 todoLines（如 detectSpecialChars 移除 "/"）
+     *
+     * 同步策略：
+     * - 文本相同 → 不更新（避免无意义重组）
+     * - 文本不同 → 更新 text，保持原 selection（coerce 到新文本长度范围内）
+     *   这样用户在编辑时光标不会被意外重置
+     */
+    LaunchedEffect(line.text) {
+        if (textFieldValue.text != line.text) {
+            val newStart = textFieldValue.selection.start.coerceIn(0, line.text.length)
+            val newEnd = textFieldValue.selection.end.coerceIn(0, line.text.length)
+            textFieldValue = TextFieldValue(
+                text = line.text,
+                selection = TextRange(newStart, newEnd)
+            )
+        }
+    }
+
+    /**
+     * 🆕 v2026-07-25 光标置末尾触发器
+     *
+     * 外部递增 cursorAtEndTrigger 时，强制把本地 TextFieldValue.selection
+     * 设置为 TextRange(text.length)，让光标落在文本末尾。
+     *
+     * 典型场景：用户在子待办行按 Backspace 删除空行后，焦点转移到上一行，
+     * 此时需要把上一行光标设置到末尾，用户继续按 Backspace 才能从行尾往前删除。
+     */
+    LaunchedEffect(cursorAtEndTrigger) {
+        if (cursorAtEndTrigger > 0) {
+            textFieldValue = TextFieldValue(
+                text = line.text,
+                selection = TextRange(line.text.length)
+            )
+        }
+    }
 
     /**
      * 🆕 行容器：应用外部传入的修饰符（用于 onGloballyPositioned 行边界捕获）
@@ -1108,9 +1216,12 @@ private fun CheckboxEditRow(
 
         // 文本输入区域
         BasicTextField(
-            value = line.text,
+            value = textFieldValue,
             onValueChange = { newValue ->
-                onTextChange(newValue)
+                // 🆕 v2026-07-25 改用 TextFieldValue 重载
+                // 同步更新本地 textFieldValue 状态 + 通知外部 line.text 变化
+                textFieldValue = newValue
+                onTextChange(newValue.text)
             },
             enabled = isEnabled,
             textStyle = TextStyle(
@@ -1487,7 +1598,19 @@ private fun handleKeyEvent(
      * 用途：让 UI 层据此触发 externalPendingFocus 焦点转移，
      *      兜底 LaunchedEffect(isFocused) 在新行未完全渲染时 requestFocus() 失败的时序竞态
      */
-    onNewSubTaskRequested: ((newSubTaskIndex: Int) -> Unit)?
+    onNewSubTaskRequested: ((newSubTaskIndex: Int) -> Unit)?,
+    /**
+     * 🆕 v2026-07-25 光标置末尾回调
+     *
+     * 参数：需要把光标设置到文本末尾的目标行索引
+     * 触发场景：handleKeyEvent 在 KEYCODE_DEL 分支删除空行后调用，
+     * 让 UI 层据此递增目标行的 cursorAtEndTrigger，
+     * 由 CheckboxEditRow 内 LaunchedEffect 把光标设置到文本末尾。
+     *
+     * 用户需求：当用户在子待办行按 Backspace 删除空行后，焦点转移到上一行，
+     * 光标必须落在上一行的文本末尾，用户继续按 Backspace 才能从行尾往前删除。
+     */
+    onCursorAtEndRequested: ((targetLineIndex: Int) -> Unit)?
 ): Boolean {
     if (keyEvent.action != android.view.KeyEvent.ACTION_DOWN) return false
 
@@ -1540,7 +1663,21 @@ private fun handleKeyEvent(
 
             reindexOrders(updatedLines)
             onLinesChange(updatedLines)
-            onFocusChange((index - 1).coerceAtLeast(0))
+            val targetFocusIndex = (index - 1).coerceAtLeast(0)
+            onFocusChange(targetFocusIndex)
+            // 🆕 v2026-07-25 删除空行后，通知 UI 层把上一行的光标强制设置到文本末尾
+            //
+            // 用户需求：在子待办行按 Backspace 删除空行后，焦点转移到上一行，
+            // 光标必须落在上一行的文本末尾，用户继续按 Backspace 才能从行尾往前删除。
+            //
+            // 机制：通过 onCursorAtEndRequested 回调递增目标行的 cursorAtEndTrigger，
+            // 由 CheckboxEditRow 内 LaunchedEffect(cursorAtEndTrigger) 监听并设置光标位置。
+            //
+            // 注意：仅当 targetFocusIndex 在 updatedLines 范围内才触发，
+            // 避免整组删除后列表为空时调用越界（虽然 onFocusChange 已 coerce，但这里再加一道防线）
+            if (targetFocusIndex in updatedLines.indices) {
+                onCursorAtEndRequested?.invoke(targetFocusIndex)
+            }
             true
         }
         else -> false
