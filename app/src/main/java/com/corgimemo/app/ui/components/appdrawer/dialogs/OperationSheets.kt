@@ -32,7 +32,10 @@ import com.corgimemo.app.data.model.CustomDateType
  *
  * 外部访问方式：通过 `com.corgimemo.app.ui.components.CategoryOperationSheet` 薄壳转发。
  *
- * @param sheetState BottomSheet 状态（必须由调用方在 Composable 作用域创建，**不可给默认值**）
+ * @param sheetState BottomSheet 状态（默认 `rememberModalBottomSheetState(skipPartiallyExpanded = true)`，
+ *                   可由调用方在 Composable 作用域自定义。注意：因本函数本身是 `@Composable`，
+ *                   Composable 函数（如 `rememberModalBottomSheetState`）**可以**作为参数默认值。
+ *                   Kotlin 编译器会自动在 Composable 作用域内解析该默认值，调用方无需感知）
  * @param category 被操作的分类
  * @param onPin 置顶回调
  * @param onRename 编辑回调
@@ -42,7 +45,7 @@ import com.corgimemo.app.data.model.CustomDateType
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryOperationSheet(
-    sheetState: SheetState,
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     category: Category,
     onPin: () -> Unit,
     onRename: () -> Unit,
@@ -112,7 +115,8 @@ fun CategoryOperationSheet(
  *
  * 外部访问方式：通过 `com.corgimemo.app.ui.components.DateTypeOperationSheet` 薄壳转发。
  *
- * @param sheetState BottomSheet 状态（必须由调用方在 Composable 作用域创建，**不可给默认值**）
+ * @param sheetState BottomSheet 状态（默认 `rememberModalBottomSheetState(skipPartiallyExpanded = true)`，
+ *                   可由调用方在 Composable 作用域自定义）
  * @param customType 被操作的自定义类型
  * @param onRename 编辑回调
  * @param onDelete 删除回调
@@ -121,7 +125,7 @@ fun CategoryOperationSheet(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DateTypeOperationSheet(
-    sheetState: SheetState,
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     customType: CustomDateType,
     onRename: () -> Unit,
     onDelete: () -> Unit,

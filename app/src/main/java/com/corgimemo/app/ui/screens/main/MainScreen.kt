@@ -66,7 +66,6 @@ import androidx.navigation.NavController
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.ui.components.AppDrawerContent
 import com.corgimemo.app.ui.components.AppSnackbarHost
-import com.corgimemo.app.ui.components.CategoryAction
 import com.corgimemo.app.ui.components.EnhancedTopBar
 import com.corgimemo.app.ui.components.LeftIconType
 import com.corgimemo.app.ui.components.RightIconType
@@ -97,8 +96,9 @@ import com.corgimemo.app.ui.screens.home.components.TodoCalendarDialog
 import com.corgimemo.app.ui.components.calendar.DatePickerRow
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.data.model.CustomDateType
-import com.corgimemo.app.ui.components.DateTypeAction
 import com.corgimemo.app.ui.components.DateTypeOperationSheet
+import com.corgimemo.app.ui.components.appdrawer.model.CategoryAction
+import com.corgimemo.app.ui.components.appdrawer.model.DateTypeAction
 import com.corgimemo.app.analytics.UserBehaviorAnalyzer
 import com.corgimemo.app.analytics.UserBehaviorAnalyzerEntryPoint
 import com.corgimemo.app.backup.exporter.ShareCoordinator

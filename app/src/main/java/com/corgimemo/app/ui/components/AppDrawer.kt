@@ -9,11 +9,16 @@ package com.corgimemo.app.ui.components
 //   - dialogs/    — 3 个弹窗 + 1 个 OperationSheets（2 个 BottomSheet）
 //
 // 保留本薄壳的原因：
-//   1) MainScreen.kt 已 `import com.corgimemo.app.ui.components.AppDrawerContent`
-//      和 `import com.corgimemo.app.ui.components.{CategoryAction,DateTypeAction}`，
-//      迁移子包会导致所有 import 路径变化，影响面巨大；
-//   2) 通过 typealias + 函数转发，MainScreen 0 改动；
-//   3) 后续可逐步把调用方迁到新路径，最后删除本文件。
+//   1) MainScreen.kt 已 `import com.corgimemo.app.ui.components.AppDrawerContent`，
+//      迁移子包会导致 Composable 函数调用路径变化，影响面巨大；
+//   2) 通过函数转发，MainScreen 调用 Composable 函数 0 改动；
+//   3) sealed class 通过 typealias 暴露别名（**仅用于类型签名**），
+//      但 sealed class 子类的作用域**不能**通过 typealias 访问
+//      （Kotlin 编译器限制：typealias 不传递子类可见性）。
+//      MainScreen 的 `is CategoryAction.ShowMenu` pattern match 需要**直接**
+//      import 真实路径 `com.corgimemo.app.ui.components.appdrawer.model.CategoryAction`
+//      才能解析子类型。
+//   4) 后续可逐步把调用方迁到新路径，最后删除本文件。
 //
 // 外部调用方应继续使用本文件暴露的 API：
 //   - AppDrawerContent(...)
@@ -22,13 +27,14 @@ package com.corgimemo.app.ui.components
 //   - DeleteCategoryConfirmDialog(...)
 //   - CategoryOperationSheet(...)
 //   - DateTypeOperationSheet(...)
-//   - typealias CategoryAction / DateTypeAction
+//   - typealias CategoryAction / DateTypeAction（**仅作类型签名**，子类需直接 import 真实路径）
 //
 // 不要直接 import `com.corgimemo.app.ui.components.appdrawer.*`（内部实现细节）。
 // =================================================================================
 
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.corgimemo.app.data.model.Category
@@ -42,14 +48,26 @@ import com.corgimemo.app.viewmodel.TagFilterMode
 
 // ==================== sealed class typealias ====================
 //
-// Kotlin typealias 适用于任何类型（含 sealed class），编译期展开为原类型。
-// MainScreen 的 `is CategoryAction.ShowMenu` pattern match 编译后等价于
-// `is com.corgimemo.app.ui.components.appdrawer.model.CategoryAction.ShowMenu`，完全兼容。
+// **重要**：Kotlin typealias 对 sealed class 子类的作用域解析**不生效**。
+//
+// typealias 仅在类型签名层面（如 `(CategoryAction) -> Unit` 参数类型）替换为原类型。
+// 但当使用 `CategoryAction.ShowMenu` 这种**嵌套类型访问**语法时，
+// 编译器需要在 sealed class 的可见作用域内查找 `ShowMenu` 子类，
+// typealias 不传递子类的可见性，导致编译错误：
+//   - 'when' expression must be exhaustive
+//   - Unresolved reference 'ShowMenu'
+//
+// **解决方案**：调用方需要直接 import 真实 sealed class 路径：
+//   import com.corgimemo.app.ui.components.appdrawer.model.CategoryAction
+//   import com.corgimemo.app.ui.components.appdrawer.model.DateTypeAction
+// 这样 when 表达式 `is CategoryAction.ShowMenu` 才能正确解析。
+//
+// 详细说明见：.trae/rules/巨石组件拆分规范.md §3 薄壳层规则
 
-/** 分类操作动作（薄壳 typealias），真实定义见 model/CategoryAction.kt */
+/** 分类操作动作（薄壳 typealias，**仅作类型签名**），真实定义见 model/CategoryAction.kt */
 typealias CategoryAction = CategoryActionImpl
 
-/** 日期类型操作动作（薄壳 typealias），真实定义见 model/DateTypeAction.kt */
+/** 日期类型操作动作（薄壳 typealias，**仅作类型签名**），真实定义见 model/DateTypeAction.kt */
 typealias DateTypeAction = DateTypeActionImpl
 
 // ==================== 主入口转发 ====================
@@ -192,14 +210,14 @@ fun DeleteCategoryConfirmDialog(
 /**
  * 分类长按操作菜单（薄壳转发）
  *
- * @param sheetState BottomSheet 状态（必须由调用方在 Composable 作用域创建，**不可给默认值**，
- *                   因为 `rememberModalBottomSheetState()` 是 Composable 函数）
+ * @param sheetState BottomSheet 状态（默认 `rememberModalBottomSheetState(skipPartiallyExpanded = true)`，
+ *                   因本函数是 `@Composable`，Composable 函数可作为参数默认值）
  * @see com.corgimemo.app.ui.components.appdrawer.dialogs.CategoryOperationSheet
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryOperationSheet(
-    sheetState: SheetState,
+    sheetState: SheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
     category: Category,
     onPin: () -> Unit,
     onRename: () -> Unit,
@@ -219,13 +237,13 @@ fun CategoryOperationSheet(
 /**
  * 自定义日期类型长按操作菜单（薄壳转发）
  *
- * @param sheetState BottomSheet 状态（必须由调用方在 Composable 作用域创建，**不可给默认值**）
+ * @param sheetState BottomSheet 状态（默认 `rememberModalBottomSheetState(skipPartiallyExpanded = true)`）
  * @see com.corgimemo.app.ui.components.appdrawer.dialogs.DateTypeOperationSheet
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DateTypeOperationSheet(
-    sheetState: SheetState,
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     customType: CustomDateType,
     onRename: () -> Unit,
     onDelete: () -> Unit,
