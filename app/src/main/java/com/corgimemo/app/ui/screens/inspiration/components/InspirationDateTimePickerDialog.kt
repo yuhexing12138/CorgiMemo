@@ -54,8 +54,7 @@ import java.util.Calendar
 /**
  * 灵感日期时间修改专用弹窗
  *
- * 复用 InspirationCalendarDialog 的 CalendarMonthView/DateWheelPicker/CalendarInspirationItem，
- * 以及 ReminderPickerBottomSheet 的 TimeWheelView。
+ * 复用 InspirationCalendarDialog 的 CalendarMonthView/DateWheelPicker/CalendarInspirationItem。
  *
  * 布局结构：
  * - 标题"修改日期时间"

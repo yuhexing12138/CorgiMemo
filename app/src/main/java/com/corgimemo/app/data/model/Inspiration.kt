@@ -85,13 +85,6 @@ data class Inspiration(
     /** 预估时长（分钟） */
     val estimatedDurationMinutes: Int? = null,
 
-    /** 提醒时间（时间戳毫秒） */
-    val reminderTime: Long? = null,
-
-    /** 重复类型: 0=不重复, 1=每天, 2=每周, 3=每月, 4=每年 */
-    @ColumnInfo(defaultValue = "0")
-    val repeatType: Int = 0,
-
     /** 完成时间（时间戳毫秒） */
     val completedAt: Long? = null,
 

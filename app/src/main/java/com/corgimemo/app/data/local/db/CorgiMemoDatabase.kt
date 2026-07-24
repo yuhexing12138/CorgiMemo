@@ -31,7 +31,7 @@ import com.corgimemo.app.data.model.CustomDateType
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
-    version = 45,
+    version = 46,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -99,7 +99,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1289,6 +1289,211 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_title ON todo_items(title)")
             database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_title ON inspirations(title)")
             database.execSQL("CREATE INDEX IF NOT EXISTS index_special_dates_title ON special_dates(title)")
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 45 → 46（v2026-07-24 灵感页精简）
+     * 删除 inspirations 与 deleted_inspirations 两表的 reminderTime + repeatType 字段
+     *
+     * **原因**：灵感页是轻量想法记录入口，不需要"提醒时间"和"重复规则"。
+     * 这两个字段从 v27 (MIGRATION_26_27) 借鉴自 TodoItem 实体，但灵感编辑 UI
+     * 从未提供过相关入口，导致 ViewModel 中只有死代码。
+     *
+     * **策略：12-step 重建表**（minSdk=26 内置 SQLite 3.18 不支持
+     * `ALTER TABLE DROP COLUMN`，需要 SQLite 3.35+/API 31+）
+     *
+     * 流程：
+     *  1. PRAGMA foreign_keys = OFF （事务外）
+     *  2. database.beginTransaction()
+     *  3. CREATE TABLE inspirations_new (新 schema, 不含 reminderTime/repeatType)
+     *  4. INSERT INTO inspirations_new (列) SELECT (列) FROM inspirations
+     *  5. DROP TABLE inspirations
+     *  6. ALTER TABLE inspirations_new RENAME TO inspirations
+     *  7. 重建 7 个索引
+     *  8-11. 重复 3-7 处理 deleted_inspirations（无索引, 步骤 7 跳过）
+     *  12. database.endTransaction() + PRAGMA foreign_keys = ON
+     *
+     * **数据兼容性**：
+     * - inspirations / deleted_inspirations 两表本来无 UI 入口设置过 reminderTime/repeatType
+     * - 旧字段值（永远是 null/0）被直接丢弃，不影响业务
+     * - 行数与索引数量保持一致
+     *
+     * **依据 .trae/rules/entity与migration同步检查.md**：
+     * 已同步修改 Inspiration.kt / DeletedInspiration.kt 删除两字段
+     */
+    internal val MIGRATION_45_TO_46 = object : Migration(45, 46) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // ===== Step 1: 关闭外键（事务外，PRAGMA 不能在事务内执行）=====
+            database.execSQL("PRAGMA foreign_keys = OFF")
+
+            // ===== Step 2: 开启事务 =====
+            database.beginTransaction()
+            try {
+                // ===== 处理 inspirations 表（Steps 3-7）=====
+                // Step 3: 创建新表
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS inspirations_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        title TEXT NOT NULL,
+                        content TEXT NOT NULL DEFAULT '',
+                        tags TEXT NOT NULL DEFAULT '',
+                        imagePaths TEXT NOT NULL DEFAULT '',
+                        imageUrls TEXT NOT NULL DEFAULT '',
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        isPinned INTEGER NOT NULL DEFAULT 0,
+                        isArchived INTEGER NOT NULL DEFAULT 0,
+                        categoryId INTEGER NOT NULL DEFAULT 0,
+                        priority INTEGER NOT NULL DEFAULT 0,
+                        status INTEGER NOT NULL DEFAULT 0,
+                        startDate INTEGER,
+                        dueDate INTEGER,
+                        estimatedDurationMinutes INTEGER,
+                        completedAt INTEGER,
+                        geofenceLat REAL,
+                        geofenceLng REAL,
+                        geofenceRadius REAL,
+                        geofenceType INTEGER,
+                        geofenceEnabled INTEGER NOT NULL DEFAULT 0,
+                        geofenceAddress TEXT,
+                        hasSubTasks INTEGER NOT NULL DEFAULT 0,
+                        voiceNotePath TEXT,
+                        voiceDuration INTEGER,
+                        backgroundColor INTEGER NOT NULL DEFAULT -1,
+                        position INTEGER NOT NULL DEFAULT 0,
+                        contentFormat TEXT NOT NULL DEFAULT ''
+                    )
+                    """.trimIndent()
+                )
+
+                // Step 4: 复制数据（排除 reminderTime, repeatType）
+                database.execSQL(
+                    """
+                    INSERT INTO inspirations_new (
+                        id, title, content, tags, imagePaths, imageUrls,
+                        createdAt, updatedAt, isPinned, isArchived,
+                        categoryId, priority, status,
+                        startDate, dueDate, estimatedDurationMinutes,
+                        completedAt,
+                        geofenceLat, geofenceLng, geofenceRadius, geofenceType,
+                        geofenceEnabled, geofenceAddress,
+                        hasSubTasks, voiceNotePath, voiceDuration,
+                        backgroundColor, position, contentFormat
+                    )
+                    SELECT
+                        id, title, content, tags, imagePaths, imageUrls,
+                        createdAt, updatedAt, isPinned, isArchived,
+                        categoryId, priority, status,
+                        startDate, dueDate, estimatedDurationMinutes,
+                        completedAt,
+                        geofenceLat, geofenceLng, geofenceRadius, geofenceType,
+                        geofenceEnabled, geofenceAddress,
+                        hasSubTasks, voiceNotePath, voiceDuration,
+                        backgroundColor, position, contentFormat
+                    FROM inspirations
+                    """.trimIndent()
+                )
+
+                // Step 5: 删除旧表
+                database.execSQL("DROP TABLE IF EXISTS inspirations")
+
+                // Step 6: 重命名新表
+                database.execSQL("ALTER TABLE inspirations_new RENAME TO inspirations")
+
+                // Step 7: 重建 7 个索引
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_createdAt ON inspirations(createdAt)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_isPinned ON inspirations(isPinned)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_categoryId ON inspirations(categoryId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_priority ON inspirations(priority)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_status_createdAt ON inspirations(status, createdAt)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_dueDate_status ON inspirations(dueDate, status)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_inspirations_title ON inspirations(title)")
+
+                // ===== 处理 deleted_inspirations 表（Steps 8-11）=====
+                // Step 8: 创建新表
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS deleted_inspirations_new (
+                        id INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        content TEXT NOT NULL DEFAULT '',
+                        tags TEXT NOT NULL DEFAULT '',
+                        imagePaths TEXT NOT NULL DEFAULT '',
+                        imageUrls TEXT NOT NULL DEFAULT '',
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        isPinned INTEGER NOT NULL DEFAULT 0,
+                        isArchived INTEGER NOT NULL DEFAULT 0,
+                        categoryId INTEGER NOT NULL DEFAULT 0,
+                        priority INTEGER NOT NULL DEFAULT 0,
+                        status INTEGER NOT NULL DEFAULT 0,
+                        startDate INTEGER,
+                        dueDate INTEGER,
+                        estimatedDurationMinutes INTEGER,
+                        completedAt INTEGER,
+                        geofenceLat REAL,
+                        geofenceLng REAL,
+                        geofenceRadius REAL,
+                        geofenceType INTEGER,
+                        geofenceEnabled INTEGER NOT NULL DEFAULT 0,
+                        geofenceAddress TEXT,
+                        hasSubTasks INTEGER NOT NULL DEFAULT 0,
+                        voiceNotePath TEXT,
+                        voiceDuration INTEGER,
+                        backgroundColor INTEGER NOT NULL DEFAULT -1,
+                        position INTEGER NOT NULL DEFAULT 0,
+                        contentFormat TEXT NOT NULL DEFAULT '',
+                        deletedAt INTEGER NOT NULL,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent()
+                )
+
+                // Step 9: 复制数据
+                database.execSQL(
+                    """
+                    INSERT INTO deleted_inspirations_new (
+                        id, title, content, tags, imagePaths, imageUrls,
+                        createdAt, updatedAt, isPinned, isArchived,
+                        categoryId, priority, status,
+                        startDate, dueDate, estimatedDurationMinutes,
+                        completedAt,
+                        geofenceLat, geofenceLng, geofenceRadius, geofenceType,
+                        geofenceEnabled, geofenceAddress,
+                        hasSubTasks, voiceNotePath, voiceDuration,
+                        backgroundColor, position, contentFormat,
+                        deletedAt
+                    )
+                    SELECT
+                        id, title, content, tags, imagePaths, imageUrls,
+                        createdAt, updatedAt, isPinned, isArchived,
+                        categoryId, priority, status,
+                        startDate, dueDate, estimatedDurationMinutes,
+                        completedAt,
+                        geofenceLat, geofenceLng, geofenceRadius, geofenceType,
+                        geofenceEnabled, geofenceAddress,
+                        hasSubTasks, voiceNotePath, voiceDuration,
+                        backgroundColor, position, contentFormat,
+                        deletedAt
+                    FROM deleted_inspirations
+                    """.trimIndent()
+                )
+
+                // Step 10: 删除旧表
+                database.execSQL("DROP TABLE IF EXISTS deleted_inspirations")
+
+                // Step 11: 重命名
+                database.execSQL("ALTER TABLE deleted_inspirations_new RENAME TO deleted_inspirations")
+
+                database.setTransactionSuccessful()
+            } finally {
+                database.endTransaction()
+            }
+
+            // ===== Step 12: 重新开启外键 =====
+            database.execSQL("PRAGMA foreign_keys = ON")
         }
     }
     // companion object 闭合

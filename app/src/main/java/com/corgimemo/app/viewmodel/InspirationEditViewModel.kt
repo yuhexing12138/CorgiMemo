@@ -17,7 +17,6 @@ import com.corgimemo.app.data.repository.CardRelationRepository
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.InspirationRepository
 import com.corgimemo.app.data.repository.SubTaskManager
-import com.corgimemo.app.domain.ReminderRecommender
 import com.corgimemo.app.model.UserType
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
 import com.mohamedrejeb.richeditor.model.RichTextState
@@ -50,7 +49,6 @@ class InspirationEditViewModel @Inject constructor(
 
     /** 防抖导出任务引用：用于延迟执行 MarkdownParser.export() */
     private var _debounceJob: Job? = null
-    private val reminderRecommender = ReminderRecommender()
 
     // ========== 基础字段状态 ==========
 
@@ -93,9 +91,6 @@ class InspirationEditViewModel @Inject constructor(
     private val _estimatedDurationMinutes = MutableStateFlow<Int?>(null)
     val estimatedDurationMinutes: StateFlow<Int?> = _estimatedDurationMinutes.asStateFlow()
 
-    private val _repeatType = MutableStateFlow(0)
-    val repeatType: StateFlow<Int> = _repeatType.asStateFlow()
-
     // 地理围栏相关字段
     private val _geofenceLat = MutableStateFlow<Double?>(null)
     val geofenceLat: StateFlow<Double?> = _geofenceLat.asStateFlow()
@@ -125,16 +120,6 @@ class InspirationEditViewModel @Inject constructor(
 
     private val _isCategoriesLoaded = MutableStateFlow(false)
     val isCategoriesLoaded: StateFlow<Boolean> = _isCategoriesLoaded.asStateFlow()
-
-    // 提醒时间相关状态
-    private val _reminderTime = MutableStateFlow<Long?>(null)
-    val reminderTime: StateFlow<Long?> = _reminderTime.asStateFlow()
-
-    private val _recommendedReminderTime = MutableStateFlow<Long?>(null)
-    val recommendedReminderTime: StateFlow<Long?> = _recommendedReminderTime.asStateFlow()
-
-    private val _showReminderRecommendation = MutableStateFlow(false)
-    val showReminderRecommendation: StateFlow<Boolean> = _showReminderRecommendation.asStateFlow()
 
     // 语音备注相关状态
     private val _voiceNotePath = MutableStateFlow<String?>(null)
@@ -434,7 +419,6 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setCategoryId(categoryId: Long) {
         _categoryId.value = categoryId
-        updateReminderRecommendation()
         _isDirty.value = true
     }
 
@@ -453,23 +437,17 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setStartDate(startDate: Long?) {
         _startDate.value = startDate
-        updateReminderRecommendation()
         _isDirty.value = true
     }
 
     /**
      * 设置截止时间
      * 用户在时间选择器中确认后调用
-     * 同时自动将提醒时间关联为截止时间（若用户未手动设置过提醒时间）
      *
      * @param dueDate 截止时间（毫秒时间戳）
      */
     fun setDueDate(dueDate: Long?) {
         _dueDate.value = dueDate
-        /** 联动逻辑：若提醒时间为空，自动将提醒时间设为截止时间 */
-        if (dueDate != null && _reminderTime.value == null) {
-            _reminderTime.value = dueDate
-        }
         _isDirty.value = true
     }
 
@@ -479,16 +457,6 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setEstimatedDurationMinutes(minutes: Int?) {
         _estimatedDurationMinutes.value = minutes
-        updateReminderRecommendation()
-        _isDirty.value = true
-    }
-
-    /**
-     * 设置重复类型
-     * @param repeatType 重复类型（0=不重复, 1=每天, 2=每周, 3=每月, 4=每年）
-     */
-    fun setRepeatType(repeatType: Int) {
-        _repeatType.value = repeatType
         _isDirty.value = true
     }
 
@@ -647,15 +615,12 @@ class InspirationEditViewModel @Inject constructor(
                 _startDate.value = inspiration.startDate
                 _dueDate.value = inspiration.dueDate
                 _estimatedDurationMinutes.value = inspiration.estimatedDurationMinutes
-                _repeatType.value = inspiration.repeatType
                 _geofenceLat.value = inspiration.geofenceLat
                 _geofenceLng.value = inspiration.geofenceLng
                 _geofenceRadius.value = inspiration.geofenceRadius
                 _geofenceType.value = inspiration.geofenceType
                 _geofenceEnabled.value = inspiration.geofenceEnabled
                 _geofenceAddress.value = inspiration.geofenceAddress
-
-                _reminderTime.value = inspiration.reminderTime
 
                 // 加载语音备注
                 _voiceNotePath.value = inspiration.voiceNotePath
@@ -831,8 +796,6 @@ class InspirationEditViewModel @Inject constructor(
                 startDate = _startDate.value,
                 dueDate = _dueDate.value,
                 estimatedDurationMinutes = _estimatedDurationMinutes.value,
-                reminderTime = _reminderTime.value,
-                repeatType = _repeatType.value,
                 updatedAt = currentTime,
                 geofenceLat = _geofenceLat.value,
                 geofenceLng = _geofenceLng.value,
@@ -865,8 +828,6 @@ class InspirationEditViewModel @Inject constructor(
                 startDate = _startDate.value,
                 dueDate = _dueDate.value,
                 estimatedDurationMinutes = _estimatedDurationMinutes.value,
-                reminderTime = _reminderTime.value,
-                repeatType = _repeatType.value,
                 geofenceLat = _geofenceLat.value,
                 geofenceLng = _geofenceLng.value,
                 geofenceRadius = if (_geofenceEnabled.value) _geofenceRadius.value else null,
@@ -984,50 +945,6 @@ class InspirationEditViewModel @Inject constructor(
                 android.util.Log.d("InspirationEditVM", "分类加载完成, isCategoriesLoaded=true, categories数量=${_categories.value.size}")
             }
         }
-    }
-
-    // ==================== 提醒时间推荐相关方法 ====================
-
-    /**
-     * 设置提醒时间
-     * 用户在 TimePicker 中手动确认时间后调用
-     *
-     * @param time 用户选择的提醒时间（毫秒时间戳）
-     */
-    fun setReminderTime(time: Long) {
-        _reminderTime.value = time
-        _showReminderRecommendation.value = false
-    }
-
-    /**
-     * 接受推荐的提醒时间
-     * 用户点击推荐标签后调用
-     */
-    fun acceptReminderRecommendation() {
-        val recommended = _recommendedReminderTime.value ?: return
-        _reminderTime.value = recommended
-        _showReminderRecommendation.value = false
-    }
-
-    /**
-     * 更新提醒时间推荐
-     * 当开始时间或分类变化时自动触发
-     */
-    private fun updateReminderRecommendation() {
-        val startDate = _startDate.value
-        val categoryId = _categoryId.value
-        val category = _categories.value.find { it.id == categoryId }
-
-        val recommended = reminderRecommender.recommend(
-            categoryType = category?.type,
-            startDate = startDate
-        )
-
-        _recommendedReminderTime.value = recommended
-
-        val isShow = recommended != null &&
-                (_reminderTime.value == null || _reminderTime.value != recommended)
-        _showReminderRecommendation.value = isShow
     }
 
     // ==================== 语音备注相关方法 ====================

@@ -409,7 +409,7 @@ fun InspirationScreen(
                 showTagPicker = true
             },
             onDateClick = {
-                // 关闭长按面板，打开日期时间选择器（保留 longPressedInspiration 供 ReminderPickerBottomSheet 使用）
+                // 关闭长按面板，打开日期时间选择器
                 showLongPressSheet = false
                 showDateTimePicker = true
             },
