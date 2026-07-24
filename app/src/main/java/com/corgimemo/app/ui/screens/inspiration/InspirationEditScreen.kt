@@ -559,25 +559,21 @@ fun InspirationEditScreen(
         }
     }
 
-    /** 初始化已有内容块（优先从 content_blocks 表加载，回退到旧字段） */
+    /**
+     * 初始化已有内容块
+     *
+     * v2026-07-25 三写存储重构：仅从 content_blocks 表加载附件
+     * - 旧的回退逻辑（从 imagePaths/voiceNotePath 恢复）已删除
+     * - Migration 46→47 已将旧数据迁移到 content_blocks 表并清空旧字段
+     * - 保存时已不再写入 imagePaths/voiceNotePath（置空）
+     */
     var hasInitializedBlocks by remember { mutableStateOf(false) }
     LaunchedEffect(inspirationId) {
         if (!hasInitializedBlocks && inspirationId != null) {
-            /** 优先从独立表加载内容块（新方案） */
+            /** 仅从 content_blocks 表加载（单一数据源） */
             val dbBlocks = viewModel.loadContentBlocks(inspirationId)
-            if (dbBlocks.isNotEmpty()) {
-                contentBlocks.clear()
-                contentBlocks.addAll(dbBlocks)
-            } else {
-                /** 回退：从旧字段加载（向后兼容） */
-                contentBlocks.clear()
-                imagePaths.forEach { path ->
-                    contentBlocks.add(ContentBlock.Image(path))
-                }
-                voiceNotePath?.let { path ->
-                    contentBlocks.add(ContentBlock.Voice(path, voiceDuration))
-                }
-            }
+            contentBlocks.clear()
+            contentBlocks.addAll(dbBlocks)
             /** 同步到 ViewModel */
             viewModel.syncContentBlocks(contentBlocks.toList())
             hasInitializedBlocks = true

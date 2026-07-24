@@ -31,7 +31,7 @@ import com.corgimemo.app.data.model.CustomDateType
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
-    version = 46,
+    version = 47,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -99,7 +99,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1494,6 +1494,127 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
 
             // ===== Step 12: 重新开启外键 =====
             database.execSQL("PRAGMA foreign_keys = ON")
+        }
+    }
+
+    /**
+     * v2026-07-25 三写存储 → 单一数据源重构
+     *
+     * content_blocks 表扩展 subTaskId 和 lineIndex 字段，成为附件唯一权威源。
+     *
+     * 迁移步骤：
+     * 1. 创建新表 content_blocks_new（含 subTaskId、lineIndex 字段 + 索引）
+     * 2. 复制现有 content_blocks 数据到新表（subTaskId=null, lineIndex=0）
+     * 3. 从 todo_items.imagePaths（JSON 数组）迁移图片到 content_blocks（subTaskId=null, lineIndex=0）
+     * 4. 从 todo_items.voiceNotePath 迁移语音到 content_blocks（subTaskId=null, lineIndex=0）
+     * 5. 从 sub_tasks.imagePaths 迁移图片到 content_blocks（subTaskId=子任务ID, lineIndex=子任务行号）
+     * 6. 从 sub_tasks.voicePaths 迁移语音到 content_blocks（subTaskId=子任务ID, lineIndex=子任务行号）
+     * 7. 删除旧表，重命名新表
+     * 8. 清空 todo_items 和 inspirations 的 imagePaths/voiceNotePath/voicePaths 字段（保留字段但置空）
+     *
+     * 注意：SQLite 的 json_each 函数用于展开 JSON 数组，Android API 21+ 支持。
+     */
+    internal val MIGRATION_46_TO_47 = object : Migration(46, 47) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.beginTransaction()
+            try {
+                // Step 1: 创建新表（含 subTaskId、lineIndex 字段 + 索引）
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS content_blocks_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        todoId INTEGER NOT NULL,
+                        type TEXT NOT NULL,
+                        filePath TEXT NOT NULL,
+                        duration INTEGER,
+                        orderIndex INTEGER NOT NULL DEFAULT 0,
+                        subTaskId INTEGER,
+                        lineIndex INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL("CREATE INDEX index_content_blocks_new_todoId ON content_blocks_new(todoId)")
+                database.execSQL("CREATE INDEX index_content_blocks_new_subTaskId ON content_blocks_new(subTaskId)")
+                database.execSQL("CREATE INDEX index_content_blocks_new_lineIndex ON content_blocks_new(lineIndex)")
+
+                // Step 2: 复制现有 content_blocks 数据到新表（subTaskId=null, lineIndex=0）
+                database.execSQL(
+                    """
+                    INSERT INTO content_blocks_new (todoId, type, filePath, duration, orderIndex, subTaskId, lineIndex)
+                    SELECT todoId, type, filePath, duration, orderIndex, NULL, 0
+                    FROM content_blocks
+                    """.trimIndent()
+                )
+
+                // Step 3: 从 todo_items.imagePaths（JSON 数组）迁移图片
+                // 使用 json_each 展开 JSON 数组，为每个路径创建一条 content_blocks 记录
+                // 仅迁移非空且非 "[]" 的 imagePaths
+                database.execSQL(
+                    """
+                    INSERT INTO content_blocks_new (todoId, type, filePath, orderIndex, subTaskId, lineIndex)
+                    SELECT t.id, 'image', je.value, 0, NULL, 0
+                    FROM todo_items t, json_each(t.imagePaths) je
+                    WHERE t.imagePaths IS NOT NULL
+                      AND t.imagePaths != ''
+                      AND t.imagePaths != '[]'
+                      AND je.value IS NOT NULL
+                      AND je.value != ''
+                    """.trimIndent()
+                )
+
+                // Step 4: 从 todo_items.voiceNotePath 迁移语音（单个 String?，非 JSON 数组）
+                database.execSQL(
+                    """
+                    INSERT INTO content_blocks_new (todoId, type, filePath, duration, orderIndex, subTaskId, lineIndex)
+                    SELECT t.id, 'voice', t.voiceNotePath, t.voiceDuration, 0, NULL, 0
+                    FROM todo_items t
+                    WHERE t.voiceNotePath IS NOT NULL
+                      AND t.voiceNotePath != ''
+                    """.trimIndent()
+                )
+
+                // Step 5: 从 sub_tasks.imagePaths 迁移图片（subTaskId=子任务ID, lineIndex=子任务行号）
+                // lineIndex 用子任务的 order 字段近似（order 从 1 开始，lineIndex 从 0 开始，所以减 1）
+                database.execSQL(
+                    """
+                    INSERT INTO content_blocks_new (todoId, type, filePath, orderIndex, subTaskId, lineIndex)
+                    SELECT s.todoId, 'image', je.value, 0, s.id, MAX(0, s.order - 1)
+                    FROM sub_tasks s, json_each(s.imagePaths) je
+                    WHERE s.imagePaths IS NOT NULL
+                      AND s.imagePaths != ''
+                      AND s.imagePaths != '[]'
+                      AND je.value IS NOT NULL
+                      AND je.value != ''
+                    """.trimIndent()
+                )
+
+                // Step 6: 从 sub_tasks.voicePaths 迁移语音
+                database.execSQL(
+                    """
+                    INSERT INTO content_blocks_new (todoId, type, filePath, orderIndex, subTaskId, lineIndex)
+                    SELECT s.todoId, 'voice', je.value, 0, s.id, MAX(0, s.order - 1)
+                    FROM sub_tasks s, json_each(s.voicePaths) je
+                    WHERE s.voicePaths IS NOT NULL
+                      AND s.voicePaths != ''
+                      AND s.voicePaths != '[]'
+                      AND je.value IS NOT NULL
+                      AND je.value != ''
+                    """.trimIndent()
+                )
+
+                // Step 7: 删除旧表，重命名新表
+                database.execSQL("DROP TABLE IF EXISTS content_blocks")
+                database.execSQL("ALTER TABLE content_blocks_new RENAME TO content_blocks")
+
+                // Step 8: 清空 todo_items 和 inspirations 的旧字段（保留字段但置空，避免回退读取）
+                database.execSQL("UPDATE todo_items SET imagePaths = '', voiceNotePath = NULL, voiceDuration = NULL")
+                database.execSQL("UPDATE inspirations SET imagePaths = '', voiceNotePath = NULL, voiceDuration = NULL")
+                database.execSQL("UPDATE sub_tasks SET imagePaths = '', voicePaths = ''")
+
+                database.setTransactionSuccessful()
+            } finally {
+                database.endTransaction()
+            }
         }
     }
     // companion object 闭合

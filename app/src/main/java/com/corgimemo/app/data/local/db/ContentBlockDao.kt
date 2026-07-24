@@ -24,6 +24,19 @@ interface ContentBlockDao {
     suspend fun getBlocksByTodoId(todoId: Long): List<ContentBlockEntity>
 
     /**
+     * 批量查询多个待办的所有内容块（v2026-07-25 单一数据源重构新增）
+     *
+     * 用于首页卡片角标计数和路径聚合：
+     * - 替代旧的从 `TodoItem.imagePaths` / `SubTask.imagePaths` 字段聚合的方案
+     * - 阶段2 重构后这些字段已被置空，content_blocks 表成为单一权威源
+     *
+     * @param todoIds 待办 ID 列表（空列表返回空结果）
+     * @return 所有匹配的内容块列表（按 todoId 分组、orderIndex 升序）
+     */
+    @Query("SELECT * FROM content_blocks WHERE todoId IN (:todoIds) ORDER BY todoId ASC, orderIndex ASC")
+    suspend fun getBlocksByTodoIds(todoIds: List<Long>): List<ContentBlockEntity>
+
+    /**
      * 删除某待办的所有内容块
      *
      * 保存时先清后写，确保数据一致性
@@ -40,6 +53,32 @@ interface ContentBlockDao {
      */
     @Query("DELETE FROM content_blocks WHERE id = :blockId")
     suspend fun deleteBlock(blockId: Long)
+
+    /**
+     * 删除某待办的指定图片内容块
+     *
+     * v2026-07-24 新增：用于首页图片全屏预览删除单张图片时，同步清理 content_blocks 表的冗余记录
+     * 项目处于双写过渡期，图片路径同时存储在 TodoItem.imagePaths（JSON 字段）和 content_blocks 表
+     * 仅删除 TodoItem.imagePaths 会导致编辑页（优先从 content_blocks 加载）仍显示已删除的图片
+     *
+     * @param todoId 待办事项 ID
+     * @param filePath 图片绝对路径
+     */
+    @Query("DELETE FROM content_blocks WHERE todoId = :todoId AND filePath = :filePath AND type = 'image'")
+    suspend fun deleteImageBlockByPath(todoId: Long, filePath: String)
+
+    /**
+     * 删除某待办的指定语音内容块
+     *
+     * v2026-07-25 新增：用于首页录音全屏预览删除单条语音时，同步清理 content_blocks 表的冗余记录
+     * 与 [deleteImageBlockByPath] 对称，解决语音附件的三写存储一致性问题
+     * （voiceNotePath/voicePaths + content_blocks + contentFormat 行级附件快照 voiceAttachments）
+     *
+     * @param todoId 待办事项 ID
+     * @param filePath 语音文件绝对路径
+     */
+    @Query("DELETE FROM content_blocks WHERE todoId = :todoId AND filePath = :filePath AND type = 'voice'")
+    suspend fun deleteVoiceBlockByPath(todoId: Long, filePath: String)
 
     /**
      * 批量插入内容块

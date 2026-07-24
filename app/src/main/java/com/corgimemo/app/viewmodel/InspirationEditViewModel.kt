@@ -622,14 +622,19 @@ class InspirationEditViewModel @Inject constructor(
                 _geofenceEnabled.value = inspiration.geofenceEnabled
                 _geofenceAddress.value = inspiration.geofenceAddress
 
-                // 加载语音备注
-                _voiceNotePath.value = inspiration.voiceNotePath
-                _voiceDuration.value = inspiration.voiceDuration
-
-                // 加载图片路径列表（从JSON字符串反序列化）
-                if (inspiration.imagePaths.isNotBlank()) {
-                    _imagePaths.value = decodePaths(inspiration.imagePaths)
-                }
+                /**
+                 * v2026-07-25 三写存储重构：附件信息不再从 inspiration 字段加载
+                 *
+                 * 旧逻辑：
+                 * - _voiceNotePath / _voiceDuration 从 inspiration.voiceNotePath / voiceDuration 加载
+                 * - _imagePaths 从 inspiration.imagePaths（JSON 数组）解析
+                 *
+                 * 新逻辑：
+                 * - 附件信息已迁移到 content_blocks 表（单一数据源）
+                 * - 这些 StateFlow 保持默认空值
+                 * - UI 层（InspirationEditScreen）从 content_blocks 表加载附件到 contentBlocks
+                 * - Migration 46→47 已清空 inspiration.imagePaths/voiceNotePath 等旧字段
+                 */
 
                 /** 加载标签列表（从 JSON 字符串解码为 List<String>） */
                 if (inspiration.tags.isNotBlank()) {
@@ -804,9 +809,14 @@ class InspirationEditViewModel @Inject constructor(
                 geofenceEnabled = _geofenceEnabled.value,
                 geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
                 hasSubTasks = hasSubTasks,
-                voiceNotePath = _voiceNotePath.value,
-                voiceDuration = _voiceDuration.value,
-                imagePaths = encodePaths(_imagePaths.value),
+                /**
+                 * v2026-07-25 三写存储重构：附件信息已迁移到 content_blocks 表（单一数据源）
+                 * 字段保留但不再写入，避免破坏数据库 schema
+                 * （与 TodoEditViewModel 保持一致）
+                 */
+                voiceNotePath = null,
+                voiceDuration = null,
+                imagePaths = "",
                 tags = encodeTags(_tags.value), /** 编码标签列表为 JSON 字符串 */
                 backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
                 contentFormat = safeContentFormat /** 持久化同步导出的最新富文本内容（Markdown）*/
@@ -819,7 +829,11 @@ class InspirationEditViewModel @Inject constructor(
                 title = _title.value,
                 content = if (liveText.isBlank()) "" else liveText,
                 tags = encodeTags(_tags.value), /** 编码标签列表为 JSON 字符串 */
-                imagePaths = encodePaths(_imagePaths.value),
+                /**
+                 * v2026-07-25 三写存储重构：附件信息已迁移到 content_blocks 表（单一数据源）
+                 * 字段保留但不再写入，避免破坏数据库 schema
+                 */
+                imagePaths = "",
                 createdAt = currentTime,
                 updatedAt = currentTime,
                 categoryId = _categoryId.value,
@@ -835,8 +849,8 @@ class InspirationEditViewModel @Inject constructor(
                 geofenceEnabled = _geofenceEnabled.value,
                 geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
                 hasSubTasks = hasSubTasks,
-                voiceNotePath = _voiceNotePath.value,
-                voiceDuration = _voiceDuration.value,
+                voiceNotePath = null,
+                voiceDuration = null,
                 backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
                 contentFormat = safeContentFormat /** 持久化同步导出的最新富文本内容（Markdown）*/
             )
@@ -854,10 +868,17 @@ class InspirationEditViewModel @Inject constructor(
          */
         _isDirty.value = false
 
-        /** 保存内容块到独立表（图片/语音等混合内容） */
-        if (_currentContentBlocks.value.isNotEmpty()) {
-            saveContentBlocks(inspirationId, _currentContentBlocks.value)
-        }
+        /**
+         * v2026-07-25 三写存储重构：保存内容块到 content_blocks 表（单一数据源）
+         *
+         * 无论 _currentContentBlocks 是否为空都调用：
+         * - 非空时写入新数据
+         * - 空时清空旧的 content_blocks 记录（replaceBlocksForTodo 是先删后写）
+         *
+         * 灵感模块的子任务目前不支持附件，所有附件均属于父灵感本身
+         * （subTaskId=null, lineIndex=0）
+         */
+        saveContentBlocks(inspirationId, _currentContentBlocks.value)
 
         // 保存关联关系（新建时将临时关联绑定到新ID）
         if (existingInspiration == null) {
@@ -1057,18 +1078,31 @@ class InspirationEditViewModel @Inject constructor(
      * 在 performSave() 时调用，确保数据一致性。
      * 注意：使用 todoId 字段存储 inspirationId（复用 ContentBlockEntity 结构）
      *
+     * v2026-07-25 三写存储重构：新增 subTaskId 和 lineIndex 参数
+     * 与 [com.corgimemo.app.viewmodel.TodoEditViewModel.saveContentBlocks] 保持一致。
+     * 灵感模块的子任务目前不支持附件，调用方使用默认值（subTaskId=null, lineIndex=0）即可。
+     *
      * @param inspirationId 灵感事项 ID
      * @param blocks 当前内存中的 ContentBlock 列表
+     * @param subTaskId 子任务 ID（null 表示属于父灵感本身）
+     * @param lineIndex 行号索引（0 表示父灵感标题行）
      */
-    suspend fun saveContentBlocks(inspirationId: Long, blocks: List<ContentBlock>) {
+    suspend fun saveContentBlocks(
+        inspirationId: Long,
+        blocks: List<ContentBlock>,
+        subTaskId: Long? = null,
+        lineIndex: Int = 0
+    ) {
         val entities = blocks.mapIndexed { index, block ->
             when (block) {
                 is ContentBlock.Image -> ContentBlockEntity(
-                    todoId = inspirationId, type = "image", filePath = block.path, orderIndex = index
+                    todoId = inspirationId, type = "image", filePath = block.path,
+                    orderIndex = index, subTaskId = subTaskId, lineIndex = lineIndex
                 )
                 is ContentBlock.Voice -> ContentBlockEntity(
                     todoId = inspirationId, type = "voice", filePath = block.path,
-                    duration = block.duration, orderIndex = index
+                    duration = block.duration, orderIndex = index,
+                    subTaskId = subTaskId, lineIndex = lineIndex
                 )
                 is ContentBlock.Text -> null // 文本块不持久化到独立表
             }

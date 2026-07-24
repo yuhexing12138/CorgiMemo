@@ -733,55 +733,50 @@ fun TodoEditScreen(
             }
 
             /**
-             * 【关键修复】恢复行内附件（支持多行）
+             * v2026-07-25 三写存储重构：从 content_blocks 表恢复附件到 todoLines
              *
-             * 优先级策略：
-             * 1. 行级快照（lineAttachmentsSnapshot）：最精确，记录了每行的完整附件信息
-             * 2. 全局回退（imagePaths/voiceNotePath）：兼容旧数据，将所有附件放到第一行
+             * 替代旧的 lineAttachmentsSnapshot 和 imagePaths/voiceNotePath 恢复逻辑：
+             * - 旧逻辑1：从 contentFormat 中的行级附件快照（|||LINE_ATTACHMENTS|||）恢复
+             * - 旧逻辑2：从 imagePaths/voiceNotePath 全局字段恢复到第一行
              *
-             * 问题背景：
-             * - fromSubTasks() 和 parseFromText() 都不恢复 imagePaths/voiceAttachments
-             * - 导致重新打开待办时，虽然 _imagePaths/_voiceNotePath 有数据，
-             *   但 todoLines 中没有附件数据，UI 显示空白
+             * 新逻辑：
+             * - 从 content_blocks 表加载 entities（含 lineIndex/subTaskId 信息）
+             * - 根据 entity.lineIndex 把附件分配到 todoLines 对应行
+             * - lineIndex=0 表示父待办行，lineIndex>0 表示子任务行
              *
-             * 解决方案（多行支持）：
-             * - 如果有行级快照数据，使用 LineSnapshotUtils 精确恢复到对应行
-             * - 否则回退到旧逻辑，将全局附件放到第一行
+             * 兼容性：Migration 46→47 已将旧数据迁移到 content_blocks 表
+             * 新建模式（todoId == null）跳过附件恢复
              */
-            if (initialLines.isNotEmpty()) {
-                // 尝试从行级快照恢复（新方式：支持多行）
-                val snapshots = com.corgimemo.app.ui.model.LineSnapshotUtils.deserialize(lineAttachmentsSnapshot)
-                if (snapshots.isNotEmpty()) {
-                    // 使用行级快照精确恢复每行的附件
-                    initialLines = com.corgimemo.app.ui.model.LineSnapshotUtils.restoreAttachmentsToLines(initialLines, snapshots)
-                    android.util.Log.w("TodoEditInit", "使用行级快照恢复附件: ${snapshots.size}个行快照")
-                } else {
-                    // 回退到旧逻辑：将全局附件放到第一行（兼容无快照的旧数据）
-                    val firstLine = initialLines[0]
-                    var updatedLine = firstLine
-
-                    // 恢复图片到第一行
-                    if (imagePaths.isNotEmpty() && firstLine.imagePaths.isEmpty()) {
-                        updatedLine = updatedLine.copy(imagePaths = imagePaths.toList())
-                        android.util.Log.w("TodoEditInit", "恢复图片到第一行: ${imagePaths}")
+            if (initialLines.isNotEmpty() && todoId != null) {
+                val blockEntities = viewModel.loadContentBlockEntities(todoId)
+                if (blockEntities.isNotEmpty()) {
+                    val resultLines = initialLines.toMutableList()
+                    blockEntities.forEach { entity ->
+                        // lineIndex 可能超出当前 todoLines 范围（例如子任务被删除），
+                        // 用 coerceAtMost 兜底追加到最后一行，避免附件丢失
+                        val targetIdx = entity.lineIndex.coerceAtMost(resultLines.lastIndex)
+                        if (targetIdx in resultLines.indices) {
+                            val currentLine = resultLines[targetIdx]
+                            val updatedLine = when (entity.type) {
+                                "image" -> currentLine.copy(
+                                    imagePaths = currentLine.imagePaths + entity.filePath
+                                )
+                                "voice" -> currentLine.copy(
+                                    voiceAttachments = currentLine.voiceAttachments +
+                                        com.corgimemo.app.ui.model.VoiceAttachment(
+                                            path = entity.filePath,
+                                            duration = entity.duration
+                                        )
+                                )
+                                else -> currentLine
+                            }
+                            if (updatedLine != currentLine) {
+                                resultLines[targetIdx] = updatedLine
+                            }
+                        }
                     }
-
-                    // 恢复录音到第一行
-                    val voicePath = voiceNotePath
-                    if (voicePath != null && firstLine.voiceAttachments.isEmpty()) {
-                        val voiceAttachment = com.corgimemo.app.ui.model.VoiceAttachment(
-                            path = voicePath,
-                            duration = voiceDuration
-                        )
-                        updatedLine = updatedLine.copy(voiceAttachments = listOf(voiceAttachment))
-                        android.util.Log.w("TodoEditInit", "恢复录音到第一行: $voicePath")
-                    }
-
-                    // 如果有更新，替换第一行
-                    if (updatedLine != firstLine) {
-                        initialLines = initialLines.toMutableList().also { it[0] = updatedLine }
-                        android.util.Log.w("TodoEditInit", "附件恢复完成: 第一行=$updatedLine")
-                    }
+                    initialLines = resultLines
+                    android.util.Log.w("TodoEditInit", "从 content_blocks 表恢复附件: ${blockEntities.size}个附件")
                 }
             }
 
@@ -912,6 +907,11 @@ fun TodoEditScreen(
      * - 新增 key: isLoaded（ViewModel 中的数据加载完成标志）
      * - 仅当 isLoaded=true 且尚未初始化时才执行初始化逻辑
      * - 编辑模式：isLoaded 在 loadTodo 完成后变为 true → 用实际数据初始化
+     *
+     * v2026-07-25 三写存储重构：仅从 content_blocks 表加载附件
+     * - 旧的回退逻辑（从 imagePaths/voiceNotePath 恢复）已删除
+     * - Migration 46→47 已将旧数据迁移到 content_blocks 表并清空旧字段
+     * - 保存时已不再写入 imagePaths/voiceNotePath（置空）
      */
     LaunchedEffect(isLoaded, todoId, hasInitializedBlocks) {
         /** 判断是否应该初始化：编辑模式必须等 isLoaded=true */
@@ -927,29 +927,16 @@ fun TodoEditScreen(
             /** 诊断日志：追踪 contentBlocks 初始化 */
             android.util.Log.w(
                 "TodoEditInit",
-                "初始化 contentBlocks: todoId=$todoId, dbBlocks.size=${dbBlocks.size}, " +
-                "imagePaths=$imagePaths, voiceNotePath=$voiceNotePath"
+                "初始化 contentBlocks: todoId=$todoId, dbBlocks.size=${dbBlocks.size}"
             )
 
-            if (dbBlocks.isNotEmpty()) {
-                /** 从 ContentBlock 表加载到持久化的内容块 */
-                contentBlocks.clear()
-                contentBlocks.addAll(dbBlocks)
-            } else {
-                /**
-                 * 回退逻辑：从 ViewModel 的 imagePaths/voiceNotePath 恢复
-                 *
-                 * 此时 isLoaded=true，确保这些字段已填充实际数据，
-                 * 避免用空值初始化导致附件丢失。
-                 */
-                contentBlocks.clear()
-                imagePaths.forEach { path ->
-                    contentBlocks.add(ContentBlock.Image(path))
-                }
-                voiceNotePath?.let { path ->
-                    contentBlocks.add(ContentBlock.Voice(path, voiceDuration))
-                }
-            }
+            /**
+             * v2026-07-25 三写存储重构：仅从 content_blocks 表加载
+             * - dbBlocks 非空 → 用 dbBlocks 初始化
+             * - dbBlocks 为空 → 用户未添加任何附件，保持 contentBlocks 为空
+             */
+            contentBlocks.clear()
+            contentBlocks.addAll(dbBlocks)
             viewModel.syncContentBlocks(contentBlocks.toList())
             hasInitializedBlocks = true
         }

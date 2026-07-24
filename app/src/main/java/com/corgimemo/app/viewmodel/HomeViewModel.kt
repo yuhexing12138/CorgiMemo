@@ -38,6 +38,7 @@ import com.corgimemo.app.data.repository.CorgiRepository
 import com.corgimemo.app.data.repository.MoodHistoryRepository
 import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.data.repository.SubTaskManager
+import com.corgimemo.app.data.local.db.ContentBlockDao
 import com.corgimemo.app.data.local.db.OperationLogEntity
 import com.corgimemo.app.data.repository.OperationLogRepository
 import com.corgimemo.app.data.repository.TaskDailyStatsRepository
@@ -130,6 +131,8 @@ class HomeViewModel @Inject constructor(
     private val hapticFeedbackController: HapticFeedbackController,
     /** v2026-07-21 新增：用于查询待办卡片的关联数量（首页卡片展示） */
     private val cardRelationRepository: CardRelationRepository,
+    /** v2026-07-24 新增：用于首页图片预览删除时同步清理 content_blocks 表冗余记录 */
+    private val contentBlockDao: ContentBlockDao,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -317,6 +320,50 @@ class HomeViewModel @Inject constructor(
     // 子任务列表映射：todoId -> 子任务列表
     private val _subTasksMap = MutableStateFlow<Map<Long, List<SubTask>>>(emptyMap())
     val subTasksMap: StateFlow<Map<Long, List<SubTask>>> = _subTasksMap.asStateFlow()
+
+    /**
+     * 各待办的附件路径映射（v2026-07-25 单一数据源重构新增）
+     *
+     * - key = todoId (Long)
+     * - value = Pair(图片路径列表, 语音路径列表)
+     *
+     * 数据源：`content_blocks` 表（单一权威源）
+     * 旧的 `TodoItem.imagePaths` / `voiceNotePath` / `SubTask.imagePaths` / `voicePaths` 字段
+     * 已在阶段2 重构中置空。
+     *
+     * 用途：
+     * - 首页卡片图片/语音角标数量显示（[com.corgimemo.app.ui.components.TodoListItem]）
+     * - 点击角标时聚合所有路径传给全屏预览组件（[com.corgimemo.app.ui.screens.home.HomeScreen]）
+     *
+     * 更新时机：
+     * - [loadTodos] 初始加载 / Flow 重发
+     * - [refreshAllData] 编辑页保存/删除后全量刷新
+     * - [deleteImageFromTodo] / [deleteVoiceFromTodo] 删除附件后局部刷新
+     */
+    private val _todoAttachmentsMap =
+        MutableStateFlow<Map<Long, Pair<List<String>, List<String>>>>(emptyMap())
+    val todoAttachmentsMap: StateFlow<Map<Long, Pair<List<String>, List<String>>>> =
+        _todoAttachmentsMap.asStateFlow()
+
+    /**
+     * 各子任务的附件路径映射（v2026-07-25 单一数据源重构新增）
+     *
+     * - key = subTaskId (Long)
+     * - value = Pair(图片路径列表, 语音路径列表)
+     *
+     * 数据源：`content_blocks` 表中 `subTaskId IS NOT NULL` 的记录
+     *
+     * 用途：
+     * - 子任务列表展开时，每个子任务自身的图片/语音附件角标数量显示
+     * - 替代旧的从 `SubTask.imagePaths` / `SubTask.voicePaths` 字段聚合的方案
+     *   （阶段2 重构后这些字段已被置空）
+     *
+     * 更新时机：与 [_todoAttachmentsMap] 同步
+     */
+    private val _subTaskAttachmentsMap =
+        MutableStateFlow<Map<Long, Pair<List<String>, List<String>>>>(emptyMap())
+    val subTaskAttachmentsMap: StateFlow<Map<Long, Pair<List<String>, List<String>>>> =
+        _subTaskAttachmentsMap.asStateFlow()
 
     /**
      * 各待办的关联卡片数量映射（v2026-07-21 新增）
@@ -1069,6 +1116,351 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 更新待办的分组（v2026-07-25 新增）
+     *
+     * 从首页待办卡片分组角标点击触发，弹出 [CategorySelectorDialog] 后，
+     * 用户选择新分组或创建自定义分组时调用此方法。
+     *
+     * 两种场景：
+     * - categoryId > 0：选中已有分组，直接更新 todo.categoryId
+     * - categoryId == 0L：用户输入了新分组名称，需先创建分组获取 ID 再更新
+     *
+     * @param todoId 待办 ID
+     * @param categoryId 分组 ID（>0 已有分组，0L 新建分组）
+     * @param categoryName 分组名称（categoryId==0L 时为用户新输入的名称）
+     */
+    fun updateTodoCategory(todoId: Long, categoryId: Long, categoryName: String) {
+        viewModelScope.launch {
+            val targetCategoryId = if (categoryId > 0) {
+                categoryId
+            } else {
+                // 新建自定义分组，获取返回的自增 ID
+                categoryRepository.insertCategory(
+                    com.corgimemo.app.data.model.Category(
+                        name = categoryName,
+                        type = com.corgimemo.app.data.model.CategoryType.CUSTOM,
+                        isDefault = false
+                    )
+                )
+            }
+
+            // 获取当前待办并更新 categoryId
+            todoRepository.getTodoById(todoId)?.let { todo ->
+                val updatedTodo = todo.copy(
+                    categoryId = targetCategoryId,
+                    updatedAt = System.currentTimeMillis()
+                )
+                todoRepository.updateTodo(updatedTodo)
+            }
+        }
+    }
+
+    /**
+     * 从待办（含子任务）中删除指定图片路径
+     *
+     * v2026-07-24 新增：用于首页图片全屏预览的删除功能
+     * v2026-07-24 修复：同步删除 content_blocks 表冗余记录，解决编辑页仍显示已删除图片的问题
+     * v2026-07-24 修复：同步从 contentFormat 行级附件快照中移除图片路径，解决编辑页仍显示已删除图片的问题
+     *
+     * 项目三写存储机制（图片路径存储在三个地方）：
+     * 1. TodoItem.imagePaths / SubTask.imagePaths：JSON 数组字段，分别存储各自图片路径
+     * 2. content_blocks 表：编辑页保存时所有图片（含子任务）都用父待办 ID 存储（见 saveContentBlocks）
+     * 3. TodoItem.contentFormat：行级附件快照（LineSnapshot.imagePaths），编辑页通过
+     *    LineSnapshotUtils.deserialize + restoreAttachmentsToLines 恢复到 TodoLine.imagePaths 显示
+     *
+     * 编辑页加载顺序（TodoEditScreen）：
+     * 1. 优先从 content_blocks 表加载（loadContentBlocks(todoId)）
+     * 2. 仅当 content_blocks 为空时才回退到 imagePaths
+     * 3. contentFormat 中的行级附件快照会通过 restoreAttachmentsToLines 恢复到 TodoLine.imagePaths
+     *
+     * 因此必须同步清理三处数据，否则编辑页仍会显示已删除的图片。
+     *
+     * 注意：此方法仅更新数据库记录中的路径引用，不删除物理图片文件
+     * （物理文件可能被其他卡片复用，删除由 FileCopyManager 统一管理）
+     *
+     * @param todoId 父待办 ID
+     * @param imagePath 要删除的图片绝对路径
+     */
+    fun deleteImageFromTodo(todoId: Long, imagePath: String) {
+        viewModelScope.launch {
+            val todo = todoRepository.getTodoById(todoId) ?: return@launch
+
+            // 1. 同步删除 content_blocks 表中的冗余记录（三写存储之 #2）
+            // content_blocks 表中父待办和子任务的图片都用父待办 ID 存储（见 saveContentBlocks 调用），
+            // 所以无论图片属于父待办还是子任务，都用父待办 ID 删除 content_blocks 记录。
+            contentBlockDao.deleteImageBlockByPath(todoId, imagePath)
+
+            // 2. 同步从 contentFormat 行级附件快照中移除该图片路径（三写存储之 #3）
+            // 编辑页通过 LineSnapshotUtils.deserialize + restoreAttachmentsToLines 恢复行级附件，
+            // 如果不从快照中移除，编辑页仍会从快照恢复已删除的图片。
+            val updatedContentFormat = removeImagePathFromContentFormat(todo.contentFormat, imagePath)
+
+            // 3. 从父待办的 imagePaths 中移除（三写存储之 #1）
+            val parentPaths = parsePathsToJsonList(todo.imagePaths).toMutableList()
+            val parentContains = parentPaths.remove(imagePath)
+
+            // 4. 如果父待办的 imagePaths 或 contentFormat 有变化，更新父待办
+            if (parentContains || updatedContentFormat != todo.contentFormat) {
+                val updatedTodo = todo.copy(
+                    imagePaths = pathsListToJsonString(parentPaths),
+                    contentFormat = updatedContentFormat,
+                    updatedAt = System.currentTimeMillis()
+                )
+                todoRepository.updateTodo(updatedTodo)
+            }
+
+            // 5. 遍历子任务，从子任务的 imagePaths 中移除（三写存储之 #1 子任务部分）
+            // 注意：子任务的图片路径只存在于 SubTask.imagePaths，不在 contentFormat 中
+            // （contentFormat 中的行级附件快照只属于父待办）
+            val subTasks = SubTaskManager.getSubTasks(context, todoId)
+            for (subTask in subTasks) {
+                val subPaths = parsePathsToJsonList(subTask.imagePaths).toMutableList()
+                if (subPaths.remove(imagePath)) {
+                    val updatedSubTask = subTask.copy(
+                        imagePaths = pathsListToJsonString(subPaths)
+                    )
+                    SubTaskManager.updateSubTask(context, updatedSubTask)
+                }
+            }
+
+            // 6. v2026-07-25 单一数据源：局部刷新 _todoAttachmentsMap 和 _subTaskAttachmentsMap
+            // 已从 content_blocks 表删除该路径，同步从内存 Map 中移除，确保 UI 立即更新
+            // （无需触发 loadTodos 的全量刷新，性能更优）
+            // 注意：附件可能属于父待办或某个子任务，需同时清理两个 Map
+            val currentTodoMap = _todoAttachmentsMap.value.toMutableMap()
+            val currentTodoAttachments = currentTodoMap[todoId]
+            if (currentTodoAttachments != null) {
+                val newImagePaths = currentTodoAttachments.first.filter { it != imagePath }
+                val newVoicePaths = currentTodoAttachments.second
+                currentTodoMap[todoId] = newImagePaths to newVoicePaths
+                _todoAttachmentsMap.value = currentTodoMap
+            }
+            // 同步清理子任务附件 Map（删除的图片可能属于某个子任务）
+            val currentSubMap = _subTaskAttachmentsMap.value.toMutableMap()
+            var subMapChanged = false
+            for ((subId, attachments) in currentSubMap) {
+                if (imagePath in attachments.first) {
+                    currentSubMap[subId] = attachments.first.filter { it != imagePath } to attachments.second
+                    subMapChanged = true
+                }
+            }
+            if (subMapChanged) {
+                _subTaskAttachmentsMap.value = currentSubMap
+            }
+        }
+    }
+
+    /**
+     * 从 contentFormat 的行级附件快照中移除指定图片路径
+     *
+     * contentFormat 格式：`{Markdown 内容}|||LINE_ATTACHMENTS|||[{...}, {...}]`
+     * 分隔符后的 JSON 数组是 LineSnapshot 列表，每个 LineSnapshot 包含 imagePaths 字段。
+     *
+     * 此方法：
+     * 1. 提取 Markdown 显示内容（分隔符前的部分）
+     * 2. 反序列化行级附件快照列表
+     * 3. 遍历每个快照，从 imagePaths 中移除指定路径
+     * 4. 重新序列化为 contentFormat 字符串
+     *
+     * @param contentFormat 原始的 contentFormat 字符串（非空，与 TodoItem.contentFormat 类型一致）
+     * @param imagePath 要移除的图片路径
+     * @return 更新后的 contentFormat 字符串（如果未找到路径则返回原值）
+     */
+    private fun removeImagePathFromContentFormat(
+        contentFormat: String,
+        imagePath: String
+    ): String {
+        if (contentFormat.isBlank()) return contentFormat
+        if (!contentFormat.contains(com.corgimemo.app.ui.model.LineSnapshotUtils.SEPARATOR)) {
+            return contentFormat
+        }
+
+        // 提取 Markdown 显示内容（分隔符前的部分）
+        val displayContent = com.corgimemo.app.ui.model.LineSnapshotUtils.extractDisplayContent(contentFormat)
+        // 反序列化行级附件快照列表
+        val snapshots = com.corgimemo.app.ui.model.LineSnapshotUtils.deserialize(contentFormat).toMutableList()
+
+        var changed = false
+        snapshots.forEachIndexed { index, snapshot ->
+            if (snapshot.imagePaths.contains(imagePath)) {
+                // 从该行的 imagePaths 中移除指定路径
+                snapshots[index] = snapshot.copy(imagePaths = snapshot.imagePaths - imagePath)
+                changed = true
+            }
+        }
+
+        // 仅在有变化时重新序列化，避免不必要的字符串操作
+        return if (changed) {
+            com.corgimemo.app.ui.model.LineSnapshotUtils.serialize(snapshots, displayContent)
+        } else {
+            contentFormat
+        }
+    }
+
+    /**
+     * 从待办（含子任务）中删除指定语音附件路径
+     *
+     * v2026-07-25 新增：用于首页录音全屏预览的删除功能
+     * 与 [deleteImageFromTodo] 对称，同步清理三处存储（三写一致性）：
+     *
+     * 项目三写存储机制（语音附件）：
+     * 1. TodoItem.voiceNotePath（单个 String?，父待办全局语音）/ SubTask.voicePaths（JSON 数组）
+     * 2. content_blocks 表：编辑页保存时所有语音（含子任务）都用父待办 ID 存储（type='voice'）
+     * 3. TodoItem.contentFormat：行级附件快照（LineSnapshot.voiceAttachments），编辑页通过
+     *    LineSnapshotUtils.deserialize + restoreAttachmentsToLines 恢复到 TodoLine.voiceAttachments 显示
+     *
+     * 编辑页加载顺序（TodoEditScreen）：
+     * 1. 优先从 content_blocks 表加载（loadContentBlocks(todoId)）
+     * 2. 仅当 content_blocks 为空时才回退到 voiceNotePath/voicePaths
+     * 3. contentFormat 中的行级附件快照会通过 restoreAttachmentsToLines 恢复到 TodoLine.voiceAttachments
+     *
+     * 注意：此方法仅更新数据库记录中的路径引用，不删除物理文件
+     * （物理文件由 VoicePreviewDialog.deleteRecording() 负责删除）
+     *
+     * @param todoId 父待办 ID
+     * @param voicePath 要删除的语音文件绝对路径
+     */
+    fun deleteVoiceFromTodo(todoId: Long, voicePath: String) {
+        viewModelScope.launch {
+            val todo = todoRepository.getTodoById(todoId) ?: return@launch
+
+            // 1. 同步删除 content_blocks 表中的冗余记录（三写存储之 #2）
+            // content_blocks 表中父待办和子任务的语音都用父待办 ID 存储（见 saveContentBlocks 调用）
+            contentBlockDao.deleteVoiceBlockByPath(todoId, voicePath)
+
+            // 2. 同步从 contentFormat 行级附件快照中移除该语音路径（三写存储之 #3）
+            // 编辑页通过 LineSnapshotUtils.deserialize + restoreAttachmentsToLines 恢复行级附件
+            val updatedContentFormat = removeVoicePathFromContentFormat(todo.contentFormat, voicePath)
+
+            // 3. 从父待办的 voiceNotePath 中移除（三写存储之 #1 父待办部分）
+            // voiceNotePath 是单个 String?（非 JSON 数组），直接比较路径字符串
+            val parentVoiceChanged = todo.voiceNotePath == voicePath
+            val newVoiceNotePath = if (parentVoiceChanged) null else todo.voiceNotePath
+            // 同时清理 voiceDuration（删除语音时同步清理时长，避免残留无效数据）
+            val newVoiceDuration = if (parentVoiceChanged) null else todo.voiceDuration
+
+            // 4. 如果父待办的 voiceNotePath 或 contentFormat 有变化，更新父待办
+            if (parentVoiceChanged || updatedContentFormat != todo.contentFormat) {
+                val updatedTodo = todo.copy(
+                    voiceNotePath = newVoiceNotePath,
+                    voiceDuration = newVoiceDuration,
+                    contentFormat = updatedContentFormat,
+                    updatedAt = System.currentTimeMillis()
+                )
+                todoRepository.updateTodo(updatedTodo)
+            }
+
+            // 5. 遍历子任务，从子任务的 voicePaths 中移除（三写存储之 #1 子任务部分）
+            // 注意：子任务的语音路径只存在于 SubTask.voicePaths（JSON 数组），不在 contentFormat 中
+            // （contentFormat 中的行级附件快照只属于父待办）
+            val subTasks = SubTaskManager.getSubTasks(context, todoId)
+            for (subTask in subTasks) {
+                val subPaths = parsePathsToJsonList(subTask.voicePaths).toMutableList()
+                if (subPaths.remove(voicePath)) {
+                    val updatedSubTask = subTask.copy(
+                        voicePaths = pathsListToJsonString(subPaths)
+                    )
+                    SubTaskManager.updateSubTask(context, updatedSubTask)
+                }
+            }
+
+            // 6. v2026-07-25 单一数据源：局部刷新 _todoAttachmentsMap 和 _subTaskAttachmentsMap
+            // 已从 content_blocks 表删除该路径，同步从内存 Map 中移除，确保 UI 立即更新
+            // （与 deleteImageFromTodo 对称，无需触发 loadTodos 的全量刷新）
+            // 注意：附件可能属于父待办或某个子任务，需同时清理两个 Map
+            val currentTodoMap = _todoAttachmentsMap.value.toMutableMap()
+            val currentTodoAttachments = currentTodoMap[todoId]
+            if (currentTodoAttachments != null) {
+                val newImagePaths = currentTodoAttachments.first
+                val newVoicePaths = currentTodoAttachments.second.filter { it != voicePath }
+                currentTodoMap[todoId] = newImagePaths to newVoicePaths
+                _todoAttachmentsMap.value = currentTodoMap
+            }
+            // 同步清理子任务附件 Map（删除的语音可能属于某个子任务）
+            val currentSubMap = _subTaskAttachmentsMap.value.toMutableMap()
+            var subMapChanged = false
+            for ((subId, attachments) in currentSubMap) {
+                if (voicePath in attachments.second) {
+                    currentSubMap[subId] = attachments.first to attachments.second.filter { it != voicePath }
+                    subMapChanged = true
+                }
+            }
+            if (subMapChanged) {
+                _subTaskAttachmentsMap.value = currentSubMap
+            }
+        }
+    }
+
+    /**
+     * 从 contentFormat 的行级附件快照中移除指定语音路径
+     *
+     * 与 [removeImagePathFromContentFormat] 对称，处理 LineSnapshot.voiceAttachments 字段。
+     *
+     * contentFormat 格式：`{Markdown 内容}|||LINE_ATTACHMENTS|||[{...}, {...}]`
+     * 每个 LineSnapshot 的 voiceAttachments 是 VoiceAttachmentSnapshot 列表，每项含 path 和 duration。
+     *
+     * @param contentFormat 原始的 contentFormat 字符串（非空，与 TodoItem.contentFormat 类型一致）
+     * @param voicePath 要移除的语音文件路径
+     * @return 更新后的 contentFormat 字符串（如果未找到路径则返回原值）
+     */
+    private fun removeVoicePathFromContentFormat(
+        contentFormat: String,
+        voicePath: String
+    ): String {
+        if (contentFormat.isBlank()) return contentFormat
+        if (!contentFormat.contains(com.corgimemo.app.ui.model.LineSnapshotUtils.SEPARATOR)) {
+            return contentFormat
+        }
+
+        val displayContent = com.corgimemo.app.ui.model.LineSnapshotUtils.extractDisplayContent(contentFormat)
+        val snapshots = com.corgimemo.app.ui.model.LineSnapshotUtils.deserialize(contentFormat).toMutableList()
+
+        var changed = false
+        snapshots.forEachIndexed { index, snapshot ->
+            if (snapshot.voiceAttachments.any { it.path == voicePath }) {
+                // 从该行的 voiceAttachments 中过滤掉指定路径
+                snapshots[index] = snapshot.copy(
+                    voiceAttachments = snapshot.voiceAttachments.filter { it.path != voicePath }
+                )
+                changed = true
+            }
+        }
+
+        return if (changed) {
+            com.corgimemo.app.ui.model.LineSnapshotUtils.serialize(snapshots, displayContent)
+        } else {
+            contentFormat
+        }
+    }
+
+    /**
+     * 解析 JSON 数组字符串为路径列表
+     *
+     * v2026-07-24 修复：统一使用 [TagUtils.decodePaths]，确保路径格式与 content_blocks 表一致。
+     *
+     * 之前的自定义实现用 `org.json.JSONArray.getString()` 获取路径，不会反转义 `\/` 为 `/`。
+     * 而 [TagUtils.decodePaths] 会执行 `.replace("\\/", "/")` 反转义。
+     *
+     * 这导致：
+     * - content_blocks 表中 filePath 是 `/data/...`（保存时经 TagUtils.decodePaths 反转义）
+     * - 但 aggregateImagePaths 返回的路径是 `\/data\/...`（未反转义）
+     * - 删除时传入 `\/data\/...`，DELETE SQL `WHERE filePath = :filePath` 不匹配
+     *
+     * 统一使用 TagUtils.decodePaths 后，所有路径解析都执行反转义，确保格式一致。
+     */
+    private fun parsePathsToJsonList(pathsJson: String): List<String> =
+        com.corgimemo.app.util.TagUtils.decodePaths(pathsJson)
+
+    /**
+     * 路径列表序列化为 JSON 数组字符串
+     * 用于持久化到 [TodoItem.imagePaths] / [SubTask.imagePaths] 字段
+     *
+     * 统一使用 [TagUtils.encodePaths]，与 [TodoEditViewModel.encodePaths] 保持一致
+     */
+    private fun pathsListToJsonString(paths: List<String>): String =
+        com.corgimemo.app.util.TagUtils.encodePaths(paths)
+
+    /**
      * 创建新分类
      *
      * @param name 分类名称
@@ -1156,6 +1548,10 @@ class HomeViewModel @Inject constructor(
                 // v2026-07-21：刷新关联数量映射（首页卡片附件行右侧展示）
                 refreshRelationCounts(allTodos)
 
+                // v2026-07-25 单一数据源：从 content_blocks 表批量加载附件路径映射
+                // 替代旧的从 TodoItem.imagePaths / SubTask.imagePaths 字段聚合的方案
+                refreshTodoAttachments(allTodos)
+
                 // v2026-07-20 v7 关键修复：把 _isDataInitialized.value = true 移到所有依赖 Flow emit 之后
                 // - 旧逻辑：todos emit 后立即设 isDataInitialized = true，
                 //   HomeScreen 立即显示真实列表，但 subTaskProgressMap / subTasksMap 还在同步计算中
@@ -1198,6 +1594,56 @@ class HomeViewModel @Inject constructor(
             }
         }
         _relationCountMap.value = relationCountMap
+    }
+
+    /**
+     * 批量刷新附件路径映射（v2026-07-25 单一数据源重构新增）
+     *
+     * 从 `content_blocks` 表批量查询所有待办的内容块，按两个维度聚合：
+     * 1. 按 `todoId` 聚合 → [_todoAttachmentsMap]（父卡片角标总数）
+     * 2. 按 `subTaskId` 聚合 → [_subTaskAttachmentsMap]（子任务自身角标）
+     *
+     * **数据源**：单一权威源 `content_blocks` 表
+     * **替代方案**：旧的从 `TodoItem.imagePaths` / `SubTask.imagePaths` 等字段聚合
+     *
+     * **性能考量**：
+     * - 单次 SQL `IN` 查询，避免 N+1 问题
+     * - 典型场景 N < 200，content_blocks 总量 < 2000，查询耗时 < 10ms
+     *
+     * @param allTodos 当前所有待办列表
+     */
+    private suspend fun refreshTodoAttachments(allTodos: List<TodoItem>) {
+        if (allTodos.isEmpty()) {
+            _todoAttachmentsMap.value = emptyMap()
+            _subTaskAttachmentsMap.value = emptyMap()
+            return
+        }
+        val todoIds = allTodos.map { it.id }.filter { it > 0L }
+        if (todoIds.isEmpty()) {
+            _todoAttachmentsMap.value = emptyMap()
+            _subTaskAttachmentsMap.value = emptyMap()
+            return
+        }
+        val blocks = contentBlockDao.getBlocksByTodoIds(todoIds)
+        // 按 todoId 聚合（父卡片角标总数，包含子任务的附件）
+        val todoMap = mutableMapOf<Long, Pair<MutableList<String>, MutableList<String>>>()
+        // 按 subTaskId 聚合（子任务自身角标）
+        val subTaskMap = mutableMapOf<Long, Pair<MutableList<String>, MutableList<String>>>()
+        for (block in blocks) {
+            val targetMap = if (block.subTaskId != null) subTaskMap else todoMap
+            val key = if (block.subTaskId != null) block.subTaskId else block.todoId
+            val entry = targetMap.getOrPut(key) {
+                mutableListOf<String>() to mutableListOf<String>()
+            }
+            when (block.type) {
+                "image" -> entry.first.add(block.filePath)
+                "voice" -> entry.second.add(block.filePath)
+                else -> { /* 文本块等不参与附件聚合 */ }
+            }
+        }
+        // 转为不可变 List，避免外部误修改
+        _todoAttachmentsMap.value = todoMap.mapValues { it.value.first.toList() to it.value.second.toList() }
+        _subTaskAttachmentsMap.value = subTaskMap.mapValues { it.value.first.toList() to it.value.second.toList() }
     }
 
     /**
@@ -1784,6 +2230,9 @@ class HomeViewModel @Inject constructor(
             _subTasksMap.value = subTasksMap
             // v2026-07-21：同步刷新关联数量（用户可能在编辑页修改了关联）
             refreshRelationCounts(allTodos)
+            // v2026-07-25 单一数据源：同步刷新附件路径映射
+            // （用户可能在编辑页修改了附件，需从 content_blocks 表重新加载）
+            refreshTodoAttachments(allTodos)
         }
     }
 
@@ -1823,6 +2272,9 @@ class HomeViewModel @Inject constructor(
             _subTasksMap.value = subTasksMap
             // v2026-07-21：同步刷新关联数量（编辑页保存/删除后关联可能变化）
             refreshRelationCounts(allTodos)
+            // v2026-07-25 单一数据源：同步刷新附件路径映射
+            // （编辑页保存后附件可能变化，需从 content_blocks 表重新加载）
+            refreshTodoAttachments(allTodos)
         }
     }
 

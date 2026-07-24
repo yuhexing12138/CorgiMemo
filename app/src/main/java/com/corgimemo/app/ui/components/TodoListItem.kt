@@ -188,14 +188,73 @@ fun TodoListItem(
      */
     onRelationCountClick: () -> Unit = {},
     /**
-     * 分组角标点击回调（v2026-07-24 新增）
+     * 分组角标点击回调（v2026-07-24 新增，v2026-07-25 改为弹出改变分组弹窗）
      *
      * 当 [categoryName] 非空时在卡片左上角显示分组角标；点击角标时触发此回调，
-     * 由父级决定如何跳转到该分组的待办列表（通常是触发 onCategoryFilter 过滤）。
+     * 由父级弹出 [CategorySelectorDialog] 供用户选择新分组。
      *
      * 不传时角标仍可显示但不可点击（保持向后兼容）。
      */
-    onCategoryClick: (String) -> Unit = {}
+    onCategoryClick: () -> Unit = {},
+    /**
+     * 图片附件角标点击回调（v2026-07-25 新增）
+     *
+     * 当图片附件数量 > 0 时显示图片角标；点击角标时触发此回调，
+     * 由父级弹出全屏图片预览页面（参考 [InspirationImageGallery]）。
+     *
+     * 不传时角标仍可显示但不可点击（保持向后兼容）。
+     */
+    onImageClick: () -> Unit = {},
+    /**
+     * 语音附件角标点击回调（v2026-07-25 新增）
+     *
+     * 当语音附件数量 > 0 时显示语音角标；点击角标时触发此回调，
+     * 由父级弹出全屏录音预览页面（波形 + 播放控制 + 录音列表）。
+     *
+     * 不传时角标仍可显示但不可点击（保持向后兼容）。
+     */
+    onVoiceClick: () -> Unit = {},
+    /**
+     * 图片附件路径列表（v2026-07-25 单一数据源重构新增）
+     *
+     * 数据源：`content_blocks` 表（由 [HomeViewModel.todoAttachmentsMap] 提供）
+     * 旧的 `TodoItem.imagePaths` / `SubTask.imagePaths` 字段已在阶段2 重构中置空。
+     *
+     * 用途：
+     * - 计算图片角标数量（`imagePaths.size`）
+     * - 替代旧的 [aggregateAttachmentCounts] 从字段聚合的方案
+     *
+     * 默认空列表（保持向后兼容，未传时角标不显示）
+     */
+    imagePaths: List<String> = emptyList(),
+    /**
+     * 语音附件路径列表（v2026-07-25 单一数据源重构新增）
+     *
+     * 数据源：`content_blocks` 表（由 [HomeViewModel.todoAttachmentsMap] 提供）
+     * 旧的 `TodoItem.voiceNotePath` / `SubTask.voicePaths` 字段已在阶段2 重构中置空。
+     *
+     * 用途：
+     * - 计算语音角标数量（`voicePaths.size`）
+     * - 替代旧的 [aggregateAttachmentCounts] 从字段聚合的方案
+     *
+     * 默认空列表（保持向后兼容，未传时角标不显示）
+     */
+    voicePaths: List<String> = emptyList(),
+    /**
+     * 子任务附件路径映射（v2026-07-25 单一数据源重构新增）
+     *
+     * - key = subTaskId (Long)
+     * - value = Pair(图片路径列表, 语音路径列表)
+     *
+     * 数据源：`content_blocks` 表中 `subTaskId IS NOT NULL` 的记录
+     * 由 [HomeViewModel.subTaskAttachmentsMap] 提供
+     *
+     * 用途：子任务列表展开时，每个子任务自身的图片/语音附件角标数量显示
+     * 替代旧的从 `SubTask.imagePaths` / `SubTask.voicePaths` 字段聚合的方案
+     *
+     * 默认空 Map（保持向后兼容，未传时子任务附件角标不显示）
+     */
+    subTaskAttachmentsMap: Map<Long, Pair<List<String>, List<String>>> = emptyMap()
 ) {
 
     /** 逐区间动画参数：每字符延迟 2ms，最大延迟上限 300ms */
@@ -405,13 +464,20 @@ fun TodoListItem(
         // Box 内部 Layout 的 Column 仍然可以直接引用这些外层变量。
         /** 是否存在分组角标（详情模式且categoryName不为空） */
         val hasCategory = !isSimpleMode && categoryName != null
-        /** 聚合附件数量（图片+语音总数），供多角标布局和元数据行使用 */
-        val aggregateCounts = aggregateAttachmentCounts(todo, subTasks)
+        /**
+         * 聚合附件数量（图片+语音总数），供多角标布局和元数据行使用
+         *
+         * v2026-07-25 单一数据源重构：改为从外部传入的 imagePaths / voicePaths 计算
+         * 旧的 [aggregateAttachmentCounts] 从 TodoItem/SubTask 字段聚合的方案已废弃
+         * （阶段2 重构后这些字段已被置空）
+         */
+        val imageCount = imagePaths.size
+        val voiceCount = voicePaths.size
         /** v1.3 改造：图片/语音分开展示为两个独立角标 */
         /** 是否存在图片附件角标（详情模式下图片数量>0） */
-        val hasImageAttachment = !isSimpleMode && aggregateCounts.first > 0
+        val hasImageAttachment = !isSimpleMode && imageCount > 0
         /** 是否存在语音附件角标（详情模式下语音数量>0） */
-        val hasVoiceAttachment = !isSimpleMode && aggregateCounts.second > 0
+        val hasVoiceAttachment = !isSimpleMode && voiceCount > 0
         /** 是否存在关联卡片角标（v2026-07-25 升级，详情模式下 relationCount>0） */
         val hasRelationBadge = !isSimpleMode && relationCount > 0
         Box {
@@ -673,6 +739,8 @@ fun TodoListItem(
                             .padding(start = 52.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)
                     ) {
                         subTasks.forEach { subTask ->
+                            // v2026-07-25 单一数据源：从 subTaskAttachmentsMap 获取子任务自身附件路径
+                            val subAttachments = subTaskAttachmentsMap[subTask.id]
                             SubTaskInTodoListItem(
                                 subTask = subTask,
                                 isParentCompleted = todo.status == 1,
@@ -680,7 +748,9 @@ fun TodoListItem(
                                 onToggleComplete = { onToggleSubTask(subTask.id) },
                                 onDisabledLongPress = {
                                     onShowSnackbar(exitBatchModeHint)
-                                }
+                                },
+                                imagePaths = subAttachments?.first ?: emptyList(),
+                                voicePaths = subAttachments?.second ?: emptyList()
                             )
                             if (subTask != subTasks.last()) {
                                 Spacer(modifier = Modifier.height(4.dp))
@@ -768,22 +838,25 @@ fun TodoListItem(
                         CategoryBadge(
                             categoryName = categoryName!!,
                             isCompleted = todo.status == 1,
-                            onClick = { onCategoryClick(categoryName!!) },
+                            onClick = { onCategoryClick() },
                             isLastBadge = lastBadgeIndex == 0
                         )
                     }
                     // v1.3 改造：图片/语音分开为两个独立角标
+                    // v2026-07-25 新增：图片/语音角标可点击，弹出全屏预览
                     if (hasImageAttachment) {
                         ImageAttachmentBadge(
-                            count = aggregateCounts.first,
+                            count = imageCount,
                             isCompleted = todo.status == 1,
+                            onClick = { onImageClick() },
                             isLastBadge = lastBadgeIndex == 1
                         )
                     }
                     if (hasVoiceAttachment) {
                         VoiceAttachmentBadge(
-                            count = aggregateCounts.second,
+                            count = voiceCount,
                             isCompleted = todo.status == 1,
+                            onClick = { onVoiceClick() },
                             isLastBadge = lastBadgeIndex == 2
                         )
                     }
@@ -908,6 +981,8 @@ private fun parseProgress(progressText: String): Float {
  * @param subTask 子任务
  * @param onToggleComplete 切换完成状态回调
  * @param modifier Modifier
+ * @param imagePaths 子任务自身的图片附件路径列表（v2026-07-25 单一数据源重构新增）
+ * @param voicePaths 子任务自身的语音附件路径列表（v2026-07-25 单一数据源重构新增）
  */
 @Composable
 private fun SubTaskInTodoListItem(
@@ -916,7 +991,9 @@ private fun SubTaskInTodoListItem(
     isEnabled: Boolean = true,
     onToggleComplete: () -> Unit = {},
     onDisabledLongPress: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    imagePaths: List<String> = emptyList(),
+    voicePaths: List<String> = emptyList()
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -953,8 +1030,10 @@ private fun SubTaskInTodoListItem(
         )
 
         // 子任务自身附件计数（独立于父卡聚合）- 使用 Material Icons 图标
-        val subImageCount = parseImagePathsCount(subTask.imagePaths)
-        val subVoiceCount = parseVoicePathsCount(subTask.voicePaths)
+        // v2026-07-25 单一数据源重构：从外部传入的 imagePaths / voicePaths 计算
+        // 替代旧的从 subTask.imagePaths / subTask.voicePaths 字段解析（阶段2 重构后字段已置空）
+        val subImageCount = imagePaths.size
+        val subVoiceCount = voicePaths.size
         if (subImageCount > 0 || subVoiceCount > 0) {
             Spacer(modifier = Modifier.width(8.dp))
             val attachmentColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1161,54 +1240,6 @@ private fun PriorityBar(
 }
 
 /**
- * 解析 JSON 数组格式的图片路径字符串，返回图片数量
- *
- * @param imagePathsJson org.json.JSONArray 序列化的字符串
- * @return 图片数量（解析失败或为空返回 0）
- */
-private fun parseImagePathsCount(imagePathsJson: String): Int {
-    if (imagePathsJson.isBlank()) return 0
-    return try {
-        org.json.JSONArray(imagePathsJson).length()
-    } catch (e: Exception) {
-        0
-    }
-}
-
-/**
- * 解析 JSON 数组格式的语音路径字符串，返回语音数量
- *
- * @param voicePathsJson org.json.JSONArray 序列化的字符串
- * @return 语音数量（解析失败或为空返回 0）
- */
-private fun parseVoicePathsCount(voicePathsJson: String): Int {
-    if (voicePathsJson.isBlank()) return 0
-    return try {
-        org.json.JSONArray(voicePathsJson).length()
-    } catch (e: Exception) {
-        0
-    }
-}
-
-/**
- * 聚合待办卡片附件数量（父自身 + 所有子任务）
- *
- * @param todo 父待办
- * @param subTasks 子任务列表
- * @return Pair(图片总数, 语音总数)
- */
-private fun aggregateAttachmentCounts(
-    todo: TodoItem,
-    subTasks: List<SubTask>
-): Pair<Int, Int> {
-    val imageCount = parseImagePathsCount(todo.imagePaths) +
-            subTasks.sumOf { parseImagePathsCount(it.imagePaths) }
-    val voiceCount = (if (todo.voiceNotePath != null) 1 else 0) +
-            subTasks.sumOf { parseVoicePathsCount(it.voicePaths) }
-    return imageCount to voiceCount
-}
-
-/**
  * 分组角标组件（v2026-07-24 重设计，v2026-07-25 升级为通用角标容器）
  *
  * 设计参考：待办分享图中的分类角标（drawCategoryBadge）
@@ -1321,11 +1352,12 @@ private fun CategoryBadge(
  * - 圆角：仅最右角标右下 16dp，其他三边 0 圆角贴合边框
  * - 样式：与 [CategoryBadge] 完全一致（11sp + 浅灰背景 + 灰文字 + Material Icons）
  * - 高度：19dp（11sp lineHeight + 4dp×2 padding），与分享图分类角标严格一致
- * - 不可点击：纯展示性角标（与分组角标不同，分组可点击跳转）
+ * - 可点击：点击触发 onClick 回调，弹出全屏图片预览（v2026-07-25 新增）
  * - 图标：Material Icons `Icons.Default.Image`
  *
  * @param count 图片附件数量
  * @param isCompleted 是否已完成（视觉降权）
+ * @param onClick 点击回调（弹出全屏图片预览）
  * @param modifier 外部 modifier（一般由调用方控制）
  * @param isLastBadge 是否是最右角标（true 时右下 16dp 圆角，否则全 0 圆角）
  */
@@ -1333,6 +1365,7 @@ private fun CategoryBadge(
 private fun ImageAttachmentBadge(
     count: Int,
     isCompleted: Boolean,
+    onClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     isLastBadge: Boolean = false
 ) {
@@ -1355,6 +1388,11 @@ private fun ImageAttachmentBadge(
         modifier = modifier
             .clip(badgeShape)
             .background(bgColor, badgeShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(bounded = false, radius = 24.dp),
+                onClick = onClick
+            )
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1383,8 +1421,11 @@ private fun ImageAttachmentBadge(
  *
  * 与 [ImageAttachmentBadge] 完全对称的设计，但使用 `mic` 图标表示语音附件
  *
+ * v2026-07-25 新增可点击：点击触发 onClick 回调，弹出全屏录音预览
+ *
  * @param count 语音附件数量
  * @param isCompleted 是否已完成（视觉降权）
+ * @param onClick 点击回调（弹出全屏录音预览）
  * @param modifier 外部 modifier（一般由调用方控制）
  * @param isLastBadge 是否是最右角标（true 时右下 16dp 圆角，否则全 0 圆角）
  */
@@ -1392,6 +1433,7 @@ private fun ImageAttachmentBadge(
 private fun VoiceAttachmentBadge(
     count: Int,
     isCompleted: Boolean,
+    onClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     isLastBadge: Boolean = false
 ) {
@@ -1414,6 +1456,11 @@ private fun VoiceAttachmentBadge(
         modifier = modifier
             .clip(badgeShape)
             .background(bgColor, badgeShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(bounded = false, radius = 24.dp),
+                onClick = onClick
+            )
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1580,58 +1627,6 @@ private fun ReminderInfoRow(
         // 循环类型文字（"周一至周五"/"每天"/"每周"等）
         Text(
             text = RepeatTaskManager.getRepeatTypeName(repeatType),
-            fontSize = 12.sp,
-            color = color
-        )
-    }
-}
-
-/**
- * 附件计数行（语音 + 图片附件数量显示）
- *
- * 从原内联代码提取，避免拥挤/非拥挤两种布局下的代码重复。
- * 当两种附件都有时，语音在前图片在后，中间留 6dp 间距。
- *
- * @param imageCount 图片附件数量
- * @param voiceCount 语音附件数量
- * @param color 图标和文字颜色（已完成态使用灰色降权）
- */
-@Composable
-private fun AttachmentCountsRow(
-    imageCount: Int,
-    voiceCount: Int,
-    color: Color
-) {
-    // 语音附件
-    if (voiceCount > 0) {
-        Icon(
-            imageVector = Icons.Outlined.Mic,
-            contentDescription = "语音附件",
-            tint = color,
-            modifier = Modifier.size(14.dp)
-        )
-        Spacer(modifier = Modifier.width(2.dp))
-        Text(
-            text = "×$voiceCount",
-            fontSize = 12.sp,
-            color = color
-        )
-        // 两种附件间间距
-        if (imageCount > 0) {
-            Spacer(modifier = Modifier.width(6.dp))
-        }
-    }
-    // 图片附件
-    if (imageCount > 0) {
-        Icon(
-            imageVector = Icons.Outlined.Image,
-            contentDescription = "图片附件",
-            tint = color,
-            modifier = Modifier.size(14.dp)
-        )
-        Spacer(modifier = Modifier.width(2.dp))
-        Text(
-            text = "×$imageCount",
             fontSize = 12.sp,
             color = color
         )

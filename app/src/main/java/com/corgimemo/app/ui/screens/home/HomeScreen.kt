@@ -133,6 +133,9 @@ import com.corgimemo.app.ui.components.PriorityPickerSheet
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
 // v2026-07-22 新增：关联列表 BottomSheet
 import com.corgimemo.app.ui.components.RelationListBottomSheet
+import com.corgimemo.app.ui.components.CategorySelectorDialog
+import com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery
+import com.corgimemo.app.ui.components.VoicePreviewDialog
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -224,6 +227,19 @@ fun HomeScreen(
     // 各待办的关联卡片数量映射（v2026-07-21 新增，用于首页卡片附件行右侧展示）
     val relationCountMap by viewModel.relationCountMap.collectAsState()
 
+    // 各待办的附件路径映射（v2026-07-25 单一数据源重构新增）
+    // - key = todoId
+    // - value = Pair(图片路径列表, 语音路径列表)
+    // 数据源：content_blocks 表（单一权威源），替代旧的 TodoItem.imagePaths / SubTask.imagePaths 字段
+    val todoAttachmentsMap by viewModel.todoAttachmentsMap.collectAsState()
+
+    // 各子任务的附件路径映射（v2026-07-25 单一数据源重构新增）
+    // - key = subTaskId
+    // - value = Pair(图片路径列表, 语音路径列表)
+    // 数据源：content_blocks 表中 subTaskId IS NOT NULL 的记录
+    // 用于子任务列表展开时每个子任务自身的附件角标显示
+    val subTaskAttachmentsMap by viewModel.subTaskAttachmentsMap.collectAsState()
+
     // 待办列表 LazyColumn 状态（用于滚动位置记忆与下拉刷新联动）
     val lazyListState = rememberLazyListState()
 
@@ -297,6 +313,45 @@ fun HomeScreen(
      */
     var showRelationListSheet by remember { mutableStateOf(false) }
     var relationListSourceId by remember { mutableStateOf<Long?>(null) }
+
+    /**
+     * 分组选择弹窗状态（v2026-07-25 新增）
+     *
+     * 点击待办卡片分组角标时触发：
+     * - pendingCategoryTodoId 非 null 时显示 [CategorySelectorDialog]
+     * - 用户选择/创建分组后调用 viewModel.updateTodoCategory()
+     * - 取消时置 null 关闭弹窗
+     */
+    var pendingCategoryTodoId by remember { mutableStateOf<Long?>(null) }
+
+    /**
+     * 图片全屏预览状态（v2026-07-25 新增）
+     *
+     * 点击待办卡片图片角标时触发：
+     * - previewImagePaths 非空时显示 [InspirationImageGallery]
+     * - 聚合父待办 + 所有子任务的图片路径
+     *
+     * v2026-07-24 新增 previewTodoId：
+     * - 保存当前预览图片所属的父待办 ID
+     * - 用于删除图片时定位数据库记录（父待办或子任务）
+     */
+    var previewImagePaths by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showImagePreview by remember { mutableStateOf(false) }
+    var previewTodoId by remember { mutableStateOf<Long?>(null) }
+
+    /**
+     * 录音全屏预览状态（v2026-07-25 新增）
+     *
+     * 点击待办卡片语音角标时触发：
+     * - previewVoicePaths 非空时显示 [VoicePreviewDialog]
+     * - 聚合父待办 + 所有子任务的语音路径
+     *
+     * v2026-07-25 新增 previewVoiceTodoId：与 previewTodoId（图片预览）对称，
+     * 用于在 onDelete 回调中传入父待办 ID，供 ViewModel 同步清理三处存储。
+     */
+    var previewVoicePaths by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showVoicePreview by remember { mutableStateOf(false) }
+    var previewVoiceTodoId by remember { mutableStateOf<Long?>(null) }
 
     /**
      * 排序弹窗显示状态（已提升至 ViewModel，供 MainScreen.dropdownContent 触发）
@@ -1079,7 +1134,10 @@ fun HomeScreen(
                                                     viewModel.toggleSelection(todo.id)
                                                 },
                                                 onShareAsImage = {
-                                                    shareTodoAsImage(context, todo, categories)
+                                                    // v2026-07-25 单一数据源：从 todoAttachmentsMap 获取图片路径
+                                                    // （替代旧的从 todo.imagePaths 字段解析）
+                                                    val imgPaths = todoAttachmentsMap[todo.id]?.first ?: emptyList()
+                                                    shareTodoAsImage(context, todo, categories, imgPaths)
                                                 },
                                                 onToggleExpand = {
                                                     viewModel.toggleExpand(todo.id)
@@ -1103,16 +1161,48 @@ fun HomeScreen(
                                                     relationListSourceId = todo.id
                                                     showRelationListSheet = true
                                                 },
-                                                // v2026-07-24 新增：点击分组角标过滤该分组的待办
-                                                // - 通过 categoryName 查找 categoryId
-                                                // - 调用 viewModel.filterByCategory 切换过滤器
-                                                onCategoryClick = { categoryName ->
-                                                    val targetCategory = categories.find { it.name == categoryName }
-                                                    if (targetCategory != null) {
-                                                        viewModel.onUserInteraction()
-                                                        viewModel.filterByCategory(targetCategory.id)
+                                                // v2026-07-25 改造：点击分组角标弹出改变分组弹窗
+                                                // - 原 behavior：filterByCategory 过滤该分组待办
+                                                // - 新 behavior：弹出 CategorySelectorDialog 供用户选择新分组
+                                                // - 原过滤功能通过侧滑抽屉分类列表实现
+                                                onCategoryClick = {
+                                                    pendingCategoryTodoId = todo.id
+                                                },
+                                                // v2026-07-25 新增：点击图片角标弹出全屏图片预览
+                                                // - 聚合父待办 + 所有子任务的图片路径
+                                                // - 复用 InspirationImageGallery 组件
+                                                // v2026-07-24 新增：保存 previewTodoId 用于删除时定位数据库记录
+                                                // v2026-07-25 单一数据源重构：从 todoAttachmentsMap 获取路径
+                                                // （替代旧的 aggregateImagePaths 从 TodoItem/SubTask 字段聚合）
+                                                onImageClick = {
+                                                    val paths = todoAttachmentsMap[todo.id]?.first ?: emptyList()
+                                                    if (paths.isNotEmpty()) {
+                                                        previewImagePaths = paths
+                                                        previewTodoId = todo.id
+                                                        showImagePreview = true
                                                     }
                                                 },
+                                                // v2026-07-25 新增：点击语音角标弹出全屏录音预览
+                                                // - 聚合父待办 + 所有子任务的语音路径
+                                                // - 使用新建的 VoicePreviewDialog 组件
+                                                // v2026-07-25 单一数据源重构：从 todoAttachmentsMap 获取路径
+                                                // （替代旧的 aggregateVoicePaths 从 TodoItem/SubTask 字段聚合）
+                                                onVoiceClick = {
+                                                    val paths = todoAttachmentsMap[todo.id]?.second ?: emptyList()
+                                                    if (paths.isNotEmpty()) {
+                                                        previewVoicePaths = paths
+                                                        previewVoiceTodoId = todo.id
+                                                        showVoicePreview = true
+                                                    }
+                                                },
+                                                // v2026-07-25 单一数据源重构：从 todoAttachmentsMap 传入附件路径
+                                                // 用于 TodoListItem 内部计算图片/语音角标数量
+                                                // （替代旧的 aggregateAttachmentCounts 从字段聚合）
+                                                imagePaths = todoAttachmentsMap[todo.id]?.first ?: emptyList(),
+                                                voicePaths = todoAttachmentsMap[todo.id]?.second ?: emptyList(),
+                                                // v2026-07-25 单一数据源重构：传入子任务附件映射
+                                                // 用于 SubTaskInTodoListItem 内部计算每个子任务自身的附件角标数量
+                                                subTaskAttachmentsMap = subTaskAttachmentsMap,
                                                 // 统一 Snackbar 提示回调（替代 Toast）
                                                 onShowSnackbar = { msg ->
                                                     coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
@@ -1177,6 +1267,82 @@ fun HomeScreen(
                     currentUnlockedAchievement = null
                     // 弹窗关闭后恢复柯基默认姿态
                     viewModel.restorePoseWithDelay(200)
+                }
+            )
+        }
+
+        // v2026-07-25 新增：分组选择弹窗（点击分组角标触发）
+        pendingCategoryTodoId?.let { todoId ->
+            val currentTodo = filteredTodos.find { it.id == todoId }
+            CategorySelectorDialog(
+                categories = categories,
+                currentCategoryId = currentTodo?.categoryId,
+                onDismiss = { pendingCategoryTodoId = null },
+                onCategorySelected = { categoryId, categoryName ->
+                    viewModel.onUserInteraction()
+                    viewModel.updateTodoCategory(todoId, categoryId, categoryName)
+                    pendingCategoryTodoId = null
+                }
+            )
+        }
+
+        // v2026-07-25 新增：图片全屏预览（点击图片角标触发）
+        // v2026-07-24 新增：onDeleteClick 回调接入实际删除逻辑
+        if (showImagePreview && previewImagePaths.isNotEmpty()) {
+            InspirationImageGallery(
+                imagePaths = previewImagePaths,
+                initialIndex = 0,
+                // 删除回调：从本地列表移除（UI 立即更新）+ 调用 ViewModel 持久化删除
+                onDeleteClick = { index ->
+                    val todoId = previewTodoId
+                    val deletedPath = previewImagePaths.getOrNull(index)
+                    if (deletedPath != null) {
+                        // 1. 从本地列表移除（UI 立即更新，无需等待数据库）
+                        previewImagePaths = previewImagePaths.toMutableList().apply {
+                            if (index in indices) removeAt(index)
+                        }
+                        // 2. 列表为空时关闭预览
+                        if (previewImagePaths.isEmpty()) {
+                            showImagePreview = false
+                        }
+                        // 3. 持久化到数据库（父待办或子任务的 imagePaths 字段）
+                        if (todoId != null) {
+                            viewModel.deleteImageFromTodo(todoId, deletedPath)
+                        }
+                    }
+                },
+                onDismiss = {
+                    showImagePreview = false
+                    previewImagePaths = emptyList()
+                    previewTodoId = null
+                }
+            )
+        }
+
+        // v2026-07-25 新增：录音全屏预览（点击语音角标触发）
+        // v2026-07-25 接入 onDelete 回调：同步清理三处存储（voiceNotePath/voicePaths + content_blocks + contentFormat）
+        if (showVoicePreview && previewVoicePaths.isNotEmpty()) {
+            VoicePreviewDialog(
+                voicePaths = previewVoicePaths,
+                onDismiss = {
+                    showVoicePreview = false
+                    previewVoicePaths = emptyList()
+                    previewVoiceTodoId = null
+                },
+                onDelete = { voicePath ->
+                    val todoId = previewVoiceTodoId
+                    if (todoId != null) {
+                        // 1. 从本地列表移除（UI 立即更新，无需等待数据库）
+                        previewVoicePaths = previewVoicePaths.toMutableList().apply {
+                            remove(voicePath)
+                        }
+                        // 2. 列表为空时关闭预览（VoicePreviewDialog 内部也会调用 onDismiss）
+                        if (previewVoicePaths.isEmpty()) {
+                            showVoicePreview = false
+                        }
+                        // 3. 持久化到数据库（同步清理三处存储：父待办 voiceNotePath 或子任务 voicePaths + content_blocks + contentFormat）
+                        viewModel.deleteVoiceFromTodo(todoId, voicePath)
+                    }
                 }
             )
         }
@@ -3059,14 +3225,19 @@ private fun QuickAddTodoContent(
 /**
  * 分享待办为图片
  *
+ * v2026-07-25 单一数据源重构：新增 imagePaths 参数，由调用方从 content_blocks 表派生
+ * 旧的从 `todo.imagePaths` 字段解析的方案已废弃（阶段2 重构后该字段已被置空）
+ *
  * @param context 上下文
  * @param todo 待办项
  * @param categories 分类列表
+ * @param imagePaths 图片附件路径列表（从 content_blocks 表派生，由调用方传入）
  */
 fun shareTodoAsImage(
     context: android.content.Context,
     todo: TodoItem,
-    categories: List<Category>
+    categories: List<Category>,
+    imagePaths: List<String> = emptyList()
 ) {
     val coroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
     coroutineScope.launch {
@@ -3076,13 +3247,8 @@ fun shareTodoAsImage(
             // 异步查询子待办列表
             val subTasks = com.corgimemo.app.data.repository.SubTaskManager.getSubTasks(context, todo.id)
 
-            // 解析图片附件路径列表
-            val imagePaths = if (todo.imagePaths.isNotBlank()) {
-                try {
-                    val arr = org.json.JSONArray(todo.imagePaths)
-                    (0 until arr.length()).map { arr.getString(it) }
-                } catch (_: Exception) { emptyList<String>() }
-            } else emptyList()
+            // v2026-07-25 单一数据源：图片路径由调用方传入，不再从 todo.imagePaths 字段解析
+            // （阶段2 重构后该字段已被置空）
 
             // 关联数（暂无轻量查询方法，传 0）
             val relationCount = 0
