@@ -77,8 +77,11 @@ object SubTaskManager {
      * @param context 上下文
      * @param todoId 父待办 ID（会覆盖 subTask.todoId）
      * @param subTasks 子任务完整数据（含 imagePaths / voicePaths / isCompleted / order 等）
+     * @return 插入后的子任务 ID 列表（与输入列表一一对应；IGNORE 策略下冲突项返回 -1）
+     *         v2026-07-25 新增返回值：用于 saveGroup 中回填到 groupLines，
+     *         以便 saveContentBlocksFromTodoLines 能正确设置子任务附件的 subTaskId 字段。
      */
-    suspend fun addSubTasks(context: Context, todoId: Long, subTasks: List<SubTask>) {
+    suspend fun addSubTasks(context: Context, todoId: Long, subTasks: List<SubTask>): List<Long> {
         val database = CorgiMemoDatabase.getDatabase(context)
         val maxOrder = database.subTaskDao().getMaxOrder(todoId) ?: 0
         val toInsert = subTasks.mapIndexed { index, st ->
@@ -89,7 +92,7 @@ object SubTaskManager {
                 createdAt = if (st.createdAt > 0L) st.createdAt else System.currentTimeMillis()
             )
         }
-        database.subTaskDao().insertAll(toInsert)
+        return database.subTaskDao().insertAll(toInsert)
     }
 
     /**

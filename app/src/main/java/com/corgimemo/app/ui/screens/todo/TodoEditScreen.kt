@@ -71,9 +71,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.ui.layout.layout
 import androidx.compose.runtime.remember
@@ -104,7 +102,6 @@ import com.corgimemo.app.ui.components.*
 // 🆕 v2026-07-21 关联功能组件（需显式 import 因与通配符 import 同包但用于明确性）
 import com.corgimemo.app.ui.components.RelationPickerBottomSheet
 import com.corgimemo.app.ui.components.LinkedCardPreviewDialog
-import com.corgimemo.app.ui.model.ContentBlock
 import com.corgimemo.app.ui.model.TodoLine
 import com.corgimemo.app.util.ImageUtils
 import com.corgimemo.app.util.VoicePlayer
@@ -340,9 +337,6 @@ fun TodoEditScreen(
      */
     var shareTodosSnapshot by remember { mutableStateOf<List<com.corgimemo.app.data.model.TodoItem>>(emptyList()) }
 
-    val contentBlocks = remember { androidx.compose.runtime.mutableStateListOf<ContentBlock>() }
-    var highlightedIndex by remember { mutableIntStateOf(-1) }
-    val blockVisibilityStates = remember { mutableStateMapOf<Int, Boolean>() }
     var isLocked by remember { mutableStateOf(false) }
 
     // 复选框编辑器的行数据列表（todoLines）和当前聚焦行索引（focusedLineIndex）
@@ -627,7 +621,6 @@ fun TodoEditScreen(
         }
     }
 
-    var hasInitializedBlocks by remember { mutableStateOf(false) }
     var hasInitializedLines by remember { mutableStateOf(false) }
 
     /** 从 ViewModel 获取数据加载完成标志 */
@@ -691,20 +684,10 @@ fun TodoEditScreen(
              *
              * 注意：第一行统一使用 title 字段，而非从 content 解析，
              * 避免 content 中可能存在的陈旧/不一致数据导致显示错误。
-             *
-             * 添加诊断日志以便追踪数据不一致问题
              */
-            android.util.Log.w(
-                "TodoEditInit",
-                "初始化 todoLines: todoId=$todoId, title='$title', " +
-                "content='$content', subTasks.size=${subTasks.size}, " +
-                "subTasks=${subTasks.map { it.title }}"
-            )
-
             var initialLines = if (subTasks.isNotEmpty()) {
                 // 优先从子任务表恢复结构化数据，第一行用已加载的标题填充
                 val result = listOf(TodoLine(text = title)) + TodoLine.fromSubTasks(subTasks)
-                android.util.Log.w("TodoEditInit", "使用 fromSubTasks: $result")
                 result
             } else if (content.isNotBlank()) {
                 // 从纯文本解析（回退方案，用于无子任务的旧数据）
@@ -776,7 +759,6 @@ fun TodoEditScreen(
                         }
                     }
                     initialLines = resultLines
-                    android.util.Log.w("TodoEditInit", "从 content_blocks 表恢复附件: ${blockEntities.size}个附件")
                 }
             }
 
@@ -893,54 +875,9 @@ fun TodoEditScreen(
         }
     }
 
-    /**
-     * 初始化内容块列表（contentBlocks）
-     *
-     * 关键修复：使用 isLoaded 标志解决竞态条件
-     *
-     * 问题背景：
-     * - loadTodo() 是异步操作，imagePaths/voiceNotePath 需要时间从数据库加载
-     * - 如果在 loadTodo 完成前就初始化 contentBlocks，会用空的 imagePaths/voiceNotePath
-     * - 之后 hasInitializedBlocks=true 会阻止重新初始化，导致附件丢失
-     *
-     * 解决方案：
-     * - 新增 key: isLoaded（ViewModel 中的数据加载完成标志）
-     * - 仅当 isLoaded=true 且尚未初始化时才执行初始化逻辑
-     * - 编辑模式：isLoaded 在 loadTodo 完成后变为 true → 用实际数据初始化
-     *
-     * v2026-07-25 三写存储重构：仅从 content_blocks 表加载附件
-     * - 旧的回退逻辑（从 imagePaths/voiceNotePath 恢复）已删除
-     * - Migration 46→47 已将旧数据迁移到 content_blocks 表并清空旧字段
-     * - 保存时已不再写入 imagePaths/voiceNotePath（置空）
-     */
-    LaunchedEffect(isLoaded, todoId, hasInitializedBlocks) {
-        /** 判断是否应该初始化：编辑模式必须等 isLoaded=true */
-        val shouldInit = if (todoId != null) {
-            isLoaded && !hasInitializedBlocks
-        } else {
-            !hasInitializedBlocks
-        }
-
-        if (shouldInit && todoId != null) {
-            val dbBlocks = viewModel.loadContentBlocks(todoId)
-
-            /** 诊断日志：追踪 contentBlocks 初始化 */
-            android.util.Log.w(
-                "TodoEditInit",
-                "初始化 contentBlocks: todoId=$todoId, dbBlocks.size=${dbBlocks.size}"
-            )
-
-            /**
-             * v2026-07-25 三写存储重构：仅从 content_blocks 表加载
-             * - dbBlocks 非空 → 用 dbBlocks 初始化
-             * - dbBlocks 为空 → 用户未添加任何附件，保持 contentBlocks 为空
-             */
-            contentBlocks.clear()
-            contentBlocks.addAll(dbBlocks)
-            viewModel.syncContentBlocks(contentBlocks.toList())
-            hasInitializedBlocks = true
-        }
-    }
+    // v2026-07-25 优化：删除初始化 contentBlocks 的 LaunchedEffect
+    // 附件权威源已迁移到 _todoLines，在 L740 附近的 LaunchedEffect 中
+    // 从 content_blocks 表加载到 initialLines（即 _todoLines），无需单独初始化 contentBlocks 列表
 
     LaunchedEffect(startDate, dueDate) {
         val start = startDate
@@ -1237,92 +1174,9 @@ fun TodoEditScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
 
-            // 【已废弃】全局 contentBlocks 渲染区域
+            // v2026-07-25 优化：删除【已废弃】全局 contentBlocks 渲染区域注释块
             // 附件现在改为行级存储，在每个 CheckboxEditRow 内部渲染（支持子任务缩进）
-            // 以下 ReorderableColumn 已被替换为 TodoLine.imagePaths / voiceAttachments 字段
-            /*
-            com.corgimemo.app.ui.components.ReorderableColumn(
-                items = contentBlocks.filter { it !is ContentBlock.Text },
-                onReorder = { fromIndex, toIndex ->
-                    val nonTextBlocks = contentBlocks.filter { it !is ContentBlock.Text }.toMutableList()
-                    viewModel.pushBlocksReorderedOperation(nonTextBlocks.toList())
-                    val moved = nonTextBlocks.removeAt(fromIndex)
-                    nonTextBlocks.add(toIndex, moved)
-
-                    val textBlocks = contentBlocks.filter { it is ContentBlock.Text }
-                    val newOrder = mutableListOf<ContentBlock>()
-                    var nonTextIdx = 0
-                    contentBlocks.forEach { block ->
-                        if (block is ContentBlock.Text) {
-                            newOrder.add(block)
-                        } else {
-                            newOrder.add(nonTextBlocks[nonTextIdx++])
-                        }
-                    }
-                    contentBlocks.clear()
-                    contentBlocks.addAll(newOrder)
-                    highlightedIndex = -1
-                    viewModel.syncContentBlocks(contentBlocks.toList())
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) { index, block, isDragging ->
-                val globalBlockIndex = contentBlocks.indexOf(block)
-                val isBlockVisible = blockVisibilityStates.getOrDefault(globalBlockIndex, false)
-
-                val baseModifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .onVisibilityChanged { isVisible ->
-                        if (blockVisibilityStates[globalBlockIndex] != isVisible) {
-                            blockVisibilityStates[globalBlockIndex] = isVisible
-                        }
-                    }
-                    .then(
-                        if (isDragging) {
-                            Modifier.graphicsLayer(
-                                scaleX = 1.05f,
-                                scaleY = 1.05f,
-                                shadowElevation = 8f,
-                                translationY = (-4).dp.toPxFloat(density)
-                            )
-                        } else {
-                            Modifier
-                        }
-                    )
-
-                when (block) {
-                    is ContentBlock.Image -> {
-                        com.corgimemo.app.ui.components.InlineImagePreview(
-                            imageUri = block.path,
-                            modifier = baseModifier,
-                            isHighlighted = index == highlightedIndex,
-                            isVisible = isBlockVisible
-                        )
-                    }
-                    is ContentBlock.Voice -> {
-                        com.corgimemo.app.ui.components.VoicePlayerComponent(
-                            voicePlayer = voicePlayer,
-                            filePath = block.path,
-                            totalDuration = block.duration,
-                            onDelete = {
-                                val deleteIdx = contentBlocks.indexOf(block)
-                                if (deleteIdx >= 0) {
-                                    viewModel.pushBlockDeletedOperation(listOf(block), deleteIdx)
-                                    contentBlocks.removeAt(deleteIdx)
-                                    if (highlightedIndex == deleteIdx) highlightedIndex = -1
-                                    else if (highlightedIndex > deleteIdx) highlightedIndex--
-                                    viewModel.syncContentBlocks(contentBlocks.toList())
-                                }
-                            },
-                            isHighlighted = index == highlightedIndex,
-                            modifier = baseModifier,
-                            isVisible = isBlockVisible
-                        )
-                    }
-                    is ContentBlock.Text -> {}
-                }
-            }
-            */
+            // 旧 ReorderableColumn 已被替换为 TodoLine.imagePaths / voiceAttachments 字段
 
             /** 复选框文本编辑器（替代原 OutlinedTextField，支持逐行复选框编辑） */
             CheckboxEditText(

@@ -307,23 +307,6 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
-     * 当前内容块列表（由 UI 层同步）
-     *
-     * UI 层在 contentBlocks 变化时调用 syncContentBlocks() 更新此状态，
-     * performSave() 时读取此状态持久化到数据库。
-     */
-    private val _currentContentBlocks = MutableStateFlow<List<ContentBlock>>(emptyList())
-
-    /**
-     * 同步当前内容块列表（UI 层调用）
-     *
-     * @param blocks 当前 Composable 中的 contentBlocks 列表
-     */
-    fun syncContentBlocks(blocks: List<ContentBlock>) {
-        _currentContentBlocks.value = blocks
-    }
-
-    /**
      * 行级附件快照数据（JSON 序列化字符串）
      *
      * 存储每行的图片和录音附件信息，用于在重新打开待办时精确恢复到对应行。
@@ -469,7 +452,9 @@ class TodoEditViewModel @Inject constructor(
             content = _content.value,
             contentFormat = _contentFormat.value,
             subTasks = _subTasks.value,
-            contentBlocks = _currentContentBlocks.value,
+            // v2026-07-25 优化：contentBlocks 字段保留为空列表（向后兼容 EditSnapshot 数据类）
+            // 附件权威源已迁移到 _todoLines，快照中的 lines 字段包含完整附件信息
+            contentBlocks = emptyList(),
             // v2026-07-22 bug 修复：深拷贝 _todoLines.value，确保快照独立于外部状态，
             // 防止后续修改 _todoLines 时影响已推入的快照。
             // 注：TodoLine 是 data class，.map { it.copy() } 实现浅深拷贝（List 字段如
@@ -571,7 +556,8 @@ class TodoEditViewModel @Inject constructor(
         _content.value = snapshot.content
         _contentFormat.value = snapshot.contentFormat
         _subTasks.value = snapshot.subTasks
-        _currentContentBlocks.value = snapshot.contentBlocks
+        // v2026-07-25 优化：不再恢复 _currentContentBlocks（已删除）
+        // 附件信息通过 snapshot.lines 恢复到 _todoLines（见下方 setTodoLines 调用）
         _startDate.value = snapshot.startDate
         _dueDate.value = snapshot.dueDate
         _geofenceLat.value = snapshot.geofenceLat
@@ -1697,14 +1683,6 @@ class TodoEditViewModel @Inject constructor(
                 val subTasks = SubTaskManager.getSubTasks(context, todoId)
                 _subTasks.value = subTasks
 
-                /** 诊断日志：追踪 loadTodo 数据加载 */
-            android.util.Log.w(
-                "TodoEditLoad",
-                "loadTodo 完成: id=$todoId, title='${todo.title}', " +
-                "content='${todo.content}', subTasks=${subTasks.map { it.title }}, " +
-                "contentFormat长度=${todo.contentFormat.length}"
-            )
-
                 /** 标记数据加载完成，通知 UI 层可以开始初始化 */
                 _isLoaded.value = true
 
@@ -1758,173 +1736,6 @@ class TodoEditViewModel @Inject constructor(
                 loadGroupRelations(todoId, listOf(0))
 
                 android.util.Log.w("TodoEditVM", "从列表加载: 初始化 groupSaveStates[0], savedTodoId=${todo.id}, priority=${todo.priority}")
-            }
-        }
-    }
-
-    /**
-     * 保存待办
-     *
-     * @return 是否成功保存
-     */
-    fun saveTodo(): Boolean {
-        if (_title.value.isBlank()) {
-            return false
-        }
-
-        performSave()
-        return true
-    }
-
-    private fun performSave() {
-        viewModelScope.launch {
-            val currentTime = System.currentTimeMillis()
-            val hasSubTasks = _subTasks.value.isNotEmpty()
-
-            /** 取消未完成的防抖任务，确保不泄漏协程 */
-            _debounceJob?.cancel()
-
-            /** 保存前对 contentFormat 进行校验和修复（防止损坏数据） */
-            val safeContentFormat = com.corgimemo.app.util.MarkdownParser.validateAndSanitize(_contentFormat.value)
-
-            /**
-             * 统一生成 content 字段（从权威数据源派生）
-             *
-             * 关键修复：确保 content 与 title + subTasks 严格一致
-             *
-             * 数据层次定义：
-             * - Layer 1（权威）：title + subTasks → 用户实际输入的数据
-             * - Layer 2（派生）：content ← 由 Layer 1 在保存时一次性生成
-             *
-             * 优势：
-             * 1. 消除编辑过程中的中间态不一致
-             * 2. content 始终是 title + subTasks 的准确快照
-             * 3. 下次打开时，parseFromText(content) 与 fromSubTasks() 结果一致
-             */
-            val derivedContent = buildContentFromTitleAndSubTasks(
-                title = _title.value,
-                subTasks = _subTasks.value
-            )
-
-            /**
-             * v2026-07-25 三写存储重构：contentFormat 不再写入行级附件快照
-             *
-             * 旧逻辑：contentFormat = "{Markdown}|||LINE_ATTACHMENTS|||[{JSON}]"
-             * 新逻辑：contentFormat = "{Markdown}"（纯富文本内容）
-             *
-             * 行级附件信息已迁移到 content_blocks 表的 lineIndex 和 subTaskId 字段，
-             * 不再需要在 contentFormat 中冗余存储。
-             */
-            val finalContentFormat = safeContentFormat
-
-            val todoId: Long = if (existingTodo != null) {
-                val todo = existingTodo!!.copy(
-                    title = _title.value,
-                    /** 使用派生的 content，确保与 subTasks 一致 */
-                    content = derivedContent.ifBlank { null },
-                    categoryId = _groupCategoryIds.value[0] ?: 0L,
-                    /**
-                     * v2026-07-21 修复：保存时改用分组独立优先级 [_groupPriorities]，
-                     * 与下方 [buildTodoItemForGroup] 保持一致。
-                     * 原 [setPriority] / [_priority] 是早期单容器模式残留，
-                     * [CheckboxEditText] 实际只读 [_groupPriorities]，导致旧逻辑保存
-                     * 的是未变化的 [_priority]，与 UI 显示的优先级不一致。
-                     */
-                    priority = _groupPriorities.value[0] ?: 0,
-                    startDate = _startDate.value,
-                    dueDate = _dueDate.value,
-                    estimatedDurationMinutes = _estimatedDurationMinutes.value,
-                    reminderTime = _groupReminders.value[0],
-                    repeatType = _groupRepeatTypes.value[0] ?: 0,
-                    updatedAt = currentTime,
-                    geofenceLat = _geofenceLat.value,
-                    geofenceLng = _geofenceLng.value,
-                    geofenceRadius = if (_geofenceEnabled.value) _geofenceRadius.value else null,
-                    geofenceType = _geofenceType.value,
-                    geofenceEnabled = _geofenceEnabled.value,
-                    geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
-                    hasSubTasks = hasSubTasks,
-                    /**
-                     * v2026-07-25 三写存储重构：imagePaths/voiceNotePath/voiceDuration 置空
-                     * 附件信息已迁移到 content_blocks 表（单一数据源）
-                     * 字段保留但不再写入，避免破坏数据库 schema
-                     */
-                    voiceNotePath = null,
-                    voiceDuration = null,
-                    imagePaths = "",
-                    backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
-                    contentFormat = finalContentFormat /** 纯 Markdown 内容（不再含行级附件快照）*/
-                )
-                todoRepository.updateTodo(todo)
-                existingTodo!!.id
-            } else {
-                val todo = TodoItem(
-                    title = _title.value,
-                    /** 使用派生的 content，确保与 subTasks 一致 */
-                    content = derivedContent.ifBlank { null },
-                    categoryId = _groupCategoryIds.value[0] ?: 0L,
-                    /**
-                     * v2026-07-21 修复：保存时改用分组独立优先级 [_groupPriorities]，
-                     * 与 [buildTodoItemForGroup] / 已有 todo 更新路径保持一致。
-                     * 新建模式下 _groupPriorities[0] 为 null 时回退 0（无优先级），
-                     * 后续用户修改 groupId=0 的优先级时已通过 [setGroupPriority] 写入。
-                     */
-                    priority = _groupPriorities.value[0] ?: 0,
-                    status = 0,
-                    startDate = _startDate.value,
-                    dueDate = _dueDate.value,
-                    estimatedDurationMinutes = _estimatedDurationMinutes.value,
-                    reminderTime = _groupReminders.value[0],
-                    repeatType = _groupRepeatTypes.value[0] ?: 0,
-                    createdAt = currentTime,
-                    updatedAt = currentTime,
-                    geofenceLat = _geofenceLat.value,
-                    geofenceLng = _geofenceLng.value,
-                    geofenceRadius = if (_geofenceEnabled.value) _geofenceRadius.value else null,
-                    geofenceType = _geofenceType.value,
-                    geofenceEnabled = _geofenceEnabled.value,
-                    geofenceAddress = if (_geofenceEnabled.value) _geofenceAddress.value else null,
-                    hasSubTasks = hasSubTasks,
-                    /**
-                     * v2026-07-25 三写存储重构：imagePaths/voiceNotePath/voiceDuration 置空
-                     * 附件信息已迁移到 content_blocks 表（单一数据源）
-                     */
-                    voiceNotePath = null,
-                    voiceDuration = null,
-                    imagePaths = "",
-                    backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
-                    contentFormat = finalContentFormat /** 纯 Markdown 内容（不再含行级附件快照）*/
-                )
-                // v2026-07-22 新增：修复"新建模式提前 addRelation"导致的 sourceId=0 脏数据。
-                // 同步迁移 card_relations 表中所有 sourceType=todo AND sourceId=0 的占位关联，
-                // 以及对应的反向记录 (targetType=todo AND targetId=0)。
-                // 注：当前 if/else 表达式要求最后一句为 Long，所以这里接住 insertTodo 返回值再显式 return。
-                val insertedId = todoRepository.insertTodo(todo)
-                cardRelationRepository.fixupZeroSourceRelations("todo", insertedId)
-                insertedId
-            }
-
-            saveSubTasks(todoId)
-
-            /**
-             * v2026-07-25 三写存储重构：从 _todoLines 提取所有附件保存到 content_blocks 表
-             *
-             * 替代旧的 saveContentBlocks(todoId, _currentContentBlocks.value) 调用。
-             * 新方法 saveContentBlocksFromTodoLines 会：
-             * - 遍历每个 TodoLine，记录行号（lineIndex）
-             * - 父待办行的附件：subTaskId=null
-             * - 子任务行的附件：subTaskId=该行的 subTaskId
-             *
-             * 注意：无论 _currentContentBlocks 是否为空都调用，
-             * 因为需要清空旧的 content_blocks 记录（replaceBlocksForTodo 是先删后写）
-             */
-            saveContentBlocksFromTodoLines(todoId, _todoLines.value)
-
-            // 保存关联关系（新建时将各分组的临时关联绑定到新ID）
-            if (existingTodo == null) {
-                _groupRelations.value.values.flatten().forEach { relation ->
-                    cardRelationRepository.addRelation(relation.copy(sourceId = todoId))
-                }
             }
         }
     }
@@ -2099,19 +1910,57 @@ class TodoEditViewModel @Inject constructor(
                 }
 
                 // 保存子任务（如果有）
+                // v2026-07-25 优化：接收插入后的子任务 ID 列表，用于回填到 groupLines
+                // 让后续 saveContentBlocksFromTodoLines 能正确设置子任务附件的 subTaskId 字段
+                var insertedSubTaskIds: List<Long> = emptyList()
                 if (subTasks.isNotEmpty()) {
                     // UPDATE 模式：先删除旧子任务再添加新的，避免重复
                     if (existingSavedId != null && existingSavedId > 0) {
                         SubTaskManager.deleteAllSubTasks(context, newTodoId)
                     }
                     // 使用含完整数据（含附件）的 addSubTasks 重载，保留 imagePaths/voicePaths
-                    SubTaskManager.addSubTasks(context, newTodoId, subTasks)
+                    // 返回的 ID 列表与 subTasks 一一对应（IGNORE 策略下冲突项为 -1，本场景不会冲突）
+                    insertedSubTaskIds = SubTaskManager.addSubTasks(context, newTodoId, subTasks)
                 }
 
-                // 保存内容块（如果有全局附件）
-                if (_currentContentBlocks.value.isNotEmpty()) {
-                    saveContentBlocks(newTodoId, _currentContentBlocks.value)
+                // v2026-07-25 三写存储重构：使用 saveContentBlocksFromTodoLines 统一保存附件
+                //
+                // 替代旧的 saveContentBlocks(newTodoId, _currentContentBlocks.value) 调用。
+                //
+                // 旧逻辑的两个 bug：
+                // 1. 新建模式下用户添加图片只更新 _todoLines（addImageToFocusedLine），
+                //    不更新 _currentContentBlocks → 保存时被 if 非空判断跳过 → 附件丢失
+                // 2. 旧方法 saveContentBlocks 不保存 subTaskId 和 lineIndex 字段，
+                //    无法精确定位附件所属行，子任务附件会全部归到父待办
+                //
+                // 新方法 saveContentBlocksFromTodoLines 直接从 groupLines 提取附件：
+                // - 父待办行（isSubTask=false）的附件：subTaskId=null
+                // - 子任务行（isSubTask=true）的附件：subTaskId=该行的 subTaskId
+                // - lineIndex 为相对于该分组的行号（与加载时的 resultLines 索引一致）
+                //
+                // v2026-07-25 优化：新建模式下子任务 subTaskId 初始为 0（未保存到 DB），
+                // 此处用 insertedSubTaskIds 回填到 groupLines 副本，确保子任务附件能正确
+                // 关联到对应的 subTaskId（而非被错误归到 subTaskId=null 的父待办）。
+                //
+                // 注意：无论 groupLines 是否有附件都必须调用，
+                // 因为 replaceBlocksForTodo 是先删后写，需要清空用户已删除的旧附件记录
+                val linesForSave = if (insertedSubTaskIds.isNotEmpty()) {
+                    // 子任务 ID 回填：subTaskLines（过滤条件 isSubTask && text.isNotBlank()）
+                    // 与 insertedSubTaskIds 一一对应，遍历 groupLines 时按相同条件回填
+                    var subTaskIdIndex = 0
+                    groupLines.map { line ->
+                        if (line.isSubTask && line.text.isNotBlank() && subTaskIdIndex < insertedSubTaskIds.size) {
+                            val newSubTaskId = insertedSubTaskIds[subTaskIdIndex]
+                            subTaskIdIndex++
+                            if (newSubTaskId > 0) line.copy(subTaskId = newSubTaskId) else line
+                        } else {
+                            line
+                        }
+                    }
+                } else {
+                    groupLines
                 }
+                saveContentBlocksFromTodoLines(newTodoId, linesForSave)
 
                 // 设置提醒（如果有）
                 if (todoItem.reminderTime != null) {
@@ -2703,14 +2552,6 @@ class TodoEditViewModel @Inject constructor(
         }
 
         val result = lines.joinToString("\n")
-
-        /** 诊断日志：追踪 content 派生过程 */
-        android.util.Log.w(
-            "TodoEditSave",
-            "派生 content: title='$title', subTasks=${subTasks.map { it.title }}, result='$result', " +
-            "_imagePaths=${_imagePaths.value}, _voiceNotePath=${_voiceNotePath.value}, " +
-            "_currentContentBlocks=${_currentContentBlocks.value.size}个"
-        )
 
         return result
     }

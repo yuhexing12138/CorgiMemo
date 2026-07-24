@@ -18,8 +18,17 @@ interface SubTaskDao {
     @Insert
     suspend fun insert(subTask: SubTask): Long
 
+    /**
+     * 批量插入子任务并返回每个子任务的 ID（与输入列表一一对应）
+     *
+     * v2026-07-25 优化：返回 ID 列表用于 saveGroup 中回填到 groupLines，
+     * 以便 saveContentBlocksFromTodoLines 能正确设置子任务附件的 subTaskId 字段。
+     *
+     * 注意：OnConflictStrategy.IGNORE 策略下冲突项返回 -1，
+     * 调用方使用返回值时需处理 -1 的情况（saveGroup 场景下不会冲突）。
+     */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertAll(subTasks: List<SubTask>)
+    suspend fun insertAll(subTasks: List<SubTask>): List<Long>
 
     @Update
     suspend fun update(subTask: SubTask)
