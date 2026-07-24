@@ -423,7 +423,7 @@ fun TodoListItem(
 
                     /** 内容区域，占满除竖条外的宽度；paddingEnd=24dp 为右上角置顶图标预留空间避免重叠 */
                     Column(modifier = Modifier.fillMaxWidth().padding(end = 24.dp)) {
-                // hasCategory / aggregateCounts / hasAttachmentBadge / totalAttachment / hasRelationBadge
+                // hasCategory / aggregateCounts / hasImageAttachment / hasVoiceAttachment / hasRelationBadge
                 // 均已在 Box 之外定义（v2026-07-25 提取），此处直接引用
                 /**
                  * 是否存在提醒时间
@@ -431,8 +431,11 @@ fun TodoListItem(
                  * v2026-07-25 改造：附件/关联已迁出元数据行（v1.2 多角标设计），
                  * 附件/关联不再参与 isMetaCrowded 拥挤判断，只有 hasReminder 单因素决定。
                  * 保留 hasAttachment 变量仅为兼容旧版调用，实际不再渲染。
+                 *
+                 * v2026-07-25 v1.3 改造：hasAttachmentBadge 拆分为 hasImageAttachment + hasVoiceAttachment
+                 * 此处 hasAttachment 兼容变量改为两者合并判断
                  */
-                val hasAttachment = hasAttachmentBadge  // 仅为兼容，元数据行不再使用
+                val hasAttachment = hasImageAttachment || hasVoiceAttachment  // 仅为兼容，元数据行不再使用
                 val hasReminder = todo.reminderTime != null
                 /**
                  * 元数据是否"拥挤"：仅判断 hasReminder（附件/关联已迁出至多角标行）
