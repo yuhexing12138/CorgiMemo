@@ -1,9 +1,5 @@
 package com.corgimemo.app.ui.components
 
-import android.util.Log
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,12 +15,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onPlaced
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.screens.home.DisplayItem
@@ -63,7 +56,6 @@ import com.corgimemo.app.util.HomeBootTrace
  * @param itemSpacing 列表项之间的间距
  * @param content 列表项 Composable，参数为 (index, item, isDragging, isDragActive)
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ZonedReorderableLazyColumn(
     items: List<DisplayItem>,
@@ -185,183 +177,111 @@ fun ZonedReorderableLazyColumn(
             items = displayItems,
             key = { _, it -> key(it) }
         ) { index, item ->
-            // v2026-07-24 提取：item 是否展开（含子待办展开 / 左滑操作区展开）。
-            // 展开中的 item 需要应用 zIndex=1f，绘制在所有未展开 item 之上，
-            // 避免被下方卡片"压住"。zIndex 必须在 LazyItemScope 作用域内（即本 Box 上）才生效。
-            val isItemExpanded = (item as? DisplayItem.Todo)?.isExpanded == true
-            // v2026-07-24 关键修复：外层 Box（itemsIndexed lambda 内、ReorderableItem 外面）
-            // 之前的修复失败原因：zIndex 和 animateItem 都在 ReorderableItem 内部的 Box 上调用，
-            //   作用域是 ReorderableCollectionItemScope，不是 LazyItemScope，
-            //   导致 `Modifier.zIndex` 解析为通用版本（`androidx.compose.ui.zIndex`），
-            //   只影响 Box 内部兄弟节点，**不影响 LazyColumn item 之间的绘制顺序**。
-            // 真正生效的 `zIndex` 在 LazyItemScope 中，名为 `LazyItemScope.zIndex`，
-            //   必须在 itemsIndexed/items 的 lambda 内（即 LazyItemScope receiver）调用。
-            // 新结构：
-            //   itemsIndexed lambda (this: LazyItemScope)
-            //     └── 外层 Box (zIndex + animateItem)  ← LazyItemScope 解析生效
-            //         └── ReorderableItem
-            //             └── 内层 Box (longPressDraggableHandle)
-            //                 └── content
-            Box(
-                modifier = Modifier
-                    // v2026-07-24 修复绘制顺序（Z-order）问题
-                    // - 现象：用户在子待办展开时，**展开中的卡片会被下方卡片"压住"**瞬间
-                    //   截图证实：第一个 todo 展开子待办时，其下半部分（子待办区域）
-                    //   被第二个 todo 卡片的顶部"覆盖"
-                    // - 真正根因：之前的修复把 zIndex 放在 ReorderableItem 内部 Box 上，
-                    //   作用域是 ReorderableCollectionItemScope（不继承 LazyItemScope），
-                    //   导致调用的是 `androidx.compose.ui.zIndex` 通用版本，**不**影响
-                    //   LazyColumn item 之间的绘制顺序
-                    // - 修复：把 zIndex 移到 itemsIndexed lambda 内、ReorderableItem 外面的 Box 上
-                    //   此时 `Modifier.zIndex` 解析为 `LazyItemScope.zIndex`（LazyColumn 专用），
-                    //   zIndex=1f 的 item 绘制在 zIndex=0f 的所有 item 之上
-                    // - 收起时恢复 zIndex=0f，其他 item 顺序不变
-                    .zIndex(if (isItemExpanded) 1f else 0f)
-                    // 同时保留上一次的 animateItem（placementSpec = tween(200)），
-                    // 让位置变化平滑（在 LazyItemScope 作用域内调用，正常工作）
-                    .animateItem(
-                        fadeInSpec = tween(durationMillis = 150),
-                        fadeOutSpec = tween(durationMillis = 150),
-                        placementSpec = tween(
-                            durationMillis = 200,
-                            easing = FastOutSlowInEasing
-                        )
-                    )
-                    // v2026-07-25 临时埋点：诊断 LazyColumn 给 item 分配的 y 位置与渲染时机
-                    // - onPlaced 在每次 placeRelative 后回调（每帧最多一次）
-                    // - 报告 item 的"逻辑 y 位置"（positionInRoot）和"渲染 y 位置"
-                    //   注意：animateItem 用 graphicsLayer.translationY 偏移，
-                    //   视觉位置 = 逻辑位置 + translationY，
-                    //   而 positionInRoot 是**逻辑位置**（未经 translationY 偏移）
-                    // - 通过对比 TodoItem_Measure 的 columnHeight 与此处的 layoutHeight，
-                    //   可以判断 LazyColumn 是否正确响应高度变化
-                    .onPlaced { coords ->
-                        val y = coords.positionInRoot().y
-                        val height = coords.size.height
-                        Log.d(
-                            "TodoBox_Placed",
-                            "key=${key(item)}, y=${y.toInt()}px, height=${height}px, " +
-                                "isItemExpanded=$isItemExpanded, " +
-                                "itemType=${item::class.simpleName}, " +
-                                "t=${System.currentTimeMillis()}"
-                        )
+            when (item) {
+                is DisplayItem.PinnedDivider,
+                is DisplayItem.PendingDivider,
+                is DisplayItem.CompletedDivider -> {
+                    // Divider 包裹 ReorderableItem(enabled=true) 加入 reorderableKeys，
+                    // 使其可作为 onMove 的 to 目标（其他项可跨过 divider）。
+                    // 但 Modifier.longPressDraggableHandle(enabled=false) 保证 divider 本身不可被拖拽。
+                    // 注：库的 longPressDraggableHandle 是 ReorderableCollectionItemScope 的扩展，
+                    // 不是 Compose 标准库的 Modifier.draggable（后者需要 state + orientation 参数）。
+                    val dividerKey = when (item) {
+                        is DisplayItem.PinnedDivider -> "pinned_divider"
+                        is DisplayItem.PendingDivider -> "pending_divider"
+                        is DisplayItem.CompletedDivider -> "completed_divider"
                     }
-            ) {
-                when (item) {
-                    is DisplayItem.PinnedDivider,
-                    is DisplayItem.PendingDivider,
-                    is DisplayItem.CompletedDivider -> {
-                        // Divider 包裹 ReorderableItem(enabled=true) 加入 reorderableKeys，
-                        // 使其可作为 onMove 的 to 目标（其他项可跨过 divider）。
-                        // 但 Modifier.longPressDraggableHandle(enabled=false) 保证 divider 本身不可被拖拽。
-                        // 注：库的 longPressDraggableHandle 是 ReorderableCollectionItemScope 的扩展，
-                        // 不是 Compose 标准库的 Modifier.draggable（后者需要 state + orientation 参数）。
-                        val dividerKey = when (item) {
-                            is DisplayItem.PinnedDivider -> "pinned_divider"
-                            is DisplayItem.PendingDivider -> "pending_divider"
-                            is DisplayItem.CompletedDivider -> "completed_divider"
-                        }
-                        ReorderableItem(
-                            state = reorderableState,
-                            key = dividerKey,
-                            enabled = true   // 加入 reorderableKeys，可作为 to
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = dividerKey,
+                        enabled = true   // 加入 reorderableKeys，可作为 to
+                    ) {
+                        Box(
+                            modifier = Modifier.longPressDraggableHandle(enabled = false)  // 不可拖拽
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .longPressDraggableHandle(enabled = false)  // 不可拖拽
-                            ) {
-                                content(index, item, false, isDragActive)
-                            }
+                            content(index, item, false, isDragActive)
                         }
                     }
-                    is DisplayItem.Todo -> {
-                        ReorderableItem(
-                            state = reorderableState,
-                            key = item.item.id,
-                            enabled = isDragEnabled
-                        ) { isDragging ->
-                            Box(
-                                modifier = Modifier
-                                    // v2026-07-25 双重保险：在 inner Box（ReorderableItem 内部）
-                                    // 也加 zIndex，防止 ReorderableItem 包裹层影响 LazyItemScope.zIndex 的传播
-                                    // - 外层 Box（LazyItemScope）已有 zIndex=1f
-                                    // - 这里再加一层 1f，确保任何渲染层（即使 ReorderableItem 创建了
-                                    //   独立 RenderNode 隔离 LazyColumn item Z 序）也能将展开中的
-                                    //   todo 绘制在所有未展开 todo 之上
-                                    .zIndex(if (isItemExpanded) 1f else 0f)
-                                    .longPressDraggableHandle(
-                                        enabled = isDragEnabled,
-                                        onDragStarted = {
-                                            // 注意：必须用 displayItems 计算索引与原始数据，
-                                            // 与 onDragStopped 中 draggedCurrentIndex 的参照系保持一致。
-                                            // 原因：onDragStarted lambda 可能捕获旧的 item（因 longPressDraggableHandle
-                                            // 的 pointerInput 未因 items 变化而重启），导致返回旧值。
-                                            isDragActive = true
-                                            val draggedIdx = displayItems.indexOfFirst {
-                                                key(it) == key(item)
-                                            }
-                                            draggedOriginalIndex = draggedIdx
-                                            val draggedTodoItem = (displayItems.getOrNull(draggedIdx)
-                                                as? DisplayItem.Todo)?.item
-                                            if (draggedTodoItem != null) {
-                                                dragZoneState.startDrag(draggedTodoItem)
-                                            }
-                                            HapticFeedbackManager.performHapticFeedback(
-                                                context = context,
-                                                type = InteractionType.TEXT_MOVE,
-                                                enabled = true
-                                            )
-                                        },
-                                        onDragStopped = {
-                                            val draggedCurrentIndex = displayItems.indexOfFirst {
-                                                key(it) == key(item)
-                                            }
-                                            if (draggedOriginalIndex >= 0 &&
-                                                draggedOriginalIndex != draggedCurrentIndex &&
-                                                draggedCurrentIndex >= 0
-                                            ) {
-                                                // 状态机输出最终 zone 状态
-                                                val dragResult = dragZoneState.endDrag()
-
-                                                // 基于内部 displayItems（已被 onMove 更新）取被拖项
-                                                val draggedTodoItem = displayItems[draggedCurrentIndex]
-                                                    as? DisplayItem.Todo
-                                                    ?: return@longPressDraggableHandle
-
-                                                // 基于 dragResult.currentZone 计算目标 zone 内相对索引
-                                                val relativeIndex = computeRelativeIndexInZone(
-                                                    displayItems = displayItems,
-                                                    draggedCurrentIndex = draggedCurrentIndex,
-                                                    targetZone = dragResult.currentZone
-                                                )
-
-                                                onReorder(dragResult, draggedTodoItem, relativeIndex)
-
-                                                HapticFeedbackManager.performHapticFeedback(
-                                                    context = context,
-                                                    type = InteractionType.CONFIRM,
-                                                    enabled = true
-                                                )
-                                            }
-                                            isDragActive = false
-                                            draggedOriginalIndex = -1
-                                            dragZoneState.reset()
-                                        }
+                }
+                is DisplayItem.Todo -> {
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = item.item.id,
+                        enabled = isDragEnabled
+                    ) { isDragging ->
+                        Box(
+                            modifier = Modifier.longPressDraggableHandle(
+                                enabled = isDragEnabled,
+                                onDragStarted = {
+                                    // 注意：必须用 displayItems 计算索引与原始数据，
+                                    // 与 onDragStopped 中 draggedCurrentIndex 的参照系保持一致。
+                                    // 原因：onDragStarted lambda 可能捕获旧的 item（因 longPressDraggableHandle
+                                    // 的 pointerInput 未因 items 变化而重启），导致返回旧值。
+                                    isDragActive = true
+                                    val draggedIdx = displayItems.indexOfFirst {
+                                        key(it) == key(item)
+                                    }
+                                    draggedOriginalIndex = draggedIdx
+                                    val draggedTodoItem = (displayItems.getOrNull(draggedIdx)
+                                        as? DisplayItem.Todo)?.item
+                                    if (draggedTodoItem != null) {
+                                        dragZoneState.startDrag(draggedTodoItem)
+                                    }
+                                    HapticFeedbackManager.performHapticFeedback(
+                                        context = context,
+                                        type = InteractionType.TEXT_MOVE,
+                                        enabled = true
                                     )
-                            ) {
-                                // 被拖项：绑定状态机的视觉层 isPinned/status（实时翻转，未持久化）
-                                val displayItem = if (isDragging) {
-                                    item.copy(
-                                        item = item.item.copy(
-                                            isPinned = dragZoneState.visualIsPinned,
-                                            status = dragZoneState.visualStatus
+                                },
+                                onDragStopped = {
+                                    val draggedCurrentIndex = displayItems.indexOfFirst {
+                                        key(it) == key(item)
+                                    }
+                                    if (draggedOriginalIndex >= 0 &&
+                                        draggedOriginalIndex != draggedCurrentIndex &&
+                                        draggedCurrentIndex >= 0
+                                    ) {
+                                        // 状态机输出最终 zone 状态
+                                        val dragResult = dragZoneState.endDrag()
+
+                                        // 基于内部 displayItems（已被 onMove 更新）取被拖项
+                                        val draggedTodoItem = displayItems[draggedCurrentIndex]
+                                            as? DisplayItem.Todo
+                                            ?: return@longPressDraggableHandle
+
+                                        // 基于 dragResult.currentZone 计算目标 zone 内相对索引
+                                        val relativeIndex = computeRelativeIndexInZone(
+                                            displayItems = displayItems,
+                                            draggedCurrentIndex = draggedCurrentIndex,
+                                            targetZone = dragResult.currentZone
                                         )
-                                    )
-                                } else {
-                                    item
+
+                                        onReorder(dragResult, draggedTodoItem, relativeIndex)
+
+                                        HapticFeedbackManager.performHapticFeedback(
+                                            context = context,
+                                            type = InteractionType.CONFIRM,
+                                            enabled = true
+                                        )
+                                    }
+                                    isDragActive = false
+                                    draggedOriginalIndex = -1
+                                    dragZoneState.reset()
                                 }
-                                content(index, displayItem, isDragging, isDragActive)
+                            )
+                        ) {
+                            // 被拖项：绑定状态机的视觉层 isPinned/status（实时翻转，未持久化）
+                            val displayItem = if (isDragging) {
+                                item.copy(
+                                    item = item.item.copy(
+                                        isPinned = dragZoneState.visualIsPinned,
+                                        status = dragZoneState.visualStatus
+                                    )
+                                )
+                            } else {
+                                item
                             }
+                            content(index, displayItem, isDragging, isDragActive)
                         }
                     }
                 }

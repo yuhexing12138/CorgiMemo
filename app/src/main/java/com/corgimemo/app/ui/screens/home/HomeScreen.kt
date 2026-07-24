@@ -757,11 +757,7 @@ fun HomeScreen(
                             filteredPending, filteredCompleted,
                             showPinned, showPending, showCompleted,
                             pinnedCount, pendingCount, completedCount,
-                            hideCompletedItems,
-                            // v2026-07-24 新增：展开状态影响 DisplayItem.Todo.isExpanded，
-                            // 进而影响 ZonedReorderableLazyColumn 的 Modifier.zIndex（解决子待办展开时下方卡片遮挡）。
-                            // 必须加入 key，否则 expandedTodos 变化时 displayItems 不会重算，zIndex 不更新。
-                            expandedTodos, swipeExpandedTodoId
+                            hideCompletedItems
                         ) {
                             buildList {
                                 // 置顶区（仅当有置顶待办时显示）
@@ -772,16 +768,7 @@ fun HomeScreen(
                                     ))
                                     if (showPinned) {
                                         filteredPending.filter { it.isPinned }
-                                            // v2026-07-24 新增：传入 isExpanded（子待办展开 ∪ 左滑展开）
-                                            // 让 ZonedReorderableLazyColumn 对展开中的 item 应用 zIndex=1f，
-                                            // 绘制在所有未展开 item 之上，避免被下方卡片"压住"。
-                                            .forEach { todo ->
-                                                add(DisplayItem.Todo(
-                                                    item = todo,
-                                                    isExpanded = expandedTodos.contains(todo.id) ||
-                                                        swipeExpandedTodoId == todo.id
-                                                ))
-                                            }
+                                            .forEach { add(DisplayItem.Todo(it)) }
                                     }
                                 }
                                 // 待完成区（始终显示，代表非置顶待完成）
@@ -791,14 +778,7 @@ fun HomeScreen(
                                 ))
                                 if (showPending) {
                                     filteredPending.filter { !it.isPinned }
-                                        // v2026-07-24 新增：传入 isExpanded（子待办展开 ∪ 左滑展开）
-                                        .forEach { todo ->
-                                            add(DisplayItem.Todo(
-                                                item = todo,
-                                                isExpanded = expandedTodos.contains(todo.id) ||
-                                                    swipeExpandedTodoId == todo.id
-                                            ))
-                                        }
+                                        .forEach { add(DisplayItem.Todo(it)) }
                                 }
                                 // 已完成区（原有逻辑不变）
                                 if (!hideCompletedItems && completedCount > 0) {
@@ -807,15 +787,7 @@ fun HomeScreen(
                                         isExpanded = showCompleted
                                     ))
                                     if (showCompleted) {
-                                        filteredCompleted
-                                            // v2026-07-24 新增：传入 isExpanded（子待办展开 ∪ 左滑展开）
-                                            .forEach { todo ->
-                                                add(DisplayItem.Todo(
-                                                    item = todo,
-                                                    isExpanded = expandedTodos.contains(todo.id) ||
-                                                        swipeExpandedTodoId == todo.id
-                                                ))
-                                            }
+                                        filteredCompleted.forEach { add(DisplayItem.Todo(it)) }
                                     }
                                 }
                             }.also {
@@ -2543,15 +2515,7 @@ fun CelebrationOverlay(level: CelebrationLevel, message: String) {
  * 跨文件引用（Task 5）。
  */
 sealed interface DisplayItem {
-    /**
-     * @param isExpanded 是否展开（含子待办展开 / 左滑操作区展开 / 长按面板展开中）。
-     *
-     * v2026-07-24 新增：用于 [com.corgimemo.app.ui.components.ZonedReorderableLazyColumn]
-     * 识别"展开中的 item"并应用 [androidx.compose.foundation.lazy.LazyItemScope.zIndex]=1f，
-     * 解决 LazyColumn 内 item 高度变化时**绘制顺序固定**导致下方卡片"压住"展开中卡片的问题。
-     * 详见 ZonedReorderableLazyColumn.kt 的 `Modifier.zIndex` 注释。
-     */
-    data class Todo(val item: TodoItem, val isExpanded: Boolean = false) : DisplayItem
+    data class Todo(val item: TodoItem) : DisplayItem
     data class PinnedDivider(val count: Int, val isExpanded: Boolean) : DisplayItem
     data class PendingDivider(val count: Int, val isExpanded: Boolean) : DisplayItem
     data class CompletedDivider(val count: Int, val isExpanded: Boolean) : DisplayItem
