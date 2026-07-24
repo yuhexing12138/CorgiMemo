@@ -1103,6 +1103,16 @@ fun HomeScreen(
                                                     relationListSourceId = todo.id
                                                     showRelationListSheet = true
                                                 },
+                                                // v2026-07-24 新增：点击分组角标过滤该分组的待办
+                                                // - 通过 categoryName 查找 categoryId
+                                                // - 调用 viewModel.filterByCategory 切换过滤器
+                                                onCategoryClick = { categoryName ->
+                                                    val targetCategory = categories.find { it.name == categoryName }
+                                                    if (targetCategory != null) {
+                                                        viewModel.onUserInteraction()
+                                                        viewModel.filterByCategory(targetCategory.id)
+                                                    }
+                                                },
                                                 // 统一 Snackbar 提示回调（替代 Toast）
                                                 onShowSnackbar = { msg ->
                                                     coroutineScope.launch { snackbarHostState.showSnackbar(msg) }

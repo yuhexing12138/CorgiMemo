@@ -65,6 +65,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.data.model.SubTask
@@ -170,7 +171,16 @@ fun TodoListItem(
      *
      * 不传时徽章仍可显示但不可点击（保持向后兼容）。
      */
-    onRelationCountClick: () -> Unit = {}
+    onRelationCountClick: () -> Unit = {},
+    /**
+     * 分组角标点击回调（v2026-07-24 新增）
+     *
+     * 当 [categoryName] 非空时在卡片左上角显示分组角标；点击角标时触发此回调，
+     * 由父级决定如何跳转到该分组的待办列表（通常是触发 onCategoryFilter 过滤）。
+     *
+     * 不传时角标仍可显示但不可点击（保持向后兼容）。
+     */
+    onCategoryClick: (String) -> Unit = {}
 ) {
 
     /** 逐区间动画参数：每字符延迟 2ms，最大延迟上限 300ms */
@@ -389,14 +399,17 @@ fun TodoListItem(
                 /** 是否存在关联卡片（v2026-07-21 新增，详情模式下 relationCount>0） */
                 val hasRelation = !isSimpleMode && relationCount > 0
                 /**
-                 * 元数据是否"拥挤"：分类+提醒+附件三者同时存在
-                 * 拥挤时采用两行布局：第一行分类+附件，第二行提醒单独一行突出显示
+                 * 元数据是否"拥挤"：提醒+附件两者同时存在
+                 * 拥挤时采用两行布局：第一行附件+关联，第二行提醒单独一行突出显示
                  * 非拥挤时（缺少任一元素）：所有可见元数据同一行显示
+                 *
+                 * v2026-07-24 改造：移除 hasCategory 依赖，因为分组标签已从元数据行迁出
+                 * 改为卡片左上角角标（CategoryBadge），不再参与元数据行布局判断。
                  *
                  * v2026-07-21：关联数量不影响拥挤模式判断，始终跟在附件计数之后，
                  * 避免布局逻辑复杂化。
                  */
-                val isMetaCrowded = hasCategory && hasReminder && hasAttachment
+                val isMetaCrowded = hasReminder && hasAttachment
 
                 // 主区域行：复选框 + (标题+元数据列) + 展开区域
                 // 复选框通过 Row(verticalAlignment=CenterVertically) 相对于"标题+元数据"整体垂直居中
@@ -546,8 +559,12 @@ fun TodoListItem(
                         }
 
                         // ========== 元数据智能布局 ==========
-                        // 判断是否有任何元数据需要显示（v2026-07-21：包含关联数量）
-                        val hasAnyMeta = hasReminder || hasAttachment || hasCategory || hasRelation
+                        // 判断是否有任何元数据需要显示（v2026-07-24 改造：移除 hasCategory）
+                        // - 旧：hasReminder || hasAttachment || hasCategory || hasRelation
+                        // - 新：hasReminder || hasAttachment || hasRelation
+                        //   因为分组标签已从元数据行迁出到卡片左上角角标（CategoryBadge），
+                        //   不再参与元数据行是否有内容的判断
+                        val hasAnyMeta = hasReminder || hasAttachment || hasRelation
                         if (hasAnyMeta) {
                             // 附件图标颜色（已完成态视觉降权）
                             val attachmentColor = if (todo.status == 1) CompletedColors.Text
@@ -567,21 +584,15 @@ fun TodoListItem(
                             } else null
 
                             if (isMetaCrowded) {
-                                // ---- 拥挤模式（tag+reminder+attach三者都有）：两行布局 ----
-                                // 第一行：分类标签 + 附件计数 + 关联数量
+                                // ---- 拥挤模式（reminder+attach两者都有）：两行布局 ----
+                                // 第一行：附件计数 + 关联数量
+                                // v2026-07-24 改造：移除分类标签（已迁出为左上角角标 CategoryBadge）
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(top = 4.dp)
                                 ) {
-                                    // 分类标签
-                                    CategoryTagWithShadow(
-                                        // isMetaCrowded 分支内 categoryName 已智能转换为非空 String，移除冗余 !! 2026-07-20
-                                        categoryName = categoryName,
-                                        isCompleted = todo.status == 1
-                                    )
                                     // 附件计数（语音+图片）
                                     if (hasAttachment) {
-                                        Spacer(modifier = Modifier.width(8.dp))
                                         AttachmentCountsRow(
                                             imageCount = aggregateCounts.first,
                                             voiceCount = aggregateCounts.second,
@@ -616,21 +627,13 @@ fun TodoListItem(
                                 }
                             } else {
                                 // ---- 非拥挤模式：所有可见元数据同一行 ----
+                                // v2026-07-24 改造：移除分类标签（已迁出为左上角角标 CategoryBadge）
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(top = 4.dp)
                                 ) {
-                                    // 分类标签
-                                    if (hasCategory) {
-                                        // hasCategory 分支内 categoryName 已智能转换为非空 String，移除冗余 !! 2026-07-20
-                                        CategoryTagWithShadow(
-                                            categoryName = categoryName,
-                                            isCompleted = todo.status == 1
-                                        )
-                                    }
                                     // 提醒时间
                                     if (reminderData != null) {
-                                        if (hasCategory) Spacer(modifier = Modifier.width(8.dp))
                                         val (reminder, reminderColor, isOverdue) = reminderData
                                         ReminderInfoRow(
                                             text = reminder.text,
@@ -640,7 +643,7 @@ fun TodoListItem(
                                     }
                                     // 附件计数
                                     if (hasAttachment) {
-                                        if (hasReminder || hasCategory) Spacer(modifier = Modifier.width(8.dp))
+                                        if (hasReminder) Spacer(modifier = Modifier.width(8.dp))
                                         AttachmentCountsRow(
                                             imageCount = aggregateCounts.first,
                                             voiceCount = aggregateCounts.second,
@@ -651,7 +654,7 @@ fun TodoListItem(
                                     if (hasRelation) {
                                         if (hasAttachment) {
                                             Spacer(modifier = Modifier.width(6.dp))
-                                        } else if (hasReminder || hasCategory) {
+                                        } else if (hasReminder) {
                                             Spacer(modifier = Modifier.width(8.dp))
                                         }
                                         RelationCountChip(
@@ -753,6 +756,25 @@ fun TodoListItem(
                 }
             }
             )
+
+            // 左上角分组角标：v2026-07-24 改造，从元数据行迁出到卡片左上角作为角标
+            // - 位置：TopStart，从竖条内侧 4dp 开始（避免覆盖竖条）
+            // - 圆角：仅右下 16dp（与卡片圆角严格一致），其他三边 0 圆角贴合边框
+            // - 样式：仿待办分享图分类角标（11sp + 浅灰背景 + 灰文字）
+            // - z 顺序：在内容之上、pin icon 之下（zIndex = 3f）
+            // - 可点击：点击触发 onCategoryClick 回调，跳转到该分组的待办列表
+            // - 与 pin icon 不冲突：分组在左上，置顶在右上，水平分隔
+            if (hasCategory) {
+                CategoryBadge(
+                    categoryName = categoryName,
+                    isCompleted = todo.status == 1,
+                    onClick = { onCategoryClick(categoryName) },
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(start = 4.dp)
+                        .zIndex(3f)
+                )
+            }
 
             // 右上角置顶图标：todo.isPinned 为 true 时显示
             // 已完成态使用灰色（onSurfaceVariant），未完成态使用品牌色（primary）
@@ -1165,54 +1187,65 @@ private fun aggregateAttachmentCounts(
 }
 
 /**
- * 带阴影效果的分类标签
+ * 分组角标组件（v2026-07-24 重设计）
  *
- * 用于 TodoListItem 卡片提醒行左侧：
- * - 阴影：水平偏移 2px，垂直偏移 2px，模糊半径 4px，颜色 rgba(0,0,0,0.1)
- * - 字号 12sp
- * - 已完成态使用 CompletedColors.Text 降权
+ * 设计参考：待办分享图中的分类角标（drawCategoryBadge）
+ * - 位置：卡片左上角贴边（从竖条内侧 4dp 开始）
+ * - 圆角：仅右下 16dp（与卡片 16dp 圆角严格一致），其他三边 0 圆角贴合边框
+ * - 样式：浅灰背景 + 灰文字 + 11sp（与分享图一致）
+ * - 可点击：点击触发 onClick 回调，跳转到该分组的待办列表
+ * - z 顺序：在内容之上（zIndex = 3f，由调用方控制）
  *
- * 实现：双层 Box
- * - 外层 Box：matchParentSize + offset(2.dp, 2.dp) + 半透明黑背景 + blur(4.dp) 模拟阴影
- * - 内层 Row：实际内容（背景色 + 图标 + 名称）
+ * 演变历史：
+ * - 旧实现 CategoryTagWithShadow：元数据行内嵌 + 4dp 全圆角 + 阴影偏移 + 暖橙浅背景
+ * - 新实现 CategoryBadge：卡片左上角角标 + 仅右下 16dp 圆角 + 无阴影 + 浅灰背景
+ *
+ * @param categoryName 分组名称
+ * @param isCompleted 是否已完成（视觉降权）
+ * @param onClick 点击回调
+ * @param modifier 外部传入的 modifier（位置/对齐/层级）
  */
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-private fun CategoryTagWithShadow(
+private fun CategoryBadge(
     categoryName: String,
-    isCompleted: Boolean
+    isCompleted: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val textColor = if (isCompleted) CompletedColors.Text
-                    else MaterialTheme.colorScheme.primary
-    val bgColor = if (isCompleted) CompletedColors.Text.copy(alpha = 0.12f)
-                  else MaterialTheme.colorScheme.primaryContainer
+    val bgColor = if (isCompleted)
+        Color(0x66E0E0E0)  // rgba(224, 224, 224, 0.4) — 已完成态更淡
+    else
+        Color(0x99E0E0E0)  // rgba(224, 224, 224, 0.6) — 与分享图分类角标一致
+    val textColor = if (isCompleted) Color(0xFF999999)
+                    else Color(0xFF666666)
 
-    Box(contentAlignment = Alignment.Center) {
-        // 外层：阴影（偏移 2dp 半透明黑 + 4dp 模糊）
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .offset(x = 2.dp, y = 2.dp)
-                .background(
-                    color = Color(0x1A000000),  // rgba(0, 0, 0, 0.1)
-                    shape = RoundedCornerShape(4.dp)
-                )
-                .blur(radius = 4.dp)
-        )
-        // 内层：实际内容（仅文字，不再包含 emoji 图标）
-        //
-        // 用户要求："待办卡片上的类型组件不要emoji表情，只要文字"
-        // 原实现：Row { emoji Text + Spacer + name Text }
-        // 新实现：直接 Text(categoryName)，更紧凑
+    // 仿灵感详情页字数徽章：仅右下角圆角，其他三边 0 圆角
+    val badgeShape = RoundedCornerShape(
+        topStart = 0.dp,
+        topEnd = 0.dp,
+        bottomEnd = 16.dp,    // 与卡片 16dp 圆角严格一致
+        bottomStart = 0.dp
+    )
+
+    Box(
+        modifier = modifier
+            .clip(badgeShape)
+            .background(bgColor, badgeShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = androidx.compose.material.ripple.rememberRipple(bounded = false, radius = 24.dp),
+                onClick = onClick
+            )
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
         Text(
             text = categoryName,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             color = textColor,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
             maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            modifier = Modifier
-                .background(color = bgColor, shape = RoundedCornerShape(4.dp))
-                .padding(horizontal = 8.dp, vertical = 2.dp)
+            overflow = TextOverflow.Ellipsis,
+            letterSpacing = 0.3.sp
         )
     }
 }

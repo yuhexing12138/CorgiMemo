@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>待办卡片分组角标原型 v1.0 · 从元数据行迁到左上角角标</title>
+<style>
+  /* ============ 配色（遵循 UI设计规范 12.1.2 + 12.1.10）============ */
+  :root {
+    --primary: #FF9A5C;
+    --primary-light: #FFE4CC;
+    --primary-dark: #E88A4D;
+    --bg-page: #F8F6F3;
+    --bg-card: #FFFFFF;
+    --text-main: #2D2D2D;
+    --text-secondary: #666666;
+    --text-hint: #999999;
+    --divider: #EEEEEE;
+    --cancel-bg: #F8F6F3;
+    /* 优先级色 */
+    --priority-high: #FF8A80;
+    --priority-medium: #FFB74D;
+    --priority-low: #90CAF9;
+    --priority-none: #C8E6C9;
+    /* 竖条宽度 */
+    --bar-width: 4px;
+    /* 圆角 */
+    --card-radius: 16px;        /* TodoListItem 实际圆角 16dp */
+    --badge-radius: 16px;        /* 角标仅右下圆角 16dp，与卡片一致 */
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg-page);
+    color: var(--text-main);
+    min-height: 100vh;
+    padding: 32px 16px 64px;
+    line-height: 1.5;
+  }
+
+  .page-header {
+    text-align: center;
+    margin-bottom: 16px;
+  }
+  .page-header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-main);
+  }
+  .page-header p {
+    font-size: 13px;
+    color: var(--text-hint);
+    margin-top: 6px;
+  }
+
+  .cache-hint {
+    text-align: center;
+    color: #C62828;
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+
+  /* ============ 对比区 ============ */
+  .compare-grid {
+    max-width: 1200px;
+    margin: 0 auto 40px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+  @media (max-width: 900px) {
+    .compare-grid { grid-template-columns: 1fr; }
+  }
+  .compare-col {
+    background: #FFFFFF;
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+  }
+  .compare-col h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text-main);
+  }
+  .compare-col h2 .ver {
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--primary);
+    color: #fff;
+    border-radius: 4px;
+    font-size: 11px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .compare-col h2 .ver.old { background: #999; }
+  .compare-col h2 .ver.new { background: var(--primary); }
+  .compare-col p {
+    font-size: 12px;
+    color: var(--text-hint);
+    margin-bottom: 18px;
+  }
+
+  /* ============ 待办卡片通用样式 ============ */
+  .todo-card {
+    background: var(--bg-card);
+    border-radius: var(--card-radius);
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    margin-bottom: 12px;
+  }
+
+  /* 优先级竖条 —— 仅左侧 4dp，竖直充满整个卡片 */
+  .priority-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--bar-width);
+    z-index: 5;
+  }
+  .priority-bar.high { background: var(--priority-high); }
+  .priority-bar.medium { background: var(--priority-medium); }
+  .priority-bar.low { background: var(--priority-low); }
+  .priority-bar.none { background: var(--priority-none); }
+  .priority-bar.transparent { background: transparent; }
+
+  /* 优先级边框 —— 1.5dp */
+  .priority-border {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--card-radius);
+    pointer-events: none;
+    z-index: 4;
+  }
+  .priority-border.high { box-shadow: inset 0 0 0 1.5px rgba(255, 138, 128, 0.6); }
+  .priority-border.medium { box-shadow: inset 0 0 0 1.5px rgba(255, 183, 77, 0.6); }
+  .priority-border.low { box-shadow: inset 0 0 0 1.5px rgba(144, 202, 249, 0.6); }
+  .priority-border.none { box-shadow: inset 0 0 0 1.5px rgba(200, 230, 201, 0.6); }
+  .priority-border.transparent { box-shadow: inset 0 0 0 1.5px transparent; }
+
+  /* 置顶图标 —— 卡片右上角 */
+  .pin-icon {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 2;
+    font-size: 16px;
+    color: var(--primary);
+  }
+
+  /* 卡片内容容器 */
+  .card-content {
+    padding: 14px 16px 14px 22px; /* 左侧 22dp 给竖条+复选框空间 */
+  }
+
+  /* 标题行：复选框 + 标题 + 进度 */
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .checkbox-circle {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid #CCCCCC;
+    flex-shrink: 0;
+    margin-left: 6px;
+  }
+  .checkbox-circle.checked {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+  }
+  .title-text {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-main);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .title-text.completed {
+    color: #888;
+    text-decoration: line-through;
+  }
+  .title-progress {
+    font-size: 13px;
+    color: var(--primary);
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  /* 内容摘要（描述） */
+  .content-summary {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* ============ 原版（元数据行内嵌）============ */
+  .meta-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .meta-row.legacy { padding-top: 4px; }
+
+  /* 旧分组标签 */
+  .legacy-category-tag {
+    display: inline-flex;
+    align-items: center;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 4px;
+    position: relative;
+  }
+  .legacy-category-tag::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    right: -2px;
+    bottom: -2px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+    filter: blur(2px);
+    z-index: -1;
+  }
+  .legacy-category-tag.completed {
+    background: rgba(136, 136, 136, 0.12);
+    color: #888;
+  }
+
+  .reminder-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .reminder-info.overdue { color: #DC2626; font-weight: 600; }
+  .reminder-info .icon { font-size: 12px; }
+
+  .attachment-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .attachment-info .icon { font-size: 12px; }
+
+  .relation-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12px;
+    color: var(--primary);
+    font-weight: 500;
+  }
+  .relation-chip .icon { font-size: 12px; }
+
+  /* ============ 新版（角标贴边）============ */
+  /* 分组角标 —— 卡片左上角贴边，从竖条内侧开始
+     - 圆角：仅右下 16dp（与卡片圆角严格一致）
+     - 背景：与分享图一致 #E0E0E0 60% 透明
+     - 文字色：#666
+     - 高度：11 + 4*2 = 19dp */
+  .category-badge {
+    position: absolute;
+    top: 0;
+    left: var(--bar-width);  /* 从竖条内侧（4dp）开始 */
+    z-index: 3;
+    background: rgba(224, 224, 224, 0.6);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: var(--badge-radius);
+    line-height: 1;
+    white-space: nowrap;
+    letter-spacing: 0.3px;
+  }
+  .category-badge.completed {
+    background: rgba(224, 224, 224, 0.4);
+    color: #999;
+  }
+
+  /* 新版元数据行（无分组标签）*/
+  .meta-row.new {
+    padding-top: 8px; /* 给角标让出顶部空间 */
+  }
+
+  /* ============ 场景说明 ============ */
+  .scenario-section {
+    max-width: 1200px;
+    margin: 0 auto 40px;
+    background: #FFFFFF;
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+  }
+  .scenario-section h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 14px;
+  }
+  .scenario-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 20px;
+  }
+
+  /* ============ 说明面板 ============ */
+  .info-panel {
+    max-width: 1200px;
+    margin: 0 auto 32px;
+    background: #FFFFFF;
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+  }
+  .info-panel h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 14px;
+    color: var(--text-main);
+  }
+  .info-panel h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 18px 0 10px;
+    color: var(--text-main);
+  }
+  .info-panel p, .info-panel li {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+  .info-panel ul {
+    padding-left: 22px;
+  }
+  .info-panel code {
+    background: var(--bg-page);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: var(--primary);
+  }
+  .change-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-size: 12px;
+  }
+  .change-table th, .change-table td {
+    border: 1px solid var(--divider);
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .change-table th {
+    background: var(--bg-page);
+    font-weight: 600;
+    color: var(--text-main);
+  }
+  .change-table td {
+    color: var(--text-secondary);
+  }
+  .badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .badge-fix { background: #FFF3E0; color: #E65100; }
+  .badge-new { background: #E8F5E9; color: #2E7D32; }
+  .badge-info { background: #E3F2FD; color: #1565C0; }
+  .badge-old { background: #F5F5F5; color: #616161; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>待办卡片分组标签角标化原型 <span style="color:#FF9A5C;">v1.0 ✅ 已通过</span> · 从元数据行迁到左上角</h1>
+  <p>CorgiMemo · TodoListItem 重设计 · 将分组标签从元数据行迁到卡片左上角作为角标（与待办分享图分类角标严格一致）<br>
+  <span style="color:#2E7D32;font-weight:600;">✅ 用户已确认：11sp + 浅灰背景 + 仅右下 16dp 圆角 + 可点击 + 不与置顶冲突</span></p>
+</div>
+
+<div class="cache-hint">⚠️ 请按 Ctrl+F5 强制刷新（清除浏览器缓存）</div>
+
+<!-- ============ 主对比区：拥挤模式 ============ -->
+<div class="compare-grid">
+  <!-- 原版 -->
+  <div class="compare-col">
+    <h2>原版 <span class="ver old">v0</span></h2>
+    <p>分组标签在元数据行（与附件/关联同级），圆角 4dp，橙色阴影胶囊</p>
+
+    <!-- 卡片1：有分组+提醒+附件（拥挤模式）-->
+    <div class="todo-card">
+      <div class="priority-bar high"></div>
+      <div class="priority-border high"></div>
+      <div class="pin-icon">📌</div>
+      <div class="card-content">
+        <div class="title-row">
+          <div class="checkbox-circle"></div>
+          <span class="title-text">演示种子数据注入机制</span>
+          <span class="title-progress">(0/5)</span>
+        </div>
+        <!-- 元数据行（第一行） -->
+        <div class="meta-row legacy">
+          <span class="legacy-category-tag">工作</span>
+          <span class="attachment-info">
+            <span class="icon">🖼️</span>1
+            <span class="icon" style="margin-left:4px;">🎤</span>1
+          </span>
+          <span class="relation-chip">
+            <span class="icon">🔗</span>3
+          </span>
+        </div>
+        <!-- 元数据行（第二行：提醒单独一行）-->
+        <div class="meta-row legacy">
+          <span class="reminder-info">
+            <span class="icon">⏰</span>7月25日 10:00
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片2：仅分组（简单模式）-->
+    <div class="todo-card">
+      <div class="priority-bar none"></div>
+      <div class="priority-border none"></div>
+      <div class="card-content">
+        <div class="title-row">
+          <div class="checkbox-circle"></div>
+          <span class="title-text">设计分层 Seeder 架构</span>
+        </div>
+        <div class="meta-row legacy">
+          <span class="legacy-category-tag">学习</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片3：已完成 -->
+    <div class="todo-card">
+      <div class="priority-bar none"></div>
+      <div class="priority-border none"></div>
+      <div class="card-content">
+        <div class="title-row">
+          <div class="checkbox-circle checked">✓</div>
+          <span class="title-text completed">编写项目启动日</span>
+        </div>
+        <div class="meta-row legacy">
+          <span class="legacy-category-tag completed">生活</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新版 -->
+  <div class="compare-col">
+    <h2>新版 <span class="ver new">v1</span></h2>
+    <p>分组标签移到左上角作为角标贴边（参考分享图分类角标），仅右下圆角 16dp（与卡片圆角一致）</p>
+
+    <!-- 卡片1：有分组+提醒+附件（拥挤模式）-->
+    <div class="todo-card">
+      <div class="priority-bar high"></div>
+      <div class="priority-border high"></div>
+      <div class="pin-icon">📌</div>
+      <span class="category-badge">工作</span>
+      <div class="card-content">
+        <div class="title-row">
+          <div class="checkbox-circle"></div>
+          <span class="title-text">演示种子数据注入机制</span>
+          <span class="title-progress">(0/5)</span>
+        </div>
+        <!-- 元数据行（无分组标签）-->
+        <div class="meta-row new">
+          <span class="attachment-info">
+            <span class="icon">🖼️</span>1
+            <span class="icon" style="margin-left:4px;">🎤</span>1
+          </span>
+          <span class="relation-chip">
+            <span class="icon">🔗</span>3
+          </span>
+          <span class="reminder-info">
+            <span class="icon">⏰</span>7月25日 10:00
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片2：仅分组（简单模式）-->
+    <div class="todo-card">
+      <div class="priority-bar none"></div>
+      <div class="priority-border none"></div>
+      <span class="category-badge">学习</span>
+      <div class="card-content">
+        <div class="title-row">
+          <div class="checkbox-circle"></div>
+          <span class="title-text">设计分层 Seeder 架构</span>
+        </div>
+        <!-- 无元数据行 -->
+      </div>
+    </div>
+
+    <!-- 卡片3：已完成 -->
+    <div class="todo-card">
+      <div class="priority-bar none"></div>
+      <div class="priority-border none"></div>
+      <span class="category-badge completed">生活</span>
+      <div class="card-content">
+        <div class="title-row">
+          <div class="checkbox-circle checked">✓</div>
+          <span class="title-text completed">编写项目启动日</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 场景演示 ============ -->
+<div class="scenario-section">
+  <h2>场景对比：原版 vs 新版</h2>
+  <div class="scenario-grid">
+
+    <!-- 场景 1：极简（仅分组）-->
+    <div>
+      <h3 style="font-size:13px;margin-bottom:10px;color:var(--text-hint);">场景 1：仅分组（极简）</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <div style="font-size:11px;color:var(--text-hint);margin-bottom:6px;">原版</div>
+          <div class="todo-card">
+            <div class="priority-bar none"></div>
+            <div class="priority-border none"></div>
+            <div class="card-content">
+              <div class="title-row">
+                <div class="checkbox-circle"></div>
+                <span class="title-text">学习 Kotlin 协程</span>
+              </div>
+              <div class="meta-row legacy">
+                <span class="legacy-category-tag">学习</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-hint);margin-bottom:6px;">新版</div>
+          <div class="todo-card">
+            <div class="priority-bar none"></div>
+            <div class="priority-border none"></div>
+            <span class="category-badge">学习</span>
+            <div class="card-content">
+              <div class="title-row">
+                <div class="checkbox-circle"></div>
+                <span class="title-text">学习 Kotlin 协程</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 场景 2：多元素（拥挤）-->
+    <div>
+      <h3 style="font-size:13px;margin-bottom:10px;color:var(--text-hint);">场景 2：多元素（拥挤模式）</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <div style="font-size:11px;color:var(--text-hint);margin-bottom:6px;">原版（两行）</div>
+          <div class="todo-card">
+            <div class="priority-bar high"></div>
+            <div class="priority-border high"></div>
+            <div class="card-content">
+              <div class="title-row">
+                <div class="checkbox-circle"></div>
+                <span class="title-text">紧急任务</span>
+              </div>
+              <div class="meta-row legacy">
+                <span class="legacy-category-tag">工作</span>
+                <span class="attachment-info"><span class="icon">🖼️</span>2</span>
+                <span class="relation-chip"><span class="icon">🔗</span>5</span>
+              </div>
+              <div class="meta-row legacy">
+                <span class="reminder-info overdue"><span class="icon">⏰</span>已过期 2h</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-hint);margin-bottom:6px;">新版（单行）</div>
+          <div class="todo-card">
+            <div class="priority-bar high"></div>
+            <div class="priority-border high"></div>
+            <span class="category-badge">工作</span>
+            <div class="card-content">
+              <div class="title-row">
+                <div class="checkbox-circle"></div>
+                <span class="title-text">紧急任务</span>
+              </div>
+              <div class="meta-row new">
+                <span class="attachment-info"><span class="icon">🖼️</span>2</span>
+                <span class="relation-chip"><span class="icon">🔗</span>5</span>
+                <span class="reminder-info overdue"><span class="icon">⏰</span>已过期 2h</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 场景 3：长标题 -->
+    <div>
+      <h3 style="font-size:13px;margin-bottom:10px;color:var(--text-hint);">场景 3：长标题 + 描述</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <div style="font-size:11px;color:var(--text-hint);margin-bottom:6px;">原版</div>
+          <div class="todo-card">
+            <div class="priority-bar medium"></div>
+            <div class="priority-border medium"></div>
+            <div class="card-content">
+              <div class="title-row">
+                <div class="checkbox-circle"></div>
+                <span class="title-text">实现数据层 Repository 模式封装与依赖注入集成方案</span>
+              </div>
+              <div class="content-summary">通过 Hilt 提供 Repository 单例，并使用 Flow + StateFlow 实现响应式数据流</div>
+              <div class="meta-row legacy">
+                <span class="legacy-category-tag">学习</span>
+                <span class="reminder-info"><span class="icon">⏰</span>7月30日 14:00</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-hint);margin-bottom:6px;">新版</div>
+          <div class="todo-card">
+            <div class="priority-bar medium"></div>
+            <div class="priority-border medium"></div>
+            <span class="category-badge">学习</span>
+            <div class="card-content">
+              <div class="title-row">
+                <div class="checkbox-circle"></div>
+                <span class="title-text">实现数据层 Repository 模式封装与依赖注入集成方案</span>
+              </div>
+              <div class="content-summary">通过 Hilt 提供 Repository 单例，并使用 Flow + StateFlow 实现响应式数据流</div>
+              <div class="meta-row new">
+                <span class="reminder-info"><span class="icon">⏰</span>7月30日 14:00</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ 说明面板 ============ -->
+<div class="info-panel">
+  <h2>v1.0 分组标签角标化：设计要点与样式规范</h2>
+
+  <h3>核心变更</h3>
+  <table class="change-table">
+    <tr>
+      <th style="width: 22%;">变更点</th>
+      <th>说明</th>
+    </tr>
+    <tr>
+      <td><span class="badge badge-new">位置</span> 卡片左上角</td>
+      <td>从元数据行（卡内第一行）迁移到卡片左上角<b>贴边</b>，与待办分享图分类角标严格一致。<br>
+        <code>position: absolute; top: 0; left: 4px</code>（从竖条内侧 4dp 开始）</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-new">圆角</span> 仅右下 16dp</td>
+      <td>原：4dp 全圆角胶囊 + 阴影偏移。<br>新：<b>仅右下 16dp</b>（与首页卡片 16dp 圆角严格一致），其他三边 0 圆角贴合边框。<br>
+        视觉效果：卡片左上角 = 角标 + 卡片共同构成"双重圆角"，与边框完美贴合。</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-new">样式</span> 仿分享图</td>
+      <td>背景：<code>rgba(224, 224, 224, 0.6)</code>（#E0E0E0 60% 透明，与分享图一致）。<br>
+        文字色：<code>#666666</code>（次要文字色）。<br>
+        字号：<b>11sp</b>（从 12sp 缩小）。<br>
+        padding：<code>4px 10px</code>（与分享图一致）。<br>
+        letter-spacing：0.3px。</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-fix">移除</span> 阴影偏移</td>
+      <td>原 <code>offset(2dp, 2dp) + blur(4dp)</code> 阴影偏移设计废弃。<br>新设计为贴边角标，无需阴影（视觉上更轻盈、整齐）。</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-fix">元数据行</span> 简化为单行</td>
+      <td>原拥挤模式 = 两行（分组/附件/关联 一行 + 提醒 一行）。<br>新设计：移除"拥挤模式"分支，<b>统一单行</b>布局（附件/关联/提醒），因为分组标签已迁出元数据行。</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-info">Z 顺序</span> z-index=3</td>
+      <td>角标 z-index=3，被优先级竖条（z=5）和优先级边框（z=4）压住。<br>与分享图分类角标一致。</td>
+    </tr>
+  </table>
+
+  <h3>样式规范对照表（与待办分享图分类角标）</h3>
+  <table class="change-table">
+    <tr>
+      <th>维度</th>
+      <th>分享图分类角标（v6.0）</th>
+      <th>原 TodoListItem 分组标签</th>
+      <th>新版 TodoListItem 分组角标</th>
+    </tr>
+    <tr>
+      <td>位置</td>
+      <td>卡片左上角贴边 (top=0, left=4px)</td>
+      <td>元数据行内（卡内）</td>
+      <td>卡片左上角贴边 (top=0, left=4px) ✓</td>
+    </tr>
+    <tr>
+      <td>圆角</td>
+      <td>仅右下 9.5dp（卡片 9.5dp 一致）</td>
+      <td>4dp 全圆角 + 阴影偏移</td>
+      <td>仅右下 <b>16dp</b>（卡片 16dp 一致）✓</td>
+    </tr>
+    <tr>
+      <td>字号</td>
+      <td>11sp</td>
+      <td>12sp</td>
+      <td>11sp ✓</td>
+    </tr>
+    <tr>
+      <td>背景</td>
+      <td>rgba(224, 224, 224, 0.6)</td>
+      <td>primaryContainer 暖橙浅</td>
+      <td>rgba(224, 224, 224, 0.6) ✓</td>
+    </tr>
+    <tr>
+      <td>文字色</td>
+      <td>#666666</td>
+      <td>primary 橙</td>
+      <td>#666666 ✓</td>
+    </tr>
+    <tr>
+      <td>padding</td>
+      <td>4px 10px</td>
+      <td>2px 8px</td>
+      <td>4px 10px ✓</td>
+    </tr>
+    <tr>
+      <td>阴影</td>
+      <td>无</td>
+      <td>2dp 偏移 + 4dp 模糊</td>
+      <td>无 ✓</td>
+    </tr>
+  </table>
+
+  <h3>对首页布局的影响</h3>
+  <ul>
+    <li><b>卡片顶部 padding 调整</b>：原 <code>card-content padding-top=14dp</code>，新版建议保留 14dp 但额外增加 <code>topCardPadding = 28dp</code> 给角标让出空间（参考分享图 36dp，按比例缩小到首页）</li>
+    <li><b>挤压模式判定简化</b>：原 <code>isMetaCrowded = hasCategory && hasReminder && hasAttachment</code> 改写为 <code>isMetaCrowded = hasReminder && hasAttachment</code>（因为 hasCategory 不再是元数据行元素）</li>
+    <li><b>元数据行结构调整</b>：第一行不再渲染分组标签，所有元数据元素按 8dp 间距顺序排列（附件/关联/提醒）</li>
+    <li><b>Category 数据模型不变</b>：无需修改，仅修改 <code>CategoryTagWithShadow</code> 组件为 <code>CategoryBadge</code>（位置+样式重写）</li>
+  </ul>
+
+  <h3>待确认问题</h3>
+  <ul>
+    <li><b>Q1</b>：分组标签字号是否需要保持 12sp（原）还是改为 11sp（与分享图一致）？</li>
+    <li><b>Q2</b>：分组标签背景色是否改为灰色（与分享图一致）还是保持橙色（与品牌一致）？</li>
+    <li><b>Q3</b>：当 todo 同时"已置顶"且"有分组"时，分组角标和置顶图标（卡片右上角 📌）是否会冲突？</li>
+    <li><b>Q4</b>：分组角标是否需要可点击交互（点击进入该分组的待办列表）？</li>
+  </ul>
+</div>
+
+</body>
+</html>
