@@ -31,6 +31,9 @@ Thumbs.db
 # Visual companion mockups（brainstorming skill 临时产物）
 .superpowers/
 
+# Workbuddy 工作辅助工具临时产物（memory/ 缓存 + extract_ui.py 脚本）
+.workbuddy/
+
 # ============================================================
 # Graphify 知识图谱工具的输出与中间产物
 # 说明：graphify 仓库本身位于 ./graphify（Git 子模块，受 .gitmodules 管理），
