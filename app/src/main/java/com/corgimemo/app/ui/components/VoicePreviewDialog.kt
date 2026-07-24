@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -79,9 +81,9 @@ import kotlin.math.sin
  *
  * 布局结构（与原型一致）：
  * - 顶栏：标题 + 关闭按钮
- * - 上半区（50%）：波形可视化 + 播放控制（播放/暂停按钮 + 进度条 + 时间）
+ * - 上半区（50%）：波形可视化 + 播放控制（左箭头 + 播放/暂停按钮 + 右箭头 + 进度条 + 时间）
  * - 下半区（50%）：录音列表（可滚动，默认最多显示约 3 条）
- * - 底栏：下载按钮 + 删除按钮（删除需二次确认）
+ * - 底栏：删除按钮 + 下载按钮（删除需二次确认）
  *
  * 技术要点：
  * - 使用独立 Dialog Window 渲染全屏（与 InspirationImageGallery 相同模式）
@@ -381,41 +383,99 @@ fun VoicePreviewDialog(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // 播放/暂停按钮
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFFF9A5C))
-                            .clickable {
-                                when (playbackState) {
-                                    VoicePlayer.PlaybackState.PLAYING -> {
-                                        voicePlayer.pause()
-                                    }
-                                    VoicePlayer.PlaybackState.PAUSED -> {
-                                        voicePlayer.resume()
-                                    }
-                                    VoicePlayer.PlaybackState.PREPARED,
-                                    VoicePlayer.PlaybackState.STOPPED,
-                                    VoicePlayer.PlaybackState.COMPLETED -> {
-                                        voicePlayer.play()
-                                    }
-                                    else -> {
-                                        // IDLE 状态，重新准备
-                                        if (currentIndex < mutablePaths.size) {
-                                            voicePlayer.prepare(mutablePaths[currentIndex])
-                                        }
-                                    }
+                    /**
+                     * 播放控制区：左箭头 + 播放/暂停按钮 + 右箭头
+                     *
+                     * v2026-07-25 新增：参考原型图 CorgiMemo 角标点击交互原型.html
+                     * - 左右箭头循环切换录音（到首项点左跳到末项，到末项点右跳到首项）
+                     * - 与原型 voiceGo(dir) 行为一致：(index + dir + size) % size
+                     * - 切换后 LaunchedEffect(currentIndex) 自动调用 voicePlayer.prepare()
+                     */
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 左箭头：切换到上一个录音（循环）
+                        IconButton(
+                            onClick = {
+                                if (mutablePaths.isNotEmpty()) {
+                                    currentIndex = (currentIndex - 1 + mutablePaths.size) % mutablePaths.size
                                 }
                             },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "暂停" else "播放",
-                            tint = Color.White,
-                            modifier = Modifier.size(28.dp)
-                        )
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF2A2A2A))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SkipPrevious,
+                                contentDescription = "上一个录音",
+                                tint = Color(0xFFCCCCCC),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(24.dp))
+
+                        // 播放/暂停按钮
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFF9A5C))
+                                .clickable {
+                                    when (playbackState) {
+                                        VoicePlayer.PlaybackState.PLAYING -> {
+                                            voicePlayer.pause()
+                                        }
+                                        VoicePlayer.PlaybackState.PAUSED -> {
+                                            voicePlayer.resume()
+                                        }
+                                        VoicePlayer.PlaybackState.PREPARED,
+                                        VoicePlayer.PlaybackState.STOPPED,
+                                        VoicePlayer.PlaybackState.COMPLETED -> {
+                                            voicePlayer.play()
+                                        }
+                                        else -> {
+                                            // IDLE 状态，重新准备
+                                            if (currentIndex < mutablePaths.size) {
+                                                voicePlayer.prepare(mutablePaths[currentIndex])
+                                            }
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "暂停" else "播放",
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(24.dp))
+
+                        // 右箭头：切换到下一个录音（循环）
+                        IconButton(
+                            onClick = {
+                                if (mutablePaths.isNotEmpty()) {
+                                    currentIndex = (currentIndex + 1) % mutablePaths.size
+                                }
+                            },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF2A2A2A))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SkipNext,
+                                contentDescription = "下一个录音",
+                                tint = Color(0xFFCCCCCC),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
 
@@ -506,38 +566,14 @@ fun VoicePreviewDialog(
                     }
                 }
 
-                // ========== 底栏：下载 + 删除按钮 ==========
+                // ========== 底栏：删除 + 下载按钮 ==========
+                // v2026-07-25 调整：参考原型图，删除按钮在左，下载按钮在右
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // 下载按钮
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(Color(0xFF2A2A2A))
-                            .clickable { downloadCurrentRecording() }
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "下载",
-                            tint = Color(0xFFCCCCCC),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "下载",
-                            color = Color(0xFFCCCCCC),
-                            fontSize = 14.sp
-                        )
-                    }
                     // 删除按钮
                     Row(
                         modifier = Modifier
@@ -563,6 +599,31 @@ fun VoicePreviewDialog(
                         Text(
                             text = "删除",
                             color = Color(0xFFFF6B6B),
+                            fontSize = 14.sp
+                        )
+                    }
+                    // 下载按钮
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color(0xFF2A2A2A))
+                            .clickable { downloadCurrentRecording() }
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = "下载",
+                            tint = Color(0xFFCCCCCC),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "下载",
+                            color = Color(0xFFCCCCCC),
                             fontSize = 14.sp
                         )
                     }
