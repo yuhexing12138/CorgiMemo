@@ -31,7 +31,7 @@ import com.corgimemo.app.data.model.CustomDateType
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
-    version = 50,
+    version = 51,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -99,7 +99,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1832,6 +1832,108 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_dueDate_status ON todo_items(dueDate, status)")
             database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_isPinned ON todo_items(isPinned)")
             database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_title ON todo_items(title)")
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 50 → 51（v2026-07-25 紧急修复启动闪退）
+     * 删除 deleted_todos 表的 startDate 字段
+     *
+     * ## 背景
+     *
+     * v49→v50 的 [MIGRATION_49_TO_50] 只处理了 `todo_items` 表的 startDate 列删除，
+     * **遗漏了 `deleted_todos` 表的同步处理**。而 [DeletedTodo] Entity 已经移除了
+     * startDate 字段（与 [TodoItem] 保持一致），导致 Room schema 校验失败：
+     *
+     * ```
+     * IllegalStateException: Migration didn't properly handle: deleted_todos
+     * Expected: ... (no startDate column)
+     * Found:   ... (has startDate column)
+     * ```
+     *
+     * ## 策略：12-step 重建表
+     *
+     * SQLite 在 minSdk=26（Android 8.0）内置版本不支持 `ALTER TABLE DROP COLUMN`，
+     * 需要使用「创建新表 → 复制数据 → 删除旧表 → 重命名」的标准做法。
+     *
+     * ## 依据 .trae/rules/entity与 migration同步检查.md
+     *
+     * 新表 schema 严格对齐 [DeletedTodo] Entity：
+     * - geofenceType: DEFAULT 0
+     * - geofenceEnabled: DEFAULT 0
+     * - hasSubTasks: DEFAULT 0
+     * （DeletedTodo 没有 @ColumnInfo defaultValue 注解的其他字段保持原样）
+     *
+     * ## 索引处理
+     *
+     * [DeletedTodo] Entity 没有 @Index 注解，原表也无索引，无需重建索引。
+     *
+     * **不要修改历史 Migration SQL 中的 startDate**（如 MIGRATION_15_16），
+     * 这些是历史升级链必须保留。
+     */
+    internal val MIGRATION_50_TO_51 = object : Migration(50, 51) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // Step 1: 创建新表（不含 startDate 列，schema 与 DeletedTodo Entity 严格对齐）
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS deleted_todos_new (
+                    id INTEGER PRIMARY KEY NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT,
+                    categoryId INTEGER NOT NULL,
+                    priority INTEGER NOT NULL,
+                    status INTEGER NOT NULL,
+                    estimatedDurationMinutes INTEGER,
+                    reminderTime INTEGER,
+                    repeatType INTEGER NOT NULL,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    completedAt INTEGER,
+                    geofenceLat REAL,
+                    geofenceLng REAL,
+                    geofenceRadius REAL,
+                    geofenceType INTEGER NOT NULL DEFAULT 0,
+                    geofenceEnabled INTEGER NOT NULL DEFAULT 0,
+                    geofenceAddress TEXT,
+                    hasSubTasks INTEGER NOT NULL DEFAULT 0,
+                    voiceNotePath TEXT,
+                    voiceDuration INTEGER,
+                    deletedAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+
+            // Step 2: 复制数据（排除 startDate 列）
+            database.execSQL(
+                """
+                INSERT INTO deleted_todos_new (
+                    id, title, content, categoryId, priority, status,
+                    estimatedDurationMinutes, reminderTime, repeatType,
+                    createdAt, updatedAt, completedAt,
+                    geofenceLat, geofenceLng, geofenceRadius, geofenceType,
+                    geofenceEnabled, geofenceAddress,
+                    hasSubTasks, voiceNotePath, voiceDuration,
+                    deletedAt
+                )
+                SELECT
+                    id, title, content, categoryId, priority, status,
+                    estimatedDurationMinutes, reminderTime, repeatType,
+                    createdAt, updatedAt, completedAt,
+                    geofenceLat, geofenceLng, geofenceRadius, geofenceType,
+                    geofenceEnabled, geofenceAddress,
+                    hasSubTasks, voiceNotePath, voiceDuration,
+                    deletedAt
+                FROM deleted_todos
+                """.trimIndent()
+            )
+
+            // Step 3: 删除旧表
+            database.execSQL("DROP TABLE IF EXISTS deleted_todos")
+
+            // Step 4: 重命名新表
+            database.execSQL("ALTER TABLE deleted_todos_new RENAME TO deleted_todos")
+
+            // 注：DeletedTodo Entity 无 @Index 注解，无需重建索引
         }
     }
     // companion object 闭合
