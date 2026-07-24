@@ -2984,7 +2984,7 @@ class HomeViewModel @Inject constructor(
      * 批量设置提醒时间
      *
      * @param reminderTime 提醒时间戳（null 表示清除提醒）
-     * @param repeatType 重复类型（0=不重复，1=每天，2=每周，3=每月，4=周一至周五，5=每年）
+     * @param repeatType 重复类型（0=不重复，1=每天，2=每周，3=每月，4=周一至周五，5=每年，6=周六至周日）
      *
      * 注意：ReminderPickerBottomSheet 的 `calendarEnabled` 参数仅是 UI 内部状态
      * （用于切换农历显示），不持久化到 TodoItem 字段。本方法仅更新 reminderTime

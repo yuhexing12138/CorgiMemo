@@ -158,6 +158,7 @@ fun ReminderPickerBottomSheet(
         Pair(0, "不重复"),
         Pair(1, "每天"),
         Pair(4, "周一至周五"),
+        Pair(6, "周六至周日"),
         Pair(2, "每周"),
         Pair(3, "每月"),
         Pair(5, "每年")

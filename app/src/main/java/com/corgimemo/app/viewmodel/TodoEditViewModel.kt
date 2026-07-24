@@ -1372,7 +1372,7 @@ class TodoEditViewModel @Inject constructor(
      * v2026-07-22 bug 修复：加变化检查。
      *
      * @param groupId 分组 ID
-     * @param type 重复类型（0=不重复, 1=每天, 2=每周, 3=每月, 4=周一至周五, 5=每年）
+     * @param type 重复类型（0=不重复, 1=每天, 2=每周, 3=每月, 4=周一至周五, 5=每年, 6=周六至周日）
      */
     fun setGroupRepeatType(groupId: Int, type: Int) {
         if (_groupRepeatTypes.value[groupId] == type) {

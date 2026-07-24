@@ -44,9 +44,9 @@ object RepeatTaskManager {
             RepeatType.DAILY -> "每天"
             RepeatType.WEEKLY -> "每周"
             RepeatType.MONTHLY -> "每月"
-            RepeatType.WEEKDAYS -> "工作日"
+            RepeatType.WEEKDAYS -> "周一至周五"
             RepeatType.YEARLY -> "每年"
-            RepeatType.WEEKENDS -> "周末"
+            RepeatType.WEEKENDS -> "周六至周日"
             else -> "不重复"
         }
     }
