@@ -34,6 +34,7 @@ object ImageExporter {
     private val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
     private val displayDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
     private val shortDateFormat = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
+    private val timeWithYearFormat = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
 
     /**
      * 创建待办分享卡片图片（v2 重设计）
@@ -259,6 +260,10 @@ object ImageExporter {
         // 原因：Android Canvas 的 stroke 是中心线（half in / half out），与 HTML/CSS border 外侧不同
         val cornerRadius = (9f * density)
         val borderRadius = (8.25f * density)
+        // 边框内侧圆角 = borderRadius - stroke/2 = 8.25 - 0.75 = 7.5dp
+        // 用作角标 clipPath，让角标被边框内侧"切掉"超出部分 → 边框 1.5dp 范围 [7.5dp, 9dp] 内完全无角标
+        // 视觉效果：边框完全压住角标（角标只在 0~7.5dp 圆角范围内可见，不透出边框）
+        val borderInnerRadius = (7.5f * density)
         val imageCount = imagePaths.size
 
         // 测量内容高度
@@ -275,53 +280,16 @@ object ImageExporter {
             cornerRadius, cornerRadius, cardBgPaint
         )
 
-        // 优先级边框 (1.5dp)
-        val priorityBorderColor = getPriorityBorderColor(todo.priority)
-        val borderPaint = Paint().apply {
-            color = priorityBorderColor
-            isAntiAlias = true
-            style = Paint.Style.STROKE
-            strokeWidth = (1.5 * density).toFloat()
-        }
-        canvas.drawRoundRect(
-            RectF(padding.toFloat(), startY.toFloat(),
-                (width - padding).toFloat(), (startY + contentHeight).toFloat()),
-            borderRadius, borderRadius, borderPaint
-        )
-
-        // 左侧 4dp 优先级竖条（不内缩，用卡片圆角 clipPath 自动裁剪上下超出部分）
-        val barColor = getPriorityBarColor(todo.priority)
-        val barPaint = Paint().apply {
-            color = barColor
-            isAntiAlias = true
-        }
-        // 用卡片圆角矩形作为 clipPath，竖条会被自然裁剪
-        canvas.save()
-        val cardClipPath = android.graphics.Path().apply {
-            addRoundRect(
-                RectF(padding.toFloat(), startY.toFloat(),
-                    (width - padding).toFloat(), (startY + contentHeight).toFloat()),
-                cornerRadius, cornerRadius, android.graphics.Path.Direction.CW
-            )
-        }
-        canvas.clipPath(cardClipPath)
-        // 竖条充满整个卡片高度（左右边缘会与卡片圆角自然对齐）
-        canvas.drawRect(
-            RectF(padding.toFloat(), startY.toFloat(),
-                (padding + 4 * density).toFloat(), (startY + contentHeight).toFloat()),
-            barPaint
-        )
-        canvas.restore()
-
         // ===== 顶部两角角标 =====
-        // 用卡片视觉外轮廓（cornerRadius 9dp）作为 clipPath，让角标"贴边"超出部分被自然裁剪
-        // 这是"贴片"设计：角标顶/外/底 贴边 → 被卡片圆角切掉；角标圆角侧 → 在卡片内完整显示
+        // 用边框内侧（borderInnerRadius 7.5dp）作为 clipPath，让角标被边框"切掉"超出部分
+        // 这样边框 1.5dp [7.5dp, 9dp] 范围内完全没有角标 → 边框完全压住角标，不透出
+        // 角标 0~7.5dp 圆角范围内完整显示；[7.5dp, 9dp] 范围被边框内侧"切掉"
         canvas.save()
         val badgeClipPath = android.graphics.Path().apply {
             addRoundRect(
                 RectF(padding.toFloat(), startY.toFloat(),
                     (width - padding).toFloat(), (startY + contentHeight).toFloat()),
-                cornerRadius, cornerRadius, android.graphics.Path.Direction.CW
+                borderInnerRadius, borderInnerRadius, android.graphics.Path.Direction.CW
             )
         }
         canvas.clipPath(badgeClipPath)
@@ -503,6 +471,65 @@ object ImageExporter {
 
         // 底部时间标签（贴卡片左下角，与分类角标对称——仅右上角圆角 9dp）
         drawBottomTimeChip(canvas, width, padding, startY, contentHeight, todo, density)
+
+        // ===== 优先级边框（在所有角标和时间标签之上，覆盖它们的背景色边缘） =====
+        // 边框线 1.5dp 描边，在卡片边缘 0.75dp 位置 → 覆盖角标顶部 0.75dp 外侧
+        val priorityBorderColor = getPriorityBorderColor(todo.priority)
+        val borderPaint = Paint().apply {
+            color = priorityBorderColor
+            isAntiAlias = true
+            style = Paint.Style.STROKE
+            strokeWidth = (1.5 * density).toFloat()
+        }
+        canvas.drawRoundRect(
+            RectF(padding.toFloat(), startY.toFloat(),
+                (width - padding).toFloat(), (startY + contentHeight).toFloat()),
+            borderRadius, borderRadius, borderPaint
+        )
+
+        // ===== 左侧 4dp 优先级竖条（最上层，覆盖边框和所有角标背景色） =====
+        // 关键：竖条左边缘严格对齐优先级外框的外侧边缘
+        //   边框 stroke 1.5dp 中心线在 padding 位置 → 外侧 = padding - 0.75dp, 内侧 = padding + 0.75dp
+        //   竖条左边缘 = padding - 0.75dp = 边框外侧 (严格对齐)
+        //   竖条右边缘 = padding + 4dp (与分类角标 left 对齐，保持无缝拼接)
+        // 关键：竖条在圆角处紧贴外侧边缘
+        //   clipPath 圆心必须与边框外侧圆心严格对齐
+        //     边框外侧 = stroke 中心线 (path 圆角 8.25dp) + 0.75dp = 9dp 圆弧
+        //     边框外侧圆心 = path 圆心 = (padding + 8.25dp, startY + 8.25dp)
+        //     clipPath 圆心 = (clipPath left + 9dp, clipPath top + 9dp)
+        //     → clipPath left = padding + 8.25dp - 9dp = padding - 0.75dp = padding - barOffset ✓
+        //     → clipPath top = startY + 8.25dp - 9dp = startY - 0.75dp = startY - barOffset ✓
+        //   clipPath 范围上下左右各扩 barOffset，让圆心与边框外侧圆心对齐
+        val barColor = getPriorityBarColor(todo.priority)
+        val barPaint = Paint().apply {
+            color = barColor
+            isAntiAlias = true
+        }
+        val barOffset = 0.75f * density // strokeWidth/2 = 边框外侧偏移量
+        canvas.save()
+        val cardClipPath = android.graphics.Path().apply {
+            addRoundRect(
+                // 范围左右各扩 barOffset，上下各扩 barOffset → clipPath 圆心 = 边框外侧圆心
+                RectF((padding - barOffset), (startY - barOffset),
+                    (width - padding + barOffset), (startY + contentHeight + barOffset)),
+                cornerRadius, cornerRadius, android.graphics.Path.Direction.CW
+            )
+        }
+        canvas.clipPath(cardClipPath)
+        // 竖条：上下延伸充满整个卡片高度，左右用 clipPath 圆角裁剪
+        //   竖条左边缘 = padding - barOffset = 边框外侧 (严格对齐)
+        //   竖条右边缘 = padding + 4dp = 距卡片左外边 4dp (与分类角标 left 对齐)
+        //   竖条顶部/底部超出 clipPath 圆角范围的部分被自动裁剪 → 在圆角处紧贴外侧边缘
+        canvas.drawRect(
+            RectF(
+                (padding - barOffset),  // 竖条左边缘 = 边框外侧
+                startY.toFloat(),
+                (padding + 4 * density).toFloat(),  // 竖条右边缘 = 距卡片左外边 4dp (与分类角标 left 对齐)
+                (startY + contentHeight).toFloat()
+            ),
+            barPaint
+        )
+        canvas.restore()
 
         return startY + contentHeight
     }
@@ -797,6 +824,9 @@ object ImageExporter {
         val chipPaddingV = (4 * density)
         // 圆角与卡片圆角严格一致（9dp，与边框外侧圆角视觉一致）
         val cornerRadius = (9f * density)
+        // 边框内侧圆角 7.5dp = 8.25dp - stroke/2
+        // 用作时间标签 clipPath，让时间标签被边框"切掉"超出部分 → 边框 1.5dp [7.5dp, 9dp] 内完全无时间标签
+        val borderInnerRadius = (7.5f * density)
 
         val textPaint = TextPaint().apply {
             textSize = (11 * density)
@@ -825,13 +855,14 @@ object ImageExporter {
         val top = cardBottom - badgeHeight
         val right = left + badgeWidth
 
-        // 用卡片圆角矩形作为 clipPath，自动裁剪底部超出
+        // 用边框内侧（borderInnerRadius 7.5dp）作为 clipPath，让时间标签被边框"切掉"
+        // 边框 1.5dp [7.5dp, 9dp] 范围内完全没有时间标签 → 边框完全压住时间标签，不透出
         canvas.save()
         val cardClipPath = android.graphics.Path().apply {
             addRoundRect(
                 RectF(padding.toFloat(), cardStartY.toFloat(),
                     (width - padding).toFloat(), (cardStartY + contentHeight).toFloat()),
-                cornerRadius, cornerRadius, android.graphics.Path.Direction.CW
+                borderInnerRadius, borderInnerRadius, android.graphics.Path.Direction.CW
             )
         }
         canvas.clipPath(cardClipPath)
