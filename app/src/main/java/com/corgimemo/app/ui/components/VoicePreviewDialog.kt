@@ -290,7 +290,20 @@ fun VoicePreviewDialog(
                         fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold
                     )
-                    IconButton(onClick = onDismiss) {
+                    /**
+                     * 关闭按钮
+                     *
+                     * v2026-07-25 统一尺寸：与 ImagePreviewScreen 的关闭按钮保持一致
+                     * - 容器 40dp + CircleShape + 半透明黑色背景
+                     * - Close 图标 24dp，白色
+                     */
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.5f))
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "关闭",
