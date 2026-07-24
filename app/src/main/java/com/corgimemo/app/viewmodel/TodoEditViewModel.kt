@@ -1081,19 +1081,38 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
+     * 每行（父待办或子待办）允许的最大图片附件数量
+     *
+     * v2026-07-25 新增：限制单行图片数量，避免分享卡片图片行过高、
+     * 编辑页附件管理体验下降、内存占用过大等问题。
+     */
+    companion object {
+        const val MAX_IMAGES_PER_LINE = 3
+    }
+
+    /**
      * 向当前聚焦行添加图片附件（v2026-07-22 新增）
      *
      * 替代原 UI 层 addImageToFocusedLine 内部直接 todoLines = ... 的写法。
      * 内部会触发快照推入。
+     *
+     * v2026-07-25 新增配额限制：单行图片数不超过 [MAX_IMAGES_PER_LINE]，
+     * 超出时返回 false 由 UI 层提示用户（不抛异常，避免中断批量选图流程）。
+     *
+     * @param imagePath 图片的本地存储路径
+     * @return true 添加成功；false 当前行已满（≥ MAX_IMAGES_PER_LINE），未添加
      */
-    fun addImageToFocusedLine(imagePath: String) {
+    fun addImageToFocusedLine(imagePath: String): Boolean {
         val current = _todoLines.value
         val idx = _focusedLineIndex.value
-        if (idx !in current.indices) return
+        if (idx !in current.indices) return false
         val newList = current.toMutableList()
         val oldLine = newList[idx]
+        // 配额检查：当前行图片数已达上限时拒绝添加
+        if (oldLine.imagePaths.size >= MAX_IMAGES_PER_LINE) return false
         newList[idx] = oldLine.copy(imagePaths = oldLine.imagePaths + imagePath)
         setTodoLines(newList)
+        return true
     }
 
     /**

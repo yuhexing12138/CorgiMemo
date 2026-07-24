@@ -371,10 +371,14 @@ fun TodoEditScreen(
      *
      * 委托给 viewModel.addImageToFocusedLine 内部处理（更新 _todoLines + 推快照）。
      *
+     * v2026-07-25 新增配额限制：单行最多 [TodoEditViewModel.MAX_IMAGES_PER_LINE] 张，
+     * 超出时返回 false 由调用方提示用户。
+     *
      * @param imagePath 图片的本地存储路径
+     * @return true 添加成功；false 当前行已满，未添加
      */
-    fun addImageToFocusedLine(imagePath: String) {
-        viewModel.addImageToFocusedLine(imagePath)
+    fun addImageToFocusedLine(imagePath: String): Boolean {
+        return viewModel.addImageToFocusedLine(imagePath)
     }
 
     /**
@@ -400,6 +404,9 @@ fun TodoEditScreen(
         viewModel.createNewTodoAfterLine(lineIndex)
     }
 
+    // v2026-07-25 移到 launcher 之前声明：launcher 回调中需要引用 snackbarHostState 做配额提示
+    val snackbarHostState = remember { SnackbarHostState() }
+
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { isSuccess: Boolean ->
@@ -410,7 +417,11 @@ fun TodoEditScreen(
                     savedPath?.let { path ->
                         viewModel.addImagePath(path)
                         // 将图片添加到当前聚焦行，而非全局 contentBlocks
-                        addImageToFocusedLine(path)
+                        // v2026-07-25 配额检查：单行最多 MAX_IMAGES_PER_LINE 张
+                        val added = addImageToFocusedLine(path)
+                        if (!added) {
+                            snackbarHostState.showSnackbar("每行最多 ${TodoEditViewModel.MAX_IMAGES_PER_LINE} 张图片")
+                        }
                     }
                 }
             }
@@ -421,13 +432,25 @@ fun TodoEditScreen(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         coroutineScope.launch {
-            uris.forEach { uri ->
+            // v2026-07-25 配额检查：单行最多 MAX_IMAGES_PER_LINE 张
+            // 多选时一旦当前行满了就停止后续添加，并通过 snackbar 提示用户
+            var skippedCount = 0
+            for (i in uris.indices) {
+                val uri = uris[i]
                 val savedPath = ImageUtils.copyUriToInternalStorage(context, uri)
                 savedPath?.let { path ->
                     viewModel.addImagePath(path)
                     // 将图片添加到当前聚焦行，而非全局 contentBlocks
-                    addImageToFocusedLine(path)
+                    val added = addImageToFocusedLine(path)
+                    if (!added) {
+                        // 当前行已满，剩余未处理的 uri 全部跳过（含当前这张）
+                        skippedCount = uris.size - i
+                        break
+                    }
                 }
+            }
+            if (skippedCount > 0) {
+                snackbarHostState.showSnackbar("每行最多 ${TodoEditViewModel.MAX_IMAGES_PER_LINE} 张图片，已跳过 $skippedCount 张")
             }
         }
     }
@@ -472,8 +495,6 @@ fun TodoEditScreen(
     var editingReminderGroupId by remember { mutableStateOf<Int?>(null) }
     /** picker 是否打开：editingReminderGroupId != null 即展示 */
     val showReminderPicker = editingReminderGroupId != null
-
-    val snackbarHostState = remember { SnackbarHostState() }
 
     var showLocationPopup by remember { mutableStateOf(false) }
 
