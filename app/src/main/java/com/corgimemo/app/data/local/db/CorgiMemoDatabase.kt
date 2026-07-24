@@ -31,7 +31,7 @@ import com.corgimemo.app.data.model.CustomDateType
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
-    version = 49,
+    version = 50,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -99,7 +99,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1714,6 +1714,124 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
 
             // Step 3: 创建 ownerType 索引（与 Entity 的 @Index 注解一致）
             database.execSQL("CREATE INDEX IF NOT EXISTS index_content_blocks_ownerType ON content_blocks(ownerType)")
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 49 → 50（v2026-07-25 新增）
+     * 删除 todo_items 表的 startDate 字段及相关索引
+     *
+     * ## 背景
+     *
+     * TodoItem Entity 的 startDate 字段已被移除，预计时长改由 reminderTime + dueDate 派生。
+     * 此 Migration 同步删除数据库中的 startDate 列及基于该列的复合索引
+     * `index_todo_items_priority_startDate`（由 MIGRATION_10_11 创建）。
+     *
+     * ## 策略：12-step 重建表
+     *
+     * SQLite 在某些 Android 版本（API 30 以下）不支持 `ALTER TABLE DROP COLUMN`，
+     * 因此采用「创建新表 → 复制数据 → 删除旧表 → 重命名」的标准做法。
+     *
+     * ## 依据 .trae/rules/entity与 migration同步检查.md
+     *
+     * 新表 schema 严格对齐 [TodoItem] Entity 的 @ColumnInfo 默认值：
+     * - imagePaths: DEFAULT ''
+     * - backgroundColor: DEFAULT 16777215
+     * - contentFormat: DEFAULT ''
+     * - isPinned: DEFAULT 0
+     * - sortOrder: DEFAULT 0
+     * - geofenceType: DEFAULT 0
+     * - geofenceEnabled: DEFAULT 0
+     * - hasSubTasks: DEFAULT 0
+     *
+     * ## 历史索引处理
+     *
+     * - 删除 `index_todo_items_priority_startDate`（依赖 startDate，无法保留）
+     * - 重建其他 6 个索引（与 Entity 的 @Index 注解保持一致）
+     *
+     * **不要修改历史 Migration SQL 中的 startDate**（如 MIGRATION_10_11），
+     * 这些是历史升级链必须保留。
+     */
+    internal val MIGRATION_49_TO_50 = object : Migration(49, 50) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // Step 1: 删除基于 startDate 的复合索引（由 MIGRATION_10_11 创建）
+            database.execSQL("DROP INDEX IF EXISTS index_todo_items_priority_startDate")
+
+            // Step 2: 创建新表（不含 startDate 列，schema 与 TodoItem Entity 严格对齐）
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS todo_items_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT,
+                    categoryId INTEGER NOT NULL,
+                    priority INTEGER NOT NULL,
+                    status INTEGER NOT NULL,
+                    dueDate INTEGER,
+                    estimatedDurationMinutes INTEGER,
+                    reminderTime INTEGER,
+                    repeatType INTEGER NOT NULL,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    completedAt INTEGER,
+                    geofenceLat REAL,
+                    geofenceLng REAL,
+                    geofenceRadius REAL,
+                    geofenceType INTEGER NOT NULL DEFAULT 0,
+                    geofenceEnabled INTEGER NOT NULL DEFAULT 0,
+                    geofenceAddress TEXT,
+                    hasSubTasks INTEGER NOT NULL DEFAULT 0,
+                    voiceNotePath TEXT,
+                    voiceDuration INTEGER,
+                    imagePaths TEXT NOT NULL DEFAULT '',
+                    backgroundColor INTEGER NOT NULL DEFAULT 16777215,
+                    contentFormat TEXT NOT NULL DEFAULT '',
+                    isPinned INTEGER NOT NULL DEFAULT 0,
+                    sortOrder INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent()
+            )
+
+            // Step 3: 复制数据（排除 startDate 列）
+            database.execSQL(
+                """
+                INSERT INTO todo_items_new (
+                    id, title, content, categoryId, priority, status, dueDate,
+                    estimatedDurationMinutes, reminderTime, repeatType,
+                    createdAt, updatedAt, completedAt,
+                    geofenceLat, geofenceLng, geofenceRadius, geofenceType,
+                    geofenceEnabled, geofenceAddress,
+                    hasSubTasks, voiceNotePath, voiceDuration,
+                    imagePaths, backgroundColor, contentFormat,
+                    isPinned, sortOrder
+                )
+                SELECT
+                    id, title, content, categoryId, priority, status, dueDate,
+                    estimatedDurationMinutes, reminderTime, repeatType,
+                    createdAt, updatedAt, completedAt,
+                    geofenceLat, geofenceLng, geofenceRadius, geofenceType,
+                    geofenceEnabled, geofenceAddress,
+                    hasSubTasks, voiceNotePath, voiceDuration,
+                    imagePaths, backgroundColor, contentFormat,
+                    isPinned, sortOrder
+                FROM todo_items
+                """.trimIndent()
+            )
+
+            // Step 4: 删除旧表
+            database.execSQL("DROP TABLE todo_items")
+
+            // Step 5: 重命名新表
+            database.execSQL("ALTER TABLE todo_items_new RENAME TO todo_items")
+
+            // Step 6: 重建其他索引（除了被删除的 priority_startDate）
+            // 索引名与 TodoItem Entity 的 @Index 注解生成的名称一致
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_status_createdAt ON todo_items(status, createdAt)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_categoryId_status ON todo_items(categoryId, status)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_hasSubTasks ON todo_items(hasSubTasks)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_dueDate_status ON todo_items(dueDate, status)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_isPinned ON todo_items(isPinned)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_title ON todo_items(title)")
         }
     }
     // companion object 闭合

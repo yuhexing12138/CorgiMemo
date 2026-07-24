@@ -1,0 +1,51 @@
+refactor(entity): 完整删除 TodoItem.startDate 字段，改用 reminderTime 计算
+
+承接前两次提交（e8e19fd0、c9d88856），本次完整删除 TodoItem Entity 的 startDate
+字段，并将所有引用改为使用 reminderTime 计算（用户原话："将startDate都换个描述，
+都改成提醒时间来计算"）。
+
+改动范围（17 个文件，+193/-80）：
+
+【Entity 层】
+- TodoItem.kt：移除 startDate 字段 + Index(value = ["priority", "startDate"])
+- DeletedTodo.kt：移除 startDate 字段 + fromTodoItem/toTodoItem 中的赋值
+- BackupData.kt：移除 BackupTodoItem.startDate 字段
+
+【DAO / 数据库层】
+- TodoDao.kt：SQL ORDER BY ... startDate ASC → reminderTime ASC
+- CorgiMemoDatabase.kt：
+  · 版本 49 → 50
+  · 新增 MIGRATION_49_TO_50（12-step 重建表删除 startDate 列）
+  · 删除 index_todo_items_priority_startDate 索引
+  · 重建 6 个其他索引
+  · Schema 严格对齐 TodoItem Entity 的 @ColumnInfo(defaultValue)
+  · 历史 Migration SQL 中的 startDate 保留（升级链必须）
+
+【ViewModel / 业务逻辑层】
+- HomeViewModel.kt：getEstimatedEndTime + 日历视图回退链改用 reminderTime
+- TodoEditViewModel.kt：移除 startDate = null / startDate = todoItem.startDate
+- RepeatTaskManager.kt：重复任务计算改用 reminderTime，移除 nextStartDate 变量
+
+【Widget / 动画 / 备份导出层】
+- WidgetDataManager.kt：getEstimatedEndTime 改用 reminderTime
+- DynamicGreetingManager.kt：getEstimatedEndTime 改用 reminderTime
+- IcsExporter.kt：getEstimatedEndTime + 事件时间回退链 + 移除"开始时间"显示
+- ShareCardComponent.kt：移除"开始: ..."显示段
+- CsvSerializer.kt：getEstimatedEndTime + CSV 输出改用 reminderTime
+- BackupManager.kt：移除 toBackupModel/toModel 中的 startDate 转换
+
+【种子数据】
+- TodoSeedData.kt：移除 T1~T7 全部 7 处 startDate 赋值
+
+【注释更新】
+- CheckboxEditText.kt：3 处注释 startDate/dueDate → reminderTime/dueDate
+- TodoCalendarDialog.kt：注释 基于 startDate → 基于 reminderTime
+
+验证：
+- 全项目搜索确认无 todo.startDate / deleted.startDate / todoItem.startDate 实际代码引用
+- 剩余 startDate 字样均为合法保留（改造注释、历史 Migration SQL、Inspiration 实体）
+
+后续可优化：
+- CsvSerializer 表头"开始时间"列与"提醒时间"列数据重复，可合并
+- RepeatTaskManager 函数参数名 startDate 可改为 baseTime
+- 编译验证需特别关注 Room schema 校验（MIGRATION_49_TO_50 新表 schema 必须与 Entity hash 一致）

@@ -52,7 +52,7 @@ import java.util.Calendar
  * 结构与 InspirationCalendarDialog 对称，复用共享日历组件。
  *
  * 顶部标题行布局：`[年月 ▼] ... [×]`
- * 底部列表区：当天基于 startDate 的待办列表（含已完成）
+ * 底部列表区：当天基于 reminderTime 的待办列表（含已完成）
  *
  * @param initialDate 初始选中日期
  * @param todoCountByDate 日期 -> 待办条数的映射（用于显示圆点）

@@ -148,15 +148,13 @@ object RepeatTaskManager {
         val database = CorgiMemoDatabase.getDatabase(context)
         val currentTime = System.currentTimeMillis()
 
-        val nextStartDate = completedTodo.startDate?.let {
-            calculateNextRepeatTime(it, completedTodo.repeatType)
-        }
-
+        // v2026-07-25 改造：startDate 字段已删除，下次重复时间统一基于 reminderTime 计算
+        // 原 nextStartDate 变量已移除（其语义与 nextReminderTime 重叠）
         val nextReminderTime = completedTodo.reminderTime?.let {
             calculateNextRepeatTime(it, completedTodo.repeatType)
         }
 
-        if (nextStartDate == null && nextReminderTime == null) {
+        if (nextReminderTime == null) {
             return null
         }
 
@@ -186,7 +184,7 @@ object RepeatTaskManager {
             categoryId = completedTodo.categoryId,
             priority = completedTodo.priority,
             status = 0,
-            startDate = nextStartDate,
+            // v2026-07-25 改造：startDate 字段已删除，不再设置
             estimatedDurationMinutes = completedTodo.estimatedDurationMinutes,
             reminderTime = nextReminderTime,
             repeatType = completedTodo.repeatType,

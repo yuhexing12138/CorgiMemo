@@ -1999,8 +1999,7 @@ class TodoEditViewModel @Inject constructor(
             categoryId = _groupCategoryIds.value[targetGroupId] ?: 0L,
             priority = _groupPriorities.value[targetGroupId] ?: 0,  // 使用分组独立优先级
             status = 0,
-            // v2026-07-25 改造：startDate 置 null（字段已废弃，预计时长改由 reminder+due 派生）
-            startDate = null,
+            // v2026-07-25 改造：startDate 字段已删除，不再设置
             dueDate = _dueDate.value,
             estimatedDurationMinutes = _estimatedDurationMinutes.value,
             reminderTime = _groupReminders.value[targetGroupId],
@@ -2112,7 +2111,7 @@ class TodoEditViewModel @Inject constructor(
                             content = todoItem.content,
                             categoryId = todoItem.categoryId,
                             priority = todoItem.priority,
-                            startDate = todoItem.startDate,
+                            // v2026-07-25 改造：startDate 字段已删除，不再赋值
                             dueDate = todoItem.dueDate,
                             estimatedDurationMinutes = todoItem.estimatedDurationMinutes,
                             reminderTime = todoItem.reminderTime,

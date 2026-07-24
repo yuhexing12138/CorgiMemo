@@ -24,14 +24,16 @@ object IcsExporter {
 
     /**
      * 获取预计完成时间
-     * 计算方式：startDate + estimatedDurationMinutes
+     * 计算方式：reminderTime + estimatedDurationMinutes
+     *
+     * v2026-07-25 改造：startDate 字段已删除，改用 reminderTime（提醒时间）计算
      *
      * @param todo 待办项
-     * @return 预计完成时间戳，如果没有 startDate 或 estimatedDurationMinutes 则返回 null
+     * @return 预计完成时间戳，如果没有 reminderTime 或 estimatedDurationMinutes 则返回 null
      */
     private fun getEstimatedEndTime(todo: TodoItem): Long? {
-        return if (todo.startDate != null && todo.estimatedDurationMinutes != null) {
-            todo.startDate + todo.estimatedDurationMinutes * 60000L
+        return if (todo.reminderTime != null && todo.estimatedDurationMinutes != null) {
+            todo.reminderTime + todo.estimatedDurationMinutes * 60000L
         } else {
             null
         }
@@ -77,7 +79,8 @@ object IcsExporter {
         val sb = StringBuilder()
 
         val estimatedEndTime = getEstimatedEndTime(todo)
-        val eventTime = todo.reminderTime ?: estimatedEndTime ?: todo.startDate ?: System.currentTimeMillis()
+        // v2026-07-25 改造：startDate 字段已删除，移除 ?: todo.startDate 回退
+        val eventTime = todo.reminderTime ?: estimatedEndTime ?: System.currentTimeMillis()
         val startTime = formatDateTime(eventTime)
         val endTime = formatDateTime(eventTime + 30 * 60 * 1000)
 
@@ -133,10 +136,7 @@ object IcsExporter {
     private fun buildDescription(todo: TodoItem): String {
         val sb = StringBuilder()
 
-        todo.startDate?.let {
-            sb.append("开始时间: ${displayDateFormat.format(Date(it))}\\n")
-        }
-
+        // v2026-07-25 改造：startDate 字段已删除，移除"开始时间"输出段
         todo.estimatedDurationMinutes?.let {
             sb.append("预计时长: ${formatDuration(it)}\\n")
         }

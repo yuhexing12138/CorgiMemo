@@ -122,7 +122,8 @@ interface TodoDao {
     @Query("SELECT * FROM todo_items WHERE categoryId = :categoryId AND status = :status ORDER BY createdAt DESC")
     fun getTodosByCategoryAndStatus(categoryId: Long, status: Int): Flow<List<TodoItem>>
 
-    @Query("SELECT * FROM todo_items WHERE status = :status ORDER BY priority DESC, startDate ASC")
+    // v2026-07-25 改造：startDate 字段已删除，排序改用 reminderTime（提醒时间）替代
+    @Query("SELECT * FROM todo_items WHERE status = :status ORDER BY priority DESC, reminderTime ASC")
     fun getTodosByStatusPriorityDueDate(status: Int): Flow<List<TodoItem>>
 
     @Query("SELECT COUNT(*) FROM todo_items WHERE status = 1 AND categoryId = :categoryId")

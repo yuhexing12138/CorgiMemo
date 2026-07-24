@@ -10,7 +10,7 @@ import androidx.room.PrimaryKey
     indices = [
         Index(value = ["status", "createdAt"]),
         Index(value = ["categoryId", "status"]),
-        Index(value = ["priority", "startDate"]),
+        // v2026-07-25 改造：移除 Index(value = ["priority", "startDate"])，startDate 字段已删除
         Index(value = ["hasSubTasks"]),
         Index(value = ["dueDate", "status"]),
         Index(value = ["isPinned"]),
@@ -29,7 +29,7 @@ data class TodoItem(
     val categoryId: Long,
     val priority: Int,
     val status: Int,
-    val startDate: Long? = null,
+    // v2026-07-25 改造：移除 startDate 字段，预计时长改由 reminderTime+dueDate 派生
 
     /** 截止时间（时间戳），用于设置任务必须完成的最后期限 */
     val dueDate: Long? = null,

@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<!-- saved from url=(0036)http://127.0.0.1:8765/index.html?v=9 -->
+<html lang="zh-CN"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CorgiMemo 角标点击交互原型</title>
+<style>
+:root{--primary:#FF9A5C;--primary-light:#FFE4CC;--primary-deep:#E65100;--bg:#F8F6F3;--card:#FFFFFF;--t1:#2D2D2D;--t2:#666666;--t3:#999999;--div:#EEEEEE;--badge-bg:rgba(224,224,224,.6);--red:#DC2626;--rb:#FCA5A5;}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{font-family:"Roboto","Noto Sans SC",sans-serif;background:linear-gradient(135deg,#ECE9E4,#F2EEE8);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;color:var(--t1);}
+.device{width:390px;height:844px;background:#000;border-radius:48px;padding:12px;box-shadow:0 30px 80px rgba(0,0,0,.28);position:relative;overflow:hidden;flex-shrink:0;}
+.screen{width:100%;height:100%;background:var(--bg);border-radius:38px;overflow:hidden;position:relative;}
+.statusbar{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;font-size:14px;font-weight:600;color:#000;}
+.statusbar .ic svg{width:16px;height:16px;}
+.home{position:absolute;inset:0;display:flex;flex-direction:column;}
+.appbar{padding:8px 20px 12px;display:flex;align-items:flex-end;justify-content:space-between;background:var(--bg);}
+.appbar h1{font-size:26px;font-weight:700;letter-spacing:-.3px;}
+.appbar .date{font-size:12px;color:var(--t3);margin-top:2px;}
+.appbar .avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#FFB37A,#FF9A5C);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:15px;}
+.list{flex:1;overflow-y:auto;padding:4px 16px 90px;}
+.list::-webkit-scrollbar{display:none;}
+.todo-card{position:relative;background:var(--card);border-radius:16px;padding:30px 16px 14px 20px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+.todo-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--primary);border-radius:16px 0 0 16px;}
+.badges{position:absolute;top:0;left:6px;display:flex;align-items:center;height:19px;z-index:3;}
+.badge{display:flex;align-items:center;height:19px;padding:0 8px;background:var(--badge-bg);cursor:pointer;transition:background .15s,transform .1s;user-select:none;}
+.badge:active{transform:scale(.96);}
+.badge:hover{background:rgba(224,224,224,.85);}
+.badge.last{border-bottom-right-radius:16px;}
+.badge svg{width:12px;height:12px;color:var(--t2);}
+.badge span{font-size:11px;line-height:11px;color:var(--t2);font-weight:500;margin-left:3px;}
+.badge.linked{background:rgba(255,154,92,.18);}
+.badge.linked svg,.badge.linked span{color:var(--primary-deep);}
+.card-row{display:flex;align-items:flex-start;gap:10px;}
+.checkbox{width:22px;height:22px;border-radius:50%;border:2px solid #CCC;flex-shrink:0;margin-top:1px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;}
+.checkbox.checked{background:var(--primary);border-color:var(--primary);}
+.checkbox.checked svg{width:13px;height:13px;color:#fff;}
+.card-body{flex:1;min-width:0;}
+.card-title{font-size:15px;font-weight:600;line-height:1.35;}
+.card-meta{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;}
+.meta-chip{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--t2);}
+.meta-chip svg{width:12px;height:12px;}
+.meta-chip.time{color:var(--primary);font-weight:600;}
+.pin{position:absolute;top:12px;right:12px;color:var(--primary);}
+.pin svg{width:16px;height:16px;}
+.todo-card.simple{padding:24px 16px 14px 20px;}
+.bottombar{position:absolute;bottom:0;left:0;right:0;height:78px;background:#fff;border-top:1px solid var(--div);display:flex;align-items:flex-start;justify-content:space-around;padding-top:10px;}
+.nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--t3);font-size:10px;}
+.nav-item svg{width:22px;height:22px;}
+.nav-item.active{color:var(--primary);}
+.fab{position:absolute;bottom:96px;right:16px;width:56px;height:56px;border-radius:18px;background:var(--primary);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(255,154,92,.45);cursor:pointer;}
+.fab svg{width:26px;height:26px;color:#fff;}
+.overlay{position:absolute;inset:0;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;z-index:50;animation:fade .2s;}
+.overlay.show{display:flex;}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes pop{from{opacity:0;transform:scale(.92) translateY(8px)}to{opacity:1;transform:scale(1)}}
+.dialog{width:320px;background:var(--card);border-radius:24px;overflow:hidden;animation:pop .22s cubic-bezier(.2,.8,.2,1);max-height:80%;display:flex;flex-direction:column;}
+.dialog-title{padding:22px 24px 0;font-size:18px;font-weight:600;}
+.dialog-body{padding:14px 24px 8px;overflow-y:auto;}
+.dialog-body::-webkit-scrollbar{display:none;}
+.section-h{font-size:12px;font-weight:500;color:var(--t3);margin:4px 0 8px;}
+.flow{display:flex;flex-wrap:wrap;gap:8px;}
+.tag{display:flex;align-items:center;gap:4px;padding:6px 12px;border-radius:20px;font-size:14px;cursor:pointer;transition:all .15s;background:rgba(0,0,0,.05);}
+.tag:active{transform:scale(.95);}
+.tag.sel{font-weight:600;}
+.tag-add{background:transparent;color:var(--t2);border:1px dashed #CCC;}
+.dialog-actions{padding:8px 16px 16px;display:flex;justify-content:flex-end;}
+.btn-text{padding:8px 16px;font-size:14px;color:var(--t2);cursor:pointer;border:none;background:none;font-weight:500;}
+.fullscreen{position:absolute;inset:0;z-index:60;display:none;flex-direction:column;animation:fsIn .25s;}
+.fullscreen.show{display:flex;}
+@keyframes fsIn{from{opacity:0;transform:scale(1.04)}to{opacity:1;transform:scale(1)}}
+.img-preview{background:#000;}
+.img-btn{position:absolute;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;z-index:3;transition:transform .1s;}
+.img-btn:active{transform:scale(.92);}
+.img-btn svg{width:24px;height:24px;color:#fff;}
+.img-btn.close{top:54px;right:16px;}
+.img-btn.download{bottom:40px;right:16px;}
+.img-btn.delete{bottom:40px;left:16px;}
+.img-pager{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
+.img-track{display:flex;transition:transform .3s cubic-bezier(.2,.8,.2,1);width:100%;height:100%;}
+.img-slide{min-width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:0 8px;}
+.img-slide .photo{width:100%;height:70%;border-radius:12px;background-size:cover;background-position:center;box-shadow:0 8px 30px rgba(0,0,0,.5);}
+.img-page{position:absolute;top:54px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;padding:6px 14px;border-radius:16px;font-size:13px;z-index:3;}
+.img-nav{position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2;}
+.img-nav.prev{left:12px;}.img-nav.next{right:12px;}
+.img-nav svg{width:22px;height:22px;color:#fff;}
+.voice-preview{background:var(--bg);}
+.voice-top{padding:50px 16px 14px;display:flex;align-items:center;justify-content:space-between;background:var(--card);border-bottom:1px solid var(--div);}
+.voice-top .t-left{display:flex;align-items:center;gap:10px;}
+.voice-top .ic-box{width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;}
+.voice-top .ic-box svg{width:18px;height:18px;color:var(--primary-deep);}
+.voice-top h2{font-size:16px;font-weight:600;}
+.voice-top .sub{font-size:11px;color:var(--t3);margin-top:1px;}
+.voice-close{width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--t3);font-size:22px;}
+.voice-main{flex:1;display:grid;grid-template-rows:auto 1fr 1fr;gap:16px;padding:20px 20px 96px;overflow:hidden;}
+.voice-main::-webkit-scrollbar{display:none;}
+.voice-btn{position:absolute;width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;z-index:4;transition:transform .1s;box-shadow:0 3px 10px rgba(0,0,0,.12);}
+.voice-btn:active{transform:scale(.92);}
+.voice-btn svg{width:22px;height:22px;}
+.voice-btn.delete{bottom:28px;left:16px;background:#FEE2E2;}
+.voice-btn.delete svg{color:var(--red);}
+.voice-btn.download{bottom:28px;right:16px;background:var(--primary-light);}
+.voice-btn.download svg{color:var(--primary-deep);}
+.list-h{font-size:12px;font-weight:500;color:var(--t3);margin:0 4px;}
+.voice-list{display:flex;flex-direction:column;gap:8px;overflow-y:auto;min-height:0;}.voice-list::-webkit-scrollbar{display:none;}
+.voice-item{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:14px;padding:12px 14px;cursor:pointer;transition:all .15s;border:1.5px solid transparent;}
+.voice-item:active{transform:scale(.98);}
+.voice-item.active{border-color:var(--primary);background:#FFF8F2;}
+.voice-item .v-ic{width:36px;height:36px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.voice-item .v-ic svg{width:18px;height:18px;color:var(--primary-deep);}
+.voice-item.active .v-ic{background:var(--primary);}
+.voice-item.active .v-ic svg{color:#fff;}
+.voice-item .v-info{flex:1;min-width:0;}
+.voice-item .v-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.voice-item .v-meta{font-size:11px;color:var(--t3);margin-top:2px;}
+.voice-item .v-wave{display:flex;align-items:center;gap:1.5px;width:44px;height:20px;}
+.voice-item .v-wave .b{flex:1;background:var(--t3);border-radius:1px;min-width:1.5px;opacity:.5;}
+.voice-item.active .v-wave .b{background:var(--primary);opacity:1;}
+.voice-item .playing-tag{font-size:10px;color:var(--primary);font-weight:600;}
+.now-card{background:var(--card);border-radius:20px;padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.05);overflow:hidden;min-height:0;}
+.now-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.now-name{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;}
+.now-name .dot{width:8px;height:8px;border-radius:50%;background:var(--primary);}
+.now-dur{font-size:12px;color:var(--t3);}
+.wave{display:flex;align-items:center;gap:2px;height:72px;margin-bottom:12px;}
+.wave .bar{flex:1;border-radius:2px;background:#E0E0E0;transition:background .2s;min-width:2px;}
+.wave .bar.played{background:var(--primary);}
+.wave .bar.cursor{background:var(--primary-deep);}
+.time-row{display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-bottom:18px;font-variant-numeric:tabular-nums;}
+.controls{display:flex;align-items:center;justify-content:center;gap:36px;margin-bottom:8px;}
+.ctrl{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;background:#F0EDE8;color:var(--t2);border:none;}
+.ctrl svg{width:22px;height:22px;}
+.ctrl.play{width:64px;height:64px;background:var(--primary);color:#fff;box-shadow:0 6px 18px rgba(255,154,92,.45);}
+.ctrl.play svg{width:30px;height:30px;}
+.ctrl:active{transform:scale(.92);}
+.confirm{width:280px;}
+.confirm .ct{padding:22px 24px 8px;font-size:16px;font-weight:600;}
+.confirm .cd{padding:0 24px 8px;font-size:13px;color:var(--t2);line-height:1.5;}
+.confirm .ca{display:flex;gap:8px;padding:8px 16px 16px;}
+.confirm .ca .btn-text{flex:1;text-align:center;border-radius:10px;padding:10px;background:var(--bg);}
+.confirm .ca .btn-del{background:#FEE2E2;color:var(--red);}
+.tip{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.78);color:#fff;padding:8px 16px;border-radius:20px;font-size:12px;z-index:70;opacity:0;transition:opacity .2s;pointer-events:none;}
+.tip.show{opacity:1;}
+.legend{position:fixed;left:24px;top:24px;background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 6px 20px rgba(0,0,0,.1);font-size:12px;max-width:230px;line-height:1.6;}
+.legend h3{font-size:13px;margin-bottom:8px;}
+.legend b{color:var(--primary);}
+.legend .k{display:flex;align-items:center;gap:6px;margin-top:6px;color:var(--t2);}
+.legend .sw{width:10px;height:10px;border-radius:3px;}
+</style>
+</head>
+<body>
+<div class="legend">
+<h3>角标点击交互原型</h3>
+<div>点击卡片左上角四个角标触发对应交互：</div>
+<div class="k"><span class="sw" style="background:#90CAF9"></span>分组 改变分组弹窗</div>
+<div class="k"><span class="sw" style="background:#FFB74D"></span>图片 全屏图片预览</div>
+<div class="k"><span class="sw" style="background:#FF9A5C"></span>语音 全屏录音预览</div>
+<div class="k"><span class="sw" style="background:#B8A0D4"></span>关联 已实现参考</div>
+</div>
+<div class="device"><div class="screen" id="screen">
+<div class="statusbar"><span>9:41</span><div class="ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3c-1.65-1.66-4.34-1.66-6 0zm-4-4l2 2c2.76-2.76 7.24-2.76 10 0l2-2C14.9 6.9 9.1 6.9 5 13z"></path></svg><svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z"></path></svg></div></div>
+<div class="home">
+<div class="appbar"><div><h1>今天</h1><div class="date">7月24日 星期四 农历六月廿十</div></div><div class="avatar">柯</div></div>
+<div class="list">
+<div class="todo-card">
+<div class="badges">
+<div class="badge" onclick="openCategory()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"></path></svg><span>工作</span></div>
+<div class="badge" onclick="openImage()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"></path></svg><span>3</span></div>
+<div class="badge" onclick="openVoice()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"></path></svg><span>10</span></div>
+<div class="badge linked last" onclick="showTip(&#39;关联卡片预览已实现 LinkedCardPreviewDialog&#39;)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg><span>1</span></div>
+</div>
+<div class="pin"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 9V4l1 0c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1l1 0v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"></path></svg></div>
+<div class="card-row">
+<div class="checkbox" onclick="this.classList.toggle(&#39;checked&#39;)"></div>
+<div class="card-body">
+<div class="card-title">完成 Q3 季度报告并提交给主管</div>
+<div class="card-meta">
+<span class="meta-chip time"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"></path></svg>今天 18:00</span>
+<span class="meta-chip" style="color:#FFB74D"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"></circle></svg>中优先级</span>
+<span class="meta-chip"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"></path></svg>2/3 子任务</span>
+</div>
+</div>
+</div>
+</div>
+<div class="todo-card simple">
+<div class="badges">
+<div class="badge" onclick="openCategory()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"></path></svg><span>学习</span></div>
+<div class="badge last" onclick="openImage()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"></path></svg><span>1</span></div>
+</div>
+<div class="card-row">
+<div class="checkbox checked" onclick="this.classList.toggle(&#39;checked&#39;)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"></path></svg></div>
+<div class="card-body">
+<div class="card-title" style="text-decoration:line-through;color:var(--t3)">复习 Compose 性能优化章节</div>
+<div class="card-meta"><span class="meta-chip"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"></path></svg>2 小时前完成</span></div>
+</div>
+</div>
+</div>
+</div>
+<div class="fab" onclick="showTip(&#39;新建待办 仅演示&#39;)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"></path></svg></div>
+<div class="bottombar">
+<div class="nav-item active"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"></path></svg>待办</div>
+<div class="nav-item"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg>日历</div>
+<div class="nav-item"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"></path></svg>灵感</div>
+<div class="nav-item"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"></path></svg>我的</div>
+</div>
+</div>
+<div class="overlay" id="ovCategory" onclick="closeCategory(event)">
+<div class="dialog" onclick="event.stopPropagation()">
+<div class="dialog-title">选择分类</div>
+<div class="dialog-body">
+<div class="section-h">默认分类</div>
+<div class="flow" id="defaultTags"></div>
+<div class="section-h" style="margin-top:16px">我的分组</div>
+<div class="flow" id="customTags"></div>
+<div class="flow" style="margin-top:12px"><div class="tag tag-add" onclick="showTip(&#39;新建分组 仅演示&#39;)"><span style="font-size:16px;font-weight:600">+</span>&nbsp;自定义</div></div>
+</div>
+<div class="dialog-actions"><button class="btn-text" onclick="closeCategory()">取消</button></div>
+</div>
+</div>
+<div class="fullscreen img-preview" id="fsImage">
+<div class="img-page" id="imgPage">1 / 3</div>
+<button class="img-btn close" onclick="closeImage()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg></button>
+<button class="img-btn download" onclick="showTip(&#39;保存到相册 仅演示&#39;)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path></svg></button>
+<button class="img-btn delete" onclick="openImgConfirm()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path></svg></button>
+<div class="img-pager">
+<div class="img-nav prev" onclick="imgGo(-1)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"></path></svg></div>
+<div class="img-track" id="imgTrack"></div>
+<div class="img-nav next" onclick="imgGo(1)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"></path></svg></div>
+</div>
+<div class="overlay" id="ovImgConfirm" style="z-index:65" onclick="closeImgConfirm(event)">
+<div class="dialog confirm" onclick="event.stopPropagation()">
+<div class="ct">删除图片？</div>
+<div class="cd">删除后无法恢复，该图片将从当前待办中移除。</div>
+<div class="ca">
+<button class="btn-text" style="background:var(--bg)" onclick="closeImgConfirm()">取消</button>
+<button class="btn-text btn-del" onclick="confirmImgDelete()">删除</button>
+</div>
+</div>
+</div>
+</div>
+<div class="fullscreen voice-preview" id="fsVoice">
+<div class="voice-top">
+<div class="t-left">
+<div class="ic-box"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"></path></svg></div>
+<div><h2>语音附件</h2><div class="sub" id="voiceSub">10 条录音 共 14:13</div></div>
+</div>
+<div class="voice-close" onclick="closeVoice()">×</div>
+</div>
+<div class="voice-main">
+<div class="list-h">全部录音</div>
+<div class="voice-list" id="voiceList"><div class="voice-item active"><div class="v-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"></path></svg></div><div class="v-info"><div class="v-name">会议录音_项目周会</div><div class="v-meta">02:08 · 刚刚录制</div></div><div class="v-wave"><div class="b" style="height:17.92px"></div><div class="b" style="height:15.36px"></div><div class="b" style="height:20.48px"></div><div class="b" style="height:14.72px"></div><div class="b" style="height:7.68px"></div><div class="b" style="height:20.48px"></div><div class="b" style="height:9.92px"></div><div class="b" style="height:6.72px"></div><div class="b" style="height:12.48px"></div><div class="b" style="height:10.88px"></div><div class="b" style="height:18.88px"></div><div class="b" style="height:20.16px"></div></div></div><div class="voice-item"><div class="v-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"></path></svg></div><div class="v-info"><div class="v-name">录音_20260724_02</div><div class="v-meta">00:45 · 刚刚录制</div></div><div class="v-wave"><div class="b" style="height:5.76px"></div><div class="b" style="height:12.8px"></div><div class="b" style="height:13.44px"></div><div class="b" style="height:6.4px"></div><div class="b" style="height:18.240000000000002px"></div><div class="b" style="height:11.200000000000001px"></div><div class="b" style="height:21.76px"></div><div class="b" style="height:7.36px"></div><div class="b" style="height:6.4px"></div><div class="b" style="height:8.64px"></div><div class="b" style="height:20.16px"></div><div class="b" style="height:22.080000000000002px"></div></div></div><div class="voice-item"><div class="v-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"></path></svg></div><div class="v-info"><div class="v-name">客户需求确认</div><div class="v-meta">03:23 · 刚刚录制</div></div><div class="v-wave"><div class="b" style="height:10.56px"></div><div class="b" style="height:10.56px"></div><div class="b" style="height:6.08px"></div><div class="b" style="height:14.72px"></div><div class="b" style="height:11.84px"></div><div class="b" style="height:18.56px"></div><div class="b" style="height:16.64px"></div><div class="b" style="height:7.68px"></div><div class="b" style="height:16.64px"></div><div class="b" style="height:6.72px"></div><div class="b" style="height:21.76px"></div><div class="b" style="height:7.36px"></div></div></div><div class="voice-item"><div class="v-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"></path></svg></div><div class="v-info"><div class="v-name">录音_20260723_01</div><div class="v-meta">00:32 · 刚刚录制</div></div><div class="v-wave"><div class="b" style="height:15.040000000000001px"></div><div class="b" style="height:8px"></div><div class="b" style="height:15.68px"></div><div class="b" style="height:6.72px"></div><div class="b" style="height:22.400000000000002px"></div><div class="b" style="height:9.28px"></div><div class="b" style="height:11.84px"></div><div class="b" style="height:8.32px"></div><div class="b" style="height:10.24px"></div><div class="b" style="height:21.12px"></div><div class="b" style="height:6.4px"></div><div class="b" style="height:8.96px"></div></div></div><div class="voice-item"><div class="v-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"></path></svg></div><div class="v-info"><div class="v-name">灵感备忘_产品命名</div><div class="v-meta">00:18 · 刚刚录制</div></div><div class="v-wave"><div class="b" style="height:19.84px"></div><div class="b" style="height:22.080000000000002px"></div><div class="b" style="height:8.32px"></div><div class="b" style="height:15.040000000000001px"></div><div class="b" style="height:16px"></div><div class="b" style="height:16.64px"></div><div class="b" style="height:6.72px"></div><div class="b" style="height:8.96px"></div><div class="b" style="height:20.8px"></div><div class="b" style="height:19.2px"></div><div class="b" style="height:8px"></div><div class="b" style="height:10.88px"></div></div></div><div class="voice-item"><div class="v-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"></path></svg></div><div class="v-info"><div class="v-name">录音_20260722_03</div><div class="v-meta">01:07 · 刚刚录制</div></div><div class="v-wave"><div class="b" style="height:8px"></div><div class="b" style="height:19.52px"></div><div class="b" style="height:17.92px"></div><div class="b" style="height:6.72px"></div><div class="b" style="height:9.6px"></div><div class="b" style="height:7.36px"></div><div class="b" style="height:18.56px"></div><div class="b" style="height:9.6px"></div><div class="b" style="height:14.4px"></div><div class="b" style="height:16.96px"></div><div class="b" style="height:9.28px"></div><div class="b" style="height:12.8px"></div></div></div><div class="voice-item"><div class="v-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"></path></svg></div><div class="v-info"><div class="v-name">晨会纪要</div><div class="v-meta">01:31 · 刚刚录制</div></div><div class="v-wave"><div class="b" style="height:12.48px"></div><div class="b" style="height:17.28px"></div><div class="b" style="height:10.88px"></div><div class="b" style="height:15.040000000000001px"></div><div class="b" style="height:20.16px"></div><div class="b" style="height:14.72px"></div><div class="b" style="height:13.76px"></div><div class="b" style="height:10.24px"></div><div class="b" style="height:8.32px"></div><div class="b" style="height:14.72px"></div><div class="b" style="height:10.56px"></div><div class="b" style="height:14.4px"></div></div></div><div class="voice-item"><div class="v-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"></path></svg></div><div class="v-info"><div class="v-name">录音_20260720_01</div><div class="v-meta">02:34 · 刚刚录制</div></div><div class="v-wave"><div class="b" style="height:17.28px"></div><div class="b" style="height:14.72px"></div><div class="b" style="height:20.16px"></div><div class="b" style="height:7.04px"></div><div class="b" style="height:13.76px"></div><div class="b" style="height:22.080000000000002px"></div><div class="b" style="height:8.64px"></div><div class="b" style="height:10.56px"></div><div class="b" style="height:18.56px"></div><div class="b" style="height:12.8px"></div><div class="b" style="height:12.16px"></div><div class="b" style="height:16.32px"></div></div></div><div class="voice-item"><div class="v-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"></path></svg></div><div class="v-info"><div class="v-name">电话录音_供应商</div><div class="v-meta">01:16 · 刚刚录制</div></div><div class="v-wave"><div class="b" style="height:21.76px"></div><div class="b" style="height:12.16px"></div><div class="b" style="height:13.120000000000001px"></div><div class="b" style="height:15.36px"></div><div class="b" style="height:7.68px"></div><div class="b" style="height:12.8px"></div><div class="b" style="height:20.48px"></div><div class="b" style="height:11.200000000000001px"></div><div class="b" style="height:12.16px"></div><div class="b" style="height:10.56px"></div><div class="b" style="height:13.44px"></div><div class="b" style="height:17.92px"></div></div></div><div class="voice-item"><div class="v-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"></path></svg></div><div class="v-info"><div class="v-name">录音_20260718_02</div><div class="v-meta">00:39 · 刚刚录制</div></div><div class="v-wave"><div class="b" style="height:9.92px"></div><div class="b" style="height:9.6px"></div><div class="b" style="height:5.76px"></div><div class="b" style="height:7.04px"></div><div class="b" style="height:17.92px"></div><div class="b" style="height:20.16px"></div><div class="b" style="height:15.36px"></div><div class="b" style="height:11.84px"></div><div class="b" style="height:6.08px"></div><div class="b" style="height:8.64px"></div><div class="b" style="height:15.040000000000001px"></div><div class="b" style="height:19.84px"></div></div></div></div>
+<div class="now-card">
+<div class="now-head">
+<div class="now-name"><span class="dot"></span><span id="nowName">会议录音_项目周会</span></div>
+<div class="now-dur" id="nowDur">02:08</div>
+</div>
+<div class="wave" id="wave"><div class="bar cursor" style="height: 56px;"></div><div class="bar" style="height: 48px;"></div><div class="bar" style="height: 64px;"></div><div class="bar" style="height: 46px;"></div><div class="bar" style="height: 24px;"></div><div class="bar" style="height: 64px;"></div><div class="bar" style="height: 31px;"></div><div class="bar" style="height: 21px;"></div><div class="bar" style="height: 39px;"></div><div class="bar" style="height: 34px;"></div><div class="bar" style="height: 59px;"></div><div class="bar" style="height: 63px;"></div><div class="bar" style="height: 23px;"></div><div class="bar" style="height: 56px;"></div><div class="bar" style="height: 54px;"></div><div class="bar" style="height: 21px;"></div><div class="bar" style="height: 35px;"></div><div class="bar" style="height: 33px;"></div><div class="bar" style="height: 49px;"></div><div class="bar" style="height: 69px;"></div><div class="bar" style="height: 23px;"></div><div class="bar" style="height: 26px;"></div><div class="bar" style="height: 23px;"></div><div class="bar" style="height: 43px;"></div><div class="bar" style="height: 23px;"></div><div class="bar" style="height: 23px;"></div><div class="bar" style="height: 66px;"></div><div class="bar" style="height: 64px;"></div><div class="bar" style="height: 38px;"></div><div class="bar" style="height: 59px;"></div><div class="bar" style="height: 66px;"></div><div class="bar" style="height: 40px;"></div><div class="bar" style="height: 44px;"></div><div class="bar" style="height: 50px;"></div><div class="bar" style="height: 48px;"></div><div class="bar" style="height: 45px;"></div><div class="bar" style="height: 39px;"></div><div class="bar" style="height: 33px;"></div><div class="bar" style="height: 29px;"></div><div class="bar" style="height: 53px;"></div><div class="bar" style="height: 69px;"></div><div class="bar" style="height: 18px;"></div><div class="bar" style="height: 63px;"></div><div class="bar" style="height: 20px;"></div><div class="bar" style="height: 35px;"></div><div class="bar" style="height: 38px;"></div><div class="bar" style="height: 66px;"></div><div class="bar" style="height: 50px;"></div></div>
+<div class="time-row"><span id="curTime">00:00</span><span id="totTime">02:08</span></div>
+<div class="controls">
+<button class="ctrl" onclick="voiceGo(-1)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"></path></svg></button>
+<button class="ctrl play" id="playBtn" onclick="togglePlay()"><svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg></button>
+<button class="ctrl" onclick="voiceGo(1)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"></path></svg></button>
+</div>
+</div>
+</div>
+<button class="voice-btn delete" onclick="openConfirm()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path></svg></button>
+<button class="voice-btn download" onclick="showTip(&#39;保存录音 仅演示&#39;)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path></svg></button>
+<div class="overlay" id="ovConfirm" style="z-index:65" onclick="closeConfirm(event)">
+<div class="dialog confirm" onclick="event.stopPropagation()">
+<div class="ct">删除录音？</div>
+<div class="cd">删除后无法恢复，该录音将从当前待办中移除。</div>
+<div class="ca">
+<button class="btn-text" style="background:var(--bg)" onclick="closeConfirm()">取消</button>
+<button class="btn-text btn-del" onclick="confirmDelete()">删除</button>
+</div>
+</div>
+</div>
+</div>
+<div class="tip" id="tip"></div>
+</div></div>
+<script>
+var defaultCats=[{name:'学习',emoji:'📚',color:'#7EC8A0'},{name:'工作',emoji:'💼',color:'#90CAF9'},{name:'生活',emoji:'🏠',color:'#FFB74D'},{name:'运动',emoji:'🏃',color:'#7EB8DA'},{name:'娱乐',emoji:'🎮',color:'#E1BEE7'}];
+var customCats=[{name:'读书笔记',color:'#B8A0D4'},{name:'项目A',color:'#B8A0D4'}];
+var currentCat='工作';
+var images=['https://images.unsplash.com/photo-1517842645767-c639042777db?w=800&q=80','https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=800&q=80','https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=800&q=80'];
+var voices=[{name:'会议录音_项目周会',dur:128,played:0},{name:'录音_20260724_02',dur:45,played:0},{name:'客户需求确认',dur:203,played:0},{name:'录音_20260723_01',dur:32,played:0},{name:'灵感备忘_产品命名',dur:18,played:0},{name:'录音_20260722_03',dur:67,played:0},{name:'晨会纪要',dur:91,played:0},{name:'录音_20260720_01',dur:154,played:0},{name:'电话录音_供应商',dur:76,played:0},{name:'录音_20260718_02',dur:39,played:0}];
+var curVoice=0,isPlaying=false,playTimer=null,curImg=0;
+function showTip(msg){var t=document.getElementById('tip');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(function(){t.classList.remove('show')},2000);}
+function renderTags(){var dEl=document.getElementById('defaultTags'),cEl=document.getElementById('customTags');dEl.innerHTML='';cEl.innerHTML='';defaultCats.forEach(function(c){var el=document.createElement('div');el.className='tag'+(c.name===currentCat?' sel':'');el.style.background=c.name===currentCat?c.color+'40':c.color+'1F';if(c.name===currentCat)el.style.border='2px solid '+c.color;el.innerHTML='<span>'+c.emoji+'</span><span>'+c.name+'</span>';el.onclick=function(){currentCat=c.name;renderTags();showTip('已切换到「'+c.name+'」');setTimeout(closeCategory,500)};dEl.appendChild(el)});customCats.forEach(function(c){var el=document.createElement('div');el.className='tag'+(c.name===currentCat?' sel':'');if(c.name===currentCat){el.style.background=c.color+'40';el.style.border='2px solid '+c.color;el.style.fontWeight='600'}else{el.style.background='rgba(0,0,0,.05)'}el.innerHTML='<span>📋</span><span>'+c.name+'</span>';el.onclick=function(){currentCat=c.name;renderTags();showTip('已切换到「'+c.name+'」');setTimeout(closeCategory,500)};cEl.appendChild(el)})}
+function openCategory(){renderTags();document.getElementById('ovCategory').classList.add('show')}
+function closeCategory(e){if(e&&e.target!==e.currentTarget)return;document.getElementById('ovCategory').classList.remove('show')}
+function renderImages(){var tr=document.getElementById('imgTrack');tr.innerHTML='';images.forEach(function(src){var s=document.createElement('div');s.className='img-slide';s.innerHTML='<div class="photo" style="background-image:url(\''+src+'\')"></div>';tr.appendChild(s)});updateImg()}
+function updateImg(){var tr=document.getElementById('imgTrack');tr.style.transform='translateX(-'+curImg*100+'%)';document.getElementById('imgPage').textContent=(curImg+1)+' / '+images.length}
+function imgGo(dir){curImg=(curImg+dir+images.length)%images.length;updateImg()}
+function openImage(){curImg=0;renderImages();document.getElementById('fsImage').classList.add('show')}
+function closeImage(){document.getElementById('fsImage').classList.remove('show')}
+function openImgConfirm(){document.getElementById('ovImgConfirm').classList.add('show')}
+function closeImgConfirm(e){if(e&&e.target!==e.currentTarget)return;document.getElementById('ovImgConfirm').classList.remove('show')}
+function confirmImgDelete(){closeImgConfirm();if(images.length<=1){showTip('至少保留 1 张图片');return}images.splice(curImg,1);if(curImg>=images.length)curImg=images.length-1;renderImages();showTip('图片已删除')}
+function fmt(s){var m=Math.floor(s/60),x=s%60;return String(m).padStart(2,'0')+':'+String(x).padStart(2,'0')}
+function genWave(seed,count){var arr=[],v=seed;for(var i=0;i<count;i++){v=(v*9301+49297)%233280;arr.push(Math.round(18+(v/233280)*52))}return arr}
+function renderWave(){var w=document.getElementById('wave');w.innerHTML='';var heights=genWave(curVoice*7+13,48),v=voices[curVoice],progress=v.dur>0?v.played/v.dur:0,cursorIdx=Math.floor(progress*48);heights.forEach(function(h,i){var b=document.createElement('div');b.className='bar';if(i<cursorIdx)b.classList.add('played');if(i===cursorIdx)b.classList.add('cursor');b.style.height=h+'px';w.appendChild(b)})}
+function renderVoiceList(){var el=document.getElementById('voiceList');el.innerHTML='';voices.forEach(function(v,i){var it=document.createElement('div');it.className='voice-item'+(i===curVoice?' active':'');var heights=genWave(i*7+13,12);var bars=heights.map(function(h){return '<div class="b" style="height:'+Math.max(4,h*0.32)+'px"></div>'}).join('');it.innerHTML='<div class="v-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg></div><div class="v-info"><div class="v-name">'+v.name+'</div><div class="v-meta">'+fmt(v.dur)+' · 刚刚录制</div></div><div class="v-wave">'+bars+'</div>'+(i===curVoice&&isPlaying?'<div class="playing-tag">播放中</div>':'');it.onclick=function(){if(i!==curVoice){stopPlay();curVoice=i;updateNow()}};el.appendChild(it)})}
+function updateNow(){var v=voices[curVoice];document.getElementById('nowName').textContent=v.name;document.getElementById('nowDur').textContent=fmt(v.dur);document.getElementById('totTime').textContent=fmt(v.dur);document.getElementById('curTime').textContent=fmt(v.played);var total=voices.reduce(function(a,b){return a+b.dur},0);document.getElementById('voiceSub').textContent=voices.length+' 条录音 共 '+fmt(total);renderWave();renderVoiceList()}
+function togglePlay(){isPlaying=!isPlaying;var ic=document.getElementById('playIcon');if(isPlaying){ic.innerHTML='<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';playTimer=setInterval(function(){var v=voices[curVoice];v.played++;if(v.played>=v.dur)v.played=0;document.getElementById('curTime').textContent=fmt(v.played);renderWave()},1000)}else{ic.innerHTML='<path d="M8 5v14l11-7z"/>';clearInterval(playTimer)}renderVoiceList()}
+function stopPlay(){if(isPlaying){isPlaying=false;document.getElementById('playIcon').innerHTML='<path d="M8 5v14l11-7z"/>';clearInterval(playTimer)}}
+function voiceGo(dir){stopPlay();voices[curVoice].played=0;curVoice=(curVoice+dir+voices.length)%voices.length;updateNow()}
+function openVoice(){curVoice=0;voices.forEach(function(v){v.played=0});stopPlay();document.getElementById('playIcon').innerHTML='<path d="M8 5v14l11-7z"/>';updateNow();document.getElementById('fsVoice').classList.add('show')}
+function closeVoice(){stopPlay();document.getElementById('fsVoice').classList.remove('show')}
+function openConfirm(){document.getElementById('ovConfirm').classList.add('show')}
+function closeConfirm(e){if(e&&e.target!==e.currentTarget)return;document.getElementById('ovConfirm').classList.remove('show')}
+function confirmDelete(){closeConfirm();if(voices.length<=1){showTip('至少保留 1 条录音');return}voices.splice(curVoice,1);curVoice=0;stopPlay();document.getElementById('playIcon').innerHTML='<path d="M8 5v14l11-7z"/>';updateNow();showTip('录音已删除')}
+updateNow();
+</script>
+
+</body></html>

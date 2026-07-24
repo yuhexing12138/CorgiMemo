@@ -258,22 +258,7 @@ object ShareCardComponent {
                     )
                 }
 
-                todo.startDate?.let {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "🕐",
-                            fontSize = 16.sp
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "开始: ${dateFormat.format(Date(it))}",
-                            fontSize = 13.sp,
-                            color = Color(0xFF5D4030)
-                        )
-                    }
-                }
-
+                // v2026-07-25 改造：startDate 字段已删除，移除"开始时间"显示段
                 todo.estimatedDurationMinutes?.let {
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {

@@ -278,7 +278,7 @@ private fun TodoItem.toBackupModel(): BackupTodoItem = BackupTodoItem(
     categoryId = categoryId,
     priority = priority,
     status = status,
-    startDate = startDate,
+    // v2026-07-25 改造：startDate 字段已删除，不再赋值
     estimatedDurationMinutes = estimatedDurationMinutes,
     reminderTime = reminderTime,
     repeatType = repeatType,
@@ -300,7 +300,7 @@ private fun BackupTodoItem.toModel(): TodoItem = TodoItem(
     categoryId = categoryId,
     priority = priority,
     status = status,
-    startDate = startDate,
+    // v2026-07-25 改造：startDate 字段已删除，不再赋值
     estimatedDurationMinutes = estimatedDurationMinutes,
     reminderTime = reminderTime,
     repeatType = repeatType,

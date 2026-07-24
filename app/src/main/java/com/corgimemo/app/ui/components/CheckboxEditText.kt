@@ -190,7 +190,7 @@ fun CheckboxEditText(
      * - null 或不存在：该容器底部不显示预计时长行
      * - 非空字符串：在容器底部左下角渲染 "⏱️ 预计时长: $value"
      *
-     * 由 TodoEditScreen 根据 startDate/dueDate 计算后按 groupId 传入。
+     * 由 TodoEditScreen 根据 reminderTime/dueDate 计算后按 groupId 传入。
      */
     groupEstimatedDurations: Map<Int, String?> = emptyMap(),
     modifier: Modifier = Modifier,
@@ -367,7 +367,7 @@ fun CheckboxEditText(
 
                 // 🆕 v2026-07-25 容器外左下角预计时长显示
                 // 位置：紧贴容器底部外侧，左对齐（start=4dp 与容器内边距对齐）
-                // 由 TodoEditScreen 根据 startDate/dueDate 计算后按 groupId 传入
+                // 由 TodoEditScreen 根据 reminderTime/dueDate 计算后按 groupId 传入
                 groupEstimatedDurations[0]?.let { duration ->
                     Text(
                         text = "⏱️ 预计时长: $duration",
@@ -543,7 +543,7 @@ fun CheckboxEditText(
 
                 // 🆕 v2026-07-25 容器外左下角预计时长显示
                 // 位置：紧贴容器底部外侧，左对齐（start=4dp 与容器内边距对齐）
-                // 由 TodoEditScreen 根据 startDate/dueDate 计算后按 groupId 传入
+                // 由 TodoEditScreen 根据 reminderTime/dueDate 计算后按 groupId 传入
                 groupEstimatedDurations[groupId]?.let { duration ->
                     Text(
                         text = "⏱️ 预计时长: $duration",

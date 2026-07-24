@@ -50,7 +50,7 @@ class TodoSeedData(
             categoryId = categoryIds[1]!!, // 工作
             priority = 3, // 高
             status = 0, // 待办
-            startDate = timeStamp(2026, 7, 10, 9, 0),
+            // v2026-07-25 改造：startDate 字段已删除
             dueDate = timeStamp(2026, 7, 15, 23, 59, 59),
             reminderTime = timeStamp(2026, 7, 15, 20, 0), // 未来
             repeatType = 0,
@@ -72,7 +72,7 @@ class TodoSeedData(
             categoryId = categoryIds[0]!!, // 学习
             priority = 2, // 中
             status = 0, // 待办
-            startDate = timeStamp(2026, 6, 20, 10, 0),
+            // v2026-07-25 改造：startDate 字段已删除
             dueDate = timeStamp(2026, 6, 25, 18, 0),
             reminderTime = timeStamp(2026, 6, 20, 9, 0), // 过去
             repeatType = 0,
@@ -94,7 +94,7 @@ class TodoSeedData(
             categoryId = categoryIds[1]!!, // 工作
             priority = 3, // 高
             status = 1, // 已完成
-            startDate = timeStamp(2026, 7, 13, 14, 0),
+            // v2026-07-25 改造：startDate 字段已删除
             dueDate = timeStamp(2026, 7, 13, 18, 0),
             reminderTime = timeStamp(2026, 7, 14, 12, 0), // 当前
             repeatType = 0,
@@ -117,7 +117,7 @@ class TodoSeedData(
             categoryId = categoryIds[2]!!, // 生活
             priority = 0, // 无优先级
             status = 1, // 已完成
-            startDate = timeStamp(2026, 7, 14, 9, 0),
+            // v2026-07-25 改造：startDate 字段已删除
             dueDate = timeStamp(2026, 7, 14, 17, 0),
             reminderTime = timeStamp(2026, 7, 14, 8, 30), // 过去
             repeatType = 0,
@@ -140,7 +140,7 @@ class TodoSeedData(
             categoryId = categoryIds[0]!!, // 学习
             priority = 1, // 低
             status = 0, // 待办
-            startDate = timeStamp(2026, 7, 16, 10, 0),
+            // v2026-07-25 改造：startDate 字段已删除
             dueDate = timeStamp(2026, 7, 20, 18, 0),
             reminderTime = timeStamp(2026, 7, 16, 9, 0), // 未来
             repeatType = 0,
@@ -162,7 +162,7 @@ class TodoSeedData(
             categoryId = categoryIds[1]!!, // 工作
             priority = 3, // 高
             status = 0, // 待办
-            startDate = timeStamp(2026, 7, 14, 15, 0),
+            // v2026-07-25 改造：startDate 字段已删除
             dueDate = timeStamp(2026, 7, 14, 23, 59, 59),
             reminderTime = timeStamp(2026, 7, 14, 15, 0), // 当前
             repeatType = 0,
@@ -184,7 +184,7 @@ class TodoSeedData(
             categoryId = categoryIds[1]!!, // 工作
             priority = 3, // 高
             status = 0, // 待办
-            startDate = timeStamp(2026, 7, 15, 9, 0),
+            // v2026-07-25 改造：startDate 字段已删除
             dueDate = timeStamp(2026, 7, 15, 18, 0),
             reminderTime = timeStamp(2026, 7, 15, 8, 0), // 未来
             repeatType = 0,

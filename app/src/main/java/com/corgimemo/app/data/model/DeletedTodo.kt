@@ -12,7 +12,7 @@ data class DeletedTodo(
     val categoryId: Long,
     val priority: Int,
     val status: Int,
-    val startDate: Long? = null,
+    // v2026-07-25 改造：移除 startDate 字段（跟随 TodoItem Entity）
     val estimatedDurationMinutes: Int? = null,
     val reminderTime: Long? = null,
     val repeatType: Int,
@@ -39,7 +39,7 @@ data class DeletedTodo(
                 categoryId = todo.categoryId,
                 priority = todo.priority,
                 status = todo.status,
-                startDate = todo.startDate,
+                // v2026-07-25 改造：移除 startDate 赋值
                 estimatedDurationMinutes = todo.estimatedDurationMinutes,
                 reminderTime = todo.reminderTime,
                 repeatType = todo.repeatType,
@@ -67,7 +67,7 @@ data class DeletedTodo(
                 categoryId = deleted.categoryId,
                 priority = deleted.priority,
                 status = deleted.status,
-                startDate = deleted.startDate,
+                // v2026-07-25 改造：移除 startDate 赋值
                 estimatedDurationMinutes = deleted.estimatedDurationMinutes,
                 reminderTime = deleted.reminderTime,
                 repeatType = deleted.repeatType,

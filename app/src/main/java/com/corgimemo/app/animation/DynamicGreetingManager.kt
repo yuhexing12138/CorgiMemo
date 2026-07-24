@@ -132,14 +132,16 @@ object DynamicGreetingManager {
 
     /**
      * 获取预计完成时间
-     * 计算方式：startDate + estimatedDurationMinutes
+     * 计算方式：reminderTime + estimatedDurationMinutes
+     *
+     * v2026-07-25 改造：startDate 字段已删除，改用 reminderTime（提醒时间）计算
      *
      * @param todo 待办项
-     * @return 预计完成时间戳，如果没有 startDate 或 estimatedDurationMinutes 则返回 null
+     * @return 预计完成时间戳，如果没有 reminderTime 或 estimatedDurationMinutes 则返回 null
      */
     private fun getEstimatedEndTime(todo: TodoItem): Long? {
-        return if (todo.startDate != null && todo.estimatedDurationMinutes != null) {
-            todo.startDate + todo.estimatedDurationMinutes * 60000L
+        return if (todo.reminderTime != null && todo.estimatedDurationMinutes != null) {
+            todo.reminderTime + todo.estimatedDurationMinutes * 60000L
         } else {
             null
         }

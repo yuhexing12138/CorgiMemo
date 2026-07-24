@@ -45,7 +45,7 @@ data class BackupTodoItem(
     val categoryId: Long,
     val priority: Int,
     val status: Int,
-    val startDate: Long? = null,
+    // v2026-07-25 改造：移除 startDate 字段（跟随 TodoItem Entity）
     val estimatedDurationMinutes: Int? = null,
     val reminderTime: Long? = null,
     val repeatType: Int,
