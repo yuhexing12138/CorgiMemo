@@ -2376,7 +2376,6 @@ private fun requestRecordAudioPermission(
     }
 }
 
-@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun RecordingIndicator(isListening: Boolean) {
     Icon(
@@ -2387,7 +2386,6 @@ fun RecordingIndicator(isListening: Boolean) {
     )
 }
 
-@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun RecordingWaveAnimation(isListening: Boolean) {
     Row(
