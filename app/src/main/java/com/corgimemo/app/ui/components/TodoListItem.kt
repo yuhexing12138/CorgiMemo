@@ -30,8 +30,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+// v2026-07-24 新增：分组角标 Material Icons（替代 emoji 📂）
+import androidx.compose.material.icons.filled.Folder
+// v2026-07-24 新增：循环提醒图标（周一至周五 / 每天 / 每周 / 每月 / 每年 / 周六至周日）
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Mic
@@ -73,6 +78,8 @@ import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
+// v2026-07-24 新增：用于将 repeatType 转换为「周一至周五」/「每天」等显示文案
+import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.ui.util.formatReminderDisplay
 import com.corgimemo.app.R
 import androidx.compose.ui.res.stringResource
@@ -387,9 +394,21 @@ fun TodoListItem(
         //
         // v2026-07-24 改动：把 hasCategory 提取到 Box 之外，让 Box 内的 CategoryBadge
         // 和 Box 内的 Column 内容都能访问，避免重复定义。
+        //
+        // v2026-07-25 改造：把 aggregateCounts / hasAttachmentBadge / hasRelationBadge / totalAttachment
+        // 也提升到 Box 之外，让 Box 第二段（多角标 Row）也能访问这些变量。
+        // Box 内部 Layout 的 Column 仍然可以直接引用这些外层变量。
         /** 是否存在分组角标（详情模式且categoryName不为空） */
-        // Box 和 Column 都会引用，提取到外层避免作用域限制
         val hasCategory = !isSimpleMode && categoryName != null
+        /** 聚合附件数量（图片+语音总数），供多角标布局和元数据行使用 */
+        val aggregateCounts = aggregateAttachmentCounts(todo, subTasks)
+        /** 是否存在附件角标（详情模式下图片或语音数量>0） */
+        val hasAttachmentBadge = !isSimpleMode && (aggregateCounts.first > 0 || aggregateCounts.second > 0)
+        /** 总附件数（图片+语音合并），用于显示在附件角标上 */
+        val totalAttachment = if (hasAttachmentBadge)
+            aggregateCounts.first + aggregateCounts.second else 0
+        /** 是否存在关联卡片角标（v2026-07-25 升级，详情模式下 relationCount>0） */
+        val hasRelationBadge = !isSimpleMode && relationCount > 0
         Box {
             Layout(
                 content = {
@@ -398,27 +417,25 @@ fun TodoListItem(
 
                     /** 内容区域，占满除竖条外的宽度；paddingEnd=24dp 为右上角置顶图标预留空间避免重叠 */
                     Column(modifier = Modifier.fillMaxWidth().padding(end = 24.dp)) {
-                // 聚合附件数量（提前计算，供元数据布局判断使用）
-                val aggregateCounts = aggregateAttachmentCounts(todo, subTasks)
-                // hasCategory 已在 Box 之外定义（v2026-07-24 提取），此处直接引用
-                /** 是否存在提醒时间 */
-                val hasReminder = todo.reminderTime != null
-                /** 是否存在附件（详情模式下图片或语音数量>0） */
-                val hasAttachment = !isSimpleMode && (aggregateCounts.first > 0 || aggregateCounts.second > 0)
-                /** 是否存在关联卡片（v2026-07-21 新增，详情模式下 relationCount>0） */
-                val hasRelation = !isSimpleMode && relationCount > 0
+                // hasCategory / aggregateCounts / hasAttachmentBadge / totalAttachment / hasRelationBadge
+                // 均已在 Box 之外定义（v2026-07-25 提取），此处直接引用
                 /**
-                 * 元数据是否"拥挤"：提醒+附件两者同时存在
-                 * 拥挤时采用两行布局：第一行附件+关联，第二行提醒单独一行突出显示
-                 * 非拥挤时（缺少任一元素）：所有可见元数据同一行显示
+                 * 是否存在提醒时间
                  *
-                 * v2026-07-24 改造：移除 hasCategory 依赖，因为分组标签已从元数据行迁出
-                 * 改为卡片左上角角标（CategoryBadge），不再参与元数据行布局判断。
-                 *
-                 * v2026-07-21：关联数量不影响拥挤模式判断，始终跟在附件计数之后，
-                 * 避免布局逻辑复杂化。
+                 * v2026-07-25 改造：附件/关联已迁出元数据行（v1.2 多角标设计），
+                 * 附件/关联不再参与 isMetaCrowded 拥挤判断，只有 hasReminder 单因素决定。
+                 * 保留 hasAttachment 变量仅为兼容旧版调用，实际不再渲染。
                  */
-                val isMetaCrowded = hasReminder && hasAttachment
+                val hasAttachment = hasAttachmentBadge  // 仅为兼容，元数据行不再使用
+                val hasReminder = todo.reminderTime != null
+                /**
+                 * 元数据是否"拥挤"：仅判断 hasReminder（附件/关联已迁出至多角标行）
+                 * 当仅有提醒时间时：单行显示；无任何元数据时不显示元数据行
+                 *
+                 * v2026-07-25 改造：移除 hasAttachment 依赖，因为附件/关联已从元数据行迁出
+                 * 改为卡片左上角多角标行（v1.2 设计），不再参与元数据行布局判断。
+                 */
+                val isMetaCrowded = hasReminder
 
                 // 主区域行：复选框 + (标题+元数据列) + 展开区域
                 // 复选框通过 Row(verticalAlignment=CenterVertically) 相对于"标题+元数据"整体垂直居中
@@ -644,34 +661,17 @@ fun TodoListItem(
                                     // 提醒时间
                                     if (reminderData != null) {
                                         val (reminder, reminderColor, isOverdue) = reminderData
+                                        // v2026-07-24 新增：传入 repeatType 显示「，🔁 循环名」
                                         ReminderInfoRow(
                                             text = reminder.text,
                                             color = reminderColor,
-                                            isOverdue = isOverdue && todo.status != 1
+                                            isOverdue = isOverdue && todo.status != 1,
+                                            repeatType = todo.repeatType
                                         )
                                     }
-                                    // 附件计数
-                                    if (hasAttachment) {
-                                        if (hasReminder) Spacer(modifier = Modifier.width(8.dp))
-                                        AttachmentCountsRow(
-                                            imageCount = aggregateCounts.first,
-                                            voiceCount = aggregateCounts.second,
-                                            color = attachmentColor
-                                        )
-                                    }
-                                    // 关联数量（v2026-07-21 新增，跟在附件计数之后）
-                                    if (hasRelation) {
-                                        if (hasAttachment) {
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                        } else if (hasReminder) {
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                        }
-                                        RelationCountChip(
-                                            count = relationCount,
-                                            color = attachmentColor,
-                                            onClick = onRelationCountClick
-                                        )
-                                    }
+                                    // v2026-07-25 改造：附件计数 + 关联数量已从元数据行迁出至卡片左上角多角标行
+                                    // (CategoryBadge / AttachmentBadge / RelationBadge)，由 Box 顶部 Row 统一渲染
+                                    // 元数据行现在只保留：提醒时间（+ 循环信息）
                                 }
                             }
                         }
@@ -766,29 +766,60 @@ fun TodoListItem(
             }
             )
 
-            // 左上角分组角标：v2026-07-24 改造，从元数据行迁出到卡片左上角作为角标
+            // ====== 卡片左上角多角标行（v1.2 设计） ======
+            // v2026-07-25 升级：从单一分组角标升级为多角标 Row
+            // 包含：分组角标 + 附件角标 + 关联角标（按顺序）
             // - 位置：TopStart，从竖条内侧 4dp 开始（避免覆盖竖条）
-            // - 圆角：仅右下 16dp（与卡片圆角严格一致），其他三边 0 圆角贴合边框
-            // - 样式：仿待办分享图分类角标（11sp + 浅灰背景 + 灰文字）
+            // - 顺序固定：分组 → 附件 → 关联
+            // - 圆角：仅最右角标右下 16dp（与卡片 16dp 圆角严格一致）
+            // - 样式：仿待办分享图分类角标（11sp + 浅灰背景 + 灰文字 + Material Icons）
+            // - 高度：19dp，与分享图分类角标严格一致
             // - z 顺序：在内容之上、pin icon 之下（zIndex = 3f）
-            // - 可点击：点击触发 onCategoryClick 回调，跳转到该分组的待办列表
-            // - 与 pin icon 不冲突：分组在左上，置顶在右上，水平分隔
+            // - 空态处理：所有角标都隐藏时，整 Row 不渲染，不留空白
             //
-            // v2026-07-24 编译修复：
-            // hasCategory = !isSimpleMode && categoryName != null
+            // v2026-07-25 编译修复：
             // Kotlin 不能在 if(hasCategory) 内对 categoryName 智能转换为非空 String，
             // 因为 hasCategory 不是简单的 null 检查。这里用 !! 强制解包是安全的：
-            // hasCategory 为 true 时 categoryName 必非空（line 393 定义保证）。
-            if (hasCategory) {
-                CategoryBadge(
-                    categoryName = categoryName!!,
-                    isCompleted = todo.status == 1,
-                    onClick = { onCategoryClick(categoryName!!) },
+            // hasCategory 为 true 时 categoryName 必非空（line 399 定义保证）。
+            if (hasCategory || hasAttachmentBadge || hasRelationBadge) {
+                // 计算最右角标索引（用于 isLastBadge 参数，控制右下圆角位置）
+                val lastBadgeIndex = when {
+                    hasRelationBadge -> 2
+                    hasAttachmentBadge -> 1
+                    hasCategory -> 0
+                    else -> -1
+                }
+                Row(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(start = 4.dp)
-                        .zIndex(3f)
-                )
+                        .zIndex(3f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (hasCategory) {
+                        CategoryBadge(
+                            categoryName = categoryName!!,
+                            isCompleted = todo.status == 1,
+                            onClick = { onCategoryClick(categoryName!!) },
+                            isLastBadge = lastBadgeIndex == 0
+                        )
+                    }
+                    if (hasAttachmentBadge) {
+                        AttachmentBadge(
+                            count = totalAttachment,
+                            isCompleted = todo.status == 1,
+                            isLastBadge = lastBadgeIndex == 1
+                        )
+                    }
+                    if (hasRelationBadge) {
+                        RelationBadge(
+                            count = relationCount,
+                            isCompleted = todo.status == 1,
+                            onClick = onRelationCountClick,
+                            isLastBadge = lastBadgeIndex == 2
+                        )
+                    }
+                }
             }
 
             // 右上角置顶图标：todo.isPinned 为 true 时显示
@@ -1202,30 +1233,37 @@ private fun aggregateAttachmentCounts(
 }
 
 /**
- * 分组角标组件（v2026-07-24 重设计）
+ * 分组角标组件（v2026-07-24 重设计，v2026-07-25 升级为通用角标容器）
  *
  * 设计参考：待办分享图中的分类角标（drawCategoryBadge）
  * - 位置：卡片左上角贴边（从竖条内侧 4dp 开始）
- * - 圆角：仅右下 16dp（与卡片 16dp 圆角严格一致），其他三边 0 圆角贴合边框
+ * - 圆角：仅最右角标右下 16dp（与卡片 16dp 圆角严格一致），其他三边 0 圆角贴合边框
  * - 样式：浅灰背景 + 灰文字 + 11sp（与分享图一致）
+ * - 高度：19dp（11sp lineHeight + 4dp×2 padding），与分享图分类角标严格一致
  * - 可点击：点击触发 onClick 回调，跳转到该分组的待办列表
  * - z 顺序：在内容之上（zIndex = 3f，由调用方控制）
  *
  * 演变历史：
  * - 旧实现 CategoryTagWithShadow：元数据行内嵌 + 4dp 全圆角 + 阴影偏移 + 暖橙浅背景
- * - 新实现 CategoryBadge：卡片左上角角标 + 仅右下 16dp 圆角 + 无阴影 + 浅灰背景
+ * - v1.0 CategoryBadge：卡片左上角角标 + 仅右下 16dp 圆角 + 无阴影 + 浅灰背景（仅文字）
+ * - v1.2 CategoryBadge：增加 Material Icons 图标（默认 Folder）+ isLastBadge 参数
+ *                      供外部 Row 使用，灵活控制圆角位置
  *
  * @param categoryName 分组名称
  * @param isCompleted 是否已完成（视觉降权）
  * @param onClick 点击回调
  * @param modifier 外部传入的 modifier（位置/对齐/层级）
+ * @param icon 分组图标（默认 Icons.Default.Folder，与 v1.2 原型一致）
+ * @param isLastBadge 是否是最右角标（true 时右下 16dp 圆角，否则全 0 圆角）
  */
 @Composable
 private fun CategoryBadge(
     categoryName: String,
     isCompleted: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    icon: ImageVector = Icons.Default.Folder,
+    isLastBadge: Boolean = false
 ) {
     val bgColor = if (isCompleted)
         Color(0x66E0E0E0)  // rgba(224, 224, 224, 0.4) — 已完成态更淡
@@ -1234,11 +1272,11 @@ private fun CategoryBadge(
     val textColor = if (isCompleted) Color(0xFF999999)
                     else Color(0xFF666666)
 
-    // 仿灵感详情页字数徽章：仅右下角圆角，其他三边 0 圆角
+    // 仿灵感详情页字数徽章：仅最右角标右下角圆角，其他三边 0 圆角
     val badgeShape = RoundedCornerShape(
         topStart = 0.dp,
         topEnd = 0.dp,
-        bottomEnd = 16.dp,    // 与卡片 16dp 圆角严格一致
+        bottomEnd = if (isLastBadge) 16.dp else 0.dp,
         bottomStart = 0.dp
     )
 
@@ -1258,40 +1296,204 @@ private fun CategoryBadge(
                 ),
                 onClick = onClick
             )
-            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
-        Text(
-            text = categoryName,
-            fontSize = 11.sp,
-            // v2026-07-24 调整：显式设置 lineHeight = 11.sp，使角标总高度 = 11 + 8 = 19dp
-            // 与待办分享图分类角标严格一致（分享图用 Canvas drawText，lineHeight ≈ fontSize）
-            // 否则 Material 3 默认 lineHeight = fontSize × 1.5 = 16.5dp，总高度 ≈ 24.5dp
-            lineHeight = 11.sp,
-            color = textColor,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            letterSpacing = 0.3.sp
-        )
+        // v1.2 改造：图标 + 文字水平排列
+        // 图标固定 12dp，文字 11sp + lineHeight=11sp = 总高 19dp
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = textColor,
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(3.dp))
+            Text(
+                text = categoryName,
+                fontSize = 11.sp,
+                // v2026-07-24 调整：显式设置 lineHeight = 11.sp，使角标总高度 = 11 + 8 = 19dp
+                // 与待办分享图分类角标严格一致（分享图用 Canvas drawText，lineHeight ≈ fontSize）
+                // 否则 Material 3 默认 lineHeight = fontSize × 1.5 = 16.5dp，总高度 ≈ 24.5dp
+                lineHeight = 11.sp,
+                color = textColor,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                letterSpacing = 0.3.sp
+            )
+        }
     }
 }
 
 /**
- * 提醒时间显示组件（闹钟图标 + 时间文本）
+ * 附件数量角标（v2026-07-25 新增）
+ *
+ * 替换旧版 [AttachmentCountsRow]（元数据行内嵌的图片+语音分两个图标）
+ * v1.2 升级：图片+语音合并为单一角标（attach_file + 总数），节省视觉空间
+ *
+ * 设计要点：
+ * - 位置：位于 [CategoryBadge] 右侧（如有），从竖条内侧 4dp 紧贴
+ * - 圆角：仅最右角标右下 16dp，其他三边 0 圆角贴合边框
+ * - 样式：与 [CategoryBadge] 完全一致（11sp + 浅灰背景 + 灰文字 + Material Icons）
+ * - 高度：19dp（11sp lineHeight + 4dp×2 padding），与分享图分类角标严格一致
+ * - 不可点击：纯展示性角标（与分组角标不同，分组可点击跳转）
+ *
+ * @param count 总附件数（图片+语音合并）
+ * @param isCompleted 是否已完成（视觉降权）
+ * @param modifier 外部 modifier（一般由调用方控制）
+ * @param isLastBadge 是否是最右角标（true 时右下 16dp 圆角，否则全 0 圆角）
+ */
+@Composable
+private fun AttachmentBadge(
+    count: Int,
+    isCompleted: Boolean,
+    modifier: Modifier = Modifier,
+    isLastBadge: Boolean = false
+) {
+    if (count <= 0) return
+    val bgColor = if (isCompleted)
+        Color(0x66E0E0E0)
+    else
+        Color(0x99E0E0E0)
+    val textColor = if (isCompleted) Color(0xFF999999)
+                    else Color(0xFF666666)
+
+    val badgeShape = RoundedCornerShape(
+        topStart = 0.dp,
+        topEnd = 0.dp,
+        bottomEnd = if (isLastBadge) 16.dp else 0.dp,
+        bottomStart = 0.dp
+    )
+
+    Box(
+        modifier = modifier
+            .clip(badgeShape)
+            .background(bgColor, badgeShape)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.AttachFile,
+                contentDescription = "附件",
+                tint = textColor,
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(3.dp))
+            Text(
+                text = count.toString(),
+                fontSize = 11.sp,
+                lineHeight = 11.sp,
+                color = textColor,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                maxLines = 1,
+                letterSpacing = 0.3.sp
+            )
+        }
+    }
+}
+
+/**
+ * 关联卡片数量角标（v2026-07-25 新增，替代旧版 [RelationCountChip]）
+ *
+ * 与 [CategoryBadge] / [AttachmentBadge] 风格完全一致，作为多角标行的最后一员
+ * 可点击：点击触发 onClick 回调，弹出关联列表底部表单（[com.corgimemo.app.ui.components.RelationListBottomSheet]）
+ *
+ * 设计要点：
+ * - 位置：位于多角标行最右（如有），紧贴附件角标右侧
+ * - 圆角：作为最右角标时右下 16dp（与卡片 16dp 圆角严格一致）
+ * - 样式：与 [CategoryBadge] 完全一致
+ * - 高度：19dp，与分享图分类角标严格一致
+ * - 可点击：点击触发 onClick 回调，弹出关联详情
+ *
+ * @param count 关联卡片数量
+ * @param isCompleted 是否已完成（视觉降权）
+ * @param onClick 点击回调（弹窗关联列表底部表单）
+ * @param modifier 外部 modifier
+ * @param isLastBadge 是否是最右角标
+ */
+@Composable
+private fun RelationBadge(
+    count: Int,
+    isCompleted: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    isLastBadge: Boolean = false
+) {
+    if (count <= 0) return
+    val bgColor = if (isCompleted)
+        Color(0x66E0E0E0)
+    else
+        Color(0x99E0E0E0)
+    val textColor = if (isCompleted) Color(0xFF999999)
+                    else Color(0xFF666666)
+
+    val badgeShape = RoundedCornerShape(
+        topStart = 0.dp,
+        topEnd = 0.dp,
+        bottomEnd = if (isLastBadge) 16.dp else 0.dp,
+        bottomStart = 0.dp
+    )
+
+    Box(
+        modifier = modifier
+            .clip(badgeShape)
+            .background(bgColor, badgeShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(bounded = false, radius = 24.dp),
+                onClick = onClick
+            )
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Outlined.Link,
+                contentDescription = "关联卡片",
+                tint = textColor,
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(3.dp))
+            Text(
+                text = count.toString(),
+                fontSize = 11.sp,
+                lineHeight = 11.sp,
+                color = textColor,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                maxLines = 1,
+                letterSpacing = 0.3.sp
+            )
+        }
+    }
+}
+
+/**
+ * 提醒时间显示组件（闹钟图标 + 时间文本 [+ 循环图标 + 循环类型]）
  *
  * 用于元数据行中渲染提醒时间，支持过期红色高亮。
  * 从原内联代码提取，避免拥挤/非拥挤两种布局下的代码重复。
  *
+ * **v2026-07-24 扩展**：增加 [repeatType] 参数，当不为 NONE（0）时
+ * 在提醒时间后追加「，🔁 循环类型」字样。
+ *
+ * 完整显示格式：
+ * - 不循环：`🔔 7月24日 16:00`
+ * - 有循环：`🔔 7月24日 16:00，🔁 周一至周五`
+ * - 已过期 + 有循环：`🔔 昨天 14:00 已过期，🔁 每周`
+ *
  * @param text 格式化后的提醒时间文字（如 "7月15日 20:00"、"明天09:00"）
  * @param color 文字和图标颜色（过期为红色，已完成为灰色，普通为 onSurfaceVariant）
  * @param isOverdue 是否已过期（true 时使用 SemiBold 字重增强视觉权重）
+ * @param repeatType 重复类型（0=不重复，1=每天，2=每周，3=每月，4=周一至周五，5=每年，6=周六至周日）
+ *                   不为 0 时在提醒时间后追加显示「，🔁 循环类型」信息
  */
 @Composable
 private fun ReminderInfoRow(
     text: String,
     color: Color,
-    isOverdue: Boolean
+    isOverdue: Boolean,
+    repeatType: Int = 0
 ) {
+    // ===== 闹钟图标 + 提醒时间文本 =====
     Icon(
         imageVector = Icons.Default.Alarm,
         contentDescription = if (isOverdue) "已过期提醒" else "提醒",
@@ -1308,6 +1510,35 @@ private fun ReminderInfoRow(
         else
             androidx.compose.ui.text.font.FontWeight.Normal
     )
+
+    // ===== 循环信息（v2026-07-24 新增）=====
+    // 当 repeatType != 0（NONE）时，在提醒时间后追加显示「，🔁 循环类型」
+    // 视觉层次：循环图标与闹钟图标等大（14dp），保持"两个同等重要的元信息"视觉对等
+    if (repeatType != 0) {
+        // 中文逗号"，"作为提醒时间与循环信息的分隔符（与现有 formatReminderDisplay 文案风格统一）
+        Spacer(modifier = Modifier.width(0.dp))
+        Text(
+            text = "，",
+            fontSize = 12.sp,
+            color = color
+        )
+        Spacer(modifier = Modifier.width(2.dp))
+        // 循环图标：Icons.Default.Repeat 是 Material Icons 中最广为人知的「循环」图标
+        // （两个相反方向的箭头围成的环形，是国际通用的"循环/重复"符号）
+        Icon(
+            imageVector = Icons.Default.Repeat,
+            contentDescription = RepeatTaskManager.getRepeatTypeName(repeatType),
+            tint = color,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(2.dp))
+        // 循环类型文字（"周一至周五"/"每天"/"每周"等）
+        Text(
+            text = RepeatTaskManager.getRepeatTypeName(repeatType),
+            fontSize = 12.sp,
+            color = color
+        )
+    }
 }
 
 /**
