@@ -1564,6 +1564,7 @@ fun InspirationEditScreen(
                 // 权限已授予，显示录制面板
                 VoiceRecordBottomSheet(
                     voiceRecorder = voiceRecorder,
+                    voicePlayer = voicePlayer,
                     onSaved = { path, duration ->
                         viewModel.setVoiceNote(path, duration)
                         val insertIndex = contentBlocks.size

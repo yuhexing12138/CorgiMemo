@@ -1766,6 +1766,7 @@ fun TodoEditScreen(
                 RecordAudioPermissionState.GRANTED -> {
                     VoiceRecordBottomSheet(
                         voiceRecorder = voiceRecorder,
+                        voicePlayer = voicePlayer,
                         onSaved = { path, duration ->
                             viewModel.setVoiceNote(path, duration)
                             // 将语音添加到当前聚焦行，而非全局 contentBlocks
@@ -2286,17 +2287,17 @@ fun TodoEditScreen(
      *    - 编辑模式（todoId != null）→ deleteDialogMode = Delete
      *    - 新建模式（todoId == null）→ deleteDialogMode = Discard
      *    → 然后 showDeleteConfirm = true
-     * 2. 本弹窗被打开，根据 deleteDialogMode + pendingDeleteGroupLineIndex 派生标题/正文文案
+     * 2. 本弹窗被打开，根据 deleteDialogMode 派生标题/正文文案
      * 3. 用户选择：
      *    - 点击"删除" / "放弃编辑" → 走对应分支
      *    - 点击"取消" / 点击遮罩 / 按返回键 → 仅关闭弹窗，数据无任何变化
      *
-     * 三种场景文案（v2026-07-25 对齐 12.1.11 二次确认弹窗规范——极简 AlertDialog）：
-     * - 删整个 todo（pendingDeleteGroupLineIndex == -1 且 Delete 模式）
-     *   → 标题"删除待办" / 正文"确定要删除这个待办吗？删除后不可恢复。"
-     * - 删当前容器（pendingDeleteGroupLineIndex >= 0，Delete 模式）
-     *   → 标题"删除「{分组首行文本}」" / 正文"确定要删除这个分组吗？删除后不可恢复。"
-     *   （动态标题 + 通用正文：分组名嵌在标题里，符合 4-8 字短语规范）
+     * 两种场景文案（v2026-07-25 对齐 12.1.11 二次确认弹窗规范——极简 AlertDialog）：
+     * - 删当前容器（Delete 模式）
+     *   单容器（pendingDeleteGroupLineIndex == -1）是删当前容器的特例，
+     *   光标所在分组即主分组，等同删整个 todo，与多容器场景文案统一
+     *   → 标题"删除「{首行文本}」"（动态标题，让用户看清要删的是哪个待办）
+     *   → 正文"确定要删除这个待办吗？删除后不可恢复。"
      * - 放弃编辑（Discard 模式）
      *   → 标题"放弃编辑" / 正文"确定要放弃编辑吗？未保存的内容将永久丢失。"
      *
@@ -2307,39 +2308,41 @@ fun TodoEditScreen(
      *   也要在 Delete 分支内重新判空，避免对错误的 ID 调用 deleteTodo
      */
     if (showDeleteConfirm) {
-        // 场景判断：当前是"放弃编辑"还是"删除"，以及"删除"是删整个 todo 还是删当前容器
+        // 场景判断：当前是"放弃编辑"还是"删除"
         val isDiscard = deleteDialogMode == DeleteDialogMode.Discard
-        val isDeleteGroup = pendingDeleteGroupLineIndex >= 0
 
         /**
          * 标题文案派生（4-8 字短语，符合 12.1.11.4 标题模板）
          *
-         * - 删当前容器：动态标题"删除「{首行文本}」"，让用户看清要删的是哪个分组
-         *   首行文本取目标分组的首行非空文本，空则回退为"此分组"
-         * - 删整个 todo：固定标题"删除待办"
+         * - 删除模式：动态标题"删除「{首行文本}」"
+         *   - 多容器（pendingDeleteGroupLineIndex >= 0）：取光标所在分组的首行文本
+         *   - 单容器（pendingDeleteGroupLineIndex == -1）：取主分组（groupId == 0）的首行文本
+         *     （单容器是删当前容器的特例，等同删整个 todo）
+         *   - 首行文本为空时回退为"此待办"
          * - 放弃编辑：固定标题"放弃编辑"
          */
-        val titleText = when {
-            isDiscard -> "放弃编辑"
-            isDeleteGroup -> {
-                val targetLineIdx = pendingDeleteGroupLineIndex
-                val targetLine = todoLines.getOrNull(targetLineIdx)
-                val targetGroupId = targetLine?.groupId ?: 0
-                val firstLineText = todoLines
-                    .getOrNull(todoLines.indexOfFirst { it.groupId == targetGroupId })
-                    ?.text
-                    ?.ifBlank { null }
-                    ?: "此分组"
-                "删除「$firstLineText」"
+        val titleText = if (isDiscard) {
+            "放弃编辑"
+        } else {
+            // 取目标分组 groupId：多容器取光标所在分组，单容器固定取主分组 0
+            val targetGroupId = if (pendingDeleteGroupLineIndex >= 0) {
+                todoLines.getOrNull(pendingDeleteGroupLineIndex)?.groupId ?: 0
+            } else {
+                0
             }
-            else -> "删除待办"
+            val firstLineText = todoLines
+                .getOrNull(todoLines.indexOfFirst { it.groupId == targetGroupId })
+                ?.text
+                ?.ifBlank { null }
+                ?: "此待办"
+            "删除「$firstLineText」"
         }
 
         /** 正文文案派生（一句话询问 + 一句话后果说明，符合 12.1.11.4 正文模板） */
-        val bodyText = when {
-            isDiscard -> "确定要放弃编辑吗？未保存的内容将永久丢失。"
-            isDeleteGroup -> "确定要删除这个分组吗？删除后不可恢复。"
-            else -> "确定要删除这个待办吗？删除后不可恢复。"
+        val bodyText = if (isDiscard) {
+            "确定要放弃编辑吗？未保存的内容将永久丢失。"
+        } else {
+            "确定要删除这个待办吗？删除后不可恢复。"
         }
 
         /** 确认按钮文字（与标题动词一致，符合 12.1.11.4 按钮文案） */
