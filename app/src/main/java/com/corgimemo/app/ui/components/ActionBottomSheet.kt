@@ -2,7 +2,6 @@ package com.corgimemo.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -84,32 +85,54 @@ fun ActionBottomSheet(
                 .fillMaxWidth()
                 .padding(bottom = 24.dp)
         ) {
-            /** 自定义拖动指示器 */
+            /** 拖动指示器：36×4px，圆角 2px，居中，#E0E0E0（与原型一致） */
             Box(
                 modifier = Modifier
                     .padding(vertical = 12.dp)
-                    .fillMaxWidth()
-                    .height(4.dp),
+                    .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                    modifier = Modifier.width(36.dp)
+                Box(
+                    modifier = Modifier
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color(0xFFE0E0E0))
                 )
             }
 
-            /** 可选标题栏 */
+            /** 可选标题栏：左对齐标题（18px SemiBold）+ 右侧暖橙色关闭按钮 */
             title?.let { titleText ->
-                Text(
-                    text = titleText,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 16.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
+                        .padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = titleText,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Color(0xFFFFF0E5))
+                            .clickable(onClick = onDismiss),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "关闭",
+                            tint = Color(0xFFFF9A5C),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
 
                 /** 标题下方分割线 */
                 HorizontalDivider(

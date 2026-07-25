@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
@@ -59,7 +58,7 @@ val SORT_OPTIONS = listOf(
 /**
  * 排序弹窗 BottomSheet 组件
  *
- * 提供便签/待办列表的排序方式选择功能，
+ * 提供待办列表的排序方式选择功能，
  * 包含 4 种排序选项：按更新时间或创建时间升序/降序排列。
  *
  * @param sheetState 底部弹窗状态控制
@@ -103,36 +102,34 @@ fun SortBottomSheet(
                 )
             }
 
-            /** 标题栏：居中标题 + 右侧关闭按钮 */
+            /** 左对齐标题（18px SemiBold）+ 右侧圆形关闭按钮 */
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                /** 左侧占位，保持标题居中 */
-                Spacer(modifier = Modifier.width(32.dp))
-
-                /** 居中标题 "便签排序" */
                 Text(
-                    text = "便签排序",
+                    text = "待办排序",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f)
                 )
 
-                /** 暖橙色关闭按钮 */
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(32.dp)
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Color(0xFFFFF0E5))
+                        .clickable(onClick = onDismiss),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "关闭",
-                        tint = Color(0xFFFF9A5C), // 暖橙色
-                        modifier = Modifier.size(20.dp)
+                        tint = Color(0xFFFF9A5C),
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }

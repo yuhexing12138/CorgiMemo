@@ -339,28 +339,6 @@
         overflow-y: auto;
         flex-shrink: 0;
       }
-      .sheet-footer {
-        padding: 16px 24px;
-        padding-bottom: 24px;
-        flex-shrink: 0;
-      }
-      .sheet-cancel-btn {
-        width: 100%;
-        padding: 14px;
-        border: 1px solid #EEEEEE;
-        border-radius: 8px;
-        background: transparent;
-        color: #666666;
-        font-size: 16px;
-        font-weight: 500;
-        text-align: center;
-        cursor: pointer;
-        font-family: inherit;
-        transition: background 0.15s ease;
-      }
-      .sheet-cancel-btn:hover {
-        background: #F8F6F3;
-      }
 
       /* ===== 操作列表行 ===== */
       .action-row {
@@ -531,7 +509,6 @@
           <li>每行包含 Lucide 线性图标（20px）+ 文字（16px Medium），左对齐排列</li>
           <li>选项行 padding：上下 14px / 左右 24px，行高约 52dp</li>
           <li>破坏性操作（删除）使用 #E53935 红色文字 + 浅红背景 #FFEBEE</li>
-          <li>底部取消按钮：全宽、1px 边框 #EEEEEE、圆角 8px、文字 #666666</li>
           <li>拖拽条：36×4px，圆角 2px，居中，颜色 #E0E0E0</li>
           <li>标题栏：左对齐标题 18px SemiBold + 右侧暖橙关闭按钮</li>
         </ul>
@@ -605,12 +582,6 @@
                   <span class="action-row-text">删除</span>
                 </div>
               </div>
-
-              <!-- 底部取消按钮 -->
-              <div class="sheet-footer">
-                <button class="sheet-cancel-btn" type="button" style="text-align: center;">取消</button>
-              </div>
-            </div>
 
             <!-- Home Indicator -->
             <div class="home-indicator"></div>
