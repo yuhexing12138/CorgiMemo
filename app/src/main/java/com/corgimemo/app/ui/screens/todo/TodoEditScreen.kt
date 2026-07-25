@@ -2279,130 +2279,196 @@ fun TodoEditScreen(
     }
 
     /**
-     * 删除/放弃确认弹窗（v2026-07-22 新增，二次升级）
-     *
-     * v2026-07-22 首次新增：垃圾桶二次确认，防止误删
-     * v2026-07-22 二次升级：支持 [DeleteDialogMode.Discard] 模式，覆盖新建待办的"放弃编辑"场景
+     * 删除/放弃确认弹窗（v2026-07-22 新增，v2026-07-25 视觉对齐项目二次确认弹窗规范）
      *
      * 触发链路：
      * 1. 用户点击顶部导航栏的垃圾桶图标 → onDeleteClick：
      *    - 编辑模式（todoId != null）→ deleteDialogMode = Delete
      *    - 新建模式（todoId == null）→ deleteDialogMode = Discard
      *    → 然后 showDeleteConfirm = true
-     * 2. 本弹窗被打开，根据 deleteDialogMode 渲染不同文案
+     * 2. 本弹窗被打开，根据 deleteDialogMode + pendingDeleteGroupLineIndex 派生标题/正文文案
      * 3. 用户选择：
-     *    - 点击"确认删除" / "放弃编辑" → 根据 mode 走不同分支
+     *    - 点击"删除" / "放弃编辑" → 走对应分支
      *    - 点击"取消" / 点击遮罩 / 按返回键 → 仅关闭弹窗，数据无任何变化
      *
-     * 行为差异：
-     * - Delete 模式：调用 homeViewModel.deleteTodo(todoId) + popBackStack
-     * - Discard 模式：仅 navController.popBackStack()（无 DB 删除，因为新建待办未持久化）
+     * 三种场景文案（v2026-07-25 对齐 12.1.11 二次确认弹窗规范——极简 AlertDialog）：
+     * - 删整个 todo（pendingDeleteGroupLineIndex == -1 且 Delete 模式）
+     *   → 标题"删除待办" / 正文"确定要删除这个待办吗？删除后不可恢复。"
+     * - 删当前容器（pendingDeleteGroupLineIndex >= 0，Delete 模式）
+     *   → 标题"删除「{分组首行文本}」" / 正文"确定要删除这个分组吗？删除后不可恢复。"
+     *   （动态标题 + 通用正文：分组名嵌在标题里，符合 4-8 字短语规范）
+     * - 放弃编辑（Discard 模式）
+     *   → 标题"放弃编辑" / 正文"确定要放弃编辑吗？未保存的内容将永久丢失。"
      *
      * 设计要点：
-     * - 复用项目已有的 [com.corgimemo.app.ui.components.DeleteConfirmDialog] 组件
-     *   通过 mode 参数切换文案，共享同一套警告图标 + 红色按钮样式
-     * - itemTitle 仅在 Delete 模式使用（高亮显示），Discard 模式被组件内部忽略
+     * - 不使用 Warning 图标 + 标题高亮区，与 InspirationImageGallery 删除图片弹窗视觉一致
+     * - 删除/放弃按钮使用警示色 Color(0xFFFF6B6B)，取消按钮使用默认主题色
      * - todoId 二次校验：即使 showDeleteConfirm 在 todoId 变更后仍为 true（理论不会发生），
      *   也要在 Delete 分支内重新判空，避免对错误的 ID 调用 deleteTodo
      */
-    DeleteConfirmDialog(
-        showDialog = showDeleteConfirm,
-        // 🆕 v2026-07-25 多容器光标感知：itemTitle 根据删除路径动态选择
-        // - 走"删整个 todo"路径（pendingDeleteGroupLineIndex == -1）→ 显示 todo 标题
-        // - 走"删当前容器"路径（pendingDeleteGroupLineIndex >= 0）→ 显示目标分组首行文本
-        itemTitle = if (pendingDeleteGroupLineIndex >= 0) {
-            // 多容器场景：取目标分组首行文本作为标题（让用户看清要删的是哪个分组）
-            val targetLineIdx = pendingDeleteGroupLineIndex
-            val targetLine = todoLines.getOrNull(targetLineIdx)
-            val targetGroupId = targetLine?.groupId ?: 0
-            // 找到该分组的首行文本（非空优先）
-            val firstLineText = todoLines
-                .getOrNull(todoLines.indexOfFirst { it.groupId == targetGroupId })
-                ?.text
-                ?.ifBlank { null }
-                ?: "此分组"
-            firstLineText
-        } else {
-            // 单容器场景：使用 todo 标题（原行为）
-            title.ifBlank { "此待办" }
-        },
-        mode = deleteDialogMode,
-        onConfirm = {
-            // 1. 先关闭弹窗（避免 popBackStack 时弹窗仍在屏幕上闪烁）
-            showDeleteConfirm = false
-            // 2. 根据 pendingDeleteGroupLineIndex 决定走哪条路径
-            if (pendingDeleteGroupLineIndex >= 0) {
-                // 🆕 v2026-07-25 多容器场景：走"删当前容器"路径
-                // 调用 viewModel.deleteGroupByLineIndex 删除光标所在的子分组
-                // - 从 todoLines 移除该 groupId 的所有行
-                // - 清理 group* 状态映射中的对应条目
-                // - 如果该分组已保存（有 savedTodoId）→ 异步从 DB 删除对应 todo
-                // - 返回删除后的目标聚焦行索引（-1 表示列表已空，无需转移焦点）
-                val newFocusIdx = viewModel.deleteGroupByLineIndex(pendingDeleteGroupLineIndex)
-                // 重置标记，避免下次误入此分支
+    if (showDeleteConfirm) {
+        // 场景判断：当前是"放弃编辑"还是"删除"，以及"删除"是删整个 todo 还是删当前容器
+        val isDiscard = deleteDialogMode == DeleteDialogMode.Discard
+        val isDeleteGroup = pendingDeleteGroupLineIndex >= 0
+
+        /**
+         * 标题文案派生（4-8 字短语，符合 12.1.11.4 标题模板）
+         *
+         * - 删当前容器：动态标题"删除「{首行文本}」"，让用户看清要删的是哪个分组
+         *   首行文本取目标分组的首行非空文本，空则回退为"此分组"
+         * - 删整个 todo：固定标题"删除待办"
+         * - 放弃编辑：固定标题"放弃编辑"
+         */
+        val titleText = when {
+            isDiscard -> "放弃编辑"
+            isDeleteGroup -> {
+                val targetLineIdx = pendingDeleteGroupLineIndex
+                val targetLine = todoLines.getOrNull(targetLineIdx)
+                val targetGroupId = targetLine?.groupId ?: 0
+                val firstLineText = todoLines
+                    .getOrNull(todoLines.indexOfFirst { it.groupId == targetGroupId })
+                    ?.text
+                    ?.ifBlank { null }
+                    ?: "此分组"
+                "删除「$firstLineText」"
+            }
+            else -> "删除待办"
+        }
+
+        /** 正文文案派生（一句话询问 + 一句话后果说明，符合 12.1.11.4 正文模板） */
+        val bodyText = when {
+            isDiscard -> "确定要放弃编辑吗？未保存的内容将永久丢失。"
+            isDeleteGroup -> "确定要删除这个分组吗？删除后不可恢复。"
+            else -> "确定要删除这个待办吗？删除后不可恢复。"
+        }
+
+        /** 确认按钮文字（与标题动词一致，符合 12.1.11.4 按钮文案） */
+        val confirmText = if (isDiscard) "放弃编辑" else "删除"
+
+        AlertDialog(
+            onDismissRequest = {
+                // 取消路径（点遮罩/返回键/取消按钮）：仅关闭弹窗，不修改数据
+                // 同时重置 pendingDeleteGroupLineIndex，避免下次误入"删当前容器"分支
+                showDeleteConfirm = false
                 pendingDeleteGroupLineIndex = -1
-                // 触发焦点转移到上一分组首行（递增 trigger 保证 LaunchedEffect 必触发）
-                if (newFocusIdx >= 0) {
-                    externalPendingFocus = newFocusIdx
-                    externalPendingFocusTrigger++
-                }
-            } else {
-                // 走原"删整个 todo"路径：根据 mode 走不同分支
-                when (deleteDialogMode) {
-                    DeleteDialogMode.Delete -> {
-                        // 删除模式：二次校验 todoId 有效性后真正删除 + 返回
-                        val targetId = todoId
-                        if (targetId != null && targetId > 0) {
-                            homeViewModel.deleteTodo(targetId)
-                            navController.popBackStack()
+            },
+            title = {
+                Text(
+                    text = titleText,
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            text = {
+                Text(bodyText)
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // 1. 先关闭弹窗（避免 popBackStack 时弹窗仍在屏幕上闪烁）
+                        showDeleteConfirm = false
+                        // 2. 根据 pendingDeleteGroupLineIndex 决定走哪条路径
+                        if (pendingDeleteGroupLineIndex >= 0) {
+                            // 🆕 v2026-07-25 多容器场景：走"删当前容器"路径
+                            // 调用 viewModel.deleteGroupByLineIndex 删除光标所在的子分组
+                            // - 从 todoLines 移除该 groupId 的所有行
+                            // - 清理 group* 状态映射中的对应条目
+                            // - 如果该分组已保存（有 savedTodoId）→ 异步从 DB 删除对应 todo
+                            // - 返回删除后的目标聚焦行索引（-1 表示列表已空，无需转移焦点）
+                            val newFocusIdx = viewModel.deleteGroupByLineIndex(pendingDeleteGroupLineIndex)
+                            // 重置标记，避免下次误入此分支
+                            pendingDeleteGroupLineIndex = -1
+                            // 触发焦点转移到上一分组首行（递增 trigger 保证 LaunchedEffect 必触发）
+                            if (newFocusIdx >= 0) {
+                                externalPendingFocus = newFocusIdx
+                                externalPendingFocusTrigger++
+                            }
+                        } else {
+                            // 走原"删整个 todo"路径：根据 mode 走不同分支
+                            when (deleteDialogMode) {
+                                DeleteDialogMode.Delete -> {
+                                    // 删除模式：二次校验 todoId 有效性后真正删除 + 返回
+                                    val targetId = todoId
+                                    if (targetId != null && targetId > 0) {
+                                        homeViewModel.deleteTodo(targetId)
+                                        navController.popBackStack()
+                                    }
+                                }
+                                DeleteDialogMode.Discard -> {
+                                    // 放弃编辑模式：直接关闭页面，丢弃未保存草稿
+                                    // 不调用任何 viewModel 方法，因为新建待办尚未持久化到 DB，
+                                    // 没有任何"删除"动作需要执行
+                                    navController.popBackStack()
+                                }
+                            }
                         }
                     }
-                    DeleteDialogMode.Discard -> {
-                        // 放弃编辑模式：直接关闭页面，丢弃未保存草稿
-                        // 不调用任何 viewModel 方法，因为新建待办尚未持久化到 DB，
-                        // 没有任何"删除"动作需要执行
-                        navController.popBackStack()
+                ) {
+                    Text(confirmText, color = Color(0xFFFF6B6B))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        pendingDeleteGroupLineIndex = -1
                     }
+                ) {
+                    Text("取消")
                 }
             }
-        },
-        onDismiss = {
-            // 取消路径（点遮罩/返回键/取消按钮）：仅关闭弹窗，不修改数据
-            // 同时重置 pendingDeleteGroupLineIndex，避免下次误入"删当前容器"分支
-            showDeleteConfirm = false
-            pendingDeleteGroupLineIndex = -1
-        }
-    )
+        )
+    }
 
     /**
-     * 放弃编辑确认弹窗（v2026-07-22 新增）
+     * 放弃编辑确认弹窗（v2026-07-22 新增，v2026-07-25 视觉对齐项目二次确认弹窗规范）
      *
      * 当用户从待办编辑页触发返回（顶部 ← / 系统返回键 / 手势返回）时，
      * 若 viewModel.hasAnyUnsavedChanges == true，弹此弹窗询问用户是否真的要放弃未保存内容。
      *
-     * 复用 DeleteConfirmDialog 的 Discard 模式：
+     * v2026-07-25 改造：从 DeleteConfirmDialog(Discard) 改为内联简化版 AlertDialog，
+     * 与 InspirationImageGallery 删除图片弹窗视觉一致（无 Warning 图标、无标题高亮区）。
      * - 弹窗标题"放弃编辑"，按钮"放弃编辑"
-     * - 警告"未保存的内容将永久丢失，无法恢复"
-     * - 不显示 itemTitle 高亮（因为未保存内容没有"标题"概念）
+     * - 正文"确定要放弃编辑吗？未保存的内容将永久丢失。"
      *
      * onConfirm 行为：仅 navController.popBackStack（无 DB 操作）
      * onDismiss 行为：仅关闭弹窗，留在编辑页
      */
-    DeleteConfirmDialog(
-        showDialog = showDiscardConfirm,
-        itemTitle = "",
-        mode = DeleteDialogMode.Discard,
-        onConfirm = {
-            // 1. 先关闭弹窗
-            showDiscardConfirm = false
-            // 2. 执行返回（无 DB 操作，直接关闭页面）
-            navController.popBackStack()
-        },
-        onDismiss = {
-            // 取消路径：仅关闭弹窗，留在编辑页
-            showDiscardConfirm = false
-        }
-    )
+    if (showDiscardConfirm) {
+        AlertDialog(
+            onDismissRequest = {
+                // 取消路径：仅关闭弹窗，留在编辑页
+                showDiscardConfirm = false
+            },
+            title = {
+                Text(
+                    text = "放弃编辑",
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            text = {
+                Text("确定要放弃编辑吗？未保存的内容将永久丢失。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // 1. 先关闭弹窗
+                        showDiscardConfirm = false
+                        // 2. 执行返回（无 DB 操作，直接关闭页面）
+                        navController.popBackStack()
+                    }
+                ) {
+                    Text("放弃编辑", color = Color(0xFFFF6B6B))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDiscardConfirm = false }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
+    }
 }
 
 private fun hasRecordAudioPermission(context: Context): Boolean {
