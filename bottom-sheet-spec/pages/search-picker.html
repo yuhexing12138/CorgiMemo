@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>带搜索选择器型</title>
+    <style id="theme-vars">
+/* ============================================================
+   CorgiMemo 底部弹窗通用规范 - colors_and_type.css
+   品牌前缀: cm | 单一 primary 暖橙 hue（柯基治愈系）
+   ============================================================ */
+
+:root {
+  /* === 品牌主色（单一暖橙 hue） === */
+  --cm-primary: #FF9A5C;              /* 暖橙主色：关闭按钮、选中态高亮 */
+  --cm-primary-foreground: #FFFFFF;  /* 暖橙上的文字 */
+  --cm-primary-tint: #FFE0C0;        /* 选中态浅暖橙背景 */
+  --cm-primary-soft: #FFF0E5;        /* 更浅暖橙表面 */
+  --cm-primary-deep: #E88A4D;        /* 深暖橙文字 */
+
+  /* === 中性表面（背景 / 卡片 / 文字） === */
+  --cm-background: #F4F4F6;          /* 页面底色 */
+  --cm-foreground: #2D2D2D;          /* 主文字 */
+  --cm-card: #FFFFFF;                /* 卡片 / 弹窗表面 */
+  --cm-card-foreground: #2D2D2D;     /* 卡片上的文字 */
+  --cm-popover: #FFFFFF;             /* 浮层表面（与 card 一致） */
+  --cm-popover-foreground: #2D2D2D;
+  --cm-muted: #F0F0F2;               /* 次级表面 */
+  --cm-muted-foreground: #888888;    /* 次要文字 / 拖拽条默认色 */
+  --cm-border: #E8E8EA;              /* 分割线 / 边框 */
+  --cm-input: #E8E8EA;              /* 输入框边框 */
+  --cm-ring: #FF9A5C;               /* 聚焦环 */
+
+  /* === 状态色（仅用于真实状态：破坏性/成功/警告） === */
+  --cm-state-error: #E53935;         /* 破坏性操作文字 */
+  --cm-state-error-foreground: #FFFFFF;
+  --cm-state-success: #4CAF50;
+  --cm-state-warning: #FF9800;
+
+  /* === 圆角 scale === */
+  --cm-radius-sm: 4px;
+  --cm-radius-md: 8px;
+  --cm-radius-lg: 16px;
+  --cm-radius-sheet: 24px;           /* 底部弹窗顶部圆角（规范核心值，对齐 UI规范 12.1.5.1） */
+  --cm-radius-pill: 999px;
+
+  /* === 阴影 === */
+  --cm-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 1px rgba(15, 23, 42, 0.02);
+  --cm-shadow-2: 0 8px 24px -8px rgba(15, 23, 42, 0.12);
+  --cm-shadow-sheet: 0 -4px 24px -4px rgba(15, 23, 42, 0.10);
+
+  /* === 字体 === */
+  --cm-font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--cm-background);
+    --color-foreground: var(--cm-foreground);
+    --color-card: var(--cm-card);
+    --color-card-foreground: var(--cm-card-foreground);
+    --color-popover: var(--cm-popover);
+    --color-popover-foreground: var(--cm-popover-foreground);
+    --color-primary: var(--cm-primary);
+    --color-primary-foreground: var(--cm-primary-foreground);
+    --color-muted: var(--cm-muted);
+    --color-muted-foreground: var(--cm-muted-foreground);
+    --color-border: var(--cm-border);
+    --color-input: var(--cm-input);
+    --color-ring: var(--cm-ring);
+    --radius-sm: var(--cm-radius-sm);
+    --radius-md: var(--cm-radius-md);
+    --radius-lg: var(--cm-radius-lg);
+  }
+  @layer base {
+    body { background: var(--cm-background); color: var(--cm-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--cm-background); }
+      .text-background { color: var(--cm-background); }
+      .border-background { border-color: var(--cm-background); }
+      .ring-background { --tw-ring-color: var(--cm-background); }
+      .bg-foreground { background-color: var(--cm-foreground); }
+      .text-foreground { color: var(--cm-foreground); }
+      .border-foreground { border-color: var(--cm-foreground); }
+      .ring-foreground { --tw-ring-color: var(--cm-foreground); }
+      .bg-card { background-color: var(--cm-card); }
+      .text-card { color: var(--cm-card); }
+      .border-card { border-color: var(--cm-card); }
+      .ring-card { --tw-ring-color: var(--cm-card); }
+      .bg-card-foreground { background-color: var(--cm-card-foreground); }
+      .text-card-foreground { color: var(--cm-card-foreground); }
+      .border-card-foreground { border-color: var(--cm-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--cm-card-foreground); }
+      .bg-popover { background-color: var(--cm-popover); }
+      .text-popover { color: var(--cm-popover); }
+      .border-popover { border-color: var(--cm-popover); }
+      .ring-popover { --tw-ring-color: var(--cm-popover); }
+      .bg-popover-foreground { background-color: var(--cm-popover-foreground); }
+      .text-popover-foreground { color: var(--cm-popover-foreground); }
+      .border-popover-foreground { border-color: var(--cm-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--cm-popover-foreground); }
+      .bg-primary { background-color: var(--cm-primary); }
+      .text-primary { color: var(--cm-primary); }
+      .border-primary { border-color: var(--cm-primary); }
+      .ring-primary { --tw-ring-color: var(--cm-primary); }
+      .bg-primary-foreground { background-color: var(--cm-primary-foreground); }
+      .text-primary-foreground { color: var(--cm-primary-foreground); }
+      .border-primary-foreground { border-color: var(--cm-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--cm-primary-foreground); }
+      .bg-muted { background-color: var(--cm-muted); }
+      .text-muted { color: var(--cm-muted); }
+      .border-muted { border-color: var(--cm-muted); }
+      .ring-muted { --tw-ring-color: var(--cm-muted); }
+      .bg-muted-foreground { background-color: var(--cm-muted-foreground); }
+      .text-muted-foreground { color: var(--cm-muted-foreground); }
+      .border-muted-foreground { border-color: var(--cm-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--cm-muted-foreground); }
+      .bg-border { background-color: var(--cm-border); }
+      .text-border { color: var(--cm-border); }
+      .border-border { border-color: var(--cm-border); }
+      .ring-border { --tw-ring-color: var(--cm-border); }
+      .bg-input { background-color: var(--cm-input); }
+      .text-input { color: var(--cm-input); }
+      .border-input { border-color: var(--cm-input); }
+      .ring-input { --tw-ring-color: var(--cm-input); }
+      .bg-ring { background-color: var(--cm-ring); }
+      .text-ring { color: var(--cm-ring); }
+      .border-ring { border-color: var(--cm-ring); }
+      .ring-ring { --tw-ring-color: var(--cm-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+    <style>
+      /* ============================================================
+         页面专属样式：带搜索选择器型底部弹窗
+         ============================================================ */
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        overflow-x: hidden;
+        font-family: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        background: #F4F4F6;
+        color: #2D2D2D;
+      }
+
+      /* === 区域 1：顶部说明区 === */
+      .top-description {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 48px 24px 32px;
+      }
+      .top-description h1 {
+        font-size: 28px;
+        font-weight: 600;
+        color: #2D2D2D;
+        text-wrap: balance;
+        margin: 0;
+      }
+      .top-description p {
+        font-size: 15px;
+        color: #666666;
+        line-height: 1.6;
+        margin: 12px 0 0;
+      }
+      .top-description ul {
+        list-style: disc;
+        padding-left: 20px;
+        margin: 16px 0 0;
+      }
+      .top-description li {
+        font-size: 14px;
+        color: #666666;
+        line-height: 1.8;
+      }
+
+      /* === 区域 2：中部手机模拟器 === */
+      .phone-section {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 0 24px 48px;
+      }
+      .phone-frame {
+        width: 375px;
+        margin: 0 auto;
+        border-radius: 48px;
+        border: 12px solid #1A1A1A;
+        overflow: hidden;
+        box-shadow: 0 24px 60px -20px rgba(0,0,0,0.3);
+        position: relative;
+        background: #F8F6F3;
+      }
+      .phone-screen {
+        height: 720px;
+        background: #F8F6F3;
+        position: relative;
+        overflow: hidden;
+      }
+      .phone-status-bar {
+        height: 44px;
+        padding: 0 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 14px;
+        font-weight: 600;
+        color: #2D2D2D;
+      }
+      .status-icons {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #2D2D2D;
+      }
+      .status-icons svg {
+        width: 16px;
+        height: 16px;
+      }
+      .phone-content {
+        padding: 8px 16px;
+      }
+      .mock-card {
+        background: #FFFFFF;
+        border-radius: 16px;
+        padding: 16px;
+        margin-bottom: 8px;
+        box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+      }
+      .mock-card-line {
+        height: 12px;
+        background: #EEEEEE;
+        border-radius: 4px;
+        margin-bottom: 8px;
+      }
+      .mock-card-line:last-child {
+        margin-bottom: 0;
+        width: 60%;
+      }
+      .home-indicator {
+        position: absolute;
+        bottom: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 134px;
+        height: 5px;
+        border-radius: 999px;
+        background: #1A1A1A;
+        z-index: 20;
+      }
+
+      /* === 底部弹窗 === */
+      .sheet-scrim {
+        position: absolute;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 10;
+      }
+      .sheet-container {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #FFFFFF;
+        border-radius: 24px 24px 0 0;
+        box-shadow: 0 -4px 24px -4px rgba(15,23,42,0.10);
+        z-index: 11;
+        display: flex;
+        flex-direction: column;
+      }
+      .sheet-handle {
+        width: 36px;
+        height: 4px;
+        border-radius: 2px;
+        background: #E0E0E0;
+        margin: 12px auto 0;
+        flex-shrink: 0;
+      }
+      .sheet-header {
+        padding: 12px 24px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+      }
+      .sheet-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #2D2D2D;
+        text-align: left;
+      }
+      .sheet-close-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 999px;
+        background: #FFF0E5;
+        color: #FF9A5C;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        border: none;
+        padding: 0;
+        transition: background 0.15s ease;
+      }
+      .sheet-close-btn:hover {
+        background: #FFE0C0;
+      }
+      .sheet-close-btn svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      /* 搜索框区域（固定在标题下方，不随列表滚动） */
+      .sheet-search {
+        padding: 0 24px 12px;
+        flex-shrink: 0;
+      }
+      .search-input-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        border: 1px solid #EEEEEE;
+        border-radius: 8px;
+        background: #F8F6F3;
+        transition: border-color 0.15s ease, background 0.15s ease;
+      }
+      .search-input-wrapper:focus-within {
+        border-color: #FF9A5C;
+        background: #FFFFFF;
+      }
+      .search-input-icon {
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+        color: #999999;
+      }
+      .search-input {
+        flex: 1;
+        border: none;
+        outline: none;
+        background: transparent;
+        font-size: 15px;
+        color: #2D2D2D;
+        font-family: inherit;
+        min-width: 0;
+      }
+      .search-input::placeholder {
+        color: #999999;
+      }
+      .sheet-divider {
+        height: 1px;
+        background: rgba(0,0,0,0.08);
+        margin: 0 24px;
+        flex-shrink: 0;
+      }
+      .sheet-content {
+        padding: 8px 0;
+        max-height: 320px;
+        overflow-y: auto;
+        flex-shrink: 0;
+      }
+
+      /* 选择器行 */
+      .picker-row {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 24px;
+        cursor: pointer;
+        position: relative;
+        transition: background 0.15s ease;
+      }
+      .picker-row:hover {
+        background: #F8F6F3;
+      }
+      .picker-row-selected {
+        background: #FFF0E5;
+      }
+      .picker-row-selected:hover {
+        background: #FFF0E5;
+      }
+      .picker-row-selected::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+        background: #FF9A5C;
+        border-radius: 0 2px 2px 0;
+      }
+      .picker-row-icon {
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+        color: #666666;
+      }
+      .picker-row-selected .picker-row-icon {
+        color: #FF9A5C;
+      }
+      .picker-row-text {
+        font-size: 16px;
+        font-weight: 500;
+        color: #2D2D2D;
+        flex: 1;
+      }
+      .picker-row-check {
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+        color: #FF9A5C;
+        opacity: 0;
+      }
+      .picker-row-selected .picker-row-check {
+        opacity: 1;
+      }
+
+      .sheet-footer {
+        padding: 16px 24px;
+        padding-bottom: 24px;
+        flex-shrink: 0;
+      }
+      .sheet-cancel-btn {
+        width: 100%;
+        padding: 14px;
+        border: 1px solid #EEEEEE;
+        border-radius: 8px;
+        background: transparent;
+        color: #666666;
+        font-size: 16px;
+        font-weight: 500;
+        text-align: center;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.15s ease;
+      }
+      .sheet-cancel-btn:hover {
+        background: #F8F6F3;
+      }
+
+      /* ===== 区域 2.5：本项目使用例子 ===== */
+      .examples-intro {
+        font-size: 14px;
+        color: #666666;
+        line-height: 1.6;
+        margin-bottom: 16px;
+      }
+      .example-card {
+        background: #FFFFFF;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+        border: 1px solid #EEEEEE;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+      .example-card:hover {
+        border-color: #FF9A5C;
+        box-shadow: 0 2px 8px rgba(255, 154, 92, 0.1);
+      }
+      .example-card-header {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+      }
+      .example-icon-wrapper {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: #FFF0E5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .example-icon {
+        width: 20px;
+        height: 20px;
+        color: #FF9A5C;
+      }
+      .example-card-text {
+        flex: 1;
+      }
+      .example-card-text h3 {
+        font-size: 15px;
+        font-weight: 600;
+        color: #2D2D2D;
+        margin: 0 0 4px 0;
+      }
+      .example-card-text p {
+        font-size: 13px;
+        color: #666666;
+        line-height: 1.5;
+        margin: 0;
+      }
+      .example-tag {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #999999;
+        font-family: "SF Mono", "Fira Code", monospace;
+        background: #F8F6F3;
+        padding: 4px 8px;
+        border-radius: 4px;
+        display: inline-block;
+      }
+
+      /* === 区域 3：底部规范标注表 === */
+      .spec-section {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 0 24px 48px;
+      }
+      .spec-section h2 {
+        font-size: 20px;
+        font-weight: 600;
+        color: #2D2D2D;
+        margin: 0 0 16px;
+      }
+      .spec-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .spec-table th {
+        background: #F8F6F3;
+        padding: 12px 16px;
+        font-weight: 600;
+        color: #2D2D2D;
+        text-align: left;
+        border-bottom: 1px solid #EEEEEE;
+      }
+      .spec-table td {
+        padding: 12px 16px;
+        color: #666666;
+        border-bottom: 1px solid #EEEEEE;
+      }
+      .spec-table td:first-child {
+        font-family: "SF Mono", "Fira Code", monospace;
+        color: #E88A4D;
+        font-size: 12px;
+      }
+      .spec-table td:nth-child(2) {
+        font-family: "SF Mono", "Fira Code", monospace;
+        color: #2D2D2D;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <main>
+      <!-- 区域 1：顶部说明区 -->
+      <section class="top-description">
+        <h1>带搜索选择器型底部弹窗</h1>
+        <p>在单选选择器基础上增加顶部搜索框，适用于选项较多的场景，如分类选择、标签选择。输入时实时过滤列表。</p>
+        <ul>
+          <li>搜索框固定在标题栏下方，不随列表滚动</li>
+          <li>搜索框：圆角 8px、边框 1px #EEEEEE、背景 #F8F6F3、左侧 search 图标</li>
+          <li>搜索框 padding：10px 16px，placeholder #999999</li>
+          <li>选项列表可滚动，选中项与单选选择器样式一致</li>
+          <li>每行包含 Lucide 图标（20px）+ 文字（16px Medium），左对齐排列</li>
+          <li>选项行 padding：上下 14px / 左右 24px，行高约 52dp</li>
+        </ul>
+      </section>
+
+      <!-- 区域 2：中部手机模拟器 -->
+      <section class="phone-section">
+        <div class="phone-frame">
+          <div class="phone-screen">
+            <!-- 状态栏 -->
+            <div class="phone-status-bar">
+              <span>9:41</span>
+              <div class="status-icons">
+                <i data-lucide="signal"></i>
+                <i data-lucide="wifi"></i>
+                <i data-lucide="battery-full"></i>
+              </div>
+            </div>
+            <!-- 内容区：mock 待办卡片占位 -->
+            <div class="phone-content">
+              <div class="mock-card">
+                <div class="mock-card-line"></div>
+                <div class="mock-card-line"></div>
+              </div>
+              <div class="mock-card">
+                <div class="mock-card-line" style="width:80%"></div>
+                <div class="mock-card-line" style="width:50%"></div>
+              </div>
+            </div>
+
+            <!-- 底部弹窗：叠加在手机模拟器内部 -->
+            <div class="sheet-scrim"></div>
+            <div class="sheet-container" id="sheet-search-picker">
+              <div class="sheet-handle"></div>
+              <div class="sheet-header">
+                <span class="sheet-title">选择分类</span>
+                <button class="sheet-close-btn" aria-label="关闭">
+                  <i data-lucide="x"></i>
+                </button>
+              </div>
+              <div class="sheet-search">
+                <div class="search-input-wrapper">
+                  <i data-lucide="search" class="search-input-icon"></i>
+                  <input type="text" class="search-input" placeholder="搜索分类..." />
+                </div>
+              </div>
+              <div class="sheet-divider"></div>
+              <div class="sheet-content">
+                <div class="picker-row picker-row-selected">
+                  <i data-lucide="briefcase" class="picker-row-icon"></i>
+                  <span class="picker-row-text">工作</span>
+                  <i data-lucide="check" class="picker-row-check"></i>
+                </div>
+                <div class="picker-row">
+                  <i data-lucide="home" class="picker-row-icon"></i>
+                  <span class="picker-row-text">生活</span>
+                  <i data-lucide="check" class="picker-row-check"></i>
+                </div>
+                <div class="picker-row">
+                  <i data-lucide="book" class="picker-row-icon"></i>
+                  <span class="picker-row-text">学习</span>
+                  <i data-lucide="check" class="picker-row-check"></i>
+                </div>
+                <div class="picker-row">
+                  <i data-lucide="heart" class="picker-row-icon"></i>
+                  <span class="picker-row-text">健康</span>
+                  <i data-lucide="check" class="picker-row-check"></i>
+                </div>
+                <div class="picker-row">
+                  <i data-lucide="shopping-cart" class="picker-row-icon"></i>
+                  <span class="picker-row-text">购物</span>
+                  <i data-lucide="check" class="picker-row-check"></i>
+                </div>
+                <div class="picker-row">
+                  <i data-lucide="users" class="picker-row-icon"></i>
+                  <span class="picker-row-text">社交</span>
+                  <i data-lucide="check" class="picker-row-check"></i>
+                </div>
+                <div class="picker-row">
+                  <i data-lucide="plane" class="picker-row-icon"></i>
+                  <span class="picker-row-text">旅行</span>
+                  <i data-lucide="check" class="picker-row-check"></i>
+                </div>
+                <div class="picker-row">
+                  <i data-lucide="utensils" class="picker-row-icon"></i>
+                  <span class="picker-row-text">饮食</span>
+                  <i data-lucide="check" class="picker-row-check"></i>
+                </div>
+              </div>
+              <div class="sheet-footer">
+                <button class="sheet-cancel-btn">取消</button>
+              </div>
+            </div>
+            <!-- home indicator -->
+            <div class="home-indicator"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 区域 2.5：本项目使用例子 ============ -->
+      <section class="spec-section">
+        <h2>本项目使用例子</h2>
+        <p class="examples-intro">以下是 CorgiMemo 项目中实际使用「带搜索选择器型底部弹窗」的 3 个场景：</p>
+        <div class="example-card">
+          <div class="example-card-header">
+            <div class="example-icon-wrapper">
+              <i data-lucide="folder-input" class="example-icon"></i>
+            </div>
+            <div class="example-card-text">
+              <h3>CategoryPickerSheet</h3>
+              <p>「移动到分组」功能：顶部搜索框实时过滤分类列表，选中项高亮显示，支持分类图标展示</p>
+            </div>
+          </div>
+          <div class="example-tag">文件：CategoryPickerSheet.kt</div>
+        </div>
+        <div class="example-card">
+          <div class="example-card-header">
+            <div class="example-icon-wrapper">
+              <i data-lucide="tag" class="example-icon"></i>
+            </div>
+            <div class="example-card-text">
+              <h3>TagPickerSheet</h3>
+              <p>灵感编辑页标签选择：搜索过滤已有标签 + 新建标签输入，FlowRow 布局展示标签列表</p>
+            </div>
+          </div>
+          <div class="example-tag">文件：inspiration/components/TagPickerSheet.kt</div>
+        </div>
+        <div class="example-card">
+          <div class="example-card-header">
+            <div class="example-icon-wrapper">
+              <i data-lucide="palette" class="example-icon"></i>
+            </div>
+            <div class="example-card-text">
+              <h3>ColorPickerBottomSheet</h3>
+              <p>特殊日期卡片颜色选择：网格布局展示色板，搜索框辅助查找特定颜色名称</p>
+            </div>
+          </div>
+          <div class="example-tag">文件：ColorPickerBottomSheet.kt</div>
+        </div>
+      </section>
+
+      <!-- ============ 区域 2.6：项目弹窗完整清单 ============ -->
+      <section class="spec-section">
+        <h2>项目弹窗完整清单</h2>
+        <p class="examples-intro">以下是 CorgiMemo 项目中所有属于「带搜索选择器型」的弹窗实例：</p>
+        <table class="spec-table">
+          <thead>
+            <tr>
+              <th>弹窗文件</th>
+              <th>当前实现</th>
+              <th>如何调出</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>CategoryPickerSheet.kt</td>
+              <td>ModalBottomSheet</td>
+              <td>首页待办列表 → 点击右上角"⋮"三点按钮 → 选择"批量选择"进入多选模式 → 勾选待办 → 底部工具栏点击"移动到分组"，在分类列表中搜索并选择目标分组</td>
+              <td>✅ 符合规范</td>
+            </tr>
+            <tr>
+              <td>TagPickerSheet.kt</td>
+              <td>ModalBottomSheet</td>
+              <td>灵感编辑页 → 点击"标签"字段，在已有标签列表中搜索选择或新建标签</td>
+              <td>✅ 符合规范</td>
+            </tr>
+            <tr>
+              <td>RelationPickerBottomSheet.kt</td>
+              <td>ModalBottomSheet</td>
+              <td>待办或灵感编辑页 → 点击"关联卡片"按钮 → 搜索并选择要关联的待办/灵感/日期卡片</td>
+              <td>✅ 符合规范</td>
+            </tr>
+            <tr>
+              <td>CategorySelectorDialog.kt</td>
+              <td>AlertDialog</td>
+              <td>路径1：首页待办卡片左下角分类角标 → 点击角标切换分组；路径2：待办编辑页 → 点击"分类"按钮选择该待办所属分组</td>
+              <td>⚠️ 需改为底部弹窗</td>
+            </tr>
+            <tr>
+              <td>CardLinkSelectorDialog.kt</td>
+              <td>Dialog</td>
+              <td>待办或灵感编辑页 → 点击"关联卡片"按钮 → 在搜索框输入关键词 → 从搜索结果列表中选择要关联的卡片</td>
+              <td>⚠️ 需改为底部弹窗</td>
+            </tr>
+            <tr>
+              <td>KeywordSelectionDialog.kt</td>
+              <td>AlertDialog</td>
+              <td>智能分类流程 → 系统检测到未分类待办时，在待办列表或设置页点击"智能分类"入口 → 为待办选择关键词并匹配分类</td>
+              <td>⚠️ 需改为底部弹窗</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ============ 区域 2.7：需改造为中心弹窗→底部弹窗 ============ -->
+      <section class="spec-section">
+        <h2>需改造为中心弹窗→底部弹窗</h2>
+        <p class="examples-intro">以下弹窗当前使用中心 Dialog 实现，属于「带搜索选择器型」但未遵循底部弹窗规范，建议改造：</p>
+        <div class="example-card" style="border-left: 4px solid #FF9A5C;">
+          <div class="example-card-header">
+            <div class="example-icon-wrapper" style="background: #FFEBEE;">
+              <i data-lucide="folder" class="example-icon" style="color: #E53935;"></i>
+            </div>
+            <div class="example-card-text">
+              <h3>CategorySelectorDialog → CategoryPickerSheet（增强）</h3>
+              <p><strong>当前实现：</strong>AlertDialog（中心弹窗）</p>
+              <p><strong>如何调出：</strong>首页待办卡片角标点分组；待办编辑页点"分类"按钮</p>
+              <p><strong>改造理由：</strong>选项多 + 支持长按删除 + 自定义输入，内容偏重；与已有 CategoryPickerSheet 视觉割裂，应统一</p>
+              <p><strong>改造方向：</strong>复用/增强 CategoryPickerSheet（补充自定义输入、长按删除功能）</p>
+            </div>
+          </div>
+          <div class="example-tag">文件：CategorySelectorDialog.kt</div>
+        </div>
+        <div class="example-card" style="border-left: 4px solid #FF9A5C;">
+          <div class="example-card-header">
+            <div class="example-icon-wrapper" style="background: #FFEBEE;">
+              <i data-lucide="link" class="example-icon" style="color: #E53935;"></i>
+            </div>
+            <div class="example-card-text">
+              <h3>CardLinkSelectorDialog → CardLinkPickerSheet</h3>
+              <p><strong>当前实现：</strong>Dialog（中心弹窗）</p>
+              <p><strong>如何调出：</strong>待办 / 灵感编辑页点"关联卡片"</p>
+              <p><strong>改造理由：</strong>带搜索框 + LazyColumn 列表，典型带搜索选择器；中心 Dialog 空间局促，底部 Sheet 更适合长列表</p>
+              <p><strong>改造方向：</strong>新建 CardLinkPickerSheet，注意键盘与滚动嵌套处理</p>
+            </div>
+          </div>
+          <div class="example-tag">文件：CardLinkSelectorDialog.kt</div>
+        </div>
+        <div class="example-card" style="border-left: 4px solid #FF9A5C;">
+          <div class="example-card-header">
+            <div class="example-icon-wrapper" style="background: #FFEBEE;">
+              <i data-lucide="search" class="example-icon" style="color: #E53935;"></i>
+            </div>
+            <div class="example-card-text">
+              <h3>KeywordSelectionDialog → KeywordSelectionSheet</h3>
+              <p><strong>当前实现：</strong>AlertDialog（中心弹窗）</p>
+              <p><strong>如何调出：</strong>智能分类流程触发</p>
+              <p><strong>改造理由：</strong>关键词 + 分类双重选择，内容较多；底部 Sheet 提供更充足的展示空间</p>
+              <p><strong>改造方向：</strong>新建 KeywordSelectionSheet，保持双重选择逻辑</p>
+            </div>
+          </div>
+          <div class="example-tag">文件：KeywordSelectionDialog.kt</div>
+        </div>
+      </section>
+
+      <!-- 区域 3：底部规范标注表 -->
+      <section class="spec-section">
+        <h2>规范标注</h2>
+        <table class="spec-table">
+          <thead>
+            <tr>
+              <th>Token</th>
+              <th>值</th>
+              <th>用途</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>--cm-radius-sheet</td>
+              <td>24px</td>
+              <td>底部弹窗顶部圆角</td>
+            </tr>
+            <tr>
+              <td>--cm-primary</td>
+              <td>#FF9A5C</td>
+              <td>暖橙主色（选中竖条、check 图标、聚焦边框）</td>
+            </tr>
+            <tr>
+              <td>--cm-primary-soft</td>
+              <td>#FFF0E5</td>
+              <td>选中行暖橙浅色背景</td>
+            </tr>
+            <tr>
+              <td>搜索框边框</td>
+              <td>1px #EEEEEE</td>
+              <td>搜索框默认边框</td>
+            </tr>
+            <tr>
+              <td>搜索框背景</td>
+              <td>#F8F6F3</td>
+              <td>搜索框默认背景</td>
+            </tr>
+            <tr>
+              <td>搜索框聚焦边框</td>
+              <td>#FF9A5C</td>
+              <td>聚焦时边框色</td>
+            </tr>
+            <tr>
+              <td>标题字号</td>
+              <td>18px / 600</td>
+              <td>弹窗标题</td>
+            </tr>
+            <tr>
+              <td>选项行字号</td>
+              <td>16px / 500</td>
+              <td>选项文字</td>
+            </tr>
+            <tr>
+              <td>选项行 padding</td>
+              <td>14px 24px</td>
+              <td>选项行内边距</td>
+            </tr>
+            <tr>
+              <td>选项行高度</td>
+              <td>~52dp</td>
+              <td>单行高度</td>
+            </tr>
+            <tr>
+              <td>拖拽条</td>
+              <td>36×4px / r2px</td>
+              <td>顶部拖拽指示器</td>
+            </tr>
+            <tr>
+              <td>安全区</td>
+              <td>24px</td>
+              <td>底部安全间距</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+    <script>lucide.createIcons();</script>
+</body>
+</html>
