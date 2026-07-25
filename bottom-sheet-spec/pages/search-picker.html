@@ -556,6 +556,8 @@
           <li>选项列表可滚动，选中项与单选选择器样式一致</li>
           <li>每行包含 Lucide 图标（20px）+ 文字（16px Medium），左对齐排列</li>
           <li>选项行 padding：上下 14px / 左右 24px，行高约 52dp</li>
+          <li>拖拽条：36×4px，圆角 2px，居中，颜色 #E0E0E0</li>
+          <li>展开动画：弹窗从屏幕底部弹簧上滑展开，translateY(100% → 0)，spring（dampingRatio 0.8，stiffness 400），遮罩同步淡入 opacity(0 → 1)</li>
         </ul>
       </section>
 
@@ -676,8 +678,8 @@
             <tr>
               <td>CategoryPickerSheet.kt</td>
               <td>ModalBottomSheet</td>
-              <td style="text-align: left;"><strong>已定义但未接入业务。</strong>CategoryPickerSheet 是底部弹窗组件但 0 次调用。当前"移动到分组"实际使用 CategorySelectorDialog（自定义 Dialog），入口：待办列表页 → 右上角"⋮"三点 → 批量选择 → 勾选待办 → 底部工具栏"移动到分组"；或待办编辑页 → 分类选择器</td>
-              <td>⚠️ 需替换为 CategoryPickerSheet</td>
+              <td style="text-align: left;"><strong>已接入业务，替代原 CategorySelectorDialog。</strong>待办编辑页 → 分组行；首页待办卡片 → 分组角标；待办列表页 → "⋮"批量选择 → 底部操作栏"移动到分组"。以上入口均弹出选择分类底部弹窗（FlowRow Tag："默认分类"+"我的分组"+自定义创建+长按删除）。已按带搜索选择器型原型规范完整改造</td>
+              <td>✅ 已接入</td>
             </tr>
             <tr>
               <td>TagPickerSheet.kt</td>
@@ -692,10 +694,10 @@
               <td>✅ 符合规范</td>
             </tr>
             <tr>
-              <td>CategorySelectorDialog.kt</td>
-              <td>AlertDialog</td>
-              <td>路径1：首页待办卡片左上角分类角标 → 点击角标切换分组；路径2：待办编辑页 → 点击"分类"按钮选择该待办所属分组</td>
-              <td>⚠️ 需改为底部弹窗</td>
+              
+              
+              
+              
             </tr>
             <tr>
               
@@ -788,6 +790,11 @@
               <td>拖拽条</td>
               <td>36×4px / r2px</td>
               <td>顶部拖拽指示器</td>
+            </tr>
+            <tr>
+              <td>展开动画</td>
+              <td>spring / ~350ms</td>
+              <td>弹窗弹簧上滑 + 遮罩淡入</td>
             </tr>
             <tr>
               <td>安全区</td>

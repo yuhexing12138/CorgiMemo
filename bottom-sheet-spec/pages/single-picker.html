@@ -510,6 +510,8 @@
           <li>未选中项默认白底，hover 时背景 #F8F6F3</li>
           <li>每行包含 Lucide 图标（20px）+ 文字（16px Medium），左对齐排列</li>
           <li>选项行 padding：上下 14px / 左右 24px，行高约 52dp</li>
+          <li>拖拽条：36×4px，圆角 2px，居中，颜色 #E0E0E0</li>
+          <li>展开动画：弹窗从屏幕底部弹簧上滑展开，translateY(100% → 0)，spring（dampingRatio 0.8，stiffness 400），遮罩同步淡入 opacity(0 → 1)</li>
         </ul>
       </section>
 
@@ -604,13 +606,13 @@
             <tr>
               <td>PriorityPickerSheet.kt</td>
               <td>ModalBottomSheet</td>
-              <td>待办列表页 → 右上角"⋮"三点 → 批量选择 → 选中待办 → 底部操作栏"更多选项"（⋮）→ "优先级"按钮，弹出无/低/中/高四选 1（注意：待办编辑页内联优先级仍使用 AlertDialog，非此组件）</td>
+              <td>待办列表页 → 右上角"⋮"三点 → 批量选择 → 选中待办 → 底部操作栏"更多选项"（⋮）→ "优先级"按钮，弹出无/低/中/高四选1（左侧 PriorityColors 彩色圆点 + 选中文字/✓与优先级颜色一致，与待办编辑页内联 AlertDialog 视觉统一）</td>
               <td>✅ 符合规范</td>
             </tr>
             <tr>
               <td>DateTypePickerBottomSheet.kt</td>
               <td>ModalBottomSheet</td>
-              <td>特殊日期模块 → 新建或编辑日期卡片 → 点击"类型"字段，在生日/纪念日/倒计时等类型中单选</td>
+              <td>特殊日期模块 → 新建或编辑日期卡片 → 点击"类型"字段 → 弹出 7 个固定内置类型（emoji+名称）+ 已有自定义类型列表 + "自定义"展开输入，选中即回调（已按单选选择器型原型改造：补充拖动指示器+暖橙关闭按钮+分割线，emoji 保留 20sp，行样式标准化）</td>
               <td>✅ 符合规范</td>
             </tr>
             <tr>
@@ -628,7 +630,7 @@
             <tr>
               <td>ColorPickerBottomSheet.kt</td>
               <td>ModalBottomSheet</td>
-              <td>待办编辑页或灵感编辑页 → 点击顶部导航栏右侧的调色板图标（🎨），弹出 12 种预设背景色供单选</td>
+              <td>待办编辑页或灵感编辑页 → 点击顶部导航栏右侧调色板图标（🎨）→ 弹出 12 种预设背景色 4×3 网格（专属工具型，非单选选择器型。已补充拖动指示器+标题栏+暖橙关闭按钮+分割线，色块网格保持原样）</td>
               <td>✅ 符合规范</td>
             </tr>
             <tr>
@@ -676,6 +678,7 @@
             <tr><td>选项行高度</td><td>~52dp</td><td>单行高度</td></tr>
             <tr><td>分割线</td><td>rgba(0,0,0,0.08)</td><td>弹窗内部分割线</td></tr>
             <tr><td>拖拽条</td><td>36×4px / r2px</td><td>顶部拖拽指示器</td></tr>
+            <tr><td>展开动画</td><td>spring / ~350ms</td><td>弹窗弹簧上滑 + 遮罩淡入</td></tr>
             <tr><td>安全区</td><td>24px</td><td>底部安全间距</td></tr>
           </tbody>
         </table>

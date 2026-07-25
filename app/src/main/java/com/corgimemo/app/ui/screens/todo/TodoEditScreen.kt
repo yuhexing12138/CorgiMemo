@@ -189,7 +189,7 @@ fun TodoEditScreen(
      * null = 不显示确认弹窗；非 null = 显示「确认删除分类」弹窗
      *
      * 触发链：用户长按弹窗中的自定义分类 Tag
-     *   → CategorySelectorDialog.onCategoryLongPress(category)
+     *   → CategoryPickerSheet.onCategoryLongPress(category)
      *   → pendingDeleteCategory = category（弹窗不关闭，让用户看清背景）
      *   → 弹出确认 AlertDialog
      *   → 用户点击「删除」→ viewModel.deleteCustomCategory + 关闭确认弹窗 + 关闭选分类弹窗
@@ -1097,23 +1097,9 @@ fun TodoEditScreen(
                             val totalCount = savedOnlyList.size
 
                             if (totalCount == 1) {
-                                // 只有一个已保存 todo：直接走单张分享（不弹选择）
-                                // v2026-07-25 单一数据源：预查 content_blocks 表获取图片附件路径
-                                val todoIds = listOf(mainTodo.id)
-                                val (todoImgMap, subTaskImgMap) = viewModel.getAttachmentsForShare(todoIds)
-                                ShareCoordinator.shareTodosFromEdit(
-                                    context = context,
-                                    mainTodo = mainTodo,
-                                    savedSubTodos = savedSubTodos,
-                                    categories = categories,
-                                    hasUnsavedGroups = false,
-                                    todoImagePaths = todoImgMap,
-                                    subTaskImagePaths = subTaskImgMap,
-                                    onShowSnackBar = { msg ->
-                                        coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
-                                    },
-                                    onShowDialog = null
-                                )
+                                // 只有一个已保存 todo：也弹出 ShareModeDialog 让用户选择保存/分享
+                                shareTodosSnapshot = savedOnlyList
+                                showShareModeDialog = true
                                 return@launch
                             }
 
@@ -2112,7 +2098,9 @@ fun TodoEditScreen(
     }
 
     pendingCategoryGroupId?.let { targetGroupId ->
-        CategorySelectorDialog(
+        val categoryPickerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        com.corgimemo.app.ui.components.CategoryPickerSheet(
+            sheetState = categoryPickerState,
             categories = categories,
             currentCategoryId = groupCategoryIds[targetGroupId] ?: 0L,
             onDismiss = { pendingCategoryGroupId = null },
@@ -2141,7 +2129,7 @@ fun TodoEditScreen(
     /**
      * 删除自定义分类确认弹窗
      *
-     * 叠加在 [CategorySelectorDialog] 之上显示（Material3 AlertDialog 默认层级更高），
+     * 叠加在 [CategoryPickerSheet] 之上显示（Material3 AlertDialog 默认层级更高），
      * 避免在长按后直接关闭选分类弹窗导致用户失去上下文。
      *
      * 删除行为：
@@ -2207,21 +2195,18 @@ fun TodoEditScreen(
      *
      * 当用户在编辑页点击"分享"按钮时，onShareClick 内 Coordinator 通过回调设置
      * shareTodosSnapshot + showShareModeDialog=true 触发显示。
-     * 弹窗中提供"合并分享/一条条分享/取消"三种操作。
      */
     if (showShareModeDialog) {
-        val enableMerge = shareTodosSnapshot.size <= 10
+        val shareSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         com.corgimemo.app.ui.components.ShareModeDialog(
-            count = shareTodosSnapshot.size,
-            enableMerge = enableMerge,
+            sheetState = shareSheetState,
             onDismiss = { showShareModeDialog = false },
-            onMerge = {
+            onSaveToAlbum = {
                 showShareModeDialog = false
                 coroutineScope.launch {
-                    // v2026-07-25 单一数据源：预查 content_blocks 表获取图片附件路径
                     val todoIds = shareTodosSnapshot.map { it.id }
                     val (todoImgMap, subTaskImgMap) = viewModel.getAttachmentsForShare(todoIds)
-                    ShareCoordinator.shareMerged(
+                    ShareCoordinator.shareOneByOne(
                         context = context,
                         todos = shareTodosSnapshot,
                         categories = categories,
@@ -2233,10 +2218,9 @@ fun TodoEditScreen(
                     )
                 }
             },
-            onOneByOne = {
+            onMoreShare = {
                 showShareModeDialog = false
                 coroutineScope.launch {
-                    // v2026-07-25 单一数据源：预查 content_blocks 表获取图片附件路径
                     val todoIds = shareTodosSnapshot.map { it.id }
                     val (todoImgMap, subTaskImgMap) = viewModel.getAttachmentsForShare(todoIds)
                     ShareCoordinator.shareOneByOne(

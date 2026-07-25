@@ -187,7 +187,7 @@ fun TodoListItem(
      * 分组角标点击回调（v2026-07-24 新增，v2026-07-25 改为弹出改变分组弹窗）
      *
      * 当 [categoryName] 非空时在卡片左上角显示分组角标；点击角标时触发此回调，
-     * 由父级弹出 [CategorySelectorDialog] 供用户选择新分组。
+     * 由父级弹出 [CategoryPickerSheet] 供用户选择新分组。
      *
      * 不传时角标仍可显示但不可点击（保持向后兼容）。
      */

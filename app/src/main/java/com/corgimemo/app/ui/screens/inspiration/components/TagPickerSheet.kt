@@ -26,8 +26,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
@@ -45,28 +43,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.corgimemo.app.ui.theme.UiColors
 
 /**
  * 标签选择底部弹窗组件
  *
- * 用于灵感编辑页的标签管理，排布方式参考待办编辑页的 CategorySelectorDialog：
- * - 标签使用 FlowRow 流式布局（圆角矩形 Chip 样式，带 # 前缀）
- * - 长按标签触发删除确认对话框（非直接删除，防误触）
- * - 顶部输入框 + 添加按钮：添加新标签到本地暂存列表
- * - 历史标签区域：显示曾经使用过的标签，点击快速添加
- * - 底部"取消"/"确认"按钮：取消放弃本次更改，确认保存并关闭
+ * 带搜索选择器型变体，用于灵感编辑页的标签管理。
+ * FlowRow Chip 布局 + 输入框添加 + 历史标签快速选择 + 取消/确认按钮。
  *
- * 本地暂存机制：
- * - 打开弹窗时以传入的 tags 初始化 localTags
- * - 增删操作只修改 localTags，不立即回调
- * - 点击"确认"：onTagsChange(localTags) + onDismiss()
- * - 点击"取消"：直接 onDismiss()（不回调，放弃更改）
+ * 展开动画（由 Material3 ModalBottomSheet 提供）：
+ *   弹窗：spring 弹簧上滑 translateY(100% → 0)，dampingRatio ≈ 0.8，stiffness ≈ 400
+ *   遮罩：淡入 opacity(0 → 0.32)
  *
  * @param sheetState 底部弹窗状态控制对象
  * @param tags 当前标签列表（初始值）
- * @param savedTags 历史标签列表（从所有灵感聚合去重，用于快速选择）
- * @param onTagsChange 标签变更回调（仅点击确认时触发，传入完整新列表）
+ * @param savedTags 历史标签列表（从所有灵感聚合去重）
+ * @param onTagsChange 标签变更回调（仅点击确认时触发）
  * @param onDismiss 弹窗关闭回调
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -78,79 +69,49 @@ fun TagPickerSheet(
     onTagsChange: (List<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
-    /** 本地暂存标签列表（确认后才回调） */
     var localTags by remember { mutableStateOf(tags) }
-    /** 当前输入的新标签内容 */
     var newTagText by remember { mutableStateOf("") }
-    /** 待删除的标签（长按后弹出确认对话框） */
     var pendingDeleteTag by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(
         sheetState = sheetState,
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = Color.White,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        scrimColor = Color.Black.copy(alpha = 0.32f),
         dragHandle = null
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp)
+                .padding(bottom = 24.dp)
         ) {
-            /** 自定义拖动指示器 */
-            Box(
-                modifier = Modifier
-                    .padding(vertical = 12.dp)
-                    .fillMaxWidth()
-                    .height(4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                    modifier = Modifier.width(36.dp)
-                )
-            }
+            /** 拖动指示器：36×4px，圆角 2px，居中，#E0E0E0 */
+            DragHandle()
 
-            /** 标题栏：标题 + 关闭按钮 */
+            /** 标题栏：左对齐标题 + 右侧圆形关闭按钮 */
+            TitleBar(title = "标签管理", onDismiss = onDismiss)
+
+            /** 标题下方分割线 */
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 24.dp),
+                color = Color(0x14000000)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            /** 输入框 + 添加按钮 */
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "标签管理",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "关闭",
-                        tint = UiColors.Primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
-            /** 自定义输入框 + 添加按钮 */
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                    .padding(horizontal = 24.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
                     value = newTagText,
                     onValueChange = { newTagText = it },
                     placeholder = {
-                        Text("输入新标签...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("输入新标签...", color = Color(0xFF999999), fontSize = 14.sp)
                     },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
@@ -164,7 +125,7 @@ fun TagPickerSheet(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(UiColors.Primary)
+                        .background(Color(0xFFFF9A5C))
                         .clickable {
                             val trimmed = newTagText.trim()
                             if (trimmed.isNotBlank() && trimmed !in localTags) {
@@ -185,7 +146,7 @@ fun TagPickerSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            /** 标签流式排布区域（参考待办编辑页 CategorySelectorDialog 的 FlowRow 布局） */
+            /** 标签流式排布区域 */
             if (localTags.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -195,7 +156,7 @@ fun TagPickerSheet(
                 ) {
                     Text(
                         text = "暂无标签，请在上方输入添加",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color(0xFF999999),
                         fontSize = 14.sp
                     )
                 }
@@ -223,7 +184,7 @@ fun TagPickerSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            /** 历史标签区域：显示曾经使用过的标签（排除已选中的），点击快速添加 */
+            /** 历史标签区域 */
             val availableSavedTags = savedTags.filter { it !in localTags }
             if (availableSavedTags.isNotEmpty()) {
                 Column(
@@ -235,7 +196,7 @@ fun TagPickerSheet(
                         text = "历史标签",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color(0xFF888888),
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     FlowRow(
@@ -270,7 +231,7 @@ fun TagPickerSheet(
                 TextButton(onClick = onDismiss) {
                     Text(
                         text = "取消",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color(0xFF888888),
                         fontSize = 14.sp
                     )
                 }
@@ -283,7 +244,7 @@ fun TagPickerSheet(
                 ) {
                     Text(
                         text = "确认",
-                        color = UiColors.Primary,
+                        color = Color(0xFFFF9A5C),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -292,7 +253,7 @@ fun TagPickerSheet(
         }
     }
 
-    /** 长按标签删除确认对话框（防误触） */
+    /** 长按标签删除确认对话框 */
     pendingDeleteTag?.let { targetTag ->
         AlertDialog(
             onDismissRequest = { pendingDeleteTag = null },
@@ -310,10 +271,7 @@ fun TagPickerSheet(
                         pendingDeleteTag = null
                     }
                 ) {
-                    Text(
-                        text = "删除",
-                        color = Color(0xFFDC2626)
-                    )
+                    Text("删除", color = Color(0xFFDC2626))
                 }
             },
             dismissButton = {
@@ -325,14 +283,61 @@ fun TagPickerSheet(
     }
 }
 
+/** 拖动指示器：36×4px，圆角 2px，居中，#E0E0E0 */
+@Composable
+private fun DragHandle() {
+    Box(
+        modifier = Modifier
+            .padding(top = 12.dp)
+            .fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(36.dp)
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color(0xFFE0E0E0))
+        )
+    }
+}
+
+/** 标题栏：左对齐标题 + 右侧圆形关闭按钮 */
+@Composable
+private fun TitleBar(title: String, onDismiss: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF2D2D2D),
+            modifier = Modifier.weight(1f)
+        )
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(Color(0xFFFFF0E5))
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "关闭",
+                tint = Color(0xFFFF9A5C),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
 /**
  * 标签 Chip 组件
- *
- * 圆角矩形样式，带 # 前缀，长按触发删除回调。
- * 样式参考待办编辑页 CategorySelectorDialog 的 CategoryTag。
- *
- * @param tag 标签文本
- * @param onLongClick 长按回调（触发删除确认对话框）
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -343,7 +348,7 @@ private fun TagChip(
     Row(
         modifier = Modifier
             .combinedClickable(
-                onClick = { /* 点击无操作（仅展示） */ },
+                onClick = { /* 点击无操作 */ },
                 onLongClick = onLongClick
             )
             .background(
@@ -357,19 +362,13 @@ private fun TagChip(
             text = "#$tag",
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
-            color = UiColors.Primary
+            color = Color(0xFFFF9A5C)
         )
     }
 }
 
 /**
  * 历史标签 Chip 组件
- *
- * 用于显示曾经使用过的标签，点击后添加到当前标签列表。
- * 视觉上与已选中标签区分（使用 surfaceVariant 背景 + 灰色文字）。
- *
- * @param tag 标签文本
- * @param onClick 点击回调（添加到当前标签列表）
  */
 @Composable
 private fun HistoryTagChip(
@@ -380,7 +379,7 @@ private fun HistoryTagChip(
         modifier = Modifier
             .clickable(onClick = onClick)
             .background(
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                color = Color(0xFFF0F0F2),
                 shape = RoundedCornerShape(20.dp)
             )
             .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -389,7 +388,7 @@ private fun HistoryTagChip(
         Text(
             text = "#$tag",
             fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = Color(0xFF888888)
         )
     }
 }

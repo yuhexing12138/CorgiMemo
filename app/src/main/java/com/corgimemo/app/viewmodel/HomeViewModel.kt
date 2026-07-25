@@ -1118,7 +1118,7 @@ class HomeViewModel @Inject constructor(
     /**
      * 更新待办的分组（v2026-07-25 新增）
      *
-     * 从首页待办卡片分组角标点击触发，弹出 [CategorySelectorDialog] 后，
+     * 从首页待办卡片分组角标点击触发，弹出 [CategoryPickerSheet] 后，
      * 用户选择新分组或创建自定义分组时调用此方法。
      *
      * 两种场景：

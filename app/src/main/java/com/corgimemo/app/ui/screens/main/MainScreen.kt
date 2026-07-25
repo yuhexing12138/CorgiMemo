@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -1142,37 +1143,32 @@ fun MainScreen(
      *
      * 当用户点击批量操作栏的"分享"按钮时，onShare 内 Coordinator 通过回调设置
      * shareTodosSnapshot + showShareModeDialog=true 触发显示。
-     * 弹窗中提供"合并分享/一条条分享/取消"三种操作。
      */
     if (showShareModeDialog) {
-        val enableMerge = shareTodosSnapshot.size <= 10
+        val shareSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ShareModeDialog(
-            count = shareTodosSnapshot.size,
-            enableMerge = enableMerge,
+            sheetState = shareSheetState,
             onDismiss = { showShareModeDialog = false },
-            onMerge = {
+            onSaveToAlbum = {
                 showShareModeDialog = false
                 coroutineScope.launch {
-                    // v2026-07-25 单一数据源：预查 content_blocks 表获取图片附件路径
                     val todoIds = shareTodosSnapshot.map { it.id }
                     val (todoImgMap, subTaskImgMap) = homeViewModel.getAttachmentsForShare(todoIds)
-                    ShareCoordinator.shareMerged(
+                    ShareCoordinator.shareOneByOne(
                         context = context,
                         todos = shareTodosSnapshot,
                         categories = categories,
                         todoImagePaths = todoImgMap,
                         subTaskImagePaths = subTaskImgMap,
                         onShowSnackBar = { msg ->
-                            // 统一通过顶层 snackbarHostState 显示
                             coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
                         }
                     )
                 }
             },
-            onOneByOne = {
+            onMoreShare = {
                 showShareModeDialog = false
                 coroutineScope.launch {
-                    // v2026-07-25 单一数据源：预查 content_blocks 表获取图片附件路径
                     val todoIds = shareTodosSnapshot.map { it.id }
                     val (todoImgMap, subTaskImgMap) = homeViewModel.getAttachmentsForShare(todoIds)
                     ShareCoordinator.shareOneByOne(

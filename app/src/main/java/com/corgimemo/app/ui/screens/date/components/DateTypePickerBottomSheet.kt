@@ -1,14 +1,37 @@
 package com.corgimemo.app.ui.screens.date.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -24,25 +47,21 @@ import com.corgimemo.app.viewmodel.DateCategory
  * - [CustomNew]：新建自定义类型（调用方需先创建类型再保存日期）
  */
 sealed class DateTypePickerResult {
-    /** 选中内置类型 */
     data class BuiltIn(val category: DateCategory) : DateTypePickerResult()
-    /** 选中已有自定义类型 */
     data class CustomExisting(val customType: CustomDateType) : DateTypePickerResult()
-    /** 新建自定义类型（返回名称，调用方负责创建） */
     data class CustomNew(val name: String) : DateTypePickerResult()
 }
 
 /**
  * 类型选择底部弹窗（日期新建/编辑页专用）
  *
- * 提供三种类型选择方式：
- * 1. 7 个固定内置类型：纪念日 / 生日 / 节日 / 生活 / 学习 / 工作 / 娱乐
- * 2. 已有自定义类型列表（从侧滑栏同步，存储为 "CUSTOM:<id>" 格式）
- * 3. "自定义"输入功能：输入名称后新建类型
+ * 单选选择器型底部弹窗，提供三种类型选择方式。
+ * 选中即回调并关闭弹窗，无预选状态。
  *
- * 数据同步说明：
- * - 自定义类型列表与侧滑栏、数据统计页共享同一数据源（CustomDateType 表）
- * - 选中已有自定义类型时存储为 "CUSTOM:<id>" 格式，重命名/删除时自动同步
+ * 展开动画（由 Material3 ModalBottomSheet 提供）：
+ *   弹窗：spring 弹簧上滑 translateY(100% → 0)，dampingRatio ≈ 0.8，stiffness ≈ 400
+ *   遮罩：淡入 opacity(0 → 0.32)
+ * 严格遵循单选选择器型底部弹窗原型规范。
  *
  * @param customDateTypes 已有自定义类型列表（从 ViewModel 获取）
  * @param onDismissRequest 关闭弹窗回调
@@ -55,10 +74,6 @@ fun DateTypePickerBottomSheet(
     onDismissRequest: () -> Unit,
     onSelected: (DateTypePickerResult) -> Unit
 ) {
-    // 弹窗状态：控制滑入/滑出动画与展开高度
-    val sheetState = rememberModalBottomSheetState()
-
-    // 7 个固定类型列表：纪念日/生日/节日/生活/学习/工作/娱乐
     val fixedCategories = remember {
         listOf(
             DateCategory.ANNIVERSARY,
@@ -71,50 +86,39 @@ fun DateTypePickerBottomSheet(
         )
     }
 
-    // 是否展开"自定义"输入区
     var showCustomInput by remember { mutableStateOf(false) }
-
-    // 自定义类型名称输入框内容
     var customName by remember { mutableStateOf("") }
 
-    // 弹窗主体：圆角顶部 24dp，使用 surface 背景色与项目主题保持一致
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
-        sheetState = sheetState,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Color.White,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        containerColor = MaterialTheme.colorScheme.surface
+        scrimColor = Color.Black.copy(alpha = 0.32f),
+        dragHandle = null
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .padding(bottom = 24.dp)
         ) {
-            // 顶部标题栏：标题 + 关闭按钮
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "选择类型",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = onDismissRequest) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = "关闭",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            /** 拖动指示器：36×4px，圆角 2px，居中，#E0E0E0 */
+            DragHandle()
+
+            /** 标题栏：左对齐标题 + 右侧圆形关闭按钮 */
+            TitleBar(title = "选择类型", onDismiss = onDismissRequest)
+
+            /** 标题下方分割线 */
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 24.dp),
+                color = Color(0x14000000)
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 7 个固定类型选项：点击后回调 BuiltIn 结果并关闭弹窗
+            // 7 个固定类型选项
             fixedCategories.forEach { category ->
-                DateTypeOptionRow(
+                TypeOptionRow(
                     emoji = category.emoji,
                     name = category.displayName,
                     onClick = {
@@ -124,17 +128,16 @@ fun DateTypePickerBottomSheet(
                 )
             }
 
-            // 已有自定义类型列表（从侧滑栏同步）
+            // 已有自定义类型列表
             if (customDateTypes.isNotEmpty()) {
-                // 分隔线
                 HorizontalDivider(
                     modifier = Modifier.padding(vertical = 8.dp),
                     thickness = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    color = Color(0x14000000)
                 )
 
                 customDateTypes.forEach { customType ->
-                    DateTypeOptionRow(
+                    TypeOptionRow(
                         emoji = customType.emoji,
                         name = customType.name,
                         onClick = {
@@ -145,28 +148,26 @@ fun DateTypePickerBottomSheet(
                 }
             }
 
-            // 分隔线（自定义输入区之前）
+            // 分隔线
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 8.dp),
                 thickness = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                color = Color(0x14000000)
             )
 
-            // "自定义"选项：未展开时显示为普通行；点击后展开为输入区
+            // 自定义输入区
             if (!showCustomInput) {
-                DateTypeOptionRow(
+                TypeOptionRow(
                     emoji = "✏️",
                     name = "自定义",
                     onClick = { showCustomInput = true }
                 )
             } else {
-                // 自定义输入区：OutlinedTextField + 添加按钮
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 8.dp)
+                        .padding(horizontal = 24.dp, vertical = 8.dp)
                 ) {
-                    // 限制输入 1-10 字（实时过滤超过 10 字的输入）
                     OutlinedTextField(
                         value = customName,
                         onValueChange = { if (it.length <= 10) customName = it },
@@ -176,7 +177,6 @@ fun DateTypePickerBottomSheet(
                         shape = RoundedCornerShape(12.dp)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    // 添加按钮：仅在输入非空时启用；回调 CustomNew 结果，由调用方创建类型
                     Button(
                         onClick = {
                             val trimmed = customName.trim()
@@ -194,22 +194,67 @@ fun DateTypePickerBottomSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
 
-/**
- * 单个类型选项行（emoji + 名称）
- *
- * 内部 Composable，弹窗内复用。固定高度 56dp，emoji 固定 32dp 宽度占位，名称紧跟其后。
- *
- * @param emoji 左侧 emoji 图标
- * @param name 类型显示名称
- * @param onClick 整行点击回调
- */
+/** 拖动指示器：36×4px，圆角 2px，居中，#E0E0E0 */
 @Composable
-private fun DateTypeOptionRow(
+private fun DragHandle() {
+    Box(
+        modifier = Modifier
+            .padding(top = 12.dp)
+            .fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(36.dp)
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color(0xFFE0E0E0))
+        )
+    }
+}
+
+/** 标题栏：左对齐标题 + 右侧圆形关闭按钮 */
+@Composable
+private fun TitleBar(title: String, onDismiss: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF2D2D2D),
+            modifier = Modifier.weight(1f)
+        )
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(Color(0xFFFFF0E5))
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "关闭",
+                tint = Color(0xFFFF9A5C),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+/** 类型选项行：emoji + 名称，标准单选选择器行样式 */
+@Composable
+private fun TypeOptionRow(
     emoji: String,
     name: String,
     onClick: () -> Unit
@@ -217,23 +262,29 @@ private fun DateTypeOptionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp),
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            )
+            .padding(horizontal = 24.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 左侧 emoji：固定 32dp 宽度以保证名称对齐
+        /** emoji 占位：20sp，固定 32dp 宽度保证名称对齐 */
         Text(
             text = emoji,
             fontSize = 20.sp,
             modifier = Modifier.width(32.dp)
         )
-        Spacer(modifier = Modifier.width(8.dp))
-        // 类型名称
+
+        Spacer(modifier = Modifier.width(16.dp))
+
         Text(
             text = name,
             fontSize = 16.sp,
-            color = MaterialTheme.colorScheme.onSurface
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFF2D2D2D),
+            modifier = Modifier.weight(1f)
         )
     }
 }

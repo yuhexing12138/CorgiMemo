@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -28,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,9 +42,12 @@ import com.corgimemo.app.data.model.CustomDateType
  * 分类操作底部弹窗
  *
  * 触发：侧滑抽屉 → 点击分类项右侧 ⋮ → 弹出置顶/编辑/删除
+ * 展开动画（由 Material3 ModalBottomSheet 提供）：
+ *   弹窗：spring 弹簧上滑 translateY(100% → 0)，dampingRatio ≈ 0.8，stiffness ≈ 400
+ *   遮罩：淡入 opacity(0 → 0.32)
  * 严格遵循操作列表型底部弹窗原型规范。
  *
- * @param sheetState BottomSheet 状态
+ * @param sheetState BottomSheet 状态（skipPartiallyExpanded = true 确保一次性展开）
  * @param category 被操作的分类
  * @param onPin 置顶回调
  * @param onRename 编辑回调
@@ -62,8 +69,12 @@ fun CategoryOperationSheet(
         sheetState = sheetState,
         containerColor = Color.White,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        scrimColor = Color.Black.copy(alpha = 0.32f),
         dragHandle = null
     ) {
+        // CategoryOperationSheet - 展开动画由 ModalBottomSheet 提供
+        // 弹簧上滑 + 遮罩淡入，参考 SpringDefaults.DampingRatioMediumBouncy
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -71,11 +82,11 @@ fun CategoryOperationSheet(
         ) {
             DragHandle()
 
-            // 标题栏：左对齐 + 右侧圆形关闭按钮
+            // 标题栏：左对齐 + 右侧圆形关闭按钮（padding: 12px 24px 16px）
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 16.dp),
+                    .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -99,16 +110,16 @@ fun CategoryOperationSheet(
 
             // 操作列表
             Column(modifier = Modifier.fillMaxWidth()) {
-                ActionRow(emoji = "📌", text = "置顶分组") {
+                ActionRow(icon = Icons.Outlined.PushPin, text = "置顶分组") {
                     onPin()
                     onDismiss()
                 }
-                ActionRow(emoji = "✏️", text = "编辑分组") {
+                ActionRow(icon = Icons.Filled.Edit, text = "编辑分组") {
                     onRename()
                     onDismiss()
                 }
                 ActionRow(
-                    emoji = "🗑️",
+                    icon = Icons.Outlined.Delete,
                     text = "删除分组",
                     isDestructive = true
                 ) {
@@ -124,9 +135,12 @@ fun CategoryOperationSheet(
  * 自定义日期类型操作底部弹窗
  *
  * 与 CategoryOperationSheet 区别：仅含编辑/删除两项，不含置顶。
+ * 展开动画（由 Material3 ModalBottomSheet 提供）：
+ *   弹窗：spring 弹簧上滑 translateY(100% → 0)，dampingRatio ≈ 0.8，stiffness ≈ 400
+ *   遮罩：淡入 opacity(0 → 0.32)
  * 严格遵循操作列表型底部弹窗原型规范。
  *
- * @param sheetState BottomSheet 状态
+ * @param sheetState BottomSheet 状态（skipPartiallyExpanded = true 确保一次性展开）
  * @param customType 被操作的自定义类型
  * @param onRename 编辑回调
  * @param onDelete 删除回调
@@ -146,8 +160,11 @@ fun DateTypeOperationSheet(
         sheetState = sheetState,
         containerColor = Color.White,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        scrimColor = Color.Black.copy(alpha = 0.32f),
         dragHandle = null
     ) {
+        // DateTypeOperationSheet - 展开动画由 ModalBottomSheet 提供
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -155,11 +172,11 @@ fun DateTypeOperationSheet(
         ) {
             DragHandle()
 
-            // 标题栏：emoji + 类型名 + 右侧圆形关闭按钮
+            // 标题栏：emoji + 类型名 + 右侧圆形关闭按钮（padding: 12px 24px 16px）
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 16.dp),
+                    .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
@@ -189,12 +206,12 @@ fun DateTypeOperationSheet(
 
             // 操作列表
             Column(modifier = Modifier.fillMaxWidth()) {
-                ActionRow(emoji = "✏️", text = "编辑类型") {
+                ActionRow(icon = Icons.Filled.Edit, text = "编辑类型") {
                     onRename()
                     onDismiss()
                 }
                 ActionRow(
-                    emoji = "🗑️",
+                    icon = Icons.Outlined.Delete,
                     text = "删除类型",
                     isDestructive = true
                 ) {
@@ -209,13 +226,13 @@ fun DateTypeOperationSheet(
 // ==================== 共享子组件（遵循原型规范） ====================
 
 /**
- * 拖动指示器：36×4px，圆角 2px，居中，#E0E0E0
+ * 拖动指示器：36×4px，圆角 2px，居中，#E0E0E0（margin: 12px auto 0）
  */
 @Composable
 private fun DragHandle() {
     Box(
         modifier = Modifier
-            .padding(vertical = 12.dp)
+            .padding(top = 12.dp)
             .fillMaxWidth(),
         contentAlignment = Alignment.Center
     ) {
@@ -258,7 +275,7 @@ private fun CloseButton(onClick: () -> Unit) {
  */
 @Composable
 private fun ActionRow(
-    emoji: String,
+    icon: ImageVector,
     text: String,
     isDestructive: Boolean = false,
     onClick: () -> Unit
@@ -276,10 +293,11 @@ private fun ActionRow(
             .padding(horizontal = 24.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = emoji,
-            fontSize = 20.sp,
-            color = contentColor
+        Icon(
+            imageVector = icon,
+            contentDescription = text,
+            tint = contentColor,
+            modifier = Modifier.size(20.dp)
         )
 
         Spacer(modifier = Modifier.width(16.dp))

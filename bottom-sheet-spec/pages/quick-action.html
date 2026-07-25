@@ -513,6 +513,8 @@
           <li>文字标签：13px，color #666666，居中对齐</li>
           <li>操作项间距：行间距 16px，列间距 16px</li>
           <li>内容区 padding：16px 24px</li>
+          <li>拖拽条：36×4px，圆角 2px，居中，颜色 #E0E0E0</li>
+          <li>展开动画：弹窗从屏幕底部弹簧上滑展开，translateY(100% → 0)，spring（dampingRatio 0.8，stiffness 400），遮罩同步淡入 opacity(0 → 1)</li>
         </ul>
       </section>
 
@@ -612,7 +614,7 @@
             <tr>
               <td>InspirationLongPressSheet.kt</td>
               <td>ModalBottomSheet</td>
-              <td>灵感列表页 → 长按任一灵感卡片（非点击），从底部弹出置顶/标签/改日期/删除四个操作选项</td>
+              <td>灵感列表页 → 长按任一灵感卡片 → 弹出 2×2 操作网格（置顶/标签/改日期/删除），每项为 Lucide 图标圆形背景（56dp #FFF0E5 / 破坏性 #FFEBEE）+ 文字标签 13sp #666666（已全面改造对齐原型规范）</td>
               <td>✅ 符合规范</td>
             </tr>
           </tbody>
@@ -688,6 +690,11 @@
               <td>拖拽条</td>
               <td>36×4px / r2px</td>
               <td>顶部拖拽指示器</td>
+            </tr>
+            <tr>
+              <td>展开动画</td>
+              <td>spring / ~350ms</td>
+              <td>弹窗弹簧上滑 + 遮罩淡入</td>
             </tr>
             <tr>
               <td>安全区</td>

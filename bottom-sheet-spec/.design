@@ -83,6 +83,27 @@
         "htmlSrc": "pages/quick-action.html",
         "interactions": []
       }
+    },
+    {
+      "id": "page-tool-panel",
+      "title": "专属工具型",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1784937600000,
+      "canvasData": {
+        "x": 1212,
+        "y": 0,
+        "group": 0,
+        "deviceType": "freeSize",
+        "windowSize": {
+          "width": 799,
+          "height": 2200
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/tool-panel.html",
+        "interactions": []
+      }
     }
   ],
   "config": {

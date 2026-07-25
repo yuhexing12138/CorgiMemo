@@ -1,32 +1,39 @@
 package com.corgimemo.app.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,223 +50,387 @@ import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CategoryType
 
 /**
- * 分类选择底部弹窗组件
+ * 分类选择底部弹窗（带搜索选择器型）
  *
- * 用于"移动到分组"功能，让用户选择待办要移动到的目标分类。
- * 支持搜索过滤、分类图标显示、选中状态反馈等。
+ * 替换原 CategorySelectorDialog（AlertDialog），提供：
+ * - FlowRow Tag 标签布局：「默认分类」+「我的分组」两个区域
+ * - 搜索过滤
+ * - 分类颜色高亮 + 选中边框
+ * - 「+ 自定义」按钮 → 展开输入框创建分组
+ * - 长按自定义分类触发删除
+ *
+ * 展开动画（由 Material3 ModalBottomSheet 提供）：
+ *   弹窗：spring 弹簧上滑 translateY(100% → 0)，dampingRatio ≈ 0.8，stiffness ≈ 400
+ *   遮罩：淡入 opacity(0 → 0.32)
+ * 严格遵循带搜索选择器型底部弹窗原型规范。
  *
  * @param sheetState 底部弹窗状态控制对象
- * @param categories 可选分类列表
- * @param currentCategoryId 当前待办所属的分类 ID（用于高亮显示）
- * @param onDismiss 弹窗关闭回调
- * @param onCategorySelected 分类选择回调，返回选中的分类 ID
+ * @param categories 可选分类列表（已包含默认 + 用户自定义）
+ * @param currentCategoryId 当前分类 ID（用于高亮显示）
+ * @param onDismiss 关闭弹窗回调
+ * @param onCategorySelected 分类选中回调，参数为 (id, name)。
+ *        id == 0L 表示自定义创建（name 为用户输入）
+ * @param onCategoryLongPress 自定义分类长按回调（传 null 时不支持长按）
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun CategoryPickerSheet(
     sheetState: SheetState,
     categories: List<Category>,
     currentCategoryId: Long? = null,
     onDismiss: () -> Unit,
-    onCategorySelected: (Long) -> Unit
+    onCategorySelected: (id: Long, name: String) -> Unit,
+    onCategoryLongPress: ((Category) -> Unit)? = null
 ) {
-    /** 搜索关键词状态 */
     var searchQuery by remember { mutableStateOf("") }
+    var showCustomInput by remember { mutableStateOf(false) }
+    var customInput by remember { mutableStateOf("") }
 
-    /** 过滤后的分类列表 */
-    val filteredCategories = remember(searchQuery, categories) {
-        if (searchQuery.isBlank()) {
-            categories
-        } else {
-            categories.filter { category ->
-                category.name.contains(searchQuery, ignoreCase = true)
-            }
-        }
+    val defaultCategories = categories.filter { it.isDefault }
+    val customCategories = categories.filter { !it.isDefault && it.type == CategoryType.CUSTOM }
+
+    /** 搜索过滤 */
+    val filteredDefault = if (searchQuery.isBlank()) {
+        defaultCategories
+    } else {
+        defaultCategories.filter { it.name.contains(searchQuery, ignoreCase = true) }
     }
+    val filteredCustom = if (searchQuery.isBlank()) {
+        customCategories
+    } else {
+        customCategories.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
+    val hasResults = filteredDefault.isNotEmpty() || filteredCustom.isNotEmpty()
 
     ModalBottomSheet(
-        sheetState = sheetState,
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface,
+        sheetState = sheetState,
+        containerColor = Color.White,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        dragHandle = null // 使用自定义拖动指示器
+        scrimColor = Color.Black.copy(alpha = 0.32f),
+        dragHandle = null
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 24.dp)
         ) {
-            /** 自定义拖动指示器 */
-            Box(
-                modifier = Modifier
-                    .padding(vertical = 12.dp)
-                    .fillMaxWidth()
-                    .height(4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                    modifier = Modifier.width(36.dp)
-                )
-            }
+            /** 拖动指示器 */
+            DragHandle()
 
-            /** 标题栏：标题 + 关闭按钮 */
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "移动到分组",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
+            /** 标题栏 */
+            TitleBar(title = "选择分类", onDismiss = onDismiss)
 
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "关闭",
-                        tint = Color(0xFFFF9A5C), // 暖橙色
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
+            /** 分割线 */
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 24.dp),
+                color = Color(0x14000000)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             /** 搜索框 */
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = {
-                    Text("搜索分类...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("搜索分类...", color = Color(0xFF999999), fontSize = 16.sp)
                 },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "搜索",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = Color(0xFF999999),
+                        modifier = Modifier.size(20.dp)
                     )
                 },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 8.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .padding(horizontal = 24.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFFFF9A5C),
+                    unfocusedBorderColor = Color(0xFFE0E0E0),
+                    focusedContainerColor = Color(0xFFF5F5F5),
+                    unfocusedContainerColor = Color(0xFFF5F5F5)
+                )
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            /** 分类列表 */
-            if (filteredCategories.isEmpty()) {
-                /** 空状态提示 */
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 48.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = if (searchQuery.isNotBlank()) "未找到匹配的分类" else "暂无可用分类",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(filteredCategories) { category ->
-                        CategoryPickerItem(
-                            category = category,
-                            isSelected = category.id == currentCategoryId,
-                            onClick = {
-                                onCategorySelected(category.id)
-                                onDismiss()
-                            }
+            /** 内容区：FlowRow Tag 标签 + 垂直滚动 */
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .heightIn(max = 380.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                if (!hasResults && searchQuery.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "未找到匹配的分类",
+                            color = Color(0xFF999999),
+                            fontSize = 14.sp
                         )
+                    }
+                } else {
+                    /** 区域 1：默认分类 */
+                    if (filteredDefault.isNotEmpty()) {
+                        SectionHeader(title = "默认分类")
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            filteredDefault.forEach { category ->
+                                CategoryTag(
+                                    category = category,
+                                    isSelected = category.id == currentCategoryId,
+                                    onClick = {
+                                        onCategorySelected(category.id, category.name)
+                                        onDismiss()
+                                    },
+                                    forceIcon = null
+                                )
+                            }
+                        }
+                    }
+
+                    /** 区域 2：用户自定义分组 */
+                    if (hasResults || customCategories.isNotEmpty()) {
+                        if (filteredCustom.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            SectionHeader(title = "我的分组")
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                filteredCustom.forEach { category ->
+                                    CategoryTag(
+                                        category = category,
+                                        isSelected = category.id == currentCategoryId,
+                                        onClick = {
+                                            onCategorySelected(category.id, category.name)
+                                            onDismiss()
+                                        },
+                                        onLongClick = if (onCategoryLongPress != null) {
+                                            { onCategoryLongPress(category) }
+                                        } else null,
+                                        forceIcon = "📋"
+                                    )
+                                }
+
+                                /** 「+ 自定义」按钮 */
+                                CustomCategoryButton(
+                                    onClick = { showCustomInput = !showCustomInput }
+                                )
+                            }
+                        } else if (customCategories.isEmpty()) {
+                            /** 无自定义分组时显示创建入口 */
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Start
+                            ) {
+                                CustomCategoryButton(
+                                    onClick = { showCustomInput = !showCustomInput }
+                                )
+                            }
+                        }
+                    }
+
+                    /** 自定义输入框 */
+                    if (showCustomInput) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = customInput,
+                                onValueChange = { customInput = it },
+                                placeholder = { Text("输入分组名称", fontSize = 14.sp) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            TextButton(
+                                onClick = {
+                                    val name = customInput.trim()
+                                    if (name.isNotBlank()) {
+                                        onCategorySelected(0L, name)
+                                        onDismiss()
+                                    }
+                                },
+                                enabled = customInput.trim().isNotBlank()
+                            ) {
+                                Text("确定", fontSize = 14.sp)
+                            }
+                        }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
 
-/**
- * 分类选择项组件
- *
- * 单个分类的 UI 展示，包含图标、名称和选中状态。
- *
- * @param category 分类数据
- * @param isSelected 是否为当前选中状态（当前所属分类）
- * @param onClick 点击回调
- */
+/** ==================== 子组件 ==================== */
+
 @Composable
-private fun CategoryPickerItem(
-    category: Category,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    /** 根据分类类型获取对应图标 */
-    val categoryIcon = when (category.type) {
-        CategoryType.STUDY -> "📚"
-        CategoryType.WORK -> "💼"
-        CategoryType.LIFE -> "🏠"
-        CategoryType.SPORT -> "🏃"
-        else -> "📋"
+private fun DragHandle() {
+    Box(
+        modifier = Modifier
+            .padding(top = 12.dp)
+            .fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(36.dp)
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color(0xFFE0E0E0))
+        )
     }
+}
 
-    /** 获取分类对应的颜色 */
-    val categoryColor = when (category.type) {
-        CategoryType.STUDY -> Color(0xFF7EC8A0) // 薄荷绿
-        CategoryType.WORK -> Color(0xFF90CAF9) // 天空蓝
-        CategoryType.LIFE -> Color(0xFFFFB74D) // 暖橙色
-        CategoryType.SPORT -> Color(0xFF7EB8DA) // 运动蓝
-        else -> Color(0xFFB8A0D4) // 默认紫色
-    }
-
+@Composable
+private fun TitleBar(title: String, onDismiss: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 14.dp),
+            .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        /** 分类图标 */
         Text(
-            text = categoryIcon,
-            fontSize = 20.sp,
-            modifier = Modifier.padding(end = 12.dp)
-        )
-
-        /** 分类名称 */
-        Text(
-            text = category.name,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
+            text = title,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF2D2D2D),
             modifier = Modifier.weight(1f)
         )
-
-        /** 选中状态指示器 */
-        if (isSelected) {
-            Text(
-                text = "当前",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = categoryColor,
-                modifier = Modifier
-                    .background(
-                        color = categoryColor.copy(alpha = 0.1f),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(Color(0xFFFFF0E5))
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "关闭",
+                tint = Color(0xFFFF9A5C),
+                modifier = Modifier.size(18.dp)
             )
         }
     }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        color = Color(0xFF888888),
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CategoryTag(
+    category: Category,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    forceIcon: String? = null
+) {
+    val categoryColor = getCategoryColor(category.type)
+    val bgColor = if (isSelected) categoryColor.copy(alpha = 0.25f)
+                  else categoryColor.copy(alpha = 0.12f)
+    val borderModifier = if (isSelected) {
+        Modifier.border(2.dp, categoryColor, RoundedCornerShape(20.dp))
+    } else {
+        Modifier
+    }
+
+    val interactionModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
+    Row(
+        modifier = interactionModifier
+            .then(borderModifier)
+            .background(color = bgColor, shape = RoundedCornerShape(20.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = forceIcon ?: getCategoryEmoji(category.type), fontSize = 14.sp)
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = category.name,
+            fontSize = 14.sp,
+            color = Color(0xFF2D2D2D),
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+        )
+    }
+}
+
+@Composable
+private fun CustomCategoryButton(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .background(
+                color = Color(0xFFF0F0F2),
+                shape = RoundedCornerShape(20.dp)
+            )
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "+",
+            fontSize = 16.sp,
+            color = Color(0xFF888888),
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = "自定义",
+            fontSize = 14.sp,
+            color = Color(0xFF888888)
+        )
+    }
+}
+
+private fun getCategoryEmoji(type: Int): String = when (type) {
+    CategoryType.STUDY -> "📚"
+    CategoryType.WORK -> "💼"
+    CategoryType.LIFE -> "🏠"
+    CategoryType.SPORT -> "🏃"
+    CategoryType.ENTERTAINMENT -> "🎮"
+    else -> "📋"
+}
+
+private fun getCategoryColor(type: Int): Color = when (type) {
+    CategoryType.STUDY -> Color(0xFF7EC8A0)
+    CategoryType.WORK -> Color(0xFF90CAF9)
+    CategoryType.LIFE -> Color(0xFFFFB74D)
+    CategoryType.SPORT -> Color(0xFF7EB8DA)
+    CategoryType.ENTERTAINMENT -> Color(0xFFE1BEE7)
+    else -> Color(0xFFB8A0D4)
 }

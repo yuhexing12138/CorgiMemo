@@ -133,7 +133,8 @@ import com.corgimemo.app.ui.components.PriorityPickerSheet
 import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
 // v2026-07-22 新增：关联列表 BottomSheet
 import com.corgimemo.app.ui.components.RelationListBottomSheet
-import com.corgimemo.app.ui.components.CategorySelectorDialog
+import com.corgimemo.app.ui.components.CategoryPickerSheet
+import com.corgimemo.app.ui.components.ShareModeDialog
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery
 import com.corgimemo.app.ui.components.VoicePreviewDialog
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -314,11 +315,15 @@ fun HomeScreen(
     var showRelationListSheet by remember { mutableStateOf(false) }
     var relationListSourceId by remember { mutableStateOf<Long?>(null) }
 
+    /** 单个卡片分享弹窗状态（左滑/长按面板分享入口） */
+    var showCardShareDialog by remember { mutableStateOf(false) }
+    var cardShareTodoId by remember { mutableStateOf<Long?>(null) }
+
     /**
      * 分组选择弹窗状态（v2026-07-25 新增）
      *
      * 点击待办卡片分组角标时触发：
-     * - pendingCategoryTodoId 非 null 时显示 [CategorySelectorDialog]
+     * - pendingCategoryTodoId 非 null 时显示 [CategoryPickerSheet]
      * - 用户选择/创建分组后调用 viewModel.updateTodoCategory()
      * - 取消时置 null 关闭弹窗
      */
@@ -1089,12 +1094,9 @@ fun HomeScreen(
                                                 viewModel.setSwipeActionExpanded(expanded)
                                             },
                                             onShareClick = {
-                                                // v2026-07-25 单一数据源修复：左滑分享按钮也需传入图片附件路径
-                                                // 旧代码只传 (context, todo, categories)，导致 imagePaths 走默认值 emptyList()
-                                                // 分享卡片里所有图片附件都不显示
-                                                val imgPaths = todoAttachmentsMap[todo.id]?.first ?: emptyList()
-                                                val subImgPaths = subTaskAttachmentsMap.mapValues { it.value.first }
-                                                shareTodoAsImage(context, todo, categories, imgPaths, subImgPaths)
+                                                // v2026-07-25 接入 ShareModeDialog：先弹出"保存到相册/更多分享"选择弹窗
+                                                cardShareTodoId = todo.id
+                                                showCardShareDialog = true
                                             },
                                             onPinClick = {
                                                 viewModel.togglePin(todo.id)
@@ -1136,15 +1138,10 @@ fun HomeScreen(
                                                     viewModel.toggleSelection(todo.id)
                                                 },
                                                 onShareAsImage = {
-                                    // v2026-07-25 单一数据源：从 todoAttachmentsMap 获取主待办图片路径
-                                    // （替代旧的从 todo.imagePaths 字段解析）
-                                    val imgPaths = todoAttachmentsMap[todo.id]?.first ?: emptyList()
-                                    // v2026-07-25 新增：从 subTaskAttachmentsMap 提取子任务图片路径映射
-                                    // （替代旧的 ImageExporter 内部从 sub.imagePaths 字段解析）
-                                    val subImgPaths = subTaskAttachmentsMap
-                                        .mapValues { it.value.first }
-                                    shareTodoAsImage(context, todo, categories, imgPaths, subImgPaths)
-                                },
+                                                    // v2026-07-25 接入 ShareModeDialog：先弹出"保存到相册/更多分享"选择弹窗
+                                                    cardShareTodoId = todo.id
+                                                    showCardShareDialog = true
+                                                },
                                                 onToggleExpand = {
                                                     viewModel.toggleExpand(todo.id)
                                                 },
@@ -1169,7 +1166,7 @@ fun HomeScreen(
                                                 },
                                                 // v2026-07-25 改造：点击分组角标弹出改变分组弹窗
                                                 // - 原 behavior：filterByCategory 过滤该分组待办
-                                                // - 新 behavior：弹出 CategorySelectorDialog 供用户选择新分组
+                                                // - 新 behavior：弹出 CategoryPickerSheet 供用户选择新分组
                                                 // - 原过滤功能通过侧滑抽屉分类列表实现
                                                 onCategoryClick = {
                                                     pendingCategoryTodoId = todo.id
@@ -1280,7 +1277,9 @@ fun HomeScreen(
         // v2026-07-25 新增：分组选择弹窗（点击分组角标触发）
         pendingCategoryTodoId?.let { todoId ->
             val currentTodo = filteredTodos.find { it.id == todoId }
-            CategorySelectorDialog(
+            val categoryPickerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            CategoryPickerSheet(
+                sheetState = categoryPickerState,
                 categories = categories,
                 currentCategoryId = currentTodo?.categoryId,
                 onDismiss = { pendingCategoryTodoId = null },
@@ -1446,43 +1445,69 @@ fun HomeScreen(
         )
     }
 
-    // 批量移动分类选择对话框
+    // 批量移动分类选择底部弹窗
     if (showBatchMoveDialog) {
-        val categoryList = categories
-        AlertDialog(
-            onDismissRequest = { viewModel.setShowBatchMoveDialog(false) },
-            title = { Text("移动到分类") },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    categoryList.forEach { category ->
-                        androidx.compose.foundation.layout.Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    viewModel.setShowBatchMoveDialog(false)
-                                    viewModel.batchMove(category.id)
-                                    coroutineScope.launch {
-                                        snackbarHostState.showSnackbar("已移动到「${category.name}」")
-                                    }
-                                }
-                                .padding(vertical = 12.dp)
-                        ) {
-                            Text(
-                                text = category.name,
-                                fontSize = 16.sp
-                            )
-                        }
-                        HorizontalDivider()
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { viewModel.setShowBatchMoveDialog(false) }) {
-                    Text("取消")
+        val batchMoveSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        CategoryPickerSheet(
+            sheetState = batchMoveSheetState,
+            categories = categories,
+            currentCategoryId = null,
+            onDismiss = { viewModel.setShowBatchMoveDialog(false) },
+            onCategorySelected = { categoryId, categoryName ->
+                viewModel.batchMove(categoryId)
+                viewModel.setShowBatchMoveDialog(false)
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("已移动到「$categoryName」")
                 }
             }
         )
+    }
+
+    // v2026-07-25 单个卡片分享弹窗（左滑/长按面板分享入口）
+    if (showCardShareDialog && cardShareTodoId != null) {
+        val shareTodo = filteredTodos.find { it.id == cardShareTodoId }
+        if (shareTodo != null) {
+            val shareSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            ShareModeDialog(
+                sheetState = shareSheetState,
+                onDismiss = { showCardShareDialog = false; cardShareTodoId = null },
+                onSaveToAlbum = {
+                    showCardShareDialog = false
+                    coroutineScope.launch {
+                        try {
+                            val imgPaths = todoAttachmentsMap[shareTodo.id]?.first ?: emptyList()
+                            val subImgPaths = subTaskAttachmentsMap.mapValues { it.value.first }
+                            val bitmap = ImageExporter.createTodoShareCard(
+                                 context = context,
+                                 todo = shareTodo,
+                                 category = categories.find { it.id == shareTodo.categoryId },
+                                 subTodos = com.corgimemo.app.data.repository.SubTaskManager.getSubTasks(context, shareTodo.id),
+                                 imagePaths = imgPaths,
+                                 subTaskImagePaths = subImgPaths,
+                                 relationCount = 0
+                             )
+                             val uri = com.corgimemo.app.util.InspirationScreenshot.saveToGallery(context, bitmap)
+                            if (uri != null) {
+                                snackbarHostState.showSnackbar("已保存到相册")
+                            } else {
+                                snackbarHostState.showSnackbar("保存失败")
+                            }
+                        } catch (e: Exception) {
+                            snackbarHostState.showSnackbar("保存失败：${e.message}")
+                        } finally {
+                            cardShareTodoId = null
+                        }
+                    }
+                },
+                onMoreShare = {
+                    showCardShareDialog = false
+                    val imgPaths = todoAttachmentsMap[shareTodo.id]?.first ?: emptyList()
+                    val subImgPaths = subTaskAttachmentsMap.mapValues { it.value.first }
+                    shareTodoAsImage(context, shareTodo, categories, imgPaths, subImgPaths)
+                    cardShareTodoId = null
+                }
+            )
+        }
     }
 
     LaunchedEffect(showOutfitSheet) {

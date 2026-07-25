@@ -60,8 +60,11 @@ val SORT_OPTIONS = listOf(
  *
  * 提供待办列表的排序方式选择功能，
  * 包含 4 种排序选项：按更新时间或创建时间升序/降序排列。
+ * 展开动画（由 Material3 ModalBottomSheet 提供）：
+ *   弹窗：spring 弹簧上滑 translateY(100% → 0)，dampingRatio ≈ 0.8，stiffness ≈ 400
+ *   遮罩：淡入 opacity(0 → 0.32)
  *
- * @param sheetState 底部弹窗状态控制
+ * @param sheetState 底部弹窗状态控制（调用方需用 rememberModalBottomSheetState(skipPartiallyExpanded = true) 创建）
  * @param currentSortOrder 当前选中的排序方式标识符
  * @param onDismiss 弹窗关闭回调
  * @param onSortOrderSelected 排序方式选择回调，返回选中的排序类型标识符
@@ -81,24 +84,27 @@ fun SortBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        dragHandle = null // 使用自定义拖动指示器
+        scrimColor = Color.Black.copy(alpha = 0.32f),
+        dragHandle = null
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 24.dp)
         ) {
-            /** 自定义拖动指示器 */
+            /** 拖动指示器：36×4px，圆角 2px，居中，#E0E0E0（与原型一致） */
             Box(
                 modifier = Modifier
                     .padding(vertical = 12.dp)
-                    .fillMaxWidth()
-                    .height(4.dp),
+                    .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                    modifier = Modifier.width(36.dp)
+                Box(
+                    modifier = Modifier
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color(0xFFE0E0E0))
                 )
             }
 
@@ -134,13 +140,13 @@ fun SortBottomSheet(
                 }
             }
 
-            /** 分割线 */
+            /** 标题下方分割线 */
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 24.dp),
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                color = Color(0x14000000)
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             /** 排序选项列表 */
             Column(
@@ -161,11 +167,10 @@ fun SortBottomSheet(
                 }
             }
 
-            /** 分割线 */
             Spacer(modifier = Modifier.height(20.dp))
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 24.dp),
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                color = Color(0x14000000)
             )
             Spacer(modifier = Modifier.height(16.dp))
 

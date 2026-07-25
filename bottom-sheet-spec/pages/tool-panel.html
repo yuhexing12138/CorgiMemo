@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>操作列表型</title>
+    <title>专属工具型</title>
     <style id="theme-vars">
 /* ============================================================
    CorgiMemo 底部弹窗通用规范 - colors_and_type.css
@@ -333,57 +333,43 @@
         margin: 0 24px;
         flex-shrink: 0;
       }
-      .sheet-content {
-        padding: 8px 0;
-        max-height: 400px;
-        overflow-y: auto;
-        flex-shrink: 0;
-      }
 
-      /* ===== 操作列表行 ===== */
-      .action-row {
+      /* ===== 专属工具内容区 ===== */
+      .sheet-tool-area {
+        padding: 24px;
         display: flex;
+        flex-direction: column;
         align-items: center;
-        gap: 16px;
-        padding: 14px 24px;
-        cursor: pointer;
-        transition: background 0.15s ease;
-      }
-      .action-row:hover {
-        background: #F8F6F3;
-      }
-      .action-row-icon {
-        width: 20px;
-        height: 20px;
+        justify-content: center;
         flex-shrink: 0;
-        color: #666666;
       }
-      .action-row-text {
-        font-size: 16px;
+      .tool-placeholder {
+        width: 280px;
+        height: 200px;
+        border: 2px dashed #DDDDDD;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        background: #FAFAFA;
+      }
+      .tool-placeholder-title {
+        font-size: 15px;
         font-weight: 500;
-        color: #2D2D2D;
+        color: #999999;
       }
-      .action-row-destructive .action-row-icon {
-        color: #E53935;
+      .tool-placeholder-subtitle {
+        font-size: 12px;
+        color: #BBBBBB;
+        text-align: center;
+        line-height: 1.6;
+        max-width: 260px;
       }
-      .action-row-destructive .action-row-text {
-        color: #E53935;
-      }
-      .action-row-destructive:hover {
-        background: #FFEBEE;
-      }
-
-      /* ===== 区域 3：规范标注表 ===== */
-      .spec-section {
-        max-width: 800px;
-        margin: 0 auto;
-        padding: 0 24px 48px;
-      }
-      .spec-section h2 {
-        font-size: 20px;
-        font-weight: 600;
-        color: #2D2D2D;
-        margin-bottom: 16px;
+      .sheet-bottom-safe {
+        height: 24px;
+        flex-shrink: 0;
       }
 
       /* ===== 区域 2.5：本项目使用例子 ===== */
@@ -451,6 +437,18 @@
         display: inline-block;
       }
 
+      /* ===== 区域 3：规范标注表 ===== */
+      .spec-section {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 0 24px 48px;
+      }
+      .spec-section h2 {
+        font-size: 20px;
+        font-weight: 600;
+        color: #2D2D2D;
+        margin-bottom: 16px;
+      }
       .spec-table {
         width: 100%;
         border-collapse: collapse;
@@ -490,28 +488,21 @@
       .spec-table .category-header:first-child th {
         padding-top: 8px;
       }
-
-      /* ===== Lucide 图标尺寸兜底 ===== */
-      .action-row-icon i,
-      .action-row-icon svg {
-        width: 20px;
-        height: 20px;
-      }
     </style>
 </head>
 <body class="min-h-screen font-sans antialiased">
     <main>
       <!-- ============ 区域 1：顶部说明区 ============ -->
       <section class="top-desc">
-        <h1>操作列表型底部弹窗</h1>
-        <p class="lead">用于展示一组并列的操作选项。用户点击某项后立即执行操作并关闭弹窗，适用于更多操作、批量操作等场景。</p>
+        <h1>专属工具型底部弹窗</h1>
+        <p class="lead">用于承载需要独立交互空间的专用工具界面，如语音录制、计时器、颜色选择器等。与操作列表型的固定行布局不同，内容区域由具体工具自行定义。</p>
         <ul>
-          <li>每行包含 Lucide 线性图标（20px）+ 文字（16px Medium），左对齐排列</li>
-          <li>选项行 padding：上下 14px / 左右 24px，行高约 52dp</li>
-          <li>破坏性操作（删除）使用 #E53935 红色文字 + 浅红背景 #FFEBEE</li>
           <li>拖拽条：36×4px，圆角 2px，居中，颜色 #E0E0E0</li>
+          <li>标题栏：左对齐标题 18px SemiBold + 右侧暖橙关闭按钮（32dp圆 #FFF0E5 / 图标 18px #FF9A5C）</li>
+          <li>标题下方 1px 分割线 rgba(0,0,0,0.08)</li>
+          <li>内容区：固定宽度 280px × 高度 200px，居中显示，由具体工具自行定义内部布局（如录音波形、计时器、颜色选择器等），总弹窗高度建议不超过屏幕 60%</li>
+          <li>底部安全区 24px</li>
           <li>展开动画：弹窗从屏幕底部弹簧上滑展开，translateY(100% → 0)，spring（dampingRatio 0.8，stiffness 400），遮罩同步淡入 opacity(0 → 1)</li>
-          <li>标题栏：左对齐标题 18px SemiBold + 右侧暖橙关闭按钮</li>
         </ul>
       </section>
 
@@ -545,13 +536,13 @@
             <div class="sheet-scrim"></div>
 
             <!-- 底部弹窗容器 -->
-            <div class="sheet-container" id="sheet-action-list">
+            <div class="sheet-container" id="sheet-tool-panel">
               <!-- 拖拽条 -->
               <div class="sheet-handle"></div>
 
               <!-- 标题栏 -->
               <div class="sheet-header">
-                <div class="sheet-title">更多操作</div>
+                <div class="sheet-title">专属工具</div>
                 <button class="sheet-close-btn" type="button" aria-label="关闭">
                   <i data-lucide="x"></i>
                 </button>
@@ -560,29 +551,17 @@
               <!-- 标题下方分割线 -->
               <div class="sheet-divider"></div>
 
-              <!-- 操作列表内容 -->
-              <div class="sheet-content">
-                <div class="action-row" role="button" tabindex="0">
-                  <span class="action-row-icon"><i data-lucide="copy"></i></span>
-                  <span class="action-row-text">创建副本</span>
-                </div>
-                <div class="action-row" role="button" tabindex="0">
-                  <span class="action-row-icon"><i data-lucide="share-2"></i></span>
-                  <span class="action-row-text">分享给好友</span>
-                </div>
-                <div class="action-row" role="button" tabindex="0">
-                  <span class="action-row-icon"><i data-lucide="bell"></i></span>
-                  <span class="action-row-text">设置提醒</span>
-                </div>
-                <div class="action-row" role="button" tabindex="0">
-                  <span class="action-row-icon"><i data-lucide="archive"></i></span>
-                  <span class="action-row-text">归档</span>
-                </div>
-                <div class="action-row action-row-destructive" role="button" tabindex="0">
-                  <span class="action-row-icon"><i data-lucide="trash-2"></i></span>
-                  <span class="action-row-text">删除</span>
+              <!-- 专属工具内容区（占位） -->
+              <div class="sheet-tool-area">
+                <div class="tool-placeholder">
+                  <span class="tool-placeholder-title">工具内容区域</span>
+                  <span class="tool-placeholder-subtitle">此区域由具体工具自行定义布局<br>（如录音波形、计时器、颜色选择器等）</span>
                 </div>
               </div>
+
+              <!-- 底部安全区 -->
+              <div class="sheet-bottom-safe"></div>
+            </div>
 
             <!-- Home Indicator -->
             <div class="home-indicator"></div>
@@ -591,18 +570,12 @@
       </section>
 
       <!-- ============ 区域 2.5：本项目使用例子 ============ -->
-      <section class="spec-section">
-        
-        
-        
-        
-        
-      </section>
+      
 
       <!-- ============ 区域 2.6：项目弹窗完整清单 ============ -->
       <section class="spec-section">
         <h2>项目弹窗完整清单</h2>
-        <p class="examples-intro">以下是 CorgiMemo 项目中所有属于「操作列表型」的弹窗实例：</p>
+        <p class="examples-intro">以下是 CorgiMemo 项目中所有属于「专属工具型」的弹窗实例：</p>
         <table class="spec-table">
           <thead>
             <tr>
@@ -618,99 +591,25 @@
               <th colspan="4">一、待办</th>
             </tr>
             <tr>
-              <td>ShareModeDialog.kt</td>
-              <td>ModalBottomSheet</td>
-              <td style="text-align: left;">待办列表页 → 多选待办后点击底部工具栏"分享"按钮；或待办编辑页 → 点击右上角分享图标 → 弹出"保存到相册"和"更多分享"两项操作（已按操作列表型原型规范改造：拖动指示器+标题栏+暖橙关闭按钮+分割线。额外配套 PartialSaveConfirmDialog 处理部分分组未保存场景）</td>
-              <td>✅ 符合规范</td>
-            </tr>
-            <tr>
-              <td>SortBottomSheet.kt</td>
-              <td>ModalBottomSheet</td>
-              <td style="text-align: left;">待办列表页 → 点击右上角"⋮"三点按钮 → 点击"排序"，弹出"待办排序"，选择最新更新的在前/在后、最新创建的在前/在后，或恢复默认排序</td>
-              <td>✅ 符合规范</td>
-            </tr>
-            <tr>
-              <td>OperationSheets.kt</td>
-              <td>ModalBottomSheet</td>
-              <td style="text-align: left;">待办列表页 → 从左屏幕边缘右滑打开侧滑抽屉 → 点击自定义分类项右侧"⋮"按钮，弹出置顶/编辑/删除三项操作</td>
-              <td>✅ 符合规范</td>
-            </tr>
-            <tr>
-              <td>ActionBottomSheet.kt</td>
-              <td>ModalBottomSheet</td>
-              <td style="text-align: left;"><strong>已删除。</strong>MoreOptionsSheet 原先代理到此组件，现已独立重写；CategoryGroupSection 分类操作均已迁移至 CategoryOperationSheet。组件无任何调用方</td>
-              <td>✅ 已删除</td>
-            </tr>
-            <tr>
-              <td>MoreOptionsSheet.kt</td>
-              <td>ModalBottomSheet</td>
-              <td style="text-align: left;">待办列表页 → 右上角"⋮"三点 → 批量选择 → 选中待办 → 底部操作栏点击"更多选项"（⋮），弹出完成/置顶/优先级/提醒时间/创建副本/转换为灵感六项操作</td>
-              <td>✅ 符合规范</td>
-            </tr>
-            <tr>
-              <td>ShareModeDialog.kt</td>
-              <td>ModalBottomSheet</td>
-              <td style="text-align: left;">待办列表页多选后点击"分享"按钮，或待办编辑页点击右上角分享图标 → 弹出"保存到相册"和"更多分享"两项操作（已从 AlertDialog 改造为底部弹窗，移除合并分享逻辑，统一使用逐条分享）</td>
-              <td>✅ 符合规范</td>
-            </tr>
-            <tr>
-              <td>ImagePickerDialog.kt</td>
-              <td>ModalBottomSheet</td>
-              <td style="text-align: left;">待办编辑页（或灵感编辑页）→ 点击输入区下方工具栏"📷"图片按钮 → 弹出拍照/从相册选择（已从 AlertDialog 改造为操作列表型底部弹窗，签名不变，TodoEditScreen/InspirationEditScreen/ImagePicker 三处调用方无需修改）</td>
-              <td>✅ 符合规范</td>
-            </tr>
-            <tr>
               <td>VoiceRecordBottomSheet.kt</td>
               <td>ModalBottomSheet</td>
-              <td style="text-align: left;">待办编辑页 → 点击输入区下方工具栏"🎤"话筒按钮 → 弹出语音录制底部弹窗，支持录制/暂停/停止、波形动画、计时器、试听播放（专属工具型，非标准操作列表型）</td>
+              <td style="text-align: left;">待办编辑页 → 点击输入区下方工具栏"🎤"话筒按钮 → 弹出语音录制底部弹窗，支持录制/暂停/停止、波形可视化、试听播放、计时器（已补充拖动指示器、暖橙关闭按钮、分割线、弹簧展开动画等公共元素）</td>
               <td>✅ 符合规范</td>
             </tr>
-          </tbody>
-          <tbody>
-            <!-- ═══ 二、灵感 ═══ -->
-            <tr class="category-header">
-              <th colspan="4">二、灵感</th>
-            </tr>
             <tr>
-              <td>ShareInspirationSheet.kt</td>
+              <td>AvatarSourceSheet.kt（内部模式）</td>
               <td>ModalBottomSheet</td>
-              <td style="text-align: left;">灵感详情页 → 点击"分享"按钮 → 弹出"保存到相册"和"更多分享"两项操作（已按操作列表型原型规范改造：补充拖动指示器+标题栏+暖橙关闭按钮+分割线）</td>
+              <td style="text-align: left;">个人资料页 → 点击顶部头像区域 → 弹出"拍照/从相册选择/预设头像库" → 点击预设头像库切换至内部网格选择模式（专属工具型），280dp 宽 4 列网格，从 13 种柯基动作中选取，选中即回调并关闭弹窗</td>
               <td>✅ 符合规范</td>
             </tr>
-          </tbody>
-          <tbody>
-            <!-- ═══ 三、日期 ═══ -->
-            <tr class="category-header">
-              <th colspan="4">三、日期</th>
-            </tr>
             <tr>
-              <td>ShareDateSheet.kt</td>
+              <td>ThemePickerBottomSheet.kt</td>
               <td>ModalBottomSheet</td>
-              <td style="text-align: left;">日期详情页 → 点击右下角底部工具栏"分享"图标 → 弹出"保存到相册"和"更多分享"两项操作（已按操作列表型原型规范改造：补充拖动指示器+标题栏"分享日期"+暖橙关闭按钮+分割线）</td>
-              <td>✅ 符合规范</td>
-            </tr>
-          </tbody>
-          <tbody>
-            <!-- ═══ 四、我的 ═══ -->
-            <tr class="category-header">
-              <th colspan="4">四、我的</th>
-            </tr>
-            <tr>
-              <td>AvatarSourceSheet.kt</td>
-              <td>ModalBottomSheet</td>
-              <td style="text-align: left;">个人资料页 → 点击顶部头像区域 → 弹出"拍照/从相册选择/预设头像库"三项操作（外部模式：操作列表型），点击预设头像库切换至内部网格选择（内部模式：专属工具型，280dp 宽 4 列网格，从 13 种柯基动作选择）</td>
+              <td style="text-align: left;">特殊日期模块 → 新建或编辑日期卡片 → 点击"主题"字段 → 弹出样式/颜色 Tab 切换选择器，DateCardStyleSelector 2 列网格 + DateCardColorPicker 色块选择器，选中即回调（已补充拖动指示器+暖橙关闭按钮+分割线，内容区保持原宽度）</td>
               <td>✅ 符合规范</td>
             </tr>
           </tbody>
         </table>
-      </section>
-
-      <!-- ============ 区域 2.7：需改造为中心弹窗→底部弹窗 ============ -->
-      <section class="spec-section">
-        
-        
-        
-        
       </section>
 
       <!-- ============ 区域 3：底部规范标注表 ============ -->
@@ -720,65 +619,80 @@
           <thead>
             <tr>
               <th>Token</th>
-              <th>值</th>
+              <th>规范值</th>
               <th>用途</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td>--cm-radius-sheet</td>
-              <td>24px</td>
+              <td>弹窗背景</td>
+              <td>#FFFFFF</td>
+              <td>弹窗表面背景色</td>
+            </tr>
+            <tr>
+              <td>弹窗圆角</td>
+              <td>24px（顶部）</td>
               <td>底部弹窗顶部圆角</td>
             </tr>
             <tr>
-              <td>--cm-primary</td>
-              <td>#FF9A5C</td>
-              <td>暖橙主色（关闭按钮图标色）</td>
-            </tr>
-            <tr>
-              <td>--cm-primary-soft</td>
-              <td>#FFF0E5</td>
-              <td>暖橙最浅背景（关闭按钮背景、hover）</td>
-            </tr>
-            <tr>
-              <td>--cm-state-error</td>
-              <td>#E53935</td>
-              <td>破坏性操作文字色</td>
+              <td>页眉</td>
+              <td>padding: 12px 24px 16px</td>
+              <td>标题栏内边距</td>
             </tr>
             <tr>
               <td>标题字号</td>
-              <td>18px / 600</td>
-              <td>弹窗标题</td>
+              <td>18px</td>
+              <td>弹窗标题文字大小</td>
             </tr>
             <tr>
-              <td>选项行字号</td>
-              <td>16px / 500</td>
-              <td>选项文字</td>
+              <td>标题字重</td>
+              <td>600（SemiBold）</td>
+              <td>弹窗标题文字粗细</td>
             </tr>
             <tr>
-              <td>选项行 padding</td>
-              <td>14px 24px</td>
-              <td>选项行内边距</td>
+              <td>标题颜色</td>
+              <td>#2D2D2D</td>
+              <td>弹窗标题文字颜色</td>
             </tr>
             <tr>
-              <td>选项行高度</td>
-              <td>~52dp</td>
-              <td>单行高度</td>
+              <td>关闭按钮</td>
+              <td>32×32dp / 圆形</td>
+              <td>右侧暖橙关闭按钮尺寸</td>
+            </tr>
+            <tr>
+              <td>关闭按钮背景</td>
+              <td>#FFF0E5</td>
+              <td>关闭按钮圆形背景色</td>
+            </tr>
+            <tr>
+              <td>关闭按钮图标色</td>
+              <td>#FF9A5C</td>
+              <td>关闭按钮 x 图标颜色</td>
+            </tr>
+            <tr>
+              <td>关闭按钮图标尺寸</td>
+              <td>18px</td>
+              <td>关闭按钮内 Lucide x 图标尺寸</td>
             </tr>
             <tr>
               <td>分割线</td>
-              <td>rgba(0,0,0,0.08)</td>
-              <td>弹窗内部分割线</td>
+              <td>1px / rgba(0,0,0,0.08)</td>
+              <td>标题下方分割线</td>
             </tr>
             <tr>
               <td>拖拽条</td>
-              <td>36×4px / r2px</td>
+              <td>36×4px / r2px / #E0E0E0</td>
               <td>顶部拖拽指示器</td>
             </tr>
             <tr>
               <td>展开动画</td>
-              <td>spring / ~350ms</td>
+              <td>spring（dampingRatio 0.8，stiffness 400）</td>
               <td>弹窗弹簧上滑 + 遮罩淡入</td>
+            </tr>
+            <tr>
+              <td>内容区</td>
+              <td>280×200px</td>
+              <td>工具内容区域固定尺寸，居中</td>
             </tr>
             <tr>
               <td>安全区</td>
