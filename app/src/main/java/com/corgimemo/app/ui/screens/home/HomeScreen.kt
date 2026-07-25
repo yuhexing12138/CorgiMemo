@@ -1132,9 +1132,6 @@ fun HomeScreen(
                                                     viewModel.onUserInteraction()
                                                     navController.navigate(Screen.TodoEditWithId.withArgs(todo.id.toString()))
                                                 },
-                                                onLongClick = {
-                                                    viewModel.enterBatchMode(todo.id)
-                                                },
                                                 onSelectClick = {
                                                     viewModel.toggleSelection(todo.id)
                                                 },

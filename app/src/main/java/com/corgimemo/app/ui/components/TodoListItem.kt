@@ -79,8 +79,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import com.corgimemo.app.animation.HapticFeedbackManager
-import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.data.model.SubTask
 import com.corgimemo.app.data.model.TodoItem
 // v2026-07-24 新增：用于将 repeatType 转换为「周一至周五」/「每天」等显示文案
@@ -105,14 +103,13 @@ import java.util.concurrent.TimeUnit
  * @param onToggleComplete 切换完成状态回调
  * @param onDelete 删除回调
  * @param onClick 点击回调（普通模式）
- * @param onLongClick 长按回调（进入批量模式）
  * @param onSelectClick 选择回调（批量模式下点击）
  * @param onShareAsImage 分享为图片回调
  * @param onToggleExpand 切换展开状态回调
  * @param onToggleSubTask 切换子任务完成状态回调
  * @param relationHint 关联提示文字
  * @param searchQuery 搜索关键词（非空时对标题和内容进行高亮显示）
- * @param isClickBlocked 左滑操作面板是否展开（true 时屏蔽详情点击 / 子待办展开 / 长按 / 复选框）
+ * @param isClickBlocked 左滑操作面板是否展开（true 时屏蔽详情点击 / 子待办展开 / 按压 / 复选框）
  * @param isSimpleMode 简化模式（true 时隐藏分类标签、子任务进度文本、子任务列表、附件数量，仅保留标题/提醒/优先级/置顶/勾选框）
  */
 @OptIn(
@@ -132,7 +129,6 @@ fun TodoListItem(
     onToggleComplete: (Long, Boolean) -> Unit,
     onDelete: (Long) -> Unit,
     onClick: () -> Unit = {},
-    onLongClick: () -> Unit = {},
     onSelectClick: () -> Unit = {},
     onShareAsImage: () -> Unit = {},
     onToggleExpand: () -> Unit = {},
@@ -414,17 +410,6 @@ fun TodoListItem(
                     } else {
                         onClick()
                     }
-                },
-                onLongClick = {
-                    // 长按：仅非批量模式时触发震动反馈
-                    if (!isBatchMode) {
-                        HapticFeedbackManager.performHapticFeedback(
-                            context = context,
-                            type = InteractionType.LONG_CLICK,
-                            enabled = hapticEnabled
-                        )
-                    }
-                    onLongClick()
                 },
                 scaleDown = 0.94f,
                 scaleDownDurationMs = 60,
