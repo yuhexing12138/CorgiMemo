@@ -67,13 +67,16 @@ fun AudioWaveform(
             val time = System.currentTimeMillis() / 100.0
 
             // 计算本次循环使用的有效振幅：
-            // - 未录制时使用待机幅度（0.08），让波形区域保持微弱的"呼吸"动画，避免完全空白
-            // - 录制时取 max(amplitude, 0.10)，保证静默环境下波形也有最低限度的动态
-            // - 语义：录制静默(0.10) > 待机(0.08)，表示"正在听"比"待机"更活跃
-            val standbyAmplitude = 0.08f
-            val minActiveAmplitude = 0.10f
+            // - 未录制时使用待机幅度（0.18），让波形区域保持明显的"呼吸"动画
+            // - 录制时取 max(amplitude * 2.5f, 0.30)，保证静默环境下波形也有明显波动
+            // - 录制时对真实振幅做 2.5x 放大：MediaRecorder 归一化后说话音量通常仅 0.03-0.21，
+            //   放大后才能在视觉上反映音量变化
+            // - 语义：录制静默(0.30) > 待机(0.18)，表示"正在听"比"待机"更活跃
+            val standbyAmplitude = 0.18f
+            val minActiveAmplitude = 0.30f
+            val amplitudeAmplifier = 2.5f
             val effectiveAmplitude = if (isRecording) {
-                maxOf(currentAmplitude, minActiveAmplitude)
+                maxOf(currentAmplitude * amplitudeAmplifier, minActiveAmplitude).coerceAtMost(1f)
             } else {
                 standbyAmplitude
             }
@@ -88,10 +91,11 @@ fun AudioWaveform(
                 val wave3 = sin(time * 0.8 + phase * 0.5).toFloat() * 0.2f
 
                 // 计算目标高度（基于位置、时间和输入振幅）
-                val positionFactor = 1.0f - abs(i.toFloat() / barCount - 0.5f) * 1.5f
+                // positionFactor 下限从 0.3 提高到 0.5，让边缘柱子也有明显高度
+                val positionFactor = 1.0f - abs(i.toFloat() / barCount - 0.5f) * 1.0f
                 val targetHeight = ((wave1 + wave2 + wave3) * 0.5f + 0.5f) *
                         effectiveAmplitude *
-                        positionFactor.coerceIn(0.3f, 1.0f)
+                        positionFactor.coerceIn(0.5f, 1.0f)
 
                 // 平滑过渡到目标高度
                 val currentHeight = barHeights[i]
