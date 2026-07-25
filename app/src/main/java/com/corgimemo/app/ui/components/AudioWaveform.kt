@@ -67,10 +67,11 @@ fun AudioWaveform(
             val time = System.currentTimeMillis() / 100.0
 
             // 计算本次循环使用的有效振幅：
-            // - 未录制时使用待机幅度（0.15），让波形区域保持微弱的"呼吸"动画，避免完全空白
-            // - 录制时取 max(amplitude, 0.05)，保证静默环境下波形也有最低限度的动态
-            val standbyAmplitude = 0.15f
-            val minActiveAmplitude = 0.05f
+            // - 未录制时使用待机幅度（0.08），让波形区域保持微弱的"呼吸"动画，避免完全空白
+            // - 录制时取 max(amplitude, 0.10)，保证静默环境下波形也有最低限度的动态
+            // - 语义：录制静默(0.10) > 待机(0.08)，表示"正在听"比"待机"更活跃
+            val standbyAmplitude = 0.08f
+            val minActiveAmplitude = 0.10f
             val effectiveAmplitude = if (isRecording) {
                 maxOf(currentAmplitude, minActiveAmplitude)
             } else {
@@ -127,10 +128,20 @@ fun AudioWaveform(
             // 根据高度计算透明度（越高的柱子越明显）
             val alpha = 0.4f + height * 0.6f
 
+            // 颜色基于录制状态而非高度阈值：
+            // - 录制中：始终用 activeColor（橙色），alpha 随高度变化
+            // - 待机：用 activeColor 但 alpha 减半，呈现淡橙色呼吸效果
+            // 修复 bug：原逻辑用 height > 0.05 判断颜色，导致待机(0.15>0.05)显示橙色
+            // 而录制静默(0.05 不 > 0.05)显示灰色，语义完全反转
+            val barColor = if (isRecording) {
+                activeColor.copy(alpha = alpha)
+            } else {
+                activeColor.copy(alpha = alpha * 0.5f)
+            }
+
             // 绘制圆角矩形柱子
             drawRoundRect(
-                color = if (height > 0.05f) activeColor.copy(alpha = alpha)
-                        else inactiveColor.copy(alpha = 0.3f),
+                color = barColor,
                 topLeft = Offset(x, y),
                 size = Size(width = barWidth, height = barHeightPx),
                 cornerRadius = CornerRadius(barWidth / 2)
