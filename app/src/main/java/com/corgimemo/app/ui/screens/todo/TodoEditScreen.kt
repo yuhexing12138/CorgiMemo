@@ -1807,6 +1807,13 @@ fun TodoEditScreen(
     // 提醒设置弹窗（位于 Scaffold 外层，遮罩可覆盖 topBar 和 bottomBar）
     // 遮罩无动画，弹窗有淡入缩放动画
     if (showReminderPicker) {
+        // 拦截系统返回键 / 侧滑返回：关闭提醒弹窗而非退出编辑页
+        // 原理：Compose BackHandler 按栈式优先级消费 back 事件，此处注册的 BackHandler
+        // 比第 1011 行的全局 BackHandler 更内层，弹窗打开时优先消费 back；
+        // 弹窗关闭后（showReminderPicker = false）本 BackHandler 自动注销，
+        // 全局 BackHandler 恢复生效，确保正常返回导航。
+        BackHandler { editingReminderGroupId = null }
+
         // 弹窗出现时隐藏键盘
         androidx.compose.ui.platform.LocalFocusManager.current.clearFocus()
 
