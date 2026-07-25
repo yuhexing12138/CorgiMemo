@@ -40,6 +40,18 @@ fun VoiceRecordBottomSheet(
     val amplitude by voiceRecorder.amplitude.collectAsState()
     val duration by voiceRecorder.duration.collectAsState()
 
+    // 弹窗销毁时重置 voiceRecorder 状态，确保下次打开是干净的 IDLE 状态
+    // 修复 bug：第一次录音保存后 recordingState 停在 STOPPED，下次打开弹窗时
+    // LaunchedEffect(recordingState) 会立即命中 STOPPED && !isRecorded，
+    // 导致弹窗一打开就显示"重录/保存"按钮并保留上次的录音路径。
+    // release() 只重置状态（state/duration/amplitude/filePath）不删除文件，
+    // 而 onSaved 是同步调用，path 已传给 ViewModel 后才触发弹窗销毁，所以安全。
+    DisposableEffect(Unit) {
+        onDispose {
+            voiceRecorder.release()
+        }
+    }
+
     // 是否已完成录制（停止状态）
     var isRecorded by remember { mutableStateOf(false) }
     var lastRecordingPath by remember { mutableStateOf<String?>(null) }
