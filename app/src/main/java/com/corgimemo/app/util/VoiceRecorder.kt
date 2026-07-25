@@ -31,7 +31,7 @@ class VoiceRecorder(private val context: Context) {
 
     companion object {
         /** 最大录制时长（毫秒） */
-        private const val MAX_RECORDING_DURATION_MS = 30_000L
+        private const val MAX_RECORDING_DURATION_MS = 60_000L
 
         /** 音量采样间隔（毫秒） */
         private const val AMPLITUDE_SAMPLE_INTERVAL_MS = 50L

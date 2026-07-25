@@ -149,7 +149,7 @@ fun VoiceRecordBottomSheet(
             // 计时器显示
             RecordingTimer(
                 currentDuration = duration,
-                maxDuration = 30_000L,
+                maxDuration = 60_000L,
                 isRecording = recordingState == VoiceRecorder.RecordingState.RECORDING
             )
 
