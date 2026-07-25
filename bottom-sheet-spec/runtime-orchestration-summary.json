@@ -1,0 +1,587 @@
+{
+  "skillProvenance": {
+    "name": "solo-design",
+    "version": "2026.07.06.8",
+    "version_source": "skill-release-manifest.json",
+    "read_status": "ok"
+  },
+  "project": {
+    "name": "底部弹窗通用规范原型",
+    "resolvedLane": "existing_edit_add_comparison",
+    "intentProfile": {
+      "caseFamily": "existing_edit_add_comparison",
+      "operatingMode": "in-place-edit",
+      "routingReason": "existing bottom-sheet-spec project; user explicitly requested adding project dialog classification content into existing prototype pages; in-place edit intent confirmed by '加入各类型的原型图中'"
+    },
+    "sourceProjectLaneHeritage": {
+      "originalLane": "free_exploration",
+      "mutationMode": "in-place-content-append",
+      "sourcePageIds": ["page-action-list", "page-single-picker", "page-search-picker", "page-quick-action"]
+    },
+    "selectedIntentWorkflowRead": true,
+    "contextRequirementsLoaded": [
+      {
+        "path": "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "delivery-quality/page-rendering-quality-gate.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "delivery-quality/design-artifact-validation.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "delivery-quality/delivery-evidence-contract.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "visual-experience/visual-experience-guidelines.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      }
+    ],
+    "contextReadScope": {
+      "mainAgent": {
+        "forbiddenReads": [
+          "other intent-workflows/**",
+          "Sub-Agent implementation files before dispatch"
+        ]
+      },
+      "pageSubAgent": {
+        "allowedReads": [
+          "current lane page runtime guide",
+          "current lane dispatch contract excerpt",
+          "current Page Packet",
+          "supplementaryReads[] only"
+        ],
+        "forbiddenReads": [
+          "SKILL.md full re-read",
+          "other intent-workflows/**",
+          "full runtime-orchestration-summary.json unless explicitly sliced"
+        ]
+      },
+      "readScopeLedgerWriter": "shared-runtime/deterministic-tooling/build-page-dispatch-manifest.mjs"
+    },
+    "validationRunDiscipline": {
+      "maxFullValidationRuns": 2,
+      "softWarningsTriggerRepair": false,
+      "blockingRepairMode": "targeted-once",
+      "forbiddenRepairTriggers": [
+        "soft-warning-only",
+        "provenance-warning-only",
+        "style-warning-only"
+      ]
+    },
+    "lowValueCallWatchdog": {
+      "applies": true,
+      "noProgressSignals": [
+        "no_tool_call",
+        "no_artifact_diff",
+        "no_structured_decision"
+      ],
+      "noProgressNextAction": "enter_readiness_or_blocked_summary"
+    },
+    "pageCompletenessGate": {
+      "expectedPages": [
+        "action-list",
+        "single-picker",
+        "search-picker",
+        "quick-action"
+      ],
+      "requiredStates": [
+        "default"
+      ],
+      "requiredInteractions": [],
+      "requiredNavigation": [],
+      "missingAllowed": []
+    },
+    "defaultDeliverableVisibility": {
+      "applies": true,
+      "requiredVisibleRegions": [
+        {
+          "htmlSrc": "pages/action-list.html",
+          "selector": "#sheet-action-list",
+          "label": "操作列表型底部弹窗",
+          "source": "user requirement"
+        },
+        {
+          "htmlSrc": "pages/single-picker.html",
+          "selector": "#sheet-single-picker",
+          "label": "单选选择器型底部弹窗",
+          "source": "user requirement"
+        },
+        {
+          "htmlSrc": "pages/search-picker.html",
+          "selector": "#sheet-search-picker",
+          "label": "带搜索选择器型底部弹窗",
+          "source": "user requirement"
+        },
+        {
+          "htmlSrc": "pages/quick-action.html",
+          "selector": "#sheet-quick-action",
+          "label": "长按操作面板型底部弹窗",
+          "source": "user requirement"
+        }
+      ],
+      "hiddenAllowed": []
+    },
+    "creativeRecipe": {
+      "businessTone": "治愈系柯基暖橙 + Material3 克制",
+      "layoutArchetype": "手机模拟器内嵌底部弹窗规范展示",
+      "visualSignature": "统一 24dp 顶部圆角 + 36dp 拖拽条 + 左对齐标题栏 + 右侧暖橙关闭按钮 + 选项行 padding v14 / 左右 24dp",
+      "densityTarget": "balanced",
+      "avoidOneThing": "禁止 emoji 作功能图标（统一 Lucide 线性图标）"
+    },
+    "cssPreflightEvidence": {
+      "applies": true,
+      "status": "passed",
+      "command": "node {SKILL_DIR}/shared-runtime/deterministic-tooling/apply-html-head-contract.mjs colors_and_type.css .preflight/preflight.html --title=\"Preflight\" --lang=zh-CN --prefix=cm --force-skeleton",
+      "brandPrefix": "cm",
+      "checks": {
+        "themeVars": "present",
+        "semanticTokenFallback": "present",
+        "themeInline": "present",
+        "tailwindCdn": "present",
+        "lucideCdn": "present",
+        "htmlClass": "light",
+        "semanticMappings": "resolved"
+      },
+      "retryCount": 0,
+      "blockingReason": null,
+      "prefixMode": "standard"
+    },
+    "visualQualityCheckpoints": [
+      {
+        "id": "vq-anchor",
+        "anchor": "4 种形态共享统一容器：24dp 顶部圆角 / surface 背景 / 36dp 拖拽条圆角 2dp / 左对齐标题栏 + 右侧暖橙关闭按钮 / 底部 24dp 安全区"
+      },
+      {
+        "id": "vq-hierarchy",
+        "hierarchy": "标题 18sp SemiBold → 标题下分割线 outline alpha0.2 → 选项行 16sp Medium / padding horizontal 24dp vertical 14dp / 行高 ~52dp"
+      },
+      {
+        "id": "vq-composition",
+        "composition": "每页：顶部形态说明 + 规范要点 → 中部手机模拟器内底部弹窗（scrim + sheet）→ 底部规范标注表（圆角/间距/字号/颜色 token）"
+      },
+      {
+        "id": "vq-impl",
+        "strategy": "单 primary 暖橙 #FF9A5C + 中性 surface/ink + error 状态色 #E53935；Lucide 线性图标 20px；document-scroll viewport；mobile device frame 由 Design SDK 提供，HTML 不自建固定外层视口"
+      }
+    ],
+    "deviceType": "mobile",
+    "dispatchPreflightManifest": [
+      {
+        "recorded_at": "2026-07-25T08:14:46.875Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "nodeId": "page-action-list",
+        "htmlSrc": "pages/action-list.html",
+        "allowedWritePaths": [
+          "pages/action-list.html",
+          "assets/"
+        ],
+        "fillHtmlHeadCommand": "node \"c:\\Users\\Lenovo\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\colors_and_type.css\" \"c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\pages\\action-list.html\" --title=\"操作列表型\" --lang=\"zh-CN\" --prefix=\"cm\"",
+        "cssFilePath": "c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\colors_and_type.css",
+        "htmlFilePath": "c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\pages\\action-list.html",
+        "brandPrefix": "cm",
+        "aestheticsMode": "free-explore",
+        "viewportMode": "document-scroll",
+        "headFillMode": "skeleton-first",
+        "completionSchemaExpected": "compact",
+        "persistedToSummary": true
+      },
+      {
+        "recorded_at": "2026-07-25T08:14:46.875Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "nodeId": "page-single-picker",
+        "htmlSrc": "pages/single-picker.html",
+        "allowedWritePaths": [
+          "pages/single-picker.html",
+          "assets/"
+        ],
+        "fillHtmlHeadCommand": "node \"c:\\Users\\Lenovo\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\colors_and_type.css\" \"c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\pages\\single-picker.html\" --title=\"单选选择器型\" --lang=\"zh-CN\" --prefix=\"cm\"",
+        "cssFilePath": "c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\colors_and_type.css",
+        "htmlFilePath": "c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\pages\\single-picker.html",
+        "brandPrefix": "cm",
+        "aestheticsMode": "free-explore",
+        "viewportMode": "document-scroll",
+        "headFillMode": "skeleton-first",
+        "completionSchemaExpected": "compact",
+        "persistedToSummary": true
+      },
+      {
+        "recorded_at": "2026-07-25T08:14:46.875Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "nodeId": "page-search-picker",
+        "htmlSrc": "pages/search-picker.html",
+        "allowedWritePaths": [
+          "pages/search-picker.html",
+          "assets/"
+        ],
+        "fillHtmlHeadCommand": "node \"c:\\Users\\Lenovo\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\colors_and_type.css\" \"c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\pages\\search-picker.html\" --title=\"带搜索选择器型\" --lang=\"zh-CN\" --prefix=\"cm\"",
+        "cssFilePath": "c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\colors_and_type.css",
+        "htmlFilePath": "c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\pages\\search-picker.html",
+        "brandPrefix": "cm",
+        "aestheticsMode": "free-explore",
+        "viewportMode": "document-scroll",
+        "headFillMode": "skeleton-first",
+        "completionSchemaExpected": "compact",
+        "persistedToSummary": true
+      },
+      {
+        "recorded_at": "2026-07-25T08:14:46.875Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "nodeId": "page-quick-action",
+        "htmlSrc": "pages/quick-action.html",
+        "allowedWritePaths": [
+          "pages/quick-action.html",
+          "assets/"
+        ],
+        "fillHtmlHeadCommand": "node \"c:\\Users\\Lenovo\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\colors_and_type.css\" \"c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\pages\\quick-action.html\" --title=\"长按操作面板型\" --lang=\"zh-CN\" --prefix=\"cm\"",
+        "cssFilePath": "c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\colors_and_type.css",
+        "htmlFilePath": "c:\\Users\\Lenovo\\Desktop\\CorgiMemo\\bottom-sheet-spec\\pages\\quick-action.html",
+        "brandPrefix": "cm",
+        "aestheticsMode": "free-explore",
+        "viewportMode": "document-scroll",
+        "headFillMode": "skeleton-first",
+        "completionSchemaExpected": "compact",
+        "persistedToSummary": true
+      }
+    ],
+    "expectedDispatches": [
+      {
+        "nodeId": "page-action-list",
+        "pageId": "page-action-list",
+        "targetPageId": "page-action-list",
+        "htmlSrc": "pages/action-list.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/action-list.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "C1B679710F24D5CCBB84F820A0CEE8D3A01ACCB8DF1FAA8439F7B4A18D95260F",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-07-25T08:28:01.048Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-single-picker",
+        "pageId": "page-single-picker",
+        "targetPageId": "page-single-picker",
+        "htmlSrc": "pages/single-picker.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/single-picker.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "38C3011E5A134E83301FFFE1883ED9F5E02912A6B428EBD7660F0EB0F143F5BC",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-07-25T08:28:04.736Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-search-picker",
+        "pageId": "page-search-picker",
+        "targetPageId": "page-search-picker",
+        "htmlSrc": "pages/search-picker.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/search-picker.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "9BF323CC22ACBE8FCA716411DA7B2C8FBED36CE6047583E4EB37B949CF9C46A1",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-07-25T08:28:07.345Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-quick-action",
+        "pageId": "page-quick-action",
+        "targetPageId": "page-quick-action",
+        "htmlSrc": "pages/quick-action.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/quick-action.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "06804C53226F71DC6D7948893B091734191E89C0C784C69C689BE98519E15B8C",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-07-25T08:28:09.114Z",
+        "source": "record-dispatch-completion.mjs"
+      }
+    ],
+    "mainAgentPostDispatchMutations": [
+      {
+        "mutationType": "in-place-content-append",
+        "sourcePageIds": ["page-action-list", "page-single-picker", "page-search-picker", "page-quick-action"],
+        "targetPageIds": ["page-action-list", "page-single-picker", "page-search-picker", "page-quick-action"],
+        "inPlaceEditAllowed": true,
+        "inPlaceEditReason": "user explicitly requested '加入各类型的原型图中进行说明'",
+        "changedFiles": [
+          "pages/action-list.html",
+          "pages/single-picker.html",
+          "pages/search-picker.html",
+          "pages/quick-action.html"
+        ],
+        "derivationType": "in-place-edit",
+        "mutationSummary": "在每个原型页面的'本项目使用例子'区块后插入'项目弹窗完整清单'表格和'需改造为中心弹窗→底部弹窗'说明卡片",
+        "recordedAt": "2026-07-25T08:30:00.000Z"
+      }
+    ],
+    "validationHistory": [
+      {
+        "reportPath": "validation-report.json",
+        "reportHash": "29316691aa1e155f630b84099c82e46f3dda833a907d856e7b0a0a57294b3ed1",
+        "checkedAt": "2026-07-25T08:28:15.980Z",
+        "success": false,
+        "exitCode": 1,
+        "renderBlockingErrorCount": 2,
+        "repairPlanHints": [
+          "hardcoded-color-in-body",
+          "hardcoded-color-in-body",
+          "hardcoded-color-in-body",
+          "hardcoded-color-in-body"
+        ],
+        "errorSignatures": [
+          {
+            "errorClass": "directory-structure",
+            "normalized": "[directory-structure] Missing required directory: assets/",
+            "signature": "c78e26a864205b3d5e2ce8a2a5ce7a295d7b1ae82a70af3e0bbf90d6fe191bc2"
+          },
+          {
+            "errorClass": "artifact-readiness",
+            "normalized": "[device-type-consistency] orchestration-summary project.deviceType=\"desktop\" does not match .design config.deviceType=\"mobile\". Fix .design config before final delivery.",
+            "signature": "adbaf09326f2ac2348f3bc736edcc440da10bec75135355ff0cda20715c1f67a"
+          }
+        ],
+        "terminalState": null
+      }
+    ],
+    "validationRepairLedger": [
+      {
+        "failedReportPath": "validation-report.json",
+        "failedReportHash": "29316691aa1e155f630b84099c82e46f3dda833a907d856e7b0a0a57294b3ed1",
+        "repairWorkflowReadPath": "intent-workflows/intent-project-mutation/main-agent-repair-workflow.md",
+        "repairStartedAt": "2026-07-25T08:29:10.316Z",
+        "repairEntryStatus": "started-awaiting-owner-batch-repair",
+        "ownerTriage": [
+          {
+            "owner": "sub-agent",
+            "errorClass": "hardcoded-color-in-body",
+            "affectedFiles": [
+              "action-list.html"
+            ],
+            "repairScope": "targeted-token-replace",
+            "strategy": "targeted_token_replace_once"
+          },
+          {
+            "owner": "sub-agent",
+            "errorClass": "hardcoded-color-in-body",
+            "affectedFiles": [
+              "quick-action.html"
+            ],
+            "repairScope": "targeted-token-replace",
+            "strategy": "targeted_token_replace_once"
+          },
+          {
+            "owner": "sub-agent",
+            "errorClass": "hardcoded-color-in-body",
+            "affectedFiles": [
+              "search-picker.html"
+            ],
+            "repairScope": "targeted-token-replace",
+            "strategy": "targeted_token_replace_once"
+          },
+          {
+            "owner": "sub-agent",
+            "errorClass": "hardcoded-color-in-body",
+            "affectedFiles": [
+              "single-picker.html"
+            ],
+            "repairScope": "targeted-token-replace",
+            "strategy": "targeted_token_replace_once"
+          }
+        ],
+        "repairPlanHints": [
+          {
+            "errorClass": "hardcoded-color-in-body",
+            "owner": "sub-agent",
+            "repairScope": "targeted-token-replace",
+            "strategy": "targeted_token_replace_once",
+            "affectedFiles": [
+              "action-list.html"
+            ],
+            "repairReportPath": null,
+            "repairAlreadyAttempted": false,
+            "allowSourceRead": "no-full-html-read",
+            "maxValidationRuns": 2
+          },
+          {
+            "errorClass": "hardcoded-color-in-body",
+            "owner": "sub-agent",
+            "repairScope": "targeted-token-replace",
+            "strategy": "targeted_token_replace_once",
+            "affectedFiles": [
+              "quick-action.html"
+            ],
+            "repairReportPath": null,
+            "repairAlreadyAttempted": false,
+            "allowSourceRead": "no-full-html-read",
+            "maxValidationRuns": 2
+          },
+          {
+            "errorClass": "hardcoded-color-in-body",
+            "owner": "sub-agent",
+            "repairScope": "targeted-token-replace",
+            "strategy": "targeted_token_replace_once",
+            "affectedFiles": [
+              "search-picker.html"
+            ],
+            "repairReportPath": null,
+            "repairAlreadyAttempted": false,
+            "allowSourceRead": "no-full-html-read",
+            "maxValidationRuns": 2
+          },
+          {
+            "errorClass": "hardcoded-color-in-body",
+            "owner": "sub-agent",
+            "repairScope": "targeted-token-replace",
+            "strategy": "targeted_token_replace_once",
+            "affectedFiles": [
+              "single-picker.html"
+            ],
+            "repairReportPath": null,
+            "repairAlreadyAttempted": false,
+            "allowSourceRead": "no-full-html-read",
+            "maxValidationRuns": 2
+          }
+        ],
+        "repairActions": [],
+        "revalidationReportPath": null,
+        "revalidationReportHash": null,
+        "revalidationSuccess": null,
+        "blockedReason": null
+      }
+    ],
+    "repairEntryEvidence": [
+      {
+        "failedReportPath": "validation-report.json",
+        "failedReportHash": "29316691aa1e155f630b84099c82e46f3dda833a907d856e7b0a0a57294b3ed1",
+        "repairWorkflowReadPath": "intent-workflows/intent-project-mutation/main-agent-repair-workflow.md",
+        "repairStartedAt": "2026-07-25T08:29:10.316Z",
+        "ledgerIndex": 0,
+        "ownerTriageCount": 4,
+        "repairActionCount": 0,
+        "revalidationReportPath": null,
+        "revalidationReportHash": null,
+        "revalidationSuccess": null
+      }
+    ]
+  },
+  "pages": [
+    {
+      "nodeId": "page-action-list",
+      "htmlSrc": "pages/action-list.html",
+      "title": "操作列表型",
+      "deviceType": "mobile",
+      "viewportMode": "document-scroll",
+      "writeMode": "SkeletonMainAtomic",
+      "stateGroupId": null,
+      "stateRole": null
+    },
+    {
+      "nodeId": "page-single-picker",
+      "htmlSrc": "pages/single-picker.html",
+      "title": "单选选择器型",
+      "deviceType": "mobile",
+      "viewportMode": "document-scroll",
+      "writeMode": "SkeletonMainAtomic",
+      "stateGroupId": null,
+      "stateRole": null
+    },
+    {
+      "nodeId": "page-search-picker",
+      "htmlSrc": "pages/search-picker.html",
+      "title": "带搜索选择器型",
+      "deviceType": "mobile",
+      "viewportMode": "document-scroll",
+      "writeMode": "SkeletonMainAtomic",
+      "stateGroupId": null,
+      "stateRole": null
+    },
+    {
+      "nodeId": "page-quick-action",
+      "htmlSrc": "pages/quick-action.html",
+      "title": "长按操作面板型",
+      "deviceType": "mobile",
+      "viewportMode": "document-scroll",
+      "writeMode": "SkeletonMainAtomic",
+      "stateGroupId": null,
+      "stateRole": null
+    }
+  ],
+  "dispatchPreflightManifest": [],
+  "expectedDispatches": []
+}

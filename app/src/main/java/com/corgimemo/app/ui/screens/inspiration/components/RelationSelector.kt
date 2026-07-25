@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CardSearchResult
 import com.corgimemo.app.data.repository.CardRelationRepository
-import com.corgimemo.app.ui.components.CardLinkSelectorDialog
+import com.corgimemo.app.ui.components.RelationPickerBottomSheet
 import com.corgimemo.app.ui.theme.UiColors
 
 /**
@@ -65,6 +65,7 @@ fun RelationSelector(
     modifier: Modifier = Modifier
 ) {
     var showSelectorDialog by remember { mutableStateOf(false) }
+    val excludeIds = remember(relations) { relations.map { it.targetType to it.targetId }.toSet() }
     val relationTitles = remember(relations) { mutableMapOf<Pair<String, Long>, String>() }
 
     LaunchedEffect(relations) {
@@ -166,20 +167,18 @@ fun RelationSelector(
         }
     }
 
-    if (showSelectorDialog) {
-        val excludeIds = relations.map { it.targetType to it.targetId }.toSet()
-        CardLinkSelectorDialog(
+    RelationPickerBottomSheet(
+            visible = showSelectorDialog,
+            excludeIds = excludeIds,
             onDismiss = { showSelectorDialog = false },
-            onCardSelected = { cardType, cardId, cardTitle ->
-                onRelationAdd(cardType, cardId)
+            onConfirm = { selectedCards ->
+                selectedCards.forEach { card ->
+                    onRelationAdd(card.cardType, card.cardId)
+                }
                 showSelectorDialog = false
             },
-            searchCards = searchCards,
-            excludeIds = excludeIds,
-            sourceType = sourceType,
-            sourceId = sourceId
+            searchCards = searchCards
         )
-    }
 }
 
 /**

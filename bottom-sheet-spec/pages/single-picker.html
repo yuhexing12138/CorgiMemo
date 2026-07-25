@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>带搜索选择器型</title>
+    <title>单选选择器型</title>
     <style id="theme-vars">
 /* ============================================================
    CorgiMemo 底部弹窗通用规范 - colors_and_type.css
@@ -151,51 +151,52 @@
         background-color: currentColor;
       }
     </style>
-    <style>
-      /* ============================================================
-         页面专属样式：带搜索选择器型底部弹窗
-         ============================================================ */
+    <style id="page-styles">
+      /* === 页面整体 === */
       * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; }
-      body {
+      html, body {
+        margin: 0;
+        padding: 0;
         overflow-x: hidden;
+      }
+      body {
         font-family: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
         background: #F4F4F6;
         color: #2D2D2D;
       }
 
       /* === 区域 1：顶部说明区 === */
-      .top-description {
+      .top-desc {
         max-width: 800px;
         margin: 0 auto;
         padding: 48px 24px 32px;
       }
-      .top-description h1 {
+      .top-desc h1 {
         font-size: 28px;
         font-weight: 600;
         color: #2D2D2D;
-        text-wrap: balance;
         margin: 0;
+        text-wrap: balance;
       }
-      .top-description p {
+      .top-desc p {
         font-size: 15px;
         color: #666666;
         line-height: 1.6;
         margin: 12px 0 0;
       }
-      .top-description ul {
+      .top-desc ul {
         list-style: disc;
         padding-left: 20px;
         margin: 16px 0 0;
       }
-      .top-description li {
+      .top-desc li {
         font-size: 14px;
         color: #666666;
         line-height: 1.8;
       }
 
       /* === 区域 2：中部手机模拟器 === */
-      .phone-section {
+      .phone-area {
         max-width: 800px;
         margin: 0 auto;
         padding: 0 24px 48px;
@@ -230,12 +231,8 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        color: #2D2D2D;
       }
-      .status-icons svg {
-        width: 16px;
-        height: 16px;
-      }
+      .status-icons i { width: 16px; height: 16px; }
       .phone-content {
         padding: 8px 16px;
       }
@@ -254,7 +251,6 @@
       }
       .mock-card-line:last-child {
         margin-bottom: 0;
-        width: 60%;
       }
       .home-indicator {
         position: absolute;
@@ -268,7 +264,7 @@
         z-index: 20;
       }
 
-      /* === 底部弹窗 === */
+      /* === 底部弹窗（叠加在手机模拟器内） === */
       .sheet-scrim {
         position: absolute;
         inset: 0;
@@ -307,6 +303,7 @@
         font-weight: 600;
         color: #2D2D2D;
         text-align: left;
+        margin: 0;
       }
       .sheet-close-btn {
         width: 32px;
@@ -325,49 +322,7 @@
       .sheet-close-btn:hover {
         background: #FFE0C0;
       }
-      .sheet-close-btn svg {
-        width: 20px;
-        height: 20px;
-      }
-
-      /* 搜索框区域（固定在标题下方，不随列表滚动） */
-      .sheet-search {
-        padding: 0 24px 12px;
-        flex-shrink: 0;
-      }
-      .search-input-wrapper {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 16px;
-        border: 1px solid #EEEEEE;
-        border-radius: 8px;
-        background: #F8F6F3;
-        transition: border-color 0.15s ease, background 0.15s ease;
-      }
-      .search-input-wrapper:focus-within {
-        border-color: #FF9A5C;
-        background: #FFFFFF;
-      }
-      .search-input-icon {
-        width: 20px;
-        height: 20px;
-        flex-shrink: 0;
-        color: #999999;
-      }
-      .search-input {
-        flex: 1;
-        border: none;
-        outline: none;
-        background: transparent;
-        font-size: 15px;
-        color: #2D2D2D;
-        font-family: inherit;
-        min-width: 0;
-      }
-      .search-input::placeholder {
-        color: #999999;
-      }
+      .sheet-close-btn i { width: 18px; height: 18px; }
       .sheet-divider {
         height: 1px;
         background: rgba(0,0,0,0.08);
@@ -376,12 +331,34 @@
       }
       .sheet-content {
         padding: 8px 0;
-        max-height: 320px;
+        max-height: 400px;
         overflow-y: auto;
         flex-shrink: 0;
       }
+      .sheet-footer {
+        padding: 16px 24px;
+        padding-bottom: 24px;
+        flex-shrink: 0;
+      }
+      .sheet-cancel-btn {
+        width: 100%;
+        padding: 14px;
+        border: 1px solid #EEEEEE;
+        border-radius: 8px;
+        background: transparent;
+        color: #666666;
+        font-size: 16px;
+        font-weight: 500;
+        text-align: center;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.15s ease;
+      }
+      .sheet-cancel-btn:hover {
+        background: #F8F6F3;
+      }
 
-      /* 选择器行 */
+      /* === 单选选择器行 === */
       .picker-row {
         display: flex;
         align-items: center;
@@ -434,29 +411,6 @@
       }
       .picker-row-selected .picker-row-check {
         opacity: 1;
-      }
-
-      .sheet-footer {
-        padding: 16px 24px;
-        padding-bottom: 24px;
-        flex-shrink: 0;
-      }
-      .sheet-cancel-btn {
-        width: 100%;
-        padding: 14px;
-        border: 1px solid #EEEEEE;
-        border-radius: 8px;
-        background: transparent;
-        color: #666666;
-        font-size: 16px;
-        font-weight: 500;
-        text-align: center;
-        cursor: pointer;
-        font-family: inherit;
-        transition: background 0.15s ease;
-      }
-      .sheet-cancel-btn:hover {
-        background: #F8F6F3;
       }
 
       /* ===== 区域 2.5：本项目使用例子 ===== */
@@ -525,12 +479,12 @@
       }
 
       /* === 区域 3：底部规范标注表 === */
-      .spec-section {
+      .spec-table-area {
         max-width: 800px;
         margin: 0 auto;
         padding: 0 24px 48px;
       }
-      .spec-section h2 {
+      .spec-table-area h2 {
         font-size: 20px;
         font-weight: 600;
         color: #2D2D2D;
@@ -568,21 +522,21 @@
 <body class="min-h-screen font-sans antialiased">
     <main>
       <!-- 区域 1：顶部说明区 -->
-      <section class="top-description">
-        <h1>带搜索选择器型底部弹窗</h1>
-        <p>在单选选择器基础上增加顶部搜索框，适用于选项较多的场景，如分类选择、标签选择。输入时实时过滤列表。</p>
+      <section class="top-desc">
+        <h1>单选选择器型底部弹窗</h1>
+        <p>用于从一组互斥选项中选择一个，如优先级选择、排序方式选择。当前选中项有暖橙色高亮标记，点击新选项自动切换。</p>
         <ul>
-          <li>搜索框固定在标题栏下方，不随列表滚动</li>
-          <li>搜索框：圆角 8px、边框 1px #EEEEEE、背景 #F8F6F3、左侧 search 图标</li>
-          <li>搜索框 padding：10px 16px，placeholder #999999</li>
-          <li>选项列表可滚动，选中项与单选选择器样式一致</li>
+          <li>选中项背景使用 #FFF0E5 暖橙浅色背景</li>
+          <li>选中项左侧有 3px 宽暖橙竖条标识</li>
+          <li>选中项右侧显示 Lucide check 图标（#FF9A5C）</li>
+          <li>未选中项默认白底，hover 时背景 #F8F6F3</li>
           <li>每行包含 Lucide 图标（20px）+ 文字（16px Medium），左对齐排列</li>
           <li>选项行 padding：上下 14px / 左右 24px，行高约 52dp</li>
         </ul>
       </section>
 
       <!-- 区域 2：中部手机模拟器 -->
-      <section class="phone-section">
+      <section class="phone-area">
         <div class="phone-frame">
           <div class="phone-screen">
             <!-- 状态栏 -->
@@ -594,74 +548,48 @@
                 <i data-lucide="battery-full"></i>
               </div>
             </div>
-            <!-- 内容区：mock 待办卡片占位 -->
+            <!-- 内容区（待办列表背景占位） -->
             <div class="phone-content">
               <div class="mock-card">
-                <div class="mock-card-line"></div>
-                <div class="mock-card-line"></div>
+                <div class="mock-card-line" style="width: 100%;"></div>
+                <div class="mock-card-line" style="width: 60%;"></div>
               </div>
               <div class="mock-card">
-                <div class="mock-card-line" style="width:80%"></div>
-                <div class="mock-card-line" style="width:50%"></div>
+                <div class="mock-card-line" style="width: 80%;"></div>
+                <div class="mock-card-line" style="width: 50%;"></div>
               </div>
             </div>
-
-            <!-- 底部弹窗：叠加在手机模拟器内部 -->
+            <!-- 遮罩 -->
             <div class="sheet-scrim"></div>
-            <div class="sheet-container" id="sheet-search-picker">
+            <!-- 底部弹窗 -->
+            <div class="sheet-container" id="sheet-single-picker">
               <div class="sheet-handle"></div>
               <div class="sheet-header">
-                <span class="sheet-title">选择分类</span>
+                <h2 class="sheet-title">优先级</h2>
                 <button class="sheet-close-btn" aria-label="关闭">
                   <i data-lucide="x"></i>
                 </button>
               </div>
-              <div class="sheet-search">
-                <div class="search-input-wrapper">
-                  <i data-lucide="search" class="search-input-icon"></i>
-                  <input type="text" class="search-input" placeholder="搜索分类..." >
-                </div>
-              </div>
               <div class="sheet-divider"></div>
               <div class="sheet-content">
                 <div class="picker-row picker-row-selected">
-                  <i data-lucide="briefcase" class="picker-row-icon"></i>
-                  <span class="picker-row-text">工作</span>
+                  <i data-lucide="arrow-up" class="picker-row-icon"></i>
+                  <span class="picker-row-text">高优先级</span>
                   <i data-lucide="check" class="picker-row-check"></i>
                 </div>
                 <div class="picker-row">
-                  <i data-lucide="home" class="picker-row-icon"></i>
-                  <span class="picker-row-text">生活</span>
+                  <i data-lucide="minus" class="picker-row-icon"></i>
+                  <span class="picker-row-text">中优先级</span>
                   <i data-lucide="check" class="picker-row-check"></i>
                 </div>
                 <div class="picker-row">
-                  <i data-lucide="book" class="picker-row-icon"></i>
-                  <span class="picker-row-text">学习</span>
+                  <i data-lucide="arrow-down" class="picker-row-icon"></i>
+                  <span class="picker-row-text">低优先级</span>
                   <i data-lucide="check" class="picker-row-check"></i>
                 </div>
                 <div class="picker-row">
-                  <i data-lucide="heart" class="picker-row-icon"></i>
-                  <span class="picker-row-text">健康</span>
-                  <i data-lucide="check" class="picker-row-check"></i>
-                </div>
-                <div class="picker-row">
-                  <i data-lucide="shopping-cart" class="picker-row-icon"></i>
-                  <span class="picker-row-text">购物</span>
-                  <i data-lucide="check" class="picker-row-check"></i>
-                </div>
-                <div class="picker-row">
-                  <i data-lucide="users" class="picker-row-icon"></i>
-                  <span class="picker-row-text">社交</span>
-                  <i data-lucide="check" class="picker-row-check"></i>
-                </div>
-                <div class="picker-row">
-                  <i data-lucide="plane" class="picker-row-icon"></i>
-                  <span class="picker-row-text">旅行</span>
-                  <i data-lucide="check" class="picker-row-check"></i>
-                </div>
-                <div class="picker-row">
-                  <i data-lucide="utensils" class="picker-row-icon"></i>
-                  <span class="picker-row-text">饮食</span>
+                  <i data-lucide="circle" class="picker-row-icon"></i>
+                  <span class="picker-row-text">无优先级</span>
                   <i data-lucide="check" class="picker-row-check"></i>
                 </div>
               </div>
@@ -669,7 +597,7 @@
                 <button class="sheet-cancel-btn">取消</button>
               </div>
             </div>
-            <!-- home indicator -->
+            <!-- Home Indicator -->
             <div class="home-indicator"></div>
           </div>
         </div>
@@ -687,7 +615,7 @@
       <!-- ============ 区域 2.6：项目弹窗完整清单 ============ -->
       <section class="spec-section">
         <h2>项目弹窗完整清单</h2>
-        <p class="examples-intro">以下是 CorgiMemo 项目中所有属于「带搜索选择器型」的弹窗实例：</p>
+        <p class="examples-intro">以下是 CorgiMemo 项目中所有属于「单选选择器型」的弹窗实例：</p>
         <table class="spec-table">
           <thead>
             <tr>
@@ -699,34 +627,40 @@
           </thead>
           <tbody>
             <tr>
-              <td>CategoryPickerSheet.kt</td>
+              <td>PriorityPickerSheet.kt</td>
               <td>ModalBottomSheet</td>
-              <td style="text-align: left;"><strong>已定义但未接入业务。</strong>CategoryPickerSheet 是底部弹窗组件但 0 次调用。当前"移动到分组"实际使用 CategorySelectorDialog（自定义 Dialog），入口：待办列表页 → 右上角"⋮"三点 → 批量选择 → 勾选待办 → 底部工具栏"移动到分组"；或待办编辑页 → 分类选择器</td>
-              <td>⚠️ 需替换为 CategoryPickerSheet</td>
-            </tr>
-            <tr>
-              <td>TagPickerSheet.kt</td>
-              <td>ModalBottomSheet</td>
-              <td>灵感编辑页 → 点击"标签"字段，在已有标签列表中搜索选择或新建标签</td>
+              <td>待办列表页 → 右上角"⋮"三点 → 批量选择 → 选中待办 → 底部操作栏"更多选项"（⋮）→ "优先级"按钮，弹出无/低/中/高四选 1（注意：待办编辑页内联优先级仍使用 AlertDialog，非此组件）</td>
               <td>✅ 符合规范</td>
             </tr>
             <tr>
-              <td>RelationPickerBottomSheet.kt</td>
+              <td>DateTypePickerBottomSheet.kt</td>
               <td>ModalBottomSheet</td>
-              <td>待办或灵感编辑页 → 点击"关联卡片"按钮 → 搜索并选择要关联的待办/灵感/日期卡片</td>
+              <td>特殊日期模块 → 新建或编辑日期卡片 → 点击"类型"字段，在生日/纪念日/倒计时等类型中单选</td>
               <td>✅ 符合规范</td>
             </tr>
             <tr>
-              <td>CategorySelectorDialog.kt</td>
-              <td>AlertDialog</td>
-              <td>路径1：首页待办卡片左上角分类角标 → 点击角标切换分组；路径2：待办编辑页 → 点击"分类"按钮选择该待办所属分组</td>
-              <td>⚠️ 需改为底部弹窗</td>
+              <td>ThemePickerBottomSheet.kt</td>
+              <td>ModalBottomSheet</td>
+              <td>特殊日期模块 → 编辑日期卡片 → 点击"主题"字段，选择卡片配色主题</td>
+              <td>✅ 符合规范</td>
+            </tr>
+            <tr><td>OutfitQuickSwitchSheet.kt</td>
+              
+              <td>ModalBottomSheet</td>
+              <td>首页（HomeScreen）→ 长按底部导航栏上方的柯基角色 → 弹出已解锁装扮列表，点击即可快速切换（另 CorgiDetailScreen 中虽有组件渲染但无 UI 触发入口，该路径不可达）</td>
+              <td>✅ 符合规范</td>
             </tr>
             <tr>
-              
-              
-              
-              
+              <td>ColorPickerBottomSheet.kt</td>
+              <td>ModalBottomSheet</td>
+              <td>待办编辑页或灵感编辑页 → 点击顶部导航栏右侧的调色板图标（🎨），弹出 12 种预设背景色供单选</td>
+              <td>✅ 符合规范</td>
+            </tr>
+            <tr>
+              <td>ReminderPickerBottomSheet.kt</td>
+              <td>自定义遮罩弹窗</td>
+              <td>待办编辑页 → 点击分组容器内的"提醒"按钮 → 弹出全屏半透明遮罩 + 居中定位的提醒时间设置面板（非底部弹窗，由 Box + 自定义 Layout 按 4:1 比例固定定位），包含日期选择、时间滚轮、重复提醒、截止日期</td>
+              <td>⚠️ 非底部弹窗，不在本规范范围内</td>
             </tr>
             <tr>
               
@@ -743,12 +677,10 @@
         
         
         
-        
-        
       </section>
 
       <!-- 区域 3：底部规范标注表 -->
-      <section class="spec-section">
+      <section class="spec-table-area">
         <h2>规范标注</h2>
         <table class="spec-table">
           <thead>
@@ -759,66 +691,17 @@
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>--cm-radius-sheet</td>
-              <td>24px</td>
-              <td>底部弹窗顶部圆角</td>
-            </tr>
-            <tr>
-              <td>--cm-primary</td>
-              <td>#FF9A5C</td>
-              <td>暖橙主色（选中竖条、check 图标、聚焦边框）</td>
-            </tr>
-            <tr>
-              <td>--cm-primary-soft</td>
-              <td>#FFF0E5</td>
-              <td>选中行暖橙浅色背景</td>
-            </tr>
-            <tr>
-              <td>搜索框边框</td>
-              <td>1px #EEEEEE</td>
-              <td>搜索框默认边框</td>
-            </tr>
-            <tr>
-              <td>搜索框背景</td>
-              <td>#F8F6F3</td>
-              <td>搜索框默认背景</td>
-            </tr>
-            <tr>
-              <td>搜索框聚焦边框</td>
-              <td>#FF9A5C</td>
-              <td>聚焦时边框色</td>
-            </tr>
-            <tr>
-              <td>标题字号</td>
-              <td>18px / 600</td>
-              <td>弹窗标题</td>
-            </tr>
-            <tr>
-              <td>选项行字号</td>
-              <td>16px / 500</td>
-              <td>选项文字</td>
-            </tr>
-            <tr>
-              <td>选项行 padding</td>
-              <td>14px 24px</td>
-              <td>选项行内边距</td>
-            </tr>
-            <tr>
-              <td>选项行高度</td>
-              <td>~52dp</td>
-              <td>单行高度</td>
-            </tr>
-            <tr>
-              <td>拖拽条</td>
-              <td>36×4px / r2px</td>
-              <td>顶部拖拽指示器</td>
-            </tr>
-            <tr>
-              <td>安全区</td>
-              <td>24px</td>
-              <td>底部安全间距</td>
-            </tr>
+            <tr><td>--cm-radius-sheet</td><td>24px</td><td>底部弹窗顶部圆角</td></tr>
+            <tr><td>--cm-primary</td><td>#FF9A5C</td><td>暖橙主色（选中竖条、check 图标）</td></tr>
+            <tr><td>--cm-primary-soft</td><td>#FFF0E5</td><td>选中行暖橙浅色背景</td></tr>
+            <tr><td>选中竖条</td><td>3px / #FF9A5C</td><td>选中项左侧标识</td></tr>
+            <tr><td>标题字号</td><td>18px / 600</td><td>弹窗标题</td></tr>
+            <tr><td>选项行字号</td><td>16px / 500</td><td>选项文字</td></tr>
+            <tr><td>选项行 padding</td><td>14px 24px</td><td>选项行内边距</td></tr>
+            <tr><td>选项行高度</td><td>~52dp</td><td>单行高度</td></tr>
+            <tr><td>分割线</td><td>rgba(0,0,0,0.08)</td><td>弹窗内部分割线</td></tr>
+            <tr><td>拖拽条</td><td>36×4px / r2px</td><td>顶部拖拽指示器</td></tr>
+            <tr><td>安全区</td><td>24px</td><td>底部安全间距</td></tr>
           </tbody>
         </table>
       </section>

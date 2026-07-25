@@ -1,0 +1,95 @@
+{
+  "data": [
+    {
+      "id": "page-action-list",
+      "title": "操作列表型",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1784937600000,
+      "canvasData": {
+        "x": 12,
+        "y": -12,
+        "group": 0,
+        "deviceType": "freeSize",
+        "windowSize": {
+          "width": 799,
+          "height": 2897
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/action-list.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-single-picker",
+      "title": "单选选择器型",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1784937600000,
+      "canvasData": {
+        "x": 288,
+        "y": -12,
+        "group": 0,
+        "deviceType": "freeSize",
+        "windowSize": {
+          "width": 662,
+          "height": 2479
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/single-picker.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-search-picker",
+      "title": "带搜索选择器型",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1784937600000,
+      "canvasData": {
+        "x": 618,
+        "y": 0,
+        "group": 0,
+        "deviceType": "freeSize",
+        "windowSize": {
+          "width": 785,
+          "height": 2568
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/search-picker.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-quick-action",
+      "title": "长按操作面板型",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1784937600000,
+      "canvasData": {
+        "x": 927,
+        "y": 0,
+        "group": 0,
+        "deviceType": "freeSize",
+        "windowSize": {
+          "width": 867,
+          "height": 2098
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/quick-action.html",
+        "interactions": []
+      }
+    }
+  ],
+  "config": {
+    "autoLayout": false,
+    "deviceType": "mobile",
+    "projectName": "底部弹窗通用规范原型",
+    "visualEditorEnabled": true,
+    "showEdge": false
+  }
+}

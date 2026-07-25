@@ -1297,4 +1297,367 @@ if (showBatchDeleteConfirm) {
 |------|------|------|
 | 2026-07-25 | v1.0 | 初始规范：以 [InspirationImageGallery.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/inspiration/components/InspirationImageGallery.kt) L285-322 为视觉样板，确立"极简 `AlertDialog`（title + text + 删除/取消按钮）"为项目统一标准；明确与 Snackbar 撤销模式的适用边界（不可恢复走弹窗 / 可恢复走 Snackbar）；审计项目内 25 处二次确认弹窗调用点（21 处符合 / 4 处不符合，暂不强制迁移）；统一删除按钮警示色为 `Color(0xFFFF6B6B)` |
 
+### 12.1.12 底部弹窗（ModalBottomSheet）通用规范
+
+> **视觉样板**：[ActionBottomSheet.kt](../../app/src/main/java/com/corgimemo/app/ui/components/ActionBottomSheet.kt)（通用操作列表组件，已按规范实现）
+>
+> **适用范围**：项目内所有从底部滑出的模态面板（ModalBottomSheet），包括操作菜单、选择器、编辑器、内容展示面板等。
+
+#### 12.1.12.1 设计原则
+
+| 原则 | 说明 |
+|------|------|
+| **治愈不焦虑** | 顶部大圆角 + 柔和阴影 + 平滑滑入动画，避免生硬弹出 |
+| **视觉统一** | 所有底部弹窗遵循相同的容器、指示条、间距、列表项规范 |
+| **主题适配** | 颜色必须使用 `MaterialTheme.colorScheme`，**禁止**硬编码 `Color.White` |
+| **类型清晰** | 按交互模式分为4种变体，不同变体有明确的适用场景 |
+| **操作反馈即时** | 点击选项后立即执行回调并关闭（类型A/B），或有明确的确认按钮（类型C） |
+
+#### 12.1.12.2 基础视觉参数（所有弹窗必须遵守）
+
+##### 容器规格
+
+| 属性 | 值 | 说明 |
+|------|------|------|
+| 容器组件 | `ModalBottomSheet`（Material3） | 不使用自定义 `BottomSheetScaffold` 做模态 |
+| 形状（Shape） | `RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)` | **必须显式指定**，24dp顶部大圆角 |
+| 容器颜色（containerColor） | `MaterialTheme.colorScheme.surface` | **必须显式指定**，禁止硬编码白色 |
+| 内容颜色（contentColor） | 默认（不指定） | 跟随 `contentColorFor(surface)` 自动计算 |
+| 阴影（tonalElevation） | 默认（不指定） | M3默认值，不自定义 |
+| 拖拽关闭 | 默认开启 | 支持向下拖拽关闭，不设置 `gesturesEnabled = false` |
+
+##### Drag Handle（顶部指示条）
+
+| 属性 | 值 | 说明 |
+|------|------|------|
+| dragHandle 参数 | **必须设为 `null`** | 禁用M3默认dragHandle，使用自定义实现 |
+| 自定义指示条宽度 | 40.dp | 统一宽度 |
+| 自定义指示条高度 | 4.dp | 统一高度 |
+| 自定义指示条颜色 | `MaterialTheme.colorScheme.outlineVariant` | 主题适配的浅灰色 |
+| 自定义指示条圆角 | `RoundedCornerShape(2.dp)` | 两端小圆角 |
+| 指示条顶部间距 | 12.dp | 指示条距离弹窗顶部 |
+| 指示条底部间距 | 16.dp | 指示条距离下方内容（标题或列表） |
+
+**自定义指示条标准代码：**
+```kotlin
+// 标准 Drag Handle（仅指示条，无标题）
+Box(
+    modifier = Modifier
+        .fillMaxWidth()
+        .padding(top = 12.dp, bottom = 16.dp),
+    contentAlignment = Alignment.Center
+) {
+    Box(
+        modifier = Modifier
+            .width(40.dp)
+            .height(4.dp)
+            .background(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(2.dp)
+            )
+    )
+}
+
+// 带标题的 Drag Handle（指示条 + 标题）
+Column(
+    modifier = Modifier
+        .fillMaxWidth()
+        .padding(top = 12.dp, bottom = 16.dp),
+    horizontalAlignment = Alignment.CenterHorizontally
+) {
+    Box(
+        modifier = Modifier
+            .width(40.dp)
+            .height(4.dp)
+            .background(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(2.dp)
+            )
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+```
+
+##### 内容内边距（Content Padding）
+
+| 场景 | horizontalPadding | bottomPadding | 说明 |
+|------|-------------------|---------------|------|
+| 默认模式 | 24.dp | 24.dp | 大多数弹窗使用此值 |
+| 有底部操作按钮 | 24.dp | 32.dp | 底部有确认/取消按钮时增加底部间距 |
+| 紧凑模式 | 24.dp | 16.dp | 内容非常少、无分割线时使用 |
+
+> **注意**：内容顶部不需要额外padding（Drag Handle已提供16dp底部间距）。
+
+##### 列表项规格（类型A/B）
+
+| 属性 | 值 | 说明 |
+|------|------|------|
+| 列表项最小高度 | 48.dp | 保证足够点击热区 |
+| 列表项标准高度 | 56.dp | 大多数操作项使用此高度 |
+| 图标尺寸 | 20.dp（emoji/图标） | 图标容器32.dp宽 |
+| 图标与文字间距 | 12.dp | |
+| 文字字号 | 16.sp | |
+| 文字字重 | FontWeight.Medium | |
+| 项间分割线 | 1.dp `HorizontalDivider` | 颜色 `MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)` |
+| 点击反馈 | 默认 ripple | 不自定义 pressFeedback |
+| 破坏性操作颜色 | `MaterialTheme.colorScheme.error` | 删除项文字和图标使用error色 |
+| 选中项颜色 | 主题色（`MaterialTheme.colorScheme.primary` 或项目主色 `0xFFFF9A5C`） | 选中项文字+图标使用主题色，右侧显示✓ |
+
+##### 底部操作按钮（类型C）
+
+| 属性 | 值 | 说明 |
+|------|------|------|
+| 按钮高度 | 44.dp | |
+| 按钮圆角 | 12.dp | 与输入框等元素统一 |
+| 主按钮颜色 | `0xFFFF9A5C`（项目橙色） | 背景橙色，白色文字 |
+| 次按钮颜色 | `MaterialTheme.colorScheme.surfaceVariant` | 浅灰背景，文字默认色 |
+| 按钮间距 | 12.dp | |
+| 按钮区域顶部间距 | 16.dp | 与内容区域用分割线隔开 |
+| 按钮文字 | 动词（"确认"/"应用"/"取消"） | 不使用"OK"/"确定"等模糊词汇 |
+
+##### 动画规范
+
+| 动画类型 | 时长 | 说明 |
+|---------|------|------|
+| 滑入/滑出 | M3默认（~300ms） | 使用 `cubic-bezier(0.2, 0.8, 0.2, 1)` 缓动 |
+| 列表项点击 | 100-150ms | 默认ripple |
+| 选中态切换 | 150-200ms | 颜色和✓图标淡入淡出 |
+| 不自定义 | — | **禁止**自定义enter/exit transition，使用M3默认动画 |
+
+#### 12.1.12.3 四种弹窗类型变体
+
+##### 类型 A：操作列表（Action Sheet）
+
+| 属性 | 说明 |
+|------|------|
+| 标题 | **无标题**，直接显示操作项 |
+| Drag Handle | 仅指示条（无标题） |
+| 交互 | 点击选项**立即执行回调并关闭弹窗** |
+| 内容 | 垂直列表，支持 `dividerIndex` 插入分组分割线 |
+| 破坏性操作 | 使用error色显示 |
+| 适用场景 | 长按菜单、更多操作、分享选项、快速操作入口 |
+| 参考组件 | `ActionBottomSheet`（已封装，优先复用） |
+
+**标准样板：**
+```kotlin
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ActionBottomSheet(
+    // ...
+) {
+    val sheetState = rememberModalBottomSheetState()
+    val coroutineScope = rememberCoroutineScope()
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = null
+    ) {
+        // 自定义 Drag Handle（仅指示条）
+        Box(
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(40.dp).height(4.dp)
+                    .background(
+                        MaterialTheme.colorScheme.outlineVariant,
+                        RoundedCornerShape(2.dp)
+                    )
+            )
+        }
+
+        // 可选标题（居中或左对齐）
+        // 操作列表
+        Column(modifier = Modifier.padding(horizontal = 24.dp, bottom = 24.dp)) {
+            items.forEachIndexed { index, item ->
+                SheetItem(
+                    icon = item.icon,
+                    label = item.label,
+                    isDanger = item.isDanger,
+                    onClick = {
+                        coroutineScope.launch {
+                            sheetState.hide()
+                            awaitCancellation()
+                        }.invokeOnCompletion {
+                            if (!sheetState.isVisible) onDismiss()
+                            item.onClick()
+                        }
+                    }
+                )
+                if (index == dividerIndex) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                }
+            }
+        }
+    }
+}
+```
+
+##### 类型 B：单选列表（Picker Sheet）
+
+| 属性 | 说明 |
+|------|------|
+| 标题 | **必须有标题**，显示在Drag Handle区域或内容顶部 |
+| Drag Handle | 带标题（指示条 + 标题文字） |
+| 交互 | 点击选项**立即回调选中值并关闭弹窗** |
+| 选中态 | 文字/图标使用主题色，右侧显示✓图标 |
+| 适用场景 | 优先级选择、排序方式选择、分类选择、颜色选择（列表形式） |
+| 参考组件 | `PriorityPickerSheet`、`SortBottomSheet`、`CategoryPickerSheet` |
+
+##### 类型 C：确认/编辑（Confirm Sheet）
+
+| 属性 | 说明 |
+|------|------|
+| 标题 | **必须有标题** |
+| Drag Handle | 带标题 |
+| 交互 | 点击底部"确认"按钮才回调，点击"取消"或遮罩关闭不执行 |
+| 内容 | 可包含搜索框、输入框、Chip组、网格、LazyColumn等复杂内容 |
+| 底部按钮 | **必须有**"取消"和"确认"（或"应用"）双按钮 |
+| 本地状态 | 弹窗内维护本地暂存状态，确认时才提交给外部 |
+| 适用场景 | 标签管理、多选关联、多级排序配置、筛选条件设置、创建/编辑表单 |
+| 参考组件 | `TagPickerSheet`、`MultiSortSheet`、`RelationPickerBottomSheet` |
+
+##### 类型 D：内容展示（Content Sheet）
+
+| 属性 | 说明 |
+|------|------|
+| 标题 | **必须有标题**，通常带关闭按钮 |
+| Drag Handle | 带标题，或仅指示条 + 内容内标题栏 |
+| 交互 | 无底部确认按钮，点击关闭按钮/遮罩/返回键关闭 |
+| 内容 | 可滚动（`verticalScroll` 或 `LazyColumn`），支持复杂布局（网格、横滑列表、Tab切换） |
+| 适用场景 | 成就详情、录音面板、主题预览、头像来源选择、快速换装 |
+| 参考组件 | `AchievementDetailSheet`、`VoiceRecordBottomSheet`、`OutfitQuickSwitchSheet` |
+
+#### 12.1.12.4 特殊场景规范
+
+##### 搜索框规范（类型B/C）
+
+| 属性 | 值 |
+|------|------|
+| 圆角 | 12.dp |
+| 背景 | `MaterialTheme.colorScheme.surfaceVariant` |
+| 高度 | 40.dp |
+| 内边距 | 水平12.dp |
+| 搜索图标 | 18.dp，颜色 `onSurfaceVariant` |
+| 与标题间距 | 12.dp |
+| 与列表间距 | 12.dp |
+
+##### 网格布局规范（类型B/C，如颜色选择、表情选择）
+
+| 属性 | 值 |
+|------|------|
+| 列数 | 3-5列（根据元素尺寸调整） |
+| 间距 | 12.dp |
+| 元素尺寸 | 48-56dp（圆形或方形） |
+| 选中态 | 3dp主题色边框 + 缩放1.05倍 + 居中✓图标 |
+
+##### 横滑列表规范（类型D，如装扮选择）
+
+| 属性 | 值 |
+|------|------|
+| 卡片宽度 | 100dp |
+| 卡片高度 | 120dp |
+| 卡片圆角 | 16.dp |
+| 卡片阴影 | 2dp |
+| 间距 | 12.dp |
+| 内容内边距 | 16.dp |
+| 选中态 | 主题色背景 + "✓ 当前"标签 |
+
+##### 最大高度限制
+
+| 场景 | 最大高度 |
+|------|---------|
+| 简单列表（≤6项） | wrapContent（不设限制） |
+| 长列表/搜索/复杂内容 | `fillMaxHeight(0.9f)`（最大占屏90%） |
+| 录音等特殊面板 | `fillMaxHeight(0.9f)` |
+
+#### 12.1.12.5 与其他弹窗的边界
+
+| 弹窗类型 | 适用场景 | 不适用场景 |
+|---------|---------|-----------|
+| **ModalBottomSheet（底部弹窗）** | 选项列表、选择器、轻量编辑、操作菜单 | 不可恢复的破坏性操作确认 |
+| **AlertDialog（二次确认弹窗）** | 不可恢复操作的事前确认（删除、清空、覆盖） | 多选项列表、复杂编辑、内容展示 |
+| **Snackbar** | 可恢复操作的事后反馈（移入回收站、归档），5s撤销 | 事前拦截、多选项选择、内容展示 |
+| **全屏Dialog/Navigation** | 复杂编辑页面（如待办编辑、灵感编辑） | 简单选项选择（2-6项） |
+
+#### 12.1.12.6 现有弹窗审计与迁移计划（22处，2026-07-25）
+
+##### A. 已符合规范的弹窗（9处）
+
+| # | 文件 | 类型 | 符合点 |
+|---|------|------|--------|
+| 1 | `ActionBottomSheet.kt` | A（操作列表） | 24dp圆角、surface颜色、自定义dragHandle、标准间距 |
+| 2 | `CategoryPickerSheet.kt` | B（单选列表） | 24dp圆角、surface颜色、自定义dragHandle |
+| 3 | `ColorPickerBottomSheet.kt` | B（单选） | 24dp圆角、surface颜色、带标题dragHandle |
+| 4 | `MultiSortSheet.kt` | C（确认/编辑） | 24dp圆角、surface颜色、带标题dragHandle、底部按钮 |
+| 5 | `SortBottomSheet.kt` | B（单选） | 24dp圆角、surface颜色、自定义dragHandle |
+| 6 | `TagPickerSheet.kt` | C（确认/编辑） | 24dp圆角、surface颜色、自定义dragHandle、底部按钮 |
+| 7 | `DateTypePickerBottomSheet.kt` | B/C混合 | 24dp圆角、surface颜色 |
+| 8 | `InspirationLongPressSheet.kt` | A（操作列表） | surface颜色、自定义dragHandle |
+| 9 | `AchievementDetailSheet.kt` | D（内容展示） | 24dp圆角、surface颜色、自定义dragHandle |
+
+##### B. 需修复的问题弹窗（13处，按优先级排序）
+
+| # | 文件 | 问题 | 修复优先级 |
+|---|------|------|-----------|
+| 1 | `CategoryOperationSheet.kt` (OperationSheets.kt) | 硬编码 `Color.White`（深色模式异常）、未指定shape、使用默认dragHandle | **高** |
+| 2 | `DateTypeOperationSheet.kt` (OperationSheets.kt) | 硬编码 `Color.White`、未指定shape、使用默认dragHandle | **高** |
+| 3 | `RelationPickerBottomSheet.kt` | 硬编码 `Color.White`、未指定shape、使用默认dragHandle | **高** |
+| 4 | `AvatarSourceSheet.kt` | 未指定shape、使用默认dragHandle | 中 |
+| 5 | `PriorityPickerSheet.kt` | 未指定shape、使用默认dragHandle | 中 |
+| 6 | `RelationListBottomSheet.kt` | 未指定shape、使用默认dragHandle | 中 |
+| 7 | `OutfitQuickSwitchSheet.kt` | 未指定shape/containerColor、使用默认dragHandle | 中 |
+| 8 | `ShareDateSheet.kt` | 未指定shape/containerColor、使用默认dragHandle | 中 |
+| 9 | `ShareInspirationSheet.kt` | 未指定shape/containerColor、使用默认dragHandle | 中 |
+| 10 | `ThemePickerBottomSheet.kt` | 未指定shape/containerColor、使用默认dragHandle | 中 |
+| 11 | `VoiceRecordBottomSheet.kt` | 未指定shape/containerColor、使用默认dragHandle | 中 |
+| 12 | `QuickAddTodo` (HomeScreen.kt) | 未指定shape、使用默认dragHandle | 中 |
+| 13 | `ReminderPickerBottomSheet` 包裹 (HomeScreen.kt) | 未指定shape、使用默认dragHandle | 中 |
+
+##### 修复要点
+
+1. **高优先级（3处硬编码白色）**：
+   - 将 `containerColor = Color.White` 改为 `containerColor = MaterialTheme.colorScheme.surface`
+   - 添加 `shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)`
+   - 添加 `dragHandle = null` 并实现自定义40dp指示条
+
+2. **中优先级（10处未指定shape/dragHandle）**：
+   - 添加 `shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)`
+   - 添加 `dragHandle = null` 并实现自定义40dp指示条
+   - 检查并统一内边距为 `horizontal = 24.dp`
+
+3. **迁移策略**：
+   - 优先复用 `ActionBottomSheet` 组件封装类型A弹窗（如 `CategoryOperationSheet`、`ShareDateSheet`、`ShareInspirationSheet` 等简单列表可直接复用）
+   - 类型B/C/D弹窗在各自组件内按规范统一视觉参数
+   - 不要求一次性全部迁移，新写弹窗必须遵守规范，旧弹窗在迭代时逐步修复
+
+#### 12.1.12.7 不允许的用法
+
+| 违规用法 | 原因 | 正确做法 |
+|---------|------|---------|
+| `containerColor = Color.White` | 不适配深色模式 | 使用 `MaterialTheme.colorScheme.surface` |
+| 不指定 `shape` 参数 | 各弹窗圆角不一致（M3默认~28dp vs 规范24dp） | 显式指定 `RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)` |
+| 使用M3默认 `dragHandle` | 默认dragHandle样式与自定义指示条视觉不一致 | `dragHandle = null` + 自定义40×4dp指示条 |
+| 自定义enter/exit动画 | 破坏动画一致性 | 使用M3默认动画 |
+| 弹窗内直接执行业务逻辑后不关闭 | 用户点击后弹窗未消失，状态混乱 | 先 `sheetState.hide()` 再执行回调（参考类型A样板） |
+| 列表项高度 < 48.dp | 点击热区过小，不易点击 | 最小高度48dp，推荐56dp |
+| 类型C弹窗无底部确认按钮 | 用户修改后无明确反馈，不知道是否生效 | 必须有"取消/确认"双按钮 |
+| 类型A/B弹窗点击后不立即关闭 | 操作反馈不明确 | 点击选项后立即hide并执行回调 |
+| 不同弹窗使用不同的指示条尺寸（36dp/40dp/线） | 顶部视觉混乱 | 统一40dp × 4dp |
+
+#### 12.1.12.8 排版变更记录
+
+| 日期 | 版本 | 变更 |
+|------|------|------|
+| 2026-07-25 | v1.0 | 初始规范：基于项目内22个现有ModalBottomSheet审计结果，确立统一视觉标准：24dp顶部圆角、surface容器色、40×4dp自定义dragHandle、24dp标准内边距、56dp列表项高度；定义4种弹窗变体（操作列表/单选列表/确认编辑/内容展示）；明确与AlertDialog/Snackbar的适用边界；列出3处高优先级问题（硬编码白色）和10处中优先级问题需迁移修复 |
+
 

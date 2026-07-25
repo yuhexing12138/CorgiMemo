@@ -1,0 +1,47 @@
+/* ============================================================
+   CorgiMemo 底部弹窗通用规范 - colors_and_type.css
+   品牌前缀: cm | 单一 primary 暖橙 hue（柯基治愈系）
+   ============================================================ */
+
+:root {
+  /* === 品牌主色（单一暖橙 hue） === */
+  --cm-primary: #FF9A5C;              /* 暖橙主色：关闭按钮、选中态高亮 */
+  --cm-primary-foreground: #FFFFFF;  /* 暖橙上的文字 */
+  --cm-primary-tint: #FFE0C0;        /* 选中态浅暖橙背景 */
+  --cm-primary-soft: #FFF0E5;        /* 更浅暖橙表面 */
+  --cm-primary-deep: #E88A4D;        /* 深暖橙文字 */
+
+  /* === 中性表面（背景 / 卡片 / 文字） === */
+  --cm-background: #F4F4F6;          /* 页面底色 */
+  --cm-foreground: #2D2D2D;          /* 主文字 */
+  --cm-card: #FFFFFF;                /* 卡片 / 弹窗表面 */
+  --cm-card-foreground: #2D2D2D;     /* 卡片上的文字 */
+  --cm-popover: #FFFFFF;             /* 浮层表面（与 card 一致） */
+  --cm-popover-foreground: #2D2D2D;
+  --cm-muted: #F0F0F2;               /* 次级表面 */
+  --cm-muted-foreground: #888888;    /* 次要文字 / 拖拽条默认色 */
+  --cm-border: #E8E8EA;              /* 分割线 / 边框 */
+  --cm-input: #E8E8EA;              /* 输入框边框 */
+  --cm-ring: #FF9A5C;               /* 聚焦环 */
+
+  /* === 状态色（仅用于真实状态：破坏性/成功/警告） === */
+  --cm-state-error: #E53935;         /* 破坏性操作文字 */
+  --cm-state-error-foreground: #FFFFFF;
+  --cm-state-success: #4CAF50;
+  --cm-state-warning: #FF9800;
+
+  /* === 圆角 scale === */
+  --cm-radius-sm: 4px;
+  --cm-radius-md: 8px;
+  --cm-radius-lg: 16px;
+  --cm-radius-sheet: 24px;           /* 底部弹窗顶部圆角（规范核心值，对齐 UI规范 12.1.5.1） */
+  --cm-radius-pill: 999px;
+
+  /* === 阴影 === */
+  --cm-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 1px rgba(15, 23, 42, 0.02);
+  --cm-shadow-2: 0 8px 24px -8px rgba(15, 23, 42, 0.12);
+  --cm-shadow-sheet: 0 -4px 24px -4px rgba(15, 23, 42, 0.10);
+
+  /* === 字体 === */
+  --cm-font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}

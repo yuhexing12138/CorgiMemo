@@ -500,6 +500,18 @@
         font-family: "SF Mono", "Fira Code", monospace;
         color: #2D2D2D;
       }
+      .spec-table .category-header th {
+        background: none;
+        padding: 24px 16px 8px 16px;
+        font-size: 15px;
+        font-weight: 700;
+        color: #FF9A5C;
+        text-align: left;
+        border-bottom: none;
+      }
+      .spec-table .category-header:first-child th {
+        padding-top: 8px;
+      }
 
       /* ===== Lucide 图标尺寸兜底 ===== */
       .action-row-icon i,
@@ -608,44 +620,11 @@
 
       <!-- ============ 区域 2.5：本项目使用例子 ============ -->
       <section class="spec-section">
-        <h2>本项目使用例子</h2>
-        <p class="examples-intro">以下是 CorgiMemo 项目中实际使用「操作列表型底部弹窗」的 3 个场景：</p>
-        <div class="example-card">
-          <div class="example-card-header">
-            <div class="example-icon-wrapper">
-              <i data-lucide="check-square" class="example-icon"></i>
-            </div>
-            <div class="example-card-text">
-              <h3>MoreOptionsSheet</h3>
-              <p>多选模式下点击 ⋮ 按钮弹出的 6 项操作菜单：完成 / 置顶 / 优先级 / 提醒时间 / 创建副本 / 转换为灵感</p>
-            </div>
-          </div>
-          <div class="example-tag">文件：MoreOptionsSheet.kt</div>
-        </div>
-        <div class="example-card">
-          <div class="example-card-header">
-            <div class="example-icon-wrapper">
-              <i data-lucide="folder" class="example-icon"></i>
-            </div>
-            <div class="example-card-text">
-              <h3>CategoryOperationSheet</h3>
-              <p>长按侧边栏分类弹出的操作菜单：置顶 / 编辑 / 删除（删除项使用红色破坏性样式）</p>
-            </div>
-          </div>
-          <div class="example-tag">文件：appdrawer/dialogs/OperationSheets.kt</div>
-        </div>
-        <div class="example-card">
-          <div class="example-card-header">
-            <div class="example-icon-wrapper">
-              <i data-lucide="trophy" class="example-icon"></i>
-            </div>
-            <div class="example-card-text">
-              <h3>AchievementDetailSheet</h3>
-              <p>点击成就卡片弹出的操作菜单：分享成就 / 查看详情 / 关闭，操作项少时自动适配高度</p>
-            </div>
-          </div>
-          <div class="example-tag">文件：AchievementDetailSheet.kt</div>
-        </div>
+        
+        
+        
+        
+        
       </section>
 
       <!-- ============ 区域 2.6：项目弹窗完整清单 ============ -->
@@ -662,71 +641,81 @@
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>MoreOptionsSheet.kt</td>
-              <td>ModalBottomSheet</td>
-              <td style="text-align: left;">首页待办列表 → 点击右上角"⋮"三点按钮 → 选择"批量选择"进入多选模式 → 选中至少一个待办 → 底部批量操作栏点击"更多选项"按钮，弹出完成/置顶/优先级/提醒时间/创建副本/转换为灵感六项操作</td>
-              <td>✅ 符合规范</td>
+            <!-- ═══ 一、待办 ═══ -->
+            <tr class="category-header">
+              <th colspan="4">一、待办</th>
             </tr>
             <tr>
-              <td>ActionBottomSheet.kt</td>
+              <td>SortBottomSheet.kt</td>
               <td>ModalBottomSheet</td>
-              <td>通用组件无固定入口，由侧滑抽屉分类操作、批量选择等多个业务场景调用，调用方传入 actions 列表动态渲染</td>
+              <td style="text-align: left;">待办列表页 → 点击右上角"⋮"三点按钮 → 点击"排序"，弹出"待办排序"，选择最新更新的在前/在后、最新创建的在前/在后，或恢复默认排序</td>
               <td>✅ 符合规范</td>
             </tr>
             <tr>
               <td>OperationSheets.kt</td>
               <td>ModalBottomSheet</td>
-              <td>首页从左屏幕边缘向右滑动打开侧滑抽屉 → 长按任一自定义分类项（如"工作""学习"），弹出置顶/编辑/删除三项操作</td>
+              <td style="text-align: left;">待办列表页 → 从左屏幕边缘右滑打开侧滑抽屉 → 点击自定义分类项右侧"⋮"按钮，弹出置顶/编辑/删除三项操作</td>
               <td>✅ 符合规范</td>
             </tr>
             <tr>
-              <td>ShareDateSheet.kt</td>
+              <td>ActionBottomSheet.kt</td>
               <td>ModalBottomSheet</td>
-              <td>特殊日期模块 → 点击任一日期卡片进入日期详情页 → 点击右上角"分享"图标，选择分享渠道</td>
+              <td style="text-align: left;"><strong>通用底层组件，无固定入口。</strong>被侧滑抽屉分类操作、批量模式等场景复用，调用方通过 <code>actions</code> 参数注入操作项列表</td>
               <td>✅ 符合规范</td>
             </tr>
             <tr>
-              <td>ShareInspirationSheet.kt</td>
+              <td>MoreOptionsSheet.kt</td>
               <td>ModalBottomSheet</td>
-              <td>灵感列表页 → 点击任一灵感卡片进入灵感详情 → 点击"分享"按钮，选择分享渠道</td>
+              <td style="text-align: left;">待办列表页 → 右上角"⋮"三点 → 批量选择 → 选中待办 → 底部操作栏点击"更多选项"（⋮），弹出完成/置顶/优先级/提醒时间/创建副本/转换为灵感六项操作</td>
               <td>✅ 符合规范</td>
-            </tr>
-            <tr>
-              <td>MultiSortSheet.kt</td>
-              <td>ModalBottomSheet</td>
-              <td>首页点击右上角"⋮"三点按钮 → 选择"批量选择"进入多选模式 → 勾选两个及以上待办 → 底部工具栏点击"排序"按钮，弹出多字段排序选项</td>
-              <td>✅ 符合规范</td>
-            </tr>
-            <tr>
-              <td>SortBottomSheet.kt</td>
-              <td>ModalBottomSheet</td>
-              <td>待办列表页 → 点击顶部标题栏"排序"入口（或列表为空时占位区的排序选项），选择排序方式</td>
-              <td>✅ 符合规范</td>
-            </tr>
-            <tr>
-              <td>AvatarSourceSheet.kt</td>
-              <td>ModalBottomSheet</td>
-              <td>底部导航栏点击"我的" → 进入个人资料页 → 点击顶部头像区域，选择拍照或从相册更换头像</td>
-              <td>✅ 符合规范</td>
-            </tr>
-            <tr>
-              <td>AchievementDetailSheet.kt</td>
-              <td>ModalBottomSheet</td>
-              <td>底部导航栏点击"我的" → 进入"成就"页 → 点击任一成就卡片，查看成就详情并分享</td>
-              <td>✅ 符合规范</td>
-            </tr>
-            <tr>
-              <td>ImagePickerDialog.kt</td>
-              <td>AlertDialog</td>
-              <td>待办编辑页或灵感编辑页 → 点击输入区下方工具栏的"📷"图片按钮，弹出拍照/从相册选择两个选项</td>
-              <td>⚠️ 需改为底部弹窗</td>
             </tr>
             <tr>
               <td>ShareModeDialog.kt</td>
               <td>AlertDialog</td>
-              <td>路径1：首页多选模式选中多个待办后点击"分享"；路径2：待办编辑页点击右上角"分享"图标，弹出合并/一条条分享两个选项</td>
+              <td style="text-align: left;">路径①：待办列表页多选待办后点击底部"分享"按钮；路径②：待办编辑页点击右上角"分享"图标。弹出合并/逐条分享选择</td>
               <td>⚠️ 需改为底部弹窗</td>
+            </tr>
+            <tr>
+              <td>ImagePickerDialog.kt</td>
+              <td>AlertDialog</td>
+              <td style="text-align: left;">待办编辑页（或灵感编辑页）→ 点击输入区下方工具栏"📷"图片按钮，弹出拍照/从相册选择</td>
+              <td>⚠️ 需改为底部弹窗</td>
+            </tr>
+          </tbody>
+          <tbody>
+            <!-- ═══ 二、灵感 ═══ -->
+            <tr class="category-header">
+              <th colspan="4">二、灵感</th>
+            </tr>
+            <tr>
+              <td>ShareInspirationSheet.kt</td>
+              <td>ModalBottomSheet</td>
+              <td style="text-align: left;">灵感列表页 → 点击任一灵感卡片进入灵感详情 → 点击"分享"按钮，选择分享渠道</td>
+              <td>✅ 符合规范</td>
+            </tr>
+          </tbody>
+          <tbody>
+            <!-- ═══ 三、日期 ═══ -->
+            <tr class="category-header">
+              <th colspan="4">三、日期</th>
+            </tr>
+            <tr>
+              <td>ShareDateSheet.kt</td>
+              <td>ModalBottomSheet</td>
+              <td style="text-align: left;">日期列表页 → 点击任一日期卡片进入日期详情 → 点击右下角底部工具栏"分享"图标，选择分享渠道</td>
+              <td>✅ 符合规范</td>
+            </tr>
+          </tbody>
+          <tbody>
+            <!-- ═══ 四、我的 ═══ -->
+            <tr class="category-header">
+              <th colspan="4">四、我的</th>
+            </tr>
+            <tr>
+              <td>AvatarSourceSheet.kt</td>
+              <td>ModalBottomSheet</td>
+              <td style="text-align: left;">底部导航栏 → "我的" → 个人资料页 → 点击顶部头像区域，选择拍照或从相册更换</td>
+              <td>✅ 符合规范</td>
             </tr>
           </tbody>
         </table>
@@ -734,38 +723,10 @@
 
       <!-- ============ 区域 2.7：需改造为中心弹窗→底部弹窗 ============ -->
       <section class="spec-section">
-        <h2>需改造为中心弹窗→底部弹窗</h2>
-        <p class="examples-intro">以下弹窗当前使用中心 AlertDialog 实现，属于「操作列表型」但未遵循底部弹窗规范，建议改造：</p>
-        <div class="example-card" style="border-left: 4px solid #FF9A5C;">
-          <div class="example-card-header">
-            <div class="example-icon-wrapper" style="background: #FFEBEE;">
-              <i data-lucide="camera" class="example-icon" style="color: #E53935;"></i>
-            </div>
-            <div class="example-card-text">
-              <h3>ImagePickerDialog → ImageSourceSheet</h3>
-              <p><strong>当前实现：</strong>AlertDialog（中心弹窗）</p>
-              <p><strong>如何调出：</strong>待办编辑页 / 灵感编辑页点"📷"添加图片按钮</p>
-              <p><strong>改造理由：</strong>两个平级操作（拍照 / 相册）属操作列表型；底部弹出拇指可达，与已有的 AvatarSourceSheet 风格统一</p>
-              <p><strong>改造方向：</strong>复用 ActionBottomSheet 或新建 ImageSourceSheet</p>
-            </div>
-          </div>
-          <div class="example-tag">文件：ImagePickerDialog.kt</div>
-        </div>
-        <div class="example-card" style="border-left: 4px solid #FF9A5C;">
-          <div class="example-card-header">
-            <div class="example-icon-wrapper" style="background: #FFEBEE;">
-              <i data-lucide="share-2" class="example-icon" style="color: #E53935;"></i>
-            </div>
-            <div class="example-card-text">
-              <h3>ShareModeDialog → ShareModeSheet</h3>
-              <p><strong>当前实现：</strong>AlertDialog（中心弹窗）</p>
-              <p><strong>如何调出：</strong>多选模式点分享（MainScreen）；待办编辑页右上角分享（TodoEditScreen）</p>
-              <p><strong>改造理由：</strong>两个平级操作（合并 / 一条条）属操作列表型；与已有的 ShareDateSheet / ShareInspirationSheet 视觉不一致</p>
-              <p><strong>改造方向：</strong>新建 ShareModeSheet，对齐 ShareDateSheet 样式</p>
-            </div>
-          </div>
-          <div class="example-tag">文件：ShareModeDialog.kt</div>
-        </div>
+        
+        
+        
+        
       </section>
 
       <!-- ============ 区域 3：底部规范标注表 ============ -->

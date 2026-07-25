@@ -29,7 +29,7 @@ import com.corgimemo.app.ui.theme.UiColors
  * 3. "未分类"项（selectedCategoryId == 0L）
  * 4. 自定义分类列表（来自 [categories]，按 sortOrder 排序）
  *
- * 长按自定义分类 → 触发 [CategoryAction.ShowMenu]（MainScreen 显示 BottomSheet）
+ * 点击自定义分类右侧三点菜单 → 触发 [CategoryAction.ShowMenu]（MainScreen 显示 BottomSheet）
  *
  * **可见性说明**：原 `private` 改为 `internal`，被 AppDrawerContentImpl 调用。
  *
