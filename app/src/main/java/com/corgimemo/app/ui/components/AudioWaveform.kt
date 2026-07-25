@@ -10,6 +10,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -55,16 +56,30 @@ fun AudioWaveform(
         repeat(barCount) { barHeights.add(0f) }
     }
 
-    // 动画更新每个柱的高度
-    LaunchedEffect(amplitude, isRecording) {
+    // 用 rememberUpdatedState 持有最新 amplitude，避免作为 LaunchedEffect 的 key
+    // 这样 amplitude 每 50ms 变化时不会重启动画协程，保证波形动画连续流畅
+    val currentAmplitude by rememberUpdatedState(amplitude)
+
+    // 仅在 isRecording 状态切换时重启协程，内部 while 循环用时间驱动持续更新
+    LaunchedEffect(isRecording) {
         while (isActive) {
             // 根据当前振幅和时间生成动态波形
             val time = System.currentTimeMillis() / 100.0
 
+            // 计算本次循环使用的有效振幅：
+            // - 未录制时使用待机幅度（0.15），让波形区域保持微弱的"呼吸"动画，避免完全空白
+            // - 录制时取 max(amplitude, 0.05)，保证静默环境下波形也有最低限度的动态
+            val standbyAmplitude = 0.15f
+            val minActiveAmplitude = 0.05f
+            val effectiveAmplitude = if (isRecording) {
+                maxOf(currentAmplitude, minActiveAmplitude)
+            } else {
+                standbyAmplitude
+            }
+
             for (i in 0 until barCount) {
                 // 使用正弦波 + 随机因子创建自然波动效果
                 val phase = (i.toFloat() / barCount) * 2 * Math.PI
-                val baseAmplitude = if (isRecording) amplitude else amplitude * 0.7f
 
                 // 组合多个频率的波形，创造更自然的视觉效果
                 val wave1 = sin(time + phase).toFloat() * 0.5f
@@ -74,7 +89,7 @@ fun AudioWaveform(
                 // 计算目标高度（基于位置、时间和输入振幅）
                 val positionFactor = 1.0f - abs(i.toFloat() / barCount - 0.5f) * 1.5f
                 val targetHeight = ((wave1 + wave2 + wave3) * 0.5f + 0.5f) *
-                        baseAmplitude *
+                        effectiveAmplitude *
                         positionFactor.coerceIn(0.3f, 1.0f)
 
                 // 平滑过渡到目标高度
