@@ -31,14 +31,17 @@ import com.corgimemo.app.data.model.CustomDateType
 import com.corgimemo.app.ui.components.UserAvatar
 import com.corgimemo.app.ui.components.appdrawer.model.CategoryAction
 import com.corgimemo.app.ui.components.appdrawer.model.DateTypeAction
+import com.corgimemo.app.ui.components.appdrawer.model.DrawerSection
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.theme.UiColors
+import com.corgimemo.app.viewmodel.StatusFilter
 import com.corgimemo.app.viewmodel.TagFilterMode
 
 /**
  * 侧边栏主入口实现（侧边栏专用）
  *
  * 编排 4 个分区（TODO / INSPIRE / DATE / PROFILE）+ 顶部用户头 + 底部添加按钮。
+ * TODO Tab 下支持"分组管理"和"状态管理"两个互斥分区切换（v2026-07-27 新增）。
  *
  * **架构角色**：本函数是真实实现，由 `com.corgimemo.app.ui.components.AppDrawer.kt` 薄壳
  * `AppDrawerContent` 转发调用。**外部调用方应使用 `AppDrawerContent`**，不要直接 import
@@ -69,6 +72,16 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  * @param onCustomTypeAction 自定义类型操作回调（DATE Tab，长按触发）
  * @param onSettingsClick 设置点击回调（PROFILE Tab）
  * @param onUserAreaClick 用户头区域点击回调（顶部，点击跳"我的"页）
+ * @param currentDrawerSection 当前侧滑栏分区（v2026-07-27 新增，TODO Tab 用，默认 [DrawerSection.GROUP]）
+ * @param onDrawerSectionChange 分区切换回调（v2026-07-27 新增）
+ * @param statusFilter 当前状态过滤（v2026-07-27 新增，TODO Tab 用）
+ * @param onStatusFilterClick 状态过滤点击回调（v2026-07-27 新增）
+ * @param totalTodoCount 全部待办数（v2026-07-27 新增，状态管理用）
+ * @param pinnedCount 置顶待办数（v2026-07-27 新增）
+ * @param pendingCount 待完成待办数（v2026-07-27 新增）
+ * @param completedCount 已完成待办数（v2026-07-27 新增）
+ * @param overdueCount 已过期待办数（v2026-07-27 新增）
+ * @param repeatReminderCount 重复提醒待办数（v2026-07-27 新增）
  * @param modifier 外部 Modifier
  */
 @Composable
@@ -98,6 +111,17 @@ fun AppDrawerContentImpl(
     onCustomTypeAction: (DateTypeAction) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onUserAreaClick: () -> Unit = {},
+    // ===== v2026-07-27 新增：状态管理 Tab 切换（9 个参数） =====
+    currentDrawerSection: DrawerSection = DrawerSection.GROUP,
+    onDrawerSectionChange: (DrawerSection) -> Unit = {},
+    statusFilter: StatusFilter = StatusFilter.ALL,
+    onStatusFilterClick: (StatusFilter) -> Unit = {},
+    totalTodoCount: Int = 0,
+    pinnedCount: Int = 0,
+    pendingCount: Int = 0,
+    completedCount: Int = 0,
+    overdueCount: Int = 0,
+    repeatReminderCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -117,14 +141,42 @@ fun AppDrawerContentImpl(
         // 2. 中部分区（按 Tab 分发）
         when (currentTab) {
             TabItem.TODO -> {
-                CategoryGroupSection(
-                    categories = categories,
-                    todoCountByCategory = todoCountByCategory,
-                    selectedCategoryId = selectedCategoryId,
-                    onCategoryClick = onCategoryClick,
-                    onCategoryAction = onCategoryAction,
-                    modifier = Modifier.weight(1f)
+                // 2.1 Tab 切换器（v2026-07-27 新增）："分组管理" vs "状态管理"
+                DrawerSectionTab(
+                    currentSection = currentDrawerSection,
+                    onSectionChange = onDrawerSectionChange
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 2.2 互斥渲染"分组管理"或"状态管理"
+                when (currentDrawerSection) {
+                    DrawerSection.GROUP -> {
+                        CategoryGroupSection(
+                            categories = categories,
+                            todoCountByCategory = todoCountByCategory,
+                            selectedCategoryId = selectedCategoryId,
+                            onCategoryClick = onCategoryClick,
+                            onCategoryAction = onCategoryAction,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    DrawerSection.STATUS -> {
+                        // 状态管理分区（v2026-07-27 新增）
+                        StatusFilterSection(
+                            currentFilter = statusFilter,
+                            totalCount = totalTodoCount,
+                            pinnedCount = pinnedCount,
+                            pendingCount = pendingCount,
+                            completedCount = completedCount,
+                            overdueCount = overdueCount,
+                            repeatReminderCount = repeatReminderCount,
+                            onFilterClick = onStatusFilterClick,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // 2.3 共用底部"添加分组"按钮（两种模式都用）
                 AddCategoryButton(text = "添加分组", onClick = onAddCategoryClick)
             }
             TabItem.INSPIRE -> {

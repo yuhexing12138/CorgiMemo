@@ -100,6 +100,7 @@ import com.corgimemo.app.data.model.CustomDateType
 import com.corgimemo.app.ui.components.DateTypeOperationSheet
 import com.corgimemo.app.ui.components.appdrawer.model.CategoryAction
 import com.corgimemo.app.ui.components.appdrawer.model.DateTypeAction
+import com.corgimemo.app.ui.components.appdrawer.model.DrawerSection
 import com.corgimemo.app.analytics.UserBehaviorAnalyzer
 import com.corgimemo.app.analytics.UserBehaviorAnalyzerEntryPoint
 import com.corgimemo.app.backup.exporter.ShareCoordinator
@@ -108,6 +109,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import com.corgimemo.app.viewmodel.StatusFilter
 
 /**
  * 主屏幕容器（统一版）
@@ -287,6 +289,36 @@ fun MainScreen(
     val hapticEnabled by homeViewModel.hapticEnabled.collectAsState()
     /** 是否有待办卡片的左滑操作区处于展开状态 */
     val swipeActionExpanded by homeViewModel.swipeActionExpanded.collectAsState()
+
+    // ===== v2026-07-27 新增：状态管理 Tab 切换相关 StateFlow =====
+    //
+    // 5 个计数 + statusFilter 都是 HomeViewModel 暴露的 StateFlow，
+    // collectAsState 后传递给 AppDrawerContent 显示在状态管理分区。
+    /** 当前状态过滤（侧滑栏"状态管理"Tab 选中项） */
+    val statusFilter by homeViewModel.statusFilter.collectAsState()
+    /** 全部待办总数（"全部状态"项显示） */
+    val totalTodoCount by homeViewModel.totalTodoCount.collectAsState()
+    /** 置顶待办数（"置顶"项显示） */
+    val pinnedCount by homeViewModel.pinnedCount.collectAsState()
+    /** 待完成待办数（"待完成"项显示） */
+    val pendingCount by homeViewModel.pendingCount.collectAsState()
+    /** 已完成待办数（"已完成"项显示） */
+    val completedCount by homeViewModel.completedCount.collectAsState()
+    /** 已过期待办数（"已过期"项显示） */
+    val overdueCount by homeViewModel.overdueCount.collectAsState()
+    /** 重复提醒待办数（"重复提醒"项显示） */
+    val repeatReminderCount by homeViewModel.repeatReminderCount.collectAsState()
+
+    /**
+     * 侧滑栏分区切换状态（v2026-07-27 新增）
+     *
+     * 使用 `rememberSaveable` 保 Tab 切换不重置：
+     * - TODO Tab 切换到 INSPIRE 再切回，分区选择不丢
+     * - 进程被杀后分区回到默认 [DrawerSection.GROUP]
+     *
+     * 仅在 TODO Tab 下有效（其他 Tab 走原分区逻辑，忽略此 state）。
+     */
+    var currentDrawerSection by rememberSaveable { mutableStateOf(DrawerSection.GROUP) }
 
     /**
      * 批量模式相关状态
@@ -539,7 +571,23 @@ fun MainScreen(
                     onUserAreaClick = {
                         navController.navigate(Screen.ProfileDetail.route)
                         coroutineScope.launch { drawerState.close() }
-                    }
+                    },
+                    // ===== v2026-07-27 新增：状态管理 Tab 切换（9 个参数） =====
+                    currentDrawerSection = currentDrawerSection,
+                    onDrawerSectionChange = { section ->
+                        currentDrawerSection = section
+                    },
+                    statusFilter = statusFilter,
+                    onStatusFilterClick = { filter ->
+                        homeViewModel.setStatusFilter(filter)
+                        coroutineScope.launch { drawerState.close() }
+                    },
+                    totalTodoCount = totalTodoCount,
+                    pinnedCount = pinnedCount,
+                    pendingCount = pendingCount,
+                    completedCount = completedCount,
+                    overdueCount = overdueCount,
+                    repeatReminderCount = repeatReminderCount
                 )
             }
         }

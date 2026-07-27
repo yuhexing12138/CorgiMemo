@@ -42,8 +42,10 @@ import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.CustomDateType
 import com.corgimemo.app.ui.components.appdrawer.model.CategoryAction as CategoryActionImpl
 import com.corgimemo.app.ui.components.appdrawer.model.DateTypeAction as DateTypeActionImpl
+import com.corgimemo.app.ui.components.appdrawer.model.DrawerSection
 import com.corgimemo.app.ui.components.appdrawer.sections.AppDrawerContentImpl
 import com.corgimemo.app.ui.components.navigation.TabItem
+import com.corgimemo.app.viewmodel.StatusFilter
 import com.corgimemo.app.viewmodel.TagFilterMode
 
 // ==================== sealed class typealias ====================
@@ -75,7 +77,7 @@ typealias DateTypeAction = DateTypeActionImpl
 /**
  * 侧滑导航栏内容组件（薄壳转发）
  *
- * 真实实现见 [AppDrawerContentImpl]。本函数仅透传所有 24 个参数，
+ * 真实实现见 [AppDrawerContentImpl]。本函数仅透传所有 33 个参数（v2026-07-27 从 24 增加到 33），
  * 目的是让 MainScreen 的 import 路径（`com.corgimemo.app.ui.components.AppDrawerContent`）不变。
  *
  * @see com.corgimemo.app.ui.components.appdrawer.sections.AppDrawerContentImpl
@@ -107,6 +109,17 @@ fun AppDrawerContent(
     onCustomTypeAction: (DateTypeAction) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onUserAreaClick: () -> Unit = {},
+    // ===== v2026-07-27 新增：状态管理 Tab 切换（9 个参数） =====
+    currentDrawerSection: DrawerSection = DrawerSection.GROUP,
+    onDrawerSectionChange: (DrawerSection) -> Unit = {},
+    statusFilter: StatusFilter = StatusFilter.ALL,
+    onStatusFilterClick: (StatusFilter) -> Unit = {},
+    totalTodoCount: Int = 0,
+    pinnedCount: Int = 0,
+    pendingCount: Int = 0,
+    completedCount: Int = 0,
+    overdueCount: Int = 0,
+    repeatReminderCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     AppDrawerContentImpl(
@@ -135,6 +148,17 @@ fun AppDrawerContent(
         onCustomTypeAction = onCustomTypeAction,
         onSettingsClick = onSettingsClick,
         onUserAreaClick = onUserAreaClick,
+        // v2026-07-27 新增：状态管理 Tab 透传
+        currentDrawerSection = currentDrawerSection,
+        onDrawerSectionChange = onDrawerSectionChange,
+        statusFilter = statusFilter,
+        onStatusFilterClick = onStatusFilterClick,
+        totalTodoCount = totalTodoCount,
+        pinnedCount = pinnedCount,
+        pendingCount = pendingCount,
+        completedCount = completedCount,
+        overdueCount = overdueCount,
+        repeatReminderCount = repeatReminderCount,
         modifier = modifier
     )
 }

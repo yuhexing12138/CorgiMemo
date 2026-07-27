@@ -238,6 +238,40 @@ class HomeViewModel @Inject constructor(
         todos.count { !it.isPinned && it.status == 0 }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
+    // ========== 状态管理分区专用计数（v2026-07-27 新增） ==========
+    //
+    // 为侧滑栏"状态管理"Tab 提供实时计数。这些计数都是 _todos 的派生 StateFlow，
+    // 与现有 pinnedCount/pendingCount/completedCount 共享同一个源数据流，性能开销极小。
+
+    /**
+     * 全部待办总数（"全部状态"过滤项显示）
+     *
+     * 注意：这里用 `_todos.size` 而非 pinnedCount + pendingCount + completedCount，
+     * 避免"已完成 30 天过滤"造成的差异（COMPLETED 区只显示近 30 天，但 completedCount 包含所有）。
+     */
+    val totalTodoCount: StateFlow<Int> = _todos.map { todos ->
+        todos.size
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    /**
+     * 已过期待办数（status=0 且 dueDate < now）
+     *
+     * 使用 [MoodManager.isOverdue] 复用现有"过期"判断逻辑，确保与情绪系统一致。
+     */
+    val overdueCount: StateFlow<Int> = _todos.map { todos ->
+        todos.count { it.status == 0 && MoodManager.isOverdue(it.dueDate) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    /**
+     * 重复提醒待办数（repeatType != 0）
+     *
+     * 含义：所有设置了重复提醒的待办，不论当前 status。
+     * repeatType 枚举值（见 RepeatType）：0=不重复, 1-6=各种重复类型
+     */
+    val repeatReminderCount: StateFlow<Int> = _todos.map { todos ->
+        todos.count { it.repeatType != 0 }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     // ========== 搜索相关状态 ==========
 
     private val _searchQuery = MutableStateFlow("")
@@ -256,17 +290,37 @@ class HomeViewModel @Inject constructor(
     private val _selectedCategoryId = MutableStateFlow<Long?>(null)
     val selectedCategoryId: StateFlow<Long?> = _selectedCategoryId.asStateFlow()
 
+    /**
+     * 状态过滤器（v2026-07-27 新增）
+     *
+     * 侧滑栏"状态管理"分区专用。与 `_selectedCategoryId` 是**组合关系**（AND），
+     * 两者可同时生效。
+     *
+     * **不持久化**：状态过滤是临时筛选意图，App 重启后回到 [StatusFilter.ALL]（不过滤）。
+     * 如需持久化，参考 `.trae/documents/侧滑栏添加状态管理切换功能实施计划.md` 八、后续可优化点 #2。
+     */
+    private val _statusFilter = MutableStateFlow(StatusFilter.ALL)
+    val statusFilter: StateFlow<StatusFilter> = _statusFilter.asStateFlow()
+
     /** 排序方式状态（默认为 "updated_desc" - 最新更新的在前） */
     private val _sortType = MutableStateFlow("updated_desc")
     val sortType: StateFlow<String> = _sortType.asStateFlow()
 
     /**
-     * 当前可见待办列表（基于 4 个 zone StateFlow 合并，应用搜索/分类过滤）
+     * 当前可见待办列表（基于 4 个 zone StateFlow 合并，应用搜索/分类/状态过滤）
      *
      * 合并顺序：PINNED_PENDING → PENDING → PINNED_COMPLETED → COMPLETED
      * - hideCompletedItems=true：仅返回 pending 区（含置顶）
      * - showCompleted=false：仅返回 pending 区（含置顶）
      * - 否则：返回 4 个 zone 合并列表
+     *
+     * 过滤链（顺序敏感）：
+     * 1. showCompleted / hideCompletedItems 粗筛（保留/丢弃已完成）
+     * 2. 状态过滤（v2026-07-27 新增）：置顶/待完成/已完成/已过期/重复提醒
+     * 3. 分类过滤：null=全部, 0=未分类, >0=具体分类
+     * 4. 搜索过滤：标题/正文/格式化内容
+     *
+     * 状态过滤与分类过滤是**组合关系**（AND），可同时生效。
      */
     val filteredTodos: StateFlow<List<TodoItem>> = run {
         val baseFlow = kotlinx.coroutines.flow.combine(
@@ -277,14 +331,29 @@ class HomeViewModel @Inject constructor(
         ) { pinnedPending, pending, pinnedCompleted, completed ->
             pinnedPending + pending + pinnedCompleted + completed
         }
+        // ★ v2026-07-27 新增 _statusFilter 到 combine 列表
         kotlinx.coroutines.flow.combine(
-            baseFlow, _searchQuery, _selectedCategoryId, _showCompleted, _hideCompletedItems
-        ) { baseList, query, categoryId, showCompleted, hideCompletedItems ->
+            baseFlow, _searchQuery, _selectedCategoryId, _showCompleted, _hideCompletedItems, _statusFilter
+        ) { baseList, query, categoryId, showCompleted, hideCompletedItems, statusFilter ->
             // 先按展开状态过滤
             var result = if (hideCompletedItems || !showCompleted) {
                 baseList.filter { it.status == 0 }
             } else {
                 baseList
+            }
+
+            // ★ v2026-07-27 新增：状态过滤（在分类过滤之前应用，确保"已过期+未分类"等组合生效）
+            if (statusFilter != StatusFilter.ALL) {
+                result = when (statusFilter) {
+                    StatusFilter.PINNED -> result.filter { it.isPinned }
+                    StatusFilter.PENDING -> result.filter { !it.isPinned && it.status == 0 }
+                    StatusFilter.COMPLETED -> result.filter { it.status == 1 }
+                    StatusFilter.OVERDUE -> result.filter { todo ->
+                        todo.status == 0 && MoodManager.isOverdue(todo.dueDate)
+                    }
+                    StatusFilter.REPEAT_REMINDER -> result.filter { it.repeatType != 0 }
+                    StatusFilter.ALL -> result  // unreachable（已在外层 if 排除）
+                }
             }
 
             if (categoryId != null && categoryId > 0) {
@@ -1113,6 +1182,27 @@ class HomeViewModel @Inject constructor(
      */
     fun clearCategoryFilter() {
         _selectedCategoryId.value = null
+    }
+
+    // ===== v2026-07-27 新增：状态管理过滤方法 =====
+
+    /**
+     * 设置状态过滤（v2026-07-27 新增）
+     *
+     * 由侧滑栏"状态管理"分区点击状态项时调用。
+     * 与 [_selectedCategoryId] 是**组合关系**（AND），可同时生效。
+     *
+     * @param filter 状态过滤器（[StatusFilter.ALL] 表示不过滤）
+     */
+    fun setStatusFilter(filter: StatusFilter) {
+        _statusFilter.value = filter
+    }
+
+    /**
+     * 清除状态过滤，回到"全部状态"
+     */
+    fun clearStatusFilter() {
+        _statusFilter.value = StatusFilter.ALL
     }
 
     /**

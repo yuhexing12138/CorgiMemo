@@ -362,22 +362,22 @@ val nodeTopY = (nodeCenterY - nodeRadius).coerceAtLeast(0.dp)
 > **关联文件**：[MainScreen.kt](../../app/src/main/java/com/corgimemo/app/ui/screens/main/MainScreen.kt) 第 365-402 行
 > **适用范围**：灵感页（`TabItem.INSPIRE`）且非批量模式下的 `EnhancedTopBar` 中间内容
 
-灵感页导航栏中间区域采用"大号日期 + 月份 + 下拉箭头"**水平三段式**布局，高度自适应内容，由外层 `Box(Alignment.Center)` 在导航栏中居中（v1.15）：
+灵感页导航栏中间区域采用"月份 + 大号日期 + 下拉箭头"**水平三段式**布局，高度自适应内容，由外层 `Box(Alignment.Center)` 在导航栏中居中（v1.15）：
 
 ```
-[大号日期] [7dp] [月份] [2dp] [▼]
-  "09"           "07月"       "▼"
-  25sp Bold      16sp         8sp
+[月份]   [7dp]   [大号日期]  [2dp]  [▼]
+  "07月"           "09"
+  16sp             25sp Bold
   ↘ 全部底部对齐（Alignment.Bottom），Row 高度由 25sp "日" 撑高
 ```
 
 | 元素 | 字号 | 字重 | 颜色 |
 |------|------|------|------|
-| **大号日期**（如 "09"） | **25sp** | Bold | `MaterialTheme.colorScheme.onSurface` |
 | **月份**（如 "07月"） | **16sp** | Regular | `#666666` 次要文字 |
+| **大号日期**（如 "09"） | **25sp** | Bold | `MaterialTheme.colorScheme.onSurface` |
 | **下拉箭头**（"▼"） | 8sp | Regular | `#666666` 次要文字 |
-| **日 → 月间距** | **7dp** | — | 水平间距 |
-| **月 → 箭头间距** | 2dp | — | 水平间距 |
+| **月 → 日间距** | **7dp** | — | 水平间距 |
+| **日 → 箭头间距** | 2dp | — | 水平间距 |
 
 ##### 布局结构
 
@@ -388,10 +388,10 @@ Row(
         .clickable { showInspirationCalendar = true }
     // 不使用 fillMaxHeight()，高度自适应内容，由外层 Box 居中
 ) {
-    Text("09", fontSize = 25.sp, fontWeight = FontWeight.Bold)   // 大号日期
-    Spacer(modifier = Modifier.width(7.dp))                      // 日 → 月 7dp
     Text("07月", fontSize = 16.sp)                               // 月份
-    Spacer(modifier = Modifier.width(2.dp))                      // 月 → 箭头 2dp
+    Spacer(modifier = Modifier.width(7.dp))                      // 月 → 日 7dp
+    Text("09", fontSize = 25.sp, fontWeight = FontWeight.Bold)   // 大号日期
+    Spacer(modifier = Modifier.width(2.dp))                      // 日 → 箭头 2dp
     Text("▼", fontSize = 8.sp)                                   // 下拉箭头
 }
 ```
@@ -405,8 +405,8 @@ Row(
 
 ##### 显示条件
 
-- 仅在 `selectedTab == TabItem.INSPIRE` 且 `!isBatchMode` 时显示
-- 其他页面（待办、日期、我的）使用 `EnhancedTopBar` 的默认 title
+- 在 `selectedTab ∈ {TabItem.TODO, TabItem.INSPIRE, TabItem.DATE}` 且 `!effectiveBatchMode` 时显示（v1.16 扩展至三页）
+- 我的页（`TabItem.MINE`）使用 `EnhancedTopBar` 的默认 title
 - 批量模式下显示"批量模式"标题，centerContent 为 null
 
 ##### 版本变更说明
@@ -436,6 +436,7 @@ Row(
 | 2026-07-09 | v1.13 | **灵感页导航栏日期字号调整**：`MainScreen.kt` 中大号日期 "09" 20sp → **25sp**（Bold），月份 "07月" 10sp → **16sp**，下拉箭头 "▼" 保持 8sp。Column 宽度保持 wrapContentWidth（自适应内容） |
 | 2026-07-09 | v1.14 | **导航栏日期布局从 Column 改为 Row**：原 Column 垂直布局导致 "07月" 和 "▼" 上下排列，改为纯水平 Row 布局让 "▼" 紧邻 "07月" 右侧。月份与箭头间距 2dp |
 | 2026-07-09 | v1.15 | **导航栏日期水平排列 + 底部对齐**：保持 Row 水平布局，日→月间距从 2dp 改为 **7dp**，子元素对齐改为 **`Alignment.Bottom`**，高度自适应内容（去掉 `fillMaxHeight`），由外层 Box `Alignment.Center` 居中 ✓ |
+| 2026-07-27 | v1.16 | **导航栏日期顺序调整为"月 → 日"**：将大号日期（25sp Bold）与月份（16sp）交换位置，月份移到左侧、天数移到右侧。间距规则不变（月→日 7dp、日→箭头 2dp）。待办/灵感/日期三页同步生效 |
 
 ### 12.1.9 Snackbar 提示规范
 
@@ -1659,5 +1660,123 @@ fun ActionBottomSheet(
 | 日期 | 版本 | 变更 |
 |------|------|------|
 | 2026-07-25 | v1.0 | 初始规范：基于项目内22个现有ModalBottomSheet审计结果，确立统一视觉标准：24dp顶部圆角、surface容器色、40×4dp自定义dragHandle、24dp标准内边距、56dp列表项高度；定义4种弹窗变体（操作列表/单选列表/确认编辑/内容展示）；明确与AlertDialog/Snackbar的适用边界；列出3处高优先级问题（硬编码白色）和10处中优先级问题需迁移修复 |
+
+### 12.1.13 侧滑栏 Tab 切换规范
+
+> **适用范围**：[AppDrawer.kt](../../app/src/main/java/com/corgimemo/app/ui/components/AppDrawer.kt) TODO Tab 下的 [DrawerSectionTab](../../app/src/main/java/com/corgimemo/app/ui/components/appdrawer/sections/DrawerSectionTab.kt) 组件
+>
+> **关联文件**：
+> - 薄壳层：[AppDrawer.kt](../../app/src/main/java/com/corgimemo/app/ui/components/AppDrawer.kt)（33 个参数透传）
+> - 主入口实现：[AppDrawerContentImpl.kt](../../app/src/main/java/com/corgimemo/app/ui/components/appdrawer/sections/AppDrawerContentImpl.kt)
+> - Tab 组件：[DrawerSectionTab.kt](../../app/src/main/java/com/corgimemo/app/ui/components/appdrawer/sections/DrawerSectionTab.kt)
+> - 状态分区：[StatusFilterSection.kt](../../app/src/main/java/com/corgimemo/app/ui/components/appdrawer/sections/StatusFilterSection.kt)
+> - 数据模型：[StatusFilter.kt](../../app/src/main/java/com/corgimemo/app/viewmodel/StatusFilter.kt)、[DrawerSection.kt](../../app/src/main/java/com/corgimemo/app/ui/components/appdrawer/model/DrawerSection.kt)
+> - ViewModel：[HomeViewModel.kt](../../app/src/main/java/com/corgimemo/app/viewmodel/HomeViewModel.kt) 5 个新计数 + `_statusFilter` + `setStatusFilter`/`clearStatusFilter`
+> - 实施计划：[侧滑栏添加状态管理切换功能实施计划.md](../../../../.trae/documents/侧滑栏添加状态管理切换功能实施计划.md)
+
+#### 12.1.13.1 视觉规格（DrawerSectionTab）
+
+| 元素 | 规格 |
+|------|------|
+| 容器 | `Row.fillMaxWidth()`，horizontal=20dp，vertical=8dp |
+| 标题字号 | 16sp |
+| 标题字重（激活） | Bold |
+| 标题字重（未激活） | Normal |
+| 标题颜色（激活） | `UiColors.Primary` |
+| 标题颜色（未激活） | `Color(0xFF1C1B1F)` |
+| 横线高度 | 3dp |
+| 横线颜色（激活） | `UiColors.Primary` |
+| 横线颜色（未激活） | `Color.Transparent`（占位避免布局抖动） |
+| 标签间距 | 24dp |
+| 标签 padding | horizontal=4dp, vertical=4dp |
+| 点击反馈 | `Modifier.clickable` + `Modifier.clip(RoundedCornerShape(8.dp))`（圆角矩形波纹） |
+
+#### 12.1.13.2 适用场景
+
+- 侧滑栏内多分区互斥切换（v2026-07-27 首例："分组管理" vs "状态管理"）
+- 互斥选择：点击其中一个自动取消其他选中
+- 横线指示器随选中态切换（**不需要动画**，使用 alpha 二值切换，足够平滑）
+
+#### 12.1.13.3 状态过滤（StatusFilter）规范
+
+| 状态 | 含义 | 计数数据源 | 图标 |
+|------|------|-----------|------|
+| `ALL` | 全部（默认） | `HomeViewModel.totalTodoCount`（`todos.size`） | 📋 |
+| `PINNED` | 置顶（isPinned=true） | `HomeViewModel.pinnedCount` | 📌 |
+| `PENDING` | 待完成（!isPinned && status=0） | `HomeViewModel.pendingCount` | ⏳ |
+| `COMPLETED` | 已完成（status=1） | `HomeViewModel.completedCount` | ✅ |
+| `OVERDUE` | 已过期（status=0 && MoodManager.isOverdue(dueDate)） | `HomeViewModel.overdueCount` | ⏰ |
+| `REPEAT_REMINDER` | 重复提醒（repeatType != 0） | `HomeViewModel.repeatReminderCount` | 🔁 |
+
+**过滤行为**：状态过滤 + 分类过滤（来自 `CategoryGroupSection`）是 **AND 组合关系**，可同时生效。
+
+**典型用例**：
+- "已过期 + 未分类" = 所有过期未分类待办
+- "置顶 + 工作" 分组 = 工作分组下的所有置顶待办
+- "重复提醒 + 学习" 分组 = 学习分组下设置了重复提醒的待办
+
+#### 12.1.13.4 视觉样板（结构）
+
+```
+┌────────────────────────────────────────────┐
+│ [用户头像] 昵称              48dp 头像       │
+│            签名                              │
+├────────────────────────────────────────────┤
+│                                             │
+│  分组管理    状态管理    ← 16sp Tab 切换器   │
+│   ━━━━━                                       │
+│  分组管理（标题 + 橙线）                       │
+│  📋 全部待办       (N)        →              │
+│  📦 未分类         (N)        →              │
+│  📚 学习           (N)        ⋮              │
+│  ...                                          │
+│                                             │
+│  [+ 添加分组]        ← 共用底部按钮           │
+└────────────────────────────────────────────┘
+```
+
+**双标题结构**（关键设计）：
+- **外层 Tab 切换器**（"分组管理" | "状态管理"）：始终显示，切换激活态
+- **内层分区标题**（"分组管理" / "状态过滤"）：仅当对应 Tab 激活时显示
+- 切换时内层标题**不变位置**（避免布局抖动）
+
+#### 12.1.13.5 实施常量参考
+
+[DrawerSectionTab.kt](../../app/src/main/java/com/corgimemo/app/ui/components/appdrawer/sections/DrawerSectionTab.kt) 中：
+
+```kotlin
+// 标签间距
+val TAB_SPACING = 24.dp
+
+// 横线高度
+val TAB_INDICATOR_HEIGHT = 3.dp
+
+// 标签圆角（点击反馈区域）
+val TAB_CLIP_RADIUS = 8.dp
+
+// 标签 padding
+val TAB_PADDING_HORIZONTAL = 4.dp
+val TAB_PADDING_VERTICAL = 4.dp
+
+// 标题与横线间距
+val TAB_TITLE_TO_INDICATOR_GAP = 6.dp
+```
+
+#### 12.1.13.6 不允许的用法
+
+| 违规用法 | 原因 | 正确做法 |
+|---------|------|---------|
+| 用 `BottomNavigation` 组件做侧滑栏内 Tab | 语义错误，BottomNavigation 适用于底部导航 | 用 `Row` + `Column` 自实现轻量 Tab |
+| Tab 切换时不传 `Modifier.clickable` | 用户无法点击 | 必须有 `clickable` + `clip` 提供点击波纹 |
+| 横线高度与宽度不固定 | 切换时布局抖动 | 横线 `height=3dp` + `fillMaxWidth()` 固定占位（激活态换色） |
+| Tab 状态持久化到 DataStore | 状态切换是临时意图，不应持久化 | 用 `rememberSaveable` 即可，进程死回默认 [DrawerSection.GROUP] |
+| 状态过滤与 hideCompleted 同时使用时优先级混乱 | 过滤链顺序敏感 | 状态过滤必须在 hideCompleted 之后、分类过滤之前（见 HomeViewModel.filteredTodos） |
+| 5 个状态项的图标用纯文字 | 视觉重量不足 | 用 emoji（📌/⏳/✅/⏰/🔁）保持与现有"分组管理"风格一致 |
+
+#### 12.1.13.7 排版变更记录
+
+| 日期 | 版本 | 变更 |
+|------|------|------|
+| 2026-07-27 | v1.0 | 初始规范：DrawerSectionTab + StatusFilterSection 组件上线；HomeViewModel 新增 5 个计数 StateFlow（totalTodoCount/overdueCount/repeatReminderCount + 复用现有 pinnedCount/pendingCount/completedCount）+ `_statusFilter` + `setStatusFilter`/`clearStatusFilter`；filteredTodos 新增状态过滤分支（与分类过滤 AND 组合）；AppDrawerContent 参数从 24 增加到 33（薄壳透传 9 个新参数） |
 
 
