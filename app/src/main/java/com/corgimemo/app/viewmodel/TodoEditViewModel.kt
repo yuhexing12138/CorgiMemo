@@ -21,7 +21,6 @@ import com.corgimemo.app.data.repository.RepeatTaskManager
 import com.corgimemo.app.data.repository.SubTaskManager
 import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.domain.ReminderRecommender
-import com.corgimemo.app.ui.components.CrossLineDragManager
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
 import com.corgimemo.app.ui.model.LineSnapshotUtils
 import com.corgimemo.app.ui.model.TodoLine /** v2026-07-22 撤销/恢复改造：todoLines 迁入 ViewModel，需 TodoLine 类型直接 import */
@@ -1262,6 +1261,35 @@ class TodoEditViewModel @Inject constructor(
         if (oldLine.imagePaths == newPaths) return  // 无变化，跳过避免空快照
         val newList = current.toMutableList()
         newList[lineIndex] = oldLine.copy(imagePaths = newPaths)
+        setTodoLines(newList)
+    }
+
+    /**
+     * 应用语音重排到指定行（v2026-07-27 P6 新增）
+     *
+     * 用途：UI 层使用 Reorderable 库完成行内语音附件拖拽后，
+     *      调用本方法把排序后的新语音列表写入对应行。
+     *
+     * 与 P6 Reorderable 库配套使用：
+     * - UI 层 `LazyRow` + `rememberReorderableLazyListState` 检测拖拽结束
+     * - 调用 `onMove(from, to)` 计算新顺序后，回调本方法
+     * - ViewModel 内部通过 [setTodoLines] 推入撤销快照，UI 可用 Ctrl+Z 撤销重排
+     *
+     * 设计决策（与 [applyImageReorder] 保持一致）：
+     * - 行级重排：仅替换指定行的 voiceAttachments，不影响其他行
+     * - 不做去重：newOrder 元素集合应与原 voiceAttachments 相同，仅顺序不同
+     *   保留 UI 层传入顺序，避免 ViewModel 二次过滤与 UI 期望不一致
+     *
+     * @param lineIndex 目标行索引（越界时直接 return，不抛异常）
+     * @param newOrder 排序后的语音附件列表（元素集合应与原 voiceAttachments 相同，仅顺序不同）
+     */
+    fun applyVoiceReorder(lineIndex: Int, newOrder: List<com.corgimemo.app.ui.model.VoiceAttachment>) {
+        val current = _todoLines.value
+        if (lineIndex !in current.indices) return
+        val oldLine = current[lineIndex]
+        if (oldLine.voiceAttachments == newOrder) return  // 无变化，跳过避免空快照
+        val newList = current.toMutableList()
+        newList[lineIndex] = oldLine.copy(voiceAttachments = newOrder)
         setTodoLines(newList)
     }
 

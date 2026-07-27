@@ -387,25 +387,9 @@ fun TodoEditScreen(
     //   val focusedLineIndex by viewModel.focusedLineIndex.collectAsState()
     // 修改入口必须通过 viewModel.setTodoLines / viewModel.setFocusedLineIndex 等命令式 API。
 
-    /**
-     * 跨行拖拽状态管理器实例
-     *
-     * 协调管理图片/语音附件的拖拽操作，
-     * 支持行内排序和跨行移动两种模式。
-     * 整个编辑页面共享同一个实例。
-     */
-    val crossLineDragManager = remember { com.corgimemo.app.ui.components.CrossLineDragManager() }
-
-    /**
-     * 行边界矩形缓存（用于精确的目标行检测）
-     *
-     * key = 行索引 (Int)
-     * value = 该行在屏幕上的边界矩形 (Rect: left, top, right, bottom)
-     *
-     * 由 CheckboxEditText 内部的 onGloballyPositioned 回调更新，
-     * 用于 CrossLineDragManager 行边界检测。
-     */
-    val rowBoundsMap = remember { mutableMapOf<Int, androidx.compose.ui.geometry.Rect>() }
+    // 🆕 v2026-07-27 P6 改造：删除 crossLineDragManager + rowBoundsMap
+    // 原 384 行 CrossLineDragManager + 4 个旧拖拽回调已全部由 Reorderable 库接管。
+    // 图片 + 语音都迁至 Reorderable 库后，crossLineDragManager 不再需要。
 
     /**
      * 向当前聚焦行添加图片附件（v2026-07-22 改为 viewModel API）
@@ -1442,101 +1426,30 @@ fun TodoEditScreen(
                     viewModel.removeVoiceFromLine(lineIndex, voicePath)
                 },
                 /**
-                 * 🆕 拖拽状态：传递 CrossLineDragManager 的当前状态给子组件
+                 * 🆕 v2026-07-27 P5 改造：图片行内排序回调
                  *
-                 * 子组件（CheckboxEditRow → DraggableImageAttachment）通过此状态：
-                 * - 判断当前图片是否正在被拖拽 (isDragging)
-                 * - 判断当前行是否为跨行目标位置 (isDropTarget)
-                 * - 渲染对应的视觉反馈（浮层、高亮等）
+                 * Reorderable 库 onMove 触发时调用此回调，
+                 * 委托给 viewModel.applyImageReorder() 写回数据。
                  */
-                dragState = crossLineDragManager.state,
-                /**
-                 * 🆕 附件拖拽开始回调
-                 *
-                 * 当用户长按某张图片触发拖拽时调用，
-                 * 通知 CrossLineDragManager 进入拖拽模式。
-                 *
-                 * @param sourceLineIdx 被拖拽图片所属的行索引
-                 * @param sourceImgIdx 被拖拽图片在该行列表中的位置索引
-                 */
-                onAttachmentDragStart = { sourceLineIdx, sourceImgIdx, imageHeightPx ->
-                    /** 传递源行和图片索引到拖拽管理器 */
-                    crossLineDragManager.startDrag(sourceLineIdx, sourceImgIdx, imageHeightPx)
+                onImageReorder = { lineIndex, newOrder ->
+                    viewModel.applyImageReorder(lineIndex, newOrder)
                 },
                 /**
-                 * 附件拖拽过程中更新回调
+                 * 🆕 v2026-07-27 P6 改造：语音行内排序回调
                  *
-                 * 当用户拖动手指时持续调用，
-                 * 将偏移量同步给 CrossLineDragManager 用于：
-                 * 1. 计算当前悬停的目标图片
-                 * 2. 判断交换/移动模式
-                 * 3. 驱动 UI 的视觉反馈（虚线框/光标）
+                 * Reorderable 库 onMove 触发时调用此回调，
+                 * 委托给 viewModel.applyVoiceReorder() 写回数据。
+                 *
+                 * v2026-07-27 状态：viewModel.applyVoiceReorder() 由 P6 同步添加。
                  */
-                onAttachmentDragUpdate = { dragOffset, fingerX, fingerY, scrollOffsetPx ->
-                    /** 获取源行的图片数量 */
-                    val sourceLineIdx = crossLineDragManager.state.sourceLineIndex
-                    val imageCount = if (sourceLineIdx in todoLines.indices) {
-                        todoLines[sourceLineIdx].imagePaths.size
-                    } else {
-                        0
-                    }
-
-                    crossLineDragManager.updateDrag(
-                        currentOffset = dragOffset,
-                        density = context.resources.displayMetrics.density,
-                        imageCount = imageCount,
-                        scrollOffsetPx = scrollOffsetPx  // 🆕 滚动偏移补偿
-                    )
+                onVoiceReorder = { lineIndex, newOrder ->
+                    viewModel.applyVoiceReorder(lineIndex, newOrder)
                 },
-                /**
-                 * 🆕 附件拖拽结束回调
-                 *
-                 * 当用户释放手指时调用，
-                 * 执行以下操作序列：
-                 * 1. 调用 CrossLineDragManager.endDrag() 获取拖拽结果
-                 * 2. 如果结果有效，调用 applyDragResult() 更新 todoLines 数据
-                 * 3. 清理行边界缓存（因为行高可能变化）
-                 *
-                 * @param sourceLineIdx 源行索引
-                 * @param sourceImgIdx 源图片位置索引
-                 * @param targetLineIdx 目标行索引（由 DraggableImageAttachment 估算）
-                 * @param targetImgIdx 目标图片位置索引（null=追加到末尾）
-                 */
-                onAttachmentDragEnd = { sourceLineIdx, sourceImgIdx, targetLineIdx, targetImgIdx ->
-                    /** 1. 结束拖拽并获取结果 */
-                    val result = crossLineDragManager.endDrag()
-
-                    /** 2. 如果拖拽结果有效，执行数据更新 */
-                    if (result.isSuccess) {
-                        val sourceLine = todoLines.getOrNull(sourceLineIdx)
-                        val imagePath = sourceLine?.imagePaths?.getOrNull(sourceImgIdx)
-
-                        if (imagePath != null) {
-                            // v2026-07-22 改造：调用 viewModel.applyDragResult 内部更新 _todoLines
-                            val newLines = crossLineDragManager.applyDragResult(
-                                lines = todoLines,
-                                result = result,
-                                imagePath = imagePath
-                            )
-                            viewModel.applyDragResult(newLines)
-                        }
-                    }
-
-                    /** 3. 清理行边界缓存 */
-                    rowBoundsMap.clear()
-                },
-                /**
-                 * 🆕 行边界更新回调
-                 *
-                 * CheckboxEditText 内部通过 onGloballyPositioned 捕获每行的 Rect 后，
-                 * 通过此回调将边界信息传递给外部，用于精确的目标行检测。
-                 *
-                 * @param lineIndex 行索引
-                 * @param rect 该行在屏幕上的边界矩形
-                 */
-                onRowBoundsChanged = { lineIndex, rect ->
-                    rowBoundsMap[lineIndex] = rect
-                },
+                // 🆕 v2026-07-27 P6 改造：删除 dragState / 3 个旧拖拽回调
+                // 原通过 crossLineDragManager 桥接的 4 个参数已全部由 Reorderable 库接管：
+                // - dragState：库内置 isDragging 状态
+                // - onAttachmentDragStart/Update/End：库内部手势处理
+                // 注释占位保持代码结构清晰，实际无业务逻辑。
                 // 🆕 关联功能参数（v2026-07-21 新增）
                 groupRelations = groupRelations,
                 relationTitles = relationTitles,
