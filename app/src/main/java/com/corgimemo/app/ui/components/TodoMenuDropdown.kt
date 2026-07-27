@@ -22,14 +22,14 @@ import androidx.compose.ui.unit.dp
 /**
  * 我的待办页面功能菜单弹窗
  *
- * 点击右上角三点图标后弹出，包含7个功能项：
+ * 点击右上角三点图标后弹出，包含6个功能项：
  * 1. 隐藏/显示详情
  * 2. 隐藏/显示已完成
  * 3. 待办排序
  * 4. 管理分组（占位）
  * 5. 批量选择
- * 6. 分享（占位）
- * 7. 创建待办副本（占位）
+ * 6. 创建待办副本（占位）
+ * 7. 回收站
  */
 @Composable
 fun TodoMenuDropdown(
@@ -124,23 +124,7 @@ fun TodoMenuDropdown(
                 )
             }
         )
-        // 6. 分享（占位）
-        DropdownMenuItem(
-            text = { Text("分享") },
-            onClick = {
-                onPlaceholderClick()
-                onDismiss()
-            },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Outlined.Share,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-            },
-            modifier = Modifier.alpha(0.4f)
-        )
-        // 7. 创建待办副本（占位）
+        // 6. 创建待办副本（占位）
         DropdownMenuItem(
             text = { Text("创建待办副本") },
             onClick = {
@@ -156,7 +140,7 @@ fun TodoMenuDropdown(
             },
             modifier = Modifier.alpha(0.4f)
         )
-        // 8. 回收站
+        // 7. 回收站
         DropdownMenuItem(
             text = { Text("回收站") },
             onClick = {
