@@ -75,6 +75,8 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  * @param onCustomTypeAction 自定义类型操作回调（DATE Tab，长按触发）
  * @param onReorderDateType 日期类型拖拽排序回调（v2026-07-27 P8 Phase 3 新增，DATE Tab）
  * @param onSettingsClick 设置点击回调（PROFILE Tab）
+ * @param navItems 个人快速导航项（v2026-07-27 P8 Phase 5 新增，PROFILE Tab 用）
+ * @param onReorderNav 快速导航项拖拽排序回调（v2026-07-27 P8 Phase 5 新增，PROFILE Tab）
  * @param onUserAreaClick 用户头区域点击回调（顶部，点击跳"我的"页）
  * @param currentDrawerSection 当前侧滑栏分区（v2026-07-27 新增，TODO Tab 用，默认 [DrawerSection.GROUP]）
  * @param onDrawerSectionChange 分区切换回调（v2026-07-27 新增）
@@ -240,6 +242,9 @@ fun AppDrawerContentImpl(
             }
             TabItem.PROFILE -> {
                 ProfileQuickNavSection(
+                    // v2026-07-27 P8 Phase 5：透传数据驱动的 nav item 列表 + 拖拽回调
+                    navItems = navItems,
+                    onReorder = onReorderNav,
                     onSettingsClick = onSettingsClick,
                     modifier = Modifier.weight(1f)
                 )

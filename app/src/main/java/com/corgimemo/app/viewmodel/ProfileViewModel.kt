@@ -11,9 +11,11 @@ import com.corgimemo.app.animation.SeasonalOutfitRecommender
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.model.Achievement
 import com.corgimemo.app.data.model.CorgiData
+import com.corgimemo.app.data.model.ProfileNavItem
 import com.corgimemo.app.data.repository.AchievementRepository
 import com.corgimemo.app.data.repository.CategoryRepository
 import com.corgimemo.app.data.repository.CorgiRepository
+import com.corgimemo.app.data.repository.ProfileRepository
 import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.ui.theme.ThemeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -36,7 +38,9 @@ class ProfileViewModel @Inject constructor(
     private val corgiPreferences: CorgiPreferences,
     private val todoRepository: TodoRepository,
     private val categoryRepository: CategoryRepository,
-    private val achievementRepository: AchievementRepository
+    private val achievementRepository: AchievementRepository,
+    // v2026-07-27 新增：P8 Phase 5 PROFILE Tab 拖拽排序 Repository
+    private val profileRepository: ProfileRepository
 ) : ViewModel() {
 
     private val _corgiData = MutableStateFlow<CorgiData?>(null)
@@ -130,6 +134,50 @@ class ProfileViewModel @Inject constructor(
 
     init {
         loadCorgiData()
+        // v2026-07-27 新增：P8 Phase 5 PROFILE Tab 首次启动 seed 默认 3 个 nav item
+        // 幂等实现：seedIfNeeded 内部已用 count() == 0 判断
+        viewModelScope.launch {
+            try {
+                profileRepository.seedIfNeeded()
+            } catch (e: Exception) {
+                android.util.Log.e("ProfileViewModel", "seed profile nav items failed", e)
+            }
+        }
+    }
+
+    // ==================== P8 Phase 5：PROFILE Tab 快速导航拖拽排序 ====================
+
+    /**
+     * 个人快速导航项（v2026-07-27 新增，P8 Phase 5 实施）
+     *
+     * 响应式订阅 profile_nav_items 表，UI 层（ProfileQuickNavSection）通过
+     * `collectAsState()` 观察顺序变化。
+     *
+     * **数据特征**：行数极少（3 个默认项），stateIn 保持 WhileSubscribed(5000) 与其他流一致。
+     */
+    val navItems: StateFlow<List<ProfileNavItem>> = profileRepository.getAllByOrder()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    /**
+     * 更新快速导航拖拽顺序（v2026-07-27 新增，P8 Phase 5 实施）
+     *
+     * PROFILE Tab 侧滑栏拖拽完成后由 UI 层调用。
+     * 立即更新内存 + 异步持久化到 profile_nav_items 表。
+     *
+     * @param newList 拖拽后的新 nav item 列表
+     */
+    fun updateNavOrder(newList: List<ProfileNavItem>) {
+        viewModelScope.launch {
+            try {
+                profileRepository.updateNavOrder(newList)
+            } catch (e: Exception) {
+                android.util.Log.e("ProfileViewModel", "更新导航顺序失败", e)
+            }
+        }
     }
 
     /**

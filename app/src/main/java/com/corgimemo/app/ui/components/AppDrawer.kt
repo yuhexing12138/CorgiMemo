@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.CustomDateType
+import com.corgimemo.app.data.model.ProfileNavItem
 import com.corgimemo.app.ui.components.appdrawer.model.CategoryAction as CategoryActionImpl
 import com.corgimemo.app.ui.components.appdrawer.model.DateTypeAction as DateTypeActionImpl
 import com.corgimemo.app.ui.components.appdrawer.model.DrawerSection
@@ -77,7 +78,7 @@ typealias DateTypeAction = DateTypeActionImpl
 /**
  * 侧滑导航栏内容组件（薄壳转发）
  *
- * 真实实现见 [AppDrawerContentImpl]。本函数仅透传所有 33 个参数（v2026-07-27 从 24 增加到 33），
+ * 真实实现见 [AppDrawerContentImpl]。本函数仅透传所有 35 个参数（v2026-07-27 从 33 增加到 35），
  * 目的是让 MainScreen 的 import 路径（`com.corgimemo.app.ui.components.AppDrawerContent`）不变。
  *
  * @see com.corgimemo.app.ui.components.appdrawer.sections.AppDrawerContentImpl
