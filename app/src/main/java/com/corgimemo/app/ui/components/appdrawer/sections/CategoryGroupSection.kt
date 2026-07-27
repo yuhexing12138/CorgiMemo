@@ -1,33 +1,27 @@
 package com.corgimemo.app.ui.components.appdrawer.sections
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.ui.components.appdrawer.model.CategoryAction
-import com.corgimemo.app.ui.theme.UiColors
 
 /**
  * 待办分组管理分区（侧边栏）
  *
  * 布局：
- * 1. 标题"分组管理" + 橙色横线
- * 2. "全部待办"项（selectedCategoryId == null）
- * 3. "未分类"项（selectedCategoryId == 0L）
- * 4. 自定义分类列表（来自 [categories]，按 sortOrder 排序）
+ * 1. "全部待办"项（selectedCategoryId == null）
+ * 2. "未分类"项（selectedCategoryId == 0L）
+ * 3. 自定义分类列表（来自 [categories]，按 sortOrder 排序）
+ *
+ * **v2026-07-27 调整**：删除内部"分组管理"标题 + 橙线，避免与上方
+ * [DrawerSectionTab] Tab 切换器的"分组管理"文字重复。
+ * 顶部 8dp 间距用 LazyColumn.padding(top) 替代原来的 Spacer。
  *
  * 点击自定义分类右侧三点菜单 → 触发 [CategoryAction.ShowMenu]（MainScreen 显示 BottomSheet）
  *
@@ -50,29 +44,11 @@ internal fun CategoryGroupSection(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        // 标题
-        Text(
-            text = "分组管理",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF1C1B1F),
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-        )
-
-        // 橙色横线（视觉分隔）
-        Box(
-            modifier = Modifier
-                .padding(horizontal = 20.dp)
-                .height(3.dp)
-                .fillMaxWidth()
-                .background(UiColors.Primary)
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 分类列表
+        // 分类列表（顶部 8dp 间距替代原"标题 + 橙线 + Spacer 8dp"）
         LazyColumn(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
         ) {
             // 1. "全部待办" 项（特殊 ID: -1L）
             item {

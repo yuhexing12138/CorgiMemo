@@ -1,19 +1,14 @@
 package com.corgimemo.app.ui.components.appdrawer.sections
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -77,16 +72,14 @@ internal fun DrawerSectionTab(
 /**
  * 单个 Tab 标签（私有，仅 DrawerSectionTab 使用）
  *
- * 视觉三段式：
+ * 视觉二段式（v2026-07-27 简化）：
  * ```
  * [文字]  ← 16sp，Bold/Primary 或 Normal/Black
- *   6dp 间距
- * [横线]  ← 3dp 高度，固定 56dp 宽，激活态显示 Primary 色，未激活态透明
  * ```
  *
- * **v2026-07-27 修复**：原实现用 `Box.fillMaxWidth()` 在 wrap content Column 内
- * 触发测量异常（`Constraints.Infinity`），导致整个 Tab 切换器不渲染。
- * 改为固定宽度 56dp（4 个汉字 ≈ 56dp）+ 简单 Box + Column 结构。
+ * **v2026-07-27 调整**：移除内部 3dp 橙线指示器，改由 [AppDrawerContentImpl]
+ * 在 [DrawerSectionTab] 下方统一绘制一条整条 3dp 橙线作为"分区头"分隔。
+ * 避免双线视觉重复，让"文字 + 字重 + 颜色"作为 Tab 激活态唯一视觉反馈。
  *
  * @param text 标签文字（"分组管理" / "状态管理"）
  * @param isActive 是否处于激活态
@@ -98,31 +91,14 @@ private fun DrawerSectionLabel(
     isActive: Boolean,
     onClick: () -> Unit
 ) {
-    Column(
-        horizontalAlignment = Alignment.Start,
+    Text(
+        text = text,
+        fontSize = 16.sp,
+        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+        color = if (isActive) UiColors.Primary else Color(0xFF1C1B1F),
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 4.dp)
-    ) {
-        // 标题文字
-        Text(
-            text = text,
-            fontSize = 16.sp,
-            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-            color = if (isActive) UiColors.Primary else Color(0xFF1C1B1F)
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // 激活态横线（固定宽度 56dp，避免 fillMaxWidth 在 wrap content 容器内的异常）
-        Box(
-            modifier = Modifier
-                .width(56.dp)
-                .height(3.dp)
-                .background(
-                    color = if (isActive) UiColors.Primary else Color.Transparent
-                )
-        )
-    }
+    )
 }

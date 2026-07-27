@@ -1,21 +1,12 @@
 package com.corgimemo.app.ui.components.appdrawer.sections
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.corgimemo.app.ui.theme.UiColors
 import com.corgimemo.app.viewmodel.StatusFilter
 
 /**
@@ -26,7 +17,10 @@ import com.corgimemo.app.viewmodel.StatusFilter
  *
  * **复用策略**：
  * - 6 个状态项全部复用 [CategoryItem]（同包 `internal` 可见性）
- * - 列表标题"状态过滤" + 橙色横线结构与 [CategoryGroupSection] 镜像
+ *
+ * **v2026-07-27 调整**：删除内部"状态过滤"标题 + 橙线，避免与上方
+ * [DrawerSectionTab] Tab 切换器的"状态管理"文字重复。
+ * 顶部 8dp 间距用 LazyColumn.padding(top) 替代原来的 Spacer。
  *
  * **过滤行为**：
  * 状态过滤 + 分组过滤（来自 CategoryGroupSection）是 **AND 组合关系**，
@@ -60,29 +54,11 @@ internal fun StatusFilterSection(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        // 1. 标题"状态过滤"（与 CategoryGroupSection 的"分组管理"对称）
-        Text(
-            text = "状态过滤",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF1C1B1F),
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-        )
-
-        // 2. 橙色横线（视觉分隔）
-        Box(
-            modifier = Modifier
-                .padding(horizontal = 20.dp)
-                .height(3.dp)
-                .fillMaxWidth()
-                .background(UiColors.Primary)
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 3. 6 个状态项（复用 CategoryItem，统一视觉）
+        // 6 个状态项（复用 CategoryItem，统一视觉；顶部 8dp 间距替代原"标题 + 橙线 + Spacer"）
         LazyColumn(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
         ) {
             // 1) 全部状态（默认选中）
             item {

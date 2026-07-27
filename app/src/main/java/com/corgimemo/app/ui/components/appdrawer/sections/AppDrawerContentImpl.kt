@@ -2,6 +2,7 @@ package com.corgimemo.app.ui.components.appdrawer.sections
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -141,14 +142,24 @@ fun AppDrawerContentImpl(
         // 2. 中部分区（按 Tab 分发）
         when (currentTab) {
             TabItem.TODO -> {
-                // 2.1 Tab 切换器（v2026-07-27 新增）："分组管理" vs "状态管理"
+                // 2.1 Tab 切换器（v2026-07-27 调整：位置 = 原"分组管理" 内部标题位置）
                 DrawerSectionTab(
                     currentSection = currentDrawerSection,
                     onSectionChange = onDrawerSectionChange
                 )
+
+                // 2.2 整条 3dp 橙线（v2026-07-27 新增：保留原"分组管理" 内部标题下方的橙线）
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 20.dp)
+                        .height(3.dp)
+                        .fillMaxWidth()
+                        .background(UiColors.Primary)
+                )
+
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // 2.2 互斥渲染"分组管理"或"状态管理"
+                // 2.3 互斥渲染"分组管理"或"状态管理"
                 when (currentDrawerSection) {
                     DrawerSection.GROUP -> {
                         CategoryGroupSection(
@@ -176,7 +187,7 @@ fun AppDrawerContentImpl(
                     }
                 }
 
-                // 2.3 共用底部"添加分组"按钮（两种模式都用）
+                // 2.4 共用底部"添加分组"按钮（两种模式都用）
                 AddCategoryButton(text = "添加分组", onClick = onAddCategoryClick)
             }
             TabItem.INSPIRE -> {
