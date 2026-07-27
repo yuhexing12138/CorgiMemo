@@ -417,20 +417,21 @@ Layout(
     // Box 高 = 30sp（"27"子项高 25sp + 数字 glyph 距 em-box 底 5sp 留白）
     val boxHeightPx = 30.sp.toPx()
 
-    // 字符分类与 placement y 计算规则
-    // | 字符类别         | glyph 占 em-box | 例子      | 计算方式                  |
-    // | 数字 Regular/Bold| ~75%           | "07" "27"| boxH - FirstBaseline     |
-    // | 中文方块字      | ~100%          | "月"     | boxH - 子项高              |
-    // | 几何符号        | ~100%          | "▼" "▲"  | boxH - 子项高              |
+    // 字符分类与 placement y 计算规则（v1.21 统一）
+    // 关键发现：所有字符（数字 / 中文 / 几何符号）的 glyph 底 = baseline 距 layout 顶
+    //   不管 glyph 高度是否占满 em-box，glyph 底总是 baseline
+    // 所以统一用 `boxH - FirstBaseline` 算 placement y
+    // | 字符类别         | fontSize | FirstBaseline | 计算方式              |
+    // | 数字 Regular    | 16sp    | ~12sp        | boxH - FirstBaseline |
+    // | 数字 Bold       | 25sp    | ~19sp        | boxH - FirstBaseline |
+    // | 中文方块字      | 16sp    | ~12-14sp     | boxH - FirstBaseline |
+    // | 几何符号        | 8sp     | ~6-7sp       | boxH - FirstBaseline |
 
-    // 数字（"07" / "27"）→ y = boxH - FirstBaseline
-    val monthNumFirstBaseline = monthNumP[FirstBaseline]
-    val monthNumY = (boxHeightPx - monthNumFirstBaseline).toInt()
-    val dayFirstBaseline = dayP[FirstBaseline]
-    val dayY = (boxHeightPx - dayFirstBaseline).toInt()
-    // 中文方块字 / 几何符号 → y = boxH - 子项高
-    val monthCnY = (boxHeightPx - monthCnP.height).toInt()
-    val arrowY = (boxHeightPx - arrowP.height).toInt()
+    // 所有 4 个字符统一用 FirstBaseline 算 placement y（v1.21 修复）
+    val monthNumY = (boxHeightPx - monthNumP[FirstBaseline]).toInt()
+    val monthCnY = (boxHeightPx - monthCnP[FirstBaseline]).toInt()
+    val dayY = (boxHeightPx - dayP[FirstBaseline]).toInt()
+    val arrowY = (boxHeightPx - arrowP[FirstBaseline]).toInt()
 
     layout(totalW.toInt(), boxHeightPx.toInt()) {
         val x0 = 0
@@ -449,13 +450,15 @@ Layout(
 > **v1.18 关键教训（已废弃）**：`Modifier.padding(top = X)` 实测发现**不改变** glyph 距 layout 底的距离（glyph 在 layout 内的位置由字体 metrics 决定）。故 v1.19 改用自定义 `Layout` + `placeRelative`。详见 [DatePickerRow.kt](../../app/src/main/java/com/corgimemo/app/ui/components/calendar/DatePickerRow.kt) 注释。
 >
 > **v1.20 关键教训**：混合字符串（数字+中文）不能用单一 placement 规则处理。`Text` 的 `FirstBaseline` 只反映**第一个字符**的 baseline，无法表示字符串中最深字符的 glyph 底。故"07月"必须拆成"07"和"月"两个 Text 分别计算。
+>
+> **v1.21 关键教训**：v1.20 假设"中文/几何符号 glyph 占满 em-box → glyph 底 = layout 底"是错误的。所有字符（数字 / 中文 / 几何符号）的 glyph 底都 = **baseline**（不是 layout 底）。`Placeable.height` 包含 baseline 下方的 descent 留白（数字 ~20%、中文 ~20%、几何 ~20%）。v1.20 用 `boxH - 子项高` 算中文/几何 placement y，导致"月"和"▲"的 glyph 底比"07"和"27"高 1-3sp。**修复**：所有 4 个 Text 统一用 `boxH - FirstBaseline` 算 placement y。
 
 ##### 交互与对齐
 
 - **可点击**：整行 `Modifier.clickable` 触发日历弹窗 `showInspirationCalendar = true`
 - **高度自适应**：自定义 `Layout` 显式指定 `boxHeightPx = 30.sp`（v1.17/18 用 Row 高度由 25sp "日" 撑高；v1.19 起改为显式 30sp）
 - **居中**：由 `EnhancedTopBar` 外层 `Box(contentAlignment = Alignment.Center)` 在导航栏中居中
-- **底部对齐（v1.20）**：通过 `placeRelative` 精确把 4 个子项的所有字符 glyph 底对齐到 `boxH = 30sp`，不是依赖 `Row(verticalAlignment = Alignment.Bottom)` 对齐 layout box 底。**数字用 FirstBaseline 算，**中文/几何用 `boxH - 子项高` 算**
+- **底部对齐（v1.21 统一）**：通过 `placeRelative` 精确把 4 个子项的所有字符 glyph 底对齐到 `boxH = 30sp`，**所有字符统一用 `boxH - FirstBaseline` 算 placement y**，不区分字符类别
 
 ##### 显示条件
 
@@ -495,6 +498,7 @@ Layout(
 | 2026-07-27 | v1.18 | **导航栏日期 glyph 底精确对齐（数字 vs 中文/几何符号）**：v1.17 消除行间距后，数字"27"（25sp Bold 不全高）距 em-box 底仍 ~3-4sp、中文"月"（16sp 方块字）距底 ~1sp、几何"▼"（8sp）距底 ~1sp，导致"月"和"▼"底部略低于"27"底部。给大号日期 Text 加 `Modifier.padding(top = 3.dp)` 让"27"内容整体下移 3dp，glyph 底贴 layout 底（= Row 底），与"月"/"▼"精确对齐。**注意 padding 方向**：`padding(bottom)` 错误（只扩展 layout 盒底边界、glyph 位置不变），必须用 `padding(top)` 才行 |
 | 2026-07-27 | v1.19 | **导航栏日期 glyph 底完美对齐（自定义 Layout 方案）**：v1.18 `padding(top)` 实测发现不改变 glyph 距 layout 底的距离（glyph 在 layout 内的位置由字体 metrics 决定）。改用自定义 `Layout` + `placeRelative` 精确控制每个子项的 placement y。Box 高 = 30sp（"27"子项高 25sp + 数字 glyph 距 em-box 底 5sp 留白），三个 glyph 底都精确等于 boxH。月份/箭头（glyph 占满 em-box）→ y = boxH - 子项高；日期（数字 glyph 底 = baseline）→ y = boxH - FirstBaseline（动态测量，避免硬编码）。导航栏比 v1.17/18 高 5sp |
 | 2026-07-27 | v1.20 | **导航栏日期修正"07月"字符串字符分类错误**：v1.19 误判"07月"为全方块字字符串（glyph 占满 em-box），实际是"0" "7" 数字（不全高）+ "月" 中文（占满 em-box）的混合。v1.19 用 `boxH - monthP.height` 算整个"07月" placement y，导致"0" "7" 数字 glyph 底比"27"日期底高 4sp，视觉上"0" "7" 浮在 box 中间。**修复**：把"07月"拆成"07"（数字）和"月"（中文）两个 Text，分别用 FirstBaseline 和 `boxH - 子项高` 算 placement y。间距："07" → "月" 0dp（视觉连续），"月" → "27" 7dp，"27" → "▼" 2dp。4 个 Text 所有字符 glyph 底都精确等于 boxH = 30sp |
+| 2026-07-27 | v1.21 | **导航栏日期修正"中文/几何符号 glyph 底 = baseline"（统一规则）**：v1.20 假设"中文/几何符号 glyph 占满 em-box → glyph 底 = layout 底"是错误的。所有字符（数字 / 中文 / 几何符号）的 glyph 底都 = **baseline**（不是 layout 底）。`Placeable.height` 包含 baseline 下方的 descent 留白（数字 ~20%、中文 ~20%、几何 ~20%）。v1.20 用 `boxH - 子项高` 算中文/几何 placement y，导致"月"和"▲"的 glyph 底比"07"和"27"高 1-3sp。**修复**：所有 4 个 Text 统一用 `boxH - FirstBaseline` 算 placement y，不再区分字符类别。v1.20 的"拆 Text"思路保留（"07月"仍拆成"07"+"月"），但 placement y 计算统一 |
 
 ### 12.1.9 Snackbar 提示规范
 
