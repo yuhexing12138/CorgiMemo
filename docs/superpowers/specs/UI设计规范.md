@@ -414,24 +414,29 @@ Layout(
     val gapDayArrowPx = 2.dp.toPx()      // "27" → "▼" 2dp
     val totalW = monthNumW + gapMonthInnerPx + monthCnW + gapMonthDayPx + dayW + gapDayArrowPx + arrowW
 
-    // Box 高 = 30sp（"27"子项高 25sp + 数字 glyph 距 em-box 底 5sp 留白）
-    val boxHeightPx = 30.sp.toPx()
+    // Box 高 = "27"子项高 = 25sp（v1.22）
+    //   v1.19-v1.21 用 30sp 让 glyph 底贴 layout 底，但导致"27"中心远离 layout 中心，水波纹看起来贴底
+    //   v1.22 改为 25sp = "27"子项高，让水波纹中心 = layout 中心 = "27"中心
+    val boxHeightPx = dayP.height.toFloat()
+    val dayFirstBaseline = dayP[FirstBaseline]
+    val targetGlyphBottomY = dayFirstBaseline.toFloat()  // "27" baseline 位置（所有字符 glyph 底都对齐到这里）
 
-    // 字符分类与 placement y 计算规则（v1.21 统一）
-    // 关键发现：所有字符（数字 / 中文 / 几何符号）的 glyph 底 = baseline 距 layout 顶
-    //   不管 glyph 高度是否占满 em-box，glyph 底总是 baseline
-    // 所以统一用 `boxH - FirstBaseline` 算 placement y
-    // | 字符类别         | fontSize | FirstBaseline | 计算方式              |
-    // | 数字 Regular    | 16sp    | ~12sp        | boxH - FirstBaseline |
-    // | 数字 Bold       | 25sp    | ~19sp        | boxH - FirstBaseline |
-    // | 中文方块字      | 16sp    | ~12-14sp     | boxH - FirstBaseline |
-    // | 几何符号        | 8sp     | ~6-7sp       | boxH - FirstBaseline |
+    // 字符分类与 placement y 计算规则（v1.22 统一以"27" baseline 为目标）
+    // 关键发现（v1.21）：所有字符（数字 / 中文 / 几何符号）的 glyph 底 = baseline 距 layout 顶
+    // 关键变更（v1.22）：所有字符 glyph 底都对齐到 **"27" baseline**（不再贴 Layout 底）
+    //   placement y = targetGlyphBottomY - FirstBaseline
+    //   glyph 底 = placement y + FirstBaseline = "27" baseline = 19sp 距 layout 顶
+    // | 字符类别         | fontSize | FirstBaseline | 计算方式                       |
+    // | 数字 Regular    | 16sp    | ~12sp        | targetGlyphBottomY - FirstBaseline |
+    // | 数字 Bold       | 25sp    | ~19sp        | targetGlyphBottomY - FirstBaseline |
+    // | 中文方块字      | 16sp    | ~12-14sp     | targetGlyphBottomY - FirstBaseline |
+    // | 几何符号        | 8sp     | ~6-7sp       | targetGlyphBottomY - FirstBaseline |
 
-    // 所有 4 个字符统一用 FirstBaseline 算 placement y（v1.21 修复）
-    val monthNumY = (boxHeightPx - monthNumP[FirstBaseline]).toInt()
-    val monthCnY = (boxHeightPx - monthCnP[FirstBaseline]).toInt()
-    val dayY = (boxHeightPx - dayP[FirstBaseline]).toInt()
-    val arrowY = (boxHeightPx - arrowP[FirstBaseline]).toInt()
+    // 所有 4 个字符统一以"27" baseline 为目标算 placement y（v1.22 修复）
+    val monthNumY = (targetGlyphBottomY - monthNumP[FirstBaseline]).toInt()
+    val monthCnY = (targetGlyphBottomY - monthCnP[FirstBaseline]).toInt()
+    val dayY = (targetGlyphBottomY - dayFirstBaseline).toInt()  // = 0
+    val arrowY = (targetGlyphBottomY - arrowP[FirstBaseline]).toInt()
 
     layout(totalW.toInt(), boxHeightPx.toInt()) {
         val x0 = 0
@@ -452,13 +457,15 @@ Layout(
 > **v1.20 关键教训**：混合字符串（数字+中文）不能用单一 placement 规则处理。`Text` 的 `FirstBaseline` 只反映**第一个字符**的 baseline，无法表示字符串中最深字符的 glyph 底。故"07月"必须拆成"07"和"月"两个 Text 分别计算。
 >
 > **v1.21 关键教训**：v1.20 假设"中文/几何符号 glyph 占满 em-box → glyph 底 = layout 底"是错误的。所有字符（数字 / 中文 / 几何符号）的 glyph 底都 = **baseline**（不是 layout 底）。`Placeable.height` 包含 baseline 下方的 descent 留白（数字 ~20%、中文 ~20%、几何 ~20%）。v1.20 用 `boxH - 子项高` 算中文/几何 placement y，导致"月"和"▲"的 glyph 底比"07"和"27"高 1-3sp。**修复**：所有 4 个 Text 统一用 `boxH - FirstBaseline` 算 placement y。
+>
+> **v1.22 关键变更**：让水波纹以"27"为中心（上下距离一样）。v1.19-v1.21 让 4 个字符 glyph 底都贴 Layout 底（30sp），但导致"27"中心（23.5sp 距 layout 顶）远离 Layout 中心（15sp 距 layout 顶），点击"27"中央时水波纹看起来偏向底部。**修复**：让 Layout 高度 = "27" 子项高（25sp），"27" 中心 = 12.5sp = Layout 中心，水波纹从中心扩散看起来居中。**新对齐目标**：4 个字符 glyph 底都对齐到 "27" baseline（距 layout 顶 19sp，距 layout 底 6sp），**不再贴 Layout 底**。导航栏高度从 30sp → 25sp（矮 5sp，恢复到 v1.17/18 高度）
 
 ##### 交互与对齐
 
 - **可点击**：整行 `Modifier.clickable` 触发日历弹窗 `showInspirationCalendar = true`
-- **高度自适应**：自定义 `Layout` 显式指定 `boxHeightPx = 30.sp`（v1.17/18 用 Row 高度由 25sp "日" 撑高；v1.19 起改为显式 30sp）
+- **高度自适应（v1.22）**：自定义 `Layout` 高度 = "27" 子项高 = 25sp（v1.17/18 用 Row 高度由 25sp "日" 撑高；v1.19-v1.21 改为显式 30sp 让 glyph 底贴 Layout 底；v1.22 恢复 25sp，让水波纹以"27"为中心）
 - **居中**：由 `EnhancedTopBar` 外层 `Box(contentAlignment = Alignment.Center)` 在导航栏中居中
-- **底部对齐（v1.21 统一）**：通过 `placeRelative` 精确把 4 个子项的所有字符 glyph 底对齐到 `boxH = 30sp`，**所有字符统一用 `boxH - FirstBaseline` 算 placement y**，不区分字符类别
+- **底部对齐（v1.22 统一）**：通过 `placeRelative` 精确把 4 个子项的所有字符 glyph 底对齐到 **"27" baseline = 距 layout 顶 19sp**（不再贴 Layout 底），**所有字符统一以"27" baseline 为目标算 placement y = `targetGlyphBottomY - FirstBaseline`**。**水波纹中心** = Layout 中心 = 12.5sp = "27" 中心，用户点击"27"中央时水波纹看起来居中
 
 ##### 显示条件
 
@@ -499,6 +506,7 @@ Layout(
 | 2026-07-27 | v1.19 | **导航栏日期 glyph 底完美对齐（自定义 Layout 方案）**：v1.18 `padding(top)` 实测发现不改变 glyph 距 layout 底的距离（glyph 在 layout 内的位置由字体 metrics 决定）。改用自定义 `Layout` + `placeRelative` 精确控制每个子项的 placement y。Box 高 = 30sp（"27"子项高 25sp + 数字 glyph 距 em-box 底 5sp 留白），三个 glyph 底都精确等于 boxH。月份/箭头（glyph 占满 em-box）→ y = boxH - 子项高；日期（数字 glyph 底 = baseline）→ y = boxH - FirstBaseline（动态测量，避免硬编码）。导航栏比 v1.17/18 高 5sp |
 | 2026-07-27 | v1.20 | **导航栏日期修正"07月"字符串字符分类错误**：v1.19 误判"07月"为全方块字字符串（glyph 占满 em-box），实际是"0" "7" 数字（不全高）+ "月" 中文（占满 em-box）的混合。v1.19 用 `boxH - monthP.height` 算整个"07月" placement y，导致"0" "7" 数字 glyph 底比"27"日期底高 4sp，视觉上"0" "7" 浮在 box 中间。**修复**：把"07月"拆成"07"（数字）和"月"（中文）两个 Text，分别用 FirstBaseline 和 `boxH - 子项高` 算 placement y。间距："07" → "月" 0dp（视觉连续），"月" → "27" 7dp，"27" → "▼" 2dp。4 个 Text 所有字符 glyph 底都精确等于 boxH = 30sp |
 | 2026-07-27 | v1.21 | **导航栏日期修正"中文/几何符号 glyph 底 = baseline"（统一规则）**：v1.20 假设"中文/几何符号 glyph 占满 em-box → glyph 底 = layout 底"是错误的。所有字符（数字 / 中文 / 几何符号）的 glyph 底都 = **baseline**（不是 layout 底）。`Placeable.height` 包含 baseline 下方的 descent 留白（数字 ~20%、中文 ~20%、几何 ~20%）。v1.20 用 `boxH - 子项高` 算中文/几何 placement y，导致"月"和"▲"的 glyph 底比"07"和"27"高 1-3sp。**修复**：所有 4 个 Text 统一用 `boxH - FirstBaseline` 算 placement y，不再区分字符类别。v1.20 的"拆 Text"思路保留（"07月"仍拆成"07"+"月"），但 placement y 计算统一 |
+| 2026-07-27 | v1.22 | **导航栏日期水波纹以"27"为中心（Layout 高 30sp → 25sp）**：v1.19-v1.21 让 4 个字符 glyph 底都贴 Layout 底（30sp），但导致"27"中心（23.5sp 距 layout 顶）远离 Layout 中心（15sp 距 layout 顶），点击"27"中央时水波纹看起来偏向底部。**修复**：让 Layout 高度 = "27" 子项高（25sp），"27" 中心 = 12.5sp = Layout 中心，水波纹从中心扩散看起来居中。**新对齐目标**：4 个字符 glyph 底都对齐到 "27" baseline（距 layout 顶 19sp，距 layout 底 6sp），**不再贴 Layout 底**。导航栏高度从 30sp → 25sp（矮 5sp，恢复到 v1.17/18 高度） |
 
 ### 12.1.9 Snackbar 提示规范
 

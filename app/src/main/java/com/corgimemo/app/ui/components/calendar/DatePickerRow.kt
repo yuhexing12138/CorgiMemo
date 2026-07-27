@@ -23,6 +23,17 @@ import java.util.Calendar
  * 待办页、灵感页、日期页的导航栏日期显示复用此组件，仅传入不同的
  * isExpanded 和 onClick 参数即可。
  *
+ * v2026-07-27 v1.22 关键变更：让水波纹以"27"为中心（上下距离一样）。
+ * v1.19-v1.21 让 4 个字符 glyph 底都贴 Layout 底（30sp），
+ * 但导致"27"中心（23.5sp 距 layout 顶）远离 Layout 中心（15sp 距 layout 顶），
+ * 点击"27"中央时水波纹看起来偏向底部。
+ *
+ * v1.22 修复：让 Layout 高度 = "27" 子项高（25sp），
+ * - "27" 占据 0~25sp，"27" 中心 = 12.5sp = Layout 中心 ✓
+ * - 水波纹从 Layout 中心扩散，触摸点（点击"27"中央）= Layout 中心，看起来居中
+ * - 4 个字符 glyph 底都 = "27" baseline = 距 layout 顶 19sp（不再贴 Layout 底）
+ * - 导航栏高度从 30sp → 25sp（矮 5sp，恢复到 v1.17/18 高度）
+ *
  * v2026-07-27 v1.21 修复：v1.20 误判中文/几何符号的 glyph 底位置。
  * 实际所有字符（数字 / 中文 / 几何符号）的 glyph 底 = baseline 距 layout 顶，
  * 不是 layout 底。v1.20 用 `boxH - 子项高` 算中文/几何符号 placement y，
@@ -43,7 +54,7 @@ import java.util.Calendar
  * v2026-07-27 v1.19 重构：用自定义 `Layout` 替代 `Row(Alignment.Bottom)`，
  * 实现"月→日→箭头"三个 glyph 底完美对齐到 Box 底。Box 高度 = 30sp
  * （"27"子项高 25sp + 数字 glyph 距 em-box 底 5sp 留白），比 v1.17/18 的
- * 25sp 高 5sp，导航栏相应高 5sp。
+ * 25sp 高 5sp，导航栏相应高 5sp。**v1.22 已改回 25sp（让水波纹以"27"为中心）**
  *
  * 设计原理：
  * Compose `Row(verticalAlignment = Alignment.Bottom)` 对齐的是子项 layout
@@ -148,28 +159,36 @@ fun DatePickerRow(
 
         val totalW = monthNumW + gapMonthInnerPx + monthCnW + gapMonthDayPx + dayW + gapDayArrowPx + arrowW
 
-        // Box 高度策略：让所有字符 glyph 底都贴 Box 底
-        // "27" 数字 glyph 距 em-box 底 ~5sp → Box 高需 = 25sp + 5sp = 30sp
-        val boxHeightPx = 30.sp.toPx()
-
-        // 各子项 placement y 计算（v1.21 统一规则）
-        // 所有字符（数字 / 中文 / 几何符号）glyph 底 = baseline 距 layout 顶
-        // placement y = boxH - FirstBaseline → glyph 底 = placement y + FirstBaseline = boxH ✓
+        // Box 高度策略（v1.22）：让 Layout 高度 = "27" 子项高（25sp）
+        //   水波纹中心 = Layout 中心 = "27" 中心（用户要求水波纹以天数为基准，上下距离一样）
+        //   4 个字符 glyph 底都对齐到 "27" baseline（距 layout 顶 ~19sp），
+        //   不再贴 Layout 底（v1.19-v1.21 的目标）
         //
-        // v1.20 错误：用 `boxH - 子项高` 算中文/几何符号 placement y，假设 glyph 底 = layout 底
-        //   但实际中文/几何符号的 glyph 底 = baseline（不是 layout 底），
-        //   导致"月"和"▲"的 glyph 底比"07"和"27"的 glyph 底高 1-3sp
-        // v1.21 修复：所有字符统一用 `boxH - FirstBaseline` 算 placement y
-        val monthNumY = (boxHeightPx - monthNumP[FirstBaseline]).toInt()
-        val monthCnY = (boxHeightPx - monthCnP[FirstBaseline]).toInt()
-        val dayY = (boxHeightPx - dayP[FirstBaseline]).toInt()
-        val arrowY = (boxHeightPx - arrowP[FirstBaseline]).toInt()
+        // v1.22 关键变化：
+        //   - boxHeightPx = dayP.height（不再硬编码 30sp）
+        //   - targetGlyphBottomY = dayP[FirstBaseline] = "27" baseline 距 layout 顶
+        //   - 各字符 placement y = targetGlyphBottomY - 该字符 FirstBaseline
+        //   - 导航栏高度从 30sp → 25sp（矮 5sp，恢复到 v1.17/18 高度）
+        val boxHeightPx = dayP.height.toFloat()
+        val dayFirstBaseline = dayP[FirstBaseline]
+        val targetGlyphBottomY = dayFirstBaseline.toFloat()  // "27" baseline 位置（所有字符 glyph 底都对齐到这里）
 
-        // 验证（理论上，4 个字符 glyph 底都 = boxH）：
-        // "07" 数字  → y=18, glyph 底 = 18 + FirstBaseline(12) = 30sp ✓
-        // "月" 中文  → y=17, glyph 底 = 17 + FirstBaseline(13) = 30sp ✓
-        // "27" 数字  → y=11, glyph 底 = 11 + FirstBaseline(19) = 30sp ✓
-        // "▲" 几何   → y=23, glyph 底 = 23 + FirstBaseline(7)  = 30sp ✓
+        // 各子项 placement y（v1.22 统一规则）
+        // 所有字符的 glyph 底 = targetGlyphBottomY = "27" baseline
+        // placement y = targetGlyphBottomY - FirstBaseline
+        val monthNumY = (targetGlyphBottomY - monthNumP[FirstBaseline]).toInt()
+        val monthCnY = (targetGlyphBottomY - monthCnP[FirstBaseline]).toInt()
+        val dayY = (targetGlyphBottomY - dayFirstBaseline).toInt()  // = 0
+        val arrowY = (targetGlyphBottomY - arrowP[FirstBaseline]).toInt()
+
+        // 验证（v1.22，4 个字符 glyph 底都 = "27" baseline = 距 layout 顶 19sp）：
+        // "07" 数字  → y=7,  占据 7~23sp,  glyph 底 = 7  + 12 = 19sp ✓
+        // "月" 中文  → y=6,  占据 6~22sp,  glyph 底 = 6  + 13 = 19sp ✓
+        // "27" 数字  → y=0,  占据 0~25sp,  glyph 底 = 0  + 19 = 19sp ✓
+        // "▲" 几何   → y=12, 占据 12~20sp, glyph 底 = 12 + 7  = 19sp ✓
+        //
+        // 水波纹中心 = Layout 中心 = 25/2 = 12.5sp = "27" 中心 ✓
+        //   "27" 中心 = (0 + 25) / 2 = 12.5sp 距 layout 顶
 
         layout(totalW.toInt(), boxHeightPx.toInt()) {
             val x0 = 0
