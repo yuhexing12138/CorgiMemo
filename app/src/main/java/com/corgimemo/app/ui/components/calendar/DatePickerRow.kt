@@ -130,10 +130,10 @@ fun DatePickerRow(
         val dayW = dayP.width
         val arrowW = arrowP.width
 
-        // 间距（dp → px）
-        val gapMonthInnerPx = 0.dp.toPx()    // "07" → "月" 0dp（视觉上"07月"连续）
-        val gapMonthDayPx = 7.dp.toPx()      // "月" → "27" 7dp
-        val gapDayArrowPx = 2.dp.toPx()      // "27" → "▼" 2dp
+        // 间距（dp → px，toInt() 避免 Int + Float = Float 的类型错误）
+        val gapMonthInnerPx = 0.dp.toPx().toInt()    // "07" → "月" 0dp（视觉连续）
+        val gapMonthDayPx = 7.dp.toPx().toInt()      // "月" → "27" 7dp
+        val gapDayArrowPx = 2.dp.toPx().toInt()      // "27" → "▼" 2dp
 
         val totalW = monthNumW + gapMonthInnerPx + monthCnW + gapMonthDayPx + dayW + gapDayArrowPx + arrowW
 

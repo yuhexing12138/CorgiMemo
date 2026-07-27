@@ -67,7 +67,6 @@ import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.model.TodoLine
 import com.corgimemo.app.ui.util.formatReminderDisplay
 import com.corgimemo.app.util.VoicePlayer
-import sh.calvin.reorderable.DragGestureDetector
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -1414,11 +1413,16 @@ private fun CheckboxEditRow(
                                     isDragging = isDragging,
                                     onClick = { onImageClick(it) },
                                     onDelete = { onDeleteImage(it) },
-                                    // 🆕 v2026-07-27 P5 改造：图片拖拽使用 LongPress 模式
-                                    // 关键修正：默认 DragGestureDetector.Press 是"按下立即触发拖拽"，
-                                    // 会与 LazyRow 水平滚动手势冲突 → 用户滑动查看图片时会误触拖拽。
-                                    // 改用 LongPress 后：短按 + 拖 = 滚动查看图片；长按 + 拖 = 触发拖拽重排，与系统行为一致。
-                                    modifier = Modifier.draggableHandle(
+                                    /**
+                                     * 🆕 v2026-07-27 P7 改造：图片拖拽使用便捷方法 longPressDraggableHandle
+                                     *
+                                     * 与旧代码 `Modifier.draggableHandle(..., dragGestureDetector = LongPress)` 完全等价，
+                                     * 源码实现就是 `longPressDraggableHandle(..., dragGestureDetector = LongPress)` 的便捷封装。
+                                     * 项目统一用便捷方法，意图明确（永远要长按），无需担心默认值。
+                                     *
+                                     * 行为：短按 + 拖 = 滚动查看；长按 + 拖 = 触发拖拽重排。
+                                     */
+                                    modifier = Modifier.longPressDraggableHandle(
                                         onDragStarted = {
                                             HapticFeedbackManager.performHapticFeedback(
                                                 context = context,
@@ -1426,8 +1430,7 @@ private fun CheckboxEditRow(
                                                 enabled = true
                                             )
                                         },
-                                        onDragStopped = {},
-                                        dragGestureDetector = DragGestureDetector.LongPress
+                                        onDragStopped = {}
                                     )
                                 )
                             }
@@ -1537,12 +1540,14 @@ private fun CheckboxEditRow(
                                         onDeleteVoice(voice.path)
                                     },
                                     /**
-                                     * 🆕 v2026-07-27 P6 改造：语音拖拽使用 LongPress 模式
+                                     * 🆕 v2026-07-27 P7 改造：语音拖拽使用便捷方法 longPressDraggableHandle
+                                     *
                                      * 与图片一致：短按 + 拖 = 滚动查看；长按 + 拖 = 触发拖拽。
-                                     * 避免与 LazyRow 水平滚动手势冲突。
+                                     * 与旧代码 `Modifier.draggableHandle(..., dragGestureDetector = LongPress)` 完全等价。
+                                     *
                                      * onDragStarted 时暂停正在播放的语音（替代原 onPauseRequest）
                                      */
-                                    modifier = Modifier.draggableHandle(
+                                    modifier = Modifier.longPressDraggableHandle(
                                         onDragStarted = {
                                             if (voicePlayer.isPlaying.value) {
                                                 voicePlayer.pause()
@@ -1553,8 +1558,7 @@ private fun CheckboxEditRow(
                                                 enabled = true
                                             )
                                         },
-                                        onDragStopped = {},
-                                        dragGestureDetector = DragGestureDetector.LongPress
+                                        onDragStopped = {}
                                     )
                                 )
                             }
