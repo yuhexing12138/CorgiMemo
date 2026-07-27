@@ -170,6 +170,8 @@ class CorgiPreferences(
         const val USER_DEFINED_TAGS = "user_defined_tags"
         /** v2026-07-27：待办编辑页每行图片上限（-1=无限，>0=具体张数，默认 10） */
         const val MAX_IMAGES_PER_LINE = "max_images_per_line"
+        /** v2026-07-27：STATUS Tab 状态过滤项顺序（逗号分隔的 StatusFilter.name） */
+        const val STATUS_FILTER_ORDER = "status_filter_order"
     }
 
     // ==================== 数据迁移（DataStore → ESP）====================
@@ -1023,5 +1025,32 @@ class CorgiPreferences(
         val array = JSONArray()
         tags.sorted().forEach { array.put(it) }
         esp.edit().putString(Keys.USER_DEFINED_TAGS, array.toString()).apply()
+    }
+
+    // ==================== STATUS Tab 状态过滤项顺序（v2026-07-27 新增）====================
+
+    /**
+     * 获取状态过滤项顺序（v2026-07-27 新增，P8 Phase 2 实施）
+     *
+     * 持久化 STATUS Tab 侧滑栏拖拽排序后的状态项顺序。
+     * 存储格式：逗号分隔的 StatusFilter.name 字符串（例如 "ALL,PINNED,PENDING,..."）。
+     * 默认值：StatusFilter.values() 全部 6 个枚举名（按声明顺序）。
+     *
+     * **不存在的处理**：当 ESP 无该键时返回 null，由调用方决定默认值。
+     *
+     * @return 顺序字符串（如 "PINNED,PENDING,COMPLETED,..."），无值时返回 null
+     */
+    fun getStatusFilterOrderRaw(): String? = esp.getString(Keys.STATUS_FILTER_ORDER, null)
+
+    /**
+     * 设置状态过滤项顺序（v2026-07-27 新增，P8 Phase 2 实施）
+     *
+     * STATUS Tab 拖拽完成后由 ViewModel 调用。
+     * 列表顺序通过 joinToString(",") 序列化为字符串存储。
+     *
+     * @param order 拖拽后的新顺序（StatusFilter.name 列表）
+     */
+    suspend fun saveStatusFilterOrder(order: List<String>) = withContext(Dispatchers.IO) {
+        esp.edit().putString(Keys.STATUS_FILTER_ORDER, order.joinToString(",")).apply()
     }
 }

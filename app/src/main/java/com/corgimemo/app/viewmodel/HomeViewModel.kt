@@ -302,6 +302,30 @@ class HomeViewModel @Inject constructor(
     private val _statusFilter = MutableStateFlow(StatusFilter.ALL)
     val statusFilter: StateFlow<StatusFilter> = _statusFilter.asStateFlow()
 
+    /**
+     * 状态过滤项顺序（v2026-07-27 新增，P8 Phase 2 实施）
+     *
+     * 用于 STATUS Tab 侧滑栏拖拽排序的渲染顺序。
+     * - 默认值：StatusFilter.values() 全部 6 个枚举按声明顺序
+     * - 持久化：通过 [updateStatusOrder] 写入 ESP，重启后保留用户自定义顺序
+     * - 初始化：从 corgiPreferences.getStatusFilterOrderRaw() 同步读取 + 过滤无效值
+     */
+    private val _statusOrder = MutableStateFlow(StatusFilter.values().toList())
+    val statusOrder: StateFlow<List<StatusFilter>> = _statusOrder.asStateFlow()
+
+    init {
+        // 启动时从 ESP 恢复状态过滤项顺序（P8 Phase 2 新增）
+        val raw = corgiPreferences.getStatusFilterOrderRaw()
+        if (!raw.isNullOrBlank()) {
+            val restored = raw.split(",")
+                .mapNotNull { runCatching { StatusFilter.valueOf(it) }.getOrNull() }
+            // 仅当所有值都有效时才覆盖默认（避免部分损坏导致顺序混乱）
+            if (restored.size == StatusFilter.values().size) {
+                _statusOrder.value = restored
+            }
+        }
+    }
+
     /** 排序方式状态（默认为 "updated_desc" - 最新更新的在前） */
     private val _sortType = MutableStateFlow("updated_desc")
     val sortType: StateFlow<String> = _sortType.asStateFlow()
@@ -1624,6 +1648,27 @@ class HomeViewModel @Inject constructor(
                 // 错误通过 logcat 记录（与 HomeViewModel 其他错误处理一致，参考 line 3747/3857）
                 // 后续可扩展为 SharedFlow 事件供 UI 显示 Snackbar
                 android.util.Log.e("HomeViewModel", "更新分类顺序失败", e)
+            }
+        }
+    }
+
+    /**
+     * 更新状态过滤项顺序（v2026-07-27 新增，P8 Phase 2 实施）
+     *
+     * STATUS Tab 侧滑栏长按拖拽完成后由 UI 层调用。
+     * 立即更新内存中的 _statusOrder，并写入 ESP 持久化（重启后保留）。
+     *
+     * @param newOrder 拖拽后的新顺序（已按 UI 列表顺序排列）
+     */
+    fun updateStatusOrder(newOrder: List<StatusFilter>) {
+        // 1. 立即更新内存状态（UI 立即响应）
+        _statusOrder.value = newOrder
+        // 2. 异步持久化到 ESP
+        viewModelScope.launch {
+            try {
+                corgiPreferences.saveStatusFilterOrder(newOrder.map { it.name })
+            } catch (e: Exception) {
+                android.util.Log.e("HomeViewModel", "保存状态过滤项顺序失败", e)
             }
         }
     }

@@ -116,6 +116,9 @@ fun AppDrawerContent(
     onDrawerSectionChange: (DrawerSection) -> Unit = {},
     statusFilter: StatusFilter = StatusFilter.ALL,
     onStatusFilterClick: (StatusFilter) -> Unit = {},
+    // v2026-07-27 P8 Phase 2 新增：状态过滤项拖拽顺序 + 回调
+    statusOrder: List<StatusFilter> = StatusFilter.values().toList(),
+    onReorderStatus: (List<StatusFilter>) -> Unit = {},
     totalTodoCount: Int = 0,
     pinnedCount: Int = 0,
     pendingCount: Int = 0,
@@ -157,6 +160,9 @@ fun AppDrawerContent(
         onDrawerSectionChange = onDrawerSectionChange,
         statusFilter = statusFilter,
         onStatusFilterClick = onStatusFilterClick,
+        // v2026-07-27 P8 Phase 2：透传状态过滤项拖拽顺序 + 回调
+        statusOrder = statusOrder,
+        onReorderStatus = onReorderStatus,
         totalTodoCount = totalTodoCount,
         pinnedCount = pinnedCount,
         pendingCount = pendingCount,

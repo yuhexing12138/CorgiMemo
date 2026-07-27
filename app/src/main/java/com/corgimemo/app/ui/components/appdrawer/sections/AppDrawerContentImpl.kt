@@ -78,6 +78,8 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  * @param onDrawerSectionChange 分区切换回调（v2026-07-27 新增）
  * @param statusFilter 当前状态过滤（v2026-07-27 新增，TODO Tab 用）
  * @param onStatusFilterClick 状态过滤点击回调（v2026-07-27 新增）
+ * @param statusOrder 状态过滤项顺序（v2026-07-27 P8 Phase 2 新增，TODO Tab 用）
+ * @param onReorderStatus 状态过滤项拖拽排序回调（v2026-07-27 P8 Phase 2 新增）
  * @param totalTodoCount 全部待办数（v2026-07-27 新增，状态管理用）
  * @param pinnedCount 置顶待办数（v2026-07-27 新增）
  * @param pendingCount 待完成待办数（v2026-07-27 新增）
@@ -120,6 +122,9 @@ fun AppDrawerContentImpl(
     onDrawerSectionChange: (DrawerSection) -> Unit = {},
     statusFilter: StatusFilter = StatusFilter.ALL,
     onStatusFilterClick: (StatusFilter) -> Unit = {},
+    // v2026-07-27 P8 Phase 2 新增：状态过滤项拖拽顺序 + 回调
+    statusOrder: List<StatusFilter> = StatusFilter.values().toList(),
+    onReorderStatus: (List<StatusFilter>) -> Unit = {},
     totalTodoCount: Int = 0,
     pinnedCount: Int = 0,
     pendingCount: Int = 0,
@@ -177,8 +182,9 @@ fun AppDrawerContentImpl(
                         )
                     }
                     DrawerSection.STATUS -> {
-                        // 状态管理分区（v2026-07-27 新增）
+                        // 状态管理分区（v2026-07-27 新增，v2026-07-27 P8 Phase 2 接入拖拽）
                         StatusFilterSection(
+                            statusOrder = statusOrder,
                             currentFilter = statusFilter,
                             totalCount = totalTodoCount,
                             pinnedCount = pinnedCount,
@@ -187,6 +193,8 @@ fun AppDrawerContentImpl(
                             overdueCount = overdueCount,
                             repeatReminderCount = repeatReminderCount,
                             onFilterClick = onStatusFilterClick,
+                            // v2026-07-27 P8 Phase 2：透传拖拽回调，委托外层 ViewModel 持久化
+                            onReorder = onReorderStatus,
                             modifier = Modifier.weight(1f)
                         )
                     }

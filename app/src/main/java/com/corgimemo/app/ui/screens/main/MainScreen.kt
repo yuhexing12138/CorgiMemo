@@ -296,6 +296,8 @@ fun MainScreen(
     // collectAsState 后传递给 AppDrawerContent 显示在状态管理分区。
     /** 当前状态过滤（侧滑栏"状态管理"Tab 选中项） */
     val statusFilter by homeViewModel.statusFilter.collectAsState()
+    /** 状态过滤项顺序（v2026-07-27 P8 Phase 2 新增，可拖拽排序，从 ESP 加载） */
+    val statusOrder by homeViewModel.statusOrder.collectAsState()
     /** 全部待办总数（"全部状态"项显示） */
     val totalTodoCount by homeViewModel.totalTodoCount.collectAsState()
     /** 置顶待办数（"置顶"项显示） */
@@ -586,6 +588,12 @@ fun MainScreen(
                     onStatusFilterClick = { filter ->
                         homeViewModel.setStatusFilter(filter)
                         coroutineScope.launch { drawerState.close() }
+                    },
+                    // v2026-07-27 P8 Phase 2：状态过滤项拖拽顺序（来自 HomeViewModel）
+                    statusOrder = statusOrder,
+                    // v2026-07-27 P8 Phase 2：状态过滤项拖拽回调，委托 HomeViewModel 持久化
+                    onReorderStatus = { newOrder ->
+                        homeViewModel.updateStatusOrder(newOrder)
                     },
                     totalTodoCount = totalTodoCount,
                     pinnedCount = pinnedCount,
