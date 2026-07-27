@@ -17,6 +17,7 @@ import com.corgimemo.app.data.local.db.CustomDateTypeDao
 import com.corgimemo.app.data.local.db.SpecialDateRelationDao
 import com.corgimemo.app.data.local.db.MoodHistoryDao
 import com.corgimemo.app.data.local.db.OperationLogDao
+import com.corgimemo.app.data.local.db.ProfileNavItemDao
 import com.corgimemo.app.data.local.db.SubTaskDao
 import com.corgimemo.app.data.local.db.TaskDailyStatsDao
 import com.corgimemo.app.data.local.db.TodoDao
@@ -155,5 +156,12 @@ object DatabaseModule {
     @Singleton
     fun provideSubTaskDao(database: CorgiMemoDatabase): SubTaskDao {
         return database.subTaskDao()
+    }
+
+    /** 个人快速导航 DAO（P8 Phase 5 PROFILE Tab 拖拽持久化用） */
+    @Provides
+    @Singleton
+    fun provideProfileNavItemDao(database: CorgiMemoDatabase): ProfileNavItemDao {
+        return database.profileNavItemDao()
     }
 }

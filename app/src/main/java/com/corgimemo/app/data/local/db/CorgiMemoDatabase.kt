@@ -9,6 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.corgimemo.app.data.local.db.ContentBlockEntity
 import com.corgimemo.app.data.local.db.AchievementEntity
 import com.corgimemo.app.data.local.db.OperationLogEntity
+import com.corgimemo.app.data.local.db.ProfileNavItemDao
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CorgiData
@@ -90,6 +91,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
 
     /** 灵感标签拖拽排序 DAO（v2026-07-27 新增，P8 Phase 4 实施） */
     abstract fun inspirationTagOrderDao(): InspirationTagOrderDao
+
+    /** 个人快速导航 DAO（v2026-07-27 新增，P8 Phase 5 实施） */
+    abstract fun profileNavItemDao(): ProfileNavItemDao
 
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
