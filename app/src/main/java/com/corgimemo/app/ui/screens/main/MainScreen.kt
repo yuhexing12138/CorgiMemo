@@ -583,6 +583,11 @@ fun MainScreen(
                         navController.navigate(Screen.Settings.route)
                         coroutineScope.launch { drawerState.close() }
                     },
+                    // v2026-07-27 P8 Phase 5：个人快速导航项 + 拖拽回调
+                    navItems = navItems,
+                    onReorderNav = { newOrder ->
+                        profileViewModel.updateNavOrder(newOrder)
+                    },
                     // Task 11: 顶部用户头像点击 → 跳 ProfileDetail 路由 + 关 drawer
                     // 原行为是切到 PROFILE tab,ProfileDetail 化后改为独立路由(便于保留"我的"页 tab 位置)
                     // 顺序：先 navigate 再关 drawer,符合 lambda 捕获防御规则——无外部可变引用
@@ -726,7 +731,7 @@ fun MainScreen(
                                     onBatchSelectClick = {
                                         filteredTodos.firstOrNull()?.let { homeViewModel.enterBatchMode(it.id) }
                                     },
-                                    onPlaceholderClick = {
+                                    onDuplicateTodoClick = {
                                         coroutineScope.launch { snackbarHostState.showSnackbar("功能开发中...") }
                                     },
                                     onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("todo")) }

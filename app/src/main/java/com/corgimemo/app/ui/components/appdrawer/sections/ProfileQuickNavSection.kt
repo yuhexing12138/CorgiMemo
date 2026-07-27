@@ -25,7 +25,7 @@ import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.data.model.ProfileNavItem
 import com.corgimemo.app.ui.theme.UiColors
 import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.draggableHandle
+import sh.calvin.reorderable.longPressDraggableHandle
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 /**

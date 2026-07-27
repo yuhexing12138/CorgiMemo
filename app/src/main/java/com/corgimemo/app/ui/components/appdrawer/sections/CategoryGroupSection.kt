@@ -18,7 +18,7 @@ import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.ui.components.appdrawer.model.CategoryAction
 import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.draggableHandle
+import sh.calvin.reorderable.longPressDraggableHandle
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 /**

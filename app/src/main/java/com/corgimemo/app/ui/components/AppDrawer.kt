@@ -164,6 +164,9 @@ fun AppDrawerContent(
         onReorderDateType = onReorderDateType,
         onSettingsClick = onSettingsClick,
         onUserAreaClick = onUserAreaClick,
+        // v2026-07-27 P8 Phase 5：透传个人快速导航项 + 拖拽回调
+        navItems = navItems,
+        onReorderNav = onReorderNav,
         // v2026-07-27 新增：状态管理 Tab 透传
         currentDrawerSection = currentDrawerSection,
         onDrawerSectionChange = onDrawerSectionChange,

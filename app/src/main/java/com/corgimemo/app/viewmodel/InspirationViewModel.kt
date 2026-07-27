@@ -276,7 +276,7 @@ class InspirationViewModel @Inject constructor(
      * - 首次启动时为空 Flow（用户在 DB 拖拽前没数据）
      * - 拖拽后由 updateTagOrder() 持久化
      */
-    val tagOrder: StateFlow<List<String>> = repository.getOrderedTagNames()
+    val tagOrder: StateFlow<List<String>> = inspirationRepository.getOrderedTagNames()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -317,7 +317,7 @@ class InspirationViewModel @Inject constructor(
     fun updateTagOrder(newOrder: List<String>) {
         viewModelScope.launch {
             try {
-                repository.updateTagOrder(newOrder)
+                inspirationRepository.updateTagOrder(newOrder)
             } catch (e: Exception) {
                 android.util.Log.e("InspirationViewModel", "更新标签顺序失败", e)
             }

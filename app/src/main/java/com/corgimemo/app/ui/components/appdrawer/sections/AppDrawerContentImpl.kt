@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.CustomDateType
+import com.corgimemo.app.data.model.ProfileNavItem
 import com.corgimemo.app.ui.components.UserAvatar
 import com.corgimemo.app.ui.components.appdrawer.model.CategoryAction
 import com.corgimemo.app.ui.components.appdrawer.model.DateTypeAction
@@ -125,6 +126,9 @@ fun AppDrawerContentImpl(
     onReorderDateType: (List<CustomDateType>) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onUserAreaClick: () -> Unit = {},
+    // v2026-07-27 P8 Phase 5 新增：个人快速导航项 + 拖拽回调
+    navItems: List<ProfileNavItem> = emptyList(),
+    onReorderNav: (List<ProfileNavItem>) -> Unit = {},
     // ===== v2026-07-27 新增：状态管理 Tab 切换（9 个参数） =====
     currentDrawerSection: DrawerSection = DrawerSection.GROUP,
     onDrawerSectionChange: (DrawerSection) -> Unit = {},
@@ -213,7 +217,7 @@ fun AppDrawerContentImpl(
             }
             TabItem.INSPIRE -> {
                 InspirationFilterSection(
-                    tags = inspirationTags,
+                    orderedTags = inspirationTags,
                     selectedTags = selectedTags,
                     filterMode = tagFilterMode,
                     tagCounts = tagCounts,

@@ -36,6 +36,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
@@ -1073,7 +1074,9 @@ fun TodoEditScreen(
                          */
                         val lines = viewModel.getCurrentContainerLines(focusedLineIndex)
                         if (lines.isEmpty()) {
-                            snackbarHostState.showSnackbar("请先选择一行待办")
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("请先选择一行待办")
+                            }
                             return@IconButton
                         }
                         val text = viewModel.formatContainerAsCopyText(lines)
