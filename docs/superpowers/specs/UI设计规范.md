@@ -388,11 +388,11 @@ Row(
         .clickable { showInspirationCalendar = true }
     // 不使用 fillMaxHeight()，高度自适应内容，由外层 Box 居中
 ) {
-    Text("07月", fontSize = 16.sp)                               // 月份
+    Text("07月", fontSize = 16.sp, lineHeight = 16.sp)            // 月份（v1.17: lineHeight 消除行间距）
     Spacer(modifier = Modifier.width(7.dp))                      // 月 → 日 7dp
-    Text("09", fontSize = 25.sp, fontWeight = FontWeight.Bold)   // 大号日期
+    Text("09", fontSize = 25.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold)  // 大号日期（v1.17: lineHeight 消除行间距）
     Spacer(modifier = Modifier.width(2.dp))                      // 日 → 箭头 2dp
-    Text("▼", fontSize = 8.sp)                                   // 下拉箭头
+    Text("▼", fontSize = 8.sp, lineHeight = 8.sp)                // 下拉箭头（v1.17: lineHeight 消除行间距）
 }
 ```
 
@@ -437,6 +437,7 @@ Row(
 | 2026-07-09 | v1.14 | **导航栏日期布局从 Column 改为 Row**：原 Column 垂直布局导致 "07月" 和 "▼" 上下排列，改为纯水平 Row 布局让 "▼" 紧邻 "07月" 右侧。月份与箭头间距 2dp |
 | 2026-07-09 | v1.15 | **导航栏日期水平排列 + 底部对齐**：保持 Row 水平布局，日→月间距从 2dp 改为 **7dp**，子元素对齐改为 **`Alignment.Bottom`**，高度自适应内容（去掉 `fillMaxHeight`），由外层 Box `Alignment.Center` 居中 ✓ |
 | 2026-07-27 | v1.16 | **导航栏日期顺序调整为"月 → 日"**：将大号日期（25sp Bold）与月份（16sp）交换位置，月份移到左侧、天数移到右侧。间距规则不变（月→日 7dp、日→箭头 2dp）。待办/灵感/日期三页同步生效 |
+| 2026-07-27 | v1.17 | **导航栏日期底部精确对齐**：三个 Text 元素（月/日/箭头）都设置 `lineHeight = fontSize` 消除默认行间距。Compose `Row(Alignment.Bottom)` 对齐的是子项 layout box 底部而非 glyph 底部，默认 lineHeight ≈ fontSize × 1.2-1.4 含 ~2-3sp 上下行间距，25sp Bold "09" 距盒底 ~7sp 而 16sp "月" 距盒底 ~2sp，肉眼可见底部偏差。`lineHeight = fontSize` 后留白归零，视觉底部精确对齐 |
 
 ### 12.1.9 Snackbar 提示规范
 

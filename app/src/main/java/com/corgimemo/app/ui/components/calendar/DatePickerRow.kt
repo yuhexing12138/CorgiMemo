@@ -24,7 +24,17 @@ import java.util.Calendar
  * 待办页、灵感页、日期页的导航栏日期显示复用此组件，仅传入不同的
  * isExpanded 和 onClick 参数即可。
  *
- * v2026-07-27 调整：月份移到左侧、天数移到右侧，月份→天数间距 7dp 保持不变
+ * v2026-07-27 v1.17 调整：三个 Text 元素都设置 `lineHeight = fontSize`，
+ * 消除默认行间距（lineHeight ≈ fontSize × 1.2-1.4），让 layout box
+ * 紧贴 glyph 上下边界。配合 `Row(verticalAlignment = Alignment.Bottom)`，
+ * 解决"月份"和"日期"因字号/字重不同导致的视觉底部不对齐问题。
+ *
+ * 原因详解：Compose `Row(Alignment.Bottom)` 对齐的是子项 layout box 底部，
+ * 不是 glyph 底部。默认 lineHeight 包含 ~2-3sp 上下行间距，字号越大留白越
+ * 明显。25sp Bold "09" 距盒底 ~7sp，16sp "月" 距盒底 ~2sp，肉眼可见偏差。
+ * 设置 `lineHeight = fontSize` 后留白归零，视觉底部精确对齐。
+ *
+ * v2026-07-27 v1.16 调整：月份移到左侧、天数移到右侧，月份→天数间距 7dp 保持不变
  *
  * @param isExpanded 日历弹窗是否展开（控制箭头方向：▲ / ▼）
  * @param onClick 点击回调（切换弹窗展开/收起）
@@ -41,18 +51,20 @@ fun DatePickerRow(
         modifier = modifier.clickable(onClick = onClick)
     ) {
         val now = Calendar.getInstance()
-        // 月份（16sp）— 2026-07-27 起改为左侧显示
+        // 月份（16sp，lineHeight=16sp 消除行间距）— 2026-07-27 v1.16 起改为左侧显示
         Text(
             text = String.format("%02d月", now.get(Calendar.MONTH) + 1),
             fontSize = 16.sp,
+            lineHeight = 16.sp,                  // 关键：消除默认行间距
             color = Color(0xFF666666)
         )
         // 月 → 日 水平间距 7dp
         Spacer(modifier = Modifier.width(7.dp))
-        // 大号日期数字（25sp Bold）— 2026-07-27 起改为右侧显示
+        // 大号日期数字（25sp Bold，lineHeight=25sp 消除行间距）— v1.16 起改为右侧显示
         Text(
             text = String.format("%02d", now.get(Calendar.DAY_OF_MONTH)),
             fontSize = 25.sp,
+            lineHeight = 25.sp,                  // 关键：消除默认行间距
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -62,6 +74,7 @@ fun DatePickerRow(
         Text(
             text = if (isExpanded) "▲" else "▼",
             fontSize = 8.sp,
+            lineHeight = 8.sp,                   // 关键：消除默认行间距
             color = Color(0xFF666666)
         )
     }
