@@ -392,12 +392,14 @@ Row(
     Spacer(modifier = Modifier.width(7.dp))                      // 月 → 日 7dp
     Text(
         "27", fontSize = 25.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(bottom = 3.dp)               // v1.18: padding 微调补偿数字 glyph 不全高
+        modifier = Modifier.padding(top = 3.dp)                  // v1.18 修正: padding(top) 让 glyph 下移贴底
     )                                                            // 大号日期
     Spacer(modifier = Modifier.width(2.dp))                      // 日 → 箭头 2dp
     Text("▼", fontSize = 8.sp, lineHeight = 8.sp)                // 下拉箭头（v1.17: lineHeight 消除行间距）
 }
 ```
+
+> **v1.18 关键教训**：`Modifier.padding(bottom = X)` 不会让 glyph 底向下移动，只会扩大 layout 盒的下边界。`padding(top = X)` 才是让 glyph 整体下移的正确方向。详见 [DatePickerRow.kt](../../app/src/main/java/com/corgimemo/app/ui/components/calendar/DatePickerRow.kt) 注释。
 
 ##### 交互与对齐
 
@@ -441,7 +443,7 @@ Row(
 | 2026-07-09 | v1.15 | **导航栏日期水平排列 + 底部对齐**：保持 Row 水平布局，日→月间距从 2dp 改为 **7dp**，子元素对齐改为 **`Alignment.Bottom`**，高度自适应内容（去掉 `fillMaxHeight`），由外层 Box `Alignment.Center` 居中 ✓ |
 | 2026-07-27 | v1.16 | **导航栏日期顺序调整为"月 → 日"**：将大号日期（25sp Bold）与月份（16sp）交换位置，月份移到左侧、天数移到右侧。间距规则不变（月→日 7dp、日→箭头 2dp）。待办/灵感/日期三页同步生效 |
 | 2026-07-27 | v1.17 | **导航栏日期底部精确对齐**：三个 Text 元素（月/日/箭头）都设置 `lineHeight = fontSize` 消除默认行间距。Compose `Row(Alignment.Bottom)` 对齐的是子项 layout box 底部而非 glyph 底部，默认 lineHeight ≈ fontSize × 1.2-1.4 含 ~2-3sp 上下行间距，25sp Bold "09" 距盒底 ~7sp 而 16sp "月" 距盒底 ~2sp，肉眼可见底部偏差。`lineHeight = fontSize` 后留白归零，视觉底部精确对齐 |
-| 2026-07-27 | v1.18 | **导航栏日期 glyph 底精确对齐（数字 vs 中文/几何符号）**：v1.17 消除行间距后，数字"27"（25sp Bold 不全高）距 em-box 底仍 ~3-4sp、中文"月"（16sp 方块字）距底 ~1sp、几何"▼"（8sp）距底 ~1sp，导致"月"和"▼"底部略低于"27"底部。给大号日期 Text 加 `Modifier.padding(bottom = 3.dp)` 向下扩展 layout 盒，让"27"glyph 底与"月"/"▼"精确对齐到同一水平线 |
+| 2026-07-27 | v1.18 | **导航栏日期 glyph 底精确对齐（数字 vs 中文/几何符号）**：v1.17 消除行间距后，数字"27"（25sp Bold 不全高）距 em-box 底仍 ~3-4sp、中文"月"（16sp 方块字）距底 ~1sp、几何"▼"（8sp）距底 ~1sp，导致"月"和"▼"底部略低于"27"底部。给大号日期 Text 加 `Modifier.padding(top = 3.dp)` 让"27"内容整体下移 3dp，glyph 底贴 layout 底（= Row 底），与"月"/"▼"精确对齐。**注意 padding 方向**：`padding(bottom)` 错误（只扩展 layout 盒底边界、glyph 位置不变），必须用 `padding(top)` 才行 |
 
 ### 12.1.9 Snackbar 提示规范
 
