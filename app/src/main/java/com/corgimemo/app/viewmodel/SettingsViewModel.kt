@@ -45,6 +45,18 @@ class SettingsViewModel @Inject constructor(
     private val _themeColor = MutableStateFlow("orange")
     val themeColor: StateFlow<String> = _themeColor.asStateFlow()
 
+    /**
+     * 单行图片附件上限（v2026-07-27 新增）
+     *
+     * 与 [com.corgimemo.app.viewmodel.TodoEditViewModel.maxImagesPerLine] 共享同一份 ESP 存储。
+     *
+     * - 默认值：10（与数据层 intFlow 默认值一致）
+     * - 取值约定：-1=无限，5/10/20=具体张数
+     * - 写入触发 [setMaxImagesPerLine]，UI 层在设置页「单行图片上限」选择项中调用
+     */
+    private val _maxImagesPerLine = MutableStateFlow(10)
+    val maxImagesPerLine: StateFlow<Int> = _maxImagesPerLine.asStateFlow()
+
     init {
         loadSettings()
     }
@@ -65,6 +77,9 @@ class SettingsViewModel @Inject constructor(
             _themeMode.value = loadedMode
             _themeColor.value = loadedColor
             ThemeManager.initTheme(loadedMode, loadedColor)
+
+            // v2026-07-27 新增：加载「单行图片上限」
+            _maxImagesPerLine.value = corgiPreferences.maxImagesPerLine.first()
         }
     }
 
@@ -81,6 +96,24 @@ class SettingsViewModel @Inject constructor(
             _themeColor.value = color
             ThemeManager.setThemeColor(color)
             corgiPreferences.saveThemeColor(color)
+        }
+    }
+
+    /**
+     * 设置单行图片附件上限（v2026-07-27 新增）
+     *
+     * 同步写入内存 StateFlow 与 ESP 存储。
+     * 编辑页（TodoEditViewModel）通过订阅同一份 ESP Flow 自动收到新值，
+     * 无需手动通知（无 EventBus，依赖 Flow 的响应式订阅）。
+     *
+     * @param count 新的上限值
+     *   - `-1`：无限
+     *   - `>0`：具体张数（如 5/10/20）
+     */
+    fun setMaxImagesPerLine(count: Int) {
+        viewModelScope.launch {
+            _maxImagesPerLine.value = count
+            corgiPreferences.saveMaxImagesPerLine(count)
         }
     }
 

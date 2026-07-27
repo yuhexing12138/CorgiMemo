@@ -104,6 +104,9 @@ fun SettingsScreen(
     // 注：themeMode / themeColor 状态已迁移至 AppearanceScreen（v1.1）
     // 设置页不再承担外观切换，仅保留外观入口项指向 AppearanceScreen
 
+    // v2026-07-27 新增：单行图片上限（用户在设置中自定义，与 TodoEditViewModel 共享同一份 ESP）
+    val maxImagesPerLine by viewModel.maxImagesPerLine.collectAsState()
+
     // ========== 弹窗状态 ==========
     var showUserTypeDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
@@ -111,6 +114,8 @@ fun SettingsScreen(
     var showExportDialog by remember { mutableStateOf(false) }
     var showImportConfirmDialog by remember { mutableStateOf(false) }
     var showAutoBackupDialog by remember { mutableStateOf(false) }
+    // v2026-07-27 新增：单行图片上限选择弹窗控制状态
+    var showMaxImagesDialog by remember { mutableStateOf(false) }
 
     // ========== Snackbar（用于"关于与帮助"占位提示）==========
     val snackbarHostState = remember { SnackbarHostState() }
@@ -232,6 +237,15 @@ fun SettingsScreen(
                             // 切换功能已外移到独立 AppearanceScreen
                             SettingItem(icon = "🎨", title = "外观") {
                                 navController.navigate(Screen.Appearance.route)
+                            },
+                            // v2026-07-27 新增：单行图片上限（编辑页图片附件配额）
+                            // 展示当前值（"5 张" / "10 张" / "20 张" / "无限"），点击切换
+                            SettingItem(
+                                icon = "🖼",
+                                title = "单行图片上限",
+                                value = formatMaxImagesPerLine(maxImagesPerLine)
+                            ) {
+                                showMaxImagesDialog = true
                             }
                         )
                     )
@@ -494,6 +508,37 @@ fun SettingsScreen(
             onDismiss = { showAutoBackupDialog = false }
         )
     }
+
+    // ========== 单行图片上限选择弹窗（v2026-07-27 新增）==========
+    // 与身份选择弹窗风格一致：左 emoji + 标题 + 描述 + 右侧选中 ✓
+    // 选项：5 张 / 10 张（默认）/ 20 张 / 无限
+    if (showMaxImagesDialog) {
+        MaxImagesPerLineDialog(
+            currentValue = maxImagesPerLine,
+            onDismiss = { showMaxImagesDialog = false },
+            onConfirm = { count ->
+                viewModel.setMaxImagesPerLine(count)
+                showMaxImagesDialog = false
+            }
+        )
+    }
+}
+
+/**
+ * 将单行图片上限枚举值格式化为显示文字（v2026-07-27 新增）
+ *
+ * 用于设置页 SettingListCard 右侧的"当前值"展示。
+ *
+ * @param count 来自 CorgiPreferences.maxImagesPerLine 的整数值
+ *   - `-1` → "无限"
+ *   - `>0` → "N 张"
+ *   - 其他（含 0）→ "10 张"（防御性 fallback，避免显示"0 张"歧义）
+ * @return 用户友好的中文显示文字
+ */
+private fun formatMaxImagesPerLine(count: Int): String = when (count) {
+    -1 -> "无限"
+    in 1..999 -> "$count 张"
+    else -> "10 张"  // 0 / 负数（非 -1） / 异常大值 → 防御性 fallback
 }
 
 /**
@@ -1060,5 +1105,169 @@ fun getUserTypeName(userType: UserType): String {
     return when (userType) {
         UserType.WORKER -> "上班族"
         UserType.STUDENT -> "学生"
+    }
+}
+
+// ==================== 单行图片上限选择（v2026-07-27 新增）====================
+
+/**
+ * 单行图片上限的可选值列表（v2026-07-27 新增）
+ *
+ * 设计决策：
+ * - 5/10/20 是常用档位，覆盖轻量 / 日常 / 重度用户
+ * - 无限（-1）满足"无限制"需求
+ * - 10 是默认值（与 CorgiPreferences.maxImagesPerLine Flow 默认值一致）
+ *
+ * 添加新选项时同步更新 [MaxImagesOptionCard] 中的 emoji 与描述映射。
+ */
+private val MaxImagesPerLineOptions = listOf(5, 10, 20, -1)
+
+/**
+ * 单行图片上限选择弹窗（v2026-07-27 新增）
+ *
+ * 风格与 [UserTypeSelectCard] 一致：左 emoji + 标题 + 描述 + 右侧选中 ✓。
+ * 选项卡 4 个：5 张 / 10 张（默认）/ 20 张 / 无限。
+ *
+ * 设计：
+ * - 点击选项卡立即确认（无需底部"确认"按钮），与身份选择弹窗风格一致
+ * - 选项卡列表用 Column 垂直堆叠，间距 12dp
+ * - 当前选中项有 primary 背景 + ✓ 标记
+ *
+ * @param currentValue 当前选中的上限值
+ * @param onDismiss 取消回调
+ * @param onConfirm 确认回调，参数为用户新选的整数值（-1=无限，>0=具体张数）
+ */
+@Composable
+fun MaxImagesPerLineDialog(
+    currentValue: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "单行图片上限",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "设置编辑页每个待办行最多可添加的图片数量。",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                MaxImagesPerLineOptions.forEach { value ->
+                    MaxImagesOptionCard(
+                        value = value,
+                        isSelected = value == currentValue,
+                        onClick = { onConfirm(value) }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = onDismiss
+            ) {
+                Text(text = "关闭")
+            }
+        }
+    )
+}
+
+/**
+ * 单行图片上限选项卡（v2026-07-27 新增）
+ *
+ * 风格复用 [UserTypeSelectCard]：左 emoji + 标题 + 描述 + 右侧 ✓。
+ * 选中时整张卡片用 primary 色背景。
+ *
+ * @param value 该选项对应的上限值（5/10/20/-1）
+ * @param isSelected 是否当前选中
+ * @param onClick 点击回调
+ */
+@Composable
+fun MaxImagesOptionCard(
+    value: Int,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val backgroundColor = if (isSelected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val textColor = if (isSelected) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val descriptionColor = if (isSelected) {
+        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    // 根据 value 映射显示文案
+    val (emoji, title, description) = when (value) {
+        5 -> Triple("5️⃣", "5 张", "轻量使用，单行图片紧凑")
+        10 -> Triple("🔟", "10 张（默认）", "日常使用，推荐档位")
+        20 -> Triple("🖼", "20 张", "重度使用，图片较多")
+        -1 -> Triple("∞", "无限", "不限制图片数量")
+        else -> Triple("❓", "$value", "自定义")
+    }
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = backgroundColor
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = emoji,
+                fontSize = 28.sp
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = textColor
+                )
+                Text(
+                    text = description,
+                    fontSize = 13.sp,
+                    color = descriptionColor,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            if (isSelected) {
+                Text(
+                    text = "✓",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = textColor
+                )
+            }
+        }
     }
 }

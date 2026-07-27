@@ -99,7 +99,8 @@ class DemoResourceManager(private val context: Context) {
 
     /** 待办图片资源映射（文件名 → drawableId）
      *
-     * v2026-07-25 调整：每个父待办行图片数 ≤ 3（与 TodoEditViewModel.MAX_IMAGES_PER_LINE 一致）
+     * v2026-07-25 调整：每个父待办行图片数 ≤ 3
+     * v2026-07-27 改造：种子数据保持 ≤ 3 张演示，但运行时上限已改为用户可配（默认 10）
      * - T1: 3 张（原 1 张 → 增至 3 张）
      * - T2: 2 张（保持）
      * - T3: 3 张（保持）

@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect /** v2026-07-27 新增：maxImagesPerLine 订阅需要 collect 扩展函数 */
 import kotlinx.coroutines.flow.map /** v2026-07-22 新增：hasAnyUnsavedChanges 派生需要 .map 扩展函数 */
 import kotlinx.coroutines.flow.stateIn /** v2026-07-22 新增：hasAnyUnsavedChanges 派生需要 .stateIn 共享 StateFlow */
 import kotlinx.coroutines.launch
@@ -229,6 +230,29 @@ class TodoEditViewModel @Inject constructor(
     val imagePaths: StateFlow<List<String>> = _imagePaths.asStateFlow()
 
     // ==================== 内容块统一管理（ContentBlock 系统） ====================
+
+    /**
+     * 单行图片附件上限（v2026-07-27 改造：从硬编码常量改为用户可配置）
+     *
+     * **数据流链路**：
+     * `CorgiPreferences.maxImagesPerLine` (Flow<Int>) → 本 StateFlow → `addImageToFocusedLine` 配额检查
+     *
+     * **取值约定**：
+     * - `-1`：表示无限（无上限）
+     * - `>0`：具体张数（5 / 10 / 20）
+     * - 默认值：`10`（与 P1 数据层 `intFlow` 默认值一致）
+     *
+     * **改造背景**：
+     * 原 `MAX_IMAGES_PER_LINE = 3` 是 `companion object const val`，
+     * 硬编码 3 张无法满足"用户希望放更多图片"的需求。
+     * 现改为从 ESP 读取，用户可在设置页（SettingsScreen）自由配置 5/10/20/无限。
+     *
+     * **初始化时机**：
+     * ViewModel 创建时通过 `init` 块订阅 Flow，订阅立即发射当前值，
+     * 后续用户在设置页修改后会自动更新本 StateFlow，所有引用方 UI 重新组合。
+     */
+    private val _maxImagesPerLine = MutableStateFlow(10)
+    val maxImagesPerLine: StateFlow<Int> = _maxImagesPerLine.asStateFlow()
 
     /**
      * 编辑状态全量快照，用于撤销/恢复功能
@@ -901,6 +925,30 @@ class TodoEditViewModel @Inject constructor(
 
     private var existingTodo: TodoItem? = null
 
+    /**
+     * ViewModel 初始化块（v2026-07-27 新增）
+     *
+     * 启动时订阅 [corgiPreferences.maxImagesPerLine] Flow，
+     * 实时同步到 [_maxImagesPerLine] 供 [addImageToFocusedLine] 等方法读取。
+     *
+     * **为什么用 init 块而不是 loadTodo 内启动？**
+     * - maxImagesPerLine 配额检查在 `addImageToFocusedLine` 中执行，
+     *   该方法可能在 `loadTodo` 之前被 UI 层调用（例如用户进入新建模式立即添加图片）
+     * - 用 init 块保证 StateFlow 在 ViewModel 构造时立即就绪（默认 10），
+     *   Flow 发射后立即覆盖为 ESP 中的真实值
+     *
+     * **为什么用 viewModelScope.launch 而非 collect 顶层？**
+     * - collect 顶层会让 init 块挂起，违反 init 块的"非挂起"约束
+     * - viewModelScope.launch 异步启动收集，ViewModel 销毁时自动取消
+     */
+    init {
+        viewModelScope.launch {
+            corgiPreferences.maxImagesPerLine.collect { value ->
+                _maxImagesPerLine.value = value
+            }
+        }
+    }
+
     fun setTitle(title: String) {
         _title.value = title
     }
@@ -1161,26 +1209,17 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
-     * 每行（父待办或子待办）允许的最大图片附件数量
-     *
-     * v2026-07-25 新增：限制单行图片数量，避免分享卡片图片行过高、
-     * 编辑页附件管理体验下降、内存占用过大等问题。
-     */
-    companion object {
-        const val MAX_IMAGES_PER_LINE = 3
-    }
-
-    /**
-     * 向当前聚焦行添加图片附件（v2026-07-22 新增）
+     * 向当前聚焦行添加图片附件（v2026-07-22 新增，v2026-07-27 改造）
      *
      * 替代原 UI 层 addImageToFocusedLine 内部直接 todoLines = ... 的写法。
      * 内部会触发快照推入。
      *
-     * v2026-07-25 新增配额限制：单行图片数不超过 [MAX_IMAGES_PER_LINE]，
+     * v2026-07-27 改造：配额上限从硬编码 `MAX_IMAGES_PER_LINE = 3` 改为从
+     * [_maxImagesPerLine] 动态读取（用户在设置中自定义，-1=无限）。
      * 超出时返回 false 由 UI 层提示用户（不抛异常，避免中断批量选图流程）。
      *
      * @param imagePath 图片的本地存储路径
-     * @return true 添加成功；false 当前行已满（≥ MAX_IMAGES_PER_LINE），未添加
+     * @return true 添加成功；false 当前行已满（>= 上限），未添加
      */
     fun addImageToFocusedLine(imagePath: String): Boolean {
         val current = _todoLines.value
@@ -1188,11 +1227,42 @@ class TodoEditViewModel @Inject constructor(
         if (idx !in current.indices) return false
         val newList = current.toMutableList()
         val oldLine = newList[idx]
-        // 配额检查：当前行图片数已达上限时拒绝添加
-        if (oldLine.imagePaths.size >= MAX_IMAGES_PER_LINE) return false
+        // 配额检查：-1 表示无限，>0 时为具体上限
+        val maxImages = _maxImagesPerLine.value
+        if (maxImages != -1 && oldLine.imagePaths.size >= maxImages) return false
         newList[idx] = oldLine.copy(imagePaths = oldLine.imagePaths + imagePath)
         setTodoLines(newList)
         return true
+    }
+
+    /**
+     * 应用图片重排到指定行（v2026-07-27 新增）
+     *
+     * 用途：UI 层使用 Reorderable 库完成行内图片拖拽后，
+     *      调用本方法把排序后的新路径列表写入对应行。
+     *
+     * 与 P5 Reorderable 库配套使用：
+     * - UI 层 `LazyRow` + `rememberReorderableLazyListState` 检测拖拽结束
+     * - 调用 `onMove(from, to)` 计算新顺序后，回调本方法
+     * - ViewModel 内部通过 [setTodoLines] 推入撤销快照，UI 可用 Ctrl+Z 撤销重排
+     *
+     * 设计决策：
+     * - 行级重排：仅替换指定行的 imagePaths，不影响其他行
+     *   （跨行拖拽由 CrossLineDragManager 在 P5 末段处理或后续迭代支持）
+     * - 不做去重：newPaths 应该与原 imagePaths 元素完全相同，仅顺序不同
+     *   保留 UI 层传入顺序，避免 ViewModel 二次过滤与 UI 期望不一致
+     *
+     * @param lineIndex 目标行索引（越界时直接 return，不抛异常）
+     * @param newPaths 排序后的图片路径列表（元素集合应与原 imagePaths 相同，仅顺序不同）
+     */
+    fun applyImageReorder(lineIndex: Int, newPaths: List<String>) {
+        val current = _todoLines.value
+        if (lineIndex !in current.indices) return
+        val oldLine = current[lineIndex]
+        if (oldLine.imagePaths == newPaths) return  // 无变化，跳过避免空快照
+        val newList = current.toMutableList()
+        newList[lineIndex] = oldLine.copy(imagePaths = newPaths)
+        setTodoLines(newList)
     }
 
     /**

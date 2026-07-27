@@ -30,12 +30,19 @@ import androidx.compose.ui.unit.sp
  *
  * @param icon emoji 图标（如 "🔔"）
  * @param title 标题
+ * @param value 右侧显示的当前值（可选，如 "10 张" / "无限"）
+ *   - v2026-07-27 新增：用于"单行图片上限"等带配置项的入口
+ *   - 视觉位置：标题右侧、"›"箭头左侧
+ *   - 颜色：onSurfaceVariant（次要文本色），与右箭头一致
+ *   - 设为 null 时不显示该位置
  * @param onClick 点击回调
  */
 data class SettingItem(
     val icon: String,
     val title: String,
-    val onClick: () -> Unit
+    val onClick: () -> Unit,
+    /** v2026-07-27 新增：右侧当前值（如 "5 张"），null=不显示 */
+    val value: String? = null
 )
 
 /**
@@ -127,6 +134,17 @@ private fun SettingRow(item: SettingItem) {
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
         )
+        // v2026-07-27 新增：右侧 value 显示（仅在 item.value 非空时渲染）
+        // 视觉位置：标题与 › 箭头之间，onSurfaceVariant 色（次要文本）
+        // 用途：如"单行图片上限: 10 张"，让用户在不点击的情况下看到当前配置
+        if (item.value != null) {
+            Text(
+                text = item.value,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
         Text(
             text = "›",
             fontSize = 14.sp,

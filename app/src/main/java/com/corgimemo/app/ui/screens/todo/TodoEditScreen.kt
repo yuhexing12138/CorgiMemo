@@ -201,6 +201,15 @@ fun TodoEditScreen(
     val groupCategoryIds by viewModel.groupCategoryIds.collectAsState()
 
     /**
+     * 单行图片附件上限（v2026-07-27 改造：从硬编码常量改为用户可配置）
+     *
+     * - 来源：viewModel.maxImagesPerLine（订阅 CorgiPreferences ESP）
+     * - 默认 10，可在设置页选择 5/10/20/无限（-1）
+     * - -1 表示无限：UI 层不再触发"已达上限"提示
+     */
+    val maxImagesPerLine by viewModel.maxImagesPerLine.collectAsState()
+
+    /**
      * 派生：各 groupId 对应的分类名称映射
      * key = groupId, value = categoryName（null = 未设置/未分类）
      */
@@ -403,8 +412,8 @@ fun TodoEditScreen(
      *
      * 委托给 viewModel.addImageToFocusedLine 内部处理（更新 _todoLines + 推快照）。
      *
-     * v2026-07-25 新增配额限制：单行最多 [TodoEditViewModel.MAX_IMAGES_PER_LINE] 张，
-     * 超出时返回 false 由调用方提示用户。
+     * v2026-07-27 改造：配额上限改为从 viewModel.maxImagesPerLine 动态读取
+     * （用户在设置中自定义，-1=无限）。超出时返回 false 由调用方提示用户。
      *
      * @param imagePath 图片的本地存储路径
      * @return true 添加成功；false 当前行已满，未添加
@@ -463,10 +472,10 @@ fun TodoEditScreen(
                     savedPath?.let { path ->
                         viewModel.addImagePath(path)
                         // 将图片添加到当前聚焦行，而非全局 contentBlocks
-                        // v2026-07-25 配额检查：单行最多 MAX_IMAGES_PER_LINE 张
+                        // v2026-07-27 改造：配额从 maxImagesPerLine StateFlow 读取（用户可配）
                         val added = addImageToFocusedLine(path)
-                        if (!added) {
-                            snackbarHostState.showSnackbar("每行最多 ${TodoEditViewModel.MAX_IMAGES_PER_LINE} 张图片")
+                        if (!added && maxImagesPerLine != -1) {
+                            snackbarHostState.showSnackbar("每行最多 $maxImagesPerLine 张图片")
                         }
                     }
                 }
@@ -478,8 +487,9 @@ fun TodoEditScreen(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         coroutineScope.launch {
-            // v2026-07-25 配额检查：单行最多 MAX_IMAGES_PER_LINE 张
+            // v2026-07-27 改造：配额从 maxImagesPerLine StateFlow 读取（用户可配）
             // 多选时一旦当前行满了就停止后续添加，并通过 snackbar 提示用户
+            // maxImagesPerLine == -1 时表示无限，永远不会超限
             var skippedCount = 0
             for (i in uris.indices) {
                 val uri = uris[i]
@@ -495,8 +505,8 @@ fun TodoEditScreen(
                     }
                 }
             }
-            if (skippedCount > 0) {
-                snackbarHostState.showSnackbar("每行最多 ${TodoEditViewModel.MAX_IMAGES_PER_LINE} 张图片，已跳过 $skippedCount 张")
+            if (skippedCount > 0 && maxImagesPerLine != -1) {
+                snackbarHostState.showSnackbar("每行最多 $maxImagesPerLine 张图片，已跳过 $skippedCount 张")
             }
         }
     }

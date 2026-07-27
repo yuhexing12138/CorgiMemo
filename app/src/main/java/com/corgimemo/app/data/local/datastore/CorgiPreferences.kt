@@ -168,6 +168,8 @@ class CorgiPreferences(
         const val SHOW_PENDING = "show_pending"
         /** 用户自定义灵感标签（JSON 数组字符串） */
         const val USER_DEFINED_TAGS = "user_defined_tags"
+        /** v2026-07-27：待办编辑页每行图片上限（-1=无限，>0=具体张数，默认 10） */
+        const val MAX_IMAGES_PER_LINE = "max_images_per_line"
     }
 
     // ==================== 数据迁移（DataStore → ESP）====================
@@ -599,6 +601,9 @@ class CorgiPreferences(
     val autoBackupPassword: Flow<String?> = stringFlow(Keys.AUTO_BACKUP_PASSWORD)
     val autoBackupKeepCount: Flow<Int> = intFlow(Keys.AUTO_BACKUP_KEEP_COUNT, 5)
 
+    /** 获取「待办编辑页每行图片上限」的Flow（默认 10，-1 表示无限） */
+    val maxImagesPerLine: Flow<Int> = intFlow(Keys.MAX_IMAGES_PER_LINE, 10)
+
     suspend fun setAutoBackupEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
         esp.edit().putBoolean(Keys.AUTO_BACKUP_ENABLED, enabled).apply()
     }
@@ -617,6 +622,11 @@ class CorgiPreferences(
 
     suspend fun saveAutoBackupKeepCount(count: Int) = withContext(Dispatchers.IO) {
         esp.edit().putInt(Keys.AUTO_BACKUP_KEEP_COUNT, count).apply()
+    }
+
+    /** 保存「待办编辑页每行图片上限」到 ESP（-1=无限，>0=具体张数） */
+    suspend fun saveMaxImagesPerLine(count: Int) = withContext(Dispatchers.IO) {
+        esp.edit().putInt(Keys.MAX_IMAGES_PER_LINE, count).apply()
     }
 
     // ==================== 自动备份频率 ====================
@@ -656,6 +666,9 @@ class CorgiPreferences(
     suspend fun getAutoBackupUri(): String? = esp.getString(Keys.AUTO_BACKUP_URI, null)
 
     suspend fun getAutoBackupKeepCount(): Int = esp.getInt(Keys.AUTO_BACKUP_KEEP_COUNT, 5)
+
+    /** 同步读取「待办编辑页每行图片上限」（-1=无限，>0=具体张数，默认 10） */
+    suspend fun getMaxImagesPerLine(): Int = esp.getInt(Keys.MAX_IMAGES_PER_LINE, 10)
 
     // ==================== 备份历史 ====================
 
