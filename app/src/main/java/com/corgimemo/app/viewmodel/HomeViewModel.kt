@@ -323,7 +323,7 @@ class HomeViewModel @Inject constructor(
      * 状态过滤与分类过滤是**组合关系**（AND），可同时生效。
      */
     val filteredTodos: StateFlow<List<TodoItem>> = run {
-        val baseFlow = kotlinx.coroutines.flow.combine(
+        val baseFlow = combine(
             pinnedPendingTodos,
             pendingTodos,
             pinnedCompletedTodos,
@@ -331,10 +331,21 @@ class HomeViewModel @Inject constructor(
         ) { pinnedPending, pending, pinnedCompleted, completed ->
             pinnedPending + pending + pinnedCompleted + completed
         }
-        // ★ v2026-07-27 新增 _statusFilter 到 combine 列表
-        kotlinx.coroutines.flow.combine(
-            baseFlow, _searchQuery, _selectedCategoryId, _showCompleted, _hideCompletedItems, _statusFilter
-        ) { baseList, query, categoryId, showCompleted, hideCompletedItems, statusFilter ->
+        // ★ v2026-07-27 修复：6 个不同类型 Flow 触发 combine 的 vararg 重载（要求所有 Flow 同类型），
+        //   导致 lambda 类型推断为 Array<Any?>、后续 it.xxx 全部失效。
+        //   拆成 (3) + (4) 嵌套 combine：内层合并基础数据，外层合并控制参数。
+        val dataPart: kotlinx.coroutines.flow.Flow<Triple<List<TodoItem>, String, Long?>> =
+            combine(
+                baseFlow, _searchQuery, _selectedCategoryId
+            ) { base, query, catId -> Triple(base, query, catId) }
+
+        // ★ v2026-07-27 新增 _statusFilter 到 combine 列表（外层 4 个 Flow）
+        combine(
+            dataPart, _showCompleted, _hideCompletedItems, _statusFilter
+        ) { data, showCompleted, hideCompletedItems, statusFilter ->
+            val baseList = data.first
+            val query = data.second
+            val categoryId = data.third
             // 先按展开状态过滤
             var result = if (hideCompletedItems || !showCompleted) {
                 baseList.filter { it.status == 0 }
@@ -377,7 +388,7 @@ class HomeViewModel @Inject constructor(
             result
         }.stateIn(
             scope = viewModelScope,
-            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
     }
