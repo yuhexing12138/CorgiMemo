@@ -2,6 +2,7 @@ package com.corgimemo.app.data.model
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -13,10 +14,14 @@ import androidx.room.PrimaryKey
  * @property type 分类类型：0=学习，1=工作，2=生活，3=自定义
  * @property isDefault 是否为默认分类
  * @property sortOrder 拖拽排序位置（v2026-07-27 新增，GROUP Tab 拖拽持久化用）
- *   - @ColumnInfo(defaultValue = "0") 与 MIGRATION_8_9 SQL DEFAULT 0 一致
+ *   - @ColumnInfo(defaultValue = "0") 与 MIGRATION_51_52 SQL DEFAULT 0 一致
+ *   - sortOrder 上加 @Index 索引，与 MIGRATION_51_52 创建的 index_categories_sortOrder 一致
  *   - 见 .trae/rules/entity与migration同步检查.md
  */
-@Entity(tableName = "categories")
+@Entity(
+    tableName = "categories",
+    indices = [Index(value = ["sortOrder"])]
+)
 data class Category(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,

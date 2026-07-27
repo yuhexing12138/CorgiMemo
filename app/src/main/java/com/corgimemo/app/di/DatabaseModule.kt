@@ -12,6 +12,7 @@ import com.corgimemo.app.data.local.db.DeletedInspirationDao
 import com.corgimemo.app.data.local.db.DeletedSpecialDateDao
 import com.corgimemo.app.data.local.db.InspirationDao
 import com.corgimemo.app.data.local.db.InspirationRelationDao
+import com.corgimemo.app.data.local.db.InspirationTagOrderDao
 import com.corgimemo.app.data.local.db.SpecialDateDao
 import com.corgimemo.app.data.local.db.CustomDateTypeDao
 import com.corgimemo.app.data.local.db.SpecialDateRelationDao
@@ -163,5 +164,12 @@ object DatabaseModule {
     @Singleton
     fun provideProfileNavItemDao(database: CorgiMemoDatabase): ProfileNavItemDao {
         return database.profileNavItemDao()
+    }
+
+    /** 灵感标签拖拽顺序 DAO（v2026-07-27 新增，P8 Phase 4 实施） */
+    @Provides
+    @Singleton
+    fun provideInspirationTagOrderDao(database: CorgiMemoDatabase): InspirationTagOrderDao {
+        return database.inspirationTagOrderDao()
     }
 }

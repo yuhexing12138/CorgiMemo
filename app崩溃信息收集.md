@@ -1,32 +1,129 @@
-> Task :app:compileDebugKotlin
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/CheckboxEditText.kt:71:30 Unresolved reference 'draggableHandle'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/VoiceAttachmentItem.kt:92:40 Unresolved reference 'dp'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:212:54 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:212:71 Argument type mismatch: actual type is '() -> Unit', but 'String?' was expected.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:230:54 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:230:70 Argument type mismatch: actual type is '() -> Unit', but 'String?' was expected.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:233:54 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:233:70 Argument type mismatch: actual type is '() -> Unit', but 'String?' was expected.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:238:54 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:238:68 Argument type mismatch: actual type is '() -> Unit', but 'String?' was expected.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:246:33 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:247:31 Too many arguments for 'constructor(icon: String, title: String, onClick: () -> Unit, value: String? = ...): SettingItem'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:261:54 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:261:71 Argument type mismatch: actual type is '() -> Unit', but 'String?' was expected.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:264:54 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:264:69 Argument type mismatch: actual type is '() -> Unit', but 'String?' was expected.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:267:54 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:267:72 Argument type mismatch: actual type is '() -> Unit', but 'String?' was expected.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:270:54 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:270:70 Argument type mismatch: actual type is '() -> Unit', but 'String?' was expected.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:273:54 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:273:70 Argument type mismatch: actual type is '() -> Unit', but 'String?' was expected.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:287:54 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:287:70 Argument type mismatch: actual type is '() -> Job', but 'String?' was expected.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:295:54 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:295:70 Argument type mismatch: actual type is '() -> Job', but 'String?' was expected.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:303:54 No value passed for parameter 'onClick'.
-e: file:///C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/settings/SettingsScreen.kt:303:71 Argument type mismatch: actual type is '() -> Job', but 'String?' was expected.
-
-> Task :app:compileDebugKotlin FAILED
-
+java.lang.IllegalStateException: Migration didn't properly handle: categories(com.corgimemo.app.data.model.Category).
+ Expected:
+TableInfo {
+    name = 'categories',
+    columns = {    
+        Column {
+           name = 'id',
+           type = 'INTEGER',
+           affinity = '3',
+           notNull = 'true',
+           primaryKeyPosition = '1',
+           defaultValue = 'undefined'
+        },
+        Column {
+           name = 'isDefault',
+           type = 'INTEGER',
+           affinity = '3',
+           notNull = 'true',
+           primaryKeyPosition = '0',
+           defaultValue = 'undefined'
+        },
+        Column {
+           name = 'name',
+           type = 'TEXT',
+           affinity = '2',
+           notNull = 'true',
+           primaryKeyPosition = '0',
+           defaultValue = 'undefined'
+        },
+        Column {
+           name = 'sortOrder',
+           type = 'INTEGER',
+           affinity = '3',
+           notNull = 'true',
+           primaryKeyPosition = '0',
+           defaultValue = '0'
+        },
+        Column {
+           name = 'type',
+           type = 'INTEGER',
+           affinity = '3',
+           notNull = 'true',
+           primaryKeyPosition = '0',
+           defaultValue = 'undefined'
+        }
+    },
+    foreignKeys = { }
+    indices = { }
+}
+ Found:
+TableInfo {
+    name = 'categories',
+    columns = {    
+        Column {
+           name = 'id',
+           type = 'INTEGER',
+           affinity = '3',
+           notNull = 'true',
+           primaryKeyPosition = '1',
+           defaultValue = 'undefined'
+        },
+        Column {
+           name = 'isDefault',
+           type = 'INTEGER',
+           affinity = '3',
+           notNull = 'true',
+           primaryKeyPosition = '0',
+           defaultValue = 'undefined'
+        },
+        Column {
+           name = 'name',
+           type = 'TEXT',
+           affinity = '2',
+           notNull = 'true',
+           primaryKeyPosition = '0',
+           defaultValue = 'undefined'
+        },
+        Column {
+           name = 'sortOrder',
+           type = 'INTEGER',
+           affinity = '3',
+           notNull = 'true',
+           primaryKeyPosition = '0',
+           defaultValue = '0'
+        },
+        Column {
+           name = 'type',
+           type = 'INTEGER',
+           affinity = '3',
+           notNull = 'true',
+           primaryKeyPosition = '0',
+           defaultValue = 'undefined'
+        }
+    },
+    foreignKeys = { }
+    indices = {    
+        Index {
+           name = 'index_categories_sortOrder',
+           unique = 'false',
+           columns = {    sortOrder    },
+           orders = {    ASC     }
+        }
+    },
+}
+	at androidx.room.BaseRoomConnectionManager.onMigrate(RoomConnectionManager.kt:215)
+	at androidx.room.RoomConnectionManager$SupportOpenHelperCallback.onUpgrade(RoomConnectionManager.android.kt:165)
+	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper$OpenHelper.onUpgrade(FrameworkSQLiteOpenHelper.android.kt:245)
+	at android.database.sqlite.SQLiteOpenHelper.getDatabaseLocked(SQLiteOpenHelper.java:437)
+	at android.database.sqlite.SQLiteOpenHelper.getWritableDatabase(SQLiteOpenHelper.java:336)
+	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper$OpenHelper.getWritableOrReadableDatabase(FrameworkSQLiteOpenHelper.android.kt:224)
+	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper$OpenHelper.innerGetDatabase(FrameworkSQLiteOpenHelper.android.kt:180)
+	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper$OpenHelper.getSupportDatabase(FrameworkSQLiteOpenHelper.android.kt:141)
+	at androidx.sqlite.db.framework.FrameworkSQLiteOpenHelper.getWritableDatabase(FrameworkSQLiteOpenHelper.android.kt:96)
+	at androidx.sqlite.driver.SupportSQLiteDriver.open(SupportSQLiteDriver.android.kt:57)
+	at androidx.sqlite.driver.SupportSQLiteDriver.open(SupportSQLiteDriver.android.kt:33)
+	at androidx.room.coroutines.PassthroughConnectionPool.connection$lambda$0(PassthroughConnectionPool.kt:47)
+	at androidx.room.coroutines.PassthroughConnectionPool$$ExternalSyntheticLambda0.invoke(D8$$SyntheticClass:0)
+	at kotlin.SynchronizedLazyImpl.getValue(LazyJVM.kt:86)
+	at androidx.room.coroutines.PassthroughConnectionPool.useConnection(PassthroughConnectionPool.kt:58)
+	at androidx.room.RoomConnectionManager.useConnection(RoomConnectionManager.android.kt:138)
+	at androidx.room.RoomDatabase.useConnection(RoomDatabase.android.kt:619)
+	at androidx.room.TriggerBasedInvalidationTracker.syncTriggers$room_runtime(InvalidationTracker.kt:306)
+	at androidx.room.TriggerBasedInvalidationTracker$createFlow$1$1.invokeSuspend(InvalidationTracker.kt:239)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1302)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:677)
+	at java.lang.Thread.run(Thread.java:1119)
+	Suppressed: kotlinx.coroutines.internal.DiagnosticCoroutineContextException: [StandaloneCoroutine{Cancelling}@619e712, Dispatchers.Main.immediate]

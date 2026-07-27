@@ -116,6 +116,9 @@ fun AppDrawerContent(
     onReorderDateType: (List<CustomDateType>) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onUserAreaClick: () -> Unit = {},
+    // v2026-07-27 P8 Phase 5 新增：个人快速导航项 + 拖拽回调（透传至 AppDrawerContentImpl）
+    navItems: List<ProfileNavItem> = emptyList(),
+    onReorderNav: (List<ProfileNavItem>) -> Unit = {},
     // ===== v2026-07-27 新增：状态管理 Tab 切换（9 个参数） =====
     currentDrawerSection: DrawerSection = DrawerSection.GROUP,
     onDrawerSectionChange: (DrawerSection) -> Unit = {},

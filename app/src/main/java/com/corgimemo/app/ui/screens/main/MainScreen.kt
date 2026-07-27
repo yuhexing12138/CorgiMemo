@@ -91,6 +91,7 @@ import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.InspirationViewModel
+import com.corgimemo.app.viewmodel.ProfileViewModel
 import com.corgimemo.app.viewmodel.SpecialDateViewModel
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationCalendarDialog
 import com.corgimemo.app.ui.screens.home.components.TodoCalendarDialog
@@ -247,6 +248,8 @@ fun MainScreen(
      * 与待办页 homeViewModel、灵感页 inspirationViewModel 同构。
      */
     val specialDateViewModel: SpecialDateViewModel = hiltViewModel()
+    // v2026-07-27 新增：P8 Phase 5 PROFILE Tab 拖拽 ViewModel
+    val profileViewModel: ProfileViewModel = hiltViewModel()
     /** 灵感页标签相关状态（供侧边栏使用） */
     val inspirationTags by inspirationViewModel.savedTags.collectAsState()
     /** 灵感标签按用户拖拽顺序排序（v2026-07-27 P8 Phase 4 新增，侧边栏渲染用） */
@@ -312,6 +315,9 @@ fun MainScreen(
     val overdueCount by homeViewModel.overdueCount.collectAsState()
     /** 重复提醒待办数（"重复提醒"项显示） */
     val repeatReminderCount by homeViewModel.repeatReminderCount.collectAsState()
+
+    // v2026-07-27 新增：P8 Phase 5 PROFILE Tab 快速导航项（按 sortOrder 升序）
+    val navItems by profileViewModel.navItems.collectAsState()
 
     /**
      * 侧滑栏分区切换状态（v2026-07-27 新增）
@@ -732,7 +738,7 @@ fun MainScreen(
                                         filteredTodos.firstOrNull()?.let { homeViewModel.enterBatchMode(it.id) }
                                     },
                                     onDuplicateTodoClick = {
-                                        coroutineScope.launch { snackbarHostState.showSnackbar("功能开发中...") }
+                                        homeViewModel.setShowDuplicateDialog(true)
                                     },
                                     onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("todo")) }
                                 )
