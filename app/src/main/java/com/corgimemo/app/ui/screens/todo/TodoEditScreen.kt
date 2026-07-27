@@ -387,9 +387,7 @@ fun TodoEditScreen(
     //   val focusedLineIndex by viewModel.focusedLineIndex.collectAsState()
     // 修改入口必须通过 viewModel.setTodoLines / viewModel.setFocusedLineIndex 等命令式 API。
 
-    // 🆕 v2026-07-27 P6 改造：删除 crossLineDragManager + rowBoundsMap
-    // 原 384 行 CrossLineDragManager + 4 个旧拖拽回调已全部由 Reorderable 库接管。
-    // 图片 + 语音都迁至 Reorderable 库后，crossLineDragManager 不再需要。
+    // 🆕 v2026-07-27 P5+P6 改造：图片+语音附件拖拽已全部迁至 Reorderable 库接管（删除 CrossLineDragManager 384 行）
 
     /**
      * 向当前聚焦行添加图片附件（v2026-07-22 改为 viewModel API）
@@ -1445,11 +1443,6 @@ fun TodoEditScreen(
                 onVoiceReorder = { lineIndex, newOrder ->
                     viewModel.applyVoiceReorder(lineIndex, newOrder)
                 },
-                // 🆕 v2026-07-27 P6 改造：删除 dragState / 3 个旧拖拽回调
-                // 原通过 crossLineDragManager 桥接的 4 个参数已全部由 Reorderable 库接管：
-                // - dragState：库内置 isDragging 状态
-                // - onAttachmentDragStart/Update/End：库内部手势处理
-                // 注释占位保持代码结构清晰，实际无业务逻辑。
                 // 🆕 关联功能参数（v2026-07-21 新增）
                 groupRelations = groupRelations,
                 relationTitles = relationTitles,

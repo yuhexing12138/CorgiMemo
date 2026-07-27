@@ -6,8 +6,6 @@ import com.corgimemo.app.data.model.TodoItem
  * Zone 拖拽结果
  *
  * 释放时由 [DragZoneStateMachine.endDrag] 输出，供 ViewModel 一次性持久化。
- *
- * 注：命名为 ZoneDragResult 以避免与 [CrossLineDragManager] 中的 DragResult 冲突。
  */
 data class ZoneDragResult(
     val originalZone: TodoZone,

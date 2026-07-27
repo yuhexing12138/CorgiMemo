@@ -1247,7 +1247,7 @@ class TodoEditViewModel @Inject constructor(
      *
      * 设计决策：
      * - 行级重排：仅替换指定行的 imagePaths，不影响其他行
-     *   （跨行拖拽由 CrossLineDragManager 在 P5 末段处理或后续迭代支持）
+     *   （跨行拖拽不在本期范围，由 Reorderable 库 LazyListItemInfo 自动处理行内定位）
      * - 不做去重：newPaths 应该与原 imagePaths 元素完全相同，仅顺序不同
      *   保留 UI 层传入顺序，避免 ViewModel 二次过滤与 UI 期望不一致
      *
@@ -1592,16 +1592,6 @@ class TodoEditViewModel @Inject constructor(
         newList[lineIndex] = merged
         newList.removeAt(lineIndex + 1)
         setTodoLines(newList)
-    }
-
-    /**
-     * 应用跨行拖拽结果（v2026-07-22 新增）
-     *
-     * 用户在行内/跨行拖拽图片或语音附件结束时调用。
-     * 由 UI 层的 crossLineDragManager.applyDragResult() 产生结果后传入。
-     */
-    fun applyDragResult(newLines: List<TodoLine>) {
-        setTodoLines(newLines)
     }
 
     /**
