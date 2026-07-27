@@ -67,6 +67,7 @@ import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.model.TodoLine
 import com.corgimemo.app.ui.util.formatReminderDisplay
 import com.corgimemo.app.util.VoicePlayer
+import sh.calvin.reorderable.DragGestureDetector
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -1413,9 +1414,10 @@ private fun CheckboxEditRow(
                                     isDragging = isDragging,
                                     onClick = { onImageClick(it) },
                                     onDelete = { onDeleteImage(it) },
-                                    // 🆕 v2026-07-27 整张图片可拖（Modifier.draggableHandle 扩展函数）
-                                    // 默认 DragGestureDetector.LongPress 长按触发，无需额外配置
-                                    // 库内部会自动处理：与外层 Reorderable 的手势消费、长按 → 拖拽的转换
+                                    // 🆕 v2026-07-27 P5 改造：图片拖拽使用 LongPress 模式
+                                    // 关键修正：默认 DragGestureDetector.Press 是"按下立即触发拖拽"，
+                                    // 会与 LazyRow 水平滚动手势冲突 → 用户滑动查看图片时会误触拖拽。
+                                    // 改用 LongPress 后：短按 + 拖 = 滚动查看图片；长按 + 拖 = 触发拖拽重排，与系统行为一致。
                                     modifier = Modifier.draggableHandle(
                                         onDragStarted = {
                                             HapticFeedbackManager.performHapticFeedback(
@@ -1424,7 +1426,8 @@ private fun CheckboxEditRow(
                                                 enabled = true
                                             )
                                         },
-                                        onDragStopped = {}
+                                        onDragStopped = {},
+                                        dragGestureDetector = DragGestureDetector.LongPress
                                     )
                                 )
                             }
