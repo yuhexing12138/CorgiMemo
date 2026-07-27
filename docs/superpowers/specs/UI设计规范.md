@@ -379,34 +379,58 @@ val nodeTopY = (nodeCenterY - nodeRadius).coerceAtLeast(0.dp)
 | **月 → 日间距** | **7dp** | — | 水平间距 |
 | **日 → 箭头间距** | 2dp | — | 水平间距 |
 
-##### 布局结构
+##### 布局结构（v1.19 重构：自定义 Layout）
+
+> **v1.19 关键变更**：用自定义 `Layout` + `placeRelative` 替代 `Row(Alignment.Bottom)`，精确控制每个子项的 placement y，实现三个 glyph 底完美对齐到 Box 底。
 
 ```kotlin
-Row(
-    verticalAlignment = Alignment.Bottom,           // 子元素底部对齐
-    modifier = Modifier
-        .clickable { showInspirationCalendar = true }
-    // 不使用 fillMaxHeight()，高度自适应内容，由外层 Box 居中
-) {
-    Text("07月", fontSize = 16.sp, lineHeight = 16.sp)            // 月份（v1.17: lineHeight 消除行间距）
-    Spacer(modifier = Modifier.width(7.dp))                      // 月 → 日 7dp
-    Text(
-        "27", fontSize = 25.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(top = 3.dp)                  // v1.18 修正: padding(top) 让 glyph 下移贴底
-    )                                                            // 大号日期
-    Spacer(modifier = Modifier.width(2.dp))                      // 日 → 箭头 2dp
-    Text("▼", fontSize = 8.sp, lineHeight = 8.sp)                // 下拉箭头（v1.17: lineHeight 消除行间距）
+// v1.19 自定义 Layout — 月/日/箭头 glyph 底完美对齐
+// 详见 DatePickerRow.kt 注释（共 149 行）
+Layout(
+    modifier = modifier.clickable(onClick = onClick),
+    content = {
+        // 0: 月份（16sp 中文方块字，glyph 占满 em-box）
+        Text(text = monthText, fontSize = 16.sp, lineHeight = 16.sp, color = Color(0xFF666666))
+        // 1: 大号日期（25sp Bold 数字，glyph 底 = baseline）
+        Text(text = dayText, fontSize = 25.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold,
+             color = MaterialTheme.colorScheme.onSurface)
+        // 2: 箭头（8sp 几何符号，glyph 占满 em-box）
+        Text(text = arrowText, fontSize = 8.sp, lineHeight = 8.sp, color = Color(0xFF666666))
+    }
+) { measurables, constraints ->
+    val monthP = measurables[0].measure(constraints)
+    val dayP = measurables[1].measure(constraints)
+    val arrowP = measurables[2].measure(constraints)
+
+    val monthW = monthP.width; val dayW = dayP.width; val arrowW = arrowP.width
+    val gap1Px = 7.dp.toPx(); val gap2Px = 2.dp.toPx()
+    val totalW = monthW + gap1Px + dayW + gap2Px + arrowW
+
+    // Box 高 = 30sp（"27"子项高 25sp + 数字 glyph 距 em-box 底 5sp 留白）
+    val boxHeightPx = 30.sp.toPx()
+
+    // 精确 placement：让三个 glyph 底都 = boxH
+    val monthY = (boxHeightPx - monthP.height).toInt()                  // 月份 glyph 底 = boxH
+    val arrowY = (boxHeightPx - arrowP.height).toInt()                  // 箭头 glyph 底 = boxH
+    val dayFirstBaseline = dayP[FirstBaseline]                          // 数字 baseline 距 layout 顶
+    val dayY = (boxHeightPx - dayFirstBaseline).toInt()                 // 日期 glyph 底 = boxH
+
+    layout(totalW.toInt(), boxHeightPx.toInt()) {
+        monthP.placeRelative(0, monthY)
+        dayP.placeRelative((monthW + gap1Px).toInt(), dayY)
+        arrowP.placeRelative((monthW + gap1Px + dayW + gap2Px).toInt(), arrowY)
+    }
 }
 ```
 
-> **v1.18 关键教训**：`Modifier.padding(bottom = X)` 不会让 glyph 底向下移动，只会扩大 layout 盒的下边界。`padding(top = X)` 才是让 glyph 整体下移的正确方向。详见 [DatePickerRow.kt](../../app/src/main/java/com/corgimemo/app/ui/components/calendar/DatePickerRow.kt) 注释。
+> **v1.18 关键教训（已废弃）**：`Modifier.padding(top = X)` 实测发现**不改变** glyph 距 layout 底的距离（glyph 在 layout 内的位置由字体 metrics 决定）。故 v1.19 改用自定义 `Layout` + `placeRelative`。详见 [DatePickerRow.kt](../../app/src/main/java/com/corgimemo/app/ui/components/calendar/DatePickerRow.kt) 注释。
 
 ##### 交互与对齐
 
 - **可点击**：整行 `Modifier.clickable` 触发日历弹窗 `showInspirationCalendar = true`
-- **高度自适应**：不使用 `fillMaxHeight()`，Row 高度由最高的"09"（25sp）撑高
+- **高度自适应**：自定义 `Layout` 显式指定 `boxHeightPx = 30.sp`（v1.17/18 用 Row 高度由 25sp "日" 撑高；v1.19 改为显式 30sp）
 - **居中**：由 `EnhancedTopBar` 外层 `Box(contentAlignment = Alignment.Center)` 在导航栏中居中
-- **底部对齐**：`verticalAlignment = Alignment.Bottom` 让"07月"（16sp）、"▼"（8sp）与"09"（25sp）底部对齐
+- **底部对齐（v1.19）**：通过 `placeRelative` 精确把三个子项的 glyph 底对齐到 `boxH = 30sp`，不是依赖 `Row(verticalAlignment = Alignment.Bottom)` 对齐 layout box 底
 
 ##### 显示条件
 
@@ -444,6 +468,7 @@ Row(
 | 2026-07-27 | v1.16 | **导航栏日期顺序调整为"月 → 日"**：将大号日期（25sp Bold）与月份（16sp）交换位置，月份移到左侧、天数移到右侧。间距规则不变（月→日 7dp、日→箭头 2dp）。待办/灵感/日期三页同步生效 |
 | 2026-07-27 | v1.17 | **导航栏日期底部精确对齐**：三个 Text 元素（月/日/箭头）都设置 `lineHeight = fontSize` 消除默认行间距。Compose `Row(Alignment.Bottom)` 对齐的是子项 layout box 底部而非 glyph 底部，默认 lineHeight ≈ fontSize × 1.2-1.4 含 ~2-3sp 上下行间距，25sp Bold "09" 距盒底 ~7sp 而 16sp "月" 距盒底 ~2sp，肉眼可见底部偏差。`lineHeight = fontSize` 后留白归零，视觉底部精确对齐 |
 | 2026-07-27 | v1.18 | **导航栏日期 glyph 底精确对齐（数字 vs 中文/几何符号）**：v1.17 消除行间距后，数字"27"（25sp Bold 不全高）距 em-box 底仍 ~3-4sp、中文"月"（16sp 方块字）距底 ~1sp、几何"▼"（8sp）距底 ~1sp，导致"月"和"▼"底部略低于"27"底部。给大号日期 Text 加 `Modifier.padding(top = 3.dp)` 让"27"内容整体下移 3dp，glyph 底贴 layout 底（= Row 底），与"月"/"▼"精确对齐。**注意 padding 方向**：`padding(bottom)` 错误（只扩展 layout 盒底边界、glyph 位置不变），必须用 `padding(top)` 才行 |
+| 2026-07-27 | v1.19 | **导航栏日期 glyph 底完美对齐（自定义 Layout 方案）**：v1.18 `padding(top)` 实测发现不改变 glyph 距 layout 底的距离（glyph 在 layout 内的位置由字体 metrics 决定）。改用自定义 `Layout` + `placeRelative` 精确控制每个子项的 placement y。Box 高 = 30sp（"27"子项高 25sp + 数字 glyph 距 em-box 底 5sp 留白），三个 glyph 底都精确等于 boxH。月份/箭头（glyph 占满 em-box）→ y = boxH - 子项高；日期（数字 glyph 底 = baseline）→ y = boxH - FirstBaseline（动态测量，避免硬编码）。导航栏比 v1.17/18 高 5sp |
 
 ### 12.1.9 Snackbar 提示规范
 
