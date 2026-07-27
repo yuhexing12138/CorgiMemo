@@ -81,8 +81,12 @@ internal fun DrawerSectionTab(
  * ```
  * [文字]  ← 16sp，Bold/Primary 或 Normal/Black
  *   6dp 间距
- * [横线]  ← 3dp 高度，激活态显示 Primary 色，未激活态透明
+ * [横线]  ← 3dp 高度，固定 56dp 宽，激活态显示 Primary 色，未激活态透明
  * ```
+ *
+ * **v2026-07-27 修复**：原实现用 `Box.fillMaxWidth()` 在 wrap content Column 内
+ * 触发测量异常（`Constraints.Infinity`），导致整个 Tab 切换器不渲染。
+ * 改为固定宽度 56dp（4 个汉字 ≈ 56dp）+ 简单 Box + Column 结构。
  *
  * @param text 标签文字（"分组管理" / "状态管理"）
  * @param isActive 是否处于激活态
@@ -95,7 +99,7 @@ private fun DrawerSectionLabel(
     onClick: () -> Unit
 ) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
+        horizontalAlignment = Alignment.Start,
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
@@ -111,10 +115,10 @@ private fun DrawerSectionLabel(
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // 激活态横线（未激活态用 Color.Transparent 占位，避免布局抖动）
+        // 激活态横线（固定宽度 56dp，避免 fillMaxWidth 在 wrap content 容器内的异常）
         Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .width(56.dp)
                 .height(3.dp)
                 .background(
                     color = if (isActive) UiColors.Primary else Color.Transparent
