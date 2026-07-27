@@ -18,11 +18,13 @@ import java.util.Calendar
 /**
  * 导航栏中间的日期选择行组件
  *
- * 布局：[大号日期 25sp Bold] [7dp间距] [月份 16sp] [2dp间距] [箭头 8sp]
+ * 布局：[月份 16sp] [7dp间距] [大号日期 25sp Bold] [2dp间距] [箭头 8sp]
  * 点击整个 Row 触发弹窗展开/收起，箭头方向随弹窗状态同步切换。
  *
- * 待办页和灵感页的导航栏日期显示复用此组件，仅传入不同的
+ * 待办页、灵感页、日期页的导航栏日期显示复用此组件，仅传入不同的
  * isExpanded 和 onClick 参数即可。
+ *
+ * v2026-07-27 调整：月份移到左侧、天数移到右侧，月份→天数间距 7dp 保持不变
  *
  * @param isExpanded 日历弹窗是否展开（控制箭头方向：▲ / ▼）
  * @param onClick 点击回调（切换弹窗展开/收起）
@@ -39,22 +41,22 @@ fun DatePickerRow(
         modifier = modifier.clickable(onClick = onClick)
     ) {
         val now = Calendar.getInstance()
-        // 大号日期数字（25sp Bold）
+        // 月份（16sp）— 2026-07-27 起改为左侧显示
+        Text(
+            text = String.format("%02d月", now.get(Calendar.MONTH) + 1),
+            fontSize = 16.sp,
+            color = Color(0xFF666666)
+        )
+        // 月 → 日 水平间距 7dp
+        Spacer(modifier = Modifier.width(7.dp))
+        // 大号日期数字（25sp Bold）— 2026-07-27 起改为右侧显示
         Text(
             text = String.format("%02d", now.get(Calendar.DAY_OF_MONTH)),
             fontSize = 25.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
-        // 日 → 月 水平间距 7dp
-        Spacer(modifier = Modifier.width(7.dp))
-        // 月份（16sp）
-        Text(
-            text = String.format("%02d月", now.get(Calendar.MONTH) + 1),
-            fontSize = 16.sp,
-            color = Color(0xFF666666)
-        )
-        // 月 → 箭头 间距 2dp
+        // 日 → 箭头 间距 2dp
         Spacer(modifier = Modifier.width(2.dp))
         // 箭头方向随弹窗状态切换：展开时向上▲，收起时向下▼
         Text(
