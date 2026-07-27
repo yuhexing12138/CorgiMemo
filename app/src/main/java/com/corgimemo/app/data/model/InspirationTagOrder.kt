@@ -1,6 +1,8 @@
 package com.corgimemo.app.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -21,9 +23,13 @@ import androidx.room.PrimaryKey
  * @property tagName 标签名（主键，关联 inspirations.tags 字符串字段）
  * @property sortOrder 排序位置（ASC，0 = 最前）
  */
-@Entity(tableName = "inspiration_tag_order")
+@Entity(
+    tableName = "inspiration_tag_order",
+    indices = [Index(value = ["sortOrder"])]
+)
 data class InspirationTagOrder(
     @PrimaryKey
     val tagName: String,
+    @ColumnInfo(defaultValue = "0")
     val sortOrder: Int = 0
 )

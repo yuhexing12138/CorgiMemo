@@ -1,6 +1,8 @@
 package com.corgimemo.app.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -17,11 +19,15 @@ import androidx.room.PrimaryKey
  * @property name 显示名
  * @property sortOrder 拖拽排序位置（v2026-07-27 P8 Phase 5 新增，PROFILE Tab 拖拽持久化用）
  */
-@Entity(tableName = "profile_nav_items")
+@Entity(
+    tableName = "profile_nav_items",
+    indices = [Index(value = ["sortOrder"])]
+)
 data class ProfileNavItem(
     @PrimaryKey
     val id: String,
     val icon: String,
     val name: String,
+    @ColumnInfo(defaultValue = "0")
     val sortOrder: Int = 0
 )
