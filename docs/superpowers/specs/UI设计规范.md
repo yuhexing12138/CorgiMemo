@@ -97,6 +97,112 @@
 
 ### 12.1.4 字体规范
 
+#### 12.1.4.0 Compose 文本对齐原理与策略选择指南（前置必读）
+
+> **为什么需要这一节**：v1.19→v1.22 导航栏日期对齐走了一圈弯路，根源是没有理解 Compose 文本 glyph 渲染原理。本节列出 3 种对齐策略的适用场景，避免后续再踩坑。详见 [DatePickerRow.kt](../../app/src/main/java/com/corgimemo/app/ui/components/calendar/DatePickerRow.kt) 注释 v1.19-v1.22 演进。
+
+##### 基础原理：Compose Text 的 layout box 组成
+
+```
+Text Layout Box (Placeable.height)
+├─ ascent（从 baseline 到 em-box 顶）      ← ~75-80% fontSize
+├─ baseline（字符视觉底部）               ← FirstBaseline = ascent 距 layout 顶
+└─ descent（从 baseline 到 em-box 底）    ← ~20-25% fontSize
+     （= layout 底）
+```
+
+**关键事实**：
+- 所有字符（数字 / 中文 / 几何符号）的 **glyph 底 = baseline**，**不是** layout 底
+- `Placeable.height` 包含 baseline 下方的 descent 留白（~20-25% fontSize）
+- 默认 `lineHeight ≈ fontSize × 1.2-1.4`，会在 layout box 上下额外加 padding
+- `LayoutCoordinates.FirstBaseline` 反映**第一个字符** baseline 距 layout 顶的距离
+
+##### 不同字符的 FirstBaseline 经验值
+
+| 字符类别 | fontSize | FirstBaseline（距 layout 顶）| glyph 底距 layout 底 |
+|---|---|---|---|
+| 数字 Regular | 16sp | ~12sp | ~4sp |
+| 数字 Bold | 25sp | ~19sp | ~6sp |
+| 中文方块字 | 16sp | ~12-14sp | ~2-4sp |
+| 几何符号 | 8sp | ~6-7sp | ~1-2sp |
+
+**结论**：不同字符 glyph 底距 layout 底的距离不同（0-6sp），所以**不能用 `Row(verticalAlignment = Alignment.Bottom)` 对齐 glyph 底**（它对齐 layout 底，不是 glyph 底）。
+
+##### v1.19-v1.22 踩坑历程
+
+| 版本 | 设计目标 | 失败原因 |
+|---|---|---|
+| v1.17/18 | Row 默认对齐 | `Alignment.Bottom` 对齐 layout 底，不同字号 glyph 底不对齐 |
+| v1.19 | 自定义 Layout 让 glyph 底贴 Layout 底（30sp） | "07月"整体 placement y 算错，混合字符串字符高度不同 |
+| v1.20 | 拆"07月"为"07"+"月"两个 Text | 中文/几何用 `boxH - 子项高` 算错（glyph 底 ≠ layout 底） |
+| v1.21 | 统一所有字符用 FirstBaseline | glyph 底贴 Layout 底（30sp），"27"中心远离 Layout 中心，水波纹偏底 |
+| v1.22 | 以"27"为中心（25sp Layout 高） | ✓ 用户满意 |
+
+##### 3 种对齐策略
+
+###### 策略 A：贴底对齐（v1.19-v1.21 思路）
+
+| 维度 | 内容 |
+|---|---|
+| **目标** | 所有字符 glyph 底都对齐到 Layout 底 |
+| **公式** | `placement y = boxH - FirstBaseline` |
+| **适用场景** | • 装饰元素 + 文本混排（如图标 + 数字、角标 + 主标题）<br>• 多行文本底部需要贴底（如卡片底部标签对齐）<br>• 进度条 / 横线 / 装饰线在文本下方 |
+| **示例** | `[图标 16sp]  [数字 25sp Bold]  [箭头 8sp]`<br>↘ placement y = boxH - FirstBaseline（30 - 12/19/7）<br>↘ glyph 底都 = 30sp（boxH） |
+| **陷阱** | 如果"主元素 + 辅助元素"用此策略，触摸点（主元素中心）会远离 Layout 中心，**水波纹看起来偏底** |
+
+###### 策略 B：以最大字号为中心（v1.22 思路）✅ 首选
+
+| 维度 | 内容 |
+|---|---|
+| **目标** | Layout 高度 = 最大字号子项高，水波纹中心 = Layout 中心 = 最大字号中心 |
+| **公式** | ```kotlin<br>val boxHeightPx = maxChild.height<br>val targetGlyphBottomY = maxChild[FirstBaseline]<br>val childY = targetGlyphBottomY - child[FirstBaseline]<br>``` |
+| **适用场景** | • 主元素 + 辅助元素（"27"日期 + "07月" + 箭头"▼"）<br>• 标题 + 副标题组合（24sp 标题 + 14sp 副标题）<br>• 数字 + 单位（25sp 数字 + 12sp 单位"元"）<br>• **任何需要点击交互的混合文本**（水波纹以主元素为中心） |
+| **示例** | `[数字"07" 16sp]  [中文"月" 16sp]  [数字"27" 25sp Bold]  [几何"▲" 8sp]`<br>↘ placement y = targetGlyphBottomY - FirstBaseline（19 - 12/13/19/7）<br>↘ glyph 底都 = 19sp 距 layout 顶 = "27" baseline 位置<br>↘ Layout 高 = "27"子项高 = 25sp<br>↘ Layout 中心 = 12.5sp = "27"中心 ✓ |
+| **优势** | 水波纹以"主元素"为中心，触摸点视觉上居中 |
+
+###### 策略 C：按 baseline 对齐（v1.21 中间方案）
+
+| 维度 | 内容 |
+|---|---|
+| **目标** | 所有字符 baseline 对齐到同一条水平线（不一定是 Layout 底） |
+| **公式** | `placement y = baselineY - FirstBaseline`（baselineY 固定为目标 baseline 位置） |
+| **适用场景** | • 多行文本基线对齐（如表格列、列表项）<br>• 上标 / 下标场景（如 H₂O）<br>• 方程、化学式混排 |
+| **示例** | `H₂O: H（24sp）+ ₂（12sp 下标）+ O（24sp）`<br>↘ ₂ 的 baseline 略低（基线对齐到 H baseline 下方 4sp） |
+| **注意** | 与策略 A 区别：策略 A 让 glyph 底贴 Layout 底，策略 C 让 baseline 对齐到任意水平线 |
+
+##### 选择决策树
+
+```
+需要文本对齐？
+├─ 是
+│  ├─ 是否需要点击交互？
+│  │  ├─ 是 → 策略 B（以最大字号为中心）✅
+│  │  └─ 否
+│  │     ├─ 是否有"主元素 + 辅助元素"层级？
+│  │     │  ├─ 是 → 策略 B（以最大字号为中心）
+│  │     │  └─ 否
+│  │     │     ├─ 是否需要 glyph 底贴底？
+│  │     │     │  ├─ 是 → 策略 A（贴底对齐）
+│  │     │     │  └─ 否 → 策略 C（baseline 对齐）
+```
+
+##### 关键 API 参考
+
+| API | 用途 |
+|---|---|
+| `Text(..., lineHeight = fontSize)` | 消除默认行间距（lineHeight ≈ fontSize × 1.2-1.4） |
+| `LayoutCoordinates.FirstBaseline` | 获取第一个字符 baseline 距 layout 顶的距离 |
+| `LayoutCoordinates.LastBaseline` | 获取最后一个字符 baseline 距 layout 顶的距离（多行时用） |
+| `Modifier.padding(top = X.dp)` | 让 glyph 整体下移 X（**正确方向**） |
+| `Modifier.padding(bottom = X.dp)` | 扩大 layout 盒下边界，glyph 位置**不变**（错误方向） |
+| `Placeable.placeRelative(x, y)` | 自定义 Layout 中精确控制子项位置 |
+
+##### 历史教训
+
+> **v1.19→v1.22 教训**：最初以为"glyph 底贴 Layout 底"是唯一目标（v1.19-v1.21），但忽略了**水波纹中心 = 触摸点**这个事实。当"主元素 + 辅助元素"用贴底对齐时，触摸点（主元素中心）会远离 Layout 中心，水波纹看起来偏底。
+>
+> **正确思路**：先确定"设计目标"（贴底 / 以主元素为中心 / baseline 对齐），再选择对齐策略。**不要默认"glyph 底贴底"为唯一目标**。
+
 #### 12.1.4.1 字体选择
 
 | 用途 | 字体 | 说明 |
