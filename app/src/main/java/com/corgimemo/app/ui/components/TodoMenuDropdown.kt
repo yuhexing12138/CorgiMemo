@@ -14,18 +14,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 
 /**
  * 我的待办页面功能菜单弹窗
  *
- * 点击右上角三点图标后弹出，包含5个功能项：
+ * 点击右上角三点图标后弹出，包含 6 个功能项：
  * 1. 隐藏/显示详情
  * 2. 隐藏/显示已完成
  * 3. 待办排序
  * 4. 批量选择
- * 5. 创建待办副本（占位）
+ * 5. 创建待办副本（弹 [DuplicateTodoDialog] 中心弹窗，让用户选择复制范围）
  * 6. 回收站
  */
 @Composable
@@ -38,7 +37,7 @@ fun TodoMenuDropdown(
     onToggleHideCompletedItems: () -> Unit,
     onSortClick: () -> Unit,
     onBatchSelectClick: () -> Unit,
-    onPlaceholderClick: () -> Unit,
+    onDuplicateTodoClick: () -> Unit,
     onRecycleBinClick: () -> Unit
 ) {
     DropdownMenu(
@@ -105,11 +104,11 @@ fun TodoMenuDropdown(
                 )
             }
         )
-        // 5. 创建待办副本（占位）
+        // 5. 创建待办副本（弹中心弹窗，让用户选择复制范围）
         DropdownMenuItem(
             text = { Text("创建待办副本") },
             onClick = {
-                onPlaceholderClick()
+                onDuplicateTodoClick()
                 onDismiss()
             },
             leadingIcon = {
@@ -118,8 +117,7 @@ fun TodoMenuDropdown(
                     contentDescription = null,
                     modifier = Modifier.size(20.dp)
                 )
-            },
-            modifier = Modifier.alpha(0.4f)
+            }
         )
         // 6. 回收站
         DropdownMenuItem(

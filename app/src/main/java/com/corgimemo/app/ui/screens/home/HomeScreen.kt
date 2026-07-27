@@ -134,6 +134,7 @@ import com.corgimemo.app.ui.components.ReminderPickerBottomSheet
 // v2026-07-22 新增：关联列表 BottomSheet
 import com.corgimemo.app.ui.components.RelationListBottomSheet
 import com.corgimemo.app.ui.components.CategoryPickerSheet
+import com.corgimemo.app.ui.components.DuplicateTodoDialog
 import com.corgimemo.app.ui.components.ShareModeDialog
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery
 import com.corgimemo.app.ui.components.VoicePreviewDialog
@@ -274,6 +275,8 @@ fun HomeScreen(
     val showBatchDeleteDialog by viewModel.showBatchDeleteDialog.collectAsState()
     val showBatchMoveDialog by viewModel.showBatchMoveDialog.collectAsState()
     val showMoreOptionsSheet by viewModel.showMoreOptionsSheet.collectAsState()
+    /** 创建待办副本 中心弹窗显示状态（三点菜单 → 创建待办副本） */
+    val showDuplicateDialog by viewModel.showDuplicateDialog.collectAsState()
 
     /** PriorityPicker 弹窗显示状态（MoreOptions → 优先级） */
     var showPriorityPickerSheet by remember { mutableStateOf(false) }
@@ -1413,6 +1416,17 @@ fun HomeScreen(
             }
         )
     }
+
+    // 创建待办副本 中心弹窗（三点菜单 → 创建待办副本）
+    // 失败 Snackbar 复用 _pendingBatchDuplicateFailure，已在下方 LaunchedEffect 监听
+    DuplicateTodoDialog(
+        showDialog = showDuplicateDialog,
+        onDismiss = { viewModel.setShowDuplicateDialog(false) },
+        onConfirm = { range ->
+            viewModel.setShowDuplicateDialog(false)
+            viewModel.duplicateAllTodos(range)
+        },
+    )
 
     // 单个待办删除二次确认弹窗
     // 区别于批量删除弹窗（showBatchDeleteDialog），本弹窗仅针对单个待办

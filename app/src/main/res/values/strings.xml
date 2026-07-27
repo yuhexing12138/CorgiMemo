@@ -325,6 +325,12 @@
     <!-- ==================== 批量复制附件（方案 B：仅失败 Snackbar） ==================== -->
     <string name="batch_duplicate_failure_hint">⚠️ 部分文件复制失败，请手动检查</string>
 
+    <!-- ==================== 创建待办副本 中心弹窗 ==================== -->
+    <string name="duplicate_dialog_title">创建待办副本</string>
+    <string name="duplicate_range_pending_only">只复制未完成的任务</string>
+    <string name="duplicate_range_keep_status">复制全部任务，保留已完成状态</string>
+    <string name="duplicate_range_reset_status">复制全部任务，不保留已完成状态</string>
+
     <!-- 待办分享方式选择弹窗 -->
     <string name="share_mode_title">选择分享方式</string>
     <string name="share_mode_subtitle_normal">共 %1$d 条待办，可合并为一张图片或单独分享</string>

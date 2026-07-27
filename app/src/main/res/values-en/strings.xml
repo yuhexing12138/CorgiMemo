@@ -307,6 +307,12 @@
     <!-- ==================== Batch Duplicate (Plan B: Failure Snackbar Only) ==================== -->
     <string name="batch_duplicate_failure_hint">⚠️ Some files failed to copy, please check manually</string>
 
+    <!-- Create todo copies dialog -->
+    <string name="duplicate_dialog_title">Create Todo Copies</string>
+    <string name="duplicate_range_pending_only">Only copy incomplete tasks</string>
+    <string name="duplicate_range_keep_status">Copy all tasks, keep completed status</string>
+    <string name="duplicate_range_reset_status">Copy all tasks, reset to incomplete</string>
+
     <!-- Todo share mode selection dialog -->
     <string name="share_mode_title">Choose share mode</string>
     <string name="share_mode_subtitle_normal">%1$d todos. Merge into one image or share one by one.</string>

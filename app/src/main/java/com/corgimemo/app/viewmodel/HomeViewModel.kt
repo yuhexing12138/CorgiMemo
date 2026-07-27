@@ -581,6 +581,35 @@ class HomeViewModel @Inject constructor(
         _showBatchDeleteDialog.value = show
     }
 
+    // ========== 创建待办副本（首页可见 todo 批量复制） ==========
+
+    /**
+     * 创建待办副本 - 复制范围枚举
+     *
+     * 用户在中心弹窗中选择复制范围，对应 3 种 status 行为。
+     * 与 `batchDuplicate()`（多选模式）不同：本功能作用于"首页可见的 todo"（`filteredTodos`），
+     * status 行为由用户主动选择。
+     */
+    enum class DuplicateRange(val labelKey: String) {
+        /** 只复制未完成任务（status == 0） —— 默认值 */
+        PENDING_ONLY("duplicate_range_pending_only"),
+
+        /** 复制全部任务，保留原 status（已完成仍标完成，含 completedAt） */
+        KEEP_STATUS("duplicate_range_keep_status"),
+
+        /** 复制全部任务，重置 status 为 0，completedAt 置空 */
+        RESET_STATUS("duplicate_range_reset_status"),
+    }
+
+    /** "创建待办副本" 中心弹窗显示状态（由三点菜单触发） */
+    private val _showDuplicateDialog = MutableStateFlow(false)
+    val showDuplicateDialog: StateFlow<Boolean> = _showDuplicateDialog.asStateFlow()
+
+    /** 设置 "创建待办副本" 弹窗显示状态 */
+    fun setShowDuplicateDialog(show: Boolean) {
+        _showDuplicateDialog.value = show
+    }
+
     /** 设置批量移动分类选择弹窗显示状态 */
     fun setShowBatchMoveDialog(show: Boolean) {
         _showBatchMoveDialog.value = show
@@ -3830,6 +3859,128 @@ class HomeViewModel @Inject constructor(
             } finally {
                 // 失败时弹 Snackbar（成功时不弹任何 UI 反馈）
                 if (hasFailure) {
+                    _pendingBatchDuplicateFailure.value = true
+                }
+            }
+        }
+    }
+
+    /**
+     * 创建待办副本（数据源：首页可见的 todo）
+     *
+     * 入口：待办页 → 三点菜单 → 创建待办副本 → 中心弹窗（DuplicateTodoDialog）
+     *
+     * 与 [batchDuplicate] 的关键差异：
+     * | 维度 | batchDuplicate（多选） | duplicateAllTodos（可见 todo） |
+     * | --- | --- | --- |
+     * | 数据源 | `_selectedTodoIds` | `filteredTodos`（受过滤/搜索/分类影响） |
+     * | status 行为 | 一律重置 0 | 按 [DuplicateRange] 三态处理 |
+     *
+     * 流程：
+     * 1. 按 range 预过滤 sourceTodos
+     * 2. 主表 + SubTask 数据库同步复制
+     * 3. 后台异步复制附件文件（FileCopyManager）
+     * 4. 失败时通过 `_pendingBatchDuplicateFailure` 触发 Snackbar
+     * 5. 成功时静默（与 batchDuplicate 行为一致）
+     *
+     * @param range 用户在弹窗中选择的复制范围
+     */
+    fun duplicateAllTodos(range: DuplicateRange) {
+        // 步骤 1：按 range 决定预过滤（0 个 todo 时静默 return，不弹 Snackbar）
+        val sourceTodos = when (range) {
+            DuplicateRange.PENDING_ONLY -> filteredTodos.value.filter { it.status == 0 }
+            DuplicateRange.KEEP_STATUS -> filteredTodos.value
+            DuplicateRange.RESET_STATUS -> filteredTodos.value
+        }
+        if (sourceTodos.isEmpty()) return
+
+        val ids = sourceTodos.map { it.id }
+        val currentTime = System.currentTimeMillis()
+
+        viewModelScope.launch {
+            // 顶层 try/catch 防止 viewModelScope 因意外异常崩溃
+            var hasFailure = false
+            try {
+                val newSubTaskMaps = mutableMapOf<Long, Long>()
+                val duplicatePairs = mutableListOf<Pair<Long, Long>>()
+
+                // ========== 阶段 1：主表 + SubTask 数据库复制（同步） ==========
+                ids.forEach { id ->
+                    val todo = todoRepository.getTodoById(id) ?: return@forEach
+
+                    // ★ status 三态处理（与 batchDuplicate 的核心差异点）
+                    val (newStatus, newCompletedAt) = when (range) {
+                        DuplicateRange.PENDING_ONLY -> 0 to null
+                        DuplicateRange.KEEP_STATUS -> todo.status to todo.completedAt
+                        DuplicateRange.RESET_STATUS -> 0 to null
+                    }
+
+                    val newId = todoRepository.insertTodo(
+                        todo.copy(
+                            id = 0, // Room 自增
+                            status = newStatus,
+                            completedAt = newCompletedAt,
+                            createdAt = currentTime,
+                            updatedAt = currentTime
+                            // ★ reminderTime / repeatType / scheduleAlarm 全部继承（与 batchDuplicate 一致）
+                        )
+                    )
+
+                    // 复制子任务（与 batchDuplicate 一致）
+                    val subTasks = SubTaskManager.getSubTasks(context, id)
+                    if (subTasks.isNotEmpty()) {
+                        SubTaskManager.addSubTasks(context, newId, subTasks)
+                        val newSubTasks = SubTaskManager.getSubTasks(context, newId)
+                        for (original in subTasks) {
+                            val matched = newSubTasks.firstOrNull { it.order == original.order }
+                            if (matched != null) {
+                                newSubTaskMaps[original.id] = matched.id
+                            }
+                        }
+                    }
+                    duplicatePairs.add(id to newId)
+                }
+
+                // 刷新子任务进度 Map，让新副本的"(0/N)"和下箭头立即可见
+                if (newSubTaskMaps.isNotEmpty()) {
+                    val updatedProgressMap = _subTaskProgressMap.value.toMutableMap()
+                    val updatedSubTasksMap = _subTasksMap.value.toMutableMap()
+                    duplicatePairs.forEach { (_, newId) ->
+                        val progress = SubTaskManager.getProgressText(context, newId)
+                        if (progress != null) {
+                            updatedProgressMap[newId] = progress
+                        }
+                        val subTasks = SubTaskManager.getSubTasks(context, newId)
+                        updatedSubTasksMap[newId] = subTasks
+                    }
+                    _subTaskProgressMap.value = updatedProgressMap
+                    _subTasksMap.value = updatedSubTasksMap
+                }
+
+                // ========== 阶段 2：文件复制（后台异步，顺序 for 循环） ==========
+                for ((originalId, newId) in duplicatePairs) {
+                    try {
+                        // 静默收集（不更新 UI 进度）
+                        fileCopyManager.copyAllAttachments(originalId, newId).collect { /* 静默 */ }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        android.util.Log.e(
+                            "HomeViewModel",
+                            "创建待办副本附件失败: originalId=$originalId, newId=$newId",
+                            e
+                        )
+                        hasFailure = true
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.e("HomeViewModel", "创建待办副本失败", e)
+                hasFailure = true
+            } finally {
+                if (hasFailure) {
+                    // 复用现有失败 trigger（HomeScreen.kt 已监听 → 弹"⚠️ 部分文件复制失败"）
                     _pendingBatchDuplicateFailure.value = true
                 }
             }
