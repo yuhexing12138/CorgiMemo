@@ -379,58 +379,83 @@ val nodeTopY = (nodeCenterY - nodeRadius).coerceAtLeast(0.dp)
 | **月 → 日间距** | **7dp** | — | 水平间距 |
 | **日 → 箭头间距** | 2dp | — | 水平间距 |
 
-##### 布局结构（v1.19 重构：自定义 Layout）
+##### 布局结构（v1.20 修正：拆分"07月"为两个 Text）
 
 > **v1.19 关键变更**：用自定义 `Layout` + `placeRelative` 替代 `Row(Alignment.Bottom)`，精确控制每个子项的 placement y，实现三个 glyph 底完美对齐到 Box 底。
+>
+> **v1.20 关键修正**：v1.19 误判"07月"为全方块字字符串（整体 glyph 占满 em-box），实际是"0" "7" 数字（不全高）+ "月" 中文（占满 em-box）的混合。"07"和"27"都需要按数字算 placement y，"月"和"▼"按方块字/几何算。
 
 ```kotlin
-// v1.19 自定义 Layout — 月/日/箭头 glyph 底完美对齐
-// 详见 DatePickerRow.kt 注释（共 149 行）
+// v1.20 自定义 Layout — 4 个 Text 拆分布局，所有字符 glyph 底完美对齐
+// 详见 DatePickerRow.kt 注释（共 ~200 行）
 Layout(
     modifier = modifier.clickable(onClick = onClick),
     content = {
-        // 0: 月份（16sp 中文方块字，glyph 占满 em-box）
-        Text(text = monthText, fontSize = 16.sp, lineHeight = 16.sp, color = Color(0xFF666666))
-        // 1: 大号日期（25sp Bold 数字，glyph 底 = baseline）
+        // 0: 月份数字"07"（16sp 数字，glyph 不全高，用 FirstBaseline 算）
+        Text(text = monthNumText, fontSize = 16.sp, lineHeight = 16.sp, color = Color(0xFF666666))
+        // 1: 月份中文"月"（16sp 中文方块字，glyph 占满 em-box，用 boxH - 子项高 算）
+        Text(text = "月", fontSize = 16.sp, lineHeight = 16.sp, color = Color(0xFF666666))
+        // 2: 大号日期"27"（25sp Bold 数字，glyph 底 = baseline，用 FirstBaseline 算）
         Text(text = dayText, fontSize = 25.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold,
              color = MaterialTheme.colorScheme.onSurface)
-        // 2: 箭头（8sp 几何符号，glyph 占满 em-box）
+        // 3: 箭头"▼"（8sp 几何符号，glyph 占满 em-box，用 boxH - 子项高 算）
         Text(text = arrowText, fontSize = 8.sp, lineHeight = 8.sp, color = Color(0xFF666666))
     }
 ) { measurables, constraints ->
-    val monthP = measurables[0].measure(constraints)
-    val dayP = measurables[1].measure(constraints)
-    val arrowP = measurables[2].measure(constraints)
+    val monthNumP = measurables[0].measure(constraints)   // "07" 数字
+    val monthCnP  = measurables[1].measure(constraints)   // "月" 中文
+    val dayP      = measurables[2].measure(constraints)   // "27" 数字
+    val arrowP    = measurables[3].measure(constraints)   // "▼" 几何
 
-    val monthW = monthP.width; val dayW = dayP.width; val arrowW = arrowP.width
-    val gap1Px = 7.dp.toPx(); val gap2Px = 2.dp.toPx()
-    val totalW = monthW + gap1Px + dayW + gap2Px + arrowW
+    val monthNumW = monthNumP.width; val monthCnW = monthCnP.width
+    val dayW = dayP.width; val arrowW = arrowP.width
+    val gapMonthInnerPx = 0.dp.toPx()    // "07" → "月" 0dp（视觉连续）
+    val gapMonthDayPx = 7.dp.toPx()      // "月" → "27" 7dp
+    val gapDayArrowPx = 2.dp.toPx()      // "27" → "▼" 2dp
+    val totalW = monthNumW + gapMonthInnerPx + monthCnW + gapMonthDayPx + dayW + gapDayArrowPx + arrowW
 
     // Box 高 = 30sp（"27"子项高 25sp + 数字 glyph 距 em-box 底 5sp 留白）
     val boxHeightPx = 30.sp.toPx()
 
-    // 精确 placement：让三个 glyph 底都 = boxH
-    val monthY = (boxHeightPx - monthP.height).toInt()                  // 月份 glyph 底 = boxH
-    val arrowY = (boxHeightPx - arrowP.height).toInt()                  // 箭头 glyph 底 = boxH
-    val dayFirstBaseline = dayP[FirstBaseline]                          // 数字 baseline 距 layout 顶
-    val dayY = (boxHeightPx - dayFirstBaseline).toInt()                 // 日期 glyph 底 = boxH
+    // 字符分类与 placement y 计算规则
+    // | 字符类别         | glyph 占 em-box | 例子      | 计算方式                  |
+    // | 数字 Regular/Bold| ~75%           | "07" "27"| boxH - FirstBaseline     |
+    // | 中文方块字      | ~100%          | "月"     | boxH - 子项高              |
+    // | 几何符号        | ~100%          | "▼" "▲"  | boxH - 子项高              |
+
+    // 数字（"07" / "27"）→ y = boxH - FirstBaseline
+    val monthNumFirstBaseline = monthNumP[FirstBaseline]
+    val monthNumY = (boxHeightPx - monthNumFirstBaseline).toInt()
+    val dayFirstBaseline = dayP[FirstBaseline]
+    val dayY = (boxHeightPx - dayFirstBaseline).toInt()
+    // 中文方块字 / 几何符号 → y = boxH - 子项高
+    val monthCnY = (boxHeightPx - monthCnP.height).toInt()
+    val arrowY = (boxHeightPx - arrowP.height).toInt()
 
     layout(totalW.toInt(), boxHeightPx.toInt()) {
-        monthP.placeRelative(0, monthY)
-        dayP.placeRelative((monthW + gap1Px).toInt(), dayY)
-        arrowP.placeRelative((monthW + gap1Px + dayW + gap2Px).toInt(), arrowY)
+        val x0 = 0
+        val x1 = x0 + monthNumW + gapMonthInnerPx
+        val x2 = x1 + monthCnW + gapMonthDayPx
+        val x3 = x2 + dayW + gapDayArrowPx
+
+        monthNumP.placeRelative(x0, monthNumY)   // "07"
+        monthCnP.placeRelative(x1, monthCnY)     // "月"
+        dayP.placeRelative(x2, dayY)             // "27"
+        arrowP.placeRelative(x3, arrowY)         // "▼"
     }
 }
 ```
 
 > **v1.18 关键教训（已废弃）**：`Modifier.padding(top = X)` 实测发现**不改变** glyph 距 layout 底的距离（glyph 在 layout 内的位置由字体 metrics 决定）。故 v1.19 改用自定义 `Layout` + `placeRelative`。详见 [DatePickerRow.kt](../../app/src/main/java/com/corgimemo/app/ui/components/calendar/DatePickerRow.kt) 注释。
+>
+> **v1.20 关键教训**：混合字符串（数字+中文）不能用单一 placement 规则处理。`Text` 的 `FirstBaseline` 只反映**第一个字符**的 baseline，无法表示字符串中最深字符的 glyph 底。故"07月"必须拆成"07"和"月"两个 Text 分别计算。
 
 ##### 交互与对齐
 
 - **可点击**：整行 `Modifier.clickable` 触发日历弹窗 `showInspirationCalendar = true`
-- **高度自适应**：自定义 `Layout` 显式指定 `boxHeightPx = 30.sp`（v1.17/18 用 Row 高度由 25sp "日" 撑高；v1.19 改为显式 30sp）
+- **高度自适应**：自定义 `Layout` 显式指定 `boxHeightPx = 30.sp`（v1.17/18 用 Row 高度由 25sp "日" 撑高；v1.19 起改为显式 30sp）
 - **居中**：由 `EnhancedTopBar` 外层 `Box(contentAlignment = Alignment.Center)` 在导航栏中居中
-- **底部对齐（v1.19）**：通过 `placeRelative` 精确把三个子项的 glyph 底对齐到 `boxH = 30sp`，不是依赖 `Row(verticalAlignment = Alignment.Bottom)` 对齐 layout box 底
+- **底部对齐（v1.20）**：通过 `placeRelative` 精确把 4 个子项的所有字符 glyph 底对齐到 `boxH = 30sp`，不是依赖 `Row(verticalAlignment = Alignment.Bottom)` 对齐 layout box 底。**数字用 FirstBaseline 算，**中文/几何用 `boxH - 子项高` 算**
 
 ##### 显示条件
 
@@ -469,6 +494,7 @@ Layout(
 | 2026-07-27 | v1.17 | **导航栏日期底部精确对齐**：三个 Text 元素（月/日/箭头）都设置 `lineHeight = fontSize` 消除默认行间距。Compose `Row(Alignment.Bottom)` 对齐的是子项 layout box 底部而非 glyph 底部，默认 lineHeight ≈ fontSize × 1.2-1.4 含 ~2-3sp 上下行间距，25sp Bold "09" 距盒底 ~7sp 而 16sp "月" 距盒底 ~2sp，肉眼可见底部偏差。`lineHeight = fontSize` 后留白归零，视觉底部精确对齐 |
 | 2026-07-27 | v1.18 | **导航栏日期 glyph 底精确对齐（数字 vs 中文/几何符号）**：v1.17 消除行间距后，数字"27"（25sp Bold 不全高）距 em-box 底仍 ~3-4sp、中文"月"（16sp 方块字）距底 ~1sp、几何"▼"（8sp）距底 ~1sp，导致"月"和"▼"底部略低于"27"底部。给大号日期 Text 加 `Modifier.padding(top = 3.dp)` 让"27"内容整体下移 3dp，glyph 底贴 layout 底（= Row 底），与"月"/"▼"精确对齐。**注意 padding 方向**：`padding(bottom)` 错误（只扩展 layout 盒底边界、glyph 位置不变），必须用 `padding(top)` 才行 |
 | 2026-07-27 | v1.19 | **导航栏日期 glyph 底完美对齐（自定义 Layout 方案）**：v1.18 `padding(top)` 实测发现不改变 glyph 距 layout 底的距离（glyph 在 layout 内的位置由字体 metrics 决定）。改用自定义 `Layout` + `placeRelative` 精确控制每个子项的 placement y。Box 高 = 30sp（"27"子项高 25sp + 数字 glyph 距 em-box 底 5sp 留白），三个 glyph 底都精确等于 boxH。月份/箭头（glyph 占满 em-box）→ y = boxH - 子项高；日期（数字 glyph 底 = baseline）→ y = boxH - FirstBaseline（动态测量，避免硬编码）。导航栏比 v1.17/18 高 5sp |
+| 2026-07-27 | v1.20 | **导航栏日期修正"07月"字符串字符分类错误**：v1.19 误判"07月"为全方块字字符串（glyph 占满 em-box），实际是"0" "7" 数字（不全高）+ "月" 中文（占满 em-box）的混合。v1.19 用 `boxH - monthP.height` 算整个"07月" placement y，导致"0" "7" 数字 glyph 底比"27"日期底高 4sp，视觉上"0" "7" 浮在 box 中间。**修复**：把"07月"拆成"07"（数字）和"月"（中文）两个 Text，分别用 FirstBaseline 和 `boxH - 子项高` 算 placement y。间距："07" → "月" 0dp（视觉连续），"月" → "27" 7dp，"27" → "▼" 2dp。4 个 Text 所有字符 glyph 底都精确等于 boxH = 30sp |
 
 ### 12.1.9 Snackbar 提示规范
 
