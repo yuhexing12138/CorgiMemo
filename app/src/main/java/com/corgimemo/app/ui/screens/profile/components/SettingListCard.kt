@@ -40,9 +40,9 @@ import androidx.compose.ui.unit.sp
 data class SettingItem(
     val icon: String,
     val title: String,
-    val onClick: () -> Unit,
     /** v2026-07-27 新增：右侧当前值（如 "5 张"），null=不显示 */
-    val value: String? = null
+    val value: String? = null,
+    val onClick: () -> Unit
 )
 
 /**

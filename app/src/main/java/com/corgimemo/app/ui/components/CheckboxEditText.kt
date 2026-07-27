@@ -68,7 +68,6 @@ import com.corgimemo.app.ui.model.TodoLine
 import com.corgimemo.app.ui.util.formatReminderDisplay
 import com.corgimemo.app.util.VoicePlayer
 import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.draggableHandle
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 /**
