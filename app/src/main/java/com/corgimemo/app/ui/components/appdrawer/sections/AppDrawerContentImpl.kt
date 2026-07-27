@@ -72,6 +72,7 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  * @param onDateCategoryClick 日期类型点击回调（DATE Tab）
  * @param onAddCustomTypeClick 添加自定义类型回调（DATE Tab 底部按钮）
  * @param onCustomTypeAction 自定义类型操作回调（DATE Tab，长按触发）
+ * @param onReorderDateType 日期类型拖拽排序回调（v2026-07-27 P8 Phase 3 新增，DATE Tab）
  * @param onSettingsClick 设置点击回调（PROFILE Tab）
  * @param onUserAreaClick 用户头区域点击回调（顶部，点击跳"我的"页）
  * @param currentDrawerSection 当前侧滑栏分区（v2026-07-27 新增，TODO Tab 用，默认 [DrawerSection.GROUP]）
@@ -115,6 +116,8 @@ fun AppDrawerContentImpl(
     onDateCategoryClick: (String?) -> Unit = {},
     onAddCustomTypeClick: () -> Unit = {},
     onCustomTypeAction: (DateTypeAction) -> Unit = {},
+    // v2026-07-27 P8 Phase 3 新增：自定义日期类型拖拽回调
+    onReorderDateType: (List<CustomDateType>) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onUserAreaClick: () -> Unit = {},
     // ===== v2026-07-27 新增：状态管理 Tab 切换（9 个参数） =====
@@ -224,6 +227,8 @@ fun AppDrawerContentImpl(
                     customDateTypes = customDateTypes,
                     onDateCategoryClick = onDateCategoryClick,
                     onCustomTypeAction = onCustomTypeAction,
+                    // v2026-07-27 P8 Phase 3：透传拖拽回调，委托外层 ViewModel 持久化
+                    onReorder = onReorderDateType,
                     modifier = Modifier.weight(1f)
                 )
                 AddCategoryButton(text = "添加类型", onClick = onAddCustomTypeClick)

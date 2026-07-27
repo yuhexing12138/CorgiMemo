@@ -568,6 +568,10 @@ fun MainScreen(
                             is DateTypeAction.Delete -> showDeleteDateTypeDialog = action.customType
                         }
                     },
+                    // v2026-07-27 P8 Phase 3：自定义日期类型拖拽回调，委托 SpecialDateViewModel 持久化
+                    onReorderDateType = { newList ->
+                        specialDateViewModel.updateDateTypeOrder(newList)
+                    },
                     onSettingsClick = {
                         navController.navigate(Screen.Settings.route)
                         coroutineScope.launch { drawerState.close() }

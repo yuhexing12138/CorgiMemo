@@ -49,6 +49,19 @@ class SpecialDateRepository @Inject constructor(
         customDateTypeDao.getById(id)?.let { customDateTypeDao.delete(it) }
     }
 
+    /**
+     * 批量更新自定义类型排序（v2026-07-27 新增，P8 Phase 3 实施）
+     *
+     * DATE Tab 拖拽后由 ViewModel 调用。
+     * Room @Update 自动按主键匹配 + 事务，无需显式 WHERE。
+     *
+     * @param customTypes 排序后的自定义类型列表（每项 sortOrder 字段为目标位置）
+     *   调用方应预先 mapIndexed { idx, t -> t.copy(sortOrder = idx) } 重新分配 sortOrder
+     */
+    suspend fun batchUpdateDateTypeSortOrder(customTypes: List<CustomDateType>) {
+        customDateTypeDao.updateAll(customTypes)
+    }
+
     /** 获取所有自定义类型（一次性快照） */
     private suspend fun getAllCustomDateTypesList(): List<CustomDateType> {
         return allCustomDateTypes.first()

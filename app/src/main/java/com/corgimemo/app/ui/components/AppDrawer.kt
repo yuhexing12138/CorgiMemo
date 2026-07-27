@@ -109,6 +109,8 @@ fun AppDrawerContent(
     onDateCategoryClick: (String?) -> Unit = {},
     onAddCustomTypeClick: () -> Unit = {},
     onCustomTypeAction: (DateTypeAction) -> Unit = {},
+    // v2026-07-27 P8 Phase 3 新增：自定义日期类型拖拽回调
+    onReorderDateType: (List<CustomDateType>) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onUserAreaClick: () -> Unit = {},
     // ===== v2026-07-27 新增：状态管理 Tab 切换（9 个参数） =====
@@ -153,6 +155,8 @@ fun AppDrawerContent(
         onDateCategoryClick = onDateCategoryClick,
         onAddCustomTypeClick = onAddCustomTypeClick,
         onCustomTypeAction = onCustomTypeAction,
+        // v2026-07-27 P8 Phase 3：透传自定义日期类型拖拽回调
+        onReorderDateType = onReorderDateType,
         onSettingsClick = onSettingsClick,
         onUserAreaClick = onUserAreaClick,
         // v2026-07-27 新增：状态管理 Tab 透传

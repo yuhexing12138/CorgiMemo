@@ -147,6 +147,27 @@ class SpecialDateViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 更新自定义日期类型顺序（v2026-07-27 新增，P8 Phase 3 实施）
+     *
+     * DATE Tab 侧滑栏长按拖拽完成后由 UI 层调用。
+     * 重新分配 sortOrder 后批量持久化到 Room。
+     *
+     * @param newList 拖拽后的新自定义类型列表
+     *   - UI 层（DateTypeFilterSection）的 Reorderable onMove 回调产生
+     *   - 直接透传不重排，mapIndexed 在此方法内做
+     */
+    fun updateDateTypeOrder(newList: List<CustomDateType>) {
+        viewModelScope.launch {
+            try {
+                val ordered = newList.mapIndexed { idx, t -> t.copy(sortOrder = idx) }
+                repository.batchUpdateDateTypeSortOrder(ordered)
+            } catch (e: Exception) {
+                android.util.Log.e("SpecialDateViewModel", "更新日期类型顺序失败", e)
+            }
+        }
+    }
+
     /** 设置类型筛选 */
     fun filterByDateCategory(category: String?) {
         _selectedDateCategory.value = category

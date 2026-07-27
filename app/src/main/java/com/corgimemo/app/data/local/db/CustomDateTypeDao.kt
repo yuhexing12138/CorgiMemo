@@ -33,4 +33,15 @@ interface CustomDateTypeDao {
     /** 删除自定义类型 */
     @Delete
     suspend fun delete(customType: CustomDateType)
+
+    /**
+     * 批量更新自定义类型（v2026-07-27 新增，P8 Phase 3 实施）
+     *
+     * 用于 DATE Tab 拖拽后批量持久化 sortOrder。
+     * Room 自动按 @Update 主键匹配，无需显式 WHERE。
+     *
+     * @param customTypes 排序后的自定义类型列表（每项 sortOrder 字段为目标位置）
+     */
+    @Update
+    suspend fun updateAll(customTypes: List<CustomDateType>)
 }
