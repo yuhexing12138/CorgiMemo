@@ -78,6 +78,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import com.corgimemo.app.util.toPxFloat
@@ -130,6 +131,10 @@ fun TodoEditScreen(
     viewModel: TodoEditViewModel = hiltViewModel(),
     homeViewModel: HomeViewModel = hiltViewModel()
 ) {
+    // 🆕 v2026-07-27 复制当前容器功能：使用 Compose 的 LocalClipboard 写入剪贴板
+    // （与 InspirationViewScreen.kt:213-216 的标准写法保持一致）
+    val clipboard = LocalClipboard.current
+
     val title by viewModel.title.collectAsState()
     val content by viewModel.content.collectAsState()
     val priority by viewModel.priority.collectAsState()
@@ -1045,6 +1050,44 @@ fun TodoEditScreen(
                     Icon(
                         imageVector = Icons.Default.Palette,
                         contentDescription = "背景色",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // 🆕 v2026-07-27 复制当前容器按钮：插入在画板按钮和分享按钮之间
+                // 点击行为：复制当前光标所在容器（同一 groupId 的所有 TodoLine）到系统剪贴板
+                // 复制格式：未完成 `◎  text` / 已完成 `✓  text` / 子任务行前加 2 空格缩进
+                // 复制内容通过 TodoEditViewModel.formatContainerAsCopyText 格式化
+                // 复制反馈通过 AppSnackbarHost 提示"已复制 N 项到剪切板"
+                // 尺寸 36dp / 18dp 与画板、分享按钮保持统一
+                IconButton(
+                    onClick = {
+                        /**
+                         * 复制当前容器到剪贴板：
+                         * 1. 从 viewModel 获取当前光标所在 groupId 下的所有非空行（按 order 排序）
+                         * 2. 列表为空 → snackbar 提示"请先选择一行待办"（可能 todoLines 为空或光标未聚焦）
+                         * 3. 列表非空 → formatContainerAsCopyText 格式化为纯文本
+                         * 4. 通过 LocalClipboard 写入剪贴板（与 InspirationViewScreen 写法一致）
+                         * 5. snackbar 反馈"已复制 N 项到剪切板"
+                         */
+                        val lines = viewModel.getCurrentContainerLines(focusedLineIndex)
+                        if (lines.isEmpty()) {
+                            snackbarHostState.showSnackbar("请先选择一行待办")
+                            return@IconButton
+                        }
+                        val text = viewModel.formatContainerAsCopyText(lines)
+                        coroutineScope.launch {
+                            val clipData = ClipData.newPlainText("todo_container", text)
+                            clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(clipData))
+                            snackbarHostState.showSnackbar("已复制 ${lines.size} 项到剪切板")
+                        }
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "复制当前容器",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
                     )

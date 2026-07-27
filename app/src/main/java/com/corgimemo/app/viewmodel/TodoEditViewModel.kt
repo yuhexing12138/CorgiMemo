@@ -2529,6 +2529,62 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
+     * 获取当前光标所在容器的所有 TodoLine（按 order 升序，已过滤空行）
+     *
+     * v2026-07-27 新增：用于"复制当前容器"功能。
+     *
+     * "容器"在多卡架构中定义为同一 [com.corgimemo.app.ui.model.TodoLine.groupId] 的行集合。
+     * 当前光标位置由 [focusedLineIndex] 决定，通过该索引查到对应行的 groupId，
+     * 再过滤出同 groupId 下的所有行，并按 [com.corgimemo.app.ui.model.TodoLine.order] 升序返回。
+     *
+     * 边界处理：
+     * - focusedLineIndex 越界或 todoLines 为空 → 返回空 list
+     * - 过滤掉 [com.corgimemo.app.ui.model.TodoLine.isEmpty] 的行（无文本且无附件的行不复制）
+     *
+     * @param focusedIndex 当前光标所在行的索引（来自 [_focusedLineIndex]）
+     * @return 当前容器下所有非空 TodoLine，按 order 升序；若索引无效则返回空 list
+     */
+    fun getCurrentContainerLines(focusedIndex: Int): List<com.corgimemo.app.ui.model.TodoLine> {
+        val lines = _todoLines.value
+        if (lines.isEmpty() || focusedIndex < 0 || focusedIndex >= lines.size) return emptyList()
+        val targetGroupId = lines[focusedIndex].groupId
+        return lines
+            .asSequence()
+            .filter { it.groupId == targetGroupId }
+            .filter { !it.isEmpty() }
+            .sortedBy { it.order }
+            .toList()
+    }
+
+    /**
+     * 将容器内 TodoLine 列表格式化为"复制到剪贴板"的纯文本
+     *
+     * v2026-07-27 新增：配合 [getCurrentContainerLines] 使用。
+     *
+     * 格式约定（与用户确认的样例一致）：
+     * - 未完成行：`◎  文本`（前缀两个空格与符号对齐）
+     * - 已完成行：`✓  文本`
+     * - 子任务行（isSubTask=true）：在上述格式前再加 2 空格缩进
+     *
+     * 示例输出（3 行容器）：
+     * ```
+     * ◎  这是测试1
+     *   ◎  测试2
+     *   ✓  测试3
+     * ```
+     *
+     * @param lines 待格式化的 TodoLine 列表（通常来自 [getCurrentContainerLines]）
+     * @return 格式化后的多行文本，末尾不包含换行符
+     */
+    fun formatContainerAsCopyText(lines: List<com.corgimemo.app.ui.model.TodoLine>): String {
+        return lines.joinToString(separator = "\n") { line ->
+            val prefix = if (line.isChecked) "✓" else "◎"
+            val indent = if (line.isSubTask) "  " else ""
+            "$indent$prefix  ${line.text}"
+        }
+    }
+
+    /**
      * 批量查询待办和子任务的图片附件路径（用于分享卡片）
      *
      * v2026-07-25 单一数据源重构新增：
