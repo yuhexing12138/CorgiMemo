@@ -1537,7 +1537,9 @@ private fun CheckboxEditRow(
                                         onDeleteVoice(voice.path)
                                     },
                                     /**
-                                     * draggableHandle 绑定到 Box，库自动处理长按触发 + 拖拽
+                                     * 🆕 v2026-07-27 P6 改造：语音拖拽使用 LongPress 模式
+                                     * 与图片一致：短按 + 拖 = 滚动查看；长按 + 拖 = 触发拖拽。
+                                     * 避免与 LazyRow 水平滚动手势冲突。
                                      * onDragStarted 时暂停正在播放的语音（替代原 onPauseRequest）
                                      */
                                     modifier = Modifier.draggableHandle(
@@ -1551,7 +1553,8 @@ private fun CheckboxEditRow(
                                                 enabled = true
                                             )
                                         },
-                                        onDragStopped = {}
+                                        onDragStopped = {},
+                                        dragGestureDetector = DragGestureDetector.LongPress
                                     )
                                 )
                             }
