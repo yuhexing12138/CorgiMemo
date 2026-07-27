@@ -68,11 +68,17 @@ internal fun DateTypeFilterSection(
     modifier: Modifier = Modifier
 ) {
     // 🆕 v2026-07-27 P8 Phase 3 拖拽状态
+    // 固定项偏移：LazyColumn 前 9 项（"全部日期" + 8 个 DateCategory）不可拖拽
     val listState = rememberLazyListState()
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState = listState) { from, to ->
-        // 复制列表，重排，通知外层
+        // 全局索引 → customDateTypes 子列表索引（减去固定项偏移 9）
+        val fromIndex = from.index - 9
+        val toIndex = to.index - 9
+        if (fromIndex !in customDateTypes.indices || toIndex !in customDateTypes.indices) {
+            return@rememberReorderableLazyListState
+        }
         val newList = customDateTypes.toMutableList().apply {
-            add(to.index, removeAt(from.index))
+            add(toIndex, removeAt(fromIndex))
         }
         onReorder(newList)
     }

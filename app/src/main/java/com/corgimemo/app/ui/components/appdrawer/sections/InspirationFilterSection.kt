@@ -98,11 +98,17 @@ internal fun InspirationFilterSection(
     }
 
     // 🆕 v2026-07-27 P8 Phase 4 拖拽状态
+    // 固定项偏移：LazyColumn 第 0 项（"全部灵感"）不可拖拽
     val listState = rememberLazyListState()
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState = listState) { from, to ->
-        // 复制完整 orderedTags 列表，重排，通知外层
+        // 全局索引 → orderedTags 子列表索引（减去固定项偏移 1）
+        val fromIndex = from.index - 1
+        val toIndex = to.index - 1
+        if (fromIndex !in orderedTags.indices || toIndex !in orderedTags.indices) {
+            return@rememberReorderableLazyListState
+        }
         val newOrder = orderedTags.toMutableList().apply {
-            add(to.index, removeAt(from.index))
+            add(toIndex, removeAt(fromIndex))
         }
         onReorder(newOrder)
     }

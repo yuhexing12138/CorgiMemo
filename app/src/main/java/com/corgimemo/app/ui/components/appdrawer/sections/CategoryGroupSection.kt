@@ -18,7 +18,6 @@ import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.ui.components.appdrawer.model.CategoryAction
 import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.longPressDraggableHandle
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 /**
@@ -63,11 +62,17 @@ internal fun CategoryGroupSection(
     modifier: Modifier = Modifier
 ) {
     // 🆕 v2026-07-27 P8 Phase 1 拖拽状态
+    // 固定项偏移：LazyColumn 前 2 项（"全部待办"/"未分类"）不可拖拽
     val listState = rememberLazyListState()
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState = listState) { from, to ->
-        // 复制列表，重排，通知外层
+        // 全局索引 → categories 子列表索引（减去固定项偏移 2）
+        val fromIndex = from.index - 2
+        val toIndex = to.index - 2
+        if (fromIndex !in categories.indices || toIndex !in categories.indices) {
+            return@rememberReorderableLazyListState
+        }
         val newList = categories.toMutableList().apply {
-            add(to.index, removeAt(from.index))
+            add(toIndex, removeAt(fromIndex))
         }
         onReorder(newList)
     }
