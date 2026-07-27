@@ -1,5 +1,6 @@
 package com.corgimemo.app.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -11,6 +12,9 @@ import androidx.room.PrimaryKey
  * @property name 分类名称
  * @property type 分类类型：0=学习，1=工作，2=生活，3=自定义
  * @property isDefault 是否为默认分类
+ * @property sortOrder 拖拽排序位置（v2026-07-27 新增，GROUP Tab 拖拽持久化用）
+ *   - @ColumnInfo(defaultValue = "0") 与 MIGRATION_8_9 SQL DEFAULT 0 一致
+ *   - 见 .trae/rules/entity与migration同步检查.md
  */
 @Entity(tableName = "categories")
 data class Category(
@@ -18,7 +22,9 @@ data class Category(
     val id: Long = 0,
     val name: String,
     val type: Int,
-    val isDefault: Boolean = false
+    val isDefault: Boolean = false,
+    @ColumnInfo(defaultValue = "0")
+    val sortOrder: Int = 0
 )
 
 /**

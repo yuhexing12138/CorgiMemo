@@ -1606,6 +1606,29 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 更新分类拖拽顺序（v2026-07-27 新增，P8 Phase 1 实施）
+     *
+     * GROUP Tab 侧滑栏长按拖拽完成后由 UI 层调用。
+     * 重新分配 sortOrder（按当前 list 顺序 0,1,2,...）后批量持久化。
+     *
+     * @param newList 拖拽后的新分类列表
+     *   - UI 层（CategoryGroupSection）的 Reorderable onMove 回调产生
+     *   - 直接透传不重排，mapIndexed 在此方法内做
+     */
+    fun updateCategoryOrder(newList: List<Category>) {
+        viewModelScope.launch {
+            try {
+                val ordered = newList.mapIndexed { idx, c -> c.copy(sortOrder = idx) }
+                categoryRepository.batchUpdateSortOrder(ordered)
+            } catch (e: Exception) {
+                // 错误通过 logcat 记录（与 HomeViewModel 其他错误处理一致，参考 line 3747/3857）
+                // 后续可扩展为 SharedFlow 事件供 UI 显示 Snackbar
+                android.util.Log.e("HomeViewModel", "更新分类顺序失败", e)
+            }
+        }
+    }
+
+    /**
      * 初始化姿态和情绪
      * 默认姿态根据情绪选择
      */

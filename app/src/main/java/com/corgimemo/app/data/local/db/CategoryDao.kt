@@ -3,6 +3,7 @@ package com.corgimemo.app.data.local.db
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Update
 import com.corgimemo.app.data.model.Category
 import kotlinx.coroutines.flow.Flow
 
@@ -18,10 +19,33 @@ interface CategoryDao {
     @Insert
     suspend fun insertAll(categories: List<Category>)
 
-    @Query("SELECT * FROM categories ORDER BY id ASC")
+    /**
+     * 批量更新分类排序（v2026-07-27 新增）
+     *
+     * 用于 GROUP Tab 拖拽后批量持久化 sortOrder。
+     * Room 自动按 @Update 主键匹配，无需显式 WHERE。
+     *
+     * @param categories 排序后的分类列表（每项 sortOrder 字段为目标位置）
+     */
+    @Update
+    suspend fun updateSortOrders(categories: List<Category>)
+
+    /**
+     * 获取所有分类（Flow，按用户拖拽顺序）
+     *
+     * v2026-07-27 P8 Phase 1 调整：ORDER BY 改为 sortOrder ASC, id ASC
+     * - sortOrder 优先：保证侧滑栏拖拽后的自定义顺序生效
+     * - id ASC 兜底：sortOrder 相同（默认 0）时按创建顺序排列
+     */
+    @Query("SELECT * FROM categories ORDER BY sortOrder ASC, id ASC")
     fun getAllCategories(): Flow<List<Category>>
 
-    @Query("SELECT * FROM categories ORDER BY id ASC")
+    /**
+     * 获取所有分类（同步列表，按用户拖拽顺序）
+     *
+     * v2026-07-27 P8 Phase 1 调整：同上 sortOrder ASC, id ASC
+     */
+    @Query("SELECT * FROM categories ORDER BY sortOrder ASC, id ASC")
     suspend fun getAllCategoriesList(): List<Category>
 
     @Query("SELECT * FROM categories WHERE id = :id")

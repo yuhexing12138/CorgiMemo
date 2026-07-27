@@ -131,4 +131,17 @@ class CategoryRepository @Inject constructor(
     suspend fun deleteCustomCategory(id: Long) = withContext(ioDispatcher) {
         categoryDao.deleteCustomCategory(id)
     }
+
+    /**
+     * 批量更新分类排序（v2026-07-27 新增，P8 Phase 1 实施）
+     *
+     * GROUP Tab 拖拽后由 ViewModel 调用。
+     * Room @Update 自动按主键匹配 + 事务，无需显式 WHERE。
+     *
+     * @param categories 排序后的分类列表（每项 sortOrder 字段为目标位置）
+     *   调用方应预先 mapIndexed { idx, c -> c.copy(sortOrder = idx) } 重新分配 sortOrder
+     */
+    suspend fun batchUpdateSortOrder(categories: List<Category>) = withContext(ioDispatcher) {
+        categoryDao.updateSortOrders(categories)
+    }
 }

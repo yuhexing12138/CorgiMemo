@@ -100,6 +100,8 @@ fun AppDrawerContent(
     onCategoryClick: (Long?) -> Unit = {},
     onAddCategoryClick: () -> Unit = {},
     onCategoryAction: (CategoryAction) -> Unit = {},
+    // v2026-07-27 P8 Phase 1 新增：分类拖拽排序回调
+    onReorderCategory: (List<Category>) -> Unit = {},
     onTagClick: (String) -> Unit = {},
     onTagFilterModeChange: (TagFilterMode) -> Unit = {},
     onClearTagSelection: () -> Unit = {},
@@ -139,6 +141,8 @@ fun AppDrawerContent(
         onCategoryClick = onCategoryClick,
         onAddCategoryClick = onAddCategoryClick,
         onCategoryAction = onCategoryAction,
+        // v2026-07-27 P8 Phase 1：透传分类拖拽回调
+        onReorderCategory = onReorderCategory,
         onTagClick = onTagClick,
         onTagFilterModeChange = onTagFilterModeChange,
         onClearTagSelection = onClearTagSelection,

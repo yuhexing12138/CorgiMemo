@@ -64,6 +64,7 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  * @param onCategoryClick 分类点击回调（TODO Tab）
  * @param onAddCategoryClick 添加分组回调（TODO Tab 底部按钮）
  * @param onCategoryAction 分类操作回调（TODO Tab，长按分类触发）
+ * @param onReorderCategory 分类拖拽排序回调（v2026-07-27 P8 Phase 1 新增，TODO/GROUP Tab）
  * @param onTagClick 标签点击回调（INSPIRE Tab）
  * @param onTagFilterModeChange 标签筛选模式切换回调（INSPIRE Tab）
  * @param onClearTagSelection 清空选中标签回调（INSPIRE Tab，"全部灵感"项）
@@ -103,6 +104,8 @@ fun AppDrawerContentImpl(
     onCategoryClick: (Long?) -> Unit = {},
     onAddCategoryClick: () -> Unit = {},
     onCategoryAction: (CategoryAction) -> Unit = {},
+    // v2026-07-27 P8 Phase 1 新增：分类拖拽回调（CategoryGroupSection 内置 Reorderable）
+    onReorderCategory: (List<Category>) -> Unit = {},
     onTagClick: (String) -> Unit = {},
     onTagFilterModeChange: (TagFilterMode) -> Unit = {},
     onClearTagSelection: () -> Unit = {},
@@ -168,6 +171,8 @@ fun AppDrawerContentImpl(
                             selectedCategoryId = selectedCategoryId,
                             onCategoryClick = onCategoryClick,
                             onCategoryAction = onCategoryAction,
+                            // v2026-07-27 P8 Phase 1：透传拖拽回调，委托外层 ViewModel 持久化
+                            onReorder = onReorderCategory,
                             modifier = Modifier.weight(1f)
                         )
                     }

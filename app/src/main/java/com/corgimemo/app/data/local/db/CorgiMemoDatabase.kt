@@ -31,7 +31,7 @@ import com.corgimemo.app.data.model.CustomDateType
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
-    version = 51,
+    version = 52,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -99,7 +99,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51, MIGRATION_51_52)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1934,6 +1934,46 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             database.execSQL("ALTER TABLE deleted_todos_new RENAME TO deleted_todos")
 
             // 注：DeletedTodo Entity 无 @Index 注解，无需重建索引
+        }
+    }
+    /**
+     * 数据库迁移：版本 51 → 52（v2026-07-27 新增，P8 Phase 1 实施）
+     * categories 表新增 sortOrder 字段
+     *
+     * **背景**：
+     * P8 任务为侧滑栏 4 个 Tab 添加长按拖拽排序功能。
+     * 本次（Phase 1：TODO / GROUP 拖拽）为 categories 表新增 sortOrder 字段，
+     * 用于持久化用户拖拽后自定义的分组顺序。
+     *
+     * **依据 .trae/rules/entity与 migration同步检查.md 规则**：
+     * SQL 的 `DEFAULT 0` 必须与 Category.sortOrder 的
+     * `@ColumnInfo(defaultValue = "0")` 严格保持一致。
+     *
+     * **字段语义**：
+     * - INTEGER 类型，默认 0
+     * - 较小值排在前面（与现有 todo_items.sortOrder 一致）
+     * - 旧数据全部默认为 0（按 id ASC 排序保留原视觉顺序）
+     *
+     * **关于 ORDER BY**：
+     * 不在本 Migration 中修改 getAllCategories 的 ORDER BY（保持原 id ASC）。
+     * sortOrder 真正生效需在 CategoryDao.getAllCategories 改为 ORDER BY sortOrder ASC, id ASC。
+     * 该改动计划在 P8.1 验收前的补充 Task 中进行。
+     *
+     * **后续 Migration 计划**（P8 剩余 4 个 Phase）：
+     * - MIGRATION_52_53: P4 — 新建 inspiration_tag_order 表
+     * - MIGRATION_53_54: P5 — 新建 profile_nav_items 表
+     */
+    internal val MIGRATION_51_52 = object : Migration(51, 52) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // 新增 sortOrder 字段（与 Entity @ColumnInfo defaultValue = "0" 一致）
+            database.execSQL(
+                "ALTER TABLE categories ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0"
+            )
+
+            // 加索引：sortOrder 是侧滑栏拖拽持久化的查询/排序键
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_categories_sortOrder ON categories(sortOrder)"
+            )
         }
     }
     // companion object 闭合

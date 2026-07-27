@@ -536,6 +536,11 @@ fun MainScreen(
                             is CategoryAction.Delete -> showDeleteCategoryDialog = action.category
                         }
                     },
+                    // v2026-07-27 P8 Phase 1：分类拖拽排序回调，委托 HomeViewModel 持久化
+                    // 列表顺序变化时立即更新 sortOrder 并落库，确保重启后保留用户自定义顺序
+                    onReorderCategory = { newList ->
+                        homeViewModel.updateCategoryOrder(newList)
+                    },
                     onTagClick = { tag ->
                         inspirationViewModel.toggleTagSelection(tag)
                     },
