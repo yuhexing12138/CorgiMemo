@@ -387,13 +387,50 @@ fun MyImageList(
 
 ## 8. 本项目使用清单
 
-| 文件 | 用途 | 容器 | 拖拽模式 |
-| --- | --- | --- | --- |
-| [CheckboxEditText.kt](file:///c:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/CheckboxEditText.kt) | 待办行内图片/语音附件 | `LazyRow` | `LongPress`（P5+P6 改造后） |
-| HomeScreen 相关 | 首页 todo 卡片跨区拖拽 | `LazyColumn` | 待确认（建议审计） |
-| AppDrawer 相关 | 侧滑栏分组/状态项拖拽 | `LazyColumn` / `LazyRow` | 待确认（建议审计） |
+> **v2026-07-27 审计结果**：项目内 **7 个 Reorderable 拖拽点全部使用 LongPress 模式**，0 个 Press 残留。
+> AppDrawer 当前**没有实现拖拽**（用户记忆有误），如未来要加建议直接用 `longPressDraggableHandle`。
 
-> 📌 **审计建议**：本规则发布后，**审计上述其他使用点是否也是 `LongPress`**，避免同样的滑动误触问题。
+### 8.1 实际拖拽点（7 处）
+
+| # | 文件:行 | 用途 | 容器 | 拖拽模式 | 风险 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | [CheckboxEditText.kt:1421-1431](file:///c:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/CheckboxEditText.kt#L1421-L1431) | 待办行内图片附件 | `LazyRow` | `LongPress`（显式传） | ✅ |
+| 2 | [CheckboxEditText.kt:1545-1558](file:///c:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/CheckboxEditText.kt#L1545-L1558) | 待办行内语音附件 | `LazyRow` | `LongPress`（显式传） | ✅ |
+| 3 | [ReorderableLazyColumn.kt:46](file:///c:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/ReorderableLazyColumn.kt#L46) | 设置页 / 简化场景封装 | `Column` | `longPressDraggableHandle`（便捷方法） | ✅ |
+| 4 | [ZonedReorderableLazyColumn.kt:200](file:///c:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/ZonedReorderableLazyColumn.kt#L200) | 4 区拖拽的 divider | `LazyColumn` | `longPressDraggableHandle(enabled = false)` | ✅ |
+| 5 | [ZonedReorderableLazyColumn.kt:213](file:///c:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/ZonedReorderableLazyColumn.kt#L213) | 首页 todo 卡片跨区拖拽 | `LazyColumn` | `longPressDraggableHandle(enabled = isDragEnabled)` | ✅ |
+| 6 | [SpecialDateScreen.kt:493](file:///c:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/date/SpecialDateScreen.kt#L493) | 日期页 section header | `LazyColumn` | `longPressDraggableHandle(enabled = false)` | ✅ |
+| 7 | InspirationEditScreen.kt:1107 | 灵感编辑内容块（间接通过 #3 封装） | `Column` | `longPressDraggableHandle`（封装内） | ✅ |
+
+### 8.2 统一模式：5/7 用便捷方法，2/7 显式传参
+
+| 模式 | 使用次数 | 适用场景 |
+| --- | --- | --- |
+| `Modifier.longPressDraggableHandle(...)` | **5 次** | 新代码、单一意图（永远要长按） |
+| `Modifier.draggableHandle(..., dragGestureDetector = LongPress)` | **2 次** | 旧代码（P5+P6 阶段），需要注释说明 |
+
+> 📌 **建议**：未来新代码**统一用 `longPressDraggableHandle`**，把 #1 #2 改造成便捷方法形式（仅做收尾，非必要）。
+
+### 8.3 审计命令（未来重跑）
+
+```powershell
+# 扫描所有 draggableHandle / longPressDraggableHandle 调用点
+Get-ChildItem -Path "app/src/main/java" -Recurse -Filter "*.kt" |
+  Select-String -Pattern "\.draggableHandle|longPressDraggableHandle" |
+  Where-Object { $_.Line -notmatch "^\s*\*" }  # 排除 KDoc 注释
+```
+
+### 8.4 审计 Checklist（拖拽代码 review 时逐项打勾）
+
+- [ ] 容器需要用户滚动（LazyRow / LazyColumn 多于 1 屏）？
+  - 是 → 必须 LongPress
+  - 否 → 仍建议 LongPress（与系统行为一致）
+- [ ] 实际代码中**未省略 `dragGestureDetector` 默认值**？
+- [ ] 若用 `draggableHandle` 而非便捷方法，KDoc 注释是否说明"为何不用 longPressDraggableHandle"？
+- [ ] `ReorderableItem` 的 `key` 与 `items(key = ...)` 一致？
+- [ ] onMove 同步完成数据更新（无 `launch` 后立即返回）？
+- [ ] `Modifier.zIndex` 写在 `ReorderableItem` content lambda 内（LazyItemScope 作用域）？
+- [ ] divider / section header 用 `enabled = false` 仅作为 to 目标？
 
 ## 9. 常见陷阱与最佳实践
 
@@ -408,6 +445,7 @@ fun MyImageList(
 | 用 `from.index` 直接索引，但列表有动画 | 索引漂移 | 用 `from.key` 重新定位 |
 | 把 `Modifier.zIndex` 写到 `ReorderableItem` 外面 | zIndex 不生效 | 必须在 `ReorderableItem` content lambda 内（LazyItemScope 作用域） |
 | 误以为 `enabled = false` 让项不能拖 | 项仍可被拖出 | 用 `draggableHandle.enabled = false` 禁用手柄 |
+| **同类 bug 在多点出现时只修一处**（P5+P6 历史教训） | 修了图片但忘了语音 | 修复时用 `8.3 审计命令` 跑一遍所有调用点；每个调用点独立确认修复生效 |
 
 ### 9.2 最佳实践
 
@@ -423,5 +461,9 @@ fun MyImageList(
 
 - [Reorderable 库源码（库内）](file:///C:/Users/EDY/Desktop/CorgiMemo/Reorderable/reorderable/reorderable/src/commonMain/kotlin/sh/calvin/reorderable)
 - [Reorderable 官方仓库](https://github.com/Calvin-LL/Reorderable)
-- 本项目使用点：[CheckboxEditText.kt](file:///c:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/CheckboxEditText.kt)
+- 本项目使用点：
+  - [CheckboxEditText.kt](file:///c:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/CheckboxEditText.kt)（图片 + 语音拖拽）
+  - [ZonedReorderableLazyColumn.kt](file:///c:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/ZonedReorderableLazyColumn.kt)（首页 4 区拖拽封装）
+  - [ReorderableLazyColumn.kt](file:///c:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/components/ReorderableLazyColumn.kt)（简化版封装）
+  - [SpecialDateScreen.kt](file:///c:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/date/SpecialDateScreen.kt)（日期页 section header）
 - 改造历史：P5（图片拖拽）、P6（语音拖拽）— 见 [图片拖拽迁移至Reorderable库与自定义上限实施计划.md](file:///c:/Users/EDY/Desktop/CorgiMemo/.trae/documents/图片拖拽迁移至Reorderable库与自定义上限实施计划.md)
