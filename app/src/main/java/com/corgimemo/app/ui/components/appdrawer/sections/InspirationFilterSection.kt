@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -30,11 +31,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import com.corgimemo.app.animation.HapticFeedbackManager
+import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.theme.UiColors
 import com.corgimemo.app.viewmodel.TagFilterMode
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 /**
  * 灵感标签筛选分区（侧边栏）
@@ -47,7 +55,14 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  *
  * **可见性说明**：原 `private` 改为 `internal`，被 AppDrawerContentImpl 调用。
  *
- * @param tags 所有标签名列表
+ * **v2026-07-27 P8 Phase 4 改造**：
+ * - 接受 [orderedTags] 参数（来自 InspirationViewModel.orderedTags，已按用户拖拽顺序）
+ * - 接受 [onReorder] 回调，拖拽后委托外层 ViewModel 持久化到 inspiration_tag_order 表
+ * - 拖拽视觉：scale 1.05 + shadowElevation 8dp + zIndex 1f
+ * - 触觉反馈：HapticFeedbackManager.TEXT_MOVE
+ * - 搜索框过滤时仍隐藏部分 tag，但拖拽基于完整 orderedTags（与首页 todo 卡片风格一致）
+ *
+ * @param orderedTags 已按用户拖拽顺序排列的完整标签列表（v2026-07-27 P8 Phase 4 新增，替代原 savedTags）
  * @param selectedTags 当前选中的标签集合（多选）
  * @param filterMode 标签筛选模式（OR / AND / NOT）
  * @param tagCounts 每个标签对应的灵感数量
@@ -55,11 +70,12 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  * @param onTagClick 标签点击回调（传入标签名，由调用方切换选中状态）
  * @param onFilterModeChange 筛选模式切换回调
  * @param onClearTagSelection 清空所有选中标签回调（"全部灵感"点击时调用）
+ * @param onReorder 标签拖拽完成回调（v2026-07-27 P8 Phase 4 新增，参数为新顺序的完整标签列表）
  * @param modifier 外部 Modifier
  */
 @Composable
 internal fun InspirationFilterSection(
-    tags: List<String>,
+    orderedTags: List<String>,
     selectedTags: Set<String>,
     filterMode: TagFilterMode,
     tagCounts: Map<String, Int>,
@@ -67,16 +83,28 @@ internal fun InspirationFilterSection(
     onTagClick: (String) -> Unit,
     onFilterModeChange: (TagFilterMode) -> Unit,
     onClearTagSelection: () -> Unit,
+    onReorder: (List<String>) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // 搜索框本地状态（不持久化，关闭侧边栏后清空）
     var searchQuery by remember { mutableStateOf("") }
 
     // 根据搜索词过滤标签列表（忽略大小写的模糊匹配）
+    // 注意：基于 orderedTags（用户排序后），不是 savedTags（字母序）
     val filteredTags = if (searchQuery.isBlank()) {
-        tags
+        orderedTags
     } else {
-        tags.filter { it.contains(searchQuery, ignoreCase = true) }
+        orderedTags.filter { it.contains(searchQuery, ignoreCase = true) }
+    }
+
+    // 🆕 v2026-07-27 P8 Phase 4 拖拽状态
+    val listState = rememberLazyListState()
+    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState = listState) { from, to ->
+        // 复制完整 orderedTags 列表，重排，通知外层
+        val newOrder = orderedTags.toMutableList().apply {
+            add(to.index, removeAt(from.index))
+        }
+        onReorder(newOrder)
     }
 
     Column(modifier = modifier) {
@@ -183,9 +211,12 @@ internal fun InspirationFilterSection(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // 5. 标签列表（可滚动）
-        LazyColumn(modifier = Modifier.fillMaxWidth()) {
-            // "全部灵感" 选项（无选中标签时高亮）
+        // 5. 标签列表（可滚动，可拖拽）
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // "全部灵感" 选项（无选中标签时高亮，不可拖拽）
             item {
                 CategoryItem(
                     icon = DRAWER_ICON_ALL,
@@ -197,16 +228,46 @@ internal fun InspirationFilterSection(
                 )
             }
 
-            // 过滤后的标签列表
-            items(filteredTags) { tag ->
-                CategoryItem(
-                    icon = "#",
-                    name = tag,
-                    count = tagCounts[tag] ?: 0,
-                    isSelected = tag in selectedTags,
-                    showMenu = false,
-                    onClick = { onTagClick(tag) }
-                )
+            // 过滤后的标签列表（v2026-07-27 P8 Phase 4 起支持长按拖拽）
+            //    key 用 tag 字符串本身（稳定主键）
+            items(
+                items = filteredTags,
+                key = { it }
+            ) { tag ->
+                ReorderableItem(
+                    state = reorderableLazyListState,
+                    key = tag
+                ) { isDragging ->
+                    val context = LocalContext.current
+                    Box(
+                        modifier = Modifier
+                            .zIndex(if (isDragging) 1f else 0f)
+                            .graphicsLayer {
+                                scaleX = if (isDragging) 1.05f else 1f
+                                scaleY = if (isDragging) 1.05f else 1f
+                                shadowElevation = if (isDragging) 8f else 0f
+                            }
+                            .longPressDraggableHandle(
+                                onDragStarted = {
+                                    HapticFeedbackManager.performHapticFeedback(
+                                        context = context,
+                                        type = InteractionType.TEXT_MOVE,
+                                        enabled = true
+                                    )
+                                },
+                                onDragStopped = {}
+                            )
+                    ) {
+                        CategoryItem(
+                            icon = "#",
+                            name = tag,
+                            count = tagCounts[tag] ?: 0,
+                            isSelected = tag in selectedTags,
+                            showMenu = false,
+                            onClick = { onTagClick(tag) }
+                        )
+                    }
+                }
             }
         }
     }

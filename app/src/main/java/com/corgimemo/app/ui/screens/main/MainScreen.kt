@@ -249,6 +249,8 @@ fun MainScreen(
     val specialDateViewModel: SpecialDateViewModel = hiltViewModel()
     /** 灵感页标签相关状态（供侧边栏使用） */
     val inspirationTags by inspirationViewModel.savedTags.collectAsState()
+    /** 灵感标签按用户拖拽顺序排序（v2026-07-27 P8 Phase 4 新增，侧边栏渲染用） */
+    val orderedInspirationTags by inspirationViewModel.orderedTags.collectAsState()
     val selectedTags by inspirationViewModel.selectedTags.collectAsState()
     val tagFilterMode by inspirationViewModel.tagFilterMode.collectAsState()
     val tagCounts by inspirationViewModel.tagCounts.collectAsState()
@@ -520,7 +522,8 @@ fun MainScreen(
                     categories = categories,
                     todoCountByCategory = todoCountByCategory,
                     selectedCategoryId = selectedCategoryId,
-                    inspirationTags = inspirationTags,
+                    // v2026-07-27 P8 Phase 4：传入 orderedTags（用户拖拽顺序）替代 inspirationTags（字母序）
+                    inspirationTags = orderedInspirationTags,
                     selectedTags = selectedTags,
                     tagFilterMode = tagFilterMode,
                     tagCounts = tagCounts,
@@ -553,6 +556,10 @@ fun MainScreen(
                         inspirationViewModel.clearTagSelection()
                     },
                     onAddTagClick = { showAddTagDialog = true },
+                    // v2026-07-27 P8 Phase 4：灵感标签拖拽回调，委托 InspirationViewModel 持久化
+                    onReorderInspirationTag = { newOrder ->
+                        inspirationViewModel.updateTagOrder(newOrder)
+                    },
                     selectedDateCategory = selectedDateCategory,
                     dateCountByCategory = dateCountByCategory,
                     customDateTypes = customDateTypes,

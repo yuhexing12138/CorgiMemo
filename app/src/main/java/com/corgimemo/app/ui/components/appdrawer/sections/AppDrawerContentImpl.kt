@@ -69,6 +69,7 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  * @param onTagFilterModeChange 标签筛选模式切换回调（INSPIRE Tab）
  * @param onClearTagSelection 清空选中标签回调（INSPIRE Tab，"全部灵感"项）
  * @param onAddTagClick 添加标签回调（INSPIRE Tab 底部按钮）
+ * @param onReorderInspirationTag 灵感标签拖拽排序回调（v2026-07-27 P8 Phase 4 新增，INSPIRE Tab）
  * @param onDateCategoryClick 日期类型点击回调（DATE Tab）
  * @param onAddCustomTypeClick 添加自定义类型回调（DATE Tab 底部按钮）
  * @param onCustomTypeAction 自定义类型操作回调（DATE Tab，长按触发）
@@ -113,6 +114,8 @@ fun AppDrawerContentImpl(
     onTagFilterModeChange: (TagFilterMode) -> Unit = {},
     onClearTagSelection: () -> Unit = {},
     onAddTagClick: () -> Unit = {},
+    // v2026-07-27 P8 Phase 4 新增：灵感标签拖拽回调
+    onReorderInspirationTag: (List<String>) -> Unit = {},
     onDateCategoryClick: (String?) -> Unit = {},
     onAddCustomTypeClick: () -> Unit = {},
     onCustomTypeAction: (DateTypeAction) -> Unit = {},
@@ -216,6 +219,8 @@ fun AppDrawerContentImpl(
                     onTagClick = onTagClick,
                     onFilterModeChange = onTagFilterModeChange,
                     onClearTagSelection = onClearTagSelection,
+                    // v2026-07-27 P8 Phase 4：透传拖拽回调，委托外层 ViewModel 持久化
+                    onReorder = onReorderInspirationTag,
                     modifier = Modifier.weight(1f)
                 )
                 AddCategoryButton(text = "添加标签", onClick = onAddTagClick)

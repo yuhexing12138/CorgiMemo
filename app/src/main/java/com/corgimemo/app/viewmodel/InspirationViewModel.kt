@@ -269,6 +269,61 @@ class InspirationViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
+    /**
+     * 灵感标签拖拽顺序（v2026-07-27 新增，P8 Phase 4 实施）
+     *
+     * 从 inspiration_tag_order 表读取用户自定义的 tag 顺序。
+     * - 首次启动时为空 Flow（用户在 DB 拖拽前没数据）
+     * - 拖拽后由 updateTagOrder() 持久化
+     */
+    val tagOrder: StateFlow<List<String>> = repository.getOrderedTagNames()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    /**
+     * 排序后的标签列表（v2026-07-27 新增，P8 Phase 4 实施）
+     *
+     * 组合逻辑：优先按用户 tagOrder 排序，剩余 tag 按字母序追加在末尾。
+     * - 假设 tagOrder = ["C", "A"], savedTags = ["A", "B", "C", "D"]
+     * - 结果 = ["C", "A", "B", "D"]（B、D 来自 savedTags 中未在 tagOrder 出现的）
+     *
+     * **fallback**：tagOrder 为空（首次启动）时直接用 savedTags 字母序。
+     */
+    val orderedTags: StateFlow<List<String>> = combine(savedTags, tagOrder) { tags, order ->
+        if (order.isEmpty()) {
+            tags
+        } else {
+            // 1. 按 order 顺序保留出现在 order 中的 tag
+            val orderedFromOrder = order.filter { it in tags }
+            // 2. savedTags 中不在 order 里的剩余 tag，按字母序追加
+            val remaining = (tags - orderedFromOrder.toSet()).sorted()
+            orderedFromOrder + remaining
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    /**
+     * 更新标签拖拽顺序（v2026-07-27 新增，P8 Phase 4 实施）
+     *
+     * INSPIRATION Tab 侧滑栏长按拖拽完成后由 UI 层调用。
+     * 立即更新内存 + 异步持久化到 inspiration_tag_order 表。
+     */
+    fun updateTagOrder(newOrder: List<String>) {
+        viewModelScope.launch {
+            try {
+                repository.updateTagOrder(newOrder)
+            } catch (e: Exception) {
+                android.util.Log.e("InspirationViewModel", "更新标签顺序失败", e)
+            }
+        }
+    }
+
     /** 选中的标签集合（多选） */
     private val _selectedTags = MutableStateFlow<Set<String>>(emptySet())
     val selectedTags: StateFlow<Set<String>> = _selectedTags.asStateFlow()

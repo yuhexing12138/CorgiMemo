@@ -4,6 +4,8 @@ import com.corgimemo.app.data.local.db.InspirationDao
 import com.corgimemo.app.data.local.db.InspirationRelationDao
 import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.data.model.InspirationRelation
+import com.corgimemo.app.data.model.InspirationTagOrder
+import com.corgimemo.app.data.local.db.InspirationTagOrderDao
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -17,7 +19,9 @@ import javax.inject.Singleton
 class InspirationRepository @Inject constructor(
     private val inspirationDao: InspirationDao,
     private val relationDao: InspirationRelationDao,
-    private val cardRelationRepository: CardRelationRepository
+    private val cardRelationRepository: CardRelationRepository,
+    // v2026-07-27 新增：灵感标签拖拽排序 DAO
+    private val inspirationTagOrderDao: InspirationTagOrderDao
 ) {
     
     // ========== 灵感 CRUD 操作 ==========
@@ -185,6 +189,31 @@ class InspirationRepository @Inject constructor(
      * 删除灵感所有关联
      * @param inspirationId 灵感ID
      */
-    suspend fun deleteAllRelationsByInspirationId(inspirationId: Long) = 
+    suspend fun deleteAllRelationsByInspirationId(inspirationId: Long) =
         relationDao.deleteByInspirationId(inspirationId)
+
+    // ========== 标签拖拽排序（v2026-07-27 新增，P8 Phase 4 实施） ==========
+
+    /**
+     * 获取已排序的标签名列表
+     *
+     * 如 DB 中无记录则返回空 Flow（首次启动会 seed 全部已知标签）。
+     * 调用方应做 fallback：空列表时从 inspirations.tags 字段聚合后按字母序排序。
+     */
+    fun getOrderedTagNames(): Flow<List<String>> = inspirationTagOrderDao.getOrderedTagNames()
+
+    /**
+     * 更新标签拖拽顺序（v2026-07-27 新增）
+     *
+     * INSPIRATION Tab 拖拽完成后由 ViewModel 调用。
+     * 重新分配 sortOrder 后批量 REPLACE 写入。
+     *
+     * @param orderedTagNames 拖拽后的新标签顺序
+     */
+    suspend fun updateTagOrder(orderedTagNames: List<String>) {
+        val orders = orderedTagNames.mapIndexed { idx, name ->
+            InspirationTagOrder(tagName = name, sortOrder = idx)
+        }
+        inspirationTagOrderDao.insertAll(orders)
+    }
 }

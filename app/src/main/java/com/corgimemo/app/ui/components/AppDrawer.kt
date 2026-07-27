@@ -106,6 +106,8 @@ fun AppDrawerContent(
     onTagFilterModeChange: (TagFilterMode) -> Unit = {},
     onClearTagSelection: () -> Unit = {},
     onAddTagClick: () -> Unit = {},
+    // v2026-07-27 P8 Phase 4 新增：灵感标签拖拽回调
+    onReorderInspirationTag: (List<String>) -> Unit = {},
     onDateCategoryClick: (String?) -> Unit = {},
     onAddCustomTypeClick: () -> Unit = {},
     onCustomTypeAction: (DateTypeAction) -> Unit = {},
@@ -152,6 +154,8 @@ fun AppDrawerContent(
         onTagFilterModeChange = onTagFilterModeChange,
         onClearTagSelection = onClearTagSelection,
         onAddTagClick = onAddTagClick,
+        // v2026-07-27 P8 Phase 4：透传灵感标签拖拽回调
+        onReorderInspirationTag = onReorderInspirationTag,
         onDateCategoryClick = onDateCategoryClick,
         onAddCustomTypeClick = onAddCustomTypeClick,
         onCustomTypeAction = onCustomTypeAction,

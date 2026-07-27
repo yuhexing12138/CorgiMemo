@@ -24,14 +24,15 @@ import com.corgimemo.app.data.model.SpecialDateRelation
 import com.corgimemo.app.data.model.UserTemplateEntity
 import com.corgimemo.app.data.model.DeletedSpecialDate
 import com.corgimemo.app.data.model.CustomDateType
+import com.corgimemo.app.data.model.InspirationTagOrder
 
 /**
  * 应用数据库
  * 管理待办事项、柯基数据、任务分类、成就和用户模板
  */
 @Database(
-    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class],
-    version = 52,
+    entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class, InspirationTagOrder::class],
+    version = 53,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -86,6 +87,9 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
     /** 自定义日期类型 DAO */
     abstract fun customDateTypeDao(): CustomDateTypeDao
 
+    /** 灵感标签拖拽排序 DAO（v2026-07-27 新增，P8 Phase 4 实施） */
+    abstract fun inspirationTagOrderDao(): InspirationTagOrderDao
+
     companion object {
         private const val DATABASE_NAME = "corgimemo_database"
 
@@ -99,7 +103,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51, MIGRATION_51_52)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51, MIGRATION_51_52, MIGRATION_52_53)
                     .build()
                 INSTANCE = instance
                 instance
@@ -1973,6 +1977,37 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             // 加索引：sortOrder 是侧滑栏拖拽持久化的查询/排序键
             database.execSQL(
                 "CREATE INDEX IF NOT EXISTS index_categories_sortOrder ON categories(sortOrder)"
+            )
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 52 → 53（v2026-07-27 新增，P8 Phase 4 实施）
+     * 新建 inspiration_tag_order 表（INSPIRATION Tab 标签拖拽排序持久化）
+     *
+     * **背景**：
+     * P8 任务为侧滑栏 4 个 Tab 添加长按拖拽排序功能。
+     * 本次（Phase 4：INSPIRATION / 标签拖拽）新建 inspiration_tag_order 表，
+     * 用 tagName 作主键 + sortOrder 字段，存储用户自定义的标签顺序。
+     *
+     * **字段说明**：
+     * - tagName: TEXT PRIMARY KEY（标签名）
+     * - sortOrder: INTEGER NOT NULL DEFAULT 0（拖拽顺序）
+     *
+     * **数据回填**：
+     * 本 Migration 不做回填。新表初始为空，
+     * 首次启动时由 InspirationViewModel 从 inspirations.tags 字段聚合 + seed。
+     */
+    internal val MIGRATION_52_53 = object : Migration(52, 53) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS inspiration_tag_order (
+                    tagName TEXT NOT NULL PRIMARY KEY,
+                    sortOrder INTEGER NOT NULL DEFAULT 0
+                )
+            """.trimIndent())
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_inspiration_tag_order_sortOrder ON inspiration_tag_order(sortOrder)"
             )
         }
     }
