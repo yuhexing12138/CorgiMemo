@@ -9,6 +9,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -18,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -26,81 +35,70 @@ import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.ui.components.appdrawer.model.CategoryAction
+import com.corgimemo.app.viewmodel.FilterItem
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 /**
- * 待办分组管理分区（侧边栏）
+ * 待办分组管理分区（侧边栏，v2026-07-28 v2 跨维度改造）
  *
- * 布局：
- * 1. "全部待办"项（selectedCategoryId == null）
- * 2. "未分类"项（selectedCategoryId == 0L）
- * 3. 自定义分类列表（来自 [categories]，按 sortOrder 排序，**v2026-07-27 起支持长按拖拽**）
+ * **v2 跨维度改造**（v2026-07-28）：
+ * - 改为多选交互（`selectedCategoryItems: Set<FilterItem.Category>`）
+ * - 配合全局 [com.corgimemo.app.viewmodel.HomeViewModel.filterMode] 实现 OR/AND/NOT 跨维度组合
+ * - "全部待办"项点击 → 清空所有过滤（[onClearAllFilters]）
+ * - "未分类"项和自定义分组项支持多选
+ *
+ * **🆕 v2026-07-28 搜索框**：
+ * - 加搜索框（本地状态，按分组名模糊过滤显示）
+ * - 仅过滤自定义分组的显示，不影响"全部待办"/"未分类"
+ *
+ * **布局**（沿用 P8 Phase 1 设计）：
+ * 1. "全部待办"项（selectedCategoryItems 为空时高亮）
+ * 2. "未分类"项（FilterItem.Category(0L) in selectedCategoryItems 时高亮）
+ * 3. 自定义分类列表（按 sortOrder 排序，**v2026-07-27 起支持长按拖拽**）
  *
  * **v2026-07-27 调整**：删除内部"分组管理"标题 + 橙线，避免与上方
  * [DrawerSectionTab] Tab 切换器的"分组管理"文字重复。
- * 顶部 8dp 间距用 LazyColumn.padding(top) 替代原来的 Spacer。
- *
- * **v2026-07-27 P8 Phase 1 改造**：自定义分类列表接入 Reorderable 库
- * - 长按整行触发拖拽（与首页 todo 卡片拖拽一致）
- * - 拖拽中视觉：scale 1.05 + shadowElevation 8dp + zIndex 1f
- * - 触觉反馈：HapticFeedbackManager.TEXT_MOVE
- * - 顶部 2 个 fixed items（全部待办/未分类）**不可拖拽**（无 sortOrder）
  *
  * **v2026-07-28 Plan A 改造**：onReorder 调用时机从 onMove 改为 onDragStopped
  * - 原：每次 onMove 都回调 onReorder → 整条 StateFlow 链路更新 → 单次拖拽重组 200-400 次
  * - 现：拖拽中仅更新本地 pendingReorder，拖拽结束才回调 onReorder
- * - 预期：单次拖拽重组 < 10 次
  *
  * **v2026-07-28 Plan D 改造**：graphicsLayer 参数改用 animateFloatAsState
  * - 原：scale/shadow 突变（isDragging 切换瞬间从 1.0/0 跳到 1.05/8）
  * - 现：scale/shadow 用 120ms tween 平滑过渡
- * - 目的：消除 scale/shadow 突变导致的残影/闪烁
  *
- * 点击自定义分类右侧三点菜单 → 触发 [CategoryAction.ShowMenu]（MainScreen 显示 BottomSheet）
- *
- * **可见性说明**：原 `private` 改为 `internal`，被 AppDrawerContentImpl 调用。
+ * **v2026-07-28 拖拽埋点**：接入 [rememberReorderableDiagnostics]（7 类埋点）
  *
  * @param categories 自定义分类列表（已按 sortOrder 排序）
  * @param todoCountByCategory 各分类 ID → 待办数量映射（key=-1 表示全部，key=0 表示未分类）
- * @param selectedCategoryId 当前选中的分类 ID（null=全部, 0L=未分类, 其他=自定义分类 ID）
- * @param onCategoryClick 点击分类行回调（参数为分类 ID）
+ * @param selectedCategoryItems 当前选中的分组项集合（不包含"全部"项）
+ * @param onCategoryToggle 分组项点击回调（参数为要切换的 [FilterItem.Category]）
+ * @param onClearAllFilters 点击"全部待办"时回调
  * @param onCategoryAction 分组操作回调（ShowMenu / Pin / Rename / Delete）
- * @param onReorder 拖拽结束回调（v2026-07-28 Plan A：仅在拖拽结束时调用，参数为最终的新分类列表）
- *   原 v2026-07-27 接 Reorderable onMove 通知，委托外层 ViewModel 持久化
+ * @param onReorder 拖拽结束回调
  * @param modifier 外部 Modifier
  */
 @Composable
 internal fun CategoryGroupSection(
     categories: List<Category>,
     todoCountByCategory: Map<Long, Int>,
-    selectedCategoryId: Long?,
-    onCategoryClick: (Long?) -> Unit,
+    selectedCategoryItems: Set<FilterItem.Category>,
+    onCategoryToggle: (FilterItem.Category) -> Unit,
+    onClearAllFilters: () -> Unit,
     onCategoryAction: (CategoryAction) -> Unit,
     onReorder: (List<Category>) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // 🆕 v2026-07-28 拖拽埋点（诊断"残影/闪烁"问题，调试代码不入仓）
-    //   7 类埋点：onRecompose / onMove / onDragStarted / onDragStopped /
-    //             onGraphicsLayerChange / onLayoutChange / onReorderSubmit
     val diag = rememberReorderableDiagnostics("Category")
-    // 重组埋点：函数体每次重组都自增
     diag.onRecompose()
 
     // 🆕 v2026-07-28 Plan A+：拖拽中暂存新顺序，**不主动清空**
-    //   - 松手时由 onDragStopped 调用 onReorder → ViewModel 端同步 emit override
-    //     （HomeViewModel._categoryOrderOverride），UI 立即看到新顺序
-    //   - 持久化完成后由 [LaunchedEffect] 监听 categories 与 pendingReorder 一致时
-    //     自动清空 pendingReorder（避免无限期持有 stale 状态）
-    //   - 行为：松手瞬间不会回弹到旧顺序，无残影
     var pendingReorder by remember { mutableStateOf<List<Category>?>(null) }
-    // 拖拽中显示 pendingReorder（如果有），否则显示原始 categories
     val displayCategories = pendingReorder ?: categories
 
-    // 🆕 v2026-07-28 方案 C 监听器：当 ViewModel 数据已与 pendingReorder 同步时
-    //   自动清空 pendingReorder，displayCategories 自然显示新顺序（来自 ViewModel），
-    //   不需要 Section 端主动清空（避免回弹残影）。
-    //   注意：比较 id 序列（不比较对象），因为 override 与 Room Flow 是不同实例
+    // 🆕 v2026-07-28 方案 C 监听器：ViewModel 数据已与 pendingReorder 同步时自动清空
     LaunchedEffect(categories, pendingReorder) {
         if (pendingReorder != null) {
             val pendingIds = pendingReorder!!.map { it.id }
@@ -111,13 +109,25 @@ internal fun CategoryGroupSection(
         }
     }
 
+    // 🆕 v2026-07-28 搜索框本地状态（按 category.name 模糊过滤显示）
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredCategories = remember(displayCategories, searchQuery) {
+        if (searchQuery.isBlank()) {
+            displayCategories
+        } else {
+            displayCategories.filter { category ->
+                category.name.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+
     // 🆕 v2026-07-27 P8 Phase 1 拖拽状态
-    // 固定项偏移：LazyColumn 前 2 项（"全部待办"/"未分类"）不可拖拽
     val listState = rememberLazyListState()
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState = listState) { from, to ->
-        // 埋点 #2：位置交换（仅记录，不回调外层）
-        diag.onMove(from = from.index, to = to.index, listSize = displayCategories.size + 2, isDragging = true)
-        // 全局索引 → categories 子列表索引（减去固定项偏移 2）
+        // 拒绝拖动 ALL 和 UNCATEGORIZED（前 2 个固定项）
+        if (from.index < 2 || to.index < 2) {
+            return@rememberReorderableLazyListState
+        }
         val fromIndex = from.index - 2
         val toIndex = to.index - 2
         val currentList = pendingReorder ?: categories
@@ -128,55 +138,64 @@ internal fun CategoryGroupSection(
         pendingReorder = currentList.toMutableList().apply {
             add(toIndex, removeAt(fromIndex))
         }
-        // 埋点：onMove 后的 pendingReorder 快照（验证 list 变化 → isDragging 因果链）
+        diag.onMove(from = fromIndex, to = toIndex, listSize = displayCategories.size + 2, isDragging = true)
         diag.onMoveSnapshot(from = fromIndex, to = toIndex, snapshot = pendingReorder!!)
     }
 
-    // 埋点 #6：LazyColumn 布局变化
     TrackLazyColumnLayout(listState, diag)
 
-    // 埋点：items() 列表 key 顺序变化
     LaunchedEffect(displayCategories) {
         diag.onListKeysChange(displayCategories.map { it.id })
     }
 
     Column(modifier = modifier) {
-        // 分类列表（顶部 8dp 间距替代原"标题 + 橙线 + Spacer 8dp"）
+        // 🆕 v2026-07-28 搜索框（仅过滤自定义分组的显示，不影响 ALL/UNCATEGORIZED）
+        CategorySearchBar(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            onClear = { searchQuery = "" },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 8.dp)
+                .padding(top = 4.dp)
         ) {
             // 1. "全部待办" 项（特殊 ID: -1L，不可拖拽）
-            item {
+            //    v2 跨维度：点击调用 onClearAllFilters() 清空所有过滤
+            item(key = "all_todos") {
                 CategoryItem(
                     icon = DRAWER_ICON_ALL,
                     name = "全部待办",
                     count = todoCountByCategory[-1L] ?: 0,
-                    isSelected = selectedCategoryId == null,
+                    isSelected = selectedCategoryItems.isEmpty(),
                     showMenu = false,
-                    onClick = { onCategoryClick(null) }
+                    onClick = { onClearAllFilters() }
                 )
             }
 
-            // 2. "未分类" 项（特殊 ID: 0L，不可拖拽）
-            item {
+            // 2. "未分类" 项（FilterItem.Category(0L)，不可拖拽）
+            item(key = "uncategorized") {
+                val item = FilterItem.Category(0L)
                 CategoryItem(
                     icon = DRAWER_ICON_UNCATEGORIZED,
                     name = "未分类",
                     count = todoCountByCategory[0L] ?: 0,
-                    isSelected = selectedCategoryId == 0L,
+                    isSelected = item in selectedCategoryItems,
                     showMenu = false,
-                    onClick = { onCategoryClick(0L) }
+                    onClick = { onCategoryToggle(item) }
                 )
             }
 
             // 3. 自定义分类列表（v2026-07-27 起支持长按拖拽）
-            //    注意：key 用 category.id（稳定主键），不是 index（拖拽中 index 会变）
-            //    v2026-07-28 Plan A：items() 使用 displayCategories，拖拽中显示 pendingReorder
+            //    v2 跨维度：多选交互 isSelected = FilterItem.Category(category.id) in selectedCategoryItems
+            //    v2026-07-28 搜索：渲染 filteredCategories（拖拽中仍用 displayCategories）
             items(
-                items = displayCategories,
+                items = filteredCategories,
                 key = { it.id }
             ) { category ->
                 ReorderableItem(
@@ -184,14 +203,12 @@ internal fun CategoryGroupSection(
                     key = category.id
                 ) { isDragging ->
                     val context = LocalContext.current
-                    // 埋点：ReorderableItem 创建/销毁（验证 isDragging 反复切换根因）
                     DisposableEffect(category.id) {
                         diag.onItemEnter(category.id)
                         onDispose {
                             diag.onItemExit(category.id)
                         }
                     }
-                    // 埋点 #4：graphicsLayer 参数变化（isDragging 切换时触发）
                     LaunchedEffect(isDragging) {
                         diag.onGraphicsLayerChange(
                             isDragging = isDragging,
@@ -201,8 +218,6 @@ internal fun CategoryGroupSection(
                             zIndex = if (isDragging) 1f else 0f
                         )
                     }
-                    // 🆕 v2026-07-28 Plan D：graphicsLayer 参数动画过渡
-                    //   即使 isDragging 切换，scale/shadow 也是平滑过渡，不会瞬间跳变
                     val scale by animateFloatAsState(
                         targetValue = if (isDragging) 1.05f else 1f,
                         animationSpec = tween(durationMillis = 120),
@@ -213,7 +228,6 @@ internal fun CategoryGroupSection(
                         animationSpec = tween(durationMillis = 120),
                         label = "shadow"
                     )
-                    // 埋点：拖拽中 scale/shadow 实际值（验证动画过渡是否生效）
                     LaunchedEffect(isDragging) {
                         if (isDragging) {
                             snapshotFlow { scale to shadow }
@@ -232,9 +246,7 @@ internal fun CategoryGroupSection(
                             }
                             .longPressDraggableHandle(
                                 onDragStarted = {
-                                    // Plan A：拖拽开始时清空 pendingReorder，确保新拖拽干净起步
                                     pendingReorder = null
-                                    // 埋点 #1：拖拽开始
                                     diag.onDragStarted(category.id)
                                     HapticFeedbackManager.performHapticFeedback(
                                         context = context,
@@ -243,28 +255,23 @@ internal fun CategoryGroupSection(
                                     )
                                 },
                                 onDragStopped = {
-                                    // Plan A+：松手时调用 onReorder，**不**主动清空 pendingReorder
-                                    //   - ViewModel 端通过 _categoryOrderOverride 同步 emit 新顺序
-                                    //   - Section 端 LaunchedEffect 监听 categories == pendingReorder 时
-                                    //     才清空 pendingReorder（避免松手瞬间回弹到旧顺序残影）
                                     pendingReorder?.let { finalList ->
-                                        // 埋点 #7：实际触发 ViewModel 更新的次数（Plan A 验证）
                                         diag.onReorderSubmit(finalList.size)
                                         onReorder(finalList)
                                     }
-                                    // 埋点 #3：拖拽结束
                                     diag.onDragStopped(category.id, listSize = displayCategories.size + 2)
                                 }
                             )
                     ) {
                         val icon = categoryIcons[category.type] ?: "📂"
+                        val item = FilterItem.Category(category.id)
                         CategoryItem(
                             icon = icon,
                             name = category.name,
                             count = todoCountByCategory[category.id] ?: 0,
-                            isSelected = selectedCategoryId == category.id,
+                            isSelected = item in selectedCategoryItems,
                             showMenu = !category.isDefault,
-                            onClick = { onCategoryClick(category.id) },
+                            onClick = { onCategoryToggle(item) },
                             onMenuClick = {
                                 onCategoryAction(
                                     CategoryAction.ShowMenu(category)
@@ -274,6 +281,49 @@ internal fun CategoryGroupSection(
                     }
                 }
             }
+
+            // 搜索无结果提示
+            if (searchQuery.isNotBlank() && filteredCategories.isEmpty() && displayCategories.isNotEmpty()) {
+                item(key = "no_match_category") {
+                    Text(
+                        text = "未找到匹配的分组",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        color = Color.Gray
+                    )
+                }
+            }
         }
     }
+}
+
+/**
+ * 分组搜索框（v2026-07-28 新增）
+ */
+@Composable
+private fun CategorySearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = modifier,
+        placeholder = { Text("搜索分组") },
+        leadingIcon = {
+            Icon(Icons.Default.Search, contentDescription = "搜索")
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = onClear) {
+                    Icon(Icons.Default.Close, contentDescription = "清空")
+                }
+            }
+        },
+        singleLine = true,
+        colors = OutlinedTextFieldDefaults.colors()
+    )
 }

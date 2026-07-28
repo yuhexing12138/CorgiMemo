@@ -46,6 +46,7 @@ import com.corgimemo.app.ui.components.appdrawer.model.DateTypeAction as DateTyp
 import com.corgimemo.app.ui.components.appdrawer.model.DrawerSection
 import com.corgimemo.app.ui.components.appdrawer.sections.AppDrawerContentImpl
 import com.corgimemo.app.ui.components.navigation.TabItem
+import com.corgimemo.app.viewmodel.FilterItem
 import com.corgimemo.app.viewmodel.SpecialDateViewModel
 import com.corgimemo.app.viewmodel.StatusFilter
 import com.corgimemo.app.viewmodel.TagFilterMode
@@ -90,7 +91,9 @@ fun AppDrawerContent(
     corgiData: CorgiData?,
     categories: List<Category>,
     todoCountByCategory: Map<Long, Int>,
-    selectedCategoryId: Long?,
+    // ★ v2026-07-28 v2 跨维度：删除 selectedCategoryId，新增 selectedFilterItems + filterMode
+    selectedFilterItems: Set<FilterItem> = emptySet(),
+    filterMode: TagFilterMode = TagFilterMode.OR,
     inspirationTags: List<String> = emptyList(),
     selectedTags: Set<String> = emptySet(),
     tagFilterMode: TagFilterMode = TagFilterMode.OR,
@@ -100,11 +103,16 @@ fun AppDrawerContent(
     dateCountByCategory: Map<String, Int> = emptyMap(),
     // 🆕 v2026-07-28 P8.6：统一日期类型列表（内置 8 个 + 自定义混排）
     dateTypeOrder: List<SpecialDateViewModel.DateTypeEntry> = emptyList(),
-    onCategoryClick: (Long?) -> Unit = {},
+    // ★ v2026-07-28 v2 跨维度：删除 onCategoryClick，新增 onCategoryToggle
+    onCategoryToggle: (FilterItem) -> Unit = {},
     onAddCategoryClick: () -> Unit = {},
     onCategoryAction: (CategoryAction) -> Unit = {},
     // v2026-07-27 P8 Phase 1 新增：分类拖拽排序回调
     onReorderCategory: (List<Category>) -> Unit = {},
+    // ★ v2026-07-28 v2 跨维度：删除 onStatusFilterClick，新增 onStatusFilterToggle
+    onStatusFilterToggle: (FilterItem) -> Unit = {},
+    onFilterModeChange: (TagFilterMode) -> Unit = {},
+    onClearAllFilters: () -> Unit = {},
     onTagClick: (String) -> Unit = {},
     onTagFilterModeChange: (TagFilterMode) -> Unit = {},
     onClearTagSelection: () -> Unit = {},
@@ -121,11 +129,9 @@ fun AppDrawerContent(
     // v2026-07-27 P8 Phase 5 新增：个人快速导航项 + 拖拽回调（透传至 AppDrawerContentImpl）
     navItems: List<ProfileNavItem> = emptyList(),
     onReorderNav: (List<ProfileNavItem>) -> Unit = {},
-    // ===== v2026-07-27 新增：状态管理 Tab 切换（9 个参数） =====
+    // ===== v2026-07-27 新增：状态管理 Tab 切换 =====
     currentDrawerSection: DrawerSection = DrawerSection.GROUP,
     onDrawerSectionChange: (DrawerSection) -> Unit = {},
-    statusFilter: StatusFilter = StatusFilter.ALL,
-    onStatusFilterClick: (StatusFilter) -> Unit = {},
     // v2026-07-27 P8 Phase 2 新增：状态过滤项拖拽顺序 + 回调
     statusOrder: List<StatusFilter> = StatusFilter.values().toList(),
     onReorderStatus: (List<StatusFilter>) -> Unit = {},
@@ -142,7 +148,9 @@ fun AppDrawerContent(
         corgiData = corgiData,
         categories = categories,
         todoCountByCategory = todoCountByCategory,
-        selectedCategoryId = selectedCategoryId,
+        // ★ v2026-07-28 v2 跨维度：透传新参数
+        selectedFilterItems = selectedFilterItems,
+        filterMode = filterMode,
         inspirationTags = inspirationTags,
         selectedTags = selectedTags,
         tagFilterMode = tagFilterMode,
@@ -152,11 +160,16 @@ fun AppDrawerContent(
         dateCountByCategory = dateCountByCategory,
         // 🆕 v2026-07-28 P8.6：透传统一日期类型列表
         dateTypeOrder = dateTypeOrder,
-        onCategoryClick = onCategoryClick,
+        // ★ v2026-07-28 v2 跨维度：透传 onCategoryToggle
+        onCategoryToggle = onCategoryToggle,
         onAddCategoryClick = onAddCategoryClick,
         onCategoryAction = onCategoryAction,
         // v2026-07-27 P8 Phase 1：透传分类拖拽回调
         onReorderCategory = onReorderCategory,
+        // ★ v2026-07-28 v2 跨维度：透传 onStatusFilterToggle / onFilterModeChange / onClearAllFilters
+        onStatusFilterToggle = onStatusFilterToggle,
+        onFilterModeChange = onFilterModeChange,
+        onClearAllFilters = onClearAllFilters,
         onTagClick = onTagClick,
         onTagFilterModeChange = onTagFilterModeChange,
         onClearTagSelection = onClearTagSelection,
@@ -176,8 +189,6 @@ fun AppDrawerContent(
         // v2026-07-27 新增：状态管理 Tab 透传
         currentDrawerSection = currentDrawerSection,
         onDrawerSectionChange = onDrawerSectionChange,
-        statusFilter = statusFilter,
-        onStatusFilterClick = onStatusFilterClick,
         // v2026-07-27 P8 Phase 2：透传状态过滤项拖拽顺序 + 回调
         statusOrder = statusOrder,
         onReorderStatus = onReorderStatus,

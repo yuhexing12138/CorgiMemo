@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,6 +17,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,6 +38,7 @@ import com.corgimemo.app.ui.components.appdrawer.model.DateTypeAction
 import com.corgimemo.app.ui.components.appdrawer.model.DrawerSection
 import com.corgimemo.app.ui.components.navigation.TabItem
 import com.corgimemo.app.ui.theme.UiColors
+import com.corgimemo.app.viewmodel.FilterItem
 import com.corgimemo.app.viewmodel.SpecialDateViewModel
 import com.corgimemo.app.viewmodel.StatusFilter
 import com.corgimemo.app.viewmodel.TagFilterMode
@@ -53,7 +57,8 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  * @param corgiData 柯基数据（用户头渲染用）
  * @param categories 自定义分类列表（TODO Tab 用）
  * @param todoCountByCategory 待办分组计数（TODO Tab 用，key=-1=全部, key=0=未分类）
- * @param selectedCategoryId 当前选中的分类 ID（TODO Tab 用）
+ * @param selectedFilterItems 跨维度统一选中的过滤项集合（v2026-07-28 v2 跨维度，TODO Tab 用）
+ * @param filterMode 跨维度统一过滤模式（v2026-07-28 v2 跨维度，TODO Tab 用，跨分组+状态共享）
  * @param inspirationTags 灵感标签列表（INSPIRE Tab 用）
  * @param selectedTags 当前选中的标签集合（INSPIRE Tab 用）
  * @param tagFilterMode 标签筛选模式（INSPIRE Tab 用）
@@ -62,10 +67,13 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  * @param selectedDateCategory 当前选中的日期类型（DATE Tab 用）
  * @param dateCountByCategory 日期类型计数（DATE Tab 用）
  * @param customDateTypes 自定义日期类型列表（DATE Tab 用）
- * @param onCategoryClick 分类点击回调（TODO Tab）
+ * @param onCategoryToggle 分组项点击回调（v2026-07-28 v2 跨维度，TODO Tab）
  * @param onAddCategoryClick 添加分组回调（TODO Tab 底部按钮）
  * @param onCategoryAction 分类操作回调（TODO Tab，长按分类触发）
  * @param onReorderCategory 分类拖拽排序回调（v2026-07-27 P8 Phase 1 新增，TODO/GROUP Tab）
+ * @param onStatusFilterToggle 状态项点击回调（v2026-07-28 v2 跨维度，TODO Tab）
+ * @param onFilterModeChange 跨维度 mode 切换回调（v2026-07-28 v2 跨维度，TODO Tab）
+ * @param onClearAllFilters 清空所有过滤回调（v2026-07-28 v2 跨维度，TODO Tab）
  * @param onTagClick 标签点击回调（INSPIRE Tab）
  * @param onTagFilterModeChange 标签筛选模式切换回调（INSPIRE Tab）
  * @param onClearTagSelection 清空选中标签回调（INSPIRE Tab，"全部灵感"项）
@@ -81,8 +89,6 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  * @param onUserAreaClick 用户头区域点击回调（顶部，点击跳"我的"页）
  * @param currentDrawerSection 当前侧滑栏分区（v2026-07-27 新增，TODO Tab 用，默认 [DrawerSection.GROUP]）
  * @param onDrawerSectionChange 分区切换回调（v2026-07-27 新增）
- * @param statusFilter 当前状态过滤（v2026-07-27 新增，TODO Tab 用）
- * @param onStatusFilterClick 状态过滤点击回调（v2026-07-27 新增）
  * @param statusOrder 状态过滤项顺序（v2026-07-27 P8 Phase 2 新增，TODO Tab 用）
  * @param onReorderStatus 状态过滤项拖拽排序回调（v2026-07-27 P8 Phase 2 新增）
  * @param totalTodoCount 全部待办数（v2026-07-27 新增，状态管理用）
@@ -99,7 +105,9 @@ fun AppDrawerContentImpl(
     corgiData: CorgiData?,
     categories: List<Category>,
     todoCountByCategory: Map<Long, Int>,
-    selectedCategoryId: Long?,
+    // ★ v2026-07-28 v2 跨维度：删除 selectedCategoryId、statusFilter，改用 selectedFilterItems + filterMode
+    selectedFilterItems: Set<FilterItem> = emptySet(),
+    filterMode: TagFilterMode = TagFilterMode.OR,
     inspirationTags: List<String> = emptyList(),
     selectedTags: Set<String> = emptySet(),
     tagFilterMode: TagFilterMode = TagFilterMode.OR,
@@ -109,11 +117,16 @@ fun AppDrawerContentImpl(
     dateCountByCategory: Map<String, Int> = emptyMap(),
     // 🆕 v2026-07-28 P8.6：统一日期类型列表（内置 8 个 + 自定义混排）
     dateTypeOrder: List<SpecialDateViewModel.DateTypeEntry> = emptyList(),
-    onCategoryClick: (Long?) -> Unit = {},
+    // ★ v2026-07-28 v2 跨维度：删除 onCategoryClick，新增 onCategoryToggle
+    onCategoryToggle: (FilterItem) -> Unit = {},
     onAddCategoryClick: () -> Unit = {},
     onCategoryAction: (CategoryAction) -> Unit = {},
     // v2026-07-27 P8 Phase 1 新增：分类拖拽回调（CategoryGroupSection 内置 Reorderable）
     onReorderCategory: (List<Category>) -> Unit = {},
+    // ★ v2026-07-28 v2 跨维度：删除 onStatusFilterClick，新增 onStatusFilterToggle
+    onStatusFilterToggle: (FilterItem) -> Unit = {},
+    onFilterModeChange: (TagFilterMode) -> Unit = {},
+    onClearAllFilters: () -> Unit = {},
     onTagClick: (String) -> Unit = {},
     onTagFilterModeChange: (TagFilterMode) -> Unit = {},
     onClearTagSelection: () -> Unit = {},
@@ -130,11 +143,9 @@ fun AppDrawerContentImpl(
     // v2026-07-27 P8 Phase 5 新增：个人快速导航项 + 拖拽回调
     navItems: List<ProfileNavItem> = emptyList(),
     onReorderNav: (List<ProfileNavItem>) -> Unit = {},
-    // ===== v2026-07-27 新增：状态管理 Tab 切换（9 个参数） =====
+    // ===== v2026-07-27 新增：状态管理 Tab 切换 =====
     currentDrawerSection: DrawerSection = DrawerSection.GROUP,
     onDrawerSectionChange: (DrawerSection) -> Unit = {},
-    statusFilter: StatusFilter = StatusFilter.ALL,
-    onStatusFilterClick: (StatusFilter) -> Unit = {},
     // v2026-07-27 P8 Phase 2 新增：状态过滤项拖拽顺序 + 回调
     statusOrder: List<StatusFilter> = StatusFilter.values().toList(),
     onReorderStatus: (List<StatusFilter>) -> Unit = {},
@@ -180,33 +191,53 @@ fun AppDrawerContentImpl(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // 🆕 v2026-07-28 v2 跨维度：全局 FilterChip Row（OR/AND/NOT 跨 2 个分区共享）
+                //   位置：DrawerSectionTab 下方，section 上方
+                //   业务规则：点击 AND 时自动清空分组项（避免 AND 多分组退化为空集）
+                FilterModeChipRow(
+                    mode = filterMode,
+                    onModeChange = onFilterModeChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp)
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
                 // 2.3 互斥渲染"分组管理"或"状态管理"
                 when (currentDrawerSection) {
                     DrawerSection.GROUP -> {
+                        // ★ v2026-07-28 v2 跨维度：拆分 selectedFilterItems 为 Category 子集
+                        val selectedCategoryItems = selectedFilterItems
+                            .filterIsInstance<FilterItem.Category>()
+                            .toSet()
                         CategoryGroupSection(
                             categories = categories,
                             todoCountByCategory = todoCountByCategory,
-                            selectedCategoryId = selectedCategoryId,
-                            onCategoryClick = onCategoryClick,
+                            selectedCategoryItems = selectedCategoryItems,
+                            onCategoryToggle = onCategoryToggle,
+                            onClearAllFilters = onClearAllFilters,
                             onCategoryAction = onCategoryAction,
-                            // v2026-07-27 P8 Phase 1：透传拖拽回调，委托外层 ViewModel 持久化
                             onReorder = onReorderCategory,
                             modifier = Modifier.weight(1f)
                         )
                     }
                     DrawerSection.STATUS -> {
-                        // 状态管理分区（v2026-07-27 新增，v2026-07-27 P8 Phase 2 接入拖拽）
+                        // ★ v2026-07-28 v2 跨维度：拆分 selectedFilterItems 为 Status 子集
+                        val selectedStatusItems = selectedFilterItems
+                            .filterIsInstance<FilterItem.Status>()
+                            .toSet()
                         StatusFilterSection(
                             statusOrder = statusOrder,
-                            currentFilter = statusFilter,
+                            selectedStatusItems = selectedStatusItems,
                             totalCount = totalTodoCount,
                             pinnedCount = pinnedCount,
                             pendingCount = pendingCount,
                             completedCount = completedCount,
                             overdueCount = overdueCount,
                             repeatReminderCount = repeatReminderCount,
-                            onFilterClick = onStatusFilterClick,
-                            // v2026-07-27 P8 Phase 2：透传拖拽回调，委托外层 ViewModel 持久化
+                            onStatusToggle = onStatusFilterToggle,
+                            onClearAllFilters = onClearAllFilters,
                             onReorder = onReorderStatus,
                             modifier = Modifier.weight(1f)
                         )
@@ -351,6 +382,62 @@ private fun AddCategoryButton(
             text = text,
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+/**
+ * 🆕 v2026-07-28 v2 跨维度：全局 FilterChip Row（OR/AND/NOT）
+ *
+ * 位置：TODO Tab 下 DrawerSectionTab 下方，跨分组+状态 2 个分区共享 1 个 mode。
+ *
+ * 视觉：参考 [com.corgimemo.app.ui.components.appdrawer.sections.InspirationFilterSection] 的
+ * OR/AND/NOT chip 样式（FilterChip + UiColors.PrimaryLight 选中色 + 12sp 文字）。
+ *
+ * 业务规则：点击 AND chip 时，由外层 HomeViewModel 自动清空分组项
+ * （applyFilterItems 在 AND 模式下分组项被忽略），避免"看起来已选但无效"。
+ * 这里只负责切换 mode，清空逻辑在 HomeViewModel 中实现。
+ *
+ * @param mode 当前选中的过滤模式
+ * @param onModeChange 切换 mode 回调
+ * @param modifier 外部 Modifier
+ */
+@Composable
+private fun FilterModeChipRow(
+    mode: TagFilterMode,
+    onModeChange: (TagFilterMode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FilterChip(
+            selected = mode == TagFilterMode.OR,
+            onClick = { onModeChange(TagFilterMode.OR) },
+            label = { Text("OR", fontSize = 12.sp) },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = UiColors.PrimaryLight,
+                selectedLabelColor = UiColors.Primary
+            )
+        )
+        FilterChip(
+            selected = mode == TagFilterMode.AND,
+            onClick = { onModeChange(TagFilterMode.AND) },
+            label = { Text("AND", fontSize = 12.sp) },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = UiColors.PrimaryLight,
+                selectedLabelColor = UiColors.Primary
+            )
+        )
+        FilterChip(
+            selected = mode == TagFilterMode.NOT,
+            onClick = { onModeChange(TagFilterMode.NOT) },
+            label = { Text("NOT", fontSize = 12.sp) },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = UiColors.PrimaryLight,
+                selectedLabelColor = UiColors.Primary
+            )
         )
     }
 }

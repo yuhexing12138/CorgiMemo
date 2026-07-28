@@ -302,20 +302,31 @@ class HomeViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
-    private val _selectedCategoryId = MutableStateFlow<Long?>(null)
-    val selectedCategoryId: StateFlow<Long?> = _selectedCategoryId.asStateFlow()
+    // ===== v2026-07-28 P8 跨维度统一过滤（替换原 4 个单选 StateFlow） =====
 
     /**
-     * 状态过滤器（v2026-07-27 新增）
+     * 跨维度统一多选过滤集合（v2026-07-28 新增，v2 跨维度改造）
      *
-     * 侧滑栏"状态管理"分区专用。与 `_selectedCategoryId` 是**组合关系**（AND），
-     * 两者可同时生效。
+     * 把"分组项"和"状态项"统一为 [FilterItem] sealed class 集合，
+     * 让用户可以跨维度多选（同时选中"工作"分组 + "置顶"状态），
+     * 配合 [_filterMode] 实现 OR/AND/NOT 跨维度组合。
      *
-     * **不持久化**：状态过滤是临时筛选意图，App 重启后回到 [StatusFilter.ALL]（不过滤）。
-     * 如需持久化，参考 `.trae/documents/侧滑栏添加状态管理切换功能实施计划.md` 八、后续可优化点 #2。
+     * **不持久化**：临时筛选意图，App 重启后回到空集合（不过滤）。
      */
-    private val _statusFilter = MutableStateFlow(StatusFilter.ALL)
-    val statusFilter: StateFlow<StatusFilter> = _statusFilter.asStateFlow()
+    private val _selectedFilterItems = MutableStateFlow<Set<FilterItem>>(emptySet())
+    val selectedFilterItems: StateFlow<Set<FilterItem>> = _selectedFilterItems.asStateFlow()
+
+    /**
+     * 统一过滤模式（v2026-07-28 新增，1 个 mode 跨 2 个分区共享）
+     *
+     * 默认 [TagFilterMode.OR]：
+     * - 分组项内部 OR（属于任一选中分组）+ 状态项内部 OR（满足任一选中状态）
+     * - 跨维度 AND（同时满足分组和状态条件）
+     *
+     * **不持久化**：与 _selectedFilterItems 一致，重启后回 OR。
+     */
+    private val _filterMode = MutableStateFlow(TagFilterMode.OR)
+    val filterMode: StateFlow<TagFilterMode> = _filterMode.asStateFlow()
 
     /**
      * 状态过滤项顺序（v2026-07-27 新增，P8 Phase 2 实施）
@@ -359,7 +370,8 @@ class HomeViewModel @Inject constructor(
      * 3. 分类过滤：null=全部, 0=未分类, >0=具体分类
      * 4. 搜索过滤：标题/正文/格式化内容
      *
-     * 状态过滤与分类过滤是**组合关系**（AND），可同时生效。
+     * 过滤统一由 [applyFilterItems] 处理（v2026-07-28 v2 跨维度改造）：
+     * 分组项和状态项混合多选，1 个 mode 跨维度共享。
      */
     val filteredTodos: StateFlow<List<TodoItem>> = run {
         val baseFlow = combine(
@@ -370,21 +382,21 @@ class HomeViewModel @Inject constructor(
         ) { pinnedPending, pending, pinnedCompleted, completed ->
             pinnedPending + pending + pinnedCompleted + completed
         }
-        // ★ v2026-07-27 修复：6 个不同类型 Flow 触发 combine 的 vararg 重载（要求所有 Flow 同类型），
-        //   导致 lambda 类型推断为 Array<Any?>、后续 it.xxx 全部失效。
-        //   拆成 (3) + (4) 嵌套 combine：内层合并基础数据，外层合并控制参数。
-        val dataPart: kotlinx.coroutines.flow.Flow<Triple<List<TodoItem>, String, Long?>> =
+        // ★ v2026-07-28 v2 跨维度改造：把 _selectedCategoryId（Long?）+ _statusFilter（StatusFilter）
+        //   合并为 _selectedFilterItems（Set<FilterItem>） + _filterMode（TagFilterMode）
+        //   dataPart 类型从 Triple<..., Long?> 改为 Triple<..., Set<FilterItem>>
+        val dataPart: kotlinx.coroutines.flow.Flow<Triple<List<TodoItem>, String, Set<FilterItem>>> =
             combine(
-                baseFlow, _searchQuery, _selectedCategoryId
-            ) { base, query, catId -> Triple(base, query, catId) }
+                baseFlow, _searchQuery, _selectedFilterItems
+            ) { base, query, items -> Triple(base, query, items) }
 
-        // ★ v2026-07-27 新增 _statusFilter 到 combine 列表（外层 4 个 Flow）
+        // 外层 combine 列表：dataPart + 2 个开关 + _filterMode
         combine(
-            dataPart, _showCompleted, _hideCompletedItems, _statusFilter
-        ) { data, showCompleted, hideCompletedItems, statusFilter ->
+            dataPart, _showCompleted, _hideCompletedItems, _filterMode
+        ) { data, showCompleted, hideCompletedItems, mode ->
             val baseList = data.first
             val query = data.second
-            val categoryId = data.third
+            val items = data.third
             // 先按展开状态过滤
             var result = if (hideCompletedItems || !showCompleted) {
                 baseList.filter { it.status == 0 }
@@ -392,25 +404,9 @@ class HomeViewModel @Inject constructor(
                 baseList
             }
 
-            // ★ v2026-07-27 新增：状态过滤（在分类过滤之前应用，确保"已过期+未分类"等组合生效）
-            if (statusFilter != StatusFilter.ALL) {
-                result = when (statusFilter) {
-                    StatusFilter.PINNED -> result.filter { it.isPinned }
-                    StatusFilter.PENDING -> result.filter { !it.isPinned && it.status == 0 }
-                    StatusFilter.COMPLETED -> result.filter { it.status == 1 }
-                    StatusFilter.OVERDUE -> result.filter { todo ->
-                        todo.status == 0 && MoodManager.isOverdue(todo.dueDate)
-                    }
-                    StatusFilter.REPEAT_REMINDER -> result.filter { it.repeatType != 0 }
-                    StatusFilter.ALL -> result  // unreachable（已在外层 if 排除）
-                }
-            }
-
-            if (categoryId != null && categoryId > 0) {
-                result = result.filter { it.categoryId == categoryId }
-            } else if (categoryId != null && categoryId == 0L) {
-                val validCategoryIds = categories.value.map { it.id }.toSet()
-                result = result.filter { it.categoryId !in validCategoryIds }
+            // ★ v2026-07-28 v2 跨维度统一过滤（替代原 2 段独立过滤）
+            if (items.isNotEmpty()) {
+                result = applyFilterItems(result, items, mode)
             }
 
             if (query.isNotBlank()) {
@@ -1245,43 +1241,125 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    // ========== 侧滑导航栏相关方法 ==========
+    // ========== 侧滑导航栏相关方法（v2026-07-28 v2 跨维度改造） ==========
 
     /**
-     * 设置分类过滤
+     * 切换过滤项选中状态（v2026-07-28 新增，v2 跨维度改造）
      *
-     * @param categoryId 分类 ID（null=全部，0=未分类，>0=具体分类）
+     * 已选则取消，未选则加入。支持分组项和状态项的跨维度混选。
+     *
+     * @param item 要切换的过滤项（[FilterItem.Category] 或 [FilterItem.Status]）
      */
-    fun filterByCategory(categoryId: Long?) {
-        _selectedCategoryId.value = categoryId
+    fun toggleFilterItem(item: FilterItem) {
+        _selectedFilterItems.value = _selectedFilterItems.value.toMutableSet().apply {
+            if (contains(item)) remove(item) else add(item)
+        }
     }
 
     /**
-     * 清除分类过滤，显示所有待办
-     */
-    fun clearCategoryFilter() {
-        _selectedCategoryId.value = null
-    }
-
-    // ===== v2026-07-27 新增：状态管理过滤方法 =====
-
-    /**
-     * 设置状态过滤（v2026-07-27 新增）
+     * 设置过滤模式（v2026-07-28 新增）
      *
-     * 由侧滑栏"状态管理"分区点击状态项时调用。
-     * 与 [_selectedCategoryId] 是**组合关系**（AND），可同时生效。
+     * 1 个 mode 跨分组和状态 2 个维度共享。
      *
-     * @param filter 状态过滤器（[StatusFilter.ALL] 表示不过滤）
+     * @param mode [TagFilterMode.OR] / [TagFilterMode.AND] / [TagFilterMode.NOT]
      */
-    fun setStatusFilter(filter: StatusFilter) {
-        _statusFilter.value = filter
+    fun setFilterMode(mode: TagFilterMode) {
+        _filterMode.value = mode
     }
 
     /**
-     * 清除状态过滤，回到"全部状态"
+     * 清空所有过滤（v2026-07-28 新增）
+     *
+     * 选中"全部待办"或"全部状态"时调用，清空整个 _selectedFilterItems。
      */
-    fun clearStatusFilter() {
-        _statusFilter.value = StatusFilter.ALL
+    fun clearAllFilters() {
+        _selectedFilterItems.value = emptySet()
+    }
+
+    /**
+     * 切换到 AND 模式时自动清空分组项（v2026-07-28 新增）
+     *
+     * 业务规则：AND 模式下分组项被忽略（todo 只能属于 1 个分组，
+     * 多个分组 AND 退化为空集）。自动清空避免分组项"看起来已选但无效"。
+     */
+    fun switchToAndModeWithCategoryFilter() {
+        _filterMode.value = TagFilterMode.AND
+        _selectedFilterItems.value =
+            _selectedFilterItems.value.filterNot { it is FilterItem.Category }.toSet()
+    }
+
+    // ===== v2026-07-28 新增：跨维度统一过滤工具函数（private） =====
+
+    /**
+     * 单个 [FilterItem] 是否匹配某个 todo（v2026-07-28 新增）
+     *
+     * @param todo 待检测的 todo
+     * @param item 过滤项（分组项或状态项）
+     * @return 是否匹配
+     */
+    private fun matchesFilterItem(todo: TodoItem, item: FilterItem): Boolean = when (item) {
+        is FilterItem.Category -> todo.categoryId == item.id
+        is FilterItem.Status -> when (item.filter) {
+            StatusFilter.PINNED -> todo.isPinned
+            StatusFilter.PENDING -> !todo.isPinned && todo.status == 0
+            StatusFilter.COMPLETED -> todo.status == 1
+            StatusFilter.OVERDUE -> todo.status == 0 && MoodManager.isOverdue(todo.dueDate)
+            StatusFilter.REPEAT_REMINDER -> todo.repeatType != 0
+            StatusFilter.ALL -> true  // 不应出现（ALL 不作为多选元素）
+        }
+    }
+
+    /**
+     * 应用统一过滤（v2026-07-28 新增，v2 跨维度改造）
+     *
+     * **OR 模式**：
+     *   - 分组项内部 OR（属于任一选中分组）
+     *   - 状态项内部 OR（满足任一选中状态）
+     *   - 跨维度 AND（同时满足分组和状态条件）
+     *
+     * **AND 模式**：
+     *   - 分组项被忽略（todo 只能属于 1 个分组，AND 多个分组无意义）
+     *   - 仅状态项内部 AND（同时满足所有选中状态）
+     *
+     * **NOT 模式**：
+     *   - 分组项内部 NOT（不属于任何选中分组）
+     *   - 状态项内部 NOT（不满足任何选中状态）
+     *   - 跨维度 AND（同时满足 NOT 分组和 NOT 状态条件）
+     *
+     * @param todos 待过滤列表
+     * @param selected 选中的过滤项集合
+     * @param mode 组合模式
+     * @return 过滤后的 todo 列表
+     */
+    private fun applyFilterItems(
+        todos: List<TodoItem>,
+        selected: Set<FilterItem>,
+        mode: TagFilterMode
+    ): List<TodoItem> {
+        if (selected.isEmpty()) return todos
+        val categoryItems = selected.filterIsInstance<FilterItem.Category>()
+        val statusItems = selected.filterIsInstance<FilterItem.Status>()
+
+        return when (mode) {
+            TagFilterMode.OR -> todos.filter { todo ->
+                val catOk = categoryItems.isEmpty() ||
+                    categoryItems.any { matchesFilterItem(todo, it) }
+                val stOk = statusItems.isEmpty() ||
+                    statusItems.any { matchesFilterItem(todo, it) }
+                catOk && stOk
+            }
+            TagFilterMode.AND -> todos.filter { todo ->
+                // AND 模式下分组项被忽略（按 plan 决策 D2）
+                statusItems.isEmpty() || statusItems.all { matchesFilterItem(todo, it) }
+            }
+            TagFilterMode.NOT -> todos.filter { todo ->
+                val catNotOk = categoryItems.isEmpty() ||
+                    categoryItems.none { matchesFilterItem(todo, it) }
+                val stNotOk = statusItems.isEmpty() ||
+                    statusItems.none { matchesFilterItem(todo, it) }
+                catNotOk && stNotOk
+            }
+        }
     }
 
     /**
@@ -1667,9 +1745,11 @@ class HomeViewModel @Inject constructor(
     fun deleteCategory(id: Long) {
         viewModelScope.launch {
             categoryRepository.deleteCustomCategory(id)
-            if (_selectedCategoryId.value == id) {
-                _selectedCategoryId.value = null
-            }
+            // ★ v2026-07-28 v2 跨维度改造：删除 _selectedFilterItems 中对应 FilterItem.Category
+            _selectedFilterItems.value =
+                _selectedFilterItems.value.filterNot {
+                    it is FilterItem.Category && it.id == id
+                }.toSet()
         }
     }
 

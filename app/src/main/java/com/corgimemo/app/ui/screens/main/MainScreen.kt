@@ -89,6 +89,7 @@ import com.corgimemo.app.ui.screens.home.HomeScreen
 import com.corgimemo.app.ui.screens.home.shareTodoAsImage
 import com.corgimemo.app.ui.screens.inspiration.InspirationScreen
 import com.corgimemo.app.ui.screens.profile.ProfileScreen
+import com.corgimemo.app.viewmodel.FilterItem
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.InspirationViewModel
 import com.corgimemo.app.viewmodel.ProfileViewModel
@@ -110,7 +111,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.launch
 import java.util.Calendar
-import com.corgimemo.app.viewmodel.StatusFilter
+// StatusFilter 已不再直接使用（合并到 FilterItem.Status 中），import 已清理
 
 /**
  * 主屏幕容器（统一版）
@@ -289,7 +290,9 @@ fun MainScreen(
     val corgiData by homeViewModel.corgiData.collectAsState()
     val categories by homeViewModel.categories.collectAsState()
     val todoCountByCategory by homeViewModel.todoCountByCategory.collectAsState()
-    val selectedCategoryId by homeViewModel.selectedCategoryId.collectAsState()
+    // ★ v2026-07-28 v2 跨维度：删除 selectedCategoryId，改为 selectedFilterItems + filterMode
+    val selectedFilterItems by homeViewModel.selectedFilterItems.collectAsState()
+    val filterMode by homeViewModel.filterMode.collectAsState()
     val currentMood by homeViewModel.currentMood.collectAsState()
     val currentPose by homeViewModel.currentPose.collectAsState()
     val hapticEnabled by homeViewModel.hapticEnabled.collectAsState()
@@ -298,10 +301,8 @@ fun MainScreen(
 
     // ===== v2026-07-27 新增：状态管理 Tab 切换相关 StateFlow =====
     //
-    // 5 个计数 + statusFilter 都是 HomeViewModel 暴露的 StateFlow，
-    // collectAsState 后传递给 AppDrawerContent 显示在状态管理分区。
-    /** 当前状态过滤（侧滑栏"状态管理"Tab 选中项） */
-    val statusFilter by homeViewModel.statusFilter.collectAsState()
+    // 6 个计数由 HomeViewModel 暴露，collectAsState 后传递给 AppDrawerContent 显示在状态管理分区。
+    // ★ v2026-07-28 v2 跨维度：删除 statusFilter（已合并到 selectedFilterItems 中）。
     /** 状态过滤项顺序（v2026-07-27 P8 Phase 2 新增，可拖拽排序，从 ESP 加载） */
     val statusOrder by homeViewModel.statusOrder.collectAsState()
     /** 全部待办总数（"全部状态"项显示） */
@@ -391,12 +392,31 @@ fun MainScreen(
         corgiButtonPosition = corgiPrefs.getFloatingCorgiPosition()
     }
 
+    /**
+     * TopBar 标题计算（v2026-07-28 v2 跨维度改造）
+     *
+     * 原逻辑：基于单选 `selectedCategoryId: Long?` 显示"📝 待办" / "📦 未分类" / "📁 {分组名}"。
+     * 新逻辑：基于 `selectedFilterItems: Set<FilterItem>` 适配多选场景。
+     *
+     * 规则：
+     * - 0 项选中（空集合）→ "📝 待办"
+     * - 仅 1 个 Category 项且无 Status 项 → "📁 {分组名}" 或 "📦 未分类"
+     * - 其他（多选 / 仅 Status / Category+Status 组合）→ "📝 待办 · 已筛选"
+     */
     val topBarTitle = when (selectedTab) {
         TabItem.TODO -> {
-            when (selectedCategoryId) {
-                null -> "📝 待办"
-                0L -> "📦 未分类"
-                else -> categories.find { it.id == selectedCategoryId }?.let { "📁 ${it.name}" } ?: "📝 待办"
+            val catItems = selectedFilterItems.filterIsInstance<FilterItem.Category>()
+            val statusItems = selectedFilterItems.filterIsInstance<FilterItem.Status>()
+            when {
+                selectedFilterItems.isEmpty() -> "📝 待办"
+                catItems.size == 1 && statusItems.isEmpty() -> {
+                    val id = catItems.first().id
+                    when (id) {
+                        0L -> "📦 未分类"
+                        else -> categories.find { it.id == id }?.let { "📁 ${it.name}" } ?: "📝 待办"
+                    }
+                }
+                else -> "📝 待办 · 已筛选"
             }
         }
         TabItem.INSPIRE -> "💡 灵感"
@@ -528,16 +548,21 @@ fun MainScreen(
                     corgiData = corgiData,
                     categories = categories,
                     todoCountByCategory = todoCountByCategory,
-                    selectedCategoryId = selectedCategoryId,
+                    // ★ v2026-07-28 v2 跨维度：透传 selectedFilterItems + filterMode
+                    selectedFilterItems = selectedFilterItems,
+                    filterMode = filterMode,
                     // v2026-07-27 P8 Phase 4：传入 orderedTags（用户拖拽顺序）替代 inspirationTags（字母序）
                     inspirationTags = orderedInspirationTags,
                     selectedTags = selectedTags,
                     tagFilterMode = tagFilterMode,
                     tagCounts = tagCounts,
                     totalInspirationCount = totalInspirationCount,
-                    onCategoryClick = { categoryId ->
-                        homeViewModel.filterByCategory(categoryId)
-                        coroutineScope.launch { drawerState.close() }
+                    // ★ v2026-07-28 v2 跨维度：onCategoryToggle 替代 onCategoryClick
+                    onCategoryToggle = { filterItem ->
+                        // filterItem 应当是 FilterItem.Category（UI 层只生成 Category 项）
+                        if (filterItem is FilterItem.Category) {
+                            homeViewModel.toggleFilterItem(filterItem)
+                        }
                     },
                     onAddCategoryClick = { showAddCategoryDialog = true },
                     onCategoryAction = { action ->
@@ -552,6 +577,19 @@ fun MainScreen(
                     // 列表顺序变化时立即更新 sortOrder 并落库，确保重启后保留用户自定义顺序
                     onReorderCategory = { newList ->
                         homeViewModel.updateCategoryOrder(newList)
+                    },
+                    // ★ v2026-07-28 v2 跨维度：onStatusFilterToggle + onFilterModeChange + onClearAllFilters
+                    //   替代原来的 onStatusFilterClick（单选语义）
+                    onStatusFilterToggle = { filterItem ->
+                        if (filterItem is FilterItem.Status) {
+                            homeViewModel.toggleFilterItem(filterItem)
+                        }
+                    },
+                    onFilterModeChange = { mode ->
+                        homeViewModel.setFilterMode(mode)
+                    },
+                    onClearAllFilters = {
+                        homeViewModel.clearAllFilters()
                     },
                     onTagClick = { tag ->
                         inspirationViewModel.toggleTagSelection(tag)
@@ -603,15 +641,10 @@ fun MainScreen(
                         navController.navigate(Screen.ProfileDetail.route)
                         coroutineScope.launch { drawerState.close() }
                     },
-                    // ===== v2026-07-27 新增：状态管理 Tab 切换（9 个参数） =====
+                    // ===== v2026-07-27 新增：状态管理 Tab 切换 =====
                     currentDrawerSection = currentDrawerSection,
                     onDrawerSectionChange = { section ->
                         currentDrawerSection = section
-                    },
-                    statusFilter = statusFilter,
-                    onStatusFilterClick = { filter ->
-                        homeViewModel.setStatusFilter(filter)
-                        coroutineScope.launch { drawerState.close() }
                     },
                     // v2026-07-27 P8 Phase 2：状态过滤项拖拽顺序（来自 HomeViewModel）
                     statusOrder = statusOrder,
