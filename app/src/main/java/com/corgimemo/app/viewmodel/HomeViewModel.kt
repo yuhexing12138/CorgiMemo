@@ -1354,19 +1354,26 @@ class HomeViewModel @Inject constructor(
 
         return when (mode) {
             TagFilterMode.OR -> todos.filter { todo ->
-                val catOk = categoryItems.isEmpty() ||
-                    categoryItems.any { matchesFilterItem(todo, it) }
-                val stOk = statusItems.isEmpty() ||
-                    statusItems.any { matchesFilterItem(todo, it) }
-                // ★ v3 跨维度 OR：满足分组 OR 满足状态任一
-                catOk || stOk
+                // ★ v3.1 修复：空集合的 any() 返回 false（不再用 isEmpty() || any 模式）
+                //   旧代码 bug：当任一维度为空时（如只选 1 个分组），空集合的 isEmpty()=true
+                //   导致 catOk||stOk 恒为 true，所有 todo 都通过，看起来"点击不触发筛选"
+                val catMatch = categoryItems.any { matchesFilterItem(todo, it) }
+                val stMatch = statusItems.any { matchesFilterItem(todo, it) }
+                // 调试 log：跟踪每个 todo 的 OR 模式判定
+                android.util.Log.d("HomeFilter", "OR todo=${todo.id} catMatch=$catMatch stMatch=$stMatch pass=${catMatch || stMatch} | selected=$selected")
+                catMatch || stMatch
             }
             TagFilterMode.AND -> todos.filter { todo ->
-                // AND 模式下分组项被忽略（按 plan 决策 D2：todo 只能属于 1 个分组）
-                val catOk = categoryItems.isEmpty()
+                // ★ v3.2 修正：恢复标准跨维度 AND（catOk && stOk）
+                //   v3.1 错误地"忽略分组项"导致选中"工作"+"置顶"时只显示所有置顶 todo
+                //   用户反馈：AND 应同时满足分组和状态（catOk && stOk）
+                //   注意：单分组内 AND（同时选"工作"+"学习"）永远不匹配，因为 todo 只能属于 1 个分组
+                val catOk = categoryItems.isEmpty() ||
+                    categoryItems.all { matchesFilterItem(todo, it) }
                 val stOk = statusItems.isEmpty() ||
                     statusItems.all { matchesFilterItem(todo, it) }
-                // ★ v3 跨维度 AND：同时满足分组和状态
+                // 调试 log：跟踪每个 todo 的 AND 模式判定
+                android.util.Log.d("HomeFilter", "AND todo=${todo.id} catOk=$catOk stOk=$stOk pass=${catOk && stOk} | selected=$selected")
                 catOk && stOk
             }
             TagFilterMode.NOT -> todos.filter { todo ->
@@ -1374,7 +1381,8 @@ class HomeViewModel @Inject constructor(
                     categoryItems.none { matchesFilterItem(todo, it) }
                 val stNotOk = statusItems.isEmpty() ||
                     statusItems.none { matchesFilterItem(todo, it) }
-                // ★ v3 跨维度 NOT：两维度都不满足（= OR 模式取反）
+                // 调试 log：跟踪每个 todo 的 NOT 模式判定
+                android.util.Log.d("HomeFilter", "NOT todo=${todo.id} catNotOk=$catNotOk stNotOk=$stNotOk pass=${catNotOk && stNotOk} | selected=$selected")
                 catNotOk && stNotOk
             }
         }

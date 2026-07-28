@@ -97,13 +97,19 @@ internal fun StatusFilterSection(
         statusOrder.filter { it != StatusFilter.ALL }
     }
 
+    // 🆕 v2026-07-28 Plan A+：拖拽中暂存新顺序，**不主动清空**
+    var pendingReorder by remember { mutableStateOf<List<StatusFilter>?>(null) }
+    val displayDraggable = pendingReorder ?: draggableFilters
+
     // 🆕 v2026-07-28 搜索框本地状态（按 statusDisplayName 模糊过滤显示）
+    //   ★ 修复：基于 displayDraggable 而非 draggableFilters，与 CategoryGroupSection 保持一致
+    //   原 bug：items() 用了 displayDraggable（未应用搜索），导致搜索框完全不起作用
     var searchQuery by remember { mutableStateOf("") }
-    val filteredDraggable = remember(draggableFilters, searchQuery) {
+    val filteredDraggable = remember(displayDraggable, searchQuery) {
         if (searchQuery.isBlank()) {
-            draggableFilters
+            displayDraggable
         } else {
-            draggableFilters.filter { filter ->
+            displayDraggable.filter { filter ->
                 statusDisplayName(filter).contains(searchQuery, ignoreCase = true)
             }
         }
@@ -112,10 +118,6 @@ internal fun StatusFilterSection(
     // 🆕 v2026-07-28 拖拽埋点（诊断"残影/闪烁"问题，调试代码不入仓）
     val diag = rememberReorderableDiagnostics("Status")
     diag.onRecompose()
-
-    // 🆕 v2026-07-28 Plan A+：拖拽中暂存新顺序，**不主动清空**
-    var pendingReorder by remember { mutableStateOf<List<StatusFilter>?>(null) }
-    val displayDraggable = pendingReorder ?: draggableFilters
 
     // 🆕 v2026-07-28 方案 C 监听器：ViewModel 数据与 pendingReorder 同步时自动清空
     LaunchedEffect(draggableFilters, pendingReorder) {
@@ -195,11 +197,11 @@ internal fun StatusFilterSection(
                 )
             }
 
-            // 2. 其他状态项（**可拖**）— 渲染 displayDraggable（拖拽中用 pendingReorder）
+            // 2. 其他状态项（**可拖**）— 渲染 filteredDraggable（搜索过滤 + 拖拽中暂存顺序）
             //    v2 跨维度：多选交互 isSelected = FilterItem.Status(filter) in selectedStatusItems
             //    点击调用 onStatusToggle(FilterItem.Status(filter))
             items(
-                items = displayDraggable,
+                items = filteredDraggable,
                 key = { it.name }
             ) { filter ->
                 ReorderableItem(
@@ -291,7 +293,7 @@ internal fun StatusFilterSection(
             }
 
             // 搜索无结果提示
-            if (searchQuery.isNotBlank() && filteredDraggable.isEmpty() && draggableFilters.isNotEmpty()) {
+            if (searchQuery.isNotBlank() && filteredDraggable.isEmpty() && displayDraggable.isNotEmpty()) {
                 item(key = "no_match_status") {
                     Text(
                         text = "未找到匹配的状态",
