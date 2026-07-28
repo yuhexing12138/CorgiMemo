@@ -119,13 +119,24 @@ internal fun InspirationFilterSection(
         orderedTags.filter { it.contains(searchQuery, ignoreCase = true) }
     }
 
-    // 🆕 v2026-07-28 Plan A：拖拽中暂存新顺序，拖拽结束才提交外层 ViewModel
-    //   原因：避免每次 onMove 都触发 ViewModel → Repository → DAO → StateFlow 整条链路更新，
-    //         导致整列表重组（实测单次拖拽重组 200-400 次）。
-    //   行为：拖拽过程中仅更新本地 pendingReorder，onDragStopped 才回调 onReorder。
+    // 🆕 v2026-07-28 Plan A+：拖拽中暂存新顺序，**不主动清空**
+    //   - 松手时由 onDragStopped 调用 onReorder → ViewModel 端同步 emit override
+    //     （InspirationViewModel._tagOrderOverride），UI 立即看到新顺序
+    //   - 持久化完成后由 [LaunchedEffect] 监听 orderedTags 与 pendingReorder 一致时
+    //     自动清空 pendingReorder（避免无限期持有 stale 状态）
+    //   - 行为：松手瞬间不会回弹到旧顺序，无残影
     var pendingReorder by remember { mutableStateOf<List<String>?>(null) }
     // 拖拽中显示 pendingReorder（如果有），否则显示过滤后的 filteredTags
     val displayTags = pendingReorder ?: filteredTags
+
+    // 🆕 v2026-07-28 方案 C 监听器：当 ViewModel 数据（orderedTags）已与 pendingReorder
+    //   同步时自动清空 pendingReorder。注意监听 orderedTags 而非 filteredTags，
+    //   因为 filteredTags 受搜索框过滤影响，未必等于 orderedTags。
+    LaunchedEffect(orderedTags, pendingReorder) {
+        if (pendingReorder != null && pendingReorder == orderedTags) {
+            pendingReorder = null
+        }
+    }
 
     // 🆕 v2026-07-27 P8 Phase 4 拖拽状态
     // 固定项偏移：LazyColumn 第 0 项（"全部灵感"）不可拖拽
@@ -348,13 +359,15 @@ internal fun InspirationFilterSection(
                                     )
                                 },
                                 onDragStopped = {
-                                    // Plan A：拖拽结束才提交到外层 ViewModel
+                                    // Plan A+：松手时调用 onReorder，**不**主动清空 pendingReorder
+                                    //   - ViewModel 端通过 _tagOrderOverride 同步 emit 新顺序
+                                    //   - Section 端 LaunchedEffect 监听 orderedTags == pendingReorder 时
+                                    //     才清空 pendingReorder（避免松手瞬间回弹到旧顺序残影）
                                     pendingReorder?.let { finalList ->
                                         // 埋点 #7：实际触发 ViewModel 更新
                                         diag.onReorderSubmit(finalList.size)
                                         onReorder(finalList)
                                     }
-                                    pendingReorder = null
                                     // 埋点 #3：拖拽结束
                                     diag.onDragStopped(tag, listSize = displayTags.size + 1)
                                 }

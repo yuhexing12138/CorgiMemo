@@ -87,13 +87,29 @@ internal fun CategoryGroupSection(
     // 重组埋点：函数体每次重组都自增
     diag.onRecompose()
 
-    // 🆕 v2026-07-28 Plan A：拖拽中暂存新顺序，拖拽结束才提交外层 ViewModel
-    //   原因：避免每次 onMove 都触发 ViewModel → Repository → DAO → StateFlow 整条链路更新，
-    //         导致整列表重组（实测单次拖拽重组 200-400 次）。
-    //   行为：拖拽过程中仅更新本地 pendingReorder，onDragStopped 才回调 onReorder。
+    // 🆕 v2026-07-28 Plan A+：拖拽中暂存新顺序，**不主动清空**
+    //   - 松手时由 onDragStopped 调用 onReorder → ViewModel 端同步 emit override
+    //     （HomeViewModel._categoryOrderOverride），UI 立即看到新顺序
+    //   - 持久化完成后由 [LaunchedEffect] 监听 categories 与 pendingReorder 一致时
+    //     自动清空 pendingReorder（避免无限期持有 stale 状态）
+    //   - 行为：松手瞬间不会回弹到旧顺序，无残影
     var pendingReorder by remember { mutableStateOf<List<Category>?>(null) }
     // 拖拽中显示 pendingReorder（如果有），否则显示原始 categories
     val displayCategories = pendingReorder ?: categories
+
+    // 🆕 v2026-07-28 方案 C 监听器：当 ViewModel 数据已与 pendingReorder 同步时
+    //   自动清空 pendingReorder，displayCategories 自然显示新顺序（来自 ViewModel），
+    //   不需要 Section 端主动清空（避免回弹残影）。
+    //   注意：比较 id 序列（不比较对象），因为 override 与 Room Flow 是不同实例
+    LaunchedEffect(categories, pendingReorder) {
+        if (pendingReorder != null) {
+            val pendingIds = pendingReorder!!.map { it.id }
+            val currentIds = categories.map { it.id }
+            if (pendingIds == currentIds) {
+                pendingReorder = null
+            }
+        }
+    }
 
     // 🆕 v2026-07-27 P8 Phase 1 拖拽状态
     // 固定项偏移：LazyColumn 前 2 项（"全部待办"/"未分类"）不可拖拽
@@ -227,13 +243,15 @@ internal fun CategoryGroupSection(
                                     )
                                 },
                                 onDragStopped = {
-                                    // Plan A：拖拽结束才提交到外层 ViewModel
+                                    // Plan A+：松手时调用 onReorder，**不**主动清空 pendingReorder
+                                    //   - ViewModel 端通过 _categoryOrderOverride 同步 emit 新顺序
+                                    //   - Section 端 LaunchedEffect 监听 categories == pendingReorder 时
+                                    //     才清空 pendingReorder（避免松手瞬间回弹到旧顺序残影）
                                     pendingReorder?.let { finalList ->
                                         // 埋点 #7：实际触发 ViewModel 更新的次数（Plan A 验证）
                                         diag.onReorderSubmit(finalList.size)
                                         onReorder(finalList)
                                     }
-                                    pendingReorder = null
                                     // 埋点 #3：拖拽结束
                                     diag.onDragStopped(category.id, listSize = displayCategories.size + 2)
                                 }
