@@ -151,6 +151,16 @@ class ProfileViewModel @Inject constructor(
     // ==================== P8 Phase 5：PROFILE Tab 快速导航拖拽排序 ====================
 
     /**
+     * 导航项顺序 override（v2026-07-28 方案 C 修复松手残影）
+     *
+     * 拖拽结束时 [updateNavOrder] 同步设置此 override，
+     * `navItems` 通过 `combine` 优先返回 override（非空时）。
+     *
+     * **声明顺序**：必须在 [navItems] 之前声明（Kotlin 属性按声明顺序初始化）。
+     */
+    private val _navItemsOverride = MutableStateFlow<List<ProfileNavItem>?>(null)
+
+    /**
      * 个人快速导航项（v2026-07-27 新增，P8 Phase 5 实施）
      *
      * 响应式订阅 profile_nav_items 表，UI 层（ProfileQuickNavSection）通过
@@ -171,14 +181,6 @@ class ProfileViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
-
-    /**
-     * 导航项顺序 override（v2026-07-28 方案 C 修复松手残影）
-     *
-     * 拖拽结束时 [updateNavOrder] 同步设置此 override，
-     * `navItems` 通过 `combine` 优先返回 override（非空时）。
-     */
-    private val _navItemsOverride = MutableStateFlow<List<ProfileNavItem>?>(null)
 
     /**
      * 更新快速导航拖拽顺序（v2026-07-27 新增，P8 Phase 5 实施）

@@ -270,6 +270,16 @@ class InspirationViewModel @Inject constructor(
         )
 
     /**
+     * 标签顺序 override（v2026-07-28 方案 C 修复松手残影）
+     *
+     * 拖拽结束时 [updateTagOrder] 同步设置此 override，
+     * `tagOrder` 通过 `combine` 优先返回 override（非空时）。
+     *
+     * **声明顺序**：必须在 [tagOrder] 之前声明（Kotlin 属性按声明顺序初始化）。
+     */
+    private val _tagOrderOverride = MutableStateFlow<List<String>?>(null)
+
+    /**
      * 灵感标签拖拽顺序（v2026-07-27 新增，P8 Phase 4 实施）
      *
      * 从 inspiration_tag_order 表读取用户自定义的 tag 顺序。
@@ -289,14 +299,6 @@ class InspirationViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
-
-    /**
-     * 标签顺序 override（v2026-07-28 方案 C 修复松手残影）
-     *
-     * 拖拽结束时 [updateTagOrder] 同步设置此 override，
-     * `tagOrder` 通过 `combine` 优先返回 override（非空时）。
-     */
-    private val _tagOrderOverride = MutableStateFlow<List<String>?>(null)
 
     /**
      * 排序后的标签列表（v2026-07-27 新增，P8 Phase 4 实施）
