@@ -19,10 +19,12 @@ import com.corgimemo.app.data.repository.ProfileRepository
 import com.corgimemo.app.data.repository.TodoRepository
 import com.corgimemo.app.ui.theme.ThemeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -155,13 +157,28 @@ class ProfileViewModel @Inject constructor(
      * `collectAsState()` 观察顺序变化。
      *
      * **数据特征**：行数极少（3 个默认项），stateIn 保持 WhileSubscribed(5000) 与其他流一致。
+     *
+     * 🆕 v2026-07-28 方案 C：通过 [_navItemsOverride] 同步覆盖实现松手立即响应，
+     *   UI 无需等待 Room 异步更新即可看到新顺序，消除松手瞬间的回弹残影。
      */
-    val navItems: StateFlow<List<ProfileNavItem>> = profileRepository.getAllByOrder()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+    val navItems: StateFlow<List<ProfileNavItem>> = combine(
+        profileRepository.getAllByOrder(),
+        _navItemsOverride
+    ) { fromDb, override ->
+        override ?: fromDb
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    /**
+     * 导航项顺序 override（v2026-07-28 方案 C 修复松手残影）
+     *
+     * 拖拽结束时 [updateNavOrder] 同步设置此 override，
+     * `navItems` 通过 `combine` 优先返回 override（非空时）。
+     */
+    private val _navItemsOverride = MutableStateFlow<List<ProfileNavItem>?>(null)
 
     /**
      * 更新快速导航拖拽顺序（v2026-07-27 新增，P8 Phase 5 实施）
@@ -172,11 +189,22 @@ class ProfileViewModel @Inject constructor(
      * @param newList 拖拽后的新 nav item 列表
      */
     fun updateNavOrder(newList: List<ProfileNavItem>) {
+        val ordered = newList.mapIndexed { idx, item -> item.copy(sortOrder = idx) }
+        // 🆕 v2026-07-28 方案 C：先同步覆盖内存状态
+        //   通过 _navItemsOverride 立即让 navItems StateFlow emit 新顺序，
+        //   UI 无需等待 Room 异步更新即可看到新顺序，消除松手瞬间的回弹残影。
+        _navItemsOverride.value = ordered
+        // 异步持久化（Room 异步更新 Flow + 50ms 后清空 override 让 Room Flow 接管）
         viewModelScope.launch {
             try {
-                profileRepository.updateNavOrder(newList)
+                profileRepository.updateNavOrder(ordered)
+                // 延迟 50ms 让 Room Flow 追上，再清空 override
+                kotlinx.coroutines.delay(50)
+                _navItemsOverride.value = null
             } catch (e: Exception) {
                 android.util.Log.e("ProfileViewModel", "更新导航顺序失败", e)
+                // 失败时回滚 override，避免 UI 永久显示已持久化失败的新顺序
+                _navItemsOverride.value = null
             }
         }
     }

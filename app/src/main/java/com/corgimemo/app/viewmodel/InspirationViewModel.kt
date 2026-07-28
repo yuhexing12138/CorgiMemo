@@ -275,13 +275,28 @@ class InspirationViewModel @Inject constructor(
      * 从 inspiration_tag_order 表读取用户自定义的 tag 顺序。
      * - 首次启动时为空 Flow（用户在 DB 拖拽前没数据）
      * - 拖拽后由 updateTagOrder() 持久化
+     *
+     * 🆕 v2026-07-28 方案 C：通过 [_tagOrderOverride] 同步覆盖实现松手立即响应，
+     *   UI 无需等待 Room 异步更新即可看到新顺序，消除松手瞬间的回弹残影。
      */
-    val tagOrder: StateFlow<List<String>> = inspirationRepository.getOrderedTagNames()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+    val tagOrder: StateFlow<List<String>> = combine(
+        inspirationRepository.getOrderedTagNames(),
+        _tagOrderOverride
+    ) { fromDb, override ->
+        override ?: fromDb
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    /**
+     * 标签顺序 override（v2026-07-28 方案 C 修复松手残影）
+     *
+     * 拖拽结束时 [updateTagOrder] 同步设置此 override，
+     * `tagOrder` 通过 `combine` 优先返回 override（非空时）。
+     */
+    private val _tagOrderOverride = MutableStateFlow<List<String>?>(null)
 
     /**
      * 排序后的标签列表（v2026-07-27 新增，P8 Phase 4 实施）
@@ -315,11 +330,21 @@ class InspirationViewModel @Inject constructor(
      * 立即更新内存 + 异步持久化到 inspiration_tag_order 表。
      */
     fun updateTagOrder(newOrder: List<String>) {
+        // 🆕 v2026-07-28 方案 C：先同步覆盖内存状态
+        //   通过 _tagOrderOverride 立即让 tagOrder StateFlow emit 新顺序，
+        //   UI 无需等待 Room 异步更新即可看到新顺序，消除松手瞬间的回弹残影。
+        _tagOrderOverride.value = newOrder
+        // 异步持久化（Room 异步更新 Flow + 50ms 后清空 override 让 Room Flow 接管）
         viewModelScope.launch {
             try {
                 inspirationRepository.updateTagOrder(newOrder)
+                // 延迟 50ms 让 Room Flow 追上，再清空 override
+                kotlinx.coroutines.delay(50)
+                _tagOrderOverride.value = null
             } catch (e: Exception) {
                 android.util.Log.e("InspirationViewModel", "更新标签顺序失败", e)
+                // 失败时回滚 override，避免 UI 永久显示已持久化失败的新顺序
+                _tagOrderOverride.value = null
             }
         }
     }

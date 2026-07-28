@@ -279,13 +279,28 @@ class HomeViewModel @Inject constructor(
 
     // ========== 分类相关状态（必须在 filteredTodos 之前声明） ==========
 
-    val categories: StateFlow<List<Category>> =
-        categoryRepository.getAllCategories()
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
-            )
+    /**
+     * 分类排序 override（v2026-07-28 方案 C 修复松手残影）
+     *
+     * 拖拽结束时 [updateCategoryOrder] 同步设置此 override，
+     * `categories` 通过 `combine` 优先返回 override（非空时），
+     * 让 UI 立即看到新顺序，避免回弹到旧顺序的残影。
+     *
+     * 持久化成功后延迟 50ms 清空，让 Room Flow 重新接管（Room Flow 已在持久化
+     * 期间 emit 新值，override 清空后无视觉跳变）。
+     */
+    private val _categoryOrderOverride = MutableStateFlow<List<Category>?>(null)
+
+    val categories: StateFlow<List<Category>> = combine(
+        categoryRepository.getAllCategories(),
+        _categoryOrderOverride
+    ) { fromDb, override ->
+        override ?: fromDb
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
 
     private val _selectedCategoryId = MutableStateFlow<Long?>(null)
     val selectedCategoryId: StateFlow<Long?> = _selectedCategoryId.asStateFlow()
@@ -1669,14 +1684,24 @@ class HomeViewModel @Inject constructor(
      *   - 直接透传不重排，mapIndexed 在此方法内做
      */
     fun updateCategoryOrder(newList: List<Category>) {
+        val ordered = newList.mapIndexed { idx, c -> c.copy(sortOrder = idx) }
+        // 🆕 v2026-07-28 方案 C：先同步覆盖内存状态
+        //   通过 _categoryOrderOverride 立即让 categories StateFlow emit 新顺序，
+        //   UI 无需等待 Room 异步更新即可看到新顺序，消除松手瞬间的回弹残影。
+        _categoryOrderOverride.value = ordered
+        // 异步持久化（Room 异步更新 Flow + 50ms 后清空 override 让 Room Flow 接管）
         viewModelScope.launch {
             try {
-                val ordered = newList.mapIndexed { idx, c -> c.copy(sortOrder = idx) }
                 categoryRepository.batchUpdateSortOrder(ordered)
+                // 延迟 50ms 让 Room Flow 追上，再清空 override（避免中间帧显示旧数据）
+                kotlinx.coroutines.delay(50)
+                _categoryOrderOverride.value = null
             } catch (e: Exception) {
                 // 错误通过 logcat 记录（与 HomeViewModel 其他错误处理一致，参考 line 3747/3857）
                 // 后续可扩展为 SharedFlow 事件供 UI 显示 Snackbar
                 android.util.Log.e("HomeViewModel", "更新分类顺序失败", e)
+                // 失败时回滚 override，避免 UI 永久显示已持久化失败的新顺序
+                _categoryOrderOverride.value = null
             }
         }
     }
