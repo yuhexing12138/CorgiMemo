@@ -280,7 +280,8 @@ fun MainScreen(
     // 2026-07-14 新增：日期类型筛选状态
     val selectedDateCategory by specialDateViewModel.selectedDateCategory.collectAsState()
     val dateCountByCategory by specialDateViewModel.dateCountByCategory.collectAsState()
-    val customDateTypes by specialDateViewModel.customDateTypes.collectAsState()
+    // 🆕 v2026-07-28 P8.6：使用统一日期类型列表（内置 8 个 + 自定义混排）
+    val dateTypeOrder by specialDateViewModel.dateTypeOrder.collectAsState()
     /** 用户行为分析器（通过 Hilt 入口点获取 @Singleton 实例，用于记录页面访问） */
     val userBehaviorAnalyzer: UserBehaviorAnalyzer = remember {
         EntryPointAccessors.fromApplication(context, UserBehaviorAnalyzerEntryPoint::class.java).analyzer()
@@ -568,7 +569,8 @@ fun MainScreen(
                     },
                     selectedDateCategory = selectedDateCategory,
                     dateCountByCategory = dateCountByCategory,
-                    customDateTypes = customDateTypes,
+                    // 🆕 v2026-07-28 P8.6：使用统一日期类型列表
+                    dateTypeOrder = dateTypeOrder,
                     onDateCategoryClick = { category ->
                         specialDateViewModel.filterByDateCategory(category)
                         coroutineScope.launch { drawerState.close() }
