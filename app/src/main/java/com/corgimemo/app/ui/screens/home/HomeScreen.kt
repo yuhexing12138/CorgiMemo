@@ -142,7 +142,9 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import com.corgimemo.app.viewmodel.CelebrationLevel
+import com.corgimemo.app.viewmodel.FilterItem
 import com.corgimemo.app.viewmodel.HomeViewModel
+import com.corgimemo.app.viewmodel.TagFilterMode
 import com.corgimemo.app.util.HomeBootTrace
 import com.corgimemo.app.ui.theme.UiColors
 import kotlinx.coroutines.delay
@@ -253,7 +255,11 @@ fun HomeScreen(
     val selectedTodoIds by viewModel.selectedTodoIds.collectAsState()
     val categories by viewModel.categories.collectAsState()
 
-    val selectedCategoryId by viewModel.selectedCategoryId.collectAsState()
+    // ★ v2026-07-28 v2 跨维度：删除 selectedCategoryId，改为 selectedFilterItems（Set<FilterItem>，多选）
+    val selectedFilterItems by viewModel.selectedFilterItems.collectAsState()
+    // ★ v2026-07-28 v2 跨维度：filterMode 也需要在 HomeScreen.applyFilters 中按 mode 切换 OR/AND/NOT 逻辑
+    //   否则 NOT 模式 + 未分类 会被本地二次过滤覆盖为 OR 模式效果
+    val filterMode by viewModel.filterMode.collectAsState()
 
     /** 排序方式状态 */
     val sortType by viewModel.sortType.collectAsState()
@@ -785,15 +791,42 @@ fun HomeScreen(
 
                         /**
                          * 应用分类和搜索过滤
+                         *
+                         * ★ v2026-07-28 v2 跨维度改造（完整版）：
+                         * - 旧的 `selectedCategoryId: Long?` 单选过滤已删除
+                         * - 改为 `selectedFilterItems: Set<FilterItem>` 多选过滤
+                         *   （仅处理 Category 子集；Status 子集由 HomeViewModel.filteredTodos 处理）
+                         * - **必须按 [filterMode] 切换 OR/AND/NOT 逻辑**，与 HomeViewModel.applyFilterItems 一致
+                         *   否则 NOT 模式 + 未分类 会被本地 OR 模式二次过滤覆盖，显示错误结果
+                         * - "未分类"语义：id=0L 表示"未分类"（todo.categoryId 不在自定义分组中）
+                         *
+                         ** OR 模式：todo 属于任一选中分组（Category 项内部 OR，跨 Status 项 AND）
+                         ** AND 模式：分组项被忽略（todo 只能属于 1 个分组）
+                         ** NOT 模式：todo 不属于任何选中分组
                          */
                         fun applyFilters(list: List<TodoItem>): List<TodoItem> {
                             var result = list
-                            val catId = selectedCategoryId
-                            if (catId != null && catId > 0) {
-                                result = result.filter { it.categoryId == catId }
-                            } else if (catId != null && catId == 0L) {
+                            val categoryItems = selectedFilterItems.filterIsInstance<FilterItem.Category>()
+                            if (categoryItems.isNotEmpty()) {
                                 val validCategoryIds = categories.map { it.id }.toSet()
-                                result = result.filter { it.categoryId !in validCategoryIds }
+                                // 复用匹配函数：与 HomeViewModel.matchesFilterItem 的 Category 分支语义一致
+                                // （id=0L 视为"未分类"：todo.categoryId !in validCategoryIds）
+                                fun matchesCategory(todo: TodoItem, item: FilterItem.Category): Boolean =
+                                    if (item.id == 0L) todo.categoryId !in validCategoryIds
+                                    else todo.categoryId == item.id
+
+                                result = when (filterMode) {
+                                    TagFilterMode.OR -> result.filter { todo ->
+                                        categoryItems.any { matchesCategory(todo, it) }
+                                    }
+                                    TagFilterMode.AND -> {
+                                        // AND 模式下分组项被忽略（按 plan 决策 D2：todo 只能属于 1 个分组）
+                                        result
+                                    }
+                                    TagFilterMode.NOT -> result.filter { todo ->
+                                        categoryItems.none { matchesCategory(todo, it) }
+                                    }
+                                }
                             }
                             if (searchQuery.isNotBlank()) {
                                 result = result.filter { todo ->
@@ -972,7 +1005,7 @@ fun HomeScreen(
                                 items = displayItems,
                                 listState = lazyListState,
                                 isDragEnabled = !isBatchMode && swipeExpandedTodoId == null
-                                    && searchQuery.isBlank() && selectedCategoryId == null,
+                                    && searchQuery.isBlank() && selectedFilterItems.isEmpty(),
                                 key = { item ->
                                     when (item) {
                                         is DisplayItem.Todo -> item.item.id
