@@ -1312,26 +1312,38 @@ class HomeViewModel @Inject constructor(
     /**
      * 应用统一过滤（v2026-07-28 新增，v2 跨维度改造）
      *
+     * **跨维度组合语义（v2026-07-28 v3 修正）**：
+     *   模式（OR/AND/NOT）不仅决定**单维度内多个 item 的组合方式**，也决定**维度间的组合方式**。
+     *   - OR 模式：跨维度 OR（满足任一维度即可）→ `catOk || stOk`
+     *   - AND 模式：跨维度 AND（同时满足两维度）→ `catOk && stOk`
+     *   - NOT 模式：跨维度 NOT（两维度都不满足）→ `catNotOk && stNotOk`（= OR 模式取反）
+     *
      * **OR 模式**：
      *   - 分组项内部 OR（属于任一选中分组）
      *   - 状态项内部 OR（满足任一选中状态）
-     *   - 跨维度 AND（同时满足分组和状态条件）
+     *   - 跨维度 OR（满足分组 OR 状态任一）
      *
      * **AND 模式**：
-     *   - 分组项被忽略（todo 只能属于 1 个分组，AND 多个分组无意义）
-     *   - 仅状态项内部 AND（同时满足所有选中状态）
+     *   - 分组项内部 AND（同时属于所有选中分组——但 todo 只能属于 1 个分组，故分组项被忽略）
+     *   - 状态项内部 AND（同时满足所有选中状态）
+     *   - 跨维度 AND（同时满足分组和状态）
      *
      * **NOT 模式**：
      *   - 分组项内部 NOT（不属于任何选中分组）
      *   - 状态项内部 NOT（不满足任何选中状态）
-     *   - 跨维度 AND（同时满足 NOT 分组和 NOT 状态条件）
+     *   - 跨维度 NOT（既不属于任何选中分组 也不满足任何选中状态）
+     *
+     * **修改历史**：
+     *   - v2（D11 决策）：跨维度用 AND 组合（catOk && stOk）
+     *   - v3（v2026-07-28 用户反馈）：跨维度改为 OR 组合（OR=catOk||stOk, NOT=catNotOk&&stNotOk）
+     *   - 三个模式满足 De Morgan 律：NOT = !OR，AND = !(NOT OR)
      *
      * @param todos 待过滤列表
      * @param selected 选中的过滤项集合
      * @param mode 组合模式
      * @return 过滤后的 todo 列表
      */
-    private fun applyFilterItems(
+    internal fun applyFilterItems(
         todos: List<TodoItem>,
         selected: Set<FilterItem>,
         mode: TagFilterMode
@@ -1346,17 +1358,23 @@ class HomeViewModel @Inject constructor(
                     categoryItems.any { matchesFilterItem(todo, it) }
                 val stOk = statusItems.isEmpty() ||
                     statusItems.any { matchesFilterItem(todo, it) }
-                catOk && stOk
+                // ★ v3 跨维度 OR：满足分组 OR 满足状态任一
+                catOk || stOk
             }
             TagFilterMode.AND -> todos.filter { todo ->
-                // AND 模式下分组项被忽略（按 plan 决策 D2）
-                statusItems.isEmpty() || statusItems.all { matchesFilterItem(todo, it) }
+                // AND 模式下分组项被忽略（按 plan 决策 D2：todo 只能属于 1 个分组）
+                val catOk = categoryItems.isEmpty()
+                val stOk = statusItems.isEmpty() ||
+                    statusItems.all { matchesFilterItem(todo, it) }
+                // ★ v3 跨维度 AND：同时满足分组和状态
+                catOk && stOk
             }
             TagFilterMode.NOT -> todos.filter { todo ->
                 val catNotOk = categoryItems.isEmpty() ||
                     categoryItems.none { matchesFilterItem(todo, it) }
                 val stNotOk = statusItems.isEmpty() ||
                     statusItems.none { matchesFilterItem(todo, it) }
+                // ★ v3 跨维度 NOT：两维度都不满足（= OR 模式取反）
                 catNotOk && stNotOk
             }
         }

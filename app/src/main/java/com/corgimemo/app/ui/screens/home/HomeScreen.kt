@@ -142,9 +142,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import com.corgimemo.app.viewmodel.CelebrationLevel
-import com.corgimemo.app.viewmodel.FilterItem
 import com.corgimemo.app.viewmodel.HomeViewModel
-import com.corgimemo.app.viewmodel.TagFilterMode
 import com.corgimemo.app.util.HomeBootTrace
 import com.corgimemo.app.ui.theme.UiColors
 import kotlinx.coroutines.delay
@@ -792,42 +790,20 @@ fun HomeScreen(
                         /**
                          * 应用分类和搜索过滤
                          *
-                         * ★ v2026-07-28 v2 跨维度改造（完整版）：
+                         * ★ v2026-07-28 v2 跨维度改造 → v3 跨维度组合修正：
                          * - 旧的 `selectedCategoryId: Long?` 单选过滤已删除
                          * - 改为 `selectedFilterItems: Set<FilterItem>` 多选过滤
-                         *   （仅处理 Category 子集；Status 子集由 HomeViewModel.filteredTodos 处理）
-                         * - **必须按 [filterMode] 切换 OR/AND/NOT 逻辑**，与 HomeViewModel.applyFilterItems 一致
-                         *   否则 NOT 模式 + 未分类 会被本地 OR 模式二次过滤覆盖，显示错误结果
-                         * - "未分类"语义：id=0L 表示"未分类"（todo.categoryId 不在自定义分组中）
-                         *
-                         ** OR 模式：todo 属于任一选中分组（Category 项内部 OR，跨 Status 项 AND）
-                         ** AND 模式：分组项被忽略（todo 只能属于 1 个分组）
-                         ** NOT 模式：todo 不属于任何选中分组
+                         * - **跨维度组合语义**（v3）：
+                         *   - OR 模式：catOk || stOk（满足分组 OR 满足状态任一）
+                         *   - AND 模式：catOk && stOk（同时满足两维度，分组项被忽略）
+                         *   - NOT 模式：catNotOk && stNotOk（两维度都不满足）
+                         * - **直接调用 [viewModel.applyFilterItems]**，避免双过滤逻辑漂移
+                         *   （之前 HomeScreen 二次过滤会覆盖 VM 的过滤结果，导致 NOT 模式 bug）
+                         * - searchQuery 过滤保留在 UI 层（VM 也做，结果是 AND 交集，无副作用）
                          */
                         fun applyFilters(list: List<TodoItem>): List<TodoItem> {
-                            var result = list
-                            val categoryItems = selectedFilterItems.filterIsInstance<FilterItem.Category>()
-                            if (categoryItems.isNotEmpty()) {
-                                val validCategoryIds = categories.map { it.id }.toSet()
-                                // 复用匹配函数：与 HomeViewModel.matchesFilterItem 的 Category 分支语义一致
-                                // （id=0L 视为"未分类"：todo.categoryId !in validCategoryIds）
-                                fun matchesCategory(todo: TodoItem, item: FilterItem.Category): Boolean =
-                                    if (item.id == 0L) todo.categoryId !in validCategoryIds
-                                    else todo.categoryId == item.id
-
-                                result = when (filterMode) {
-                                    TagFilterMode.OR -> result.filter { todo ->
-                                        categoryItems.any { matchesCategory(todo, it) }
-                                    }
-                                    TagFilterMode.AND -> {
-                                        // AND 模式下分组项被忽略（按 plan 决策 D2：todo 只能属于 1 个分组）
-                                        result
-                                    }
-                                    TagFilterMode.NOT -> result.filter { todo ->
-                                        categoryItems.none { matchesCategory(todo, it) }
-                                    }
-                                }
-                            }
+                            // 复用 VM 的跨维度过滤逻辑（含 OR/AND/NOT + "未分类"语义）
+                            var result = viewModel.applyFilterItems(list, selectedFilterItems, filterMode)
                             if (searchQuery.isNotBlank()) {
                                 result = result.filter { todo ->
                                     todo.title.contains(searchQuery, ignoreCase = true) ||
