@@ -172,6 +172,8 @@ class CorgiPreferences(
         const val MAX_IMAGES_PER_LINE = "max_images_per_line"
         /** v2026-07-27：STATUS Tab 状态过滤项顺序（逗号分隔的 StatusFilter.name） */
         const val STATUS_FILTER_ORDER = "status_filter_order"
+        /** 🆕 v2026-07-28：DATE Tab 内置日期类型顺序（逗号分隔的 DateCategory.name） */
+        const val DATE_CATEGORY_ORDER = "date_category_order"
     }
 
     // ==================== 数据迁移（DataStore → ESP）====================
@@ -1052,5 +1054,27 @@ class CorgiPreferences(
      */
     suspend fun saveStatusFilterOrder(order: List<String>) = withContext(Dispatchers.IO) {
         esp.edit().putString(Keys.STATUS_FILTER_ORDER, order.joinToString(",")).apply()
+    }
+
+    /**
+     * 获取内置日期类型顺序（v2026-07-28 新增，P8.6 实施）
+     *
+     * DATE Tab 启动时由 ViewModel 调用。
+     *
+     * @return 顺序字符串（如 "BIRTHDAY,ANNIVERSARY,HOLIDAY,LIFE,STUDY,WORK,ENTERTAINMENT,OTHER"），
+     *         无值时返回 null（此时 ViewModel 用 DateCategory.entries 默认顺序）
+     */
+    fun getDateCategoryOrderRaw(): String? = esp.getString(Keys.DATE_CATEGORY_ORDER, null)
+
+    /**
+     * 设置内置日期类型顺序（v2026-07-28 新增，P8.6 实施）
+     *
+     * DATE Tab 拖拽完成后由 ViewModel 调用。
+     * 仅持久化内置 8 个 DateCategory 的顺序，自定义类型由 Room 单独存储。
+     *
+     * @param order 拖拽后的新顺序（DateCategory.name 列表，必须包含全部 8 个）
+     */
+    suspend fun saveDateCategoryOrder(order: List<String>) = withContext(Dispatchers.IO) {
+        esp.edit().putString(Keys.DATE_CATEGORY_ORDER, order.joinToString(",")).apply()
     }
 }

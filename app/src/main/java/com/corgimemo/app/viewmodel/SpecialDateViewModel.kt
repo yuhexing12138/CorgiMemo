@@ -118,6 +118,105 @@ class SpecialDateViewModel @Inject constructor(
     val customDateTypes: StateFlow<List<CustomDateType>> = repository.allCustomDateTypes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // ========== 拖拽排序相关（v2026-07-28 新增，P8.6 实施）==========
+
+    /**
+     * 日期类型统一条目（v2026-07-28 新增，P8.6 实施）
+     *
+     * DATE Tab 侧滑栏拖拽时不再区分内置 / 自定义，UI 层直接对
+     * `dateTypeOrder` 列表重排，跨组拖拽（用户要求）。
+     * 持久化时再拆分为内置 8 个（ESP）+ 自定义（Room）分别处理。
+     */
+    sealed class DateTypeEntry {
+        /** 唯一 key，用于 LazyColumn key 和 ReorderableItem key */
+        abstract val key: String
+        /** 选中时的 category 标识（与 `_selectedDateCategory` 对齐） */
+        abstract val categoryId: String
+        /** 类型显示名 */
+        abstract val displayName: String
+        /** 类型 emoji 图标 */
+        abstract val emoji: String
+        /** 是否为自定义（用于持久化拆分） */
+        abstract val isCustom: Boolean
+
+        /** 内置 8 个 DateCategory */
+        data class Builtin(val category: DateCategory) : DateTypeEntry() {
+            override val key: String get() = "BUILTIN:${category.name}"
+            override val categoryId: String get() = category.name
+            override val displayName: String get() = category.displayName
+            override val emoji: String get() = category.emoji
+            override val isCustom: Boolean get() = false
+        }
+
+        /** 用户自定义 CustomDateType */
+        data class Custom(val type: CustomDateType) : DateTypeEntry() {
+            override val key: String get() = "CUSTOM:${type.id}"
+            override val categoryId: String get() = "CUSTOM:${type.id}"
+            override val displayName: String get() = type.name
+            override val emoji: String get() = type.emoji
+            override val isCustom: Boolean get() = true
+        }
+    }
+
+    /**
+     * 内置 DateCategory 顺序（v2026-07-28 新增，P8.6 实施）
+     *
+     * 启动时从 ESP 恢复，运行时由 [updateDateTypeOrder] 更新。
+     */
+    private val _dateCategoryOrder = MutableStateFlow(DateCategory.entries.toList())
+
+    /**
+     * 内置 DateCategory 顺序 override（v2026-07-28 方案 C 修复松手残影）
+     *
+     * 拖拽结束时 [updateDateTypeOrder] 同步设置此 override，
+     * 让 UI 立即看到新顺序，避免回弹到旧顺序的残影。
+     *
+     * **声明顺序**：必须在 [_dateTypeOrderOverride] 之前声明（Kotlin 属性按声明顺序初始化）。
+     */
+    private val _dateCategoryOrderOverride = MutableStateFlow<List<DateCategory>?>(null)
+
+    /**
+     * 统一日期类型列表 override（v2026-07-28 方案 C 修复松手残影）
+     *
+     * 拖拽结束时 [updateDateTypeOrder] 同步设置此 override，
+     * `dateTypeOrder` 通过 `combine` 优先返回 override（非空时），
+     * 让 UI 立即看到新顺序，避免回弹到旧顺序的残影。
+     *
+     * **声明顺序**：必须在 [dateTypeOrder] 之前声明（Kotlin 属性按声明顺序初始化）。
+     */
+    private val _dateTypeOrderOverride = MutableStateFlow<List<DateTypeEntry>?>(null)
+
+    /**
+     * 统一日期类型列表（v2026-07-28 新增，P8.6 实施）
+     *
+     * DATE Tab 侧滑栏拖拽的统一数据源：内置 8 个 + 自定义类型混排。
+     * UI 层（DateTypeFilterSection）通过 `collectAsState()` 观察顺序变化。
+     *
+     * 数据优先级：
+     * 1. [_dateTypeOrderOverride]（拖拽松手时同步设置，松手残影修复用）
+     * 2. 内置 [_dateCategoryOrder]（含 override） + 自定义 [customDateTypes] 拼接
+     *
+     * 注意：保留 [customDateTypes] 作为原始数据流，以便其他模块继续使用
+     * （如"添加自定义类型时是否需要重新分配 sortOrder"等逻辑）。
+     */
+    val dateTypeOrder: StateFlow<List<DateTypeEntry>> = combine(
+        combine(
+            _dateCategoryOrder,
+            _dateCategoryOrderOverride
+        ) { order, override -> override ?: order },
+        customDateTypes,
+        _dateTypeOrderOverride
+    ) { categories, customs, listOverride ->
+        listOverride ?: (
+            categories.map { DateTypeEntry.Builtin(it) } +
+                customs.map { DateTypeEntry.Custom(it) }
+            )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = DateCategory.entries.map { DateTypeEntry.Builtin(it) }
+    )
+
     /** 当前选中的类型筛选（null=全部, "BIRTHDAY"=内置, "CUSTOM:42"=自定义） */
     private val _selectedDateCategory = MutableStateFlow<String?>(null)
     val selectedDateCategory: StateFlow<String?> = _selectedDateCategory
@@ -148,22 +247,45 @@ class SpecialDateViewModel @Inject constructor(
     }
 
     /**
-     * 更新自定义日期类型顺序（v2026-07-27 新增，P8 Phase 3 实施）
+     * 更新日期类型统一顺序（v2026-07-28 升级，P8.6 实施）
      *
      * DATE Tab 侧滑栏长按拖拽完成后由 UI 层调用。
-     * 重新分配 sortOrder 后批量持久化到 Room。
+     * **支持内置 8 个 + 自定义类型跨组混排**（用户 P8.6 要求）。
      *
-     * @param newList 拖拽后的新自定义类型列表
-     *   - UI 层（DateTypeFilterSection）的 Reorderable onMove 回调产生
-     *   - 直接透传不重排，mapIndexed 在此方法内做
+     * 拆分持久化：
+     * - 内置 DateCategory：写入 ESP（同步 `_dateCategoryOrder` + `_dateCategoryOrderOverride`）
+     * - 自定义 CustomDateType：写入 Room（`batchUpdateDateTypeSortOrder`）
+     *
+     * 方案 C 修复：先同步设置 `_dateTypeOrderOverride`，UI 立即看到新顺序；
+     * 持久化完成 50ms 后清空 override，让 Room/ESP 自然接管。
      */
-    fun updateDateTypeOrder(newList: List<CustomDateType>) {
+    fun updateDateTypeOrder(newList: List<DateTypeEntry>) {
+        // 1. 同步 emit override（方案 C：UI 立即看到新顺序）
+        _dateTypeOrderOverride.value = newList
+
+        // 拆分
+        val builtinOrder = newList.filterIsInstance<DateTypeEntry.Builtin>().map { it.category }
+        val customOrder = newList.filterIsInstance<DateTypeEntry.Custom>().map { it.type }
+
         viewModelScope.launch {
             try {
-                val ordered = newList.mapIndexed { idx, t -> t.copy(sortOrder = idx) }
-                repository.batchUpdateDateTypeSortOrder(ordered)
+                // 2a. 持久化内置 8 个到 ESP
+                if (builtinOrder.size == DateCategory.entries.size) {
+                    _dateCategoryOrder.value = builtinOrder
+                    corgiPreferences.saveDateCategoryOrder(builtinOrder.map { it.name })
+                }
+                // 2b. 持久化自定义到 Room
+                if (customOrder.isNotEmpty()) {
+                    val ordered = customOrder.mapIndexed { idx, t -> t.copy(sortOrder = idx) }
+                    repository.batchUpdateDateTypeSortOrder(ordered)
+                }
+                // 3. 延迟 50ms 让 ESP/Room 异步更新追上，再清空 override
+                kotlinx.coroutines.delay(50)
+                _dateTypeOrderOverride.value = null
             } catch (e: Exception) {
                 android.util.Log.e("SpecialDateViewModel", "更新日期类型顺序失败", e)
+                // 失败时回滚 override
+                _dateTypeOrderOverride.value = null
             }
         }
     }
@@ -199,6 +321,18 @@ class SpecialDateViewModel @Inject constructor(
         viewModelScope.launch {
             corgiPreferences.hideArchivedDateItems.collect { hide ->
                 _hideArchivedItems.value = hide
+            }
+        }
+        // 🆕 v2026-07-28 P8.6：从 ESP 恢复内置 DateCategory 顺序
+        //   同步读取（ESP 是 Android Key-Value，读取为毫秒级），
+        //   故不放在 launch 中（避免空帧后再赋值）
+        val raw = corgiPreferences.getDateCategoryOrderRaw()
+        if (!raw.isNullOrBlank()) {
+            val restored = raw.split(",")
+                .mapNotNull { runCatching { DateCategory.valueOf(it) }.getOrNull() }
+            // 数量匹配才应用（防止 ESP 数据被意外污染时崩溃）
+            if (restored.size == DateCategory.entries.size) {
+                _dateCategoryOrder.value = restored
             }
         }
     }
