@@ -46,6 +46,7 @@ import com.corgimemo.app.ui.components.appdrawer.model.DateTypeAction as DateTyp
 import com.corgimemo.app.ui.components.appdrawer.model.DrawerSection
 import com.corgimemo.app.ui.components.appdrawer.sections.AppDrawerContentImpl
 import com.corgimemo.app.ui.components.navigation.TabItem
+import com.corgimemo.app.viewmodel.SpecialDateViewModel
 import com.corgimemo.app.viewmodel.StatusFilter
 import com.corgimemo.app.viewmodel.TagFilterMode
 
@@ -97,7 +98,8 @@ fun AppDrawerContent(
     totalInspirationCount: Int = 0,
     selectedDateCategory: String? = null,
     dateCountByCategory: Map<String, Int> = emptyMap(),
-    customDateTypes: List<CustomDateType> = emptyList(),
+    // 🆕 v2026-07-28 P8.6：统一日期类型列表（内置 8 个 + 自定义混排）
+    dateTypeOrder: List<SpecialDateViewModel.DateTypeEntry> = emptyList(),
     onCategoryClick: (Long?) -> Unit = {},
     onAddCategoryClick: () -> Unit = {},
     onCategoryAction: (CategoryAction) -> Unit = {},
@@ -112,8 +114,8 @@ fun AppDrawerContent(
     onDateCategoryClick: (String?) -> Unit = {},
     onAddCustomTypeClick: () -> Unit = {},
     onCustomTypeAction: (DateTypeAction) -> Unit = {},
-    // v2026-07-27 P8 Phase 3 新增：自定义日期类型拖拽回调
-    onReorderDateType: (List<CustomDateType>) -> Unit = {},
+    // 🆕 v2026-07-28 P8.6：日期类型拖拽回调（统一 List<DateTypeEntry>，支持跨组混排）
+    onReorderDateType: (List<SpecialDateViewModel.DateTypeEntry>) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onUserAreaClick: () -> Unit = {},
     // v2026-07-27 P8 Phase 5 新增：个人快速导航项 + 拖拽回调（透传至 AppDrawerContentImpl）
@@ -148,7 +150,8 @@ fun AppDrawerContent(
         totalInspirationCount = totalInspirationCount,
         selectedDateCategory = selectedDateCategory,
         dateCountByCategory = dateCountByCategory,
-        customDateTypes = customDateTypes,
+        // 🆕 v2026-07-28 P8.6：透传统一日期类型列表
+        dateTypeOrder = dateTypeOrder,
         onCategoryClick = onCategoryClick,
         onAddCategoryClick = onAddCategoryClick,
         onCategoryAction = onCategoryAction,
@@ -163,7 +166,7 @@ fun AppDrawerContent(
         onDateCategoryClick = onDateCategoryClick,
         onAddCustomTypeClick = onAddCustomTypeClick,
         onCustomTypeAction = onCustomTypeAction,
-        // v2026-07-27 P8 Phase 3：透传自定义日期类型拖拽回调
+        // 🆕 v2026-07-28 P8.6：透传统一 List<DateTypeEntry> 拖拽回调
         onReorderDateType = onReorderDateType,
         onSettingsClick = onSettingsClick,
         onUserAreaClick = onUserAreaClick,
