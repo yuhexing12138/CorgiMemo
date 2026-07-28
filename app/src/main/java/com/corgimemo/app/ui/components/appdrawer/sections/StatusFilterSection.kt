@@ -42,6 +42,15 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  * - 拖拽视觉：scale 1.05 + shadowElevation 8dp + zIndex 1f
  * - 触觉反馈：HapticFeedbackManager.TEXT_MOVE
  *
+ * **🆕 v2026-07-28 P8.7 调整**：
+ * - **"全部状态"（[StatusFilter.ALL]）作为固定首项不参与拖拽**（用户要求）
+ *   - 原因："全部"是聚合项，拖到中间位置会导致列表语义混乱
+ *   - 实现：ALL 项用普通 `item()` 渲染（非 `ReorderableItem` 包装）
+ *   - 拖拽范围仅限其他 5 个状态项（PINNED / PENDING / COMPLETED / OVERDUE / REPEAT_REMINDER）
+ *   - onMove 中拒绝 `from.index == 0` 和 `to.index == 0`（防止拖到 ALL 位置）
+ * - 其他 5 个状态项**仍可拖**，保持 P8 Phase 2 视觉与交互
+ * - 持久化 ESP 仍然保留（用户已保存的顺序在重启后仍生效）
+ *
  * **架构角色**：
  * - 本函数是 sections 包的内部实现（`internal` 可见性）
  * - 由 [AppDrawerContentImpl] 在 DrawerSection.STATUS 分支调用
@@ -73,13 +82,31 @@ internal fun StatusFilterSection(
     onReorder: (List<StatusFilter>) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // 🆕 v2026-07-27 P8 Phase 2 拖拽状态
+    // 🆕 v2026-07-28 P8.7：拆分固定首项与可拖列表
+    // 固定首项："全部状态"（StatusFilter.ALL）— 不可拖
+    // 可拖列表：除 ALL 外的其他 5 个状态项
+    val draggableFilters = remember(statusOrder) {
+        statusOrder.filter { it != StatusFilter.ALL }
+    }
+
+    // 🆕 v2026-07-27 P8 Phase 2 拖拽状态（仅作用于可拖列表）
     val listState = rememberLazyListState()
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState = listState) { from, to ->
-        // 复制列表，重排，通知外层
-        val newOrder = statusOrder.toMutableList().apply {
-            add(to.index, removeAt(from.index))
+        // 🆕 v2026-07-28 P8.7：拒绝拖动 ALL（index 0 是固定首项）
+        if (from.index == 0 || to.index == 0) {
+            return@rememberReorderableLazyListState
         }
+        // 拖拽范围 [1, draggableFilters.size]：对应可拖列表的 [0, size-1]
+        val fromIndex = from.index - 1
+        val toIndex = to.index - 1
+        if (fromIndex !in draggableFilters.indices || toIndex !in draggableFilters.indices) {
+            return@rememberReorderableLazyListState
+        }
+        // 重新组装完整 statusOrder（ALL 始终在第一位 + 拖拽后的其他项）
+        val reordered = draggableFilters.toMutableList().apply {
+            add(toIndex, removeAt(fromIndex))
+        }
+        val newOrder = listOf(StatusFilter.ALL) + reordered
         onReorder(newOrder)
     }
 
@@ -94,16 +121,31 @@ internal fun StatusFilterSection(
     )
 
     Column(modifier = modifier) {
-        // 6 个状态项，按 statusOrder 顺序渲染，全部支持长按拖拽
+        // 6 个状态项，按 statusOrder 顺序渲染
+        // 🆕 v2026-07-28 P8.7：拆分渲染 - ALL 固定首项不可拖，其他 5 个可拖
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 8.dp)
         ) {
-            // items() 按 statusOrder 渲染，注意：key 用 StatusFilter.name（稳定枚举名）
+            // 1. "全部状态"（固定首项，**不可拖**）— 普通 item，无 ReorderableItem 包装
+            item(key = StatusFilter.ALL.name) {
+                CategoryItem(
+                    icon = statusIcon(StatusFilter.ALL),
+                    name = statusDisplayName(StatusFilter.ALL),
+                    count = countMap[StatusFilter.ALL] ?: 0,
+                    isSelected = currentFilter == StatusFilter.ALL,
+                    showMenu = false,
+                    onClick = { onFilterClick(StatusFilter.ALL) }
+                )
+            }
+
+            // 2. 其他 5 个状态项（**可拖**）— 全部用 ReorderableItem 包装
+            //    key 用 StatusFilter.name（稳定枚举名）
+            //    拖拽中 onMove 的 index 偏移：LazyColumn 中的 index - 1 = 可拖列表中的 index
             items(
-                items = statusOrder,
+                items = draggableFilters,
                 key = { it.name }
             ) { filter ->
                 ReorderableItem(
