@@ -251,18 +251,23 @@ fun RenameCategoryDialog(
 /**
  * 删除分类/类型确认弹窗（薄壳转发）
  *
+ * v2026-07-29 改造：同步底层新增 `todoCount` 参数；
+ * `message` 改为 `String?`（可空，默认 null → 由底层按 todoCount 自动生成待办分组文案）。
+ *
  * @see com.corgimemo.app.ui.components.appdrawer.dialogs.DeleteCategoryConfirmDialog
  */
 @Composable
 fun DeleteCategoryConfirmDialog(
     categoryName: String,
+    todoCount: Int = 0,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     title: String = "删除分组",
-    message: String = "确定要删除分组「$categoryName」吗？\n该分组下的待办将变为未分类状态。"
+    message: String? = null
 ) {
     com.corgimemo.app.ui.components.appdrawer.dialogs.DeleteCategoryConfirmDialog(
         categoryName = categoryName,
+        todoCount = todoCount,
         onConfirm = onConfirm,
         onDismiss = onDismiss,
         title = title,

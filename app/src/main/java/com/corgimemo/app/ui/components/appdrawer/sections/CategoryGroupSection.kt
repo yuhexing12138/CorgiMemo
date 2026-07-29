@@ -128,6 +128,18 @@ internal fun CategoryGroupSection(
         if (fromIndex !in currentList.indices || toIndex !in currentList.indices) {
             return@rememberReorderableLazyListState
         }
+        // v2026-07-29 改造：禁止跨置顶区拖动
+        // - 置顶分组（isPinned=true）锁定在置顶区内拖拽
+        // - 非置顶分组（isPinned=false）锁定在非置顶区内拖拽
+        // - 数据库已按 `isPinned DESC, sortOrder ASC, id ASC` 排序，
+        //   置顶分组在列表前部，非置顶在后部，故只需判断两端 isPinned 是否一致
+        val fromCategory = currentList[fromIndex]
+        val toCategory = currentList[toIndex]
+        if (fromCategory.isPinned != toCategory.isPinned) {
+            // 跨置顶区拖动 → 拒绝（不更新 pendingReorder，拖拽会回弹到原位）
+            diag.onMove(from = fromIndex, to = toIndex, listSize = displayCategories.size + 2, isDragging = true)
+            return@rememberReorderableLazyListState
+        }
         // Plan A：仅更新本地 pendingReorder，不触发外层 ViewModel
         pendingReorder = currentList.toMutableList().apply {
             add(toIndex, removeAt(fromIndex))
@@ -151,6 +163,7 @@ internal fun CategoryGroupSection(
         ) {
             // 1. "全部待办" 项（特殊 ID: -1L，不可拖拽）
             //    v2 跨维度：点击调用 onClearAllFilters() 清空所有过滤
+            //    v2026-07-29 改造：highlightBackground = true（固定项加深背景）
             item(key = "all_todos") {
                 CategoryItem(
                     icon = DRAWER_ICON_ALL,
@@ -158,12 +171,14 @@ internal fun CategoryGroupSection(
                     count = todoCountByCategory[-1L] ?: 0,
                     isSelected = selectedCategoryItems.isEmpty(),
                     showMenu = false,
+                    highlightBackground = true,
                     onClick = { onClearAllFilters() }
                 )
             }
 
             // 2. "未分组" 项（FilterItem.Category(0L)，不可拖拽）
             // v2026-07-29：原"未分类"改为"未分组"，与待办分组语义一致
+            // v2026-07-29 改造：highlightBackground = true（固定项加深背景）
             item(key = "uncategorized") {
                 val item = FilterItem.Category(0L)
                 CategoryItem(
@@ -172,6 +187,7 @@ internal fun CategoryGroupSection(
                     count = todoCountByCategory[0L] ?: 0,
                     isSelected = item in selectedCategoryItems,
                     showMenu = false,
+                    highlightBackground = true,
                     onClick = { onCategoryToggle(item) }
                 )
             }
@@ -179,6 +195,7 @@ internal fun CategoryGroupSection(
             // 3. 自定义分类列表（v2026-07-27 起支持长按拖拽）
             //    v2 跨维度：多选交互 isSelected = FilterItem.Category(category.id) in selectedCategoryItems
             //    v2026-07-28 搜索：渲染 filteredCategories（拖拽中仍用 displayCategories）
+            //    v2026-07-29 改造：置顶分组（isPinned=true）加深背景，如微信置顶会话
             items(
                 items = filteredCategories,
                 key = { it.id }
@@ -258,6 +275,8 @@ internal fun CategoryGroupSection(
                             // v2026-07-29 改造：取消"默认/自定义分组"区分后，所有分组都显示菜单
                             // 原 `showMenu = !category.isDefault` 让默认分组无法触发 ShowMenu 操作
                             showMenu = true,
+                            // v2026-07-29 改造：置顶分组加深背景（如微信置顶会话）
+                            highlightBackground = category.isPinned,
                             onClick = { onCategoryToggle(item) },
                             onMenuClick = {
                                 onCategoryAction(

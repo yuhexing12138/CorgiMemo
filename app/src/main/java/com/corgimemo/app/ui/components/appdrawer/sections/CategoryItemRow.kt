@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.components.appdrawer.sections
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,6 +44,18 @@ internal val categoryIcons: Map<Int, String> = mapOf(
 )
 
 /**
+ * 置顶/固定项的加深背景色（v2026-07-29 新增）
+ *
+ * 用于 [CategoryItem] 的 `highlightBackground = true` 场景：
+ * - "全部待办"和"未分组"固定项（永远在顶部，不参与拖拽）
+ * - isPinned=true 的置顶分组（如微信置顶会话，背景加深与普通项区分）
+ *
+ * 颜色选取依据：浅灰色 `#F5F5F5`，与白色侧滑栏背景对比度适中，
+ * 与微信置顶会话视觉一致。
+ */
+internal val DrawerPinnedBackground = Color(0xFFF5F5F5)
+
+/**
  * 分类/标签/日期类型 通用 Item 行（internal）
  *
  * 4 个 section 共用：CategoryGroupSection / InspirationFilterSection /
@@ -54,11 +67,16 @@ internal val categoryIcons: Map<Int, String> = mapOf(
  * 4 个 section 跨文件调用，private 会导致编译失败。internal 在单模块项目中等价于 public，
  * 但不暴露给外部依赖（外部调用方应通过 AppDrawerContent 进入）。
  *
+ * **v2026-07-29 新增 `highlightBackground` 参数**：
+ * - true 时行背景设为 [DrawerPinnedBackground]，用于置顶分组和固定项视觉区分
+ * - false（默认）保持透明背景
+ *
  * @param icon 前置 emoji
  * @param name 显示名称
  * @param count 关联数量（>0 时显示括号数字）
  * @param isSelected 是否选中（选中时加粗 + Primary 色）
  * @param showMenu 是否显示三点菜单（true 时显示 IconButton，false 时显示右箭头）
+ * @param highlightBackground 是否加深背景（v2026-07-29 新增，用于置顶分组和固定项）
  * @param textColor 未选中时文字颜色
  * @param onClick 行点击回调
  * @param onMenuClick 菜单按钮点击回调（仅 showMenu=true 时生效）
@@ -70,6 +88,7 @@ internal fun CategoryItem(
     count: Int,
     isSelected: Boolean,
     showMenu: Boolean,
+    highlightBackground: Boolean = false,
     textColor: Color = Color(0xFF1C1B1F),
     onClick: () -> Unit,
     onMenuClick: () -> Unit = {}
@@ -78,6 +97,10 @@ internal fun CategoryItem(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
+            .let { base ->
+                // v2026-07-29 改造：置顶/固定项加深背景（如微信置顶会话）
+                if (highlightBackground) base.background(DrawerPinnedBackground) else base
+            }
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically

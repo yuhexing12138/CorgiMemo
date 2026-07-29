@@ -1184,6 +1184,8 @@ fun MainScreen(
     showDeleteCategoryDialog?.let { category ->
         com.corgimemo.app.ui.components.DeleteCategoryConfirmDialog(
             categoryName = category.name,
+            // v2026-07-29 改造：传入关联 todo 数量，弹窗正文动态显示具体条数
+            todoCount = todoCountByCategory[category.id] ?: 0,
             onConfirm = {
                 homeViewModel.deleteCategory(category.id)
                 showDeleteCategoryDialog = null
@@ -1252,18 +1254,18 @@ fun MainScreen(
     showCategorySheet?.let { category ->
         com.corgimemo.app.ui.components.CategoryOperationSheet(
             category = category,
-            // v2026-07-29 改造：实现 Pin 操作，调用 HomeViewModel.toggleCategoryPinned 自动切换状态
+            // v2026-07-29 改造：
+            // 1. Pin 操作实现：调用 HomeViewModel.toggleCategoryPinned 自动切换状态
+            // 2. 关闭逻辑统一：onPin/onRename/onDelete 不再显式 showCategorySheet = null，
+            //    由 ActionRow 内部的 onDismiss() 统一关闭（避免双重关闭）
             onPin = {
                 homeViewModel.toggleCategoryPinned(category)
-                showCategorySheet = null
             },
             onRename = {
                 showRenameCategoryDialog = category
-                showCategorySheet = null
             },
             onDelete = {
                 showDeleteCategoryDialog = category
-                showCategorySheet = null
             },
             onDismiss = { showCategorySheet = null }
         )
