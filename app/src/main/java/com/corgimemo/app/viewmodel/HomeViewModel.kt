@@ -1440,12 +1440,12 @@ class HomeViewModel @Inject constructor(
             val targetCategoryId = if (categoryId > 0) {
                 categoryId
             } else {
-                // 新建自定义分组，获取返回的自增 ID
+                // 新建分组，获取返回的自增 ID
+                // v2026-07-29 改造：取消 isDefault 字段后不再传该参数
                 categoryRepository.insertCategory(
                     com.corgimemo.app.data.model.Category(
                         name = categoryName,
-                        type = com.corgimemo.app.data.model.CategoryType.CUSTOM,
-                        isDefault = false
+                        type = com.corgimemo.app.data.model.CategoryType.CUSTOM
                     )
                 )
             }
@@ -1769,6 +1769,8 @@ class HomeViewModel @Inject constructor(
     /**
      * 创建新分类
      *
+     * v2026-07-29 改造：取消 `isDefault` 字段后不再传该参数。
+     *
      * @param name 分类名称
      */
     fun createCategory(name: String) {
@@ -1776,8 +1778,7 @@ class HomeViewModel @Inject constructor(
             categoryRepository.insertCategory(
                 com.corgimemo.app.data.model.Category(
                     name = name,
-                    type = com.corgimemo.app.data.model.CategoryType.CUSTOM,
-                    isDefault = false
+                    type = com.corgimemo.app.data.model.CategoryType.CUSTOM
                 )
             )
         }
@@ -1797,19 +1798,50 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * 删除自定义分类
+     * 删除分类（v2026-07-29 改造）
+     *
+     * 取消"默认/自定义分组"区分后，所有分组都可被删除。
+     * Repository 层 [com.corgimemo.app.data.repository.CategoryRepository.deleteCategory]
+     * 已移除 `isDefault = 0` 过滤，直接按 id 删除。
      *
      * @param id 分类 ID
      */
     fun deleteCategory(id: Long) {
         viewModelScope.launch {
-            categoryRepository.deleteCustomCategory(id)
+            categoryRepository.deleteCategory(id)
             // ★ v2026-07-28 v2 跨维度改造：删除 _selectedFilterItems 中对应 FilterItem.Category
             _selectedFilterItems.value =
                 _selectedFilterItems.value.filterNot {
                     it is FilterItem.Category && it.id == id
                 }.toSet()
         }
+    }
+
+    /**
+     * 置顶/取消置顶分类（v2026-07-29 新增）
+     *
+     * 用于侧滑栏分组列表的置顶操作。
+     * - isPinned=true 的分组在 [CategoryDao.getAllCategories] 中排在前
+     * - 切换逻辑由调用方决定（如 [com.corgimemo.app.ui.components.appdrawer.dialogs.CategoryOperationSheet] 的 onPin 回调）
+     *
+     * @param id 分类 ID
+     * @param isPinned true=置顶，false=取消置顶
+     */
+    fun setCategoryPinned(id: Long, isPinned: Boolean) {
+        viewModelScope.launch {
+            categoryRepository.setCategoryPinned(id, isPinned)
+        }
+    }
+
+    /**
+     * 切换分类置顶状态（v2026-07-29 新增）
+     *
+     * 便利方法：根据当前状态自动切换。MainScreen 的 onPin 回调直接调用此方法。
+     *
+     * @param category 要切换置顶状态的分类
+     */
+    fun toggleCategoryPinned(category: com.corgimemo.app.data.model.Category) {
+        setCategoryPinned(category.id, !category.isPinned)
     }
 
     /**

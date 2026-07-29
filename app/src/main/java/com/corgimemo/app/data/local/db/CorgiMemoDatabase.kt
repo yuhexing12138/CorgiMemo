@@ -34,7 +34,7 @@ import com.corgimemo.app.data.model.ProfileNavItem
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class, InspirationTagOrder::class, ProfileNavItem::class],
-    version = 54,
+    version = 55,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -108,7 +108,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55)
                     .build()
                 INSTANCE = instance
                 instance
@@ -2049,6 +2049,75 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             """.trimIndent())
             database.execSQL(
                 "CREATE INDEX IF NOT EXISTS index_profile_nav_items_sortOrder ON profile_nav_items(sortOrder)"
+            )
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 54 → 55（v2026-07-29 新增）
+     * categories 表取消"默认/自定义分组"区分，新增 isPinned 字段
+     *
+     * **背景**：
+     * 业务需求变更，所有分组都应支持修改/删除/重命名/置顶操作，不再保留"默认分组"特殊标记。
+     * 同时为侧滑栏分组列表新增"置顶分组"能力（isPinned=true 的分组排在前）。
+     *
+     * **改造内容**：
+     * 1. 移除 categories 表的 `isDefault` 列（彻底删除，业务不再使用）
+     * 2. 新增 `isPinned INTEGER NOT NULL DEFAULT 0` 列
+     * 3. 重建索引：
+     *    - index_categories_sortOrder（沿用 MIGRATION_51_52 创建，DROP TABLE 时被自动删除需重建）
+     *    - index_categories_isPinned（新增，配合 [Category] 的 @Index 声明）
+     *
+     * **SQLite DROP COLUMN 兼容性说明**：
+     * SQLite 3.35+ 才支持 `ALTER TABLE ... DROP COLUMN`，Android SupportSQLiteDatabase 各 API
+     * 版本兼容性不一致，故采用经典"重建表"模式：建新表 → 复制数据 → DROP 旧表 → RENAME。
+     *
+     * **依据 .trae/rules/entity与migration同步检查.md 规则**：
+     * - 新字段 isPinned 的 SQL `DEFAULT 0` 与 Category.isPinned 的
+     *   `@ColumnInfo(defaultValue = "0")` 严格一致
+     * - 新字段 isPinned 的 @Index 声明与本 Migration 创建的 `index_categories_isPinned` 一致
+     * - 既有字段 sortOrder 的 SQL `DEFAULT 0` 保持不变，与 Category.sortOrder 的
+     *   `@ColumnInfo(defaultValue = "0")` 严格一致
+     *
+     * **字段语义**：
+     * - isPinned: INTEGER 类型，默认 0（未置顶）
+     * - 数据回填策略：所有现有分组 isPinned = 0（不预设任何分组为置顶）
+     *   用户主动置顶后才会变为 1
+     */
+    internal val MIGRATION_54_55 = object : Migration(54, 55) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // Step 1: 创建新表（去掉 isDefault，新增 isPinned）
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS categories_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    name TEXT NOT NULL,
+                    type INTEGER NOT NULL,
+                    isPinned INTEGER NOT NULL DEFAULT 0,
+                    sortOrder INTEGER NOT NULL DEFAULT 0
+                )
+            """.trimIndent())
+
+            // Step 2: 复制数据（isPinned 默认为 0，不沿用 isDefault 的值，
+            //         因为"默认分组"和"置顶分组"是两个不同语义的字段）
+            database.execSQL("""
+                INSERT INTO categories_new (id, name, type, isPinned, sortOrder)
+                SELECT id, name, type, 0, sortOrder FROM categories
+            """.trimIndent())
+
+            // Step 3: 删除原表（旧索引会一并删除）
+            database.execSQL("DROP TABLE categories")
+
+            // Step 4: 重命名新表
+            database.execSQL("ALTER TABLE categories_new RENAME TO categories")
+
+            // Step 5: 重建索引
+            // 5.1 重建 sortOrder 索引（原 index_categories_sortOrder 随 DROP TABLE 已删除）
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_categories_sortOrder ON categories(sortOrder)"
+            )
+            // 5.2 新建 isPinned 索引（配合置顶分组查询）
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_categories_isPinned ON categories(isPinned)"
             )
         }
     }

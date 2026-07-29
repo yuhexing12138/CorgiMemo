@@ -2895,10 +2895,10 @@ class TodoEditViewModel @Inject constructor(
         if (name.isBlank()) return
         viewModelScope.launch {
             try {
+                // v2026-07-29 改造：取消 isDefault 字段后不再传该参数
                 val newCategory = Category(
                     name = name.trim(),
-                    type = CategoryType.CUSTOM,
-                    isDefault = false
+                    type = CategoryType.CUSTOM
                 )
                 val newId = categoryRepository.insertCategory(newCategory)
                 // 刷新内存中的分类列表
@@ -2912,11 +2912,11 @@ class TodoEditViewModel @Inject constructor(
     }
 
     /**
-     * 删除自定义分类
+     * 删除分类（v2026-07-29 改造）
      *
-     * 用户在「分类选择弹窗」长按某个自定义分类 Tag 时调用。
-     * 行为与侧滑页（HomeViewModel.deleteCategory）保持一致：
-     * - 数据库层：调用 [CategoryRepository.deleteCustomCategory] 删除行（带 isDefault=0 过滤）
+     * 用户在「分类选择弹窗」长按某个分类 Tag 时调用。
+     * 行为与侧滑页（[com.corgimemo.app.viewmodel.HomeViewModel.deleteCategory]）保持一致：
+     * - 数据库层：调用 [CategoryRepository.deleteCategory] 删除行（v2026-07-29 起取消 `isDefault = 0` 过滤）
      * - 内存层：刷新 [_categories] 列表，让弹窗立即移除已删除项
      * - 引用层：调用方需自行处理引用该 categoryId 的 todo（[clearGroupCategory] 或 [setGroupCategory]）
      *
@@ -2924,21 +2924,21 @@ class TodoEditViewModel @Inject constructor(
      * 这些 todo 的 categoryId 字段会保持原值但在弹窗中不再可见，
      * 与 HomeViewModel 侧滑页的删除行为一致（项目既定行为，避免破坏性变更）。
      *
-     * @param category 要删除的自定义分类（必须 isDefault=false，否则 dao 层不会执行）
+     * v2026-07-29 改造：取消"默认/自定义分组"区分后，
+     * - 移除 `if (category.isDefault) return` 拦截
+     * - 方法名从 `deleteCustomCategory` 改为 `deleteCategory`，与 Repository 层保持一致
+     *
+     * @param category 要删除的分类
      */
-    fun deleteCustomCategory(category: Category) {
-        if (category.isDefault) {
-            android.util.Log.w("TodoEditVM", "尝试删除默认分类，已拒绝: id=${category.id}")
-            return
-        }
+    fun deleteCategory(category: Category) {
         viewModelScope.launch {
             try {
-                categoryRepository.deleteCustomCategory(category.id)
+                categoryRepository.deleteCategory(category.id)
                 // 刷新内存中的分类列表（弹窗基于此列表渲染）
                 _categories.value = categoryRepository.getAllCategoriesList()
-                android.util.Log.w("TodoEditVM", "删除自定义分类成功: id=${category.id}, name='${category.name}'")
+                android.util.Log.w("TodoEditVM", "删除分类成功: id=${category.id}, name='${category.name}'")
             } catch (e: Exception) {
-                android.util.Log.e("TodoEditVM", "删除自定义分类失败", e)
+                android.util.Log.e("TodoEditVM", "删除分类失败", e)
             }
         }
     }

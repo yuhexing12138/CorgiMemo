@@ -124,28 +124,31 @@ class DemoDataSeeder @Inject constructor(
      *
      * 先查询现有分类，仅在缺失时插入，避免主键冲突。
      *
+     * v2026-07-29 改造：取消 `isDefault` 字段后，种子分类不再带特殊标记，
+     * 与用户后续新建的分组完全等价。仅 `name + type` 由 [DefaultCategoryName] / [CategoryType] 提供。
+     *
      * @return 分类 ID 映射（type → categoryId）
      */
     private suspend fun seedCategories(): Map<Int, Long> {
         val categoryDao = database.categoryDao()
         val categoryIds = mutableMapOf<Int, Long>()
 
-        // 定义需要的分类
+        // 定义需要的分类（v2026-07-29 改 Triple 为 Pair，去掉 isDefault 维度）
         val requiredCategories = listOf(
-            Triple(DefaultCategoryName.STUDY, CategoryType.STUDY, true),
-            Triple(DefaultCategoryName.WORK, CategoryType.WORK, true),
-            Triple(DefaultCategoryName.LIFE, CategoryType.LIFE, true),
-            Triple(DefaultCategoryName.SPORT, CategoryType.SPORT, true)
+            DefaultCategoryName.STUDY to CategoryType.STUDY,
+            DefaultCategoryName.WORK to CategoryType.WORK,
+            DefaultCategoryName.LIFE to CategoryType.LIFE,
+            DefaultCategoryName.SPORT to CategoryType.SPORT
         )
 
-        for ((name, type, isDefault) in requiredCategories) {
+        for ((name, type) in requiredCategories) {
             // 先查询是否已存在
             val existing = categoryDao.getCategoryByType(type)
             if (existing != null) {
                 categoryIds[type] = existing.id
             } else {
                 // 不存在则插入
-                val id = categoryDao.insert(Category(name = name, type = type, isDefault = isDefault))
+                val id = categoryDao.insert(Category(name = name, type = type))
                 categoryIds[type] = id
             }
         }

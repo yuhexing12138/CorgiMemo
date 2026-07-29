@@ -79,7 +79,7 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  * @param currentTab 当前选中的 Tab（决定显示哪个分区）
  * @param corgiData 柯基数据（用户头渲染用）
  * @param categories 自定义分类列表（TODO Tab 用）
- * @param todoCountByCategory 待办分组计数（TODO Tab 用，key=-1=全部, key=0=未分类）
+ * @param todoCountByCategory 待办分组计数（TODO Tab 用，key=-1=全部, key=0=未分组）
  * @param selectedFilterItems 跨维度统一选中的过滤项集合（v2026-07-28 v2 跨维度，TODO Tab 用）
  * @param filterMode 跨维度统一过滤模式（v2026-07-28 v2 跨维度，TODO Tab 用，跨分组+状态共享）
  * @param inspirationTags 灵感标签列表（INSPIRE Tab 用）
@@ -91,7 +91,7 @@ import com.corgimemo.app.viewmodel.TagFilterMode
  * @param dateCountByCategory 日期类型计数（DATE Tab 用）
  * @param customDateTypes 自定义日期类型列表（DATE Tab 用）
  * @param onCategoryToggle 分组项点击回调（v2026-07-28 v2 跨维度，TODO Tab）
- * @param onAddCategoryClick 添加分组回调（TODO Tab 底部按钮）
+ * @param onAddCategoryClick 新建分组回调（TODO Tab 底部按钮）
  * @param onCategoryAction 分类操作回调（TODO Tab，长按分类触发）
  * @param onReorderCategory 分类拖拽排序回调（v2026-07-27 P8 Phase 1 新增，TODO/GROUP Tab）
  * @param onStatusFilterToggle 状态项点击回调（v2026-07-28 v2 跨维度，TODO Tab）
@@ -421,7 +421,7 @@ fun AppDrawerContentImpl(
                     }
                 }
 
-                // 2.6 底部双按钮：清空筛选（OutlinedButton）+ 添加分组（FilledButton）
+                // 2.6 底部双按钮：清空筛选（OutlinedButton）+ 新建分组（FilledButton）
                 //    位置与高度与原 AddCategoryButton（灵感页添加标签按钮）保持一致：
                 //    padding(horizontal = 20.dp) + height(48.dp)，无 vertical padding
                 Row(
@@ -474,7 +474,7 @@ fun AppDrawerContentImpl(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "添加分组",
+                            text = "新建分组",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium
                         )
@@ -586,12 +586,12 @@ private fun DrawerUserHeader(
 /**
  * 底部"添加"按钮（私有，仅 AppDrawerContentImpl 使用）
  *
- * 3 个 Tab 都有底部添加按钮：TODO（添加分组）/ INSPIRE（添加标签）/ DATE（添加类型）
+ * 3 个 Tab 都有底部添加按钮：TODO（新建分组）/ INSPIRE（添加标签）/ DATE（添加类型）
  * 文案通过 [text] 参数动态传入。
  */
 @Composable
 private fun AddCategoryButton(
-    text: String = "添加分组",
+    text: String = "新建分组",
     onClick: () -> Unit
 ) {
     Button(

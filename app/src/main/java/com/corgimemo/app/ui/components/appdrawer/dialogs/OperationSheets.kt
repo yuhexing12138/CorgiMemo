@@ -110,7 +110,11 @@ fun CategoryOperationSheet(
 
             // 操作列表
             Column(modifier = Modifier.fillMaxWidth()) {
-                ActionRow(icon = Icons.Outlined.PushPin, text = "置顶分组") {
+                // v2026-07-29 改造：Pin 操作已实现，文案根据 isPinned 状态切换
+                ActionRow(
+                    icon = Icons.Outlined.PushPin,
+                    text = if (category.isPinned) "取消置顶分组" else "置顶分组"
+                ) {
                     onPin()
                     onDismiss()
                 }

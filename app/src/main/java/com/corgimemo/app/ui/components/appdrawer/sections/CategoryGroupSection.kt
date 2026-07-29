@@ -39,7 +39,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  * - 改为多选交互（`selectedCategoryItems: Set<FilterItem.Category>`）
  * - 配合全局 [com.corgimemo.app.viewmodel.HomeViewModel.filterMode] 实现 OR/AND/NOT 跨维度组合
  * - "全部待办"项点击 → 清空所有过滤（[onClearAllFilters]）
- * - "未分类"项和自定义分组项支持多选
+ * - "未分组"项和自定义分组项支持多选
  *
  * **🆕 v2026-07-29 搜索框外部化**：
  * - 搜索框移至 [AppDrawerContentImpl] 顶部展开区，本组件不再渲染搜索框
@@ -47,7 +47,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  *
  * **布局**（沿用 P8 Phase 1 设计）：
  * 1. "全部待办"项（selectedCategoryItems 为空时高亮）
- * 2. "未分类"项（FilterItem.Category(0L) in selectedCategoryItems 时高亮）
+ * 2. "未分组"项（FilterItem.Category(0L) in selectedCategoryItems 时高亮）
  * 3. 自定义分类列表（按 sortOrder 排序，**v2026-07-27 起支持长按拖拽**）
  *
  * **v2026-07-27 调整**：删除内部"分组管理"标题 + 橙线，避免与上方
@@ -64,7 +64,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  * **v2026-07-28 拖拽埋点**：接入 [rememberReorderableDiagnostics]（7 类埋点）
  *
  * @param categories 自定义分类列表（已按 sortOrder 排序）
- * @param todoCountByCategory 各分类 ID → 待办数量映射（key=-1 表示全部，key=0 表示未分类）
+ * @param todoCountByCategory 各分类 ID → 待办数量映射（key=-1 表示全部，key=0 表示未分组）
  * @param selectedCategoryItems 当前选中的分组项集合（不包含"全部"项）
  * @param searchQuery 搜索查询词（由外部 AppDrawerContentImpl 展开区传入，按分组名模糊过滤）
  * @param onCategoryToggle 分组项点击回调（参数为要切换的 [FilterItem.Category]）
@@ -162,12 +162,13 @@ internal fun CategoryGroupSection(
                 )
             }
 
-            // 2. "未分类" 项（FilterItem.Category(0L)，不可拖拽）
+            // 2. "未分组" 项（FilterItem.Category(0L)，不可拖拽）
+            // v2026-07-29：原"未分类"改为"未分组"，与待办分组语义一致
             item(key = "uncategorized") {
                 val item = FilterItem.Category(0L)
                 CategoryItem(
                     icon = DRAWER_ICON_UNCATEGORIZED,
-                    name = "未分类",
+                    name = "未分组",
                     count = todoCountByCategory[0L] ?: 0,
                     isSelected = item in selectedCategoryItems,
                     showMenu = false,
@@ -254,7 +255,9 @@ internal fun CategoryGroupSection(
                             name = category.name,
                             count = todoCountByCategory[category.id] ?: 0,
                             isSelected = item in selectedCategoryItems,
-                            showMenu = !category.isDefault,
+                            // v2026-07-29 改造：取消"默认/自定义分组"区分后，所有分组都显示菜单
+                            // 原 `showMenu = !category.isDefault` 让默认分组无法触发 ShowMenu 操作
+                            showMenu = true,
                             onClick = { onCategoryToggle(item) },
                             onMenuClick = {
                                 onCategoryAction(

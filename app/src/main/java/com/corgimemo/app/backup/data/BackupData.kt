@@ -62,13 +62,17 @@ data class BackupTodoItem(
 
 /**
  * 可序列化的分类
+ *
+ * v2026-07-29 改造：取消 isDefault 字段，新增 isPinned 字段。
+ * - 老备份（含 isDefault）恢复时，isDefault 字段会被忽略（Kotlinx Serialization 默认行为）
+ * - isPinned 缺省值为 false，与 CategoryEntity 默认值一致
  */
 @Serializable
 data class BackupCategory(
     val id: Long = 0,
     val name: String,
     val type: Int,
-    val isDefault: Boolean = false
+    val isPinned: Boolean = false
 )
 
 /**

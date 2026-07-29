@@ -319,14 +319,17 @@ private fun Category.toBackupModel(): BackupCategory = BackupCategory(
     id = id,
     name = name,
     type = type,
-    isDefault = isDefault
+    // v2026-07-29 改造：取消 isDefault，改用 isPinned
+    isPinned = isPinned
 )
 
 private fun BackupCategory.toModel(): Category = Category(
     id = id,
     name = name,
     type = type,
-    isDefault = isDefault
+    // v2026-07-29 改造：取消 isDefault，改用 isPinned
+    // 老备份（含 isDefault）恢复时，isPinned 字段缺省为 false
+    isPinned = isPinned
 )
 
 private fun CorgiData.toBackupModel(): BackupCorgiData = BackupCorgiData(

@@ -53,11 +53,17 @@ import com.corgimemo.app.data.model.CategoryType
  * 分类选择底部弹窗（带搜索选择器型）
  *
  * 替换原 CategorySelectorDialog（AlertDialog），提供：
- * - FlowRow Tag 标签布局：「默认分类」+「我的分组」两个区域
+ * - FlowRow Tag 标签布局：单一分组列表（v2026-07-29 改造，原"默认分类"+"我的分组"两区已合并）
  * - 搜索过滤
  * - 分类颜色高亮 + 选中边框
  * - 「+ 自定义」按钮 → 展开输入框创建分组
- * - 长按自定义分类触发删除
+ * - 长按任意分组触发删除（v2026-07-29 改造，原仅自定义分组可长按）
+ *
+ * v2026-07-29 改造：
+ * - 取消"默认/自定义分组"区分后，所有分组均按 `isPinned DESC, sortOrder ASC, id ASC`
+ *   顺序混合显示（由 CategoryDao.getAllCategories 排序保证）
+ * - 移除"默认分类"和"我的分组"两个 SectionHeader
+ * - 所有分组都支持长按触发 onCategoryLongPress 回调
  *
  * 展开动画（由 Material3 ModalBottomSheet 提供）：
  *   弹窗：spring 弹簧上滑 translateY(100% → 0)，dampingRatio ≈ 0.8，stiffness ≈ 400
@@ -65,12 +71,12 @@ import com.corgimemo.app.data.model.CategoryType
  * 严格遵循带搜索选择器型底部弹窗原型规范。
  *
  * @param sheetState 底部弹窗状态控制对象
- * @param categories 可选分类列表（已包含默认 + 用户自定义）
+ * @param categories 可选分类列表（已按 isPinned DESC, sortOrder ASC, id ASC 排序）
  * @param currentCategoryId 当前分类 ID（用于高亮显示）
  * @param onDismiss 关闭弹窗回调
  * @param onCategorySelected 分类选中回调，参数为 (id, name)。
  *        id == 0L 表示自定义创建（name 为用户输入）
- * @param onCategoryLongPress 自定义分类长按回调（传 null 时不支持长按）
+ * @param onCategoryLongPress 任意分组长按回调（传 null 时不支持长按）
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -86,21 +92,13 @@ fun CategoryPickerSheet(
     var showCustomInput by remember { mutableStateOf(false) }
     var customInput by remember { mutableStateOf("") }
 
-    val defaultCategories = categories.filter { it.isDefault }
-    val customCategories = categories.filter { !it.isDefault && it.type == CategoryType.CUSTOM }
-
-    /** 搜索过滤 */
-    val filteredDefault = if (searchQuery.isBlank()) {
-        defaultCategories
+    // v2026-07-29 改造：合并为单一分组列表，按数据库返回顺序（isPinned DESC, sortOrder ASC, id ASC）显示
+    val filteredCategories = if (searchQuery.isBlank()) {
+        categories
     } else {
-        defaultCategories.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        categories.filter { it.name.contains(searchQuery, ignoreCase = true) }
     }
-    val filteredCustom = if (searchQuery.isBlank()) {
-        customCategories
-    } else {
-        customCategories.filter { it.name.contains(searchQuery, ignoreCase = true) }
-    }
-    val hasResults = filteredDefault.isNotEmpty() || filteredCustom.isNotEmpty()
+    val hasResults = filteredCategories.isNotEmpty()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -181,70 +179,31 @@ fun CategoryPickerSheet(
                         )
                     }
                 } else {
-                    /** 区域 1：默认分类 */
-                    if (filteredDefault.isNotEmpty()) {
-                        SectionHeader(title = "默认分类")
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            filteredDefault.forEach { category ->
-                                CategoryTag(
-                                    category = category,
-                                    isSelected = category.id == currentCategoryId,
-                                    onClick = {
-                                        onCategorySelected(category.id, category.name)
-                                        onDismiss()
-                                    },
-                                    forceIcon = null
-                                )
-                            }
+                    /** 单一分组列表（v2026-07-29 改造：原"默认分类"+"我的分组"两区合并） */
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        filteredCategories.forEach { category ->
+                            CategoryTag(
+                                category = category,
+                                isSelected = category.id == currentCategoryId,
+                                onClick = {
+                                    onCategorySelected(category.id, category.name)
+                                    onDismiss()
+                                },
+                                onLongClick = if (onCategoryLongPress != null) {
+                                    { onCategoryLongPress(category) }
+                                } else null,
+                                forceIcon = null
+                            )
                         }
-                    }
 
-                    /** 区域 2：用户自定义分组 */
-                    if (hasResults || customCategories.isNotEmpty()) {
-                        if (filteredCustom.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            SectionHeader(title = "我的分组")
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                filteredCustom.forEach { category ->
-                                    CategoryTag(
-                                        category = category,
-                                        isSelected = category.id == currentCategoryId,
-                                        onClick = {
-                                            onCategorySelected(category.id, category.name)
-                                            onDismiss()
-                                        },
-                                        onLongClick = if (onCategoryLongPress != null) {
-                                            { onCategoryLongPress(category) }
-                                        } else null,
-                                        forceIcon = "📋"
-                                    )
-                                }
-
-                                /** 「+ 自定义」按钮 */
-                                CustomCategoryButton(
-                                    onClick = { showCustomInput = !showCustomInput }
-                                )
-                            }
-                        } else if (customCategories.isEmpty()) {
-                            /** 无自定义分组时显示创建入口 */
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Start
-                            ) {
-                                CustomCategoryButton(
-                                    onClick = { showCustomInput = !showCustomInput }
-                                )
-                            }
-                        }
+                        /** 「+ 自定义」按钮 */
+                        CustomCategoryButton(
+                            onClick = { showCustomInput = !showCustomInput }
+                        )
                     }
 
                     /** 自定义输入框 */
@@ -335,17 +294,6 @@ private fun TitleBar(title: String, onDismiss: () -> Unit) {
             )
         }
     }
-}
-
-@Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Medium,
-        color = Color(0xFF888888),
-        modifier = Modifier.padding(bottom = 8.dp)
-    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)

@@ -199,7 +199,7 @@ fun TodoEditScreen(
      *   → CategoryPickerSheet.onCategoryLongPress(category)
      *   → pendingDeleteCategory = category（弹窗不关闭，让用户看清背景）
      *   → 弹出确认 AlertDialog
-     *   → 用户点击「删除」→ viewModel.deleteCustomCategory + 关闭确认弹窗 + 关闭选分类弹窗
+     *   → 用户点击「删除」→ viewModel.deleteCategory + 关闭确认弹窗 + 关闭选分类弹窗
      */
     var pendingDeleteCategory by remember { mutableStateOf<Category?>(null) }
 
@@ -2096,7 +2096,7 @@ fun TodoEditScreen(
      * 避免在长按后直接关闭选分类弹窗导致用户失去上下文。
      *
      * 删除行为：
-     * 1. 调用 viewModel.deleteCustomCategory(category) → 数据库删除 + 内存列表刷新
+     * 1. 调用 viewModel.deleteCategory(category) → 数据库删除 + 内存列表刷新
      * 2. 若当前 groupId 关联了该 categoryId，主动清空关联（避免弹窗刷新后出现"幽灵选中"）
      * 3. 关闭确认弹窗（pendingDeleteCategory = null）
      * 4. 关闭选分类弹窗（pendingCategoryGroupId = null），
@@ -2105,7 +2105,7 @@ fun TodoEditScreen(
     pendingDeleteCategory?.let { targetCategory ->
         AlertDialog(
             onDismissRequest = { pendingDeleteCategory = null },
-            title = { Text("删除自定义分组") },
+            title = { Text("删除分组") },
             text = {
                 Column {
                     Text(
@@ -2129,7 +2129,7 @@ fun TodoEditScreen(
                             groupCategoryIds[gid]
                         }
                         // 2. 执行删除
-                        viewModel.deleteCustomCategory(targetCategory)
+                        viewModel.deleteCategory(targetCategory)
                         // 3. 清理当前 group 与被删分类的关联（若曾选中该分类）
                         if (currentGroupId != null && oldCategoryId == targetCategory.id) {
                             viewModel.clearGroupCategory(currentGroupId)

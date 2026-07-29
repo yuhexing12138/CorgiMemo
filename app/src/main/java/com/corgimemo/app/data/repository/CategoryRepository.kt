@@ -14,6 +14,12 @@ import javax.inject.Singleton
 /**
  * 分类数据仓库
  * 负责分类数据的 CRUD 操作和默认分类初始化
+ *
+ * v2026-07-29 改造：
+ * - 取消"默认/自定义分组"区分，所有分组均支持修改/删除/置顶操作
+ * - `initDefaultCategories` 仅作为首次启动时的种子数据初始化，不再带 `isDefault` 标记
+ * - 原 `deleteCustomCategory(id)` 改名为 `deleteCategory(id)`，移除"是否默认分组"过滤
+ * - 新增 `setCategoryPinned(id, isPinned)` 支持置顶分组
  */
 @Singleton
 class CategoryRepository @Inject constructor(
@@ -25,28 +31,33 @@ class CategoryRepository @Inject constructor(
      * 初始化默认分类
      * 如果数据库中没有分类，则创建学习、工作、生活、娱乐、运动五个默认分类
      *
+     * v2026-07-29 改造：取消 `isDefault` 字段后，5 个种子分类不再带特殊标记，
+     * 与用户后续新建的分组完全等价（用户可任意修改/删除/置顶它们）。
+     * 仅 `name + type` 仍由 [DefaultCategoryName] / [CategoryType] 提供，
+     * 供首次启动时填充分组选择项。
+     *
      * 幂等性：使用"不存在则插入"模式，多次调用安全
      */
     suspend fun initDefaultCategories() = withContext(ioDispatcher) {
         val existingCategories = categoryDao.getAllCategoriesList()
         if (existingCategories.isEmpty()) {
             val defaultCategories = listOf(
-                Category(name = DefaultCategoryName.STUDY, type = CategoryType.STUDY, isDefault = true),
-                Category(name = DefaultCategoryName.WORK, type = CategoryType.WORK, isDefault = true),
-                Category(name = DefaultCategoryName.LIFE, type = CategoryType.LIFE, isDefault = true),
-                Category(name = DefaultCategoryName.SPORT, type = CategoryType.SPORT, isDefault = true),
-                Category(name = DefaultCategoryName.ENTERTAINMENT, type = CategoryType.ENTERTAINMENT, isDefault = true)
+                Category(name = DefaultCategoryName.STUDY, type = CategoryType.STUDY),
+                Category(name = DefaultCategoryName.WORK, type = CategoryType.WORK),
+                Category(name = DefaultCategoryName.LIFE, type = CategoryType.LIFE),
+                Category(name = DefaultCategoryName.SPORT, type = CategoryType.SPORT),
+                Category(name = DefaultCategoryName.ENTERTAINMENT, type = CategoryType.ENTERTAINMENT)
             )
             categoryDao.insertAll(defaultCategories)
         } else {
             val hasSport = existingCategories.any { it.type == CategoryType.SPORT }
             if (!hasSport) {
-                categoryDao.insert(Category(name = DefaultCategoryName.SPORT, type = CategoryType.SPORT, isDefault = true))
+                categoryDao.insert(Category(name = DefaultCategoryName.SPORT, type = CategoryType.SPORT))
             }
             // 兼容老用户：补齐"娱乐"分类
             val hasEntertainment = existingCategories.any { it.type == CategoryType.ENTERTAINMENT }
             if (!hasEntertainment) {
-                categoryDao.insert(Category(name = DefaultCategoryName.ENTERTAINMENT, type = CategoryType.ENTERTAINMENT, isDefault = true))
+                categoryDao.insert(Category(name = DefaultCategoryName.ENTERTAINMENT, type = CategoryType.ENTERTAINMENT))
             }
         }
     }
@@ -126,10 +137,28 @@ class CategoryRepository @Inject constructor(
     }
 
     /**
-     * 删除自定义分类
+     * 删除分类（v2026-07-29 改造）
+     *
+     * 原 `deleteCustomCategory(id)` 仅允许删除非默认分组（DAO 层带 `AND isDefault = 0` 过滤）。
+     * 现已取消默认/自定义区分，所有分组都可被删除，故改名为 `deleteCategory`。
+     *
+     * @param id 要删除的分类 ID
      */
-    suspend fun deleteCustomCategory(id: Long) = withContext(ioDispatcher) {
-        categoryDao.deleteCustomCategory(id)
+    suspend fun deleteCategory(id: Long) = withContext(ioDispatcher) {
+        categoryDao.deleteCategory(id)
+    }
+
+    /**
+     * 设置分类置顶状态（v2026-07-29 新增）
+     *
+     * 用于侧滑栏分组列表的置顶/取消置顶操作。
+     * isPinned=true 的分组在 [getAllCategories] 中会排在前。
+     *
+     * @param id 分类 ID
+     * @param isPinned true=置顶（排在前），false=取消置顶
+     */
+    suspend fun setCategoryPinned(id: Long, isPinned: Boolean) = withContext(ioDispatcher) {
+        categoryDao.setPinned(id, isPinned)
     }
 
     /**

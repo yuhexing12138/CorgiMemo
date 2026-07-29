@@ -576,7 +576,8 @@ fun MainScreen(
                     onCategoryAction = { action ->
                         when (action) {
                             is CategoryAction.ShowMenu -> showCategorySheet = action.category
-                            is CategoryAction.Pin -> { /* TODO */ }
+                            // v2026-07-29 改造：实现 Pin 操作，直接调用 ViewModel 切换置顶状态
+                            is CategoryAction.Pin -> homeViewModel.toggleCategoryPinned(action.category)
                             is CategoryAction.Rename -> showRenameCategoryDialog = action.category
                             is CategoryAction.Delete -> showDeleteCategoryDialog = action.category
                         }
@@ -1251,7 +1252,11 @@ fun MainScreen(
     showCategorySheet?.let { category ->
         com.corgimemo.app.ui.components.CategoryOperationSheet(
             category = category,
-            onPin = { /* TODO */ },
+            // v2026-07-29 改造：实现 Pin 操作，调用 HomeViewModel.toggleCategoryPinned 自动切换状态
+            onPin = {
+                homeViewModel.toggleCategoryPinned(category)
+                showCategorySheet = null
+            },
             onRename = {
                 showRenameCategoryDialog = category
                 showCategorySheet = null
