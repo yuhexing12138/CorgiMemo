@@ -1105,6 +1105,15 @@ fun HomeScreen(
                                                 swipeExpandedTodoId = if (expanded) todo.id else null
                                                 viewModel.setSwipeActionExpanded(expanded)
                                             },
+                                            // v2026-07-29 互斥恢复机制：
+                                            // 首次左滑时调用，清除其他展开的待办（不设为当前ID，避免 isExpanded 变化导致 pointerInput 重启）
+                                            // 上一个展开的待办 isExpanded 变 false 后通过 LaunchedEffect 开始右滑归位
+                                            onExpandStart = {
+                                                if (swipeExpandedTodoId != null && swipeExpandedTodoId != todo.id) {
+                                                    swipeExpandedTodoId = null
+                                                    viewModel.setSwipeActionExpanded(false)
+                                                }
+                                            },
                                             onShareClick = {
                                                 // v2026-07-25 接入 ShareModeDialog：先弹出"保存到相册/更多分享"选择弹窗
                                                 cardShareTodoId = todo.id

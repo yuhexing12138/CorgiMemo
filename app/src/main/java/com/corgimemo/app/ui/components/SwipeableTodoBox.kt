@@ -187,6 +187,18 @@ fun SwipeableTodoBox(
     isExpanded: Boolean = false,
     isPinned: Boolean = false,
     onExpandChange: (Boolean) -> Unit = {},
+    /**
+     * 开始展开回调（v2026-07-29 新增）
+     *
+     * 在首次左滑时被调用，用于通知父组件清除其他展开的待办。
+     * 与 `onExpandChange(true)` 区别：
+     * - onExpandChange(true) 会改变当前组件的 isExpanded，导致 pointerInput 重启
+     * - onExpandStart 只通知父组件清除其他展开的待办，不改变当前组件的 isExpanded
+     *
+     * 父组件在 onExpandStart 中设置 swipeExpandedTodoId = null（不设为当前ID），
+     * 上一个待办 isExpanded 变 false 后通过 LaunchedEffect 开始归位
+     */
+    onExpandStart: () -> Unit = {},
     onShareClick: () -> Unit = {},
     onPinClick: () -> Unit = {},
     onArchiveClick: () -> Unit = {},
@@ -249,6 +261,12 @@ fun SwipeableTodoBox(
     // 用于 onDragEnd 判断是否需要"抬手总关闭"（即使慢速右滑也关闭）
     // 实现"右滑跟手 + 抬手总关闭"语义
     var hadRightDrag by remember { mutableStateOf(false) }
+
+    // 左滑展开通知标记：首次检测到 dragAmount < 0 时调用 onExpandChange(true)，
+    // 让父组件立即清除上一个展开的待办（swipeExpandedTodoId = currentId），
+    // 上一个待办 isExpanded 变 false 后通过 LaunchedEffect 立即开始右滑归位动画
+    // 不等到 onDragEnd 阈值判定，实现"其他待办开始左滑时上一个立马恢复"
+    var hasNotifiedExpand by remember { mutableStateOf(false) }
 
     // 几何参数
     val buttonWidthDp = 72.dp
@@ -397,12 +415,13 @@ fun SwipeableTodoBox(
                         detectHorizontalDragGestures(
                             onDragStart = {
                                 // 开始新一轮拖动：
-                                // 1. 重置速度跟踪器 + 右滑意图
+                                // 1. 重置速度跟踪器 + 右滑意图 + 展开通知标记
                                 // 2. 标记为手势进行中 → 禁用内容卡片的 indication 水波纹
                                 // 3. 取消正在跑的恢复动画 → 避免新 snapTo 与旧 animateTo 争抢 cardOffsetX
                                 //    （保留回弹效果让"跟手"更自然）
                                 velocityTracker.resetTracking()
                                 hadRightDrag = false
+                                hasNotifiedExpand = false
                                 restoreJob.value?.cancel()
                                 restoreJob.value = null
                                 isDragging = true
@@ -525,6 +544,20 @@ fun SwipeableTodoBox(
                         ) { change, dragAmount ->
                             // 记录每个 pointer 事件的位置和时间，用于计算抬手时的速度
                             velocityTracker.addPosition(change.uptimeMillis, change.position)
+
+                            // 首次检测到左滑（dragAmount < 0）时，立即通知父组件"我开始展开了"
+                            // 父组件会清除其他展开的待办（设置 swipeExpandedTodoId = null，不设为当前ID），
+                            // 上一个展开的待办 isExpanded 立即变 false，通过 LaunchedEffect 开始右滑归位
+                            // 实现"其他待办开始左滑时上一个立马恢复"，不等 onDragEnd 阈值判定
+                            //
+                            // 关键：调用 onExpandStart 而非 onExpandChange(true)
+                            // 原因：onExpandChange(true) 会改变当前组件的 isExpanded 从 false→true，
+                            // 导致 pointerInput(isEnabled, isExpanded) 重启，中断正在进行的拖拽手势
+                            // onExpandStart 只通知父组件清除其他展开的待办，不改变当前组件的 isExpanded
+                            if (dragAmount < 0f && !hasNotifiedExpand) {
+                                onExpandStart()
+                                hasNotifiedExpand = true
+                            }
 
                             // 计算本帧 snapTo 后的目标位置
                             val newOffset = (cardOffsetX.value + dragAmount)

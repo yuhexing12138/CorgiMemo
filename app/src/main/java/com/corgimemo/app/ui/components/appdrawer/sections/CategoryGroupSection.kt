@@ -278,6 +278,14 @@ internal fun CategoryGroupSection(
                         onExpandChange = { expanded ->
                             swipeExpandedCategoryId = if (expanded) category.id else null
                         },
+                        // v2026-07-29 互斥恢复机制：
+                        // 首次右滑时调用，清除其他展开的分组（不设为当前ID，避免 isExpanded 变化导致 pointerInput 重启）
+                        // 上一个展开的分组 isExpanded 变 false 后通过 LaunchedEffect 开始左滑归位
+                        onExpandStart = {
+                            if (swipeExpandedCategoryId != null && swipeExpandedCategoryId != category.id) {
+                                swipeExpandedCategoryId = null
+                            }
+                        },
                         onPinClick = {
                             onCategoryAction(CategoryAction.Pin(category))
                         },

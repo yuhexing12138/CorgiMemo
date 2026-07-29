@@ -415,6 +415,13 @@ private fun DateSectionsList(
                     onExpandChange = { expanded ->
                         onSetExpanded(if (expanded) pinned.id else null)
                     },
+                    // v2026-07-29 互斥恢复机制：
+                    // 首次左滑时调用，清除其他展开的日期卡（不设为当前ID，避免 isExpanded 变化导致 pointerInput 重启）
+                    onExpandStart = {
+                        if (expandedDateId != null && expandedDateId != pinned.id) {
+                            onSetExpanded(null)
+                        }
+                    },
                     onPinClick = { onUnpin(pinned.id) },
                     // 2026-07-14 修改：已归档+置顶的卡点击"取消归档"按钮调用 onUnarchive
                     //            未归档+置顶的卡点击"归档"按钮调用 onArchive
@@ -520,6 +527,13 @@ private fun DateSectionsList(
                         cardScale = dateCardScale,
                         onExpandChange = { expanded ->
                             onSetExpanded(if (expanded) date.id else null)
+                        },
+                        // v2026-07-29 互斥恢复机制：
+                        // 首次左滑时调用，清除其他展开的日期卡（不设为当前ID，避免 isExpanded 变化导致 pointerInput 重启）
+                        onExpandStart = {
+                            if (expandedDateId != null && expandedDateId != date.id) {
+                                onSetExpanded(null)
+                            }
                         },
                         onPinClick = {
                             if (date.isPinned) onUnpin(date.id) else onPin(date.id)
