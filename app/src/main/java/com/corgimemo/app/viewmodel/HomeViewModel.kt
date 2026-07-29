@@ -254,12 +254,43 @@ class HomeViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     /**
-     * 已过期待办数（status=0 且 dueDate < now）
+     * 判断 todo 是否"已过期"（v2026-07-29 修正）
      *
-     * 使用 [MoodManager.isOverdue] 复用现有"过期"判断逻辑，确保与情绪系统一致。
+     * **修正前**：仅判断 `dueDate < now`，导致两类问题：
+     * 1. 设了提醒但没设截止日期的 todo 永远不算过期；
+     * 2. 设了提醒 9:00、截止 23:59，10:00 时仍显示未过期，与用户直觉不符。
+     *
+     * **修正后语义**：**未完成**（status=0）且（**过了提醒时间** 或 **过了截止时间**）任一满足即视为过期。
+     * - `reminderTime` 是用户主动设置的提醒时间，过了该时间表示用户已被通知该处理；
+     * - `dueDate` 是截止时间，过了表示真正超期；
+     * - 任一过期即符合用户对"已过期"的直觉语义。
+     *
+     * **单一数据源**：同时服务于 [overdueCount] 计数与 [matchesFilterItem] 中
+     * [StatusFilter.OVERDUE] 的过滤判断，确保侧滑栏计数与点进列表看到的待办数完全一致，
+     * 不会出现"侧滑栏显示 5、点进去只看到 3"的不一致。
+     *
+     * **不影响情绪系统**：情绪/担忧系统的判断（[MoodManager.isOverdue]）仍基于
+     * `getEstimatedEndTime(todo)`，本函数不修改 [MoodManager]，避免破坏既有行为。
+     *
+     * @param todo 待判断的 todo
+     * @param now 当前时间戳（默认 System.currentTimeMillis()）
+     * @return true 表示已过期
+     */
+    private fun isOverdueTodo(todo: TodoItem, now: Long = System.currentTimeMillis()): Boolean {
+        if (todo.status != 0) return false
+        val reminderOverdue = todo.reminderTime != null && todo.reminderTime < now
+        val dueOverdue = todo.dueDate != null && todo.dueDate < now
+        return reminderOverdue || dueOverdue
+    }
+
+    /**
+     * 已过期待办数（status=0 且 reminderTime/dueDate 任一过期）
+     *
+     * 判断逻辑委托给 [isOverdueTodo]，与 [matchesFilterItem] 中 [StatusFilter.OVERDUE]
+     * 的过滤条件完全一致，避免侧滑栏计数与列表过滤脱节。
      */
     val overdueCount: StateFlow<Int> = _todos.map { todos ->
-        todos.count { it.status == 0 && MoodManager.isOverdue(it.dueDate) }
+        todos.count { isOverdueTodo(it) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     /**
@@ -1303,7 +1334,9 @@ class HomeViewModel @Inject constructor(
             StatusFilter.PINNED -> todo.isPinned
             StatusFilter.PENDING -> !todo.isPinned && todo.status == 0
             StatusFilter.COMPLETED -> todo.status == 1
-            StatusFilter.OVERDUE -> todo.status == 0 && MoodManager.isOverdue(todo.dueDate)
+            // v2026-07-29：改用 isOverdueTodo 统一函数（reminderTime/dueDate 任一过期）
+            // 与 overdueCount 计数逻辑保持一致，避免侧滑栏计数与列表过滤脱节
+            StatusFilter.OVERDUE -> isOverdueTodo(todo)
             StatusFilter.REPEAT_REMINDER -> todo.repeatType != 0
             StatusFilter.ALL -> true  // 不应出现（ALL 不作为多选元素）
         }

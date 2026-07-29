@@ -15,7 +15,7 @@ package com.corgimemo.app.viewmodel
  * - PINNED → `pinnedCount`（isPinned=true）
  * - PENDING → `pendingCount`（!isPinned && status=0）
  * - COMPLETED → `completedCount`（status=1）
- * - OVERDUE → `overdueCount`（status=0 && MoodManager.isOverdue(dueDate)）
+ * - OVERDUE → `overdueCount`（status=0 且 reminderTime/dueDate 任一过期，见 HomeViewModel.isOverdueTodo）
  * - REPEAT_REMINDER → `repeatReminderCount`（repeatType != 0）
  */
 enum class StatusFilter {
@@ -31,7 +31,12 @@ enum class StatusFilter {
     /** 已完成（status=1） */
     COMPLETED,
 
-    /** 已过期（status=0 且 dueDate < now） */
+    /**
+     * 已过期（status=0 且 reminderTime/dueDate 任一过期）
+     *
+     * v2026-07-29 修正：原仅判断 dueDate < now，会导致"设了提醒但未设截止"的待办永不过期。
+     * 现改为 HomeViewModel.isOverdueTodo 统一判断，与 overdueCount 计数保持一致。
+     */
     OVERDUE,
 
     /** 重复提醒（repeatType != 0，即设置了重复提醒的待办） */
