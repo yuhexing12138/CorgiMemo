@@ -1822,7 +1822,7 @@ class HomeViewModel @Inject constructor(
      *
      * 用于侧滑栏分组列表的置顶操作。
      * - isPinned=true 的分组在 [CategoryDao.getAllCategories] 中排在前
-     * - 切换逻辑由调用方决定（如 [com.corgimemo.app.ui.components.appdrawer.dialogs.CategoryOperationSheet] 的 onPin 回调）
+     * - 切换逻辑由调用方决定（v2026-07-29 改造后由 SwipeableCategoryBox 的右滑"置顶"按钮触发 onPinClick 回调）
      *
      * @param id 分类 ID
      * @param isPinned true=置顶，false=取消置顶

@@ -363,7 +363,6 @@ fun MainScreen(
     var showSpecialDateBatchDeleteDialog by remember { mutableStateOf(false) }
     var showRenameCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
     var showDeleteCategoryDialog by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
-    var showCategorySheet by remember { mutableStateOf<com.corgimemo.app.data.model.Category?>(null) }
 
     // 2026-07-14 新增：日期类型管理弹窗状态
     var showAddDateTypeDialog by remember { mutableStateOf(false) }
@@ -575,7 +574,7 @@ fun MainScreen(
                     onAddCategoryClick = { showAddCategoryDialog = true },
                     onCategoryAction = { action ->
                         when (action) {
-                            is CategoryAction.ShowMenu -> showCategorySheet = action.category
+                            // v2026-07-29 改造：ShowMenu 已移除（底部弹窗改为右滑操作按钮）
                             // v2026-07-29 改造：实现 Pin 操作，直接调用 ViewModel 切换置顶状态
                             is CategoryAction.Pin -> homeViewModel.toggleCategoryPinned(action.category)
                             is CategoryAction.Rename -> showRenameCategoryDialog = action.category
@@ -1251,25 +1250,8 @@ fun MainScreen(
         )
     }
 
-    showCategorySheet?.let { category ->
-        com.corgimemo.app.ui.components.CategoryOperationSheet(
-            category = category,
-            // v2026-07-29 改造：
-            // 1. Pin 操作实现：调用 HomeViewModel.toggleCategoryPinned 自动切换状态
-            // 2. 关闭逻辑统一：onPin/onRename/onDelete 不再显式 showCategorySheet = null，
-            //    由 ActionRow 内部的 onDismiss() 统一关闭（避免双重关闭）
-            onPin = {
-                homeViewModel.toggleCategoryPinned(category)
-            },
-            onRename = {
-                showRenameCategoryDialog = category
-            },
-            onDelete = {
-                showDeleteCategoryDialog = category
-            },
-            onDismiss = { showCategorySheet = null }
-        )
-    }
+    // v2026-07-29 改造：CategoryOperationSheet 已移除
+    // 分组操作改为右滑展开按钮（SwipeableCategoryBox），不再需要底部弹窗
 
     /**
      * 分享方式选择弹窗（多选模式）

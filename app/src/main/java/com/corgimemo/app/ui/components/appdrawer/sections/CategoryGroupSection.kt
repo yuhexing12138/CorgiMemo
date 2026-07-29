@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.corgimemo.app.animation.HapticFeedbackManager
+import kotlinx.coroutines.CancellationException
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.ui.components.appdrawer.model.CategoryAction
@@ -93,6 +94,12 @@ internal fun CategoryGroupSection(
     var pendingReorder by remember { mutableStateOf<List<Category>?>(null) }
     val displayCategories = pendingReorder ?: categories
 
+    // v2026-07-29 改造：右滑展开状态管理（互斥展开）
+    // - 同一时间仅允许一个分组处于右滑展开状态
+    // - 展开时禁用该分组的长按拖拽（避免手势冲突）
+    // - 与首页待办卡片左滑行为一致（swipeExpandedTodoId 模式）
+    var swipeExpandedCategoryId by remember { mutableStateOf<Long?>(null) }
+
     // 🆕 v2026-07-28 方案 C 监听器：ViewModel 数据已与 pendingReorder 同步时自动清空
     LaunchedEffect(categories, pendingReorder) {
         if (pendingReorder != null) {
@@ -136,9 +143,20 @@ internal fun CategoryGroupSection(
         val fromCategory = currentList[fromIndex]
         val toCategory = currentList[toIndex]
         if (fromCategory.isPinned != toCategory.isPinned) {
-            // 跨置顶区拖动 → 拒绝（不更新 pendingReorder，拖拽会回弹到原位）
-            diag.onMove(from = fromIndex, to = toIndex, listSize = displayCategories.size + 2, isDragging = true)
-            return@rememberReorderableLazyListState
+            // 跨置顶区拖动 → 抛 CancellationException 中止 moveItems
+            //
+            // **为何不用 return**：
+            // Reorderable 库的 moveItems 在调用 onMove 后会设置 predictedDraggingItemOffset
+            // （基于 targetItem 位置）。如果 onMove 仅 return，predictedDraggingItemOffset
+            // 仍会被设置，导致被拖拽项"跳"到目标位置附近，而非跟随手指。
+            //
+            // 抛 CancellationException 后：
+            // 1. moveItems 的 catch 块捕获异常并"do nothing"
+            // 2. predictedDraggingItemOffset 不被设置（保持 null）
+            // 3. 被拖拽项位置 = it.offset + draggingItemDraggedDelta（继续跟随手指）
+            // 4. oldDraggingItemIndex 残留但不影响（predictedDraggingItemOffset 为 null 时用 it.offset）
+            // 5. onDragStopped 时会重置 oldDraggingItemIndex 和 predictedDraggingItemOffset
+            throw CancellationException("Cross pinned zone drag rejected")
         }
         // Plan A：仅更新本地 pendingReorder，不触发外层 ViewModel
         pendingReorder = currentList.toMutableList().apply {
@@ -196,6 +214,7 @@ internal fun CategoryGroupSection(
             //    v2 跨维度：多选交互 isSelected = FilterItem.Category(category.id) in selectedCategoryItems
             //    v2026-07-28 搜索：渲染 filteredCategories（拖拽中仍用 displayCategories）
             //    v2026-07-29 改造：置顶分组（isPinned=true）加深背景，如微信置顶会话
+            //    v2026-07-29 改造：用 SwipeableCategoryBox 替代三点菜单，右滑展开操作按钮
             items(
                 items = filteredCategories,
                 key = { it.id }
@@ -238,52 +257,77 @@ internal fun CategoryGroupSection(
                                 }
                         }
                     }
-                    Box(
+
+                    // v2026-07-29 改造：用 SwipeableCategoryBox 包裹分组项
+                    // - 右滑展开"置顶/编辑/删除"三个操作按钮（仅图标）
+                    // - 展开时禁用长按拖拽（避免手势冲突）
+                    // - 互斥展开：同时只允许一个分组展开
+                    // - 动画参数与首页待办卡片左滑一致（300ms 弹性回弹 + 20% 阈值吸附）
+                    SwipeableCategoryBox(
                         modifier = Modifier
                             .zIndex(if (isDragging) 1f else 0f)
                             .graphicsLayer {
                                 scaleX = scale
                                 scaleY = scale
                                 shadowElevation = shadow
-                            }
-                            .longPressDraggableHandle(
-                                onDragStarted = {
-                                    pendingReorder = null
-                                    diag.onDragStarted(category.id)
-                                    HapticFeedbackManager.performHapticFeedback(
-                                        context = context,
-                                        type = InteractionType.TEXT_MOVE,
-                                        enabled = true
-                                    )
-                                },
-                                onDragStopped = {
-                                    pendingReorder?.let { finalList ->
-                                        diag.onReorderSubmit(finalList.size)
-                                        onReorder(finalList)
-                                    }
-                                    diag.onDragStopped(category.id, listSize = displayCategories.size + 2)
-                                }
-                            )
+                            },
+                        // 右滑手势始终启用（用于展开/收起）
+                        isEnabled = true,
+                        isExpanded = swipeExpandedCategoryId == category.id,
+                        isPinned = category.isPinned,
+                        onExpandChange = { expanded ->
+                            swipeExpandedCategoryId = if (expanded) category.id else null
+                        },
+                        onPinClick = {
+                            onCategoryAction(CategoryAction.Pin(category))
+                        },
+                        onEditClick = {
+                            onCategoryAction(CategoryAction.Rename(category))
+                        },
+                        onDeleteClick = {
+                            onCategoryAction(CategoryAction.Delete(category))
+                        }
                     ) {
-                        val icon = categoryIcons[category.type] ?: "📂"
-                        val item = FilterItem.Category(category.id)
-                        CategoryItem(
-                            icon = icon,
-                            name = category.name,
-                            count = todoCountByCategory[category.id] ?: 0,
-                            isSelected = item in selectedCategoryItems,
-                            // v2026-07-29 改造：取消"默认/自定义分组"区分后，所有分组都显示菜单
-                            // 原 `showMenu = !category.isDefault` 让默认分组无法触发 ShowMenu 操作
-                            showMenu = true,
-                            // v2026-07-29 改造：置顶分组加深背景（如微信置顶会话）
-                            highlightBackground = category.isPinned,
-                            onClick = { onCategoryToggle(item) },
-                            onMenuClick = {
-                                onCategoryAction(
-                                    CategoryAction.ShowMenu(category)
+                        // content：长按拖拽 handle + CategoryItem
+                        // 展开时禁用 longPressDraggableHandle，避免右滑手势与长按拖拽冲突
+                        Box(
+                            modifier = Modifier
+                                .longPressDraggableHandle(
+                                    // v2026-07-29 改造：任何分组展开时禁用拖拽
+                                    // 原因：右滑展开后若仍可长按拖拽，会产生手势冲突
+                                    enabled = swipeExpandedCategoryId == null,
+                                    onDragStarted = {
+                                        pendingReorder = null
+                                        diag.onDragStarted(category.id)
+                                        HapticFeedbackManager.performHapticFeedback(
+                                            context = context,
+                                            type = InteractionType.TEXT_MOVE,
+                                            enabled = true
+                                        )
+                                    },
+                                    onDragStopped = {
+                                        pendingReorder?.let { finalList ->
+                                            diag.onReorderSubmit(finalList.size)
+                                            onReorder(finalList)
+                                        }
+                                        diag.onDragStopped(category.id, listSize = displayCategories.size + 2)
+                                    }
                                 )
-                            }
-                        )
+                        ) {
+                            val icon = categoryIcons[category.type] ?: "📂"
+                            val item = FilterItem.Category(category.id)
+                            CategoryItem(
+                                icon = icon,
+                                name = category.name,
+                                count = todoCountByCategory[category.id] ?: 0,
+                                isSelected = item in selectedCategoryItems,
+                                // v2026-07-29 改造：移除三点菜单按钮，改用右滑操作
+                                showMenu = false,
+                                // v2026-07-29 改造：置顶分组加深背景（如微信置顶会话）
+                                highlightBackground = category.isPinned,
+                                onClick = { onCategoryToggle(item) }
+                            )
+                        }
                     }
                 }
             }

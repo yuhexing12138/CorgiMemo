@@ -17,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -35,110 +34,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CustomDateType
-
-/**
- * 分类操作底部弹窗
- *
- * 触发：侧滑抽屉 → 点击分类项右侧 ⋮ → 弹出置顶/编辑/删除
- * 展开动画（由 Material3 ModalBottomSheet 提供）：
- *   弹窗：spring 弹簧上滑 translateY(100% → 0)，dampingRatio ≈ 0.8，stiffness ≈ 400
- *   遮罩：淡入 opacity(0 → 0.32)
- * 严格遵循操作列表型底部弹窗原型规范。
- *
- * @param sheetState BottomSheet 状态（skipPartiallyExpanded = true 确保一次性展开）
- * @param category 被操作的分类
- * @param onPin 置顶回调
- * @param onRename 编辑回调
- * @param onDelete 删除回调
- * @param onDismiss 关闭回调
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun CategoryOperationSheet(
-    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    category: Category,
-    onPin: () -> Unit,
-    onRename: () -> Unit,
-    onDelete: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Color.White,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        scrimColor = Color.Black.copy(alpha = 0.32f),
-        dragHandle = null
-    ) {
-        // CategoryOperationSheet - 展开动画由 ModalBottomSheet 提供
-        // 弹簧上滑 + 遮罩淡入，参考 SpringDefaults.DampingRatioMediumBouncy
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp)
-        ) {
-            DragHandle()
-
-            // 标题栏：左对齐 + 右侧圆形关闭按钮（padding: 12px 24px 16px）
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = category.name,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF2D2D2D),
-                    modifier = Modifier.weight(1f)
-                )
-
-                CloseButton(onClick = onDismiss)
-            }
-
-            // 标题下方分割线
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 24.dp),
-                color = Color(0x14000000)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 操作列表
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // v2026-07-29 改造：Pin 操作已实现，文案根据 isPinned 状态切换
-                ActionRow(
-                    icon = Icons.Outlined.PushPin,
-                    text = if (category.isPinned) "取消置顶分组" else "置顶分组"
-                ) {
-                    onPin()
-                    onDismiss()
-                }
-                ActionRow(icon = Icons.Filled.Edit, text = "编辑分组") {
-                    onRename()
-                    onDismiss()
-                }
-                ActionRow(
-                    icon = Icons.Outlined.Delete,
-                    text = "删除分组",
-                    isDestructive = true
-                ) {
-                    onDelete()
-                    onDismiss()
-                }
-            }
-        }
-    }
-}
 
 /**
  * 自定义日期类型操作底部弹窗
  *
- * 与 CategoryOperationSheet 区别：仅含编辑/删除两项，不含置顶。
+ * v2026-07-29 改造：CategoryOperationSheet 已移除（分组操作改为右滑展开按钮 SwipeableCategoryBox）
+ * 本文件仅保留 DateTypeOperationSheet 及其共享子组件（DragHandle / CloseButton / ActionRow）
+ *
+ * 与原 CategoryOperationSheet 区别：仅含编辑/删除两项，不含置顶。
  * 展开动画（由 Material3 ModalBottomSheet 提供）：
  *   弹窗：spring 弹簧上滑 translateY(100% → 0)，dampingRatio ≈ 0.8，stiffness ≈ 400
  *   遮罩：淡入 opacity(0 → 0.32)
