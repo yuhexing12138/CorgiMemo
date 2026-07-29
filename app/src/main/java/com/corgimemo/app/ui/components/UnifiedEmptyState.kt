@@ -36,13 +36,15 @@ import com.corgimemo.app.ui.theme.UiColors
  * 统一空状态组件（柯基帧动画版）
  *
  * 用于待办、灵感、特殊日期三个页面的空状态展示，保持视觉风格统一。
- * 包含：柯基帧动画（corgi_sit 趴姿）、emoji小标签、主文案、副文案、CTA按钮。
- * 柯基大小适中（100dp），与页面风格协调。
+ * 包含：柯基帧动画（corgi_tilt 摇摆姿）、可选 emoji 小标签、主文案、副文案、CTA按钮。
+ * 柯基大小适中（160dp），与页面风格协调。
  *
- * @param icon emoji图标字符串（如 "💡"、"📅"、"📝"），用于柯基下方的小标签
+ * v2026-07-29 更新：移除标题与 CTA 按钮中的 emoji 前缀；icon 参数为空字符串时不渲染小标签。
+ *
+ * @param icon emoji图标字符串（如 "💡"、"📅"、"📝"），用于柯基下方的小标签；传空字符串则不渲染
  * @param title 主文案（如 "还没有灵感记录~"）
  * @param subtitle 副文案（如 "点击下方按钮记录你的第一个灵感吧！"）
- * @param ctaText CTA按钮文字（如 "💡 记录灵感"）
+ * @param ctaText CTA按钮文字（如 "记录灵感"）
  * @param onCtaClick CTA按钮点击回调
  * @param modifier 修饰符
  */
@@ -89,12 +91,14 @@ fun UnifiedEmptyState(
             contentScale = ContentScale.Fit
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = icon,
-            fontSize = 20.sp
-        )
+        // v2026-07-29：icon 为空时不渲染 emoji 小标签，仅保留柯基到 title 的间距
+        if (icon.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = icon,
+                fontSize = 20.sp
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 

@@ -206,10 +206,10 @@ fun InspirationScreen(
                 InspirationSkeleton()
             } else if (displayItems.isEmpty()) {
                 UnifiedEmptyState(
-                    icon = "💡",
+                    icon = "",
                     title = "还没有灵感记录~",
                     subtitle = "点击右下角按钮记录你的第一个灵感吧！",
-                    ctaText = "💡 记录灵感",
+                    ctaText = "记录灵感",
                     onCtaClick = onFabClick,
                     modifier = Modifier.fillMaxSize()
                 )

@@ -159,7 +159,7 @@ fun CorgiNamingPage(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    text = "💡 试试这些名字：",
+                    text = "试试这些名字：",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

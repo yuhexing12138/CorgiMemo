@@ -69,7 +69,7 @@ fun InspirationFeaturePage(
         ) {
         // 上半：功能介绍
         Text(
-            text = "💡 灵感功能",
+            text = "灵感功能",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
@@ -99,7 +99,7 @@ fun InspirationFeaturePage(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "🎉 灵感保存成功！",
+                text = "灵感保存成功！",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary

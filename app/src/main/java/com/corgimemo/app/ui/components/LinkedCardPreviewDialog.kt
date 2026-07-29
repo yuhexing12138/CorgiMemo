@@ -94,9 +94,9 @@ fun LinkedCardPreviewDialog(
         else -> "📎"
     }
     val typeLabel = when (relation.targetType) {
-        "todo" -> "📝 待办"
-        "inspiration" -> "💡 灵感"
-        "date" -> "📅 日期"
+        "todo" -> "待办"
+        "inspiration" -> "灵感"
+        "date" -> "日期"
         else -> "未知"
     }
 
@@ -185,7 +185,7 @@ fun LinkedCardPreviewDialog(
  * @param typeBg 类型图标背景色
  * @param typeIconText 类型图标 emoji
  * @param title 卡片标题（加载中时为 null，显示占位）
- * @param typeLabel 类型标签文字（如 "📝 待办"）
+ * @param typeLabel 类型标签文字（如 "待办"）
  * @param onClose 关闭回调
  */
 @Composable
@@ -281,7 +281,7 @@ private fun TodoDetailBody(detail: CardDetail.TodoDetail) {
         // 分类
         InfoRow(
             label = "分类",
-            value = "📁 ${detail.categoryName ?: "未分类"}",
+            value = detail.categoryName ?: "未分类",
             valueColor = Color(0xFF2D2D2D)
         )
         Spacer(modifier = Modifier.height(8.dp))

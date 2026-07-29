@@ -732,10 +732,10 @@ fun HomeScreen(
                         TodoSkeleton()
                     } else if (pendingTodosAll.isEmpty() && completedCount == 0) {
                         UnifiedEmptyState(
-                            icon = "📝",
+                            icon = "",
                             title = "还没有待办~",
                             subtitle = "点击下方按钮添加第一个待办吧！",
-                            ctaText = "📝 添加待办",
+                            ctaText = "添加待办",
                             onCtaClick = {
                                 viewModel.onUserInteraction()
                                 viewModel.setPoseForCreating()

@@ -129,7 +129,7 @@ fun DateFeaturePage(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "🎉 日期创建成功！",
+                    text = "日期创建成功！",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary

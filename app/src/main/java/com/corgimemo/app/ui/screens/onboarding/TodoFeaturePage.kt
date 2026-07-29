@@ -72,7 +72,7 @@ fun TodoFeaturePage(
         ) {
         // 上半：功能介绍
         Text(
-            text = "📋 待办功能",
+            text = "待办功能",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
@@ -102,7 +102,7 @@ fun TodoFeaturePage(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "🎉 待办创建成功！",
+                text = "待办创建成功！",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary

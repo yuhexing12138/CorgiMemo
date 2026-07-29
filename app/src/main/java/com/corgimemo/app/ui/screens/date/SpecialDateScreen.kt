@@ -221,10 +221,10 @@ fun SpecialDateScreen(
             } else if (groupedDates.isEmpty() && pinnedDate == null) {
                 // 2026-07-14 修改：仅当没有置顶卡也没有任何分组卡时才显示空态
                 UnifiedEmptyState(
-                    icon = "📅",
+                    icon = "",
                     title = "还没有特殊日期~",
                     subtitle = "记录重要的日子，不错过每个纪念！",
-                    ctaText = "📅 添加日期",
+                    ctaText = "添加日期",
                     onCtaClick = onFabClick,
                     modifier = Modifier.fillMaxSize()
                 )

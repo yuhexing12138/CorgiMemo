@@ -398,30 +398,38 @@ fun MainScreen(
      * 原逻辑：基于单选 `selectedCategoryId: Long?` 显示"📝 待办" / "📦 未分类" / "📁 {分组名}"。
      * 新逻辑：基于 `selectedFilterItems: Set<FilterItem>` 适配多选场景。
      *
+     * v2026-07-29 更新：
+     * - 移除标题左侧 emoji 图标，待办/灵感/日期页标题改为纯文字
+     * - 指定分组时分组名超过 2 字则截断为前 2 字 + "..."（如"学习计划"→"学习..."）
+     * - 多选/筛选场景标题简化为"已筛选"
+     *
      * 规则：
-     * - 0 项选中（空集合）→ "📝 待办"
-     * - 仅 1 个 Category 项且无 Status 项 → "📁 {分组名}" 或 "📦 未分类"
-     * - 其他（多选 / 仅 Status / Category+Status 组合）→ "📝 待办 · 已筛选"
+     * - 0 项选中（空集合）→ "待办"
+     * - 仅 1 个 Category 项且无 Status 项 → "{分组名（>2字截断）}" 或 "未分类"
+     * - 其他（多选 / 仅 Status / Category+Status 组合）→ "已筛选"
      */
     val topBarTitle = when (selectedTab) {
         TabItem.TODO -> {
             val catItems = selectedFilterItems.filterIsInstance<FilterItem.Category>()
             val statusItems = selectedFilterItems.filterIsInstance<FilterItem.Status>()
             when {
-                selectedFilterItems.isEmpty() -> "📝 待办"
+                selectedFilterItems.isEmpty() -> "待办"
                 catItems.size == 1 && statusItems.isEmpty() -> {
                     val id = catItems.first().id
                     when (id) {
-                        0L -> "📦 未分类"
-                        else -> categories.find { it.id == id }?.let { "📁 ${it.name}" } ?: "📝 待办"
+                        0L -> "未分类"
+                        else -> categories.find { it.id == id }?.name?.let { name ->
+                            // 分组名超过 2 字截断为前 2 字 + "..."
+                            if (name.length > 2) name.take(2) + "..." else name
+                        } ?: "待办"
                     }
                 }
-                else -> "📝 待办 · 已筛选"
+                else -> "已筛选"
             }
         }
-        TabItem.INSPIRE -> "💡 灵感"
-        TabItem.DATE -> "📅 日期"
-        TabItem.PROFILE -> "👤 我的"
+        TabItem.INSPIRE -> "灵感"
+        TabItem.DATE -> "日期"
+        TabItem.PROFILE -> "我的"
         TabItem.EDIT -> ""
     }
 

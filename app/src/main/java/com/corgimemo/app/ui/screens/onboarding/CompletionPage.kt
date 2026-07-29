@@ -83,7 +83,7 @@ fun CompletionPage(
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "🎉 设置完成！",
+            text = "设置完成！",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
