@@ -2,23 +2,13 @@ package com.corgimemo.app.ui.components.appdrawer.sections
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -28,7 +18,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -53,8 +42,9 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  * - "全部状态"项点击 → 清空所有过滤（[onClearAllFilters]）
  * - 其他 5 个状态项（PINNED / PENDING / COMPLETED / OVERDUE / REPEAT_REMINDER）支持多选
  *
- * **🆕 v2026-07-28 搜索框 + Plan A/D 改造**：
- * - 加搜索框（本地状态，按状态名模糊过滤显示）
+ * **🆕 v2026-07-29 搜索框外部化**：
+ * - 搜索框移至 [AppDrawerContentImpl] 顶部展开区，本组件不再渲染搜索框
+ * - `searchQuery` 由外部传入，本组件仅负责按查询词过滤显示
  * - Plan A：onReorder 调用时机从 onMove 改为 onDragStopped
  * - Plan D：graphicsLayer 参数改用 animateFloatAsState 平滑过渡
  * - 接入 [rememberReorderableDiagnostics] 拖拽埋点
@@ -66,6 +56,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  *
  * @param statusOrder 状态项渲染顺序（来自 HomeViewModel.statusOrder，可拖拽排序）
  * @param selectedStatusItems 当前选中的状态过滤项集合（不包含 ALL）
+ * @param searchQuery 搜索查询词（由外部 AppDrawerContentImpl 展开区传入，按状态名模糊过滤）
  * @param totalCount "全部状态"项显示的总数
  * @param pinnedCount 置顶待办数
  * @param pendingCount 待完成待办数
@@ -81,6 +72,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 internal fun StatusFilterSection(
     statusOrder: List<StatusFilter>,
     selectedStatusItems: Set<FilterItem.Status>,
+    searchQuery: String = "",
     totalCount: Int,
     pinnedCount: Int,
     pendingCount: Int,
@@ -101,10 +93,9 @@ internal fun StatusFilterSection(
     var pendingReorder by remember { mutableStateOf<List<StatusFilter>?>(null) }
     val displayDraggable = pendingReorder ?: draggableFilters
 
-    // 🆕 v2026-07-28 搜索框本地状态（按 statusDisplayName 模糊过滤显示）
+    // 🆕 v2026-07-29 搜索框外部化：searchQuery 由外部 AppDrawerContentImpl 传入
     //   ★ 修复：基于 displayDraggable 而非 draggableFilters，与 CategoryGroupSection 保持一致
     //   原 bug：items() 用了 displayDraggable（未应用搜索），导致搜索框完全不起作用
-    var searchQuery by remember { mutableStateOf("") }
     val filteredDraggable = remember(displayDraggable, searchQuery) {
         if (searchQuery.isBlank()) {
             displayDraggable
@@ -168,16 +159,6 @@ internal fun StatusFilterSection(
     )
 
     Column(modifier = modifier) {
-        // 🆕 v2026-07-28 搜索框（仅过滤可拖列表的显示，不跨维度）
-        StatusSearchBar(
-            query = searchQuery,
-            onQueryChange = { searchQuery = it },
-            onClear = { searchQuery = "" },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        )
-
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -306,36 +287,6 @@ internal fun StatusFilterSection(
             }
         }
     }
-}
-
-/**
- * 状态搜索框（v2026-07-28 新增）
- */
-@Composable
-private fun StatusSearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onClear: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = modifier,
-        placeholder = { Text("搜索状态") },
-        leadingIcon = {
-            Icon(Icons.Default.Search, contentDescription = "搜索")
-        },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = onClear) {
-                    Icon(Icons.Default.Close, contentDescription = "清空")
-                }
-            }
-        },
-        singleLine = true,
-        colors = OutlinedTextFieldDefaults.colors()
-    )
 }
 
 /**

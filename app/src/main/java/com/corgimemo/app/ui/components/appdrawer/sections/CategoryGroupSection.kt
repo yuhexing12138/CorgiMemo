@@ -9,13 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -48,9 +41,9 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  * - "全部待办"项点击 → 清空所有过滤（[onClearAllFilters]）
  * - "未分类"项和自定义分组项支持多选
  *
- * **🆕 v2026-07-28 搜索框**：
- * - 加搜索框（本地状态，按分组名模糊过滤显示）
- * - 仅过滤自定义分组的显示，不影响"全部待办"/"未分类"
+ * **🆕 v2026-07-29 搜索框外部化**：
+ * - 搜索框移至 [AppDrawerContentImpl] 顶部展开区，本组件不再渲染搜索框
+ * - `searchQuery` 由外部传入，本组件仅负责按查询词过滤显示
  *
  * **布局**（沿用 P8 Phase 1 设计）：
  * 1. "全部待办"项（selectedCategoryItems 为空时高亮）
@@ -73,6 +66,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  * @param categories 自定义分类列表（已按 sortOrder 排序）
  * @param todoCountByCategory 各分类 ID → 待办数量映射（key=-1 表示全部，key=0 表示未分类）
  * @param selectedCategoryItems 当前选中的分组项集合（不包含"全部"项）
+ * @param searchQuery 搜索查询词（由外部 AppDrawerContentImpl 展开区传入，按分组名模糊过滤）
  * @param onCategoryToggle 分组项点击回调（参数为要切换的 [FilterItem.Category]）
  * @param onClearAllFilters 点击"全部待办"时回调
  * @param onCategoryAction 分组操作回调（ShowMenu / Pin / Rename / Delete）
@@ -84,6 +78,7 @@ internal fun CategoryGroupSection(
     categories: List<Category>,
     todoCountByCategory: Map<Long, Int>,
     selectedCategoryItems: Set<FilterItem.Category>,
+    searchQuery: String = "",
     onCategoryToggle: (FilterItem.Category) -> Unit,
     onClearAllFilters: () -> Unit,
     onCategoryAction: (CategoryAction) -> Unit,
@@ -109,8 +104,7 @@ internal fun CategoryGroupSection(
         }
     }
 
-    // 🆕 v2026-07-28 搜索框本地状态（按 category.name 模糊过滤显示）
-    var searchQuery by remember { mutableStateOf("") }
+    // 🆕 v2026-07-29 搜索框外部化：searchQuery 由外部 AppDrawerContentImpl 传入
     val filteredCategories = remember(displayCategories, searchQuery) {
         if (searchQuery.isBlank()) {
             displayCategories
@@ -149,16 +143,6 @@ internal fun CategoryGroupSection(
     }
 
     Column(modifier = modifier) {
-        // 🆕 v2026-07-28 搜索框（仅过滤自定义分组的显示，不影响 ALL/UNCATEGORIZED）
-        CategorySearchBar(
-            query = searchQuery,
-            onQueryChange = { searchQuery = it },
-            onClear = { searchQuery = "" },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        )
-
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -296,34 +280,4 @@ internal fun CategoryGroupSection(
             }
         }
     }
-}
-
-/**
- * 分组搜索框（v2026-07-28 新增）
- */
-@Composable
-private fun CategorySearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onClear: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = modifier,
-        placeholder = { Text("搜索分组") },
-        leadingIcon = {
-            Icon(Icons.Default.Search, contentDescription = "搜索")
-        },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = onClear) {
-                    Icon(Icons.Default.Close, contentDescription = "清空")
-                }
-            }
-        },
-        singleLine = true,
-        colors = OutlinedTextFieldDefaults.colors()
-    )
 }

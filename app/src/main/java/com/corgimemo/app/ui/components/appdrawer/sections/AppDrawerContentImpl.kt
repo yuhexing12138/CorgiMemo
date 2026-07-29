@@ -1,5 +1,9 @@
 package com.corgimemo.app.ui.components.appdrawer.sections
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -8,20 +12,37 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterAltOff
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,6 +50,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.ProfileNavItem
@@ -174,13 +197,116 @@ fun AppDrawerContentImpl(
         // 2. 中部分区（按 Tab 分发）
         when (currentTab) {
             TabItem.TODO -> {
-                // 2.1 Tab 切换器（v2026-07-27 调整：位置 = 原"分组管理" 内部标题位置）
-                DrawerSectionTab(
-                    currentSection = currentDrawerSection,
-                    onSectionChange = onDrawerSectionChange
-                )
+                // ===== v2026-07-29 图标化改造：搜索框和过滤模式收入图标，点击展开 =====
+                var searchExpanded by remember { mutableStateOf(false) }
+                var filterModeExpanded by remember { mutableStateOf(false) }
+                var searchQuery by remember { mutableStateOf("") }
+                val scope = rememberCoroutineScope()
 
-                // 2.2 整条 3dp 橙线（v2026-07-27 新增：保留原"分组管理" 内部标题下方的橙线）
+                // 清空筛选：重置搜索词 + 模式回 OR + 清空选中项 + 收起展开区
+                val onClearAll: () -> Unit = {
+                    searchQuery = ""
+                    searchExpanded = false
+                    filterModeExpanded = false
+                    onFilterModeChange(TagFilterMode.OR)
+                    onClearAllFilters()
+                }
+
+                // 2.1 Tab 行 + 图标行（分组管理 左 + 状态管理 居中 + 搜索/过滤图标 右）
+                //    状态管理用 weight(1f) 居中，使其与分组管理右侧和搜索图标左侧的视觉距离自适应相等
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 左：分组管理标签
+                    DrawerSectionLabel(
+                        text = "分组管理",
+                        isActive = currentDrawerSection == DrawerSection.GROUP,
+                        onClick = { onDrawerSectionChange(DrawerSection.GROUP) }
+                    )
+
+                    // 中：状态管理标签（weight(1f) 居中，左右视觉间距自适应相等）
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        DrawerSectionLabel(
+                            text = "状态管理",
+                            isActive = currentDrawerSection == DrawerSection.STATUS,
+                            onClick = { onDrawerSectionChange(DrawerSection.STATUS) }
+                        )
+                    }
+
+                    // 右：搜索图标 + 过滤模式图标
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        // 搜索图标：有输入内容时变主题色 + 填充
+                        IconButton(onClick = {
+                            searchExpanded = !searchExpanded
+                            if (searchExpanded) filterModeExpanded = false
+                        }) {
+                            Icon(
+                                imageVector = if (searchQuery.isNotEmpty()) Icons.Filled.Search else Icons.Outlined.Search,
+                                contentDescription = "搜索",
+                                tint = if (searchQuery.isNotEmpty()) UiColors.Primary else Color(0xFF79747E),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        // 过滤模式图标：非 OR 模式时变主题色 + 填充 + 角标
+                        //    外层 48dp Box：包裹 IconButton + 角标层，角标不受 IconButton 的 CircleShape clip 裁剪
+                        //    IconButton：提供与搜索图标完全一致的圆形 48dp 水波纹
+                        //    24dp Box：与 IconButton 内图标重叠居中，放角标，align(TopEnd) 对齐图标右上角
+                        Box(
+                            modifier = Modifier.size(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    filterModeExpanded = !filterModeExpanded
+                                    if (filterModeExpanded) searchExpanded = false
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = if (filterMode != TagFilterMode.OR) Icons.Filled.Tune else Icons.Outlined.Tune,
+                                    contentDescription = "过滤模式",
+                                    tint = if (filterMode != TagFilterMode.OR) UiColors.Primary else Color(0xFF79747E),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            // 非 OR 模式显示角标（A = AND, N = NOT）
+                            // 24dp Box 与 IconButton 内图标重叠，角标 align(TopEnd) + offset 对齐图标右上角
+                            // 放在外层 Box 而非 IconButton 内部，避免被 IconButton 的 CircleShape 裁剪
+                            if (filterMode != TagFilterMode.OR) {
+                                Box(modifier = Modifier.size(24.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .offset(x = 6.dp, y = (-4).dp)
+                                            .size(14.dp)
+                                            .background(UiColors.Primary, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = if (filterMode == TagFilterMode.AND) "A" else "N",
+                                            fontSize = 9.sp,
+                                            lineHeight = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2.2 整条 3dp 橙线
                 Box(
                     modifier = Modifier
                         .padding(horizontal = 20.dp)
@@ -189,25 +315,75 @@ fun AppDrawerContentImpl(
                         .background(UiColors.Primary)
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                // 2.3 搜索展开区（AnimatedVisibility 内联向下展开）
+                AnimatedVisibility(
+                    visible = searchExpanded,
+                    enter = expandVertically(),
+                    exit = shrinkVertically()
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        placeholder = {
+                            Text(if (currentDrawerSection == DrawerSection.GROUP) "搜索分组" else "搜索状态")
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Search, contentDescription = "搜索")
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "清空")
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors()
+                    )
+                }
 
-                // 🆕 v2026-07-28 v2 跨维度：全局 FilterChip Row（OR/AND/NOT 跨 2 个分区共享）
-                //   位置：DrawerSectionTab 下方，section 上方
-                //   业务规则：点击 AND 时自动清空分组项（避免 AND 多分组退化为空集）
-                FilterModeChipRow(
-                    mode = filterMode,
-                    onModeChange = onFilterModeChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 4.dp)
-                )
+                // 2.4 过滤模式展开区（AnimatedVisibility 内联向下展开）
+                AnimatedVisibility(
+                    visible = filterModeExpanded,
+                    enter = expandVertically(),
+                    exit = shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 4.dp)
+                    ) {
+                        FilterModeChipRow(
+                            mode = filterMode,
+                            onModeChange = { mode ->
+                                onFilterModeChange(mode)
+                                // 选择模式后 1.2s 自动收起
+                                scope.launch {
+                                    delay(1200)
+                                    filterModeExpanded = false
+                                }
+                            }
+                        )
+                        // 模式描述文字
+                        Text(
+                            text = when (filterMode) {
+                                TagFilterMode.OR -> "OR · 满足任一选中项即显示"
+                                TagFilterMode.AND -> "AND · 必须同时满足所有选中项"
+                                TagFilterMode.NOT -> "NOT · 排除所有选中项"
+                            },
+                            fontSize = 11.sp,
+                            color = Color(0xFF79747E),
+                            modifier = Modifier.padding(top = 6.dp, start = 2.dp)
+                        )
+                    }
+                }
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // 2.3 互斥渲染"分组管理"或"状态管理"
+                // 2.5 互斥渲染"分组管理"或"状态管理"
                 when (currentDrawerSection) {
                     DrawerSection.GROUP -> {
-                        // ★ v2026-07-28 v2 跨维度：拆分 selectedFilterItems 为 Category 子集
                         val selectedCategoryItems = selectedFilterItems
                             .filterIsInstance<FilterItem.Category>()
                             .toSet()
@@ -215,6 +391,7 @@ fun AppDrawerContentImpl(
                             categories = categories,
                             todoCountByCategory = todoCountByCategory,
                             selectedCategoryItems = selectedCategoryItems,
+                            searchQuery = searchQuery,
                             onCategoryToggle = onCategoryToggle,
                             onClearAllFilters = onClearAllFilters,
                             onCategoryAction = onCategoryAction,
@@ -223,13 +400,13 @@ fun AppDrawerContentImpl(
                         )
                     }
                     DrawerSection.STATUS -> {
-                        // ★ v2026-07-28 v2 跨维度：拆分 selectedFilterItems 为 Status 子集
                         val selectedStatusItems = selectedFilterItems
                             .filterIsInstance<FilterItem.Status>()
                             .toSet()
                         StatusFilterSection(
                             statusOrder = statusOrder,
                             selectedStatusItems = selectedStatusItems,
+                            searchQuery = searchQuery,
                             totalCount = totalTodoCount,
                             pinnedCount = pinnedCount,
                             pendingCount = pendingCount,
@@ -244,8 +421,65 @@ fun AppDrawerContentImpl(
                     }
                 }
 
-                // 2.4 共用底部"添加分组"按钮（两种模式都用）
-                AddCategoryButton(text = "添加分组", onClick = onAddCategoryClick)
+                // 2.6 底部双按钮：清空筛选（OutlinedButton）+ 添加分组（FilledButton）
+                //    位置与高度与原 AddCategoryButton（灵感页添加标签按钮）保持一致：
+                //    padding(horizontal = 20.dp) + height(48.dp)，无 vertical padding
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // 清空筛选：次操作（描边按钮）
+                    OutlinedButton(
+                        onClick = onClearAll,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.5.dp, UiColors.Primary),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = UiColors.PrimaryDark
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FilterAltOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "清空筛选",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    // 添加分组：主操作（填充按钮）
+                    Button(
+                        onClick = onAddCategoryClick,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = UiColors.Primary,
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "添加分组",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
             TabItem.INSPIRE -> {
                 InspirationFilterSection(

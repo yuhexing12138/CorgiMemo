@@ -3,7 +3,6 @@ package com.corgimemo.app.ui.components.appdrawer.sections
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,8 +47,7 @@ internal fun DrawerSectionTab(
 ) {
     Row(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp)
+            .padding(horizontal = 4.dp, vertical = 8.dp)
     ) {
         // 1. "分组管理" 标签
         DrawerSectionLabel(
@@ -86,7 +84,7 @@ internal fun DrawerSectionTab(
  * @param onClick 点击回调
  */
 @Composable
-private fun DrawerSectionLabel(
+internal fun DrawerSectionLabel(
     text: String,
     isActive: Boolean,
     onClick: () -> Unit
