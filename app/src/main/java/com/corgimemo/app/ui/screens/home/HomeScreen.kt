@@ -109,6 +109,7 @@ import com.corgimemo.app.data.model.CorgiData
 import com.corgimemo.app.data.model.TodoItem
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.backup.exporter.ImageExporter
+import com.corgimemo.app.backup.exporter.ShareCoordinator
 import com.corgimemo.app.backup.exporter.ShareIntentHelper
 import com.corgimemo.app.ui.components.AchievementUnlockDialog
 import com.corgimemo.app.ui.components.CorgiNamerDialog
@@ -1506,30 +1507,29 @@ fun HomeScreen(
                 onSaveToAlbum = {
                     showCardShareDialog = false
                     coroutineScope.launch {
-                        try {
-                            val imgPaths = todoAttachmentsMap[shareTodo.id]?.first ?: emptyList()
-                            val subImgPaths = subTaskAttachmentsMap.mapValues { it.value.first }
-                            val bitmap = ImageExporter.createTodoShareCard(
-                                 context = context,
-                                 todo = shareTodo,
-                                 category = categories.find { it.id == shareTodo.categoryId },
-                                 subTodos = com.corgimemo.app.data.repository.SubTaskManager.getSubTasks(context, shareTodo.id),
-                                 imagePaths = imgPaths,
-                                 subTaskImagePaths = subImgPaths,
-                                 relationCount = 0
-                             )
-                             val uri = com.corgimemo.app.util.InspirationScreenshot.saveToGallery(context, bitmap)
-                            if (uri != null) {
-                                snackbarHostState.showSnackbar("已保存到相册")
-                            } else {
-                                snackbarHostState.showSnackbar("保存失败")
+                        // 统一走 ShareCoordinator.saveToAlbumOneByOne（与 MainScreen 多选模式一致）
+                        val imgPaths = todoAttachmentsMap[shareTodo.id]?.first ?: emptyList()
+                        val subImgPaths = subTaskAttachmentsMap.mapValues { it.value.first }
+                        ShareCoordinator.saveToAlbumOneByOne(
+                            context = context,
+                            todos = listOf(shareTodo),
+                            categories = categories,
+                            todoImagePaths = mapOf(shareTodo.id to imgPaths),
+                            subTaskImagePaths = subImgPaths,
+                            onProgress = null, // 单条无需进度提示
+                            onResult = { successCount, failCount ->
+                                coroutineScope.launch {
+                                    val msg = when {
+                                        failCount == 0 -> "已保存到相册"
+                                        successCount == 0 -> "保存失败"
+                                        else -> "成功 $successCount 张，失败 $failCount 张"
+                                    }
+                                    snackbarHostState.showSnackbar(msg)
+                                }
                             }
-                        } catch (e: Exception) {
-                            snackbarHostState.showSnackbar("保存失败：${e.message}")
-                        } finally {
-                            cardShareTodoId = null
-                        }
+                        )
                     }
+                    cardShareTodoId = null
                 },
                 onMoreShare = {
                     showCardShareDialog = false

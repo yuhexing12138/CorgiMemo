@@ -1269,14 +1269,37 @@ fun MainScreen(
                 coroutineScope.launch {
                     val todoIds = shareTodosSnapshot.map { it.id }
                     val (todoImgMap, subTaskImgMap) = homeViewModel.getAttachmentsForShare(todoIds)
-                    ShareCoordinator.shareOneByOne(
+                    // 多条场景下显示"正在保存 (X/Y)"进度提示
+                    val total = shareTodosSnapshot.size
+                    if (total > 1) {
+                        snackbarHostState.showSnackbar("正在保存到相册 (0/$total)...")
+                    }
+                    ShareCoordinator.saveToAlbumOneByOne(
                         context = context,
                         todos = shareTodosSnapshot,
                         categories = categories,
                         todoImagePaths = todoImgMap,
                         subTaskImagePaths = subTaskImgMap,
-                        onShowSnackBar = { msg ->
-                            coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                        onProgress = { current, t ->
+                            // 多条场景下每完成一条更新进度
+                            if (t > 1) {
+                                coroutineScope.launch {
+                                    snackbarHostState.currentSnackbarData?.dismiss()
+                                    snackbarHostState.showSnackbar("正在保存到相册 ($current/$t)...")
+                                }
+                            }
+                        },
+                        onResult = { successCount, failCount ->
+                            coroutineScope.launch {
+                                // 按"全部成功 / 部分成功 / 全部失败"三种情况给出最终提示
+                                val msg = when {
+                                    failCount == 0 -> "已保存 $successCount 张到相册"
+                                    successCount == 0 -> "保存失败"
+                                    else -> "成功 $successCount 张，失败 $failCount 张"
+                                }
+                                snackbarHostState.currentSnackbarData?.dismiss()
+                                snackbarHostState.showSnackbar(msg)
+                            }
                         }
                     )
                 }

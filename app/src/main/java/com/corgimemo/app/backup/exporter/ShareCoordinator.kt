@@ -205,4 +205,67 @@ object ShareCoordinator {
             }
         }
     }
+
+    /**
+     * 用户在弹窗中选择了"保存到相册"
+     *
+     * 与 [shareOneByOne] 对称，但走"保存到相册"路径而非"系统分享 Intent"路径。
+     *
+     * 流程：每个 todo 生成分享卡片 Bitmap → [InspirationScreenshot.saveToGallery] 写入 MediaStore
+     * → 统计成功/失败数量 → 通过回调汇报进度和最终结果。
+     *
+     * 统一入口原因（v2026-07-30 重构）：
+     * - 之前 MainScreen / TodoEditScreen / HomeScreen 三处各自内联实现，
+     *   其中 MainScreen 和 TodoEditScreen 误用 [shareOneByOne]（启动系统分享 Intent），
+     *   导致"保存到相册"按钮误弹系统分享面板。
+     * - 抽到此方法后，三处调用方共用同一逻辑，避免行为漂移。
+     *
+     * @param context 上下文
+     * @param todos 待保存的 todo 列表
+     * @param categories 分类列表
+     * @param todoImagePaths 各待办的图片路径映射（key = todoId, value = 图片路径列表）
+     * @param subTaskImagePaths 各子任务的图片路径映射（key = subTaskId, value = 图片路径列表）
+     * @param onProgress 进度回调（current 当前已处理条数, total 总条数）
+     *                   - 多条场景下每处理完一条触发一次，调用方可用于更新"正在保存 (X/Y)"提示
+     * @param onResult 最终结果回调（successCount 成功条数, failCount 失败条数）
+     *                  - 由调用方组织 Snackbar 文案（如"已保存 N 张到相册"）
+     */
+    suspend fun saveToAlbumOneByOne(
+        context: Context,
+        todos: List<TodoItem>,
+        categories: List<Category>,
+        todoImagePaths: Map<Long, List<String>>,
+        subTaskImagePaths: Map<Long, List<String>>,
+        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+        onResult: (successCount: Int, failCount: Int) -> Unit
+    ) {
+        var successCount = 0
+        var failCount = 0
+        val total = todos.size
+
+        for ((index, todo) in todos.withIndex()) {
+            try {
+                val imgPaths = todoImagePaths[todo.id] ?: emptyList()
+                // 生成分享卡片 Bitmap（与 HomeScreen 左滑分享一致）
+                val bitmap = ImageExporter.createTodoShareCard(
+                    context = context,
+                    todo = todo,
+                    category = categories.find { it.id == todo.categoryId },
+                    subTodos = com.corgimemo.app.data.repository.SubTaskManager.getSubTasks(context, todo.id),
+                    imagePaths = imgPaths,
+                    subTaskImagePaths = subTaskImagePaths,
+                    relationCount = 0
+                )
+                // 写入 MediaStore（API 29+ 无需权限）
+                val uri = com.corgimemo.app.util.InspirationScreenshot.saveToGallery(context, bitmap)
+                if (uri != null) successCount++ else failCount
+            } catch (e: Exception) {
+                failCount++
+            }
+            // 汇报进度（已处理 index+1 条）
+            onProgress?.invoke(index + 1, total)
+        }
+
+        onResult(successCount, failCount)
+    }
 }
