@@ -93,6 +93,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.corgimemo.app.backup.exporter.ImageExporter
 import com.corgimemo.app.backup.exporter.ShareCoordinator
 import com.corgimemo.app.data.model.Category
 import com.corgimemo.app.data.repository.RepeatTaskManager
@@ -2167,18 +2168,38 @@ fun TodoEditScreen(
             onSaveToAlbum = {
                 showShareModeDialog = false
                 coroutineScope.launch {
+                    // 与 HomeScreen 左滑分享"保存到相册"行为一致：
+                    // 逐条生成分享卡片 Bitmap → saveToGallery 写入 MediaStore → Snackbar 提示
+                    // 不走 ShareCoordinator.shareOneByOne（其内部启动系统分享 Intent，会弹系统分享面板）
                     val todoIds = shareTodosSnapshot.map { it.id }
                     val (todoImgMap, subTaskImgMap) = viewModel.getAttachmentsForShare(todoIds)
-                    ShareCoordinator.shareOneByOne(
-                        context = context,
-                        todos = shareTodosSnapshot,
-                        categories = categories,
-                        todoImagePaths = todoImgMap,
-                        subTaskImagePaths = subTaskImgMap,
-                        onShowSnackBar = { msg ->
-                            coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                    var successCount = 0
+                    var failCount = 0
+                    for (todo in shareTodosSnapshot) {
+                        try {
+                            val imgPaths = todoImgMap[todo.id] ?: emptyList()
+                            val bitmap = ImageExporter.createTodoShareCard(
+                                context = context,
+                                todo = todo,
+                                category = categories.find { it.id == todo.categoryId },
+                                subTodos = com.corgimemo.app.data.repository.SubTaskManager.getSubTasks(context, todo.id),
+                                imagePaths = imgPaths,
+                                subTaskImagePaths = subTaskImgMap,
+                                relationCount = 0
+                            )
+                            val uri = com.corgimemo.app.util.InspirationScreenshot.saveToGallery(context, bitmap)
+                            if (uri != null) successCount++ else failCount++
+                        } catch (e: Exception) {
+                            failCount++
                         }
-                    )
+                    }
+                    // 按"成功 / 部分成功 / 全部失败"三种情况给出 Snackbar 提示
+                    val msg = when {
+                        failCount == 0 -> "已保存 $successCount 张到相册"
+                        successCount == 0 -> "保存失败"
+                        else -> "成功 $successCount 张，失败 $failCount 张"
+                    }
+                    snackbarHostState.showSnackbar(msg)
                 }
             },
             onMoreShare = {
