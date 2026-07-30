@@ -162,6 +162,20 @@ class CategoryRepository @Inject constructor(
     }
 
     /**
+     * 重命名分类（v2026-07-30 新增，修复闪退 Bug）
+     *
+     * 历史问题：原实现走 [insertCategory] 插入带已存在主键的记录，
+     * 触发 SQLite UNIQUE 约束冲突导致 APP 闪退。
+     * 现改为直接调用 [CategoryDao.renameCategory] 用 UPDATE 语句按主键更新 name 字段。
+     *
+     * @param id 分类 ID
+     * @param newName 新名称（调用方应已 trim 并校验非空）
+     */
+    suspend fun renameCategory(id: Long, newName: String) = withContext(ioDispatcher) {
+        categoryDao.renameCategory(id, newName)
+    }
+
+    /**
      * 批量更新分类排序（v2026-07-27 新增，P8 Phase 1 实施）
      *
      * GROUP Tab 拖拽后由 ViewModel 调用。

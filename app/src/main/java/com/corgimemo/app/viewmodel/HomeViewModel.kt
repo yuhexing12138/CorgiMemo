@@ -1792,8 +1792,10 @@ class HomeViewModel @Inject constructor(
      */
     fun renameCategory(id: Long, newName: String) {
         viewModelScope.launch {
-            val category = categoryRepository.getCategoryById(id) ?: return@launch
-            categoryRepository.insertCategory(category.copy(name = newName))
+            // v2026-07-30 修复闪退 Bug：
+            // 原实现调用 insertCategory 插入带已存在主键的记录，触发 UNIQUE 约束冲突导致 APP 闪退。
+            // 现改为调用 repository.renameCategory，内部走 @Query UPDATE 按 id 更新 name 字段。
+            categoryRepository.renameCategory(id, newName)
         }
     }
 

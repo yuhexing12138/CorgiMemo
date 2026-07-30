@@ -90,6 +90,21 @@ interface CategoryDao {
     @Query("UPDATE categories SET isPinned = :isPinned WHERE id = :id")
     suspend fun setPinned(id: Long, isPinned: Boolean)
 
+    /**
+     * 重命名分类（v2026-07-30 新增，修复闪退 Bug）
+     *
+     * 历史问题：原 [HomeViewModel.renameCategory] 误用 [insert] 插入带已存在主键的记录，
+     * 触发 `UNIQUE constraint failed: categories.id` 导致 APP 闪退。
+     * 改用 @Query UPDATE 直接按主键更新 name 字段，避免冲突。
+     *
+     * 由 [com.corgimemo.app.data.repository.CategoryRepository.renameCategory] 调用。
+     *
+     * @param id 分类 ID
+     * @param newName 新名称（调用方应已 trim 并校验非空）
+     */
+    @Query("UPDATE categories SET name = :newName WHERE id = :id")
+    suspend fun renameCategory(id: Long, newName: String)
+
     @Query("DELETE FROM categories")
     suspend fun deleteAll()
 }
