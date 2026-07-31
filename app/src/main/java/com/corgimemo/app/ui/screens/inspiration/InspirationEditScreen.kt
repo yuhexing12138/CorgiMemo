@@ -135,9 +135,6 @@ import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import com.mohamedrejeb.richeditor.ui.material3.TriggerSuggestions
-import com.corgimemo.app.ui.components.RichTextImageLoader /** v2026-08-01 Phase 4：自定义 Coil3 图片加载器 */
-import androidx.compose.ui.text.TextRange /** v2026-08-01 Phase 4：图片插入时需要 TextRange 选中占位符 */
-import androidx.compose.ui.unit.sp /** v2026-08-01 Phase 4：RichSpanStyle.Image 的 width/height 参数 */
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -305,31 +302,6 @@ fun InspirationEditScreen(
     }
 
     /**
-     * v2026-08-01 Phase 4：在光标位置内联插入图片到 RichTextEditor
-     *
-     * 实现原理（参照库的 Markdown 解析器）：
-     * 1. 在当前光标位置插入 Unicode 占位符 \uFFFD（InlineContentPlaceholder）
-     * 2. 选中刚插入的占位符字符（TextRange: cursorPos to cursorPos+1）
-     * 3. 对该范围应用 RichSpanStyle.Image，库自动将其渲染为 inline 图片
-     *
-     * width/height 设为 0.sp：库会从 ImageLoader 返回的 Painter 的 intrinsic size
-     * 自动解析实际尺寸，并通过 LocalRichTextMaxImageWidthProvider 做容器宽度 clamp。
-     *
-     * @param imagePath 图片在内部存储的文件路径
-     */
-    fun insertImageIntoRichText(imagePath: String) {
-        val cursorPos = richTextState.selection.start
-        richTextState.addTextAfterSelection("\uFFFD")
-        val imageSpan = RichSpanStyle.Image(
-            model = imagePath,
-            width = 0.sp,
-            height = 0.sp,
-            contentDescription = "插入的图片"
-        )
-        richTextState.addRichSpan(imageSpan, TextRange(cursorPos, cursorPos + 1))
-    }
-
-    /**
      * 相机拍照 Launcher
      *
      * 使用 ActivityResultContracts.TakePicture() 契约，
@@ -347,9 +319,13 @@ fun InspirationEditScreen(
                 coroutineScope.launch {
                     val savedPath = com.corgimemo.app.util.ImageUtils.copyUriToInternalStorage(context, uri)
                     savedPath?.let { path ->
-                        /** v2026-08-01 Phase 4：图片内联到 RichTextEditor，不再添加 ContentBlock.Image */
+                        /** v2026-08-01 Phase 4 回退：图片作为独立 ContentBlock.Image 渲染 */
                         viewModel.addImagePath(path)
-                        insertImageIntoRichText(path)
+                        val insertIndex = contentBlocks.size
+                        contentBlocks.add(ContentBlock.Image(path))
+                        /** 推送插入操作到撤销栈 + 同步 ViewModel */
+                        viewModel.pushBlockInsertedOperation(insertIndex)
+                        viewModel.syncContentBlocks(contentBlocks.toList())
                     }
                 }
             }
@@ -369,9 +345,13 @@ fun InspirationEditScreen(
             uris.forEach { uri ->
                 val savedPath = ImageUtils.copyUriToInternalStorage(context, uri)
                 savedPath?.let { path ->
-                    /** v2026-08-01 Phase 4：图片内联到 RichTextEditor，不再添加 ContentBlock.Image */
+                    /** v2026-08-01 Phase 4 回退：图片作为独立 ContentBlock.Image 渲染 */
                     viewModel.addImagePath(path)
-                    insertImageIntoRichText(path)
+                    val insertIndex = contentBlocks.size
+                    contentBlocks.add(ContentBlock.Image(path))
+                    /** 推送插入操作到撤销栈 + 同步 ViewModel */
+                    viewModel.pushBlockInsertedOperation(insertIndex)
+                    viewModel.syncContentBlocks(contentBlocks.toList())
                 }
             }
         }
@@ -1346,12 +1326,19 @@ fun InspirationEditScreen(
 
                 when (block) {
                     /**
-                     * v2026-08-01 Phase 4：图片已内联到 RichTextEditor（RichSpanStyle.Image），
-                     * 不再作为独立 ContentBlock 渲染。
-                     * 旧数据的 ContentBlock.Image 会在 ViewModel.loadInspiration 中
-                     * 迁移为 Markdown ![图片](path) 语法，导入到 richTextState。
+                     * v2026-08-01 Phase 4 回退：图片作为独立 ContentBlock.Image 块状渲染。
+                     * 原因：Compose 1.11.0 的 BasicTextField 移除了 inlineContent 参数，
+                     * 编辑模式下 RichSpanStyle.Image 只能显示占位符，无法渲染实际图片。
+                     * 改回非内联方案，图片在编辑器下方/之间独立显示。
                      */
-                    is ContentBlock.Image -> { /* 已迁移到 RichTextEditor 内联 */ }
+                    is ContentBlock.Image -> {
+                        com.corgimemo.app.ui.components.InlineImagePreview(
+                            imageUri = block.path,
+                            modifier = baseModifier,
+                            isHighlighted = index == highlightedIndex
+                            /** V2.8: 移除 isVisible 参数，图片始终渲染避免滚动时变成占位符 */
+                        )
+                    }
                     is ContentBlock.Voice -> {
                         com.corgimemo.app.ui.components.VoicePlayerComponent(
                             voicePlayer = voicePlayer,
@@ -1460,8 +1447,6 @@ fun InspirationEditScreen(
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     color = MaterialTheme.colorScheme.onSurface
                 ),
-                /** v2026-08-01 Phase 4：传入自定义 Coil3 图片加载器，使 RichSpanStyle.Image 在编辑模式下渲染实际图片 */
-                imageLoader = RichTextImageLoader,
                 colors = RichTextEditorDefaults.richTextEditorColors(
                     /** 容器背景透明，跟随全局主题色 */
                     containerColor = Color.Transparent,

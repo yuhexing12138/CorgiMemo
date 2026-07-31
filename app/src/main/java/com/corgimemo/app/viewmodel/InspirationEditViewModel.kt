@@ -889,51 +889,13 @@ class InspirationEditViewModel @Inject constructor(
                 }
 
                 /**
-                 * v2026-08-01 Phase 4：图片块迁移逻辑
-                 *
-                 * 把 content_blocks 表中的旧 ContentBlock.Image 迁移为 Markdown 图片语法，
-                 * 让 RichTextEditor 通过 setMarkdown 自动恢复为 RichSpanStyle.Image 内联图片。
-                 *
-                 * **迁移策略**：
-                 * 1. 从 content_blocks 表加载所有块
-                 * 2. 提取 Image 块的文件路径
-                 * 3. 检查 Markdown 中是否已含这些路径的 ![图片](path) 语法
-                 * 4. 若无，则在 Markdown 末尾追加图片语法
-                 * 5. 重新 setMarkdown 让库解析为 RichSpanStyle.Image
-                 *
-                 * **注意**：
-                 * - loadContentBlocks() 已改为只返回 Voice 块（过滤掉 Image 块）
-                 * - 保存时 saveContentBlocks 会自动清理旧的 Image 块（先删后写）
-                 * - _imagePaths 同步更新为 Markdown 中解析出的路径列表
+                 * v2026-08-01 Phase 4 回退：图片不再迁移为 Markdown 内联语法。
+                 * 图片作为独立 ContentBlock.Image 块加载，由 UI 层 contentBlocks 渲染。
+                 * _imagePaths 从数据库的 Image 块同步（用于文件清理追踪）。
                  */
                 val dbBlocks = contentBlockDao.getBlocksByTodoId(inspirationId, ownerType = "inspiration")
                 val imageBlocks = dbBlocks.filter { it.type == "image" }
-                if (imageBlocks.isNotEmpty()) {
-                    val existingImagePaths = extractImagePathsFromMarkdown(_contentFormat.value).toSet()
-                    val pathsToMigrate = imageBlocks.map { it.filePath }.filter { it !in existingImagePaths }
-                    if (pathsToMigrate.isNotEmpty()) {
-                        val migratedMarkdown = buildString {
-                            append(_contentFormat.value)
-                            if (_contentFormat.value.isNotEmpty() && !_contentFormat.value.endsWith("\n")) {
-                                append("\n\n")
-                            }
-                            pathsToMigrate.forEach { path ->
-                                append("![图片]($path)\n\n")
-                            }
-                            val result = toString().trimEnd()
-                            clear()
-                            append(result)
-                        }
-                        _contentFormat.value = migratedMarkdown
-                        _richTextState?.let { state ->
-                            state.setMarkdown(migratedMarkdown)
-                            _content.value = state.annotatedString.text
-                        }
-                    }
-                }
-
-                /** 从 Markdown 同步 _imagePaths（用于文件清理追踪） */
-                _imagePaths.value = extractImagePathsFromMarkdown(_contentFormat.value)
+                _imagePaths.value = imageBlocks.map { it.filePath }
 
                 val subTasks = SubTaskManager.getSubTasks(context, inspirationId)
                 _subTasks.value = subTasks
@@ -1056,8 +1018,8 @@ class InspirationEditViewModel @Inject constructor(
             /** 同步更新 _contentFormat 和 _content（不等防抖） */
             _contentFormat.value = liveMarkdown
             _content.value = liveText
-            /** v2026-08-01 Phase 4：同步 _imagePaths（用于文件清理追踪） */
-            _imagePaths.value = extractImagePathsFromMarkdown(liveMarkdown)
+            /** v2026-08-01 Phase 4 回退：_imagePaths 不再从 Markdown 解析，
+             *  由 addImagePath() 和 contentBlocks 中的 Image 块维护 */
         } else {
             liveText = _content.value
         }
@@ -1352,43 +1314,18 @@ class InspirationEditViewModel @Inject constructor(
     suspend fun loadContentBlocks(inspirationId: Long): List<ContentBlock> {
         // v2026-07-25 ownerType 过滤：灵感查询传 "inspiration"，避免与待办 ID 冲突
         val entities = contentBlockDao.getBlocksByTodoId(inspirationId, ownerType = "inspiration")
-        return entities.mapNotNull { entity ->
+        return entities.map { entity ->
             when (entity.type) {
                 /**
-                 * v2026-08-01 Phase 4：Image 块已迁移到 Markdown 内联图片，
-                 * 不再作为独立 ContentBlock 返回。旧数据在 loadInspiration 中已迁移。
+                 * v2026-08-01 Phase 4 回退：Image 块作为独立 ContentBlock 返回。
+                 * 原因：编辑模式下 BasicTextField 不支持 inlineContent，无法渲染内联图片，
+                 * 改回非内联方案，图片作为独立块在编辑器下方/之间显示。
                  */
-                "image" -> null
+                "image" -> ContentBlock.Image(entity.filePath)
                 "voice" -> ContentBlock.Voice(entity.filePath, entity.duration)
-                else -> null
+                else -> ContentBlock.Text("") // 兜底
             }
         }
-    }
-
-    /**
-     * v2026-08-01 Phase 4：从 Markdown 中提取图片路径列表
-     *
-     * 解析标准 Markdown 图片语法 `![alt](path)`，提取所有图片的文件路径。
-     * 用于：
-     * - 加载时同步 _imagePaths（文件清理追踪）
-     * - 迁移时检测已有图片路径（避免重复追加）
-     *
-     * @param markdown 富文本 Markdown 字符串
-     * @return 图片文件路径列表（保持出现顺序，去重）
-     */
-    private fun extractImagePathsFromMarkdown(markdown: String): List<String> {
-        if (markdown.isBlank()) return emptyList()
-        /** 匹配 ![任意文字](路径) 格式的图片语法 */
-        val pattern = Regex("""!\[[^\]]*\]\(([^)]+)\)""")
-        val pathSet = linkedSetOf<String>()
-        pattern.findAll(markdown).forEach { match ->
-            val path = match.groupValues[1].trim()
-            if (path.isNotEmpty() && !path.startsWith("trigger:")) {
-                /** 排除 trigger token（如 [#标签](trigger:hashtag:xxx)） */
-                pathSet.add(path)
-            }
-        }
-        return pathSet.toList()
     }
 
     /**
@@ -1698,8 +1635,8 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setContentFormat(markdown: String) {
         _contentFormat.value = markdown
-        /** v2026-08-01 Phase 4：同步 _imagePaths（用于文件清理追踪） */
-        _imagePaths.value = extractImagePathsFromMarkdown(markdown)
+        /** v2026-08-01 Phase 4 回退：_imagePaths 不再从 Markdown 解析，
+         *  由 addImagePath() 和 contentBlocks 中的 Image 块维护 */
         _isDirty.value = true
     }
 
@@ -1736,8 +1673,8 @@ class InspirationEditViewModel @Inject constructor(
             val markdown = _richTextState?.toMarkdown()
                 ?: com.corgimemo.app.util.MarkdownParser.export(annotatedString)
             _contentFormat.value = markdown
-            /** v2026-08-01 Phase 4：同步 _imagePaths（用于文件清理追踪） */
-            _imagePaths.value = extractImagePathsFromMarkdown(markdown)
+            /** v2026-08-01 Phase 4 回退：_imagePaths 不再从 Markdown 解析，
+             *  由 addImagePath() 和 contentBlocks 中的 Image 块维护 */
             /**
              * v2026-07-31 Phase 2 重构：tags 派生流自动同步
              *
