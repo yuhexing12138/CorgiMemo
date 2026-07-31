@@ -75,6 +75,8 @@ import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -976,10 +978,53 @@ fun InspirationEditScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            /** ===== 标题区（独立大标题）===== */
+            /**
+             * v2026-07-31 标题 OutlinedTextField
+             *
+             * 改用 `state: TextFieldState` 重载（Material 3 1.9+ 引入），
+             * 原因：`value: String` 重载**不支持 contentPadding 参数**，
+             * 而默认 16dp 水平 padding 会让标题文字起点 = Column padding(8dp) + 16dp = 24dp，
+             * 与下方时间戳+字数 Row (起点 8dp) 和 RichTextEditor 正文 (起点 8dp) 不对齐。
+             *
+             * 改用 TextFieldState 重载后，可显式传 `contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp)`，
+             * 让标题文字起点 = Column padding(8dp) + 0dp = **8dp**，
+             * 与时间戳+字数 Row (起点 8dp) 和 RichTextEditor 正文 (起点 8dp) **完全左对齐**。
+             *
+             * **双向同步策略**：
+             * 1. state → viewModel：用 `snapshotFlow { state.text }` 监听用户输入，调用 `viewModel.setTitleWithRecommendation()`
+             * 2. viewModel → state：用 `LaunchedEffect(title)` 仅在 viewModel 主动设置 title（如 loadInspiration）时同步
+             * 3. 防止循环：用 `if (newText != title)` 判断避免重复触发
+             */
+            val titleFieldState = rememberTextFieldState(initialText = title)
+
+            /** 单向同步：viewModel.title 变化时（loadInspiration / 外部调用 setTitle）→ state */
+            LaunchedEffect(title) {
+                if (titleFieldState.text.toString() != title) {
+                    titleFieldState.edit {
+                        replace(0, length, title)
+                    }
+                }
+            }
+
+            /** 单向同步：state.text 变化时（用户输入）→ viewModel.title */
+            LaunchedEffect(titleFieldState) {
+                snapshotFlow { titleFieldState.text.toString() }
+                    .collect { newText ->
+                        if (newText != title && !isLocked) {
+                            viewModel.setTitleWithRecommendation(newText)
+                        }
+                    }
+            }
+
             OutlinedTextField(
-                value = title,
-                onValueChange = { if (!isLocked) viewModel.setTitleWithRecommendation(it) },
+                state = titleFieldState,
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    disabledBorderColor = Color.Transparent,
+                    cursorColor = Color(0xFFFF9A5C)
+                ),
                 placeholder = {
                     Text(
                         "标题",
@@ -988,23 +1033,10 @@ fun InspirationEditScreen(
                         )
                     )
                 },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    disabledBorderColor = Color.Transparent,
-                    cursorColor = Color(0xFFFF9A5C)
-                ),
                 /**
                  * v2026-07-31 左对齐修复：
-                 * Material 3 OutlinedTextField 默认 contentPadding.horizontal = 16dp，
-                 * 会让标题文字起点偏移到 8dp (Column padding) + 16dp = 24dp，
-                 * 与下方时间戳+字数行 (起点 8dp) 和 RichTextEditor 正文 (起点 8dp) 不对齐。
-                 *
-                 * 改为 horizontal = 0.dp，标题文字起点 = 8dp (Column padding) + 0 = 8dp，
-                 * 与时间戳行 / RichTextEditor / 标签 / 关联卡片 起点完全一致，
-                 * 视觉上全部"贴 Column 左边内边缘"，与详情页 InspirationViewCard 排版风格统一。
+                 * 水平 padding 设为 0.dp，让标题文字起点 = Column padding(8dp) + 0 = **8dp**，
+                 * 与下方时间戳+字数 Row (起点 8dp) 和 RichTextEditor 正文 (起点 8dp) 完全左对齐。
                  * vertical 保持 8dp，标题上下仍有合适的呼吸空间。
                  */
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
