@@ -25,9 +25,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import com.corgimemo.app.util.TagUtils
 import javax.inject.Inject
@@ -154,12 +157,66 @@ class InspirationEditViewModel @Inject constructor(
     // ========== 标签相关状态 ==========
 
     /**
-     * 标签列表状态
-     * 用于 UI 层展示和管理灵感标签，支持增删改查
-     * 保存时自动编码为 JSON 字符串存入 Inspiration.tags 字段
+     * 标签列表状态（v2026-07-31 重构：实时派生自 Markdown 内容）
+     *
+     * **设计变更背景**：
+     * 原本 `_tags` 是独立的 MutableStateFlow，由 UI 层通过 `updateTags()` 同步维护，
+     * 与正文内容分离存储。Phase 2 重构引入 compose-rich-editor 的 # Trigger 后，
+     * 标签以 atomic token 形式内联在正文中（如 `[#工作](trigger:hashtag:工作)`），
+     * 用户在正文里直接增删标签 token，独立维护 `_tags` 会与正文不同步。
+     *
+     * **新方案（实时派生）**：
+     * - 删除 `_tags` 可变状态
+     * - `tags` 改为 `_contentFormat` 的 map 派生 StateFlow（定义在 `_contentFormat` 之后）
+     * - 每当 `_contentFormat` 变化（用户输入触发 `scheduleFormatExport` 防抖更新，
+     *   或 `performSave` 同步更新）时，自动从 Markdown 提取标签 token
+     * - 保存时 `encodeTags(tags.value)` 即可，无需额外同步逻辑
+     *
+     * **兼容性**：
+     * - UI 层 `viewModel.tags.collectAsState()` 调用不变
+     * - 旧数据（contentFormat 中无 token 但 inspiration.tags 非空）由
+     *   [loadInspiration] 中的迁移逻辑处理：把旧标签追加为 token 到 markdown
      */
-    private val _tags = MutableStateFlow<List<String>>(emptyList())
-    val tags: StateFlow<List<String>> = _tags.asStateFlow()
+
+    /**
+     * 从 Markdown 文本中提取所有 # Trigger 产生的标签 token
+     *
+     * compose-rich-editor 库将 # Trigger 选中的标签序列化为 Markdown 链接形式：
+     * ```
+     * [#标签名](trigger:hashtag:标签ID)
+     * ```
+     * 本方法用正则匹配所有该模式的 token，提取 `标签名`（去掉 # 前缀）并去重。
+     *
+     * **为何用正则而非解析 Markdown AST**：
+     * - Markdown 导出后是纯字符串，无现成 AST 工具
+     * - 正则匹配简单高效，且 token 格式由库固定，不会变化
+     * - 即使 Markdown 中有其他普通 `[]()` 链接，由于 URL 部分以 `trigger:hashtag:` 开头，
+     *   不会被误匹配
+     *
+     * @param markdown Markdown 格式的字符串（由 RichTextState.toMarkdown() 导出）
+     * @return 去重后的标签名列表（不含 # 前缀），保持首次出现顺序
+     */
+    private fun extractTagsFromMarkdown(markdown: String): List<String> {
+        if (markdown.isBlank()) return emptyList()
+        /**
+         * 正则解释：
+         * - \[#        匹配字面量 "[#"
+         * - ([^\]]+)   捕获组 1：标签名（不含 # 前缀），匹配到 "]" 为止
+         * - \]         匹配字面量 "]"
+         * - \(trigger:hashtag:[^)]*\)  匹配 "(trigger:hashtag:任意ID)"
+         *
+         * 例：[#工作](trigger:hashtag:工作) → 捕获 "工作"
+         */
+        val pattern = Regex("""\[#([^\]]+)\]\(trigger:hashtag:[^)]*\)""")
+        val tagSet = linkedSetOf<String>()
+        pattern.findAll(markdown).forEach { match ->
+            val tagName = match.groupValues[1].trim()
+            if (tagName.isNotEmpty()) {
+                tagSet.add(tagName)
+            }
+        }
+        return tagSet.toList()
+    }
 
     /**
      * 历史标签列表状态
@@ -329,6 +386,29 @@ class InspirationEditViewModel @Inject constructor(
      */
     private val _contentFormat = MutableStateFlow("") // 默认空字符串（无格式）
     val contentFormat: StateFlow<String> = _contentFormat.asStateFlow()
+
+    /**
+     * 标签列表 StateFlow（v2026-07-31 重构：派生自 `_contentFormat`）
+     *
+     * **依赖关系**：必须在 `_contentFormat` 定义之后声明，因为 Kotlin 属性初始化按声明顺序执行。
+     *
+     * **工作原理**：
+     * - `_contentFormat` 变化 → `map { extractTagsFromMarkdown(it) }` 自动重新提取
+     * - `stateIn(WhileSubscribed(5_000L))`：有订阅者时启动，无订阅者 5 秒后停止以节省资源
+     * - `initialValue = emptyList()`：首次订阅前的初始值
+     *
+     * **触发时机**：
+     * - 用户输入触发 [scheduleFormatExport] 防抖更新 `_contentFormat` → 标签自动同步
+     * - [performSave] 同步更新 `_contentFormat` → 保存时标签已是最新
+     * - [loadInspiration] 加载旧数据后调用 `setMarkdown()` 并更新 `_contentFormat` → 标签恢复
+     */
+    val tags: StateFlow<List<String>> = _contentFormat
+        .map { extractTagsFromMarkdown(it) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = emptyList()
+        )
 
     /**
      * 富文本编辑器状态（compose-rich-editor 库）
@@ -595,15 +675,22 @@ class InspirationEditViewModel @Inject constructor(
     // ==================== 标签管理方法 ====================
 
     /**
-     * 更新标签列表
-     * 由 UI 层调用，更新当前灵感的标签集合
+     * 标签管理说明（v2026-07-31 Phase 2 重构后）
      *
-     * @param newTags 新的标签列表
+     * **已删除的方法**：
+     * - `updateTags(newTags: List<String>)` —— 标签不再由 UI 层独立维护
+     *
+     * **新方案**：
+     * - 标签以 atomic token 内联在正文中（[#标签名](trigger:hashtag:标签ID)）
+     * - UI 层通过 # Trigger + TriggerSuggestions 直接在正文中插入/删除标签 token
+     * - `tags` StateFlow 派生自 `_contentFormat`，自动同步，无需手动 update
+     * - 保存时 `encodeTags(tags.value)` 自动从 markdown 提取最新标签列表
+     *
+     * **UI 层迁移要点**：
+     * - 删除 TagPickerSheet 弹窗调用
+     * - 删除 FlowRow 标签展示区
+     * - 底部 # 按钮改为 `richTextState.addTextAfterSelection("#")` 触发建议弹窗
      */
-    fun updateTags(newTags: List<String>) {
-        _tags.value = newTags
-        _isDirty.value = true
-    }
 
     // ==================== 加载方法 ====================
 
@@ -660,9 +747,29 @@ class InspirationEditViewModel @Inject constructor(
                  * - Migration 46→47 已清空 inspiration.imagePaths/voiceNotePath 等旧字段
                  */
 
-                /** 加载标签列表（从 JSON 字符串解码为 List<String>） */
-                if (inspiration.tags.isNotBlank()) {
-                    _tags.value = decodeTags(inspiration.tags)
+                /**
+                 * v2026-07-31 Phase 2 重构：标签数据迁移逻辑
+                 *
+                 * **旧行为**：从 inspiration.tags（JSON）解码后赋给 _tags MutableStateFlow
+                 * **新行为**：标签从 markdown 派生，不再独立存储
+                 *
+                 * **迁移场景**：
+                 * - **新数据**（Phase 2 之后保存的灵感）：contentFormat 已包含
+                 *   [#xxx](trigger:hashtag:xxx) 形式的 token，setMarkdown 后自动恢复
+                 * - **旧数据**（Phase 2 之前保存的灵感）：contentFormat 中无 token，
+                 *   但 inspiration.tags 字段非空。需要把旧标签以 token 形式追加到 markdown 末尾，
+                 *   让用户在编辑器中看到旧的标签，并能在保存时正确序列化。
+                 *
+                 * **迁移策略**：
+                 * 1. 先加载原始 contentFormat 到 _contentFormat 和 RichTextState
+                 * 2. 从 markdown 中提取现有标签 token
+                 * 3. 若 inspiration.tags 中的标签未在 markdown 中出现，则追加为 token 到 markdown 末尾
+                 * 4. 更新 _contentFormat 并重新 setMarkdown
+                 */
+                val legacyTags: List<String> = if (inspiration.tags.isNotBlank()) {
+                    decodeTags(inspiration.tags)
+                } else {
+                    emptyList()
                 }
 
                 /** 加载背景颜色（从 ARGB 整数值恢复为 Compose Color） */
@@ -679,6 +786,53 @@ class InspirationEditViewModel @Inject constructor(
                     }
                 }
 
+                /**
+                 * 旧数据迁移：把 inspiration.tags 中未在 markdown 出现的标签追加为 token
+                 *
+                 * 触发条件：
+                 * - legacyTags 非空（旧数据有标签）
+                 * - markdown 中已有的标签集合不含某个旧标签
+                 *
+                 * 追加格式：在 markdown 末尾追加 ` #标签名` 然后用 token 链接包裹：
+                 *   ` [#标签名](trigger:hashtag:标签名)`
+                 * 注意：需要先在 RichTextState 中注册 # Trigger（UI 层负责），
+                 * 但此处仅操作 markdown 字符串，setMarkdown 时库会自动解析 token。
+                 */
+                if (legacyTags.isNotEmpty()) {
+                    val existingTags = extractTagsFromMarkdown(_contentFormat.value).toSet()
+                    val tagsToMigrate = legacyTags.filter { it !in existingTags }
+                    if (tagsToMigrate.isNotEmpty()) {
+                        /**
+                         * 构造迁移后的 markdown：在原 markdown 末尾追加标签 token
+                         *
+                         * 格式说明：
+                         * - 每个标签 token 之间用空格分隔
+                         * - 若原 markdown 非空且不以空格结尾，则先追加一个空格
+                         * - token 格式：[#标签名](trigger:hashtag:标签名)
+                         *   （id 与 label 相同，因为本项目标签无独立 id 体系）
+                         */
+                        val migratedMarkdown = buildString {
+                            append(_contentFormat.value)
+                            if (_contentFormat.value.isNotEmpty() && !_contentFormat.value.endsWith(" ")) {
+                                append(" ")
+                            }
+                            tagsToMigrate.forEach { tag ->
+                                append("[#$tag](trigger:hashtag:$tag) ")
+                            }
+                            /** 移除末尾多余的空格 */
+                            val result = toString().trimEnd()
+                            clear()
+                            append(result)
+                        }
+                        _contentFormat.value = migratedMarkdown
+                        /** 重新 setMarkdown 以让 RichTextState 解析新追加的 token */
+                        _richTextState?.let { state ->
+                            state.setMarkdown(migratedMarkdown)
+                            _content.value = state.annotatedString.text
+                        }
+                    }
+                }
+
                 /** 从 DataStore 恢复跨会话的 Undo/Redo 栈（如有） */
                 restoreUndoStacks(inspirationId)
 
@@ -686,6 +840,100 @@ class InspirationEditViewModel @Inject constructor(
                 _relations.value = cardRelationRepository.getRelationsBlocking("inspiration", inspirationId, 0)
                 // v2026-07-22 新增：加载关联后增量刷新标题缓存
                 refreshRelationTitles()
+
+                /**
+                 * v2026-08-01 Phase 3：关联数据迁移逻辑
+                 *
+                 * 把已有 _relations 转换为 @ token 追加到 markdown 末尾，
+                 * 让用户在编辑器中看到已关联的卡片（以 atomic token 形式内联）。
+                 *
+                 * **迁移策略**：
+                 * 1. 检测 contentFormat 中是否已含 @ mention token
+                 * 2. 若无但 _relations 非空，则把每个关联转换为 token 追加到 markdown 末尾
+                 * 3. token 格式：[@标题](trigger:mention:类型:ID)
+                 *    - id 格式：`类型:ID`（如 `todo:123`），用于序列化和反序列化
+                 *    - label 格式：`@标题`（如 `@买菜`），用于显示
+                 *
+                 * **注意**：
+                 * - 关联的真相源仍是 card_relations 表，token 仅作视觉展示
+                 * - 若用户删除 token，关联不会自动删除（需通过其他入口）
+                 * - 若 contentFormat 已含 @ token（新数据），跳过迁移避免重复
+                 */
+                val hasMentionToken = _contentFormat.value.contains("trigger:mention")
+                if (!hasMentionToken && _relations.value.isNotEmpty()) {
+                    val mentionTokens = _relations.value.mapNotNull { relation ->
+                        val title = _relationTitles.value[relation.id] ?: return@mapNotNull null
+                        val tokenId = "${relation.targetType}:${relation.targetId}"
+                        "[@$title](trigger:mention:$tokenId)"
+                    }
+                    if (mentionTokens.isNotEmpty()) {
+                        val migratedMarkdown = buildString {
+                            append(_contentFormat.value)
+                            if (_contentFormat.value.isNotEmpty() && !_contentFormat.value.endsWith(" ")) {
+                                append(" ")
+                            }
+                            mentionTokens.forEach { token ->
+                                append("$token ")
+                            }
+                            val result = toString().trimEnd()
+                            clear()
+                            append(result)
+                        }
+                        _contentFormat.value = migratedMarkdown
+                        /** 重新 setMarkdown 以让 RichTextState 解析新追加的 token */
+                        _richTextState?.let { state ->
+                            state.setMarkdown(migratedMarkdown)
+                            _content.value = state.annotatedString.text
+                        }
+                    }
+                }
+
+                /**
+                 * v2026-08-01 Phase 4：图片块迁移逻辑
+                 *
+                 * 把 content_blocks 表中的旧 ContentBlock.Image 迁移为 Markdown 图片语法，
+                 * 让 RichTextEditor 通过 setMarkdown 自动恢复为 RichSpanStyle.Image 内联图片。
+                 *
+                 * **迁移策略**：
+                 * 1. 从 content_blocks 表加载所有块
+                 * 2. 提取 Image 块的文件路径
+                 * 3. 检查 Markdown 中是否已含这些路径的 ![图片](path) 语法
+                 * 4. 若无，则在 Markdown 末尾追加图片语法
+                 * 5. 重新 setMarkdown 让库解析为 RichSpanStyle.Image
+                 *
+                 * **注意**：
+                 * - loadContentBlocks() 已改为只返回 Voice 块（过滤掉 Image 块）
+                 * - 保存时 saveContentBlocks 会自动清理旧的 Image 块（先删后写）
+                 * - _imagePaths 同步更新为 Markdown 中解析出的路径列表
+                 */
+                val dbBlocks = contentBlockDao.getBlocksByTodoId(inspirationId, ownerType = "inspiration")
+                val imageBlocks = dbBlocks.filter { it.type == "image" }
+                if (imageBlocks.isNotEmpty()) {
+                    val existingImagePaths = extractImagePathsFromMarkdown(_contentFormat.value).toSet()
+                    val pathsToMigrate = imageBlocks.map { it.filePath }.filter { it !in existingImagePaths }
+                    if (pathsToMigrate.isNotEmpty()) {
+                        val migratedMarkdown = buildString {
+                            append(_contentFormat.value)
+                            if (_contentFormat.value.isNotEmpty() && !_contentFormat.value.endsWith("\n")) {
+                                append("\n\n")
+                            }
+                            pathsToMigrate.forEach { path ->
+                                append("![图片]($path)\n\n")
+                            }
+                            val result = toString().trimEnd()
+                            clear()
+                            append(result)
+                        }
+                        _contentFormat.value = migratedMarkdown
+                        _richTextState?.let { state ->
+                            state.setMarkdown(migratedMarkdown)
+                            _content.value = state.annotatedString.text
+                        }
+                    }
+                }
+
+                /** 从 Markdown 同步 _imagePaths（用于文件清理追踪） */
+                _imagePaths.value = extractImagePathsFromMarkdown(_contentFormat.value)
 
                 val subTasks = SubTaskManager.getSubTasks(context, inspirationId)
                 _subTasks.value = subTasks
@@ -808,6 +1056,8 @@ class InspirationEditViewModel @Inject constructor(
             /** 同步更新 _contentFormat 和 _content（不等防抖） */
             _contentFormat.value = liveMarkdown
             _content.value = liveText
+            /** v2026-08-01 Phase 4：同步 _imagePaths（用于文件清理追踪） */
+            _imagePaths.value = extractImagePathsFromMarkdown(liveMarkdown)
         } else {
             liveText = _content.value
         }
@@ -841,7 +1091,14 @@ class InspirationEditViewModel @Inject constructor(
                 voiceNotePath = null,
                 voiceDuration = null,
                 imagePaths = "",
-                tags = encodeTags(_tags.value), /** 编码标签列表为 JSON 字符串 */
+                /**
+                 * v2026-07-31 Phase 2 重构：tags 从 markdown 实时派生
+                 * - 旧：encodeTags(_tags.value)，_tags 是独立 MutableStateFlow
+                 * - 新：encodeTags(extractTagsFromMarkdown(liveMarkdown))，直接从当前 markdown 提取
+                 * - 同步派生流 tags.value 在 _contentFormat 更新后也会更新，但保存时
+                 *   直接用 liveMarkdown 提取更精确（避免派流还没传播）
+                 */
+                tags = encodeTags(extractTagsFromMarkdown(liveMarkdown)),
                 backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
                 contentFormat = safeContentFormat /** 持久化同步导出的最新富文本内容（Markdown）*/
             )
@@ -852,7 +1109,7 @@ class InspirationEditViewModel @Inject constructor(
             val inspiration = Inspiration(
                 title = _title.value,
                 content = if (liveText.isBlank()) "" else liveText,
-                tags = encodeTags(_tags.value), /** 编码标签列表为 JSON 字符串 */
+                tags = encodeTags(extractTagsFromMarkdown(liveMarkdown)), /** 同上：从 markdown 实时派生 */
                 /**
                  * v2026-07-25 三写存储重构：附件信息已迁移到 content_blocks 表（单一数据源）
                  * 字段保留但不再写入，避免破坏数据库 schema
@@ -1095,13 +1352,43 @@ class InspirationEditViewModel @Inject constructor(
     suspend fun loadContentBlocks(inspirationId: Long): List<ContentBlock> {
         // v2026-07-25 ownerType 过滤：灵感查询传 "inspiration"，避免与待办 ID 冲突
         val entities = contentBlockDao.getBlocksByTodoId(inspirationId, ownerType = "inspiration")
-        return entities.map { entity ->
+        return entities.mapNotNull { entity ->
             when (entity.type) {
-                "image" -> ContentBlock.Image(entity.filePath)
+                /**
+                 * v2026-08-01 Phase 4：Image 块已迁移到 Markdown 内联图片，
+                 * 不再作为独立 ContentBlock 返回。旧数据在 loadInspiration 中已迁移。
+                 */
+                "image" -> null
                 "voice" -> ContentBlock.Voice(entity.filePath, entity.duration)
-                else -> ContentBlock.Text("") // 兜底
+                else -> null
             }
         }
+    }
+
+    /**
+     * v2026-08-01 Phase 4：从 Markdown 中提取图片路径列表
+     *
+     * 解析标准 Markdown 图片语法 `![alt](path)`，提取所有图片的文件路径。
+     * 用于：
+     * - 加载时同步 _imagePaths（文件清理追踪）
+     * - 迁移时检测已有图片路径（避免重复追加）
+     *
+     * @param markdown 富文本 Markdown 字符串
+     * @return 图片文件路径列表（保持出现顺序，去重）
+     */
+    private fun extractImagePathsFromMarkdown(markdown: String): List<String> {
+        if (markdown.isBlank()) return emptyList()
+        /** 匹配 ![任意文字](路径) 格式的图片语法 */
+        val pattern = Regex("""!\[[^\]]*\]\(([^)]+)\)""")
+        val pathSet = linkedSetOf<String>()
+        pattern.findAll(markdown).forEach { match ->
+            val path = match.groupValues[1].trim()
+            if (path.isNotEmpty() && !path.startsWith("trigger:")) {
+                /** 排除 trigger token（如 [#标签](trigger:hashtag:xxx)） */
+                pathSet.add(path)
+            }
+        }
+        return pathSet.toList()
     }
 
     /**
@@ -1411,6 +1698,8 @@ class InspirationEditViewModel @Inject constructor(
      */
     fun setContentFormat(markdown: String) {
         _contentFormat.value = markdown
+        /** v2026-08-01 Phase 4：同步 _imagePaths（用于文件清理追踪） */
+        _imagePaths.value = extractImagePathsFromMarkdown(markdown)
         _isDirty.value = true
     }
 
@@ -1447,6 +1736,15 @@ class InspirationEditViewModel @Inject constructor(
             val markdown = _richTextState?.toMarkdown()
                 ?: com.corgimemo.app.util.MarkdownParser.export(annotatedString)
             _contentFormat.value = markdown
+            /** v2026-08-01 Phase 4：同步 _imagePaths（用于文件清理追踪） */
+            _imagePaths.value = extractImagePathsFromMarkdown(markdown)
+            /**
+             * v2026-07-31 Phase 2 重构：tags 派生流自动同步
+             *
+             * 此处更新 _contentFormat.value 后，tags StateFlow（派生自 _contentFormat）
+             * 会自动通过 map { extractTagsFromMarkdown(it) } 重新计算标签列表。
+             * 无需显式调用 extractTagsFromMarkdown，避免双重维护。
+             */
             /** 同步纯文本内容（用于搜索/字数统计） */
             _content.value = annotatedString.text
         }

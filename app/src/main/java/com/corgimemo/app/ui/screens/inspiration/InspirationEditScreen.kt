@@ -2,6 +2,8 @@ package com.corgimemo.app.ui.screens.inspiration
 
 import android.net.Uri
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
@@ -38,6 +40,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.filled.Lock
@@ -54,7 +57,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -75,8 +77,6 @@ import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,10 +98,14 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.data.model.CardRelation
+import com.corgimemo.app.data.model.CardSearchResult /** v2026-08-01 Phase 3：@ Trigger 搜索结果数据类 */
 import com.corgimemo.app.ui.components.AppSnackbarHost
-import com.corgimemo.app.ui.components.LinkedCardsRow /** v2026-07-22 新增：关联卡片 Chip 流展示组件 */
-import com.corgimemo.app.ui.components.LinkedCardPreviewDialog /** v2026-07-22 新增：关联卡片预览弹窗 */
-import com.corgimemo.app.ui.components.RelationPickerBottomSheet /** v2026-07-22 新增：多选关联选择 BottomSheet */
+/**
+ * v2026-08-01 Phase 3：以下 import 已移除（关联改为 @ Trigger 内联插入）
+ * - LinkedCardsRow（关联 Chip 流展示，改用 @ atomic token）
+ * - LinkedCardPreviewDialog（关联预览弹窗，已移除）
+ * - RelationPickerBottomSheet（多选关联 BottomSheet，改用 TriggerSuggestions）
+ */
 import com.corgimemo.app.ui.components.LocationPicker
 import com.corgimemo.app.ui.components.VoiceRecordBottomSheet
 import com.corgimemo.app.ui.components.DeleteConfirmDialog /** 删除确认对话框（防误触）*/
@@ -122,12 +126,18 @@ import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.InspirationEditViewModel
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationEditBottomBar /** 灵感编辑页底部栏（5 按钮 + 可折叠格式工具栏）*/
-import com.corgimemo.app.ui.screens.inspiration.components.TagPickerSheet /** 标签选择弹窗组件（灵感独有功能）*/
 import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils /** v2026-07-31 新增：标题与正文之间"时间戳+字数"行所需的字数统计工具 */
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
+import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
+import com.mohamedrejeb.richeditor.model.RichSpanStyle
+import com.mohamedrejeb.richeditor.model.Trigger
 import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
+import com.mohamedrejeb.richeditor.ui.material3.TriggerSuggestions
+import com.corgimemo.app.ui.components.RichTextImageLoader /** v2026-08-01 Phase 4：自定义 Coil3 图片加载器 */
+import androidx.compose.ui.text.TextRange /** v2026-08-01 Phase 4：图片插入时需要 TextRange 选中占位符 */
+import androidx.compose.ui.unit.sp /** v2026-08-01 Phase 4：RichSpanStyle.Image 的 width/height 参数 */
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -172,7 +182,7 @@ fun InspirationEditScreen(
 
     /** ★★★ 标签列表状态（灵感独有功能）★★★ */
     val tags by viewModel.tags.collectAsState()
-    /** ★ 历史标签列表（从所有灵感聚合去重，用于 TagPickerSheet 快速选择）★ */
+    /** ★ 历史标签列表（从所有灵感聚合去重，用于 TriggerSuggestions 快速选择）★ */
     val savedTags by viewModel.savedTags.collectAsState()
 
     val context = LocalContext.current
@@ -294,12 +304,9 @@ fun InspirationEditScreen(
                 coroutineScope.launch {
                     val savedPath = com.corgimemo.app.util.ImageUtils.copyUriToInternalStorage(context, uri)
                     savedPath?.let { path ->
+                        /** v2026-08-01 Phase 4：图片内联到 RichTextEditor，不再添加 ContentBlock.Image */
                         viewModel.addImagePath(path)
-                        val insertIndex = contentBlocks.size
-                        contentBlocks.add(ContentBlock.Image(path))
-                        /** 推送插入操作到撤销栈 + 同步 ViewModel */
-                        viewModel.pushBlockInsertedOperation(insertIndex)
-                        viewModel.syncContentBlocks(contentBlocks.toList())
+                        insertImageIntoRichText(path)
                     }
                 }
             }
@@ -319,12 +326,9 @@ fun InspirationEditScreen(
             uris.forEach { uri ->
                 val savedPath = ImageUtils.copyUriToInternalStorage(context, uri)
                 savedPath?.let { path ->
+                    /** v2026-08-01 Phase 4：图片内联到 RichTextEditor，不再添加 ContentBlock.Image */
                     viewModel.addImagePath(path)
-                    val insertIndex = contentBlocks.size
-                    contentBlocks.add(ContentBlock.Image(path))
-                    /** 推送插入操作到撤销栈 + 同步 ViewModel */
-                    viewModel.pushBlockInsertedOperation(insertIndex)
-                    viewModel.syncContentBlocks(contentBlocks.toList())
+                    insertImageIntoRichText(path)
                 }
             }
         }
@@ -385,26 +389,91 @@ fun InspirationEditScreen(
         viewModel.setRichTextState(richTextState)
     }
 
+    /**
+     * v2026-08-01 Phase 4：在光标位置内联插入图片到 RichTextEditor
+     *
+     * 实现原理（参照库的 Markdown 解析器）：
+     * 1. 在当前光标位置插入 Unicode 占位符 \uFFFD（InlineContentPlaceholder）
+     * 2. 选中刚插入的占位符字符（TextRange: cursorPos to cursorPos+1）
+     * 3. 对该范围应用 RichSpanStyle.Image，库自动将其渲染为 inline 图片
+     *
+     * width/height 设为 0.sp：库会从 ImageLoader 返回的 Painter 的 intrinsic size
+     * 自动解析实际尺寸，并通过 LocalRichTextMaxImageWidthProvider 做容器宽度 clamp。
+     *
+     * @param imagePath 图片在内部存储的文件路径
+     */
+    fun insertImageIntoRichText(imagePath: String) {
+        val cursorPos = richTextState.selection.start
+        richTextState.addTextAfterSelection("\uFFFD")
+        val imageSpan = RichSpanStyle.Image(
+            model = imagePath,
+            width = 0.sp,
+            height = 0.sp,
+            contentDescription = "插入的图片"
+        )
+        richTextState.addRichSpan(imageSpan, TextRange(cursorPos, cursorPos + 1))
+    }
+
     /** 格式工具栏展开/折叠状态（由底部栏 ⋮ 按钮切换） */
     var isFormatExpanded by remember { mutableStateOf(false) }
 
     /**
-     * 编辑器内容初始化：监听 contentFormat 变化，在数据到达时同步到 RichTextState
+     * v2026-08-01 Phase 2：注册 # hashtag trigger + 编辑器内容初始化
      *
-     * 使用库的 setMarkdown() 恢复完整格式（粗体/斜体/列表/代码块/链接）。
+     * 重构要点：
+     * 1. 注册 # trigger（必须在 setMarkdown 之前，否则 token 无法被解析）
+     *    - trigger id = "hashtag"，char = '#'
+     *    - style = 暖橙 SpanStyle（与原 FlowRow Chip 颜色一致）
+     *
+     * 2. 旧数据兼容：由 ViewModel.loadInspiration 统一处理
+     *    - ViewModel 检测 inspiration.tags 非空但 contentFormat 无 token 时，
+     *      自动追加 `[#标签](trigger:hashtag:标签)` 到 markdown 末尾
+     *    - UI 层只需直接 setMarkdown(contentFormat)，无需重复迁移逻辑
+     *
+     * 3. 新数据（已含 token）：直接 setMarkdown，token 自动恢复。
      */
     var hasInitializedWithData by remember { mutableStateOf(false) }
-    androidx.compose.runtime.LaunchedEffect(contentFormat) {
+    var hasTriggerRegistered by remember { mutableStateOf(false) }
+
+    /** 注册 # hashtag trigger 和 @ mention trigger（在 setMarkdown 之前执行，确保 token 能被正确解析） */
+    @OptIn(ExperimentalRichTextApi::class)
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (!hasTriggerRegistered) {
+            // # 标签 trigger：暖橙色，与原 FlowRow Chip 颜色一致
+            richTextState.registerTrigger(
+                Trigger(
+                    id = "hashtag",
+                    char = '#',
+                    style = { SpanStyle(color = Color(0xFFFF9A5C), fontWeight = FontWeight.Medium) }
+                )
+            )
+            // @ 关联 trigger：蓝色（与待办/灵感 Chip 颜色区分）
+            richTextState.registerTrigger(
+                Trigger(
+                    id = "mention",
+                    char = '@',
+                    style = { SpanStyle(color = Color(0xFF1976D2), fontWeight = FontWeight.Medium) }
+                )
+            )
+            hasTriggerRegistered = true
+        }
+    }
+
+    /** 编辑器内容初始化：等待 trigger 注册完成后执行 setMarkdown */
+    androidx.compose.runtime.LaunchedEffect(hasTriggerRegistered, contentFormat) {
+        if (!hasTriggerRegistered || hasInitializedWithData) return@LaunchedEffect
         try {
-            if (contentFormat.isNotBlank() && !hasInitializedWithData) {
-                /** 使用库的 setMarkdown 恢复格式 */
-                richTextState.setMarkdown(contentFormat)
-                hasInitializedWithData = true
-            } else if (contentFormat.isBlank() && !hasInitializedWithData) {
-                /** 新建灵感：初始化为空 */
-                richTextState.setMarkdown("")
-                hasInitializedWithData = true
-            }
+            /**
+             * 直接 setMarkdown(contentFormat)
+             *
+             * 旧数据迁移已由 ViewModel.loadInspiration 完成：
+             * - ViewModel 检测 inspiration.tags 非空但 contentFormat 无 token 时，
+             *   自动追加 token 到 markdown 末尾并更新 _contentFormat
+             * - UI 层读取的 contentFormat 已是迁移后的值（含 token）
+             * - 此处无需重复迁移，避免双重追加
+             */
+            richTextState.setMarkdown(contentFormat)
+            hasInitializedWithData = true
         } catch (e: Exception) {
             Log.e("InspirationEditScreen", "编辑器初始化异常（已捕获）", e)
             hasInitializedWithData = true
@@ -426,6 +495,38 @@ fun InspirationEditScreen(
     val navigateBack: () -> Unit = {
         navController.previousBackStackEntry?.savedStateHandle?.set("targetTab", "INSPIRE")
         navController.popBackStack()
+    }
+
+    /**
+     * v2026-08-01 新增：复制到剪贴板功能
+     *
+     * 行为：
+     * - 若正文有选区（selection.start != selection.end）→ 复制选区文本
+     * - 若无选区 → 复制正文全文
+     * - 复制后通过 SnackbarHostState 显示"已复制到剪贴板"提示（遵循项目规则：禁用系统 Toast）
+     *
+     * 实现要点：
+     * - 使用 RichTextState.annotatedString.text 获取纯文本（去除富文本格式标记）
+     * - 用 Android 系统 ClipboardManager 写入 ClipData
+     * - 复制操作不推入撤销栈（不属于内容编辑，是只读操作的派生）
+     */
+    val copyToClipboard: () -> Unit = {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val selection = richTextState.selection
+        val fullText = richTextState.annotatedString.text
+        /** 有选区时复制选区文本，无选区时复制全文 */
+        val textToCopy = if (selection.start != selection.end) {
+            val start = minOf(selection.start, selection.end)
+            val end = maxOf(selection.start, selection.end)
+            fullText.substring(start, end)
+        } else {
+            fullText
+        }
+        val clip = ClipData.newPlainText("灵感内容", textToCopy)
+        clipboard.setPrimaryClip(clip)
+        coroutineScope.launch {
+            snackbarHostState.showSnackbar("已复制到剪贴板")
+        }
     }
 
     /**
@@ -472,37 +573,67 @@ fun InspirationEditScreen(
      * 统一所有退出方式（应用内 ← 按钮、系统返回键）都经过未保存检查
      */
     BackHandler { attemptBack() }
-    /** 标签选择弹窗显示状态（由顶部标签按钮触发） */
-    var showTagPicker by remember { mutableStateOf(false) }
-    /** 待删除的标签（长按标签后弹出确认对话框，null=不显示） */
-    var pendingDeleteTag by remember { mutableStateOf<String?>(null) }
+    /** v2026-08-01 Phase 2：showTagPicker / pendingDeleteTag 已移除，标签改用 # Trigger 内联插入 */
 
     // ========== v2026-07-22 新增：关联管理状态 ==========
     /** 关联列表（按当前灵感 id 加载） */
     val relations by viewModel.relations.collectAsState()
-    /** 关联ID → 标题映射（由 ViewModel 异步加载并缓存） */
+    /**
+     * 关联ID → 标题映射（由 ViewModel 异步加载并缓存）
+     *
+     * v2026-08-01 Phase 3 后：关联以 @ token 内联在正文中，标题映射仍保留用于：
+     * - mentionSuggestions 排除已关联卡片时的过滤（通过 relations 直接判断）
+     * - 未来可能的长按 token 删除关联功能
+     */
     val relationTitles by viewModel.relationTitles.collectAsState()
-    /** 当前预览卡片的详情（供 LinkedCardPreviewDialog 展示） */
-    val cardDetail by viewModel.cardDetail.collectAsState()
-    /** 卡片详情加载中标志 */
-    val cardDetailLoading by viewModel.cardDetailLoading.collectAsState()
-    /** 关联预览 Dialog 状态（null=关闭，非null=显示该关联的预览） */
-    var previewingRelation by remember { mutableStateOf<CardRelation?>(null) }
-    /** 关联选择 BottomSheet 状态 */
-    var showRelationPicker by remember { mutableStateOf(false) }
+    /**
+     * v2026-08-01 Phase 3：以下状态已移除（关联改为 @ Trigger 内联插入）
+     * - cardDetail / cardDetailLoading（LinkedCardPreviewDialog 已移除）
+     * - previewingRelation（关联预览 Dialog 已移除）
+     * - showRelationPicker（RelationPickerBottomSheet 已移除）
+     */
 
     /**
-     * v2026-07-22 新增：监听 previewingRelation 变化，自动加载/清空卡片详情
+     * @ 关联建议列表状态（v2026-08-01 Phase 3 新增）
      *
-     * - 非null：用户点击 Chip 弹出 Dialog → 调用 loadCardDetail 异步加载详情
-     * - null：用户关闭 Dialog → 调用 clearCardDetail 清空状态
+     * TriggerSuggestions 的 suggestions 函数是同步的 `(query: String) -> List<T>`，
+     * 但 viewModel.searchCards 是异步的。因此用此状态作为桥梁：
+     * 1. LaunchedEffect 监听 activeTriggerQuery 变化，异步调用 searchCards
+     * 2. 搜索结果更新到此状态
+     * 3. TriggerSuggestions 的 suggestions 函数直接返回此列表
+     *
+     * **生命周期**：
+     * - 当 activeTriggerQuery 的 triggerId == "mention" 时触发搜索
+     * - 当 trigger 失效（选中/取消）时清空列表
      */
-    LaunchedEffect(previewingRelation) {
-        val relation = previewingRelation
-        if (relation != null) {
-            viewModel.loadCardDetail(relation.targetType, relation.targetId)
-        } else {
-            viewModel.clearCardDetail()
+    var mentionSuggestions by remember { mutableStateOf<List<CardSearchResult>>(emptyList()) }
+
+    /**
+     * 监听 activeTriggerQuery 变化，异步搜索卡片
+     *
+     * **防抖策略**：
+     * - 每次 query 变化取消上一次搜索任务（LaunchedEffect 自动 cancel-and-restart）
+     * - 延迟 200ms 后触发搜索（避免快速输入时过多 DB 查询）
+     *
+     * **搜索结果处理**：
+     * - 排除已关联的卡片（避免重复添加，因为 addRelation 会拒绝重复）
+     * - 限制最多 50 条（与原 RelationPickerBottomSheet 一致）
+     */
+    @OptIn(ExperimentalRichTextApi::class)
+    androidx.compose.runtime.LaunchedEffect(richTextState.activeTriggerQuery) {
+        val query = richTextState.activeTriggerQuery
+        if (query == null || query.triggerId != "mention") {
+            mentionSuggestions = emptyList()
+            return@LaunchedEffect
+        }
+        // 防抖：延迟 200ms 后搜索
+        delay(200L)
+        viewModel.searchCards(query.query) { results ->
+            // 排除已关联的卡片
+            val excludeIds = relations.map { it.targetType to it.targetId }.toSet()
+            mentionSuggestions = results
+                .filter { (it.cardType to it.cardId) !in excludeIds }
+                .take(50)
         }
     }
     /**
@@ -720,6 +851,26 @@ fun InspirationEditScreen(
                     }
                 }
 
+                Spacer(modifier = Modifier.width(4.dp))
+
+                /**
+                 * v2026-08-01 新增：复制按钮
+                 *
+                 * 行为：有选区复制选区文本，无选区复制正文全文
+                 * 详见 [copyToClipboard] 函数实现
+                 */
+                IconButton(
+                    onClick = copyToClipboard,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "复制",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
                 Spacer(modifier = Modifier.weight(1f))
 
                 /** ===== 从底部工具栏移入的 3 个按钮（锁按钮左侧，大小与撤销/重做/锁定一致）===== */
@@ -866,21 +1017,33 @@ fun InspirationEditScreen(
                     showVoiceRecordSheet = true
                 },
                 /**
-                 * v2026-07-22 改造：原"位置"按钮改为"标签"按钮
-                 * - onLocationClick 拆分为 onTagClick
-                 * - 触发灵感独有功能 TagPickerSheet（添加/编辑标签）
-                 * - 复用 showTagPicker 状态
+                 * v2026-08-01 Phase 2 改造：# 按钮改为在光标处插入 # 字符
+                 *
+                 * - 点击后在正文当前光标位置插入 # 字符
+                 * - # 字符触发 hashtag trigger 检测，弹出 TriggerSuggestions 建议弹窗
+                 * - 用户可继续输入标签名或从建议中选择
+                 * - 移除原 TagPickerSheet 弹窗（标签已内联为正文 atomic token）
                  */
                 onTagClick = {
-                    showTagPicker = true
+                    if (!isLocked) {
+                        richTextState.addTextAfterSelection("#")
+                    }
                 },
                 /**
-                 * v2026-07-22 改造：@按钮由 MentionTriggerPopup 升级为 RelationPickerBottomSheet
-                 * - 与待办编辑页 @ 按钮行为完全一致
-                 * - 复用 showRelationPicker 状态（顶部"关联"按钮也使用此状态）
+                 * v2026-08-01 Phase 3 改造：@按钮改为插入 @ 字符触发 TriggerSuggestions
+                 *
+                 * - 旧：弹出 RelationPickerBottomSheet（多选弹窗）
+                 * - 新：在光标位置插入 @ 字符，触发 mention trigger 弹出建议列表
+                 * - 与 # 标签按钮行为一致（统一的内联插入体验）
+                 *
+                 * 选中建议后：
+                 * 1. 插入 RichSpanStyle.Token（atomic span）
+                 * 2. 调用 viewModel.addRelation() 即时入库
                  */
                 onMentionClick = {
-                    showRelationPicker = true
+                    if (!isLocked) {
+                        richTextState.addTextAfterSelection("@")
+                    }
                 },
                 /**
                  * v2026-07-22 新增：独立的位置按钮
@@ -979,52 +1142,45 @@ fun InspirationEditScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             /**
-             * v2026-07-31 标题 OutlinedTextField
+             * v2026-08-01 标题区改用 RichTextEditor 单段落（compose-rich-editor 库）
              *
-             * 改用 `state: TextFieldState` 重载（Material 3 1.9+ 引入），
-             * 原因：`value: String` 重载**不支持 contentPadding 参数**，
-             * 而默认 16dp 水平 padding 会让标题文字起点 = Column padding(8dp) + 16dp = 24dp，
-             * 与下方时间戳+字数 Row (起点 8dp) 和 RichTextEditor 正文 (起点 8dp) 不对齐。
+             * 重构原因：统一编辑器组件，标题与正文都使用 RichTextEditor，
+             * 便于后续 Phase 2/3 在标题中也支持 trigger（如 #标签、@关联）。
              *
-             * 改用 TextFieldState 重载后，可显式传 `contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp)`，
-             * 让标题文字起点 = Column padding(8dp) + 0dp = **8dp**，
-             * 与时间戳+字数 Row (起点 8dp) 和 RichTextEditor 正文 (起点 8dp) **完全左对齐**。
+             * 关键点：
+             * - 使用独立的 titleRichTextState（与正文 richTextState 隔离）
+             * - 用 setText() 设置纯文本（不解析 markdown/html 格式，避免 # 被误解析为标题样式）
+             * - 禁用富文本格式（无格式工具栏入口，用户无法对标题加粗等）
+             * - 光标颜色与正文统一为暖橙 Color(0xFFFF9A5C)
+             * - contentPadding 水平 0.dp 保证与正文左对齐（起点 8dp）
              *
-             * **双向同步策略**：
-             * 1. state → viewModel：用 `snapshotFlow { state.text }` 监听用户输入，调用 `viewModel.setTitleWithRecommendation()`
-             * 2. viewModel → state：用 `LaunchedEffect(title)` 仅在 viewModel 主动设置 title（如 loadInspiration）时同步
-             * 3. 防止循环：用 `if (newText != title)` 判断避免重复触发
+             * 双向同步策略：
+             * 1. viewModel.title → state：loadInspiration / 外部 setTitle 时同步，用 setText() 纯文本设置
+             * 2. state → viewModel.title：用户输入时同步，用 annotatedString.text 读取纯文本
+             * 3. 防循环：用 if (currentText != title) 判断避免重复触发
              */
-            val titleFieldState = rememberTextFieldState(initialText = title)
+            val titleRichTextState = rememberRichTextState()
 
             /** 单向同步：viewModel.title 变化时（loadInspiration / 外部调用 setTitle）→ state */
             LaunchedEffect(title) {
-                if (titleFieldState.text.toString() != title) {
-                    titleFieldState.edit {
-                        replace(0, length, title)
-                    }
+                val currentText = titleRichTextState.annotatedString.text
+                if (currentText != title) {
+                    /** 用 setText 设置纯文本，不解析任何 markdown/html 格式 */
+                    titleRichTextState.setText(title)
                 }
             }
 
-            /** 单向同步：state.text 变化时（用户输入）→ viewModel.title */
-            LaunchedEffect(titleFieldState) {
-                snapshotFlow { titleFieldState.text.toString() }
-                    .collect { newText ->
-                        if (newText != title && !isLocked) {
-                            viewModel.setTitleWithRecommendation(newText)
-                        }
-                    }
+            /** 单向同步：state 文本变化时（用户输入）→ viewModel.title */
+            LaunchedEffect(titleRichTextState.annotatedString) {
+                val newText = titleRichTextState.annotatedString.text
+                if (newText != title && !isLocked) {
+                    viewModel.setTitleWithRecommendation(newText)
+                }
             }
 
-            OutlinedTextField(
-                state = titleFieldState,
+            RichTextEditor(
+                state = titleRichTextState,
                 modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    disabledBorderColor = Color.Transparent,
-                    cursorColor = Color(0xFFFF9A5C)
-                ),
                 placeholder = {
                     Text(
                         "标题",
@@ -1033,20 +1189,30 @@ fun InspirationEditScreen(
                         )
                     )
                 },
+                readOnly = isLocked,
+                textStyle = MaterialTheme.typography.headlineMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+                colors = RichTextEditorDefaults.richTextEditorColors(
+                    /** 容器背景透明，跟随全局主题色 */
+                    containerColor = Color.Transparent,
+                    /** 光标颜色：暖橙，与正文统一 */
+                    cursorColor = Color(0xFFFF9A5C),
+                    /** 移除底部指示线（边界线） */
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                    errorIndicatorColor = Color.Transparent
+                ),
                 /**
-                 * v2026-07-31 左对齐修复：
-                 * 水平 padding 设为 0.dp，让标题文字起点 = Column padding(8dp) + 0 = **8dp**，
-                 * 与下方时间戳+字数 Row (起点 8dp) 和 RichTextEditor 正文 (起点 8dp) 完全左对齐。
+                 * 水平 padding 设为 0.dp，让标题文字起点 = Column padding(8dp) + 0 = 8dp，
+                 * 与下方时间戳+字数 Row 和 RichTextEditor 正文完全左对齐。
                  * vertical 保持 8dp，标题上下仍有合适的呼吸空间。
                  */
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     horizontal = 0.dp,
                     vertical = 8.dp
-                ),
-                textStyle = MaterialTheme.typography.headlineMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurface
-                ),
-                enabled = !isLocked
+                )
             )
 
             /**
@@ -1178,14 +1344,13 @@ fun InspirationEditScreen(
                     )
 
                 when (block) {
-                    is ContentBlock.Image -> {
-                        com.corgimemo.app.ui.components.InlineImagePreview(
-                            imageUri = block.path,
-                            modifier = baseModifier,
-                            isHighlighted = index == highlightedIndex
-                            /** V2.8: 移除 isVisible 参数，图片始终渲染避免滚动时变成占位符 */
-                        )
-                    }
+                    /**
+                     * v2026-08-01 Phase 4：图片已内联到 RichTextEditor（RichSpanStyle.Image），
+                     * 不再作为独立 ContentBlock 渲染。
+                     * 旧数据的 ContentBlock.Image 会在 ViewModel.loadInspiration 中
+                     * 迁移为 Markdown ![图片](path) 语法，导入到 richTextState。
+                     */
+                    is ContentBlock.Image -> { /* 已迁移到 RichTextEditor 内联 */ }
                     is ContentBlock.Voice -> {
                         com.corgimemo.app.ui.components.VoicePlayerComponent(
                             voicePlayer = voicePlayer,
@@ -1212,6 +1377,11 @@ fun InspirationEditScreen(
                 }
             }
 
+            /**
+             * v2026-08-01 Phase 2：用 Box 包裹 RichTextEditor，
+             * 以便在其中叠加 TriggerSuggestions 弹窗（# 标签触发建议）
+             */
+            Box(modifier = Modifier.fillMaxWidth()) {
             /** 富文本编辑器（使用 compose-rich-editor 库） */
             RichTextEditor(
                 state = richTextState,
@@ -1289,9 +1459,13 @@ fun InspirationEditScreen(
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     color = MaterialTheme.colorScheme.onSurface
                 ),
+                /** v2026-08-01 Phase 4：传入自定义 Coil3 图片加载器，使 RichSpanStyle.Image 在编辑模式下渲染实际图片 */
+                imageLoader = RichTextImageLoader,
                 colors = RichTextEditorDefaults.richTextEditorColors(
                     /** 容器背景透明，跟随全局主题色 */
                     containerColor = Color.Transparent,
+                    /** v2026-08-01 光标颜色：暖橙，与标题统一 */
+                    cursorColor = Color(0xFFFF9A5C),
                     /** 移除底部指示线（边界线） */
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
@@ -1300,55 +1474,111 @@ fun InspirationEditScreen(
                 )
             )
 
-            /** ===== 标签 + 关联展示区（位于正文底部）=====
-             *  v2026-07-31 改造：
-             *  - 删除标题下方的 "+标签" / "+关联" 按钮（改由底部工具栏入口添加）
-             *  - 标签 FlowRow 与关联 Chip 流移至正文 RichTextEditor 下方
-             *  - 关联区不再显示 "🔗 已关联 N" 标题行及 ＋ 加号键（showHeader = false），
-             *    仅以 Chip 流形式呈现已关联卡片信息 */
-            if (tags.isNotEmpty()) {
-                FlowRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    tags.forEach { tag ->
-                        Box(
-                            modifier = Modifier
-                                .combinedClickable(
-                                    onClick = { showTagPicker = true },
-                                    onLongClick = { pendingDeleteTag = tag }
-                                )
-                                .background(
-                                    color = Color(0xFFFFF3E0),
-                                    shape = RoundedCornerShape(20.dp)
-                                )
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "#$tag",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFFFF9A5C)
-                            )
-                        }
+            /**
+             * v2026-08-01 Phase 2：# 标签触发建议弹窗
+             *
+             * 当用户在正文中输入 # 后触发 hashtag trigger，
+             * 此弹窗显示匹配的历史标签（savedTags）供快速选择。
+             *
+             * 选中后插入 RichSpanStyle.Token（atomic span，backspace 整体删除）。
+             */
+            @OptIn(ExperimentalRichTextApi::class)
+            TriggerSuggestions(
+                state = richTextState,
+                triggerId = "hashtag",
+                suggestions = { query ->
+                    savedTags.filter { it.contains(query, ignoreCase = true) }
+                },
+                onSelect = { tag ->
+                    RichSpanStyle.Token(
+                        triggerId = "hashtag",
+                        id = tag,
+                        label = "#$tag"
+                    )
+                },
+                item = { tag ->
+                    Text(
+                        text = "#$tag",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        fontSize = 14.sp,
+                        color = Color(0xFFFF9A5C),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            )
+
+            /**
+             * v2026-08-01 Phase 3：@ 关联触发建议弹窗
+             *
+             * 当用户在正文中输入 @ 后触发 mention trigger，
+             * 此弹窗显示匹配的卡片（待办/灵感/日期）供快速选择。
+             *
+             * 选中后：
+             * 1. 插入 RichSpanStyle.Token（atomic span，backspace 整体删除）
+             *    - token id 格式：`类型:ID`（如 `todo:123`），用于序列化
+             *    - token label 格式：`@标题`（如 `@买菜`），用于显示
+             * 2. 调用 viewModel.addRelation() 即时入库（双向插入 + 数量上限检查）
+             *
+             * **混合方案**：token 仅作视觉展示，关联的真相源是 card_relations 表。
+             * 删除 token 不会自动删除关联（需通过其他入口，如长按 token）。
+             */
+            @OptIn(ExperimentalRichTextApi::class)
+            TriggerSuggestions(
+                state = richTextState,
+                triggerId = "mention",
+                suggestions = { _ ->
+                    // 直接返回预加载的 mentionSuggestions（由 LaunchedEffect 异步更新）
+                    mentionSuggestions
+                },
+                onSelect = { card ->
+                    // 即时入库：调用 addRelation（内部 launch 协程，不阻塞 UI）
+                    viewModel.addRelation(card.cardType, card.cardId)
+                    // 返回 Token 用于视觉展示
+                    RichSpanStyle.Token(
+                        triggerId = "mention",
+                        id = "${card.cardType}:${card.cardId}",
+                        label = "@${card.title}"
+                    )
+                },
+                item = { card ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 类型 emoji 图标
+                        Text(
+                            text = card.typeIcon,
+                            fontSize = 16.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        // 卡片标题
+                        Text(
+                            text = card.title,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        // 类型标签
+                        Text(
+                            text = card.typeName,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
-            }
-
-            /** 关联卡片 Chip 流展示（无标题行，紧随标签 FlowRow 下方） */
-            LinkedCardsRow(
-                relations = relations,
-                groupId = 0,
-                relationTitles = relationTitles,
-                onAddClick = { showRelationPicker = true },
-                onChipClick = { relation -> previewingRelation = relation },
-                onChipDelete = { relationId, _ -> viewModel.deleteRelation(relationId) },
-                modifier = Modifier.padding(top = 8.dp),
-                showHeader = false
             )
+            } /** Box 结束 */
+
+            /**
+             * v2026-08-01 Phase 3：关联已内联为正文中的 atomic token（@ Trigger），
+             * 移除原 LinkedCardsRow 独立展示区。
+             * 关联的真相源仍是 card_relations 表（通过 viewModel.addRelation 即时入库）。
+             */
 
             /** 监听 RichTextState 文本变化：同步到 ViewModel + 触发防抖导出 */
             androidx.compose.runtime.LaunchedEffect(richTextState.annotatedString) {
@@ -1366,7 +1596,7 @@ fun InspirationEditScreen(
                      * v2026-07-22 改造：移除 @ 和 # 输入触发弹窗的逻辑
                      * - @ 关联功能迁移到工具栏 @ 按钮（RelationPickerBottomSheet 多选弹窗）
                      * - # 位置功能迁移到工具栏 📍 位置按钮（LocationPicker 弹窗）
-                     * - 标签功能由工具栏 # 按钮（TagPickerSheet）触发
+                     * - 标签功能由工具栏 # 按钮（插入 # 字符触发 TriggerSuggestions）触发
                      * - 输入 @ 或 # 字符不再自动弹窗，避免与"普通文本中的 @ #"语义冲突
                      */
                 }
@@ -1518,92 +1748,18 @@ fun InspirationEditScreen(
         )
     }
 
-    /** 标签选择弹窗（类似待办编辑页的分组弹窗） */
-    if (showTagPicker) {
-        val tagSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        TagPickerSheet(
-            sheetState = tagSheetState,
-            tags = tags,
-            savedTags = savedTags,
-            onTagsChange = { newTags -> viewModel.updateTags(newTags) },
-            onDismiss = { showTagPicker = false }
-        )
-    }
+    /** v2026-08-01 Phase 2：TagPickerSheet 已移除，标签改用 # Trigger 内联插入 */
 
-    // v2026-07-22 新增：关联选择 BottomSheet（多选模式，跨待办/灵感/日期三种类型）
-    if (showRelationPicker) {
-        // 排除已关联的卡片，避免重复添加
-        val excludeIds = relations
-            .map { it.targetType to it.targetId }
-            .toSet()
-        RelationPickerBottomSheet(
-            visible = true,
-            excludeIds = excludeIds,
-            onDismiss = { showRelationPicker = false },
-            onConfirm = { selectedCards ->
-                // 批量添加选中的关联（编辑页 ViewModel 已知当前 inspirationId）
-                val cards = selectedCards.map { it.cardType to it.cardId }
-                viewModel.addRelations(cards)
-                showRelationPicker = false
-            },
-            searchCards = { query, callback -> viewModel.searchCards(query, callback) }
-        )
-    }
+    /**
+     * v2026-08-01 Phase 3：RelationPickerBottomSheet 和 LinkedCardPreviewDialog 已移除
+     *
+     * - 关联选择：改用 @ Trigger + TriggerSuggestions 内联插入（与 # 标签一致）
+     * - 关联展示：改用正文中的 @ atomic token（RichSpanStyle.Token）
+     * - 关联删除：通过 viewModel.deleteRelation() 入口（如长按 token 或其他入口）
+     * - 关联真相源：仍是 card_relations 表（通过 viewModel.addRelation 即时入库）
+     */
 
-    // v2026-07-22 新增：关联预览 Dialog（点击 Chip 后弹出，按类型差异化展示详情）
-    previewingRelation?.let { relation ->
-        LinkedCardPreviewDialog(
-            relation = relation,
-            cardDetail = cardDetail,
-            isLoading = cardDetailLoading,
-            onDismiss = { previewingRelation = null },
-            onUnlink = { relationId ->
-                viewModel.deleteRelation(relationId)
-                previewingRelation = null
-            },
-            onJumpToDetail = { cardType, cardId ->
-                // 根据卡片类型路由到对应详情/编辑页（压栈跳转，返回时回到灵感编辑页）
-                when (cardType) {
-                    "todo" -> navController.navigate("todo_edit/$cardId")
-                    "inspiration" -> navController.navigate("inspiration_edit/$cardId")
-                    "date" -> navController.navigate("date_detail/$cardId")
-                }
-                previewingRelation = null
-            }
-        )
-    }
-
-    /** 标签长按删除确认对话框（防误触） */
-    pendingDeleteTag?.let { targetTag ->
-        AlertDialog(
-            onDismissRequest = { pendingDeleteTag = null },
-            title = { Text("删除标签", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
-            text = {
-                Text(
-                    text = "确定要删除标签「#$targetTag」吗？",
-                    fontSize = 14.sp
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.updateTags(tags - targetTag)
-                        pendingDeleteTag = null
-                    }
-                ) {
-                    Text(
-                        text = "删除",
-                        color = Color(0xFFDC2626)
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDeleteTag = null }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
+    /** v2026-08-01 Phase 2：pendingDeleteTag 删除确认对话框已移除，标签删除改为光标定位后 backspace */
 
     // 语音录制面板
     if (showVoiceRecordSheet) {
