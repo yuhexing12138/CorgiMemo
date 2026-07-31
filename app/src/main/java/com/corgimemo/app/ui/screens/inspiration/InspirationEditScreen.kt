@@ -996,6 +996,21 @@ fun InspirationEditScreen(
                     disabledBorderColor = Color.Transparent,
                     cursorColor = Color(0xFFFF9A5C)
                 ),
+                /**
+                 * v2026-07-31 左对齐修复：
+                 * Material 3 OutlinedTextField 默认 contentPadding.horizontal = 16dp，
+                 * 会让标题文字起点偏移到 8dp (Column padding) + 16dp = 24dp，
+                 * 与下方时间戳+字数行 (起点 8dp) 和 RichTextEditor 正文 (起点 8dp) 不对齐。
+                 *
+                 * 改为 horizontal = 0.dp，标题文字起点 = 8dp (Column padding) + 0 = 8dp，
+                 * 与时间戳行 / RichTextEditor / 标签 / 关联卡片 起点完全一致，
+                 * 视觉上全部"贴 Column 左边内边缘"，与详情页 InspirationViewCard 排版风格统一。
+                 * vertical 保持 8dp，标题上下仍有合适的呼吸空间。
+                 */
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = 0.dp,
+                    vertical = 8.dp
+                ),
                 textStyle = MaterialTheme.typography.headlineMedium.copy(
                     color = MaterialTheme.colorScheme.onSurface
                 ),
