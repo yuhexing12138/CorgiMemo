@@ -98,9 +98,9 @@ fun InspirationViewCard(
             }
         } catch (e: Exception) { emptyList() }
     }
-    // 缓存：字数（依赖标题/正文/标签变化）
-    val charCount = remember(inspiration.id, inspiration.title, inspiration.content, inspiration.tags) {
-        InspirationTextUtils.countInspirationChars(inspiration)
+    // 缓存：字数（v2026-07-31 改造：只统计正文字符数，不含标题/标签/关联）
+    val charCount = remember(inspiration.id, inspiration.content) {
+        InspirationTextUtils.countInspirationContentChars(inspiration.content)
     }
     // 缓存：格式化日期
     val formattedDate = remember(inspiration.createdAt) {
@@ -242,6 +242,9 @@ fun InspirationViewCard(
                 // 字数徽章：右上角贴边（距离卡片右边缘、距离顶均为 0）
                 // 圆角设计：左上/右上/右下 = 0（无圆角），左下 = 12dp（与 Card 圆角一致）
                 // Card 12dp 圆角自然裁剪徽章右上角，徽章与 Card 边完美融合
+                //
+                // v2026-07-31 字数统计规则：只统计正文字符数（去除空白），与
+                // 灵感编辑页"标题和正文之间"字数行保持一致——**不包含标题、标签、关联卡片**。
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)

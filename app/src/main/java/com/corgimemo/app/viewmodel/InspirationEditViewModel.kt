@@ -75,6 +75,25 @@ class InspirationEditViewModel @Inject constructor(
     private val _isDirty = MutableStateFlow(false)
     val isDirty: StateFlow<Boolean> = _isDirty.asStateFlow()
 
+    /**
+     * 当前编辑灵感的"创建时间戳"（v2026-07-31 新增）
+     *
+     * 用途：编辑页"标题和正文之间"的时间戳行显示。
+     *
+     * 值来源：
+     * - **新建模式**：进入编辑页时记录 `System.currentTimeMillis()`，
+     *   整个编辑过程保持不变（不会每秒刷新）。
+     * - **编辑模式**：[loadInspiration] 加载已有灵感时，从 `existingInspiration.createdAt`
+     *   同步过来，显示灵感首次创建的时间。
+     *
+     * 设计原因：用户期望时间戳是"灵感创建时间"，而非"编辑当前时间"。
+     * 新建时还没有真实时间戳，但需要在编辑页立即显示一个稳定时间戳，
+     * 因此使用 ViewModel 初始化时记录的 `currentTimeMillis()` 占位，
+     * 保存到数据库后正式成为 createdAt。
+     */
+    private val _createdAt = MutableStateFlow(System.currentTimeMillis())
+    val createdAt: StateFlow<Long> = _createdAt.asStateFlow()
+
     private val _categoryId = MutableStateFlow(0L)
     val categoryId: StateFlow<Long> = _categoryId.asStateFlow()
 
@@ -610,6 +629,11 @@ class InspirationEditViewModel @Inject constructor(
                 existingInspiration = inspiration
                 _title.value = inspiration.title
                 _content.value = inspiration.content
+                /**
+                 * v2026-07-31 同步：编辑模式下，从已有灵感恢复 createdAt，
+                 * 让"标题和正文之间"的时间戳行显示灵感首次创建时间，而非 ViewModel 初始化时记录的占位时间。
+                 */
+                _createdAt.value = inspiration.createdAt
                 _categoryId.value = inspiration.categoryId
                 _priority.value = inspiration.priority
                 _startDate.value = inspiration.startDate
@@ -834,7 +858,14 @@ class InspirationEditViewModel @Inject constructor(
                  * 字段保留但不再写入，避免破坏数据库 schema
                  */
                 imagePaths = "",
-                createdAt = currentTime,
+                /**
+                 * v2026-07-31 同步：新建模式下 createdAt 使用 _createdAt.value
+                 * （即进入编辑页时记录的时间戳），而非 currentTime（保存瞬间的时间）。
+                 * 这样保证：
+                 * 1. 编辑页"标题和正文之间"显示的时间戳 == 数据库 createdAt
+                 * 2. 重新进入编辑页时，时间戳行不变（与首次保存值一致）
+                 */
+                createdAt = _createdAt.value,
                 updatedAt = currentTime,
                 categoryId = _categoryId.value,
                 priority = _priority.value,

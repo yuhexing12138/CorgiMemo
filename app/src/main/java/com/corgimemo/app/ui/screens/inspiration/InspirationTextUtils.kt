@@ -56,6 +56,26 @@ object InspirationTextUtils {
     }
 
     /**
+     * 统计灵感正文字符数（仅 content 字段，去除所有空白字符）
+     *
+     * v2026-07-31 新增：用于灵感编辑页"标题和正文之间"的字数显示、
+     * 灵感详情页卡片右上角字数徽章。**只统计正文 content**，不包含：
+     * - 标题（title）
+     * - 标签（tags，关联到正文的 #关键词）
+     * - 关联卡片（relations，与正文无文本关系）
+     *
+     * 标点符号按 1 个字符计入（含中英文标点、换行、HTML 标签等），与
+     * [countInspirationChars] 一致。中英文均按 1 个字符计数。
+     *
+     * @param content 灵感正文（可能含 Markdown / HTML 标签）
+     * @return 正文字符数（去除所有空白字符后）
+     */
+    fun countInspirationContentChars(content: String): Int {
+        // 直接对原文去除所有空白字符后计数，不展开任何标签
+        return content.count { !it.isWhitespace() }
+    }
+
+    /**
      * 解析标签 JSON 数组字符串
      *
      * @param tagsJson tags 字段的 JSON 字符串（如 `["产品","设计"]`），空字符串返回空列表

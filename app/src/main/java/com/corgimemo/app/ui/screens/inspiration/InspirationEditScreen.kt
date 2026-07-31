@@ -121,12 +121,16 @@ import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.InspirationEditViewModel
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationEditBottomBar /** 灵感编辑页底部栏（5 按钮 + 可折叠格式工具栏）*/
 import com.corgimemo.app.ui.screens.inspiration.components.TagPickerSheet /** 标签选择弹窗组件（灵感独有功能）*/
+import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils /** v2026-07-31 新增：标题与正文之间"时间戳+字数"行所需的字数统计工具 */
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
 import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** 内容块定义已提取至 com.corgimemo.app.ui.model.ContentBlock（公共模块），通过 import 复用 */
 
@@ -997,6 +1001,60 @@ fun InspirationEditScreen(
                 ),
                 enabled = !isLocked
             )
+
+            /**
+             * v2026-07-31 新增：标题与正文之间的"时间戳 + 字数"行
+             *
+             * 排版规则：
+             * - 时间戳格式：`yyyy.MM.dd HH:mm`（如 `2026.07.15 10:49`），与灵感详情页卡片时间戳格式一致
+             * - 字数统计规则：只统计正文字符数（去除空白），**不包含标题、标签、关联卡片**
+             * - 时间戳来源：ViewModel.createdAt（新建模式 = 进入页面时记录；编辑模式 = 数据库 createdAt）
+             * - 视觉样式：12sp 浅灰（Color(0xFF999999)），与详情页 InspirationViewCard 时间戳样式一致
+             * - 间距：上 Spacer 8dp + 内容行 + 下 Spacer 8dp，距离标题行与正文内容区距离相等
+             *
+             * 字数实时响应 [content] 变化（用户输入时即时更新）。
+             */
+            val createdAt by viewModel.createdAt.collectAsState()
+            val timestampText = remember(createdAt) {
+                SimpleDateFormat("yyyy.MM.dd HH:mm", Locale.getDefault())
+                    .format(Date(createdAt))
+            }
+            /** 字数：实时响应 content 变化，只统计正文字符数（去除空白） */
+            val contentCharCount = remember(content) {
+                InspirationTextUtils.countInspirationContentChars(content)
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            /** 时间戳 + 字数行（中间用竖线分隔，与参考图一致） */
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = timestampText,
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999),
+                    letterSpacing = 0.5.sp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                /** 竖线分隔符（颜色比文字略浅，宽度 1dp） */
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(12.dp)
+                        .background(Color(0xFFCCCCCC))
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "${contentCharCount}字",
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999),
+                    letterSpacing = 0.5.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             /** ===== 动态内容流编辑器区域（支持拖拽排序 + 两步删除） ===== */
 
