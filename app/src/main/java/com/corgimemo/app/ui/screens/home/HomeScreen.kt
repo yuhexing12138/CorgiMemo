@@ -1507,15 +1507,17 @@ fun HomeScreen(
                 onSaveToAlbum = {
                     showCardShareDialog = false
                     coroutineScope.launch {
-                        // 统一走 ShareCoordinator.saveToAlbumOneByOne（与 MainScreen 多选模式一致）
-                        val imgPaths = todoAttachmentsMap[shareTodo.id]?.first ?: emptyList()
-                        val subImgPaths = subTaskAttachmentsMap.mapValues { it.value.first }
+                        // 统一走 ShareCoordinator.saveToAlbumOneByOne + getAttachmentsForShare
+                        // v2026-07-30 修复：改用 getAttachmentsForShare 而非 todoAttachmentsMap，
+                        // 前者只含父待办自己的图片（与编辑页 TodoLine.imagePaths 一致），
+                        // 后者含父子（用于首页父卡片角标总数，不适合分享图父行渲染）
+                        val (todoImgMap, subTaskImgMap) = viewModel.getAttachmentsForShare(listOf(shareTodo.id))
                         ShareCoordinator.saveToAlbumOneByOne(
                             context = context,
                             todos = listOf(shareTodo),
                             categories = categories,
-                            todoImagePaths = mapOf(shareTodo.id to imgPaths),
-                            subTaskImagePaths = subImgPaths,
+                            todoImagePaths = todoImgMap,
+                            subTaskImagePaths = subTaskImgMap,
                             onProgress = null, // 单条无需进度提示
                             onResult = { successCount, failCount ->
                                 coroutineScope.launch {
@@ -1533,9 +1535,11 @@ fun HomeScreen(
                 },
                 onMoreShare = {
                     showCardShareDialog = false
-                    val imgPaths = todoAttachmentsMap[shareTodo.id]?.first ?: emptyList()
-                    val subImgPaths = subTaskAttachmentsMap.mapValues { it.value.first }
-                    shareTodoAsImage(context, shareTodo, categories, imgPaths, subImgPaths)
+                    coroutineScope.launch {
+                        // v2026-07-30 同样修复：onMoreShare 也用 getAttachmentsForShare（与 onSaveToAlbum 一致）
+                        val (todoImgMap, subTaskImgMap) = viewModel.getAttachmentsForShare(listOf(shareTodo.id))
+                        shareTodoAsImage(context, shareTodo, categories, todoImgMap[shareTodo.id] ?: emptyList(), subTaskImgMap)
+                    }
                     cardShareTodoId = null
                 }
             )

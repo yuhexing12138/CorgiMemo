@@ -2073,14 +2073,24 @@ class HomeViewModel @Inject constructor(
      * - 替代旧的从 `todo.imagePaths` / `sub.imagePaths` 字段解析的方案（已置空）
      * - 供 ShareCoordinator.shareTodos / shareMerged / shareOneByOne 使用
      *
+     * v2026-07-30 修复：父待办行只显示父自己的图片，不再聚合子任务图片。
+     * 之前 todoMap 错误按"父卡片角标总数"语义聚合（含父子），导致分享图父待办行
+     * 显示了父+所有子的图片总数（如父2张+子3张 → 渲染3张+"+2"），与编辑页
+     * 行级附件渲染不一致。修复后与编辑页 `TodoLine.imagePaths` 行为对齐。
+     *
      * 聚合规则：
-     * - 按 todoId 聚合：所有附件（含父待办和子任务）按 todoId 归入 todoImagePaths（用于父卡片图片总数）
-     * - 按 subTaskId 聚合：仅子任务附件按 subTaskId 归入 subTaskImagePaths（用于子任务图片绘制）
+     * - 按 todoId 聚合：仅 subTaskId == null 的附件（父待办自己的图片）
+     * - 按 subTaskId 聚合：仅 subTaskId != null 的附件（子任务自己的图片）
+     * - 两个 map 互斥，子任务附件只进 subTaskMap，不再进入 todoMap
+     *
+     * 与 [refreshTodoAttachments] 的区别：
+     * - refreshTodoAttachments 中 _todoAttachmentsMap 含父子（用于首页父卡片角标总数，是有意为之）
+     * - 本方法只含父自己（用于分享卡片父待办行图片渲染，与编辑页一致）
      *
      * @param todoIds 待查询的待办 ID 列表
      * @return Pair(todoImagePaths, subTaskImagePaths)
-     *         - todoImagePaths: Map<todoId, List<图片路径>>
-     *         - subTaskImagePaths: Map<subTaskId, List<图片路径>>
+     *         - todoImagePaths: Map<todoId, List<图片路径>>（仅父待办自己的图片）
+     *         - subTaskImagePaths: Map<subTaskId, List<图片路径>>（仅子任务自己的图片）
      */
     suspend fun getAttachmentsForShare(todoIds: List<Long>): Pair<Map<Long, List<String>>, Map<Long, List<String>>> {
         if (todoIds.isEmpty()) return emptyMap<Long, List<String>>() to emptyMap()
@@ -2089,10 +2099,12 @@ class HomeViewModel @Inject constructor(
         val subTaskMap = mutableMapOf<Long, MutableList<String>>()
         for (block in blocks) {
             if (block.type != "image") continue
-            // 按 todoId 聚合（父卡片图片总数）
-            todoMap.getOrPut(block.todoId) { mutableListOf() }.add(block.filePath)
-            // 子任务附件额外按 subTaskId 聚合
-            if (block.subTaskId != null) {
+            // 父待办自己的附件（subTaskId == null）→ 仅进 todoMap
+            // 子任务的附件（subTaskId != null）→ 仅进 subTaskMap
+            // 与编辑页 TodoLine.imagePaths 行为对齐：父行只渲染父自己，子行只渲染子自己
+            if (block.subTaskId == null) {
+                todoMap.getOrPut(block.todoId) { mutableListOf() }.add(block.filePath)
+            } else {
                 subTaskMap.getOrPut(block.subTaskId) { mutableListOf() }.add(block.filePath)
             }
         }

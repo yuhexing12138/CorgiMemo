@@ -998,106 +998,6 @@ fun InspirationEditScreen(
                 enabled = !isLocked
             )
 
-            /** ===== 标签区（标题下方：标签按钮 + 关联按钮 + 已添加标签展示 + 关联 Chip 流）===== */
-            Column(modifier = Modifier.padding(top = 8.dp)) {
-                /** 按钮行：标签按钮 + 关联按钮（v2026-07-22 新增 +关联 按钮） */
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    /** 标签按钮：点击触发标签选择弹窗 */
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        enabled = !isLocked,
-                        onClick = { showTagPicker = true }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "添加标签",
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "标签",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                    /** v2026-07-22 新增：关联按钮，点击弹出关联选择 BottomSheet */
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        enabled = !isLocked,
-                        onClick = { showRelationPicker = true }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "添加关联",
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "关联",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                }
-
-                /** 已添加标签展示（FlowRow 流式布局；点击进入弹窗，长按删除） */
-                if (tags.isNotEmpty()) {
-                    FlowRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        tags.forEach { tag ->
-                            Box(
-                                modifier = Modifier
-                                    .combinedClickable(
-                                        onClick = { showTagPicker = true },
-                                        onLongClick = { pendingDeleteTag = tag }
-                                    )
-                                    .background(
-                                        color = Color(0xFFFFF3E0),
-                                        shape = RoundedCornerShape(20.dp)
-                                    )
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    text = "#$tag",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFFFF9A5C)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                /** v2026-07-22 新增：关联卡片 Chip 流展示（位于标签 FlowRow 下方） */
-                LinkedCardsRow(
-                    relations = relations,
-                    groupId = 0,
-                    relationTitles = relationTitles,
-                    onAddClick = { showRelationPicker = true },
-                    onChipClick = { relation -> previewingRelation = relation },
-                    onChipDelete = { relationId, _ -> viewModel.deleteRelation(relationId) },
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-
             /** ===== 动态内容流编辑器区域（支持拖拽排序 + 两步删除） ===== */
 
             /**
@@ -1293,6 +1193,56 @@ fun InspirationEditScreen(
                     disabledIndicatorColor = Color.Transparent,
                     errorIndicatorColor = Color.Transparent
                 )
+            )
+
+            /** ===== 标签 + 关联展示区（位于正文底部）=====
+             *  v2026-07-31 改造：
+             *  - 删除标题下方的 "+标签" / "+关联" 按钮（改由底部工具栏入口添加）
+             *  - 标签 FlowRow 与关联 Chip 流移至正文 RichTextEditor 下方
+             *  - 关联区不再显示 "🔗 已关联 N" 标题行及 ＋ 加号键（showHeader = false），
+             *    仅以 Chip 流形式呈现已关联卡片信息 */
+            if (tags.isNotEmpty()) {
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    tags.forEach { tag ->
+                        Box(
+                            modifier = Modifier
+                                .combinedClickable(
+                                    onClick = { showTagPicker = true },
+                                    onLongClick = { pendingDeleteTag = tag }
+                                )
+                                .background(
+                                    color = Color(0xFFFFF3E0),
+                                    shape = RoundedCornerShape(20.dp)
+                                )
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "#$tag",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFFF9A5C)
+                            )
+                        }
+                    }
+                }
+            }
+
+            /** 关联卡片 Chip 流展示（无标题行，紧随标签 FlowRow 下方） */
+            LinkedCardsRow(
+                relations = relations,
+                groupId = 0,
+                relationTitles = relationTitles,
+                onAddClick = { showRelationPicker = true },
+                onChipClick = { relation -> previewingRelation = relation },
+                onChipDelete = { relationId, _ -> viewModel.deleteRelation(relationId) },
+                modifier = Modifier.padding(top = 8.dp),
+                showHeader = false
             )
 
             /** 监听 RichTextState 文本变化：同步到 ViewModel + 触发防抖导出 */

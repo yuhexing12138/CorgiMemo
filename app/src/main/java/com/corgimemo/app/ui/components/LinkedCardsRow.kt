@@ -52,9 +52,11 @@ import com.corgimemo.app.data.model.CardRelation
  * @param relations 当前分组的关联列表
  * @param groupId 当前分组ID（用于删除回调定位）
  * @param relationTitles 关联ID → 标题的映射（由 ViewModel 异步加载并缓存）
- * @param onAddClick 点击 ＋ 添加按钮的回调
+ * @param onAddClick 点击 ＋ 添加按钮的回调（仅在 [showHeader] = true 时生效）
  * @param onChipClick 点击 Chip（非 × 区域）的回调，参数为关联实体
  * @param onChipDelete 点击 × 删除按钮的回调，参数为 (relationId, groupId)
+ * @param showHeader 是否渲染标题行（"🔗 已关联 N" + ＋ 添加按钮）。
+ *                   默认 true 保持原行为；灵感编辑页传 false 以仅展示 Chip 流。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -65,41 +67,44 @@ fun LinkedCardsRow(
     onAddClick: () -> Unit,
     onChipClick: (CardRelation) -> Unit,
     onChipDelete: (relationId: Long, groupId: Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showHeader: Boolean = true
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // 标题行：🔗 已关联 [N] + ＋ 添加按钮
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                text = "🔗 已关联 ${relations.size}",
-                fontSize = 12.sp,
-                color = Color(0xFF999999),
-                fontWeight = FontWeight.Normal
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            // ＋ 添加按钮
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFFFFF5EE))
-                    .border(1.dp, Color(0xFFFF9A5C), RoundedCornerShape(12.dp))
-                    .clickable { onAddClick() },
-                contentAlignment = Alignment.Center
+        // 标题行：🔗 已关联 [N] + ＋ 添加按钮（showHeader = false 时不渲染）
+        if (showHeader) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    text = "＋",
-                    fontSize = 14.sp,
-                    color = Color(0xFFFF9A5C),
-                    fontWeight = FontWeight.Bold
+                    text = "🔗 已关联 ${relations.size}",
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999),
+                    fontWeight = FontWeight.Normal
                 )
+                Spacer(modifier = Modifier.weight(1f))
+                // ＋ 添加按钮
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFFFF5EE))
+                        .border(1.dp, Color(0xFFFF9A5C), RoundedCornerShape(12.dp))
+                        .clickable { onAddClick() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "＋",
+                        fontSize = 14.sp,
+                        color = Color(0xFFFF9A5C),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 
