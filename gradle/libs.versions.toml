@@ -2,10 +2,10 @@
 compileSdk = "36"
 minSdk = "26"
 targetSdk = "35"
-# Kotlin 升级到 2.3.20：
-#  - 解决 KotlinAndroidPlugin 在 AGP 9.0 下 ClassCastException（testVariants 警告根因）
-#  - 2.2.x 已 EOL（2025-10-23 终止支持），2.3.x 为当前稳定线
-kotlin = "2.3.20"
+# Kotlin 升级到 2.4.0：
+#  - 对齐 compose-rich-editor 库 v1.0.0 要求的 Kotlin 版本
+#  - 2.4.0 为当前稳定线，KSP 2.3.10 已适配（含 Kotlin 2.4.0 默认模块名 sanitize 修复）
+kotlin = "2.4.0"
 compose = "1.9.2"
 composeCompiler = "2.1.0"
 # Hilt 升级到 2.59.2：Hilt 2.57.2 在 HiltGradlePlugin.kt:139 仍通过 BaseExtension 访问 Android 扩展，
@@ -94,8 +94,9 @@ android-application = { id = "com.android.application", version = "9.2.1" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 # Kotlin 2.0+ 必须显式声明 Compose Compiler 插件（替代旧版 composeCompilerExtension）
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-# KSP 2.3.9：与 Kotlin 2.3.20 配套；KSP 2.3.x 命名已简化为单一版本号（不再使用 <kotlin>-<ksp> 格式）
-ksp = { id = "com.google.devtools.ksp", version = "2.3.9" }
+# KSP 2.3.10：与 Kotlin 2.4.0 配套；KSP 2.3.x 命名已简化为单一版本号（不再使用 <kotlin>-<ksp> 格式）
+# 2.3.10 修复了 Kotlin 2.4.0 默认模块名 sanitize 问题 + AGP 9 内置 Kotlin 下 R-class 解析
+ksp = { id = "com.google.devtools.ksp", version = "2.3.10" }
 hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 # 子模块 :richeditor-compose 需要（KMP + Android Library）
 android-library = { id = "com.android.library", version = "9.2.1" }
