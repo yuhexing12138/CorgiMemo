@@ -130,7 +130,7 @@ import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils /** v2026-0
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
 import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
 import com.mohamedrejeb.richeditor.model.RichSpanStyle
-import com.mohamedrejeb.richeditor.model.Trigger
+import com.mohamedrejeb.richeditor.model.trigger.Trigger
 import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
@@ -138,6 +138,7 @@ import com.mohamedrejeb.richeditor.ui.material3.TriggerSuggestions
 import com.corgimemo.app.ui.components.RichTextImageLoader /** v2026-08-01 Phase 4：自定义 Coil3 图片加载器 */
 import androidx.compose.ui.text.TextRange /** v2026-08-01 Phase 4：图片插入时需要 TextRange 选中占位符 */
 import androidx.compose.ui.unit.sp /** v2026-08-01 Phase 4：RichSpanStyle.Image 的 width/height 参数 */
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -287,6 +288,48 @@ fun InspirationEditScreen(
     val isDirty by viewModel.isDirty.collectAsState()
 
     /**
+     * 富文本编辑器状态（compose-rich-editor 库）
+     *
+     * 使用 rememberRichTextState() 创建，支持：
+     * - toggleSpanStyle/toggleCodeSpan/toggleUnorderedList/toggleOrderedList
+     * - addLink/setMarkdown/toMarkdown
+     *
+     * 通过 ViewModel.setRichTextState() 注入到 ViewModel，
+     * 以便 ViewModel 调用 setMarkdown()/toMarkdown() 进行持久化。
+     */
+    val richTextState = rememberRichTextState()
+
+    /** 注入到 ViewModel（LaunchedEffect 确保只注入一次） */
+    androidx.compose.runtime.LaunchedEffect(richTextState) {
+        viewModel.setRichTextState(richTextState)
+    }
+
+    /**
+     * v2026-08-01 Phase 4：在光标位置内联插入图片到 RichTextEditor
+     *
+     * 实现原理（参照库的 Markdown 解析器）：
+     * 1. 在当前光标位置插入 Unicode 占位符 \uFFFD（InlineContentPlaceholder）
+     * 2. 选中刚插入的占位符字符（TextRange: cursorPos to cursorPos+1）
+     * 3. 对该范围应用 RichSpanStyle.Image，库自动将其渲染为 inline 图片
+     *
+     * width/height 设为 0.sp：库会从 ImageLoader 返回的 Painter 的 intrinsic size
+     * 自动解析实际尺寸，并通过 LocalRichTextMaxImageWidthProvider 做容器宽度 clamp。
+     *
+     * @param imagePath 图片在内部存储的文件路径
+     */
+    fun insertImageIntoRichText(imagePath: String) {
+        val cursorPos = richTextState.selection.start
+        richTextState.addTextAfterSelection("\uFFFD")
+        val imageSpan = RichSpanStyle.Image(
+            model = imagePath,
+            width = 0.sp,
+            height = 0.sp,
+            contentDescription = "插入的图片"
+        )
+        richTextState.addRichSpan(imageSpan, TextRange(cursorPos, cursorPos + 1))
+    }
+
+    /**
      * 相机拍照 Launcher
      *
      * 使用 ActivityResultContracts.TakePicture() 契约，
@@ -370,48 +413,6 @@ fun InspirationEditScreen(
         Color.Transparent
     } else {
         rawBackgroundColor
-    }
-
-    /**
-     * 富文本编辑器状态（compose-rich-editor 库）
-     *
-     * 使用 rememberRichTextState() 创建，支持：
-     * - toggleSpanStyle/toggleCodeSpan/toggleUnorderedList/toggleOrderedList
-     * - addLink/setMarkdown/toMarkdown
-     *
-     * 通过 ViewModel.setRichTextState() 注入到 ViewModel，
-     * 以便 ViewModel 调用 setMarkdown()/toMarkdown() 进行持久化。
-     */
-    val richTextState = rememberRichTextState()
-
-    /** 注入到 ViewModel（LaunchedEffect 确保只注入一次） */
-    androidx.compose.runtime.LaunchedEffect(richTextState) {
-        viewModel.setRichTextState(richTextState)
-    }
-
-    /**
-     * v2026-08-01 Phase 4：在光标位置内联插入图片到 RichTextEditor
-     *
-     * 实现原理（参照库的 Markdown 解析器）：
-     * 1. 在当前光标位置插入 Unicode 占位符 \uFFFD（InlineContentPlaceholder）
-     * 2. 选中刚插入的占位符字符（TextRange: cursorPos to cursorPos+1）
-     * 3. 对该范围应用 RichSpanStyle.Image，库自动将其渲染为 inline 图片
-     *
-     * width/height 设为 0.sp：库会从 ImageLoader 返回的 Painter 的 intrinsic size
-     * 自动解析实际尺寸，并通过 LocalRichTextMaxImageWidthProvider 做容器宽度 clamp。
-     *
-     * @param imagePath 图片在内部存储的文件路径
-     */
-    fun insertImageIntoRichText(imagePath: String) {
-        val cursorPos = richTextState.selection.start
-        richTextState.addTextAfterSelection("\uFFFD")
-        val imageSpan = RichSpanStyle.Image(
-            model = imagePath,
-            width = 0.sp,
-            height = 0.sp,
-            contentDescription = "插入的图片"
-        )
-        richTextState.addRichSpan(imageSpan, TextRange(cursorPos, cursorPos + 1))
     }
 
     /** 格式工具栏展开/折叠状态（由底部栏 ⋮ 按钮切换） */
