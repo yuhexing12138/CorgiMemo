@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -243,13 +244,15 @@ fun SwipeableImageStack(
                     Box(
                         modifier = Modifier
                             .size(cardWidth, cardHeight)
+                            // zIndex 负值让非顶卡绘制在顶卡之下（顶卡 stackIndex=0 → zIndex=0）
+                            // 用 zIndex 而非 translationZ：Compose 的 GraphicsLayerScope 不含
+                            // translationZ 属性（仅有 translationX/Y），绘制层级应交给 zIndex
+                            .zIndex(-stackIndex.toFloat())
                             .offset { IntOffset(finalX.roundToInt(), finalY.roundToInt()) }
                             .graphicsLayer {
                                 rotationZ = rotationDeg
                                 scaleX = scale
                                 scaleY = scale
-                                // z 轴略向下推一格，让堆叠有层次感
-                                translationZ = -stackIndex * 4f
                             }
                             .shadow(
                                 elevation = if (isTopCard) 8.dp else 4.dp,
