@@ -15,9 +15,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -45,6 +43,8 @@ import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.corgimemo.app.data.model.Inspiration
+import com.corgimemo.app.ui.components.SwipeDirection
+import com.corgimemo.app.ui.components.SwipeableImageStack
 import com.corgimemo.app.ui.theme.UiColors
 import java.util.Calendar
 
@@ -425,32 +425,27 @@ fun TimelineInspirationItem(
                 } // end if (!hideDetails)
             } // end 文本内容 Column
 
-            // 图片区域：拥有独立的 clickable，优先消费 tap 事件，
-            // 点击图片触发 onImageClick（进入预览页）而非外层 onClick（进入详情页）
+            // 图片区域：v2026-08-24 替换 LazyRow 为 SwipeableImageStack
+            // - 水平模式拖动（detectHorizontalDragGestures）天然不消费垂直分量，
+            //   父级 LazyColumn 仍可正常垂直滚动
+            // - 点击顶卡触发 onImageClick(顶卡 originalIndex) 进入全屏 Pager 预览
+            // - 拖动翻牌：左滑/右滑 >50dp 顶卡飞出新顶卡上位
             if (!hideDetails && imagePaths.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(tagToImageGap))
-                /**
-                 * 横向滚动图片区（LazyRow）：
-                 * - 固定高度 120dp，宽度按原图比例自适应（最大 200dp）
-                 * - 使用 SubcomposeAsyncImage 通过 state.painter.intrinsicSize
-                 *   获取原图真实宽高比，确保不拉伸
-                 * - 点击图片触发 onImageClick 回调（进入全屏预览）
-                 * - 横向滑动 LazyRow 不会触发外层 LazyColumn 滚动
-                 */
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    itemsIndexed(
-                        items = imagePaths,
-                        key = { index, path -> "img_${inspiration.id}_${index}_$path" }
-                    ) { index, path ->
-                        InspirationTimelineImage(
-                            path = path,
-                            onClick = { onImageClick(index) }
-                        )
+                SwipeableImageStack(
+                    imageUris = imagePaths,
+                    modifier = Modifier.fillMaxWidth(),
+                    cardWidth = 120.dp,
+                    cardHeight = 120.dp,
+                    cardRadius = 12.dp,
+                    swipeThreshold = 50.dp,
+                    tiltAngle = -8f,    // 减弱扇形角度，适配小尺寸缩略图
+                    xOffset = 28.dp,    // 减小水平偏移
+                    swipeDirection = SwipeDirection.Horizontal,
+                    onCardClick = { originalIndex ->
+                        onImageClick(originalIndex)
                     }
-                }
+                )
             }
         }
     }

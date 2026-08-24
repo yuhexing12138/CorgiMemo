@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -55,6 +56,21 @@ import kotlin.math.roundToInt
 private data class CardSlot(val stableId: Long, val originalIndex: Int)
 
 /**
+ * 拖动手势方向约束
+ *
+ * - [Horizontal]：仅水平拖动。**推荐用于嵌入滚动列表的场景**（如时间线）。
+ *   用 `detectHorizontalDragGestures` 天然不消费垂直分量，父级 `LazyColumn`
+ *   仍可正常垂直滚动。代价是失去原型"对角线飞"效果，fly-out 强制水平。
+ * - [Both]：全向拖动（水平+垂直），复刻 Web 端 `framer-motion` 原型效果。
+ *   仅适合独立全屏场景（如未来"图片聚合页"），嵌入滚动列表会与父级
+ *   滚动产生手势冲突。
+ */
+enum class SwipeDirection {
+    Horizontal,
+    Both
+}
+
+/**
  * 滑动堆叠图片组件
  *
  * **来源**：参考 `图片库/滑动堆叠.md`（Originkit Web 组件）的交互模式
@@ -83,15 +99,17 @@ private data class CardSlot(val stableId: Long, val originalIndex: Int)
  *
  * @param imageUris 图片 Uri 路径列表（local path / content uri / http url 都可）
  * @param modifier Modifier（可选）
- * @param cardWidth 卡片宽度（默认 300dp）
- * @param cardHeight 卡片高度（默认 400dp）
- * @param cardRadius 卡片圆角（默认 16dp，与项目内图片块一致）
- * @param swipeThreshold 拖动距离阈值（默认 50dp）
+ * @param cardWidth 卡片宽度（默认 300.dp，嵌入时间线缩略图建议传 120.dp）
+ * @param cardHeight 卡片高度（默认 400.dp，嵌入时间线缩略图建议传 120.dp）
+ * @param cardRadius 卡片圆角（默认 16.dp，嵌入时间线缩略图建议传 12.dp）
+ * @param swipeThreshold 拖动距离阈值（默认 50.dp）
  * @param tiltAngle 堆叠末端旋转角度（默认 -12f，单位度）
  * @param tiltAngleStart 堆叠首端旋转角度（默认 0f）
- * @param xOffset 堆叠末端水平偏移（默认 60dp，扇形展开幅度）
+ * @param xOffset 堆叠末端水平偏移（默认 60.dp，扇形展开幅度）
+ * @param swipeDirection 拖动手势方向约束（默认 [SwipeDirection.Horizontal]，
+ *                       嵌入滚动列表务必用 Horizontal 避免与父级手势冲突）
  * @param onCardSwiped 顶卡滑出回调（被滑出的图片在原列表中的索引）
- * @param onCardClick 顶卡点击回调
+ * @param onCardClick 顶卡点击回调，参数为顶卡对应的原始图片索引
  */
 @Composable
 fun SwipeableImageStack(
@@ -104,8 +122,9 @@ fun SwipeableImageStack(
     tiltAngle: Float = -12f,
     tiltAngleStart: Float = 0f,
     xOffset: Dp = 60.dp,
+    swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
-    onCardClick: (() -> Unit)? = null
+    onCardClick: ((originalIndex: Int) -> Unit)? = null
 ) {
     SwipeableImageStack(
         imageUris = imageUris,
@@ -117,6 +136,7 @@ fun SwipeableImageStack(
         tiltAngle = tiltAngle,
         tiltAngleStart = tiltAngleStart,
         xOffset = xOffset,
+        swipeDirection = swipeDirection,
         onCardSwiped = onCardSwiped,
         onCardClick = onCardClick,
         customContent = null
@@ -143,8 +163,9 @@ fun SwipeableImageStack(
     tiltAngle: Float = -12f,
     tiltAngleStart: Float = 0f,
     xOffset: Dp = 60.dp,
+    swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
-    onCardClick: (() -> Unit)? = null,
+    onCardClick: ((originalIndex: Int) -> Unit)? = null,
     customContent: (@Composable BoxScope.(stackIndex: Int) -> Unit)? = null
 ) {
     // 维护一个 (stableId, originalIndex) 列表：
@@ -238,59 +259,99 @@ fun SwipeableImageStack(
                             .background(Color(0xFFF3EFFF))
                             .then(
                                 if (isTopCard) {
-                                    Modifier.pointerInput(slot.stableId) {
-                                        detectDragGestures(
-                                            onDragEnd = {
-                                                val dx = dragOffsetX.value
-                                                val dy = dragOffsetY.value
-                                                val distance = hypot(dx, dy)
-                                                if (distance > thresholdPx) {
-                                                    // 飞出去 + 重排
-                                                    val flyX = if (dx.absoluteValue >= dy.absoluteValue) {
-                                                        dx * 3f
+                                    Modifier.pointerInput(slot.stableId, swipeDirection) {
+                                        // 水平模式：用 detectHorizontalDragGestures，天然不消费垂直分量，
+                                        // 父级 LazyColumn 仍可垂直滚动（关键解耦点）。
+                                        // 全向模式：用 detectDragGestures 复刻原型，嵌入滚动列表会与父级冲突。
+                                        if (swipeDirection == SwipeDirection.Horizontal) {
+                                            detectHorizontalDragGestures(
+                                                onDragEnd = {
+                                                    val dx = dragOffsetX.value
+                                                    val distance = dx.absoluteValue
+                                                    if (distance > thresholdPx) {
+                                                        // 水平飞出 + 重排
+                                                        scope.launch {
+                                                            dragOffsetX.animateTo(
+                                                                dx * 3f,
+                                                                spring(dampingRatio = 0.75f, stiffness = 200f)
+                                                            )
+                                                            onCardSwiped?.invoke(slot.originalIndex)
+                                                            val newOrder = order.toMutableList()
+                                                            val top = newOrder.removeAt(0)
+                                                            newOrder.add(top)
+                                                            order = newOrder
+                                                            dragOffsetX.snapTo(0f)
+                                                            dragOffsetY.snapTo(0f)
+                                                        }
                                                     } else {
-                                                        dx
-                                                    }
-                                                    val flyY = if (dy.absoluteValue > dx.absoluteValue) {
-                                                        dy * 3f
-                                                    } else {
-                                                        dy
-                                                    }
-                                                    scope.launch {
-                                                        dragOffsetX.animateTo(
-                                                            flyX,
-                                                            spring(dampingRatio = 0.75f, stiffness = 200f)
-                                                        )
-                                                        // 通知业务方：哪张原图被滑出
-                                                        onCardSwiped?.invoke(slot.originalIndex)
-                                                        // 重排：把顶卡移到队尾
-                                                        val newOrder = order.toMutableList()
-                                                        val top = newOrder.removeAt(0)
-                                                        newOrder.add(top)
-                                                        order = newOrder
-                                                        // 复位偏移（此时新顶卡是原 order[1]）
-                                                        dragOffsetX.snapTo(0f)
-                                                        dragOffsetY.snapTo(0f)
-                                                    }
-                                                } else {
-                                                    // 弹回中心
-                                                    scope.launch {
-                                                        dragOffsetX.animateTo(
-                                                            0f,
-                                                            spring(dampingRatio = 0.55f, stiffness = 300f)
-                                                        )
-                                                        dragOffsetY.animateTo(
-                                                            0f,
-                                                            spring(dampingRatio = 0.55f, stiffness = 300f)
-                                                        )
+                                                        // 弹回中心
+                                                        scope.launch {
+                                                            dragOffsetX.animateTo(
+                                                                0f,
+                                                                spring(dampingRatio = 0.55f, stiffness = 300f)
+                                                            )
+                                                            dragOffsetY.animateTo(
+                                                                0f,
+                                                                spring(dampingRatio = 0.55f, stiffness = 300f)
+                                                            )
+                                                        }
                                                     }
                                                 }
+                                            ) { change, dragAmount ->
+                                                scope.launch {
+                                                    dragOffsetX.snapTo(dragOffsetX.value + dragAmount)
+                                                }
                                             }
-                                        ) { change, dragAmount ->
-                                            change.consume()
-                                            scope.launch {
-                                                dragOffsetX.snapTo(dragOffsetX.value + dragAmount.x)
-                                                dragOffsetY.snapTo(dragOffsetY.value + dragAmount.y)
+                                        } else {
+                                            // 全向模式
+                                            detectDragGestures(
+                                                onDragEnd = {
+                                                    val dx = dragOffsetX.value
+                                                    val dy = dragOffsetY.value
+                                                    val distance = hypot(dx, dy)
+                                                    if (distance > thresholdPx) {
+                                                        val flyX = if (dx.absoluteValue >= dy.absoluteValue) {
+                                                            dx * 3f
+                                                        } else {
+                                                            dx
+                                                        }
+                                                        val flyY = if (dy.absoluteValue > dx.absoluteValue) {
+                                                            dy * 3f
+                                                        } else {
+                                                            dy
+                                                        }
+                                                        scope.launch {
+                                                            dragOffsetX.animateTo(
+                                                                flyX,
+                                                                spring(dampingRatio = 0.75f, stiffness = 200f)
+                                                            )
+                                                            onCardSwiped?.invoke(slot.originalIndex)
+                                                            val newOrder = order.toMutableList()
+                                                            val top = newOrder.removeAt(0)
+                                                            newOrder.add(top)
+                                                            order = newOrder
+                                                            dragOffsetX.snapTo(0f)
+                                                            dragOffsetY.snapTo(0f)
+                                                        }
+                                                    } else {
+                                                        scope.launch {
+                                                            dragOffsetX.animateTo(
+                                                                0f,
+                                                                spring(dampingRatio = 0.55f, stiffness = 300f)
+                                                            )
+                                                            dragOffsetY.animateTo(
+                                                                0f,
+                                                                spring(dampingRatio = 0.55f, stiffness = 300f)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            ) { change, dragAmount ->
+                                                change.consume()
+                                                scope.launch {
+                                                    dragOffsetX.snapTo(dragOffsetX.value + dragAmount.x)
+                                                    dragOffsetY.snapTo(dragOffsetY.value + dragAmount.y)
+                                                }
                                             }
                                         }
                                     }
@@ -326,14 +387,14 @@ fun SwipeableImageStack(
 
                         // 顶卡额外支持点击
                         // 使用 detectTapGestures 的 onTap：只在快速点击（无拖动）时触发，
-                        // 拖动事件已被外层 detectDragGestures 消费，两者不冲突。
+                        // 拖动事件已被外层 drag gesture 消费，两者不冲突。
                         if (isTopCard && onCardClick != null) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .pointerInput(slot.stableId) {
                                         detectTapGestures(
-                                            onTap = { onCardClick() }
+                                            onTap = { onCardClick(slot.originalIndex) }
                                         )
                                     }
                             )
