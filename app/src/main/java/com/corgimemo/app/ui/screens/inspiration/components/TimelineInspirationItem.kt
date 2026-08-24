@@ -430,8 +430,7 @@ fun TimelineInspirationItem(
             //   父级 LazyColumn 仍可正常垂直滚动
             // - 点击顶卡触发 onImageClick(顶卡 originalIndex) 进入全屏 Pager 预览
             // - 拖动翻牌：左滑/右滑 >50dp 顶卡飞出新顶卡上位
-            // - 120dp 缩略图专用扇形参数（接近原型 67% 宽 / -45° 的视觉效果）：
-            //   tiltAngle=-15°、xOffset=50dp（42% 卡片宽）、scaleStep=0.07（每张缩 7%）
+            // - 扇形参数：tiltAngle=45f + xOffset=0.dp（按图片中心旋转，扇形由旋转 + y 错开形成）
             if (!hideDetails && imagePaths.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(tagToImageGap))
                 SwipeableImageStack(
@@ -441,10 +440,8 @@ fun TimelineInspirationItem(
                     cardHeight = 120.dp,
                     cardRadius = 12.dp,
                     swipeThreshold = 50.dp,
-                    tiltAngle = -15f,    // 强扇形旋转（120dp 场景避免 -8° 几乎不可见）
-                    xOffset = 50.dp,     // 42% 卡片宽（接近原型 67% 视觉强度）
-                    scaleStep = 0.07f,    // 每张缩 7%（补偿小尺寸下缩放感弱）
-                    stackOffsetYStep = 8.dp,
+                    tiltAngle = 45f,
+                    xOffset = 0.dp,
                     swipeDirection = SwipeDirection.Horizontal,
                     onCardClick = { originalIndex ->
                         onImageClick(originalIndex)
