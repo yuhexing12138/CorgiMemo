@@ -368,19 +368,20 @@ fun SwipeableImageStack(
                     // - 新顶卡重排后 dragOffsetX 还在 animateTo(0) 期间，isPressed=false
                     //   finalScale 跟随 scaleAnim 平滑过渡（0.95→1.0），不再有"从大变小"突变
                     //
-                    // shouldReturnToCenter（与原型一致）：短距离拖动后回中时，1s 内顶卡 x/y/rotate 强制为 0
-                    // - 配合 setTimeout 1s 自动复位
-                    // - 视觉：顶卡先瞬移到中央，再用 spring 平滑过渡回扇形位置
-                    val finalX = when {
-                        isTopCard && shouldReturnToCenter.value -> 0f
-                        isTopCard -> positionX.value + dragOffsetX.value
-                        else -> positionX.value
-                    }
-                    val finalY = when {
-                        isTopCard && shouldReturnToCenter.value -> 0f
-                        isTopCard -> positionY.value + dragOffsetY.value
-                        else -> positionY.value
-                    }
+                    // shouldReturnToCenter 不再强制 finalX/finalY = 0（严格对齐原型）：
+                    // - 原型 getCardStyle 中 shouldReturn 对顶卡是 no-op（顶卡 index=0，
+                    //   xOffsetValue=0, stackOffset=0, rotationValue=tiltAngleStart=0，
+                    //   目标本来就是 (0,0,0)），1s setTimeout 仅作锁定期
+                    // - 原型松手后的弹回由 framer-motion 的 drag 系统自动处理
+                    //   （dragConstraints={0,0,0,0} + dragTransition.bounceStiffness/Damping）
+                    // - Compose 用 dragOffsetX/Y 的 BOUNCE_SPRING 动画模拟弹回，
+                    //   旧实现 shouldReturn 强制 finalX/Y=0 会覆盖该动画，导致顶卡"瞬移"到中心
+                    // - 修复后：finalX/Y = positionX/Y + dragOffsetX/Y，
+                    //   松手后 dragOffsetX/Y 通过 BOUNCE_SPRING 平滑回零，
+                    //   顶卡视觉上从拖动位置平滑过渡到 (0,0)，与原型一致
+                    // - shouldReturnToCenter 保留用于 onDragStart 重置 + finalRotation 锁定
+                    val finalX = if (isTopCard) positionX.value + dragOffsetX.value else positionX.value
+                    val finalY = if (isTopCard) positionY.value + dragOffsetY.value else positionY.value
                     // 原型 whileDrag: { scale: 1.05 } → 当前帧 = scaleAnim + 0.05
                     val finalScale = if (isPressed.value) scaleAnim.value + 0.05f else scaleAnim.value
                     // 原型 whileDrag: { rotate: tiltAngleStart = 0 } → 拖动时归零
