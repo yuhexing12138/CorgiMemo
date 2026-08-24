@@ -51,6 +51,12 @@ class InspirationViewModel @Inject constructor(
     private val inspirationRepository: InspirationRepository,
     private val deletedInspirationRepository: DeletedInspirationRepository,
     private val cardRelationRepository: CardRelationRepository,
+    /**
+     * v2026-08-24 修复灵感图片不可见 bug 新增：
+     * 灵感图片存储在 content_blocks 表（ownerType="inspiration"），
+     * ViewModel 需要直接查询该表以构建 imagePathsMap。
+     */
+    private val contentBlockDao: ContentBlockDao,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
