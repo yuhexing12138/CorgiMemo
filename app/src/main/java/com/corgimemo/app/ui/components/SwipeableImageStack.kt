@@ -195,9 +195,12 @@ fun SwipeableImageStack(
 
     val scope = rememberCoroutineScope()
 
-    // 容器：宽 = cardWidth + xOffset（容纳扇形最末端 xOffset 的偏移），高 = cardHeight + 60dp（容纳 yStackOffset 上移）
+    // 容器：宽 = cardWidth + xOffset（容纳扇形最末端 xOffset 的偏移），
+    // 高 = cardHeight + 15% cardHeight（容纳 yStackOffset 上移，按比例适配不同尺寸）
+    // - 用 cardHeight * 0.15 而非固定 60dp：120dp 缩略图场景只需 ~18dp 余量，400dp 详情页场景需 60dp 余量
+    val stackVerticalPadding = cardHeight * 0.15f
     Box(
-        modifier = modifier.size(cardWidth + xOffset, cardHeight + 60.dp),
+        modifier = modifier.size(cardWidth + xOffset, cardHeight + stackVerticalPadding),
         contentAlignment = Alignment.Center
     ) {
         // 透视感：父容器 cameraDistance 模拟 Web 端 perspective:1000
@@ -549,6 +552,103 @@ private fun SwipeableImageStackPreviewCustom() {
                 ) {
                     Text(
                         text = "Card ${index + 1}",
+                        color = Color.White,
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        )
+    }
+}
+
+/**
+ * Preview: 本地色块（无网络依赖，IDE 始终可预览）
+ *
+ * 适配首页时间线缩略图场景：120×120 + 5 张色块 + 水平模式
+ * - 与线上 picsum Preview 对照：可调试 stackVerticalPadding 比例、xOffset 效果
+ * - 无网络/弱网环境也能在 IDE 中正常看到堆叠视觉
+ */
+@androidx.compose.ui.tooling.preview.Preview
+@Composable
+private fun SwipeableImageStackPreviewLocal() {
+    // 与项目 Color.kt 一致的色卡（暖色 + 冷色 + 中性）
+    val palette = listOf(
+        Color(0xFFFF9A5C),  // 暖橙（主色）
+        Color(0xFFFFB5C2),  // 粉
+        Color(0xFF7EC8A0),  // 绿
+        Color(0xFF7EB8DA),  // 蓝
+        Color(0xFFB8A9D9)   // 紫
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFFFFBF5)),
+        contentAlignment = Alignment.Center
+    ) {
+        SwipeableImageStack(
+            imageUris = List(palette.size) { "" },  // 空 Uri，仅作数量依据
+            cardWidth = 120.dp,
+            cardHeight = 120.dp,
+            cardRadius = 12.dp,
+            tiltAngle = -8f,
+            xOffset = 28.dp,
+            swipeDirection = SwipeDirection.Horizontal,
+            customContent = { stackIndex ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(palette[stackIndex % palette.size]),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${stackIndex + 1}",
+                        color = Color.White,
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        )
+    }
+}
+
+/**
+ * Preview: 本地色块 - 大图场景（300×400 + 3 张色块 + 全向模式）
+ *
+ * 复刻 Web 原型效果，验证 SwipeDirection.Both 的对角线飞牌体验。
+ */
+@androidx.compose.ui.tooling.preview.Preview
+@Composable
+private fun SwipeableImageStackPreviewLocalLarge() {
+    val palette = listOf(
+        Color(0xFFFF9A5C),
+        Color(0xFF7EC8A0),
+        Color(0xFF7EB8DA)
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFFFFBF5)),
+        contentAlignment = Alignment.Center
+    ) {
+        SwipeableImageStack(
+            imageUris = List(palette.size) { "" },
+            cardWidth = 300.dp,
+            cardHeight = 400.dp,
+            cardRadius = 16.dp,
+            tiltAngle = -12f,
+            xOffset = 60.dp,
+            swipeDirection = SwipeDirection.Both,
+            customContent = { stackIndex ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(palette[stackIndex % palette.size]),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Card ${stackIndex + 1}",
                         color = Color.White,
                         fontSize = 36.sp,
                         fontWeight = FontWeight.SemiBold
