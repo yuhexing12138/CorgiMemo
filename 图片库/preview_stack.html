@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SwipeableImageStack 原型预览（严格对齐 Compose 实现）</title>
+    <!-- React 17 UMD + framer-motion 5 UMD + Babel UMD（全部纯 script 加载，无 ESM 依赖） -->
+    <script crossorigin src="https://cdn.jsdelivr.net/npm/react@17.0.2/umd/react.production.min.js"></script>
+    <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@17.0.2/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/framer-motion@5.6.0/dist/framer-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: #FFFBF5;
+            color: #333;
+            min-height: 100vh;
+        }
+        .app {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            min-height: 100vh;
+        }
+        /* ============ 控制面板 ============ */
+        .panel {
+            background: #FFFFFF;
+            border-right: 1px solid #EEE;
+            padding: 24px 20px;
+            overflow-y: auto;
+            max-height: 100vh;
+        }
+        .panel h1 {
+            font-size: 18px;
+            margin: 0 0 4px 0;
+            color: #9967FF;
+        }
+        .panel .subtitle {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 24px;
+        }
+        .panel section {
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px dashed #EEE;
+        }
+        .panel section:last-child { border-bottom: none; }
+        .panel h2 {
+            font-size: 13px;
+            margin: 0 0 12px 0;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .panel label {
+            display: block;
+            font-size: 12px;
+            color: #555;
+            margin-bottom: 4px;
+        }
+        .panel label .val {
+            color: #9967FF;
+            font-weight: 600;
+            font-family: ui-monospace, Menlo, monospace;
+            float: right;
+        }
+        .panel input[type="range"] {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        .panel button.mode-btn {
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
+            margin-bottom: 6px;
+            border: 1px solid #DDD;
+            background: #FFF;
+            color: #555;
+            font-size: 12px;
+            text-align: left;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.15s;
+        }
+        .panel button.mode-btn:hover { border-color: #9967FF; color: #9967FF; }
+        .panel button.mode-btn.active {
+            background: #F3EFFF;
+            border-color: #9967FF;
+            color: #9967FF;
+            font-weight: 600;
+        }
+        /* ============ 预览舞台 ============ */
+        .stage {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            position: relative;
+            background:
+                linear-gradient(45deg, #F8F4EE 25%, transparent 25%),
+                linear-gradient(-45deg, #F8F4EE 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #F8F4EE 75%),
+                linear-gradient(-45deg, transparent 75%, #F8F4EE 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+            background-color: #FFFBF5;
+        }
+        .stage .hint {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            font-size: 11px;
+            color: #999;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        .stage .status {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            font-size: 11px;
+            color: #999;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: ui-monospace, Menlo, monospace;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-presets="react">
+        const { useState, useEffect, useRef } = React;
+        // framer-motion 5 UMD 暴露为 window.Motion 或 window.framerMotion
+        const motion = window.Motion ? window.Motion.motion : (window.framerMotion ? window.framerMotion.motion : null);
+
+        // ============ 默认色块（与 Compose DEFAULT_IMAGE_COLORS 一致） ============
+        const DEFAULT_IMAGE_COLORS = [
+            { color: "#FF9A5C", name: "暖橙" },
+            { color: "#FFB5C2", name: "粉" },
+            { color: "#7EC8A0", name: "绿" },
+            { color: "#7EB8DA", name: "蓝" }
+        ];
+
+        // ============ 真实测试图片（picsum） ============
+        const REAL_IMAGES = [
+            { src: "https://picsum.photos/seed/corgi1/600/800" },
+            { src: "https://picsum.photos/seed/corgi2/600/800" },
+            { src: "https://picsum.photos/seed/corgi3/600/800" },
+            { src: "https://picsum.photos/seed/corgi4/600/800" }
+        ];
+
+        // ============ 自定义内容色块 ============
+        const CUSTOM_PALETTE = [
+            { color: "#FF9A5C", label: "Card 1" },
+            { color: "#FFB5C2", label: "Card 2" },
+            { color: "#7EC8A0", label: "Card 3" },
+            { color: "#7EB8DA", label: "Card 4" }
+        ];
+
+        // ============ 与 Originkit 原型严格对齐的常量 ============
+        const PERSPECTIVE = 1000;
+        const DEPTH_SPACING = 10;
+
+        if (!motion) {
+            document.getElementById("root").innerHTML =
+                '<div style="padding:40px;color:#C00;font-family:monospace">framer-motion UMD 加载失败，请检查网络（需访问 cdn.jsdelivr.net）</div>';
+        } else {
+
+        /**
+         * SwipeableImageStack - 严格对齐 Compose 实现的 Web 预览
+         */
+        function SwipeableImageStack({
+            mode = "defaultColors",
+            cardWidth = 300,
+            cardHeight = 400,
+            cardRadius = 4,
+            swipeThreshold = 50,
+            tiltAngle = -45,
+            tiltAngleStart = 0,
+            xOffset = 200,
+            transition = { type: "spring", stiffness: 300, damping: 30 }
+        }) {
+            const images = (() => {
+                switch (mode) {
+                    case "realImages": return REAL_IMAGES;
+                    case "custom": return CUSTOM_PALETTE;
+                    case "noImage": return [{ src: "" }, { src: "" }, { src: "" }];
+                    case "defaultColors":
+                    default:
+                        return DEFAULT_IMAGE_COLORS.map(c => ({ color: c.color, name: c.name }));
+                }
+            })();
+
+            const actualCardCount = images.length;
+
+            const [cards, setCards] = useState(() =>
+                Array.from({ length: actualCardCount }, (_, i) => ({
+                    id: i + 1,
+                    content: `Card ${i + 1}`,
+                    imageIndex: i
+                }))
+            );
+
+            const [isPressed, setIsPressed] = useState(false);
+            const [shouldReturnToCenter, setShouldReturnToCenter] = useState(false);
+
+            useEffect(() => {
+                setCards(prevCards => {
+                    if (prevCards.length !== actualCardCount) {
+                        return Array.from({ length: actualCardCount }, (_, i) => ({
+                            id: i + 1,
+                            content: `Card ${i + 1}`,
+                            imageIndex: i
+                        }));
+                    }
+                    return prevCards;
+                });
+            }, [actualCardCount]);
+
+            const handlePointerDown = () => setIsPressed(true);
+            const handlePointerUp = () => setIsPressed(false);
+
+            const handleDragEnd = (info) => {
+                setIsPressed(false);
+                const { offset } = info;
+                const distance = Math.sqrt(offset.x * offset.x + offset.y * offset.y);
+                if (distance > swipeThreshold) {
+                    setCards(prevCards => {
+                        const [topCard, ...restCards] = prevCards;
+                        return [...restCards, topCard];
+                    });
+                } else {
+                    setShouldReturnToCenter(true);
+                    setTimeout(() => setShouldReturnToCenter(false), 1000);
+                }
+            };
+
+            const getCardStyle = (index) => {
+                const totalCards = cards.length;
+                const stackOffset = index * 8;
+                const scaleValue = 1 - index * 0.05;
+                const rotationValue =
+                    totalCards > 1
+                        ? tiltAngleStart + (index / (totalCards - 1)) * (tiltAngle - tiltAngleStart)
+                        : tiltAngleStart;
+                const xOffsetValue =
+                    totalCards > 1 ? (index / (totalCards - 1)) * xOffset : 0;
+                const depthOffset = index * DEPTH_SPACING;
+                const isTopCard = index === 0;
+                const shouldReturn = isTopCard && shouldReturnToCenter;
+
+                return {
+                    zIndex: cards.length - index,
+                    scale: scaleValue,
+                    x: shouldReturn ? 0 : xOffsetValue,
+                    y: shouldReturn ? 0 : -stackOffset,
+                    rotate: shouldReturn ? 0 : rotationValue,
+                    z: shouldReturn ? 0 : -depthOffset,
+                    opacity: 1
+                };
+            };
+
+            const radiusPx = (cardRadius / 20) * (Math.min(cardWidth, cardHeight) / 2);
+            const containerW = cardWidth + xOffset;
+            const containerH = cardHeight + cardHeight * 0.15;
+
+            return (
+                <div style={{
+                    width: containerW,
+                    height: containerH,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    position: "relative",
+                    perspective: `${PERSPECTIVE}px`,
+                    transformStyle: "preserve-3d"
+                }}>
+                    <div style={{
+                        position: "relative",
+                        width: cardWidth,
+                        height: cardHeight,
+                        transformStyle: "preserve-3d"
+                    }}>
+                        {cards.map((card, index) => {
+                            const isTopCard = index === 0;
+                            const cardStyle = getCardStyle(index);
+                            const cardData = images[card.imageIndex];
+                            const hasImage = mode !== "noImage";
+
+                            const renderContent = () => {
+                                if (mode === "custom") {
+                                    return (
+                                        <div style={{
+                                            position: "absolute",
+                                            inset: 0,
+                                            background: cardData.color,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            color: "#FFF",
+                                            fontSize: "36px",
+                                            fontWeight: 600
+                                        }}>
+                                            {cardData.label}
+                                        </div>
+                                    );
+                                }
+                                if (mode === "defaultColors") {
+                                    return (
+                                        <div style={{
+                                            position: "absolute",
+                                            inset: 0,
+                                            background: cardData.color,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            color: "#FFF",
+                                            fontSize: "32px",
+                                            fontWeight: 600
+                                        }}>
+                                            {card.content}
+                                        </div>
+                                    );
+                                }
+                                if (mode === "realImages") {
+                                    return (
+                                        <img
+                                            src={cardData.src}
+                                            alt={card.content}
+                                            style={{
+                                                position: "absolute",
+                                                inset: 0,
+                                                width: "100%",
+                                                height: "100%",
+                                                objectFit: "cover"
+                                            }}
+                                            onError={(e) => {
+                                                e.target.style.display = "none";
+                                            }}
+                                        />
+                                    );
+                                }
+                                return null;
+                            };
+
+                            return (
+                                <motion.div
+                                    key={card.id}
+                                    drag={isTopCard}
+                                    dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+                                    dragElastic={0.7}
+                                    dragMomentum={false}
+                                    dragTransition={{ bounceStiffness: 300, bounceDamping: 20 }}
+                                    onPointerDown={isTopCard ? handlePointerDown : undefined}
+                                    onPointerUp={isTopCard ? handlePointerUp : undefined}
+                                    onDragEnd={isTopCard ? (_, info) => handleDragEnd(info) : undefined}
+                                    animate={cardStyle}
+                                    transition={{
+                                        x: transition,
+                                        y: transition,
+                                        rotate: transition,
+                                        scale: transition,
+                                        zIndex: { duration: 0.3, ease: "easeOut" },
+                                        z: { duration: 0.3, ease: "easeOut" }
+                                    }}
+                                    whileDrag={{
+                                        scale: 1.05,
+                                        rotate: tiltAngleStart,
+                                        zIndex: 1000
+                                    }}
+                                    style={{
+                                        position: "absolute",
+                                        width: "100%",
+                                        height: "100%",
+                                        transformStyle: "preserve-3d",
+                                        backgroundColor: hasImage
+                                            ? "transparent"
+                                            : "rgba(243, 239, 255, 0.8)",
+                                        borderRadius: radiusPx,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        backdropFilter: hasImage ? "none" : "blur(10px)",
+                                        justifyContent: "center",
+                                        fontSize: "32px",
+                                        fontWeight: 300,
+                                        fontFamily: "system-ui",
+                                        color: "#9967FF",
+                                        cursor: isTopCard
+                                            ? (isPressed ? "grabbing" : "grab")
+                                            : "default",
+                                        userSelect: "none",
+                                        backgroundImage: !hasImage && cardData && cardData.src
+                                            ? `url(${cardData.src})`
+                                            : undefined,
+                                        backgroundSize: "cover",
+                                        backgroundPosition: "center",
+                                        backgroundRepeat: "no-repeat",
+                                        overflow: "hidden",
+                                        border: hasImage ? "none" : "1.5px solid #9967FF",
+                                        boxShadow: isTopCard
+                                            ? "0 8px 24px rgba(0,0,0,0.18)"
+                                            : "0 4px 12px rgba(0,0,0,0.10)"
+                                    }}
+                                >
+                                    {renderContent()}
+                                    {!hasImage && (
+                                        <p style={{
+                                            position: "relative",
+                                            zIndex: 1,
+                                            fontSize: 14,
+                                            color: "#9967FF",
+                                            padding: 20,
+                                            textAlign: "center",
+                                            margin: 0
+                                        }}>
+                                            {card.content} — Add images in Content
+                                        </p>
+                                    )}
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        }
+
+        /**
+         * 控制面板
+         */
+        function App() {
+            const [mode, setMode] = useState("defaultColors");
+            const [cardWidth, setCardWidth] = useState(300);
+            const [cardHeight, setCardHeight] = useState(400);
+            const [cardRadius, setCardRadius] = useState(4);
+            const [swipeThreshold, setSwipeThreshold] = useState(50);
+            const [tiltAngle, setTiltAngle] = useState(-45);
+            const [xOffset, setXOffset] = useState(200);
+
+            return (
+                <div className="app">
+                    <aside className="panel">
+                        <h1>滑动堆叠原型预览</h1>
+                        <div className="subtitle">与 Compose SwipeableImageStack.kt 严格对齐</div>
+
+                        <section>
+                            <h2>渲染模式</h2>
+                            <button
+                                className={"mode-btn" + (mode === "defaultColors" ? " active" : "")}
+                                onClick={() => setMode("defaultColors")}
+                            >色块默认图（无网络）</button>
+                            <button
+                                className={"mode-btn" + (mode === "realImages" ? " active" : "")}
+                                onClick={() => setMode("realImages")}
+                            >真实图片（picsum）</button>
+                            <button
+                                className={"mode-btn" + (mode === "custom" ? " active" : "")}
+                                onClick={() => setMode("custom")}
+                            >自定义内容</button>
+                            <button
+                                className={"mode-btn" + (mode === "noImage" ? " active" : "")}
+                                onClick={() => setMode("noImage")}
+                            >无图占位（紫色毛玻璃）</button>
+                        </section>
+
+                        <section>
+                            <h2>尺寸</h2>
+                            <label>cardWidth <span className="val">{cardWidth}px</span></label>
+                            <input type="range" min="80" max="400" value={cardWidth}
+                                onChange={e => setCardWidth(+e.target.value)} />
+
+                            <label>cardHeight <span className="val">{cardHeight}px</span></label>
+                            <input type="range" min="80" max="500" value={cardHeight}
+                                onChange={e => setCardHeight(+e.target.value)} />
+
+                            <label>cardRadius (0-20) <span className="val">{cardRadius}</span></label>
+                            <input type="range" min="0" max="20" step="0.5" value={cardRadius}
+                                onChange={e => setCardRadius(+e.target.value)} />
+                        </section>
+
+                        <section>
+                            <h2>堆叠</h2>
+                            <label>tiltAngle <span className="val">{tiltAngle}°</span></label>
+                            <input type="range" min="-90" max="0" value={tiltAngle}
+                                onChange={e => setTiltAngle(+e.target.value)} />
+
+                            <label>xOffset <span className="val">{xOffset}px</span></label>
+                            <input type="range" min="0" max="300" value={xOffset}
+                                onChange={e => setXOffset(+e.target.value)} />
+                        </section>
+
+                        <section>
+                            <h2>手势</h2>
+                            <label>swipeThreshold <span className="val">{swipeThreshold}px</span></label>
+                            <input type="range" min="10" max="200" value={swipeThreshold}
+                                onChange={e => setSwipeThreshold(+e.target.value)} />
+                        </section>
+
+                        <section>
+                            <h2>圆角公式</h2>
+                            <code style={{ fontSize: 11, color: "#9967FF" }}>
+                                radius = (cardRadius/20) × min(W,H)/2<br/>
+                                = ({cardRadius}/20) × {Math.min(cardWidth, cardHeight)}/2<br/>
+                                = <b>{((cardRadius / 20) * (Math.min(cardWidth, cardHeight) / 2)).toFixed(1)}px</b>
+                            </code>
+                        </section>
+
+                        <section>
+                            <h2>对照说明</h2>
+                            <div style={{ fontSize: 11, color: "#777", lineHeight: 1.6 }}>
+                                本预览严格复刻 Compose <code>SwipeableImageStack.kt</code> 的实现，
+                                包括 translationZ 深度（z 属性）、条件背景、border、backdropFilter、
+                                DEFAULT_IMAGES 兜底、圆角公式、whileDrag 状态等所有细节。
+                                <br/><br/>
+                                <b>测试要点：</b>
+                                <ul style={{ margin: "4px 0", paddingLeft: 16 }}>
+                                    <li>顶卡可拖拽（鼠标按住拖动）</li>
+                                    <li>拖动 &gt; threshold → 飞出重排</li>
+                                    <li>拖动 ≤ threshold → 1 秒回中</li>
+                                    <li>切到"无图占位"验证紫色毛玻璃 + border</li>
+                                    <li>调 cardRadius 0→20 验证圆角公式</li>
+                                </ul>
+                            </div>
+                        </section>
+                    </aside>
+
+                    <main className="stage">
+                        <div className="hint">预览舞台 · 拖拽顶卡体验</div>
+                        <SwipeableImageStack
+                            mode={mode}
+                            cardWidth={cardWidth}
+                            cardHeight={cardHeight}
+                            cardRadius={cardRadius}
+                            swipeThreshold={swipeThreshold}
+                            tiltAngle={tiltAngle}
+                            tiltAngleStart={0}
+                            xOffset={xOffset}
+                            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                        />
+                        <StatusBadge mode={mode} />
+                    </main>
+                </div>
+            );
+        }
+
+        function StatusBadge({ mode }) {
+            const labels = {
+                defaultColors: "mode: DEFAULT_IMAGE_COLORS（4 色块）",
+                realImages: "mode: REAL_IMAGES（picsum）",
+                custom: "mode: CUSTOM_PALETTE（自定义 slot）",
+                noImage: "mode: NO_IMAGE（紫色毛玻璃占位）"
+            };
+            return <div className="status">{labels[mode]}</div>;
+        }
+
+        ReactDOM.render(<App />, document.getElementById("root"));
+        }  // end of `if (motion)`
+    </script>
+</body>
+</html>
