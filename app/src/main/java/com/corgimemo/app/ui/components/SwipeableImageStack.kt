@@ -36,7 +36,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -64,6 +63,23 @@ import kotlin.math.roundToInt
  *   滑动重排后保持不变，用于 `onCardSwiped` 回调让业务方知道是哪张图
  */
 private data class CardSlot(val stableId: Long, val originalIndex: Int)
+
+/**
+ * 默认色块图片（与 Originkit 原型 `DEFAULT_IMAGES` 兜底逻辑对齐）
+ *
+ * - 原型使用 4 张外网图片（imagedelivery.net）作为默认占位
+ * - Android 端改用本地色块（用户决策），避免网络依赖
+ * - 4 色覆盖暖→冷光谱，与项目 [Color.kt] 色板一致
+ *
+ * 触发条件：调用方未传 `imageUris` 且未传 `customContent` 时自动启用，
+ * 严格对齐原型 `Array.isArray(images) && images.length > 0 ? images : DEFAULT_IMAGES` 行为
+ */
+private val DEFAULT_IMAGE_COLORS = listOf(
+    Color(0xFFFF9A5C),  // 暖橙
+    Color(0xFFFFB5C2),  // 粉
+    Color(0xFF7EC8A0),  // 绿
+    Color(0xFF7EB8DA)   // 蓝
+)
 
 /**
  * 拖动手势方向约束
@@ -191,8 +207,12 @@ fun SwipeableImageStack(
     //
     // key(cardCount)：当图片数量变化时（例如新插入/删除）整体重置 order，
     // 否则会残留旧 CardSlot 引用，导致 stableId 重复或漏渲染。
-    val cardCount = imageUris.size
-    if (cardCount == 0) return
+    //
+    // 与原型 `Array.isArray(images) && images.length > 0 ? images : DEFAULT_IMAGES` 兜底一致：
+    // 调用方未传 imageUris 且未传 customContent 时，启用 [DEFAULT_IMAGE_COLORS] 作默认占位
+    val useDefaultColors = imageUris.isEmpty() && customContent == null
+    val cardCount = if (useDefaultColors) DEFAULT_IMAGE_COLORS.size else imageUris.size
+    if (cardCount == 0) return  // customContent != null 但 imageUris 为空时返回（调用方责任）
 
     var order by remember(cardCount) {
         mutableStateOf(List(cardCount) { CardSlot(stableId = it.toLong(), originalIndex = it) })
@@ -274,13 +294,31 @@ fun SwipeableImageStack(
                 key(slot.stableId) {
                     val isTopCard = stackIndex == 0
 
+                    // hasImage：与原型 `cardImage ? "transparent" : "rgba(243, 239, 255, 0.8)"` 等价的"有无图"判断
+                    // - customContent != null：自定义内容本身就是"有图"
+                    // - useDefaultColors：本地色块兜底也视为"有图"
+                    // - imageUris[originalIndex] 非空非 blank：真实图片
+                    // 否则视为"无图"，启用紫色背景 + 紫色边框 + 毛玻璃占位
+                    val hasImage = when {
+                        customContent != null -> true
+                        useDefaultColors -> true
+                        else -> imageUris.getOrNull(slot.originalIndex)?.isNotBlank() == true
+                    }
+
                     // =================== 4 个独立 Animatable ===================
                     // 每张卡片的 x/y/scale/rotation 各自有独立的 Animatable，初始值 = stackIndex 目标值
                     // 后续通过 LaunchedEffect(stackIndex) 自动过渡到新目标
-                    val targetX = with(density) {
-                        if (order.size > 1) (stackIndex.toFloat() / (order.size - 1) * xOffset.value).dp.toPx() else 0f
-                    }
-                    val targetY = with(density) { -(stackIndex * 8).dp.toPx() }
+                    //
+                    // 单位策略（与 translationZ = -stackIndex * 10f 严格一致，均用 px）：
+                    // - 原型 `xOffsetValue = (index / (totalCards - 1)) * xOffset` 中 xOffset=200 是 Web CSS px
+                    // - 原型 `stackOffset = index * 8` 也是 px
+                    // - 这里 xOffset.value 是 Dp 数值，直接当 px 用（与 translationZ 处理对齐）
+                    // - 在 density=2 设备上视觉是 dp 方案的一半，与 Web 端 CSS px 视觉一致
+                    // - 用户决策：严格 px，不再按 dp 换算
+                    val targetX = if (order.size > 1) {
+                        stackIndex.toFloat() / (order.size - 1) * xOffset.value
+                    } else 0f
+                    val targetY = -(stackIndex * 8f)  // 原型 stackOffset = index * 8 (px)
                     val targetScale = 1f - stackIndex * 0.05f
                     val targetRotation = if (order.size > 1) {
                         tiltAngleStart + (stackIndex.toFloat() / (order.size - 1)) * (tiltAngle - tiltAngleStart)
@@ -289,9 +327,11 @@ fun SwipeableImageStack(
                     }
                     // zIndex 目标：与原型 cards.length - index 严格一致
                     val targetZIndex = (order.size - stackIndex).toFloat()
-                    // 注：原型的 3D 纵深 z: -index * 10px 因 GraphicsLayerScope 没有 translationZ 属性而无法实现
-                    // 当前视觉由 cameraDistance（父容器 perspective: 1000px）+ 每张卡 scale = 1 - index*0.05 接管
-                    // 仍保留 zIndexAnim 的 0.3s easeOut 过渡，与原型 zIndex 动画一致
+                    // 原型 `z: -depthOffset` (depthOffset = index * DEPTH_SPACING = index * 10px) 在 Compose 中无直接对应 API：
+                    // - GraphicsLayerScope 仅有 translationX/translationY（2D），无 translationZ（3D z 轴位移）
+                    // - shadowElevation 语义是阴影高度（不能为负），与原型 z 轴位移语义不同
+                    // - 视觉影响评估：perspective=1000px 下 z=-10 的缩放差异 ≈ 1%（1000/1010），
+                    //   远小于 scaleX/Y 的 5% 差异（1 - index*0.05），纵深由 scale + cameraDistance 承担
 
                     val positionX = remember { Animatable(targetX) }
                     val positionY = remember { Animatable(targetY) }
@@ -319,6 +359,8 @@ fun SwipeableImageStack(
                         val target = if (isPressed.value && isTopCard) 1000f else targetZIndex
                         zIndexAnim.animateTo(target, ZINDEX_TWEEN)
                     }
+                    // 原型 z: { duration: 0.3, ease: "easeOut" } 因 Compose 无 translationZ API 已移除，
+                    // 纵深由 scaleX/Y + cameraDistance 承担（视觉差异 <1%）
 
                     // 渲染时：顶卡额外叠加 dragOffset；非顶卡只用 Animatable
                     // 用 isPressed（而非 dragOffsetX != 0）判断拖动状态：
@@ -357,8 +399,9 @@ fun SwipeableImageStack(
                             .zIndex(zIndexAnim.value)
                             .offset { IntOffset(finalX.roundToInt(), finalY.roundToInt()) }
                             .graphicsLayer {
-                                // 注：原型的 3D 纵深 z: -index * 10px 因 GraphicsLayerScope 没有 translationZ 属性而无法实现
-                                // 当前由父容器的 cameraDistance (perspective: 1000px) + 每张卡 scale = 1 - index*0.05 接管纵深感
+                                // 纵深感：父容器 cameraDistance (perspective: 1000px) + scale = 1 - index*0.05
+                                // 原型 `z: -depthOffset` (depthOffset = index * 10px) 因 Compose GraphicsLayerScope
+                                // 无 translationZ API 已移除，视觉差异 <1%，由 scaleX/Y + cameraDistance 承担
                                 rotationZ = finalRotation
                                 scaleX = finalScale
                                 scaleY = finalScale
@@ -368,7 +411,27 @@ fun SwipeableImageStack(
                                 shape = RoundedCornerShape(radiusPx)
                             )
                             .clip(RoundedCornerShape(radiusPx))
-                            .background(Color(0xFFF3EFFF))
+                            // 与原型严格对齐：`cardImage ? "transparent" : "rgba(243, 239, 255, 0.8)"`
+                            // - hasImage=true：背景 transparent，不绘制任何背景色
+                            // - hasImage=false：rgba(243, 239, 255, 0.8) 半透明紫色 + border 1.5dp solid #9967FF + backdropFilter blur(10dp)
+                            // 顺序：background → blur → border（blur 模糊背景层，border 绘制清晰边框在上层）
+                            .then(
+                                if (hasImage) {
+                                    Modifier
+                                } else {
+                                    Modifier
+                                        .background(
+                                            color = Color(0xFFF3EFFF).copy(alpha = 0.8f),  // rgba(243, 239, 255, 0.8)
+                                            shape = RoundedCornerShape(radiusPx)
+                                        )
+                                        .blur(10.dp)  // backdropFilter: blur(10px) 毛玻璃
+                                        .border(
+                                            width = 1.5.dp,
+                                            color = Color(0xFF9967FF),
+                                            shape = RoundedCornerShape(radiusPx)
+                                        )
+                                }
+                            )
                             .then(
                                 if (isTopCard) {
                                     Modifier.pointerInput(slot.stableId, swipeDirection) {
@@ -401,31 +464,39 @@ fun SwipeableImageStack(
                                                     val dx = dragOffsetX.value
                                                     val distance = dx.absoluteValue
                                                     if (distance > thresholdPx) {
-                                                        // 关键优化：立即重排（不等飞出完成），把"两段式"改为"并行"
-                                                        // 旧顶卡现在 stackIndex=N-1，LaunchedEffect 自动启动 positionX 0→xOffset
-                                                        // 同时 dragOffsetX 从当前 dx animateTo 到 0（旧顶卡"从屏外滑到队尾"）
-                                                        // 视觉：顶卡飞出去的同时新顶卡从扇形位滑到中央，全部 300ms 内完成
+                                                        // 严格对齐原型：重排后每张卡位置独立过渡
+                                                        // - 原型：A 从拖动位置 spring 到队尾，B/C/D 从旧位置 spring 到新位置
+                                                        // - 旧实现：dragOffsetX animateTo(0) 会导致两个跳变：
+                                                        //   1) A 变非顶卡后 finalX=positionX(0)，丢失 dragOffset(100)，从 100 跳到 0
+                                                        //   2) B 变新顶卡后 finalX=positionX+dragOffsetX，继承 A 残留，从 66.67 跳到 166.67
+                                                        // - 修复：把 dragOffset 转移到 A 的 positionX/Y 上，再 dragOffset 归零
+                                                        //   - A：positionX 从 0+100=100 开始，LaunchedEffect animateTo(200)，100→200 平滑飞出
+                                                        //   - B：finalX=positionX(66.67)+0=66.67，无跳变，LaunchedEffect animateTo(0)，平滑过渡
                                                         scope.launch {
-                                                            // 1. 立即重排（不等飞出完成）
                                                             onCardSwiped?.invoke(slot.originalIndex)
+                                                            // 1. dragOffset 转移到 positionX/Y（A 的飞出起点 = 拖动位置，对齐原型）
+                                                            positionX.snapTo(positionX.value + dragOffsetX.value)
+                                                            positionY.snapTo(positionY.value + dragOffsetY.value)
+                                                            // 2. dragOffset 归零（避免新顶卡 B 继承 A 的拖动残留）
+                                                            dragOffsetX.snapTo(0f)
+                                                            dragOffsetY.snapTo(0f)
+                                                            // 3. 重排：A 的 stackIndex 0→N-1，LaunchedEffect 触发 positionX animateTo(新 targetX)
                                                             val newOrder = order.toMutableList()
                                                             val top = newOrder.removeAt(0)
                                                             newOrder.add(top)
                                                             order = newOrder
-                                                            // 2. dragOffset 从 dx 飞回到 0（旧顶卡跟随位置变化，finalX = positionX + dragOffsetX 平滑过渡）
-                                                            dragOffsetX.animateTo(0f, TRANSITION_SPRING)
-                                                            dragOffsetY.animateTo(0f, TRANSITION_SPRING)
                                                         }
                                                     } else {
                                                         // 弹回中心：与原型 setShouldReturnToCenter(true) + setTimeout(1s) 一致
+                                                        // dragOffset 回弹用 BOUNCE_SPRING（对齐原型 dragTransition.bounce: damping=20）
                                                         shouldReturnToCenter.value = true
                                                         scope.launch {
                                                             delay(1000)
                                                             shouldReturnToCenter.value = false
                                                         }
                                                         scope.launch {
-                                                            dragOffsetX.animateTo(0f, TRANSITION_SPRING)
-                                                            dragOffsetY.animateTo(0f, TRANSITION_SPRING)
+                                                            dragOffsetX.animateTo(0f, BOUNCE_SPRING)
+                                                            dragOffsetY.animateTo(0f, BOUNCE_SPRING)
                                                         }
                                                     }
                                                 }
@@ -465,27 +536,34 @@ fun SwipeableImageStack(
                                                     val dy = dragOffsetY.value
                                                     val distance = hypot(dx, dy)
                                                     if (distance > thresholdPx) {
-                                                        // 关键优化：立即重排（不等飞出完成），与水平模式同样的并行策略
+                                                        // 严格对齐原型（同水平模式）：dragOffset 转移到 positionX/Y 后归零
+                                                        // - A 从拖动位置 spring 到队尾（全向：拖动方向可能是斜向）
+                                                        // - B/C/D 从旧位置 spring 到新位置，不继承 A 的 dragOffset 残留
                                                         scope.launch {
                                                             onCardSwiped?.invoke(slot.originalIndex)
+                                                            // 1. dragOffset 转移到 positionX/Y（A 的飞出起点 = 拖动位置）
+                                                            positionX.snapTo(positionX.value + dragOffsetX.value)
+                                                            positionY.snapTo(positionY.value + dragOffsetY.value)
+                                                            // 2. dragOffset 归零（避免新顶卡 B 继承 A 的拖动残留）
+                                                            dragOffsetX.snapTo(0f)
+                                                            dragOffsetY.snapTo(0f)
+                                                            // 3. 重排：LaunchedEffect 触发各卡 positionX/Y animateTo(新 targetX/Y)
                                                             val newOrder = order.toMutableList()
                                                             val top = newOrder.removeAt(0)
                                                             newOrder.add(top)
                                                             order = newOrder
-                                                            // dragOffset 从飞出方向回到 0（旧顶卡 finalX 平滑过渡到队尾）
-                                                            dragOffsetX.animateTo(0f, TRANSITION_SPRING)
-                                                            dragOffsetY.animateTo(0f, TRANSITION_SPRING)
                                                         }
                                                     } else {
                                                         // 弹回中心：与原型 setShouldReturnToCenter(true) + setTimeout(1s) 一致
+                                                        // dragOffset 回弹用 BOUNCE_SPRING（对齐原型 dragTransition.bounce: damping=20）
                                                         shouldReturnToCenter.value = true
                                                         scope.launch {
                                                             delay(1000)
                                                             shouldReturnToCenter.value = false
                                                         }
                                                         scope.launch {
-                                                            dragOffsetX.animateTo(0f, TRANSITION_SPRING)
-                                                            dragOffsetY.animateTo(0f, TRANSITION_SPRING)
+                                                            dragOffsetX.animateTo(0f, BOUNCE_SPRING)
+                                                            dragOffsetY.animateTo(0f, BOUNCE_SPRING)
                                                         }
                                                     }
                                                 }
@@ -511,27 +589,35 @@ fun SwipeableImageStack(
                             )
                     ) {
                         // ============ 卡片内容渲染 ============
-                        if (customContent != null) {
-                            // 高级 API：调用方完全自定义
-                            customContent(stackIndex)
-                        } else {
-                            // 默认 API：Coil 加载 imageUris[originalIndex]
-                            val imageUri = imageUris.getOrNull(slot.originalIndex)
-                            if (imageUri != null) {
-                                SubcomposeAsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(imageUri)
-                                        .crossfade(true)
-                                        .scale(Scale.FIT)
-                                        .build(),
-                                    contentDescription = "图片 ${slot.originalIndex + 1}",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
-                                    loading = { DefaultImagePlaceholder(radiusPx) },
-                                    error = { DefaultImagePlaceholder(radiusPx) }
-                                )
-                            } else {
-                                DefaultImagePlaceholder(radiusPx)
+                        // 三分支与原型对齐：
+                        // 1. customContent != null：调用方完全自定义
+                        // 2. useDefaultColors：本地色块兜底（替代原型 DEFAULT_IMAGES 网络图）
+                        // 3. 真实图片：Coil 异步加载 imageUris[originalIndex]
+                        //    - imageUri 非空非 blank：SubcomposeAsyncImage，loading/error 用 [DefaultImageLoading]（带背景+border+blur）
+                        //    - imageUri null/blank：罕见情况，调用 [DefaultImageText]（仅文字，背景在卡片层级）
+                        when {
+                            customContent != null -> customContent(stackIndex)
+                            useDefaultColors -> DefaultColorCard(stackIndex, radiusPx)
+                            else -> {
+                                val imageUri = imageUris.getOrNull(slot.originalIndex)
+                                if (!imageUri.isNullOrBlank()) {
+                                    SubcomposeAsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(imageUri)
+                                            .crossfade(true)
+                                            .scale(Scale.FIT)
+                                            .build(),
+                                        contentDescription = "图片 ${slot.originalIndex + 1}",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                        // loading/error 占位：带紫色背景+border+blur（卡片层级 transparent，需独立背景避免白屏）
+                                        loading = { DefaultImageLoading(radiusPx, stackIndex) },
+                                        error = { DefaultImageLoading(radiusPx, stackIndex) }
+                                    )
+                                } else {
+                                    // hasImage=false 时卡片层级已绘制背景+border+blur，此处仅显示文字
+                                    DefaultImageText(stackIndex)
+                                }
                             }
                         }
 
@@ -571,6 +657,18 @@ fun SwipeableImageStack(
 private val TRANSITION_SPRING = spring<Float>(dampingRatio = 0.866f, stiffness = 300f)
 
 /**
+ * 回弹动画规格（与 Originkit 原型 `dragTransition = { bounceStiffness: 300, bounceDamping: 20 }` 对齐）
+ *
+ * 用于 shouldReturnToCenter=true 时顶卡 dragOffset 回到 0 的回弹动画。
+ *
+ * - 原型 `bounceStiffness: 300, bounceDamping: 20` 是 framer-motion drag 的回弹 spring 参数
+ * - 转换：dampingRatio = 20 / (2 × sqrt(1 × 300)) = 20 / 34.64 ≈ 0.577
+ * - 比 [TRANSITION_SPRING] 更软（dampingRatio 0.577 < 0.866），回弹更"Q弹"
+ * - 严格对齐原型：短距离拖动后回中用 bounce spring，而非普通 transition spring
+ */
+private val BOUNCE_SPRING = spring<Float>(dampingRatio = 0.577f, stiffness = 300f)
+
+/**
  * zIndex / 3D 纵深过渡动画（与 Originkit 原型 `{ duration: 0.3, ease: "easeOut" }` 对齐）
  *
  * - 原型在 zIndex 和 z 两个属性上都用 0.3s easeOut
@@ -580,16 +678,54 @@ private val TRANSITION_SPRING = spring<Float>(dampingRatio = 0.866f, stiffness =
 private val ZINDEX_TWEEN = tween<Float>(durationMillis = 300, easing = LinearOutSlowInEasing)
 
 /**
- * 图片占位符（加载中 / 加载失败 / 缺图时显示）
+ * 无图占位文字（hasImage=false 时卡片内容）
  *
- * 与 Originkit 原型一致：
- * - background: rgba(243, 239, 255, 0.8)（浅紫半透明）
- * - border: 1.5.dp solid #9967FF（紫色边框）
- * - backdropFilter: blur(10.dp)（毛玻璃）
- * - 提示文字 "Card N — Add images in Content"（font-size 14, color #9967FF, font-weight 300）
+ * 与 Originkit 原型 `<p>` 标签语义一致：
+ * - fontSize 14, color #9967FF, font-weight 300, padding 20, textAlign center
+ * - 文本：`{card.content} — Add images in Content` = `Card N — Add images in Content`
+ *
+ * **注意**：此 composable 仅显示文字部分，背景+border+blur 由卡片层级渲染
+ * （对齐原型 `backgroundColor / border / backdropFilter` 在 motion.div 的 style 上，
+ * 而非内层 `<p>` 上）
+ *
+ * @param stackIndex 卡片在堆叠中的索引（用于生成 "Card N" 文本）
  */
 @Composable
-private fun DefaultImagePlaceholder(
+private fun DefaultImageText(stackIndex: Int) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(20.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "Card ${stackIndex + 1} — Add images in Content",
+            color = Color(0xFF9967FF),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Light,  // font-weight: 300
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+/**
+ * 加载/错误占位（SubcomposeAsyncImage 异步加载期间临时显示）
+ *
+ * 与 Originkit 原型无图占位的视觉一致：
+ * - background: rgba(243, 239, 255, 0.8) 浅紫半透明
+ * - border: 1.5dp solid #9967FF 紫色边框
+ * - backdropFilter: blur(10dp) 毛玻璃
+ * - 文字：与 [DefaultImageText] 一致（fontSize 14, color #9967FF, weight 300）
+ *
+ * **与 [DefaultImageText] 的区别**：本 composable 自带背景+border+blur，
+ * 用于卡片层级 hasImage=true（图片存在但加载中/失败）时避免白屏；
+ * hasImage=false（图片缺失）时卡片层级已绘制背景，使用 [DefaultImageText]
+ *
+ * @param cardRadius 卡片圆角（与卡片层级 RoundedCornerShape 半径一致）
+ * @param stackIndex 卡片在堆叠中的索引（用于生成 "Card N" 文本）
+ */
+@Composable
+private fun DefaultImageLoading(
     cardRadius: Dp,
     stackIndex: Int = 0
 ) {
@@ -615,6 +751,42 @@ private fun DefaultImagePlaceholder(
             fontWeight = FontWeight.Light,  // 300
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(20.dp)
+        )
+    }
+}
+
+/**
+ * 默认色块卡片（useDefaultColors 时卡片内容）
+ *
+ * 替代 Originkit 原型 `DEFAULT_IMAGES` 的 4 张外网图（imagedelivery.net），
+ * Android 端改用本地 [DEFAULT_IMAGE_COLORS] 色块（用户决策，避免网络依赖）
+ *
+ * 视觉与原型卡片"有图"状态一致：
+ * - 背景由卡片层级 transparent 接管，此处仅绘制色块
+ * - 居中显示 "Card N" 文字（fontSize 32, color White, weight SemiBold）
+ *   - 对齐原型 `fontSize: "32px"` 容器字号 + `card.content = Card N` 显示语义
+ *
+ * @param stackIndex 卡片在堆叠中的索引（用于色块循环 + "Card N" 文本）
+ * @param cardRadius 卡片圆角（与卡片层级 RoundedCornerShape 半径一致，色块裁切）
+ */
+@Composable
+private fun DefaultColorCard(
+    stackIndex: Int,
+    cardRadius: Dp
+) {
+    val color = DEFAULT_IMAGE_COLORS[stackIndex % DEFAULT_IMAGE_COLORS.size]
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(cardRadius))
+            .background(color),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "Card ${stackIndex + 1}",
+            color = Color.White,
+            fontSize = 32.sp,  // 原型 fontSize: "32px"
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
@@ -804,4 +976,117 @@ private fun SwipeableImageStackPreviewLocalLarge() {
             }
         )
     }
+}
+
+// ===========================================================================
+// 缩略图 xOffset 候选值对比 Preview（28 / 50 / 80 / 100）
+// ---------------------------------------------------------------------------
+// 在 IDE 右侧 Preview 面板中通过文件名旁的图标切换 4 个 Preview，
+// 或在文件结构窗格中点击不同函数名。哪个扇形最接近原型（卡片明显错开、
+// 后层卡可见宽度 ≥ 20dp），xOffset 就用哪个。
+// ===========================================================================
+
+/** 缩略图预览用的色板（暖色 + 冷色 + 中性，5 张区分清晰） */
+private val xOffsetPreviewPalette = listOf(
+    Color(0xFFFF9A5C),  // 暖橙
+    Color(0xFFFFB5C2),  // 粉
+    Color(0xFF7EC8A0),  // 绿
+    Color(0xFF7EB8DA),  // 蓝
+    Color(0xFFB8A9D9)   // 紫
+)
+
+/**
+ * 缩略图 xOffset 候选值预览（共享 Composable）
+ *
+ * @param xOffset 候选水平偏移值（28 / 50 / 80 / 100）
+ * @param tiltAngle 候选旋转角度（与 TimelineInspirationItem.kt 保持一致：-8°）
+ */
+@Composable
+private fun SwipeableImageStackPreviewThumb(xOffset: Dp, tiltAngle: Float = -8f) {
+    Box(
+        modifier = Modifier
+            .size(280.dp)  // 比缩略图稍大，便于看清
+            .background(Color(0xFFFFFBF5)),
+        contentAlignment = Alignment.Center
+    ) {
+        // 顶部标签：显示当前 xOffset 值
+        Text(
+            text = "xOffset = ${xOffset.value.toInt()}dp · tiltAngle = ${tiltAngle.toInt()}°",
+            color = Color(0xFF666666),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 12.dp)
+        )
+        // 中央堆叠
+        SwipeableImageStack(
+            imageUris = List(xOffsetPreviewPalette.size) { "" },
+            cardWidth = 120.dp,
+            cardHeight = 120.dp,
+            cardRadius = 12f,
+            tiltAngle = tiltAngle,
+            xOffset = xOffset,
+            swipeDirection = SwipeDirection.Horizontal,
+            customContent = { stackIndex ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(xOffsetPreviewPalette[stackIndex % xOffsetPreviewPalette.size]),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${stackIndex + 1}",
+                        color = Color.White,
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        )
+    }
+}
+
+/** 候选 1：xOffset = 28dp（当前 TimelineInspirationItem.kt 实际使用的值） */
+@androidx.compose.ui.tooling.preview.Preview(
+    name = "xOffset=28dp (当前值)",
+    widthDp = 280,
+    heightDp = 280
+)
+@Composable
+private fun SwipeableImageStackPreviewThumb_28() {
+    SwipeableImageStackPreviewThumb(xOffset = 28.dp)
+}
+
+/** 候选 2：xOffset = 50dp（中等扇形） */
+@androidx.compose.ui.tooling.preview.Preview(
+    name = "xOffset=50dp",
+    widthDp = 280,
+    heightDp = 280
+)
+@Composable
+private fun SwipeableImageStackPreviewThumb_50() {
+    SwipeableImageStackPreviewThumb(xOffset = 50.dp)
+}
+
+/** 候选 3：xOffset = 80dp（接近原型比例 0.67） */
+@androidx.compose.ui.tooling.preview.Preview(
+    name = "xOffset=80dp (推荐)",
+    widthDp = 280,
+    heightDp = 280
+)
+@Composable
+private fun SwipeableImageStackPreviewThumb_80() {
+    SwipeableImageStackPreviewThumb(xOffset = 80.dp)
+}
+
+/** 候选 4：xOffset = 100dp（夸张扇形） */
+@androidx.compose.ui.tooling.preview.Preview(
+    name = "xOffset=100dp",
+    widthDp = 280,
+    heightDp = 280
+)
+@Composable
+private fun SwipeableImageStackPreviewThumb_100() {
+    SwipeableImageStackPreviewThumb(xOffset = 100.dp)
 }
