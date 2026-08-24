@@ -1,8 +1,11 @@
 package com.corgimemo.app.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -10,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -23,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -43,6 +48,7 @@ import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.size.Scale
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.math.hypot
@@ -119,11 +125,11 @@ fun SwipeableImageStack(
     modifier: Modifier = Modifier,
     cardWidth: Dp = 300.dp,
     cardHeight: Dp = 400.dp,
-    cardRadius: Dp = 16.dp,
+    cardRadius: Float = 4f,
     swipeThreshold: Dp = 50.dp,
-    tiltAngle: Float = -12f,
+    tiltAngle: Float = -45f,
     tiltAngleStart: Float = 0f,
-    xOffset: Dp = 60.dp,
+    xOffset: Dp = 200.dp,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null
@@ -160,11 +166,11 @@ fun SwipeableImageStack(
     modifier: Modifier = Modifier,
     cardWidth: Dp = 300.dp,
     cardHeight: Dp = 400.dp,
-    cardRadius: Dp = 16.dp,
+    cardRadius: Float = 4f,
     swipeThreshold: Dp = 50.dp,
-    tiltAngle: Float = -12f,
+    tiltAngle: Float = -45f,
     tiltAngleStart: Float = 0f,
-    xOffset: Dp = 60.dp,
+    xOffset: Dp = 200.dp,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null,
@@ -196,27 +202,41 @@ fun SwipeableImageStack(
 
     val scope = rememberCoroutineScope()
 
-    // 区分"用户主动拖动"与"动画回零"——
-    // 旧实现用 dragOffsetX != 0f 判断，错误地把 onDragEnd 后 animateTo(0f) 的过渡也判为拖动中，
-    // 导致 finalScale = 1.05f（硬编码）一直生效到 dragOffsetX 归零，
-    // 之后突然切到 scaleAnim.value（0.95，新顶卡还没追上）产生"从大变小"突变
-    val isUserDragging = remember { mutableStateOf(false) }
+    // ============ 共享状态（与 Originkit 原型一致）============
+    // isPressed：组件级"是否有顶卡正在被按住"标志
+    // - 用于顶卡 scale +0.05、rotation 归零的视觉反馈
+    // - 原型 const [isPressed, setIsPressed] = useState(false)
+    val isPressed = remember { mutableStateOf(false) }
+    // shouldReturnToCenter：短距离拖动后回中动画的标志
+    // - true 期间顶卡 x/y/rotate 强制为 0（不再叠加扇形偏移）
+    // - 1s 后自动复位（与原型 setTimeout 1s 一致）
+    val shouldReturnToCenter = remember { mutableStateOf(false) }
 
     // 容器：宽 = cardWidth + xOffset（容纳扇形最末端 xOffset 的偏移），
     // 高 = cardHeight + 15% cardHeight（容纳 yStackOffset 上移，按比例适配不同尺寸）
     // - 用 cardHeight * 0.15 而非固定 60dp：120dp 缩略图场景只需 ~18dp 余量，400dp 详情页场景需 60dp 余量
     val stackVerticalPadding = cardHeight * 0.15f
+
+    // 圆角算法（与原型一致：cardRadius 0-20 滑块 → 实际圆角 = (cardRadius/20) × min(W,H)/2）
+    // 原型：const radiusPx = (cardRadius / 20) * (Math.min(cardWidth, cardHeight) / 2)
+    // cardRadius=0 → 0dp（boxy），cardRadius=20 → 完全圆角（min(W,H)/2）
+    val radiusPx = with(density) {
+        ((cardRadius / 20f) * (min(cardWidth, cardHeight).toPx() / 2f)).toDp()
+    }
+
     Box(
         modifier = modifier.size(cardWidth + xOffset, cardHeight + stackVerticalPadding),
         contentAlignment = Alignment.Center
     ) {
-        // 透视感：父容器 cameraDistance 模拟 Web 端 perspective:1000
-        // 数值越大透视越弱，1000 与 Web 1000px 对齐
+        // 透视感：父容器 cameraDistance 模拟 Web 端 perspective: 1000px
+        // - 原型 `perspective: ${PERSPECTIVE}px` (PERSPECTIVE = 1000)
+        // - Compose cameraDistance 默认单位是 dp（实际 px = cameraDistance × density）
+        // - 为与 Web 1000px 严格一致：cameraDistance = 1000 / density.density (dp)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    this.cameraDistance = 12f * density.density
+                    this.cameraDistance = 1000f / density.density
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -243,59 +263,95 @@ fun SwipeableImageStack(
                     } else {
                         tiltAngleStart
                     }
+                    // zIndex 目标：与原型 cards.length - index 严格一致
+                    val targetZIndex = (order.size - stackIndex).toFloat()
+                    // 3D 纵深目标：原型 z: -index * DEPTH_SPACING (DEPTH_SPACING = 10 px)
+                    // Compose translationZ 单位是 dp，所以 10px → 10/density dp
+                    val targetTranslationZ = with(density) { -stackIndex * 10f / density.density }
 
                     val positionX = remember { Animatable(targetX) }
                     val positionY = remember { Animatable(targetY) }
                     val scaleAnim = remember { Animatable(targetScale) }
                     val rotationAnim = remember { Animatable(targetRotation) }
+                    val zIndexAnim = remember { Animatable(targetZIndex) }
+                    val translationZAnim = remember { Animatable(targetTranslationZ) }
 
                     // stackIndex 变化时（即 order 重排），每张卡各自平滑过渡到新目标值
                     // 关键：这是解决"卡一下"的核心——新顶卡从扇形位置平滑滑到中央，旧顶卡从中央滑到队尾
-                    // 用 FLIP_SPRING 加速：300ms 而非 600ms，整体"翻牌"从 1100ms 降至 500ms
+                    // 用 TRANSITION_SPRING 加速：300ms 而非 600ms，整体"翻牌"从 1100ms 降至 500ms
                     LaunchedEffect(stackIndex, order.size) {
-                        positionX.animateTo(targetX, FLIP_SPRING)
+                        positionX.animateTo(targetX, TRANSITION_SPRING)
                     }
                     LaunchedEffect(stackIndex, order.size) {
-                        positionY.animateTo(targetY, FLIP_SPRING)
+                        positionY.animateTo(targetY, TRANSITION_SPRING)
                     }
                     LaunchedEffect(stackIndex, order.size) {
-                        scaleAnim.animateTo(targetScale, FLIP_SPRING)
+                        scaleAnim.animateTo(targetScale, TRANSITION_SPRING)
                     }
                     LaunchedEffect(stackIndex, order.size) {
-                        rotationAnim.animateTo(targetRotation, FLIP_SPRING)
+                        rotationAnim.animateTo(targetRotation, TRANSITION_SPRING)
+                    }
+                    // 原型 zIndex: { duration: 0.3, ease: "easeOut" }，按下时跳 1000
+                    LaunchedEffect(stackIndex, order.size, isPressed.value, isTopCard) {
+                        val target = if (isPressed.value && isTopCard) 1000f else targetZIndex
+                        zIndexAnim.animateTo(target, ZINDEX_TWEEN)
+                    }
+                    // 原型 z: { duration: 0.3, ease: "easeOut" }，按下时归零
+                    LaunchedEffect(stackIndex, order.size, isPressed.value, isTopCard) {
+                        val target = if (isPressed.value && isTopCard) 0f else targetTranslationZ
+                        translationZAnim.animateTo(target, ZINDEX_TWEEN)
                     }
 
                     // 渲染时：顶卡额外叠加 dragOffset；非顶卡只用 Animatable
-                    // 用 isUserDragging（而非 dragOffsetX != 0）判断拖动状态：
+                    // 用 isPressed（而非 dragOffsetX != 0）判断拖动状态：
                     // - 旧实现 isDragging = isTopCard && (dragOffsetX != 0) 会把"动画回零"误判为拖动中
-                    // - 新顶卡重排后 dragOffsetX 还在 animateTo(0) 期间，isUserDragging=false
+                    // - 新顶卡重排后 dragOffsetX 还在 animateTo(0) 期间，isPressed=false
                     //   finalScale 跟随 scaleAnim 平滑过渡（0.95→1.0），不再有"从大变小"突变
-                    val finalX = if (isTopCard) positionX.value + dragOffsetX.value else positionX.value
-                    val finalY = if (isTopCard) positionY.value + dragOffsetY.value else positionY.value
-                    // 拖动时在 scaleAnim 基础上 +0.05（相对放大），保持"拖动时顶卡变大"反馈
-                    // 静止时用 scaleAnim 当前值（顶卡=1.0，扇形位=0.95/0.9/...）
-                    val finalScale = if (isUserDragging.value) scaleAnim.value + 0.05f else scaleAnim.value
-                    // 拖动时强制水平（rotation=0），静止时跟随 rotationAnim（重排过渡有 -4°→0° 等动画）
-                    val finalRotation = if (isUserDragging.value) 0f else rotationAnim.value
+                    //
+                    // shouldReturnToCenter（与原型一致）：短距离拖动后回中时，1s 内顶卡 x/y/rotate 强制为 0
+                    // - 配合 setTimeout 1s 自动复位
+                    // - 视觉：顶卡先瞬移到中央，再用 spring 平滑过渡回扇形位置
+                    val finalX = when {
+                        isTopCard && shouldReturnToCenter.value -> 0f
+                        isTopCard -> positionX.value + dragOffsetX.value
+                        else -> positionX.value
+                    }
+                    val finalY = when {
+                        isTopCard && shouldReturnToCenter.value -> 0f
+                        isTopCard -> positionY.value + dragOffsetY.value
+                        else -> positionY.value
+                    }
+                    // 原型 whileDrag: { scale: 1.05 } → 当前帧 = scaleAnim + 0.05
+                    val finalScale = if (isPressed.value) scaleAnim.value + 0.05f else scaleAnim.value
+                    // 原型 whileDrag: { rotate: tiltAngleStart = 0 } → 拖动时归零
+                    // 原型 shouldReturn 时也强制 rotate = 0
+                    val finalRotation = when {
+                        isPressed.value -> 0f
+                        isTopCard && shouldReturnToCenter.value -> 0f
+                        else -> rotationAnim.value
+                    }
 
                     Box(
                         modifier = Modifier
                             .size(cardWidth, cardHeight)
-                            // zIndex 负值让非顶卡绘制在顶卡之下（顶卡 stackIndex=0 → zIndex=0）
-                            // 用 zIndex 而非 translationZ：Compose 的 GraphicsLayerScope 不含
-                            // translationZ 属性（仅有 translationX/Y），绘制层级应交给 zIndex
-                            .zIndex(-stackIndex.toFloat())
+                            // zIndex 由 zIndexAnim 驱动：静止时 (order.size - stackIndex)，按下时 1000
+                            // 用 Animatable + 0.3s easeOut 过渡，与原型 { duration: 0.3, ease: "easeOut" } 一致
+                            .zIndex(zIndexAnim.value)
                             .offset { IntOffset(finalX.roundToInt(), finalY.roundToInt()) }
                             .graphicsLayer {
+                                // 3D 纵深：translationZ 模拟原型 z: -index * 10px
+                                // - 父容器 cameraDistance = 1000/density.density 模拟 perspective: 1000px
+                                // - translationZ 负值让卡片往屏幕内推，形成"后层卡片更远更小"效果
+                                translationZ = translationZAnim.value
                                 rotationZ = finalRotation
                                 scaleX = finalScale
                                 scaleY = finalScale
                             }
                             .shadow(
                                 elevation = if (isTopCard) 8.dp else 4.dp,
-                                shape = RoundedCornerShape(cardRadius)
+                                shape = RoundedCornerShape(radiusPx)
                             )
-                            .clip(RoundedCornerShape(cardRadius))
+                            .clip(RoundedCornerShape(radiusPx))
                             .background(Color(0xFFF3EFFF))
                             .then(
                                 if (isTopCard) {
@@ -307,7 +363,7 @@ fun SwipeableImageStack(
                                             detectHorizontalDragGestures(
                                                 onDragStart = {
                                                     // 标记进入"用户拖动"状态（用于 finalScale = scaleAnim + 0.05 的相对放大）
-                                                    isUserDragging.value = true
+                                                    isPressed.value = true
                                                     // 把顶卡的 positionX/Y 强制归零
                                                     // - 保留这个 snapTo 防止上次重排动画把 positionX 留在中间值
                                                     // - 移除 scaleAnim.snapTo(1.05f) 和 rotationAnim.snapTo(0f)：
@@ -321,7 +377,7 @@ fun SwipeableImageStack(
                                                 },
                                                 onDragEnd = {
                                                     // 标记离开"用户拖动"状态
-                                                    isUserDragging.value = false
+                                                    isPressed.value = false
                                                     val dx = dragOffsetX.value
                                                     val distance = dx.absoluteValue
                                                     if (distance > thresholdPx) {
@@ -337,27 +393,34 @@ fun SwipeableImageStack(
                                                             newOrder.add(top)
                                                             order = newOrder
                                                             // 2. dragOffset 从 dx 飞回到 0（旧顶卡跟随位置变化，finalX = positionX + dragOffsetX 平滑过渡）
-                                                            dragOffsetX.animateTo(0f, FLY_SPRING)
-                                                            dragOffsetY.animateTo(0f, FLY_SPRING)
+                                                            dragOffsetX.animateTo(0f, TRANSITION_SPRING)
+                                                            dragOffsetY.animateTo(0f, TRANSITION_SPRING)
                                                         }
                                                     } else {
-                                                        // 弹回中心
+                                                        // 弹回中心：与原型 setShouldReturnToCenter(true) + setTimeout(1s) 一致
+                                                        shouldReturnToCenter.value = true
                                                         scope.launch {
-                                                            dragOffsetX.animateTo(0f, FLIP_SPRING)
-                                                            dragOffsetY.animateTo(0f, FLIP_SPRING)
+                                                            delay(1000)
+                                                            shouldReturnToCenter.value = false
+                                                        }
+                                                        scope.launch {
+                                                            dragOffsetX.animateTo(0f, TRANSITION_SPRING)
+                                                            dragOffsetY.animateTo(0f, TRANSITION_SPRING)
                                                         }
                                                     }
                                                 }
                                             ) { change, dragAmount ->
+                                                // dragElastic: 0.7（原型）—— 拖动距离打 7 折，提供"边界弹性"
+                                                val elasticAmount = dragAmount * 0.7f
                                                 scope.launch {
-                                                    dragOffsetX.snapTo(dragOffsetX.value + dragAmount)
+                                                    dragOffsetX.snapTo(dragOffsetX.value + elasticAmount)
                                                 }
                                             }
                                         } else {
                                             // 全向模式
                                             detectDragGestures(
                                                 onDragStart = {
-                                                    isUserDragging.value = true
+                                                    isPressed.value = true
                                                     // 同样：移除 scaleAnim.snapTo(1.05f) 和 rotationAnim.snapTo(0f)，
                                                     // 保留 positionX/Y.snapTo(0f) 防上次重排动画残留
                                                     scope.launch {
@@ -366,7 +429,7 @@ fun SwipeableImageStack(
                                                     }
                                                 },
                                                 onDragEnd = {
-                                                    isUserDragging.value = false
+                                                    isPressed.value = false
                                                     val dx = dragOffsetX.value
                                                     val dy = dragOffsetY.value
                                                     val distance = hypot(dx, dy)
@@ -379,21 +442,29 @@ fun SwipeableImageStack(
                                                             newOrder.add(top)
                                                             order = newOrder
                                                             // dragOffset 从飞出方向回到 0（旧顶卡 finalX 平滑过渡到队尾）
-                                                            dragOffsetX.animateTo(0f, FLY_SPRING)
-                                                            dragOffsetY.animateTo(0f, FLY_SPRING)
+                                                            dragOffsetX.animateTo(0f, TRANSITION_SPRING)
+                                                            dragOffsetY.animateTo(0f, TRANSITION_SPRING)
                                                         }
                                                     } else {
+                                                        // 弹回中心：与原型 setShouldReturnToCenter(true) + setTimeout(1s) 一致
+                                                        shouldReturnToCenter.value = true
                                                         scope.launch {
-                                                            dragOffsetX.animateTo(0f, FLIP_SPRING)
-                                                            dragOffsetY.animateTo(0f, FLIP_SPRING)
+                                                            delay(1000)
+                                                            shouldReturnToCenter.value = false
+                                                        }
+                                                        scope.launch {
+                                                            dragOffsetX.animateTo(0f, TRANSITION_SPRING)
+                                                            dragOffsetY.animateTo(0f, TRANSITION_SPRING)
                                                         }
                                                     }
                                                 }
                                             ) { change, dragAmount ->
                                                 change.consume()
+                                                // dragElastic: 0.7（原型）—— 拖动距离打 7 折
+                                                val elasticAmount = dragAmount * 0.7f
                                                 scope.launch {
-                                                    dragOffsetX.snapTo(dragOffsetX.value + dragAmount.x)
-                                                    dragOffsetY.snapTo(dragOffsetY.value + dragAmount.y)
+                                                    dragOffsetX.snapTo(dragOffsetX.value + elasticAmount.x)
+                                                    dragOffsetY.snapTo(dragOffsetY.value + elasticAmount.y)
                                                 }
                                             }
                                         }
@@ -420,11 +491,11 @@ fun SwipeableImageStack(
                                     contentDescription = "图片 ${slot.originalIndex + 1}",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize(),
-                                    loading = { DefaultImagePlaceholder(cardRadius) },
-                                    error = { DefaultImagePlaceholder(cardRadius) }
+                                    loading = { DefaultImagePlaceholder(radiusPx) },
+                                    error = { DefaultImagePlaceholder(radiusPx) }
                                 )
                             } else {
-                                DefaultImagePlaceholder(cardRadius)
+                                DefaultImagePlaceholder(radiusPx)
                             }
                         }
 
@@ -450,40 +521,64 @@ fun SwipeableImageStack(
 }
 
 /**
- * 动画规格常量（顶层常量，避免在 Composable 函数体内重复求值）
+ * 动画规格常量（与 Originkit 原型 `transition = { type: "spring", stiffness: 300, damping: 30 }` 对齐）
  *
- * 旧实现 spring(dampingRatio=0.7, stiffness=200) 约 600ms/次
- * 整体"飞出 + 重排"两段串联 = 500ms + 600ms = 1100ms，明显延迟
+ * framer-motion 的 damping 是物理阻尼系数（不是 dampingRatio），转换公式：
+ *   dampingRatio = damping / (2 × sqrt(mass × stiffness))
+ *   = 30 / (2 × sqrt(1 × 300))
+ *   = 30 / 34.64
+ *   ≈ 0.866
  *
- * 新实现：
- * - FLIP_SPRING: 重排过渡用（LaunchedEffect 内的 positionX/Y/scale/rotation）
- *   单次约 300ms，5 张卡 × 4 属性共 20 个 spring 并行但每个都缩短
- * - FLY_SPRING: 顶卡飞出屏外用
- *   更快（~200ms），dampingRatio=0.9 干脆不反弹
- *
- * 整体"翻牌"从 1100ms 降至 500ms
+ * 整体行为：spring stiffness=300, dampingRatio=0.866 → 单次动画约 500-600ms
+ * 原型在松手时立即重排（无飞出），所以总延迟 < 200ms
  */
-private val FLIP_SPRING = spring<Float>(dampingRatio = 0.85f, stiffness = 400f)
-private val FLY_SPRING = spring<Float>(dampingRatio = 0.9f, stiffness = 600f)
+private val TRANSITION_SPRING = spring<Float>(dampingRatio = 0.866f, stiffness = 300f)
+
+/**
+ * zIndex / 3D 纵深过渡动画（与 Originkit 原型 `{ duration: 0.3, ease: "easeOut" }` 对齐）
+ *
+ * - 原型在 zIndex 和 z 两个属性上都用 0.3s easeOut
+ * - LinearOutSlowInEasing ≈ easeOut（开始快、结束慢）
+ * - 用 tween 而非 spring：避免 spring 阻尼震荡影响 zIndex 的整数跳变
+ */
+private val ZINDEX_TWEEN = tween<Float>(durationMillis = 300, easing = LinearOutSlowInEasing)
 
 /**
  * 图片占位符（加载中 / 加载失败 / 缺图时显示）
  *
- * 与项目内 `InlineImagePreview` 保持视觉一致：浅灰背景 + 相机 emoji
+ * 与 Originkit 原型一致：
+ * - background: rgba(243, 239, 255, 0.8)（浅紫半透明）
+ * - border: 1.5.dp solid #9967FF（紫色边框）
+ * - backdropFilter: blur(10.dp)（毛玻璃）
+ * - 提示文字 "Card N — Add images in Content"（font-size 14, color #9967FF, font-weight 300）
  */
 @Composable
-private fun DefaultImagePlaceholder(cardRadius: Dp) {
+private fun DefaultImagePlaceholder(
+    cardRadius: Dp,
+    stackIndex: Int = 0
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFEEEEEE), RoundedCornerShape(cardRadius)),
+            .background(
+                color = Color(0xFFF3EFFF).copy(alpha = 0.8f),  // rgba(243, 239, 255, 0.8)
+                shape = RoundedCornerShape(cardRadius)
+            )
+            .border(
+                width = 1.5.dp,
+                color = Color(0xFF9967FF),
+                shape = RoundedCornerShape(cardRadius)
+            )
+            .blur(10.dp),  // backdropFilter: blur(10px) 毛玻璃
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = "📷",
-            style = TextStyle(fontSize = 48.sp),
-            color = Color.Gray.copy(alpha = 0.4f),
-            textAlign = TextAlign.Center
+            text = "Card ${stackIndex + 1} — Add images in Content",
+            color = Color(0xFF9967FF),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Light,  // 300
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(20.dp)
         )
     }
 }
@@ -606,7 +701,7 @@ private fun SwipeableImageStackPreviewLocal() {
             imageUris = List(palette.size) { "" },  // 空 Uri，仅作数量依据
             cardWidth = 120.dp,
             cardHeight = 120.dp,
-            cardRadius = 12.dp,
+            cardRadius = 12f,
             tiltAngle = -8f,
             xOffset = 28.dp,
             swipeDirection = SwipeDirection.Horizontal,
@@ -652,7 +747,7 @@ private fun SwipeableImageStackPreviewLocalLarge() {
             imageUris = List(palette.size) { "" },
             cardWidth = 300.dp,
             cardHeight = 400.dp,
-            cardRadius = 16.dp,
+            cardRadius = 16f,
             tiltAngle = -12f,
             xOffset = 60.dp,
             swipeDirection = SwipeDirection.Both,
