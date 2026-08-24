@@ -429,7 +429,7 @@ fun TimelineInspirationItem(
             // - 水平模式拖动（detectHorizontalDragGestures）天然不消费垂直分量，
             //   父级 LazyColumn 仍可正常垂直滚动
             // - 点击顶卡触发 onImageClick(顶卡 originalIndex) 进入全屏 Pager 预览
-            // - 拖动翻牌：左滑/右滑 >50dp 顶卡飞出新顶卡上位
+            // - 拖动翻牌：左滑/右滑 >10dp（对齐原型 10px）顶卡飞出新顶卡上位
             if (!hideDetails && imagePaths.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(tagToImageGap))
                 SwipeableImageStack(
@@ -437,12 +437,12 @@ fun TimelineInspirationItem(
                     modifier = Modifier.fillMaxWidth(),
                     cardWidth = 120.dp,
                     cardHeight = 120.dp,
-                    // cardRadius 是 0-20 滑块（Float，非 Dp），与 SwipeableImageStack.kt L132 / L175 一致
-                    // 12 对应"中等圆角"，与 L740 Preview 用 12f 同值
-                    cardRadius = 12f,
-                    swipeThreshold = 50.dp,
-                    tiltAngle = -8f,    // 减弱扇形角度，适配小尺寸缩略图
-                    xOffset = 28.dp,    // 减小水平偏移
+                    // cardRadius 是 0-20 滑块（Float，非 Dp），与 SwipeableImageStack.kt 默认值一致
+                    // 2 对应 min(W,H)/20 的圆角（120dp 卡片 ≈ 6dp 圆角）
+                    cardRadius = 2f,
+                    swipeThreshold = 10.dp,  // 对齐原型 10px（mdpi 设备 1dp=1px）
+                    tiltAngle = -45f,    // 对齐原型扇形角度（-45°）
+                    xOffset = 0.dp,      // 无水平偏移，仅靠旋转+scale 形成堆叠
                     swipeDirection = SwipeDirection.Horizontal,
                     onCardClick = { originalIndex ->
                         onImageClick(originalIndex)

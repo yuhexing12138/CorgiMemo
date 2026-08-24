@@ -124,13 +124,13 @@ enum class SwipeDirection {
  * @param modifier Modifier（可选）
  * @param cardWidth 卡片宽度（默认 300.dp，嵌入时间线缩略图建议传 120.dp）
  * @param cardHeight 卡片高度（默认 400.dp，嵌入时间线缩略图建议传 120.dp）
- * @param cardRadius 卡片圆角（默认 16.dp，嵌入时间线缩略图建议传 12.dp）
- * @param swipeThreshold 拖动距离阈值（默认 50.dp）
+ * @param cardRadius 卡片圆角（默认 2f，嵌入时间线缩略图建议传 12.dp）
+ * @param swipeThreshold 拖动距离阈值（默认 10.dp，对齐原型 10px；mdpi 设备 1dp=1px）
  * @param maxElasticDistance 弹性边界（默认 0.dp = 自动：max(threshold*4, cardWidth)）；
  *                           显式传值时覆盖默认，便于调用方微调阻力边界
- * @param tiltAngle 堆叠末端旋转角度（默认 -12f，单位度）
+ * @param tiltAngle 堆叠末端旋转角度（默认 -45f，单位度）
  * @param tiltAngleStart 堆叠首端旋转角度（默认 0f）
- * @param xOffset 堆叠末端水平偏移（默认 60.dp，扇形展开幅度）
+ * @param xOffset 堆叠末端水平偏移（默认 0.dp，扇形展开幅度）
  * @param swipeDirection 拖动手势方向约束（默认 [SwipeDirection.Horizontal]，
  *                       嵌入滚动列表务必用 Horizontal 避免与父级手势冲突）
  * @param onCardSwiped 顶卡滑出回调（被滑出的图片在原列表中的索引）
@@ -142,12 +142,12 @@ fun SwipeableImageStack(
     modifier: Modifier = Modifier,
     cardWidth: Dp = 300.dp,
     cardHeight: Dp = 400.dp,
-    cardRadius: Float = 4f,
-    swipeThreshold: Dp = 50.dp,
+    cardRadius: Float = 2f,
+    swipeThreshold: Dp = 10.dp,
     maxElasticDistance: Dp = 0.dp,
     tiltAngle: Float = -45f,
     tiltAngleStart: Float = 0f,
-    xOffset: Dp = 200.dp,
+    xOffset: Dp = 0.dp,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null
@@ -185,12 +185,12 @@ fun SwipeableImageStack(
     modifier: Modifier = Modifier,
     cardWidth: Dp = 300.dp,
     cardHeight: Dp = 400.dp,
-    cardRadius: Float = 4f,
-    swipeThreshold: Dp = 50.dp,
+    cardRadius: Float = 2f,
+    swipeThreshold: Dp = 10.dp,
     maxElasticDistance: Dp = 0.dp,
     tiltAngle: Float = -45f,
     tiltAngleStart: Float = 0f,
-    xOffset: Dp = 200.dp,
+    xOffset: Dp = 0.dp,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null,
@@ -474,7 +474,7 @@ fun SwipeableImageStack(
                                                     isPressed.value = false
                                                     val dx = dragOffsetX.value
                                                     val distance = dx.absoluteValue
-                                                    if (distance > thresholdPx) {
+                                                    if (distance > thresholdPx && order.size > 1) {
                                                         // 严格对齐原型：重排后每张卡位置独立过渡
                                                         // - 原型：A 从拖动位置 spring 到队尾，B/C/D 从旧位置 spring 到新位置
                                                         // - 旧实现：dragOffsetX animateTo(0) 会导致两个跳变：
@@ -507,6 +507,10 @@ fun SwipeableImageStack(
                                                     } else {
                                                         // 弹回中心：与原型 setShouldReturnToCenter(true) + setTimeout(1s) 一致
                                                         // dragOffset 回弹用 BOUNCE_SPRING（对齐原型 dragTransition.bounce: damping=20）
+                                                        // - 一张卡时（order.size==1）也走此分支：
+                                                        //   原型中一张卡重排后 framer-motion drag 系统自动回弹到 (0,0)
+                                                        //   Compose 中 LaunchedEffect(stackIndex, order.size) 的 key 未变不触发
+                                                        //   需手动用 BOUNCE_SPRING 回中，否则顶卡停在拖动位置(bug)
                                                         shouldReturnToCenter.value = true
                                                         scope.launch {
                                                             delay(1000)
@@ -553,7 +557,7 @@ fun SwipeableImageStack(
                                                     val dx = dragOffsetX.value
                                                     val dy = dragOffsetY.value
                                                     val distance = hypot(dx, dy)
-                                                    if (distance > thresholdPx) {
+                                                    if (distance > thresholdPx && order.size > 1) {
                                                         // 严格对齐原型（同水平模式）：dragOffset 转移到 positionX/Y 后归零
                                                         // - A 从拖动位置 spring 到队尾（全向：拖动方向可能是斜向）
                                                         // - B/C/D 从旧位置 spring 到新位置，不继承 A 的 dragOffset 残留
@@ -576,6 +580,10 @@ fun SwipeableImageStack(
                                                     } else {
                                                         // 弹回中心：与原型 setShouldReturnToCenter(true) + setTimeout(1s) 一致
                                                         // dragOffset 回弹用 BOUNCE_SPRING（对齐原型 dragTransition.bounce: damping=20）
+                                                        // - 一张卡时（order.size==1）也走此分支：
+                                                        //   原型中一张卡重排后 framer-motion drag 系统自动回弹到 (0,0)
+                                                        //   Compose 中 LaunchedEffect(stackIndex, order.size) 的 key 未变不触发
+                                                        //   需手动用 BOUNCE_SPRING 回中，否则顶卡停在拖动位置(bug)
                                                         shouldReturnToCenter.value = true
                                                         scope.launch {
                                                             delay(1000)
@@ -663,18 +671,18 @@ fun SwipeableImageStack(
 }
 
 /**
- * 动画规格常量（与 Originkit 原型 `transition = { type: "spring", stiffness: 300, damping: 30 }` 对齐）
+ * 动画规格常量（重排过渡 spring）
  *
- * framer-motion 的 damping 是物理阻尼系数（不是 dampingRatio），转换公式：
- *   dampingRatio = damping / (2 × sqrt(mass × stiffness))
- *   = 30 / (2 × sqrt(1 × 300))
- *   = 30 / 34.64
- *   ≈ 0.866
+ * 原型 `transition = { type: "spring", stiffness: 300, damping: 30 }`
+ * 严格换算 dampingRatio ≈ 0.866，但 framer-motion 与 Compose 的 spring 底层实现不同，
+ * 同参数下 Compose 过冲仅 0.5%（视觉几乎无弹簧感），framer-motion 过冲更明显。
  *
- * 整体行为：spring stiffness=300, dampingRatio=0.866 → 单次动画约 500-600ms
- * 原型在松手时立即重排（无飞出），所以总延迟 < 200ms
+ * 用户决策：降低 dampingRatio 到 0.5（过冲 ~16%），让多张卡重排时也有明显弹簧效果，
+ * 与一张卡回中的 BOUNCE_SPRING(dampingRatio=0.577) 视觉一致。
+ *
+ * 整体行为：spring stiffness=300, dampingRatio=0.5 → 单次动画约 500-600ms，过冲明显
  */
-private val TRANSITION_SPRING = spring<Float>(dampingRatio = 0.866f, stiffness = 300f)
+private val TRANSITION_SPRING = spring<Float>(dampingRatio = 0.5f, stiffness = 300f)
 
 /**
  * 回弹动画规格（与 Originkit 原型 `dragTransition = { bounceStiffness: 300, bounceDamping: 20 }` 对齐）
