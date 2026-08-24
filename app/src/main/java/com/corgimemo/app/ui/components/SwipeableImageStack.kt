@@ -196,6 +196,12 @@ fun SwipeableImageStack(
 
     val scope = rememberCoroutineScope()
 
+    // 区分"用户主动拖动"与"动画回零"——
+    // 旧实现用 dragOffsetX != 0f 判断，错误地把 onDragEnd 后 animateTo(0f) 的过渡也判为拖动中，
+    // 导致 finalScale = 1.05f（硬编码）一直生效到 dragOffsetX 归零，
+    // 之后突然切到 scaleAnim.value（0.95，新顶卡还没追上）产生"从大变小"突变
+    val isUserDragging = remember { mutableStateOf(false) }
+
     // 容器：宽 = cardWidth + xOffset（容纳扇形最末端 xOffset 的偏移），
     // 高 = cardHeight + 15% cardHeight（容纳 yStackOffset 上移，按比例适配不同尺寸）
     // - 用 cardHeight * 0.15 而非固定 60dp：120dp 缩略图场景只需 ~18dp 余量，400dp 详情页场景需 60dp 余量
@@ -260,12 +266,17 @@ fun SwipeableImageStack(
                     }
 
                     // 渲染时：顶卡额外叠加 dragOffset；非顶卡只用 Animatable
-                    // 拖动中：顶卡强制 scale 1.05 + rotation 0，忽略 Animatable 旧值
-                    val isDragging = isTopCard && (dragOffsetX.value != 0f || dragOffsetY.value != 0f)
+                    // 用 isUserDragging（而非 dragOffsetX != 0）判断拖动状态：
+                    // - 旧实现 isDragging = isTopCard && (dragOffsetX != 0) 会把"动画回零"误判为拖动中
+                    // - 新顶卡重排后 dragOffsetX 还在 animateTo(0) 期间，isUserDragging=false
+                    //   finalScale 跟随 scaleAnim 平滑过渡（0.95→1.0），不再有"从大变小"突变
                     val finalX = if (isTopCard) positionX.value + dragOffsetX.value else positionX.value
                     val finalY = if (isTopCard) positionY.value + dragOffsetY.value else positionY.value
-                    val finalScale = if (isDragging) 1.05f else scaleAnim.value
-                    val finalRotation = if (isDragging) 0f else rotationAnim.value
+                    // 拖动时在 scaleAnim 基础上 +0.05（相对放大），保持"拖动时顶卡变大"反馈
+                    // 静止时用 scaleAnim 当前值（顶卡=1.0，扇形位=0.95/0.9/...）
+                    val finalScale = if (isUserDragging.value) scaleAnim.value + 0.05f else scaleAnim.value
+                    // 拖动时强制水平（rotation=0），静止时跟随 rotationAnim（重排过渡有 -4°→0° 等动画）
+                    val finalRotation = if (isUserDragging.value) 0f else rotationAnim.value
 
                     Box(
                         modifier = Modifier
@@ -295,16 +306,22 @@ fun SwipeableImageStack(
                                         if (swipeDirection == SwipeDirection.Horizontal) {
                                             detectHorizontalDragGestures(
                                                 onDragStart = {
-                                                    // 拖动开始：把顶卡的 position/scale/rotation snap 到拖动态目标
-                                                    // 避免拖动中 Animatable 还在重排过渡与拖动手势打架
+                                                    // 标记进入"用户拖动"状态（用于 finalScale = scaleAnim + 0.05 的相对放大）
+                                                    isUserDragging.value = true
+                                                    // 把顶卡的 positionX/Y 强制归零
+                                                    // - 保留这个 snapTo 防止上次重排动画把 positionX 留在中间值
+                                                    // - 移除 scaleAnim.snapTo(1.05f) 和 rotationAnim.snapTo(0f)：
+                                                    //   这两个 snapTo 会与重排后的入场动画（0.95→1.0, -4°→0°）打架，
+                                                    //   导致用户立即开始拖新顶卡时出现"scale 突变"和"rotation 跳变"
+                                                    //   现在 finalScale/finalRotation 自动用 scaleAnim.value + 0.05 / 0f，无需 snapTo
                                                     scope.launch {
                                                         positionX.snapTo(0f)
                                                         positionY.snapTo(0f)
-                                                        scaleAnim.snapTo(1.05f)
-                                                        rotationAnim.snapTo(0f)
                                                     }
                                                 },
                                                 onDragEnd = {
+                                                    // 标记离开"用户拖动"状态
+                                                    isUserDragging.value = false
                                                     val dx = dragOffsetX.value
                                                     val distance = dx.absoluteValue
                                                     if (distance > thresholdPx) {
@@ -340,14 +357,16 @@ fun SwipeableImageStack(
                                             // 全向模式
                                             detectDragGestures(
                                                 onDragStart = {
+                                                    isUserDragging.value = true
+                                                    // 同样：移除 scaleAnim.snapTo(1.05f) 和 rotationAnim.snapTo(0f)，
+                                                    // 保留 positionX/Y.snapTo(0f) 防上次重排动画残留
                                                     scope.launch {
                                                         positionX.snapTo(0f)
                                                         positionY.snapTo(0f)
-                                                        scaleAnim.snapTo(1.05f)
-                                                        rotationAnim.snapTo(0f)
                                                     }
                                                 },
                                                 onDragEnd = {
+                                                    isUserDragging.value = false
                                                     val dx = dragOffsetX.value
                                                     val dy = dragOffsetY.value
                                                     val distance = hypot(dx, dy)
