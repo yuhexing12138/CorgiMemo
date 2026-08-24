@@ -199,6 +199,11 @@ fun SwipeableImageStack(
 
     val density = LocalDensity.current
     val thresholdPx = with(density) { swipeThreshold.toPx() }
+    // 真实弹性边界：以"1 张卡宽"作为"阻力达到 30%"的临界点
+    // - offset = 0 → 乘数 = 1.0（无阻力）
+    // - offset = cardWidth → 乘数 = 0.7（阻力最大，与原型 dragElastic 数值一致）
+    // - offset > cardWidth → 乘数 ≤ 0.7（clamp 后保持不再增加阻力）
+    val maxElasticDistance = with(density) { cardWidth.toPx() }
 
     val scope = rememberCoroutineScope()
 
@@ -364,6 +369,10 @@ fun SwipeableImageStack(
                                                 onDragStart = {
                                                     // 标记进入"用户拖动"状态（用于 finalScale = scaleAnim + 0.05 的相对放大）
                                                     isPressed.value = true
+                                                    // 取消未完成的回中动画
+                                                    // - 避免 1s 回中期内又开始拖新顶卡时，新顶卡从 (0,0) 跳到 dragOffset 起点
+                                                    // - 必须放在 isPressed=true 之后：否则 finalX 仍受 shouldReturnToCenter 控制
+                                                    shouldReturnToCenter.value = false
                                                     // 把顶卡的 positionX/Y 强制归零
                                                     // - 保留这个 snapTo 防止上次重排动画把 positionX 留在中间值
                                                     // - 移除 scaleAnim.snapTo(1.05f) 和 rotationAnim.snapTo(0f)：
@@ -410,8 +419,15 @@ fun SwipeableImageStack(
                                                     }
                                                 }
                                             ) { change, dragAmount ->
-                                                // dragElastic: 0.7（原型）—— 拖动距离打 7 折，提供"边界弹性"
-                                                val elasticAmount = dragAmount * 0.7f
+                                                // 真实弹性（参考 framer-motion dragElastic，越远阻力越大）：
+                                                //   elasticAmount = dragAmount * (1 - 0.3 * (|offset| / maxDistance))
+                                                // - offset = 当前累积偏移，maxDistance = cardWidth
+                                                // - t ∈ [0, 1]（超过 1 时 clamp 到 1，避免反向）
+                                                // - 阻力 30% = 1 - 0.7，与原型 dragElastic 数值边界一致
+                                                val currentOffset = dragOffsetX.value.absoluteValue
+                                                val t = (currentOffset / maxElasticDistance).coerceIn(0f, 1f)
+                                                val resistance = 1f - 0.3f * t
+                                                val elasticAmount = dragAmount * resistance
                                                 scope.launch {
                                                     dragOffsetX.snapTo(dragOffsetX.value + elasticAmount)
                                                 }
@@ -421,6 +437,8 @@ fun SwipeableImageStack(
                                             detectDragGestures(
                                                 onDragStart = {
                                                     isPressed.value = true
+                                                    // 取消未完成的回中动画（同水平模式，避免新顶卡从 (0,0) 跳到 dragOffset 起点）
+                                                    shouldReturnToCenter.value = false
                                                     // 同样：移除 scaleAnim.snapTo(1.05f) 和 rotationAnim.snapTo(0f)，
                                                     // 保留 positionX/Y.snapTo(0f) 防上次重排动画残留
                                                     scope.launch {
@@ -460,8 +478,13 @@ fun SwipeableImageStack(
                                                 }
                                             ) { change, dragAmount ->
                                                 change.consume()
-                                                // dragElastic: 0.7（原型）—— 拖动距离打 7 折
-                                                val elasticAmount = dragAmount * 0.7f
+                                                // 真实弹性（参考 framer-motion dragElastic，越远阻力越大）：
+                                                //   全向模式用 hypot(dragOffsetX, dragOffsetY) 计算当前累积距离
+                                                //   elasticAmount = dragAmount * (1 - 0.3 * (distance / maxDistance))
+                                                val currentDistance = hypot(dragOffsetX.value, dragOffsetY.value)
+                                                val t = (currentDistance / maxElasticDistance).coerceIn(0f, 1f)
+                                                val resistance = 1f - 0.3f * t
+                                                val elasticAmount = dragAmount * resistance
                                                 scope.launch {
                                                     dragOffsetX.snapTo(dragOffsetX.value + elasticAmount.x)
                                                     dragOffsetY.snapTo(dragOffsetY.value + elasticAmount.y)
