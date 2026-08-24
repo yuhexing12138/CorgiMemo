@@ -104,9 +104,11 @@ enum class SwipeDirection {
  * @param cardHeight 卡片高度（默认 400.dp，嵌入时间线缩略图建议传 120.dp）
  * @param cardRadius 卡片圆角（默认 16.dp，嵌入时间线缩略图建议传 12.dp）
  * @param swipeThreshold 拖动距离阈值（默认 50.dp）
- * @param tiltAngle 堆叠末端旋转角度（默认 -12f，单位度）
+ * @param tiltAngle 堆叠末端旋转角度（默认 -25f，单位度，对应原型 200px/300px ≈ 67% 宽度扇形）
  * @param tiltAngleStart 堆叠首端旋转角度（默认 0f）
- * @param xOffset 堆叠末端水平偏移（默认 60.dp，扇形展开幅度）
+ * @param xOffset 堆叠末端水平偏移（默认 100.dp，对应原型 67% 卡片宽度的扇形幅度）
+ * @param scaleStep 每张卡缩放递减量（默认 0.05f，对应原型 5%/张）
+ * @param stackOffsetYStep 每张卡垂直偏移步长（默认 8.dp，对应原型 8px/张）
  * @param swipeDirection 拖动手势方向约束（默认 [SwipeDirection.Horizontal]，
  *                       嵌入滚动列表务必用 Horizontal 避免与父级手势冲突）
  * @param onCardSwiped 顶卡滑出回调（被滑出的图片在原列表中的索引）
@@ -120,9 +122,11 @@ fun SwipeableImageStack(
     cardHeight: Dp = 400.dp,
     cardRadius: Dp = 16.dp,
     swipeThreshold: Dp = 50.dp,
-    tiltAngle: Float = -12f,
+    tiltAngle: Float = -25f,
     tiltAngleStart: Float = 0f,
-    xOffset: Dp = 60.dp,
+    xOffset: Dp = 100.dp,
+    scaleStep: Float = 0.05f,
+    stackOffsetYStep: Dp = 8.dp,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null
@@ -137,6 +141,8 @@ fun SwipeableImageStack(
         tiltAngle = tiltAngle,
         tiltAngleStart = tiltAngleStart,
         xOffset = xOffset,
+        scaleStep = scaleStep,
+        stackOffsetYStep = stackOffsetYStep,
         swipeDirection = swipeDirection,
         onCardSwiped = onCardSwiped,
         onCardClick = onCardClick,
@@ -161,9 +167,11 @@ fun SwipeableImageStack(
     cardHeight: Dp = 400.dp,
     cardRadius: Dp = 16.dp,
     swipeThreshold: Dp = 50.dp,
-    tiltAngle: Float = -12f,
+    tiltAngle: Float = -25f,
     tiltAngleStart: Float = 0f,
-    xOffset: Dp = 60.dp,
+    xOffset: Dp = 100.dp,
+    scaleStep: Float = 0.05f,
+    stackOffsetYStep: Dp = 8.dp,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null,
@@ -221,11 +229,11 @@ fun SwipeableImageStack(
                     val cardStyle = computeCardStyle(
                         stackIndex = stackIndex,
                         totalCards = order.size,
-                        cardWidth = cardWidth,
-                        cardHeight = cardHeight,
                         xOffset = xOffset,
                         tiltAngle = tiltAngle,
-                        tiltAngleStart = tiltAngleStart
+                        tiltAngleStart = tiltAngleStart,
+                        scaleStep = scaleStep,
+                        stackOffsetYStep = stackOffsetYStep
                     )
                     val rotationDeg = if (isTopCard && (dragOffsetX.value != 0f || dragOffsetY.value != 0f)) {
                         0f
@@ -414,6 +422,14 @@ fun SwipeableImageStack(
 
 /**
  * 顶卡位置/角度/缩放样式（按栈内 index 计算）
+ *
+ * 关键参数：
+ * - `scaleStep`：每张卡的缩放递减量（顶卡 = 1.0，第二张 = 1 - scaleStep，第三张 = 1 - 2*scaleStep...）
+ * - `stackOffsetYStep`：每张卡垂直偏移步长（顶卡 y=0，第二张 y=-stackOffsetYStep，第三张 y=-2*stackOffsetYStep...）
+ *
+ * 调用方应按卡片尺寸调整这两个参数：
+ * - 大卡片（300x400）：scaleStep=0.05, stackOffsetYStep=8.dp（原值）
+ * - 缩略图（120x120）：scaleStep=0.07, stackOffsetYStep=8.dp（更明显的缩放以补偿小尺寸）
  */
 private data class CardStyle(
     val x: Dp,
@@ -425,15 +441,15 @@ private data class CardStyle(
 private fun computeCardStyle(
     stackIndex: Int,
     totalCards: Int,
-    cardWidth: Dp,
-    cardHeight: Dp,
     xOffset: Dp,
     tiltAngle: Float,
-    tiltAngleStart: Float
+    tiltAngleStart: Float,
+    scaleStep: Float,
+    stackOffsetYStep: Dp
 ): CardStyle {
-    // 顶卡居中，下层依次上移（y 减小）+ 缩小
-    val stackOffsetY = -(stackIndex * 8).dp
-    val scale = 1f - stackIndex * 0.05f
+    // 顶卡居中，下层依次按 stackOffsetYStep 向上偏移（与原型 y = -stackOffset 一致）
+    val stackOffsetY = (-(stackIndex * stackOffsetYStep.value)).dp
+    val scale = 1f - stackIndex * scaleStep
     val rotation = if (totalCards > 1) {
         tiltAngleStart + (stackIndex.toFloat() / (totalCards - 1)) * (tiltAngle - tiltAngleStart)
     } else {
@@ -591,8 +607,10 @@ private fun SwipeableImageStackPreviewLocal() {
             cardWidth = 120.dp,
             cardHeight = 120.dp,
             cardRadius = 12.dp,
-            tiltAngle = -8f,
-            xOffset = 28.dp,
+            tiltAngle = -15f,    // 与 TimelineInspirationItem 一致的强扇形
+            xOffset = 50.dp,     // 42% 卡片宽
+            scaleStep = 0.07f,   // 每张缩 7%
+            stackOffsetYStep = 8.dp,
             swipeDirection = SwipeDirection.Horizontal,
             customContent = { stackIndex ->
                 Box(
@@ -637,8 +655,10 @@ private fun SwipeableImageStackPreviewLocalLarge() {
             cardWidth = 300.dp,
             cardHeight = 400.dp,
             cardRadius = 16.dp,
-            tiltAngle = -12f,
-            xOffset = 60.dp,
+            tiltAngle = -25f,    // 大图场景更激进的扇形（接近原型 -45°）
+            xOffset = 100.dp,    // 33% 卡片宽
+            scaleStep = 0.05f,
+            stackOffsetYStep = 8.dp,
             swipeDirection = SwipeDirection.Both,
             customContent = { stackIndex ->
                 Box(
