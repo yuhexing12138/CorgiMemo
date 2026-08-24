@@ -12,7 +12,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,7 +38,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -53,7 +51,6 @@ import kotlin.math.absoluteValue
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.pow
-import kotlin.math.roundToInt
 
 /**
  * 堆叠中的单张卡片槽位
@@ -382,12 +379,18 @@ fun SwipeableImageStack(
                     // - shouldReturnToCenter 保留用于 onDragStart 重置 + finalRotation 锁定
                     val finalX = if (isTopCard) positionX.value + dragOffsetX.value else positionX.value
                     val finalY = if (isTopCard) positionY.value + dragOffsetY.value else positionY.value
-                    // 原型 whileDrag: { scale: 1.05 } → 当前帧 = scaleAnim + 0.05
-                    val finalScale = if (isPressed.value) scaleAnim.value + 0.05f else scaleAnim.value
-                    // 原型 whileDrag: { rotate: tiltAngleStart = 0 } → 拖动时归零
-                    // 原型 shouldReturn 时也强制 rotate = 0
+                    // whileDrag 严格只作用于顶卡（与原型 drag={isTopCard} 一致）：
+                    // - 原型 whileDrag={{ scale: 1.05, rotate: tiltAngleStart, zIndex: 1000 }}
+                    //   因 drag={isTopCard}，只有顶卡在拖动时应用 whileDrag 样式
+                    // - 下层卡片 animate 目标不变（cards 数组没变），保持原位不动
+                    // - 旧实现 isPressed 是全局状态，导致拖动顶卡时所有卡片的
+                    //   finalRotation=0 + finalScale+=0.05，下层卡片立即旋转归零（错误）
+                    // - 修复：isTopCard && isPressed 才应用 whileDrag 样式
+                    val finalScale = if (isTopCard && isPressed.value) scaleAnim.value + 0.05f else scaleAnim.value
+                    // 原型 whileDrag: { rotate: tiltAngleStart = 0 } → 顶卡拖动时归零
+                    // 原型 shouldReturn 时也强制顶卡 rotate = 0
                     val finalRotation = when {
-                        isPressed.value -> 0f
+                        isTopCard && isPressed.value -> 0f
                         isTopCard && shouldReturnToCenter.value -> 0f
                         else -> rotationAnim.value
                     }
@@ -398,14 +401,21 @@ fun SwipeableImageStack(
                             // zIndex 由 zIndexAnim 驱动：静止时 (order.size - stackIndex)，按下时 1000
                             // 用 Animatable + 0.3s easeOut 过渡，与原型 { duration: 0.3, ease: "easeOut" } 一致
                             .zIndex(zIndexAnim.value)
-                            .offset { IntOffset(finalX.roundToInt(), finalY.roundToInt()) }
                             .graphicsLayer {
-                                // 纵深感：父容器 cameraDistance (perspective: 1000px) + scale = 1 - index*0.05
-                                // 原型 `z: -depthOffset` (depthOffset = index * 10px) 因 Compose GraphicsLayerScope
-                                // 无 translationZ API 已移除，视觉差异 <1%，由 scaleX/Y + cameraDistance 承担
-                                rotationZ = finalRotation
+                                // 严格对齐原型 CSS transform 顺序：scale → rotate → translate
+                                // - 原型 motion.div 的 transform: translate(x,y) rotate(r) scale(s)
+                                //   CSS 从右到左应用：先 scale（围绕原位置中心缩放），
+                                //   再 rotate（围绕原位置中心旋转），最后 translate（平移）
+                                // - Compose graphicsLayer 内部顺序也是 scale → rotate → translate
+                                // - 旧实现用 .offset() 在 graphicsLayer 之前，导致先平移再旋转
+                                //   （围绕平移后的新位置中心旋转），与原型旋转点视觉位置不同
+                                // - 修复：用 translationX/Y 代替 offset，让旋转围绕原位置中心进行
+                                //   下层卡片上移时旋转点与原型严格一致
                                 scaleX = finalScale
                                 scaleY = finalScale
+                                rotationZ = finalRotation
+                                translationX = finalX
+                                translationY = finalY
                             }
                             .shadow(
                                 elevation = if (isTopCard) 8.dp else 4.dp,
@@ -475,13 +485,20 @@ fun SwipeableImageStack(
                                                         //   - B：finalX=positionX(66.67)+0=66.67，无跳变，LaunchedEffect animateTo(0)，平滑过渡
                                                         scope.launch {
                                                             onCardSwiped?.invoke(slot.originalIndex)
-                                                            // 1. dragOffset 转移到 positionX/Y（A 的飞出起点 = 拖动位置，对齐原型）
+                                                            // 1. zIndex 立即变成 1（从底层插入，不遮挡其他卡片）
+                                                            // - 原型 zIndex 从 1000 过渡到 1（0.3s easeOut），但过渡过程中
+                                                            //   zIndex 远大于其他卡片（2,3,4），导致顶卡在飞出过程中遮挡其他卡片
+                                                            // - 修复：snapTo(1f) 立即变成最底层，从下方穿过，
+                                                            //   符合"从所有底层图片下方插入最底层"的视觉
+                                                            // - 重排后 targetZIndex 也是 1，LaunchedEffect 不会触发额外动画
+                                                            zIndexAnim.snapTo(1f)
+                                                            // 2. dragOffset 转移到 positionX/Y（A 的飞出起点 = 拖动位置，对齐原型）
                                                             positionX.snapTo(positionX.value + dragOffsetX.value)
                                                             positionY.snapTo(positionY.value + dragOffsetY.value)
-                                                            // 2. dragOffset 归零（避免新顶卡 B 继承 A 的拖动残留）
+                                                            // 3. dragOffset 归零（避免新顶卡 B 继承 A 的拖动残留）
                                                             dragOffsetX.snapTo(0f)
                                                             dragOffsetY.snapTo(0f)
-                                                            // 3. 重排：A 的 stackIndex 0→N-1，LaunchedEffect 触发 positionX animateTo(新 targetX)
+                                                            // 4. 重排：A 的 stackIndex 0→N-1，LaunchedEffect 触发 positionX animateTo(新 targetX)
                                                             val newOrder = order.toMutableList()
                                                             val top = newOrder.removeAt(0)
                                                             newOrder.add(top)
@@ -542,13 +559,15 @@ fun SwipeableImageStack(
                                                         // - B/C/D 从旧位置 spring 到新位置，不继承 A 的 dragOffset 残留
                                                         scope.launch {
                                                             onCardSwiped?.invoke(slot.originalIndex)
-                                                            // 1. dragOffset 转移到 positionX/Y（A 的飞出起点 = 拖动位置）
+                                                            // 1. zIndex 立即变成 1（从底层插入，不遮挡其他卡片，同水平模式）
+                                                            zIndexAnim.snapTo(1f)
+                                                            // 2. dragOffset 转移到 positionX/Y（A 的飞出起点 = 拖动位置）
                                                             positionX.snapTo(positionX.value + dragOffsetX.value)
                                                             positionY.snapTo(positionY.value + dragOffsetY.value)
-                                                            // 2. dragOffset 归零（避免新顶卡 B 继承 A 的拖动残留）
+                                                            // 3. dragOffset 归零（避免新顶卡 B 继承 A 的拖动残留）
                                                             dragOffsetX.snapTo(0f)
                                                             dragOffsetY.snapTo(0f)
-                                                            // 3. 重排：LaunchedEffect 触发各卡 positionX/Y animateTo(新 targetX/Y)
+                                                            // 4. 重排：LaunchedEffect 触发各卡 positionX/Y animateTo(新 targetX/Y)
                                                             val newOrder = order.toMutableList()
                                                             val top = newOrder.removeAt(0)
                                                             newOrder.add(top)
