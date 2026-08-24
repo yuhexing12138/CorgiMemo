@@ -115,12 +115,22 @@ object InspirationScreenshot {
      *
      * @param context 上下文（需要是 Activity）
      * @param inspiration 灵感数据
+     * @param imagePaths 灵感图片路径列表（v2026-08-24 修复灵感图片不可见 bug 新增）
+     *   原实现从 [inspiration.imagePaths] 解析，但该字段在保存时已被置空。
+     *   现改为由调用方从 `content_blocks` 表（ownerType="inspiration"）加载后传入。
      * @param scaleFactor 放大倍数（默认 2.0f，建议 1.5~2.5，过大会 OOM）
      * @return 矢量级高清 Bitmap，失败返回 null（context 非 Activity、DecorView 获取失败、容器尺寸异常、渲染超时）
      */
     suspend fun captureHighResBitmap(
         context: Context,
         inspiration: Inspiration,
+        /**
+         * 灵感图片路径列表（v2026-08-24 新增）
+         *
+         * 由调用方从 `content_blocks` 表（ownerType="inspiration"）加载后传入，
+         * 替代原 [inspiration.imagePaths] 字段读取（该字段已置空）。
+         */
+        imagePaths: List<String>,
         scaleFactor: Float = 2.0f
     ): Bitmap? = withContext(Dispatchers.Main) {
         val activity = context as? Activity
@@ -152,7 +162,8 @@ object InspirationScreenshot {
         // ========== 关键改进 1: 预加载所有图片 ==========
         // 离屏渲染前先用 Coil 同步预加载所有图片到内存
         // 这样离屏渲染时 AsyncImage 可立即从内存显示，无需等待网络/磁盘加载
-        val imagePaths = parseImagePaths(inspiration.imagePaths)
+        // v2026-08-24 修复：直接使用入参 imagePaths（来自 content_blocks 表），
+        // 替代原 parseImagePaths(inspiration.imagePaths) 字段读取
         if (imagePaths.isNotEmpty()) {
             android.util.Log.d("InspirationScreenshot", "captureHighResBitmap: 开始预加载 ${imagePaths.size} 张图片")
             val preloadResult = preloadImages(context, imagePaths)
@@ -281,22 +292,6 @@ object InspirationScreenshot {
         } finally {
             // 必须清理：移除离屏容器，避免内存泄漏
             decorView.removeView(container)
-        }
-    }
-
-    /**
-     * 解析灵感图片路径 JSON 数组
-     * 与 InspirationViewCard 内部的解析逻辑保持一致
-     */
-    private fun parseImagePaths(imagePathsJson: String): List<String> {
-        if (imagePathsJson.isBlank()) return emptyList()
-        return try {
-            org.json.JSONArray(imagePathsJson).let { arr ->
-                (0 until arr.length()).map { arr.getString(it) }
-            }
-        } catch (e: Exception) {
-            android.util.Log.w("InspirationScreenshot", "parseImagePaths 失败", e)
-            emptyList()
         }
     }
 

@@ -71,12 +71,20 @@ import java.util.Calendar
  * @param inspiration 待修改的灵感数据
  * @param onDismiss 关闭回调
  * @param onConfirm 确认回调（dateMillis=日期时间毫秒值, hour=时, minute=分）
+ * @param imagePaths 灵感图片路径列表（v2026-08-24 新增）
+ *        由父级从 InspirationViewModel.imagePathsMap 传入，
+ *        不再从 inspiration.imagePaths 解析（重构后为空）。
  */
 @Composable
 fun InspirationDateTimePickerDialog(
     inspiration: Inspiration,
     onDismiss: () -> Unit,
-    onConfirm: (dateMillis: Long, hour: Int, minute: Int) -> Unit
+    onConfirm: (dateMillis: Long, hour: Int, minute: Int) -> Unit,
+    /**
+     * 灵感图片路径列表（v2026-08-24 新增）
+     * 由父级从 [com.corgimemo.app.viewmodel.InspirationViewModel.imagePathsMap] 读取
+     */
+    imagePaths: List<String> = emptyList()
 ) {
     // 初始值：系统当前时间
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
@@ -316,6 +324,7 @@ fun InspirationDateTimePickerDialog(
                         CalendarInspirationItem(
                             inspiration = inspiration,
                             onClick = {},  // 纯预览，无点击行为
+                            imagePaths = imagePaths,  // v2026-08-24 新增：图片路径由父级传入
                             dynamicDate = selectedDate,
                             dynamicHour = selectedHour,
                             dynamicMinute = selectedMinute

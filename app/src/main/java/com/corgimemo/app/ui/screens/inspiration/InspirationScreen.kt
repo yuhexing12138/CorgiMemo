@@ -99,6 +99,8 @@ fun InspirationScreen(
     val hideDetails by viewModel.hideDetails.collectAsState()
     /** 各灵感的关联数量映射（v2026-07-21 新增，供首页卡片显示 🔗×N） */
     val relationCountMap by viewModel.relationCountMap.collectAsState()
+    /** v2026-08-24 新增：各灵感的图片路径映射（供首页卡片 + 日期时间修改弹窗预览显示） */
+    val imagePathsMap by viewModel.imagePathsMap.collectAsState()
     /** 灵感删除撤销状态（用于触发 Snackbar 提示） */
     val pendingDeletedInspiration by viewModel.pendingDeletedInspiration.collectAsState()
     val pendingBatchDeletedInspirations by viewModel.pendingBatchDeletedInspirations.collectAsState()
@@ -296,7 +298,10 @@ fun InspirationScreen(
                             ) { item ->
                                 val inspiration = item.inspiration
                                 val tags = viewModel.decodeTags(inspiration.tags)
-                                val imagePaths = viewModel.decodePaths(inspiration.imagePaths)
+                                // v2026-08-24 修复灵感图片不可见 bug：
+                                // 改从 imagePathsMap 读，替代原 viewModel.decodePaths(inspiration.imagePaths)
+                                // （原方式永远返回空，因为 saveInspiration() 已将 imagePaths 字段置空）
+                                val imagePaths = imagePathsMap[inspiration.id] ?: emptyList()
                                 val formattedTime = viewModel.formatTime(inspiration.createdAt)
 
                                 TimelineInspirationItem(
@@ -507,7 +512,9 @@ fun InspirationScreen(
                 viewModel.updateInspirationDateTime(inspiration.id, dateMillis)
                 showDateTimePicker = false
                 longPressedInspiration = null
-            }
+            },
+            // v2026-08-24 新增：图片路径从 content_blocks 表读取，让日期时间修改弹窗也能显示图片
+            imagePaths = imagePathsMap[inspiration.id] ?: emptyList()
         )
     }
 

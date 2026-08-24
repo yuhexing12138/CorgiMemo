@@ -1105,7 +1105,11 @@ fun MainScreen(
                     navController.navigate("inspiration_edit/${inspiration.id}")
                 },
                 onDismiss = { showInspirationCalendar = false },
-                topPadding = with(density) { topBarHeightPx.toDp() }
+                topPadding = with(density) { topBarHeightPx.toDp() },
+                // v2026-08-24 新增：图片路径从 content_blocks 表读取，不再从 inspiration.imagePaths
+                getImagePaths = { inspirationId ->
+                    inspirationViewModel.getImagePaths(inspirationId)
+                }
             )
         }
 

@@ -7,6 +7,7 @@ import com.corgimemo.app.data.model.CardDetail
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CardSearchResult
 import com.corgimemo.app.data.model.Inspiration
+import com.corgimemo.app.data.local.db.ContentBlockDao
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.data.repository.CardRelationRepository
 import com.corgimemo.app.data.repository.DeletedInspirationRepository
@@ -141,6 +142,29 @@ class InspirationViewModel @Inject constructor(
      */
     private val _relationCountMap = MutableStateFlow<Map<Long, Int>>(emptyMap())
     val relationCountMap: StateFlow<Map<Long, Int>> = _relationCountMap.asStateFlow()
+
+    /**
+     * 灵感 ID → 图片路径列表 映射（v2026-08-24 修复灵感图片不可见 bug 新增）
+     *
+     * 灵感图片从 [Inspiration.imagePaths]（已置空）迁移到
+     * `content_blocks` 表（ownerType="inspiration"）后，
+     * 本 ViewModel 在数据流变化时统一批量加载所有 content_blocks 并构建
+     * inspirationId → List<filePath> 映射，供 UI 层在首页/详情页读取。
+     *
+     * 模式与 [_relationCountMap] 一致：批量查询 + StateFlow 暴露 + map 查找。
+     */
+    private val _imagePathsMap = MutableStateFlow<Map<Long, List<String>>>(emptyMap())
+    val imagePathsMap: StateFlow<Map<Long, List<String>>> = _imagePathsMap.asStateFlow()
+
+    /**
+     * 按 inspirationId 读取图片路径列表（v2026-08-24 修复灵感图片不可见 bug 新增）
+     *
+     * 供 UI 层（首页 TimelineInspirationItem / 详情页 InspirationViewCard /
+     * 分享截图等）通过 inspirationId 异步获取图片列表。
+     * 未在 [_imagePathsMap] 中的灵感返回空列表。
+     */
+    fun getImagePaths(inspirationId: Long): List<String> =
+        _imagePathsMap.value[inspirationId] ?: emptyList()
 
     /**
      * 按需刷新所有灵感的关联数量（v2026-07-22 新增）
@@ -578,6 +602,10 @@ class InspirationViewModel @Inject constructor(
                     _inspirations.value = list
                     // v2026-07-21 新增：刷新关联数量映射（供首页卡片显示 🔗×N）
                     refreshRelationCounts(list)
+                    // v2026-08-24 新增：刷新图片路径映射（修复灵感图片在详情页/首页不可见 bug）
+                    // 灵感图片存储在 content_blocks 表（ownerType="inspiration"），
+                    // Inspiration.imagePaths 字段已置空，必须从 content_blocks 读取
+                    refreshImagePathsMap(list)
                 }
             } catch (e: Exception) {
                 // 异常时仅记录，不再设置 _isLoading（已移除该状态）
@@ -610,6 +638,40 @@ class InspirationViewModel @Inject constructor(
             }
         }
         _relationCountMap.value = relationCountMap
+    }
+
+    /**
+     * 刷新所有灵感的图片路径映射（v2026-08-24 修复灵感图片不可见 bug 新增）
+     *
+     * 灵感图片在 v2026-07-25 三写存储重构后仅存储在 `content_blocks` 表
+     * （ownerType="inspiration"，type="image"）。本方法批量查询所有灵感的
+     * Image 块，按 `todoId` (= inspirationId) group，再按 orderIndex 升序
+     * 映射为 `List<filePath>` 写入 [_imagePathsMap]。
+     *
+     * **调用时机**：灵感列表加载/刷新时（[startCollect] 内）
+     *
+     * **性能**：单次 SQL 批量查询所有 inspirationId 的 content_blocks，
+     * 比逐条查询 N+1 次快得多。灵感数量通常 < 100，单批结果集 < 1000 行。
+     */
+    private suspend fun refreshImagePathsMap(allInspirations: List<Inspiration>) {
+        if (allInspirations.isEmpty()) {
+            _imagePathsMap.value = emptyMap()
+            return
+        }
+        val ids = allInspirations.map { it.id }.filter { it > 0L }
+        if (ids.isEmpty()) {
+            _imagePathsMap.value = emptyMap()
+            return
+        }
+        // 一次性查询所有灵感的 Image 块（ownerType="inspiration"）
+        val blocks = contentBlockDao.getBlocksByTodoIds(ids, ownerType = "inspiration")
+            .filter { it.type == "image" }
+        // 按 inspirationId group，再按 orderIndex 升序
+        val map = blocks.groupBy { it.todoId }
+            .mapValues { entry ->
+                entry.value.sortedBy { it.orderIndex }.map { it.filePath }
+            }
+        _imagePathsMap.value = map
     }
 
     /**

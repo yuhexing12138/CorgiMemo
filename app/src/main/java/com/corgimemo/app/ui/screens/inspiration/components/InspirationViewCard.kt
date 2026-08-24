@@ -65,8 +65,17 @@ import java.util.Locale
  * v2026-07-22 新增：支持在标签下方显示关联卡片 Chip 流（类似待办编辑页），
  * 由父级传入 [relations] / [relationTitles] 和三个回调。
  *
+ * v2026-08-24 修复灵感图片不可见 bug：
+ * - 灵感图片存储在 `content_blocks` 表（ownerType="inspiration"），
+ *   [Inspiration.imagePaths] 字段已置空
+ * - 移除原内部 `remember(inspiration.imagePaths) { ... JSONArray 解析 ... }`
+ * - 改为由父级（[com.corgimemo.app.ui.screens.inspiration.InspirationViewScreen]）
+ *   通过 [imagePaths] 参数传入真实图片路径列表（来自 ViewModel.imagePathsMap）
+ * - 默认值为 `emptyList()`，保证旧调用方（如离屏截图 [InspirationScreenshot]）不传时仍可编译
+ *
  * @param inspiration 灵感实体
  * @param onImageClick 图片点击回调，参数为图片索引
+ * @param imagePaths 灵感图片路径列表（v2026-08-24 新增；由调用方从 content_blocks 表加载）
  * @param graphicsLayer 可选的 GraphicsLayer（启用时录制 Card 内容，用于截图分享）
  * @param relations 关联卡片列表（默认空，详情页传入以显示 Chip 流）
  * @param relationTitles 关联ID → 标题映射（由 ViewModel 异步加载）
@@ -79,6 +88,14 @@ import java.util.Locale
 fun InspirationViewCard(
     inspiration: Inspiration,
     onImageClick: (Int) -> Unit = {},
+    /**
+     * 灵感图片路径列表（v2026-08-24 新增）
+     *
+     * 由父级从 [com.corgimemo.app.viewmodel.InspirationViewModel.imagePathsMap]
+     * 读取（数据源为 `content_blocks` 表，ownerType="inspiration"）。
+     * 旧实现中本组件从 [Inspiration.imagePaths] 字段解析，但该字段在保存时被置空。
+     */
+    imagePaths: List<String> = emptyList(),
     graphicsLayer: GraphicsLayer? = null,
     relations: List<CardRelation> = emptyList(),
     relationTitles: Map<Long, String> = emptyMap(),
@@ -89,15 +106,10 @@ fun InspirationViewCard(
 ) {
     // 缓存：标签列表
     val tagsList = remember(inspiration.tags) { InspirationTextUtils.parseTags(inspiration.tags) }
-    // 缓存：图片路径列表
-    val imagePaths = remember(inspiration.imagePaths) {
-        if (inspiration.imagePaths.isBlank()) emptyList()
-        else try {
-            org.json.JSONArray(inspiration.imagePaths).let { arr ->
-                (0 until arr.length()).map { arr.getString(it) }
-            }
-        } catch (e: Exception) { emptyList() }
-    }
+    // v2026-08-24 修复灵感图片不可见 bug：
+    // - 移除原 `remember(inspiration.imagePaths) { org.json.JSONArray(...) }` 解析逻辑
+    // - 改为直接使用父级传入的 [imagePaths] 参数
+    // - 因 imagePaths 已是 List<String>，无需再解析
     // 缓存：字数（v2026-07-31 改造：只统计正文字符数，不含标题/标签/关联）
     val charCount = remember(inspiration.id, inspiration.content) {
         InspirationTextUtils.countInspirationContentChars(inspiration.content)

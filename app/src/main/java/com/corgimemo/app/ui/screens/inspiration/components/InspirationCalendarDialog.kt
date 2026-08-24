@@ -70,6 +70,9 @@ import java.util.Locale
  * @param onInspirationClick 点击灵感条目回调
  * @param onDismiss 关闭回调
  * @param topPadding 面板顶部偏移量（紧贴 topBar 底部）
+ * @param getImagePaths 灵感图片路径回调（v2026-08-24 新增）
+ *        参数：inspirationId，返回：图片路径列表
+ *        数据源已迁移到 content_blocks 表，由 InspirationViewModel 提供
  */
 @Composable
 fun InspirationCalendarDialog(
@@ -78,7 +81,12 @@ fun InspirationCalendarDialog(
     getInspirationsByDate: (year: Int, month: Int, day: Int) -> List<Inspiration>,
     onInspirationClick: (Inspiration) -> Unit,
     onDismiss: () -> Unit,
-    topPadding: Dp = 0.dp
+    topPadding: Dp = 0.dp,
+    /**
+     * 灵感图片路径回调（v2026-08-24 新增）
+     * 接收 inspirationId，返回从 content_blocks 表读取的图片路径列表
+     */
+    getImagePaths: (inspirationId: Long) -> List<String> = { emptyList() }
 ) {
     // 当前选中的日期
     var selectedDate by remember { mutableStateOf(initialDate) }
@@ -234,7 +242,8 @@ fun InspirationCalendarDialog(
                     ) { index, inspiration ->
                         CalendarInspirationItem(
                             inspiration = inspiration,
-                            onClick = { onInspirationClick(inspiration) }
+                            onClick = { onInspirationClick(inspiration) },
+                            imagePaths = getImagePaths(inspiration.id)
                         )
                         // 非最后一条灵感后添加灰色分割线
                         if (index < dayInspirations.size - 1) {
@@ -269,18 +278,27 @@ fun InspirationCalendarDialog(
  *
  * @param inspiration 灵感数据
  * @param onClick 点击回调
+ * @param imagePaths 灵感图片路径列表（v2026-08-24 新增）
+ *        由父级从 InspirationViewModel.imagePathsMap 传入，
+ *        不再从 inspiration.imagePaths 解析（重构后为空）。
  */
 @Composable
 internal fun CalendarInspirationItem(
     inspiration: Inspiration,
     onClick: () -> Unit,
+    /**
+     * 灵感图片路径列表（v2026-08-24 新增）
+     * 由父级从 [com.corgimemo.app.viewmodel.InspirationViewModel.imagePathsMap] 读取
+     */
+    imagePaths: List<String> = emptyList(),
     dynamicDate: LocalDate? = null,
     dynamicHour: Int? = null,
     dynamicMinute: Int? = null
 ) {
-    // 解码标签和图片路径（与 InspirationViewModel.decodeTags/decodePaths 逻辑一致）
+    // 解码标签（与 InspirationViewModel.decodeTags 逻辑一致）
     val tags = remember(inspiration.tags) { decodeTagsJson(inspiration.tags) }
-    val imagePaths = remember(inspiration.imagePaths) { decodePathsJson(inspiration.imagePaths) }
+    // v2026-08-24 重构：图片路径不再从 inspiration.imagePaths 解析，由父级通过参数传入
+    // （数据源已迁移到 content_blocks 表，Inspiration.imagePaths 字段永远为空）
     // 格式化时分时间（HH:mm）
     // dynamicHour/Minute 非 null 时用动态值，否则用灵感原始 createdAt
     val formattedTime = remember(inspiration.createdAt, dynamicHour, dynamicMinute) {
@@ -456,17 +474,6 @@ internal fun CalendarInspirationItem(
  * @return 标签列表
  */
 internal fun decodeTagsJson(tagsJson: String): List<String> = TagUtils.decodeTags(tagsJson)
-
-/**
- * 解码图片路径JSON字符串为列表
- *
- * 委托给 TagUtils.decodePaths，
- * 用于在日历弹窗中复用图片路径解析而无需依赖 ViewModel。
- *
- * @param pathsJson JSON字符串（如 ["/path1.jpg","/path2.jpg"]）
- * @return 路径列表
- */
-internal fun decodePathsJson(pathsJson: String): List<String> = TagUtils.decodePaths(pathsJson)
 
 /**
  * 去除HTML标签

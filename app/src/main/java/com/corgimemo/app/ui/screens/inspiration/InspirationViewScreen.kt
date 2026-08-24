@@ -123,6 +123,14 @@ fun InspirationViewScreen(
 
     val currentInspiration = inspirations.getOrNull(pagerState.currentPage)
 
+    /**
+     * 各灵感的图片路径映射（v2026-08-24 修复灵感图片不可见 bug 新增）
+     *
+     * 灵感图片存储在 `content_blocks` 表（ownerType="inspiration"），
+     * [Inspiration.imagePaths] 字段已置空，必须从 ViewModel 的 imagePathsMap 读取。
+     */
+    val imagePathsMap by viewModel.imagePathsMap.collectAsState()
+
     // v2026-07-22 新增：关联管理状态
     /** 关联列表（按当前灵感 id 加载） */
     val relations by viewModel.relations.collectAsState()
@@ -247,15 +255,10 @@ fun InspirationViewScreen(
                         modifier = Modifier.fillMaxSize()
                     ) { page ->
                         val ins = inspirations[page]
-                        // 缓存当前页的图片路径列表（用于图片预览）
-                        val insImagePaths = remember(ins.imagePaths) {
-                            if (ins.imagePaths.isBlank()) emptyList()
-                            else try {
-                                org.json.JSONArray(ins.imagePaths).let { arr ->
-                                    (0 until arr.length()).map { arr.getString(it) }
-                                }
-                            } catch (e: Exception) { emptyList() }
-                        }
+                        // v2026-08-24 修复灵感图片不可见 bug：
+                        // 改从 imagePathsMap 读，替代原 org.json.JSONArray(ins.imagePaths)
+                        // （原方式永远返回空，因为 saveInspiration() 已将 imagePaths 字段置空）
+                        val insImagePaths = imagePathsMap[ins.id] ?: emptyList()
                         // 每个 page 独立创建 GraphicsLayer
                         // 关键：不能共享同一个 layer，否则多个 page 的 record() 会互相覆盖，导致所有 Card 都渲染最后绘制的 page 内容
                         val pageLayer = rememberGraphicsLayer()
@@ -265,6 +268,7 @@ fun InspirationViewScreen(
                         }
                         InspirationViewCard(
                             inspiration = ins,
+                            imagePaths = insImagePaths,
                             onImageClick = { index ->
                                 // 打开图片全屏预览
                                 imageGalleryPaths = insImagePaths
