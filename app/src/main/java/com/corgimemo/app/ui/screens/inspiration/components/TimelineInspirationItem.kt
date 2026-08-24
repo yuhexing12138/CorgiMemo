@@ -437,7 +437,9 @@ fun TimelineInspirationItem(
                     modifier = Modifier.fillMaxWidth(),
                     cardWidth = 120.dp,
                     cardHeight = 120.dp,
-                    cardRadius = 12.dp,
+                    // cardRadius 是 0-20 滑块（Float，非 Dp），与 SwipeableImageStack.kt L132 / L175 一致
+                    // 12 对应"中等圆角"，与 L740 Preview 用 12f 同值
+                    cardRadius = 12f,
                     swipeThreshold = 50.dp,
                     tiltAngle = -8f,    // 减弱扇形角度，适配小尺寸缩略图
                     xOffset = 28.dp,    // 减小水平偏移
