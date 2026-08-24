@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -104,9 +105,9 @@ enum class SwipeDirection {
  * @param cardHeight 卡片高度（默认 400.dp，嵌入时间线缩略图建议传 120.dp）
  * @param cardRadius 卡片圆角（默认 16.dp，嵌入时间线缩略图建议传 12.dp）
  * @param swipeThreshold 拖动距离阈值（默认 50.dp）
- * @param tiltAngle 堆叠末端旋转角度（默认 45f，单位度；与 Originkit 原型一致）
+ * @param tiltAngle 堆叠末端旋转角度（默认 -12f，单位度）
  * @param tiltAngleStart 堆叠首端旋转角度（默认 0f）
- * @param xOffset 堆叠末端水平偏移（默认 0.dp；扇形完全由旋转 + y 错开形成）
+ * @param xOffset 堆叠末端水平偏移（默认 60.dp，扇形展开幅度）
  * @param swipeDirection 拖动手势方向约束（默认 [SwipeDirection.Horizontal]，
  *                       嵌入滚动列表务必用 Horizontal 避免与父级手势冲突）
  * @param onCardSwiped 顶卡滑出回调（被滑出的图片在原列表中的索引）
@@ -120,11 +121,9 @@ fun SwipeableImageStack(
     cardHeight: Dp = 400.dp,
     cardRadius: Dp = 16.dp,
     swipeThreshold: Dp = 50.dp,
-    // 旋转 45° + xOffset=0 复刻 Originkit 原型扇形：每张卡绕自身中心旋转，
-    // 末端卡倾斜 45° 形成扇形展开，x 方向无整体平移（与用户图一一致）
-    tiltAngle: Float = 45f,
+    tiltAngle: Float = -12f,
     tiltAngleStart: Float = 0f,
-    xOffset: Dp = 0.dp,
+    xOffset: Dp = 60.dp,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null
@@ -163,9 +162,9 @@ fun SwipeableImageStack(
     cardHeight: Dp = 400.dp,
     cardRadius: Dp = 16.dp,
     swipeThreshold: Dp = 50.dp,
-    tiltAngle: Float = 45f,
+    tiltAngle: Float = -12f,
     tiltAngleStart: Float = 0f,
-    xOffset: Dp = 0.dp,
+    xOffset: Dp = 60.dp,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null,
@@ -197,26 +196,12 @@ fun SwipeableImageStack(
 
     val scope = rememberCoroutineScope()
 
-    // 容器：宽 = cardSize * (cos|θ| + sin|θ|) + xOffset
-    // 高 = 同上 + stackVerticalPadding
-    //
-    // 旋转后矩形 bounding box 边长 = 原边长 × (cosθ + sinθ)（θ ∈ [0°, 90°]）
-    // - 0° 旋转：bounding box = 原尺寸
-    // - 45° 旋转：bounding box = 原尺寸 × √2 ≈ 1.414 倍
-    // - 90° 旋转：bounding box = 原尺寸
-    //
-    // 用 |tiltAngle| 计算扩展（末端最大旋转），保证最末端的卡完整显示不被裁切
-    val tiltAngleAbs = kotlin.math.abs(tiltAngle)
-    val angleRad = tiltAngleAbs * kotlin.math.PI.toFloat() / 180f
-    val boundingScale = kotlin.math.cos(angleRad) + kotlin.math.sin(angleRad)
-    val boundingWidth = cardWidth * boundingScale
-    val boundingHeight = cardHeight * boundingScale
-    // y 方向 stackOffsetY 累计空间：每张卡比上一张上移 8dp，N 张卡最多需 (N-1)*8dp
-    val yStackOffset = 8.dp * (cardCount - 1).coerceAtLeast(0)
-    // 加 cardHeight * 0.15f 余量用于旋转后下沿视觉缓冲
-    val stackVerticalPadding = cardHeight * 0.15f + yStackOffset
+    // 容器：宽 = cardWidth + xOffset（容纳扇形最末端 xOffset 的偏移），
+    // 高 = cardHeight + 15% cardHeight（容纳 yStackOffset 上移，按比例适配不同尺寸）
+    // - 用 cardHeight * 0.15 而非固定 60dp：120dp 缩略图场景只需 ~18dp 余量，400dp 详情页场景需 60dp 余量
+    val stackVerticalPadding = cardHeight * 0.15f
     Box(
-        modifier = modifier.size(boundingWidth + xOffset, boundingHeight + stackVerticalPadding),
+        modifier = modifier.size(cardWidth + xOffset, cardHeight + stackVerticalPadding),
         contentAlignment = Alignment.Center
     ) {
         // 透视感：父容器 cameraDistance 模拟 Web 端 perspective:1000
@@ -231,34 +216,55 @@ fun SwipeableImageStack(
         ) {
             // 渲染顺序：从底到顶（栈底先渲染，栈顶后渲染覆盖在前面）
             // order[0] 是当前顶卡，order.last] 是最底层
+            //
+            // FLIP 翻牌动画实现：每张卡维护 4 个 Animatable（positionX, positionY, scale, rotation），
+            // 当 stackIndex 变化时（即重排），LaunchedEffect 启动 animateTo 到新目标值，
+            // 视觉上呈现"流水翻牌"效果——不再有"卡一下"的视觉跳变
             order.forEachIndexed { stackIndex, slot ->
                 key(slot.stableId) {
                     val isTopCard = stackIndex == 0
-                    val cardStyle = computeCardStyle(
-                        stackIndex = stackIndex,
-                        totalCards = order.size,
-                        cardWidth = cardWidth,
-                        cardHeight = cardHeight,
-                        xOffset = xOffset,
-                        tiltAngle = tiltAngle,
-                        tiltAngleStart = tiltAngleStart
-                    )
-                    val rotationDeg = if (isTopCard && (dragOffsetX.value != 0f || dragOffsetY.value != 0f)) {
-                        0f
-                    } else {
-                        cardStyle.rotation
+
+                    // =================== 4 个独立 Animatable ===================
+                    // 每张卡片的 x/y/scale/rotation 各自有独立的 Animatable，初始值 = stackIndex 目标值
+                    // 后续通过 LaunchedEffect(stackIndex) 自动过渡到新目标
+                    val targetX = with(density) {
+                        if (order.size > 1) (stackIndex.toFloat() / (order.size - 1) * xOffset.value).dp.toPx() else 0f
                     }
-                    val scale = if (isTopCard && (dragOffsetX.value != 0f || dragOffsetY.value != 0f)) {
-                        1.05f
+                    val targetY = with(density) { -(stackIndex * 8).dp.toPx() }
+                    val targetScale = 1f - stackIndex * 0.05f
+                    val targetRotation = if (order.size > 1) {
+                        tiltAngleStart + (stackIndex.toFloat() / (order.size - 1)) * (tiltAngle - tiltAngleStart)
                     } else {
-                        cardStyle.scale
+                        tiltAngleStart
                     }
 
-                    val baseX = with(density) { cardStyle.x.toPx() }
-                    val baseY = with(density) { cardStyle.y.toPx() }
+                    val positionX = remember { Animatable(targetX) }
+                    val positionY = remember { Animatable(targetY) }
+                    val scaleAnim = remember { Animatable(targetScale) }
+                    val rotationAnim = remember { Animatable(targetRotation) }
 
-                    val finalX = if (isTopCard) baseX + dragOffsetX.value else baseX
-                    val finalY = if (isTopCard) baseY + dragOffsetY.value else baseY
+                    // stackIndex 变化时（即 order 重排），每张卡各自平滑过渡到新目标值
+                    // 关键：这是解决"卡一下"的核心——新顶卡从扇形位置平滑滑到中央，旧顶卡从中央滑到队尾
+                    LaunchedEffect(stackIndex, order.size) {
+                        positionX.animateTo(targetX, spring(dampingRatio = 0.7f, stiffness = 200f))
+                    }
+                    LaunchedEffect(stackIndex, order.size) {
+                        positionY.animateTo(targetY, spring(dampingRatio = 0.7f, stiffness = 200f))
+                    }
+                    LaunchedEffect(stackIndex, order.size) {
+                        scaleAnim.animateTo(targetScale, spring(dampingRatio = 0.7f, stiffness = 200f))
+                    }
+                    LaunchedEffect(stackIndex, order.size) {
+                        rotationAnim.animateTo(targetRotation, spring(dampingRatio = 0.7f, stiffness = 200f))
+                    }
+
+                    // 渲染时：顶卡额外叠加 dragOffset；非顶卡只用 Animatable
+                    // 拖动中：顶卡强制 scale 1.05 + rotation 0，忽略 Animatable 旧值
+                    val isDragging = isTopCard && (dragOffsetX.value != 0f || dragOffsetY.value != 0f)
+                    val finalX = if (isTopCard) positionX.value + dragOffsetX.value else positionX.value
+                    val finalY = if (isTopCard) positionY.value + dragOffsetY.value else positionY.value
+                    val finalScale = if (isDragging) 1.05f else scaleAnim.value
+                    val finalRotation = if (isDragging) 0f else rotationAnim.value
 
                     Box(
                         modifier = Modifier
@@ -269,9 +275,9 @@ fun SwipeableImageStack(
                             .zIndex(-stackIndex.toFloat())
                             .offset { IntOffset(finalX.roundToInt(), finalY.roundToInt()) }
                             .graphicsLayer {
-                                rotationZ = rotationDeg
-                                scaleX = scale
-                                scaleY = scale
+                                rotationZ = finalRotation
+                                scaleX = finalScale
+                                scaleY = finalScale
                             }
                             .shadow(
                                 elevation = if (isTopCard) 8.dp else 4.dp,
@@ -287,21 +293,34 @@ fun SwipeableImageStack(
                                         // 全向模式：用 detectDragGestures 复刻原型，嵌入滚动列表会与父级冲突。
                                         if (swipeDirection == SwipeDirection.Horizontal) {
                                             detectHorizontalDragGestures(
+                                                onDragStart = {
+                                                    // 拖动开始：把顶卡的 position/scale/rotation snap 到拖动态目标
+                                                    // 避免拖动中 Animatable 还在重排过渡与拖动手势打架
+                                                    scope.launch {
+                                                        positionX.snapTo(0f)
+                                                        positionY.snapTo(0f)
+                                                        scaleAnim.snapTo(1.05f)
+                                                        rotationAnim.snapTo(0f)
+                                                    }
+                                                },
                                                 onDragEnd = {
                                                     val dx = dragOffsetX.value
                                                     val distance = dx.absoluteValue
                                                     if (distance > thresholdPx) {
                                                         // 水平飞出 + 重排
                                                         scope.launch {
+                                                            // 1. 顶卡飞出
                                                             dragOffsetX.animateTo(
                                                                 dx * 3f,
                                                                 spring(dampingRatio = 0.75f, stiffness = 200f)
                                                             )
+                                                            // 2. 重排：order 变化触发所有卡 LaunchedEffect 重新启动 animateTo
                                                             onCardSwiped?.invoke(slot.originalIndex)
                                                             val newOrder = order.toMutableList()
                                                             val top = newOrder.removeAt(0)
                                                             newOrder.add(top)
                                                             order = newOrder
+                                                            // 3. 重置 dragOffset（此时 positionX 还在 0，等待 LaunchedEffect 拉到新 target）
                                                             dragOffsetX.snapTo(0f)
                                                             dragOffsetY.snapTo(0f)
                                                         }
@@ -327,6 +346,14 @@ fun SwipeableImageStack(
                                         } else {
                                             // 全向模式
                                             detectDragGestures(
+                                                onDragStart = {
+                                                    scope.launch {
+                                                        positionX.snapTo(0f)
+                                                        positionY.snapTo(0f)
+                                                        scaleAnim.snapTo(1.05f)
+                                                        rotationAnim.snapTo(0f)
+                                                    }
+                                                },
                                                 onDragEnd = {
                                                     val dx = dragOffsetX.value
                                                     val dy = dragOffsetY.value
@@ -426,44 +453,6 @@ fun SwipeableImageStack(
             }
         }
     }
-}
-
-/**
- * 顶卡位置/角度/缩放样式（按栈内 index 计算）
- */
-private data class CardStyle(
-    val x: Dp,
-    val y: Dp,
-    val rotation: Float,
-    val scale: Float
-)
-
-private fun computeCardStyle(
-    stackIndex: Int,
-    totalCards: Int,
-    cardWidth: Dp,
-    cardHeight: Dp,
-    xOffset: Dp,
-    tiltAngle: Float,
-    tiltAngleStart: Float
-): CardStyle {
-    // 顶卡居中，下层依次上移（y 减小）+ 缩小
-    val stackOffsetY = -(stackIndex * 8).dp
-    val scale = 1f - stackIndex * 0.05f
-    val rotation = if (totalCards > 1) {
-        tiltAngleStart + (stackIndex.toFloat() / (totalCards - 1)) * (tiltAngle - tiltAngleStart)
-    } else {
-        tiltAngleStart
-    }
-    val xOff = if (totalCards > 1) {
-        (stackIndex.toFloat() / (totalCards - 1)) * xOffset.value
-    } else 0f
-    return CardStyle(
-        x = xOff.dp,
-        y = stackOffsetY,
-        rotation = rotation,
-        scale = scale
-    )
 }
 
 /**
@@ -607,8 +596,8 @@ private fun SwipeableImageStackPreviewLocal() {
             cardWidth = 120.dp,
             cardHeight = 120.dp,
             cardRadius = 12.dp,
-            tiltAngle = 45f,
-            xOffset = 0.dp,
+            tiltAngle = -8f,
+            xOffset = 28.dp,
             swipeDirection = SwipeDirection.Horizontal,
             customContent = { stackIndex ->
                 Box(
@@ -653,8 +642,8 @@ private fun SwipeableImageStackPreviewLocalLarge() {
             cardWidth = 300.dp,
             cardHeight = 400.dp,
             cardRadius = 16.dp,
-            tiltAngle = 45f,
-            xOffset = 0.dp,
+            tiltAngle = -12f,
+            xOffset = 60.dp,
             swipeDirection = SwipeDirection.Both,
             customContent = { stackIndex ->
                 Box(
