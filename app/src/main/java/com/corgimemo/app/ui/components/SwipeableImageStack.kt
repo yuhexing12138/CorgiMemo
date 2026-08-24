@@ -53,6 +53,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlin.comparisons.minOf
 
 /**
  * 堆叠中的单张卡片槽位
@@ -226,7 +227,7 @@ fun SwipeableImageStack(
     // 原型：const radiusPx = (cardRadius / 20) * (Math.min(cardWidth, cardHeight) / 2)
     // cardRadius=0 → 0dp（boxy），cardRadius=20 → 完全圆角（min(W,H)/2）
     val radiusPx = with(density) {
-        ((cardRadius / 20f) * (min(cardWidth, cardHeight).toPx() / 2f)).toDp()
+        ((cardRadius / 20f) * (minOf(cardWidth, cardHeight).toPx() / 2f)).toDp()
     }
 
     Box(
@@ -270,16 +271,15 @@ fun SwipeableImageStack(
                     }
                     // zIndex 目标：与原型 cards.length - index 严格一致
                     val targetZIndex = (order.size - stackIndex).toFloat()
-                    // 3D 纵深目标：原型 z: -index * DEPTH_SPACING (DEPTH_SPACING = 10 px)
-                    // Compose translationZ 单位是 dp，所以 10px → 10/density dp
-                    val targetTranslationZ = with(density) { -stackIndex * 10f / density.density }
+                    // 注：原型的 3D 纵深 z: -index * 10px 因 GraphicsLayerScope 没有 translationZ 属性而无法实现
+                    // 当前视觉由 cameraDistance（父容器 perspective: 1000px）+ 每张卡 scale = 1 - index*0.05 接管
+                    // 仍保留 zIndexAnim 的 0.3s easeOut 过渡，与原型 zIndex 动画一致
 
                     val positionX = remember { Animatable(targetX) }
                     val positionY = remember { Animatable(targetY) }
                     val scaleAnim = remember { Animatable(targetScale) }
                     val rotationAnim = remember { Animatable(targetRotation) }
                     val zIndexAnim = remember { Animatable(targetZIndex) }
-                    val translationZAnim = remember { Animatable(targetTranslationZ) }
 
                     // stackIndex 变化时（即 order 重排），每张卡各自平滑过渡到新目标值
                     // 关键：这是解决"卡一下"的核心——新顶卡从扇形位置平滑滑到中央，旧顶卡从中央滑到队尾
@@ -300,11 +300,6 @@ fun SwipeableImageStack(
                     LaunchedEffect(stackIndex, order.size, isPressed.value, isTopCard) {
                         val target = if (isPressed.value && isTopCard) 1000f else targetZIndex
                         zIndexAnim.animateTo(target, ZINDEX_TWEEN)
-                    }
-                    // 原型 z: { duration: 0.3, ease: "easeOut" }，按下时归零
-                    LaunchedEffect(stackIndex, order.size, isPressed.value, isTopCard) {
-                        val target = if (isPressed.value && isTopCard) 0f else targetTranslationZ
-                        translationZAnim.animateTo(target, ZINDEX_TWEEN)
                     }
 
                     // 渲染时：顶卡额外叠加 dragOffset；非顶卡只用 Animatable
@@ -344,10 +339,8 @@ fun SwipeableImageStack(
                             .zIndex(zIndexAnim.value)
                             .offset { IntOffset(finalX.roundToInt(), finalY.roundToInt()) }
                             .graphicsLayer {
-                                // 3D 纵深：translationZ 模拟原型 z: -index * 10px
-                                // - 父容器 cameraDistance = 1000/density.density 模拟 perspective: 1000px
-                                // - translationZ 负值让卡片往屏幕内推，形成"后层卡片更远更小"效果
-                                translationZ = translationZAnim.value
+                                // 注：原型的 3D 纵深 z: -index * 10px 因 GraphicsLayerScope 没有 translationZ 属性而无法实现
+                                // 当前由父容器的 cameraDistance (perspective: 1000px) + 每张卡 scale = 1 - index*0.05 接管纵深感
                                 rotationZ = finalRotation
                                 scaleX = finalScale
                                 scaleY = finalScale
