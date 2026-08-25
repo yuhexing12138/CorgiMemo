@@ -468,18 +468,18 @@ fun SwipeableImageStack(
     val stageBoxWidthPx: Int = with(density) { stageBoxWidthDp.roundToPx() }
     val stageBoxHeightPx: Int = with(density) { stageBoxHeightDp.roundToPx() }
     // 向后兼容别名（原代码大量使用 boxWidth/boxHeight Dp 类型；后续逐步替换）
-    val boxWidth: Dp get() = stageBoxWidthDp
-    val boxHeight: Dp get() = stageBoxHeightDp
+    val boxWidth: Dp = stageBoxWidthDp
+    val boxHeight: Dp = stageBoxHeightDp
 
     /**
      * 堆叠态顶卡（stackIndex=0）左上角相对 Stage(0,0) 的偏移
      * = CardContainer Center 对齐后，用 graphicsLayer 平移 cardBoxStartX/Y 到 Stage(0,0)
      * 展开态 Row 必须使用相同偏移 padding(start/top)，保证顶卡左上角像素级一致
      */
-    // 顶卡左上角 X（Dp，数值直接当 dp）：cardBoxStartX（Dp浮点数）− bboxLeft（Float，Dp 数值）
-    val topCardLeftInStageDp: Dp = (cardBoxStartX.value - bboxLeft).dp
-    // 顶卡左上角 Y（Dp）：cardBoxStartY 直接作为 padding top
-    val topCardTopInStageDp: Dp = cardBoxStartY
+    // 顶卡左上角 X（Dp）：cardBoxStartX（Float）− bboxLeft（Float）→ 转为 Dp
+    val topCardLeftInStageDp: Dp = (cardBoxStartX - bboxLeft).dp
+    // 顶卡左上角 Y（Dp）：cardBoxStartY（Float）→ 转为 Dp
+    val topCardTopInStageDp: Dp = cardBoxStartY.dp
 
     // ==============================
     // 展开态独立尺寸（不绑定 stageBoxWidth）
@@ -1453,8 +1453,8 @@ fun SwipeableImageStack(
  * @param stackIndex 当前堆叠顺序（顶卡=0，越往下越大；同时是展开态 TopStart X 的 index）
  */
 @Composable
-internal fun SwipeableImageStackCard(
-    slot: SwipeableSlot,
+private fun SwipeableImageStackCard(
+    slot: CardSlot,
     stackIndex: Int,
     modifier: Modifier = Modifier
 ) {
