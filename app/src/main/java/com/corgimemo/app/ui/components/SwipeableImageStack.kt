@@ -1,6 +1,39 @@
 package com.corgimemo.app.ui.components
 
+/**
+ * 堆叠图组件：4 区 PINNED_PENDING / PENDING / PINNED_COMPLETED / COMPLETED 的图片/色块堆叠展示与展开。
+ *
+ * ## 当前架构（单共享实例动画）
+ * - 单一 SharedCardRow → OneSharedCard(key=stableId) 循环驱动；Positional Memoization 跨堆叠/展开包裹层复用实例。
+ * - 单一 expandProgress Animatable（0f↔1f）→ calcCardTarget 返回 x/y/rotationZ/scale/shadowElevation/zIndex。
+ * - 三层绝对定位并列：Layer-1（卡片容器，双包裹切换）/ Layer-2（CollapseBtn 全局）/ Layer-3（ExpandBtn+Badge）；
+ * - 方案A 手势互斥锁：堆叠态挂载扇形 pointerInput / 过渡中分离 / 展开态挂载单卡点击 pointerInput（三分支条件挂载）。
+ *
+ * ## 巨石组件拆分建议（当前 ≥ 1500 行，符合 .trae/rules/巨石组件拆分规范.md 触发条件）
+ * 建议按 model / sections / dialogs 三包结构拆分：
+ * ```
+ * ui/components/SwipeableImageStack.kt        → 薄壳 Facade（< 150 行，typealias + 转发）
+ * ui/components/swipeableimagestack/
+ *     ├── model/                              # 纯数据
+ *     │   ├── CardSlot.kt                     # data class CardSlot（当前 private data class）
+ *     │   ├── CardTarget.kt                   # data class CardTarget + lerp
+ *     │   ├── SwipeDirection.kt               # enum SwipeDirection
+ *     │   └── StackAnimSpec.kt                # const val TRANSITION_400_SPEC / OPACITY_200_SPEC + 常量
+ *     ├── sections/
+ *     │   ├── SwipeableImageStackContentImpl.kt  # 主入口实现（Stage Box + 三层并列）
+ *     │   ├── SharedCardRow.kt                # SharedCardRow + OneSharedCard 渲染层
+ *     │   ├── Layer1CardWrapper.kt            # 双包裹切换（堆叠态/展开态）
+ *     │   ├── Layer2CollapseButton.kt         # Layer-2 收起按钮
+ *     │   └── Layer3ExpandBadge.kt            # Layer-3 展开按钮 + 图片角标
+ *     └── dialogs/（若有长期菜单/配置弹窗才建，暂可空）
+ * ```
+ * 拆分收益：PR 冲突率低 / 每 section 可独立 preview 与单测 / 共享子组件跨分区复用 / 可读性显著提升。
+ */
+
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -18,10 +51,12 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -32,10 +67,12 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -43,6 +80,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import kotlin.math.max
+import kotlin.math.min
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -82,6 +121,114 @@ import kotlinx.coroutines.awaitAll
  *   滑动重排后保持不变，用于 `onCardSwiped` 回调让业务方知道是哪张图
  */
 private data class CardSlot(val stableId: Long, val originalIndex: Int)
+
+/**
+ * 卡片目标变换状态
+ *
+ * 描述单张卡片在堆叠态/展开态混合插值过程中的目标位置和外观。
+ * 所有字段统一描述「最终视觉目标」，由 [calcCardTarget] 根据 expandProgress 生成。
+ *
+ * @property x 水平位移（Dp）
+ * @property y 垂直位移（Dp）
+ * @property rotationZ 绕 Z 轴旋转角度（度）
+ * @property scale 缩放比例（1.0 = 原始尺寸）
+ * @property shadowElevation 阴影高度（Dp）
+ * @property zIndex 层叠顺序（越大越在上层）
+ */
+private data class CardTarget(
+    val x: Dp,
+    val y: Dp,
+    val rotationZ: Float,
+    val scale: Float,
+    val shadowElevation: Dp,
+    val zIndex: Float,
+)
+
+/**
+ * Dp 线性插值函数
+ *
+ * 在两个 Dp 值之间按比例 p 进行线性插值，结果自动 clamp 到 [0,1] 范围，
+ * 避免因动画进度溢出导致的数值越界。
+ *
+ * @param a 起始 Dp 值
+ * @param b 结束 Dp 值
+ * @param p 插值进度 [0,1]
+ * @return 插值后的 Dp 结果
+ */
+private fun lerp(a: Dp, b: Dp, p: Float): Dp =
+    (a.value + (b.value - a.value) * p.coerceIn(0f, 1f)).dp
+
+/**
+ * 计算单张卡片在堆叠态↔展开态过渡过程中的目标变换
+ *
+ * 核心算法：
+ * 1. 根据 displayIndex 分别计算「纯堆叠态 stacked」和「纯展开态 expanded」两个端点
+ * 2. 以 expandProgress ∈ [0,1] 对两个端点的各字段分别做线性插值
+ * 3. zIndex 在进度 < 0.5 时取堆叠态排序（顶卡在上），≥ 0.5 时取展开态同级（避免动画中层级跳变）
+ *
+ * 堆叠态端点公式：
+ * - y 方向：每深一层向上偏移 stackOffsetDp（使卡片底部露出形成扇形底边）
+ * - rotationZ：按可见深度线性分配旋转角（顶层 0°，底层 fanAngleDeg）
+ * - scale：每深一层缩小 scaleStep
+ * - shadowElevation：顶卡 8dp，其余 4dp
+ * - zIndex：顶卡最高（visibleDepth - ei），保证堆叠顺序正确
+ *
+ * 展开态端点公式：
+ * - x 方向：按卡片索引水平排列，索引 × (卡片宽度 + 间距)
+ * - y/rotation/scale：全部归中（无旋转、原始尺寸、同一水平高度）
+ * - shadowElevation：统一 4dp（展开态无顶卡/非顶卡视觉差异）
+ * - zIndex：全部同级（展开态层叠顺序无意义）
+ *
+ * @param displayIndex 卡片在当前显示顺序中的索引（0 = 顶卡）
+ * @param cardCount 卡片总数
+ * @param expandProgress 展开进度 0f（堆叠）→ 1f（展开）
+ * @param cardW 单张卡片宽度
+ * @param cardGap 展开态卡片间距
+ * @param visibleDepth 可见深度（最多参与扇形展开的卡片数）
+ * @param stackOffsetDp 堆叠态每层垂直上移量
+ * @param fanAngleDeg 堆叠态底层最大旋转角
+ * @param scaleStep 堆叠态每层缩放步进（每深一层 scale 减少 scaleStep）
+ * @return 插值后的卡片目标变换状态
+ */
+private fun calcCardTarget(
+    displayIndex: Int,
+    cardCount: Int,
+    expandProgress: Float,
+    cardW: Dp,
+    cardGap: Dp,
+    visibleDepth: Int,
+    stackOffsetDp: Dp,
+    fanAngleDeg: Float,
+    scaleStep: Float,
+): CardTarget {
+    val ei = min(displayIndex, visibleDepth - 1)
+    val denom = max(visibleDepth - 1, 1)
+    val stacked = CardTarget(
+        x = 0.dp,
+        y = (-ei * stackOffsetDp.value).dp,
+        rotationZ = fanAngleDeg * (ei.toFloat() / denom.toFloat()),
+        scale = 1f - ei * scaleStep,
+        shadowElevation = if (displayIndex == 0) 8.dp else 4.dp,
+        zIndex = (visibleDepth - ei).toFloat()
+    )
+    val expanded = CardTarget(
+        x = (displayIndex.toFloat() * (cardW.value + cardGap.value)).dp,
+        y = 0.dp,
+        rotationZ = 0f,
+        scale = 1f,
+        shadowElevation = 4.dp,
+        zIndex = 1f
+    )
+    val p = expandProgress.coerceIn(0f, 1f)
+    return CardTarget(
+        x = lerp(stacked.x, expanded.x, p),
+        y = lerp(stacked.y, expanded.y, p),
+        rotationZ = stacked.rotationZ + (expanded.rotationZ - stacked.rotationZ) * p,
+        scale = stacked.scale + (expanded.scale - stacked.scale) * p,
+        shadowElevation = lerp(stacked.shadowElevation, expanded.shadowElevation, p),
+        zIndex = if (p < 0.5f) stacked.zIndex else expanded.zIndex
+    )
+}
 
 /**
  * 默认色块图片（与 Originkit 原型 `DEFAULT_IMAGES` 兜底逻辑对齐）
@@ -292,6 +439,49 @@ fun SwipeableImageStack(
     }
 
     val scope = rememberCoroutineScope()
+
+    // 400ms 过渡动画规格：cubic-bezier(0.22, 1, 0.36, 1)，与原型 CSS transition 对齐
+    val TRANSITION_400_SPEC = tween<Float>(
+        durationMillis = 400,
+        easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+    )
+    // 200ms 透明度淡入淡出规格：用于按钮、角标的 appear/disappear
+    val OPACITY_200_SPEC = tween<Float>(durationMillis = 200)
+
+    // 初始展开态：优先取外部托管 expandedState，否则取 false（组件自管首次启动默认堆叠）
+    // 注：此处不能引用后面 L498 才声明的 isExpanded，否则 Kotlin 前向引用未定义报错
+    val initialExpanded = remember { expandedState?.value ?: false }
+    // 展开进度 Animatable：0f = 纯堆叠态，1f = 纯展开态，中间值为过渡混合态
+    val expandProgress = remember { Animatable(initialValue = if (initialExpanded) 1f else 0f) }
+
+    // 动画是否正在运行：用于互斥锁（动画中禁止拖拽、禁止重复触发切换）
+    val isAnimating by remember { derivedStateOf { expandProgress.isRunning } }
+    // 是否已稳定进入堆叠态：进度 < 0.01 且无动画（用于开启堆叠态专属手势）
+    val isInStackedMode by remember { derivedStateOf { expandProgress.value < 0.01f && !isAnimating } }
+    // 是否已稳定进入展开态：进度 > 0.99 且无动画（用于开启展开态专属滚动/点击）
+    val isInExpandedMode by remember { derivedStateOf { expandProgress.value > 0.99f && !isAnimating } }
+    // 推导当前展开布尔值：以 0.5 为阈值，动画中途正确反映当前"多数派"状态
+    val derivedIsExpanded by remember { derivedStateOf { expandProgress.value >= 0.5f } }
+
+    /**
+     * 单入口展开/收起切换：通过全局 expandProgress Animatable 400ms 贝塞尔动画
+     *
+     * 作用：
+     * 1. 先调用 stop() 打断运行中动画，避免重复点击导致状态错乱（幂等安全）
+     * 2. animateTo 到目标值（true→1f / false→0f），使用 TRANSITION_400_SPEC 贝塞尔缓动
+     * 3. 动画结束后，将 derivedIsExpanded（对外 Boolean 快照）同步给外部托管 expandedState 与外部 Boolean isExpanded 参数
+     */
+    suspend fun setExpanded(targetExpand: Boolean) {
+        if (expandProgress.isRunning) return
+        val targetValue = if (targetExpand) 1f else 0f
+        if (expandProgress.value == targetValue && !expandProgress.isRunning) return // 幂等跳过
+        expandProgress.stop()
+        expandProgress.animateTo(targetValue, TRANSITION_400_SPEC)
+        // 结束后同步：derivedIsExpanded 会自动由 progress≥0.5 反映，此处仅同步外部托管
+        expandedState?.value = targetExpand
+        // 注：外部 isExpanded 参数是 Composable 调用侧快照，不支持双向写；若原代码有 isExpanded = true/false 的 MutableState
+        // 写法，先统一 Grep 所有出现点，逐一替换为 scope.launch { setExpanded(true/false) }
+    }
 
     // ============ 共享状态（与 Originkit 原型一致）============
     // isPressed：组件级"是否有顶卡正在被按住"标志
@@ -522,6 +712,270 @@ fun SwipeableImageStack(
     } else 0f
     val cardRowWidthDp: Dp = cardRowWidthPxFloat.dp
 
+    // ============================================================
+    // P2 新增：共享卡片渲染层（堆叠/展开共用，Positional Memoization 复用）
+    // 本阶段仅保证堆叠态等价，calcCardTarget expandProgress 固定传 0f
+    // ============================================================
+    @Composable
+    fun OneSharedCard(displayIndex: Int, card: CardSlot) {
+        // P2：固定 progress=0f（堆叠态），保证 calcCardTarget 输出与原硬编码完全等价
+        val target = calcCardTarget(
+            displayIndex = displayIndex,
+            cardCount = order.size,
+            expandProgress = expandProgress.value,
+            cardW = cardWidth,
+            cardGap = cardGap,
+            visibleDepth = visibleDepth,
+            stackOffsetDp = 8.dp,
+            fanAngleDeg = -(visibleDepth - 1).toFloat() * 15f,
+            scaleStep = 0.05f,
+        )
+        // 每张卡独立的飞离动画 Animatable（仅堆叠态顶卡飞离时非零，其余卡恒 0）
+        // 原堆叠态 order.forEach 内 remember，抽函数后需在 OneSharedCard 内同步声明
+        val positionX = remember { Animatable(0f) }
+        val positionY = remember { Animatable(0f) }
+        // 每张卡独立的 zIndex 动画：顶卡被飞离时临时 snapTo 1f，叠加到 target.zIndex 上保证飞离过程始终在最顶层
+        val zIndexAnim = remember { Animatable(0f) }
+        // 拖拽偏移：堆叠态 displayIndex==0 顶卡叠加 dragOffset；其它卡或非堆叠态恒 0
+        val dragX = if (displayIndex == 0) dragOffsetX.value.dp else 0.dp
+        val dragY = if (displayIndex == 0) dragOffsetY.value.dp else 0.dp
+        val isTopCard = displayIndex == 0
+
+        // ========== 有无图判断 ==========
+        val hasImage = when {
+            customContent != null -> true
+            useDefaultColors -> true
+            else -> imageUris.getOrNull(card.originalIndex)?.isNotBlank() == true
+        }
+
+        Box(
+            modifier = Modifier
+                .size(cardWidth, cardHeight)
+                // 堆叠排序 + 顶卡飞离时临时上抬 zIndex（保证飞离过程始终覆盖其他卡片）
+                .zIndex(target.zIndex + zIndexAnim.value)
+                .graphicsLayer {
+                    scaleX = target.scale
+                    scaleY = target.scale
+                    rotationZ = target.rotationZ
+                    // 四元叠加：堆叠基础位移 target.x + 顶卡按住拖拽 dragX + 顶卡飞离动画 positionX
+                    translationX = density.run { (target.x + dragX + positionX.value.dp).toPx() }
+                    translationY = density.run { (target.y + dragY + positionY.value.dp).toPx() }
+                }
+                .shadow(
+                    elevation = target.shadowElevation,
+                    shape = RoundedCornerShape(radiusPx)
+                )
+                .clip(RoundedCornerShape(radiusPx))
+                .then(
+                    if (hasImage) {
+                        Modifier
+                    } else {
+                        Modifier
+                            .background(
+                                color = Color(0xFFF3EFFF).copy(alpha = 0.8f),
+                                shape = RoundedCornerShape(radiusPx)
+                            )
+                            .blur(10.dp)
+                            .border(
+                                width = 1.5.dp,
+                                color = Color(0xFF9967FF),
+                                shape = RoundedCornerShape(radiusPx)
+                            )
+                    }
+                )
+                .then(
+                    when {
+                        isTopCard && isInStackedMode -> {
+                            Modifier.pointerInput(card.stableId, swipeDirection) {
+                                if (swipeDirection == SwipeDirection.Horizontal) {
+                                    detectHorizontalDragGestures(
+                                        onDragStart = {
+                                            isPressed.value = true
+                                            shouldReturnToCenter.value = false
+                                            scope.launch {
+                                                positionX.snapTo(0f)
+                                                positionY.snapTo(0f)
+                                            }
+                                        },
+                                        onDragEnd = {
+                                            isPressed.value = false
+                                            val dx = dragOffsetX.value
+                                            val distance = dx.absoluteValue
+                                            if (distance > thresholdPx && order.size > 1) {
+                                                scope.launch {
+                                                    onCardSwiped?.invoke(card.originalIndex)
+                                                    zIndexAnim.snapTo(1f)
+                                                    positionX.snapTo(positionX.value + dragOffsetX.value)
+                                                    positionY.snapTo(positionY.value + dragOffsetY.value)
+                                                    dragOffsetX.snapTo(0f)
+                                                    dragOffsetY.snapTo(0f)
+                                                    val newOrder = order.toMutableList()
+                                                    val top = newOrder.removeAt(0)
+                                                    newOrder.add(top)
+                                                    order = newOrder
+                                                }
+                                            } else {
+                                                shouldReturnToCenter.value = true
+                                                scope.launch {
+                                                    delay(1000)
+                                                    shouldReturnToCenter.value = false
+                                                }
+                                                scope.launch {
+                                                    dragOffsetX.animateTo(0f, BOUNCE_SPRING)
+                                                    dragOffsetY.animateTo(0f, BOUNCE_SPRING)
+                                                }
+                                            }
+                                        }
+                                    ) { change, dragAmount ->
+                                        val currentOffset = dragOffsetX.value.absoluteValue
+                                        val t = (currentOffset / maxElasticDistancePx).coerceIn(0f, 1f)
+                                        val resistance = 1f - 0.3f * t.pow(1.5f)
+                                        val elasticAmount = dragAmount * resistance
+                                        scope.launch {
+                                            dragOffsetX.snapTo(dragOffsetX.value + elasticAmount)
+                                        }
+                                    }
+                                } else {
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            isPressed.value = true
+                                            shouldReturnToCenter.value = false
+                                            scope.launch {
+                                                positionX.snapTo(0f)
+                                                positionY.snapTo(0f)
+                                            }
+                                        },
+                                        onDragEnd = {
+                                            isPressed.value = false
+                                            val dx = dragOffsetX.value
+                                            val dy = dragOffsetY.value
+                                            val distance = hypot(dx, dy)
+                                            if (distance > thresholdPx && order.size > 1) {
+                                                scope.launch {
+                                                    onCardSwiped?.invoke(card.originalIndex)
+                                                    zIndexAnim.snapTo(1f)
+                                                    positionX.snapTo(positionX.value + dragOffsetX.value)
+                                                    positionY.snapTo(positionY.value + dragOffsetY.value)
+                                                    dragOffsetX.snapTo(0f)
+                                                    dragOffsetY.snapTo(0f)
+                                                    val newOrder = order.toMutableList()
+                                                    val top = newOrder.removeAt(0)
+                                                    newOrder.add(top)
+                                                    order = newOrder
+                                                }
+                                            } else {
+                                                shouldReturnToCenter.value = true
+                                                scope.launch {
+                                                    delay(1000)
+                                                    shouldReturnToCenter.value = false
+                                                }
+                                                scope.launch {
+                                                    dragOffsetX.animateTo(0f, BOUNCE_SPRING)
+                                                    dragOffsetY.animateTo(0f, BOUNCE_SPRING)
+                                                }
+                                            }
+                                        }
+                                    ) { change, dragAmount ->
+                                        change.consume()
+                                        val currentDistance = hypot(dragOffsetX.value, dragOffsetY.value)
+                                        val t = (currentDistance / maxElasticDistancePx).coerceIn(0f, 1f)
+                                        val resistance = 1f - 0.3f * t.pow(1.5f)
+                                        val elasticAmount = dragAmount * resistance
+                                        scope.launch {
+                                            dragOffsetX.snapTo(dragOffsetX.value + elasticAmount.x)
+                                            dragOffsetY.snapTo(dragOffsetY.value + elasticAmount.y)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else -> Modifier
+                    }
+                )
+                .then(
+                    when {
+                        isInExpandedMode -> {
+                            Modifier
+                        }
+                        else -> Modifier
+                    }
+                )
+        ) {
+            when {
+                customContent != null -> customContent(displayIndex)
+                useDefaultColors -> DefaultColorCard(displayIndex, radiusPx)
+                else -> {
+                    val imageUri = imageUris.getOrNull(card.originalIndex)
+                    if (!imageUri.isNullOrBlank()) {
+                        SubcomposeAsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(imageUri)
+                                .crossfade(true)
+                                .scale(Scale.FIT)
+                                .build(),
+                            contentDescription = "图片 ${card.originalIndex + 1}",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                            loading = { DefaultImageLoading(radiusPx, displayIndex) },
+                            error = { DefaultImageLoading(radiusPx, displayIndex) }
+                        )
+                    } else {
+                        DefaultImageText(displayIndex)
+                    }
+                }
+            }
+
+            if (isTopCard && onCardClick != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(card.stableId) {
+                            detectTapGestures(
+                                onTap = { onCardClick(card.originalIndex) }
+                            )
+                        }
+                )
+            }
+        }
+    }
+
+    @Composable
+    fun SharedCardRow() {
+        order.forEachIndexed { displayIndex, card ->
+            key(card.stableId) {
+                OneSharedCard(displayIndex, card)
+            }
+        }
+    }
+
+    @Composable
+    fun BoxScope.Layer1CardWrapper() {
+        if (isInExpandedMode) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(min = stageBoxWidthDp)
+                    .horizontalScroll(rememberScrollState())
+            ) {
+                SharedCardRow()
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .size(bboxWidth.dp, bboxHeight.dp)
+                    .graphicsLayer {
+                        this.cameraDistance = 1000f / density.density
+                        translationX = cardBoxStartX
+                        translationY = cardBoxStartY
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                SharedCardRow()
+            }
+        }
+    }
+
     Box(
         modifier = modifier
             // ==============================
@@ -542,49 +996,54 @@ fun SwipeableImageStack(
                     Modifier.size(stageBoxWidthDp, stageBoxHeightDp)
                 }
             )
+            // ==============================
+            // 动画：Stage 容器宽/高变化补间（对齐原型 CSS transition 400ms cubic-bezier(0.22,1,0.36,1)）
+            //   - 堆叠态 size(stageBox*, stageBox*) → 展开态 fillMaxWidth + height(stageBox*)
+            //   - 尺寸变化时 animateContentSize 自动补间中间值，视觉过渡平滑
+            //   - 必须放在 then(size/fillMaxWidth) 之后，才能正确测量尺寸变化
+            // ==============================
+            .animateContentSize(
+                animationSpec = tween(
+                    durationMillis = 400,
+                    easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+                )
+            )
             // outer Stage 永远不挂 horizontalScroll（仅展开态内部 ScrollArea 独立层才挂）
         // 外层 Box 不指定 contentAlignment，使用默认 TopStart
         // - 堆叠卡片容器：align(Alignment.TopStart) + padding，左对齐外层 Box 左边缘
         // - 角标：align(Alignment.BottomEnd) + padding，右对齐外层 Box 右边缘
     ) {
-        // ============ V2.0 修复（方案A）：堆叠态 / 展开态 分支结构（严格对应原型三层 DOM）============
-        // 原型 Stage(外层) → stage-content{Row[CollapseBtn + ScrollArea{CardContainer}]}
-        // -------------------------------------------------------------------
-        // 堆叠态（!isExpanded）：完全保留 V1.0 的 CardContainer 实现（Task 3 合并单循环）
-        //         保证：堆叠图位置 / "1/N" 角标位置 / "展开 N" 按钮位置绝对不变
-        // 展开态（isExpanded）：padding(start=expandedContentStartPadding) 整行偏移，
-        //         使展开行起点 = 标题/时间/标签行起点（TimelineItem 场景 = contentStartX≈70dp）
-        //         再 Row([CollapseBtn?] + Spacer(8dp) + [ScrollArea{CardContainer}])
-        //         - CollapseBtn：仅 showInnerCollapseButton=true 才渲染
-        //                       （由组件外部独立一行放时传 false，去重）
-        //         - ScrollArea：**maxWidth=EXPANDED_SCROLL_MAX_WIDTH_DP（480dp 独立上限）**
-        //           不再绑定 stageBoxWidth≈200dp，5 张图宽度 632dp 充足（Bug②修复）
-        //         - 仅 ScrollArea 挂 horizontalScroll，CollapseBtn 永远可见不跟随滚动
-        if (isExpanded) {
-            Row(
+                // 收起按钮：展开态(derivedIsExpanded=true) 显示，堆叠态消失（阈值 0.5）
+                val collapseBtnAlpha by animateFloatAsState(
+                    targetValue = if (derivedIsExpanded) 1f else 0f,
+                    animationSpec = OPACITY_200_SPEC,
+                    label = "collapseBtnAlpha",
+                )
+                // 展开按钮：堆叠态(derivedIsExpanded=false) 显示，展开态消失
+                val expandBtnAlpha by animateFloatAsState(
+                    targetValue = if (derivedIsExpanded) 0f else 1f,
+                    animationSpec = OPACITY_200_SPEC,
+                    label = "expandBtnAlpha",
+                )
+                // 图片数量 Badge：同 ExpandBtn 生命周期
+                val badgeAlpha by animateFloatAsState(
+                    targetValue = if (derivedIsExpanded) 0f else 1f,
+                    animationSpec = OPACITY_200_SPEC,
+                    label = "badgeAlpha",
+                )
+        Layer1CardWrapper()
+
+            // Layer-2：全局收起按钮（绝对定位 Stage 内部右上角，不随水平滚动移动）
+            Box(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .fillMaxWidth()
-                    // ==============================
-                    // V2.0 最终修复：整行起始 padding = expandedContentStartPadding
-                    //   = 标题/时间/正文/标签行统一的左侧对齐基准（TimelineItem contentStartX≈70dp）
-                    //   - 堆叠态 Badge/ExpandBtn 坐标完全不依赖此值（继续用 boxWidth/boxHeight = stageBox*Dp）
-                    //   - 展开态 CollapseBtn、第一张卡片均从同一垂直基准列（标题行左侧）开始
-                    // ==============================
-                    .padding(
-                        start = expandedContentStartPadding,
-                        top = topCardTopInStageDp
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-                // CollapseBtn 与 ScrollArea 间距 = 8dp
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .matchParentSize()
+                    .wrapContentSize(Alignment.TopEnd)
+                    .padding(top = topCardTopInStageDp, end = 8.dp)
             ) {
-                // --- CollapseBtn（收起按钮）：独立于 ScrollArea，永远可见不滚走 ---
-                // 样式：与 ExpandBtn 完全一致（半透明胶囊 #F2F3F5@55% + 11sp Medium + ChevronRight）
                 if (showInnerCollapseButton) {
                     Box(
                         modifier = Modifier
-                        // 不再飞出！保持 Row 首元素正常位置
+                            .graphicsLayer { alpha = collapseBtnAlpha }
                     ) {
                         Row(
                             modifier = Modifier
@@ -594,11 +1053,9 @@ fun SwipeableImageStack(
                                 )
                                 .padding(horizontal = 5.dp, vertical = 2.dp)
                                 .clickable {
-                                    // 点击收起按钮 → 切换回堆叠态
-                                    // 设计文档 §9.8 数据流：先滚动归零，再 isExpanded=false
                                     scope.launch {
                                         expandedScrollState.animateScrollTo(0)
-                                        isExpanded = false
+                                        setExpanded(false)
                                         onExpandStateChange?.invoke(false)
                                     }
                                 },
@@ -619,428 +1076,7 @@ fun SwipeableImageStack(
                         }
                     }
                 }
-
-                // --- ScrollArea（唯一挂 horizontalScroll 的层）：参考待办编辑页 LazyRow 模式 ---
-                // V3.0 修复（用户最新要求）：
-                //   - 彻底放弃 graphicsLayer/cameraDistance/5Animatable 变换（= 图片重叠根因）
-                //   - 100% 对齐「待办编辑页插入图片后的排列方式」：
-                //     Row + Arrangement.spacedBy(cardGap) + 简单 Box(size=cardWidth×cardHeight)
-                //   - maxWidth=EXPANDED_SCROLL_MAX_WIDTH_DP（480dp 独立上限，不与 stageBoxWidth 绑定）
-                //   - 所有卡片都可点击进入全屏预览（不再仅限堆叠态顶卡）
-                Box(
-                    modifier = Modifier
-                        .widthIn(max = EXPANDED_SCROLL_MAX_WIDTH_DP)
-                        .height(cardHeight)
-                        .horizontalScroll(expandedScrollState),
-                    contentAlignment = Alignment.TopStart
-                ) {
-                    // ==============================
-                    // Row(spacedBy)：待办编辑页同款排图
-                    // - wrapContentWidth(unbounded=true)：N 张图自由排开，不受父 Box 宽度限制
-                    // - Arrangement.spacedBy(cardGap)：卡片间距=8dp（与待办编辑页完全一致）
-                    // - 内部 forEach 简单放置 Box(size=cardWidth×cardHeight)，**无任何图形变换**
-                    // ==============================
-                    Row(
-                        modifier = Modifier
-                            // V3.1 修复：移除 wrapContentWidth(unbounded=true)
-                            // - 原因 1：Compose BOM 2026.04.01(1.9.2) 很新，wrapContentWidth 可能存在 API 兼容/注解问题
-                            // - 原因 2：在 horizontalScroll 容器内，父 Box 传递无限宽度约束，
-                            //           Row 默认会按子内容实际宽度自由排开（与 unbounded=true 效果完全等价）
-                            // - 与待办编辑页 LazyRow 行为完全同构：LazyRow 也不设置 wrapContentWidth
-                            .height(cardHeight),
-                        horizontalArrangement = Arrangement.spacedBy(cardGap),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // ==============================
-                        // 简化渲染循环：展开态专用（堆叠态 else 分支仍保留完整 V1.0 扇形布局）
-                        // - 无 Animatable / 无 graphicsLayer / 无 cameraDistance
-                        // - 纯 layout modifier：shadow + clip + background/blur/border
-                        // - 所有卡片可点击（pointerInput detectTapGestures）
-                        // ==============================
-                        order.forEachIndexed { stackIndex, slot ->
-                key(slot.stableId) {
-                    // ========== 有无图判断（展开态专用，与堆叠态逻辑一致） ==========
-                    val hasImage = when {
-                        customContent != null -> true
-                        useDefaultColors -> true
-                        else -> imageUris.getOrNull(slot.originalIndex)?.isNotBlank() == true
-                    }
-
-
-
-
-                    Box(
-                        modifier = Modifier
-                            // ====== 展开态简化版 modifier：100% 对齐待办编辑页 ======
-                            // - 无 .zIndex / .graphicsLayer / cameraDistance（= 消除图片重叠根因）
-                            // - 固定尺寸 cardWidth × cardHeight
-                            // - 统一 4.dp 阴影（展开态无顶卡/非顶卡区分，视觉整齐）
-                            .size(cardWidth, cardHeight)
-                            .shadow(
-                                elevation = 4.dp,
-                                shape = RoundedCornerShape(radiusPx)
-                            )
-                            .clip(RoundedCornerShape(radiusPx))
-                            // 与原型严格对齐：`cardImage ? "transparent" : "rgba(243, 239, 255, 0.8)"`
-                            // - hasImage=true：背景 transparent，不绘制任何背景色
-                            // - hasImage=false：rgba(243, 239, 255, 0.8) 半透明紫色 + border 1.5dp solid #9967FF + backdropFilter blur(10dp)
-                            // 顺序：background → blur → border（blur 模糊背景层，border 绘制清晰边框在上层）
-                            .then(
-                                if (hasImage) {
-                                    Modifier
-                                } else {
-                                    Modifier
-                                        .background(
-                                            color = Color(0xFFF3EFFF).copy(alpha = 0.8f),  // rgba(243, 239, 255, 0.8)
-                                            shape = RoundedCornerShape(radiusPx)
-                                        )
-                                        .blur(10.dp)  // backdropFilter: blur(10px) 毛玻璃
-                                        .border(
-                                            width = 1.5.dp,
-                                            color = Color(0xFF9967FF),
-                                            shape = RoundedCornerShape(radiusPx)
-                                        )
-                                }
-                            )
-                            // ====== 展开态：无翻牌拖拽手势（与待办编辑页一致）======
-                            // - 横向滑动由外层 ScrollArea.horizontalScroll 统一承担
-                            // - 堆叠态（else 分支）完整保留 pointerInput + detectHorizontalDragGestures
-                            // ====== 展开态：所有卡片统一支持点击进入全屏预览 ======
-                            // - 与待办编辑页图片点击行为一致（每张都可单独打开）
-                            // - 堆叠态仍保持「仅顶卡点击」规则（避免扇形下层卡片点击误触）
-                            .then(
-                                if (onCardClick != null) {
-                                    Modifier.pointerInput(slot.stableId) {
-                                        detectTapGestures(
-                                            onTap = { onCardClick(slot.originalIndex) }
-                                        )
-                                    }
-                                } else {
-                                    Modifier
-                                }
-                            )
-                    ) {
-                        // ============ 卡片内容渲染 ============
-                        // 三分支与原型对齐：
-                        // 1. customContent != null：调用方完全自定义
-                        // 2. useDefaultColors：本地色块兜底（替代原型 DEFAULT_IMAGES 网络图）
-                        // 3. 真实图片：Coil 异步加载 imageUris[originalIndex]
-                        //    - imageUri 非空非 blank：SubcomposeAsyncImage，loading/error 用 [DefaultImageLoading]（带背景+border+blur）
-                        //    - imageUri null/blank：罕见情况，调用 [DefaultImageText]（仅文字，背景在卡片层级）
-                        when {
-                            customContent != null -> customContent(stackIndex)
-                            useDefaultColors -> DefaultColorCard(stackIndex, radiusPx)
-                            else -> {
-                                val imageUri = imageUris.getOrNull(slot.originalIndex)
-                                if (!imageUri.isNullOrBlank()) {
-                                    SubcomposeAsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
-                                            .data(imageUri)
-                                            .crossfade(true)
-                                            .scale(Scale.FIT)
-                                            .build(),
-                                        contentDescription = "图片 ${slot.originalIndex + 1}",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize(),
-                                        // loading/error 占位：带紫色背景+border+blur（卡片层级 transparent，需独立背景避免白屏）
-                                        loading = { DefaultImageLoading(radiusPx, stackIndex) },
-                                        error = { DefaultImageLoading(radiusPx, stackIndex) }
-                                    )
-                                } else {
-                                    // hasImage=false 时卡片层级已绘制背景+border+blur，此处仅显示文字
-                                    DefaultImageText(stackIndex)
-                                }
-                            }
-                        }
-
-                        // ====== 展开态：点击逻辑已在 Modifier.pointerInput 层统一处理（所有卡片可点）======
-                        // ====== 堆叠态：仍保留仅顶卡点击（避免扇形下层误触，见 else 分支 L860+） ======
-                    }                        // ---- [20空格] 关闭 卡片 Box（content lambda，展开态每张卡片内容闭包）----
-                }                            // ---- [16空格] 关闭 key(slot.stableId) { ----
-            }                                // ---- [12空格] 关闭 order.forEachIndexed { lambda（展开态渲染循环）----
-                        }                        // ---- [24空格] 关闭 Row(spacedBy)（与 L642 Row( 24空格前缀严格对齐）----
-                }                            // ---- [16空格] 关闭 ScrollArea Box（与 L629 Box( 16空格前缀严格对齐）----
-            }                                // ---- [12空格] 关闭 Row([CollapseBtn] + [ScrollArea])（与 L485 Row( 12空格前缀严格对齐）----
-        }                                    // ---- [8空格] 关闭 if (isExpanded) 展开态分支（与 L484 if 8空格前缀严格对齐）----
-        else {                                // ---- [8空格] else 堆叠态分支（与 if 同级，8空格前缀严格对齐）----
-        // ===== 堆叠态分支：CardContainer 完全保留 V1.0（保证堆叠视觉和位置100%不变）=====
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .size(bboxWidth.dp, bboxHeight.dp)
-                .graphicsLayer {
-                    this.cameraDistance = 1000f / density.density
-                    // 堆叠态平移到正确位置（使旋转后最左/最上顶角恰好对齐 Stage 左上角）
-                    translationX = cardBoxStartX
-                    translationY = cardBoxStartY
-                },
-            contentAlignment = Alignment.Center // 堆叠态 Center 锚点（与展开态统一）
-        ) {
-            // ===== 堆叠态渲染循环（完全保留 V1.0 代码，与展开态分开分支）=====
-            order.forEachIndexed { stackIndex, slot ->
-                key(slot.stableId) {
-                    val isTopCard = stackIndex == 0
-
-                    // ========== 有无图判断（与展开态循环结构完全一致） ==========
-                    val hasImage = when {
-                        customContent != null -> true
-                        useDefaultColors -> true
-                        else -> imageUris.getOrNull(slot.originalIndex)?.isNotBlank() == true
-                    }
-
-                    // ========== 扇形深度常量（与展开态循环完全一致，保证 remember key 稳定） ==========
-                    val M = minOf(visibleDepth, cardCount).coerceIn(1, 4)
-                    val ei = minOf(stackIndex, M - 1)
-                    val denom = max(M - 1, 1)
-                    val effectiveTiltAngle = -(M - 1) * 15f
-                    val cardWGap = cardWidth.value + cardGap.value
-
-                    // ========== 目标值：if(isExpanded) 双分支（与展开态循环结构完全一致） ==========
-                    // - 堆叠态分支：isExpanded=false → 走扇形公式（完全保留 V1.0 像素级一致）
-                    // - 展开态分支：理论上此分支永远不触发（因为在 else 分支内），仅为结构一致性保留
-                    val targetX: Float
-                    val targetY: Float
-                    val targetScale: Float
-                    val targetRotation: Float
-                    val targetZIndex: Float
-                    if (isExpanded) {
-                        targetX = stackIndex.toFloat() * cardWGap
-                        targetY = 0f
-                        targetScale = 1f
-                        targetRotation = 0f
-                        targetZIndex = 1f
-                    } else {
-                        targetX = if (M > 1) ei.toFloat() / denom * xOffset.value else 0f
-                        targetY = -(ei * 8f)
-                        targetScale = 1f - ei * 0.05f
-                        targetRotation = if (M > 1) {
-                            tiltAngleStart + (ei.toFloat() / denom) * (effectiveTiltAngle - tiltAngleStart)
-                        } else {
-                            tiltAngleStart
-                        }
-                        targetZIndex = (order.size - stackIndex).toFloat()
-                    }
-
-                    // ========== 5 个独立 Animatable（与展开态循环完全一致） ==========
-                    val positionX = remember { Animatable(targetX) }
-                    val positionY = remember { Animatable(targetY) }
-                    val scaleAnim = remember { Animatable(targetScale) }
-                    val rotationAnim = remember { Animatable(targetRotation) }
-                    val zIndexAnim = remember { Animatable(targetZIndex) }
-
-                    // 5 个 LaunchedEffect（含 isExpanded key，切换状态立即触发过渡）
-                    LaunchedEffect(stackIndex, order.size, isExpanded) {
-                        positionX.animateTo(targetX, TRANSITION_SPRING)
-                    }
-                    LaunchedEffect(stackIndex, order.size, isExpanded) {
-                        positionY.animateTo(targetY, TRANSITION_SPRING)
-                    }
-                    LaunchedEffect(stackIndex, order.size, isExpanded) {
-                        scaleAnim.animateTo(targetScale, TRANSITION_SPRING)
-                    }
-                    LaunchedEffect(stackIndex, order.size, isExpanded) {
-                        rotationAnim.animateTo(targetRotation, TRANSITION_SPRING)
-                    }
-                    LaunchedEffect(stackIndex, order.size, isExpanded, isPressed.value, isTopCard) {
-                        val target = if (!isExpanded && isPressed.value && isTopCard) 1000f else targetZIndex
-                        zIndexAnim.animateTo(target, ZINDEX_TWEEN)
-                    }
-
-                    // =================== finalX/Y/scale/rotation：统一 !isExpanded 拖拽互斥锁 ===================
-                    // V2.0 修复（堆叠态循环缺失补上）：
-                    // - finalScale：原堆叠态缺少 `!isExpanded`，展开态切回堆叠态瞬间若 isPressed=true 会误放大
-                    // - finalRotation：原堆叠态缺少 `!isExpanded`，切换瞬间会误旋转归零
-                    val finalX = if (!isExpanded && isTopCard) positionX.value + dragOffsetX.value else positionX.value
-                    val finalY = if (!isExpanded && isTopCard) positionY.value + dragOffsetY.value else positionY.value
-                    val finalScale = if (!isExpanded && isTopCard && isPressed.value) scaleAnim.value + 0.05f else scaleAnim.value
-                    val finalRotation = when {
-                        !isExpanded && isTopCard && isPressed.value -> 0f
-                        !isExpanded && isTopCard && shouldReturnToCenter.value -> 0f
-                        else -> rotationAnim.value
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(cardWidth, cardHeight)
-                            .zIndex(zIndexAnim.value)
-                            .graphicsLayer {
-                                scaleX = finalScale
-                                scaleY = finalScale
-                                rotationZ = finalRotation
-                                translationX = finalX
-                                translationY = finalY
-                            }
-                            .shadow(
-                                elevation = if (isTopCard) 8.dp else 4.dp,
-                                shape = RoundedCornerShape(radiusPx)
-                            )
-                            .clip(RoundedCornerShape(radiusPx))
-                            .then(
-                                if (hasImage) {
-                                    Modifier
-                                } else {
-                                    Modifier
-                                        .background(
-                                            color = Color(0xFFF3EFFF).copy(alpha = 0.8f),
-                                            shape = RoundedCornerShape(radiusPx)
-                                        )
-                                        .blur(10.dp)
-                                        .border(
-                                            width = 1.5.dp,
-                                            color = Color(0xFF9967FF),
-                                            shape = RoundedCornerShape(radiusPx)
-                                        )
-                                }
-                            )
-                            .then(
-                                if (isTopCard && !isExpanded) {
-                                    Modifier.pointerInput(slot.stableId, swipeDirection) {
-                                        if (swipeDirection == SwipeDirection.Horizontal) {
-                                            detectHorizontalDragGestures(
-                                                onDragStart = {
-                                                    isPressed.value = true
-                                                    shouldReturnToCenter.value = false
-                                                    scope.launch {
-                                                        positionX.snapTo(0f)
-                                                        positionY.snapTo(0f)
-                                                    }
-                                                },
-                                                onDragEnd = {
-                                                    isPressed.value = false
-                                                    val dx = dragOffsetX.value
-                                                    val distance = dx.absoluteValue
-                                                    if (distance > thresholdPx && order.size > 1) {
-                                                        scope.launch {
-                                                            onCardSwiped?.invoke(slot.originalIndex)
-                                                            zIndexAnim.snapTo(1f)
-                                                            positionX.snapTo(positionX.value + dragOffsetX.value)
-                                                            positionY.snapTo(positionY.value + dragOffsetY.value)
-                                                            dragOffsetX.snapTo(0f)
-                                                            dragOffsetY.snapTo(0f)
-                                                            val newOrder = order.toMutableList()
-                                                            val top = newOrder.removeAt(0)
-                                                            newOrder.add(top)
-                                                            order = newOrder
-                                                        }
-                                                    } else {
-                                                        shouldReturnToCenter.value = true
-                                                        scope.launch {
-                                                            delay(1000)
-                                                            shouldReturnToCenter.value = false
-                                                        }
-                                                        scope.launch {
-                                                            dragOffsetX.animateTo(0f, BOUNCE_SPRING)
-                                                            dragOffsetY.animateTo(0f, BOUNCE_SPRING)
-                                                        }
-                                                    }
-                                                }
-                                            ) { change, dragAmount ->
-                                                val currentOffset = dragOffsetX.value.absoluteValue
-                                                val t = (currentOffset / maxElasticDistancePx).coerceIn(0f, 1f)
-                                                val resistance = 1f - 0.3f * t.pow(1.5f)
-                                                val elasticAmount = dragAmount * resistance
-                                                scope.launch {
-                                                    dragOffsetX.snapTo(dragOffsetX.value + elasticAmount)
-                                                }
-                                            }
-                                        } else {
-                                            detectDragGestures(
-                                                onDragStart = {
-                                                    isPressed.value = true
-                                                    shouldReturnToCenter.value = false
-                                                    scope.launch {
-                                                        positionX.snapTo(0f)
-                                                        positionY.snapTo(0f)
-                                                    }
-                                                },
-                                                onDragEnd = {
-                                                    isPressed.value = false
-                                                    val dx = dragOffsetX.value
-                                                    val dy = dragOffsetY.value
-                                                    val distance = hypot(dx, dy)
-                                                    if (distance > thresholdPx && order.size > 1) {
-                                                        scope.launch {
-                                                            onCardSwiped?.invoke(slot.originalIndex)
-                                                            zIndexAnim.snapTo(1f)
-                                                            positionX.snapTo(positionX.value + dragOffsetX.value)
-                                                            positionY.snapTo(positionY.value + dragOffsetY.value)
-                                                            dragOffsetX.snapTo(0f)
-                                                            dragOffsetY.snapTo(0f)
-                                                            val newOrder = order.toMutableList()
-                                                            val top = newOrder.removeAt(0)
-                                                            newOrder.add(top)
-                                                            order = newOrder
-                                                        }
-                                                    } else {
-                                                        shouldReturnToCenter.value = true
-                                                        scope.launch {
-                                                            delay(1000)
-                                                            shouldReturnToCenter.value = false
-                                                        }
-                                                        scope.launch {
-                                                            dragOffsetX.animateTo(0f, BOUNCE_SPRING)
-                                                            dragOffsetY.animateTo(0f, BOUNCE_SPRING)
-                                                        }
-                                                    }
-                                                }
-                                            ) { change, dragAmount ->
-                                                change.consume()
-                                                val currentDistance = hypot(dragOffsetX.value, dragOffsetY.value)
-                                                val t = (currentDistance / maxElasticDistancePx).coerceIn(0f, 1f)
-                                                val resistance = 1f - 0.3f * t.pow(1.5f)
-                                                val elasticAmount = dragAmount * resistance
-                                                scope.launch {
-                                                    dragOffsetX.snapTo(dragOffsetX.value + elasticAmount.x)
-                                                    dragOffsetY.snapTo(dragOffsetY.value + elasticAmount.y)
-                                                }
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    Modifier
-                                }
-                            )
-                    ) {
-                        when {
-                            customContent != null -> customContent(stackIndex)
-                            useDefaultColors -> DefaultColorCard(stackIndex, radiusPx)
-                            else -> {
-                                val imageUri = imageUris.getOrNull(slot.originalIndex)
-                                if (!imageUri.isNullOrBlank()) {
-                                    SubcomposeAsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
-                                            .data(imageUri)
-                                            .crossfade(true)
-                                            .scale(Scale.FIT)
-                                            .build(),
-                                        contentDescription = "图片 ${slot.originalIndex + 1}",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize(),
-                                        loading = { DefaultImageLoading(radiusPx, stackIndex) },
-                                        error = { DefaultImageLoading(radiusPx, stackIndex) }
-                                    )
-                                } else {
-                                    DefaultImageText(stackIndex)
-                                }
-                            }
-                        }
-
-                        if (isTopCard && onCardClick != null) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .pointerInput(slot.stableId) {
-                                        detectTapGestures(
-                                            onTap = { onCardClick(slot.originalIndex) }
-                                        )
-                                    }
-                            )
-                        }
-                    }
-                }
             }
-        } // ===== 堆叠态 Box(CardContainer) 闭合
-    } // ===== else 堆叠态分支 闭合
 
         // ============ 图片计数角标（countBadge）============
         // 样式与灵感首页标签保持一致（主色文字 + 浅橙底 + 10dp 圆角）：
@@ -1064,8 +1100,10 @@ fun SwipeableImageStack(
         //
         // 角标高估算：10sp 字体 + 0dp 垂直 padding ≈ 行高 10dp ≈ 视觉高度 12dp
         // 为保证底边缘严格对齐，角标 top = 顶卡底 - 估算高度
-        // V1.1 修复：角标仅堆叠态显示（展开态隐藏，避免与 CollapseBtn 视觉冲突）
-        if (!isExpanded && showCountBadge) {
+        // V1.1 修复：角标仅堆叠态可见（展开态隐藏，避免与 CollapseBtn 视觉冲突）
+        // 动画：移除 `!isExpanded` 硬条件（改为常驻 Composition），
+        //       通过 animateFloatAsState alpha 1f→0f 淡出，对齐原型 opacity 0.2s
+        if (showCountBadge) {
             val currentPosition = order[0].originalIndex + 1  // 1-based 当前位置
             val totalCount = cardCount
 
@@ -1078,6 +1116,8 @@ fun SwipeableImageStack(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(start = badgeStartX.dp, top = badgeTopY.dp)
+                    // 透明度动画：堆叠时显示，展开时淡出（避免与收起按钮视觉冲突）
+                    .graphicsLayer { alpha = badgeAlpha }
             ) {
                 // 与灵感首页 #标签 样式一致：
                 // - 背景色：0xFFFFF3E0（浅橙底）
@@ -1111,8 +1151,10 @@ fun SwipeableImageStack(
         //   保证视觉一致；有角标时 28dp 含角标宽 + 角标→按钮间距）
         // - 角标位置保持不变（顶卡右贴紧）
         // - 垂直：按钮中心 = 顶卡垂直中心（以堆叠图中的顶层图片为基准垂直居中）
-        // V1.1 修复：展开按钮仅堆叠态显示（展开态隐藏，显示 CollapseBtn）
-        if (!isExpanded && showExpand) {
+        // V1.1 修复：展开按钮仅堆叠态可见（展开态隐藏，显示 CollapseBtn）
+        // 动画：移除 `!isExpanded` 硬条件（改为常驻 Composition），
+        //       通过 animateFloatAsState alpha 1f→0f 淡出，对齐原型 opacity 0.2s
+        if (showExpand) {
             val totalCount = cardCount
             // 按钮 start（左）：统一以「顶卡右边缘」为基准，无论有无角标都使用相同的基准间距
             // 保证 3 张图（无角标）/ 10 张图（有角标）展开按钮距顶卡右边缘的视觉距离一致
@@ -1132,6 +1174,10 @@ fun SwipeableImageStack(
                 if (buttonSize == IntSize.Zero) 0.dp
                 else (buttonSize.height / 2).toDp()
             }
+
+            // 透明时（alpha≈0）禁用 clickable，避免透明按钮还能响应点击（挡在其他元素上面）
+            val isBtnClickable = expandBtnAlpha > 0.01f && isInStackedMode && !isAnimating
+
             // 用 TopStart + padding 精确定位：
             // - top = topCardCenterY：wrapper Box 左上角在顶卡中心线上
             // - translationY = -btnActualHalfOffsetDp：上移实际高的一半 → 真正居中
@@ -1142,6 +1188,8 @@ fun SwipeableImageStack(
                     .graphicsLayer {
                         translationY = -btnActualHalfOffsetDp.toPx()
                     }
+                    // 透明度动画：堆叠时显示，展开时淡出（与收起按钮互斥可见）
+                    .graphicsLayer { alpha = expandBtnAlpha }
             ) {
                 Row(
                     modifier = Modifier
@@ -1151,20 +1199,28 @@ fun SwipeableImageStack(
                         )
                         .padding(horizontal = 5.dp, vertical = 2.dp)
                         .onSizeChanged { buttonSize = it }
-                        .clickable {
-                            // ===== V1.1 修复：展开前 dragOffset 动画归零（保险层，防堆叠态残留）=====
-                            // - Task4 已把 finalX/Y 加 !isExpanded 锁（展开态不叠加 dragOffset），
-                            //   但切换瞬间（isExpanded=true 生效前的最后一帧）若 dragOffset≠0，
-                            //   顶卡会在切换动画前先看到偏移跳变。这里动画归零，切换更平滑。
-                            // - 用 scope.launch（rememberCoroutineScope 同文件顶部）并行清零，不阻塞点击
-                            scope.launch {
-                                dragOffsetX.animateTo(0f, TRANSITION_SPRING)
-                                dragOffsetY.animateTo(0f, BOUNCE_SPRING)
+                        // 仅非透明状态才挂载 clickable，避免透明时抢点击事件
+                        .then(
+                            if (isBtnClickable) {
+                                Modifier.clickable {
+                                    // ===== V1.1 修复：展开前 dragOffset 动画归零（保险层，防堆叠态残留）=====
+                                    // - Task4 已把 finalX/Y 加 !isExpanded 锁（展开态不叠加 dragOffset），
+                                    //   但切换瞬间（isExpanded=true 生效前的最后一帧）若 dragOffset≠0，
+                                    //   顶卡会在切换动画前先看到偏移跳变。这里动画归零，切换更平滑。
+                                    // - 用 scope.launch（rememberCoroutineScope 同文件顶部）并行清零，不阻塞点击
+                                    scope.launch {
+                                        dragOffsetX.animateTo(0f, TRANSITION_SPRING)
+                                        dragOffsetY.animateTo(0f, BOUNCE_SPRING)
+                                    }
+                                    // 切换到展开态 + 回调
+                                    scope.launch { setExpanded(true) }
+                                    onExpandStateChange?.invoke(true)
+                                }
+                            } else {
+                                // 透明时不响应任何指针输入，让事件穿透给下层元素
+                                Modifier
                             }
-                            // 切换到展开态 + 回调
-                            isExpanded = true
-                            onExpandStateChange?.invoke(true)
-                        },
+                        ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
