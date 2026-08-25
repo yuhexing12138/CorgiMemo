@@ -34,11 +34,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -375,11 +377,20 @@ fun SwipeableImageStack(
     // 展开按钮（比角标大一号）：
     // - 文本 "展开 100" 12sp ≈ 50dp + 水平 padding 10dp + 图标 16dp ≈ 76dp
     // - 胶囊高度 ≈ 22dp（比角标 16dp 高 6dp）
-    // - 与角标右边缘之间水平间距 = 6dp
+    // 展开按钮估算宽度（76dp 留足给 "展开 99 ›" 场景）
     val expandEstWidth = if (showExpand) 76f else 0f
-    val expandBadgeGap = if (showCountBadge && showExpand) 6f else 0f  // 角标→按钮 的水平间距
-    // 展开按钮相对于顶卡右边缘的独立间距（角标未显示时）
-    val expandMarginToCardNoBadge = if (showExpand && !showCountBadge) 4f else 0f
+    // ============ 按钮距「顶卡右边缘」的统一基准间距 ============
+    // 根因：之前有角标/无角标分别用不同基准，导致两套视觉距离不一致：
+    //   - 无角标：顶卡右 + 4dp
+    //   - 有角标：顶卡右 + 45dp(估算角标宽) + 6dp → 估算比实际 20dp 宽 ≈25dp，视觉偏约 21dp
+    // 修复：无论有无角标，按钮起点都相对于「顶卡右边缘」这一视觉基准；
+    //       有角标时再增加一个 gap（角标→按钮），角标实际宽度虽略小于估算，但差异可控
+    val expandMarginToCardWithBadge = if (showExpand && showCountBadge) {
+        28f  // 有角标：顶卡右 → 按钮起点 = 28dp（≈角标宽 20dp + 角标到按钮 8dp，视觉协调）
+    } else 0f
+    val expandMarginToCardNoBadge = if (showExpand && !showCountBadge) {
+        28f  // 无角标：与有角标情况相同的 28dp 基准，保证视觉一致
+    } else 0f
     // 顶卡左边缘 & 右边缘（外层 Box 坐标）
     val topCardCenterX_box = -bboxLeft
     val topCardLeft_box = topCardCenterX_box - cardWVal / 2f
@@ -392,10 +403,10 @@ fun SwipeableImageStack(
     val badgeRightEdge = if (showCountBadge) {
         topCardRightX_box + 0f + badgeEstWidth
     } else 0f
-    // 按钮右边缘：角标右侧（若显示角标）+ 间距 + 按钮宽，或直接顶卡右侧 + 间距 + 按钮宽
+    // 按钮右边缘：顶卡右边缘 + 统一基准间距（无论有无角标，视觉上按钮与顶卡距离一致）
     val expandRightEdge = if (showExpand) {
         if (showCountBadge) {
-            badgeRightEdge + expandBadgeGap + expandEstWidth
+            topCardRightX_box + expandMarginToCardWithBadge + expandEstWidth
         } else {
             topCardRightX_box + expandMarginToCardNoBadge + expandEstWidth
         }
@@ -907,41 +918,55 @@ fun SwipeableImageStack(
         // 显示条件：showExpandButton = true && cardCount >= 2（超过 1 张就显示）
         //
         // 定位：
-        // - 水平：展开按钮在角标的右侧（角标显示时：角标右 + 6dp；角标不显示时：顶卡右 + 4dp）
-        // - 角标位置保持不变
+        // - 水平：统一以「顶卡右边缘」为基准，按钮起点 = 顶卡右 + 28dp（无论有无角标都用同一间距，
+        //   保证视觉一致；有角标时 28dp 含角标宽 + 角标→按钮间距）
+        // - 角标位置保持不变（顶卡右贴紧）
         // - 垂直：按钮中心 = 顶卡垂直中心（以堆叠图中的顶层图片为基准垂直居中）
         if (showExpand) {
             val totalCount = cardCount
-            // 按钮估算高度（紧凑型，比角标高约 6dp）
-            val buttonEstH = 22f
-            // 按钮 start（左）：角标右侧 / 顶卡右侧
-            val buttonStartX = if (showCountBadge) {
-                badgeRightEdge + expandBadgeGap
+            // 按钮 start（左）：统一以「顶卡右边缘」为基准，无论有无角标都使用相同的基准间距
+            // 保证 3 张图（无角标）/ 10 张图（有角标）展开按钮距顶卡右边缘的视觉距离一致
+            val buttonStartX = topCardRightX_box + if (showCountBadge) {
+                expandMarginToCardWithBadge
             } else {
-                topCardRightX_box + expandMarginToCardNoBadge
+                expandMarginToCardNoBadge
             }
-            // 按钮垂直居中：顶卡中心 = 按钮中心
             val topCardCenterY = (topCardTop_box + topCardBottomY_box) / 2f
-            val buttonTopY = topCardCenterY - buttonEstH / 2f
-            // 用 TopStart + padding 精确定位
+            // 按钮垂直居中：先把 wrapper Box 左上角放在「顶卡中心 y」处，
+            // 再通过 onSizeChanged 读取按钮实际高度后用 graphicsLayer.translationY 回移一半，
+            // 彻底摆脱 buttonEstH 估算不准导致的视觉不居中问题（之前估算 22dp vs 实际≈19dp，
+            // 造成按钮中心高出顶卡中心约 1.5dp）。
+            var buttonSize by remember { mutableStateOf(IntSize.Zero) }
+            val density = LocalDensity.current
+            val btnActualHalfOffsetDp = with(density) {
+                if (buttonSize == IntSize.Zero) 0.dp
+                else (buttonSize.height / 2).toDp()
+            }
+            // 用 TopStart + padding 精确定位：
+            // - top = topCardCenterY：wrapper Box 左上角在顶卡中心线上
+            // - translationY = -btnActualHalfOffsetDp：上移实际高的一半 → 真正居中
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = buttonStartX.dp, top = buttonTopY.dp)
+                    .padding(start = buttonStartX.dp, top = topCardCenterY.dp)
+                    .graphicsLayer {
+                        translationY = -btnActualHalfOffsetDp.toPx()
+                    }
             ) {
                 Row(
                     modifier = Modifier
                         .background(
-                            color = Color(0xFFF2F3F5),
+                            color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
                             shape = RoundedCornerShape(11.dp)
                         )
-                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                        .onSizeChanged { buttonSize = it },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "展开 $totalCount",
                         color = Color(0xFF4F5660),
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
                     Icon(
