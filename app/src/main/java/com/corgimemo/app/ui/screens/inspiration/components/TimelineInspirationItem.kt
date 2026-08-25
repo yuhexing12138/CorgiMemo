@@ -434,7 +434,6 @@ fun TimelineInspirationItem(
                 Spacer(modifier = Modifier.height(tagToImageGap))
                 SwipeableImageStack(
                     imageUris = imagePaths,
-                    modifier = Modifier.fillMaxWidth(),
                     cardWidth = 120.dp,
                     cardHeight = 120.dp,
                     // cardRadius 是 0-20 滑块（Float，非 Dp），与 SwipeableImageStack.kt 默认值一致
@@ -444,6 +443,8 @@ fun TimelineInspirationItem(
                     visibleDepth = 4,    // 最多 4 张扇形展开；tiltAngle 由可见张数派生（4 张→-45°）
                     xOffset = 0.dp,      // 无水平偏移，仅靠旋转+scale 形成堆叠
                     swipeDirection = SwipeDirection.Horizontal,
+                    // 超过 4 张图片时显示计数角标（"当前位置/总数"），提升信息密度
+                    countBadge = true,
                     onCardClick = { originalIndex ->
                         onImageClick(originalIndex)
                     }

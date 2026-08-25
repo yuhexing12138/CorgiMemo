@@ -47,10 +47,13 @@ import coil3.request.crossfade
 import coil3.size.Scale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.absoluteValue
+import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.pow
+import kotlin.math.sin
 
 /**
  * 堆叠中的单张卡片槽位
@@ -152,6 +155,7 @@ fun SwipeableImageStack(
     xOffset: Dp = 0.dp,
     visibleDepth: Int = 4,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
+    countBadge: Boolean = false,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null
 ) {
@@ -167,6 +171,7 @@ fun SwipeableImageStack(
         xOffset = xOffset,
         visibleDepth = visibleDepth,
         swipeDirection = swipeDirection,
+        countBadge = countBadge,
         onCardSwiped = onCardSwiped,
         onCardClick = onCardClick,
         customContent = null
@@ -195,6 +200,7 @@ fun SwipeableImageStack(
     xOffset: Dp = 0.dp,
     visibleDepth: Int = 4,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
+    countBadge: Boolean = false,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null,
     customContent: (@Composable BoxScope.(stackIndex: Int) -> Unit)? = null
@@ -268,19 +274,140 @@ fun SwipeableImageStack(
         ((cardRadius / 20f) * (smallerSide.toPx() / 2f)).toDp()
     }
 
+    // ============ 动态计算旋转后堆叠区的包围盒 ============
+    // 遍历所有可见卡片（ei = 0 到 M-1），计算 scale + rotation + translation 后的包围盒。
+    // 用于：
+    // 1. 调整外层 Box 尺寸，确保旋转后的卡片不被裁剪
+    // 2. 计算内层 Box 的 translationX/Y 偏移，使堆叠区左上角对齐 Box 左上角
+    //    （进而与标题行、时分时间、正文、标签行的左边缘对齐）
+    //
+    // 单位策略：与现有卡片 translation 一致，均用 dp-as-px（cardWidth.value 等），
+    // 在 mdpi 设备上 1dp = 1px，高密度设备上视觉与 Web CSS px 一致。
+    //
+    // 旋转矩形包围盒公式（绕中心旋转 θ 后）：
+    //   rotHalfW = halfW * |cos(θ)| + halfH * |sin(θ)|
+    //   rotHalfH = halfW * |sin(θ)| + halfH * |cos(θ)|
+    // 其中 halfW/halfH 是缩放后的卡片半宽/半高。
+    //
+    // 动态适应：当 visibleDepth、tiltAngleStart、cardWidth/cardHeight 变化时，
+    // 包围盒自动重算，顶点位置自动更新。
+    val M_bbox = minOf(visibleDepth, cardCount).coerceIn(1, 4)
+    val denom_bbox = max(M_bbox - 1, 1)
+    val effectiveTilt_bbox = -(M_bbox - 1) * 15f
+
+    val cardWVal = cardWidth.value
+    val cardHVal = cardHeight.value
+    val stackVPVal = stackVerticalPadding.value
+
+    var bboxLeft = Float.MAX_VALUE
+    var bboxTop = Float.MAX_VALUE
+    var bboxRight = -Float.MAX_VALUE
+    var bboxBottom = -Float.MAX_VALUE
+
+    for (ei in 0 until M_bbox) {
+        // 每张卡片的 scale、rotation、translation（与主渲染逻辑严格一致）
+        val s = 1f - ei * 0.05f
+        val thetaDeg = if (M_bbox > 1) {
+            tiltAngleStart + (ei.toFloat() / denom_bbox) * (effectiveTilt_bbox - tiltAngleStart)
+        } else {
+            tiltAngleStart
+        }
+        val thetaRad = thetaDeg * Math.PI / 180.0
+        val cosT = abs(cos(thetaRad)).toFloat()
+        val sinT = abs(sin(thetaRad)).toFloat()
+
+        // 缩放后卡片半宽/半高
+        val halfW = s * cardWVal / 2f
+        val halfH = s * cardHVal / 2f
+        // 旋转后包围盒半宽/半高（绕中心旋转）
+        val rotHalfW = halfW * cosT + halfH * sinT
+        val rotHalfH = halfW * sinT + halfH * cosT
+
+        // 卡片平移（与主渲染逻辑一致：tx 用 xOffset.value，ty 用 8f per index）
+        val tx = if (M_bbox > 1) ei.toFloat() / denom_bbox * xOffset.value else 0f
+        val ty = -(ei * 8f)
+
+        // 累积包围盒边界（相对于卡片中心）
+        bboxLeft = minOf(bboxLeft, tx - rotHalfW)
+        bboxTop = minOf(bboxTop, ty - rotHalfH)
+        bboxRight = maxOf(bboxRight, tx + rotHalfW)
+        bboxBottom = maxOf(bboxBottom, ty + rotHalfH)
+    }
+
+    // 包围盒尺寸
+    val bboxWidth = bboxRight - bboxLeft
+    val bboxHeight = bboxBottom - bboxTop
+
+    // ============ 堆叠卡片容器定位（左对齐外层 Box 左上角）============
+    // 用户方案：堆叠图在包围盒里左对齐，角标右对齐，无需依赖 Center + translationX/Y
+    //
+    // 卡片容器（内部放所有卡片 Box，size = 包围盒尺寸，contentAlignment = Center）
+    // 容器自身放在外层 Box 的 TopStart，容器左上角 = 堆叠区左上角
+    // 因为堆叠区左边缘 = 容器中心（Center 对齐） + bboxLeft
+    // 要求堆叠区左边缘 = 外层 Box 左边缘（0）
+    // → 容器中心 x = -bboxLeft
+    // → 容器左边缘 x = 容器中心 - bboxWidth/2 = -bboxLeft - bboxWidth/2
+    // 同理：容器 top = -bboxTop - bboxHeight/2
+    //
+    // 这样堆叠区左上角恰好对齐外层 Box 左上角（0,0），与标题行等左边缘严格对齐
+    val cardBoxStartX = -bboxLeft - bboxWidth / 2f
+    val cardBoxStartY = -bboxTop - bboxHeight / 2f
+
+    // ============ 角标对 Box 右边缘的扩宽 ============
+    // 当启用 countBadge 时，角标放在外层 Box 右下角（BottomEnd）
+    // 需要动态扩宽外层 Box 右边缘，确保角标与顶卡右边缘之间有 4dp 间距，完全不重叠
+    // 左边缘保持不动（堆叠区左上角始终对齐外层 Box 左上角）
+    val badgeEstWidth = if (countBadge && cardCount > visibleDepth) {
+        // 角标估算宽度：最多 5 字符 "100/100" 10sp ≈ 35dp + 水平 padding 8dp ≈ 43dp
+        45f
+    } else 0f
+    // 顶卡左边缘 & 右边缘（外层 Box 坐标）
+    val topCardCenterX_box = -bboxLeft
+    val topCardLeft_box = topCardCenterX_box - cardWVal / 2f
+    val topCardRightX_box = topCardLeft_box + cardWVal
+    // 顶卡底边缘（外层 Box 坐标）
+    val topCardCenterY_box = -bboxTop
+    val topCardTop_box = topCardCenterY_box - cardHVal / 2f
+    val topCardBottomY_box = topCardTop_box + cardHVal
+    val badgeRequiredRight = if (countBadge && cardCount > visibleDepth) {
+        topCardRightX_box + 4f + badgeEstWidth + 4f  // 顶卡右 → 4dp → 角标 → 4dp → 外层右
+    } else 0f
+
+    // 外层 Box 尺寸：
+    // - 宽度至少容纳堆叠区包围盒 / 原始扇形宽度 / 角标所需右边缘
+    // - 高度至少容纳堆叠区包围盒 / 原始卡片+垂直余量（原始 fallback 高度，防止单卡时 bboxHeight 太小）
+    // 注：角标是 BottomEnd + right/bottom padding 定位（水平方向在图片右侧），
+    // 垂直方向角标底部 = topCardBottomY_box（≤ bboxHeight），因此不需要额外扩高 boxHeight，
+    // 否则会出现底部空白（与下一篇灵感标题行间距变大）。
+    val boxWidth = maxOf(cardWVal + xOffset.value, bboxWidth, badgeRequiredRight, cardBoxStartX + bboxWidth)
+    val boxHeight = maxOf(cardHVal + stackVPVal, bboxHeight)
+
     Box(
-        modifier = modifier.size(cardWidth + xOffset, cardHeight + stackVerticalPadding),
-        contentAlignment = Alignment.Center
+        modifier = modifier.size(boxWidth.dp, boxHeight.dp)
+        // 外层 Box 不指定 contentAlignment，使用默认 TopStart
+        // - 堆叠卡片容器：align(Alignment.TopStart) + padding，左对齐外层 Box 左边缘
+        // - 角标：align(Alignment.BottomEnd) + padding，右对齐外层 Box 右边缘
     ) {
+        // ============ 堆叠卡片容器（左对齐外层左上角）============
         // 透视感：父容器 cameraDistance 模拟 Web 端 perspective: 1000px
         // - 原型 `perspective: ${PERSPECTIVE}px` (PERSPECTIVE = 1000)
         // - Compose cameraDistance 默认单位是 dp（实际 px = cameraDistance × density）
         // - 为与 Web 1000px 严格一致：cameraDistance = 1000 / density.density (dp)
+        // - 容器放在 (cardBoxStartX, cardBoxStartY)，使堆叠区旋转后最左/最上顶角
+        //   恰好对齐外层 Box 左上角（0,0），与标题行/时间/正文/标签行左边缘严格对齐
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .align(Alignment.TopStart)
+                // 注：Compose Modifier.padding 不支持负值，当 cardBoxStartX/Y 为负
+                // （旋转后卡片顶角超出盒子左/上边缘）时会截断为 0 导致顶/左边距变大。
+                // 改为 graphicsLayer.translationX/Y，支持负值纯视觉平移（不影响外层布局）。
+                // 单位策略（与项目全局一致，严格 px 不 dp 换算）：
+                // cardBoxStartX/Y 是 Dp 数值 Float，直接当 px 传入 translationX/Y。
+                .size(bboxWidth.dp, bboxHeight.dp)
                 .graphicsLayer {
                     this.cameraDistance = 1000f / density.density
+                    translationX = cardBoxStartX
+                    translationY = cardBoxStartY
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -681,6 +808,55 @@ fun SwipeableImageStack(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // ============ 图片计数角标（countBadge）============
+        // 当启用 countBadge 且图片张数超过可见深度时，在堆叠区右下角显示
+        // "当前位置/总数" 格式的角标（如 "1/6"），让用户直观了解当前浏览进度。
+        // 角标放在外层的 Box 内，与堆叠区捆绑为一个整体，确保未来移动堆叠区时角标同步移动。
+        //
+        // 显示条件：
+        // - countBadge = true 启用
+        // - cardCount > visibleDepth 才显示（≤ visibleDepth 时角标无意义，自动隐藏）
+        //
+        // 定位方式（用户方案：堆叠图左对齐，角标右对齐）：
+        // - 外层 Box 右边缘已动态扩宽到角标外侧 4dp，角标直接用 BottomEnd + padding 右对齐
+        // - 水平方向：角标在顶卡右边缘右侧，保证不与图片重叠
+        // - 垂直方向：paddingBottom 使角标底部 ≈ 顶卡底部
+        if (countBadge && cardCount > visibleDepth) {
+            val currentPosition = order[0].originalIndex + 1  // 1-based 当前位置
+            val totalCount = cardCount
+
+            // 计算 paddingBottom：使角标底部与顶卡底部对齐
+            // 外层 Box 底部 = boxHeight，顶卡底部 = topCardBottomY_box
+            // 角标放在 BottomEnd，paddingBottom = boxHeight - topCardBottomY_box 时
+            // 角标底部 = boxHeight - paddingBottom = topCardBottomY_box ✓
+            val badgePadBottom = boxHeight - topCardBottomY_box
+            // 角标右边缘到外层 Box 右边缘 4dp 间距（外层右边缘已留出空间）
+            val badgePadEnd = 4f
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = badgePadEnd.dp, bottom = badgePadBottom.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = Color.Black.copy(alpha = 0.6f),
+                            shape = RoundedCornerShape(3.dp)
+                        )
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "$currentPosition/$totalCount",
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }
