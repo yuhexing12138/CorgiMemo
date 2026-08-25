@@ -9,6 +9,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -280,6 +282,18 @@ fun SwipeableImageStack(
     // - 1s 后自动复位（与原型 setTimeout 1s 一致）
     val shouldReturnToCenter = remember { mutableStateOf(false) }
 
+    // ============ 展开态状态（设计文档 §3.3）============
+    // isExpanded：组件内部管理的"堆叠/展开"模式开关
+    // - false：堆叠态（现有扇形布局）
+    // - true：展开态（横向排列 + horizontalScroll）
+    // 由展开按钮和收起按钮点击切换，同时通过 onExpandStateChange 通知调用方
+    var isExpanded by remember { mutableStateOf(false) }
+
+    // expandedScrollState：展开态的横向滚动状态
+    // - 展开时挂载到外层 Box 的 horizontalScroll
+    // - 收起时通过 animateScrollTo(0) 归零
+    val expandedScrollState = rememberScrollState()
+
     // 容器：宽 = cardWidth + xOffset（容纳扇形最末端 xOffset 的偏移），
     // 高 = cardHeight + 15% cardHeight（容纳 yStackOffset 上移，按比例适配不同尺寸）
     // - 用 cardHeight * 0.15 而非固定 60dp：120dp 缩略图场景只需 ~18dp 余量，400dp 详情页场景需 60dp 余量
@@ -429,11 +443,29 @@ fun SwipeableImageStack(
     // - 宽度至少容纳堆叠区包围盒 / 原始扇形宽度 / 角标和展开按钮所需右边缘
     // - 高度至少容纳堆叠区包围盒 / 原始卡片+垂直余量（原始 fallback 高度，防止单卡时 bboxHeight 太小）
     // 注：角标/展开按钮均放在 Box 右侧（不增加高度），因此 boxHeight 无需额外扩宽。
-    val boxWidth = maxOf(cardWVal + xOffset.value, bboxWidth, badgeRequiredRight, cardBoxStartX + bboxWidth)
-    val boxHeight = maxOf(cardHVal + stackVPVal, bboxHeight)
+    // ============ 展开态容器宽度（设计文档 §4.4）============
+    // 展开态：cardCount × (cardW + cardGap) - cardGap + collapseBtnWidth + 8dp 间距
+    // - collapseBtnWidth 与 expandEstWidth 保持一致（76dp 估算，实际宽度 onSizeChanged 读取后修正）
+    // - 设计文档 §3.5：collapseBtnWidth ≈ 文本宽度 + padding + icon ≈ 76dp
+    val collapseBtnEstWidth = 76f
+    val collapseBtnGap = 8f  // 收起按钮与顶卡左边缘的间距，与 expandMarginToCardNoBadge 视觉一致
+    val expandedBoxWidth = cardCount * (cardWVal + cardGap.value) - cardGap.value +
+        collapseBtnEstWidth + collapseBtnGap
+    val boxWidth = if (isExpanded) {
+        expandedBoxWidth
+    } else {
+        maxOf(cardWVal + xOffset.value, bboxWidth, badgeRequiredRight, cardBoxStartX + bboxWidth)
+    }
+    val boxHeight = if (isExpanded) {
+        cardHVal
+    } else {
+        maxOf(cardHVal + stackVPVal, bboxHeight)
+    }
 
     Box(
-        modifier = modifier.size(boxWidth.dp, boxHeight.dp)
+        modifier = modifier
+            .size(boxWidth.dp, boxHeight.dp)
+            .then(if (isExpanded) Modifier.horizontalScroll(expandedScrollState) else Modifier)
         // 外层 Box 不指定 contentAlignment，使用默认 TopStart
         // - 堆叠卡片容器：align(Alignment.TopStart) + padding，左对齐外层 Box 左边缘
         // - 角标：align(Alignment.BottomEnd) + padding，右对齐外层 Box 右边缘
@@ -453,13 +485,18 @@ fun SwipeableImageStack(
                 // 改为 graphicsLayer.translationX/Y，支持负值纯视觉平移（不影响外层布局）。
                 // 单位策略（与项目全局一致，严格 px 不 dp 换算）：
                 // cardBoxStartX/Y 是 Dp 数值 Float，直接当 px 传入 translationX/Y。
-                .size(bboxWidth.dp, bboxHeight.dp)
+                .size(
+                    width = if (isExpanded) boxWidth.dp else bboxWidth.dp,
+                    height = if (isExpanded) boxHeight.dp else bboxHeight.dp
+                )
                 .graphicsLayer {
                     this.cameraDistance = 1000f / density.density
-                    translationX = cardBoxStartX
-                    translationY = cardBoxStartY
+                    // 展开态：translationX/Y = 0（不依赖旋转包围盒平移）
+                    // 堆叠态：原有平移逻辑
+                    translationX = if (isExpanded) 0f else cardBoxStartX
+                    translationY = if (isExpanded) 0f else cardBoxStartY
                 },
-            contentAlignment = Alignment.Center
+            contentAlignment = if (isExpanded) Alignment.TopStart else Alignment.Center
         ) {
             // 渲染顺序：从底到顶（栈底先渲染，栈顶后渲染覆盖在前面）
             // order[0] 是当前顶卡，order.last] 是最底层
@@ -482,7 +519,14 @@ fun SwipeableImageStack(
                         else -> imageUris.getOrNull(slot.originalIndex)?.isNotBlank() == true
                     }
 
-                    // =================== 可见深度 visibleDepth（最大 4）===================
+                    // =================== 目标值计算（堆叠 / 展开两种模式）===================
+                    // 设计文档 §4.3：
+                    // - 堆叠态：扇形（ei 决定 rotation/Y/scale，zIndex 由 stackIndex 决定）
+                    // - 展开态：横排（rotation=0, y=0, scale=1, x=stackIndex×(cardW+cardGap), zIndex=1）
+                    // 用 stackIndex（而非 originalIndex）作为展开态 X 偏移依据，
+                    // 让顶卡（stackIndex=0）天然落在最左侧（设计文档 §2.3 决策）
+                    //
+                    // 可见深度 visibleDepth（最大 4）：
                     // 与原型一致：仅前 M = min(visibleDepth, cardCount) 张参与扇形展开，
                     // 超出部分（ei = M-1）夹在栈底，不再随图片数无限摊开。
                     // visibleDepth 上限固定为 4（coerceIn(1,4)），即最多 4 张扇形展开。
@@ -490,14 +534,6 @@ fun SwipeableImageStack(
                     // tiltAngle 由可见张数派生（与原型滑块映射一致）：
                     //   M=1 → 0°, M=2 → -15°, M=3 → -30°, M=4 → -45°
                     //   即 effectiveTiltAngle = -(M-1) * 15
-                    val M = minOf(visibleDepth, cardCount).coerceIn(1, 4)
-                    val ei = minOf(stackIndex, M - 1)         // 饱和夹取有效层索引（超出 M 的卡片夹栈底）
-                    val denom = max(M - 1, 1)                  // 扇形分母（仅在前 M 张铺开）
-                    val effectiveTiltAngle = -(M - 1) * 15f     // 1→0°, 2→-15°, 3→-30°, 4→-45°
-
-                    // =================== 4 个独立 Animatable ===================
-                    // 每张卡片的 x/y/scale/rotation 各自有独立的 Animatable，初始值 = stackIndex 目标值
-                    // 后续通过 LaunchedEffect(stackIndex) 自动过渡到新目标
                     //
                     // 单位策略（与 translationZ = -stackIndex * 10f 严格一致，均用 px）：
                     // - 原型 `xOffsetValue = (index / (totalCards - 1)) * xOffset` 中 xOffset=200 是 Web CSS px
@@ -506,18 +542,33 @@ fun SwipeableImageStack(
                     // - 在 density=2 设备上视觉是 dp 方案的一半，与 Web 端 CSS px 视觉一致
                     // - 用户决策：严格 px，不再按 dp 换算
                     // 扇形四要素均按可见深度 M 计算（ei 夹取），超出 M 的卡片叠在栈底同一位置
-                    val targetX = if (M > 1) {
-                        ei.toFloat() / denom * xOffset.value
-                    } else 0f
-                    val targetY = -(ei * 8f)  // 原型 stackOffset = index * 8 (px)
-                    val targetScale = 1f - ei * 0.05f
-                    val targetRotation = if (M > 1) {
-                        tiltAngleStart + (ei.toFloat() / denom) * (effectiveTiltAngle - tiltAngleStart)
+                    val M = minOf(visibleDepth, cardCount).coerceIn(1, 4)
+                    val ei = minOf(stackIndex, M - 1)         // 饱和夹取有效层索引（超出 M 的卡片夹栈底）
+                    val denom = max(M - 1, 1)                  // 扇形分母（仅在前 M 张铺开）
+                    val effectiveTiltAngle = -(M - 1) * 15f     // 1→0°, 2→-15°, 3→-30°, 4→-45°
+
+                    // =================== 4 个独立 Animatable ===================
+                    // 每张卡片的 x/y/scale/rotation 各自有独立的 Animatable，初始值 = stackIndex 目标值
+                    // 后续通过 LaunchedEffect(stackIndex) 自动过渡到新目标
+                    val targetX = if (isExpanded) {
+                        // 展开态：等距排列，顶卡=0 在最左侧
+                        stackIndex.toFloat() * (cardWidth.value + cardGap.value)
                     } else {
-                        tiltAngleStart
+                        if (M > 1) ei.toFloat() / denom * xOffset.value else 0f
+                    }
+                    val targetY = if (isExpanded) 0f else -(ei * 8f)  // 原型 stackOffset = index * 8 (px)
+                    val targetScale = if (isExpanded) 1f else 1f - ei * 0.05f
+                    val targetRotation = if (isExpanded) {
+                        0f
+                    } else {
+                        if (M > 1) {
+                            tiltAngleStart + (ei.toFloat() / denom) * (effectiveTiltAngle - tiltAngleStart)
+                        } else {
+                            tiltAngleStart
+                        }
                     }
                     // zIndex 目标：与原型 cards.length - index 严格一致
-                    val targetZIndex = (order.size - stackIndex).toFloat()
+                    val targetZIndex = if (isExpanded) 1f else (order.size - stackIndex).toFloat()
                     // 原型 `z: -depthOffset` (depthOffset = index * DEPTH_SPACING = index * 10px) 在 Compose 中无直接对应 API：
                     // - GraphicsLayerScope 仅有 translationX/translationY（2D），无 translationZ（3D z 轴位移）
                     // - shadowElevation 语义是阴影高度（不能为负），与原型 z 轴位移语义不同
@@ -533,20 +584,20 @@ fun SwipeableImageStack(
                     // stackIndex 变化时（即 order 重排），每张卡各自平滑过渡到新目标值
                     // 关键：这是解决"卡一下"的核心——新顶卡从扇形位置平滑滑到中央，旧顶卡从中央滑到队尾
                     // 用 TRANSITION_SPRING 加速：300ms 而非 600ms，整体"翻牌"从 1100ms 降至 500ms
-                    LaunchedEffect(stackIndex, order.size) {
+                    LaunchedEffect(stackIndex, order.size, isExpanded) {
                         positionX.animateTo(targetX, TRANSITION_SPRING)
                     }
-                    LaunchedEffect(stackIndex, order.size) {
+                    LaunchedEffect(stackIndex, order.size, isExpanded) {
                         positionY.animateTo(targetY, TRANSITION_SPRING)
                     }
-                    LaunchedEffect(stackIndex, order.size) {
+                    LaunchedEffect(stackIndex, order.size, isExpanded) {
                         scaleAnim.animateTo(targetScale, TRANSITION_SPRING)
                     }
-                    LaunchedEffect(stackIndex, order.size) {
+                    LaunchedEffect(stackIndex, order.size, isExpanded) {
                         rotationAnim.animateTo(targetRotation, TRANSITION_SPRING)
                     }
                     // 原型 zIndex: { duration: 0.3, ease: "easeOut" }，按下时跳 1000
-                    LaunchedEffect(stackIndex, order.size, isPressed.value, isTopCard) {
+                    LaunchedEffect(stackIndex, order.size, isExpanded, isPressed.value, isTopCard) {
                         val target = if (isPressed.value && isTopCard) 1000f else targetZIndex
                         zIndexAnim.animateTo(target, ZINDEX_TWEEN)
                     }
