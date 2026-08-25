@@ -128,9 +128,12 @@ enum class SwipeDirection {
  * @param swipeThreshold 拖动距离阈值（默认 10.dp，对齐原型 10px；mdpi 设备 1dp=1px）
  * @param maxElasticDistance 弹性边界（默认 0.dp = 自动：max(threshold*4, cardWidth)）；
  *                           显式传值时覆盖默认，便于调用方微调阻力边界
- * @param tiltAngle 堆叠末端旋转角度（默认 -45f，单位度）
  * @param tiltAngleStart 堆叠首端旋转角度（默认 0f）
  * @param xOffset 堆叠末端水平偏移（默认 0.dp，扇形展开幅度）
+ * @param visibleDepth 可见深度：最多参与扇形展开的卡片数（默认 4，固定上限 4）。
+ *                     仅前 M = min(visibleDepth, cardCount) 张展开成扇形，超出部分夹在栈底。
+ *                     堆叠末端旋转角由可见张数派生：M=1→0°、M=2→-15°、M=3→-30°、M=4→-45°
+ *                     （即 effectiveTiltAngle = -(M-1) * 15°），不再由外部固定 tiltAngle 参数传入。
  * @param swipeDirection 拖动手势方向约束（默认 [SwipeDirection.Horizontal]，
  *                       嵌入滚动列表务必用 Horizontal 避免与父级手势冲突）
  * @param onCardSwiped 顶卡滑出回调（被滑出的图片在原列表中的索引）
@@ -145,9 +148,9 @@ fun SwipeableImageStack(
     cardRadius: Float = 2f,
     swipeThreshold: Dp = 10.dp,
     maxElasticDistance: Dp = 0.dp,
-    tiltAngle: Float = -45f,
     tiltAngleStart: Float = 0f,
     xOffset: Dp = 0.dp,
+    visibleDepth: Int = 4,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null
@@ -160,9 +163,9 @@ fun SwipeableImageStack(
         cardRadius = cardRadius,
         swipeThreshold = swipeThreshold,
         maxElasticDistance = maxElasticDistance,
-        tiltAngle = tiltAngle,
         tiltAngleStart = tiltAngleStart,
         xOffset = xOffset,
+        visibleDepth = visibleDepth,
         swipeDirection = swipeDirection,
         onCardSwiped = onCardSwiped,
         onCardClick = onCardClick,
@@ -188,9 +191,9 @@ fun SwipeableImageStack(
     cardRadius: Float = 2f,
     swipeThreshold: Dp = 10.dp,
     maxElasticDistance: Dp = 0.dp,
-    tiltAngle: Float = -45f,
     tiltAngleStart: Float = 0f,
     xOffset: Dp = 0.dp,
+    visibleDepth: Int = 4,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null,
@@ -302,6 +305,19 @@ fun SwipeableImageStack(
                         else -> imageUris.getOrNull(slot.originalIndex)?.isNotBlank() == true
                     }
 
+                    // =================== 可见深度 visibleDepth（最大 4）===================
+                    // 与原型一致：仅前 M = min(visibleDepth, cardCount) 张参与扇形展开，
+                    // 超出部分（ei = M-1）夹在栈底，不再随图片数无限摊开。
+                    // visibleDepth 上限固定为 4（coerceIn(1,4)），即最多 4 张扇形展开。
+                    //
+                    // tiltAngle 由可见张数派生（与原型滑块映射一致）：
+                    //   M=1 → 0°, M=2 → -15°, M=3 → -30°, M=4 → -45°
+                    //   即 effectiveTiltAngle = -(M-1) * 15
+                    val M = minOf(visibleDepth, cardCount).coerceIn(1, 4)
+                    val ei = minOf(stackIndex, M - 1)         // 饱和夹取有效层索引（超出 M 的卡片夹栈底）
+                    val denom = max(M - 1, 1)                  // 扇形分母（仅在前 M 张铺开）
+                    val effectiveTiltAngle = -(M - 1) * 15f     // 1→0°, 2→-15°, 3→-30°, 4→-45°
+
                     // =================== 4 个独立 Animatable ===================
                     // 每张卡片的 x/y/scale/rotation 各自有独立的 Animatable，初始值 = stackIndex 目标值
                     // 后续通过 LaunchedEffect(stackIndex) 自动过渡到新目标
@@ -312,13 +328,14 @@ fun SwipeableImageStack(
                     // - 这里 xOffset.value 是 Dp 数值，直接当 px 用（与 translationZ 处理对齐）
                     // - 在 density=2 设备上视觉是 dp 方案的一半，与 Web 端 CSS px 视觉一致
                     // - 用户决策：严格 px，不再按 dp 换算
-                    val targetX = if (order.size > 1) {
-                        stackIndex.toFloat() / (order.size - 1) * xOffset.value
+                    // 扇形四要素均按可见深度 M 计算（ei 夹取），超出 M 的卡片叠在栈底同一位置
+                    val targetX = if (M > 1) {
+                        ei.toFloat() / denom * xOffset.value
                     } else 0f
-                    val targetY = -(stackIndex * 8f)  // 原型 stackOffset = index * 8 (px)
-                    val targetScale = 1f - stackIndex * 0.05f
-                    val targetRotation = if (order.size > 1) {
-                        tiltAngleStart + (stackIndex.toFloat() / (order.size - 1)) * (tiltAngle - tiltAngleStart)
+                    val targetY = -(ei * 8f)  // 原型 stackOffset = index * 8 (px)
+                    val targetScale = 1f - ei * 0.05f
+                    val targetRotation = if (M > 1) {
+                        tiltAngleStart + (ei.toFloat() / denom) * (effectiveTiltAngle - tiltAngleStart)
                     } else {
                         tiltAngleStart
                     }
@@ -938,7 +955,7 @@ private fun SwipeableImageStackPreviewLocal() {
             cardWidth = 120.dp,
             cardHeight = 120.dp,
             cardRadius = 12f,
-            tiltAngle = -8f,
+            visibleDepth = 4,
             xOffset = 28.dp,
             swipeDirection = SwipeDirection.Horizontal,
             customContent = { stackIndex ->
@@ -984,7 +1001,7 @@ private fun SwipeableImageStackPreviewLocalLarge() {
             cardWidth = 300.dp,
             cardHeight = 400.dp,
             cardRadius = 16f,
-            tiltAngle = -12f,
+            visibleDepth = 4,
             xOffset = 60.dp,
             swipeDirection = SwipeDirection.Both,
             customContent = { stackIndex ->
@@ -1027,10 +1044,12 @@ private val xOffsetPreviewPalette = listOf(
  * 缩略图 xOffset 候选值预览（共享 Composable）
  *
  * @param xOffset 候选水平偏移值（28 / 50 / 80 / 100）
- * @param tiltAngle 候选旋转角度（与 TimelineInspirationItem.kt 保持一致：-8°）
+ * @param visibleDepth 可见深度（默认 4，最多 4 张扇形展开；tiltAngle 由可见张数派生）
  */
 @Composable
-private fun SwipeableImageStackPreviewThumb(xOffset: Dp, tiltAngle: Float = -8f) {
+private fun SwipeableImageStackPreviewThumb(xOffset: Dp, visibleDepth: Int = 4) {
+    // tiltAngle 由可见张数派生：M=1→0°, M=2→-15°, M=3→-30°, M=4→-45°
+    val derivedTilt = -((minOf(visibleDepth, xOffsetPreviewPalette.size)).coerceIn(1, 4) - 1) * 15
     Box(
         modifier = Modifier
             .size(280.dp)  // 比缩略图稍大，便于看清
@@ -1039,7 +1058,7 @@ private fun SwipeableImageStackPreviewThumb(xOffset: Dp, tiltAngle: Float = -8f)
     ) {
         // 顶部标签：显示当前 xOffset 值
         Text(
-            text = "xOffset = ${xOffset.value.toInt()}dp · tiltAngle = ${tiltAngle.toInt()}°",
+            text = "xOffset = ${xOffset.value.toInt()}dp · visibleDepth = ${visibleDepth} · tilt = ${derivedTilt}°",
             color = Color(0xFF666666),
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
@@ -1053,7 +1072,7 @@ private fun SwipeableImageStackPreviewThumb(xOffset: Dp, tiltAngle: Float = -8f)
             cardWidth = 120.dp,
             cardHeight = 120.dp,
             cardRadius = 12f,
-            tiltAngle = tiltAngle,
+            visibleDepth = visibleDepth,
             xOffset = xOffset,
             swipeDirection = SwipeDirection.Horizontal,
             customContent = { stackIndex ->

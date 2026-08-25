@@ -441,7 +441,7 @@ fun TimelineInspirationItem(
                     // 2 对应 min(W,H)/20 的圆角（120dp 卡片 ≈ 6dp 圆角）
                     cardRadius = 2f,
                     swipeThreshold = 10.dp,  // 对齐原型 10px（mdpi 设备 1dp=1px）
-                    tiltAngle = -45f,    // 对齐原型扇形角度（-45°）
+                    visibleDepth = 4,    // 最多 4 张扇形展开；tiltAngle 由可见张数派生（4 张→-45°）
                     xOffset = 0.dp,      // 无水平偏移，仅靠旋转+scale 形成堆叠
                     swipeDirection = SwipeDirection.Horizontal,
                     onCardClick = { originalIndex ->
