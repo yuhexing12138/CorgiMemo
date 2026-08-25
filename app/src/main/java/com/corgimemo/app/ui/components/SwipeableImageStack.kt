@@ -17,10 +17,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -64,7 +64,6 @@ import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.sin
 
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Icon
@@ -461,7 +460,9 @@ fun SwipeableImageStack(
 
     Box(
         modifier = modifier
-            .clip(false)   // V1.1 新增：允许左侧负偏移（收起按钮）/ 右侧溢出不裁剪
+            // V1.1 修复：不裁剪溢出（左侧负偏移的收起按钮/右侧展开态都不被截断）
+            // 正确 API：Modifier.graphicsLayer { this.clip = false }（Modifier.clip 只接受 Shape，传 Boolean 报错）
+            .graphicsLayer { this.clip = false }
             .size(stageBoxWidth.dp, stageBoxHeight.dp)
             // V1.1 修复：outer Stage 永远不挂 horizontalScroll
             // （仅展开态 ScrollArea 独立层才挂，见 Task 2）
@@ -987,16 +988,15 @@ fun SwipeableImageStack(
                                         )
                                     }
                             )
-                        }
-                    }
-                }
-            }
-                    } // ===== 展开态 CardContainer 内层内容 闭合
-                } // ===== 展开态 Box(CardContainer 外层修饰) 闭合
-            } // ===== ScrollArea Box（唯一挂 horizontalScroll） 闭合
-        } // ===== Row([CollapseBtn 占位] + [ScrollArea]) 闭合
-    } // ===== if (isExpanded) 展开态分支 闭合
-    else {
+                        }                        // ---- [24空格] 关闭 if (isTopCard && onCardClick != null) ----
+                    }                        // ---- [20空格] 关闭 卡片 Box（content lambda，堆叠/展开的每张卡片内容闭包）----
+                }                            // ---- [16空格] 关闭 key(slot.stableId) { ----
+            }                                // ---- [12空格] 关闭 order.forEachIndexed { lambda（展开态渲染循环）----
+                    }                        // ---- [20空格] 关闭 CardContainer Box（与 L564 Box( 20空格前缀严格对齐）----
+                }                            // ---- [16空格] 关闭 ScrollArea Box（与 L544 Box( 16空格前缀严格对齐）----
+            }                                // ---- [12空格] 关闭 Row([CollapseBtn] + [ScrollArea])（与 L485 Row( 12空格前缀严格对齐）----
+        }                                    // ---- [8空格] 关闭 if (isExpanded) 展开态分支（与 L484 if 8空格前缀严格对齐）----
+        else {                                // ---- [8空格] else 堆叠态分支（与 if 同级，8空格前缀严格对齐）----
         // ===== 堆叠态分支：CardContainer 完全保留 V1.0（保证堆叠视觉和位置100%不变）=====
         Box(
             modifier = Modifier
