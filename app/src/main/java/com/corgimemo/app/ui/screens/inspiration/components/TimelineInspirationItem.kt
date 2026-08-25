@@ -447,53 +447,12 @@ fun TimelineInspirationItem(
             // - 点击顶卡触发 onImageClick(顶卡 originalIndex) 进入全屏 Pager 预览
             // - 拖动翻牌：左滑/右滑 >10dp（对齐原型 10px）顶卡飞出新顶卡上位
             if (!hideDetails && imagePaths.isNotEmpty()) {
-                // ====== 独立的「收起」按钮行（严格对齐标题行左侧 = contentStartX）======
-                // - 用户硬约束：原截图可见「收起 >」在卡片区垂直居中，严重不符合原型
-                // - 原型：收起按钮独立一行，与 测试图片标题 / 23:00 时间 / #诗意#时间 标签
-                //        保持完全相同的左边缘（contentStartX=70dp），不嵌入卡片区垂直居中
-                // - 仅在展开态（isImageStackExpanded=true）显示，堆叠态隐藏
-                // - 滚动归零（animateScrollTo）由 SwipeableImageStack 内部 LaunchedEffect 自动处理
-                if (isImageStackExpanded.value) {
-                    Spacer(modifier = Modifier.height(tagToImageGap))
-                    // ====== 独立的「收起」按钮行：父 Column(L314) 已 padding(start=contentStartX)，此处不要再重复 padding ======
-                    // V3.1 修复：删除 .padding(start = contentStartX)（避免 70dp×2=140dp 双重偏移）
-                    // - 父 Column 统一设置了 start padding，所有子项（标题/时间/正文/标签/本收起行/图片）自然对齐到同一垂直基准列
-                    // - 保留 .fillMaxWidth() + Arrangement.Start，确保按钮从父内容区左缘紧贴起始
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        // 显式 Start：避免默认 Center 导致收起按钮水平居中
-                        horizontalArrangement = Arrangement.Start
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .background(
-                                    color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
-                                    shape = RoundedCornerShape(11.dp)
-                                )
-                                .padding(horizontal = 5.dp, vertical = 2.dp)
-                                .clickable {
-                                    // 点击收起按钮 → 切回堆叠态
-                                    isImageStackExpanded.value = false
-                                },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "收起",
-                                color = Color(0xFF4F5660),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = "收起图片堆叠",
-                                tint = Color(0xFF4F5660),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                }
+                // ====== 「收起」按钮已移至 SwipeableImageStack 展开态内部外层 Row 首元素（showInnerCollapseButton=true 自动渲染）======
+                // V4.0 用户最新设计要求：收起按钮与图片行在同一行（按钮在左、图片行在右），
+                // 满足：① 按钮→图片行 间距 = 图片卡片间距 = 8dp（外层 Row Arrangement.spacedBy(8.dp) = 图片行内部 cardGap=8dp）
+                //       ② 收起按钮在图片行左侧垂直居中（外层 Row verticalAlignment = Alignment.CenterVertically）
+                //       ③ CollapseBtn 永远可见不跟随图片行滚动（独立于 ScrollArea 之外）
+                // 因此删除本独立一行，交由 SwipeableImageStack 内部完整处理（SwipeableImageStack.kt L564-L620）。
                 Spacer(modifier = Modifier.height(tagToImageGap))
                 SwipeableImageStack(
                     imageUris = imagePaths,
@@ -523,8 +482,13 @@ fun TimelineInspirationItem(
                     //  ② 堆叠态仍使用 stageBoxWidth≈200dp 固定尺寸（Badge/ExpandBtn 位置不变）
                     //  ③ 展开态 fillMaxWidth 突破 stageBoxWidth=200dp 裁切（原型 SCROLL_MAX_WIDTH=560px）
                     expandedState = isImageStackExpanded,
-                    // 已在组件外部独立行放了「收起」按钮，内部不渲染避免重复
-                    showInnerCollapseButton = false,
+                    // V4.0：showInnerCollapseButton=true → 组件内部外层 Row 首元素渲染 CollapseBtn
+                    // 满足用户最新设计要求：
+                    // ① 收起在左 + 图片行在右（同一行）
+                    // ② 按钮→图片行 间距 = 卡片间距 = 8dp（外层 Row spacedBy(8.dp) = 图片行内 cardGap=8dp）
+                    // ③ 收起按钮垂直居中于图片行（外层 Row verticalAlignment=CenterVertically）
+                    // ④ CollapseBtn 永远可见（独立于 ScrollArea 之外，不跟随横向滚动）
+                    showInnerCollapseButton = true,
                     // ↑↑↑
                     onCardClick = { originalIndex ->
                         onImageClick(originalIndex)
