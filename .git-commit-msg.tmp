@@ -1,0 +1,22 @@
+fix: 修复 SwipeableImageStack 50+ 条编译错误（括号缩进错位连锁问题）
+
+根因：
+- 展开态末尾 5 个 `}` / else 的前缀空格各错位 4 空格
+  （CardContainer 20/ScrollArea 16/Row 12/if 8/else 8 → 实际各少写了 4）
+- 导致 Stage Box 在 L1007 被提前关闭，进而 SwipeableImageStack 函数体被提前关闭
+- 文件末尾的 3 个动画常量（TRANSITION_SPRING/ZINDEX_TWEEN/BOUNCE_SPRING）
+  + 3 个 DefaultXxx 渲染函数被解析为「函数体内的局部定义」
+  → 引发三类连锁报错：
+    ① 30+ 条 Unresolved reference（局部声明必须先定义后使用，但定义在调用点之后）
+    ② 18+ 条 Modifier 'private' is not applicable（局部变量/函数不允许 private）
+    ③ Syntax error / @Composable outside context / Expecting '}'（if/else 脱离作用域）
+
+修复（按「实际开括号前缀空格」精确匹配关括号前缀）：
+- CardContainer Box 关闭：20 空格前缀（与 L564 Box( 对齐）
+- ScrollArea Box 关闭：16 空格前缀（与 L544 Box( 对齐）
+- Row 关闭：12 空格前缀（与 L485 Row( 对齐）
+- if (isExpanded) 关闭：8 空格前缀（与 L484 if 对齐）
+- else { 前缀：8 空格（与 if 同级）
+
+附带：
+- 清理重复的 androidx.compose.foundation.layout.size import
