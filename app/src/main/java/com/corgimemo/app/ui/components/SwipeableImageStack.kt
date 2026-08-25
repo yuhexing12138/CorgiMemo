@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -444,65 +445,109 @@ fun SwipeableImageStack(
     val requireExpandRight = if (showExpand) expandRightEdge + 4f else 0f
     val badgeRequiredRight = maxOf(requireBadgeRight, requireExpandRight)
 
-    // ============ Stage 外层尺寸（V1.1 修复：永远 = 堆叠态需求，不随 isExpanded 变化）============
-    // 设计文档 §9.4.1：stageBoxWidth 保持堆叠态最大值恒定不变
-    // → 保证堆叠图位置 / 角标位置 / 展开按钮位置绝对不变（用户硬约束）
-    val stageBoxWidth = maxOf(
+    // ==============================
+    // Stage 外层尺寸（永远 = 堆叠态需求；isExpanded 任何变化都不改变此值）
+    // 设计文档 §9.4.1：保持堆叠态最大值恒定不变
+    // → 保证 Badge(1/N) / ExpandBtn("展开 N") / 堆叠图本身 位置绝对不变（用户硬约束）
+    // ==============================
+    // 计算数值：Float（与项目全局 px-as-dp 单位策略一致，数值直接当 dp 使用）
+    val stageBoxWidthDpFloat: Float = maxOf(
         cardWVal + xOffset.value,           // 扇形水平摊开
         bboxWidth,                          // 旋转+scale 包围盒
         badgeRequiredRight,                 // 1/N 角标右端
         cardBoxStartX + bboxWidth           // 顶卡左上角 + 包围盒
     )
-    val stageBoxHeight = maxOf(
+    val stageBoxHeightDpFloat: Float = maxOf(
         cardHVal + stackVPVal,              // 扇形垂直摊开
         bboxHeight                          // 旋转+scale 包围盒高
     )
+    // 类型转换为 Dp：供 Modifier.size() 使用
+    val stageBoxWidthDp: Dp = stageBoxWidthDpFloat.dp
+    val stageBoxHeightDp: Dp = stageBoxHeightDpFloat.dp
+    // 像素尺寸：供布局计算使用
+    val stageBoxWidthPx: Int = with(density) { stageBoxWidthDp.roundToPx() }
+    val stageBoxHeightPx: Int = with(density) { stageBoxHeightDp.roundToPx() }
+    // 向后兼容别名（原代码大量使用 boxWidth/boxHeight Dp 类型；后续逐步替换）
+    val boxWidth: Dp get() = stageBoxWidthDp
+    val boxHeight: Dp get() = stageBoxHeightDp
+
+    /**
+     * 堆叠态顶卡（stackIndex=0）左上角相对 Stage(0,0) 的偏移
+     * = CardContainer Center 对齐后，用 graphicsLayer 平移 cardBoxStartX/Y 到 Stage(0,0)
+     * 展开态 Row 必须使用相同偏移 padding(start/top)，保证顶卡左上角像素级一致
+     */
+    // 顶卡左上角 X（Dp，数值直接当 dp）：cardBoxStartX（Dp浮点数）− bboxLeft（Float，Dp 数值）
+    val topCardLeftInStageDp: Dp = (cardBoxStartX.value - bboxLeft).dp
+    // 顶卡左上角 Y（Dp）：cardBoxStartY 直接作为 padding top
+    val topCardTopInStageDp: Dp = cardBoxStartY
+
+    // ==============================
+    // 展开态独立尺寸（不绑定 stageBoxWidth）
+    // ==============================
+    // ScrollArea 最大宽度（独立上限，保证 5 张图×120dp + 4×8dp = 632dp 有充足空间）
+    val EXPANDED_SCROLL_MAX_WIDTH_DP: Dp = 480.dp
+    // 卡片横向行总宽度：N × (W + G) − G（原型 expand-collapse-stack.html L456 公式）
+    val cardRowWidthPxFloat: Float = if (cardCount > 0) {
+        cardCount.toFloat() * (cardWidth.value + cardGap.value) - cardGap.value
+    } else 0f
+    val cardRowWidthDp: Dp = cardRowWidthPxFloat.dp
 
     Box(
         modifier = modifier
-            // V1.1 修复：不裁剪溢出（左侧负偏移的收起按钮/右侧展开态都不被截断）
-            // 正确 API：Modifier.graphicsLayer { this.clip = false }（Modifier.clip 只接受 Shape，传 Boolean 报错）
+            // ==============================
+            // V2.0 修复（方案A）：
+            //   - 不裁剪溢出（左侧展开态的收起按钮 / 右侧展开态都不被截断）
+            //   - 正确 API：Modifier.graphicsLayer { this.clip = false }（Modifier.clip 只接受 Shape）
+            //   - size 永远 = stageBoxWidthDp/stageBoxHeightDp（Dp 类型），恒定不变
+            // ==============================
             .graphicsLayer { this.clip = false }
-            .size(stageBoxWidth.dp, stageBoxHeight.dp)
-            // V1.1 修复：outer Stage 永远不挂 horizontalScroll
-            // （仅展开态 ScrollArea 独立层才挂，见 Task 2）
+            .size(stageBoxWidthDp, stageBoxHeightDp)
+            // outer Stage 永远不挂 horizontalScroll（仅展开态内部 ScrollArea 独立层才挂）
         // 外层 Box 不指定 contentAlignment，使用默认 TopStart
         // - 堆叠卡片容器：align(Alignment.TopStart) + padding，左对齐外层 Box 左边缘
         // - 角标：align(Alignment.BottomEnd) + padding，右对齐外层 Box 右边缘
     ) {
-        // ============ V1.1 修复：堆叠态 / 展开态 分支结构（原型三层 DOM 映射）============
-        // 原型 Stage(外层) → ScrollArea(独立滚动层，仅内部卡片) → CardContainer(卡片容器)
+        // ============ V2.0 修复（方案A）：堆叠态 / 展开态 分支结构（严格对应原型三层 DOM）============
+        // 原型 Stage(外层) → stage-content{Row[CollapseBtn + ScrollArea{CardContainer}]}
         // -------------------------------------------------------------------
-        // 堆叠态：直接放 CardContainer（完全保留 V1.0：translationX/Y + Center 锚点 + bbox 尺寸）
+        // 堆叠态（!isExpanded）：完全保留 V1.0 的 CardContainer 实现（Task 3 合并单循环）
         //         保证：堆叠图位置 / "1/N" 角标位置 / "展开 N" 按钮位置绝对不变
-        // 展开态：Row([CollapseBtn] + [ScrollArea{CardContainer}])
-        //         CollapseBtn 独立于 ScrollArea（不挂 horizontalScroll），永远可见不滚走
-        //         ScrollArea 仅内部卡片区横向滚动，CollapseBtn 不会被滚走（修复 Bug2）
-        //         CollapseBtn 通过 translationX = -(76+8) 左飞出 Row，使 ScrollArea(0,0)=Stage(0,0)，
-        //         与堆叠态顶卡左上角精确吻合（保证位置绝对不变）
+        // 展开态（isExpanded）：Row([CollapseBtn] + Spacer(8dp) + [ScrollArea{CardContainer}])
+        //         - CollapseBtn 在 Row 首元素，**不飞出（不使用负 translationX）**，
+        //           整 Row 通过 padding(start=topCardLeftInStageDp, top=topCardTopInStageDp)
+        //           精确定位，顶卡左上角与堆叠态顶卡左上角**像素级吻合**，
+        //           CollapseBtn 不超出 Stage 左边界，不与 x=60dp 竖向时间线重叠（Bug①修复）
+        //         - ScrollArea：**maxWidth=EXPANDED_SCROLL_MAX_WIDTH_DP（480dp 独立上限）**，
+        //           不再绑定 stageBoxWidth≈200dp，5 张图宽度 632dp 充足（Bug②修复）
+        //         - 仅 ScrollArea 挂 horizontalScroll，CollapseBtn 永远可见不跟随滚动
         if (isExpanded) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    // ==============================
+                    // V2.0 修复（方案A）：精确定位 Row 起点
+                    //   顶卡左上角必须精确落在 = 堆叠态顶卡左上角像素坐标
+                    //   → Row(0,0) padding 偏移 = topCardLeftInStageDp / topCardTopInStageDp
+                    //   → CollapseBtn 在 Row 首元素，位于顶卡左侧但不飞出 Stage，不碰时间线
+                    // ==============================
+                    .padding(
+                        start = topCardLeftInStageDp,
+                        top = topCardTopInStageDp
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
-                // CollapseBtn 与 ScrollArea 间距 = 8dp（原型 collapseBtnGap）
+                // CollapseBtn 与 ScrollArea 间距 = 8dp
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // --- CollapseBtn（收起按钮）：独立于 ScrollArea，永远可见不滚走（修 Bug2）---
-                // 样式：与 ExpandBtn 完全一致（半透明胶囊 + 11sp Medium + ChevronRight）
-                // 位置：通过 graphicsLayer.translationX = -(estimatedBtnWidth(76) + collapseBtnGap(8))
-                //       向左飞出 Row，使 ScrollArea 的 (0,0) = Row(0,0) = Stage(0,0)，
-                //       展开态顶卡左上角与堆叠态顶卡左上角精确吻合（保证位置绝对不变）
-                androidx.compose.foundation.layout.Box(
+                // --- CollapseBtn（收起按钮）：独立于 ScrollArea，永远可见不滚走 ---
+                // 样式：与 ExpandBtn 完全一致（半透明胶囊 #F2F3F5@55% + 11sp Medium + ChevronRight）
+                // V2.0 修复（方案A）：**取消 translationX = -(76+8) = -84dp 飞出**，
+                //   避免按钮飞出 Stage 左边界覆盖 x=60dp 的竖向时间线（Bug①修复）
+                Box(
                     modifier = Modifier
-                        // 飞出 Row：避免 Row 把 ScrollArea 推到最右，造成展开态起点偏移
-                        .graphicsLayer {
-                            // 按钮估宽 76dp（与 ExpandBtn 实际测量一致）+ 间距 8dp = 左移 84dp
-                            translationX = -(76f + 8f)
-                        }
+                        // 不再飞出！保持 Row 首元素正常位置，不超出 Stage 左边界
                 ) {
-                    androidx.compose.foundation.layout.Row(
+                    Row(
                         modifier = Modifier
                             .background(
                                 color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
@@ -511,23 +556,22 @@ fun SwipeableImageStack(
                             .padding(horizontal = 5.dp, vertical = 2.dp)
                             .clickable {
                                 // 点击收起按钮 → 切换回堆叠态
-                                // 设计文档 §5 数据流：先滚动归零（animateScrollTo 0），
-                                // 再 isExpanded=false，下次展开自动从首卡开始显示
+                                // 设计文档 §9.8 数据流：先滚动归零，再 isExpanded=false
                                 scope.launch {
                                     expandedScrollState.animateScrollTo(0)
                                     isExpanded = false
                                     onExpandStateChange?.invoke(false)
                                 }
                             },
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        androidx.compose.material3.Text(
+                        Text(
                             text = "收起",
                             color = Color(0xFF4F5660),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
                         )
-                        androidx.compose.material3.Icon(
+                        Icon(
                             imageVector = Icons.Default.ChevronRight,
                             contentDescription = "收起图片堆叠",
                             tint = Color(0xFF4F5660),
@@ -537,34 +581,30 @@ fun SwipeableImageStack(
                 }
 
                 // --- ScrollArea（唯一挂 horizontalScroll 的层）：仅包裹 CardContainer ---
-                // 挂载 horizontalScroll(expandedScrollState)：只有卡片区会滚动，CollapseBtn 不参与滚动
-                // Modifier.weight(1f)：横向填满 Row 剩余空间 = 展开态可视窗口宽度
-                // Modifier.height(cardHeight)：高度固定为卡片高，不超出不裁剪
-                // contentAlignment = TopStart：CardContainer 从 ScrollArea(0,0) 开始排
+                // V2.0 修复（方案A）：
+                //   - **取消 weight(1f)**（原先=stageBoxWidth≈200dp 太窄，造成空白/重叠）
+                //   - 改为 **maxWidth=EXPANDED_SCROLL_MAX_WIDTH_DP（480dp 独立上限）**，
+                //     保证 5 张图×120dp+4×8dp=632dp 有充足空间（Bug②修复）
+                //   - height=cardHeight（固定卡片高度，不裁剪）
+                //   - contentAlignment=TopStart（CardContainer 从 ScrollArea(0,0) 开始排）
                 Box(
                     modifier = Modifier
-                        .weight(1f)
+                        .widthIn(max = EXPANDED_SCROLL_MAX_WIDTH_DP)
                         .height(cardHeight)
                         .horizontalScroll(expandedScrollState),
                     contentAlignment = Alignment.TopStart
                 ) {
-                    // ===== CardContainer（展开态）：Task3 重写 size / translation / contentAlignment =====
-                    // Task3 Step1 改为：
-                    //   size = cardRowWidthPx.dp × cardHeight
-                    //   translationX/Y = 0
-                    //   contentAlignment = Alignment.Center（统一 Center 锚点，不切 TopStart）
-                    // + Task3 Step2 重写展开态 targetX 为 Center 锚点公式：(stackIndex - (N-1)/2) × (W+G)
-                    // ===== CardContainer（展开态）size：N 张完整排开的宽度 × 卡片高度 =====
-                    // cardRowWidthPx = N*cardWVal + (N-1)*cardGapVal（px 数值直接当 dp，与项目全局单位策略一致）
-                    // contentAlignment 统一 Center（堆叠态/展开态完全一致，不切 TopStart——修复重叠根因①）
-                    // translationX/Y 保持 0（展开态不从 cardBoxStartX/Y 偏移，Stage 左上角 = ScrollArea(0,0)）
-                    val cardGapVal = cardGap.value
-                    val cardRowWidthPx = cardCount * cardWVal +
-                        maxOf(0, cardCount - 1) * cardGapVal
+                    // ==============================
+                    // CardContainer（展开态）：V2.0 方案A
+                    // - size = cardRowWidthDp × cardHeight（Task1 预计算，N 张完整排开）
+                    // - contentAlignment = Alignment.TopStart（严格对齐原型 expand-collapse-stack.html）
+                    //   配合 graphicsLayer targetX = stackIndex*(W+G)，顶卡左上角精确落在 (0,0)
+                    // - 内部：单渲染循环（目标值 if(isExpanded) 双分支版本，见下）
+                    // ==============================
                     Box(
                         modifier = Modifier
                             .size(
-                                width = cardRowWidthPx.dp,
+                                width = cardRowWidthDp,   // N 张完整排开宽度（独立上限 480dp）
                                 height = cardHeight
                             )
                             .graphicsLayer {
@@ -572,85 +612,61 @@ fun SwipeableImageStack(
                                 translationX = 0f
                                 translationY = 0f
                             },
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.TopStart  // 展开态 TopStart 锚点（★ Bug③修复核心）
                     ) {
-                        // ===== 展开态渲染循环（Task3 Step2：重写 targetX 为 Center 锚点公式）=====
-                        // 原公式（TopStart锚点）：stackIndex × (cardW + cardGap) → 统一 Center 后造成所有卡片重叠
-                        // 新公式（Center 锚点，用户决策）：(stackIndex - (N-1)/2f) × (cardW + cardGap)
-                        //   → 数学验证（见 design.md §9.5）：顶卡 stackIndex=0 最终左上角 = ScrollArea(0,0)
-                        //     与堆叠态顶卡左上角精确吻合（位置绝对不变）
-            // 渲染顺序：从底到顶（栈底先渲染，栈顶后渲染覆盖在前面）
-            // order[0] 是当前顶卡，order.last] 是最底层
-            //
-            // FLIP 翻牌动画实现：每张卡维护 4 个 Animatable（positionX, positionY, scale, rotation），
-            // 当 stackIndex 变化时（即重排），LaunchedEffect 启动 animateTo 到新目标值，
-            // 视觉上呈现"流水翻牌"效果——不再有"卡一下"的视觉跳变
-            order.forEachIndexed { stackIndex, slot ->
+                        // ==============================
+                        // 单渲染循环：展开态/堆叠态共用一套模板（与堆叠态 else 分支结构完全一致）
+                        // - 目标值双分支：isExpanded ? TopStart公式 : 扇形公式
+                        // - 5 个 Animatable + LaunchedEffect 含 isExpanded key
+                        // - finalX/Y/scale/rotation 拖拽互斥锁 !isExpanded
+                        // - pointerInput 仅堆叠态顶卡挂载（避免与 horizontalScroll 冲突）
+                        // ==============================
+                        order.forEachIndexed { stackIndex, slot ->
                 key(slot.stableId) {
                     val isTopCard = stackIndex == 0
 
-                    // hasImage：与原型 `cardImage ? "transparent" : "rgba(243, 239, 255, 0.8)"` 等价的"有无图"判断
-                    // - customContent != null：自定义内容本身就是"有图"
-                    // - useDefaultColors：本地色块兜底也视为"有图"
-                    // - imageUris[originalIndex] 非空非 blank：真实图片
-                    // 否则视为"无图"，启用紫色背景 + 紫色边框 + 毛玻璃占位
+                    // ========== 有无图判断（两种状态完全相同） ==========
                     val hasImage = when {
                         customContent != null -> true
                         useDefaultColors -> true
                         else -> imageUris.getOrNull(slot.originalIndex)?.isNotBlank() == true
                     }
 
-                    // =================== 目标值计算（堆叠 / 展开两种模式）===================
-                    // 设计文档 §4.3：
-                    // - 堆叠态：扇形（ei 决定 rotation/Y/scale，zIndex 由 stackIndex 决定）
-                    // - 展开态：横排（rotation=0, y=0, scale=1, x=stackIndex×(cardW+cardGap), zIndex=1）
-                    // 用 stackIndex（而非 originalIndex）作为展开态 X 偏移依据，
-                    // 让顶卡（stackIndex=0）天然落在最左侧（设计文档 §2.3 决策）
-                    //
-                    // 可见深度 visibleDepth（最大 4）：
-                    // 与原型一致：仅前 M = min(visibleDepth, cardCount) 张参与扇形展开，
-                    // 超出部分（ei = M-1）夹在栈底，不再随图片数无限摊开。
-                    // visibleDepth 上限固定为 4（coerceIn(1,4)），即最多 4 张扇形展开。
-                    //
-                    // tiltAngle 由可见张数派生（与原型滑块映射一致）：
-                    //   M=1 → 0°, M=2 → -15°, M=3 → -30°, M=4 → -45°
-                    //   即 effectiveTiltAngle = -(M-1) * 15
-                    //
-                    // 单位策略（与 translationZ = -stackIndex * 10f 严格一致，均用 px）：
-                    // - 原型 `xOffsetValue = (index / (totalCards - 1)) * xOffset` 中 xOffset=200 是 Web CSS px
-                    // - 原型 `stackOffset = index * 8` 也是 px
-                    // - 这里 xOffset.value 是 Dp 数值，直接当 px 用（与 translationZ 处理对齐）
-                    // - 在 density=2 设备上视觉是 dp 方案的一半，与 Web 端 CSS px 视觉一致
-                    // - 用户决策：严格 px，不再按 dp 换算
-                    // 扇形四要素均按可见深度 M 计算（ei 夹取），超出 M 的卡片叠在栈底同一位置
+                    // ========== 扇形深度常量（两种状态都计算，保证 remember key 稳定不重建） ==========
                     val M = minOf(visibleDepth, cardCount).coerceIn(1, 4)
-                    val ei = minOf(stackIndex, M - 1)         // 饱和夹取有效层索引（超出 M 的卡片夹栈底）
-                    val denom = max(M - 1, 1)                  // 扇形分母（仅在前 M 张铺开）
-                    val effectiveTiltAngle = -(M - 1) * 15f     // 1→0°, 2→-15°, 3→-30°, 4→-45°
-
-                    // =================== 4 个独立 Animatable ===================
-                    // 每张卡片的 x/y/scale/rotation 各自有独立的 Animatable，初始值 = stackIndex 目标值
-                    // 后续通过 LaunchedEffect(stackIndex) 自动过渡到新目标
-                    // ===== V1.1 修复：展开态 targetX = Center 锚点公式（核心修重叠）=====
-                    // 旧公式（TopStart锚点）：stackIndex*(W+G) → 配合统一 Center 后造成所有卡片重叠（Bug1 根因）
-                    // 新公式（Center锚点，用户决策）：(stackIndex - (N-1)/2f) * (W+G)
-                    //   数学验证（顶卡左上角 = ScrollArea(0,0) = 堆叠态顶卡左上角）：
-                    //     Stage(0,0) + 容器CenterX + targetX(顶卡) - W/2 = 0 ✅（详见 Spec §9.5）
+                    val ei = minOf(stackIndex, M - 1)         // 有效层夹取索引（超出 visibleDepth 夹栈底）
+                    val denom = max(M - 1, 1)
+                    val effectiveTiltAngle = -(M - 1) * 15f
                     val cardWGap = cardWidth.value + cardGap.value
-                    val halfN = (cardCount - 1) / 2f
-                    val targetX = (stackIndex.toFloat() - halfN) * cardWGap
-                    // 展开态：Y=0、Scale=1、Rotation=0（扁平等距排开）
-                    val targetY = 0f
-                    val targetScale = 1f
-                    val targetRotation = 0f
-                    // 展开态：zIndex 全部 = 1（扁平化）
-                    val targetZIndex = 1f
-                    // 原型 `z: -depthOffset` (depthOffset = index * DEPTH_SPACING = index * 10px) 在 Compose 中无直接对应 API：
-                    // - GraphicsLayerScope 仅有 translationX/translationY（2D），无 translationZ（3D z 轴位移）
-                    // - shadowElevation 语义是阴影高度（不能为负），与原型 z 轴位移语义不同
-                    // - 视觉影响评估：perspective=1000px 下 z=-10 的缩放差异 ≈ 1%（1000/1010），
-                    //   远小于 scaleX/Y 的 5% 差异（1 - index*0.05），纵深由 scale + cameraDistance 承担
 
+                    // ========== 目标值：if(isExpanded) 双分支（★ Bug③修复核心） ==========
+                    // - 展开态：严格 TopStart 公式 = stackIndex*(W+G)（原型 expand-collapse-stack.html L358-361）
+                    //   顶卡 stackIndex=0 → targetX=0 → 左上角 = CardContainer(0,0) = 堆叠态顶卡左上角
+                    // - 堆叠态：扇形公式（完全保留 V1.0 像素级一致；保证堆叠态位置 100% 不变）
+                    val targetX: Float
+                    val targetY: Float
+                    val targetScale: Float
+                    val targetRotation: Float
+                    val targetZIndex: Float
+                    if (isExpanded) {
+                        targetX = stackIndex.toFloat() * cardWGap   // ★ 展开态 TopStart 公式（Bug③修复）
+                        targetY = 0f
+                        targetScale = 1f
+                        targetRotation = 0f
+                        targetZIndex = 1f
+                    } else {
+                        targetX = if (M > 1) ei.toFloat() / denom * xOffset.value else 0f
+                        targetY = -(ei * 8f)
+                        targetScale = 1f - ei * 0.05f
+                        targetRotation = if (M > 1) {
+                            tiltAngleStart + (ei.toFloat() / denom) * (effectiveTiltAngle - tiltAngleStart)
+                        } else {
+                            tiltAngleStart
+                        }
+                        targetZIndex = (order.size - stackIndex).toFloat()
+                    }
+
+                    // ========== 5 个独立 Animatable（remember key 稳定，卡片实例跨重组保持） ==========
                     val positionX = remember { Animatable(targetX) }
                     val positionY = remember { Animatable(targetY) }
                     val scaleAnim = remember { Animatable(targetScale) }
@@ -1015,34 +1031,54 @@ fun SwipeableImageStack(
                 key(slot.stableId) {
                     val isTopCard = stackIndex == 0
 
-                    // hasImage：与原型 `cardImage ? "transparent" : "rgba(243, 239, 255, 0.8)"` 等价
+                    // ========== 有无图判断（与展开态循环结构完全一致） ==========
                     val hasImage = when {
                         customContent != null -> true
                         useDefaultColors -> true
                         else -> imageUris.getOrNull(slot.originalIndex)?.isNotBlank() == true
                     }
 
+                    // ========== 扇形深度常量（与展开态循环完全一致，保证 remember key 稳定） ==========
                     val M = minOf(visibleDepth, cardCount).coerceIn(1, 4)
                     val ei = minOf(stackIndex, M - 1)
                     val denom = max(M - 1, 1)
                     val effectiveTiltAngle = -(M - 1) * 15f
+                    val cardWGap = cardWidth.value + cardGap.value
 
-                    val targetX = if (M > 1) ei.toFloat() / denom * xOffset.value else 0f
-                    val targetY = -(ei * 8f)  // 原型 stackOffset = index * 8 (px)
-                    val targetScale = 1f - ei * 0.05f
-                    val targetRotation = if (M > 1) {
-                        tiltAngleStart + (ei.toFloat() / denom) * (effectiveTiltAngle - tiltAngleStart)
+                    // ========== 目标值：if(isExpanded) 双分支（与展开态循环结构完全一致） ==========
+                    // - 堆叠态分支：isExpanded=false → 走扇形公式（完全保留 V1.0 像素级一致）
+                    // - 展开态分支：理论上此分支永远不触发（因为在 else 分支内），仅为结构一致性保留
+                    val targetX: Float
+                    val targetY: Float
+                    val targetScale: Float
+                    val targetRotation: Float
+                    val targetZIndex: Float
+                    if (isExpanded) {
+                        targetX = stackIndex.toFloat() * cardWGap
+                        targetY = 0f
+                        targetScale = 1f
+                        targetRotation = 0f
+                        targetZIndex = 1f
                     } else {
-                        tiltAngleStart
+                        targetX = if (M > 1) ei.toFloat() / denom * xOffset.value else 0f
+                        targetY = -(ei * 8f)
+                        targetScale = 1f - ei * 0.05f
+                        targetRotation = if (M > 1) {
+                            tiltAngleStart + (ei.toFloat() / denom) * (effectiveTiltAngle - tiltAngleStart)
+                        } else {
+                            tiltAngleStart
+                        }
+                        targetZIndex = (order.size - stackIndex).toFloat()
                     }
-                    val targetZIndex = (order.size - stackIndex).toFloat()
 
+                    // ========== 5 个独立 Animatable（与展开态循环完全一致） ==========
                     val positionX = remember { Animatable(targetX) }
                     val positionY = remember { Animatable(targetY) }
                     val scaleAnim = remember { Animatable(targetScale) }
                     val rotationAnim = remember { Animatable(targetRotation) }
                     val zIndexAnim = remember { Animatable(targetZIndex) }
 
+                    // 5 个 LaunchedEffect（含 isExpanded key，切换状态立即触发过渡）
                     LaunchedEffect(stackIndex, order.size, isExpanded) {
                         positionX.animateTo(targetX, TRANSITION_SPRING)
                     }
@@ -1055,19 +1091,21 @@ fun SwipeableImageStack(
                     LaunchedEffect(stackIndex, order.size, isExpanded) {
                         rotationAnim.animateTo(targetRotation, TRANSITION_SPRING)
                     }
-                    // V1.1 修复：拖拽互斥锁 !isExpanded（展开态不允许按下抬升 zIndex）
                     LaunchedEffect(stackIndex, order.size, isExpanded, isPressed.value, isTopCard) {
                         val target = if (!isExpanded && isPressed.value && isTopCard) 1000f else targetZIndex
                         zIndexAnim.animateTo(target, ZINDEX_TWEEN)
                     }
 
-                    // V1.1 修复：拖拽互斥锁 !isExpanded（展开态不叠加 dragOffset，避免堆叠态残留造成重叠）
+                    // =================== finalX/Y/scale/rotation：统一 !isExpanded 拖拽互斥锁 ===================
+                    // V2.0 修复（堆叠态循环缺失补上）：
+                    // - finalScale：原堆叠态缺少 `!isExpanded`，展开态切回堆叠态瞬间若 isPressed=true 会误放大
+                    // - finalRotation：原堆叠态缺少 `!isExpanded`，切换瞬间会误旋转归零
                     val finalX = if (!isExpanded && isTopCard) positionX.value + dragOffsetX.value else positionX.value
                     val finalY = if (!isExpanded && isTopCard) positionY.value + dragOffsetY.value else positionY.value
-                    val finalScale = if (isTopCard && isPressed.value) scaleAnim.value + 0.05f else scaleAnim.value
+                    val finalScale = if (!isExpanded && isTopCard && isPressed.value) scaleAnim.value + 0.05f else scaleAnim.value
                     val finalRotation = when {
-                        isTopCard && isPressed.value -> 0f
-                        isTopCard && shouldReturnToCenter.value -> 0f
+                        !isExpanded && isTopCard && isPressed.value -> 0f
+                        !isExpanded && isTopCard && shouldReturnToCenter.value -> 0f
                         else -> rotationAnim.value
                     }
 
@@ -1402,6 +1440,26 @@ fun SwipeableImageStack(
         //            独立于 ScrollArea（仅卡片区滚动），CollapseBtn 永远可见不滚走
         //            参见 L484 附近展开态分支 Row 第一子元素（Task 5 填入样式）
     }
+}
+
+/**
+ * 共享单张图片卡片渲染组件（单循环合并准备）
+ *
+ * Task 1 Step 4：仅预定义空壳占位，供 Task 3 平移两套循环的实现。
+ * 作用域约束：Task 3 合并时，调用方必须保证 key(slot.stableId) + forEachIndexed
+ * 且在同一 Composable 作用域内传入 5 个 Animatable，保证卡片实例不跨帧重建。
+ *
+ * @param slot 当前卡槽（含 stableId / originalIndex）
+ * @param stackIndex 当前堆叠顺序（顶卡=0，越往下越大；同时是展开态 TopStart X 的 index）
+ */
+@Composable
+internal fun SwipeableImageStackCard(
+    slot: SwipeableSlot,
+    stackIndex: Int,
+    modifier: Modifier = Modifier
+) {
+    // Task 3 时平移原两套 forEachIndexed 的核心实现到这里
+    // 目前仅占位：不渲染任何内容，保证 Task 1 无行为改变
 }
 
 /**
