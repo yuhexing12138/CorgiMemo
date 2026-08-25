@@ -176,13 +176,13 @@
          */
         function SwipeableImageStack({
             mode = "defaultColors",
-            cardWidth = 300,
-            cardHeight = 400,
+            cardWidth = 150,
+            cardHeight = 150,
             cardRadius = 4,
             swipeThreshold = 50,
             tiltAngle = -45,
             tiltAngleStart = 0,
-            xOffset = 200,
+            xOffset = 0,
             transition = { type: "spring", stiffness: 300, damping: 30 }
         }) {
             const images = (() => {
@@ -434,12 +434,12 @@
          */
         function App() {
             const [mode, setMode] = useState("defaultColors");
-            const [cardWidth, setCardWidth] = useState(300);
-            const [cardHeight, setCardHeight] = useState(400);
+            const [cardWidth, setCardWidth] = useState(150);
+            const [cardHeight, setCardHeight] = useState(150);
             const [cardRadius, setCardRadius] = useState(4);
             const [swipeThreshold, setSwipeThreshold] = useState(50);
             const [tiltAngle, setTiltAngle] = useState(-45);
-            const [xOffset, setXOffset] = useState(200);
+            const [xOffset, setXOffset] = useState(0);
 
             return (
                 <div className="app">
