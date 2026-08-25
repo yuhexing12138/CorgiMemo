@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SwipeableImageStack 展开/收起交互原型</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                         "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: #FFFBF5;
+            color: #333;
+            min-height: 100vh;
+        }
+
+        /* ============ 页面容器 ============ */
+        .page { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+        .page-header { margin-bottom: 24px; }
+        .page-header h1 { font-size: 22px; margin: 0 0 6px; color: #9967FF; }
+        .page-header .subtitle { font-size: 13px; color: #999; }
+
+        /* ============ 状态指示器 ============ */
+        .state-bar {
+            display: flex; align-items: center; gap: 12px;
+            margin-bottom: 16px; font-size: 13px; color: #666;
+        }
+        .state-tag {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 3px 10px; border-radius: 12px;
+            font-size: 12px; font-weight: 600;
+        }
+        .state-tag.stacked { background: #F3EFFF; color: #9967FF; }
+        .state-tag.expanded { background: #E8F5E9; color: #2E7D32; }
+        .state-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+        /* ============ 交互舞台 ============ */
+        .stage {
+            position: relative; display: flex; align-items: center; justify-content: center;
+            min-height: 240px; padding: 48px 24px; border-radius: 12px;
+            background-color: #FFFBF5; border: 1px solid #F0EBE3; overflow: hidden;
+        }
+        .stage-content { display: flex; align-items: center; justify-content: center; width: 100%; }
+
+        /* ============ 滚动区域 ============ */
+        .scroll-area { position: relative; }
+        .scroll-area::-webkit-scrollbar { height: 5px; }
+        .scroll-area::-webkit-scrollbar-track { background: transparent; }
+        .scroll-area::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 3px; }
+        .scroll-area::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
+
+        /* ============ 胶囊按钮 ============ */
+        .pill-btn {
+            display: inline-flex; align-items: center; gap: 1px;
+            background: rgba(242,243,245,0.55); border-radius: 11px;
+            padding: 2px 5px; border: none; cursor: pointer;
+            color: #4F5660; font-size: 11px; font-weight: 500;
+            font-family: inherit; white-space: nowrap; line-height: 1.4;
+            transition: background 0.15s, opacity 0.2s;
+        }
+        .pill-btn:hover { background: rgba(242,243,245,0.8); }
+        .pill-btn:active { background: rgba(242,243,245,0.95); }
+        .pill-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+        .collapse-btn { margin-right: 8px; flex-shrink: 0; }
+
+        /* ============ 卡片 ============ */
+        .card {
+            position: absolute; left: 0; top: 0;
+            width: 120px; height: 120px;
+            border-radius: 6px; overflow: hidden;
+            transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+                        box-shadow 0.3s ease;
+            will-change: transform;
+        }
+        .card img {
+            display: block; width: 100%; height: 100%;
+            object-fit: cover; pointer-events: none;
+        }
+        .card-color {
+            width: 100%; height: 100%; display: flex;
+            align-items: center; justify-content: center;
+            color: #FFF; font-size: 22px; font-weight: 700;
+        }
+
+        /* ============ 计数角标 ============ */
+        .count-badge {
+            position: absolute; left: 120px; bottom: 0; z-index: 10;
+            background: #FFF3E0; color: #E8730C; font-size: 10px;
+            line-height: 12px; border-radius: 10px; padding: 0 1px;
+            white-space: nowrap; transition: opacity 0.2s;
+        }
+
+        /* ============ 展开按钮容器 ============ */
+        .expand-btn-wrapper {
+            position: absolute; left: 148px; top: 0;
+            height: 120px; display: flex; align-items: center; z-index: 10;
+            transition: opacity 0.2s;
+        }
+
+        /* ============ 收起按钮容器 ============ */
+        .collapse-btn-wrapper {
+            transition: opacity 0.2s;
+        }
+
+        /* ============ 卡片容器 ============ */
+        .card-container {
+            position: relative; height: 120px;
+            transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        /* ============ 操作提示 ============ */
+        .hints { margin-top: 14px; text-align: center; font-size: 12px; color: #999; min-height: 18px; }
+
+        /* ============ 模式切换 ============ */
+        .mode-toggle { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
+        .mode-toggle button {
+            padding: 5px 14px; border: 1px solid #DDD; background: #FFF;
+            color: #666; font-size: 12px; border-radius: 6px; cursor: pointer;
+            font-family: inherit; transition: all 0.15s;
+        }
+        .mode-toggle button:hover { border-color: #9967FF; color: #9967FF; }
+        .mode-toggle button.active {
+            background: #F3EFFF; border-color: #9967FF; color: #9967FF; font-weight: 600;
+        }
+
+        /* ============ 三方案对比 ============ */
+        .solutions { margin-top: 48px; }
+        .solutions h2 { font-size: 17px; color: #333; margin: 0 0 4px; }
+        .solutions .section-desc { font-size: 13px; color: #999; margin-bottom: 20px; }
+        .solution-list { display: flex; flex-direction: column; gap: 16px; }
+        .solution-item {
+            padding: 18px 20px; background: #FFF;
+            border-radius: 10px; border: 1px solid #F0EBE3;
+        }
+        .solution-item.recommended {
+            border-color: #9967FF; border-width: 2px; background: #FDFAFF;
+        }
+        .solution-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .solution-name { font-size: 15px; font-weight: 700; color: #333; }
+        .recommend-badge {
+            display: inline-block; padding: 1px 8px; font-size: 11px;
+            font-weight: 600; color: #FFF; background: #9967FF; border-radius: 8px;
+        }
+        .solution-desc { font-size: 13px; color: #555; line-height: 1.6; margin: 0 0 12px; }
+        .solution-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .solution-meta h4 { font-size: 12px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .solution-meta .pros h4 { color: #2E7D32; }
+        .solution-meta .cons h4 { color: #C62828; }
+        .solution-meta ul { margin: 0; padding-left: 16px; font-size: 12px; color: #666; line-height: 1.7; }
+        .solution-best { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #EEE; font-size: 12px; color: #888; }
+        .solution-best b { color: #9967FF; }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="page-header">
+            <h1>SwipeableImageStack 展开 / 收起交互原型</h1>
+            <div class="subtitle">
+                卡片 120×120px · 圆角 6px · 间距 8px · CSS transition 动画
+                · 与 SwipeableImageStack.kt 视觉规范对齐
+            </div>
+        </div>
+
+        <!-- ============ 状态指示器 ============ -->
+        <div class="state-bar">
+            <span id="tag-stacked" class="state-tag stacked">
+                <span class="state-dot"></span> 堆叠模式
+            </span>
+            <span id="tag-expanded" class="state-tag expanded" style="display:none;">
+                <span class="state-dot"></span> 展开模式
+            </span>
+            <span>共 10 张图片 · 可见深度 4</span>
+        </div>
+
+        <!-- ============ 交互舞台 ============ -->
+        <div class="stage">
+            <div class="stage-content">
+                <!-- 收起按钮（仅展开时显示） -->
+                <div id="collapse-wrapper" class="collapse-btn-wrapper" style="display:none;">
+                    <button class="pill-btn collapse-btn" onclick="setExpanded(false)">
+                        收起
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- 滚动区域 -->
+                <div id="scroll-area" class="scroll-area" style="overflow:visible; overflow-y:visible; width:auto; max-width:none; flex-shrink:0;">
+                    <!-- 卡片容器 -->
+                    <div id="card-container" class="card-container" style="width:120px;">
+                        <!-- 10 张卡片由 JS 动态创建 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="hints" class="hints">点击「展开 10」横向铺开所有图片</div>
+
+        <div class="mode-toggle">
+            <button id="btn-real" class="active" onclick="setMode(true)">真实图片（picsum）</button>
+            <button id="btn-color" onclick="setMode(false)">色块占位（无网络）</button>
+        </div>
+
+        <!-- ============ 三方案对比 ============ -->
+        <section class="solutions">
+            <h2>三种实现方案对比</h2>
+            <p class="section-desc">
+                原型已用方案 A 的思路实现（isExpanded 状态驱动 + CSS transition 动画）。
+                以下是三种方案在 Compose 端的落地对比：
+            </p>
+            <div class="solution-list">
+                <div class="solution-item recommended">
+                    <div class="solution-header">
+                        <span class="solution-name">方案 A（推荐）</span>
+                        <span class="recommend-badge">推荐</span>
+                    </div>
+                    <p class="solution-desc">
+                        在 SwipeableImageStack 内部新增 isExpanded 状态，展开时切换布局模式
+                        （Box → Row + LazyRow），所有动画用 Animatable + LaunchedEffect 实现。
+                    </p>
+                    <div class="solution-meta">
+                        <div class="pros">
+                            <h4>优点</h4>
+                            <ul>
+                                <li>动画最连贯：同一批卡片实例不重建，transform 连续过渡</li>
+                                <li>状态内聚：isExpanded 与卡片 order 共存于同一作用域</li>
+                                <li>天然支持共享元素过渡（SharedTransitionScope）</li>
+                            </ul>
+                        </div>
+                        <div class="cons">
+                            <h4>缺点</h4>
+                            <ul>
+                                <li>SwipeableImageStack 复杂度增加（需处理两种布局测量）</li>
+                                <li>Box 与 LazyRow 切换时需手动管理 transition spec</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="solution-best"><b>适用场景：</b>追求动画流畅度、卡片实例不重建的生产环境实现</div>
+                </div>
+
+                <div class="solution-item">
+                    <div class="solution-header">
+                        <span class="solution-name">方案 B</span>
+                    </div>
+                    <p class="solution-desc">
+                        新增一个独立的 ExpandedImageRow 组件，展开时用 AnimatedContent 替换 SwipeableImageStack。
+                    </p>
+                    <div class="solution-meta">
+                        <div class="pros">
+                            <h4>优点</h4>
+                            <ul>
+                                <li>职责分离：ExpandedImageRow 独立测试和复用</li>
+                                <li>SwipeableImageStack 几乎零改动</li>
+                                <li>代码组织清晰，后续维护成本低</li>
+                            </ul>
+                        </div>
+                        <div class="cons">
+                            <h4>缺点</h4>
+                            <ul>
+                                <li>组件切换时卡片实例重建，无法做 transform 连续过渡</li>
+                                <li>除非用 SharedTransitionScope，否则动画有跳变</li>
+                                <li>两个组件需同步图片数据源和当前 order</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="solution-best"><b>适用场景：</b>希望代码组织清晰、可接受动画略逊的场景</div>
+                </div>
+
+                <div class="solution-item">
+                    <div class="solution-header">
+                        <span class="solution-name">方案 C</span>
+                    </div>
+                    <p class="solution-desc">
+                        在现有 SwipeableImageStack 上层叠加一个展开视图，用 AnimatedVisibility 切换显示。
+                    </p>
+                    <div class="solution-meta">
+                        <div class="pros">
+                            <h4>优点</h4>
+                            <ul>
+                                <li>改动最小：SwipeableImageStack 完全不变</li>
+                                <li>展开视图独立开发，不影响现有逻辑</li>
+                                <li>适合快速验证概念</li>
+                            </ul>
+                        </div>
+                        <div class="cons">
+                            <h4>缺点</h4>
+                            <ul>
+                                <li>叠加层与底层状态同步复杂（order、currentIndex）</li>
+                                <li>内存占用高：两套布局同时存在于组合树中</li>
+                                <li>层级管理易混乱，调试困难</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="solution-best"><b>适用场景：</b>快速验证、不想动现有代码的原型阶段</div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // ================================================================
+        // 常量定义（与 SwipeableImageStack.kt 实现对齐）
+        // ================================================================
+        const CARD_W = 120;
+        const CARD_H = 120;
+        const CARD_RADIUS = 6;
+        const CARD_GAP = 8;
+        const VISIBLE_DEPTH = 4;
+        const TOTAL_IMAGES = 10;
+        const STACK_OFFSET = 8;
+        const SCALE_STEP = 0.05;
+        const FAN_ANGLE = -45;
+        const EXPAND_BTN_GAP = 28;
+        const SCROLL_MAX_WIDTH = 560;
+
+        // 默认色块（与 Compose DEFAULT_IMAGE_COLORS 对齐）
+        const DEFAULT_COLORS = [
+            { color: "#FF9A5C", name: "暖橙" },
+            { color: "#FFB5C2", name: "粉" },
+            { color: "#7EC8A0", name: "绿" },
+            { color: "#7EB8DA", name: "蓝" }
+        ];
+
+        // 真实测试图片
+        const REAL_IMAGES = Array.from(
+            { length: TOTAL_IMAGES },
+            (_, i) => `https://picsum.photos/seed/corgi${i + 1}/240/240`
+        );
+
+        // ================================================================
+        // 状态
+        // ================================================================
+        let isExpanded = false;
+        let useRealImages = true;
+
+        // ================================================================
+        // 计算卡片在堆叠/展开两种状态下的动画目标值
+        //
+        // 堆叠状态（扇形）：
+        //   - 仅前 4 张参与扇形，超出部分夹在栈底
+        //   - rotation: 0° / -15° / -30° / -45°
+        //   - Y 偏移: 0 / -8 / -16 / -24
+        //   - scale: 1.0 / 0.95 / 0.90 / 0.85
+        //   - zIndex: 4 / 3 / 2 / 1
+        //
+        // 展开状态（横向排列）：
+        //   - rotation: 0°
+        //   - Y 偏移: 0
+        //   - scale: 1
+        //   - X 偏移: index × (CARD_W + CARD_GAP)
+        //   - zIndex: 1
+        // ================================================================
+        function getCardTarget(index, expanded) {
+            if (expanded) {
+                return {
+                    x: index * (CARD_W + CARD_GAP),
+                    y: 0, rotate: 0, scale: 1, zIndex: 1,
+                    shadow: '0 2px 8px rgba(0,0,0,0.10)'
+                };
+            }
+            const M = VISIBLE_DEPTH;
+            const ei = Math.min(index, M - 1);
+            const denom = M - 1;
+            return {
+                x: 0,
+                y: -ei * STACK_OFFSET,
+                rotate: FAN_ANGLE * (ei / denom),
+                scale: 1 - ei * SCALE_STEP,
+                zIndex: M - ei,
+                shadow: index === 0
+                    ? '0 8px 24px rgba(0,0,0,0.18)'
+                    : '0 4px 12px rgba(0,0,0,0.10)'
+            };
+        }
+
+        // ================================================================
+        // 创建卡片 DOM 元素
+        // ================================================================
+        function createCards() {
+            const container = document.getElementById('card-container');
+            container.innerHTML = '';
+
+            for (let i = 0; i < TOTAL_IMAGES; i++) {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.id = 'card-' + i;
+
+                if (useRealImages) {
+                    const img = document.createElement('img');
+                    img.src = REAL_IMAGES[i];
+                    img.alt = '图片 ' + (i + 1);
+                    img.onerror = function() {
+                        // 图片加载失败时用色块兜底
+                        this.style.display = 'none';
+                        this.parentElement.style.background =
+                            DEFAULT_COLORS[i % DEFAULT_COLORS.length].color;
+                    };
+                    card.appendChild(img);
+                } else {
+                    const colorDiv = document.createElement('div');
+                    colorDiv.className = 'card-color';
+                    colorDiv.style.background = DEFAULT_COLORS[i % DEFAULT_COLORS.length].color;
+                    colorDiv.textContent = i + 1;
+                    card.appendChild(colorDiv);
+                }
+
+                container.appendChild(card);
+            }
+
+            // 添加角标
+            const badge = document.createElement('div');
+            badge.className = 'count-badge';
+            badge.id = 'count-badge';
+            badge.textContent = '1/' + TOTAL_IMAGES;
+            container.appendChild(badge);
+
+            // 添加展开按钮
+            const expandWrapper = document.createElement('div');
+            expandWrapper.className = 'expand-btn-wrapper';
+            expandWrapper.id = 'expand-btn-wrapper';
+            expandWrapper.innerHTML =
+                '<button class="pill-btn" onclick="setExpanded(true)">' +
+                '展开 ' + TOTAL_IMAGES +
+                ' <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+                'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                '<polyline points="9 18 15 12 9 6"></polyline></svg></button>';
+            container.appendChild(expandWrapper);
+
+            updateCards();
+        }
+
+        // ================================================================
+        // 更新所有卡片的位置
+        // ================================================================
+        function updateCards() {
+            for (let i = 0; i < TOTAL_IMAGES; i++) {
+                const card = document.getElementById('card-' + i);
+                if (!card) continue;
+
+                const target = getCardTarget(i, isExpanded);
+                card.style.transform =
+                    'translate(' + target.x + 'px, ' + target.y + 'px) ' +
+                    'rotate(' + target.rotate + 'deg) ' +
+                    'scale(' + target.scale + ')';
+                card.style.zIndex = target.zIndex;
+                card.style.boxShadow = target.shadow;
+                card.style.pointerEvents = isExpanded ? 'none' : 'auto';
+            }
+
+            // 卡片容器宽度
+            const container = document.getElementById('card-container');
+            const expandedWidth = TOTAL_IMAGES * CARD_W + (TOTAL_IMAGES - 1) * CARD_GAP;
+            container.style.width = (isExpanded ? expandedWidth : CARD_W) + 'px';
+
+            // 角标显示/隐藏
+            const badge = document.getElementById('count-badge');
+            if (badge) badge.style.opacity = isExpanded ? '0' : '1';
+
+            // 展开按钮显示/隐藏
+            const expandBtn = document.getElementById('expand-btn-wrapper');
+            if (expandBtn) expandBtn.style.opacity = isExpanded ? '0' : '1';
+
+            // 收起按钮显示/隐藏
+            const collapseBtn = document.getElementById('collapse-wrapper');
+            collapseBtn.style.display = isExpanded ? 'flex' : 'none';
+
+            // 滚动区域
+            const scrollArea = document.getElementById('scroll-area');
+            if (isExpanded) {
+                scrollArea.style.overflowX = 'auto';
+                scrollArea.style.overflowY = 'hidden';
+                scrollArea.style.maxWidth = SCROLL_MAX_WIDTH + 'px';
+                scrollArea.style.width = SCROLL_MAX_WIDTH + 'px';
+            } else {
+                scrollArea.style.overflowX = 'visible';
+                scrollArea.style.overflowY = 'visible';
+                scrollArea.style.maxWidth = 'none';
+                scrollArea.style.width = 'auto';
+            }
+
+            // 状态标签
+            document.getElementById('tag-stacked').style.display =
+                isExpanded ? 'none' : 'inline-flex';
+            document.getElementById('tag-expanded').style.display =
+                isExpanded ? 'inline-flex' : 'none';
+
+            // 提示
+            document.getElementById('hints').textContent = isExpanded
+                ? '← 左右滑动查看全部图片 · 点击「收起」回到堆叠 · 拖拽翻牌已禁用'
+                : '点击「展开 ' + TOTAL_IMAGES + '」横向铺开所有图片';
+        }
+
+        // ================================================================
+        // 切换展开/收起状态
+        // ================================================================
+        function setExpanded(expanded) {
+            isExpanded = expanded;
+            updateCards();
+        }
+
+        // ================================================================
+        // 切换图片模式（真实/色块）
+        // ================================================================
+        function setMode(real) {
+            useRealImages = real;
+            document.getElementById('btn-real').className =
+                real ? 'active' : '';
+            document.getElementById('btn-color').className =
+                !real ? 'active' : '';
+            createCards();
+        }
+
+        // ================================================================
+        // 初始化
+        // ================================================================
+        createCards();
+    </script>
+</body>
+</html>
