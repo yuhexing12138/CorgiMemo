@@ -455,12 +455,15 @@ fun TimelineInspirationItem(
                 // - 滚动归零（animateScrollTo）由 SwipeableImageStack 内部 LaunchedEffect 自动处理
                 if (isImageStackExpanded.value) {
                     Spacer(modifier = Modifier.height(tagToImageGap))
+                    // ====== 独立的「收起」按钮行：父 Column(L314) 已 padding(start=contentStartX)，此处不要再重复 padding ======
+                    // V3.1 修复：删除 .padding(start = contentStartX)（避免 70dp×2=140dp 双重偏移）
+                    // - 父 Column 统一设置了 start padding，所有子项（标题/时间/正文/标签/本收起行/图片）自然对齐到同一垂直基准列
+                    // - 保留 .fillMaxWidth() + Arrangement.Start，确保按钮从父内容区左缘紧贴起始
                     Row(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = contentStartX),
+                            .fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        // 显式 Start：避免默认 Center 导致收起按钮水平居中（用户截图反馈）
+                        // 显式 Start：避免默认 Center 导致收起按钮水平居中
                         horizontalArrangement = Arrangement.Start
                     ) {
                         Row(
@@ -508,8 +511,13 @@ fun TimelineInspirationItem(
                     // 超过 4 张图片时显示灰底"展开 N"胶囊按钮（仅 UI，后续接入点击逻辑）
                     showExpandButton = true,
                     // ↓↓↓ 展开态外部托管参数 ↓↓↓
-                    // 展开态整行起始 padding = 标题/时间/正文/标签行 统一左基准（≈70dp）
-                    expandedContentStartPadding = contentStartX,
+                    // V3.1 修复：expandedContentStartPadding = 0.dp（避免双重 padding）
+                    // - 根因：本调用点在「右侧内容区 Column」内部（L312），
+                    //   父 Column 已统一 padding(start=contentStartX=70dp)，
+                    //   如果此处传 contentStartX=70dp → SwipeableImageStack 内部(L574) 再 padding →
+                    //   70dp×2=140dp 双重偏移=图片太靠右（用户最新截图反馈）
+                    // - 向后兼容：SwipeableImageStack 签名的默认值仍是 0.dp（其他调用点不受影响）
+                    expandedContentStartPadding = 0.dp,
                     // 外部统一托管 isExpanded 状态，保证：
                     //  ① 独立行「收起」按钮 与 组件内部 状态 100% 同步
                     //  ② 堆叠态仍使用 stageBoxWidth≈200dp 固定尺寸（Badge/ExpandBtn 位置不变）
