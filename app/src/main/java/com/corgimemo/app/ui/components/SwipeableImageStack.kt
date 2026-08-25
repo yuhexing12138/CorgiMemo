@@ -1,4 +1,4 @@
-package com.corgimemo.app.ui.components
+﻿package com.corgimemo.app.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -443,59 +443,63 @@ fun SwipeableImageStack(
     val badgeRequiredRight = maxOf(requireBadgeRight, requireExpandRight)
 
     // 外层 Box 尺寸：
-    // - 宽度至少容纳堆叠区包围盒 / 原始扇形宽度 / 角标和展开按钮所需右边缘
-    // - 高度至少容纳堆叠区包围盒 / 原始卡片+垂直余量（原始 fallback 高度，防止单卡时 bboxHeight 太小）
-    // 注：角标/展开按钮均放在 Box 右侧（不增加高度），因此 boxHeight 无需额外扩宽。
-    // ============ 展开态容器宽度（设计文档 §4.4）============
-    // 展开态：cardCount × (cardW + cardGap) - cardGap + collapseBtnWidth + 8dp 间距
-    // - collapseBtnWidth 与 expandEstWidth 保持一致（76dp 估算，实际宽度 onSizeChanged 读取后修正）
-    // - 设计文档 §3.5：collapseBtnWidth ≈ 文本宽度 + padding + icon ≈ 76dp
-    val collapseBtnEstWidth = 76f
-    val collapseBtnGap = 8f  // 收起按钮与顶卡左边缘的间距，与 expandMarginToCardNoBadge 视觉一致
-    val expandedBoxWidth = cardCount * (cardWVal + cardGap.value) - cardGap.value +
-        collapseBtnEstWidth + collapseBtnGap
-    val boxWidth = if (isExpanded) {
-        expandedBoxWidth
-    } else {
-        maxOf(cardWVal + xOffset.value, bboxWidth, badgeRequiredRight, cardBoxStartX + bboxWidth)
-    }
-    val boxHeight = if (isExpanded) {
-        cardHVal
-    } else {
-        maxOf(cardHVal + stackVPVal, bboxHeight)
-    }
+    // - 宽度：堆叠态至少容纳堆叠区包围盒 + 角标 + 展开按钮；
+    //         展开态：外层 Box 宽度保持堆叠态宽度（不随卡片容器膨胀），
+    //         因为水平滚动是在卡片容器上发生的，外层 Box 是滚动视窗；
+    //         但如果卡片容器在展开态宽度 + 收起按钮比堆叠态宽度还小，则保持堆叠态宽度。
+    // - 高度：统一 max(cardH+stackVP, bboxHeight, cardH)，保证两种模式下高度够用。
+    val stackedBoxWidth = maxOf(cardWVal + xOffset.value, bboxWidth, badgeRequiredRight, cardBoxStartX + bboxWidth)
+    val stackedBoxHeight = maxOf(cardHVal + stackVPVal, bboxHeight)
+    // 外层 Box 宽度：堆叠态/展开态统一 = 堆叠态宽度（不随卡片容器膨胀，避免影响灵感首页布局）
+    val boxWidth = stackedBoxWidth
+    val boxHeight = stackedBoxHeight
 
     Box(
         modifier = modifier
             .size(boxWidth.dp, boxHeight.dp)
-            .then(if (isExpanded) Modifier.horizontalScroll(expandedScrollState) else Modifier)
         // 外层 Box 不指定 contentAlignment，使用默认 TopStart
-        // - 堆叠卡片容器：align(Alignment.TopStart) + padding，左对齐外层 Box 左边缘
-        // - 角标：align(Alignment.BottomEnd) + padding，右对齐外层 Box 右边缘
+        // - 堆叠卡片容器：align(Alignment.TopStart) 定位
+        // - 收起按钮：展开态显示在卡片容器左侧
     ) {
-        // ============ 堆叠卡片容器（左对齐外层左上角）============
-        // 透视感：父容器 cameraDistance 模拟 Web 端 perspective: 1000px
-        // - 原型 `perspective: ${PERSPECTIVE}px` (PERSPECTIVE = 1000)
-        // - Compose cameraDistance 默认单位是 dp（实际 px = cameraDistance × density）
-        // - 为与 Web 1000px 严格一致：cameraDistance = 1000 / density.density (dp)
-        // - 容器放在 (cardBoxStartX, cardBoxStartY)，使堆叠区旋转后最左/最上顶角
-        //   恰好对齐外层 Box 左上角（0,0），与标题行/时间/正文/标签行左边缘严格对齐
+        // ============ 卡片容器（核心滚动区域，严格对齐原型 scroll-area + card-container）============
+        //
+        // 两种模式统一放在外层 Box 左上角 (0,0)（align TopStart，不使用 padding/graphicsLayer 平移）：
+        // - 堆叠态：size = bboxWidth × bboxHeight，contentAlignment = Center，
+        //   通过内部 graphicsLayer.translationX/Y 把卡片左上角对齐 (0,0)（既有逻辑不变）
+        // - 展开态：size = 展开容器宽度 × cardHVal（= cardCount×(cardW+cardGap)-cardGap），
+        //   contentAlignment = TopStart，horizontalScroll 挂载在这个容器上
+        //   （外层 Box 保持堆叠态宽度，作为滚动视窗；不裁剪子元素，clipChildren=false）
+        //
+        // 角标与展开按钮移动到这个容器内部（与原型一致）。
+        // 堆叠态：卡片容器 width 必须 = stackedBoxWidth（与外层 Box 同宽），
+        //         否则角标（topCardRightX_box + 0）和展开按钮（topCardRightX_box + 28dp + 76dp）
+        //         会因为超出卡片容器 bboxWidth 右边缘被裁剪。
+        //         高度保持 bboxHeight，保证堆叠区顶部与外层 Box 顶部对齐。
+        // 展开态：卡片容器宽度 = 所有卡片横向等距排列宽度（与原型 expandedWidth 一致）
+        val cardsContainerW = if (isExpanded) {
+            cardCount * (cardWVal + cardGap.value) - cardGap.value
+        } else {
+            stackedBoxWidth
+        }
+        val cardsContainerH = if (isExpanded) cardHVal else bboxHeight
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                // 注：Compose Modifier.padding 不支持负值，当 cardBoxStartX/Y 为负
-                // （旋转后卡片顶角超出盒子左/上边缘）时会截断为 0 导致顶/左边距变大。
-                // 改为 graphicsLayer.translationX/Y，支持负值纯视觉平移（不影响外层布局）。
-                // 单位策略（与项目全局一致，严格 px 不 dp 换算）：
-                // cardBoxStartX/Y 是 Dp 数值 Float，直接当 px 传入 translationX/Y。
-                .size(
-                    width = if (isExpanded) boxWidth.dp else bboxWidth.dp,
-                    height = if (isExpanded) boxHeight.dp else bboxHeight.dp
+                // 展开态：horizontalScroll 挂载在卡片容器（非外层 Box），与原型
+                // scroll-area overflow-x:auto 一致。外层 Box 宽度 = stackedBoxWidth 作为视窗。
+                // 堆叠态：不挂载滚动。
+                .size(cardsContainerW.dp, cardsContainerH.dp)
+                .then(
+                    if (isExpanded) {
+                        Modifier.horizontalScroll(expandedScrollState)
+                    } else {
+                        Modifier
+                    }
                 )
                 .graphicsLayer {
                     this.cameraDistance = 1000f / density.density
-                    // 展开态：translationX/Y = 0（不依赖旋转包围盒平移）
-                    // 堆叠态：原有平移逻辑
+                    // 堆叠态：用 cardBoxStartX/Y 把堆叠区最左/最上角对齐 Box 左上角（既有逻辑）
+                    // 展开态：translation 归零，卡片容器本身 size=全宽度，水平滚动让用户视窗内浏览
                     translationX = if (isExpanded) 0f else cardBoxStartX
                     translationY = if (isExpanded) 0f else cardBoxStartY
                 },
@@ -917,213 +921,215 @@ fun SwipeableImageStack(
                     }
                 }
             }
-        }
 
-        // ============ 图片计数角标（countBadge）============
-        // 样式与灵感首页标签保持一致（主色文字 + 浅橙底 + 10dp 圆角）：
-        // - 与 TimelineInspirationItem tags Row 对齐，视觉体系统一
-        //
-        // 当启用 countBadge 且图片张数超过可见深度时，在堆叠区右下角显示
-        // "当前位置/总数" 格式的角标（如 "1/6"），让用户直观了解当前浏览进度。
-        // 角标放在外层的 Box 内，与堆叠区捆绑为一个整体，确保未来移动堆叠区时角标同步移动。
-        //
-        // 显示条件：
-        // - countBadge = true 启用
-        // - cardCount > visibleDepth 才显示（≤ visibleDepth 时角标无意义，自动隐藏）
-        //
-        // 定位方式（用户方案：堆叠图左对齐，角标右对齐）：
-        // - 角标左边缘 = 顶卡右边缘（0dp 间距，用户要求紧贴）
-        // - 角标底边缘 = 顶卡底边缘（严格对齐）
-        // - 外层 Box 右边缘已动态扩宽（含展开按钮），角标完全在 Box 内
-        //
-        // 实现：用 TopStart + 绝对 padding 定位，不依赖 boxHeight/bottomEdge 反算（避免 BottomEnd
-        // 与 translationY 联动时测量不一致导致的偏移）。
-        //
-        // 角标高估算：10sp 字体 + 0dp 垂直 padding ≈ 行高 10dp ≈ 视觉高度 12dp
-        // 为保证底边缘严格对齐，角标 top = 顶卡底 - 估算高度
-        if (showCountBadge) {
-            val currentPosition = order[0].originalIndex + 1  // 1-based 当前位置
-            val totalCount = cardCount
+            // ============ 图片计数角标（countBadge）============
+            // （已移入卡片容器内，保证随卡片容器同步滚动/移动；堆叠态下的位置用 -cardBoxStartX/Y 抵消
+            //  卡片容器 graphicsLayer.translationX/Y 偏移，使视觉位置与原外层坐标系下的设计一致）
+            // 样式与灵感首页标签保持一致（主色文字 + 浅橙底 + 10dp 圆角）：
+            // - 与 TimelineInspirationItem tags Row 对齐，视觉体系统一
+            //
+            // 当启用 countBadge 且图片张数超过可见深度时，在堆叠区右下角显示
+            // "当前位置/总数" 格式的角标（如 "1/6"），让用户直观了解当前浏览进度。
+            // 角标放在外层的 Box 内，与堆叠区捆绑为一个整体，确保未来移动堆叠区时角标同步移动。
+            //
+            // 显示条件：
+            // - countBadge = true 启用
+            // - cardCount > visibleDepth 才显示（≤ visibleDepth 时角标无意义，自动隐藏）
+            //
+            // 定位方式（用户方案：堆叠图左对齐，角标右对齐）：
+            // - 角标左边缘 = 顶卡右边缘（0dp 间距，用户要求紧贴）
+            // - 角标底边缘 = 顶卡底边缘（严格对齐）
+            // - 外层 Box 右边缘已动态扩宽（含展开按钮），角标完全在 Box 内
+            //
+            // 实现：用 TopStart + 绝对 padding 定位，不依赖 boxHeight/bottomEdge 反算（避免 BottomEnd
+            // 与 translationY 联动时测量不一致导致的偏移）。
+            //
+            // 角标高估算：10sp 字体 + 0dp 垂直 padding ≈ 行高 10dp ≈ 视觉高度 12dp
+            // 为保证底边缘严格对齐，角标 top = 顶卡底 - 估算高度
+            if (showCountBadge) {
+                val currentPosition = order[0].originalIndex + 1  // 1-based 当前位置
+                val totalCount = cardCount
 
-            // 精确坐标（外层 Box TopStart 坐标系）
-            val badgeStartX = topCardRightX_box  // 0dp 间距：左边缘 = 顶卡右边缘
-            val badgeEstH = 12f  // 10sp 字体行高 ≈ 10~12dp
-            val badgeTopY = topCardBottomY_box - badgeEstH
+                // 精确坐标（相对于卡片容器 TopStart 坐标系）
+                // - 现在角标位于卡片容器内部，堆叠态卡片容器有 graphicsLayer.translationX/Y = cardBoxStartX/Y（负值）
+                //   为了让最终视觉位置仍对齐到外层坐标系下的原设计，把 padding 值减去堆叠态平移值。
+                // - 展开态卡片容器无平移，直接使用原值。
+                val badgeStartX = topCardRightX_box - if (isExpanded) 0f else cardBoxStartX
+                val badgeEstH = 12f  // 10sp 字体行高 ≈ 10~12dp
+                val badgeTopY = (topCardBottomY_box - badgeEstH) - if (isExpanded) 0f else cardBoxStartY
 
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = badgeStartX.dp, top = badgeTopY.dp)
-            ) {
-                // 与灵感首页 #标签 样式一致：
-                // - 背景色：0xFFFFF3E0（浅橙底）
-                // - 圆角：10.dp
-                // - 文字色：UiColors.Primary（项目主题主色）
-                // - 字号：10sp / lineHeight = 10sp（最小行高，紧凑型）
-                // - padding：水平 1dp / 垂直 0dp（紧凑型）
-                Text(
-                    text = "$currentPosition/$totalCount",
-                    fontSize = 10.sp,
-                    lineHeight = 10.sp,
-                    color = UiColors.Primary,
+                Box(
                     modifier = Modifier
-                        .background(
-                            color = Color(0xFFFFF3E0),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        .padding(horizontal = 1.dp, vertical = 0.dp)
-                )
-            }
-        }
-
-        // ============ 展开按钮（showExpandButton）============
-        // 仅 UI，后续再接入点击展开逻辑。
-        // 样式：灰底胶囊（比角标大一号）+ "展开 N" 文本 + 右箭头图标。
-        //
-        // 显示条件：showExpandButton = true && cardCount >= 2（超过 1 张就显示）
-        //
-        // 定位：
-        // - 水平：统一以「顶卡右边缘」为基准，按钮起点 = 顶卡右 + 28dp（无论有无角标都用同一间距，
-        //   保证视觉一致；有角标时 28dp 含角标宽 + 角标→按钮间距）
-        // - 角标位置保持不变（顶卡右贴紧）
-        // - 垂直：按钮中心 = 顶卡垂直中心（以堆叠图中的顶层图片为基准垂直居中）
-        if (showExpand) {
-            val totalCount = cardCount
-            // 按钮 start（左）：统一以「顶卡右边缘」为基准，无论有无角标都使用相同的基准间距
-            // 保证 3 张图（无角标）/ 10 张图（有角标）展开按钮距顶卡右边缘的视觉距离一致
-            val buttonStartX = topCardRightX_box + if (showCountBadge) {
-                expandMarginToCardWithBadge
-            } else {
-                expandMarginToCardNoBadge
-            }
-            val topCardCenterY = (topCardTop_box + topCardBottomY_box) / 2f
-            // 按钮垂直居中：先把 wrapper Box 左上角放在「顶卡中心 y」处，
-            // 再通过 onSizeChanged 读取按钮实际高度后用 graphicsLayer.translationY 回移一半，
-            // 彻底摆脱 buttonEstH 估算不准导致的视觉不居中问题（之前估算 22dp vs 实际≈19dp，
-            // 造成按钮中心高出顶卡中心约 1.5dp）。
-            var buttonSize by remember { mutableStateOf(IntSize.Zero) }
-            val density = LocalDensity.current
-            val btnActualHalfOffsetDp = with(density) {
-                if (buttonSize == IntSize.Zero) 0.dp
-                else (buttonSize.height / 2).toDp()
-            }
-            // 用 TopStart + padding 精确定位：
-            // - top = topCardCenterY：wrapper Box 左上角在顶卡中心线上
-            // - translationY = -btnActualHalfOffsetDp：上移实际高的一半 → 真正居中
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = buttonStartX.dp, top = topCardCenterY.dp)
-                    .graphicsLayer {
-                        translationY = -btnActualHalfOffsetDp.toPx()
-                    }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .background(
-                            color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
-                            shape = RoundedCornerShape(11.dp)
-                        )
-                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                        .onSizeChanged { buttonSize = it }
-                        .clickable {
-                            // 点击展开按钮 → 切换到展开态
-                            // 设计文档 §5 数据流：isExpanded = true 触发 LaunchedEffect 重排
-                            isExpanded = true
-                            onExpandStateChange?.invoke(true)
-                        },
-                    verticalAlignment = Alignment.CenterVertically
+                        .align(Alignment.TopStart)
+                        .padding(start = badgeStartX.dp, top = badgeTopY.dp)
                 ) {
+                    // 与灵感首页 #标签 样式一致：
+                    // - 背景色：0xFFFFF3E0（浅橙底）
+                    // - 圆角：10.dp
+                    // - 文字色：UiColors.Primary（项目主题主色）
+                    // - 字号：10sp / lineHeight = 10sp（最小行高，紧凑型）
+                    // - padding：水平 1dp / 垂直 0dp（紧凑型）
                     Text(
-                        text = "展开 $totalCount",
-                        color = Color(0xFF4F5660),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = "展开全部图片",
-                        tint = Color(0xFF4F5660),
-                        modifier = Modifier.size(16.dp)
+                        text = "$currentPosition/$totalCount",
+                        fontSize = 10.sp,
+                        lineHeight = 10.sp,
+                        color = UiColors.Primary,
+                        modifier = Modifier
+                            .background(
+                                color = Color(0xFFFFF3E0),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .padding(horizontal = 1.dp, vertical = 0.dp)
                     )
                 }
             }
-        }
 
-        // ============ 收起按钮（collapseButton）============
-        // 设计文档 §3.5：展开态下显示在顶卡左边缘左侧，垂直居中于顶卡
-        // - 样式与 expandButton 完全一致（灰底半透明胶囊 + 11sp Medium + ChevronRight 图标）
-        // - 文本：显示"收起"
-        // - 显示条件：isExpanded = true（堆叠态不显示）
-        // - 实现：与 expandButton 相同的 onSizeChanged + graphicsLayer.translationY 精确居中方案
-        if (isExpanded) {
-            // 顶卡左边缘（外层 Box 坐标）：展开态下 cardBoxStartX=0，顶卡中心 = cardWVal/2
-            val topCardLeftX_expanded = 0f  // 展开态卡片容器从 (0,0) 开始，顶卡左边缘 = 0
-            val topCardTop_expanded = 0f
-            val topCardBottom_expanded = cardHVal
-            val topCardCenterY_expanded = (topCardTop_expanded + topCardBottom_expanded) / 2f
-
-            // 收起按钮 start：顶卡左边缘 - 按钮宽度 - 8dp 间距
-            // 按钮宽度通过 onSizeChanged 实时读取（与 expandButton 一致）
-            // 这里用估算值 76dp 计算初始位置，onSizeChanged 后用 graphicsLayer.translationX 修正
-            val collapseBtnEstWidth = 76f
-            val collapseBtnGap = 8f
-            val buttonStartX = topCardLeftX_expanded - collapseBtnEstWidth - collapseBtnGap
-
-            var collapseButtonSize by remember { mutableStateOf(IntSize.Zero) }
-            val density = LocalDensity.current
-            val collapseBtnActualHalfOffsetDp = with(density) {
-                if (collapseButtonSize == IntSize.Zero) 0.dp
-                else (collapseButtonSize.height / 2).toDp()
-            }
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    // 注：buttonStartX 为负值（顶卡左侧 -76dp - 8dp），不能用 padding
-                    // （Compose padding 不支持负值会截断为 0），改用 graphicsLayer.translationX
-                    // 单位策略：与 cardBoxStartX 一致，直接当 px 用（参考堆叠卡片容器 L496）
-                    .padding(top = topCardCenterY_expanded.dp)
-                    .graphicsLayer {
-                        translationX = buttonStartX
-                        translationY = -collapseBtnActualHalfOffsetDp.toPx()
-                    }
-            ) {
-                Row(
+            // ============ 展开按钮（showExpandButton）============
+            // 仅 UI，后续再接入点击展开逻辑。
+            // 样式：灰底胶囊（比角标大一号）+ "展开 N" 文本 + 右箭头图标。
+            //
+            // 显示条件：showExpandButton = true && cardCount >= 2（超过 1 张就显示）
+            //
+            // 定位：
+            // - 水平：统一以「顶卡右边缘」为基准，按钮起点 = 顶卡右 + 28dp（无论有无角标都用同一间距，
+            //   保证视觉一致；有角标时 28dp 含角标宽 + 角标→按钮间距）
+            // - 角标位置保持不变（顶卡右贴紧）
+            // - 垂直：按钮中心 = 顶卡垂直中心（以堆叠图中的顶层图片为基准垂直居中）
+            if (showExpand) {
+                val totalCount = cardCount
+                // 按钮 start（左）：统一以「顶卡右边缘」为基准，无论有无角标都使用相同的基准间距
+                // 保证 3 张图（无角标）/ 10 张图（有角标）展开按钮距顶卡右边缘的视觉距离一致
+                // 坐标系说明：按钮现在在卡片容器内部，堆叠态卡片容器存在平移 cardBoxStartX/Y（负值），
+                // 所以 padding 值需要减去堆叠态平移，最终视觉位置与原外层坐标系设计一致；展开态无平移直接使用原值。
+                val buttonBaseMargin = if (showCountBadge) expandMarginToCardWithBadge else expandMarginToCardNoBadge
+                val buttonStartX = (topCardRightX_box + buttonBaseMargin) - if (isExpanded) 0f else cardBoxStartX
+                val topCardCenterY = (topCardTop_box + topCardBottomY_box) / 2f - if (isExpanded) 0f else cardBoxStartY
+                // 按钮垂直居中：先把 wrapper Box 左上角放在「顶卡中心 y」处，
+                // 再通过 onSizeChanged 读取按钮实际高度后用 graphicsLayer.translationY 回移一半，
+                // 彻底摆脱 buttonEstH 估算不准导致的视觉不居中问题（之前估算 22dp vs 实际≈19dp，
+                // 造成按钮中心高出顶卡中心约 1.5dp）。
+                var buttonSize by remember { mutableStateOf(IntSize.Zero) }
+                val density = LocalDensity.current
+                val btnActualHalfOffsetDp = with(density) {
+                    if (buttonSize == IntSize.Zero) 0.dp
+                    else (buttonSize.height / 2).toDp()
+                }
+                // 用 TopStart + padding 精确定位：
+                // - top = topCardCenterY：wrapper Box 左上角在顶卡中心线上
+                // - translationY = -btnActualHalfOffsetDp：上移实际高的一半 → 真正居中
+                Box(
                     modifier = Modifier
-                        .background(
-                            color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
-                            shape = RoundedCornerShape(11.dp)
-                        )
-                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                        .onSizeChanged { collapseButtonSize = it }
-                        .clickable {
-                            // 点击收起按钮 → 切换回堆叠态 + 滚动归零
-                            // 设计文档 §5 数据流：scrollState 归零 + isExpanded = false
-                            scope.launch {
-                                expandedScrollState.animateScrollTo(0)
-                                isExpanded = false
-                                onExpandStateChange?.invoke(false)
-                            }
-                        },
-                    verticalAlignment = Alignment.CenterVertically
+                        .align(Alignment.TopStart)
+                        .padding(start = buttonStartX.dp, top = topCardCenterY.dp)
+                        .graphicsLayer {
+                            translationY = -btnActualHalfOffsetDp.toPx()
+                        }
                 ) {
-                    Text(
-                        text = "收起",
-                        color = Color(0xFF4F5660),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = "收起图片堆叠",
-                        tint = Color(0xFF4F5660),
-                        modifier = Modifier.size(16.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .background(
+                                color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
+                                shape = RoundedCornerShape(11.dp)
+                            )
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                            .onSizeChanged { buttonSize = it }
+                            .clickable {
+                                // 点击展开按钮 → 切换到展开态
+                                // 设计文档 §5 数据流：isExpanded = true 触发 LaunchedEffect 重排
+                                isExpanded = true
+                                onExpandStateChange?.invoke(true)
+                            },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "展开 $totalCount",
+                            color = Color(0xFF4F5660),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "展开全部图片",
+                            tint = Color(0xFF4F5660),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
-        }
-    }
+
+            // ============ 收起按钮（collapseButton，卡片容器内）============
+            // 设计文档 §3.5：展开态下显示在顶卡左边缘左侧，垂直居中于顶卡
+            // - 样式与 expandButton 完全一致（灰底半透明胶囊 + 11sp Medium + ChevronRight 图标）
+            // - 文本：显示"收起"
+            // - 显示条件：isExpanded = true（堆叠态不显示）
+            // - 位置：放在卡片容器内部（即使 translationX 为负也不被外层裁剪，因为 horizontalScroll 在卡片容器上）
+            // - 实现：与 expandButton 相同的 onSizeChanged + graphicsLayer.translationY 精确居中方案
+            if (isExpanded) {
+                // 展开态卡片容器：TopStart 基准，顶卡左边缘 = 0，顶卡 top = 0
+                val topCardTop_expanded = 0f
+                val topCardBottom_expanded = cardHVal
+                val topCardCenterY_expanded = (topCardTop_expanded + topCardBottom_expanded) / 2f
+
+                // 收起按钮 start：顶卡左边缘(0) - 估算按钮宽(76dp) - 8dp 间距 → 负值
+                // （因为在卡片容器内部，horizontalScroll 保证水平方向不裁剪，负 translationX 可见）
+                val collapseBtnEstWidth = 76f
+                val collapseBtnGap = 8f
+                val buttonStartX = -collapseBtnEstWidth - collapseBtnGap
+
+                var collapseButtonSize by remember { mutableStateOf(IntSize.Zero) }
+                val density = LocalDensity.current
+                val collapseBtnActualHalfOffsetDp = with(density) {
+                    if (collapseButtonSize == IntSize.Zero) 0.dp
+                    else (collapseButtonSize.height / 2).toDp()
+                }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        // 收起按钮在顶卡左侧，需要负起点：padding(start=x) 不支持负值，
+                        // 统一用 graphicsLayer.translationX 实现左移
+                        .padding(top = topCardCenterY_expanded.dp)
+                        .graphicsLayer {
+                            translationX = buttonStartX
+                            translationY = -collapseBtnActualHalfOffsetDp.toPx()
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .background(
+                                color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
+                                shape = RoundedCornerShape(11.dp)
+                            )
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                            .onSizeChanged { collapseButtonSize = it }
+                            .clickable {
+                                // 点击收起按钮 → 切换回堆叠态 + 滚动归零
+                                // 设计文档 §5 数据流：scrollState 归零 + isExpanded = false
+                                scope.launch {
+                                    expandedScrollState.animateScrollTo(0)
+                                    isExpanded = false
+                                    onExpandStateChange?.invoke(false)
+                                }
+                            },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "收起",
+                            color = Color(0xFF4F5660),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "收起图片堆叠",
+                            tint = Color(0xFF4F5660),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }  // 卡片容器 Box 闭合
+    }      // 外层 Box 闭合
 }
 
 /**
