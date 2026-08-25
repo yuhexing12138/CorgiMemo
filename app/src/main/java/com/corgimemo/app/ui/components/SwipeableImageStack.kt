@@ -689,7 +689,7 @@ fun SwipeableImageStack(
                                 }
                             )
                             .then(
-                                if (isTopCard) {
+                                if (isTopCard && !isExpanded) {
                                     Modifier.pointerInput(slot.stableId, swipeDirection) {
                                         // 水平模式：用 detectHorizontalDragGestures，天然不消费垂直分量，
                                         // 父级 LazyColumn 仍可垂直滚动（关键解耦点）。
@@ -857,6 +857,9 @@ fun SwipeableImageStack(
                                         }
                                     }
                                 } else {
+                                    // 非顶卡 或 展开态：不挂载拖拽
+                                    // - 非顶卡：保持现有行为
+                                    // - 展开态：禁用翻牌手势，避免与 horizontalScroll 横向滑动冲突（设计文档 §4.6）
                                     Modifier
                                 }
                             )
