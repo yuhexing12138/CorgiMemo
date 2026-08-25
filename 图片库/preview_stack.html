@@ -183,9 +183,11 @@
             tiltAngle = -45,
             tiltAngleStart = 0,
             xOffset = 0,
+            visibleDepth = 4,
+            cardCount = 4,
             transition = { type: "spring", stiffness: 300, damping: 30 }
         }) {
-            const images = (() => {
+            const sourceImages = (() => {
                 switch (mode) {
                     case "realImages": return REAL_IMAGES;
                     case "custom": return CUSTOM_PALETTE;
@@ -194,6 +196,14 @@
                     default:
                         return DEFAULT_IMAGE_COLORS.map(c => ({ color: c.color, name: c.name }));
                 }
+            })();
+
+            // 图片数量：按 cardCount 截取/循环复用（支持用户调整张数，配合 visibleDepth 测试层叠效果）
+            const images = (() => {
+                const n = cardCount > 0 ? cardCount : sourceImages.length;
+                const out = [];
+                for (let i = 0; i < n; i++) out.push(sourceImages[i % sourceImages.length]);
+                return out;
             })();
 
             const actualCardCount = images.length;
@@ -242,15 +252,20 @@
 
             const getCardStyle = (index) => {
                 const totalCards = cards.length;
-                const stackOffset = index * 8;
-                const scaleValue = 1 - index * 0.05;
+                // 可见深度：仅前 M = min(visibleDepth, totalCards) 张参与层叠展开；
+                // 超出部分夹在栈底（ei = M-1），不再随图片数无限摊开。
+                const M = Math.max(1, Math.min(visibleDepth, totalCards));
+                const ei = Math.min(index, M - 1);     // 饱和夹取的有效层索引
+                const denom = Math.max(1, M - 1);       // 旋转/横移扇形分母（仅在前 M 张铺开）
+                const stackOffset = ei * 8;
+                const scaleValue = 1 - ei * 0.05;
                 const rotationValue =
                     totalCards > 1
-                        ? tiltAngleStart + (index / (totalCards - 1)) * (tiltAngle - tiltAngleStart)
+                        ? tiltAngleStart + (ei / denom) * (tiltAngle - tiltAngleStart)
                         : tiltAngleStart;
                 const xOffsetValue =
-                    totalCards > 1 ? (index / (totalCards - 1)) * xOffset : 0;
-                const depthOffset = index * DEPTH_SPACING;
+                    totalCards > 1 ? (ei / denom) * xOffset : 0;
+                const depthOffset = ei * DEPTH_SPACING;
                 const isTopCard = index === 0;
                 const shouldReturn = isTopCard && shouldReturnToCenter;
 
@@ -289,7 +304,7 @@
                         {cards.map((card, index) => {
                             const isTopCard = index === 0;
                             const cardStyle = getCardStyle(index);
-                            const cardData = images[card.imageIndex];
+                            const cardData = images[Math.min(card.imageIndex, images.length - 1)];
                             const hasImage = mode !== "noImage";
 
                             const renderContent = () => {
@@ -440,6 +455,8 @@
             const [swipeThreshold, setSwipeThreshold] = useState(50);
             const [tiltAngle, setTiltAngle] = useState(-45);
             const [xOffset, setXOffset] = useState(0);
+            const [visibleDepth, setVisibleDepth] = useState(4);
+            const [cardCount, setCardCount] = useState(4);
 
             return (
                 <div className="app">
@@ -483,6 +500,21 @@
                         </section>
 
                         <section>
+                            <h2>图片数量</h2>
+                            <label>cardCount <span className="val">{cardCount} 张</span></label>
+                            <input type="range" min="1" max="100" value={cardCount}
+                                onChange={e => {
+                                    const n = +e.target.value;
+                                    setCardCount(n);
+                                    setVisibleDepth(v => Math.min(v, n));
+                                }} />
+                            <div style={{ fontSize: 11, color: "#999", margin: "0 0 8px 0" }}>
+                                调整图片张数（超出各模式原图数时循环复用）；<br/>
+                                配合 visibleDepth 可观察「仅前 M 张展开、其余夹栈底」
+                            </div>
+                        </section>
+
+                        <section>
                             <h2>堆叠</h2>
                             <label>tiltAngle <span className="val">{tiltAngle}°</span></label>
                             <input type="range" min="-90" max="0" value={tiltAngle}
@@ -491,6 +523,14 @@
                             <label>xOffset <span className="val">{xOffset}px</span></label>
                             <input type="range" min="0" max="300" value={xOffset}
                                 onChange={e => setXOffset(+e.target.value)} />
+
+                            <label>visibleDepth 可见深度 <span className="val">{Math.min(visibleDepth, cardCount)} 张</span></label>
+                            <input type="range" min="1" max={cardCount} value={Math.min(visibleDepth, cardCount)}
+                                onChange={e => setVisibleDepth(Math.min(+e.target.value, cardCount))} />
+                            <div style={{ fontSize: 11, color: "#999", margin: "0 0 8px 0" }}>
+                                仅前 min(visibleDepth, 当前图数) 张层叠展开，超出夹在栈底；<br/>
+                                上限 = 当前图片数量 cardCount（{cardCount} 张），调整值不会超过它
+                            </div>
                         </section>
 
                         <section>
@@ -539,6 +579,8 @@
                             tiltAngle={tiltAngle}
                             tiltAngleStart={0}
                             xOffset={xOffset}
+                            visibleDepth={visibleDepth}
+                            cardCount={cardCount}
                             transition={{ type: "spring", stiffness: 300, damping: 30 }}
                         />
                         <StatusBadge mode={mode} />
