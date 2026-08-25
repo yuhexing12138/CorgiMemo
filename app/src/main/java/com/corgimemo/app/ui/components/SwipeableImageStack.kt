@@ -6,6 +6,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -392,8 +393,10 @@ fun SwipeableImageStack(
     // showExpandButton "展开 N" 按钮：放在角标的右侧，比角标大一号，紧凑显示
     // 两者均需动态扩宽外层 Box 右边缘，保证完全不被裁剪、不与图片重叠
     // 左边缘保持不动（堆叠区左上角始终对齐外层 Box 左上角）
-    val showCountBadge = countBadge && cardCount > visibleDepth
-    val showExpand = showExpandButton && cardCount >= 2  // ≥ 2 张时就显示展开按钮
+    // 展开态下不显示角标（设计文档 §3.4 / R6 需求）
+    val showCountBadge = countBadge && cardCount > visibleDepth && !isExpanded
+    // 展开态下展开按钮隐藏（设计文档 §3.4，由收起按钮取代）
+    val showExpand = showExpandButton && cardCount >= 2 && !isExpanded  // ≥ 2 张且非展开态时显示
     // 角标估算宽度：最多 5 字符 "100/100" 10sp ≈ 35dp + 水平 padding 8dp ≈ 43dp
     val badgeEstWidth = if (showCountBadge) 45f else 0f
     // 展开按钮（比角标大一号）：
@@ -1022,7 +1025,13 @@ fun SwipeableImageStack(
                             shape = RoundedCornerShape(11.dp)
                         )
                         .padding(horizontal = 5.dp, vertical = 2.dp)
-                        .onSizeChanged { buttonSize = it },
+                        .onSizeChanged { buttonSize = it }
+                        .clickable {
+                            // 点击展开按钮 → 切换到展开态
+                            // 设计文档 §5 数据流：isExpanded = true 触发 LaunchedEffect 重排
+                            isExpanded = true
+                            onExpandStateChange?.invoke(true)
+                        },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
