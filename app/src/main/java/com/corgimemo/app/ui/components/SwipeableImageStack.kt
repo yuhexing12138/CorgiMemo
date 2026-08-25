@@ -1049,6 +1049,80 @@ fun SwipeableImageStack(
                 }
             }
         }
+
+        // ============ 收起按钮（collapseButton）============
+        // 设计文档 §3.5：展开态下显示在顶卡左边缘左侧，垂直居中于顶卡
+        // - 样式与 expandButton 完全一致（灰底半透明胶囊 + 11sp Medium + ChevronRight 图标）
+        // - 文本：显示"收起"
+        // - 显示条件：isExpanded = true（堆叠态不显示）
+        // - 实现：与 expandButton 相同的 onSizeChanged + graphicsLayer.translationY 精确居中方案
+        if (isExpanded) {
+            // 顶卡左边缘（外层 Box 坐标）：展开态下 cardBoxStartX=0，顶卡中心 = cardWVal/2
+            val topCardLeftX_expanded = 0f  // 展开态卡片容器从 (0,0) 开始，顶卡左边缘 = 0
+            val topCardTop_expanded = 0f
+            val topCardBottom_expanded = cardHVal
+            val topCardCenterY_expanded = (topCardTop_expanded + topCardBottom_expanded) / 2f
+
+            // 收起按钮 start：顶卡左边缘 - 按钮宽度 - 8dp 间距
+            // 按钮宽度通过 onSizeChanged 实时读取（与 expandButton 一致）
+            // 这里用估算值 76dp 计算初始位置，onSizeChanged 后用 graphicsLayer.translationX 修正
+            val collapseBtnEstWidth = 76f
+            val collapseBtnGap = 8f
+            val buttonStartX = topCardLeftX_expanded - collapseBtnEstWidth - collapseBtnGap
+
+            var collapseButtonSize by remember { mutableStateOf(IntSize.Zero) }
+            val density = LocalDensity.current
+            val collapseBtnActualHalfOffsetDp = with(density) {
+                if (collapseButtonSize == IntSize.Zero) 0.dp
+                else (collapseButtonSize.height / 2).toDp()
+            }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    // 注：buttonStartX 为负值（顶卡左侧 -76dp - 8dp），不能用 padding
+                    // （Compose padding 不支持负值会截断为 0），改用 graphicsLayer.translationX
+                    // 单位策略：与 cardBoxStartX 一致，直接当 px 用（参考堆叠卡片容器 L496）
+                    .padding(top = topCardCenterY_expanded.dp)
+                    .graphicsLayer {
+                        translationX = buttonStartX
+                        translationY = -collapseBtnActualHalfOffsetDp.toPx()
+                    }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .background(
+                            color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
+                            shape = RoundedCornerShape(11.dp)
+                        )
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                        .onSizeChanged { collapseButtonSize = it }
+                        .clickable {
+                            // 点击收起按钮 → 切换回堆叠态 + 滚动归零
+                            // 设计文档 §5 数据流：scrollState 归零 + isExpanded = false
+                            scope.launch {
+                                expandedScrollState.animateScrollTo(0)
+                                isExpanded = false
+                                onExpandStateChange?.invoke(false)
+                            }
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "收起",
+                        color = Color(0xFF4F5660),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "收起图片堆叠",
+                        tint = Color(0xFF4F5660),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
     }
 }
 
