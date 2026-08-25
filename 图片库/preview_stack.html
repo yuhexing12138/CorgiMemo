@@ -500,6 +500,15 @@
                         </section>
 
                         <section>
+                            <h2>圆角公式</h2>
+                            <code style={{ fontSize: 11, color: "#9967FF" }}>
+                                radius = (cardRadius/20) × min(W,H)/2<br/>
+                                = ({cardRadius}/20) × {Math.min(cardWidth, cardHeight)}/2<br/>
+                                = <b>{((cardRadius / 20) * (Math.min(cardWidth, cardHeight) / 2)).toFixed(1)}px</b>
+                            </code>
+                        </section>
+
+                        <section>
                             <h2>图片数量</h2>
                             <label>cardCount <span className="val">{cardCount} 张</span></label>
                             <input type="range" min="1" max="100" value={cardCount}
@@ -538,15 +547,6 @@
                             <label>swipeThreshold <span className="val">{swipeThreshold}px</span></label>
                             <input type="range" min="10" max="200" value={swipeThreshold}
                                 onChange={e => setSwipeThreshold(+e.target.value)} />
-                        </section>
-
-                        <section>
-                            <h2>圆角公式</h2>
-                            <code style={{ fontSize: 11, color: "#9967FF" }}>
-                                radius = (cardRadius/20) × min(W,H)/2<br/>
-                                = ({cardRadius}/20) × {Math.min(cardWidth, cardHeight)}/2<br/>
-                                = <b>{((cardRadius / 20) * (Math.min(cardWidth, cardHeight) / 2)).toFixed(1)}px</b>
-                            </code>
                         </section>
 
                         <section>
