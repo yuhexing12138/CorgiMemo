@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -641,7 +642,11 @@ fun SwipeableImageStack(
                     // ==============================
                     Row(
                         modifier = Modifier
-                            .wrapContentWidth(unbounded = true)
+                            // V3.1 修复：移除 wrapContentWidth(unbounded=true)
+                            // - 原因 1：Compose BOM 2026.04.01(1.9.2) 很新，wrapContentWidth 可能存在 API 兼容/注解问题
+                            // - 原因 2：在 horizontalScroll 容器内，父 Box 传递无限宽度约束，
+                            //           Row 默认会按子内容实际宽度自由排开（与 unbounded=true 效果完全等价）
+                            // - 与待办编辑页 LazyRow 行为完全同构：LazyRow 也不设置 wrapContentWidth
                             .height(cardHeight),
                         horizontalArrangement = Arrangement.spacedBy(cardGap),
                         verticalAlignment = Alignment.CenterVertically
