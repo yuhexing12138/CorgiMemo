@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -54,6 +55,12 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.sin
+
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material3.Icon
+import com.corgimemo.app.ui.theme.UiColors
 
 /**
  * 堆叠中的单张卡片槽位
@@ -156,6 +163,7 @@ fun SwipeableImageStack(
     visibleDepth: Int = 4,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     countBadge: Boolean = false,
+    showExpandButton: Boolean = false,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null
 ) {
@@ -172,6 +180,7 @@ fun SwipeableImageStack(
         visibleDepth = visibleDepth,
         swipeDirection = swipeDirection,
         countBadge = countBadge,
+        showExpandButton = showExpandButton,
         onCardSwiped = onCardSwiped,
         onCardClick = onCardClick,
         customContent = null
@@ -201,6 +210,7 @@ fun SwipeableImageStack(
     visibleDepth: Int = 4,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     countBadge: Boolean = false,
+    showExpandButton: Boolean = false,
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null,
     customContent: (@Composable BoxScope.(stackIndex: Int) -> Unit)? = null
@@ -353,14 +363,23 @@ fun SwipeableImageStack(
     val cardBoxStartX = -bboxLeft - bboxWidth / 2f
     val cardBoxStartY = -bboxTop - bboxHeight / 2f
 
-    // ============ 角标对 Box 右边缘的扩宽 ============
-    // 当启用 countBadge 时，角标放在外层 Box 右下角（BottomEnd）
-    // 需要动态扩宽外层 Box 右边缘，确保角标与顶卡右边缘之间有 4dp 间距，完全不重叠
+    // ============ 角标 & 展开按钮对 Box 右边缘的扩宽 ============
+    // countBadge 角标：放在外层 Box 右下角（BottomEnd），位于顶卡右边缘右侧（位置保持不变）
+    // showExpandButton "展开 N" 按钮：放在角标的右侧，比角标大一号，紧凑显示
+    // 两者均需动态扩宽外层 Box 右边缘，保证完全不被裁剪、不与图片重叠
     // 左边缘保持不动（堆叠区左上角始终对齐外层 Box 左上角）
-    val badgeEstWidth = if (countBadge && cardCount > visibleDepth) {
-        // 角标估算宽度：最多 5 字符 "100/100" 10sp ≈ 35dp + 水平 padding 8dp ≈ 43dp
-        45f
-    } else 0f
+    val showCountBadge = countBadge && cardCount > visibleDepth
+    val showExpand = showExpandButton && cardCount >= 2  // ≥ 2 张时就显示展开按钮
+    // 角标估算宽度：最多 5 字符 "100/100" 10sp ≈ 35dp + 水平 padding 8dp ≈ 43dp
+    val badgeEstWidth = if (showCountBadge) 45f else 0f
+    // 展开按钮（比角标大一号）：
+    // - 文本 "展开 100" 12sp ≈ 50dp + 水平 padding 10dp + 图标 16dp ≈ 76dp
+    // - 胶囊高度 ≈ 22dp（比角标 16dp 高 6dp）
+    // - 与角标右边缘之间水平间距 = 6dp
+    val expandEstWidth = if (showExpand) 76f else 0f
+    val expandBadgeGap = if (showCountBadge && showExpand) 6f else 0f  // 角标→按钮 的水平间距
+    // 展开按钮相对于顶卡右边缘的独立间距（角标未显示时）
+    val expandMarginToCardNoBadge = if (showExpand && !showCountBadge) 4f else 0f
     // 顶卡左边缘 & 右边缘（外层 Box 坐标）
     val topCardCenterX_box = -bboxLeft
     val topCardLeft_box = topCardCenterX_box - cardWVal / 2f
@@ -369,16 +388,28 @@ fun SwipeableImageStack(
     val topCardCenterY_box = -bboxTop
     val topCardTop_box = topCardCenterY_box - cardHVal / 2f
     val topCardBottomY_box = topCardTop_box + cardHVal
-    val badgeRequiredRight = if (countBadge && cardCount > visibleDepth) {
-        topCardRightX_box + 4f + badgeEstWidth + 4f  // 顶卡右 → 4dp → 角标 → 4dp → 外层右
+    // 角标右边缘位置：顶卡右 + 0dp（用户要求去掉间距，角标贴紧顶卡右边缘）
+    val badgeRightEdge = if (showCountBadge) {
+        topCardRightX_box + 0f + badgeEstWidth
     } else 0f
+    // 按钮右边缘：角标右侧（若显示角标）+ 间距 + 按钮宽，或直接顶卡右侧 + 间距 + 按钮宽
+    val expandRightEdge = if (showExpand) {
+        if (showCountBadge) {
+            badgeRightEdge + expandBadgeGap + expandEstWidth
+        } else {
+            topCardRightX_box + expandMarginToCardNoBadge + expandEstWidth
+        }
+    } else 0f
+    // 外层 Box 右边缘：至少到各元素右边缘 + 4dp（不贴边）
+    // 角标左边缘已贴紧顶卡右边缘（badgeRightEdge - badgeEstWidth = topCardRightX_box + 0f）
+    val requireBadgeRight = if (showCountBadge) badgeRightEdge + 4f else 0f
+    val requireExpandRight = if (showExpand) expandRightEdge + 4f else 0f
+    val badgeRequiredRight = maxOf(requireBadgeRight, requireExpandRight)
 
     // 外层 Box 尺寸：
-    // - 宽度至少容纳堆叠区包围盒 / 原始扇形宽度 / 角标所需右边缘
+    // - 宽度至少容纳堆叠区包围盒 / 原始扇形宽度 / 角标和展开按钮所需右边缘
     // - 高度至少容纳堆叠区包围盒 / 原始卡片+垂直余量（原始 fallback 高度，防止单卡时 bboxHeight 太小）
-    // 注：角标是 BottomEnd + right/bottom padding 定位（水平方向在图片右侧），
-    // 垂直方向角标底部 = topCardBottomY_box（≤ bboxHeight），因此不需要额外扩高 boxHeight，
-    // 否则会出现底部空白（与下一篇灵感标题行间距变大）。
+    // 注：角标/展开按钮均放在 Box 右侧（不增加高度），因此 boxHeight 无需额外扩宽。
     val boxWidth = maxOf(cardWVal + xOffset.value, bboxWidth, badgeRequiredRight, cardBoxStartX + bboxWidth)
     val boxHeight = maxOf(cardHVal + stackVPVal, bboxHeight)
 
@@ -813,6 +844,9 @@ fun SwipeableImageStack(
         }
 
         // ============ 图片计数角标（countBadge）============
+        // 样式与灵感首页标签保持一致（主色文字 + 浅橙底 + 10dp 圆角）：
+        // - 与 TimelineInspirationItem tags Row 对齐，视觉体系统一
+        //
         // 当启用 countBadge 且图片张数超过可见深度时，在堆叠区右下角显示
         // "当前位置/总数" 格式的角标（如 "1/6"），让用户直观了解当前浏览进度。
         // 角标放在外层的 Box 内，与堆叠区捆绑为一个整体，确保未来移动堆叠区时角标同步移动。
@@ -822,40 +856,99 @@ fun SwipeableImageStack(
         // - cardCount > visibleDepth 才显示（≤ visibleDepth 时角标无意义，自动隐藏）
         //
         // 定位方式（用户方案：堆叠图左对齐，角标右对齐）：
-        // - 外层 Box 右边缘已动态扩宽到角标外侧 4dp，角标直接用 BottomEnd + padding 右对齐
-        // - 水平方向：角标在顶卡右边缘右侧，保证不与图片重叠
-        // - 垂直方向：paddingBottom 使角标底部 ≈ 顶卡底部
-        if (countBadge && cardCount > visibleDepth) {
+        // - 角标左边缘 = 顶卡右边缘（0dp 间距，用户要求紧贴）
+        // - 角标底边缘 = 顶卡底边缘（严格对齐）
+        // - 外层 Box 右边缘已动态扩宽（含展开按钮），角标完全在 Box 内
+        //
+        // 实现：用 TopStart + 绝对 padding 定位，不依赖 boxHeight/bottomEdge 反算（避免 BottomEnd
+        // 与 translationY 联动时测量不一致导致的偏移）。
+        //
+        // 角标高估算：10sp 字体 + 0dp 垂直 padding ≈ 行高 10dp ≈ 视觉高度 12dp
+        // 为保证底边缘严格对齐，角标 top = 顶卡底 - 估算高度
+        if (showCountBadge) {
             val currentPosition = order[0].originalIndex + 1  // 1-based 当前位置
             val totalCount = cardCount
 
-            // 计算 paddingBottom：使角标底部与顶卡底部对齐
-            // 外层 Box 底部 = boxHeight，顶卡底部 = topCardBottomY_box
-            // 角标放在 BottomEnd，paddingBottom = boxHeight - topCardBottomY_box 时
-            // 角标底部 = boxHeight - paddingBottom = topCardBottomY_box ✓
-            val badgePadBottom = boxHeight - topCardBottomY_box
-            // 角标右边缘到外层 Box 右边缘 4dp 间距（外层右边缘已留出空间）
-            val badgePadEnd = 4f
+            // 精确坐标（外层 Box TopStart 坐标系）
+            val badgeStartX = topCardRightX_box  // 0dp 间距：左边缘 = 顶卡右边缘
+            val badgeEstH = 12f  // 10sp 字体行高 ≈ 10~12dp
+            val badgeTopY = topCardBottomY_box - badgeEstH
 
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = badgePadEnd.dp, bottom = badgePadBottom.dp)
+                    .align(Alignment.TopStart)
+                    .padding(start = badgeStartX.dp, top = badgeTopY.dp)
             ) {
-                Box(
+                // 与灵感首页 #标签 样式一致：
+                // - 背景色：0xFFFFF3E0（浅橙底）
+                // - 圆角：10.dp
+                // - 文字色：UiColors.Primary（项目主题主色）
+                // - 字号：10sp / lineHeight = 10sp（最小行高，紧凑型）
+                // - padding：水平 1dp / 垂直 0dp（紧凑型）
+                Text(
+                    text = "$currentPosition/$totalCount",
+                    fontSize = 10.sp,
+                    lineHeight = 10.sp,
+                    color = UiColors.Primary,
                     modifier = Modifier
                         .background(
-                            color = Color.Black.copy(alpha = 0.6f),
-                            shape = RoundedCornerShape(3.dp)
+                            color = Color(0xFFFFF3E0),
+                            shape = RoundedCornerShape(10.dp)
                         )
-                        .padding(horizontal = 4.dp, vertical = 1.dp),
-                    contentAlignment = Alignment.Center
+                        .padding(horizontal = 1.dp, vertical = 0.dp)
+                )
+            }
+        }
+
+        // ============ 展开按钮（showExpandButton）============
+        // 仅 UI，后续再接入点击展开逻辑。
+        // 样式：灰底胶囊（比角标大一号）+ "展开 N" 文本 + 右箭头图标。
+        //
+        // 显示条件：showExpandButton = true && cardCount >= 2（超过 1 张就显示）
+        //
+        // 定位：
+        // - 水平：展开按钮在角标的右侧（角标显示时：角标右 + 6dp；角标不显示时：顶卡右 + 4dp）
+        // - 角标位置保持不变
+        // - 垂直：按钮中心 = 顶卡垂直中心（以堆叠图中的顶层图片为基准垂直居中）
+        if (showExpand) {
+            val totalCount = cardCount
+            // 按钮估算高度（紧凑型，比角标高约 6dp）
+            val buttonEstH = 22f
+            // 按钮 start（左）：角标右侧 / 顶卡右侧
+            val buttonStartX = if (showCountBadge) {
+                badgeRightEdge + expandBadgeGap
+            } else {
+                topCardRightX_box + expandMarginToCardNoBadge
+            }
+            // 按钮垂直居中：顶卡中心 = 按钮中心
+            val topCardCenterY = (topCardTop_box + topCardBottomY_box) / 2f
+            val buttonTopY = topCardCenterY - buttonEstH / 2f
+            // 用 TopStart + padding 精确定位
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = buttonStartX.dp, top = buttonTopY.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .background(
+                            color = Color(0xFFF2F3F5),
+                            shape = RoundedCornerShape(11.dp)
+                        )
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "$currentPosition/$totalCount",
-                        color = Color.White,
-                        fontSize = 10.sp,
+                        text = "展开 $totalCount",
+                        color = Color(0xFF4F5660),
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "展开全部图片",
+                        tint = Color(0xFF4F5660),
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }

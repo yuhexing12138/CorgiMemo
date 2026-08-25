@@ -445,6 +445,8 @@ fun TimelineInspirationItem(
                     swipeDirection = SwipeDirection.Horizontal,
                     // 超过 4 张图片时显示计数角标（"当前位置/总数"），提升信息密度
                     countBadge = true,
+                    // 超过 4 张图片时显示灰底"展开 N"胶囊按钮（仅 UI，后续接入点击逻辑）
+                    showExpandButton = true,
                     onCardClick = { originalIndex ->
                         onImageClick(originalIndex)
                     }
