@@ -166,6 +166,8 @@ fun SwipeableImageStack(
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     countBadge: Boolean = false,
     showExpandButton: Boolean = false,
+    cardGap: Dp = 8.dp,                                  // 透传：展开态卡片间距（堆叠态不使用）
+    onExpandStateChange: ((Boolean) -> Unit)? = null,    // 透传：展开/收起状态变化回调
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null
 ) {
@@ -183,6 +185,8 @@ fun SwipeableImageStack(
         swipeDirection = swipeDirection,
         countBadge = countBadge,
         showExpandButton = showExpandButton,
+        cardGap = cardGap,                                // 透传
+        onExpandStateChange = onExpandStateChange,       // 透传
         onCardSwiped = onCardSwiped,
         onCardClick = onCardClick,
         customContent = null
@@ -213,6 +217,10 @@ fun SwipeableImageStack(
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     countBadge: Boolean = false,
     showExpandButton: Boolean = false,
+    // ↓↓↓ 本次新增 ↓↓↓
+    cardGap: Dp = 8.dp,                                  // 展开态卡片间距（堆叠态不使用）
+    onExpandStateChange: ((Boolean) -> Unit)? = null,    // 展开/收起状态变化回调
+    // ↑↑↑ 本次新增 ↑↑↑
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null,
     customContent: (@Composable BoxScope.(stackIndex: Int) -> Unit)? = null
