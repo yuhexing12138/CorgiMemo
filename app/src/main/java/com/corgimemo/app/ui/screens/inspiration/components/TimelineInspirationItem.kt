@@ -20,12 +20,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -144,6 +150,16 @@ fun TimelineInspirationItem(
     onRelationCountClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // ===== 堆叠图 展开态 外部托管状态 =====
+    // - 收起按钮必须独立一行，padding(start=contentStartX) 与 标题/时间/正文/标签行 严格左对齐
+    //   （用户硬约束：截图可见"收起 >"现在位于卡片区垂直中间=严重不符合原型）
+    // - SwipeableImageStack 内部 render 同步使用同一 expandedState，保证：
+    //   ① 堆叠态 Badge(1/N) + 展开按钮 位置不变（仍用 stageBoxWidth≈200dp）
+    //   ② 展开态整行 Stage fillMaxWidth + expandedContentStartPadding=contentStartX，
+    //      第一张图起点 / 独立行"收起"按钮起点 = 同一垂直基准列（标题行左侧 ≈70dp）
+    val isImageStackExpanded = remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
     // ===== 横向布局常量 =====
     // 时间栏宽度 50dp：精确匹配"2026.07" 12sp 实际渲染宽度（约 50dp），
     // 让"2026.07"在 Column 内居中后右边距 = 0，时间栏右边缘紧贴"2026.07"右边缘。
@@ -431,6 +447,48 @@ fun TimelineInspirationItem(
             // - 点击顶卡触发 onImageClick(顶卡 originalIndex) 进入全屏 Pager 预览
             // - 拖动翻牌：左滑/右滑 >10dp（对齐原型 10px）顶卡飞出新顶卡上位
             if (!hideDetails && imagePaths.isNotEmpty()) {
+                // ====== 独立的「收起」按钮行（严格对齐标题行左侧 = contentStartX）======
+                // - 用户硬约束：原截图可见「收起 >」在卡片区垂直居中，严重不符合原型
+                // - 原型：收起按钮独立一行，与 测试图片标题 / 23:00 时间 / #诗意#时间 标签
+                //        保持完全相同的左边缘（contentStartX=70dp），不嵌入卡片区垂直居中
+                // - 仅在展开态（isImageStackExpanded=true）显示，堆叠态隐藏
+                // - 滚动归零（animateScrollTo）由 SwipeableImageStack 内部 LaunchedEffect 自动处理
+                if (isImageStackExpanded.value) {
+                    Spacer(modifier = Modifier.height(tagToImageGap))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = contentStartX),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .background(
+                                    color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
+                                    shape = RoundedCornerShape(11.dp)
+                                )
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                                .clickable {
+                                    // 点击收起按钮 → 切回堆叠态
+                                    isImageStackExpanded.value = false
+                                },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "收起",
+                                color = Color(0xFF4F5660),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = "收起图片堆叠",
+                                tint = Color(0xFF4F5660),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(tagToImageGap))
                 SwipeableImageStack(
                     imageUris = imagePaths,
@@ -447,6 +505,17 @@ fun TimelineInspirationItem(
                     countBadge = true,
                     // 超过 4 张图片时显示灰底"展开 N"胶囊按钮（仅 UI，后续接入点击逻辑）
                     showExpandButton = true,
+                    // ↓↓↓ 展开态外部托管参数 ↓↓↓
+                    // 展开态整行起始 padding = 标题/时间/正文/标签行 统一左基准（≈70dp）
+                    expandedContentStartPadding = contentStartX,
+                    // 外部统一托管 isExpanded 状态，保证：
+                    //  ① 独立行「收起」按钮 与 组件内部 状态 100% 同步
+                    //  ② 堆叠态仍使用 stageBoxWidth≈200dp 固定尺寸（Badge/ExpandBtn 位置不变）
+                    //  ③ 展开态 fillMaxWidth 突破 stageBoxWidth=200dp 裁切（原型 SCROLL_MAX_WIDTH=560px）
+                    expandedState = isImageStackExpanded,
+                    // 已在组件外部独立行放了「收起」按钮，内部不渲染避免重复
+                    showInnerCollapseButton = false,
+                    // ↑↑↑
                     onCardClick = { originalIndex ->
                         onImageClick(originalIndex)
                     }

@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +70,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Icon
 import com.corgimemo.app.ui.theme.UiColors
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 
 /**
  * 堆叠中的单张卡片槽位
@@ -226,6 +229,19 @@ fun SwipeableImageStack(
     // ↓↓↓ 本次新增 ↓↓↓
     cardGap: Dp = 8.dp,                                  // 展开态卡片间距（堆叠态不使用）
     onExpandStateChange: ((Boolean) -> Unit)? = null,    // 展开/收起状态变化回调
+    /** 展开态整行起始 padding（与标题/时间/标签行的左侧对齐基准）
+     *  - TimelineInspirationItem 场景应传入 contentStartX（≈70dp），
+     *    使展开行起点 = 标题行起点，视觉上纵向对齐同一列。
+     *  - 堆叠态不使用此值（完全保留 V1.0 坐标，Badge/ExpandBtn 位置不变）。*/
+    expandedContentStartPadding: Dp = 0.dp,
+    /** 外部 isExpanded 状态托管（可选）。
+     *  - 传 null（默认）：组件内部 remember 自管（向后兼容所有调用点）。
+     *  - 传 MutableState：调用方（如 TimelineInspirationItem）统一托管状态，
+     *    便于在组件**外部**放置 CollapseBtn（独立一行，padding start 与标题一致）。*/
+    expandedState: MutableState<Boolean>? = null,
+    /** 是否渲染内置 CollapseBtn。
+     *  - 当外部自己放了 CollapseBtn（expandedState 托管 + 独立行）时，传 false 去重。*/
+    showInnerCollapseButton: Boolean = true,
     // ↑↑↑ 本次新增 ↑↑↑
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null,
@@ -287,16 +303,29 @@ fun SwipeableImageStack(
     val shouldReturnToCenter = remember { mutableStateOf(false) }
 
     // ============ 展开态状态（设计文档 §3.3）============
-    // isExpanded：组件内部管理的"堆叠/展开"模式开关
-    // - false：堆叠态（现有扇形布局）
-    // - true：展开态（横向排列 + horizontalScroll）
-    // 由展开按钮和收起按钮点击切换，同时通过 onExpandStateChange 通知调用方
-    var isExpanded by remember { mutableStateOf(false) }
+    // isExpanded：堆叠/展开模式开关
+    // - 优先使用调用方 expandedState（外部托管，便于在组件外放 CollapseBtn）
+    // - 否则组件内部 remember 自管（向后兼容）
+    val _expandedInternal = remember { mutableStateOf(false) }
+    var isExpanded: Boolean by (expandedState ?: _expandedInternal)
 
     // expandedScrollState：展开态的横向滚动状态
     // - 展开时挂载到外层 Box 的 horizontalScroll
     // - 收起时通过 animateScrollTo(0) 归零
     val expandedScrollState = rememberScrollState()
+
+    // 自动重置：每当 isExpanded 变为 false，
+    // 滚动位置、顶卡拖拽偏移一起归零（下次展开视觉干净；兼容外部托管独立收起按钮行场景）
+    LaunchedEffect(isExpanded) {
+        if (!isExpanded) {
+            // 并行 3 条归位动画：滚动 + X 拖拽 + Y 拖拽
+            listOf(
+                async { expandedScrollState.animateScrollTo(0) },
+                async { dragOffsetX.animateTo(0f) },
+                async { dragOffsetY.animateTo(0f) }
+            ).awaitAll()
+        }
+    }
 
     // 容器：宽 = cardWidth + xOffset（容纳扇形最末端 xOffset 的偏移），
     // 高 = cardHeight + 15% cardHeight（容纳 yStackOffset 上移，按比例适配不同尺寸）
@@ -498,10 +527,20 @@ fun SwipeableImageStack(
             // V2.0 修复（方案A）：
             //   - 不裁剪溢出（左侧展开态的收起按钮 / 右侧展开态都不被截断）
             //   - 正确 API：Modifier.graphicsLayer { this.clip = false }（Modifier.clip 只接受 Shape）
-            //   - size 永远 = stageBoxWidthDp/stageBoxHeightDp（Dp 类型），恒定不变
+            //   - 堆叠态 size 永远 = stageBoxWidthDp/stageBoxHeightDp（恒定，Badge/ExpandBtn 位置不变）
+            //   - 展开态 fillMaxWidth：突破 stageBoxWidth≈200dp，使用父容器全宽
+            //     （原型 SCROLL_MAX_WIDTH = 560px / Stage width = full）
             // ==============================
             .graphicsLayer { this.clip = false }
-            .size(stageBoxWidthDp, stageBoxHeightDp)
+            .then(
+                if (isExpanded) {
+                    Modifier
+                        .fillMaxWidth()
+                        .height(stageBoxHeightDp)
+                } else {
+                    Modifier.size(stageBoxWidthDp, stageBoxHeightDp)
+                }
+            )
             // outer Stage 永远不挂 horizontalScroll（仅展开态内部 ScrollArea 独立层才挂）
         // 外层 Box 不指定 contentAlignment，使用默认 TopStart
         // - 堆叠卡片容器：align(Alignment.TopStart) + padding，左对齐外层 Box 左边缘
@@ -512,12 +551,12 @@ fun SwipeableImageStack(
         // -------------------------------------------------------------------
         // 堆叠态（!isExpanded）：完全保留 V1.0 的 CardContainer 实现（Task 3 合并单循环）
         //         保证：堆叠图位置 / "1/N" 角标位置 / "展开 N" 按钮位置绝对不变
-        // 展开态（isExpanded）：Row([CollapseBtn] + Spacer(8dp) + [ScrollArea{CardContainer}])
-        //         - CollapseBtn 在 Row 首元素，**不飞出（不使用负 translationX）**，
-        //           整 Row 通过 padding(start=topCardLeftInStageDp, top=topCardTopInStageDp)
-        //           精确定位，顶卡左上角与堆叠态顶卡左上角**像素级吻合**，
-        //           CollapseBtn 不超出 Stage 左边界，不与 x=60dp 竖向时间线重叠（Bug①修复）
-        //         - ScrollArea：**maxWidth=EXPANDED_SCROLL_MAX_WIDTH_DP（480dp 独立上限）**，
+        // 展开态（isExpanded）：padding(start=expandedContentStartPadding) 整行偏移，
+        //         使展开行起点 = 标题/时间/标签行起点（TimelineItem 场景 = contentStartX≈70dp）
+        //         再 Row([CollapseBtn?] + Spacer(8dp) + [ScrollArea{CardContainer}])
+        //         - CollapseBtn：仅 showInnerCollapseButton=true 才渲染
+        //                       （由组件外部独立一行放时传 false，去重）
+        //         - ScrollArea：**maxWidth=EXPANDED_SCROLL_MAX_WIDTH_DP（480dp 独立上限）**
         //           不再绑定 stageBoxWidth≈200dp，5 张图宽度 632dp 充足（Bug②修复）
         //         - 仅 ScrollArea 挂 horizontalScroll，CollapseBtn 永远可见不跟随滚动
         if (isExpanded) {
@@ -526,13 +565,13 @@ fun SwipeableImageStack(
                     .align(Alignment.TopStart)
                     .fillMaxWidth()
                     // ==============================
-                    // V2.0 修复（方案A）：精确定位 Row 起点
-                    //   顶卡左上角必须精确落在 = 堆叠态顶卡左上角像素坐标
-                    //   → Row(0,0) padding 偏移 = topCardLeftInStageDp / topCardTopInStageDp
-                    //   → CollapseBtn 在 Row 首元素，位于顶卡左侧但不飞出 Stage，不碰时间线
+                    // V2.0 最终修复：整行起始 padding = expandedContentStartPadding
+                    //   = 标题/时间/正文/标签行统一的左侧对齐基准（TimelineItem contentStartX≈70dp）
+                    //   - 堆叠态 Badge/ExpandBtn 坐标完全不依赖此值（继续用 boxWidth/boxHeight = stageBox*Dp）
+                    //   - 展开态 CollapseBtn、第一张卡片均从同一垂直基准列（标题行左侧）开始
                     // ==============================
                     .padding(
-                        start = topCardLeftInStageDp,
+                        start = expandedContentStartPadding,
                         top = topCardTopInStageDp
                     ),
                 verticalAlignment = Alignment.CenterVertically,
@@ -541,42 +580,42 @@ fun SwipeableImageStack(
             ) {
                 // --- CollapseBtn（收起按钮）：独立于 ScrollArea，永远可见不滚走 ---
                 // 样式：与 ExpandBtn 完全一致（半透明胶囊 #F2F3F5@55% + 11sp Medium + ChevronRight）
-                // V2.0 修复（方案A）：**取消 translationX = -(76+8) = -84dp 飞出**，
-                //   避免按钮飞出 Stage 左边界覆盖 x=60dp 的竖向时间线（Bug①修复）
-                Box(
-                    modifier = Modifier
-                        // 不再飞出！保持 Row 首元素正常位置，不超出 Stage 左边界
-                ) {
-                    Row(
+                if (showInnerCollapseButton) {
+                    Box(
                         modifier = Modifier
-                            .background(
-                                color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
-                                shape = RoundedCornerShape(11.dp)
-                            )
-                            .padding(horizontal = 5.dp, vertical = 2.dp)
-                            .clickable {
-                                // 点击收起按钮 → 切换回堆叠态
-                                // 设计文档 §9.8 数据流：先滚动归零，再 isExpanded=false
-                                scope.launch {
-                                    expandedScrollState.animateScrollTo(0)
-                                    isExpanded = false
-                                    onExpandStateChange?.invoke(false)
-                                }
-                            },
-                        verticalAlignment = Alignment.CenterVertically
+                        // 不再飞出！保持 Row 首元素正常位置
                     ) {
-                        Text(
-                            text = "收起",
-                            color = Color(0xFF4F5660),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = "收起图片堆叠",
-                            tint = Color(0xFF4F5660),
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .background(
+                                    color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
+                                    shape = RoundedCornerShape(11.dp)
+                                )
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                                .clickable {
+                                    // 点击收起按钮 → 切换回堆叠态
+                                    // 设计文档 §9.8 数据流：先滚动归零，再 isExpanded=false
+                                    scope.launch {
+                                        expandedScrollState.animateScrollTo(0)
+                                        isExpanded = false
+                                        onExpandStateChange?.invoke(false)
+                                    }
+                                },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "收起",
+                                color = Color(0xFF4F5660),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = "收起图片堆叠",
+                                tint = Color(0xFF4F5660),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
 
