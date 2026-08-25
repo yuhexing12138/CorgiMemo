@@ -459,7 +459,9 @@ fun TimelineInspirationItem(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(start = contentStartX),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        // 显式 Start：避免默认 Center 导致收起按钮水平居中（用户截图反馈）
+                        horizontalArrangement = Arrangement.Start
                     ) {
                         Row(
                             modifier = Modifier

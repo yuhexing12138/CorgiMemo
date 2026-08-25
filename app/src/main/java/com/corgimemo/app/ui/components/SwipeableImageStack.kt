@@ -619,13 +619,13 @@ fun SwipeableImageStack(
                     }
                 }
 
-                // --- ScrollArea（唯一挂 horizontalScroll 的层）：仅包裹 CardContainer ---
-                // V2.0 修复（方案A）：
-                //   - **取消 weight(1f)**（原先=stageBoxWidth≈200dp 太窄，造成空白/重叠）
-                //   - 改为 **maxWidth=EXPANDED_SCROLL_MAX_WIDTH_DP（480dp 独立上限）**，
-                //     保证 5 张图×120dp+4×8dp=632dp 有充足空间（Bug②修复）
-                //   - height=cardHeight（固定卡片高度，不裁剪）
-                //   - contentAlignment=TopStart（CardContainer 从 ScrollArea(0,0) 开始排）
+                // --- ScrollArea（唯一挂 horizontalScroll 的层）：参考待办编辑页 LazyRow 模式 ---
+                // V3.0 修复（用户最新要求）：
+                //   - 彻底放弃 graphicsLayer/cameraDistance/5Animatable 变换（= 图片重叠根因）
+                //   - 100% 对齐「待办编辑页插入图片后的排列方式」：
+                //     Row + Arrangement.spacedBy(cardGap) + 简单 Box(size=cardWidth×cardHeight)
+                //   - maxWidth=EXPANDED_SCROLL_MAX_WIDTH_DP（480dp 独立上限，不与 stageBoxWidth 绑定）
+                //   - 所有卡片都可点击进入全屏预览（不再仅限堆叠态顶卡）
                 Box(
                     modifier = Modifier
                         .widthIn(max = EXPANDED_SCROLL_MAX_WIDTH_DP)
@@ -634,169 +634,45 @@ fun SwipeableImageStack(
                     contentAlignment = Alignment.TopStart
                 ) {
                     // ==============================
-                    // CardContainer（展开态）：V2.0 方案A
-                    // - size = cardRowWidthDp × cardHeight（Task1 预计算，N 张完整排开）
-                    // - contentAlignment = Alignment.TopStart（严格对齐原型 expand-collapse-stack.html）
-                    //   配合 graphicsLayer targetX = stackIndex*(W+G)，顶卡左上角精确落在 (0,0)
-                    // - 内部：单渲染循环（目标值 if(isExpanded) 双分支版本，见下）
+                    // Row(spacedBy)：待办编辑页同款排图
+                    // - wrapContentWidth(unbounded=true)：N 张图自由排开，不受父 Box 宽度限制
+                    // - Arrangement.spacedBy(cardGap)：卡片间距=8dp（与待办编辑页完全一致）
+                    // - 内部 forEach 简单放置 Box(size=cardWidth×cardHeight)，**无任何图形变换**
                     // ==============================
-                    Box(
+                    Row(
                         modifier = Modifier
-                            .size(
-                                width = cardRowWidthDp,   // N 张完整排开宽度（独立上限 480dp）
-                                height = cardHeight
-                            )
-                            .graphicsLayer {
-                                this.cameraDistance = 1000f / density.density
-                                translationX = 0f
-                                translationY = 0f
-                            },
-                        contentAlignment = Alignment.TopStart  // 展开态 TopStart 锚点（★ Bug③修复核心）
+                            .wrapContentWidth(unbounded = true)
+                            .height(cardHeight),
+                        horizontalArrangement = Arrangement.spacedBy(cardGap),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         // ==============================
-                        // 单渲染循环：展开态/堆叠态共用一套模板（与堆叠态 else 分支结构完全一致）
-                        // - 目标值双分支：isExpanded ? TopStart公式 : 扇形公式
-                        // - 5 个 Animatable + LaunchedEffect 含 isExpanded key
-                        // - finalX/Y/scale/rotation 拖拽互斥锁 !isExpanded
-                        // - pointerInput 仅堆叠态顶卡挂载（避免与 horizontalScroll 冲突）
+                        // 简化渲染循环：展开态专用（堆叠态 else 分支仍保留完整 V1.0 扇形布局）
+                        // - 无 Animatable / 无 graphicsLayer / 无 cameraDistance
+                        // - 纯 layout modifier：shadow + clip + background/blur/border
+                        // - 所有卡片可点击（pointerInput detectTapGestures）
                         // ==============================
                         order.forEachIndexed { stackIndex, slot ->
                 key(slot.stableId) {
-                    val isTopCard = stackIndex == 0
-
-                    // ========== 有无图判断（两种状态完全相同） ==========
+                    // ========== 有无图判断（展开态专用，与堆叠态逻辑一致） ==========
                     val hasImage = when {
                         customContent != null -> true
                         useDefaultColors -> true
                         else -> imageUris.getOrNull(slot.originalIndex)?.isNotBlank() == true
                     }
 
-                    // ========== 扇形深度常量（两种状态都计算，保证 remember key 稳定不重建） ==========
-                    val M = minOf(visibleDepth, cardCount).coerceIn(1, 4)
-                    val ei = minOf(stackIndex, M - 1)         // 有效层夹取索引（超出 visibleDepth 夹栈底）
-                    val denom = max(M - 1, 1)
-                    val effectiveTiltAngle = -(M - 1) * 15f
-                    val cardWGap = cardWidth.value + cardGap.value
 
-                    // ========== 目标值：if(isExpanded) 双分支（★ Bug③修复核心） ==========
-                    // - 展开态：严格 TopStart 公式 = stackIndex*(W+G)（原型 expand-collapse-stack.html L358-361）
-                    //   顶卡 stackIndex=0 → targetX=0 → 左上角 = CardContainer(0,0) = 堆叠态顶卡左上角
-                    // - 堆叠态：扇形公式（完全保留 V1.0 像素级一致；保证堆叠态位置 100% 不变）
-                    val targetX: Float
-                    val targetY: Float
-                    val targetScale: Float
-                    val targetRotation: Float
-                    val targetZIndex: Float
-                    if (isExpanded) {
-                        targetX = stackIndex.toFloat() * cardWGap   // ★ 展开态 TopStart 公式（Bug③修复）
-                        targetY = 0f
-                        targetScale = 1f
-                        targetRotation = 0f
-                        targetZIndex = 1f
-                    } else {
-                        targetX = if (M > 1) ei.toFloat() / denom * xOffset.value else 0f
-                        targetY = -(ei * 8f)
-                        targetScale = 1f - ei * 0.05f
-                        targetRotation = if (M > 1) {
-                            tiltAngleStart + (ei.toFloat() / denom) * (effectiveTiltAngle - tiltAngleStart)
-                        } else {
-                            tiltAngleStart
-                        }
-                        targetZIndex = (order.size - stackIndex).toFloat()
-                    }
 
-                    // ========== 5 个独立 Animatable（remember key 稳定，卡片实例跨重组保持） ==========
-                    val positionX = remember { Animatable(targetX) }
-                    val positionY = remember { Animatable(targetY) }
-                    val scaleAnim = remember { Animatable(targetScale) }
-                    val rotationAnim = remember { Animatable(targetRotation) }
-                    val zIndexAnim = remember { Animatable(targetZIndex) }
-
-                    // stackIndex 变化时（即 order 重排），每张卡各自平滑过渡到新目标值
-                    // 关键：这是解决"卡一下"的核心——新顶卡从扇形位置平滑滑到中央，旧顶卡从中央滑到队尾
-                    // 用 TRANSITION_SPRING 加速：300ms 而非 600ms，整体"翻牌"从 1100ms 降至 500ms
-                    LaunchedEffect(stackIndex, order.size, isExpanded) {
-                        positionX.animateTo(targetX, TRANSITION_SPRING)
-                    }
-                    LaunchedEffect(stackIndex, order.size, isExpanded) {
-                        positionY.animateTo(targetY, TRANSITION_SPRING)
-                    }
-                    LaunchedEffect(stackIndex, order.size, isExpanded) {
-                        scaleAnim.animateTo(targetScale, TRANSITION_SPRING)
-                    }
-                    LaunchedEffect(stackIndex, order.size, isExpanded) {
-                        rotationAnim.animateTo(targetRotation, TRANSITION_SPRING)
-                    }
-                    // 原型 zIndex: { duration: 0.3, ease: "easeOut" }，按下时跳 1000
-                    // V1.1 修复：拖拽互斥锁 !isExpanded（展开态不允许按下抬升 zIndex）
-                    LaunchedEffect(stackIndex, order.size, isExpanded, isPressed.value, isTopCard) {
-                        val target = if (!isExpanded && isPressed.value && isTopCard) 1000f else targetZIndex
-                        zIndexAnim.animateTo(target, ZINDEX_TWEEN)
-                    }
-                    // 原型 z: { duration: 0.3, ease: "easeOut" } 因 Compose 无 translationZ API 已移除，
-                    // 纵深由 scaleX/Y + cameraDistance 承担（视觉差异 <1%）
-
-                    // 渲染时：顶卡额外叠加 dragOffset；非顶卡只用 Animatable
-                    // 用 isPressed（而非 dragOffsetX != 0）判断拖动状态：
-                    // - 旧实现 isDragging = isTopCard && (dragOffsetX != 0) 会把"动画回零"误判为拖动中
-                    // - 新顶卡重排后 dragOffsetX 还在 animateTo(0) 期间，isPressed=false
-                    //   finalScale 跟随 scaleAnim 平滑过渡（0.95→1.0），不再有"从大变小"突变
-                    //
-                    // shouldReturnToCenter 不再强制 finalX/finalY = 0（严格对齐原型）：
-                    // - 原型 getCardStyle 中 shouldReturn 对顶卡是 no-op（顶卡 index=0，
-                    //   xOffsetValue=0, stackOffset=0, rotationValue=tiltAngleStart=0，
-                    //   目标本来就是 (0,0,0)），1s setTimeout 仅作锁定期
-                    // - 原型松手后的弹回由 framer-motion 的 drag 系统自动处理
-                    //   （dragConstraints={0,0,0,0} + dragTransition.bounceStiffness/Damping）
-                    // - Compose 用 dragOffsetX/Y 的 BOUNCE_SPRING 动画模拟弹回，
-                    //   旧实现 shouldReturn 强制 finalX/Y=0 会覆盖该动画，导致顶卡"瞬移"到中心
-                    // - 修复后：finalX/Y = positionX/Y + dragOffsetX/Y，
-                    //   松手后 dragOffsetX/Y 通过 BOUNCE_SPRING 平滑回零，
-                    //   顶卡视觉上从拖动位置平滑过渡到 (0,0)，与原型一致
-                    // - shouldReturnToCenter 保留用于 onDragStart 重置 + finalRotation 锁定
-                    // V1.1 修复：拖拽互斥锁 !isExpanded（展开态不叠加 dragOffset，避免堆叠态残留造成重叠）
-                    val finalX = if (!isExpanded && isTopCard) positionX.value + dragOffsetX.value else positionX.value
-                    val finalY = if (!isExpanded && isTopCard) positionY.value + dragOffsetY.value else positionY.value
-                    // whileDrag 严格只作用于顶卡（与原型 drag={isTopCard} 一致）：
-                    // - 原型 whileDrag={{ scale: 1.05, rotate: tiltAngleStart, zIndex: 1000 }}
-                    //   因 drag={isTopCard}，只有顶卡在拖动时应用 whileDrag 样式
-                    // - 下层卡片 animate 目标不变（cards 数组没变），保持原位不动
-                    // - 旧实现 isPressed 是全局状态，导致拖动顶卡时所有卡片的
-                    //   finalRotation=0 + finalScale+=0.05，下层卡片立即旋转归零（错误）
-                    // - 修复：isTopCard && isPressed 才应用 whileDrag 样式
-                    // V1.1 修复：拖拽互斥锁 !isExpanded（展开态不放大、不旋转归零）
-                    val finalScale = if (!isExpanded && isTopCard && isPressed.value) scaleAnim.value + 0.05f else scaleAnim.value
-                    // V1.1 修复：拖拽互斥锁 !isExpanded（展开态顶卡也不走归零逻辑）
-                    val finalRotation = when {
-                        !isExpanded && isTopCard && isPressed.value -> 0f
-                        !isExpanded && isTopCard && shouldReturnToCenter.value -> 0f
-                        else -> rotationAnim.value
-                    }
 
                     Box(
                         modifier = Modifier
+                            // ====== 展开态简化版 modifier：100% 对齐待办编辑页 ======
+                            // - 无 .zIndex / .graphicsLayer / cameraDistance（= 消除图片重叠根因）
+                            // - 固定尺寸 cardWidth × cardHeight
+                            // - 统一 4.dp 阴影（展开态无顶卡/非顶卡区分，视觉整齐）
                             .size(cardWidth, cardHeight)
-                            // zIndex 由 zIndexAnim 驱动：静止时 (order.size - stackIndex)，按下时 1000
-                            // 用 Animatable + 0.3s easeOut 过渡，与原型 { duration: 0.3, ease: "easeOut" } 一致
-                            .zIndex(zIndexAnim.value)
-                            .graphicsLayer {
-                                // 严格对齐原型 CSS transform 顺序：scale → rotate → translate
-                                // - 原型 motion.div 的 transform: translate(x,y) rotate(r) scale(s)
-                                //   CSS 从右到左应用：先 scale（围绕原位置中心缩放），
-                                //   再 rotate（围绕原位置中心旋转），最后 translate（平移）
-                                // - Compose graphicsLayer 内部顺序也是 scale → rotate → translate
-                                // - 旧实现用 .offset() 在 graphicsLayer 之前，导致先平移再旋转
-                                //   （围绕平移后的新位置中心旋转），与原型旋转点视觉位置不同
-                                // - 修复：用 translationX/Y 代替 offset，让旋转围绕原位置中心进行
-                                //   下层卡片上移时旋转点与原型严格一致
-                                scaleX = finalScale
-                                scaleY = finalScale
-                                rotationZ = finalRotation
-                                translationX = finalX
-                                translationY = finalY
-                            }
                             .shadow(
-                                elevation = if (isTopCard) 8.dp else 4.dp,
+                                elevation = 4.dp,
                                 shape = RoundedCornerShape(radiusPx)
                             )
                             .clip(RoundedCornerShape(radiusPx))
@@ -821,178 +697,20 @@ fun SwipeableImageStack(
                                         )
                                 }
                             )
+                            // ====== 展开态：无翻牌拖拽手势（与待办编辑页一致）======
+                            // - 横向滑动由外层 ScrollArea.horizontalScroll 统一承担
+                            // - 堆叠态（else 分支）完整保留 pointerInput + detectHorizontalDragGestures
+                            // ====== 展开态：所有卡片统一支持点击进入全屏预览 ======
+                            // - 与待办编辑页图片点击行为一致（每张都可单独打开）
+                            // - 堆叠态仍保持「仅顶卡点击」规则（避免扇形下层卡片点击误触）
                             .then(
-                                if (isTopCard && !isExpanded) {
-                                    Modifier.pointerInput(slot.stableId, swipeDirection) {
-                                        // 水平模式：用 detectHorizontalDragGestures，天然不消费垂直分量，
-                                        // 父级 LazyColumn 仍可垂直滚动（关键解耦点）。
-                                        // 全向模式：用 detectDragGestures 复刻原型，嵌入滚动列表会与父级冲突。
-                                        if (swipeDirection == SwipeDirection.Horizontal) {
-                                            detectHorizontalDragGestures(
-                                                onDragStart = {
-                                                    // 标记进入"用户拖动"状态（用于 finalScale = scaleAnim + 0.05 的相对放大）
-                                                    isPressed.value = true
-                                                    // 取消未完成的回中动画
-                                                    // - 避免 1s 回中期内又开始拖新顶卡时，新顶卡从 (0,0) 跳到 dragOffset 起点
-                                                    // - 必须放在 isPressed=true 之后：否则 finalX 仍受 shouldReturnToCenter 控制
-                                                    shouldReturnToCenter.value = false
-                                                    // 把顶卡的 positionX/Y 强制归零
-                                                    // - 保留这个 snapTo 防止上次重排动画把 positionX 留在中间值
-                                                    // - 移除 scaleAnim.snapTo(1.05f) 和 rotationAnim.snapTo(0f)：
-                                                    //   这两个 snapTo 会与重排后的入场动画（0.95→1.0, -4°→0°）打架，
-                                                    //   导致用户立即开始拖新顶卡时出现"scale 突变"和"rotation 跳变"
-                                                    //   现在 finalScale/finalRotation 自动用 scaleAnim.value + 0.05 / 0f，无需 snapTo
-                                                    scope.launch {
-                                                        positionX.snapTo(0f)
-                                                        positionY.snapTo(0f)
-                                                    }
-                                                },
-                                                onDragEnd = {
-                                                    // 标记离开"用户拖动"状态
-                                                    isPressed.value = false
-                                                    val dx = dragOffsetX.value
-                                                    val distance = dx.absoluteValue
-                                                    if (distance > thresholdPx && order.size > 1) {
-                                                        // 严格对齐原型：重排后每张卡位置独立过渡
-                                                        // - 原型：A 从拖动位置 spring 到队尾，B/C/D 从旧位置 spring 到新位置
-                                                        // - 旧实现：dragOffsetX animateTo(0) 会导致两个跳变：
-                                                        //   1) A 变非顶卡后 finalX=positionX(0)，丢失 dragOffset(100)，从 100 跳到 0
-                                                        //   2) B 变新顶卡后 finalX=positionX+dragOffsetX，继承 A 残留，从 66.67 跳到 166.67
-                                                        // - 修复：把 dragOffset 转移到 A 的 positionX/Y 上，再 dragOffset 归零
-                                                        //   - A：positionX 从 0+100=100 开始，LaunchedEffect animateTo(200)，100→200 平滑飞出
-                                                        //   - B：finalX=positionX(66.67)+0=66.67，无跳变，LaunchedEffect animateTo(0)，平滑过渡
-                                                        scope.launch {
-                                                            onCardSwiped?.invoke(slot.originalIndex)
-                                                            // 1. zIndex 立即变成 1（从底层插入，不遮挡其他卡片）
-                                                            // - 原型 zIndex 从 1000 过渡到 1（0.3s easeOut），但过渡过程中
-                                                            //   zIndex 远大于其他卡片（2,3,4），导致顶卡在飞出过程中遮挡其他卡片
-                                                            // - 修复：snapTo(1f) 立即变成最底层，从下方穿过，
-                                                            //   符合"从所有底层图片下方插入最底层"的视觉
-                                                            // - 重排后 targetZIndex 也是 1，LaunchedEffect 不会触发额外动画
-                                                            zIndexAnim.snapTo(1f)
-                                                            // 2. dragOffset 转移到 positionX/Y（A 的飞出起点 = 拖动位置，对齐原型）
-                                                            positionX.snapTo(positionX.value + dragOffsetX.value)
-                                                            positionY.snapTo(positionY.value + dragOffsetY.value)
-                                                            // 3. dragOffset 归零（避免新顶卡 B 继承 A 的拖动残留）
-                                                            dragOffsetX.snapTo(0f)
-                                                            dragOffsetY.snapTo(0f)
-                                                            // 4. 重排：A 的 stackIndex 0→N-1，LaunchedEffect 触发 positionX animateTo(新 targetX)
-                                                            val newOrder = order.toMutableList()
-                                                            val top = newOrder.removeAt(0)
-                                                            newOrder.add(top)
-                                                            order = newOrder
-                                                        }
-                                                    } else {
-                                                        // 弹回中心：与原型 setShouldReturnToCenter(true) + setTimeout(1s) 一致
-                                                        // dragOffset 回弹用 BOUNCE_SPRING（对齐原型 dragTransition.bounce: damping=20）
-                                                        // - 一张卡时（order.size==1）也走此分支：
-                                                        //   原型中一张卡重排后 framer-motion drag 系统自动回弹到 (0,0)
-                                                        //   Compose 中 LaunchedEffect(stackIndex, order.size) 的 key 未变不触发
-                                                        //   需手动用 BOUNCE_SPRING 回中，否则顶卡停在拖动位置(bug)
-                                                        shouldReturnToCenter.value = true
-                                                        scope.launch {
-                                                            delay(1000)
-                                                            shouldReturnToCenter.value = false
-                                                        }
-                                                        scope.launch {
-                                                            dragOffsetX.animateTo(0f, BOUNCE_SPRING)
-                                                            dragOffsetY.animateTo(0f, BOUNCE_SPRING)
-                                                        }
-                                                    }
-                                                }
-                                            ) { change, dragAmount ->
-                                                // 非线性弹性（参考 framer-motion dragElastic 真实曲线，越远阻力增长越陡）：
-                                                //   elasticAmount = dragAmount * (1 - 0.3 * t^1.5)
-                                                // - t = |offset| / maxDistance，t^1.5 让阻力增长介于线性和 t^2 之间
-                                                //   - t=0.0 → 1.0（无阻力）
-                                                //   - t=0.5 → 1 - 0.3 * 0.354 = 0.894（轻微阻力）
-                                                //   - t=1.0 → 0.7（与原型 dragElastic 数值边界一致）
-                                                // - 用 pow(1.5f) 而非 pow(2f)：t^2 阻力增长过陡，缩略图场景手感过重
-                                                val currentOffset = dragOffsetX.value.absoluteValue
-                                                val t = (currentOffset / maxElasticDistancePx).coerceIn(0f, 1f)
-                                                val resistance = 1f - 0.3f * t.pow(1.5f)
-                                                val elasticAmount = dragAmount * resistance
-                                                scope.launch {
-                                                    dragOffsetX.snapTo(dragOffsetX.value + elasticAmount)
-                                                }
-                                            }
-                                        } else {
-                                            // 全向模式
-                                            detectDragGestures(
-                                                onDragStart = {
-                                                    isPressed.value = true
-                                                    // 取消未完成的回中动画（同水平模式，避免新顶卡从 (0,0) 跳到 dragOffset 起点）
-                                                    shouldReturnToCenter.value = false
-                                                    // 同样：移除 scaleAnim.snapTo(1.05f) 和 rotationAnim.snapTo(0f)，
-                                                    // 保留 positionX/Y.snapTo(0f) 防上次重排动画残留
-                                                    scope.launch {
-                                                        positionX.snapTo(0f)
-                                                        positionY.snapTo(0f)
-                                                    }
-                                                },
-                                                onDragEnd = {
-                                                    isPressed.value = false
-                                                    val dx = dragOffsetX.value
-                                                    val dy = dragOffsetY.value
-                                                    val distance = hypot(dx, dy)
-                                                    if (distance > thresholdPx && order.size > 1) {
-                                                        // 严格对齐原型（同水平模式）：dragOffset 转移到 positionX/Y 后归零
-                                                        // - A 从拖动位置 spring 到队尾（全向：拖动方向可能是斜向）
-                                                        // - B/C/D 从旧位置 spring 到新位置，不继承 A 的 dragOffset 残留
-                                                        scope.launch {
-                                                            onCardSwiped?.invoke(slot.originalIndex)
-                                                            // 1. zIndex 立即变成 1（从底层插入，不遮挡其他卡片，同水平模式）
-                                                            zIndexAnim.snapTo(1f)
-                                                            // 2. dragOffset 转移到 positionX/Y（A 的飞出起点 = 拖动位置）
-                                                            positionX.snapTo(positionX.value + dragOffsetX.value)
-                                                            positionY.snapTo(positionY.value + dragOffsetY.value)
-                                                            // 3. dragOffset 归零（避免新顶卡 B 继承 A 的拖动残留）
-                                                            dragOffsetX.snapTo(0f)
-                                                            dragOffsetY.snapTo(0f)
-                                                            // 4. 重排：LaunchedEffect 触发各卡 positionX/Y animateTo(新 targetX/Y)
-                                                            val newOrder = order.toMutableList()
-                                                            val top = newOrder.removeAt(0)
-                                                            newOrder.add(top)
-                                                            order = newOrder
-                                                        }
-                                                    } else {
-                                                        // 弹回中心：与原型 setShouldReturnToCenter(true) + setTimeout(1s) 一致
-                                                        // dragOffset 回弹用 BOUNCE_SPRING（对齐原型 dragTransition.bounce: damping=20）
-                                                        // - 一张卡时（order.size==1）也走此分支：
-                                                        //   原型中一张卡重排后 framer-motion drag 系统自动回弹到 (0,0)
-                                                        //   Compose 中 LaunchedEffect(stackIndex, order.size) 的 key 未变不触发
-                                                        //   需手动用 BOUNCE_SPRING 回中，否则顶卡停在拖动位置(bug)
-                                                        shouldReturnToCenter.value = true
-                                                        scope.launch {
-                                                            delay(1000)
-                                                            shouldReturnToCenter.value = false
-                                                        }
-                                                        scope.launch {
-                                                            dragOffsetX.animateTo(0f, BOUNCE_SPRING)
-                                                            dragOffsetY.animateTo(0f, BOUNCE_SPRING)
-                                                        }
-                                                    }
-                                                }
-                                            ) { change, dragAmount ->
-                                                change.consume()
-                                                // 非线性弹性（全向模式，参考 framer-motion dragElastic）：
-                                                //   elasticAmount = dragAmount * (1 - 0.3 * t^1.5)
-                                                //   t = hypot(dragOffsetX, dragOffsetY) / maxElasticDistancePx
-                                                val currentDistance = hypot(dragOffsetX.value, dragOffsetY.value)
-                                                val t = (currentDistance / maxElasticDistancePx).coerceIn(0f, 1f)
-                                                val resistance = 1f - 0.3f * t.pow(1.5f)
-                                                val elasticAmount = dragAmount * resistance
-                                                scope.launch {
-                                                    dragOffsetX.snapTo(dragOffsetX.value + elasticAmount.x)
-                                                    dragOffsetY.snapTo(dragOffsetY.value + elasticAmount.y)
-                                                }
-                                            }
-                                        }
+                                if (onCardClick != null) {
+                                    Modifier.pointerInput(slot.stableId) {
+                                        detectTapGestures(
+                                            onTap = { onCardClick(slot.originalIndex) }
+                                        )
                                     }
                                 } else {
-                                    // 非顶卡 或 展开态：不挂载拖拽
-                                    // - 非顶卡：保持现有行为
-                                    // - 展开态：禁用翻牌手势，避免与 horizontalScroll 横向滑动冲突（设计文档 §4.6）
                                     Modifier
                                 }
                             )
@@ -1030,25 +748,13 @@ fun SwipeableImageStack(
                             }
                         }
 
-                        // 顶卡额外支持点击
-                        // 使用 detectTapGestures 的 onTap：只在快速点击（无拖动）时触发，
-                        // 拖动事件已被外层 drag gesture 消费，两者不冲突。
-                        if (isTopCard && onCardClick != null) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .pointerInput(slot.stableId) {
-                                        detectTapGestures(
-                                            onTap = { onCardClick(slot.originalIndex) }
-                                        )
-                                    }
-                            )
-                        }                        // ---- [24空格] 关闭 if (isTopCard && onCardClick != null) ----
-                    }                        // ---- [20空格] 关闭 卡片 Box（content lambda，堆叠/展开的每张卡片内容闭包）----
+                        // ====== 展开态：点击逻辑已在 Modifier.pointerInput 层统一处理（所有卡片可点）======
+                        // ====== 堆叠态：仍保留仅顶卡点击（避免扇形下层误触，见 else 分支 L860+） ======
+                    }                        // ---- [20空格] 关闭 卡片 Box（content lambda，展开态每张卡片内容闭包）----
                 }                            // ---- [16空格] 关闭 key(slot.stableId) { ----
             }                                // ---- [12空格] 关闭 order.forEachIndexed { lambda（展开态渲染循环）----
-                    }                        // ---- [20空格] 关闭 CardContainer Box（与 L564 Box( 20空格前缀严格对齐）----
-                }                            // ---- [16空格] 关闭 ScrollArea Box（与 L544 Box( 16空格前缀严格对齐）----
+                        }                        // ---- [24空格] 关闭 Row(spacedBy)（与 L642 Row( 24空格前缀严格对齐）----
+                }                            // ---- [16空格] 关闭 ScrollArea Box（与 L629 Box( 16空格前缀严格对齐）----
             }                                // ---- [12空格] 关闭 Row([CollapseBtn] + [ScrollArea])（与 L485 Row( 12空格前缀严格对齐）----
         }                                    // ---- [8空格] 关闭 if (isExpanded) 展开态分支（与 L484 if 8空格前缀严格对齐）----
         else {                                // ---- [8空格] else 堆叠态分支（与 if 同级，8空格前缀严格对齐）----
