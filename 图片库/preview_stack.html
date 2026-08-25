@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SwipeableImageStack 原型预览（严格对齐 Compose 实现）</title>
     <!-- React 17 UMD + framer-motion 5 UMD + Babel UMD（全部纯 script 加载，无 ESM 依赖） -->
-    <script crossorigin src="https://cdn.jsdelivr.net/npm/react@17.0.2/umd/react.production.min.js"></script>
-    <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@17.0.2/umd/react-dom.production.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/framer-motion@5.6.0/dist/framer-motion.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"></script>
+    <script src="vendor/react.production.min.js"></script>
+    <script src="vendor/react-dom.production.min.js"></script>
+    <script src="vendor/framer-motion.js"></script>
+    <script src="vendor/babel.min.js"></script>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -168,7 +168,7 @@
 
         if (!motion) {
             document.getElementById("root").innerHTML =
-                '<div style="padding:40px;color:#C00;font-family:monospace">framer-motion UMD 加载失败，请检查网络（需访问 cdn.jsdelivr.net）</div>';
+                '<div style="padding:40px;color:#C00;font-family:monospace">framer-motion 加载失败，请确认 vendor/framer-motion.js 与本文件在同一目录</div>';
         } else {
 
         /**
@@ -303,6 +303,7 @@
                     }}>
                         {cards.map((card, index) => {
                             const isTopCard = index === 0;
+                            const M = Math.max(1, Math.min(visibleDepth, cards.length));
                             const cardStyle = getCardStyle(index);
                             const cardData = images[Math.min(card.imageIndex, images.length - 1)];
                             const hasImage = mode !== "noImage";
@@ -417,9 +418,9 @@
                                         backgroundRepeat: "no-repeat",
                                         overflow: "hidden",
                                         border: hasImage ? "none" : "1.5px solid #9967FF",
-                                        boxShadow: isTopCard
-                                            ? "0 8px 24px rgba(0,0,0,0.18)"
-                                            : "0 4px 12px rgba(0,0,0,0.10)"
+                                        boxShadow: index < M
+                                            ? (isTopCard ? "0 8px 24px rgba(0,0,0,0.18)" : "0 4px 12px rgba(0,0,0,0.10)")
+                                            : "none"
                                     }}
                                 >
                                     {renderContent()}
