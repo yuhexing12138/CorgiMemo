@@ -34,6 +34,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -81,6 +82,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sign
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -735,6 +737,15 @@ fun SwipeableImageStack(
         val positionY = remember { Animatable(0f) }
         // 每张卡独立的 zIndex 动画：顶卡被飞离时临时 snapTo 1f，叠加到 target.zIndex 上保证飞离过程始终在最顶层
         val zIndexAnim = remember { Animatable(0f) }
+        // ========================================
+        // Fix B：displayIndex 变化（order 翻牌）立即清零这张卡的所有残留 Animatable
+        // 根治：positionX / positionY / zIndexAnim 脏值累积导致的「多群分裂/图片倒置/遮挡混乱」
+        // ========================================
+        LaunchedEffect(displayIndex) {
+            positionX.snapTo(0f)
+            positionY.snapTo(0f)
+            zIndexAnim.snapTo(0f)
+        }
         // 拖拽偏移：堆叠态 displayIndex==0 顶卡叠加 dragOffset；其它卡或非堆叠态恒 0
         val dragX = if (displayIndex == 0) dragOffsetX.value.dp else 0.dp
         val dragY = if (displayIndex == 0) dragOffsetY.value.dp else 0.dp
@@ -803,15 +814,28 @@ fun SwipeableImageStack(
                                             if (distance > thresholdPx && order.size > 1) {
                                                 scope.launch {
                                                     onCardSwiped?.invoke(card.originalIndex)
-                                                    zIndexAnim.snapTo(1f)
-                                                    positionX.snapTo(positionX.value + dragOffsetX.value)
-                                                    positionY.snapTo(positionY.value + dragOffsetY.value)
-                                                    dragOffsetX.snapTo(0f)
-                                                    dragOffsetY.snapTo(0f)
+                                                    zIndexAnim.snapTo(1f) // 飞离过程始终置顶，确保盖住其它卡
+                                                    val direction = sign(dx).let { if (it == 0f) 1f else it }
+                                                    val cardWidPx = density.run { cardWidth.toPx() }
+                                                    val flyTargetPx = direction * cardWidPx * 1.6f // 飞出 1.6 卡宽，视觉上出边界
+                                                    // ========================================
+                                                    // Fix C：先起 300ms 飞离动画，用户看到顶卡滑出再翻牌
+                                                    // （旧实现缺 animateTo，直接 snapTo+改 order → 卡停在半路形成分裂群）
+                                                    // ========================================
+                                                    positionX.animateTo(
+                                                        targetValue = flyTargetPx / density.density,
+                                                        animationSpec = tween(300, easing = FastOutLinearInEasing)
+                                                    )
+                                                    // 动画完成后 order 才旋转：顶卡移到堆叠尾部
                                                     val newOrder = order.toMutableList()
                                                     val top = newOrder.removeAt(0)
                                                     newOrder.add(top)
                                                     order = newOrder
+                                                    // 清零 dragOffset；Fix B 的 LaunchedEffect(displayIndex) 会自动清 positionX/zIndexAnim
+                                                    dragOffsetX.snapTo(0f)
+                                                    dragOffsetY.snapTo(0f)
+                                                    shouldReturnToCenter.value = false
+                                                    isPressed.value = false
                                                 }
                                             } else {
                                                 shouldReturnToCenter.value = true
@@ -852,15 +876,28 @@ fun SwipeableImageStack(
                                             if (distance > thresholdPx && order.size > 1) {
                                                 scope.launch {
                                                     onCardSwiped?.invoke(card.originalIndex)
-                                                    zIndexAnim.snapTo(1f)
-                                                    positionX.snapTo(positionX.value + dragOffsetX.value)
-                                                    positionY.snapTo(positionY.value + dragOffsetY.value)
-                                                    dragOffsetX.snapTo(0f)
-                                                    dragOffsetY.snapTo(0f)
+                                                    zIndexAnim.snapTo(1f) // 飞离过程始终置顶，确保盖住其它卡
+                                                    val direction = sign(dx).let { if (it == 0f) 1f else it }
+                                                    val cardWidPx = density.run { cardWidth.toPx() }
+                                                    val flyTargetPx = direction * cardWidPx * 1.6f // 飞出 1.6 卡宽，视觉上出边界
+                                                    // ========================================
+                                                    // Fix C：先起 300ms 飞离动画，用户看到顶卡滑出再翻牌
+                                                    // （旧实现缺 animateTo，直接 snapTo+改 order → 卡停在半路形成分裂群）
+                                                    // ========================================
+                                                    positionX.animateTo(
+                                                        targetValue = flyTargetPx / density.density,
+                                                        animationSpec = tween(300, easing = FastOutLinearInEasing)
+                                                    )
+                                                    // 动画完成后 order 才旋转：顶卡移到堆叠尾部
                                                     val newOrder = order.toMutableList()
                                                     val top = newOrder.removeAt(0)
                                                     newOrder.add(top)
                                                     order = newOrder
+                                                    // 清零 dragOffset；Fix B 的 LaunchedEffect(displayIndex) 会自动清 positionX/zIndexAnim
+                                                    dragOffsetX.snapTo(0f)
+                                                    dragOffsetY.snapTo(0f)
+                                                    shouldReturnToCenter.value = false
+                                                    isPressed.value = false
                                                 }
                                             } else {
                                                 shouldReturnToCenter.value = true
