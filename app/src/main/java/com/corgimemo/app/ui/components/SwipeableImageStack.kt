@@ -750,6 +750,13 @@ fun SwipeableImageStack(
     val topCardLeftInStageDp: Dp = (cardBoxStartX - bboxLeft).dp
     // 顶卡左上角 Y（Dp）：cardBoxStartY（Float）→ 转为 Dp
     val topCardTopInStageDp: Dp = cardBoxStartY.dp
+    // V7.3 锚点：堆叠态/展开态统一的顶卡视觉 Top
+    // 堆叠态：Layer1 的 container 使用 Center 对齐（size = bboxHeight），所以
+    //   顶卡视觉 Top = 容器 top + (bboxHeight - cardHeight) / 2（Center 对齐的上下留白）
+    //            = cardBoxStartY + (bboxHeight - cardHeight) / 2
+    // 展开态：给卡片行追加 offset(y = topCardAnchorY)，让展开态顶卡视觉 Top
+    //   与堆叠态完全一致，消除分支切换时的向上跳变。
+    val topCardAnchorY: Float = cardBoxStartY + (bboxHeight - cardHeight.value) / 2f
 
     // ==============================
     // 展开态独立尺寸（不绑定 stageBoxWidth）
@@ -1103,7 +1110,23 @@ fun SwipeableImageStack(
                     .widthIn(min = stageBoxWidthDp)
                     .horizontalScroll(rememberScrollState())
             ) {
-                SharedCardRow()
+                // V7.3 修复：展开态固定顶卡视觉 Y，消除"展开后向上跳变"
+                //
+                // 根因：堆叠态 vs 展开态"顶卡视觉 Top 相对于 Stage(0,0)"的锚点不一致。
+                // - 堆叠态：顶卡放在「包围盒尺寸 + Center 对齐」的容器中，顶卡视觉 Top =
+                //   cardBoxStartY + (bboxHeight - cardHeight) / 2（下方留白 > 上方，顶卡视觉上偏下）
+                // - 展开态：Box(horizontalScroll) 顶对齐放 SharedCardRow()，顶卡视觉 Top = 0
+                //   → 分支切换（animateTo 结束帧后下一次重组）瞬间，顶卡视觉 Y 突然上跳
+                //   约 (bboxHeight-cardHeight)/2 像素，产生截图中的"上跳"视觉差
+                //
+                // 修复：展开态给卡片行追加 offset(y = topCardAnchorY)，把顶卡视觉 Top
+                // 平移到与堆叠态完全相同的锚点值，分支切换时顶卡 Y 零跳变。
+                Box(
+                    modifier = Modifier
+                        .offset(y = topCardAnchorY.dp)
+                ) {
+                    SharedCardRow()
+                }
             }
         } else {
             // V5.2 修复：使用 offset 定位（不使用 padding）
