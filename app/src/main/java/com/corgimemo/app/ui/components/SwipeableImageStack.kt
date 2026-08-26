@@ -576,14 +576,6 @@ fun SwipeableImageStack(
         // 写法，先统一 Grep 所有出现点，逐一替换为 scope.launch { setExpanded(true/false) }
     }
 
-    // V8.0：isExpanded 跟随 derivedIsExpanded 自动同步（expandProgress 跨越 0.5 立即生效），
-    // 不再等待 400ms 动画结束。配合 Layer1CardWrapper 统一结构 + Stage animateContentSize，
-    // 从根本上消除「动画结束才切换结构」导致的视觉跳变。
-    LaunchedEffect(derivedIsExpanded) {
-        isExpanded = derivedIsExpanded
-        expandedState?.value = derivedIsExpanded
-    }
-
     // ============ 共享状态（与 Originkit 原型一致）============
     // isPressed：组件级"是否有顶卡正在被按住"标志
     // - 用于顶卡 scale +0.05、rotation 归零的视觉反馈
@@ -600,6 +592,15 @@ fun SwipeableImageStack(
     // - 否则组件内部 remember 自管（向后兼容）
     val _expandedInternal = remember { mutableStateOf(false) }
     var isExpanded: Boolean by (expandedState ?: _expandedInternal)
+
+    // V8.0：isExpanded 跟随 derivedIsExpanded 自动同步（expandProgress 跨越 0.5 立即生效），
+    // 不再等待 400ms 动画结束。配合 Layer1CardWrapper 统一结构 + Stage animateContentSize，
+    // 从根本上消除「动画结束才切换结构」导致的视觉跳变。
+    // 注：本 LaunchedEffect 必须放在 isExpanded 声明之后，避免 Kotlin 前向引用报错。
+    LaunchedEffect(derivedIsExpanded) {
+        isExpanded = derivedIsExpanded
+        expandedState?.value = derivedIsExpanded
+    }
 
     // ============ 展开态行滚动状态（V7.6：替代 horizontalScroll）============
     // 为什么不能用 horizontalScroll：卡片展开位置是 graphicsLayer translationX 实现的，
