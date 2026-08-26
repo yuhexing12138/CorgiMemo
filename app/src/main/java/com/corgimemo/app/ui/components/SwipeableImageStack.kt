@@ -36,6 +36,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -44,8 +45,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -56,7 +55,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -65,6 +63,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.derivedStateOf
@@ -141,6 +140,27 @@ import kotlinx.coroutines.awaitAll
  *   WRAPPER 删除 translationX、SwipeableImageStack 传 stackStageOffsetX
  */
 internal val StackLeftCompensation = 130.dp
+
+/**
+ * V7.6 展开态行滚动：越界橡皮筋阻尼系数
+ *
+ * 拖拽超出滚动有效区间 [minScroll, 0] 时，越界部分的位移按此比例衰减渲染——
+ * 手指继续拖动位移增长变慢（拉伸感），松手后 spring 弹回有效边界。
+ */
+private const val ROW_OVERSCROLL_DAMPING = 0.35f
+
+/**
+ * V7.6 展开态行滚动：橡皮筋阻尼函数
+ *
+ * - raw ∈ [minScroll, 0]：正常滚动区间，原样返回
+ * - raw > 0（左端越界）：越界部分 × [ROW_OVERSCROLL_DAMPING]
+ * - raw < minScroll（右端越界）：越界部分 × [ROW_OVERSCROLL_DAMPING]
+ */
+private fun rubberBandRowScroll(raw: Float, minScroll: Float): Float = when {
+    raw > 0f -> raw * ROW_OVERSCROLL_DAMPING
+    raw < minScroll -> minScroll + (raw - minScroll) * ROW_OVERSCROLL_DAMPING
+    else -> raw
+}
 
 /**
  * 堆叠中的单张卡片槽位
@@ -487,6 +507,11 @@ fun SwipeableImageStack(
     )
     // 200ms 透明度淡入淡出规格：用于按钮、角标的 appear/disappear
     val OPACITY_200_SPEC = tween<Float>(durationMillis = 200)
+    // V7.6 展开态行滚动回弹 spring 规格：松手后越界位移弹回有效区间（两端都有弹簧感）
+    val ROW_SCROLL_SPRING = spring<Float>(
+        dampingRatio = Spring.DampingRatioMediumBouncy,
+        stiffness = Spring.StiffnessMediumLow
+    )
 
     // 初始展开态：优先取外部托管 expandedState，否则取 false（组件自管首次启动默认堆叠）
     // 注：此处不能引用后面 L498 才声明的 isExpanded，否则 Kotlin 前向引用未定义报错
@@ -540,21 +565,30 @@ fun SwipeableImageStack(
     val _expandedInternal = remember { mutableStateOf(false) }
     var isExpanded: Boolean by (expandedState ?: _expandedInternal)
 
-    // expandedScrollState：展开态的横向滚动状态
-    // - 展开时挂载到外层 Box 的 horizontalScroll
-    // - 收起时通过 animateScrollTo(0) 归零
-    val expandedScrollState = rememberScrollState()
+    // ============ 展开态行滚动状态（V7.6：替代 horizontalScroll）============
+    // 为什么不能用 horizontalScroll：卡片展开位置是 graphicsLayer translationX 实现的，
+    // 不参与布局测量 → 滚动容器测得的内容宽度只有单卡宽（cardWidth）< 视口宽 →
+    // 无内容可滚（展开后图片行完全无法左右滑动的根因）。
+    // 自绘滚动方案：
+    // - rowScrollX：渲染用滚动偏移（px，Animatable 支持 spring 回弹动画）
+    // - rawRowScroll：拖拽累计原始值（px，橡皮筋阻尼前的值；松手 clamp 回有效区间）
+    // - viewportWidthPx：展开态视口宽（px，onSizeChanged 实测）
+    // 滚动有效区间 [minScroll, 0]：0 = 第一张贴视口左缘；minScroll = -(行宽-视口宽)
+    val rowScrollX = remember { Animatable(0f) }
+    val rawRowScroll = remember { mutableFloatStateOf(0f) }
+    val viewportWidthPx = remember { mutableFloatStateOf(0f) }
 
     // 自动重置：每当 isExpanded 变为 false，
-    // 滚动位置、顶卡拖拽偏移一起归零（下次展开视觉干净；兼容外部托管独立收起按钮行场景）
+    // 行滚动、顶卡拖拽偏移一起归零（下次展开视觉干净；兼容外部托管独立收起按钮行场景）
     LaunchedEffect(isExpanded) {
         if (!isExpanded) {
-            // 并行 3 条归位动画：滚动 + X 拖拽 + Y 拖拽
+            // 并行归位动画：X 拖拽 + Y 拖拽（行滚动 snap 归零，跟随收起动画即可）
             listOf(
-                async { expandedScrollState.animateScrollTo(0) },
                 async { dragOffsetX.animateTo(0f) },
                 async { dragOffsetY.animateTo(0f) }
             ).awaitAll()
+            rawRowScroll.floatValue = 0f
+            rowScrollX.snapTo(0f)
         }
     }
 
@@ -1111,26 +1145,94 @@ fun SwipeableImageStack(
     @Composable
     fun BoxScope.Layer1CardWrapper() {
         if (isInExpandedMode) {
+            // ==================== V7.6 展开态：自绘行滚动 ====================
+            // 两个问题一次修复（共用同一套结构，互不冲突）：
+            //
+            // 问题①：顶卡左侧阴影被裁剪
+            //   根因（与堆叠态左滑裁剪同类——容器裁剪越界内容，但容器不同）：
+            //   旧实现用 horizontalScroll，滚动容器必须裁剪内容到自身 bounds；
+            //   顶卡（第一张）位于视口 x=0，其阴影向左延伸 ~4dp 超出视口左缘 → 被切。
+            //   修复：弃用 horizontalScroll，改 graphicsLayer translationX 滚动 +
+            //   全链 clip=false，阴影自由渲染。
+            //
+            // 问题②：展开后图片行无法左右滑动
+            //   根因：卡片展开位置是 graphicsLayer translationX 实现的（不参与布局
+            //   测量）→ horizontalScroll 测得内容宽 = 单卡宽(cardWidth) < 视口宽 →
+            //   无内容可滚。
+            //   修复：自绘滚动——拖拽累计 rawRowScroll → 橡皮筋阻尼 → rowScrollX
+            //   渲染平移；松手 spring 回弹（左右滑到头都有弹簧动画）。
+            //
+            // 视口右缘 = Stage 右缘 − stackStageOffsetX（即外层容器边缘，不贴屏幕边）：
+            //   Stage 展开态 fillMaxWidth（= 外层容器宽），左缘在 stackStageOffsetX
+            //   处 → padding(end = stackStageOffsetX) 把视口右缘收到外层容器右缘。
+            //
+            // 旧 widthIn(min = stageBoxWidthDp) 已删除：V7.2 后 WRAPPER 展开态传有界
+            // 约束，Stage fillMaxWidth 不再依赖子内容撑宽；该 min 反而让 Layer1
+            // 比视口宽 ~180dp，破坏滚动边界计算。
+            //
+            // 滚动有效区间 [minScroll, 0]：
+            //   0 = 第一张贴视口左缘（与 V7.4 展开锚点连续）
+            //   minScroll = -(行宽 − 视口宽) = 最后一张贴视口右缘（外层容器边缘）
+            val rowWidthPx = with(density) { cardRowWidthDp.toPx() }
+            val stackStageOffsetXPx = with(density) { stackStageOffsetX.toPx() }
+            // 实时计算滚动下界（lambda 内读取 viewportWidthPx State——pointerInput(Unit)
+            // 闭包不随重组重启，若组合期直接算 minScrollPx 会捕获视口测量前的陈旧值 0）
+            val minScrollNow: () -> Float = {
+                -(rowWidthPx - (viewportWidthPx.floatValue - stackStageOffsetXPx))
+                    .coerceAtLeast(0f)
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .widthIn(min = stageBoxWidthDp)
-                    .horizontalScroll(rememberScrollState())
+                    // 视口右缘收到外层容器右缘（不贴屏幕边缘）
+                    .padding(end = stackStageOffsetX)
+                    // 不裁剪：顶卡左缘阴影自由渲染（问题①修复的关键）
+                    .graphicsLayer { this.clip = false }
+                    .onSizeChanged {
+                        viewportWidthPx.floatValue = it.width.toFloat()
+                    }
+                    // 自绘行滚动手势（问题②修复的关键）
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                // 累计原始位移（不阻尼），渲染值经橡皮筋阻尼
+                                rawRowScroll.floatValue += dragAmount
+                                val damped = rubberBandRowScroll(rawRowScroll.floatValue, minScrollNow())
+                                scope.launch { rowScrollX.snapTo(damped) }
+                            },
+                            onDragEnd = {
+                                // 松手：原始值 clamp 回有效区间，spring 弹回（两端都有弹簧感）
+                                val minScroll = minScrollNow()
+                                rawRowScroll.floatValue = rawRowScroll.floatValue.coerceIn(minScroll, 0f)
+                                scope.launch {
+                                    rowScrollX.animateTo(rawRowScroll.floatValue, ROW_SCROLL_SPRING)
+                                }
+                            }
+                        )
+                    }
             ) {
                 // V7.3 修复：展开态固定顶卡视觉 Y，消除"展开后向上跳变"
                 //
                 // 根因：堆叠态 vs 展开态"顶卡视觉 Top 相对于 Stage(0,0)"的锚点不一致。
                 // - 堆叠态：顶卡放在「包围盒尺寸 + Center 对齐」的容器中，顶卡视觉 Top =
                 //   cardBoxStartY + (bboxHeight - cardHeight) / 2（下方留白 > 上方，顶卡视觉上偏下）
-                // - 展开态：Box(horizontalScroll) 顶对齐放 SharedCardRow()，顶卡视觉 Top = 0
+                // - 展开态：容器顶对齐放 SharedCardRow()，顶卡视觉 Top = 0
                 //   → 分支切换（animateTo 结束帧后下一次重组）瞬间，顶卡视觉 Y 突然上跳
                 //   约 (bboxHeight-cardHeight)/2 像素，产生截图中的"上跳"视觉差
                 //
                 // 修复：展开态给卡片行追加 offset(y = topCardAnchorY)，把顶卡视觉 Top
                 // 平移到与堆叠态完全相同的锚点值，分支切换时顶卡 Y 零跳变。
+                //
+                // V7.6：行滚动 translationX 挂在本层 graphicsLayer（clip=false，
+                // 滚动平移的卡片 + 阴影都不被裁剪）
                 Box(
                     modifier = Modifier
                         .offset(y = topCardAnchorY.dp)
+                        .graphicsLayer {
+                            this.clip = false
+                            translationX = rowScrollX.value
+                        }
                 ) {
                     SharedCardRow()
                 }
@@ -1459,7 +1561,10 @@ fun SwipeableImageStack(
                             .padding(horizontal = 5.dp, vertical = 2.dp)
                             .clickable {
                                 scope.launch {
-                                    expandedScrollState.animateScrollTo(0)
+                                    // V7.6：行滚动 spring 归零后再收起（与自绘滚动配套，
+                                    // 原 expandedScrollState.animateScrollTo(0) 已随 horizontalScroll 移除）
+                                    rawRowScroll.floatValue = 0f
+                                    rowScrollX.animateTo(0f, ROW_SCROLL_SPRING)
                                     setExpanded(false)
                                     onExpandStateChange?.invoke(false)
                                 }
