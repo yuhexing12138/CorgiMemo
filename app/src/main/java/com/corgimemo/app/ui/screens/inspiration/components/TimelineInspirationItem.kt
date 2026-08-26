@@ -498,10 +498,23 @@ fun TimelineInspirationItem(
                     // V7.0 布局空间预借：删除 translationX（绘制平移改为 Stage 内部的
                     // offset 布局移动，见 SwipeableImageStack 的 stackStageOffsetX 参数）。
                     // WRAPPER 只保留 wrapContentWidth 解除宽度约束 + clip=false。
+                    //
+                    // V7.2 闪退修复：unbounded 必须「分态」——
+                    // - 堆叠态（unbounded = true）：Stage 需要比父容器更宽的滑动补偿宽度
+                    //   （stageBoxWidth + StackLeftCompensation > 父宽），必须解除约束
+                    // - 展开态（unbounded = false）：必须传「有界」约束！
+                    //   根因（崩溃日志实测）：
+                    //   无限宽约束 → Stage 展开态 fillMaxWidth 失效（no-op）→ 约束继续向下
+                    //   穿透 → Layer1 展开态的 horizontalScroll() 收到无限宽最大约束 →
+                    //   Compose 抛 IllegalStateException("Horizontally scrollable component
+                    //   was measured with an infinity maximum width constraints") → 闪退
+                    // - 切换时序安全：expandedState 在动画结束后才翻转（setExpanded 尾部
+                    //   写入），动画期间 Layer1 仍是堆叠态分支（无 horizontalScroll），
+                    //   状态翻转与 Stage/WRAPPER 约束切换在同一帧重组中原子生效
                     Box(
                         modifier = Modifier
                             .wrapContentWidth(
-                                unbounded = true,
+                                unbounded = !isImageStackExpanded.value,
                                 align = Alignment.Start
                             )
                             // (V5.8 onGloballyPositioned 埋点已移除)
