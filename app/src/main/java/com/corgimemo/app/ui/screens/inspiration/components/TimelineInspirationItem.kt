@@ -42,8 +42,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -478,20 +476,7 @@ fun TimelineInspirationItem(
                         .fillMaxWidth()
                         // V7.0 新增：左缘对齐屏幕左缘（18dp = LazyColumn item 内 padding 值）
                         .offset(x = (-18).dp)
-                        // V5.8 埋点：输出图片行外层 Box 在 root 坐标系的位置
-                        // 与 [WRAPPER_BOX] / [STAGE_BOX] / [LAYER1_BOX] 对比
-                        // V7.0 适配：left 预期从 50px（18dp）变为 ≈0px（屏幕左缘）
-                        .onGloballyPositioned { coords ->
-                            val pos = coords.positionInRoot()
-                            Log.d(
-                                "StackDebug",
-                                "[OUTER_BOX] | " +
-                                        "left=${pos.x.roundToInt()}px | " +
-                                        "top=${pos.y.roundToInt()}px | " +
-                                        "right=${(pos.x + coords.size.width).roundToInt()}px | " +
-                                        "size=${coords.size.width}x${coords.size.height}px"
-                            )
-                        }
+                        // (V5.8 onGloballyPositioned 埋点已移除)
                         .graphicsLayer { this.clip = false },
                     contentAlignment = Alignment.TopStart
                 ) {
@@ -519,19 +504,7 @@ fun TimelineInspirationItem(
                                 unbounded = true,
                                 align = Alignment.Start
                             )
-                            // V5.8 埋点：输出 wrapContentWidth 内层 Box 在 root 坐标系的位置 + 实际宽度
-                            // V7.0 适配：translationX 已删除，left 预期 = OUTER_BOX.left（≈0px）
-                            .onGloballyPositioned { coords ->
-                                val pos = coords.positionInRoot()
-                                Log.d(
-                                    "StackDebug",
-                                    "[WRAPPER_BOX] | " +
-                                            "left=${pos.x.roundToInt()}px | " +
-                                            "top=${pos.y.roundToInt()}px | " +
-                                            "right=${(pos.x + coords.size.width).roundToInt()}px | " +
-                                            "size=${coords.size.width}x${coords.size.height}px"
-                                )
-                            }
+                            // (V5.8 onGloballyPositioned 埋点已移除)
                             .graphicsLayer { this.clip = false }
                     ) {
                     SwipeableImageStack(
