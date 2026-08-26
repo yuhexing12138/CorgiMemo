@@ -679,14 +679,19 @@ fun SwipeableImageStack(
     // 计算数值：Float（与项目全局 px-as-dp 单位策略一致，数值直接当 dp 使用）
     // 修复：使用 bboxSize + maxOf(cardBoxStart, 0f) 替代 bboxSize + maxOf(-cardBoxStart, 0f)
     // 当 cardBoxStart > 0 时，卡片容器有正偏移，Stage 需扩展以容纳容器底部/右侧
+    // 阴影补偿：顶卡 shadowElevation=8.dp，阴影在卡片四周绘制，需要额外空间
+    val shadowPadding = 8f  // 最大阴影高度（顶卡 8.dp）
+    // 滑动补偿：顶卡左右滑动时的最大位移，确保不被裁剪
+    // 左右两侧都需要补偿，因为卡片可以向左或向右滑动
+    val slideCompensationDp = with(density) { maxElasticDistancePx.toDp() }.value
     val stageBoxWidthDpFloat: Float = maxOf(
-        cardWVal + xOffset.value,                          // 扇形水平摊开
-        bboxWidth + maxOf(cardBoxStartX, 0f),              // 包围盒宽 + 右侧延伸量
+        cardWVal + xOffset.value + slideCompensationDp * 2,  // 扇形水平摊开 + 双侧滑动补偿
+        bboxWidth + maxOf(cardBoxStartX, 0f) + shadowPadding + slideCompensationDp * 2,  // 包围盒宽 + 右侧延伸量 + 阴影 + 双侧滑动补偿
         badgeRequiredRight                                  // 1/N 角标右端 或 展开按钮右端
     )
     val stageBoxHeightDpFloat: Float = maxOf(
-        cardHVal + stackVPVal,                              // 扇形垂直摊开
-        bboxHeight + maxOf(cardBoxStartY, 0f)               // 包围盒高 + 底部延伸量
+        cardHVal + stackVPVal + shadowPadding,               // 扇形垂直摊开 + 阴影
+        bboxHeight + maxOf(cardBoxStartY, 0f) + shadowPadding  // 包围盒高 + 底部延伸量 + 阴影
     )
     // 类型转换为 Dp：供 Modifier.size() 使用
     val stageBoxWidthDp: Dp = stageBoxWidthDpFloat.dp
