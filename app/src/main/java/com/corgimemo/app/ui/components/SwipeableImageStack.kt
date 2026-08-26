@@ -757,6 +757,14 @@ fun SwipeableImageStack(
     // 展开态：给卡片行追加 offset(y = topCardAnchorY)，让展开态顶卡视觉 Top
     //   与堆叠态完全一致，消除分支切换时的向上跳变。
     val topCardAnchorY: Float = cardBoxStartY + (bboxHeight - cardHeight.value) / 2f
+    // V7.4 锚点：展开态整行向左平移量（水平方向连续性）
+    // - 堆叠态顶卡视觉左缘 S = cardBoxStartX + (bboxWidth - cardWidth) / 2（Center 留白）
+    // - 展开态顶卡视觉左缘 E = 0（horizontalScroll Box 顶对齐 TopStart，无偏移）
+    // - 两态差值 J = S - E > 0（包围盒因卡片旋转比单卡宽）→ 原先动画结束瞬间
+    //   分支切换时整行突然左移 J（向左跳变）
+    // 修复：展开动画期间随 expandProgress 把 -J 平滑注入 Layer1 的 offset.x，
+    // 动画结束时堆叠分支与展开分支的顶卡视觉左缘严格相等 → 左移融入动画，零跳变。
+    val expandedRowShiftX: Float = cardBoxStartX + (bboxWidth - cardWidth.value) / 2f
 
     // ==============================
     // 展开态独立尺寸（不绑定 stageBoxWidth）
@@ -1140,11 +1148,18 @@ fun SwipeableImageStack(
             //   （图片部分）全程落在 Layer1 bounds 内，不再溢出
             // - Center 对齐数学自洽：卡片与 Layer1 同时 +E 宽 → 卡片相对 Layer1 的
             //   Center 偏移仍为 (bbox-card)/2 ≈ 14dp，视觉位置零变化
+            // V7.4 修复：offset.x 额外减去 expandedRowShiftX * expandProgress——
+            // 堆叠态顶卡视觉左缘 = cardBoxStartX + (bboxWidth-cardW)/2，展开态 = 0，
+            // 原先动画结束分支切换时整行突然左移该差值；现在把左移量随 expandProgress
+            // 平滑注入动画过程（与卡片扇形展开同一贝塞尔曲线），结束时两分支严格衔接。
+            // 注意：堆叠态稳定时（p=0）该项为 0，顶卡左滑轨迹的预借数学不受影响。
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .offset(
-                        x = (cardBoxStartX - StackLeftCompensation.value * (1f - expandProgress.value)).dp,
+                        x = (cardBoxStartX
+                                - StackLeftCompensation.value * (1f - expandProgress.value)
+                                - expandedRowShiftX * expandProgress.value).dp,
                         y = cardBoxStartY.dp
                     )
                     .size(
@@ -1225,12 +1240,6 @@ fun SwipeableImageStack(
                     }
                 )
         ) {
-                // 收起按钮：展开态(derivedIsExpanded=true) 显示，堆叠态消失（阈值 0.5）
-                val collapseBtnAlpha by animateFloatAsState(
-                    targetValue = if (derivedIsExpanded) 1f else 0f,
-                    animationSpec = OPACITY_200_SPEC,
-                    label = "collapseBtnAlpha",
-                )
                 // 展开按钮：堆叠态(derivedIsExpanded=false) 显示，展开态消失
                 val expandBtnAlpha by animateFloatAsState(
                     targetValue = if (derivedIsExpanded) 0f else 1f,
@@ -1244,51 +1253,6 @@ fun SwipeableImageStack(
                     label = "badgeAlpha",
                 )
         Layer1CardWrapper()
-
-            // Layer-2：全局收起按钮（绝对定位 Stage 内部右上角，不随水平滚动移动）
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .wrapContentSize(Alignment.TopEnd)
-                    .padding(top = topCardTopInStageDp, end = 8.dp)
-            ) {
-                if (showInnerCollapseButton) {
-                    Box(
-                        modifier = Modifier
-                            .graphicsLayer { alpha = collapseBtnAlpha }
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .background(
-                                    color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
-                                    shape = RoundedCornerShape(11.dp)
-                                )
-                                .padding(horizontal = 5.dp, vertical = 2.dp)
-                                .clickable {
-                                    scope.launch {
-                                        expandedScrollState.animateScrollTo(0)
-                                        setExpanded(false)
-                                        onExpandStateChange?.invoke(false)
-                                    }
-                                },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "收起",
-                                color = Color(0xFF4F5660),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = "收起图片堆叠",
-                                tint = Color(0xFF4F5660),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                }
-            }
 
         // ============ 图片计数角标（countBadge）============
         // 样式与灵感首页标签保持一致（主色文字 + 浅橙底 + 10dp 圆角）：
@@ -1458,6 +1422,65 @@ fun SwipeableImageStack(
         //            独立于 ScrollArea（仅卡片区滚动），CollapseBtn 永远可见不滚走
         //            参见 L484 附近展开态分支 Row 第一子元素（Task 5 填入样式）
         }  // V7.0：Stage 内容包装层 Box 闭合（内容视觉位置补偿）
+
+        // ============ Layer-2：全局收起按钮（V7.5 修复：锚定 Stage 而非包装层）============
+        // 根因：V7.1 给展开态 Layer1 加了 widthIn(min = stageBoxWidthDp) 以撑起 Stage 宽度
+        // （stageBoxWidthDp 含 200dp×2 滑动补偿 ≈ 558dp，远超屏幕宽），包装层（wrap-content）
+        // 随之撑宽到 ~558dp；原先锚定包装层 TopEnd 的收起按钮被推到屏幕右缘外 ~200dp，
+        // 渲染了但完全不可见。
+        // 修复：按钮移出包装层、直接作为 Stage 子元素锚定——
+        // - 展开态 Stage = fillMaxWidth()（= 可见行宽），TopEnd 一定在屏幕内
+        // - 堆叠态 Stage 为显式宽（此时按钮 alpha=0 不可见，锚点位置无影响）
+        // 当前位置为调试用临时位（Stage 右上角、end=8dp、top=顶卡视觉 Top），
+        // 后续再按设计确定最终位置。
+        val collapseBtnAlpha by animateFloatAsState(
+            targetValue = if (derivedIsExpanded) 1f else 0f,
+            animationSpec = OPACITY_200_SPEC,
+            label = "collapseBtnAlpha",
+        )
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .wrapContentSize(Alignment.TopEnd)
+                .padding(top = topCardTopInStageDp, end = 8.dp)
+        ) {
+            if (showInnerCollapseButton) {
+                Box(
+                    modifier = Modifier
+                        .graphicsLayer { alpha = collapseBtnAlpha }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .background(
+                                color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
+                                shape = RoundedCornerShape(11.dp)
+                            )
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                            .clickable {
+                                scope.launch {
+                                    expandedScrollState.animateScrollTo(0)
+                                    setExpanded(false)
+                                    onExpandStateChange?.invoke(false)
+                                }
+                            },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "收起",
+                            color = Color(0xFF4F5660),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "收起图片堆叠",
+                            tint = Color(0xFF4F5660),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
