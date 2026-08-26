@@ -57,7 +57,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -1423,15 +1422,16 @@ fun SwipeableImageStack(
         //            参见 L484 附近展开态分支 Row 第一子元素（Task 5 填入样式）
         }  // V7.0：Stage 内容包装层 Box 闭合（内容视觉位置补偿）
 
-        // ============ Layer-2：全局收起按钮（V7.5 修复：锚定 Stage 而非包装层）============
-        // 根因：V7.1 给展开态 Layer1 加了 widthIn(min = stageBoxWidthDp) 以撑起 Stage 宽度
-        // （stageBoxWidthDp 含 200dp×2 滑动补偿 ≈ 558dp，远超屏幕宽），包装层（wrap-content）
-        // 随之撑宽到 ~558dp；原先锚定包装层 TopEnd 的收起按钮被推到屏幕右缘外 ~200dp，
-        // 渲染了但完全不可见。
-        // 修复：按钮移出包装层、直接作为 Stage 子元素锚定——
-        // - 展开态 Stage = fillMaxWidth()（= 可见行宽），TopEnd 一定在屏幕内
-        // - 堆叠态 Stage 为显式宽（此时按钮 alpha=0 不可见，锚点位置无影响）
-        // 当前位置为调试用临时位（Stage 右上角、end=8dp、top=顶卡视觉 Top），
+        // ============ Layer-2：全局收起按钮（V7.5b 修复：补偿 Stage 自身偏移）============
+        // 根因链（V7.5 修复不彻底的原因）：
+        // - V7.5 把按钮从包装层（右缘 W+216）移到 Stage TopEnd —— 但展开态 Stage 有
+        //   stackStageOffsetX(88dp) 的 offset，fillMaxWidth 宽 = W-36 → Stage 右缘 =
+        //   88 + W-36 = W+52，TopEnd 锚点仍在屏幕外 ~52dp，按钮照旧不可见
+        //   （clip=false 无法对抗物理屏幕边界）
+        // - 修复：TopEnd 锚定后追加 offset(-stackStageOffsetX × p) 补偿——展开态(p=1)
+        //   按钮右缘 = W+52-88 = W-36，落在屏幕内 ✓
+        // - 堆叠态(p=0)补偿为 0，按钮 alpha=0 不可见，锚点位置无影响
+        // 当前位置为调试用临时位（Stage 右上角可见区、end=8dp、top=顶卡视觉 Top），
         // 后续再按设计确定最终位置。
         val collapseBtnAlpha by animateFloatAsState(
             targetValue = if (derivedIsExpanded) 1f else 0f,
@@ -1440,8 +1440,9 @@ fun SwipeableImageStack(
         )
         Box(
             modifier = Modifier
-                .matchParentSize()
-                .wrapContentSize(Alignment.TopEnd)
+                .align(Alignment.TopEnd)
+                // 补偿 Stage 自身 stackStageOffsetX 偏移，把 TopEnd 锚点拉回屏幕内
+                .offset(x = -stackStageOffsetX * expandProgress.value)
                 .padding(top = topCardTopInStageDp, end = 8.dp)
         ) {
             if (showInnerCollapseButton) {
