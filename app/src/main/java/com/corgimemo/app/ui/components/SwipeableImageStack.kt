@@ -54,6 +54,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -70,6 +71,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -84,6 +86,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sign
@@ -100,6 +104,7 @@ import androidx.compose.ui.zIndex
 import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import kotlinx.coroutines.flow.takeWhile
 import coil3.size.Scale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -165,6 +170,15 @@ private fun rubberBandRowScroll(raw: Float, minScroll: Float): Float = when {
     raw < minScroll -> minScroll + (raw - minScroll) * ROW_OVERSCROLL_DAMPING
     else -> raw
 }
+
+/**
+ * V7.9 展开态行 Box 双侧阴影余量
+ *
+ * 卡片展开态 shadowElevation = 4dp，阴影向四周扩散约 8dp。
+ * 行 Box 预借该余量后，所有卡片 + 左右阴影都落在行 Box 自身 layout bounds 内，
+ * 不再依赖溢出渲染（防隐式裁剪，V7.0 布局空间预借同款模式）。
+ */
+private val ExpandedRowShadowSlack = 8.dp
 
 /**
  * 堆叠中的单张卡片槽位
@@ -518,10 +532,12 @@ fun SwipeableImageStack(
     )
     // 200ms 透明度淡入淡出规格：用于按钮、角标的 appear/disappear
     val OPACITY_200_SPEC = tween<Float>(durationMillis = 200)
-    // V7.6 展开态行滚动回弹 spring 规格：松手后越界位移弹回有效区间（两端都有弹簧感）
+    // V7.9 展开态行滚动回弹 spring 规格：轻微回弹（用户反馈 V7.7 回弹惯性太大、照片甩出屏幕）
+    // - dampingRatio 0.5(MediumBouncy) → 0.75(LowBouncy)：过冲从 ~16% 降到 ~2%，弹跳轻微
+    // - stiffness MediumLow → Medium：收敛更快，松手即归位不拖沓
     val ROW_SCROLL_SPRING = spring<Float>(
-        dampingRatio = Spring.DampingRatioMediumBouncy,
-        stiffness = Spring.StiffnessMediumLow
+        dampingRatio = Spring.DampingRatioLowBouncy,
+        stiffness = Spring.StiffnessMedium
     )
 
     // 初始展开态：优先取外部托管 expandedState，否则取 false（组件自管首次启动默认堆叠）
@@ -588,6 +604,15 @@ fun SwipeableImageStack(
     val rowScrollX = remember { Animatable(0f) }
     val rawRowScroll = remember { mutableFloatStateOf(0f) }
     val viewportWidthPx = remember { mutableFloatStateOf(0f) }
+    // V7.9 展开过渡期右缘裁剪线（px，包装层本地坐标）：
+    // = 组件树根宽 − expandedViewportRightExtension − 包装层根坐标 X
+    // 根因：旧实现右缘裁剪只挂在展开分支 Layer1 上（isInExpandedMode=true 才生效），
+    // 展开动画期间（堆叠分支渲染）卡片无裁剪飞出，动画结束瞬间分支切换才突然被切 → 跳跃感。
+    // 修复：裁剪改挂 Stage 内容包装层（其左缘恒为 stackStageOffsetX，全程位置不变），
+    // expandProgress > 0 即生效——卡片扇出越过容器右缘的瞬间就被截断（一步到位），
+    // 且裁剪线与展开分支 Layer1 的 clipRect 严格同线（分支切换零跳跃）。
+    // 初始 MAX_VALUE = 未测得前不裁剪（onGloballyPositioned 首帧后写入真实值）
+    val containerClipRightPx = remember { mutableFloatStateOf(Float.MAX_VALUE) }
 
     // 自动重置：每当 isExpanded 变为 false，
     // 行滚动、顶卡拖拽偏移一起归零（下次展开视觉干净；兼容外部托管独立收起按钮行场景）
@@ -1216,14 +1241,14 @@ fun SwipeableImageStack(
                     // V7.8：仅右缘裁剪——超出视口右缘（外层容器边缘）的卡片在此被切，
                     // 不再飞到物理屏幕边缘才消失；左/上/下方向不裁剪
                     //（左侧不裁剪保留顶卡左缘阴影溢出渲染，与问题①修复不互斥）
-                    .drawWithContent {
+                    .drawWithContent drawWithContent@ {
                         clipRect(
                             left = -100000f,
                             top = -100000f,
                             right = size.width,
                             bottom = 100000f
                         ) {
-                            drawContent()
+                            this@drawWithContent.drawContent()
                         }
                     }
                     // 自绘行滚动手势（问题②修复的关键）
@@ -1260,17 +1285,26 @@ fun SwipeableImageStack(
                                 }
                                 // 有速度：fling 惯性滚动
                                 scope.launch {
-                                    // 惯性滚动到衰减尽头（或被下一个手势打断）
-                                    rowScrollX.animateDecay(velocity, flingDecay)
-                                    // 衰减尽头仍可能越界（惯性冲过头）：clamp + spring 弹回
                                     val minScroll = minScrollNow()
+                                    // V7.9 边界拦截：监听 rowScrollX，惯性一旦越界
+                                    // （滚出 [minScroll, 0] 有效区间）立即打断 decay——
+                                    // 不再让卡片冲出屏幕后才回弹（用户反馈①根因：
+                                    // animateDecay 无边界概念，会衰减到速度为 0 才停）
+                                    val boundaryWatcher = launch {
+                                        snapshotFlow { rowScrollX.value }
+                                            .takeWhile { it in minScroll..0f }
+                                            .collect { }
+                                        rowScrollX.stop()
+                                    }
+                                    // 惯性滚动（被下一个手势打断 / 越界被 watcher 打断 / 自然衰减完）
+                                    rowScrollX.animateDecay(velocity, flingDecay)
+                                    boundaryWatcher.cancel()
+                                    // 越界打断或自然结束后：clamp 到边界并轻微弹回
+                                    // （拦截后越界量仅一帧位移 ≈ 几十 px，spring 快速收敛 = 轻微回弹）
                                     val settled = rowScrollX.value.coerceIn(minScroll, 0f)
+                                    rawRowScroll.floatValue = settled
                                     if (settled != rowScrollX.value) {
-                                        rawRowScroll.floatValue = settled
                                         rowScrollX.animateTo(settled, ROW_SCROLL_SPRING)
-                                    } else {
-                                        // 未越界：同步 raw 值（下次拖拽从当前视觉位置继续）
-                                        rawRowScroll.floatValue = settled
                                     }
                                 }
                             },
@@ -1299,12 +1333,31 @@ fun SwipeableImageStack(
                 //
                 // V7.6：行滚动 translationX 挂在本层 graphicsLayer（clip=false，
                 // 滚动平移的卡片 + 阴影都不被裁剪）
+                //
+                // V7.9 布局空间预借（用户反馈②：顶卡左缘/右缘阴影仍被裁剪）：
+                // - 根因：行 Box 原为 wrap-content（宽度仅单卡 120dp），卡片展开位移
+                //   靠 graphicsLayer translationX（绘制层平移），卡片 2..N 与所有卡片的
+                //   左右阴影全部绘制在行 Box layout bounds 之外——依赖"溢出渲染"存活，
+                //   任何一环隐式裁剪（RenderNode / View 层）都会切掉阴影
+                // - 修复（V7.0 同款已验证模式）：行 Box 显式扩宽为「整行宽 + 双侧阴影余量」，
+                //   并左移阴影余量；卡片基础平移 + 余量 抵消左移，视觉位置零变化。
+                //   全部卡片 + 左右阴影从此落在行 Box 自身 layout bounds 内，免疫一切裁剪
+                val rowShadowSlackPx = with(density) { ExpandedRowShadowSlack.toPx() }
                 Box(
                     modifier = Modifier
                         .offset(y = topCardAnchorY.dp)
+                        // 行 Box 左移阴影余量（layout 移动），为左侧阴影预借空间
+                        .offset(x = -ExpandedRowShadowSlack)
+                        // requiredSize：突破父级（视口）宽度约束——行宽 632dp 远大于视口宽，
+                        // 用 size() 会被 incoming constraints 压缩回视口宽，预借失效
+                        .requiredSize(
+                            width = cardRowWidthDp + ExpandedRowShadowSlack * 2,
+                            height = cardHeight
+                        )
                         .graphicsLayer {
                             this.clip = false
-                            translationX = rowScrollX.value
+                            // 基础平移 + 阴影余量：抵消行 Box 左移，卡片视觉位置与旧版严格一致
+                            translationX = rowShadowSlackPx + rowScrollX.value
                         }
                 ) {
                     SharedCardRow()
@@ -1401,9 +1454,43 @@ fun SwipeableImageStack(
         //   Stage 宽度塌缩为 0 → 展开动画播完后图片区整体空白、收起按钮不可见。
         //   修复：展开态用默认 wrap-content，让 Layer1 的 widthIn(min=stageBoxWidthDp)
         //   撑起 Stage 宽度（与 V6.x 包装层不存在时的结构完全等价）。
+        // V7.9 过渡期右缘裁剪：挂在包装层上的「预生效」裁剪（见 containerClipRightPx 声明处注释）。
+        // 包装层左缘 = Stage offset + 本层 offset = stackStageOffsetX（恒定，与 expandProgress 无关），
+        // 因此裁剪线（包装层本地 px）全程对应屏幕上同一条竖线 = 灵感条外层容器右缘。
+        val viewportExtensionPx = with(density) { expandedViewportRightExtension.toPx() }
         Box(
             modifier = Modifier
                 .offset(x = StackLeftCompensation * (1f - expandProgress.value))
+                // 测量裁剪线：根节点宽度 − 右缘延伸量 − 包装层根坐标 X
+                // （根节点 = 组件树最外层 LayoutNode，宽度即窗口内容区宽；
+                //   LazyColumn contentPadding end=18 由调用方以 expandedViewportRightExtension
+                //   = 18.dp 传入，与 V7.8 视口右缘对齐逻辑同一耦合）
+                .onGloballyPositioned { coords ->
+                    var root = coords
+                    while (root.parentLayoutCoordinates != null) {
+                        root = root.parentLayoutCoordinates!!
+                    }
+                    containerClipRightPx.floatValue =
+                        root.size.width - viewportExtensionPx - coords.positionInRoot().x
+                }
+                // 仅右缘裁剪（左/上/下不裁剪，保留顶卡左缘阴影溢出渲染）；
+                // p > 0 生效：展开/收起动画全程 + 展开稳态持续裁剪，堆叠稳态（p=0）不裁剪
+                .drawWithContent drawWithContent@ {
+                    if (expandProgress.value > 0f &&
+                        containerClipRightPx.floatValue < Float.MAX_VALUE / 2f
+                    ) {
+                        clipRect(
+                            left = -100000f,
+                            top = -100000f,
+                            right = containerClipRightPx.floatValue,
+                            bottom = 100000f
+                        ) {
+                            this@drawWithContent.drawContent()
+                        }
+                    } else {
+                        this@drawWithContent.drawContent()
+                    }
+                }
                 .then(
                     if (isExpanded) {
                         // 展开态：wrap-content（内容撑宽 Stage，修复宽度塌缩 0 的空白 bug）
