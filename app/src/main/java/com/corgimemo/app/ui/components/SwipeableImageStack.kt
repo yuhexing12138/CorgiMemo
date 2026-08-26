@@ -52,6 +52,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
@@ -300,6 +301,7 @@ enum class SwipeDirection {
  *                           显式传值时覆盖默认，便于调用方微调阻力边界
  * @param tiltAngleStart 堆叠首端旋转角度（默认 0f）
  * @param xOffset 堆叠末端水平偏移（默认 0.dp，扇形展开幅度）
+ * @param yOffset 堆叠态每层垂直上移量（默认 4.dp，原型对齐参数）
  * @param visibleDepth 可见深度：最多参与扇形展开的卡片数（默认 4，固定上限 4）。
  *                     仅前 M = min(visibleDepth, cardCount) 张展开成扇形，超出部分夹在栈底。
  *                     堆叠末端旋转角由可见张数派生：M=1→0°、M=2→-15°、M=3→-30°、M=4→-45°
@@ -320,6 +322,7 @@ fun SwipeableImageStack(
     maxElasticDistance: Dp = 0.dp,
     tiltAngleStart: Float = 0f,
     xOffset: Dp = 0.dp,
+    yOffset: Dp = 4.dp,
     visibleDepth: Int = 4,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     countBadge: Boolean = false,
@@ -339,6 +342,7 @@ fun SwipeableImageStack(
         maxElasticDistance = maxElasticDistance,
         tiltAngleStart = tiltAngleStart,
         xOffset = xOffset,
+        yOffset = yOffset,
         visibleDepth = visibleDepth,
         swipeDirection = swipeDirection,
         countBadge = countBadge,
@@ -371,6 +375,7 @@ fun SwipeableImageStack(
     maxElasticDistance: Dp = 0.dp,
     tiltAngleStart: Float = 0f,
     xOffset: Dp = 0.dp,
+    yOffset: Dp = 4.dp,
     visibleDepth: Int = 4,
     swipeDirection: SwipeDirection = SwipeDirection.Horizontal,
     countBadge: Boolean = false,
@@ -582,9 +587,9 @@ fun SwipeableImageStack(
         val rotHalfW = halfW * cosT + halfH * sinT
         val rotHalfH = halfW * sinT + halfH * cosT
 
-        // 卡片平移（与主渲染逻辑一致：tx 用 xOffset.value，ty 用 8f per index）
+        // 卡片平移（与主渲染逻辑一致：tx 用 xOffset.value，ty 用 yOffset.value per index）
         val tx = if (M_bbox > 1) ei.toFloat() / denom_bbox * xOffset.value else 0f
-        val ty = -(ei * 8f)
+        val ty = -(ei * yOffset.value)
 
         // 累积包围盒边界（相对于卡片中心）
         bboxLeft = minOf(bboxLeft, tx - rotHalfW)
@@ -672,15 +677,16 @@ fun SwipeableImageStack(
     // → 保证 Badge(1/N) / ExpandBtn("展开 N") / 堆叠图本身 位置绝对不变（用户硬约束）
     // ==============================
     // 计算数值：Float（与项目全局 px-as-dp 单位策略一致，数值直接当 dp 使用）
+    // 修复：使用 bboxSize + maxOf(cardBoxStart, 0f) 替代 bboxSize + maxOf(-cardBoxStart, 0f)
+    // 当 cardBoxStart > 0 时，卡片容器有正偏移，Stage 需扩展以容纳容器底部/右侧
     val stageBoxWidthDpFloat: Float = maxOf(
-        cardWVal + xOffset.value,           // 扇形水平摊开
-        bboxWidth,                          // 旋转+scale 包围盒
-        badgeRequiredRight,                 // 1/N 角标右端
-        cardBoxStartX + bboxWidth           // 顶卡左上角 + 包围盒
+        cardWVal + xOffset.value,                          // 扇形水平摊开
+        bboxWidth + maxOf(cardBoxStartX, 0f),              // 包围盒宽 + 右侧延伸量
+        badgeRequiredRight                                  // 1/N 角标右端 或 展开按钮右端
     )
     val stageBoxHeightDpFloat: Float = maxOf(
-        cardHVal + stackVPVal,              // 扇形垂直摊开
-        bboxHeight                          // 旋转+scale 包围盒高
+        cardHVal + stackVPVal,                              // 扇形垂直摊开
+        bboxHeight + maxOf(cardBoxStartY, 0f)               // 包围盒高 + 底部延伸量
     )
     // 类型转换为 Dp：供 Modifier.size() 使用
     val stageBoxWidthDp: Dp = stageBoxWidthDpFloat.dp
@@ -727,7 +733,7 @@ fun SwipeableImageStack(
             cardW = cardWidth,
             cardGap = cardGap,
             visibleDepth = visibleDepth,
-            stackOffsetDp = 8.dp,
+            stackOffsetDp = yOffset,
             fanAngleDeg = -(visibleDepth - 1).toFloat() * 15f,
             scaleStep = 0.05f,
         )
@@ -996,14 +1002,20 @@ fun SwipeableImageStack(
                 SharedCardRow()
             }
         } else {
+            // V5.2 修复：使用 offset 定位（不使用 padding）
+            // - offset 不参与布局测量，配合 Stage 尺寸补偿解决裁剪
+            // - graphicsLayer 负责 clip=false 和 3D 透视
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
+                    .offset(
+                        x = cardBoxStartX.dp,
+                        y = cardBoxStartY.dp
+                    )
                     .size(bboxWidth.dp, bboxHeight.dp)
                     .graphicsLayer {
+                        this.clip = false
                         this.cameraDistance = 1000f / density.density
-                        translationX = cardBoxStartX
-                        translationY = cardBoxStartY
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -1014,15 +1026,6 @@ fun SwipeableImageStack(
 
     Box(
         modifier = modifier
-            // ==============================
-            // V2.0 修复（方案A）：
-            //   - 不裁剪溢出（左侧展开态的收起按钮 / 右侧展开态都不被截断）
-            //   - 正确 API：Modifier.graphicsLayer { this.clip = false }（Modifier.clip 只接受 Shape）
-            //   - 堆叠态 size 永远 = stageBoxWidthDp/stageBoxHeightDp（恒定，Badge/ExpandBtn 位置不变）
-            //   - 展开态 fillMaxWidth：突破 stageBoxWidth≈200dp，使用父容器全宽
-            //     （原型 SCROLL_MAX_WIDTH = 560px / Stage width = full）
-            // ==============================
-            .graphicsLayer { this.clip = false }
             .then(
                 if (isExpanded) {
                     Modifier
@@ -1032,22 +1035,13 @@ fun SwipeableImageStack(
                     Modifier.size(stageBoxWidthDp, stageBoxHeightDp)
                 }
             )
-            // ==============================
-            // 动画：Stage 容器宽/高变化补间（对齐原型 CSS transition 400ms cubic-bezier(0.22,1,0.36,1)）
-            //   - 堆叠态 size(stageBox*, stageBox*) → 展开态 fillMaxWidth + height(stageBox*)
-            //   - 尺寸变化时 animateContentSize 自动补间中间值，视觉过渡平滑
-            //   - 必须放在 then(size/fillMaxWidth) 之后，才能正确测量尺寸变化
-            // ==============================
+            .graphicsLayer { this.clip = false }
             .animateContentSize(
                 animationSpec = tween(
                     durationMillis = 400,
                     easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
                 )
             )
-            // outer Stage 永远不挂 horizontalScroll（仅展开态内部 ScrollArea 独立层才挂）
-        // 外层 Box 不指定 contentAlignment，使用默认 TopStart
-        // - 堆叠卡片容器：align(Alignment.TopStart) + padding，左对齐外层 Box 左边缘
-        // - 角标：align(Alignment.BottomEnd) + padding，右对齐外层 Box 右边缘
     ) {
                 // 收起按钮：展开态(derivedIsExpanded=true) 显示，堆叠态消失（阈值 0.5）
                 val collapseBtnAlpha by animateFloatAsState(

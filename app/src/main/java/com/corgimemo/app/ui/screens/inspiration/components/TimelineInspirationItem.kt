@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -208,27 +209,23 @@ fun TimelineInspirationItem(
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .graphicsLayer { this.clip = false }
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
             )
-            // 竖线贯通整个 Item 高度 + 向上延伸 18dp 覆盖 LazyColumn 间距，实现连续不中断
-            // 批量模式下在空心圆节点区域留出间隙，避免竖线穿过空心圆内部
             .drawBehind {
                 val x = timelineLineX.toPx()
-                val startY = -timelineLineOverlap.toPx()  // 向上延伸 18dp
+                val startY = -timelineLineOverlap.toPx()
                 if (isBatchMode) {
-                    // 批量模式：竖线分两段，跳过节点区域
                     val nodeGapRadius = (nodeSize / 2).toPx()
                     val nodeCenterYPx = nodeCenterY.toPx()
-                    // 上段：从顶部延伸到节点顶部
                     drawLine(
                         color = timelineLineColor,
                         start = Offset(x, startY),
                         end = Offset(x, nodeCenterYPx - nodeGapRadius),
                         strokeWidth = 2.dp.toPx()
                     )
-                    // 下段：从节点底部到 Item 底部
                     drawLine(
                         color = timelineLineColor,
                         start = Offset(x, nodeCenterYPx + nodeGapRadius),
@@ -236,7 +233,6 @@ fun TimelineInspirationItem(
                         strokeWidth = 2.dp.toPx()
                     )
                 } else {
-                    // 普通模式：竖线连续绘制
                     drawLine(
                         color = timelineLineColor,
                         start = Offset(x, startY),
@@ -313,6 +309,7 @@ fun TimelineInspirationItem(
             modifier = Modifier
                 .padding(start = contentStartX)
                 .align(Alignment.TopStart)
+                .graphicsLayer { this.clip = false }
         ) {
             // 文本内容区域：点击/长按由外层 Box 统一处理，水波纹效果保留
             Column {
