@@ -561,7 +561,10 @@ fun SwipeableImageStack(
      * 作用：
      * 1. 先调用 stop() 打断运行中动画，避免重复点击导致状态错乱（幂等安全）
      * 2. animateTo 到目标值（true→1f / false→0f），使用 TRANSITION_400_SPEC 贝塞尔缓动
-     * 3. 动画结束后，将 derivedIsExpanded（对外 Boolean 快照）同步给外部托管 expandedState 与外部 Boolean isExpanded 参数
+     * 3. V8.0：isExpanded 与 expandedState 由独立 LaunchedEffect 跟随 derivedIsExpanded(p≥0.5)
+     *    自动同步，不再在动画结束帧才手动赋值 —— 避免 Stage 尺寸、内容包装层尺寸策略
+     *    在动画结束后才突变导致的视觉跳变，让结构切换在动画中途（200ms, p=0.5）进行，
+     *    且与 Layer1 统一结构配合实现全程零跳变。
      */
     suspend fun setExpanded(targetExpand: Boolean) {
         if (expandProgress.isRunning) return
@@ -569,10 +572,16 @@ fun SwipeableImageStack(
         if (expandProgress.value == targetValue && !expandProgress.isRunning) return // 幂等跳过
         expandProgress.stop()
         expandProgress.animateTo(targetValue, TRANSITION_400_SPEC)
-        // 结束后同步：derivedIsExpanded 会自动由 progress≥0.5 反映，此处仅同步外部托管
-        expandedState?.value = targetExpand
         // 注：外部 isExpanded 参数是 Composable 调用侧快照，不支持双向写；若原代码有 isExpanded = true/false 的 MutableState
         // 写法，先统一 Grep 所有出现点，逐一替换为 scope.launch { setExpanded(true/false) }
+    }
+
+    // V8.0：isExpanded 跟随 derivedIsExpanded 自动同步（expandProgress 跨越 0.5 立即生效），
+    // 不再等待 400ms 动画结束。配合 Layer1CardWrapper 统一结构 + Stage animateContentSize，
+    // 从根本上消除「动画结束才切换结构」导致的视觉跳变。
+    LaunchedEffect(derivedIsExpanded) {
+        isExpanded = derivedIsExpanded
+        expandedState?.value = derivedIsExpanded
     }
 
     // ============ 共享状态（与 Originkit 原型一致）============
@@ -1180,68 +1189,65 @@ fun SwipeableImageStack(
 
     @Composable
     fun BoxScope.Layer1CardWrapper() {
-        if (isInExpandedMode) {
-            // ==================== V7.6 展开态：自绘行滚动 ====================
-            // 两个问题一次修复（共用同一套结构，互不冲突）：
-            //
-            // 问题①：顶卡左侧阴影被裁剪
-            //   根因（与堆叠态左滑裁剪同类——容器裁剪越界内容，但容器不同）：
-            //   旧实现用 horizontalScroll，滚动容器必须裁剪内容到自身 bounds；
-            //   顶卡（第一张）位于视口 x=0，其阴影向左延伸 ~4dp 超出视口左缘 → 被切。
-            //   修复：弃用 horizontalScroll，改 graphicsLayer translationX 滚动 +
-            //   全链 clip=false，阴影自由渲染。
-            //
-            // 问题②：展开后图片行无法左右滑动
-            //   根因：卡片展开位置是 graphicsLayer translationX 实现的（不参与布局
-            //   测量）→ horizontalScroll 测得内容宽 = 单卡宽(cardWidth) < 视口宽 →
-            //   无内容可滚。
-            //   修复：自绘滚动——拖拽累计 rawRowScroll → 橡皮筋阻尼 → rowScrollX
-            //   渲染平移；松手 spring 回弹（左右滑到头都有弹簧动画）。
-            //
-            // 视口右缘 = Stage 右缘 − stackStageOffsetX（即外层容器边缘，不贴屏幕边）：
-            //   Stage 展开态 fillMaxWidth（= 外层容器宽），左缘在 stackStageOffsetX
-            //   处 → padding(end = stackStageOffsetX) 把视口右缘收到外层容器右缘。
-            //
-            // 旧 widthIn(min = stageBoxWidthDp) 已删除：V7.2 后 WRAPPER 展开态传有界
-            // 约束，Stage fillMaxWidth 不再依赖子内容撑宽；该 min 反而让 Layer1
-            // 比视口宽 ~180dp，破坏滚动边界计算。
-            //
-            // 滚动有效区间 [minScroll, 0]：
-            //   0 = 第一张贴视口左缘（与 V7.4 展开锚点连续）
-            //   minScroll = -(行宽 − 视口宽) = 最后一张贴视口右缘（外层容器边缘）
-            val rowWidthPx = with(density) { cardRowWidthDp.toPx() }
-            // V7.8：视口右缘内缩量 = stackStageOffsetX − 右缘延伸量（对齐外层容器边缘）
-            val viewportEndInset = (stackStageOffsetX - expandedViewportRightExtension)
-                .coerceAtLeast(0.dp)
-            val viewportEndInsetPx = with(density) { viewportEndInset.toPx() }
-            // 实时计算滚动下界：minScroll = −(行宽 − 视口内容区宽)
-            // 视口内容区宽 = Layer1 全宽（onSizeChanged 链首实测）− 右缘内缩量
-            // （lambda 内读取 viewportWidthPx State——pointerInput(Unit) 闭包不随重组重启）
-            val minScrollNow: () -> Float = {
-                -(rowWidthPx - (viewportWidthPx.floatValue - viewportEndInsetPx))
-                    .coerceAtLeast(0f)
-            }
-            // V7.7：fling 惯性衰减曲线（@Composable 必须在组合作用域声明，
-            // pointerInput lambda 内无法调用 Composable——LazyRow 同款官方曲线）
-            val flingDecay = rememberSplineBasedDecay<Float>()
-            Box(
-                modifier = Modifier
-                    // V7.8 修复：onSizeChanged 必须放在链首——报告整个 Layer1 的全宽
-                    //（fillMaxWidth 固定约束，与内部内容无关）；若放在 padding 之后，
-                    // 会报告内容自适应宽（≈单卡 120dp，卡片展开位移不参与布局测量），
-                    // 视口宽被严重低估 → 滚动边界失真 → 甩动时卡片飞过容器边缘、
-                    // 直到物理屏幕边缘才消失（用户反馈的"右缘裁剪位置在屏幕边缘"）
-                    .onSizeChanged { viewportWidthPx.floatValue = it.width.toFloat() }
-                    .fillMaxWidth()
-                    // V7.8：视口右缘 = 外层容器右缘（默认 Stage 右缘 − stackStageOffsetX，
-                    // 按 expandedViewportRightExtension 再向右延伸对齐调用方容器边缘）
-                    .padding(end = viewportEndInset)
-                    // 不裁剪：顶卡左缘阴影自由渲染（问题①修复的关键）
-                    .graphicsLayer { this.clip = false }
-                    // V7.8：仅右缘裁剪——超出视口右缘（外层容器边缘）的卡片在此被切，
-                    // 不再飞到物理屏幕边缘才消失；左/上/下方向不裁剪
-                    //（左侧不裁剪保留顶卡左缘阴影溢出渲染，与问题①修复不互斥）
-                    .drawWithContent drawWithContent@ {
+        // ==================== V8.0 统一结构：堆叠态 / 展开态共用一套容器树 ====================
+        //
+        // 根因（原双分支跳变）：
+        // - isInExpandedMode 在动画结束帧（p>0.99 且 !animating）才从堆叠分支切换到展开分支
+        // - 两分支的容器结构完全不同：Center 对齐 Layer1 Box vs fillMaxWidth 视口 Box + 行 Box
+        // - 虽设计了端点(p=0/p=1)等价位，但中间轨迹（如 p=0.5）两分支算出的卡片位置不同
+        //   → 任何切换点都会产生视觉跳变
+        //
+        // 修复：消除 if/else，始终用展开分支的「视口 Box + 行 Box」结构，
+        // 堆叠态差异通过「行 Box 额外 offset + 参数插值」模拟，从根本上杜绝切换跳变。
+        //
+        // 关键插值：
+        // 1. unifiedStackXOffset = (expandedRowShiftX - StackLeftCompensation) * (1 - p)
+        //    → 等效于原堆叠分支的「Layer1 Box offset.x + Center 对齐 X 补偿」，
+        //      p=0 全额注入，p=1 归零，展开/收起过程完全平滑
+        // 2. cameraDistance、padding、裁剪边界全部跟随 expandProgress 或 derivedIsExpanded
+        //    渐入渐出，不再有布尔切换
+        // 3. 手势：Compose 手势系统天然子先于父分发，堆叠态 OneSharedCard 先消费拖拽，
+        //    展开态 OneSharedCard 手势关闭(isInStackedMode=false)，滚动手势自然由视口接管
+        // ====================
+
+        val rowWidthPx = with(density) { cardRowWidthDp.toPx() }
+        // V7.8：视口右缘内缩量（仅展开态生效，堆叠态 padding 为 0）
+        val viewportEndInset = (stackStageOffsetX - expandedViewportRightExtension)
+            .coerceAtLeast(0.dp)
+        val viewportEndInsetPx = with(density) { viewportEndInset.toPx() }
+        // V8.0：堆叠态 Center 对齐等效水平偏移（dp 单位的 Float），随 p 平滑归零
+        // 推导：原堆叠分支 Layer1 offset.x(p) + CenterX(p)
+        //      = [cardBoxStartX - SLC*(1-p) - J*p] + (bboxWidth - cardWidth)/2
+        //      = J*(1-p) - SLC*(1-p)
+        //      = (J - SLC) * (1-p)   （J = expandedRowShiftX）
+        val unifiedStackXOffset: Float =
+            (expandedRowShiftX - StackLeftCompensation.value) * (1f - expandProgress.value)
+        // 实时滚动下界（pointerInput 闭包内读取 State，不随重组重启）
+        val minScrollNow: () -> Float = {
+            -(rowWidthPx - (viewportWidthPx.floatValue - viewportEndInsetPx)).coerceAtLeast(0f)
+        }
+        // fling 惯性衰减曲线（@Composable 作用域声明）
+        val flingDecay = rememberSplineBasedDecay<Float>()
+        val rowShadowSlackPx = with(density) { ExpandedRowShadowSlack.toPx() }
+
+        // ==================== 视口 Box（恒常存在，堆叠态 / 展开态通用）====================
+        Box(
+            modifier = Modifier
+                // onSizeChanged 放链首：报告 Layer1 全宽（fillMaxWidth 固定约束）
+                .onSizeChanged { viewportWidthPx.floatValue = it.width.toFloat() }
+                .fillMaxWidth()
+                // V8.0：padding 随 derivedIsExpanded 渐入，堆叠态不加内缩
+                .padding(end = if (derivedIsExpanded) viewportEndInset else 0.dp)
+                .graphicsLayer {
+                    this.clip = false
+                    // V8.0：3D 透视随 p 渐出（堆叠态 p=0 全量，展开态 p=1 归零）
+                    // rotationZ 不依赖 cameraDistance，展开态为 0，此参数仅堆叠态生效
+                    this.cameraDistance = (1000f / density.density) * (1f - expandProgress.value)
+                }
+                // V7.8：仅右缘裁剪；p > 0 即生效（展开/收起动画全程 + 展开稳态），
+                // 堆叠稳态(p=0)不裁剪（保持顶卡左滑溢出渲染）
+                .drawWithContent drawWithContent@ {
+                    if (expandProgress.value > 0f) {
                         clipRect(
                             left = -100000f,
                             top = -100000f,
@@ -1250,155 +1256,81 @@ fun SwipeableImageStack(
                         ) {
                             this@drawWithContent.drawContent()
                         }
+                    } else {
+                        this@drawWithContent.drawContent()
                     }
-                    // 自绘行滚动手势（问题②修复的关键）
-                    // V7.7：加 fling 惯性——参考待办编辑页图片行（LazyRow 自带 fling），
-                    // 自绘滚动用标准基建组合：VelocityTracker 测松手初速度 →
-                    // splineBasedDecay 惯性衰减 → 越界时 spring 弹回（保留弹簧手感）。
-                    .pointerInput(Unit) {
-                        // 速度追踪器：fling 初速度来源（松手前最后几帧的滑动速度）
-                        val velocityTracker = VelocityTracker()
-                        detectHorizontalDragGestures(
-                            onDragStart = { velocityTracker.resetTracking() },
-                            onHorizontalDrag = { change, dragAmount ->
-                                change.consume()
-                                velocityTracker.addPosition(
-                                    change.uptimeMillis,
-                                    change.position
-                                )
-                                // 累计原始位移（不阻尼），渲染值经橡皮筋阻尼
-                                rawRowScroll.floatValue += dragAmount
-                                val damped = rubberBandRowScroll(rawRowScroll.floatValue, minScrollNow())
-                                scope.launch { rowScrollX.snapTo(damped) }
-                            },
-                            onDragEnd = {
-                                // 松手初速度（px/s）：负 = 向左甩（继续向左滚），正 = 向右甩
-                                val velocity = velocityTracker.calculateVelocity().x
-                                // 无速度或极慢：维持 V7.6 行为（clamp + spring 回弹）
-                                if (abs(velocity) < 200f) {
-                                    val minScroll = minScrollNow()
-                                    rawRowScroll.floatValue = rawRowScroll.floatValue.coerceIn(minScroll, 0f)
-                                    scope.launch {
-                                        rowScrollX.animateTo(rawRowScroll.floatValue, ROW_SCROLL_SPRING)
-                                    }
-                                    return@detectHorizontalDragGestures
-                                }
-                                // 有速度：fling 惯性滚动
-                                scope.launch {
-                                    val minScroll = minScrollNow()
-                                    // V7.9 边界拦截：监听 rowScrollX，惯性一旦越界
-                                    // （滚出 [minScroll, 0] 有效区间）立即打断 decay——
-                                    // 不再让卡片冲出屏幕后才回弹（用户反馈①根因：
-                                    // animateDecay 无边界概念，会衰减到速度为 0 才停）
-                                    val boundaryWatcher = launch {
-                                        snapshotFlow { rowScrollX.value }
-                                            .takeWhile { it in minScroll..0f }
-                                            .collect { }
-                                        rowScrollX.stop()
-                                    }
-                                    // 惯性滚动（被下一个手势打断 / 越界被 watcher 打断 / 自然衰减完）
-                                    rowScrollX.animateDecay(velocity, flingDecay)
-                                    boundaryWatcher.cancel()
-                                    // 越界打断或自然结束后：clamp 到边界并轻微弹回
-                                    // （拦截后越界量仅一帧位移 ≈ 几十 px，spring 快速收敛 = 轻微回弹）
-                                    val settled = rowScrollX.value.coerceIn(minScroll, 0f)
-                                    rawRowScroll.floatValue = settled
-                                    if (settled != rowScrollX.value) {
-                                        rowScrollX.animateTo(settled, ROW_SCROLL_SPRING)
-                                    }
-                                }
-                            },
-                            onDragCancel = {
-                                // 取消（如被父级手势抢占）：与慢速松手同处理
-                                val minScroll = minScrollNow()
+                }
+                // 自绘行滚动手势（展开态专属）
+                // 堆叠态：OneSharedCard 的子级 pointerInput 先于父级分发并消费 → 本手势收不到事件
+                // 展开态：OneSharedCard 手势关闭(isInStackedMode=false) → 手势自动落到这里
+                .pointerInput(Unit) {
+                    val velocityTracker = VelocityTracker()
+                    detectHorizontalDragGestures(
+                        onDragStart = { velocityTracker.resetTracking() },
+                        onHorizontalDrag = { change, dragAmount ->
+                            // V8.0：仅展开态(derivedIsExpanded)才消费事件；堆叠态不 consume，
+                            // 让子级 OneSharedCard 的堆叠拖拽手势有机会拿到事件（双重保险）
+                            if (!derivedIsExpanded) return@detectHorizontalDragGestures
+                            change.consume()
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                            rawRowScroll.floatValue += dragAmount
+                            val damped = rubberBandRowScroll(rawRowScroll.floatValue, minScrollNow())
+                            scope.launch { rowScrollX.snapTo(damped) }
+                        },
+                        onDragEnd = {
+                            if (!derivedIsExpanded) return@detectHorizontalDragGestures
+                            val velocity = velocityTracker.calculateVelocity().x
+                            val minScroll = minScrollNow()
+                            if (abs(velocity) < 200f) {
                                 rawRowScroll.floatValue = rawRowScroll.floatValue.coerceIn(minScroll, 0f)
-                                scope.launch {
-                                    rowScrollX.animateTo(rawRowScroll.floatValue, ROW_SCROLL_SPRING)
+                                scope.launch { rowScrollX.animateTo(rawRowScroll.floatValue, ROW_SCROLL_SPRING) }
+                                return@detectHorizontalDragGestures
+                            }
+                            scope.launch {
+                                val boundaryWatcher = launch {
+                                    snapshotFlow { rowScrollX.value }
+                                        .takeWhile { it in minScroll..0f }
+                                        .collect { }
+                                    rowScrollX.stop()
+                                }
+                                rowScrollX.animateDecay(velocity, flingDecay)
+                                boundaryWatcher.cancel()
+                                val settled = rowScrollX.value.coerceIn(minScroll, 0f)
+                                rawRowScroll.floatValue = settled
+                                if (settled != rowScrollX.value) {
+                                    rowScrollX.animateTo(settled, ROW_SCROLL_SPRING)
                                 }
                             }
-                        )
-                    }
-            ) {
-                // V7.3 修复：展开态固定顶卡视觉 Y，消除"展开后向上跳变"
-                //
-                // 根因：堆叠态 vs 展开态"顶卡视觉 Top 相对于 Stage(0,0)"的锚点不一致。
-                // - 堆叠态：顶卡放在「包围盒尺寸 + Center 对齐」的容器中，顶卡视觉 Top =
-                //   cardBoxStartY + (bboxHeight - cardHeight) / 2（下方留白 > 上方，顶卡视觉上偏下）
-                // - 展开态：容器顶对齐放 SharedCardRow()，顶卡视觉 Top = 0
-                //   → 分支切换（animateTo 结束帧后下一次重组）瞬间，顶卡视觉 Y 突然上跳
-                //   约 (bboxHeight-cardHeight)/2 像素，产生截图中的"上跳"视觉差
-                //
-                // 修复：展开态给卡片行追加 offset(y = topCardAnchorY)，把顶卡视觉 Top
-                // 平移到与堆叠态完全相同的锚点值，分支切换时顶卡 Y 零跳变。
-                //
-                // V7.6：行滚动 translationX 挂在本层 graphicsLayer（clip=false，
-                // 滚动平移的卡片 + 阴影都不被裁剪）
-                //
-                // V7.9 布局空间预借（用户反馈②：顶卡左缘/右缘阴影仍被裁剪）：
-                // - 根因：行 Box 原为 wrap-content（宽度仅单卡 120dp），卡片展开位移
-                //   靠 graphicsLayer translationX（绘制层平移），卡片 2..N 与所有卡片的
-                //   左右阴影全部绘制在行 Box layout bounds 之外——依赖"溢出渲染"存活，
-                //   任何一环隐式裁剪（RenderNode / View 层）都会切掉阴影
-                // - 修复（V7.0 同款已验证模式）：行 Box 显式扩宽为「整行宽 + 双侧阴影余量」，
-                //   并左移阴影余量；卡片基础平移 + 余量 抵消左移，视觉位置零变化。
-                //   全部卡片 + 左右阴影从此落在行 Box 自身 layout bounds 内，免疫一切裁剪
-                val rowShadowSlackPx = with(density) { ExpandedRowShadowSlack.toPx() }
-                Box(
-                    modifier = Modifier
-                        .offset(y = topCardAnchorY.dp)
-                        // 行 Box 左移阴影余量（layout 移动），为左侧阴影预借空间
-                        .offset(x = -ExpandedRowShadowSlack)
-                        // requiredSize：突破父级（视口）宽度约束——行宽 632dp 远大于视口宽，
-                        // 用 size() 会被 incoming constraints 压缩回视口宽，预借失效
-                        .requiredSize(
-                            width = cardRowWidthDp + ExpandedRowShadowSlack * 2,
-                            height = cardHeight
-                        )
-                        .graphicsLayer {
-                            this.clip = false
-                            // 基础平移 + 阴影余量：抵消行 Box 左移，卡片视觉位置与旧版严格一致
-                            translationX = rowShadowSlackPx + rowScrollX.value
+                        },
+                        onDragCancel = {
+                            if (!derivedIsExpanded) return@detectHorizontalDragGestures
+                            val minScroll = minScrollNow()
+                            rawRowScroll.floatValue = rawRowScroll.floatValue.coerceIn(minScroll, 0f)
+                            scope.launch { rowScrollX.animateTo(rawRowScroll.floatValue, ROW_SCROLL_SPRING) }
                         }
-                ) {
-                    SharedCardRow()
+                    )
                 }
-            }
-        } else {
-            // V5.2 修复：使用 offset 定位（不使用 padding）
-            // - offset 不参与布局测量，配合 Stage 尺寸补偿解决裁剪
-            // - graphicsLayer 负责 clip=false 和 3D 透视
-            // V7.0 布局空间预借：
-            // - offset.x 减去 StackLeftCompensation（堆叠态全额左移，随 expandProgress
-            //   插值归零，展开/收起过渡平滑）
-            // - size 宽度加上 StackLeftCompensation（右缘保持不变）
-            // - 效果：Layer1 的 layout bounds 左缘 ≈ 屏幕左缘外 42dp，顶卡左滑轨迹
-            //   （图片部分）全程落在 Layer1 bounds 内，不再溢出
-            // - Center 对齐数学自洽：卡片与 Layer1 同时 +E 宽 → 卡片相对 Layer1 的
-            //   Center 偏移仍为 (bbox-card)/2 ≈ 14dp，视觉位置零变化
-            // V7.4 修复：offset.x 额外减去 expandedRowShiftX * expandProgress——
-            // 堆叠态顶卡视觉左缘 = cardBoxStartX + (bboxWidth-cardW)/2，展开态 = 0，
-            // 原先动画结束分支切换时整行突然左移该差值；现在把左移量随 expandProgress
-            // 平滑注入动画过程（与卡片扇形展开同一贝塞尔曲线），结束时两分支严格衔接。
-            // 注意：堆叠态稳定时（p=0）该项为 0，顶卡左滑轨迹的预借数学不受影响。
+        ) {
+            // ==================== 行 Box（恒常存在：所有卡片统一渲染层）====================
+            // V7.3：offset(y = topCardAnchorY) → 顶卡视觉 Y 与堆叠态完全一致（消除向上跳变）
+            // V7.9：offset(x = -ExpandedRowShadowSlack) + translationX(+阴影余量) → 双侧阴影布局空间预借
+            // V8.0：新增 offset(x = unifiedStackXOffset.dp) → 模拟堆叠分支的 Layer1 Center 对齐效果，
+            //       随 expandProgress 平滑从 (J-SLC) 插值到 0，全程无跳变
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(
-                        x = (cardBoxStartX
-                                - StackLeftCompensation.value * (1f - expandProgress.value)
-                                - expandedRowShiftX * expandProgress.value).dp,
-                        y = cardBoxStartY.dp
+                    .offset(y = topCardAnchorY.dp)
+                    // 阴影余量左移 + 堆叠等效 X 偏移（unifiedStackXOffset 随 p 插值）
+                    .offset(x = (-ExpandedRowShadowSlack.value + unifiedStackXOffset).dp)
+                    // requiredSize：整行宽 + 双侧阴影余量（V7.9 布局空间预借，免疫阴影裁剪）
+                    .requiredSize(
+                        width = cardRowWidthDp + ExpandedRowShadowSlack * 2,
+                        height = cardHeight
                     )
-                    .size(
-                        width = (bboxWidth + StackLeftCompensation.value * (1f - expandProgress.value)).dp,
-                        height = bboxHeight.dp
-                    )
-                    // (V5.8 onGloballyPositioned 埋点已移除)
                     .graphicsLayer {
                         this.clip = false
-                        this.cameraDistance = 1000f / density.density
-                    },
-                contentAlignment = Alignment.Center
+                        // 阴影余量补偿（抵消 x=-ExpandedRowShadowSlack 左移）+ 行滚动平移
+                        translationX = rowShadowSlackPx + rowScrollX.value
+                    }
             ) {
                 SharedCardRow()
             }
