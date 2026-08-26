@@ -214,7 +214,15 @@ fun TimelineInspirationItem(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .graphicsLayer { this.clip = false }
+            // V5.9 修复：Modifier 顺序调整（严格遵循项目记忆规则）
+            // - 规则：Modifier 顺序必须为：Layout/Size/Clickable/Draw → graphicsLayer
+            //   避免 Clickable/Draw 创建的 RenderNode（默认 clip=true）
+            //   裁剪 graphicsLayer 平移的内容
+            // - 原顺序错误：fillMaxWidth → graphicsLayer → combinedClickable → drawBehind
+            //   combinedClickable 可能创建额外 RenderNode（默认 clip=true），在 graphicsLayer 之后
+            //   接收 graphicsLayer transform 后的内容，默认 clip=true 会裁剪超出 Box 范围的内容
+            // - 修复：把 graphicsLayer 放到所有 Layout/Size/Clickable/Draw modifier 之后
+            //   确保 graphicsLayer 是最外层的 RenderNode，clip=false 不裁剪顶卡左滑内容
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
@@ -246,6 +254,8 @@ fun TimelineInspirationItem(
                     )
                 }
             }
+            // V5.9 修复：graphicsLayer 放在所有 modifier 最后（最外层 RenderNode），确保 clip=false
+            .graphicsLayer { this.clip = false }
     ) {
         // ========== 左侧时间栏（年月 + 大号日期）==========
         // Column 水平居中：让"2026.07"和"08"在同一垂直中线

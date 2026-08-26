@@ -303,8 +303,19 @@ fun InspirationScreen(
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .graphicsLayer { this.clip = false }
-                                .padding(horizontal = 18.dp),
+                                // V5.9 修复：Modifier 顺序调整（严格遵循项目记忆规则）
+                                // - 规则：Modifier 顺序必须为：shadow/clip/padding → graphicsLayer
+                                //   避免 shadow/clip/padding 创建的 RenderNode（默认 clip=true）
+                                //   裁剪 graphicsLayer 平移的内容
+                                // - 原顺序错误：graphicsLayer { clip=false } → padding(18.dp)
+                                //   padding 创建的 RenderNode 默认 clip=true，顶卡左滑超出 padding 范围被裁
+                                // - 修复：把 padding 改为 contentPadding（不创建额外 RenderNode，仅影响内容位置）
+                                //   graphicsLayer 保持 clip=false，整个 LazyColumn RenderNode 不裁剪
+                                .graphicsLayer { this.clip = false },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                start = 18.dp,
+                                end = 18.dp
+                            ),
                             verticalArrangement = Arrangement.spacedBy(18.dp)
                         ) {
                             items(
