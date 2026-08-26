@@ -1178,12 +1178,29 @@ fun SwipeableImageStack(
         // - 堆叠态：offset(+130dp) → 内容视觉左缘 = 原 Stage 左缘（88dp），零变化
         // - 展开态：offset(0) → 内容 = Stage 左缘（原视觉位置），零变化
         // - 随 expandProgress 插值，切换动画期间内容视觉位置恒定
-        // - matchParentSize：包装层尺寸 = Stage 尺寸（堆叠态含左扩宽度），
-        //   内部角标/按钮/收起按钮的 matchParentSize/wrapContentSize 定位基准不变
+        //
+        // V7.1 修复：包装层尺寸策略必须分态 ——
+        // - 堆叠态：Stage 有显式 .size()，用 matchParentSize 锚定角标/收起/展开按钮
+        // - 展开态：不能用 matchParentSize！
+        //   根因：Stage 展开态是 fillMaxWidth()，但父级 WRAPPER_BOX 是
+        //   wrapContentWidth(unbounded=true)（无限宽约束），fillMaxWidth 在无限宽
+        //   约束下失效 → Stage 宽度回落为「内容自适应」；而 matchParentSize 子项
+        //   不参与父级尺寸测量（Compose 规定），包装层是 Stage 唯一子项 →
+        //   Stage 宽度塌缩为 0 → 展开动画播完后图片区整体空白、收起按钮不可见。
+        //   修复：展开态用默认 wrap-content，让 Layer1 的 widthIn(min=stageBoxWidthDp)
+        //   撑起 Stage 宽度（与 V6.x 包装层不存在时的结构完全等价）。
         Box(
             modifier = Modifier
                 .offset(x = StackLeftCompensation * (1f - expandProgress.value))
-                .matchParentSize()
+                .then(
+                    if (isExpanded) {
+                        // 展开态：wrap-content（内容撑宽 Stage，修复宽度塌缩 0 的空白 bug）
+                        Modifier
+                    } else {
+                        // 堆叠态：matchParentSize（Stage 有显式 size，锚定内部绝对定位元素）
+                        Modifier.matchParentSize()
+                    }
+                )
         ) {
                 // 收起按钮：展开态(derivedIsExpanded=true) 显示，堆叠态消失（阈值 0.5）
                 val collapseBtnAlpha by animateFloatAsState(
