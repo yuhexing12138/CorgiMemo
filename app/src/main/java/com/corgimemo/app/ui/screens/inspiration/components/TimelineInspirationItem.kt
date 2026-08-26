@@ -468,11 +468,19 @@ fun TimelineInspirationItem(
                 // 因此删除本独立一行，交由 SwipeableImageStack 内部完整处理（SwipeableImageStack.kt L564-L620）。
                 Spacer(modifier = Modifier.height(tagToImageGap))
                 // 外层 Box：占满父级宽度，clip=false 允许内部 Stage 溢出可见
+                // V7.0 布局空间预借：offset(-18dp) 把图片行 Box 的 layout bounds 左缘
+                // 从 18dp（LazyColumn item 内 padding）对齐到屏幕左缘 0dp。
+                // 若此层存在裁剪机制，裁剪边界已推到屏幕物理边缘，视觉无感。
+                // （fillMaxWidth 测量不变，右侧宽度损失 18dp —— 图片行右滑极限
+                //  的溢出依赖上层普通 Layout 不裁剪，与左滑处理方式一致）
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        // V7.0 新增：左缘对齐屏幕左缘（18dp = LazyColumn item 内 padding 值）
+                        .offset(x = (-18).dp)
                         // V5.8 埋点：输出图片行外层 Box 在 root 坐标系的位置
                         // 与 [WRAPPER_BOX] / [STAGE_BOX] / [LAYER1_BOX] 对比
+                        // V7.0 适配：left 预期从 50px（18dp）变为 ≈0px（屏幕左缘）
                         .onGloballyPositioned { coords ->
                             val pos = coords.positionInRoot()
                             Log.d(
@@ -501,6 +509,10 @@ fun TimelineInspirationItem(
                     // - 配合 outer Box 的 graphicsLayer { clip = false }，平移出的内容可正常显示
                     // - 9 层 clip=false 链完整（OneSharedCard 已加 clip=false）
                     // - 视觉不变：堆叠图堆叠态位置精确对齐文本列（屏幕 88dp）
+                    //
+                    // V7.0 布局空间预借：删除 translationX（绘制平移改为 Stage 内部的
+                    // offset 布局移动，见 SwipeableImageStack 的 stackStageOffsetX 参数）。
+                    // WRAPPER 只保留 wrapContentWidth 解除宽度约束 + clip=false。
                     Box(
                         modifier = Modifier
                             .wrapContentWidth(
@@ -508,6 +520,7 @@ fun TimelineInspirationItem(
                                 align = Alignment.Start
                             )
                             // V5.8 埋点：输出 wrapContentWidth 内层 Box 在 root 坐标系的位置 + 实际宽度
+                            // V7.0 适配：translationX 已删除，left 预期 = OUTER_BOX.left（≈0px）
                             .onGloballyPositioned { coords ->
                                 val pos = coords.positionInRoot()
                                 Log.d(
@@ -516,17 +529,18 @@ fun TimelineInspirationItem(
                                             "left=${pos.x.roundToInt()}px | " +
                                             "top=${pos.y.roundToInt()}px | " +
                                             "right=${(pos.x + coords.size.width).roundToInt()}px | " +
-                                            "size=${coords.size.width}x${coords.size.height}px | " +
-                                            "translationX_in_parent=${contentStartX.value.roundToInt()}dp"
+                                            "size=${coords.size.width}x${coords.size.height}px"
                                 )
                             }
-                            .graphicsLayer {
-                                this.clip = false
-                                translationX = contentStartX.toPx()
-                            }
+                            .graphicsLayer { this.clip = false }
                     ) {
                     SwipeableImageStack(
                         modifier = Modifier.graphicsLayer { this.clip = false },
+                        // V7.0 布局空间预借：Stage 展开态相对 WRAPPER 的视觉基准偏移。
+                        // = contentStartX(70dp) + 18dp（补偿 OUTER_BOX 的 offset(-18dp) 左移）
+                        // = 88dp = 原 V6.x Stage 视觉左缘，展开态视觉零变化；
+                        // 堆叠态组件内部会再左扩 StackLeftCompensation(130dp) 覆盖左滑轨迹。
+                        stackStageOffsetX = contentStartX + 18.dp,
                         imageUris = imagePaths,
                         cardWidth = 120.dp,
                         cardHeight = 120.dp,

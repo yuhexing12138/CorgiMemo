@@ -79,6 +79,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -137,6 +138,32 @@ import kotlinx.coroutines.awaitAll
 //   找到是哪个父级容器的 left 比顶卡 finalLeft 大 → 那个容器就是裁剪源
 // ============================================================
 private const val TAG_STACK_DEBUG = "StackDebug"
+
+/**
+ * V7.0 布局空间预借：堆叠图整条渲染链向左扩展的补偿量（dp）
+ *
+ * 背景：顶卡左滑依赖 graphicsLayer translationX（绘制层平移），内容会绘制到
+ * 各级父容器（卡片 Box / Layer1 / Stage / WRAPPER / OUTER_BOX）的 layout bounds
+ * 之外。V5.x~V6.x 尝试给整条链加 graphicsLayer{clip=false} 均无法消除裁剪
+ * （clip=false 本就是 RenderNode 默认值，真正的裁剪机制不受它控制）。
+ *
+ * V7.0 思路：不再对抗裁剪系统，改为「布局空间预借」—— 把卡片 Box、Layer1、
+ * Stage 三层容器的 layout bounds 向左扩展本常量，卡片内容用 offset 补偿回原
+ * 视觉位置。这样顶卡左滑的整个轨迹（拖拽弹性最大 120dp + 卡片距屏幕左缘
+ * ~102dp）始终落在各级容器的 layout bounds 之内，无论裁剪机制是什么都无从
+ * 裁起（damage region / bounds 剔除 / 任何形式的裁剪都只作用于 bounds 之外）。
+ *
+ * 数值来源：卡片静止视觉位置距屏幕左缘 ≈102dp（88dp 内容区 + 14dp 居中偏移），
+ * 加上弹性滑动余量，取 130dp（> 102 + 27 冗余）。
+ *
+ * 联动改动（见各使用处 V7.0 注释）：
+ * - OneSharedCard：卡片 Box 宽度 + 本量，内容 offset 补偿
+ * - Layer1CardWrapper：Layer1 宽度 + 本量、offset 左移，Center 对齐数学自洽
+ * - Stage：宽度 + 本量、offset 左移，内容包装层 offset 补偿
+ * - TimelineInspirationItem：OUTER_BOX offset(-18dp) 对齐屏幕左缘、
+ *   WRAPPER 删除 translationX、SwipeableImageStack 传 stackStageOffsetX
+ */
+internal val StackLeftCompensation = 130.dp
 
 /**
  * 堆叠中的单张卡片槽位
@@ -419,6 +446,13 @@ fun SwipeableImageStack(
     /** 是否渲染内置 CollapseBtn。
      *  - 当外部自己放了 CollapseBtn（expandedState 托管 + 独立行）时，传 false 去重。*/
     showInnerCollapseButton: Boolean = true,
+    /** V7.0 布局空间预借：Stage 在「展开态」相对父容器的水平偏移（视觉基准位置）。
+     *  - 堆叠态 Stage 实际 offset = 本值 - [StackLeftCompensation]（左扩 130dp 覆盖滑动轨迹），
+     *    展开态 = 本值（视觉与 V6.x 完全一致）。
+     *  - TimelineInspirationItem 场景传入 contentStartX + 18.dp（70+18=88dp：
+     *    88dp = 原 Stage 视觉左缘；+18.dp 补偿 OUTER_BOX 的 offset(-18dp) 左移）。
+     *  - 默认 0.dp 向后兼容其他调用点（无左扩需求时视觉不变）。*/
+    stackStageOffsetX: Dp = 0.dp,
     // ↑↑↑ 本次新增 ↑↑↑
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null,
@@ -794,8 +828,12 @@ fun SwipeableImageStack(
             zIndexAnim.snapTo(0f)
         }
         // 拖拽偏移：堆叠态 displayIndex==0 顶卡叠加 dragOffset；其它卡或非堆叠态恒 0
-        val dragX = if (displayIndex == 0) dragOffsetX.value.dp else 0.dp
-        val dragY = if (displayIndex == 0) dragOffsetY.value.dp else 0.dp
+        // V7.0 单位修复：dragOffsetX.value 是「像素值」（detectHorizontalDragGestures 的
+        // dragAmount 累计 px），旧代码 .dp 直接把 px 数值当 dp，导致渲染平移量被放大
+        // density 倍（≈2.75x），手指滑 1px 卡片动 2.75px 且埋点坐标与真实渲染不一致。
+        // 正确换算：px → dp 用 toDp()（÷density），渲染处再 toPx() 还原。
+        val dragX = if (displayIndex == 0) with(density) { dragOffsetX.value.toDp() } else 0.dp
+        val dragY = if (displayIndex == 0) with(density) { dragOffsetY.value.toDp() } else 0.dp
         val isTopCard = displayIndex == 0
 
         // ========== 有无图判断 ==========
@@ -850,34 +888,46 @@ fun SwipeableImageStack(
 
         Box(
             modifier = Modifier
-                .size(cardWidth, cardHeight)
+                // V7.0 布局空间预借：卡片 Box 宽度向左扩展 StackLeftCompensation
+                // （堆叠态全额扩展，展开态随 expandProgress 插值归零，过渡平滑）。
+                // 图片内容由下方「内容包装 Box」的 offset 补偿回原视觉位置。
+                // 效果：顶卡左滑的 translation 轨迹始终落在卡片 Box 自身的 layout
+                // bounds 内 —— 不再依赖任何溢出渲染，从根源上免疫一切裁剪机制。
+                .size(
+                    width = cardWidth + StackLeftCompensation * (1f - expandProgress.value),
+                    height = cardHeight
+                )
                 // 堆叠排序 + 顶卡飞离时临时上抬 zIndex（保证飞离过程始终覆盖其他卡片）
                 .zIndex(target.zIndex + zIndexAnim.value)
                 // V5.8 埋点：输出顶卡 Box 在 root 坐标系的位置 + 平移后最终 left/right
                 // 用于对比父级 [STAGE_BOX] / [LAYER1_BOX] / [WRAPPER_BOX] 的 left 边界
                 // 找到是哪个父级容器的 left 比顶卡 finalLeft 大 → 那个容器就是裁剪源
+                // V7.0 适配：box 是「扩宽后」的卡片 bounds，图片左缘 = boxLeft + 左扩补偿量
                 .onGloballyPositioned { coords ->
                     if (displayIndex == 0) {
                         val pos = coords.positionInRoot()
                         val boxLeft = pos.x
-                        val boxRight = pos.x + coords.size.width
                         val boxTop = pos.y
-                        val boxBottom = pos.y + coords.size.height
-                        // 计算 graphicsLayer translation 后的最终屏幕坐标
+                        // V7.0 左扩补偿（px）：图片视觉左缘相对卡片 Box 左缘的偏移
+                        val compPx = density.run {
+                            (StackLeftCompensation * (1f - expandProgress.value)).toPx()
+                        }
+                        // 计算 graphicsLayer translation 后的最终屏幕坐标（图片左缘）
                         val txPx = density.run {
                             (target.x + dragX + positionX.value.dp).toPx()
                         }
                         val tyPx = density.run {
                             (target.y + dragY + positionY.value.dp).toPx()
                         }
-                        val finalLeftPx = boxLeft + txPx
-                        val finalRightPx = boxLeft + txPx + coords.size.width
+                        val finalLeftPx = boxLeft + compPx + txPx
+                        val finalRightPx = finalLeftPx + density.run { cardWidth.toPx() }
                         val densityRatio = density.density
                         Log.d(
                             TAG_STACK_DEBUG,
                             "[TOP_CARD_BOUNDS] origIdx=${card.originalIndex} | " +
                                     "box=(${boxLeft.roundToInt()}, ${boxTop.roundToInt()}, " +
                                     "${coords.size.width}x${coords.size.height}) | " +
+                                    "comp=${compPx.roundToInt()}px | " +
                                     "tx=${txPx.roundToInt()}px ty=${tyPx.roundToInt()}px | " +
                                     "finalLeft=${(finalLeftPx / densityRatio).roundToInt()}dp / ${finalLeftPx.roundToInt()}px | " +
                                     "finalRight=${(finalRightPx / densityRatio).roundToInt()}dp / ${finalRightPx.roundToInt()}px"
@@ -900,38 +950,62 @@ fun SwipeableImageStack(
                 //   也保持 clip=false → 顶卡左滑时双层 RenderNode 都不裁剪，4 张图堆叠视觉保留
                 // - 视觉不变：静止时 translationX=0，clip=false 不影响任何渲染
                 // - 9 层 clip=false 链完整：OneSharedCard 内部 graphicsLayer + shadow 都 clip=false
+                // - V7.0：shadow/clip 已移至下方「内容包装 Box」（跟随图片区域而非扩宽后的卡片 bounds，
+                //   避免阴影绘制到卡片左侧空白补偿区）
                 .graphicsLayer {
                     this.clip = false
                     scaleX = target.scale
                     scaleY = target.scale
                     rotationZ = target.rotationZ
+                    // V7.0 变换中心补偿：卡片 Box 扩宽后默认 TransformOrigin.Center 右移，
+                    // 会让 rotationZ/scale 绕错误中心旋转缩放（破坏 4 张卡倾斜堆叠视觉）。
+                    // 显式把 pivot 钉在「图片视觉中心」，保证旋转/缩放行为与 V6.x 像素级一致。
+                    val comp = StackLeftCompensation.value * (1f - expandProgress.value)
+                    val totalW = cardWidth.value + comp
+                    transformOrigin = TransformOrigin(
+                        pivotFractionX = (comp + cardWidth.value / 2f) / totalW,
+                        pivotFractionY = 0.5f
+                    )
                     // 四元叠加：堆叠基础位移 target.x + 顶卡按住拖拽 dragX + 顶卡飞离动画 positionX
+                    // （V7.0 单位修复后 dragX 已是正确 dp，toPx() 还原为真实像素位移）
                     translationX = density.run { (target.x + dragX + positionX.value.dp).toPx() }
                     translationY = density.run { (target.y + dragY + positionY.value.dp).toPx() }
                 }
-                .shadow(
-                    elevation = target.shadowElevation,
-                    shape = RoundedCornerShape(radiusPx),
-                    clip = false,  // V5.7 修复：让 shadow RenderNode 不裁剪，顶卡左滑时不被 shadow 节点裁剪
-                )
-                .clip(RoundedCornerShape(radiusPx))
-                .then(
-                    if (hasImage) {
-                        Modifier
-                    } else {
-                        Modifier
-                            .background(
-                                color = Color(0xFFF3EFFF).copy(alpha = 0.8f),
-                                shape = RoundedCornerShape(radiusPx)
-                            )
-                            .blur(10.dp)
-                            .border(
-                                width = 1.5.dp,
-                                color = Color(0xFF9967FF),
-                                shape = RoundedCornerShape(radiusPx)
-                            )
-                    }
-                )
+        ) {
+            // ============ V7.0 内容包装 Box：图片实际渲染区域 ============
+            // - offset 把图片推到卡片 Box 右端（原视觉位置），卡片左侧扩出的
+            //   StackLeftCompensation 区域是「空 bounds」，专供左滑 translation 使用
+            // - shadow / clip / 占位背景 / 拖拽手势 从外层卡片 Box 移到这里：
+            //   ① 阴影/圆角裁剪只作用于图片区域（不出现在左侧空白区）
+            //   ② 手势区域 = 图片区域（不拦截卡片左侧空白区上方的父级点击/滑动）
+            // - 随 expandProgress 插值归零（展开态卡片恢复原尺寸 120dp）
+            Box(
+                modifier = Modifier
+                    .offset(x = StackLeftCompensation * (1f - expandProgress.value))
+                    .size(cardWidth, cardHeight)
+                    .shadow(
+                        elevation = target.shadowElevation,
+                        shape = RoundedCornerShape(radiusPx),
+                        clip = false,  // V5.7 修复：让 shadow RenderNode 不裁剪，顶卡左滑时不被 shadow 节点裁剪
+                    )
+                    .clip(RoundedCornerShape(radiusPx))
+                    .then(
+                        if (hasImage) {
+                            Modifier
+                        } else {
+                            Modifier
+                                .background(
+                                    color = Color(0xFFF3EFFF).copy(alpha = 0.8f),
+                                    shape = RoundedCornerShape(radiusPx)
+                                )
+                                .blur(10.dp)
+                                .border(
+                                    width = 1.5.dp,
+                                    color = Color(0xFF9967FF),
+                                    shape = RoundedCornerShape(radiusPx)
+                                )
+                        }
+                    )
                 .then(
                     when {
                         isTopCard && isInStackedMode -> {
@@ -1143,7 +1217,8 @@ fun SwipeableImageStack(
                         }
                 )
             }
-        }
+            }  // V7.0：内容包装 Box 闭合（图片区域）
+        }      // V7.0：外层卡片 Box（扩宽 bounds + graphicsLayer 平移）闭合
     }
 
     @Composable
@@ -1170,14 +1245,25 @@ fun SwipeableImageStack(
             // V5.2 修复：使用 offset 定位（不使用 padding）
             // - offset 不参与布局测量，配合 Stage 尺寸补偿解决裁剪
             // - graphicsLayer 负责 clip=false 和 3D 透视
+            // V7.0 布局空间预借：
+            // - offset.x 减去 StackLeftCompensation（堆叠态全额左移，随 expandProgress
+            //   插值归零，展开/收起过渡平滑）
+            // - size 宽度加上 StackLeftCompensation（右缘保持不变）
+            // - 效果：Layer1 的 layout bounds 左缘 ≈ 屏幕左缘外 42dp，顶卡左滑轨迹
+            //   （图片部分）全程落在 Layer1 bounds 内，不再溢出
+            // - Center 对齐数学自洽：卡片与 Layer1 同时 +E 宽 → 卡片相对 Layer1 的
+            //   Center 偏移仍为 (bbox-card)/2 ≈ 14dp，视觉位置零变化
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .offset(
-                        x = cardBoxStartX.dp,
+                        x = (cardBoxStartX - StackLeftCompensation.value * (1f - expandProgress.value)).dp,
                         y = cardBoxStartY.dp
                     )
-                    .size(bboxWidth.dp, bboxHeight.dp)
+                    .size(
+                        width = (bboxWidth + StackLeftCompensation.value * (1f - expandProgress.value)).dp,
+                        height = bboxHeight.dp
+                    )
                     // V5.8 埋点：输出 Layer1Box 在 root 坐标系的位置 + 尺寸
                     // 与 [TOP_CARD_BOUNDS].finalLeft 对比即可定位 Layer1Box 是否裁剪顶卡
                     .onGloballyPositioned { coords ->
@@ -1208,13 +1294,26 @@ fun SwipeableImageStack(
 
     Box(
         modifier = modifier
+            // V7.0 布局空间预借：Stage 相对父容器的水平偏移（layout 移动，非绘制平移）
+            // - 堆叠态：stackStageOffsetX - StackLeftCompensation（左扩 130dp，
+            //   Stage layout bounds 左缘覆盖到屏幕左缘外，顶卡左滑轨迹全程在 Stage 内）
+            // - 展开态：stackStageOffsetX（视觉与 V6.x 完全一致）
+            // - 随 expandProgress 插值，展开/收起过渡平滑
+            // - offset 放在 size 之前不影响测量（offset 只平移 layout 位置）
+            .offset(
+                x = stackStageOffsetX - StackLeftCompensation * (1f - expandProgress.value)
+            )
             .then(
                 if (isExpanded) {
                     Modifier
                         .fillMaxWidth()
                         .height(stageBoxHeightDp)
                 } else {
-                    Modifier.size(stageBoxWidthDp, stageBoxHeightDp)
+                    // V7.0：堆叠态宽度 + StackLeftCompensation（右缘保持不变）
+                    Modifier.size(
+                        width = stageBoxWidthDp + StackLeftCompensation,
+                        height = stageBoxHeightDp
+                    )
                 }
             )
             // V5.8 埋点：输出 Stage Box 在 root 坐标系的位置 + 实际尺寸
@@ -1242,6 +1341,18 @@ fun SwipeableImageStack(
                 )
             )
     ) {
+        // ============ V7.0 Stage 内容包装层 ============
+        // Stage 自身左移了 StackLeftCompensation，用本包装层把内容推回原视觉位置：
+        // - 堆叠态：offset(+130dp) → 内容视觉左缘 = 原 Stage 左缘（88dp），零变化
+        // - 展开态：offset(0) → 内容 = Stage 左缘（原视觉位置），零变化
+        // - 随 expandProgress 插值，切换动画期间内容视觉位置恒定
+        // - matchParentSize：包装层尺寸 = Stage 尺寸（堆叠态含左扩宽度），
+        //   内部角标/按钮/收起按钮的 matchParentSize/wrapContentSize 定位基准不变
+        Box(
+            modifier = Modifier
+                .offset(x = StackLeftCompensation * (1f - expandProgress.value))
+                .matchParentSize()
+        ) {
                 // 收起按钮：展开态(derivedIsExpanded=true) 显示，堆叠态消失（阈值 0.5）
                 val collapseBtnAlpha by animateFloatAsState(
                     targetValue = if (derivedIsExpanded) 1f else 0f,
@@ -1474,6 +1585,7 @@ fun SwipeableImageStack(
         //   - 新位置：Task 2/5 中 Row([CollapseBtn] + [ScrollArea]) 的 Row 首元素，通过 translationX 左飞出 Row
         //            独立于 ScrollArea（仅卡片区滚动），CollapseBtn 永远可见不滚走
         //            参见 L484 附近展开态分支 Row 第一子元素（Task 5 填入样式）
+        }  // V7.0：Stage 内容包装层 Box 闭合（内容视觉位置补偿）
     }
 }
 
