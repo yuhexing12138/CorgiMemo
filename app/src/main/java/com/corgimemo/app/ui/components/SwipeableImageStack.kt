@@ -39,6 +39,7 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -79,6 +80,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import kotlin.math.max
 import kotlin.math.min
@@ -1181,6 +1183,9 @@ fun SwipeableImageStack(
                 -(rowWidthPx - (viewportWidthPx.floatValue - stackStageOffsetXPx))
                     .coerceAtLeast(0f)
             }
+            // V7.7：fling 惯性衰减曲线（@Composable 必须在组合作用域声明，
+            // pointerInput lambda 内无法调用 Composable——LazyRow 同款官方曲线）
+            val flingDecay = rememberSplineBasedDecay<Float>()
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1192,17 +1197,55 @@ fun SwipeableImageStack(
                         viewportWidthPx.floatValue = it.width.toFloat()
                     }
                     // 自绘行滚动手势（问题②修复的关键）
+                    // V7.7：加 fling 惯性——参考待办编辑页图片行（LazyRow 自带 fling），
+                    // 自绘滚动用标准基建组合：VelocityTracker 测松手初速度 →
+                    // splineBasedDecay 惯性衰减 → 越界时 spring 弹回（保留弹簧手感）。
                     .pointerInput(Unit) {
+                        // 速度追踪器：fling 初速度来源（松手前最后几帧的滑动速度）
+                        val velocityTracker = VelocityTracker()
                         detectHorizontalDragGestures(
+                            onDragStart = { velocityTracker.resetTracking() },
                             onHorizontalDrag = { change, dragAmount ->
                                 change.consume()
+                                velocityTracker.addPosition(
+                                    change.uptimeMillis,
+                                    change.position
+                                )
                                 // 累计原始位移（不阻尼），渲染值经橡皮筋阻尼
                                 rawRowScroll.floatValue += dragAmount
                                 val damped = rubberBandRowScroll(rawRowScroll.floatValue, minScrollNow())
                                 scope.launch { rowScrollX.snapTo(damped) }
                             },
                             onDragEnd = {
-                                // 松手：原始值 clamp 回有效区间，spring 弹回（两端都有弹簧感）
+                                // 松手初速度（px/s）：负 = 向左甩（继续向左滚），正 = 向右甩
+                                val velocity = velocityTracker.calculateVelocity().x
+                                // 无速度或极慢：维持 V7.6 行为（clamp + spring 回弹）
+                                if (abs(velocity) < 200f) {
+                                    val minScroll = minScrollNow()
+                                    rawRowScroll.floatValue = rawRowScroll.floatValue.coerceIn(minScroll, 0f)
+                                    scope.launch {
+                                        rowScrollX.animateTo(rawRowScroll.floatValue, ROW_SCROLL_SPRING)
+                                    }
+                                    return@detectHorizontalDragGestures
+                                }
+                                // 有速度：fling 惯性滚动
+                                scope.launch {
+                                    // 惯性滚动到衰减尽头（或被下一个手势打断）
+                                    rowScrollX.animateDecay(velocity, flingDecay)
+                                    // 衰减尽头仍可能越界（惯性冲过头）：clamp + spring 弹回
+                                    val minScroll = minScrollNow()
+                                    val settled = rowScrollX.value.coerceIn(minScroll, 0f)
+                                    if (settled != rowScrollX.value) {
+                                        rawRowScroll.floatValue = settled
+                                        rowScrollX.animateTo(settled, ROW_SCROLL_SPRING)
+                                    } else {
+                                        // 未越界：同步 raw 值（下次拖拽从当前视觉位置继续）
+                                        rawRowScroll.floatValue = settled
+                                    }
+                                }
+                            },
+                            onDragCancel = {
+                                // 取消（如被父级手势抢占）：与慢速松手同处理
                                 val minScroll = minScrollNow()
                                 rawRowScroll.floatValue = rawRowScroll.floatValue.coerceIn(minScroll, 0f)
                                 scope.launch {
