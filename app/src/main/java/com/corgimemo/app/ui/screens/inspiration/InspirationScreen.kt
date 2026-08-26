@@ -303,17 +303,18 @@ fun InspirationScreen(
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxSize()
-                                // V5.9 修复：Modifier 顺序调整（严格遵循项目记忆规则）
-                                // - 规则：Modifier 顺序必须为：shadow/clip/padding → graphicsLayer
-                                //   避免 shadow/clip/padding 创建的 RenderNode（默认 clip=true）
-                                //   裁剪 graphicsLayer 平移的内容
-                                // - 原顺序错误：graphicsLayer { clip=false } → padding(18.dp)
-                                //   padding 创建的 RenderNode 默认 clip=true，顶卡左滑超出 padding 范围被裁
-                                // - 修复：把 padding 改为 contentPadding（不创建额外 RenderNode，仅影响内容位置）
-                                //   graphicsLayer 保持 clip=false，整个 LazyColumn RenderNode 不裁剪
+                                // V6.0 修复：Modifier 顺序 + 关闭整个 LazyColumn RenderNode 裁剪
                                 .graphicsLayer { this.clip = false },
+                            // V6.0 修复：取消 LazyColumn contentPadding(start=18.dp)
+                            // - 根因：V5.9 使用 contentPadding(start=18.dp, end=18.dp) 导致 item 的左边界 = 18dp（50px），
+                            //   当顶卡左滑进入 0~50px（contentPadding 空白区）时，顶卡左边缘已超出 item 左边界，
+                            //   即使 graphicsLayer clip=false，也可能被 LazyColumn viewport 内部机制或 View 层裁剪
+                            // - 修复：start=0.dp，让 item 左边界 = 屏幕左边界（0px），
+                            //   然后在 item 内部用 padding(start=18.dp) 把内容推到 18dp 位置，视觉完全一致，
+                            //   但顶卡左滑进入 0~50px 时仍在 item 内部（合法范围），不被裁剪
+                            // - end=18.dp 保留（右滑无裁剪问题）
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                start = 18.dp,
+                                start = 0.dp,
                                 end = 18.dp
                             ),
                             verticalArrangement = Arrangement.spacedBy(18.dp)
@@ -330,49 +331,61 @@ fun InspirationScreen(
                                 val imagePaths = imagePathsMap[inspiration.id] ?: emptyList()
                                 val formattedTime = viewModel.formatTime(inspiration.createdAt)
 
-                                TimelineInspirationItem(
-                                    inspiration = inspiration,
-                                    tags = tags,
-                                    imagePaths = imagePaths,
-                                    formattedTime = formattedTime,
-                                    showDate = item.showDate,
-                                    isPinnedItem = item.isPinned,
-                                    hideDetails = hideDetails,
-                                    isBatchMode = isBatchMode,
-                                    isSelected = selectedInspirationIds.contains(inspiration.id),
-                                    /** v2026-07-21 新增：传入关联数量，在标签右侧显示 🔗×N */
-                                    relationCount = relationCountMap[inspiration.id] ?: 0,
-                                    /** v2026-07-22 新增：点击 🔗×N 徽章弹出关联列表 BottomSheet */
-                                    onRelationCountClick = {
-                                        relationListSourceId = inspiration.id
-                                        showRelationListSheet = true
-                                    },
-                                    onClick = {
-                                        if (isBatchMode) {
-                                            viewModel.toggleSelection(inspiration.id)
+                                // V6.0 修复：item 内部加 padding(start=18.dp)，还原视觉位置
+                                // - LazyColumn contentPadding(start) 已取消，item 左边界 = 屏幕左边界 0px
+                                // - 用内部 padding(start=18.dp) 把内容向右推到 18dp，与原视觉完全一致
+                                // - 关键收益：顶卡左滑 finalLeft 在 0~50px 时，仍在 item 内部（合法范围）
+                                //   配合 graphicsLayer clip=false，不会被任何层级裁剪
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 18.dp)  // V6.0 新增：替代 LazyColumn contentPadding(start=18.dp)
+                                        .graphicsLayer { this.clip = false }
+                                ) {
+                                    TimelineInspirationItem(
+                                        inspiration = inspiration,
+                                        tags = tags,
+                                        imagePaths = imagePaths,
+                                        formattedTime = formattedTime,
+                                        showDate = item.showDate,
+                                        isPinnedItem = item.isPinned,
+                                        hideDetails = hideDetails,
+                                        isBatchMode = isBatchMode,
+                                        isSelected = selectedInspirationIds.contains(inspiration.id),
+                                        /** v2026-07-21 新增：传入关联数量，在标签右侧显示 🔗×N */
+                                        relationCount = relationCountMap[inspiration.id] ?: 0,
+                                        /** v2026-07-22 新增：点击 🔗×N 徽章弹出关联列表 BottomSheet */
+                                        onRelationCountClick = {
+                                            relationListSourceId = inspiration.id
+                                            showRelationListSheet = true
+                                        },
+                                        onClick = {
+                                            if (isBatchMode) {
+                                                viewModel.toggleSelection(inspiration.id)
+                                            } else {
+                                                // v2.8 改为先进入展示页，再决定复制/编辑/分享
+                                                navController.navigate(
+                                                    com.corgimemo.app.ui.navigation.Screen.InspirationViewWithId
+                                                        .createRoute(inspiration.id)
+                                                )
+                                            }
+                                        },
+                                        onLongClick = if (isBatchMode) {
+                                            {}
                                         } else {
-                                            // v2.8 改为先进入展示页，再决定复制/编辑/分享
-                                            navController.navigate(
-                                                com.corgimemo.app.ui.navigation.Screen.InspirationViewWithId
-                                                    .createRoute(inspiration.id)
-                                            )
+                                            {
+                                                longPressedInspiration = inspiration
+                                                showLongPressSheet = true
+                                            }
+                                        },
+                                        onImageClick = { index ->
+                                            // 点击图片：打开全屏图片预览（不进入编辑页）
+                                            galleryImagePaths = imagePaths
+                                            galleryInitialIndex = index
+                                            showImageGallery = true
                                         }
-                                    },
-                                    onLongClick = if (isBatchMode) {
-                                        {}
-                                    } else {
-                                        {
-                                            longPressedInspiration = inspiration
-                                            showLongPressSheet = true
-                                        }
-                                    },
-                                    onImageClick = { index ->
-                                        // 点击图片：打开全屏图片预览（不进入编辑页）
-                                        galleryImagePaths = imagePaths
-                                        galleryInitialIndex = index
-                                        showImageGallery = true
-                                    }
-                                )
+                                    )
+                                }
                             }
 
                             // 底部留白

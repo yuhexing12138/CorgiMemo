@@ -3,6 +3,8 @@ package com.corgimemo.app.ui
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.View
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -76,6 +78,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // V6.0 修复：灵感页堆叠图顶卡左滑裁剪问题 - 关闭 Android View 层级裁剪
+        // - 根因：Compose graphicsLayer { clip=false } 只能关闭 Compose RenderNode 的裁剪，
+        //   但 Android ViewGroup 默认 clipChildren=true / clipToPadding=true，
+        //   会在更底层硬裁剪超出父 View 边界的内容，导致顶卡左滑到 contentPadding 区域
+        //   （finalLeft < OUTER_BOX.left=50px 且 finalLeft > 0px）时仍被裁剪
+        // - 修复：在 setContentView 前后递归关闭所有 ViewGroup 的 clipChildren/clipToPadding
+        disableViewLevelClip()
+
         // 启用沉浸式全屏（系统栏透明 + 内容延伸到状态栏/导航栏）
         enableEdgeToEdge()
 
@@ -135,6 +145,56 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
+            }
+        }
+
+        // V6.0 修复：setContent 之后再关一次（ComposeView 已 attach 到 view 树）
+        window.decorView.post { disableViewLevelClip() }
+    }
+
+    /**
+     * V6.0 修复：递归关闭 Activity 根 View 树中所有 ViewGroup 的裁剪
+     *
+     * 关闭属性：
+     * - clipChildren=false：允许子 View 超出父 View 边界显示（关键修复项）
+     * - clipToPadding=false：允许内容显示在 padding 区域
+     *
+     * 影响范围：
+     * - Activity 根 android.R.id.content（FrameLayout）
+     * - ComposeView（ViewGroup 子类）及其内部所有 ViewGroup
+     * - 任何其他 ViewGroup 容器
+     *
+     * 副作用：几乎无（仅影响超出父边界的绘制，性能忽略不计）
+     */
+    private fun disableViewLevelClip() {
+        try {
+            val rootView = window.decorView.findViewById<ViewGroup>(android.R.id.content)
+                ?: window.decorView as? ViewGroup
+                ?: return
+            rootView.clipChildren = false
+            rootView.clipToPadding = false
+            rootView.forEachViewGroupRecursive { vg ->
+                vg.clipChildren = false
+                vg.clipToPadding = false
+            }
+        } catch (_: Exception) {
+            // 关闭裁剪失败不影响正常流程，静默吞掉异常
+        }
+    }
+
+    /**
+     * 递归遍历 ViewGroup 并对每个 ViewGroup 执行 action
+     *
+     * 注意：此处不能用 `inline` 关键字 —— Kotlin inline 扩展函数不支持递归调用，
+     * 会报 "Inline function cannot be recursive" 编译错误。
+     * 本函数仅在 Activity 启动时调用 1~2 次，性能开销可忽略。
+     */
+    private fun ViewGroup.forEachViewGroupRecursive(action: (ViewGroup) -> Unit) {
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            if (child is ViewGroup) {
+                action(child)
+                child.forEachViewGroupRecursive(action)
             }
         }
     }
@@ -210,7 +270,7 @@ class MainActivity : ComponentActivity() {
             VALUE_CREATE_TODO -> NavigationTarget.CreateTodo
             VALUE_HOME -> NavigationTarget.Home
             VALUE_EDIT_TODO -> {
-                val todoId = intent.getLongExtra(EXTRA_TODO_ID, -1)
+                val todoId = intent.getLongExtra(EXTRA_TODO_ID, -1L)
                 if (todoId > 0) {
                     NavigationTarget.EditTodo(todoId)
                 } else {
