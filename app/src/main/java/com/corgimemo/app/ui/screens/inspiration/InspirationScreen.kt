@@ -281,10 +281,24 @@ fun InspirationScreen(
                     )
 
                     // 内层 Box：列表整体下移 pullOffset
+                    // V5.4 修复：graphicsLayer 加 this.clip = false，补全「8 层 clip=false 链」第 1 层
+                    // - 根因：graphicsLayer {} 一旦调用就会创建 RenderNode，RenderNode 默认 clip=true
+                    //   之前只设了 translationY 未设 clip=false，导致 RenderNode 把顶卡左滑时超出
+                    //   屏幕左边的部分硬裁剪掉（视觉左边缘 = 88dp - 180dp = -92dp）
+                    //   而右滑最远 88+180=268dp 仍在屏幕内 360dp 内，所以右侧无裁剪
+                    //   → 表现：左滑被裁、右滑不裁，与用户截图一致
+                    // - 修复：translationY 仍保留（pullRefresh 行为不变），仅补 this.clip = false
+                    // - 8 层链：L284 Box(本层) → LazyColumn → TimelineInspirationItem 外 Box
+                    //         → 文本 Column → 图片行 outer Box → 图片行 inner Box
+                    //         → SwipeableImageStack Stage Box → 卡片 Box
+                    // - 视觉不变：Stage 起点 88dp / 顶卡静止位置 / 1·N 角标 / 展开按钮 / 文本列 / 收起按钮 全部不变
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer { translationY = pullRefreshState.pullOffset }
+                            .graphicsLayer {
+                                this.clip = false
+                                translationY = pullRefreshState.pullOffset
+                            }
                     ) {
                         LazyColumn(
                             modifier = Modifier
