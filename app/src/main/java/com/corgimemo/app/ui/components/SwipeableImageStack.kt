@@ -774,28 +774,22 @@ fun SwipeableImageStack(
                 .size(cardWidth, cardHeight)
                 // 堆叠排序 + 顶卡飞离时临时上抬 zIndex（保证飞离过程始终覆盖其他卡片）
                 .zIndex(target.zIndex + zIndexAnim.value)
-                // V5.6 关键修复：把 .shadow() 和 .clip() 移到 .graphicsLayer() 之前
-                // - 根因：.shadow() 和 .clip() 各自创建一个新的 RenderNode 节点（默认 clip=true），
-                //   其 layout 范围固定在 Box 自身 (0, 0, 120, 120)。当它们在
-                //   .graphicsLayer { translationX = -N } 之后时，graphicsLayer 已经把内容
-                //   平移到 (-N, 0) 范围，但 shadow/clip 节点的 RenderNode 范围仍是 0~120，
-                //   clip=true 默认值会硬裁剪掉 0 边界以外的内容 → 顶卡左滑时左侧被裁！
-                //   即使父级所有 RenderNode 都设了 clip=false 也救不回来
-                //   （子 RenderNode 已经被硬裁剪，父 RenderNode 拿到的就是裁剪后的画面）
-                // - 修复：让 .shadow() + .clip() 先对原内容施加效果，
-                //   再由 .graphicsLayer { clip=false; translationX = -N } 整体平移
-                //   "已加阴影 + 已裁圆角" 的结果 → 平移出的内容完全可见
-                // - 视觉不变：静止时 translationX=0，效果与原顺序一致（阴影在原内容周围、圆角一致）
-                // - 9 层 clip=false 链最终完整：
-                //   InspirationScreen Box → LazyColumn → TimelineInspirationItem 外 Box
-                //   → 文本 Column → 图片行 outer Box → 图片行 inner Box
-                //   → SwipeableImageStack Stage Box → Layer1CardWrapper Box → OneSharedCard Box
-                //   加上本修复保证最内层 graphicsLayer 的 translationX/-Y 不会被 shadow/clip 节点裁剪
-                .shadow(
-                    elevation = target.shadowElevation,
-                    shape = RoundedCornerShape(radiusPx)
-                )
-                .clip(RoundedCornerShape(radiusPx))
+                // V5.7 修复：在 V5.5.5 graphicsLayer clip=false 基础上，给 shadow 加 clip=false
+                // - 根因：
+                //   - V5.5.5 修复：graphicsLayer RenderNode 加 this.clip = false，但 Modifier.shadow
+                //     内部会再创建一个 RenderNode（用 graphicsLayer 实现 shadowElevation + shape），
+                //     默认 clip=true。顶卡左滑时 shadow RenderNode 在 graphicsLayer 内部
+                //     接收到 transform 后的内容，clip=true 会裁剪到 120x120 范围 → 左滑被裁
+                //   - V5.6 修复：把 .shadow()/.clip() 移到 .graphicsLayer() 之前，让 shadow
+                //     在父 draw scope 中画阴影、graphicsLayer 整体平移结果
+                //     - 但 shadow RenderNode 仍在 graphicsLayer RenderNode 之外（layout=120x120,
+                //       clip=true），graphicsLayer 平移的是 shadow 输出（已被裁剪到 120x120），
+                //       → 实际并未真正解决裁剪问题，且让 4 张图倾斜堆叠的视觉效果出现回归
+                // - 正确修复：保持 V5.5.5 modifier 顺序（graphicsLayer 在 shadow/clip 之前），
+                //   给 shadow 传 clip=false，让 shadow RenderNode 不裁剪，graphicsLayer RenderNode
+                //   也保持 clip=false → 顶卡左滑时双层 RenderNode 都不裁剪，4 张图堆叠视觉保留
+                // - 视觉不变：静止时 translationX=0，clip=false 不影响任何渲染
+                // - 9 层 clip=false 链完整：OneSharedCard 内部 graphicsLayer + shadow 都 clip=false
                 .graphicsLayer {
                     this.clip = false
                     scaleX = target.scale
@@ -805,6 +799,12 @@ fun SwipeableImageStack(
                     translationX = density.run { (target.x + dragX + positionX.value.dp).toPx() }
                     translationY = density.run { (target.y + dragY + positionY.value.dp).toPx() }
                 }
+                .shadow(
+                    elevation = target.shadowElevation,
+                    shape = RoundedCornerShape(radiusPx),
+                    clip = false,  // V5.7 修复：让 shadow RenderNode 不裁剪，顶卡左滑时不被 shadow 节点裁剪
+                )
+                .clip(RoundedCornerShape(radiusPx))
                 .then(
                     if (hasImage) {
                         Modifier
