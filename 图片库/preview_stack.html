@@ -183,6 +183,7 @@
             tiltAngle = -45,
             tiltAngleStart = 0,
             xOffset = 0,
+            yOffset = 8,
             visibleDepth = 4,
             cardCount = 4,
             transition = { type: "spring", stiffness: 300, damping: 30 }
@@ -257,7 +258,7 @@
                 const M = Math.max(1, Math.min(visibleDepth, totalCards));
                 const ei = Math.min(index, M - 1);     // 饱和夹取的有效层索引
                 const denom = Math.max(1, M - 1);       // 旋转/横移扇形分母（仅在前 M 张铺开）
-                const stackOffset = ei * 8;
+                const stackOffset = ei * yOffset;
                 const scaleValue = 1 - ei * 0.05;
                 const rotationValue =
                     totalCards > 1
@@ -282,7 +283,9 @@
 
             const radiusPx = (cardRadius / 20) * (Math.min(cardWidth, cardHeight) / 2);
             const containerW = cardWidth + xOffset;
-            const containerH = cardHeight + cardHeight * 0.15;
+            // 容器高度需容纳 yOffset 纵向展开的堆叠，避免顶部卡片溢出舞台
+            const M_top = Math.max(1, Math.min(visibleDepth, cards.length));
+            const containerH = cardHeight + Math.max(cardHeight * 0.15, (M_top - 1) * yOffset);
 
             return (
                 <div style={{
@@ -456,6 +459,7 @@
             const [swipeThreshold, setSwipeThreshold] = useState(50);
             const [tiltAngle, setTiltAngle] = useState(-45);
             const [xOffset, setXOffset] = useState(0);
+            const [yOffset, setYOffset] = useState(8);
             const [visibleDepth, setVisibleDepth] = useState(4);
             const [cardCount, setCardCount] = useState(4);
 
@@ -534,6 +538,13 @@
                             <input type="range" min="0" max="300" value={xOffset}
                                 onChange={e => setXOffset(+e.target.value)} />
 
+                            <label>yOffset 纵向堆叠间距 <span className="val">{yOffset}px</span></label>
+                            <input type="range" min="0" max="80" value={yOffset}
+                                onChange={e => setYOffset(+e.target.value)} />
+                            <div style={{ fontSize: 11, color: "#999", margin: "0 0 8px 0" }}>
+                                每层卡片向上偏移量（y = -层索引 × yOffset），默认 8px
+                            </div>
+
                             <label>visibleDepth 可见深度 <span className="val">{Math.min(visibleDepth, cardCount)} 张</span></label>
                             <input type="range" min="1" max={cardCount} value={Math.min(visibleDepth, cardCount)}
                                 onChange={e => setVisibleDepth(Math.min(+e.target.value, cardCount))} />
@@ -580,6 +591,7 @@
                             tiltAngle={tiltAngle}
                             tiltAngleStart={0}
                             xOffset={xOffset}
+                            yOffset={yOffset}
                             visibleDepth={visibleDepth}
                             cardCount={cardCount}
                             transition={{ type: "spring", stiffness: 300, damping: 30 }}
