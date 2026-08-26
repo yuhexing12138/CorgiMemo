@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,6 +42,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -55,6 +58,7 @@ import com.corgimemo.app.ui.components.SwipeDirection
 import com.corgimemo.app.ui.components.SwipeableImageStack
 import com.corgimemo.app.ui.theme.UiColors
 import java.util.Calendar
+import kotlin.math.roundToInt
 
 /**
  * 时间线灵感条目组件（参考图规范版）
@@ -457,6 +461,19 @@ fun TimelineInspirationItem(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        // V5.8 埋点：输出图片行外层 Box 在 root 坐标系的位置
+                        // 与 [WRAPPER_BOX] / [STAGE_BOX] / [LAYER1_BOX] 对比
+                        .onGloballyPositioned { coords ->
+                            val pos = coords.positionInRoot()
+                            Log.d(
+                                "StackDebug",
+                                "[OUTER_BOX] | " +
+                                        "left=${pos.x.roundToInt()}px | " +
+                                        "top=${pos.y.roundToInt()}px | " +
+                                        "right=${(pos.x + coords.size.width).roundToInt()}px | " +
+                                        "size=${coords.size.width}x${coords.size.height}px"
+                            )
+                        }
                         .graphicsLayer { this.clip = false },
                     contentAlignment = Alignment.TopStart
                 ) {
@@ -480,6 +497,19 @@ fun TimelineInspirationItem(
                                 unbounded = true,
                                 align = Alignment.Start
                             )
+                            // V5.8 埋点：输出 wrapContentWidth 内层 Box 在 root 坐标系的位置 + 实际宽度
+                            .onGloballyPositioned { coords ->
+                                val pos = coords.positionInRoot()
+                                Log.d(
+                                    "StackDebug",
+                                    "[WRAPPER_BOX] | " +
+                                            "left=${pos.x.roundToInt()}px | " +
+                                            "top=${pos.y.roundToInt()}px | " +
+                                            "right=${(pos.x + coords.size.width).roundToInt()}px | " +
+                                            "size=${coords.size.width}x${coords.size.height}px | " +
+                                            "translationX_in_parent=${contentStartX.value.roundToInt()}dp"
+                                )
+                            }
                             .graphicsLayer {
                                 this.clip = false
                                 translationX = contentStartX.toPx()

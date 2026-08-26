@@ -30,6 +30,7 @@ package com.corgimemo.app.ui.components
  * 拆分收益：PR 冲突率低 / 每 section 可独立 preview 与单测 / 共享子组件跨分区复用 / 可读性显著提升。
  */
 
+import android.util.Log
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
@@ -85,6 +86,8 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sign
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -107,6 +110,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.sin
+import kotlin.math.roundToInt
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
@@ -114,6 +118,25 @@ import androidx.compose.material3.Icon
 import com.corgimemo.app.ui.theme.UiColors
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+
+// ============================================================
+// V5.8 调试埋点：堆叠图左滑裁剪问题定位
+// ============================================================
+// 用法：在 Android Studio Logcat 中过滤 TAG_STACK_DEBUG
+// 输出关键数据：
+// 1. [TOP_CARD_TRANSFORM] 顶卡 graphicsLayer 最终 translationX/Y（=target + drag + fly）
+// 2. [TOP_CARD_BOUNDS] 顶卡 Box 在 root 坐标系的位置 + 平移后最终 left/right
+// 3. [DRAG] 拖拽过程中 dragOffsetX/Y 实时值（200ms throttle）
+// 4. [LAYER1_BOX] Layer1CardWrapper 容器在 root 坐标系的位置
+// 5. [STAGE_BOX] Stage 容器在 root 坐标系的位置
+// 6. [STAGE_SIZE] Stage 容器 width/height（确认 slideCompensationDp * 2 是否生效）
+// 7. [WRAPPER_BOX] TimelineInspirationItem wrapContentWidth 容器位置
+// 8. [OUTER_BOX] TimelineInspirationItem 外层 Box 位置
+// 排查流程：拖到左滑被裁位置后看 [TOP_CARD_BOUNDS] 的 finalLeft，
+//   对比 [STAGE_BOX].left / [LAYER1_BOX].left / [WRAPPER_BOX].left / [OUTER_BOX].left
+//   找到是哪个父级容器的 left 比顶卡 finalLeft 大 → 那个容器就是裁剪源
+// ============================================================
+private const val TAG_STACK_DEBUG = "StackDebug"
 
 /**
  * 堆叠中的单张卡片槽位
@@ -693,6 +716,19 @@ fun SwipeableImageStack(
         cardHVal + stackVPVal + shadowPadding,               // 扇形垂直摊开 + 阴影
         bboxHeight + maxOf(cardBoxStartY, 0f) + shadowPadding  // 包围盒高 + 底部延伸量 + 阴影
     )
+    // V5.8 埋点：输出 Stage 尺寸计算的关键参数
+    // 与 [STAGE_BOX] actualSize 对比，确认 stageBoxWidthDpFloat 是否真的被 Stage 容器使用
+    Log.d(
+        TAG_STACK_DEBUG,
+        "[STAGE_SIZE] isExpanded=$isExpanded | " +
+                "cardW=${cardWVal.roundToInt()}dp cardH=${cardHVal.roundToInt()}dp | " +
+                "bbox=${bboxWidth.roundToInt()}x${bboxHeight.roundToInt()}dp | " +
+                "cardBoxStart=(${cardBoxStartX.roundToInt()}, ${cardBoxStartY.roundToInt()})dp | " +
+                "shadowPadding=${shadowPadding.roundToInt()}dp | " +
+                "maxElasticDistancePx=${maxElasticDistancePx.roundToInt()}px " +
+                "= ${slideCompensationDp.roundToInt()}dp | " +
+                "stageBox=${stageBoxWidthDpFloat.roundToInt()}x${stageBoxHeightDpFloat.roundToInt()}dp"
+    )
     // 类型转换为 Dp：供 Modifier.size() 使用
     val stageBoxWidthDp: Dp = stageBoxWidthDpFloat.dp
     val stageBoxHeightDp: Dp = stageBoxHeightDpFloat.dp
@@ -769,11 +805,85 @@ fun SwipeableImageStack(
             else -> imageUris.getOrNull(card.originalIndex)?.isNotBlank() == true
         }
 
+        // ========== V5.8 埋点：顶卡 transform 变化时输出实际 translation 值 ==========
+        // 用 LaunchedEffect 监听 target/drag/fly 变化，输出最终 graphicsLayer translationX/Y
+        // 关键：本次 stack 内 graphicsLayer translationX = target.x + dragX + positionX.value
+        //   target.x 是堆叠基础位移（堆叠态恒 0dp）
+        //   dragX 是顶卡按住拖拽偏移（像素值，包了弹性）
+        //   positionX.value 是顶卡飞离动画偏移（像素值）
+        // 输出单位用 px 方便对比，也给 dp 方便人读
+        // throttle 200ms：避免拖拽时每帧输出刷屏（只在状态变化时输出）
+        var lastTopCardLogTime by remember { mutableStateOf(0L) }
+        // V5.8 埋点：拖拽过程实时输出的 throttle 时间戳（pointerInput 内使用）
+        var lastDragLogTime by remember { mutableStateOf(0L) }
+        LaunchedEffect(
+            displayIndex,
+            target.x,
+            target.y,
+            dragOffsetX.value,
+            dragOffsetY.value,
+            positionX.value,
+            positionY.value
+        ) {
+            if (displayIndex == 0) {
+                val now = System.currentTimeMillis()
+                // throttle 200ms；或拖拽开始/结束时强制输出
+                val dragStarted = kotlin.math.abs(dragOffsetX.value) > 0.5f
+                if (now - lastTopCardLogTime > 200 || dragStarted) {
+                    lastTopCardLogTime = now
+                    val finalTxPx = target.x.value + dragOffsetX.value + positionX.value
+                    val finalTyPx = target.y.value + dragOffsetY.value + positionY.value
+                    val densityRatio = density.density
+                    Log.d(
+                        TAG_STACK_DEBUG,
+                        "[TOP_CARD_TRANSFORM] origIdx=${card.originalIndex} | " +
+                                "target=(${target.x.value}dp, ${target.y.value}dp) | " +
+                                "drag=(${dragOffsetX.value.roundToInt()}px, ${dragOffsetY.value.roundToInt()}px) | " +
+                                "fly=(${positionX.value.roundToInt()}px, ${positionY.value.roundToInt()}px) | " +
+                                "finalTx=(${(finalTxPx / densityRatio).roundToInt()}dp / ${finalTxPx.roundToInt()}px) | " +
+                                "finalTy=(${(finalTyPx / densityRatio).roundToInt()}dp / ${finalTyPx.roundToInt()}px) | " +
+                                "scale=${target.scale} rot=${target.rotationZ}° zIdx=${target.zIndex}"
+                    )
+                }
+            }
+        }
+
         Box(
             modifier = Modifier
                 .size(cardWidth, cardHeight)
                 // 堆叠排序 + 顶卡飞离时临时上抬 zIndex（保证飞离过程始终覆盖其他卡片）
                 .zIndex(target.zIndex + zIndexAnim.value)
+                // V5.8 埋点：输出顶卡 Box 在 root 坐标系的位置 + 平移后最终 left/right
+                // 用于对比父级 [STAGE_BOX] / [LAYER1_BOX] / [WRAPPER_BOX] 的 left 边界
+                // 找到是哪个父级容器的 left 比顶卡 finalLeft 大 → 那个容器就是裁剪源
+                .onGloballyPositioned { coords ->
+                    if (displayIndex == 0) {
+                        val pos = coords.positionInRoot()
+                        val boxLeft = pos.x
+                        val boxRight = pos.x + coords.size.width
+                        val boxTop = pos.y
+                        val boxBottom = pos.y + coords.size.height
+                        // 计算 graphicsLayer translation 后的最终屏幕坐标
+                        val txPx = density.run {
+                            (target.x + dragX + positionX.value.dp).toPx()
+                        }
+                        val tyPx = density.run {
+                            (target.y + dragY + positionY.value.dp).toPx()
+                        }
+                        val finalLeftPx = boxLeft + txPx
+                        val finalRightPx = boxLeft + txPx + coords.size.width
+                        val densityRatio = density.density
+                        Log.d(
+                            TAG_STACK_DEBUG,
+                            "[TOP_CARD_BOUNDS] origIdx=${card.originalIndex} | " +
+                                    "box=(${boxLeft.roundToInt()}, ${boxTop.roundToInt()}, " +
+                                    "${coords.size.width}x${coords.size.height}) | " +
+                                    "tx=${txPx.roundToInt()}px ty=${tyPx.roundToInt()}px | " +
+                                    "finalLeft=${(finalLeftPx / densityRatio).roundToInt()}dp / ${finalLeftPx.roundToInt()}px | " +
+                                    "finalRight=${(finalRightPx / densityRatio).roundToInt()}dp / ${finalRightPx.roundToInt()}px"
+                        )
+                    }
+                }
                 // V5.7 修复：在 V5.5.5 graphicsLayer clip=false 基础上，给 shadow 加 clip=false
                 // - 根因：
                 //   - V5.5.5 修复：graphicsLayer RenderNode 加 this.clip = false，但 Modifier.shadow
@@ -835,11 +945,28 @@ fun SwipeableImageStack(
                                                 positionX.snapTo(0f)
                                                 positionY.snapTo(0f)
                                             }
+                                            // 埋点：拖拽开始
+                                            Log.d(
+                                                TAG_STACK_DEBUG,
+                                                "[DRAG_START] origIdx=${card.originalIndex} | " +
+                                                        "initial dragOffsetX=${dragOffsetX.value.roundToInt()}px " +
+                                                        "dragOffsetY=${dragOffsetY.value.roundToInt()}px"
+                                            )
                                         },
                                         onDragEnd = {
                                             isPressed.value = false
                                             val dx = dragOffsetX.value
                                             val distance = dx.absoluteValue
+                                            // 埋点：拖拽结束
+                                            Log.d(
+                                                TAG_STACK_DEBUG,
+                                                "[DRAG_END] origIdx=${card.originalIndex} | " +
+                                                        "final dragOffsetX=${dx.roundToInt()}px " +
+                                                        "dragOffsetY=${dragOffsetY.value.roundToInt()}px | " +
+                                                        "distance=${distance.roundToInt()}px " +
+                                                        "threshold=${thresholdPx.roundToInt()}px " +
+                                                        "willFlyOut=${distance > thresholdPx && order.size > 1}"
+                                            )
                                             if (distance > thresholdPx && order.size > 1) {
                                                 scope.launch {
                                                     onCardSwiped?.invoke(card.originalIndex)
@@ -885,6 +1012,21 @@ fun SwipeableImageStack(
                                         val elasticAmount = dragAmount * resistance
                                         scope.launch {
                                             dragOffsetX.snapTo(dragOffsetX.value + elasticAmount)
+                                        }
+                                        // V5.8 埋点：拖拽实时 dragOffsetX（throttle 200ms）
+                                        val now2 = System.currentTimeMillis()
+                                        if (now2 - lastDragLogTime > 200) {
+                                            lastDragLogTime = now2
+                                            val newOffset = dragOffsetX.value + elasticAmount
+                                            Log.d(
+                                                TAG_STACK_DEBUG,
+                                                "[DRAG] origIdx=${card.originalIndex} | " +
+                                                        "dragAmount=${dragAmount.roundToInt()}px | " +
+                                                        "resistance=$resistance | " +
+                                                        "elasticAmount=${elasticAmount.roundToInt()}px | " +
+                                                        "dragOffsetX=${newOffset.roundToInt()}px | " +
+                                                        "maxElastic=${maxElasticDistancePx.roundToInt()}px"
+                                            )
                                         }
                                     }
                                 } else {
@@ -1036,6 +1178,23 @@ fun SwipeableImageStack(
                         y = cardBoxStartY.dp
                     )
                     .size(bboxWidth.dp, bboxHeight.dp)
+                    // V5.8 埋点：输出 Layer1Box 在 root 坐标系的位置 + 尺寸
+                    // 与 [TOP_CARD_BOUNDS].finalLeft 对比即可定位 Layer1Box 是否裁剪顶卡
+                    .onGloballyPositioned { coords ->
+                        val pos = coords.positionInRoot()
+                        val sizeW = with(density) { coords.size.width.toDp() }
+                        val sizeH = with(density) { coords.size.height.toDp() }
+                        Log.d(
+                            TAG_STACK_DEBUG,
+                            "[LAYER1_BOX] | " +
+                                    "left=${pos.x.roundToInt()}px | " +
+                                    "top=${pos.y.roundToInt()}px | " +
+                                    "right=${(pos.x + coords.size.width).roundToInt()}px | " +
+                                    "size=${coords.size.width}x${coords.size.height}px = " +
+                                    "${sizeW.value.roundToInt()}x${sizeH.value.roundToInt()}dp | " +
+                                    "expected=${bboxWidth.roundToInt()}x${bboxHeight.roundToInt()}dp"
+                        )
+                    }
                     .graphicsLayer {
                         this.clip = false
                         this.cameraDistance = 1000f / density.density
@@ -1058,6 +1217,23 @@ fun SwipeableImageStack(
                     Modifier.size(stageBoxWidthDp, stageBoxHeightDp)
                 }
             )
+            // V5.8 埋点：输出 Stage Box 在 root 坐标系的位置 + 实际尺寸
+            // 与代码计算的 stageBoxWidthDp / stageBoxHeightDp 对比，确认 slideCompensationDp*2 是否生效
+            .onGloballyPositioned { coords ->
+                val pos = coords.positionInRoot()
+                val sizeDpW = with(density) { coords.size.width.toDp() }
+                val sizeDpH = with(density) { coords.size.height.toDp() }
+                Log.d(
+                    TAG_STACK_DEBUG,
+                    "[STAGE_BOX] isExpanded=$isExpanded | " +
+                            "left=${pos.x.roundToInt()}px | " +
+                            "top=${pos.y.roundToInt()}px | " +
+                            "right=${(pos.x + coords.size.width).roundToInt()}px | " +
+                            "actualSize=${coords.size.width}x${coords.size.height}px = " +
+                            "${sizeDpW.value.roundToInt()}x${sizeDpH.value.roundToInt()}dp | " +
+                            "expectedSize=${stageBoxWidthDp.value.roundToInt()}x${stageBoxHeightDp.value.roundToInt()}dp"
+                )
+            }
             .graphicsLayer { this.clip = false }
             .animateContentSize(
                 animationSpec = tween(
