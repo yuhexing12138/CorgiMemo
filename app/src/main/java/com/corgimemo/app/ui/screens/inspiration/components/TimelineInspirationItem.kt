@@ -464,21 +464,26 @@ fun TimelineInspirationItem(
                     // 让 SwipeableImageStack Stage 真正测量到完整宽度（含双侧滑动补偿）
                     // Alignment.Start 保证 Stage 左边缘严格对齐父 Column 左边缘
                     //
-                    // V5.3 修复：图片行与文本行严格左对齐到 contentStartX=70dp 列基准
-                    // - 父右内容 Column 的 padding(start=70dp) 已下放给内层文本 Column，
-                    //   图片行留在外层 Column 内部，需自身补一个 start padding 才能与文本/标签/收起按钮对齐
-                    // - 否则堆叠图 Stage 起点 = 父 Column 起点（0），与文本行差 70dp（用户截图"向左偏移"）
-                    // - padding 放在 wrapContentWidth 之后、graphicsLayer 之前，
-                    //   Stage 测量仍以 unbounded Constraints 进行（不受父级宽度压缩），
-                    //   但 Stage 在 inner Box 内容坐标系里右移 70dp，最终在屏幕上与文本列对齐
+                    // V5.5 修复：用 graphicsLayer translationX 替代 padding(start=70dp)
+                    // - 根因：V5.3 之前用 padding(start=70dp) 试图让 Stage 起点对齐文本列，
+                    //   但 wrapContentWidth(unbounded=true) + padding 组合在某些 Compose 版本中
+                    //   会让 padding 部分失效（实测 Stage 起点 ~50dp 而非预期 88dp，偏左 ~38dp，
+                    //   用户最新截图"顶卡明显左偏+被裁剪"）
+                    // - 改用 graphicsLayer translationX：纯绘制平移，不参与 layout 测量，
+                    //   Stage layout 起点仍在 18dp（outer Box 起点），绘制时平移 70dp 到 88dp
+                    // - 配合 outer Box 的 graphicsLayer { clip = false }，平移出的内容可正常显示
+                    // - 9 层 clip=false 链完整（OneSharedCard 已加 clip=false）
+                    // - 视觉不变：堆叠图堆叠态位置精确对齐文本列（屏幕 88dp）
                     Box(
                         modifier = Modifier
                             .wrapContentWidth(
                                 unbounded = true,
                                 align = Alignment.Start
                             )
-                            .padding(start = contentStartX)
-                            .graphicsLayer { this.clip = false }
+                            .graphicsLayer {
+                                this.clip = false
+                                translationX = contentStartX.toPx()
+                            }
                     ) {
                     SwipeableImageStack(
                         modifier = Modifier.graphicsLayer { this.clip = false },

@@ -774,7 +774,19 @@ fun SwipeableImageStack(
                 .size(cardWidth, cardHeight)
                 // 堆叠排序 + 顶卡飞离时临时上抬 zIndex（保证飞离过程始终覆盖其他卡片）
                 .zIndex(target.zIndex + zIndexAnim.value)
+                // V5.5 修复：graphicsLayer 补 this.clip = false，补全「8 层 clip=false 链」第 8 层
+                // - 根因：OneSharedCard 的 graphicsLayer 默认 clip=true，
+                //   顶卡左滑时 translationX < 0 → 卡片绘制超出 120x120 范围 → RenderNode 硬裁剪
+                //   即使父级 Layer1CardWrapper graphicsLayer { clip = false } 也救不回来
+                //   （子 RenderNode 已被裁剪，父 RenderNode 拿到的就是裁剪后的画面）
+                // - 修复：translationX 仍由 graphicsLayer 负责，仅补 this.clip = false
+                // - 8 层链补全：L284 Box → LazyColumn → TimelineInspirationItem 外 Box
+                //         → 文本 Column → 图片行 outer Box → 图片行 inner Box
+                //         → SwipeableImageStack Stage Box → Layer1CardWrapper Box
+                //         → 卡片 OneSharedCard Box（本层，9 层完整）
+                // - 视觉不变：静止时 translationX=0，clip=false 不影响任何渲染
                 .graphicsLayer {
+                    this.clip = false
                     scaleX = target.scale
                     scaleY = target.scale
                     rotationZ = target.rotationZ
