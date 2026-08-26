@@ -75,7 +75,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -452,6 +454,13 @@ fun SwipeableImageStack(
      *    88dp = 原 Stage 视觉左缘；+18.dp 补偿 OUTER_BOX 的 offset(-18dp) 左移）。
      *  - 默认 0.dp 向后兼容其他调用点（无左扩需求时视觉不变）。*/
     stackStageOffsetX: Dp = 0.dp,
+    /** V7.8：展开态视口右缘延伸量（对齐调用方外层容器边缘）。
+     *  - 默认视口右缘 = Stage 右缘 − stackStageOffsetX（即父容器右缘）。
+     *  - 当调用方图片行 Box 因左滑预借 offset 左移（如 TimelineInspirationItem
+     *    的 offset(-18dp)）导致 Box 右缘比外层容器左移 18dp 时，传 18.dp
+     *    让展开行视口右缘对齐「灵感条最外层容器」右缘。
+     *  - 堆叠态不使用此值。默认 0.dp 向后兼容其他调用点。*/
+    expandedViewportRightExtension: Dp = 0.dp,
     // ↑↑↑ 本次新增 ↑↑↑
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null,
@@ -1176,11 +1185,15 @@ fun SwipeableImageStack(
             //   0 = 第一张贴视口左缘（与 V7.4 展开锚点连续）
             //   minScroll = -(行宽 − 视口宽) = 最后一张贴视口右缘（外层容器边缘）
             val rowWidthPx = with(density) { cardRowWidthDp.toPx() }
-            val stackStageOffsetXPx = with(density) { stackStageOffsetX.toPx() }
-            // 实时计算滚动下界（lambda 内读取 viewportWidthPx State——pointerInput(Unit)
-            // 闭包不随重组重启，若组合期直接算 minScrollPx 会捕获视口测量前的陈旧值 0）
+            // V7.8：视口右缘内缩量 = stackStageOffsetX − 右缘延伸量（对齐外层容器边缘）
+            val viewportEndInset = (stackStageOffsetX - expandedViewportRightExtension)
+                .coerceAtLeast(0.dp)
+            val viewportEndInsetPx = with(density) { viewportEndInset.toPx() }
+            // 实时计算滚动下界：minScroll = −(行宽 − 视口内容区宽)
+            // 视口内容区宽 = Layer1 全宽（onSizeChanged 链首实测）− 右缘内缩量
+            // （lambda 内读取 viewportWidthPx State——pointerInput(Unit) 闭包不随重组重启）
             val minScrollNow: () -> Float = {
-                -(rowWidthPx - (viewportWidthPx.floatValue - stackStageOffsetXPx))
+                -(rowWidthPx - (viewportWidthPx.floatValue - viewportEndInsetPx))
                     .coerceAtLeast(0f)
             }
             // V7.7：fling 惯性衰减曲线（@Composable 必须在组合作用域声明，
@@ -1188,13 +1201,30 @@ fun SwipeableImageStack(
             val flingDecay = rememberSplineBasedDecay<Float>()
             Box(
                 modifier = Modifier
+                    // V7.8 修复：onSizeChanged 必须放在链首——报告整个 Layer1 的全宽
+                    //（fillMaxWidth 固定约束，与内部内容无关）；若放在 padding 之后，
+                    // 会报告内容自适应宽（≈单卡 120dp，卡片展开位移不参与布局测量），
+                    // 视口宽被严重低估 → 滚动边界失真 → 甩动时卡片飞过容器边缘、
+                    // 直到物理屏幕边缘才消失（用户反馈的"右缘裁剪位置在屏幕边缘"）
+                    .onSizeChanged { viewportWidthPx.floatValue = it.width.toFloat() }
                     .fillMaxWidth()
-                    // 视口右缘收到外层容器右缘（不贴屏幕边缘）
-                    .padding(end = stackStageOffsetX)
+                    // V7.8：视口右缘 = 外层容器右缘（默认 Stage 右缘 − stackStageOffsetX，
+                    // 按 expandedViewportRightExtension 再向右延伸对齐调用方容器边缘）
+                    .padding(end = viewportEndInset)
                     // 不裁剪：顶卡左缘阴影自由渲染（问题①修复的关键）
                     .graphicsLayer { this.clip = false }
-                    .onSizeChanged {
-                        viewportWidthPx.floatValue = it.width.toFloat()
+                    // V7.8：仅右缘裁剪——超出视口右缘（外层容器边缘）的卡片在此被切，
+                    // 不再飞到物理屏幕边缘才消失；左/上/下方向不裁剪
+                    //（左侧不裁剪保留顶卡左缘阴影溢出渲染，与问题①修复不互斥）
+                    .drawWithContent {
+                        clipRect(
+                            left = -100000f,
+                            top = -100000f,
+                            right = size.width,
+                            bottom = 100000f
+                        ) {
+                            drawContent()
+                        }
                     }
                     // 自绘行滚动手势（问题②修复的关键）
                     // V7.7：加 fling 惯性——参考待办编辑页图片行（LazyRow 自带 fling），

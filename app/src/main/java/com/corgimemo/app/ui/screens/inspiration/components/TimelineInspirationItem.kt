@@ -527,6 +527,11 @@ fun TimelineInspirationItem(
                         // = 88dp = 原 V6.x Stage 视觉左缘，展开态视觉零变化；
                         // 堆叠态组件内部会再左扩 StackLeftCompensation(130dp) 覆盖左滑轨迹。
                         stackStageOffsetX = contentStartX + 18.dp,
+                        // V7.8：展开态视口右缘延伸 18dp 对齐「灵感条最外层容器」右缘。
+                        // 根因：图片行 Box 因左滑预借 offset(-18dp) 左移后右缘 = W-36，
+                        // 而外层容器右缘 = W-18（LazyColumn contentPadding end=18）；
+                        // 不延伸则展开行右缘比外层容器短 18dp。
+                        expandedViewportRightExtension = 18.dp,
                         imageUris = imagePaths,
                         cardWidth = 120.dp,
                         cardHeight = 120.dp,
