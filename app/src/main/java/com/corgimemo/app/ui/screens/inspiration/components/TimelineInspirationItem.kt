@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -307,13 +308,14 @@ fun TimelineInspirationItem(
         // ========== 右侧内容区（标题、时分时间、正文、标签、图片）==========
         Column(
             modifier = Modifier
-                .padding(start = contentStartX)
-                .align(Alignment.TopStart)
+                .fillMaxWidth()
                 .graphicsLayer { this.clip = false }
+                .align(Alignment.TopStart)
         ) {
             // 文本内容区域：点击/长按由外层 Box 统一处理，水波纹效果保留
-            Column {
-                // 标题（16sp Medium）
+            Column(
+                modifier = Modifier.padding(start = contentStartX)
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isPinnedItem) {
                         Icon(
@@ -451,46 +453,76 @@ fun TimelineInspirationItem(
                 //       ③ CollapseBtn 永远可见不跟随图片行滚动（独立于 ScrollArea 之外）
                 // 因此删除本独立一行，交由 SwipeableImageStack 内部完整处理（SwipeableImageStack.kt L564-L620）。
                 Spacer(modifier = Modifier.height(tagToImageGap))
-                SwipeableImageStack(
-                    imageUris = imagePaths,
-                    cardWidth = 120.dp,
-                    cardHeight = 120.dp,
-                    // cardRadius 是 0-20 滑块（Float，非 Dp），与 SwipeableImageStack.kt 默认值一致
-                    // 2 对应 min(W,H)/20 的圆角（120dp 卡片 ≈ 6dp 圆角）
-                    cardRadius = 2f,
-                    swipeThreshold = 10.dp,  // 对齐原型 10px（mdpi 设备 1dp=1px）
-                    visibleDepth = 4,    // 最多 4 张扇形展开；tiltAngle 由可见张数派生（4 张→-45°）
-                    xOffset = 0.dp,      // 无水平偏移，仅靠旋转+scale 形成堆叠
-                    swipeDirection = SwipeDirection.Horizontal,
-                    // 超过 4 张图片时显示计数角标（"当前位置/总数"），提升信息密度
-                    countBadge = true,
-                    // 超过 4 张图片时显示灰底"展开 N"胶囊按钮（仅 UI，后续接入点击逻辑）
-                    showExpandButton = true,
-                    // ↓↓↓ 展开态外部托管参数 ↓↓↓
-                    // V3.1 修复：expandedContentStartPadding = 0.dp（避免双重 padding）
-                    // - 根因：本调用点在「右侧内容区 Column」内部（L312），
-                    //   父 Column 已统一 padding(start=contentStartX=70dp)，
-                    //   如果此处传 contentStartX=70dp → SwipeableImageStack 内部(L574) 再 padding →
-                    //   70dp×2=140dp 双重偏移=图片太靠右（用户最新截图反馈）
-                    // - 向后兼容：SwipeableImageStack 签名的默认值仍是 0.dp（其他调用点不受影响）
-                    expandedContentStartPadding = 0.dp,
-                    // 外部统一托管 isExpanded 状态，保证：
-                    //  ① 独立行「收起」按钮 与 组件内部 状态 100% 同步
-                    //  ② 堆叠态仍使用 stageBoxWidth≈200dp 固定尺寸（Badge/ExpandBtn 位置不变）
-                    //  ③ 展开态 fillMaxWidth 突破 stageBoxWidth=200dp 裁切（原型 SCROLL_MAX_WIDTH=560px）
-                    expandedState = isImageStackExpanded,
-                    // V4.0：showInnerCollapseButton=true → 组件内部外层 Row 首元素渲染 CollapseBtn
-                    // 满足用户最新设计要求：
-                    // ① 收起在左 + 图片行在右（同一行）
-                    // ② 按钮→图片行 间距 = 卡片间距 = 8dp（外层 Row spacedBy(8.dp) = 图片行内 cardGap=8dp）
-                    // ③ 收起按钮垂直居中于图片行（外层 Row verticalAlignment=CenterVertically）
-                    // ④ CollapseBtn 永远可见（独立于 ScrollArea 之外，不跟随横向滚动）
-                    showInnerCollapseButton = true,
-                    // ↑↑↑
-                    onCardClick = { originalIndex ->
-                        onImageClick(originalIndex)
+                // 外层 Box：占满父级宽度，clip=false 允许内部 Stage 溢出可见
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer { this.clip = false },
+                    contentAlignment = Alignment.TopStart
+                ) {
+                    // 内层 Box：wrapContentWidth(unbounded=true) 解除父级宽度约束
+                    // 让 SwipeableImageStack Stage 真正测量到完整宽度（含双侧滑动补偿）
+                    // Alignment.Start 保证 Stage 左边缘严格对齐父 Column 左边缘
+                    //
+                    // V5.3 修复：图片行与文本行严格左对齐到 contentStartX=70dp 列基准
+                    // - 父右内容 Column 的 padding(start=70dp) 已下放给内层文本 Column，
+                    //   图片行留在外层 Column 内部，需自身补一个 start padding 才能与文本/标签/收起按钮对齐
+                    // - 否则堆叠图 Stage 起点 = 父 Column 起点（0），与文本行差 70dp（用户截图"向左偏移"）
+                    // - padding 放在 wrapContentWidth 之后、graphicsLayer 之前，
+                    //   Stage 测量仍以 unbounded Constraints 进行（不受父级宽度压缩），
+                    //   但 Stage 在 inner Box 内容坐标系里右移 70dp，最终在屏幕上与文本列对齐
+                    Box(
+                        modifier = Modifier
+                            .wrapContentWidth(
+                                unbounded = true,
+                                align = Alignment.Start
+                            )
+                            .padding(start = contentStartX)
+                            .graphicsLayer { this.clip = false }
+                    ) {
+                    SwipeableImageStack(
+                        modifier = Modifier.graphicsLayer { this.clip = false },
+                        imageUris = imagePaths,
+                        cardWidth = 120.dp,
+                        cardHeight = 120.dp,
+                        // cardRadius 是 0-20 滑块（Float，非 Dp），与 SwipeableImageStack.kt 默认值一致
+                        // 2 对应 min(W,H)/20 的圆角（120dp 卡片 ≈ 6dp 圆角）
+                        cardRadius = 2f,
+                        swipeThreshold = 10.dp,  // 对齐原型 10px（mdpi 设备 1dp=1px）
+                        visibleDepth = 4,    // 最多 4 张扇形展开；tiltAngle 由可见张数派生（4 张→-45°）
+                        xOffset = 0.dp,      // 无水平偏移，仅靠旋转+scale 形成堆叠
+                        swipeDirection = SwipeDirection.Horizontal,
+                        // 超过 4 张图片时显示计数角标（"当前位置/总数"），提升信息密度
+                        countBadge = true,
+                        // 超过 4 张图片时显示灰底"展开 N"胶囊按钮（仅 UI，后续接入点击逻辑）
+                        showExpandButton = true,
+                        // ↓↓↓ 展开态外部托管参数 ↓↓↓
+                        // V3.1 修复：expandedContentStartPadding = 0.dp（避免双重 padding）
+                        // - 根因：本调用点在「右侧内容区 Column」内部（L312），
+                        //   父 Column 已统一 padding(start=contentStartX=70dp)，
+                        //   如果此处传 contentStartX=70dp → SwipeableImageStack 内部(L574) 再 padding →
+                        //   70dp×2=140dp 双重偏移=图片太靠右（用户最新截图反馈）
+                        // - 向后兼容：SwipeableImageStack 签名的默认值仍是 0.dp（其他调用点不受影响）
+                        expandedContentStartPadding = 0.dp,
+                        // 外部统一托管 isExpanded 状态，保证：
+                        //  ① 独立行「收起」按钮 与 组件内部 状态 100% 同步
+                        //  ② 堆叠态仍使用 stageBoxWidth≈200dp 固定尺寸（Badge/ExpandBtn 位置不变）
+                        //  ③ 展开态 fillMaxWidth 突破 stageBoxWidth=200dp 裁切（原型 SCROLL_MAX_WIDTH=560px）
+                        expandedState = isImageStackExpanded,
+                        // V4.0：showInnerCollapseButton=true → 组件内部外层 Row 首元素渲染 CollapseBtn
+                        // 满足用户最新设计要求：
+                        // ① 收起在左 + 图片行在右（同一行）
+                        // ② 按钮→图片行 间距 = 卡片间距 = 8dp（外层 Row spacedBy(8.dp) = 图片行内 cardGap=8dp）
+                        // ③ 收起按钮垂直居中于图片行（外层 Row verticalAlignment=CenterVertically）
+                        // ④ CollapseBtn 永远可见（独立于 ScrollArea 之外，不跟随横向滚动）
+                        showInnerCollapseButton = true,
+                        // ↑↑↑
+                        onCardClick = { originalIndex ->
+                            onImageClick(originalIndex)
+                        }
+                    )
                     }
-                )
+                }
             }
         }
     }

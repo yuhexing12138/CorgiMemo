@@ -289,6 +289,7 @@ fun InspirationScreen(
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxSize()
+                                .graphicsLayer { this.clip = false }
                                 .padding(horizontal = 18.dp),
                             verticalArrangement = Arrangement.spacedBy(18.dp)
                         ) {

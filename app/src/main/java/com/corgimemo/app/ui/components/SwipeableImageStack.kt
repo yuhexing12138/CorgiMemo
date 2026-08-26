@@ -681,13 +681,13 @@ fun SwipeableImageStack(
     // 当 cardBoxStart > 0 时，卡片容器有正偏移，Stage 需扩展以容纳容器底部/右侧
     // 阴影补偿：顶卡 shadowElevation=8.dp，阴影在卡片四周绘制，需要额外空间
     val shadowPadding = 8f  // 最大阴影高度（顶卡 8.dp）
-    // 滑动补偿：顶卡左右滑动时的最大位移，确保不被裁剪
-    // 左右两侧都需要补偿，因为卡片可以向左或向右滑动
+    // 滑动补偿：顶卡左右滑动时的最大位移（双侧各一份），让 Stage 宽度足够容纳滑动过程
+    // 注意：TimelineInspirationItem 外包一层 wrapContentWidth(unbounded=true) 保证此宽度不被压缩
     val slideCompensationDp = with(density) { maxElasticDistancePx.toDp() }.value
     val stageBoxWidthDpFloat: Float = maxOf(
         cardWVal + xOffset.value + slideCompensationDp * 2,  // 扇形水平摊开 + 双侧滑动补偿
         bboxWidth + maxOf(cardBoxStartX, 0f) + shadowPadding + slideCompensationDp * 2,  // 包围盒宽 + 右侧延伸量 + 阴影 + 双侧滑动补偿
-        badgeRequiredRight                                  // 1/N 角标右端 或 展开按钮右端
+        badgeRequiredRight                                       // 1/N 角标右端 或 展开按钮右端
     )
     val stageBoxHeightDpFloat: Float = maxOf(
         cardHVal + stackVPVal + shadowPadding,               // 扇形垂直摊开 + 阴影
