@@ -1178,11 +1178,17 @@ fun SwipeableImageStack(
                 }
             }
 
-            if (isTopCard && onCardClick != null) {
+            // 点击区域挂载条件：
+            // - 堆叠态：仅顶卡（isTopCard）可点击进入图片附件页
+            // - 展开态（isInExpandedMode）：行内每张卡片都挂载点击，
+            //   各自回调传入 card.originalIndex → 点击任意一张照片都能进入对应的图片附件页
+            // 手势竞争说明：detectTapGestures 只消费 tap，不消费 drag move，
+            // 展开态视口 Box 的横向滚动手势（detectHorizontalDragGestures）不受影响
+            if ((isTopCard || isInExpandedMode) && onCardClick != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(card.stableId) {
+                        .pointerInput(card.stableId, isInExpandedMode) {
                             detectTapGestures(
                                 onTap = { onCardClick(card.originalIndex) }
                             )
