@@ -272,7 +272,8 @@ private fun lerpCardTarget(a: CardTarget, b: CardTarget, p: Float): CardTarget {
  * - rotationZ：按可见深度线性分配旋转角（顶层 0°，底层 fanAngleDeg）
  * - scale：每深一层缩小 scaleStep
  * - shadowElevation：顶卡 8dp，其余 4dp
- * - zIndex：顶卡最高（visibleDepth - ei），保证堆叠顺序正确
+ * - zIndex：顶卡最高（visibleDepth - ei - 超深递减），保证堆叠顺序正确；
+ *           超出 visibleDepth 的卡片额外递减沉底，被第 visibleDepth 层完整遮盖
  *
  * 展开态端点公式：
  * - x 方向：按卡片索引水平排列，索引 × (卡片宽度 + 间距)
@@ -304,13 +305,18 @@ private fun calcCardTarget(
 ): CardTarget {
     val ei = min(displayIndex, visibleDepth - 1)
     val denom = max(visibleDepth - 1, 1)
+    // V8.8 超深卡片沉底：displayIndex ≥ visibleDepth 的卡片位置与第 visibleDepth 层重合
+    // （ei 被钳制），若 zIndex 也相同（旧值恒为 visibleDepth - ei = 1），平局按组合顺序
+    // 后绘制者在上 → 第 5 张完全盖住第 4 张（用户看到 1,2,3,5 而非 1,2,3,4 的根因）。
+    // 修复：超深卡片 zIndex 额外递减，沉到所有可见卡之下，被第 4 张完整遮盖（夹在栈底）。
+    val overflowDepth = max(0, displayIndex - (visibleDepth - 1))
     val stacked = CardTarget(
         x = 0.dp,
         y = (-ei * stackOffsetDp.value).dp,
         rotationZ = fanAngleDeg * (ei.toFloat() / denom.toFloat()),
         scale = 1f - ei * scaleStep,
         shadowElevation = if (displayIndex == 0) 8.dp else 4.dp,
-        zIndex = (visibleDepth - ei).toFloat()
+        zIndex = (visibleDepth - ei - overflowDepth).toFloat()
     )
     val expanded = CardTarget(
         x = (displayIndex.toFloat() * (cardW.value + cardGap.value)).dp,
@@ -1193,8 +1199,13 @@ fun SwipeableImageStack(
                                                     // 终点 = 队尾 z（被上层卡正确遮挡，仅露扇形边缘）。
                                                     // 旧值固定 visibleDepth 全程置顶 → 卡片滑到队尾位置时
                                                     // 仍盖住其它卡（用户反馈"遮挡下一层图片"的根因）。
-                                                    val tailEi = min(order.size - 1, visibleDepth - 1)
-                                                    val tailZIndex = (visibleDepth - tailEi).toFloat()
+                                                    // V8.8：队尾 z 用与 calcCardTarget 相同的公式（含超深
+                                                    // 沉底递减），order.size > visibleDepth 时队尾终点为 0
+                                                    // 而非 1，翻牌卡才能正确沉到倒数第 2 层之下。
+                                                    val tailDisplayIndex = order.size - 1
+                                                    val tailEi = min(tailDisplayIndex, visibleDepth - 1)
+                                                    val tailOverflow = max(0, tailDisplayIndex - (visibleDepth - 1))
+                                                    val tailZIndex = (visibleDepth - tailEi - tailOverflow).toFloat()
                                                     zIndexAnim.snapTo(visibleDepth.toFloat() - tailZIndex)
                                                     // ② 立即翻牌：顶卡移到队尾（视觉由快照+插值保持连续，不飞出屏幕）
                                                     val newOrder = order.toMutableList()
@@ -1350,8 +1361,13 @@ fun SwipeableImageStack(
                                                     // 终点 = 队尾 z（被上层卡正确遮挡，仅露扇形边缘）。
                                                     // 旧值固定 visibleDepth 全程置顶 → 卡片滑到队尾位置时
                                                     // 仍盖住其它卡（用户反馈"遮挡下一层图片"的根因）。
-                                                    val tailEi = min(order.size - 1, visibleDepth - 1)
-                                                    val tailZIndex = (visibleDepth - tailEi).toFloat()
+                                                    // V8.8：队尾 z 用与 calcCardTarget 相同的公式（含超深
+                                                    // 沉底递减），order.size > visibleDepth 时队尾终点为 0
+                                                    // 而非 1，翻牌卡才能正确沉到倒数第 2 层之下。
+                                                    val tailDisplayIndex = order.size - 1
+                                                    val tailEi = min(tailDisplayIndex, visibleDepth - 1)
+                                                    val tailOverflow = max(0, tailDisplayIndex - (visibleDepth - 1))
+                                                    val tailZIndex = (visibleDepth - tailEi - tailOverflow).toFloat()
                                                     zIndexAnim.snapTo(visibleDepth.toFloat() - tailZIndex)
                                                     // ② 立即翻牌：顶卡移到队尾（视觉由快照+插值保持连续，不飞出屏幕）
                                                     val newOrder = order.toMutableList()
