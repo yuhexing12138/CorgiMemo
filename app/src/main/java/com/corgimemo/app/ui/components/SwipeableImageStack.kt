@@ -176,9 +176,10 @@ private fun rubberBandRowScroll(raw: Float, minScroll: Float): Float = when {
 /**
  * V7.9 展开态行 Box 双侧阴影余量
  *
- * 卡片展开态 shadowElevation = 4dp，阴影向四周扩散约 8dp。
- * 行 Box 预借该余量后，所有卡片 + 左右阴影都落在行 Box 自身 layout bounds 内，
- * 不再依赖溢出渲染（防隐式裁剪，V7.0 布局空间预借同款模式）。
+ * 展开动画过程中（V8.9 之前展开态端点 4dp）阴影会经过非零中间值，向四周扩散约 8dp。
+ * 行 Box 预借该余量后，展开/收起过渡中的卡片 + 左右阴影都落在行 Box 自身 layout
+ * bounds 内，不再依赖溢出渲染（防隐式裁剪，V7.0 布局空间预借同款模式）。
+ * V8.9 展开完成态阴影为 0，此余量仅服务过渡过程（保留无害，防回归）。
  */
 private val ExpandedRowShadowSlack = 8.dp
 
@@ -254,7 +255,10 @@ private fun lerpCardTarget(a: CardTarget, b: CardTarget, p: Float): CardTarget {
         y = (a.y.value + (b.y.value - a.y.value) * t).dp,
         rotationZ = a.rotationZ + (b.rotationZ - a.rotationZ) * t,
         scale = a.scale + (b.scale - a.scale) * t,
-        shadowElevation = (a.shadowElevation.value + (b.shadowElevation.value - a.shadowElevation.value) * t).dp,
+        // 阴影插值加 ≥0 钳制：翻牌过冲 p>1 时反向外插可能算出负值
+        // （Modifier.shadow 负 elevation 行为未定义），统一钳到 0
+        shadowElevation = (a.shadowElevation.value + (b.shadowElevation.value - a.shadowElevation.value) * t)
+            .coerceAtLeast(0f).dp,
         zIndex = b.zIndex,
     )
 }
@@ -278,7 +282,7 @@ private fun lerpCardTarget(a: CardTarget, b: CardTarget, p: Float): CardTarget {
  * 展开态端点公式：
  * - x 方向：按卡片索引水平排列，索引 × (卡片宽度 + 间距)
  * - y/rotation/scale：全部归中（无旋转、原始尺寸、同一水平高度）
- * - shadowElevation：统一 4dp（展开态无顶卡/非顶卡视觉差异）
+ * - shadowElevation：统一 0dp（V8.9 展开态无阴影，随进度从堆叠态 8/4dp 平滑淡出）
  * - zIndex：全部同级（展开态层叠顺序无意义）
  *
  * @param displayIndex 卡片在当前显示顺序中的索引（0 = 顶卡）
@@ -323,7 +327,8 @@ private fun calcCardTarget(
         y = 0.dp,
         rotationZ = 0f,
         scale = 1f,
-        shadowElevation = 4.dp,
+        // V8.9 展开态无阴影：随 expandProgress 插值，展开时阴影平滑淡出、收起时平滑恢复
+        shadowElevation = 0.dp,
         zIndex = 1f
     )
     val p = expandProgress.coerceIn(0f, 1f)
