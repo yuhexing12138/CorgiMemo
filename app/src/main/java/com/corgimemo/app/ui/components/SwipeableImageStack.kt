@@ -1,5 +1,7 @@
 package com.corgimemo.app.ui.components
 
+import android.util.Log
+
 /**
  * 堆叠图组件：4 区 PINNED_PENDING / PENDING / PINNED_COMPLETED / COMPLETED 的图片/色块堆叠展示与展开。
  *
@@ -919,6 +921,17 @@ fun SwipeableImageStack(
                 )
                 // 堆叠排序 + 顶卡飞离时临时上抬 zIndex（保证飞离过程始终覆盖其他卡片）
                 .zIndex(target.zIndex + zIndexAnim.value)
+                // V8.3 调试埋点：卡片实际 layout 尺寸与根坐标（displayIndex 0/1 两个采样点）
+                .onGloballyPositioned {
+                    if (displayIndex <= 1) {
+                        Log.d(
+                            "STACK_V83",
+                            "[CARD#$displayIndex] size=${it.size} posInRoot=${it.positionInRoot()} " +
+                                "z=${target.zIndex} tx=${target.x.value} ty=${target.y.value} " +
+                                "scale=${target.scale} rot=${target.rotationZ}"
+                        )
+                    }
+                }
                 // (V5.8 onGloballyPositioned 埋点已移除)
                 // V5.7 修复：在 V5.5.5 graphicsLayer clip=false 基础上，给 shadow 加 clip=false
                 // - 根因：
@@ -1229,6 +1242,16 @@ fun SwipeableImageStack(
         // fling 惯性衰减曲线（@Composable 作用域声明）
         val flingDecay = rememberSplineBasedDecay<Float>()
         val rowShadowSlackPx = with(density) { ExpandedRowShadowSlack.toPx() }
+        // V8.3 修复：原两段 offset（y=anchorY、x=-slack+unifiedX）的视觉贡献预计算为像素值，
+        // 改由行 Box 的 graphicsLayer translation 承接（纯绘制平移，不参与测量）。
+        // 根因：行 Box 超宽（cardCount>4 时 3894px > 视口 1445px）时，offset
+        // LayoutModifierNode 链实测出现「尺寸被 coerce 到视口宽 + 子节点 Center 放置
+        // ((1445-3894)/2 = -1224.4px)」的异常行为（V8.3b 分层埋点铁证），
+        // 顶卡被推出屏幕左侧 → 多图整行空白；≤4 张行宽不超视口，Center 偏移恰为 0 巧合正常。
+        val stackXOffsetPx = with(density) {
+            (-ExpandedRowShadowSlack.value + unifiedStackXOffset).dp.toPx()
+        }
+        val topCardAnchorYPx = with(density) { topCardAnchorY.dp.toPx() }
 
         // ==================== 视口 Box（恒常存在，堆叠态 / 展开态通用）====================
         Box(
@@ -1241,6 +1264,13 @@ fun SwipeableImageStack(
                 // 它会覆盖 fillMaxWidth，视口 layoutWidth 跟随子项收缩→堆叠图整体右偏。
                 // 多图 requiredSize 被 coerce 的问题改由行 Box 自定义 layout 解决。
                 .fillMaxWidth()
+                // V8.3 调试埋点：视口实际 layout 尺寸与根坐标（多图空白根因定位）
+                .onGloballyPositioned {
+                    Log.d(
+                        "STACK_V83",
+                        "[VIEWPORT] size=${it.size} posInRoot=${it.positionInRoot()}"
+                    )
+                }
                 // V8.0：padding 随 derivedIsExpanded 渐入，堆叠态不加内缩
                 .padding(end = if (derivedIsExpanded) viewportEndInset else 0.dp)
                 .graphicsLayer {
@@ -1317,23 +1347,39 @@ fun SwipeableImageStack(
                 }
         ) {
             // ==================== 行 Box（恒常存在：所有卡片统一渲染层）====================
-            // V7.3：offset(y = topCardAnchorY) → 顶卡视觉 Y 与堆叠态完全一致（消除向上跳变）
-            // V7.9：offset(x = -ExpandedRowShadowSlack) + translationX(+阴影余量) → 双侧阴影布局空间预借
-            // V8.0：新增 offset(x = unifiedStackXOffset.dp) → 模拟堆叠分支的 Layer1 Center 对齐效果，
-            //       随 expandProgress 平滑从 (J-SLC) 插值到 0，全程无跳变
+            // V7.3：顶卡视觉 Y 与堆叠态一致（消除向上跳变）→ V8.3 改为 translationY
+            // V7.9：双侧阴影布局空间预借 → V8.3 改为 translationX 分量
+            // V8.0：unifiedStackXOffset 模拟堆叠分支 Center 对齐 → V8.3 改为 translationX 分量
+            //
+            // V8.3d 修复（多图空白根因，V8.3b/V8.3c 分层埋点两轮铁证定位）：
+            // - cardCount=11 堆叠态：行 Box 3894px > 视口 1445px 时，出现表观居中偏移
+            //   -1224.4px = (1445-3894)/2 → 顶卡 posInRoot≈(-1300,848) 出屏左侧 → 整行空白。
+            //   cardCount≤4 行宽不超视口，偏移恰为 0 → 巧合正常（掩盖 bug）。
+            // - V8.3c 曾用「隔离层+强宽层」双 layout{} 显式 place(0,0) 对抗 —— 仍被偏移
+            //   （两相邻 LayoutModifierNode 尺寸不一致触发 Modifier.Node chains 协调）。
+            // - V8.3d 终极修复（本版）：合并为单个 layout{}（见下方注释）+ 所有视觉
+            //   偏移并入 graphicsLayer translation（纯绘制，不参与测量）。
             Box(
                 modifier = Modifier
-                    .offset(y = topCardAnchorY.dp)
-                    // 阴影余量左移 + 堆叠等效 X 偏移（unifiedStackXOffset 随 p 插值）
-                    .offset(x = (-ExpandedRowShadowSlack.value + unifiedStackXOffset).dp)
-                    // V8.2：自定义 layout 强制固定尺寸
-                    // - 之前用 requiredSize：多图（cardCount>4）时 cardRowWidthDp > 视口 maxW，
-                    //   被 Compose 测量源码 coerceIn(0, maxW) 压缩到视口宽，
-                    //   OneSharedCard 布局链失配→整行空白。
-                    // - 现在直接 layout：忽略 constraints.maxWidth，强制返回请求尺寸，
-                    //   从根源绕开 coerce 压缩，同时视口 fillMaxWidth 保持不变→堆叠图不偏移。
+                    // V8.3b 调试埋点：合并 layout 节点外壳（= viewport placeable 报告尺寸，coerce 后）
+                    .onGloballyPositioned {
+                        Log.d(
+                            "STACK_V83",
+                            "[ROWBOX_OUTER] size=${it.size} posInRoot=${it.positionInRoot()}"
+                        )
+                    }
+                    // V8.3d 修复：隔离层+强宽层合并为单个 layout{}（关键）
+                    // - 根因（两轮日志铁证 + compose.ui 源码排除法定位）：
+                    //   相邻的两个 LayoutModifierNode（隔离层 coerce 上报 1445 / 强宽层 3894）
+                    //   尺寸不一致时，Compose Modifier.Node chains 协调机制产生表观居中偏移
+                    //   (1445-3894)/2 = -1224.4px（MeasurePassDelegate 源码注释
+                    //   "coerced outerCoordinator size ... layout cooperation" 佐证），
+                    //   顶卡被推出屏幕左侧 → 多图空白；尺寸一致时（cardCount≤4）偏移恰为 0。
+                    // - 修复：合并为单节点 —— 强宽测量子项（3894x330）+ coerce 上报父级
+                    //   （1445，不撑爆 viewport 裁剪线/滚动区间计算）+ place(0,0) 左对齐。
+                    //   单节点不存在「相邻 LayoutModifierNode 尺寸差」→ 无 chains 协调偏移。
                     .layout { measurable, constraints ->
-                        // 子项测量：传入 copy 的 constraints，maxWidth = 请求宽（绕开 coerce）
+                        // 强宽测量：子项固定尺寸（多图整行宽 + 双侧阴影余量）
                         val requestedRowWidthPx =
                             with(density) { (cardRowWidthDp + ExpandedRowShadowSlack * 2).roundToPx() }
                         val requestedHeightPx = with(density) { cardHeight.roundToPx() }
@@ -1345,18 +1391,43 @@ fun SwipeableImageStack(
                                 maxHeight = requestedHeightPx
                             )
                         )
-                        // 强制 layout 尺寸 = 请求尺寸，完全忽略父级约束
-                        layout(
-                            width = requestedRowWidthPx,
-                            height = requestedHeightPx
-                        ) {
+                        // 上报尺寸：coerce 遵守父级约束（viewport 不被超宽行撑爆，
+                        // 右缘裁剪线 size.width / 滚动区间 viewportWidthPx 不受影响）
+                        val reportWidth =
+                            requestedRowWidthPx.coerceIn(constraints.minWidth, constraints.maxWidth)
+                        val reportHeight =
+                            requestedHeightPx.coerceIn(constraints.minHeight, constraints.maxHeight)
+                        layout(reportWidth, reportHeight) {
+                            // 固定 place(0,0)：超宽内容从本节点左缘起始，绝不居中
                             placeable.place(0, 0)
                         }
                     }
+                    // V8.3b 调试埋点：layout{} 内侧（观察 graphicsLayer coordinator）——
+                    // 修复成功标志：pos 应与 OUTER 相同（无 -1224 偏移），size=3894
+                    .onGloballyPositioned {
+                        Log.d(
+                            "STACK_V83",
+                            "[ROWBOX_INNER] size=${it.size} posInRoot=${it.positionInRoot()}"
+                        )
+                    }
                     .graphicsLayer {
                         this.clip = false
-                        // 阴影余量补偿（抵消 x=-ExpandedRowShadowSlack 左移）+ 行滚动平移
-                        translationX = rowShadowSlackPx + rowScrollX.value
+                        // V8.3：平移四合一（纯绘制，不参与测量）
+                        // ① rowShadowSlackPx：阴影余量补偿（抵消原 x=-ExpandedRowShadowSlack 的左移视觉）
+                        // ② rowScrollX：展开态自绘行滚动
+                        // ③ stackXOffsetPx：原 offset(x=-slack+unifiedX) 的视觉贡献
+                        // ④ translationY = topCardAnchorYPx：原 offset(y=topCardAnchorY) 的视觉贡献
+                        translationX = rowShadowSlackPx + rowScrollX.value + stackXOffsetPx
+                        translationY = topCardAnchorYPx
+                    }
+                    // V8.3 调试埋点：行 Box 实际 layout 尺寸与根坐标（多图空白根因定位）
+                    .onGloballyPositioned {
+                        Log.d(
+                            "STACK_V83",
+                            "[ROWBOX] size=${it.size} posInRoot=${it.positionInRoot()} " +
+                                "rowScrollX=${rowScrollX.value} p=${expandProgress.value} " +
+                                "unifiedX=$unifiedStackXOffset"
+                        )
                     }
             ) {
                 SharedCardRow()
@@ -1389,6 +1460,13 @@ fun SwipeableImageStack(
                 }
             )
             // (V5.8 onGloballyPositioned 埋点已移除)
+            // V8.3 调试埋点：Stage 实际 layout 尺寸与根坐标（多图空白根因定位）
+            .onGloballyPositioned {
+                Log.d(
+                    "STACK_V83",
+                    "[STAGE] size=${it.size} posInRoot=${it.positionInRoot()}"
+                )
+            }
             .graphicsLayer { this.clip = false }
             .animateContentSize(
                 animationSpec = tween(
@@ -1416,6 +1494,19 @@ fun SwipeableImageStack(
         // V7.9 过渡期右缘裁剪：挂在包装层上的「预生效」裁剪（见 containerClipRightPx 声明处注释）。
         // 包装层左缘 = Stage offset + 本层 offset = stackStageOffsetX（恒定，与 expandProgress 无关），
         // 因此裁剪线（包装层本地 px）全程对应屏幕上同一条竖线 = 灵感条外层容器右缘。
+        // V8.3 调试埋点：一次性输出所有布局关键参数（多图空白根因定位）
+        // 触发条件：cardCount / bbox / Stage 尺寸相关输入变化时重打
+        LaunchedEffect(cardCount, bboxWidth, bboxHeight, stageBoxWidthDp, stageBoxHeightDp) {
+            Log.d(
+                "STACK_V83",
+                "[PARAMS] cardCount=$cardCount rowW=${cardRowWidthDp.value}dp " +
+                    "stageW=${stageBoxWidthDp.value}dp stageH=${stageBoxHeightDp.value}dp " +
+                    "bboxW=${bboxWidth}dp bboxH=${bboxHeight}dp " +
+                    "J=${expandedRowShiftX} " +
+                    "unifiedX=${(expandedRowShiftX - StackLeftCompensation.value) * (1f - expandProgress.value)} " +
+                    "anchorY=$topCardAnchorY showBadge=$showCountBadge"
+            )
+        }
         val viewportExtensionPx = with(density) { expandedViewportRightExtension.toPx() }
         Box(
             modifier = Modifier
@@ -1431,6 +1522,13 @@ fun SwipeableImageStack(
                     }
                     containerClipRightPx.floatValue =
                         root.size.width - viewportExtensionPx - coords.positionInRoot().x
+                }
+                // V8.3 调试埋点：包装层实际 layout 尺寸与根坐标
+                .onGloballyPositioned {
+                    Log.d(
+                        "STACK_V83",
+                        "[WRAP] size=${it.size} posInRoot=${it.positionInRoot()}"
+                    )
                 }
                 // 仅右缘裁剪（左/上/下不裁剪，保留顶卡左缘阴影溢出渲染）；
                 // p > 0 生效：展开/收起动画全程 + 展开稳态持续裁剪，堆叠稳态（p=0）不裁剪
