@@ -107,6 +107,8 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import kotlinx.coroutines.flow.takeWhile
 import coil3.size.Scale
+// V8.4：fling 边界回弹——watcher stop 取消 animateDecay 时捕获取消异常用
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -1301,7 +1303,16 @@ fun SwipeableImageStack(
                 .pointerInput(Unit) {
                     val velocityTracker = VelocityTracker()
                     detectHorizontalDragGestures(
-                        onDragStart = { velocityTracker.resetTracking() },
+                        onDragStart = {
+                            velocityTracker.resetTracking()
+                            // V8.4 修复①（惯性跳变根因）：
+                            // 触摸即停 fling 惯性（Android 触摸惯例）+ 同步逻辑/渲染双值。
+                            // 旧代码只 reset 速度追踪器：fling 中（或 fling 卡在越界处后）再拖拽，
+                            // rawRowScroll(旧逻辑值)+dragAmount → snapTo 从 fling 当前渲染位置
+                            // 直接跳变到「旧逻辑值+新位移」—— 惯性动画不连贯的根源。
+                            scope.launch { rowScrollX.stop() }
+                            rawRowScroll.floatValue = rowScrollX.value
+                        },
                         onHorizontalDrag = { change, dragAmount ->
                             // V8.0：仅展开态(derivedIsExpanded)才消费事件；堆叠态不 consume，
                             // 让子级 OneSharedCard 的堆叠拖拽手势有机会拿到事件（双重保险）
@@ -1316,20 +1327,44 @@ fun SwipeableImageStack(
                             if (!derivedIsExpanded) return@detectHorizontalDragGestures
                             val velocity = velocityTracker.calculateVelocity().x
                             val minScroll = minScrollNow()
+                            // V8.4 修复③：回弹基准统一为渲染值 rowScrollX.value
+                            //（rawRowScroll 是未阻尼累计值，越界拖拽/中断场景与渲染值脱节，
+                            //  以它为基准算出的回弹目标与视觉位置不符）
+                            val current = rowScrollX.value
                             if (abs(velocity) < 200f) {
-                                rawRowScroll.floatValue = rawRowScroll.floatValue.coerceIn(minScroll, 0f)
-                                scope.launch { rowScrollX.animateTo(rawRowScroll.floatValue, ROW_SCROLL_SPRING) }
+                                // 慢速松手：clamp 到有效区间 + 轻微弹簧回弹
+                                val target = current.coerceIn(minScroll, 0f)
+                                rawRowScroll.floatValue = target
+                                scope.launch { rowScrollX.animateTo(target, ROW_SCROLL_SPRING) }
                                 return@detectHorizontalDragGestures
                             }
+                            // 快速甩动：fling 惯性
                             scope.launch {
                                 val boundaryWatcher = launch {
                                     snapshotFlow { rowScrollX.value }
                                         .takeWhile { it in minScroll..0f }
                                         .collect { }
+                                    // V8.4 修复②（无回弹核心根因）：
+                                    // Animatable.stop() 内部是 cancel 动画 mutatorJob →
+                                    // 外层 animateDecay 抛 CancellationException → 外层协程被取消，
+                                    // 旧代码的回弹写在外层 → 永远执行不到 → 行卡死在越界位置。
+                                    // 现在回弹在本 watcher 协程内完成，不依赖外层协程存活。
                                     rowScrollX.stop()
+                                    val target = rowScrollX.value.coerceIn(minScroll, 0f)
+                                    rawRowScroll.floatValue = target
+                                    rowScrollX.animateTo(target, ROW_SCROLL_SPRING)
                                 }
-                                rowScrollX.animateDecay(velocity, flingDecay)
+                                try {
+                                    rowScrollX.animateDecay(velocity, flingDecay)
+                                } catch (e: CancellationException) {
+                                    // watcher stop 触发的正常取消路径：回弹已由 watcher 处理
+                                    return@launch
+                                }
+                                // decay 自然结束（速度衰减到 0）
                                 boundaryWatcher.cancel()
+                                // V8.4 修复④（竞态兜底）：decay 终点恰好越界时，
+                                // snapshotFlow collector 调度可能晚于 animateDecay 返回，
+                                // watcher 被 cancel 抢先杀死而来不及拦截——此处兜底回弹。
                                 val settled = rowScrollX.value.coerceIn(minScroll, 0f)
                                 rawRowScroll.floatValue = settled
                                 if (settled != rowScrollX.value) {
@@ -1340,8 +1375,10 @@ fun SwipeableImageStack(
                         onDragCancel = {
                             if (!derivedIsExpanded) return@detectHorizontalDragGestures
                             val minScroll = minScrollNow()
-                            rawRowScroll.floatValue = rawRowScroll.floatValue.coerceIn(minScroll, 0f)
-                            scope.launch { rowScrollX.animateTo(rawRowScroll.floatValue, ROW_SCROLL_SPRING) }
+                            // V8.4：与慢速松手同款基准（渲染值）
+                            val target = rowScrollX.value.coerceIn(minScroll, 0f)
+                            rawRowScroll.floatValue = target
+                            scope.launch { rowScrollX.animateTo(target, ROW_SCROLL_SPRING) }
                         }
                     )
                 }
