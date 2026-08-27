@@ -538,7 +538,11 @@ fun TimelineInspirationItem(
                         // cardRadius 是 0-20 滑块（Float，非 Dp），与 SwipeableImageStack.kt 默认值一致
                         // 2 对应 min(W,H)/20 的圆角（120dp 卡片 ≈ 6dp 圆角）
                         cardRadius = 2f,
-                        swipeThreshold = 10.dp,  // 对齐原型 10px（mdpi 设备 1dp=1px）
+                        // V8.6：10dp → 50dp（对齐原型 preview_stack.html swipeThreshold=50 默认值）。
+                        // 旧值 10dp（约 27 物理像素）过敏感：手指轻碰即超阈值 → 几乎每次松手都
+                        // 触发翻牌，用户从未见过「短拖回弹」效果。提高后：
+                        // 拖动 < 50dp → 从松手位置 spring 回弹原位；快速拖远 ≥ 50dp → 翻牌换图
+                        swipeThreshold = 50.dp,
                         visibleDepth = 4,    // 最多 4 张扇形展开；tiltAngle 由可见张数派生（4 张→-45°）
                         xOffset = 0.dp,      // 无水平偏移，仅靠旋转+scale 形成堆叠
                         swipeDirection = SwipeDirection.Horizontal,

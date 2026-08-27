@@ -36,7 +36,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -91,7 +90,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sign
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -227,6 +225,32 @@ private data class CardTarget(
  */
 private fun lerp(a: Dp, b: Dp, p: Float): Dp =
     (a.value + (b.value - a.value) * p.coerceIn(0f, 1f)).dp
+
+/**
+ * 翻牌过渡插值：在两个 [CardTarget] 之间按进度 p 全属性线性插值（V8.6）
+ *
+ * 用于顶卡翻牌到队尾的过渡动画：起点 = 松手位置快照，终点 = 队尾正常 target。
+ * 对齐原型 framer-motion 的 animate 全属性 spring 过渡（x/y/rotate/scale 同步插值）。
+ *
+ * zIndex 不插值（直接取终点 b）：过渡过程置顶由 zIndexAnim 保障（渲染处叠加），
+ * 到达终点后 zIndexAnim 归零，自然切换到队尾层级。
+ *
+ * @param a 起点状态（翻牌瞬间的松手位置快照）
+ * @param b 终点状态（队尾正常 target）
+ * @param p 插值进度 [0,1]
+ * @return 插值后的 CardTarget
+ */
+private fun lerpCardTarget(a: CardTarget, b: CardTarget, p: Float): CardTarget {
+    val t = p.coerceIn(0f, 1f)
+    return CardTarget(
+        x = lerp(a.x, b.x, t),
+        y = lerp(a.y, b.y, t),
+        rotationZ = a.rotationZ + (b.rotationZ - a.rotationZ) * t,
+        scale = a.scale + (b.scale - a.scale) * t,
+        shadowElevation = lerp(a.shadowElevation, b.shadowElevation, t),
+        zIndex = b.zIndex,
+    )
+}
 
 /**
  * 计算单张卡片在堆叠态↔展开态过渡过程中的目标变换
@@ -890,14 +914,35 @@ fun SwipeableImageStack(
         val positionY = remember { Animatable(0f) }
         // 每张卡独立的 zIndex 动画：顶卡被飞离时临时 snapTo 1f，叠加到 target.zIndex 上保证飞离过程始终在最顶层
         val zIndexAnim = remember { Animatable(0f) }
+        // ============ V8.6 翻牌过渡状态（对齐原型：从松手位置 spring 滑入队尾，不飞出屏幕）============
+        // - flipFromSnapshot：翻牌瞬间的全属性快照（x/y/rotation/scale，即松手位置的视觉状态），
+        //   非空 + flipProgress<1 表示翻牌过渡进行中
+        // - flipProgress：0→1 过渡进度，由翻牌协程 animateTo(1f, FLIP_SPRING) 驱动
+        val flipFromSnapshot = remember { mutableStateOf<CardTarget?>(null) }
+        val flipProgress = remember { Animatable(1f) }
+        // 是否顶卡（声明需在下方 pressScaleState 之前，避免前向引用编译错误）
+        val isTopCard = displayIndex == 0
+        // ============ V8.6 拖拽轻微放大（对齐原型 whileDrag: { scale: 1.05 }）============
+        // 顶卡按住拖拽时放大 5%，松手 spring 回 1.0；animateFloatAsState 保证进出都平滑无突变
+        val pressScaleState = animateFloatAsState(
+            targetValue = if (isTopCard && isPressed.value) 1.05f else 1f,
+            animationSpec = spring(dampingRatio = 0.866f, stiffness = 300f),
+            label = "pressScale",
+        )
+        val pressScale = pressScaleState.value
         // ========================================
         // Fix B：displayIndex 变化（order 翻牌）立即清零这张卡的所有残留 Animatable
         // 根治：positionX / positionY / zIndexAnim 脏值累积导致的「多群分裂/图片倒置/遮挡混乱」
+        // V8.6 例外：翻牌过渡进行中（flipProgress < 1）不清 zIndexAnim——过渡过程需要
+        // 置顶盖住其它卡（对齐原型 whileDrag zIndex 提升），过渡结束后由翻牌协程清零；
+        // 无过渡时（外部改 order 等场景）保留 Fix B 原语义立即清零
         // ========================================
         LaunchedEffect(displayIndex) {
             positionX.snapTo(0f)
             positionY.snapTo(0f)
-            zIndexAnim.snapTo(0f)
+            if (flipProgress.value >= 1f) {
+                zIndexAnim.snapTo(0f)
+            }
         }
         // 拖拽偏移：堆叠态 displayIndex==0 顶卡叠加 dragOffset；其它卡或非堆叠态恒 0
         // V7.0 单位修复：dragOffsetX.value 是「像素值」（detectHorizontalDragGestures 的
@@ -906,7 +951,12 @@ fun SwipeableImageStack(
         // 正确换算：px → dp 用 toDp()（÷density），渲染处再 toPx() 还原。
         val dragX = if (displayIndex == 0) with(density) { dragOffsetX.value.toDp() } else 0.dp
         val dragY = if (displayIndex == 0) with(density) { dragOffsetY.value.toDp() } else 0.dp
-        val isTopCard = displayIndex == 0
+
+        // V8.6 翻牌过渡中的有效 target：从「松手位置快照」向「队尾正常 target」全属性插值。
+        // 快照非空且进度 <1 时处于过渡中（对齐原型 framer-motion 翻牌的 animate 全属性 spring）。
+        val effTarget = flipFromSnapshot.value?.let { snap ->
+            if (flipProgress.value < 1f) lerpCardTarget(snap, target, flipProgress.value) else target
+        } ?: target
 
         // ========== 有无图判断 ==========
         val hasImage = when {
@@ -928,8 +978,8 @@ fun SwipeableImageStack(
                     width = cardWidth + StackLeftCompensation * (1f - expandProgress.value),
                     height = cardHeight
                 )
-                // 堆叠排序 + 顶卡飞离时临时上抬 zIndex（保证飞离过程始终覆盖其他卡片）
-                .zIndex(target.zIndex + zIndexAnim.value)
+                // 堆叠排序 + 顶卡翻牌过渡时临时上抬 zIndex（保证过渡过程始终覆盖其他卡片）
+                .zIndex(effTarget.zIndex + zIndexAnim.value)
                 // V8.3 调试埋点：卡片实际 layout 尺寸与根坐标（displayIndex 0/1 两个采样点）
                 .onGloballyPositioned {
                     if (displayIndex <= 1) {
@@ -962,9 +1012,11 @@ fun SwipeableImageStack(
                 //   避免阴影绘制到卡片左侧空白补偿区）
                 .graphicsLayer {
                     this.clip = false
-                    scaleX = target.scale
-                    scaleY = target.scale
-                    rotationZ = target.rotationZ
+                    // V8.6：scale 叠加拖拽放大 pressScale（顶卡按住 1.05，spring 平滑过渡）；
+                    // 翻牌过渡中 effTarget.scale 已含快照（松手时放大状态）→ 队尾缩小的插值
+                    scaleX = effTarget.scale * pressScale
+                    scaleY = effTarget.scale * pressScale
+                    rotationZ = effTarget.rotationZ
                     // V7.0 变换中心补偿：卡片 Box 扩宽后默认 TransformOrigin.Center 右移，
                     // 会让 rotationZ/scale 绕错误中心旋转缩放（破坏 4 张卡倾斜堆叠视觉）。
                     // 显式把 pivot 钉在「图片视觉中心」，保证旋转/缩放行为与 V6.x 像素级一致。
@@ -974,10 +1026,10 @@ fun SwipeableImageStack(
                         pivotFractionX = (comp + cardWidth.value / 2f) / totalW,
                         pivotFractionY = 0.5f
                     )
-                    // 四元叠加：堆叠基础位移 target.x + 顶卡按住拖拽 dragX + 顶卡飞离动画 positionX
+                    // 四元叠加：堆叠基础位移 effTarget.x + 顶卡按住拖拽 dragX + 顶卡飞离动画 positionX
                     // （V7.0 单位修复后 dragX 已是正确 dp，toPx() 还原为真实像素位移）
-                    translationX = density.run { (target.x + dragX + positionX.value.dp).toPx() }
-                    translationY = density.run { (target.y + dragY + positionY.value.dp).toPx() }
+                    translationX = density.run { (effTarget.x + dragX + positionX.value.dp).toPx() }
+                    translationY = density.run { (effTarget.y + dragY + positionY.value.dp).toPx() }
                 }
         ) {
             // ============ V7.0 内容包装 Box：图片实际渲染区域 ============
@@ -992,7 +1044,7 @@ fun SwipeableImageStack(
                     .offset(x = StackLeftCompensation * (1f - expandProgress.value))
                     .size(cardWidth, cardHeight)
                     .shadow(
-                        elevation = target.shadowElevation,
+                        elevation = effTarget.shadowElevation,
                         shape = RoundedCornerShape(radiusPx),
                         clip = false,  // V5.7 修复：让 shadow RenderNode 不裁剪，顶卡左滑时不被 shadow 节点裁剪
                     )
@@ -1037,28 +1089,55 @@ fun SwipeableImageStack(
                                             if (distance > thresholdPx && order.size > 1) {
                                                 scope.launch {
                                                     onCardSwiped?.invoke(card.originalIndex)
-                                                    zIndexAnim.snapTo(1f) // 飞离过程始终置顶，确保盖住其它卡
-                                                    val direction = sign(dx).let { if (it == 0f) 1f else it }
-                                                    val cardWidPx = density.run { cardWidth.toPx() }
-                                                    val flyTargetPx = direction * cardWidPx * 1.6f // 飞出 1.6 卡宽，视觉上出边界
                                                     // ========================================
-                                                    // Fix C：先起 300ms 飞离动画，用户看到顶卡滑出再翻牌
-                                                    // （旧实现缺 animateTo，直接 snapTo+改 order → 卡停在半路形成分裂群）
+                                                    // V8.6 翻牌过渡（对齐原型 preview_stack.html）：
+                                                    // 从松手位置 spring 滑入堆叠队尾，不飞出屏幕。
+                                                    // 旧实现（Fix C 时代）：positionX.animateTo(±1.6 卡宽) 先飞出
+                                                    // 屏幕再翻牌 → 用户看到「向左/右延伸出去再回弹」的两段跳变。
+                                                    // 原型行为：framer-motion 立即重排数组，卡片从松手位置用
+                                                    // transition spring 平滑滑到队尾新位置。
                                                     // ========================================
-                                                    positionX.animateTo(
-                                                        targetValue = flyTargetPx / density.density,
-                                                        animationSpec = tween(300, easing = FastOutLinearInEasing)
+                                                    // ① 快照松手位置的全属性视觉状态（闭包内 target 是组合时的
+                                                    //    顶卡 target；dragOffset 读最新值；pressScale 读 State 最新值
+                                                    //    ——pointerInput block 不随重组重启，局部 val 会捕获旧值）
+                                                    flipFromSnapshot.value = CardTarget(
+                                                        x = target.x + with(density) { dragOffsetX.value.toDp() } + positionX.value.dp,
+                                                        y = target.y + with(density) { dragOffsetY.value.toDp() } + positionY.value.dp,
+                                                        rotationZ = target.rotationZ,
+                                                        scale = target.scale * pressScaleState.value,
+                                                        shadowElevation = target.shadowElevation,
+                                                        zIndex = target.zIndex,
                                                     )
-                                                    // 动画完成后 order 才旋转：顶卡移到堆叠尾部
+                                                    flipProgress.snapTo(0f)
+                                                    // V8.6b 层级补偿（对齐原型 zIndex 300ms easeOut 渐变）：
+                                                    // 翻牌瞬间保持顶卡层级，随过渡平滑沉底到队尾层级。
+                                                    // 总 zIndex = 队尾 z + 补偿：起点 = 顶卡 z（4 张卡时=4），
+                                                    // 终点 = 队尾 z（被上层卡正确遮挡，仅露扇形边缘）。
+                                                    // 旧值固定 visibleDepth 全程置顶 → 卡片滑到队尾位置时
+                                                    // 仍盖住其它卡（用户反馈"遮挡下一层图片"的根因）。
+                                                    val tailEi = min(order.size - 1, visibleDepth - 1)
+                                                    val tailZIndex = (visibleDepth - tailEi).toFloat()
+                                                    zIndexAnim.snapTo(visibleDepth.toFloat() - tailZIndex)
+                                                    // ② 立即翻牌：顶卡移到队尾（视觉由快照+插值保持连续，不飞出屏幕）
                                                     val newOrder = order.toMutableList()
                                                     val top = newOrder.removeAt(0)
                                                     newOrder.add(top)
                                                     order = newOrder
-                                                    // 清零 dragOffset；Fix B 的 LaunchedEffect(displayIndex) 会自动清 positionX/zIndexAnim
+                                                    // 清零 dragOffset（翻牌后本卡 displayIndex≠0，dragX 不再叠加，无视觉影响）
                                                     dragOffsetX.snapTo(0f)
                                                     dragOffsetY.snapTo(0f)
                                                     shouldReturnToCenter.value = false
                                                     isPressed.value = false
+                                                    // ③ 位置插值与层级下沉并行：
+                                                    //    - flipProgress（FLIP_SPRING）：松手位置 → 队尾位置
+                                                    //    - zIndexAnim（ZINDEX_TWEEN 300ms easeOut）：顶卡层级 → 队尾层级，
+                                                    //      接近终点时卡片逐渐沉入堆叠底层，被上层卡正确遮挡
+                                                    val zJob = launch { zIndexAnim.animateTo(0f, ZINDEX_TWEEN) }
+                                                    flipProgress.animateTo(1f, FLIP_SPRING)
+                                                    zJob.join()
+                                                    // 过渡结束：清快照（zIndexAnim 已自然归零；snapTo 兜底防异常中断残留）
+                                                    zIndexAnim.snapTo(0f)
+                                                    flipFromSnapshot.value = null
                                                 }
                                             } else {
                                                 shouldReturnToCenter.value = true
@@ -1100,28 +1179,55 @@ fun SwipeableImageStack(
                                             if (distance > thresholdPx && order.size > 1) {
                                                 scope.launch {
                                                     onCardSwiped?.invoke(card.originalIndex)
-                                                    zIndexAnim.snapTo(1f) // 飞离过程始终置顶，确保盖住其它卡
-                                                    val direction = sign(dx).let { if (it == 0f) 1f else it }
-                                                    val cardWidPx = density.run { cardWidth.toPx() }
-                                                    val flyTargetPx = direction * cardWidPx * 1.6f // 飞出 1.6 卡宽，视觉上出边界
                                                     // ========================================
-                                                    // Fix C：先起 300ms 飞离动画，用户看到顶卡滑出再翻牌
-                                                    // （旧实现缺 animateTo，直接 snapTo+改 order → 卡停在半路形成分裂群）
+                                                    // V8.6 翻牌过渡（对齐原型 preview_stack.html）：
+                                                    // 从松手位置 spring 滑入堆叠队尾，不飞出屏幕。
+                                                    // 旧实现（Fix C 时代）：positionX.animateTo(±1.6 卡宽) 先飞出
+                                                    // 屏幕再翻牌 → 用户看到「向左/右延伸出去再回弹」的两段跳变。
+                                                    // 原型行为：framer-motion 立即重排数组，卡片从松手位置用
+                                                    // transition spring 平滑滑到队尾新位置。
                                                     // ========================================
-                                                    positionX.animateTo(
-                                                        targetValue = flyTargetPx / density.density,
-                                                        animationSpec = tween(300, easing = FastOutLinearInEasing)
+                                                    // ① 快照松手位置的全属性视觉状态（闭包内 target 是组合时的
+                                                    //    顶卡 target；dragOffset 读最新值；pressScale 读 State 最新值
+                                                    //    ——pointerInput block 不随重组重启，局部 val 会捕获旧值）
+                                                    flipFromSnapshot.value = CardTarget(
+                                                        x = target.x + with(density) { dragOffsetX.value.toDp() } + positionX.value.dp,
+                                                        y = target.y + with(density) { dragOffsetY.value.toDp() } + positionY.value.dp,
+                                                        rotationZ = target.rotationZ,
+                                                        scale = target.scale * pressScaleState.value,
+                                                        shadowElevation = target.shadowElevation,
+                                                        zIndex = target.zIndex,
                                                     )
-                                                    // 动画完成后 order 才旋转：顶卡移到堆叠尾部
+                                                    flipProgress.snapTo(0f)
+                                                    // V8.6b 层级补偿（对齐原型 zIndex 300ms easeOut 渐变）：
+                                                    // 翻牌瞬间保持顶卡层级，随过渡平滑沉底到队尾层级。
+                                                    // 总 zIndex = 队尾 z + 补偿：起点 = 顶卡 z（4 张卡时=4），
+                                                    // 终点 = 队尾 z（被上层卡正确遮挡，仅露扇形边缘）。
+                                                    // 旧值固定 visibleDepth 全程置顶 → 卡片滑到队尾位置时
+                                                    // 仍盖住其它卡（用户反馈"遮挡下一层图片"的根因）。
+                                                    val tailEi = min(order.size - 1, visibleDepth - 1)
+                                                    val tailZIndex = (visibleDepth - tailEi).toFloat()
+                                                    zIndexAnim.snapTo(visibleDepth.toFloat() - tailZIndex)
+                                                    // ② 立即翻牌：顶卡移到队尾（视觉由快照+插值保持连续，不飞出屏幕）
                                                     val newOrder = order.toMutableList()
                                                     val top = newOrder.removeAt(0)
                                                     newOrder.add(top)
                                                     order = newOrder
-                                                    // 清零 dragOffset；Fix B 的 LaunchedEffect(displayIndex) 会自动清 positionX/zIndexAnim
+                                                    // 清零 dragOffset（翻牌后本卡 displayIndex≠0，dragX 不再叠加，无视觉影响）
                                                     dragOffsetX.snapTo(0f)
                                                     dragOffsetY.snapTo(0f)
                                                     shouldReturnToCenter.value = false
                                                     isPressed.value = false
+                                                    // ③ 位置插值与层级下沉并行：
+                                                    //    - flipProgress（FLIP_SPRING）：松手位置 → 队尾位置
+                                                    //    - zIndexAnim（ZINDEX_TWEEN 300ms easeOut）：顶卡层级 → 队尾层级，
+                                                    //      接近终点时卡片逐渐沉入堆叠底层，被上层卡正确遮挡
+                                                    val zJob = launch { zIndexAnim.animateTo(0f, ZINDEX_TWEEN) }
+                                                    flipProgress.animateTo(1f, FLIP_SPRING)
+                                                    zJob.join()
+                                                    // 过渡结束：清快照（zIndexAnim 已自然归零；snapTo 兜底防异常中断残留）
+                                                    zIndexAnim.snapTo(0f)
+                                                    flipFromSnapshot.value = null
                                                 }
                                             } else {
                                                 shouldReturnToCenter.value = true
@@ -1923,6 +2029,18 @@ private val TRANSITION_SPRING = spring<Float>(dampingRatio = 0.5f, stiffness = 3
  * - 严格对齐原型：短距离拖动后回中用 bounce spring，而非普通 transition spring
  */
 private val BOUNCE_SPRING = spring<Float>(dampingRatio = 0.577f, stiffness = 300f)
+
+/**
+ * 翻牌过渡动画规格（V8.6：顶卡从松手位置 spring 滑入堆叠队尾）
+ *
+ * 对齐原型 preview_stack.html 翻牌行为：拖动 > 阈值松手 → framer-motion 立即重排数组，
+ * 卡片从松手位置用 transition spring（stiffness 300, damping 30）平滑滑到队尾新位置，
+ * **不飞出屏幕**。
+ *
+ * - 转换：dampingRatio = 30 / (2 × sqrt(1 × 300)) = 30 / 34.64 ≈ 0.866
+ * - 过冲仅 ~2.4%，滑动利落不拖沓（区别于回弹的 BOUNCE_SPRING 0.577 的 Q 弹）
+ */
+private val FLIP_SPRING = spring<Float>(dampingRatio = 0.866f, stiffness = 300f)
 
 /**
  * zIndex / 3D 纵深过渡动画（与 Originkit 原型 `{ duration: 0.3, ease: "easeOut" }` 对齐）
