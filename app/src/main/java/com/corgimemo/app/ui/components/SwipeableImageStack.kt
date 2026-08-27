@@ -637,7 +637,14 @@ fun SwipeableImageStack(
                 async { dragOffsetY.animateTo(0f) }
             ).awaitAll()
             rawRowScroll.floatValue = 0f
-            rowScrollX.snapTo(0f)
+            // V8.5：isRunning 保护——收起按钮的并行归零动画（rowScrollX 与 expandProgress
+            // 同 400ms 归零）进行中时，本 LaunchedEffect 会在 p 跨过 0.5 时（约 200ms 处）
+            // 提前触发；若此时 snapTo(0f) 会打断该动画，图片行中途突跳到偏移 0。
+            // 动画在跑则跳过（动画终点即 0，自然归位）；仅在无动画（外部强制收起等场景）
+            // 时直接 snap 兜底。
+            if (!rowScrollX.isRunning) {
+                rowScrollX.snapTo(0f)
+            }
         }
     }
 
@@ -1821,11 +1828,32 @@ fun SwipeableImageStack(
                             .padding(horizontal = 5.dp, vertical = 2.dp)
                             .clickable {
                                 scope.launch {
-                                    // V7.6：行滚动 spring 归零后再收起（与自绘滚动配套，
-                                    // 原 expandedScrollState.animateScrollTo(0) 已随 horizontalScroll 移除）
+                                    // V8.5：任意滚动位置直接收起（单段连续动画）
+                                    // 旧逻辑（两段式）：rowScrollX.animateTo(0f, ROW_SCROLL_SPRING)
+                                    //   先把图片行回弹到初始位置（第一张贴视口左缘），播放完才
+                                    //   setExpanded(false) 收拢 —— 用户在任意位置收起会看到
+                                    //   「先回弹 → 再收起」两段跳变。
+                                    // 新逻辑（并行归零）：行滚动偏移与展开进度用同一条 400ms
+                                    //   贝塞尔曲线（TRANSITION_400_SPEC）同步归零 —— 图片行
+                                    //   从当前滚动位置直接收拢到堆叠态，全程一段动画。
+                                    // ① 先停掉可能还在跑的 fling / 越界回弹（挂起函数，需协程内调用）
+                                    rowScrollX.stop()
                                     rawRowScroll.floatValue = 0f
-                                    rowScrollX.animateTo(0f, ROW_SCROLL_SPRING)
+                                    // ② 归零动画挂组件级 scope（兄弟协程）：收起动画期间若被
+                                    //    行手势（拖拽/回弹）打断，CancellationException 只结束
+                                    //    兄弟协程，不会传播取消 setExpanded 的收起动画
+                                    scope.launch { rowScrollX.animateTo(0f, TRANSITION_400_SPEC) }
+                                    // ③ 收起动画（expandProgress 1→0，400ms 贝塞尔）
                                     setExpanded(false)
+                                    // ④ 兜底归零：仅在收起动画真正完成（p≈0）时执行——
+                                    //    防快速双击收起时第二次 setExpanded 立即 return（动画
+                                    //    进行中）后误 snap 中断归零动画；正常路径 ② 与 ③ 同
+                                    //    spec 同时长几乎同时结束（残余差值≈0 无感）；异常路径
+                                    //    （② 被手势打断停在非零）强制归位，避免堆叠态带残余偏移
+                                    if (expandProgress.value < 0.01f) {
+                                        rowScrollX.stop()
+                                        rowScrollX.snapTo(0f)
+                                    }
                                     onExpandStateChange?.invoke(false)
                                 }
                             },
