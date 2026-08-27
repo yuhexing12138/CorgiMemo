@@ -54,11 +54,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -87,6 +84,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import kotlin.math.max
@@ -1239,15 +1237,10 @@ fun SwipeableImageStack(
                 .onSizeChanged { viewportWidthPx.floatValue = it.width.toFloat() }
                 // 视口自身尺寸固定：fillMaxWidth 绑定 matchParentSize 父级宽度≈Stage 宽度
                 // （保持 onSizeChanged 报告的视口像素宽准确，用于展开态裁剪线和滚动区间）
+                // V8.2 回滚：移除 wrapContentWidth/Height（unbounded=true），
+                // 它会覆盖 fillMaxWidth，视口 layoutWidth 跟随子项收缩→堆叠图整体右偏。
+                // 多图 requiredSize 被 coerce 的问题改由行 Box 自定义 layout 解决。
                 .fillMaxWidth()
-                // V8.1 修复：多图（cardRowWidthDp > Stage 宽度）时行 Box requiredSize
-                // 被视口 maxW 约束 coerce 压缩，导致 OneSharedCard 布局失配整行空白。
-                // wrapContentWidth(unbounded=true) 把传给子项的 maxW 改为 Infinity，
-                // minW 保持 = fillMaxWidth 固定的父宽，从而 requiredSize 不被压缩；
-                // 视口自身尺寸仍由 fillMaxWidth 决定，不影响裁剪/手势计算。
-                .wrapContentWidth(unbounded = true)
-                // 高度同理防御，避免未来出现多卡堆叠高度溢出时子项被压缩。
-                .wrapContentHeight(unbounded = true)
                 // V8.0：padding 随 derivedIsExpanded 渐入，堆叠态不加内缩
                 .padding(end = if (derivedIsExpanded) viewportEndInset else 0.dp)
                 .graphicsLayer {
@@ -1333,11 +1326,33 @@ fun SwipeableImageStack(
                     .offset(y = topCardAnchorY.dp)
                     // 阴影余量左移 + 堆叠等效 X 偏移（unifiedStackXOffset 随 p 插值）
                     .offset(x = (-ExpandedRowShadowSlack.value + unifiedStackXOffset).dp)
-                    // requiredSize：整行宽 + 双侧阴影余量（V7.9 布局空间预借，免疫阴影裁剪）
-                    .requiredSize(
-                        width = cardRowWidthDp + ExpandedRowShadowSlack * 2,
-                        height = cardHeight
-                    )
+                    // V8.2：自定义 layout 强制固定尺寸
+                    // - 之前用 requiredSize：多图（cardCount>4）时 cardRowWidthDp > 视口 maxW，
+                    //   被 Compose 测量源码 coerceIn(0, maxW) 压缩到视口宽，
+                    //   OneSharedCard 布局链失配→整行空白。
+                    // - 现在直接 layout：忽略 constraints.maxWidth，强制返回请求尺寸，
+                    //   从根源绕开 coerce 压缩，同时视口 fillMaxWidth 保持不变→堆叠图不偏移。
+                    .layout { measurable, constraints ->
+                        // 子项测量：传入 copy 的 constraints，maxWidth = 请求宽（绕开 coerce）
+                        val requestedRowWidthPx =
+                            with(density) { (cardRowWidthDp + ExpandedRowShadowSlack * 2).roundToPx() }
+                        val requestedHeightPx = with(density) { cardHeight.roundToPx() }
+                        val placeable = measurable.measure(
+                            constraints.copy(
+                                minWidth = requestedRowWidthPx,
+                                maxWidth = requestedRowWidthPx,
+                                minHeight = requestedHeightPx,
+                                maxHeight = requestedHeightPx
+                            )
+                        )
+                        // 强制 layout 尺寸 = 请求尺寸，完全忽略父级约束
+                        layout(
+                            width = requestedRowWidthPx,
+                            height = requestedHeightPx
+                        ) {
+                            placeable.place(0, 0)
+                        }
+                    }
                     .graphicsLayer {
                         this.clip = false
                         // 阴影余量补偿（抵消 x=-ExpandedRowShadowSlack 左移）+ 行滚动平移
