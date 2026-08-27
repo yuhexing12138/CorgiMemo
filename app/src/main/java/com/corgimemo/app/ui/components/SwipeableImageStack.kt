@@ -34,6 +34,7 @@ import android.util.Log
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -227,27 +228,33 @@ private fun lerp(a: Dp, b: Dp, p: Float): Dp =
     (a.value + (b.value - a.value) * p.coerceIn(0f, 1f)).dp
 
 /**
- * 翻牌过渡插值：在两个 [CardTarget] 之间按进度 p 全属性线性插值（V8.6）
+ * 翻牌/重排过渡插值：在两个 [CardTarget] 之间按进度 p 全属性线性插值（V8.6）
  *
  * 用于顶卡翻牌到队尾的过渡动画：起点 = 松手位置快照，终点 = 队尾正常 target。
  * 对齐原型 framer-motion 的 animate 全属性 spring 过渡（x/y/rotate/scale 同步插值）。
+ *
+ * V8.7c：p **不做 [0,1] 钳制**（允许线性外插）——翻牌 spring 以松手速度为初速度
+ * （对齐原型 framer-motion 速度继承）时，p 会超过 1 形成过冲回摆段，钳制会把
+ * 过冲直接抹掉（用户观察不到过冲的渲染层根因之一）。重排动画为临界阻尼无过冲，
+ * p 恒 ≤1，不受影响。
  *
  * zIndex 不插值（直接取终点 b）：过渡过程置顶由 zIndexAnim 保障（渲染处叠加），
  * 到达终点后 zIndexAnim 归零，自然切换到队尾层级。
  *
  * @param a 起点状态（翻牌瞬间的松手位置快照）
  * @param b 终点状态（队尾正常 target）
- * @param p 插值进度 [0,1]
+ * @param p 插值进度（翻牌可为 >1 的过冲值；重排恒在 [0,1]）
  * @return 插值后的 CardTarget
  */
 private fun lerpCardTarget(a: CardTarget, b: CardTarget, p: Float): CardTarget {
-    val t = p.coerceIn(0f, 1f)
+    val t = p
     return CardTarget(
-        x = lerp(a.x, b.x, t),
-        y = lerp(a.y, b.y, t),
+        // x/y/shadow 内联插值（不用共用 lerp——其 coerceIn 会截断 p>1 的过冲段）
+        x = (a.x.value + (b.x.value - a.x.value) * t).dp,
+        y = (a.y.value + (b.y.value - a.y.value) * t).dp,
         rotationZ = a.rotationZ + (b.rotationZ - a.rotationZ) * t,
         scale = a.scale + (b.scale - a.scale) * t,
-        shadowElevation = lerp(a.shadowElevation, b.shadowElevation, t),
+        shadowElevation = (a.shadowElevation.value + (b.shadowElevation.value - a.shadowElevation.value) * t).dp,
         zIndex = b.zIndex,
     )
 }
@@ -920,6 +927,22 @@ fun SwipeableImageStack(
         // - flipProgress：0→1 过渡进度，由翻牌协程 animateTo(1f, FLIP_SPRING) 驱动
         val flipFromSnapshot = remember { mutableStateOf<CardTarget?>(null) }
         val flipProgress = remember { Animatable(1f) }
+        // ============ V8.7 重排联动动画（对齐原型：翻牌时整组下层卡片 spring 顶进）============
+        // 原型 preview_stack.html 翻牌（setCards 重排）后，framer-motion 为重排的所有卡片
+        // 自动做 layout 动画：原第 2 张 spring 弹到顶层、第 3 张弹到第 2 层……整组联动顶进
+        // （transition spring stiffness=300 damping=30）。
+        // 旧实现：order 重排后下层卡片 target 直接换新值 → 瞬间跳位无过渡
+        // （用户反馈「图片在底层应该有 spring 动画，项目中没有」的根因）。
+        // 机制：displayIndex 变化时快照旧 target，从旧堆叠位置 spring 插值到新 target。
+        // - reorderFromSnapshot：重排前的旧 target 快照，非空 + progress<1 表示动画进行中
+        // - reorderProgress：0→1 插值进度，FLIP_SPRING 驱动（与原型同一 spring）
+        // - lastSeenTarget / lastDisplayIndex：上一轮 effect 记录的稳定值（动画起点来源）
+        val reorderFromSnapshot = remember { mutableStateOf<CardTarget?>(null) }
+        // 普通状态而非 Animatable：进度需在组合期同步归零（Animatable.snapTo 是挂起函数
+        // 不能在组合期调用），动画由协程内 animate{} 逐帧回写驱动
+        val reorderProgress = remember { mutableStateOf(1f) }
+        var lastStableTarget by remember { mutableStateOf<CardTarget?>(null) }
+        var lastStableIndex by remember { mutableStateOf<Int?>(null) }
         // 是否顶卡（声明需在下方 pressScaleState 之前，避免前向引用编译错误）
         val isTopCard = displayIndex == 0
         // ============ V8.6 拖拽轻微放大（对齐原型 whileDrag: { scale: 1.05 }）============
@@ -944,6 +967,42 @@ fun SwipeableImageStack(
                 zIndexAnim.snapTo(0f)
             }
         }
+        // ========================================
+        // V8.7b 重排联动动画（组合期同步快照版，修复首帧瞬跳抖动）：
+        // 旧版（LaunchedEffect 延迟启动）时序缺陷——重排后首帧以新 target 渲染（瞬跳到
+        // 新位置），下一帧 effect 才快照+归零（跳回旧位置），第三帧起才动画 → 观感「抖动」。
+        // 修复：displayIndex 变化的那次组合内**同步**快照旧 target + progress 归零，
+        // 首帧渲染即插值起点（动画视觉从旧位置无缝开始）。
+        // 组合期写 state 会触发一次额外重组，但赋值幂等（第二次 lastStableIndex 已相等）→ 收敛。
+        // 翻牌卡（flipFromSnapshot 非空）由 flip 快照机制接管，跳过本动画。
+        // ========================================
+        if (lastStableIndex != displayIndex) {
+            val from = lastStableTarget
+            if (lastStableIndex != null && from != null && flipFromSnapshot.value == null) {
+                reorderFromSnapshot.value = from
+                reorderProgress.value = 0f // 组合期同步归零（普通 state 赋值），首帧从起点渲染
+            }
+            lastStableIndex = displayIndex
+        }
+        lastStableTarget = target
+        // 动画驱动（协程）：快照就绪后用 animate{} 逐帧回写进度；finally 清快照防取消时卡片冻结在中间
+        LaunchedEffect(reorderFromSnapshot.value) {
+            if (reorderFromSnapshot.value != null) {
+                try {
+                    // REORDER_SPRING（临界阻尼零过冲）：下层卡片平稳顶进，
+                    // Q 弹过冲仅保留给翻牌卡的 FLIP_SPRING（大位移才可见）
+                    animate(
+                        initialValue = 0f,
+                        targetValue = 1f,
+                        animationSpec = REORDER_SPRING,
+                    ) { value, _ ->
+                        reorderProgress.value = value
+                    }
+                } finally {
+                    reorderFromSnapshot.value = null
+                }
+            }
+        }
         // 拖拽偏移：堆叠态 displayIndex==0 顶卡叠加 dragOffset；其它卡或非堆叠态恒 0
         // V7.0 单位修复：dragOffsetX.value 是「像素值」（detectHorizontalDragGestures 的
         // dragAmount 累计 px），旧代码 .dp 直接把 px 数值当 dp，导致渲染平移量被放大
@@ -952,11 +1011,20 @@ fun SwipeableImageStack(
         val dragX = if (displayIndex == 0) with(density) { dragOffsetX.value.toDp() } else 0.dp
         val dragY = if (displayIndex == 0) with(density) { dragOffsetY.value.toDp() } else 0.dp
 
-        // V8.6 翻牌过渡中的有效 target：从「松手位置快照」向「队尾正常 target」全属性插值。
-        // 快照非空且进度 <1 时处于过渡中（对齐原型 framer-motion 翻牌的 animate 全属性 spring）。
-        val effTarget = flipFromSnapshot.value?.let { snap ->
-            if (flipProgress.value < 1f) lerpCardTarget(snap, target, flipProgress.value) else target
-        } ?: target
+        // V8.6/V8.7 翻牌过渡 + 重排联动的有效 target（优先级从高到低）：
+        // ① 翻牌卡：从「松手位置快照」向「队尾 target」全属性 FLIP_SPRING 插值
+        // ② 重排联动：下层卡片从「旧堆叠位置快照」向「新 target」FLIP_SPRING 顶进
+        //    （对齐原型 framer-motion 重排 layout 动画：第 2 张弹到顶层、第 3 张弹到第 2 层…）
+        // ③ 稳定态：直接用 target
+        val effTarget = when {
+            // 快照非空即过渡中（不判 p<1：V8.7c 带初速度的 spring 过冲段 p>1，若判 <1 会
+            // 在过冲瞬间退出插值分支 → 过冲被抹掉）
+            flipFromSnapshot.value != null ->
+                lerpCardTarget(flipFromSnapshot.value!!, target, flipProgress.value)
+            reorderProgress.value < 1f && reorderFromSnapshot.value != null ->
+                lerpCardTarget(reorderFromSnapshot.value!!, target, reorderProgress.value)
+            else -> target
+        }
 
         // ========== 有无图判断 ==========
         val hasImage = when {
@@ -1070,11 +1138,15 @@ fun SwipeableImageStack(
                     when {
                         isTopCard && isInStackedMode -> {
                             Modifier.pointerInput(card.stableId, swipeDirection) {
+                                // V8.7c 松手速度跟踪（detectDragGestures 的 onDragEnd 不带速度参数，
+                                // 用 VelocityTracker 手动采集；pointerInput block 只执行一次，局部声明安全）
+                                val cardVelocityTracker = VelocityTracker()
                                 if (swipeDirection == SwipeDirection.Horizontal) {
                                     detectHorizontalDragGestures(
                                         onDragStart = {
                                             isPressed.value = true
                                             shouldReturnToCenter.value = false
+                                            cardVelocityTracker.resetTracking()
                                             scope.launch {
                                                 positionX.snapTo(0f)
                                                 positionY.snapTo(0f)
@@ -1087,6 +1159,10 @@ fun SwipeableImageStack(
                                             val distance = dx.absoluteValue
                                             // (V5.8 drag end 埋点已移除)
                                             if (distance > thresholdPx && order.size > 1) {
+                                                // V8.7c 松手速度（px/s）：传递给翻牌 spring 作初速度
+                                                // （对齐原型 framer-motion 速度继承，见下方 pVelocity 映射）
+                                                val flickVelocityX = cardVelocityTracker.calculateVelocity().x
+                                                val flickVelocityY = 0f
                                                 scope.launch {
                                                     onCardSwiped?.invoke(card.originalIndex)
                                                     // ========================================
@@ -1100,9 +1176,11 @@ fun SwipeableImageStack(
                                                     // ① 快照松手位置的全属性视觉状态（闭包内 target 是组合时的
                                                     //    顶卡 target；dragOffset 读最新值；pressScale 读 State 最新值
                                                     //    ——pointerInput block 不随重组重启，局部 val 会捕获旧值）
+                                                    val snapX = target.x + with(density) { dragOffsetX.value.toDp() } + positionX.value.dp
+                                                    val snapY = target.y + with(density) { dragOffsetY.value.toDp() } + positionY.value.dp
                                                     flipFromSnapshot.value = CardTarget(
-                                                        x = target.x + with(density) { dragOffsetX.value.toDp() } + positionX.value.dp,
-                                                        y = target.y + with(density) { dragOffsetY.value.toDp() } + positionY.value.dp,
+                                                        x = snapX,
+                                                        y = snapY,
                                                         rotationZ = target.rotationZ,
                                                         scale = target.scale * pressScaleState.value,
                                                         shadowElevation = target.shadowElevation,
@@ -1129,12 +1207,70 @@ fun SwipeableImageStack(
                                                     shouldReturnToCenter.value = false
                                                     isPressed.value = false
                                                     // ③ 位置插值与层级下沉并行：
-                                                    //    - flipProgress（FLIP_SPRING）：松手位置 → 队尾位置
-                                                    //    - zIndexAnim（ZINDEX_TWEEN 300ms easeOut）：顶卡层级 → 队尾层级，
-                                                    //      接近终点时卡片逐渐沉入堆叠底层，被上层卡正确遮挡
-                                                    val zJob = launch { zIndexAnim.animateTo(0f, ZINDEX_TWEEN) }
-                                                    flipProgress.animateTo(1f, FLIP_SPRING)
+                                                    //    - flipProgress（FLIP_SPRING）：松手位置 → 队尾位置（含过冲回摆）
+                                                    //    - zIndexAnim（FLIP_ZINDEX_TWEEN 450ms easeOut）：顶卡层级 → 队尾层级。
+                                                    //      V8.7b：450ms 覆盖 spring 过冲段（~360ms），过冲发生时层级未完全
+                                                    //      沉底、卡片半可见，Q 弹回摆可见（旧 300ms 在过冲前已遮挡完 → 无过冲感）
+                                                    // V8.7c 初速度映射（对齐原型 framer-motion 松手速度继承——过冲的真正来源）：
+                                                    // 原型翻牌卡片以松手速度为 spring 初速度 → 快速甩动产生明显过冲回摆。
+                                                    // 旧实现初速度恒 0：ζ=0.866 零初速过冲仅 exp(-ζπ/√(1-ζ²))≈0.4%
+                                                    // （~300px 位移只过冲 1px）完全不可见——这就是观察不到过冲的根因。
+                                                    // 映射：位置 P(p)=lerp(快照,队尾,p) → p 空间初速度 = (v·Δ)/|Δ|²
+                                                    //（Δ=队尾-快照，px；v=松手速度，px/s）
+                                                    val tailTarget = calcCardTarget(
+                                                        displayIndex = order.size - 1,
+                                                        cardCount = order.size,
+                                                        expandProgress = expandProgress.value,
+                                                        cardW = cardWidth,
+                                                        cardGap = cardGap,
+                                                        visibleDepth = visibleDepth,
+                                                        stackOffsetDp = yOffset,
+                                                        fanAngleDeg = -(visibleDepth - 1).toFloat() * 15f,
+                                                        scaleStep = 0.05f,
+                                                    )
+                                                    val dXpx = with(density) { (tailTarget.x - snapX).toPx() }
+                                                    val dYpx = with(density) { (tailTarget.y - snapY).toPx() }
+                                                    val lenSq = dXpx * dXpx + dYpx * dYpx
+                                                    val flipVelocity = if (lenSq > 1f) {
+                                                        (flickVelocityX * dXpx + flickVelocityY * dYpx) / lenSq
+                                                    } else 0f
+                                                    val zJob = launch { zIndexAnim.animateTo(0f, FLIP_ZINDEX_TWEEN) }
+                                                    // ============ V8.7c 调试埋点（验证过冲，验证后移除）============
+                                                    // 采样 flipProgress 全程值：起点/初速度/过冲峰值（p>1 的最大值）/终点
+                                                    var debugMaxP = 0f
+                                                    val debugStartMs = System.currentTimeMillis()
+                                                    Log.d(
+                                                        "FlipDebug",
+                                                        "START v=(${flickVelocityX.toInt()},${flickVelocityY.toInt()})px/s " +
+                                                            "flipVel=$flipVelocity/p/s Δ=(${dXpx.toInt()},${dYpx.toInt()})px " +
+                                                            "snap=(${snapX.value.toInt()},${snapY.value.toInt()})dp"
+                                                    )
+                                                    val debugSampler = launch {
+                                                        snapshotFlow { flipProgress.value }
+                                                            .collect { p ->
+                                                                if (p > debugMaxP) {
+                                                                    debugMaxP = p
+                                                                    if (p > 1f) {
+                                                                        Log.d(
+                                                                            "FlipDebug",
+                                                                            "OVERSHOOT p=${"%.4f".format(p)} " +
+                                                                                "excess=${((p - 1f) * hypot(dXpx, dYpx)).toInt()}px " +
+                                                                                "t=${System.currentTimeMillis() - debugStartMs}ms"
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                    }
+                                                    flipProgress.animateTo(1f, FLIP_SPRING, initialVelocity = flipVelocity)
                                                     zJob.join()
+                                                    debugSampler.cancel()
+                                                    Log.d(
+                                                        "FlipDebug",
+                                                        "END maxP=${"%.4f".format(debugMaxP)} " +
+                                                            "overshootPx=${((debugMaxP - 1f).coerceAtLeast(0f) * hypot(dXpx, dYpx)).toInt()}px " +
+                                                            "duration=${System.currentTimeMillis() - debugStartMs}ms"
+                                                    )
+                                                    // ============ 调试埋点结束 ============
                                                     // 过渡结束：清快照（zIndexAnim 已自然归零；snapTo 兜底防异常中断残留）
                                                     zIndexAnim.snapTo(0f)
                                                     flipFromSnapshot.value = null
@@ -1152,6 +1288,7 @@ fun SwipeableImageStack(
                                             }
                                         }
                                     ) { change, dragAmount ->
+                                        cardVelocityTracker.addPosition(change.uptimeMillis, change.position)
                                         val currentOffset = dragOffsetX.value.absoluteValue
                                         val t = (currentOffset / maxElasticDistancePx).coerceIn(0f, 1f)
                                         val resistance = 1f - 0.3f * t.pow(1.5f)
@@ -1166,6 +1303,7 @@ fun SwipeableImageStack(
                                         onDragStart = {
                                             isPressed.value = true
                                             shouldReturnToCenter.value = false
+                                            cardVelocityTracker.resetTracking()
                                             scope.launch {
                                                 positionX.snapTo(0f)
                                                 positionY.snapTo(0f)
@@ -1177,6 +1315,11 @@ fun SwipeableImageStack(
                                             val dy = dragOffsetY.value
                                             val distance = hypot(dx, dy)
                                             if (distance > thresholdPx && order.size > 1) {
+                                                // V8.7c 松手速度（px/s）：传递给翻牌 spring 作初速度
+                                                // （对齐原型 framer-motion 速度继承，见下方 pVelocity 映射）
+                                                val flickVelocity = cardVelocityTracker.calculateVelocity()
+                                                val flickVelocityX = flickVelocity.x
+                                                val flickVelocityY = flickVelocity.y
                                                 scope.launch {
                                                     onCardSwiped?.invoke(card.originalIndex)
                                                     // ========================================
@@ -1190,9 +1333,11 @@ fun SwipeableImageStack(
                                                     // ① 快照松手位置的全属性视觉状态（闭包内 target 是组合时的
                                                     //    顶卡 target；dragOffset 读最新值；pressScale 读 State 最新值
                                                     //    ——pointerInput block 不随重组重启，局部 val 会捕获旧值）
+                                                    val snapX = target.x + with(density) { dragOffsetX.value.toDp() } + positionX.value.dp
+                                                    val snapY = target.y + with(density) { dragOffsetY.value.toDp() } + positionY.value.dp
                                                     flipFromSnapshot.value = CardTarget(
-                                                        x = target.x + with(density) { dragOffsetX.value.toDp() } + positionX.value.dp,
-                                                        y = target.y + with(density) { dragOffsetY.value.toDp() } + positionY.value.dp,
+                                                        x = snapX,
+                                                        y = snapY,
                                                         rotationZ = target.rotationZ,
                                                         scale = target.scale * pressScaleState.value,
                                                         shadowElevation = target.shadowElevation,
@@ -1219,12 +1364,70 @@ fun SwipeableImageStack(
                                                     shouldReturnToCenter.value = false
                                                     isPressed.value = false
                                                     // ③ 位置插值与层级下沉并行：
-                                                    //    - flipProgress（FLIP_SPRING）：松手位置 → 队尾位置
-                                                    //    - zIndexAnim（ZINDEX_TWEEN 300ms easeOut）：顶卡层级 → 队尾层级，
-                                                    //      接近终点时卡片逐渐沉入堆叠底层，被上层卡正确遮挡
-                                                    val zJob = launch { zIndexAnim.animateTo(0f, ZINDEX_TWEEN) }
-                                                    flipProgress.animateTo(1f, FLIP_SPRING)
+                                                    //    - flipProgress（FLIP_SPRING）：松手位置 → 队尾位置（含过冲回摆）
+                                                    //    - zIndexAnim（FLIP_ZINDEX_TWEEN 450ms easeOut）：顶卡层级 → 队尾层级。
+                                                    //      V8.7b：450ms 覆盖 spring 过冲段（~360ms），过冲发生时层级未完全
+                                                    //      沉底、卡片半可见，Q 弹回摆可见（旧 300ms 在过冲前已遮挡完 → 无过冲感）
+                                                    // V8.7c 初速度映射（对齐原型 framer-motion 松手速度继承——过冲的真正来源）：
+                                                    // 原型翻牌卡片以松手速度为 spring 初速度 → 快速甩动产生明显过冲回摆。
+                                                    // 旧实现初速度恒 0：ζ=0.866 零初速过冲仅 exp(-ζπ/√(1-ζ²))≈0.4%
+                                                    // （~300px 位移只过冲 1px）完全不可见——这就是观察不到过冲的根因。
+                                                    // 映射：位置 P(p)=lerp(快照,队尾,p) → p 空间初速度 = (v·Δ)/|Δ|²
+                                                    //（Δ=队尾-快照，px；v=松手速度，px/s）
+                                                    val tailTarget = calcCardTarget(
+                                                        displayIndex = order.size - 1,
+                                                        cardCount = order.size,
+                                                        expandProgress = expandProgress.value,
+                                                        cardW = cardWidth,
+                                                        cardGap = cardGap,
+                                                        visibleDepth = visibleDepth,
+                                                        stackOffsetDp = yOffset,
+                                                        fanAngleDeg = -(visibleDepth - 1).toFloat() * 15f,
+                                                        scaleStep = 0.05f,
+                                                    )
+                                                    val dXpx = with(density) { (tailTarget.x - snapX).toPx() }
+                                                    val dYpx = with(density) { (tailTarget.y - snapY).toPx() }
+                                                    val lenSq = dXpx * dXpx + dYpx * dYpx
+                                                    val flipVelocity = if (lenSq > 1f) {
+                                                        (flickVelocityX * dXpx + flickVelocityY * dYpx) / lenSq
+                                                    } else 0f
+                                                    val zJob = launch { zIndexAnim.animateTo(0f, FLIP_ZINDEX_TWEEN) }
+                                                    // ============ V8.7c 调试埋点（验证过冲，验证后移除）============
+                                                    // 采样 flipProgress 全程值：起点/初速度/过冲峰值（p>1 的最大值）/终点
+                                                    var debugMaxP = 0f
+                                                    val debugStartMs = System.currentTimeMillis()
+                                                    Log.d(
+                                                        "FlipDebug",
+                                                        "START v=(${flickVelocityX.toInt()},${flickVelocityY.toInt()})px/s " +
+                                                            "flipVel=$flipVelocity/p/s Δ=(${dXpx.toInt()},${dYpx.toInt()})px " +
+                                                            "snap=(${snapX.value.toInt()},${snapY.value.toInt()})dp"
+                                                    )
+                                                    val debugSampler = launch {
+                                                        snapshotFlow { flipProgress.value }
+                                                            .collect { p ->
+                                                                if (p > debugMaxP) {
+                                                                    debugMaxP = p
+                                                                    if (p > 1f) {
+                                                                        Log.d(
+                                                                            "FlipDebug",
+                                                                            "OVERSHOOT p=${"%.4f".format(p)} " +
+                                                                                "excess=${((p - 1f) * hypot(dXpx, dYpx)).toInt()}px " +
+                                                                                "t=${System.currentTimeMillis() - debugStartMs}ms"
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                    }
+                                                    flipProgress.animateTo(1f, FLIP_SPRING, initialVelocity = flipVelocity)
                                                     zJob.join()
+                                                    debugSampler.cancel()
+                                                    Log.d(
+                                                        "FlipDebug",
+                                                        "END maxP=${"%.4f".format(debugMaxP)} " +
+                                                            "overshootPx=${((debugMaxP - 1f).coerceAtLeast(0f) * hypot(dXpx, dYpx)).toInt()}px " +
+                                                            "duration=${System.currentTimeMillis() - debugStartMs}ms"
+                                                    )
+                                                    // ============ 调试埋点结束 ============
                                                     // 过渡结束：清快照（zIndexAnim 已自然归零；snapTo 兜底防异常中断残留）
                                                     zIndexAnim.snapTo(0f)
                                                     flipFromSnapshot.value = null
@@ -1242,6 +1445,7 @@ fun SwipeableImageStack(
                                             }
                                         }
                                     ) { change, dragAmount ->
+                                        cardVelocityTracker.addPosition(change.uptimeMillis, change.position)
                                         change.consume()
                                         val currentDistance = hypot(dragOffsetX.value, dragOffsetY.value)
                                         val t = (currentDistance / maxElasticDistancePx).coerceIn(0f, 1f)
@@ -2031,25 +2235,41 @@ private val TRANSITION_SPRING = spring<Float>(dampingRatio = 0.5f, stiffness = 3
 private val BOUNCE_SPRING = spring<Float>(dampingRatio = 0.577f, stiffness = 300f)
 
 /**
- * 翻牌过渡动画规格（V8.6：顶卡从松手位置 spring 滑入堆叠队尾）
+ * 翻牌过渡动画规格（V8.7d：顶卡从松手位置 spring 滑入堆叠队尾，Q 弹过冲）
  *
  * 对齐原型 preview_stack.html 翻牌行为：拖动 > 阈值松手 → framer-motion 立即重排数组，
- * 卡片从松手位置用 transition spring（stiffness 300, damping 30）平滑滑到队尾新位置，
- * **不飞出屏幕**。
+ * 卡片从松手位置平滑滑到队尾新位置，**不飞出屏幕**。
  *
- * - 转换：dampingRatio = 30 / (2 × sqrt(1 × 300)) = 30 / 34.64 ≈ 0.866
- * - 过冲仅 ~2.4%，滑动利落不拖沓（区别于回弹的 BOUNCE_SPRING 0.577 的 Q 弹）
+ * 弹簧来源（浏览器实测确认，2026-08-27）：原型可见过冲（+4.54px / 10.8%）来自
+ * `dragTransition: { bounceStiffness: 300, bounceDamping: 20 }`：
+ * - ζ = 20 / (2 × sqrt(1 × 300)) = 20 / 34.64 ≈ 0.577（与 BOUNCE_SPRING 同参）
+ * - 过冲比 exp(−πζ/√(1−ζ²)) ≈ 10.8%，单峰回摆 ~440ms 收敛
+ * - 旧值 0.866（transition spring 300/30）实测过冲仅 1-2px 不可见——那是错误对齐
+ *
+ * 本项目 ~457px 翻牌行程 × 10.8% ≈ 49px 过冲，肉眼明显可见。
+ * 松手速度继承（flipVelocity）叠加其上：甩得越快过冲越大（与原型一致）。
  */
-private val FLIP_SPRING = spring<Float>(dampingRatio = 0.866f, stiffness = 300f)
+private val FLIP_SPRING = spring<Float>(dampingRatio = 0.577f, stiffness = 300f)
 
 /**
- * zIndex / 3D 纵深过渡动画（与 Originkit 原型 `{ duration: 0.3, ease: "easeOut" }` 对齐）
+ * 重排联动动画规格（V8.7：下层卡片顶进，无过冲）
  *
- * - 原型在 zIndex 和 z 两个属性上都用 0.3s easeOut
- * - LinearOutSlowInEasing ≈ easeOut（开始快、结束慢）
- * - 用 tween 而非 spring：避免 spring 阻尼震荡影响 zIndex 的整数跳变
+ * 原型中下层卡片位移小（层间距仅 yOffset/scale 5%），任何弹簧的过冲都不可见
+ * ——实测观感即「下层平稳顶进、仅翻牌卡（大位移）Q 弹过冲」。为复刻该观感，
+ * 下层重排动画用临界阻尼（dampingRatio = 1，零过冲）+ 同 stiffness 300，
+ * 速度曲线节奏一致但绝不越过终点。
  */
-private val ZINDEX_TWEEN = tween<Float>(durationMillis = 300, easing = LinearOutSlowInEasing)
+private val REORDER_SPRING = spring<Float>(dampingRatio = 1f, stiffness = 300f)
+
+/**
+ * 翻牌卡 zIndex 下沉规格（V8.7d：600ms，覆盖完整过冲回摆段）
+ *
+ * FLIP_SPRING(0.577, 300) 主体运动 ~220ms 过冲峰值、~500ms 完全收敛（原型实测
+ * 440ms + 速度继承余量）。zIndex 下沉需慢于位置动画全程，否则卡片在过冲回摆
+ * 前已被上层卡遮挡，用户看不到 Q 弹（V8.7b 时 450ms 配 0.866 弹簧够用，
+ * V8.7d 弹簧过冲更大更慢，同步延长到 600ms）。
+ */
+private val FLIP_ZINDEX_TWEEN = tween<Float>(durationMillis = 600, easing = LinearOutSlowInEasing)
 
 /**
  * 无图占位文字（hasImage=false 时卡片内容）
