@@ -57,6 +57,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -1236,7 +1237,17 @@ fun SwipeableImageStack(
             modifier = Modifier
                 // onSizeChanged 放链首：报告 Layer1 全宽（fillMaxWidth 固定约束）
                 .onSizeChanged { viewportWidthPx.floatValue = it.width.toFloat() }
+                // 视口自身尺寸固定：fillMaxWidth 绑定 matchParentSize 父级宽度≈Stage 宽度
+                // （保持 onSizeChanged 报告的视口像素宽准确，用于展开态裁剪线和滚动区间）
                 .fillMaxWidth()
+                // V8.1 修复：多图（cardRowWidthDp > Stage 宽度）时行 Box requiredSize
+                // 被视口 maxW 约束 coerce 压缩，导致 OneSharedCard 布局失配整行空白。
+                // wrapContentWidth(unbounded=true) 把传给子项的 maxW 改为 Infinity，
+                // minW 保持 = fillMaxWidth 固定的父宽，从而 requiredSize 不被压缩；
+                // 视口自身尺寸仍由 fillMaxWidth 决定，不影响裁剪/手势计算。
+                .wrapContentWidth(unbounded = true)
+                // 高度同理防御，避免未来出现多卡堆叠高度溢出时子项被压缩。
+                .wrapContentHeight(unbounded = true)
                 // V8.0：padding 随 derivedIsExpanded 渐入，堆叠态不加内缩
                 .padding(end = if (derivedIsExpanded) viewportEndInset else 0.dp)
                 .graphicsLayer {
