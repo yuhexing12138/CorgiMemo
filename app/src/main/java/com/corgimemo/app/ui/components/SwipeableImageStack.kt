@@ -46,6 +46,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -2170,6 +2171,11 @@ fun SwipeableImageStack(
                     // 透明度动画：堆叠时显示，展开时淡出（与收起按钮互斥可见）
                     .graphicsLayer { alpha = expandBtnAlpha }
             ) {
+                // V8.17 与收起按钮统一：无波纹 interactionSource。
+                // 必须放在下面的 if (isBtnClickable) 分支外 remember —— 该条件
+                // （expandBtnAlpha > 0.01f && isInStackedMode && !isAnimating）随展开/收起
+                // 动画频繁翻转，分支内 remember 会因 slot 位置漂移被反复重建。
+                val expandBtnInteractionSource = remember { MutableInteractionSource() }
                 Row(
                     modifier = Modifier
                         .background(
@@ -2185,7 +2191,12 @@ fun SwipeableImageStack(
                         // 仅非透明状态才挂载 clickable，避免透明时抢点击事件
                         .then(
                             if (isBtnClickable) {
-                                Modifier.clickable {
+                                // V8.17 与收起按钮统一：去掉点击水波纹
+                                // （indication = null 必须同时显式传 interactionSource 才生效）
+                                Modifier.clickable(
+                                    interactionSource = expandBtnInteractionSource,
+                                    indication = null
+                                ) {
                                     // ===== V1.1 修复：展开前 dragOffset 动画归零（保险层，防堆叠态残留）=====
                                     // - Task4 已把 finalX/Y 加 !isExpanded 锁（展开态不叠加 dragOffset），
                                     //   但切换瞬间（isExpanded=true 生效前的最后一帧）若 dragOffset≠0，
@@ -2267,6 +2278,9 @@ fun SwipeableImageStack(
                     y = (topCardAnchorY + cardHeight.value / 2f - collapseBtnH.value / 2f).dp
                 )
         ) {
+            // V8.17 与展开按钮统一：无波纹 interactionSource。
+            // 放在 if 分支外 remember，避免条件翻转时 slot 位置漂移导致状态被重建。
+            val collapseBtnInteractionSource = remember { MutableInteractionSource() }
             // V8.10b 单卡不显示收起按钮：单卡恒为展开态（平铺图片行），
             // 无堆叠可收起，收起按钮无意义
             if (showInnerCollapseButton && !singleCardMode) {
@@ -2278,7 +2292,15 @@ fun SwipeableImageStack(
                             color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
                             shape = collapseBtnShape
                         )
-                        .clickable {
+                        // V8.17 去掉点击水波纹：半胶囊是窄长形状（W = H/2），ripple 会
+                        // 溢出圆角边界，视觉脏。
+                        // indication = null 仅关闭波纹绘制 —— 点击语义、点击热区、
+                        // 无障碍（Accessibility）语义均保持不变；
+                        // interactionSource 必须显式传入，否则 indication 参数不生效。
+                        .clickable(
+                            interactionSource = collapseBtnInteractionSource,
+                            indication = null
+                        ) {
                             scope.launch {
                                 // V8.5：任意滚动位置直接收起（单段连续动画）
                                 // 旧逻辑（两段式）：rowScrollX.animateTo(0f, ROW_SCROLL_SPRING)
