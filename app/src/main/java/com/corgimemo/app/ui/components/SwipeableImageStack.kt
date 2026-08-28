@@ -1575,33 +1575,39 @@ fun SwipeableImageStack(
             }  // V7.0：内容包装 Box 闭合（图片区域）
 
             // ============ V8.13b 展开态点击热区层（覆盖放大后的视觉区域）============
-            // 根因：卡片 layout 尺寸恒 120dp，V8.13 展开态视觉放大到 S≈150dp
-            // （scale = S/W ≈ 1.25），若点击仍挂内容包装 Box 内（fillMaxSize）
-            // 只覆盖 120dp → 每侧 ~15dp 视觉边缘为点击盲区。
-            // 修复：卡片 Box 级新增透明热区层，尺寸/位置随 expandProgress 插值
-            // 对齐视觉区域（S_eff = W + (S−W)·p，与 calcCardTarget 的 scale
-            // 插值同步），展开态每张卡全覆盖。
+            // 卡片 layout 恒 120dp，V8.13 展开态视觉放大到 S≈150dp，内容包装 Box 内
+            // 的点击只覆盖 120dp → 卡片 Box 级新增透明热区层覆盖放大后的视觉区域。
             // - 堆叠态不挂载：无放大，由上方内容包装 Box 内的顶卡点击 Box 负责
             // - 手势安全：detectTapGestures 只消费 tap 不消费 drag move，
-            //   不影响视口横向滚动；相邻热区 150dp < 中心距 158dp，无重叠
-            // - 布局安全：热区超出卡片 Box bounds（每侧 15dp），Compose hit test
-            //   按节点自身 bounds 判定且整链 clip=false，超出部分仍可命中，
-            //   不引入新裁剪 RenderNode
+            //   不影响视口横向滚动
+            // - V8.14e：热区需「反缩放」布局（见块内注释），命中区才与视觉图片对齐
             if (isInExpandedMode && onCardClick != null) {
+                // ============ V8.14e 热区反缩放（修复命中区与视觉图片错位）============
+                // 根因（日志铁证：HotZone TAP idx=1 在视觉图片1区域内命中）：
+                // 热区是卡片 Box 的子节点，卡片 Box 的 graphicsLayer 带 scale = S/W ≈ 1.24，
+                // 热区按 effHotSize(149dp) 布局 → 实际命中区被复合放大成 149×1.24 ≈ 186dp：
+                // - 图片 i 视觉 [i×157, i×157+149]dp，热区 i 实际 [i×157−18, i×157+167]dp
+                // - 相邻热区越过 8dp 间隙互相侵入 ~18dp → 点图片1右缘命中图片2热区
+                // - 且热区 layout 超出卡片 Box bounds（offset −14.5 + 149 > 120），
+                //   越界部分命中测试不可靠 → 图片右缘出现"看得见点不中"的死区
+                // 修复：热区 layout 尺寸 = effHotSize / scale（≈120dp，完全在卡片 Box 内），
+                // 经父层 scale 放大后精确等于视觉边长 effHotSize —— 命中区与视觉图片逐 dp 对齐。
                 // 有效视觉边长：堆叠态 W → 展开态 S 线性插值
                 val effHotSize = cardWidth.value +
                     (expandedCardSizeDp - cardWidth.value) * expandProgress.value
-                // 视觉中心（卡片 Box 本地坐标）：内容包装 Box 左缘 + 半宽 / 垂直居中
-                // （transformOrigin 中心缩放，视觉中心与卡片 layout 中心一致）
+                val cardScale = effTarget.scale
+                val hotLayoutSize = effHotSize / cardScale
+                // 视觉中心（卡片本地未缩放坐标）：scale 的 pivot 即图片视觉中心
                 val visualCenterX = StackLeftCompensation.value * (1f - expandProgress.value) +
                     cardWidth.value / 2f
+                val visualCenterY = cardHeight.value / 2f
                 Box(
                     modifier = Modifier
                         .offset(
-                            x = (visualCenterX - effHotSize / 2f).dp,
-                            y = ((cardHeight.value - effHotSize) / 2f).dp
+                            x = (visualCenterX - hotLayoutSize / 2f).dp,
+                            y = (visualCenterY - hotLayoutSize / 2f).dp
                         )
-                        .size(effHotSize.dp)
+                        .size(hotLayoutSize.dp)
                         // V8.13b 热区圆角：与图片视觉圆角对齐（radiusPx 是相对卡宽的比例值，
                         // 放大后视觉圆角同比例膨胀），点击角落圆角外空白不再触发
                         .clip(RoundedCornerShape(radiusPx))
@@ -1866,6 +1872,11 @@ fun SwipeableImageStack(
         }
     }
 
+    // V8.14f 吞噬激活标志（作 pointerInput key）：p>0 即吞噬（展开/收起动画全程
+    // + 展开稳态），堆叠稳态（p=0）不吞噬（空白点击仍进详情页）。key 变化自动
+    // 重启手势 block，无需手动管理启停。
+    val swallowActive = expandProgress.value > 0f
+
     Box(
         modifier = modifier
             // V7.0 布局空间预借：Stage 相对父容器的水平偏移（layout 移动，非绘制平移）
@@ -1892,6 +1903,35 @@ fun SwipeableImageStack(
             )
             // (V5.8 onGloballyPositioned 埋点已移除)
             // (V8.3 调试埋点已移除)
+            // ============ V8.14f 空白点击吞噬层（挂 Stage 自身 modifier）============
+            // 需求：展开态图片行任何区域（图片间 gap、视口空白、Stage 上下空白、
+            // 圆角外角落）点击都不进灵感详情页 —— 只允许点图片进图片附件页。
+            // 根因（日志铁证：间隙点击只出 Stage 级日志、吞噬层无日志）：
+            //   吞噬层作为 Stage 子 Box 会被后声明的包装层子树「遮蔽」——
+            //   Compose 命中测试只沿最前命中链分发事件，包装层子树（layout 高度链
+            //   = cardHeight=120dp）覆盖的上半区域内，即使视口/行 Box 无任何 tap
+            //   消费者，事件也不会分发给兄弟吞噬层 → 间隙等区域点击继续冒泡进详情页。
+            //   （底部 y>120dp 区域不被包装层覆盖，子 Box 方案恰好能接到——这就是
+            //     日志里吞噬命中集中在 y≈457px 底缘的原因。）
+            // 修复：tap 吞噬直接挂 Stage 自身 modifier —— Stage 是全部内部节点的
+            //   祖先，其 pointerInput 恒在命中链末端；凡未被更深层（热区/收起按钮）
+            //   消费的 tap 在此统一吞噬，覆盖 Stage 全域（167dp × Stage 宽）。
+            // key = swallowActive（p>0f）：堆叠稳态不吞噬，展开/收起动画全程吞噬；
+            //   key 变化重启手势 block，时序安全。
+            // 手势安全：
+            // - 点图片/收起按钮：更深层先命中消费 → 本层 onTap 不触发 ✓
+            // - 长按空白：未提供 onLongPress 回调不消费长按 → 外层
+            //   combinedClickable 的长按面板保持可用 ✓
+            // - 横向滚动/列表垂直滚动：drag move 被更深手势消费 → 本层 tap
+            //   检测自动取消 ✓
+            // - 单卡模式（V8.10b 恒展开）自动吞噬 ✓
+            // （V8.14d 诊断日志已移除：TapSwallow/HotZone 验证通过，见 V8.14e/f 注释）
+            .pointerInput(swallowActive) {
+                if (!swallowActive) return@pointerInput
+                detectTapGestures(
+                    onTap = { }  // 空实现：仅消费事件，阻止 tap 冒泡进详情页
+                )
+            }
             .graphicsLayer { this.clip = false }
             .animateContentSize(
                 animationSpec = tween(
@@ -1919,52 +1959,9 @@ fun SwipeableImageStack(
         // V7.9 过渡期右缘裁剪：挂在包装层上的「预生效」裁剪（见 containerClipRightPx 声明处注释）。
         // 包装层左缘 = Stage offset + 本层 offset = stackStageOffsetX（恒定，与 expandProgress 无关），
         // 因此裁剪线（包装层本地 px）全程对应屏幕上同一条竖线 = 灵感条外层容器右缘。
-        // ============ V8.14c 展开态空白点击消费层（Stage 直属子项，最底层）============
-        // 需求：展开态图片行的任何区域（图片间 gap、视口空白、Stage 上下空白）
-        // 点击都不进入灵感详情页 —— 只允许点图片进图片附件页。
-        // 根因①（事件冒泡）：空白区域无任何子级手势消费 tap → 事件冒泡到外层
-        //   TimelineInspirationItem 的 combinedClickable(onClick) → 进入详情页。
-        // 根因②（V8.14c 覆盖不足，用户反馈「某些区域仍进详情页」的真正原因）：
-        //   吞噬层原先挂在包装层 content 内 matchParentSize —— 但包装层是
-        //   wrap-content 高度链（包装层←视口←行 Box），实际高度仅 cardHeight=120dp；
-        //   而 Stage 高 167dp（显式 .height），卡片视觉经 translationY(+24dp) 后
-        //   底缘在 ~144dp → Stage 底部 120~167dp（约 47dp 空白带）完全无吞噬层
-        //   覆盖 → 点击该带冒泡进详情页。
-        // 修复：吞噬层移到 Stage 直属子项（本位置，先于包装层声明 = 绘制底层），
-        //   matchParentSize 匹配 Stage 完整尺寸（167dp × Stage 宽），覆盖全部空白。
-        // 方案：底层透明层 detectTapGestures(onTap = {}) 吞噬 tap（空回调也会
-        //   消费事件），阻止冒泡。
-        // 挂载条件 expandProgress > 0f（V8.14b：全程覆盖）：
-        // - 展开动画从第 1 帧起挂载，动画期间（含 p<0.5 前半程）点空白同样
-        //   不进详情页，消除 400ms 挂载窗口
-        // - 堆叠稳态（p=0）不挂载，保持现状：堆叠图外空白点击进详情页
-        // - 收起动画（p 从 1 → 0）期间同样挂载，收起途中点空白不误进详情页
-        // 层级安全（先声明 = 底层，包装层及其内元素在上层先命中）：
-        // - 点图片：上层热区（V8.13b）先命中消费 → 进图片附件页 ✓
-        // - 点收起按钮：上层 clickable 先命中消费 ✓
-        // - 长按空白：detectTapGestures 未提供 onLongPress 回调不消费长按
-        //   → 外层 combinedClickable 的 onLongClick（长按面板）保持可用 ✓
-        // - 横向滚动：视口 drag 手势（更深节点）消费 move → 本层 tap 检测
-        //   因事件被消费自动取消，滚动不受影响 ✓
-        // - 单卡模式（V8.10b 恒展开）自动挂载 → 单图 item 空白点击同样不进详情页 ✓
-        // - matchParentSize 不参与 Stage 尺寸测量（Compose 规定）→ 不影响
-        //   V7.1 包装层 wrap-content 的宽度塌缩修复逻辑 ✓
-        // - matchParentSize 动态匹配 Stage「实际测量尺寸」（每帧跟随，含
-        //   animateContentSize 过渡帧）→ 未来 Stage 高度策略若放宽 §9.4.1
-        //   （改为随展开态变化 / wrap-content），吞噬层覆盖自动同步，无需改本层。
-        //   挂载条件（expandProgress > 0f）与 Stage 尺寸策略（.height 分支）
-        //   是两个独立机制，互不依赖 —— 不存在「需人工同步」的隐藏耦合
-        if (expandProgress.value > 0f) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { }  // 空实现：仅消费事件，不触发任何动作
-                        )
-                    }
-            )
-        }
+        // (V8.14f 吞噬层已上提至 Stage 自身 modifier —— 子 Box 方案会被包装层子树
+        //  遮蔽：命中测试只沿最前命中链分发，包装层（layout 高 120dp）覆盖的上半
+        //  区域间隙点击到不了兄弟吞噬层。详见 Stage modifier 上 pointerInput 注释)
         val viewportExtensionPx = with(density) { expandedViewportRightExtension.toPx() }
         Box(
             modifier = Modifier
