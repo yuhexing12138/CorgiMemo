@@ -1,7 +1,5 @@
 package com.corgimemo.app.ui.components
 
-import android.util.Log
-
 /**
  * 堆叠图组件：4 区 PINNED_PENDING / PENDING / PINNED_COMPLETED / COMPLETED 的图片/色块堆叠展示与展开。
  *
@@ -106,6 +104,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import kotlinx.coroutines.flow.takeWhile
 import coil3.size.Scale
+import coil3.size.Size
 // V8.4：fling 边界回弹——watcher stop 取消 animateDecay 时捕获取消异常用
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -1001,8 +1000,6 @@ fun SwipeableImageStack(
     // ==============================
     // 展开态独立尺寸（不绑定 stageBoxWidth）
     // ==============================
-    // ScrollArea 最大宽度（独立上限，保证 5 张图×120dp + 4×8dp = 632dp 有充足空间）
-    val EXPANDED_SCROLL_MAX_WIDTH_DP: Dp = 480.dp
     // 卡片横向行总宽度（V8.13 视觉行宽）：N × (S + G) − G
     // S = expandedCardSizeDp（展开态卡片视觉边长 ≈150dp）——卡片 layout 虽 120dp，
     // 但视觉放大后相邻间隙按 S 计，滚动范围（minScroll）与行 Box 强宽测量
@@ -1165,17 +1162,7 @@ fun SwipeableImageStack(
                 )
                 // 堆叠排序 + 顶卡翻牌过渡时临时上抬 zIndex（保证过渡过程始终覆盖其他卡片）
                 .zIndex(effTarget.zIndex + zIndexAnim.value)
-                // V8.3 调试埋点：卡片实际 layout 尺寸与根坐标（displayIndex 0/1 两个采样点）
-                .onGloballyPositioned {
-                    if (displayIndex <= 1) {
-                        Log.d(
-                            "STACK_V83",
-                            "[CARD#$displayIndex] size=${it.size} posInRoot=${it.positionInRoot()} " +
-                                "z=${target.zIndex} tx=${target.x.value} ty=${target.y.value} " +
-                                "scale=${target.scale} rot=${target.rotationZ}"
-                        )
-                    }
-                }
+                // (V8.3 调试埋点已移除)
                 // (V5.8 onGloballyPositioned 埋点已移除)
                 // V5.7 修复：在 V5.5.5 graphicsLayer clip=false 基础上，给 shadow 加 clip=false
                 // - 根因：
@@ -1362,42 +1349,9 @@ fun SwipeableImageStack(
                                                         (flickVelocityX * dXpx + flickVelocityY * dYpx) / lenSq
                                                     } else 0f
                                                     val zJob = launch { zIndexAnim.animateTo(0f, FLIP_ZINDEX_TWEEN) }
-                                                    // ============ V8.7c 调试埋点（验证过冲，验证后移除）============
-                                                    // 采样 flipProgress 全程值：起点/初速度/过冲峰值（p>1 的最大值）/终点
-                                                    var debugMaxP = 0f
-                                                    val debugStartMs = System.currentTimeMillis()
-                                                    Log.d(
-                                                        "FlipDebug",
-                                                        "START v=(${flickVelocityX.toInt()},${flickVelocityY.toInt()})px/s " +
-                                                            "flipVel=$flipVelocity/p/s Δ=(${dXpx.toInt()},${dYpx.toInt()})px " +
-                                                            "snap=(${snapX.value.toInt()},${snapY.value.toInt()})dp"
-                                                    )
-                                                    val debugSampler = launch {
-                                                        snapshotFlow { flipProgress.value }
-                                                            .collect { p ->
-                                                                if (p > debugMaxP) {
-                                                                    debugMaxP = p
-                                                                    if (p > 1f) {
-                                                                        Log.d(
-                                                                            "FlipDebug",
-                                                                            "OVERSHOOT p=${"%.4f".format(p)} " +
-                                                                                "excess=${((p - 1f) * hypot(dXpx, dYpx)).toInt()}px " +
-                                                                                "t=${System.currentTimeMillis() - debugStartMs}ms"
-                                                                        )
-                                                                    }
-                                                                }
-                                                            }
-                                                    }
+                                                    // (V8.7c FlipDebug 调试埋点已移除)
                                                     flipProgress.animateTo(1f, FLIP_SPRING, initialVelocity = flipVelocity)
                                                     zJob.join()
-                                                    debugSampler.cancel()
-                                                    Log.d(
-                                                        "FlipDebug",
-                                                        "END maxP=${"%.4f".format(debugMaxP)} " +
-                                                            "overshootPx=${((debugMaxP - 1f).coerceAtLeast(0f) * hypot(dXpx, dYpx)).toInt()}px " +
-                                                            "duration=${System.currentTimeMillis() - debugStartMs}ms"
-                                                    )
-                                                    // ============ 调试埋点结束 ============
                                                     // 过渡结束：清快照（zIndexAnim 已自然归零；snapTo 兜底防异常中断残留）
                                                     zIndexAnim.snapTo(0f)
                                                     flipFromSnapshot.value = null
@@ -1525,42 +1479,9 @@ fun SwipeableImageStack(
                                                         (flickVelocityX * dXpx + flickVelocityY * dYpx) / lenSq
                                                     } else 0f
                                                     val zJob = launch { zIndexAnim.animateTo(0f, FLIP_ZINDEX_TWEEN) }
-                                                    // ============ V8.7c 调试埋点（验证过冲，验证后移除）============
-                                                    // 采样 flipProgress 全程值：起点/初速度/过冲峰值（p>1 的最大值）/终点
-                                                    var debugMaxP = 0f
-                                                    val debugStartMs = System.currentTimeMillis()
-                                                    Log.d(
-                                                        "FlipDebug",
-                                                        "START v=(${flickVelocityX.toInt()},${flickVelocityY.toInt()})px/s " +
-                                                            "flipVel=$flipVelocity/p/s Δ=(${dXpx.toInt()},${dYpx.toInt()})px " +
-                                                            "snap=(${snapX.value.toInt()},${snapY.value.toInt()})dp"
-                                                    )
-                                                    val debugSampler = launch {
-                                                        snapshotFlow { flipProgress.value }
-                                                            .collect { p ->
-                                                                if (p > debugMaxP) {
-                                                                    debugMaxP = p
-                                                                    if (p > 1f) {
-                                                                        Log.d(
-                                                                            "FlipDebug",
-                                                                            "OVERSHOOT p=${"%.4f".format(p)} " +
-                                                                                "excess=${((p - 1f) * hypot(dXpx, dYpx)).toInt()}px " +
-                                                                                "t=${System.currentTimeMillis() - debugStartMs}ms"
-                                                                        )
-                                                                    }
-                                                                }
-                                                            }
-                                                    }
+                                                    // (V8.7c FlipDebug 调试埋点已移除)
                                                     flipProgress.animateTo(1f, FLIP_SPRING, initialVelocity = flipVelocity)
                                                     zJob.join()
-                                                    debugSampler.cancel()
-                                                    Log.d(
-                                                        "FlipDebug",
-                                                        "END maxP=${"%.4f".format(debugMaxP)} " +
-                                                            "overshootPx=${((debugMaxP - 1f).coerceAtLeast(0f) * hypot(dXpx, dYpx)).toInt()}px " +
-                                                            "duration=${System.currentTimeMillis() - debugStartMs}ms"
-                                                    )
-                                                    // ============ 调试埋点结束 ============
                                                     // 过渡结束：清快照（zIndexAnim 已自然归零；snapTo 兜底防异常中断残留）
                                                     zIndexAnim.snapTo(0f)
                                                     flipFromSnapshot.value = null
@@ -1610,11 +1531,16 @@ fun SwipeableImageStack(
                 else -> {
                     val imageUri = imageUris.getOrNull(card.originalIndex)
                     if (!imageUri.isNullOrBlank()) {
+                        // V8.13b 显式请求高一档分辨率：卡片 layout 120dp，但展开态
+                        // 视觉放大到 S≈150dp（scale 1.25），按默认约束（120dp）采样
+                        // 放大显示会略糊；显式按 S 请求（堆叠态缩小显示无碍）
+                        val requestSizePx = with(density) { expandedCardSizeDp.dp.roundToPx() }
                         SubcomposeAsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)
                                 .data(imageUri)
                                 .crossfade(true)
                                 .scale(Scale.FIT)
+                                .size(Size(requestSizePx, requestSizePx))
                                 .build(),
                             contentDescription = "图片 ${card.originalIndex + 1}",
                             contentScale = ContentScale.Crop,
@@ -1628,17 +1554,18 @@ fun SwipeableImageStack(
                 }
             }
 
-            // 点击区域挂载条件：
-            // - 堆叠态：仅顶卡（isTopCard）可点击进入图片附件页
-            // - 展开态（isInExpandedMode）：行内每张卡片都挂载点击，
-            //   各自回调传入 card.originalIndex → 点击任意一张照片都能进入对应的图片附件页
+            // 点击区域挂载条件（V8.13b 拆分）：
+            // - 本 Box（内容包装 Box 内，120dp）：堆叠态顶卡专属 —— 堆叠态无视觉放大，
+            //   120dp 热区与视觉区域完全重合
+            // - 展开态：由下方卡片 Box 级「热区层」接管（覆盖 V8.13 放大后的
+            //   ≈150dp 视觉区域，行内每张卡都有），本 Box 不挂载
             // 手势竞争说明：detectTapGestures 只消费 tap，不消费 drag move，
-            // 展开态视口 Box 的横向滚动手势（detectHorizontalDragGestures）不受影响
-            if ((isTopCard || isInExpandedMode) && onCardClick != null) {
+            // 视口 Box 的横向滚动手势（detectHorizontalDragGestures）不受影响
+            if (isTopCard && !isInExpandedMode && onCardClick != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(card.stableId, isInExpandedMode) {
+                        .pointerInput(card.stableId) {
                             detectTapGestures(
                                 onTap = { onCardClick(card.originalIndex) }
                             )
@@ -1646,6 +1573,45 @@ fun SwipeableImageStack(
                 )
             }
             }  // V7.0：内容包装 Box 闭合（图片区域）
+
+            // ============ V8.13b 展开态点击热区层（覆盖放大后的视觉区域）============
+            // 根因：卡片 layout 尺寸恒 120dp，V8.13 展开态视觉放大到 S≈150dp
+            // （scale = S/W ≈ 1.25），若点击仍挂内容包装 Box 内（fillMaxSize）
+            // 只覆盖 120dp → 每侧 ~15dp 视觉边缘为点击盲区。
+            // 修复：卡片 Box 级新增透明热区层，尺寸/位置随 expandProgress 插值
+            // 对齐视觉区域（S_eff = W + (S−W)·p，与 calcCardTarget 的 scale
+            // 插值同步），展开态每张卡全覆盖。
+            // - 堆叠态不挂载：无放大，由上方内容包装 Box 内的顶卡点击 Box 负责
+            // - 手势安全：detectTapGestures 只消费 tap 不消费 drag move，
+            //   不影响视口横向滚动；相邻热区 150dp < 中心距 158dp，无重叠
+            // - 布局安全：热区超出卡片 Box bounds（每侧 15dp），Compose hit test
+            //   按节点自身 bounds 判定且整链 clip=false，超出部分仍可命中，
+            //   不引入新裁剪 RenderNode
+            if (isInExpandedMode && onCardClick != null) {
+                // 有效视觉边长：堆叠态 W → 展开态 S 线性插值
+                val effHotSize = cardWidth.value +
+                    (expandedCardSizeDp - cardWidth.value) * expandProgress.value
+                // 视觉中心（卡片 Box 本地坐标）：内容包装 Box 左缘 + 半宽 / 垂直居中
+                // （transformOrigin 中心缩放，视觉中心与卡片 layout 中心一致）
+                val visualCenterX = StackLeftCompensation.value * (1f - expandProgress.value) +
+                    cardWidth.value / 2f
+                Box(
+                    modifier = Modifier
+                        .offset(
+                            x = (visualCenterX - effHotSize / 2f).dp,
+                            y = ((cardHeight.value - effHotSize) / 2f).dp
+                        )
+                        .size(effHotSize.dp)
+                        // V8.13b 热区圆角：与图片视觉圆角对齐（radiusPx 是相对卡宽的比例值，
+                        // 放大后视觉圆角同比例膨胀），点击角落圆角外空白不再触发
+                        .clip(RoundedCornerShape(radiusPx))
+                        .pointerInput(card.stableId) {
+                            detectTapGestures(
+                                onTap = { onCardClick(card.originalIndex) }
+                            )
+                        }
+                )
+            }
         }      // V7.0：外层卡片 Box（扩宽 bounds + graphicsLayer 平移）闭合
     }
 
@@ -1722,13 +1688,7 @@ fun SwipeableImageStack(
                 // 它会覆盖 fillMaxWidth，视口 layoutWidth 跟随子项收缩→堆叠图整体右偏。
                 // 多图 requiredSize 被 coerce 的问题改由行 Box 自定义 layout 解决。
                 .fillMaxWidth()
-                // V8.3 调试埋点：视口实际 layout 尺寸与根坐标（多图空白根因定位）
-                .onGloballyPositioned {
-                    Log.d(
-                        "STACK_V83",
-                        "[VIEWPORT] size=${it.size} posInRoot=${it.positionInRoot()}"
-                    )
-                }
+                // (V8.3 调试埋点已移除)
                 // V8.0：padding 随 derivedIsExpanded 渐入，堆叠态不加内缩
                 .padding(end = if (derivedIsExpanded) viewportEndInset else 0.dp)
                 .graphicsLayer {
@@ -1854,13 +1814,7 @@ fun SwipeableImageStack(
             //   偏移并入 graphicsLayer translation（纯绘制，不参与测量）。
             Box(
                 modifier = Modifier
-                    // V8.3b 调试埋点：合并 layout 节点外壳（= viewport placeable 报告尺寸，coerce 后）
-                    .onGloballyPositioned {
-                        Log.d(
-                            "STACK_V83",
-                            "[ROWBOX_OUTER] size=${it.size} posInRoot=${it.positionInRoot()}"
-                        )
-                    }
+                    // (V8.3b 调试埋点已移除)
                     // V8.3d 修复：隔离层+强宽层合并为单个 layout{}（关键）
                     // - 根因（两轮日志铁证 + compose.ui 源码排除法定位）：
                     //   相邻的两个 LayoutModifierNode（隔离层 coerce 上报 1445 / 强宽层 3894）
@@ -1895,14 +1849,7 @@ fun SwipeableImageStack(
                             placeable.place(0, 0)
                         }
                     }
-                    // V8.3b 调试埋点：layout{} 内侧（观察 graphicsLayer coordinator）——
-                    // 修复成功标志：pos 应与 OUTER 相同（无 -1224 偏移），size=3894
-                    .onGloballyPositioned {
-                        Log.d(
-                            "STACK_V83",
-                            "[ROWBOX_INNER] size=${it.size} posInRoot=${it.positionInRoot()}"
-                        )
-                    }
+                    // (V8.3b 调试埋点已移除)
                     .graphicsLayer {
                         this.clip = false
                         // V8.3：平移四合一（纯绘制，不参与测量）
@@ -1912,15 +1859,6 @@ fun SwipeableImageStack(
                         // ④ translationY = topCardAnchorYPx：原 offset(y=topCardAnchorY) 的视觉贡献
                         translationX = rowShadowSlackPx + rowScrollX.value + stackXOffsetPx
                         translationY = topCardAnchorYPx
-                    }
-                    // V8.3 调试埋点：行 Box 实际 layout 尺寸与根坐标（多图空白根因定位）
-                    .onGloballyPositioned {
-                        Log.d(
-                            "STACK_V83",
-                            "[ROWBOX] size=${it.size} posInRoot=${it.positionInRoot()} " +
-                                "rowScrollX=${rowScrollX.value} p=${expandProgress.value} " +
-                                "unifiedX=$unifiedStackXOffset"
-                        )
                     }
             ) {
                 SharedCardRow()
@@ -1953,13 +1891,7 @@ fun SwipeableImageStack(
                 }
             )
             // (V5.8 onGloballyPositioned 埋点已移除)
-            // V8.3 调试埋点：Stage 实际 layout 尺寸与根坐标（多图空白根因定位）
-            .onGloballyPositioned {
-                Log.d(
-                    "STACK_V83",
-                    "[STAGE] size=${it.size} posInRoot=${it.positionInRoot()}"
-                )
-            }
+            // (V8.3 调试埋点已移除)
             .graphicsLayer { this.clip = false }
             .animateContentSize(
                 animationSpec = tween(
@@ -1987,17 +1919,50 @@ fun SwipeableImageStack(
         // V7.9 过渡期右缘裁剪：挂在包装层上的「预生效」裁剪（见 containerClipRightPx 声明处注释）。
         // 包装层左缘 = Stage offset + 本层 offset = stackStageOffsetX（恒定，与 expandProgress 无关），
         // 因此裁剪线（包装层本地 px）全程对应屏幕上同一条竖线 = 灵感条外层容器右缘。
-        // V8.3 调试埋点：一次性输出所有布局关键参数（多图空白根因定位）
-        // 触发条件：cardCount / bbox / Stage 尺寸相关输入变化时重打
-        LaunchedEffect(cardCount, bboxWidth, bboxHeight, stageBoxWidthDp, stageBoxHeightDp) {
-            Log.d(
-                "STACK_V83",
-                "[PARAMS] cardCount=$cardCount rowW=${cardRowWidthDp.value}dp " +
-                    "stageW=${stageBoxWidthDp.value}dp stageH=${stageBoxHeightDp.value}dp " +
-                    "bboxW=${bboxWidth}dp bboxH=${bboxHeight}dp " +
-                    "J=${expandedRowShiftX} " +
-                    "unifiedX=${(expandedRowShiftX - StackLeftCompensation.value) * (1f - expandProgress.value)} " +
-                    "anchorY=$topCardAnchorY showBadge=$showCountBadge"
+        // ============ V8.14c 展开态空白点击消费层（Stage 直属子项，最底层）============
+        // 需求：展开态图片行的任何区域（图片间 gap、视口空白、Stage 上下空白）
+        // 点击都不进入灵感详情页 —— 只允许点图片进图片附件页。
+        // 根因①（事件冒泡）：空白区域无任何子级手势消费 tap → 事件冒泡到外层
+        //   TimelineInspirationItem 的 combinedClickable(onClick) → 进入详情页。
+        // 根因②（V8.14c 覆盖不足，用户反馈「某些区域仍进详情页」的真正原因）：
+        //   吞噬层原先挂在包装层 content 内 matchParentSize —— 但包装层是
+        //   wrap-content 高度链（包装层←视口←行 Box），实际高度仅 cardHeight=120dp；
+        //   而 Stage 高 167dp（显式 .height），卡片视觉经 translationY(+24dp) 后
+        //   底缘在 ~144dp → Stage 底部 120~167dp（约 47dp 空白带）完全无吞噬层
+        //   覆盖 → 点击该带冒泡进详情页。
+        // 修复：吞噬层移到 Stage 直属子项（本位置，先于包装层声明 = 绘制底层），
+        //   matchParentSize 匹配 Stage 完整尺寸（167dp × Stage 宽），覆盖全部空白。
+        // 方案：底层透明层 detectTapGestures(onTap = {}) 吞噬 tap（空回调也会
+        //   消费事件），阻止冒泡。
+        // 挂载条件 expandProgress > 0f（V8.14b：全程覆盖）：
+        // - 展开动画从第 1 帧起挂载，动画期间（含 p<0.5 前半程）点空白同样
+        //   不进详情页，消除 400ms 挂载窗口
+        // - 堆叠稳态（p=0）不挂载，保持现状：堆叠图外空白点击进详情页
+        // - 收起动画（p 从 1 → 0）期间同样挂载，收起途中点空白不误进详情页
+        // 层级安全（先声明 = 底层，包装层及其内元素在上层先命中）：
+        // - 点图片：上层热区（V8.13b）先命中消费 → 进图片附件页 ✓
+        // - 点收起按钮：上层 clickable 先命中消费 ✓
+        // - 长按空白：detectTapGestures 未提供 onLongPress 回调不消费长按
+        //   → 外层 combinedClickable 的 onLongClick（长按面板）保持可用 ✓
+        // - 横向滚动：视口 drag 手势（更深节点）消费 move → 本层 tap 检测
+        //   因事件被消费自动取消，滚动不受影响 ✓
+        // - 单卡模式（V8.10b 恒展开）自动挂载 → 单图 item 空白点击同样不进详情页 ✓
+        // - matchParentSize 不参与 Stage 尺寸测量（Compose 规定）→ 不影响
+        //   V7.1 包装层 wrap-content 的宽度塌缩修复逻辑 ✓
+        // - matchParentSize 动态匹配 Stage「实际测量尺寸」（每帧跟随，含
+        //   animateContentSize 过渡帧）→ 未来 Stage 高度策略若放宽 §9.4.1
+        //   （改为随展开态变化 / wrap-content），吞噬层覆盖自动同步，无需改本层。
+        //   挂载条件（expandProgress > 0f）与 Stage 尺寸策略（.height 分支）
+        //   是两个独立机制，互不依赖 —— 不存在「需人工同步」的隐藏耦合
+        if (expandProgress.value > 0f) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { }  // 空实现：仅消费事件，不触发任何动作
+                        )
+                    }
             )
         }
         val viewportExtensionPx = with(density) { expandedViewportRightExtension.toPx() }
@@ -2016,13 +1981,7 @@ fun SwipeableImageStack(
                     containerClipRightPx.floatValue =
                         root.size.width - viewportExtensionPx - coords.positionInRoot().x
                 }
-                // V8.3 调试埋点：包装层实际 layout 尺寸与根坐标
-                .onGloballyPositioned {
-                    Log.d(
-                        "STACK_V83",
-                        "[WRAP] size=${it.size} posInRoot=${it.positionInRoot()}"
-                    )
-                }
+                // (V8.3 调试埋点已移除)
                 // 仅右缘裁剪（左/上/下不裁剪，保留顶卡左缘阴影溢出渲染）；
                 // p > 0 生效：展开/收起动画全程 + 展开稳态持续裁剪，堆叠稳态（p=0）不裁剪
                 .drawWithContent drawWithContent@ {
@@ -2051,6 +2010,7 @@ fun SwipeableImageStack(
                     }
                 )
         ) {
+                // (V8.14c 吞噬层已上移至 Stage 直属子项，见包装层声明前的注释块)
                 // 展开按钮：堆叠态(derivedIsExpanded=false) 显示，展开态消失
                 val expandBtnAlpha by animateFloatAsState(
                     targetValue = if (derivedIsExpanded) 0f else 1f,
