@@ -882,7 +882,9 @@ fun SwipeableImageStack(
     // 两者均需动态扩宽外层 Box 右边缘，保证完全不被裁剪、不与图片重叠
     // 左边缘保持不动（堆叠区左上角始终对齐外层 Box 左上角）
     // 展开态下不显示角标（设计文档 §3.4 / R6 需求）
-    val showCountBadge = countBadge && cardCount > visibleDepth && !isExpanded
+    // V8.15: 角标显示条件从 "cardCount > visibleDepth" 放宽到 "cardCount > 1"
+    // 多张图片（2~4 张）也显示计数角标，让用户感知"当前位置/总数"
+    val showCountBadge = countBadge && cardCount > 1 && !isExpanded
     // 展开态下展开按钮隐藏（设计文档 §3.4，由收起按钮取代）
     val showExpand = showExpandButton && !singleCardMode && !isExpanded  // ≥ 2 张且非展开态时显示
     // 角标估算宽度：最多 5 字符 "100/100" 10sp ≈ 35dp + 水平 padding 8dp ≈ 43dp
@@ -2026,13 +2028,14 @@ fun SwipeableImageStack(
         // 样式与灵感首页标签保持一致（主色文字 + 浅橙底 + 10dp 圆角）：
         // - 与 TimelineInspirationItem tags Row 对齐，视觉体系统一
         //
-        // 当启用 countBadge 且图片张数超过可见深度时，在堆叠区右下角显示
+        // 当启用 countBadge 且图片张数 > 1 时（V8.15 放宽至 2 张及以上），在堆叠区右下角显示
         // "当前位置/总数" 格式的角标（如 "1/6"），让用户直观了解当前浏览进度。
         // 角标放在外层的 Box 内，与堆叠区捆绑为一个整体，确保未来移动堆叠区时角标同步移动。
         //
-        // 显示条件：
+        // 显示条件（V8.15 放宽）：
         // - countBadge = true 启用
-        // - cardCount > visibleDepth 才显示（≤ visibleDepth 时角标无意义，自动隐藏）
+        // - cardCount > 1 才显示（2 张及以上；单张无计数意义）
+        // - 展开态自动隐藏（避免与 CollapseBtn 视觉冲突）
         //
         // 定位方式（用户方案：堆叠图左对齐，角标右对齐）：
         // - 角标左边缘 = 顶卡右边缘（0dp 间距，用户要求紧贴）
