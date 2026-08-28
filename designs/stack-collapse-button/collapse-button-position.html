@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>堆叠图展开态「收起」按钮位置原型</title>
+    <style>
+        :root {
+            /* ============ 布局常量（对齐 SwipeableImageStack.kt） ============ */
+            --phone-w: 390px;        /* 手机视口宽 */
+            --content-pad: 18px;     /* 灵感卡左右内边距（LazyColumn contentPadding） */
+            --text-start: 70px;      /* 内容列左偏移 contentStartX（时间线列宽） */
+            --row-left: 88px;        /* 图片行视口左缘 = 18 + 70（stackStageOffsetX） */
+            --card-w: 120px;
+            --card-h: 120px;
+            --card-gap: 8px;
+            --card-top: 24px;        /* 卡片 layout 上缘 = topCardAnchorY（约 24dp） */
+            --row-h: 168px;          /* 容纳展开态视觉 9~159（150dp 高） */
+            --viewport-w: 284px;     /* = phone-w - content-pad - row-left */
+            --exp-card: 150px;       /* 展开态视觉边长 S = maxOf(bboxW, bboxH) ≈ 150 */
+            --exp-step: 158px;       /* 展开态中心步距 = S + G */
+
+            /* ============ 收起按钮（可调） ============ */
+            --fab-inset: 8px;        /* 距视口左缘内缩 */
+            --fab-size: 28px;        /* 圆形直径 / 胶囊高度 */
+            --fab-radius: 50%;
+            --fab-w: 28px;
+            --fab-h: 28px;           /* 按钮高度（半胶囊由 JS 单独赋值） */
+            --fab-left: 96px;        /* 按钮左缘（JS 按形状/朝向计算） */
+            --fab-bg: rgba(242, 243, 245, 0.55);
+            --fab-fg: #4F5660;
+            --fab-blur: 0px;
+            --fab-border: 0px solid transparent;
+            --icon-size: 16px;
+
+            /* ============ 主题 ============ */
+            --bg: #FFFBF5;
+            --panel: #FFFFFF;
+            --line: #EDE7DE;
+            --ink: #2E2A26;
+            --ink-2: #6B645C;
+            --ink-3: #9A928A;
+            --brand: #9967FF;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--bg);
+            color: var(--ink);
+        }
+        .app { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+
+        /* ============ 控制面板 ============ */
+        .panel {
+            background: var(--panel);
+            border-right: 1px solid var(--line);
+            padding: 24px 20px 48px;
+            overflow-y: auto;
+            max-height: 100vh;
+        }
+        .panel h1 { font-size: 16px; margin: 0 0 4px; color: var(--brand); }
+        .panel .subtitle { font-size: 12px; color: var(--ink-3); margin-bottom: 20px; line-height: 1.6; }
+        .panel section { margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px dashed var(--line); }
+        .panel section:last-child { border-bottom: none; }
+        .panel h2 {
+            font-size: 12px; margin: 0 0 10px; color: var(--ink-2);
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .panel label { display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 4px; }
+        .panel label .val {
+            color: var(--brand); font-weight: 600; float: right;
+            font-family: ui-monospace, Menlo, monospace;
+        }
+        .panel input[type="range"] { width: 100%; margin-bottom: 10px; accent-color: var(--brand); }
+        .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+        .chip {
+            padding: 5px 10px; border: 1px solid #DDD; background: #FFF; color: var(--ink-2);
+            font-size: 12px; border-radius: 6px; cursor: pointer; font-family: inherit;
+            transition: all 0.15s;
+        }
+        .chip:hover { border-color: var(--brand); color: var(--brand); }
+        .chip.active { background: #F3EFFF; border-color: var(--brand); color: var(--brand); font-weight: 600; }
+        .chip:disabled { opacity: 0.45; cursor: not-allowed; }
+        .chip:disabled:hover { border-color: #DDD; color: var(--ink-2); }
+        .switch { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); margin-bottom: 8px; }
+        .switch input { accent-color: var(--brand); }
+        .readout {
+            font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--brand);
+            background: #FBF8FF; border: 1px solid #EFE6FF; border-radius: 6px;
+            padding: 8px 10px; line-height: 1.7; white-space: pre-wrap;
+        }
+
+        /* ============ 预览舞台 ============ */
+        .stage { display: flex; align-items: flex-start; justify-content: center; padding: 40px 24px; }
+        .phone {
+            width: var(--phone-w); background: #FFFDF9; border: 1px solid var(--line);
+            border-radius: 18px; overflow: hidden; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+        }
+        .phone-bar {
+            height: 28px; display: flex; align-items: center; justify-content: center;
+            font-size: 11px; color: var(--ink-3); border-bottom: 1px solid var(--line);
+        }
+        /* 灵感条目：padding-top 必须为 0 —— 时间线节点中心 Y 固定 11dp 对齐标题行中心 */
+        .insp-card {
+            position: relative;
+            padding: 0 var(--content-pad) 20px;
+            margin-top: 18px;   /* LazyColumn item 间距（用 margin 避免影响内部绝对定位） */
+        }
+        .insp-title { font-size: 15px; font-weight: 600; line-height: 22px; margin: 0 0 6px; }
+
+        /* ============ 时间线（对齐 TimelineInspirationItem.kt） ============
+           dateColumnWidth 50 / dateToNodeGap 7 / nodeDiameter 6
+           nodeCenterX 60 / contentStartX 70 / nodeCenterY 11（对齐标题行中心）
+           ★ 绝对定位原点 = .insp-card 的 border box（屏幕 0），而源码坐标相对
+             item 内容区左缘（屏幕 18）—— 因此 left 必须 +18：
+             日期列 left 18、竖线中心 78 → left 77、节点中心 78 → left 75 */
+        .tl-date {
+            position: absolute; left: 18px; top: 0; width: 50px;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .tl-ym { font-size: 12px; color: #999999; line-height: 1.4; letter-spacing: 0.5px; }
+        .tl-day { font-size: 20px; font-weight: 500; line-height: 1.3; color: var(--ink); }
+        .tl-line { position: absolute; left: 77px; top: -18px; bottom: 0; width: 2px; background: #EEEEEE; }
+        .tl-node {
+            position: absolute; left: 75px; top: 8px; width: 6px; height: 6px;
+            border-radius: 50%; background: var(--brand);
+        }
+        .insp-meta { font-size: 11px; color: var(--ink-3); margin-bottom: 8px; }
+        .insp-body { font-size: 13px; line-height: 1.7; color: var(--ink-2); margin: 0 0 12px; }
+
+        /* 内容列：左偏移 = 时间线列宽 70px */
+        .content-col { padding-left: var(--text-start); }
+
+        /* ============ 图片行（外层 Box：offset(-18dp) 预借左滑空间） ============
+           对齐 SwipeableImageStack.kt 的布局：父级内容列起点 = 18(padding) + 70(text-start)
+           = 88dp，Box 自身 fillMaxWidth + offset(-18dp) → 左缘落在 70dp。
+           本原型把 row-box 平移回屏幕坐标系（左缘 = 0），
+           使内部 --row-left(88px) 直接等于屏幕 X，便于核对吸附位置。 */
+        .img-row-box {
+            position: relative;
+            left: calc(-1 * (var(--content-pad) + var(--text-start)));
+            width: var(--phone-w);
+            height: var(--row-h);
+        }
+        /* 视口：堆叠态 visible（扇形溢出可见），展开态 auto（横向滚动） */
+        .viewport {
+            position: absolute;
+            left: var(--row-left);
+            top: 0;
+            width: var(--viewport-w);
+            height: var(--row-h);
+            overflow: visible;
+        }
+        .viewport.scrolling { overflow-x: auto; overflow-y: hidden; }
+        .viewport::-webkit-scrollbar { height: 4px; }
+        .viewport::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.14); border-radius: 2px; }
+        .track { position: relative; height: var(--card-h); margin-top: var(--card-top); }
+
+        /* ============ 卡片 ============ */
+        .card {
+            position: absolute; left: 0; top: 0;
+            width: var(--card-w); height: var(--card-h);
+            border-radius: 6px; overflow: hidden;
+            will-change: transform;
+            transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1),
+                        box-shadow 400ms cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .card-face {
+            width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            color: #FFF; font-size: 30px; font-weight: 700;
+        }
+
+        /* ============ 计数角标 / 展开按钮（堆叠态） ============ */
+        .count-badge {
+            position: absolute; left: var(--row-left); top: var(--card-top);
+            margin-left: var(--card-w); margin-top: calc(var(--card-h) - 12px);
+            background: #FFF3E0; color: #E8730C; font-size: 10px; line-height: 12px;
+            border-radius: 10px; padding: 0 3px; white-space: nowrap;
+            transition: opacity 200ms ease;
+        }
+        .expand-btn {
+            position: absolute; left: var(--row-left); top: var(--card-top);
+            margin-left: calc(var(--card-w) + 28px); height: var(--card-h);
+            display: flex; align-items: center;
+            transition: opacity 200ms ease;
+        }
+        .pill {
+            display: inline-flex; align-items: center; gap: 1px;
+            background: rgba(242, 243, 245, 0.55); border-radius: 11px;
+            padding: 2px 5px; border: none; cursor: pointer;
+            color: #4F5660; font-size: 11px; font-weight: 500; font-family: inherit;
+            white-space: nowrap; line-height: 1.4;
+        }
+        .pill svg { flex-shrink: 0; }
+
+        /* ============ 收起按钮（浮层，吸附视口左缘 + 垂直居中） ============ */
+        .collapse-fab {
+            position: absolute;
+            left: var(--fab-left);
+            top: calc(var(--card-top) + var(--card-h) / 2);
+            transform: translateY(-50%);
+            width: var(--fab-w); height: var(--fab-h);
+            border-radius: var(--fab-radius);
+            background: var(--fab-bg);
+            border: var(--fab-border);
+            backdrop-filter: blur(var(--fab-blur));
+            -webkit-backdrop-filter: blur(var(--fab-blur));
+            color: var(--fab-fg);
+            display: flex; align-items: center; justify-content: center;
+            padding: 0; cursor: pointer;
+            z-index: 40;
+            transition: opacity 200ms ease, background 150ms ease, box-shadow 150ms ease;
+        }
+        .collapse-fab:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
+        .collapse-fab svg { width: var(--icon-size); height: var(--icon-size); }
+        .hidden { opacity: 0; pointer-events: none; }
+
+        /* ============ 旧位置对照（Stage 右上角） ============ */
+        .collapse-old {
+            position: absolute; right: 8px; top: var(--card-top);
+            display: none; z-index: 30;
+        }
+        .collapse-old.on { display: flex; }
+
+        /* ============ 参考线 ============ */
+        .guides { position: absolute; inset: 0; pointer-events: none; display: none; z-index: 50; }
+        .guides.on { display: block; }
+        .guide-v {
+            position: absolute; top: 0; bottom: 0; width: 1px;
+            background: repeating-linear-gradient(to bottom, #9967FF 0 4px, transparent 4px 8px);
+        }
+        .guide-h {
+            position: absolute; left: 0; right: 0; height: 1px;
+            background: repeating-linear-gradient(to right, #2E7D32 0 4px, transparent 4px 8px);
+        }
+        .guide-tag {
+            position: absolute; font-size: 10px; font-family: ui-monospace, Menlo, monospace;
+            color: #FFF; background: #9967FF; padding: 1px 4px; border-radius: 3px; white-space: nowrap;
+        }
+
+        /* ============ 底部操作与提示 ============ */
+        .stage-side { width: 220px; margin-left: 32px; padding-top: 28px; }
+        .stage-side h3 { font-size: 13px; margin: 0 0 8px; color: var(--ink-2); }
+        .state-tag {
+            display: inline-block; padding: 3px 10px; border-radius: 12px;
+            font-size: 12px; font-weight: 600; margin-bottom: 12px;
+        }
+        .state-tag.stacked { background: #F3EFFF; color: #9967FF; }
+        .state-tag.expanded { background: #E8F5E9; color: #2E7D32; }
+        .toggle-btn {
+            width: 100%; padding: 9px 12px; margin-bottom: 10px;
+            border: 1px solid var(--brand); background: #FFF; color: var(--brand);
+            font-size: 13px; border-radius: 8px; cursor: pointer; font-family: inherit;
+        }
+        .toggle-btn:hover { background: #F3EFFF; }
+        .note { font-size: 12px; line-height: 1.7; color: var(--ink-3); }
+        .note b { color: var(--ink-2); }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <aside class="panel">
+            <h1>收起按钮位置原型</h1>
+            <div class="subtitle">
+                展开态「收起」按钮：浮层吸附图片行视口左缘 + 垂直居中，纯符号无文字。
+                参数实时可调，用于确认后迁移到 SwipeableImageStack.kt。
+            </div>
+
+            <section>
+                <h2>吸附位置（所有形状通用）</h2>
+                <div class="chip-row" id="chips-anchor">
+                    <button class="chip active" data-anchor="row">图片行左缘 88</button>
+                    <button class="chip" data-anchor="tlLine">时间线竖线左缘 77</button>
+                </div>
+                <div style="font-size:11px;color:var(--ink-3);line-height:1.6;margin-bottom:10px">
+                    数值为屏幕 dp。竖线档：按钮在竖线左侧、右缘与竖线相切（间隙 0，内缩无效）。
+                </div>
+                <label>距图片行左缘内缩 <span class="val" id="val-inset">8px</span></label>
+                <input type="range" min="0" max="24" step="1" value="8" id="rng-inset" />
+                <label>按钮尺寸 <span class="val" id="val-size">28px</span></label>
+                <input type="range" min="20" max="40" step="1" value="28" id="rng-size" />
+            </section>
+
+            <section>
+                <h2>形状</h2>
+                <div class="chip-row" id="chips-shape">
+                    <button class="chip active" data-shape="circle">圆形</button>
+                    <button class="chip" data-shape="pill">胶囊</button>
+                    <button class="chip" data-shape="halfPill">半胶囊</button>
+                </div>
+                <label>圆角 <span class="val" id="val-radius">50%</span></label>
+                <input type="range" min="0" max="24" step="1" value="14" id="rng-radius" />
+            </section>
+
+            <section id="sec-half">
+                <h2>半胶囊</h2>
+                <label>高度 <span class="val" id="val-half">48px</span></label>
+                <input type="range" min="32" max="88" step="2" value="48" id="rng-half" />
+                <div class="chip-row" id="chips-dir">
+                    <button class="chip active" data-dir="in">圆头朝内（覆盖图片行）</button>
+                    <button class="chip" data-dir="out">圆头朝外（贴边缘外侧）</button>
+                </div>
+                <div style="font-size:11px;color:var(--ink-3);line-height:1.6">
+                    宽度自动 = 高度 / 2，形成正半圆；直边吸附基准线。
+                    时间线档固定「圆头朝外」（直边贴竖线），此处方向项失效。
+                </div>
+            </section>
+
+            <section>
+                <h2>背景</h2>
+                <div class="chip-row" id="chips-bg">
+                    <button class="chip active" data-bg="grey55">半透灰 55%</button>
+                    <button class="chip" data-bg="whiteBlur">半透白+模糊</button>
+                    <button class="chip" data-bg="solid">实心灰</button>
+                    <button class="chip" data-bg="none">无背景</button>
+                </div>
+                <label>图标尺寸 <span class="val" id="val-icon">16px</span></label>
+                <input type="range" min="12" max="22" step="1" value="16" id="rng-icon" />
+            </section>
+
+            <section>
+                <h2>场景</h2>
+                <label>图片数量 <span class="val" id="val-count">4 张</span></label>
+                <input type="range" min="1" max="10" step="1" value="4" id="rng-count" />
+                <div class="switch"><input type="checkbox" id="chk-guides" /> <label for="chk-guides" style="margin:0">显示对齐参考线</label></div>
+                <div class="switch"><input type="checkbox" id="chk-old" /> <label for="chk-old" style="margin:0">显示旧位置（右上角）对照</label></div>
+            </section>
+
+            <section>
+                <h2>落地数值</h2>
+                <div class="readout" id="readout"></div>
+            </section>
+        </aside>
+
+        <main class="stage">
+            <div class="phone">
+                <div class="phone-bar">灵感 · 时间线卡片</div>
+                <div class="insp-card">
+                    <!-- ====== 左侧时间线（日期列 + 竖线 + 节点） ====== -->
+                    <div class="tl-date">
+                        <span class="tl-ym">2026.08</span>
+                        <span class="tl-day">28</span>
+                    </div>
+                    <div class="tl-line"></div>
+                    <div class="tl-node"></div>
+
+                    <div class="content-col">
+                        <p class="insp-title">周末的城市漫步路线</p>
+                        <div class="insp-meta">08-28 15:41 · 灵感</div>
+                        <p class="insp-body">从老城区石板路一路走到河边，沿途记录了几处有意思的店面和光影。</p>
+
+                        <!-- ====== 图片行 ====== -->
+                        <div class="img-row-box">
+                            <div class="viewport" id="viewport">
+                                <div class="track" id="track"></div>
+                            </div>
+
+                            <div class="count-badge" id="badge">1/4</div>
+
+                            <div class="expand-btn" id="expand-btn">
+                                <button class="pill" onclick="setExpanded(true)">
+                                    展开 4
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="9 18 15 12 9 6"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <!-- 新方案：浮层吸附视口左缘 + 垂直居中 + 纯符号 -->
+                            <button class="collapse-fab hidden" id="collapse-fab" onclick="setExpanded(false)"
+                                    aria-label="收起图片堆叠">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="15 18 9 12 15 6"></polyline>
+                                </svg>
+                            </button>
+
+                            <!-- 旧位置对照：Stage 右上角 + 文字 -->
+                            <div class="collapse-old" id="collapse-old">
+                                <button class="pill" onclick="setExpanded(false)">
+                                    收起
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="9 18 15 12 9 6"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <!-- 参考线 -->
+                            <div class="guides" id="guides">
+                                <div class="guide-v" id="guide-tlline"></div>
+                                <div class="guide-v" id="guide-row"></div>
+                                <div class="guide-h" id="guide-center"></div>
+                                <div class="guide-tag" id="tag-tlline">竖线 77</div>
+                                <div class="guide-tag" id="tag-row">图片行 88</div>
+                                <div class="guide-tag" id="tag-center">图片行中心</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="stage-side">
+                <span class="state-tag stacked" id="state-tag">堆叠态</span>
+                <button class="toggle-btn" id="toggle-btn" onclick="toggle()">展开图片行</button>
+                <div class="note">
+                    <b>展开态</b>：按钮垂直居中于图片行（中心 84dp），横向滚动时固定不跟随。
+                    水平吸附基准两档可切：图片行左缘 88 / 时间线竖线左缘 77。<br /><br />
+                    <b>收起符号</b>：单左箭头 ChevronLeft（15 18 → 9 12 → 15 6），
+                    去掉「收起」二字，contentDescription 仍为「收起图片堆叠」。<br /><br />
+                    勾选右侧面板的参考线可核对 88dp 基准与垂直居中。
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // ================================================================
+        // 常量（对齐 SwipeableImageStack.kt / TimelineInspirationItem.kt）
+        // ================================================================
+        // 全部对齐 SwipeableImageStack.kt（V8.13 端点公式）
+        const CARD_W = 120;           // cardWidth（layout）
+        const CARD_H = 120;           // cardHeight（layout）
+        const CARD_GAP = 8;           // cardGap
+        const CARD_RADIUS = 6;
+        const VISIBLE_DEPTH = 4;      // visibleDepth
+        const Y_OFFSET = 8;           // yOffset（堆叠纵向层间距）
+        const SCALE_STEP = 0.05;      // 堆叠逐层缩放
+        const EXP_CARD = 150;         // expandedCardSizeDp S = maxOf(bboxW, bboxH) ≈ 150
+        const EXP_STEP = 158;         // 展开态中心步距 = S + G
+        const EXP_SCALE = EXP_CARD / CARD_W;   // 1.25，transformOrigin = 中心
+        const CARD_TOP = 24;          // topCardAnchorY：卡片 layout 上缘（两态恒定）
+        // fanAngleDeg = -(visibleDepth − 1) × 15 = -45°
+        const FAN_ANGLE = -(VISIBLE_DEPTH - 1) * 15;
+        const DEFAULT_COLORS = ["#FF9A5C", "#FFB5C2", "#7EC8A0", "#7EB8DA"];
+
+        let isExpanded = false;
+        let cardCount = 4;
+        let shape = "circle";       // circle | pill | halfPill
+        let bgMode = "grey55";      // grey55 | whiteBlur | solid | none
+        let fabSize = 28;
+        let fabInset = 8;
+        let halfH = 48;             // 半胶囊高度（宽度 = 高度 / 2）
+        let halfDir = "in";         // in = 圆头朝右（朝内容方向）| out = 圆头朝左（贴基准线外侧）
+
+        // 吸附基准线（屏幕 dp），每档带 side 表示按钮位于基准线的哪一侧：
+        // 用户确认「时间线」= 画出的竖线本身，且按钮在竖线【左侧】、与竖线【相切】
+        const ANCHORS = {
+            row:    { x: 88, side: "right" },  // 图片行视口左缘：按钮在其右侧（覆盖图片行左端）
+            tlLine: { x: 77, side: "left"  }   // 时间线竖线左缘：按钮在其左侧、右缘相切
+        };
+        const ANCHOR_LABEL = {
+            row: "图片行视口左缘 88dp（按钮在右侧覆盖）",
+            tlLine: "时间线竖线左缘 77dp（按钮在左侧相切）"
+        };
+        let anchorKey = "row";
+        let radiusSlider = 14;      // 圆形时 14 视为 50%
+        let iconSize = 16;
+
+        // ================================================================
+        // 卡片目标变换（严格对齐 calcCardTarget）
+        // ================================================================
+        function getCardTarget(index, expanded, total) {
+            // 展开端点：x = (S−W)/2 + i×(S+G)，y = 0，scale = S/W，阴影 0
+            if (expanded) {
+                return {
+                    x: (EXP_CARD - CARD_W) / 2 + index * EXP_STEP,   // 15 + i×158
+                    y: 0,
+                    rotate: 0,
+                    scale: EXP_SCALE,
+                    zIndex: 1,
+                    shadow: "none"
+                };
+            }
+            // 堆叠端点：x = 0，y = −ei×stackOffset，rotate = fan×(ei/denom)，scale = 1−ei×0.05
+            const M = Math.max(1, Math.min(VISIBLE_DEPTH, total));
+            const ei = Math.min(index, M - 1);
+            const denom = Math.max(1, M - 1);
+            const overflow = Math.max(0, index - (M - 1));   // V8.8 超深卡片沉底
+            return {
+                x: 0,
+                y: -ei * Y_OFFSET,
+                rotate: total > 1 ? FAN_ANGLE * (ei / denom) : 0,
+                scale: 1 - ei * SCALE_STEP,
+                zIndex: M - ei - overflow,
+                // 顶卡 8dp 阴影 / 下层 4dp
+                shadow: index === 0
+                    ? "0 8px 24px rgba(0,0,0,0.18)"
+                    : "0 4px 12px rgba(0,0,0,0.10)"
+            };
+        }
+
+        // ================================================================
+        // 构建卡片
+        // ================================================================
+        function buildCards() {
+            const track = document.getElementById("track");
+            track.innerHTML = "";
+            for (let i = 0; i < cardCount; i++) {
+                const card = document.createElement("div");
+                card.className = "card";
+                card.id = "card-" + i;
+                const face = document.createElement("div");
+                face.className = "card-face";
+                face.style.background = DEFAULT_COLORS[i % DEFAULT_COLORS.length];
+                face.textContent = i + 1;
+                card.appendChild(face);
+                track.appendChild(card);
+            }
+            // 单卡模式（V8.10b）：恒展开、无收起语义
+            if (cardCount === 1) {
+                isExpanded = true;
+            }
+            document.getElementById("badge").textContent = "1/" + cardCount;
+            document.querySelector("#expand-btn .pill").childNodes[0].nodeValue =
+                "展开 " + cardCount + " ";
+            render();
+        }
+
+        // ================================================================
+        // 渲染
+        // ================================================================
+        function render() {
+            const track = document.getElementById("track");
+            const viewport = document.getElementById("viewport");
+            // 展开态视觉行宽 = N × (S+G) − G（与 cardRowWidthDp 一致）
+            const expandedW = cardCount * EXP_STEP - CARD_GAP;
+            track.style.width = (isExpanded ? expandedW : CARD_W) + "px";
+
+            for (let i = 0; i < cardCount; i++) {
+                const card = document.getElementById("card-" + i);
+                if (!card) continue;
+                const t = getCardTarget(i, isExpanded, cardCount);
+                card.style.transform =
+                    "translate(" + t.x + "px, " + t.y + "px) rotate(" + t.rotate + "deg) scale(" + t.scale + ")";
+                card.style.zIndex = t.zIndex;
+                card.style.boxShadow = t.shadow;
+            }
+
+            // 视口：展开态横向滚动，堆叠态溢出可见
+            viewport.classList.toggle("scrolling", isExpanded);
+            viewport.scrollLeft = 0;
+
+            // 角标 / 展开按钮：堆叠态显示，展开态淡出
+            document.getElementById("badge").style.opacity = isExpanded ? "0" : "1";
+            document.getElementById("expand-btn").style.opacity = isExpanded ? "0" : "1";
+            document.getElementById("expand-btn").style.pointerEvents = isExpanded ? "none" : "auto";
+
+            // 收起按钮：展开态显示（单卡模式无收起语义，隐藏）
+            const fab = document.getElementById("collapse-fab");
+            const showFab = isExpanded && cardCount > 1;
+            fab.classList.toggle("hidden", !showFab);
+
+            // 旧位置对照
+            const old = document.getElementById("collapse-old");
+            old.classList.toggle("on", document.getElementById("chk-old").checked);
+            old.style.opacity = isExpanded ? "1" : "0";
+
+            // 状态标签
+            const tag = document.getElementById("state-tag");
+            tag.textContent = isExpanded ? "展开态" : "堆叠态";
+            tag.className = "state-tag " + (isExpanded ? "expanded" : "stacked");
+            document.getElementById("toggle-btn").textContent =
+                isExpanded ? "收起图片行" : "展开图片行";
+
+            renderGuides();
+            renderReadout();
+        }
+
+        // ================================================================
+        // 参考线
+        // ================================================================
+        function renderGuides() {
+            const guides = document.getElementById("guides");
+            const on = document.getElementById("chk-guides").checked;
+            guides.classList.toggle("on", on);
+            if (!on) return;
+            const centerY = CARD_TOP + CARD_H / 2;   // 图片行垂直中心（两态恒定）
+            // 两条基准竖线；标签垂直错开，避免水平相邻时文字重叠
+            [["tlline", ANCHORS.tlLine.x, 2], ["row", ANCHORS.row.x, 140]]
+                .forEach(function (it) {
+                    document.getElementById("guide-" + it[0]).style.left = it[1] + "px";
+                    const tag = document.getElementById("tag-" + it[0]);
+                    tag.style.left = (it[1] + 4) + "px";
+                    tag.style.top = it[2] + "px";
+                });
+            document.getElementById("guide-center").style.top = centerY + "px";
+            const tc = document.getElementById("tag-center");
+            tc.style.left = (ANCHORS.row.x + 90) + "px";
+            tc.style.top = (centerY + 4) + "px";
+        }
+
+        // ================================================================
+        // 落地数值（给 Compose 迁移用）
+        // ================================================================
+        function renderReadout() {
+            const centerY = CARD_TOP + CARD_H / 2;
+            const a = ANCHORS[anchorKey];
+            const sideLeft = a.side === "left";
+            const gap = sideLeft ? 0 : fabInset;
+            let W, roundRight, size, radius;
+            if (shape === "halfPill") {
+                W = Math.round(halfH / 2);
+                roundRight = sideLeft ? false : (halfDir === "in");
+                size = W + " × " + halfH + " dp (W×H，W = H/2)";
+                radius = roundRight
+                    ? "0 / " + W + " / " + W + " / 0  (start-top / end-top / end-bottom / start-bottom)"
+                    : W + " / 0 / 0 / " + W;
+            } else {
+                W = shape === "circle" ? fabSize : Math.round(fabSize * 1.35);
+                roundRight = true;
+                size = W + " × " + fabSize + " dp";
+                radius = shape === "circle" ? (fabSize / 2) + " dp" : radiusSlider + " dp";
+            }
+            const left = sideLeft
+                ? (a.x - gap - W)
+                : (roundRight ? (a.x + gap) : (a.x - gap - W));
+            const span = "[" + left + ", " + (left + W) + "] dp  " +
+                (sideLeft ? "右缘（直边）贴竖线左缘 77" : "覆盖图片行左端");
+            document.getElementById("readout").textContent =
+                "形状 = " + shapeLabel() + "\n" +
+                "吸附基准 = " + ANCHOR_LABEL[anchorKey] + "\n" +
+                "水平占位 X = " + span + "\n" +
+                "垂直中心 Y = topCardAnchorY + cardHeight/2 = " + centerY + "dp（两态恒定）\n" +
+                "尺寸 = " + size + "\n" +
+                "圆角 = " + radius + "\n" +
+                "图标 = " + iconSize + "dp  ChevronLeft\n" +
+                "层级 zIndex = 40（高于卡片）\n" +
+                "背景 = " + bgLabel() + "\n" +
+                "前景 = #4F5660";
+        }
+
+        function shapeLabel() {
+            if (shape === "circle") return "圆形";
+            if (shape === "pill") return "胶囊";
+            if (ANCHORS[anchorKey].side === "left") return "半胶囊（圆头朝外、直边贴竖线）";
+            return "半胶囊（" + (halfDir === "in" ? "圆头朝内容" : "圆头朝外") + "）";
+        }
+
+        function bgLabel() {
+            switch (bgMode) {
+                case "grey55": return "#F2F3F5 @ 55%";
+                case "whiteBlur": return "#FFF @ 70% + blur(8)";
+                case "solid": return "#F2F3F5 实心";
+                default: return "透明（裸图标）";
+            }
+        }
+
+        // ================================================================
+        // 状态切换
+        // ================================================================
+        function setExpanded(v) {
+            if (cardCount === 1) { isExpanded = true; render(); return; }
+            isExpanded = v;
+            render();
+        }
+        function toggle() { setExpanded(!isExpanded); }
+
+        // ================================================================
+        // 参数绑定
+        // ================================================================
+        function applyShape() {
+            const root = document.documentElement;
+            const fab = document.getElementById("collapse-fab");
+            const a = ANCHORS[anchorKey];          // { x, side }
+            const sideLeft = a.side === "left";     // true = 按钮在基准线左侧相切
+            const gap = sideLeft ? 0 : fabInset;    // 相切档固定 0 间隙；图片行档用内缩
+            let W, roundRight;
+
+            if (shape === "halfPill") {
+                W = Math.round(halfH / 2);
+                // 相切档固定圆头朝外（朝左、屏幕外侧，直边贴竖线）；图片行档按「朝内/朝外」选
+                roundRight = sideLeft ? false : (halfDir === "in");
+                const r = W + "px";
+                root.style.setProperty("--fab-w", W + "px");
+                root.style.setProperty("--fab-h", halfH + "px");
+                root.style.setProperty("--fab-radius", roundRight ? "0 " + r + " " + r + " 0" : r + " 0 0 " + r);
+                fab.style.paddingLeft = roundRight ? "2px" : "0px";
+                fab.style.paddingRight = roundRight ? "0px" : "2px";
+                document.getElementById("val-radius").textContent = "半胶囊";
+                document.getElementById("rng-radius").disabled = true;
+            } else if (shape === "circle") {
+                W = fabSize;
+                roundRight = true;
+                root.style.setProperty("--fab-w", W + "px");
+                root.style.setProperty("--fab-h", fabSize + "px");
+                root.style.setProperty("--fab-radius", "50%");
+                fab.style.paddingLeft = "0px";
+                fab.style.paddingRight = "0px";
+                document.getElementById("val-radius").textContent = "50%";
+                document.getElementById("rng-radius").disabled = true;
+            } else {
+                W = Math.round(fabSize * 1.35);
+                roundRight = true;
+                root.style.setProperty("--fab-w", W + "px");
+                root.style.setProperty("--fab-h", fabSize + "px");
+                root.style.setProperty("--fab-radius", radiusSlider + "px");
+                fab.style.paddingLeft = "0px";
+                fab.style.paddingRight = "0px";
+                document.getElementById("val-radius").textContent = radiusSlider + "px";
+                document.getElementById("rng-radius").disabled = false;
+            }
+
+            // 水平定位：
+            // - 图片行档（side right，覆盖式）：按钮在基准线右侧 → left = x + gap
+            //   半胶囊「圆头朝外」例外：本体在基准线左侧外侧 → left = x - gap - W
+            // - 时间线档（side left，相切式）：按钮在基准线左侧、右缘相切 → left = x - gap - W
+            const left = sideLeft
+                ? (a.x - gap - W)
+                : (roundRight ? (a.x + gap) : (a.x - gap - W));
+            root.style.setProperty("--fab-left", left + "px");
+
+            document.getElementById("sec-half").style.display =
+                shape === "halfPill" ? "block" : "none";
+            // 相切档：内缩/朝向 无意义（固定 0 间隙、圆头朝竖线），禁用对应控件
+            document.getElementById("rng-inset").disabled = sideLeft;
+            document.getElementById("chips-dir").querySelectorAll(".chip").forEach(function (c) {
+                c.disabled = sideLeft || shape !== "halfPill";
+            });
+        }
+
+        function applyBg() {
+            const root = document.documentElement;
+            if (bgMode === "grey55") {
+                root.style.setProperty("--fab-bg", "rgba(242,243,245,0.55)");
+                root.style.setProperty("--fab-blur", "0px");
+                root.style.setProperty("--fab-border", "0px solid transparent");
+                root.style.setProperty("--fab-fg", "#4F5660");
+            } else if (bgMode === "whiteBlur") {
+                root.style.setProperty("--fab-bg", "rgba(255,255,255,0.7)");
+                root.style.setProperty("--fab-blur", "8px");
+                root.style.setProperty("--fab-border", "0.5px solid rgba(0,0,0,0.06)");
+                root.style.setProperty("--fab-fg", "#4F5660");
+            } else if (bgMode === "solid") {
+                root.style.setProperty("--fab-bg", "#F2F3F5");
+                root.style.setProperty("--fab-blur", "0px");
+                root.style.setProperty("--fab-border", "0px solid transparent");
+                root.style.setProperty("--fab-fg", "#4F5660");
+            } else {
+                root.style.setProperty("--fab-bg", "transparent");
+                root.style.setProperty("--fab-blur", "0px");
+                root.style.setProperty("--fab-border", "0px solid transparent");
+                root.style.setProperty("--fab-fg", "#6B645C");
+            }
+        }
+
+        document.getElementById("rng-inset").addEventListener("input", function () {
+            fabInset = +this.value;
+            document.documentElement.style.setProperty("--fab-inset", fabInset + "px");
+            document.getElementById("val-inset").textContent = fabInset + "px";
+            applyShape();
+            renderReadout();
+        });
+        document.getElementById("rng-half").addEventListener("input", function () {
+            halfH = +this.value;
+            document.getElementById("val-half").textContent = halfH + "px";
+            applyShape();
+            renderReadout();
+        });
+        document.getElementById("chips-anchor").addEventListener("click", function (e) {
+            const btn = e.target.closest(".chip");
+            if (!btn) return;
+            anchorKey = btn.dataset.anchor;
+            this.querySelectorAll(".chip").forEach(function (c) { c.classList.remove("active"); });
+            btn.classList.add("active");
+            applyShape();
+            renderGuides();
+            renderReadout();
+        });
+        document.getElementById("chips-dir").addEventListener("click", function (e) {
+            const btn = e.target.closest(".chip");
+            if (!btn) return;
+            halfDir = btn.dataset.dir;
+            this.querySelectorAll(".chip").forEach(function (c) { c.classList.remove("active"); });
+            btn.classList.add("active");
+            applyShape();
+            renderReadout();
+        });
+        document.getElementById("rng-size").addEventListener("input", function () {
+            fabSize = +this.value;
+            document.documentElement.style.setProperty("--fab-size", fabSize + "px");
+            document.getElementById("val-size").textContent = fabSize + "px";
+            applyShape();
+            renderReadout();
+        });
+        document.getElementById("rng-radius").addEventListener("input", function () {
+            radiusSlider = +this.value;
+            applyShape();
+            renderReadout();
+        });
+        document.getElementById("rng-icon").addEventListener("input", function () {
+            iconSize = +this.value;
+            document.documentElement.style.setProperty("--icon-size", iconSize + "px");
+            document.getElementById("val-icon").textContent = iconSize + "px";
+            renderReadout();
+        });
+        document.getElementById("rng-count").addEventListener("input", function () {
+            cardCount = +this.value;
+            document.getElementById("val-count").textContent = cardCount + " 张";
+            buildCards();
+        });
+        document.getElementById("chk-guides").addEventListener("change", renderGuides);
+        document.getElementById("chk-old").addEventListener("change", render);
+
+        document.getElementById("chips-shape").addEventListener("click", function (e) {
+            const btn = e.target.closest(".chip");
+            if (!btn) return;
+            shape = btn.dataset.shape;
+            this.querySelectorAll(".chip").forEach(function (c) { c.classList.remove("active"); });
+            btn.classList.add("active");
+            applyShape();
+            renderReadout();
+        });
+        document.getElementById("chips-bg").addEventListener("click", function (e) {
+            const btn = e.target.closest(".chip");
+            if (!btn) return;
+            bgMode = btn.dataset.bg;
+            this.querySelectorAll(".chip").forEach(function (c) { c.classList.remove("active"); });
+            btn.classList.add("active");
+            applyBg();
+            renderReadout();
+        });
+
+        applyShape();
+        applyBg();
+        buildCards();
+    </script>
+</body>
+</html>

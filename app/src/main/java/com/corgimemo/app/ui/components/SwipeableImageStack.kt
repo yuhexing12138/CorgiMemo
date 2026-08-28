@@ -119,6 +119,7 @@ import kotlin.math.sin
 import kotlin.math.roundToInt
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Icon
 import com.corgimemo.app.ui.theme.UiColors
@@ -978,8 +979,6 @@ fun SwipeableImageStack(
      */
     // 顶卡左上角 X（Dp）：cardBoxStartX（Float）− bboxLeft（Float）→ 转为 Dp
     val topCardLeftInStageDp: Dp = (cardBoxStartX - bboxLeft).dp
-    // 顶卡左上角 Y（Dp）：cardBoxStartY（Float）→ 转为 Dp
-    val topCardTopInStageDp: Dp = cardBoxStartY.dp
     // V7.3 锚点：堆叠态/展开态统一的顶卡【卡片中心】垂直锚定
     // 堆叠态：Layer1 的 container 使用 Center 对齐（size = bboxHeight），所以
     //   顶卡视觉 Top = 容器 top + (bboxHeight - cardHeight) / 2（Center 对齐的上下留白）
@@ -1879,16 +1878,35 @@ fun SwipeableImageStack(
     // 重启手势 block，无需手动管理启停。
     val swallowActive = expandProgress.value > 0f
 
+    // ============ 收起按钮（半胶囊）高度数据源：展开按钮实际宽度（px）============
+    // 展开按钮在堆叠态可见（showExpand 含 !isExpanded），其 onSizeChanged 回填「完整宽度」（含 padding）；
+    // 收起按钮半胶囊高度 H 动态 = 该宽度，保证两者高度/透明度/图标规格一致。
+    // 首帧或展开按钮从未进堆叠（如 initialExpanded=true）时，用估算宽 76dp 回退。
+    var expandBtnWidthPx by remember { mutableStateOf(0) }
+
+    // 收起按钮半胶囊高度 H = 展开按钮完整宽度（动态）；宽度 W = H / 2
+    val collapseBtnH: Dp = with(density) {
+        if (expandBtnWidthPx > 0) expandBtnWidthPx.toDp() else 76.dp
+    }
+    val collapseBtnW: Dp = collapseBtnH / 2
+    // 展开态 Stage 左扩量：让 Stage 布局边界左缘覆盖到时间线竖线左缘(77) 左侧的按钮本体，
+    // 使按钮右缘相切竖线左缘(77)、本体落在 Stage 布局边界内（不被 animateContentSize 的 clipToBounds 裁剪）。
+    // = 图片行左缘(88) − 竖线左缘(77) + 按钮宽 W = 11 + W
+    // 仅在「有收起按钮」时才左扩（单卡/外部禁用收起按钮时无按钮，避免无谓左扩吞噬左侧区域点击）。
+    val collapseBtnLeftExtend: Dp =
+        if (showInnerCollapseButton && !singleCardMode) 11.dp + collapseBtnW else 0.dp
+
     Box(
         modifier = modifier
             // V7.0 布局空间预借：Stage 相对父容器的水平偏移（layout 移动，非绘制平移）
             // - 堆叠态：stackStageOffsetX - StackLeftCompensation（左扩 130dp，
             //   Stage layout bounds 左缘覆盖到屏幕左缘外，顶卡左滑轨迹全程在 Stage 内）
-            // - 展开态：stackStageOffsetX（视觉与 V6.x 完全一致）
+            // - 展开态：stackStageOffsetX - collapseBtnLeftExtend（左扩 11+W 覆盖收起按钮本体）
             // - 随 expandProgress 插值，展开/收起过渡平滑
             // - offset 放在 size 之前不影响测量（offset 只平移 layout 位置）
             .offset(
                 x = stackStageOffsetX - StackLeftCompensation * (1f - expandProgress.value)
+                    - collapseBtnLeftExtend * expandProgress.value
             )
             .then(
                 if (isExpanded) {
@@ -1967,7 +1985,10 @@ fun SwipeableImageStack(
         val viewportExtensionPx = with(density) { expandedViewportRightExtension.toPx() }
         Box(
             modifier = Modifier
-                .offset(x = StackLeftCompensation * (1f - expandProgress.value))
+                .offset(
+                    x = StackLeftCompensation * (1f - expandProgress.value)
+                        + collapseBtnLeftExtend * expandProgress.value
+                )
                 // 测量裁剪线：根节点宽度 − 右缘延伸量 − 包装层根坐标 X
                 // （根节点 = 组件树最外层 LayoutNode，宽度即窗口内容区宽；
                 //   LazyColumn contentPadding end=18 由调用方以 expandedViewportRightExtension
@@ -1981,14 +2002,19 @@ fun SwipeableImageStack(
                         root.size.width - viewportExtensionPx - coords.positionInRoot().x
                 }
                 // (V8.3 调试埋点已移除)
-                // 仅右缘裁剪（左/上/下不裁剪，保留顶卡左缘阴影溢出渲染）；
+                // 左右缘裁剪：左缘随 p 过渡（堆叠态不裁、展开态裁到视口左缘 88）；上/下不裁剪；
                 // p > 0 生效：展开/收起动画全程 + 展开稳态持续裁剪，堆叠稳态（p=0）不裁剪
                 .drawWithContent drawWithContent@ {
                     if (expandProgress.value > 0f &&
                         containerClipRightPx.floatValue < Float.MAX_VALUE / 2f
                     ) {
+                        // 左缘裁剪线随 p 过渡：堆叠态 = -StackLeftCompensation（允许顶卡左滑翻牌，
+                        // 与 Stage 堆叠态 clipToBounds 左缘一致）；展开态 = 0（图片行左滑到视口左缘 88 消失）。
+                        // 因 Stage 已左扩 collapseBtnLeftExtend 覆盖收起按钮，图片行左缘消失边界改由本层提供，
+                        // 避免边界随 Stage 左扩而左移。
+                        val leftClipPx = -StackLeftCompensation.toPx() * (1f - expandProgress.value)
                         clipRect(
-                            left = -100000f,
+                            left = leftClipPx,
                             top = -100000f,
                             right = containerClipRightPx.floatValue,
                             bottom = 100000f
@@ -2144,6 +2170,10 @@ fun SwipeableImageStack(
                             color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
                             shape = RoundedCornerShape(11.dp)
                         )
+                        .onSizeChanged {
+                            // 回填展开按钮「完整宽度」（含 horizontal padding），供收起按钮半胶囊高度动态同步
+                            expandBtnWidthPx = it.width
+                        }
                         .padding(horizontal = 5.dp, vertical = 2.dp)
                         .onSizeChanged { buttonSize = it }
                         // 仅非透明状态才挂载 clickable，避免透明时抢点击事件
@@ -2210,12 +2240,26 @@ fun SwipeableImageStack(
             animationSpec = OPACITY_200_SPEC,
             label = "collapseBtnAlpha",
         )
+        // ============ 收起按钮形状：半胶囊（D 形，圆头朝外）============
+        // 圆头朝外：左侧半圆（topStart/bottomStart = H/2），右侧直边（topEnd/bottomEnd = 0，贴竖线左缘）
+        val collapseBtnShape = RoundedCornerShape(
+            topStart = collapseBtnH / 2,
+            topEnd = 0.dp,
+            bottomEnd = 0.dp,
+            bottomStart = collapseBtnH / 2
+        )
         Box(
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                // 补偿 Stage 自身 stackStageOffsetX 偏移，把 TopEnd 锚点拉回屏幕内
-                .offset(x = -stackStageOffsetX * expandProgress.value)
-                .padding(top = topCardTopInStageDp, end = 8.dp)
+                .align(Alignment.TopStart)
+                // 水平：时间线竖线左缘相切 —— 竖线左缘(77) = 图片行左缘(88) − 11dp；
+                //       按钮右缘贴竖线左缘(77)，本体落在 Stage 左扩后的布局边界内。
+                //       展开态 p=1 时 offset = 0（按钮左缘恰在 Stage 左缘，右缘 = 竖线左缘）；
+                //       堆叠态 p=0 按钮 alpha=0 不可见，位置无影响。
+                .offset(
+                    x = (StackLeftCompensation - 11.dp - collapseBtnW) * (1f - expandProgress.value),
+                    // 垂直：顶卡卡片中心（topCardAnchorY + cardHeight/2）− 按钮半高 → 视觉垂直居中
+                    y = (topCardAnchorY + cardHeight.value / 2f - collapseBtnH.value / 2f).dp
+                )
         ) {
             // V8.10b 单卡不显示收起按钮：单卡恒为展开态（平铺图片行），
             // 无堆叠可收起，收起按钮无意义
@@ -2223,60 +2267,52 @@ fun SwipeableImageStack(
                 Box(
                     modifier = Modifier
                         .graphicsLayer { alpha = collapseBtnAlpha }
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .background(
-                                color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
-                                shape = RoundedCornerShape(11.dp)
-                            )
-                            .padding(horizontal = 5.dp, vertical = 2.dp)
-                            .clickable {
-                                scope.launch {
-                                    // V8.5：任意滚动位置直接收起（单段连续动画）
-                                    // 旧逻辑（两段式）：rowScrollX.animateTo(0f, ROW_SCROLL_SPRING)
-                                    //   先把图片行回弹到初始位置（第一张贴视口左缘），播放完才
-                                    //   setExpanded(false) 收拢 —— 用户在任意位置收起会看到
-                                    //   「先回弹 → 再收起」两段跳变。
-                                    // 新逻辑（并行归零）：行滚动偏移与展开进度用同一条 400ms
-                                    //   贝塞尔曲线（TRANSITION_400_SPEC）同步归零 —— 图片行
-                                    //   从当前滚动位置直接收拢到堆叠态，全程一段动画。
-                                    // ① 先停掉可能还在跑的 fling / 越界回弹（挂起函数，需协程内调用）
+                        .size(width = collapseBtnH / 2, height = collapseBtnH)
+                        .background(
+                            color = Color(0xFFF2F3F5).copy(alpha = 0.55f),
+                            shape = collapseBtnShape
+                        )
+                        .clickable {
+                            scope.launch {
+                                // V8.5：任意滚动位置直接收起（单段连续动画）
+                                // 旧逻辑（两段式）：rowScrollX.animateTo(0f, ROW_SCROLL_SPRING)
+                                //   先把图片行回弹到初始位置（第一张贴视口左缘），播放完才
+                                //   setExpanded(false) 收拢 —— 用户在任意位置收起会看到
+                                //   「先回弹 → 再收起」两段跳变。
+                                // 新逻辑（并行归零）：行滚动偏移与展开进度用同一条 400ms
+                                //   贝塞尔曲线（TRANSITION_400_SPEC）同步归零 —— 图片行
+                                //   从当前滚动位置直接收拢到堆叠态，全程一段动画。
+                                // ① 先停掉可能还在跑的 fling / 越界回弹（挂起函数，需协程内调用）
+                                rowScrollX.stop()
+                                rawRowScroll.floatValue = 0f
+                                // ② 归零动画挂组件级 scope（兄弟协程）：收起动画期间若被
+                                //    行手势（拖拽/回弹）打断，CancellationException 只结束
+                                //    兄弟协程，不会传播取消 setExpanded 的收起动画
+                                scope.launch { rowScrollX.animateTo(0f, TRANSITION_400_SPEC) }
+                                // ③ 收起动画（expandProgress 1→0，400ms 贝塞尔）
+                                setExpanded(false)
+                                // ④ 兜底归零：仅在收起动画真正完成（p≈0）时执行——
+                                //    防快速双击收起时第二次 setExpanded 立即 return（动画
+                                //    进行中）后误 snap 中断归零动画；正常路径 ② 与 ③ 同
+                                //    spec 同时长几乎同时结束（残余差值≈0 无感）；异常路径
+                                //    （② 被手势打断停在非零）强制归位，避免堆叠态带残余偏移
+                                if (expandProgress.value < 0.01f) {
                                     rowScrollX.stop()
-                                    rawRowScroll.floatValue = 0f
-                                    // ② 归零动画挂组件级 scope（兄弟协程）：收起动画期间若被
-                                    //    行手势（拖拽/回弹）打断，CancellationException 只结束
-                                    //    兄弟协程，不会传播取消 setExpanded 的收起动画
-                                    scope.launch { rowScrollX.animateTo(0f, TRANSITION_400_SPEC) }
-                                    // ③ 收起动画（expandProgress 1→0，400ms 贝塞尔）
-                                    setExpanded(false)
-                                    // ④ 兜底归零：仅在收起动画真正完成（p≈0）时执行——
-                                    //    防快速双击收起时第二次 setExpanded 立即 return（动画
-                                    //    进行中）后误 snap 中断归零动画；正常路径 ② 与 ③ 同
-                                    //    spec 同时长几乎同时结束（残余差值≈0 无感）；异常路径
-                                    //    （② 被手势打断停在非零）强制归位，避免堆叠态带残余偏移
-                                    if (expandProgress.value < 0.01f) {
-                                        rowScrollX.stop()
-                                        rowScrollX.snapTo(0f)
-                                    }
-                                    onExpandStateChange?.invoke(false)
+                                    rowScrollX.snapTo(0f)
                                 }
-                            },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "收起",
-                            color = Color(0xFF4F5660),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = "收起图片堆叠",
-                            tint = Color(0xFF4F5660),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                                onExpandStateChange?.invoke(false)
+                            }
+                        }
+                        // 圆头朝外：图标略左移（半圆在左、视觉重心偏移，对齐原型 padding-right 2px）
+                        .padding(end = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ChevronLeft,
+                        contentDescription = "收起图片堆叠",
+                        tint = Color(0xFF4F5660),
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
         }
