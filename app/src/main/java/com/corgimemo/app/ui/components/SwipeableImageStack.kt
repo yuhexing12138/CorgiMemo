@@ -1874,8 +1874,14 @@ fun SwipeableImageStack(
     }
 
     // V8.14f 吞噬激活标志（作 pointerInput key）：p>0 即吞噬（展开/收起动画全程
-    // + 展开稳态），堆叠稳态（p=0）不吞噬（空白点击仍进详情页）。key 变化自动
-    // 重启手势 block，无需手动管理启停。
+    // + 展开稳态），堆叠稳态（p=0）不吞噬。key 变化自动重启手势 block，无需手动管理启停。
+    // V8.16 补充（两层吞噬的分工，勿重复/勿互删）：
+    // - 本层吞噬范围 = Stage 自身 bounds。堆叠态 Stage 右缘 ≈288dp，其右侧到屏幕
+    //   右缘的同行空白不在本层范围内；该段（含堆叠态 p=0 的整段）由调用方兜底 ——
+    //   TimelineInspirationItem 的图片外层 Box（fillMaxWidth + offset(-18dp)，
+    //   覆盖屏幕 0 ~ 屏宽-36）挂了同款 pointerInput 吞噬层。
+    // - 本层仍需保留：展开态 Stage 右缘 ≈屏宽+52，超出调用方 Box 右缘（屏宽-36），
+    //   「屏宽-36 ~ 屏宽」这段同行空白只有本层能接住。
     val swallowActive = expandProgress.value > 0f
 
     // ============ 收起按钮（半胶囊）高度数据源：展开按钮实际宽度（px）============

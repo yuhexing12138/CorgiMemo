@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +42,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -476,6 +478,31 @@ fun TimelineInspirationItem(
                         .fillMaxWidth()
                         // V7.0 新增：左缘对齐屏幕左缘（18dp = LazyColumn item 内 padding 值）
                         .offset(x = (-18).dp)
+                        // ============ V8.16 图片行空白点击吞噬层（挂在外层 Box 自身 modifier）============
+                        // 需求：图片所在整行的空白处点击都不进灵感详情页 —— 堆叠态与展开后的
+                        //       图片行状态一视同仁，只允许点图片进图片附件页、点展开/收起按钮切状态。
+                        // 为什么挂在本层（而不是只靠组件内 V8.14f 的吞噬层）：
+                        //   ① V8.14f 只在 expandProgress > 0 生效 —— 堆叠稳态（p=0）不吞噬，
+                        //      点堆叠图同行空白直接冒泡到外层 combinedClickable 进详情页；
+                        //   ② 其吞噬范围只有 Stage 自身 bounds —— 堆叠态 Stage 右缘 ≈288dp，
+                        //      该右缘到屏幕右缘的同行空白不在 Stage 内，点击同样会穿透。
+                        // 本层是 SwipeableImageStack 的祖先，fillMaxWidth 覆盖整行
+                        // （offset(-18dp) 后左缘 = 屏幕 0、右缘 = 屏宽-36），
+                        // pointerInput 恒在命中链末端，能接住所有未被更深层消费的 tap。
+                        // 手势安全（与 V8.14f 同源机制，已实机验证）：
+                        // - 点图片 / 展开按钮 / 收起按钮：更深层先命中消费 → 本层 onTap 不触发 ✓
+                        // - 长按空白：detectTapGestures 未提供 onLongPress，不消费长按 →
+                        //   外层 combinedClickable 的长按面板保持可用 ✓
+                        // - 拖拽翻牌 / 展开态横向滚动 / 列表垂直滚动：move 被更深手势消费 →
+                        //   本层 tap 检测自动取消 ✓
+                        // 注：pointerInput 必须在 graphicsLayer 之前（项目 V5.9 规则：
+                        //     Layout/Size/Clickable/Draw → graphicsLayer），否则会被其
+                        //     创建的 RenderNode（默认 clip=true）裁剪。
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onTap = { }  // 空实现：仅消费事件，阻止 tap 冒泡进详情页
+                            )
+                        }
                         // (V5.8 onGloballyPositioned 埋点已移除)
                         .graphicsLayer { this.clip = false },
                     contentAlignment = Alignment.TopStart
