@@ -174,14 +174,28 @@ private fun rubberBandRowScroll(raw: Float, minScroll: Float): Float = when {
 }
 
 /**
+ * V8.11 卡片阴影体系单一数据源（动态阴影补偿）
+ *
+ * 堆叠态顶卡 shadowElevation = 本值；下层卡片 = 本值 × 0.5；展开态 = 0（V8.9）。
+ * Stage 阴影补偿 shadowPadding、[ExpandedRowShadowSlack] 与本值 1:1 对应
+ * （阴影扩散半径 ≈ elevation，dp 数值近似等量）。
+ *
+ * 设计约束（§9.4.1）：Stage 尺寸跨堆叠/展开态恒定 → 阴影补偿取「各状态最大
+ * elevation」= 本值（堆叠态顶卡），不随展开进度实时变化。
+ * 调整卡片阴影手感时只改本值，补偿与余量自动同步跟随。
+ */
+private val TopCardShadowElevation = 8.dp
+
+/**
  * V7.9 展开态行 Box 双侧阴影余量
  *
  * 展开动画过程中（V8.9 之前展开态端点 4dp）阴影会经过非零中间值，向四周扩散约 8dp。
  * 行 Box 预借该余量后，展开/收起过渡中的卡片 + 左右阴影都落在行 Box 自身 layout
  * bounds 内，不再依赖溢出渲染（防隐式裁剪，V7.0 布局空间预借同款模式）。
  * V8.9 展开完成态阴影为 0，此余量仅服务过渡过程（保留无害，防回归）。
+ * V8.11：与 [TopCardShadowElevation] 保持同步（阴影扩散 ≈ elevation）。
  */
-private val ExpandedRowShadowSlack = 8.dp
+private val ExpandedRowShadowSlack = TopCardShadowElevation
 
 /**
  * 堆叠中的单张卡片槽位
@@ -275,13 +289,17 @@ private fun lerpCardTarget(a: CardTarget, b: CardTarget, p: Float): CardTarget {
  * - y 方向：每深一层向上偏移 stackOffsetDp（使卡片底部露出形成扇形底边）
  * - rotationZ：按可见深度线性分配旋转角（顶层 0°，底层 fanAngleDeg）
  * - scale：每深一层缩小 scaleStep
- * - shadowElevation：顶卡 8dp，其余 4dp
+ * - shadowElevation：顶卡 [TopCardShadowElevation]（8dp），其余减半（4dp）
  * - zIndex：顶卡最高（visibleDepth - ei - 超深递减），保证堆叠顺序正确；
  *           超出 visibleDepth 的卡片额外递减沉底，被第 visibleDepth 层完整遮盖
  *
- * 展开态端点公式：
- * - x 方向：按卡片索引水平排列，索引 × (卡片宽度 + 间距)
- * - y/rotation/scale：全部归中（无旋转、原始尺寸、同一水平高度）
+ * 展开态端点公式（V8.13 图片扩展至堆叠包围框尺寸）：
+ * - scale：expandedCardSizeDp / cardW（卡片 layout 尺寸不变，视觉以中心为基点放大
+ *   到堆叠联合包围框边长 —— transformOrigin 默认中心，"以每张中心为基点扩展"天然成立）
+ * - x 方向：(S−W)/2 + 索引 × (S + 间距)；首项补偿让首图视觉左缘与扩展前完全一致，
+ *   相邻卡片视觉间隙恒 = cardGap（中心间距 = S + cardGap）
+ * - y/rotation：全部归中（无旋转、同一水平高度；卡片中心垂直方向不动，
+ *   视觉 top 随 scale 膨胀自然从堆叠锚点上移 → 上下留白收窄、贴近相邻行）
  * - shadowElevation：统一 0dp（V8.9 展开态无阴影，随进度从堆叠态 8/4dp 平滑淡出）
  * - zIndex：全部同级（展开态层叠顺序无意义）
  *
@@ -294,7 +312,9 @@ private fun lerpCardTarget(a: CardTarget, b: CardTarget, p: Float): CardTarget {
  * @param stackOffsetDp 堆叠态每层垂直上移量
  * @param fanAngleDeg 堆叠态底层最大旋转角
  * @param scaleStep 堆叠态每层缩放步进（每深一层 scale 减少 scaleStep）
- * @return 插值后的卡片目标变换状态（cardCount ≤ 1 时直接返回无旋转无阴影的平铺形态）
+ * @param expandedCardSizeDp V8.13 展开态卡片视觉边长（dp 数值，= 堆叠联合包围盒较大边，
+ *                           正方形）；卡片 layout 尺寸不变，视觉靠 scale 放大
+ * @return 插值后的卡片目标变换状态（cardCount ≤ 1 时直接返回无旋转无阴影的展开形态）
  */
 private fun calcCardTarget(
     displayIndex: Int,
@@ -306,17 +326,20 @@ private fun calcCardTarget(
     stackOffsetDp: Dp,
     fanAngleDeg: Float,
     scaleStep: Float,
+    expandedCardSizeDp: Float,
 ): CardTarget {
     // V8.10 单卡特例：仅 1 张图时不进入堆叠态，直接以图片行（展开）形态显示——
-    // 无旋转、无缩放、无层叠偏移、无阴影（视觉与展开完成的图片行一致）。
+    // 无旋转、无层叠偏移、无阴影（视觉与展开完成的图片行一致）。
     // 展开按钮（cardCount >= 2 才显示）与角标（cardCount > visibleDepth 才显示）
     // 对单卡均已自动隐藏，无多余 UI。
+    // V8.13 单卡同步扩展：scale 端点 = S/W（与多卡展开态视觉一致），
+    // x 含首图左缘补偿 (S−W)/2（视觉左缘与多卡首图一致）。
     if (cardCount <= 1) {
         return CardTarget(
-            x = 0.dp,
+            x = ((expandedCardSizeDp - cardW.value) / 2f).dp,
             y = 0.dp,
             rotationZ = 0f,
-            scale = 1f,
+            scale = expandedCardSizeDp / cardW.value,
             shadowElevation = 0.dp,
             zIndex = 1f
         )
@@ -333,14 +356,25 @@ private fun calcCardTarget(
         y = (-ei * stackOffsetDp.value).dp,
         rotationZ = fanAngleDeg * (ei.toFloat() / denom.toFloat()),
         scale = 1f - ei * scaleStep,
-        shadowElevation = if (displayIndex == 0) 8.dp else 4.dp,
+        // V8.11 阴影从 TopCardShadowElevation 派生（顶卡全量、下层减半）
+        shadowElevation = if (displayIndex == 0) TopCardShadowElevation else TopCardShadowElevation * 0.5f,
         zIndex = (visibleDepth - ei - overflowDepth).toFloat()
     )
+    // V8.13 展开态端点：视觉尺寸扩展到堆叠联合包围框边长 S（正方形）
+    // - scale = S / W：卡片 layout 仍 120dp，transformOrigin 中心 → 视觉以每张中心
+    //   为基点放大到 S×S（"以每张中心为基点扩展"）
+    // - x = (S−W)/2 + i×(S+G)：首项补偿使首图视觉左缘 = 索引×(S+G) 的 0 位
+    //   （与扩展前首图左缘完全一致）；相邻视觉间隙恒 = G（中心间距 = S+G）
+    // - y = 0 不变：卡片中心垂直不动，视觉 top 随 scale 膨胀从堆叠锚点(≈24dp)
+    //   自然上移到 ≈9dp → 上下留白收窄，"上侧更靠近上一行下边缘、
+    //   下侧更贴近下一 item 标题行上边缘"
+    // - 阴影 0（V8.9）：淡出与放大同时插值，无冲突
     val expanded = CardTarget(
-        x = (displayIndex.toFloat() * (cardW.value + cardGap.value)).dp,
+        x = ((expandedCardSizeDp - cardW.value) / 2f
+            + displayIndex.toFloat() * (expandedCardSizeDp + cardGap.value)).dp,
         y = 0.dp,
         rotationZ = 0f,
-        scale = 1f,
+        scale = expandedCardSizeDp / cardW.value,
         // V8.9 展开态无阴影：随 expandProgress 插值，展开时阴影平滑淡出、收起时平滑恢复
         shadowElevation = 0.dp,
         zIndex = 1f
@@ -554,6 +588,13 @@ fun SwipeableImageStack(
     val cardCount = if (useDefaultColors) DEFAULT_IMAGE_COLORS.size else imageUris.size
     if (cardCount == 0) return  // customContent != null 但 imageUris 为空时返回（调用方责任）
 
+    // V8.12 单卡模式语义 token（单一数据源）：cardCount ≤ 1 时成立
+    // —— 替代散落各处的 cardCount <= 1 / cardCount > 1 / cardCount >= 2 判定，
+    // 保证 V8.10b 单卡恒展开的全局规则未来改动时不会漏改。
+    // 使用普通 val 而非 derivedStateOf：cardCount 已是 val，每次重组自然重算，
+    // 无需快照追踪开销。
+    val singleCardMode = cardCount <= 1
+
     var order by remember(cardCount) {
         mutableStateOf(List(cardCount) { CardSlot(stableId = it.toLong(), originalIndex = it) })
     }
@@ -606,7 +647,7 @@ fun SwipeableImageStack(
     // V8.10b 单卡恒为展开态：仅 1 张图时无堆叠可翻、无展开语义，直接以图片行形态
     // 显示（平铺、无阴影、可左右拖拽回弹）—— 首帧即为 1f，无堆叠态闪帧
     val expandProgress = remember {
-        Animatable(initialValue = if (cardCount <= 1 || initialExpanded) 1f else 0f)
+        Animatable(initialValue = if (singleCardMode || initialExpanded) 1f else 0f)
     }
 
     // 动画是否正在运行：用于互斥锁（动画中禁止拖拽、禁止重复触发切换）
@@ -631,7 +672,7 @@ fun SwipeableImageStack(
      */
     suspend fun setExpanded(targetExpand: Boolean) {
         // V8.10b 单卡锁定展开态：无收起语义（收起按钮已隐藏，此处为外部调用的兜底拦截）
-        if (cardCount <= 1) return
+        if (singleCardMode) return
         if (expandProgress.isRunning) return
         val targetValue = if (targetExpand) 1f else 0f
         if (expandProgress.value == targetValue && !expandProgress.isRunning) return // 幂等跳过
@@ -684,7 +725,7 @@ fun SwipeableImageStack(
     // 时，若进度不在 1f（原为堆叠/收起态），强制切到展开态并清零行滚动偏移。
     // 增加到 ≥2 张时不回退（原状态保留：原展开则继续展开，原堆叠则保持堆叠）。
     LaunchedEffect(cardCount) {
-        if (cardCount <= 1 && expandProgress.value < 1f) {
+        if (singleCardMode && expandProgress.value < 1f) {
             rowScrollX.stop()
             rowScrollX.snapTo(0f)
             rawRowScroll.floatValue = 0f
@@ -758,7 +799,7 @@ fun SwipeableImageStack(
     // 阴影补偿都与多卡 item 完全一致 —— 单卡 item 在时间线上的视觉节奏不突兀。
     // （单卡本身渲染仍是平铺无阴影形态，见 calcCardTarget 单卡分支；虚拟几何仅用于
     //  容器尺寸与锚点计算，不产生实际卡片）
-    val M_bbox = if (cardCount <= 1) {
+    val M_bbox = if (singleCardMode) {
         visibleDepth.coerceIn(1, 4)
     } else {
         minOf(visibleDepth, cardCount).coerceIn(1, 4)
@@ -809,6 +850,18 @@ fun SwipeableImageStack(
     val bboxWidth = bboxRight - bboxLeft
     val bboxHeight = bboxBottom - bboxTop
 
+    // ============ V8.13 展开态卡片视觉边长 S（正方形）============
+    // = 堆叠联合包围盒的较大边（当前几何 ≈150dp：宽 147.5 / 高 150 取 150）。
+    // 展开后每张图片以自身中心为基点扩展到 S×S：
+    // - 卡片 layout 尺寸保持 120dp 不变（零 layout 测量变化，纯 graphicsLayer scale）
+    // - scale 端点 = S / 120 ≈ 1.25，transformOrigin 中心 → "以每张中心为基点扩展"
+    // - 消费点：calcCardTarget（x/scale 端点）、cardRowWidth（视觉行宽/滚动范围）
+    // - 单卡模式（V8.10b）经同一 bbox 派生（虚拟堆叠 M_bbox=4）→ 单卡同步 150dp
+    //   与多卡展开态视觉一致
+    // 已知限制（用户已确认接受）：点击热区仍为 120dp layout Box，每侧 ~15dp 视觉
+    // 边缘盲区（点图片中心区域有效）。
+    val expandedCardSizeDp: Float = maxOf(bboxWidth, bboxHeight)
+
     // ============ 堆叠卡片容器定位（左对齐外层 Box 左上角）============
     // 用户方案：堆叠图在包围盒里左对齐，角标右对齐，无需依赖 Center + translationX/Y
     //
@@ -832,7 +885,7 @@ fun SwipeableImageStack(
     // 展开态下不显示角标（设计文档 §3.4 / R6 需求）
     val showCountBadge = countBadge && cardCount > visibleDepth && !isExpanded
     // 展开态下展开按钮隐藏（设计文档 §3.4，由收起按钮取代）
-    val showExpand = showExpandButton && cardCount >= 2 && !isExpanded  // ≥ 2 张且非展开态时显示
+    val showExpand = showExpandButton && !singleCardMode && !isExpanded  // ≥ 2 张且非展开态时显示
     // 角标估算宽度：最多 5 字符 "100/100" 10sp ≈ 35dp + 水平 padding 8dp ≈ 43dp
     val badgeEstWidth = if (showCountBadge) 45f else 0f
     // 展开按钮（比角标大一号）：
@@ -886,10 +939,11 @@ fun SwipeableImageStack(
     // 计算数值：Float（与项目全局 px-as-dp 单位策略一致，数值直接当 dp 使用）
     // 修复：使用 bboxSize + maxOf(cardBoxStart, 0f) 替代 bboxSize + maxOf(-cardBoxStart, 0f)
     // 当 cardBoxStart > 0 时，卡片容器有正偏移，Stage 需扩展以容纳容器底部/右侧
-    // 阴影补偿：顶卡 shadowElevation=8.dp，阴影在卡片四周绘制，需要额外空间
-    // V8.10b 单卡保留阴影补偿（与多卡展开态一致性：展开态虽阴影为 0，
-    // 但 ExpandedRowShadowSlack 仍预留 8dp 余量；单卡同款保留）
-    val shadowPadding = 8f  // 最大阴影高度（顶卡 8.dp）
+    // 阴影补偿：卡片阴影向四周绘制，需要额外空间
+    // V8.11 动态派生：= 各状态最大 shadowElevation（堆叠态顶卡 TopCardShadowElevation），
+    // 不再硬编码 8f —— 调整 TopCardShadowElevation 时本补偿自动同步。
+    // V8.10b 单卡保留同款补偿（与多卡 Stage 几何一致性，见 M_bbox 虚拟堆叠注释）
+    val shadowPadding = TopCardShadowElevation.value
     // 滑动补偿：顶卡左右滑动时的最大位移（双侧各一份），让 Stage 宽度足够容纳滑动过程
     // 注意：TimelineInspirationItem 外包一层 wrapContentWidth(unbounded=true) 保证此宽度不被压缩
     // V8.10b 单卡保留滑动补偿（单卡也需要行滚动弹簧动画，与多卡展开态一致）
@@ -925,12 +979,15 @@ fun SwipeableImageStack(
     val topCardLeftInStageDp: Dp = (cardBoxStartX - bboxLeft).dp
     // 顶卡左上角 Y（Dp）：cardBoxStartY（Float）→ 转为 Dp
     val topCardTopInStageDp: Dp = cardBoxStartY.dp
-    // V7.3 锚点：堆叠态/展开态统一的顶卡视觉 Top
+    // V7.3 锚点：堆叠态/展开态统一的顶卡【卡片中心】垂直锚定
     // 堆叠态：Layer1 的 container 使用 Center 对齐（size = bboxHeight），所以
     //   顶卡视觉 Top = 容器 top + (bboxHeight - cardHeight) / 2（Center 对齐的上下留白）
     //            = cardBoxStartY + (bboxHeight - cardHeight) / 2
-    // 展开态：给卡片行追加 offset(y = topCardAnchorY)，让展开态顶卡视觉 Top
-    //   与堆叠态完全一致，消除分支切换时的向上跳变。
+    // 展开态：给卡片行追加 translationY(y = topCardAnchorY)，锚定卡片 layout 上缘。
+    // V8.13 起 scale 端点 = S/W ≈ 1.25（transformOrigin 中心）→ 展开态顶卡
+    //   视觉 Top = anchorY + W/2 − S/2 ≈ 9dp（堆叠态 ≈24dp），两态视觉 Top 不再相等，
+    //   但**卡片中心**两态恒等（anchorY + W/2）且插值连续（scale 随 expandProgress
+    //   线性插值）→ 无跳变，图片"以中心为基点"向上膨胀、上下留白收窄贴近相邻行。
     val topCardAnchorY: Float = cardBoxStartY + (bboxHeight - cardHeight.value) / 2f
     // V7.4 锚点：展开态整行向左平移量（水平方向连续性）
     // - 堆叠态顶卡视觉左缘 S = cardBoxStartX + (bboxWidth - cardWidth) / 2（Center 留白）
@@ -946,19 +1003,23 @@ fun SwipeableImageStack(
     // ==============================
     // ScrollArea 最大宽度（独立上限，保证 5 张图×120dp + 4×8dp = 632dp 有充足空间）
     val EXPANDED_SCROLL_MAX_WIDTH_DP: Dp = 480.dp
-    // 卡片横向行总宽度：N × (W + G) − G（原型 expand-collapse-stack.html L456 公式）
+    // 卡片横向行总宽度（V8.13 视觉行宽）：N × (S + G) − G
+    // S = expandedCardSizeDp（展开态卡片视觉边长 ≈150dp）——卡片 layout 虽 120dp，
+    // 但视觉放大后相邻间隙按 S 计，滚动范围（minScroll）与行 Box 强宽测量
+    // 都必须按视觉行宽算，否则最后一张卡的视觉右缘会被裁剪线切掉
     val cardRowWidthPxFloat: Float = if (cardCount > 0) {
-        cardCount.toFloat() * (cardWidth.value + cardGap.value) - cardGap.value
+        cardCount.toFloat() * (expandedCardSizeDp + cardGap.value) - cardGap.value
     } else 0f
     val cardRowWidthDp: Dp = cardRowWidthPxFloat.dp
 
     // ============================================================
     // P2 新增：共享卡片渲染层（堆叠/展开共用，Positional Memoization 复用）
-    // 本阶段仅保证堆叠态等价，calcCardTarget expandProgress 固定传 0f
+    // calcCardTarget 实时读取 expandProgress，堆叠/展开/过渡三态统一计算
     // ============================================================
     @Composable
     fun OneSharedCard(displayIndex: Int, card: CardSlot) {
-        // P2：固定 progress=0f（堆叠态），保证 calcCardTarget 输出与原硬编码完全等价
+        // 展开进度实时传入：calcCardTarget 输出堆叠↔展开两端点的线性插值
+        // （V8.13 展开端点含 scale = S/W 与 x 首图左缘补偿）
         val target = calcCardTarget(
             displayIndex = displayIndex,
             cardCount = order.size,
@@ -969,6 +1030,7 @@ fun SwipeableImageStack(
             stackOffsetDp = yOffset,
             fanAngleDeg = -(visibleDepth - 1).toFloat() * 15f,
             scaleStep = 0.05f,
+            expandedCardSizeDp = expandedCardSizeDp,
         )
         // 每张卡独立的飞离动画 Animatable（仅堆叠态顶卡飞离时非零，其余卡恒 0）
         // 原堆叠态 order.forEach 内 remember，抽函数后需在 OneSharedCard 内同步声明
@@ -1196,7 +1258,7 @@ fun SwipeableImageStack(
                             Modifier.pointerInput(card.stableId, swipeDirection, cardCount) {
                                 // V8.10 单卡平铺：无堆叠可翻 → 禁用拖拽手势（弹性跟手/按压缩放
                                 // 均为堆叠态专属交互；点击进全屏由外层 detectTapGestures 保留）
-                                if (cardCount <= 1) return@pointerInput
+                                if (singleCardMode) return@pointerInput
                                 // V8.7c 松手速度跟踪（detectDragGestures 的 onDragEnd 不带速度参数，
                                 // 用 VelocityTracker 手动采集；pointerInput block 只执行一次，局部声明安全）
                                 val cardVelocityTracker = VelocityTracker()
@@ -1291,6 +1353,7 @@ fun SwipeableImageStack(
                                                         stackOffsetDp = yOffset,
                                                         fanAngleDeg = -(visibleDepth - 1).toFloat() * 15f,
                                                         scaleStep = 0.05f,
+                                                        expandedCardSizeDp = expandedCardSizeDp,
                                                     )
                                                     val dXpx = with(density) { (tailTarget.x - snapX).toPx() }
                                                     val dYpx = with(density) { (tailTarget.y - snapY).toPx() }
@@ -1453,6 +1516,7 @@ fun SwipeableImageStack(
                                                         stackOffsetDp = yOffset,
                                                         fanAngleDeg = -(visibleDepth - 1).toFloat() * 15f,
                                                         scaleStep = 0.05f,
+                                                        expandedCardSizeDp = expandedCardSizeDp,
                                                     )
                                                     val dXpx = with(density) { (tailTarget.x - snapX).toPx() }
                                                     val dYpx = with(density) { (tailTarget.y - snapY).toPx() }
@@ -2195,7 +2259,7 @@ fun SwipeableImageStack(
         ) {
             // V8.10b 单卡不显示收起按钮：单卡恒为展开态（平铺图片行），
             // 无堆叠可收起，收起按钮无意义
-            if (showInnerCollapseButton && cardCount > 1) {
+            if (showInnerCollapseButton && !singleCardMode) {
                 Box(
                     modifier = Modifier
                         .graphicsLayer { alpha = collapseBtnAlpha }
