@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>已关联卡片显示样式对比</title>
+<style>
+  /* === CorgiMemo 设计规范色 === */
+  :root {
+    --bg-page: #F8F6F3;
+    --bg-card: #FFFFFF;
+    --text-primary: #2D2D2D;
+    --text-secondary: #666666;
+    --text-hint: #999999;
+    --divider: #EEEEEE;
+    --theme-orange: #FF9A5C;
+    --type-todo: #E3F2FD;
+    --type-date: #FCE4EC;
+    --type-inspiration: #FFF3E0;
+    --type-todo-text: #1976D2;
+    --type-date-text: #C2185B;
+    --type-inspiration-text: #E65100;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #ECEAE6;
+    color: var(--text-primary);
+    padding: 24px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .subtitle { color: var(--text-secondary); font-size: 14px; margin-bottom: 24px; }
+
+  .option-row {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 32px;
+    background: var(--bg-card);
+    border: 2px solid transparent;
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 20px;
+    cursor: pointer;
+    transition: all .2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .option-row:hover { border-color: var(--theme-orange); transform: translateY(-2px); box-shadow: 0 6px 16px rgba(255,154,92,0.18); }
+  .option-row.selected { border-color: var(--theme-orange); background: #FFF8F2; }
+
+  /* === 手机屏幕 mockup === */
+  .phone {
+    width: 300px;
+    height: 540px;
+    background: var(--bg-page);
+    border: 8px solid #2D2D2D;
+    border-radius: 28px;
+    overflow: hidden;
+    position: relative;
+    margin: 0 auto;
+  }
+  .phone-status {
+    height: 18px;
+    background: var(--bg-page);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    font-size: 9px;
+    color: var(--text-primary);
+  }
+  .phone-topbar {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    background: var(--bg-page);
+    border-bottom: 1px solid var(--divider);
+  }
+  .phone-topbar .back { font-size: 16px; color: var(--text-primary); padding: 4px; }
+  .phone-topbar .spacer { flex: 1; }
+  .phone-topbar .done-btn {
+    background: var(--theme-orange);
+    color: white;
+    font-size: 10px;
+    padding: 4px 10px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+  .phone-content {
+    padding: 10px 8px;
+    height: calc(540px - 18px - 36px);
+    overflow: hidden;
+  }
+  /* 编辑框 */
+  .edit-box {
+    background: var(--bg-card);
+    border-radius: 10px;
+    padding: 10px;
+    min-height: 80px;
+    font-size: 11px;
+    color: var(--text-primary);
+    border: 1px solid var(--divider);
+    margin-bottom: 8px;
+  }
+  .edit-box .checkbox { color: var(--theme-orange); margin-right: 6px; }
+  .edit-box .line { margin: 3px 0; }
+  .edit-box .sub-line { padding-left: 18px; color: var(--text-secondary); }
+  /* 预计时长 */
+  .duration {
+    font-size: 10px;
+    color: var(--text-secondary);
+    padding: 6px 4px;
+    border-top: 1px dashed var(--divider);
+    margin-top: 4px;
+  }
+  .duration .icon { margin-right: 4px; }
+
+  /* === 已关联区域（核心）=== */
+  .linked-section {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 2px solid var(--divider);
+  }
+  .linked-title {
+    font-size: 11px;
+    color: var(--text-primary);
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .linked-title .count {
+    background: var(--theme-orange);
+    color: white;
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    margin-left: 4px;
+  }
+  .linked-title .add-btn {
+    margin-left: auto;
+    color: var(--theme-orange);
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  /* === 样式 A：横向 Chip 流 === */
+  .style-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px 4px 10px;
+    border-radius: 14px;
+    font-size: 10px;
+    font-weight: 500;
+    max-width: 100%;
+  }
+  .chip.todo { background: var(--type-todo); color: var(--type-todo-text); }
+  .chip.date { background: var(--type-date); color: var(--type-date-text); }
+  .chip.inspiration { background: var(--type-inspiration); color: var(--type-inspiration-text); }
+  .chip .x {
+    margin-left: 4px;
+    font-size: 11px;
+    opacity: 0.7;
+    cursor: pointer;
+  }
+  .chip .x:hover { opacity: 1; }
+
+  /* === 样式 B：纵向小卡片列表 === */
+  .style-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .list-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--divider);
+    border-radius: 8px;
+    font-size: 10px;
+  }
+  .list-item .type-icon {
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+  }
+  .list-item .type-icon.todo { background: var(--type-todo); }
+  .list-item .type-icon.date { background: var(--type-date); }
+  .list-item .type-icon.inspiration { background: var(--type-inspiration); }
+  .list-item .title {
+    flex: 1;
+    color: var(--text-primary);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .list-item .type-tag {
+    font-size: 9px;
+    color: var(--text-hint);
+    padding: 1px 5px;
+    background: var(--bg-page);
+    border-radius: 4px;
+  }
+  .list-item .x {
+    color: var(--text-hint);
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  /* === 样式 C：卡片缩略图网格 === */
+  .style-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .grid-card {
+    background: var(--bg-card);
+    border: 1px solid var(--divider);
+    border-radius: 8px;
+    padding: 8px;
+    position: relative;
+    font-size: 10px;
+  }
+  .grid-card .type-icon {
+    width: 20px; height: 20px;
+    border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+  .grid-card .type-icon.todo { background: var(--type-todo); }
+  .grid-card .type-icon.date { background: var(--type-date); }
+  .grid-card .type-icon.inspiration { background: var(--type-inspiration); }
+  .grid-card .title {
+    color: var(--text-primary);
+    font-weight: 500;
+    line-height: 1.3;
+    max-height: 26px;
+    overflow: hidden;
+  }
+  .grid-card .x {
+    position: absolute;
+    top: 2px;
+    right: 4px;
+    color: var(--text-hint);
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  /* === 右侧说明 === */
+  .desc h3 {
+    font-size: 17px;
+    margin-bottom: 6px;
+    color: var(--text-primary);
+  }
+  .desc .tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    background: #FFF3E0;
+    color: var(--type-inspiration-text);
+    border-radius: 6px;
+    margin-bottom: 10px;
+  }
+  .desc ul {
+    list-style: none;
+    margin: 8px 0 12px 0;
+  }
+  .desc ul li {
+    padding: 4px 0 4px 18px;
+    position: relative;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .desc ul li:before {
+    content: "•";
+    position: absolute;
+    left: 4px;
+    color: var(--theme-orange);
+    font-weight: bold;
+  }
+  .pros-cons-mini {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 10px 0;
+    font-size: 12px;
+  }
+  .pros-cons-mini .pros { color: #16A34A; }
+  .pros-cons-mini .cons { color: #DC2626; }
+  .pros-cons-mini h4 { font-size: 11px; margin-bottom: 4px; }
+  .select-indicator {
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: var(--bg-page);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+  .option-row.selected .select-indicator {
+    background: var(--theme-orange);
+    color: white;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<h1>已关联卡片显示样式对比</h1>
+<p class="subtitle">三种样式都展示在「预计时长」下方的同一位置，颜色规范遵循 CorgiMemo 设计规范。点击任一方案卡片可选择。</p>
+
+<!-- ============ 样式 A：横向 Chip 流 ============ -->
+<div class="option-row" data-choice="a" onclick="toggleSelect(this)">
+  <div class="phone">
+    <div class="phone-status"><span>9:41</span><span>•••</span></div>
+    <div class="phone-topbar">
+      <span class="back">‹</span>
+      <span class="spacer"></span>
+      <span class="done-btn">全部完成</span>
+    </div>
+    <div class="phone-content">
+      <div class="edit-box">
+        <div class="line"><span class="checkbox">☑</span>完成季度复盘报告</div>
+        <div class="line sub-line"><span class="checkbox">☐</span>收集 Q3 数据</div>
+        <div class="line sub-line"><span class="checkbox">☐</span>整理反馈</div>
+      </div>
+      <div class="duration"><span class="icon">⏱️</span>预计时长: 2小时30分</div>
+
+      <div class="linked-section">
+        <div class="linked-title">
+          🔗 已关联 <span class="count">3</span>
+          <span class="add-btn">＋</span>
+        </div>
+        <div class="style-chips">
+          <span class="chip todo">📝 季度总结会议 <span class="x">×</span></span>
+          <span class="chip inspiration">💡 复盘方法论 <span class="x">×</span></span>
+          <span class="chip date">📅 项目截止日 <span class="x">×</span></span>
+          <span class="chip todo">📝 收集销售数据 <span class="x">×</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="desc">
+    <h3>A. 横向 Chip 流</h3>
+    <span class="tag">紧凑 · 轻量</span>
+    <ul>
+      <li>每个 Chip：类型图标 + 标题 + ×</li>
+      <li>按类型颜色区分背景（蓝/粉/橙）</li>
+      <li>横向排列自动换行，点击 Chip 弹预览</li>
+    </ul>
+    <div class="pros-cons-mini">
+      <div class="pros"><h4>✓ 优势</h4>占空间最小；视觉轻；关联多时自动换行</div>
+      <div class="cons"><h4>✗ 劣势</h4>标题长时截断；类型分布不直观</div>
+    </div>
+    <div class="select-indicator">点击选择此方案</div>
+  </div>
+</div>
+
+<!-- ============ 样式 B：纵向小卡片列表 ============ -->
+<div class="option-row" data-choice="b" onclick="toggleSelect(this)">
+  <div class="phone">
+    <div class="phone-status"><span>9:41</span><span>•••</span></div>
+    <div class="phone-topbar">
+      <span class="back">‹</span>
+      <span class="spacer"></span>
+      <span class="done-btn">全部完成</span>
+    </div>
+    <div class="phone-content">
+      <div class="edit-box">
+        <div class="line"><span class="checkbox">☑</span>完成季度复盘报告</div>
+        <div class="line sub-line"><span class="checkbox">☐</span>收集 Q3 数据</div>
+        <div class="line sub-line"><span class="checkbox">☐</span>整理反馈</div>
+      </div>
+      <div class="duration"><span class="icon">⏱️</span>预计时长: 2小时30分</div>
+
+      <div class="linked-section">
+        <div class="linked-title">
+          🔗 已关联 <span class="count">3</span>
+          <span class="add-btn">＋</span>
+        </div>
+        <div class="style-list">
+          <div class="list-item">
+            <div class="type-icon todo">📝</div>
+            <div class="title">季度总结会议</div>
+            <div class="type-tag">待办</div>
+            <div class="x">×</div>
+          </div>
+          <div class="list-item">
+            <div class="type-icon inspiration">💡</div>
+            <div class="title">复盘方法论</div>
+            <div class="type-tag">灵感</div>
+            <div class="x">×</div>
+          </div>
+          <div class="list-item">
+            <div class="type-icon date">📅</div>
+            <div class="title">项目截止日</div>
+            <div class="type-tag">日期</div>
+            <div class="x">×</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="desc">
+    <h3>B. 纵向小卡片列表</h3>
+    <span class="tag">清晰 · 信息全</span>
+    <ul>
+      <li>每行：类型图标 + 标题 + 类型标签 + ×</li>
+      <li>独立卡片样式，白底+灰边框</li>
+      <li>点击整行弹预览，× 删除</li>
+    </ul>
+    <div class="pros-cons-mini">
+      <div class="pros"><h4>✓ 优势</h4>信息最全；类型标签清晰；点击命中区大</div>
+      <div class="cons"><h4>✗ 劣势</h4>占空间较多；关联 10 个时滚动较长</div>
+    </div>
+    <div class="select-indicator">点击选择此方案</div>
+  </div>
+</div>
+
+<!-- ============ 样式 C：卡片缩略图网格 ============ -->
+<div class="option-row" data-choice="c" onclick="toggleSelect(this)">
+  <div class="phone">
+    <div class="phone-status"><span>9:41</span><span>•••</span></div>
+    <div class="phone-topbar">
+      <span class="back">‹</span>
+      <span class="spacer"></span>
+      <span class="done-btn">全部完成</span>
+    </div>
+    <div class="phone-content">
+      <div class="edit-box">
+        <div class="line"><span class="checkbox">☑</span>完成季度复盘报告</div>
+        <div class="line sub-line"><span class="checkbox">☐</span>收集 Q3 数据</div>
+        <div class="line sub-line"><span class="checkbox">☐</span>整理反馈</div>
+      </div>
+      <div class="duration"><span class="icon">⏱️</span>预计时长: 2小时30分</div>
+
+      <div class="linked-section">
+        <div class="linked-title">
+          🔗 已关联 <span class="count">3</span>
+          <span class="add-btn">＋</span>
+        </div>
+        <div class="style-grid">
+          <div class="grid-card">
+            <div class="type-icon todo">📝</div>
+            <div class="title">季度总结会议</div>
+            <div class="x">×</div>
+          </div>
+          <div class="grid-card">
+            <div class="type-icon inspiration">💡</div>
+            <div class="title">复盘方法论</div>
+            <div class="x">×</div>
+          </div>
+          <div class="grid-card">
+            <div class="type-icon date">📅</div>
+            <div class="title">项目截止日</div>
+            <div class="x">×</div>
+          </div>
+          <div class="grid-card">
+            <div class="type-icon todo">📝</div>
+            <div class="title">收集销售数据</div>
+            <div class="x">×</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="desc">
+    <h3>C. 卡片缩略图网格</h3>
+    <span class="tag">视觉化 · 紧凑</span>
+    <ul>
+      <li>2 列网格，每个卡片：类型图标 + 标题 + ×</li>
+      <li>视觉化更强，类似相册</li>
+      <li>点击卡片弹预览，× 删除</li>
+    </ul>
+    <div class="pros-cons-mini">
+      <div class="pros"><h4>✓ 优势</h4>空间利用高；视觉化强；关联多时排列整齐</div>
+      <div class="cons"><h4>✗ 劣势</h4>标题截断多；类型不直观；与待办列表风格差异大</div>
+    </div>
+    <div class="select-indicator">点击选择此方案</div>
+  </div>
+</div>
+
+<script>
+  // 简单的选择切换
+  function toggleSelect(el) {
+    document.querySelectorAll('.option-row').forEach(r => r.classList.remove('selected'));
+    el.classList.add('selected');
+  }
+</script>
+
+</body>
+</html>

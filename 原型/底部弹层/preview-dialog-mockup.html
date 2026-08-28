@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>关联卡片预览 Dialog 原型</title>
+<style>
+  :root {
+    --bg-page: #F8F6F3;
+    --bg-card: #FFFFFF;
+    --text-primary: #2D2D2D;
+    --text-secondary: #666666;
+    --text-hint: #999999;
+    --divider: #EEEEEE;
+    --theme-orange: #FF9A5C;
+    --theme-orange-light: #FFF5EE;
+    --type-todo: #E3F2FD;
+    --type-date: #FCE4EC;
+    --type-inspiration: #FFF3E0;
+    --type-todo-text: #1976D2;
+    --type-date-text: #C2185B;
+    --type-inspiration-text: #E65100;
+    --overlay: rgba(0,0,0,0.5);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #ECEAE6;
+    color: var(--text-primary);
+    padding: 24px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .subtitle { color: var(--text-secondary); font-size: 14px; margin-bottom: 8px; }
+  .update-note {
+    background: #FFF8F2;
+    border-left: 4px solid var(--theme-orange);
+    padding: 10px 14px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    border-radius: 0 8px 8px 0;
+  }
+  .update-note strong { color: var(--theme-orange); }
+
+  .preview-row {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 32px;
+    background: var(--bg-card);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+
+  /* 手机屏幕 - 显示 Dialog 激活状态 */
+  .phone {
+    width: 340px;
+    height: 620px;
+    background: var(--bg-page);
+    border: 8px solid #2D2D2D;
+    border-radius: 28px;
+    overflow: hidden;
+    position: relative;
+    margin: 0 auto;
+  }
+  /* 模糊背景 */
+  .phone-bg {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-page);
+    filter: blur(2px);
+    opacity: 0.6;
+  }
+  .phone-bg-content {
+    padding: 30px 14px 14px;
+    color: var(--text-hint);
+    font-size: 11px;
+  }
+  .phone-bg-content .mock-box {
+    background: var(--bg-card);
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 8px;
+    border: 1px solid var(--divider);
+  }
+
+  /* 遮罩 */
+  .dialog-overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--overlay);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  /* 居中 Dialog */
+  .dialog {
+    background: var(--bg-card);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 290px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  }
+  .dialog-header {
+    padding: 14px 16px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .dialog-header .type-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .dialog-header .type-icon.todo { background: var(--type-todo); }
+  .dialog-header .type-icon.inspiration { background: var(--type-inspiration); }
+  .dialog-header .type-icon.date { background: var(--type-date); }
+  .dialog-header .title-wrap { flex: 1; min-width: 0; }
+  .dialog-header .title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dialog-header .type-tag {
+    font-size: 10px;
+    color: var(--text-hint);
+    margin-top: 2px;
+  }
+  .dialog-header .close {
+    color: var(--text-hint);
+    font-size: 18px;
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dialog-body {
+    padding: 12px 16px 14px;
+  }
+  .info-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+  .info-row .label {
+    color: var(--text-hint);
+    width: 60px;
+    flex-shrink: 0;
+  }
+  .info-row .value {
+    color: var(--text-primary);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .info-row .value.highlight {
+    color: var(--theme-orange);
+    font-weight: 600;
+  }
+  .info-row .value.date-red {
+    color: var(--type-date-text);
+    font-weight: 600;
+  }
+
+  /* 内容预览块 */
+  .content-preview {
+    background: var(--bg-page);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin: 8px 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    max-height: 60px;
+    overflow: hidden;
+    position: relative;
+  }
+  .content-preview:after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 16px;
+    background: linear-gradient(transparent, var(--bg-page));
+  }
+
+  /* 缩略图 */
+  .thumb-row {
+    display: flex;
+    gap: 4px;
+    margin: 8px 0;
+  }
+  .thumb {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #FFE4B5, #FFA07A);
+    flex-shrink: 0;
+  }
+  .thumb.more {
+    background: var(--bg-page);
+    color: var(--text-hint);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+  }
+
+  /* 标签 */
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 6px 0;
+  }
+  .tag-pill {
+    background: var(--bg-page);
+    color: var(--text-secondary);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--divider);
+  }
+
+  /* 倒计时大数字 */
+  .countdown-box {
+    background: linear-gradient(135deg, #FFF5EE, #FFE4D6);
+    border-radius: 10px;
+    padding: 12px;
+    margin: 8px 0;
+    text-align: center;
+    border: 1px solid var(--theme-orange);
+  }
+  .countdown-box .number {
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--theme-orange);
+    line-height: 1;
+  }
+  .countdown-box .unit {
+    font-size: 12px;
+    color: var(--type-inspiration-text);
+    margin-left: 4px;
+  }
+  .countdown-box .label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+
+  /* 子任务进度 */
+  .progress-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+    font-size: 11px;
+  }
+  .progress-bar {
+    flex: 1;
+    height: 4px;
+    background: var(--divider);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--theme-orange);
+    border-radius: 2px;
+  }
+
+  /* 底部按钮 */
+  .dialog-footer {
+    display: flex;
+    gap: 6px;
+    padding: 10px 16px 14px;
+    border-top: 1px solid var(--divider);
+  }
+  .btn {
+    flex: 1;
+    padding: 8px 0;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    font-family: inherit;
+    text-align: center;
+  }
+  .btn-unlink {
+    background: transparent;
+    color: #DC2626;
+    border: 1px solid #FCA5A5;
+  }
+  .btn-jump {
+    background: var(--theme-orange);
+    color: white;
+  }
+  .btn-close {
+    background: var(--bg-page);
+    color: var(--text-secondary);
+  }
+
+  /* === 右侧说明 === */
+  .desc h3 {
+    font-size: 17px;
+    margin-bottom: 6px;
+  }
+  .desc .tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    background: var(--type-inspiration);
+    color: var(--type-inspiration-text);
+    border-radius: 6px;
+    margin-bottom: 10px;
+  }
+  .desc ul { list-style: none; margin: 8px 0 12px 0; }
+  .desc ul li {
+    padding: 4px 0 4px 18px;
+    position: relative;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .desc ul li:before {
+    content: "•";
+    position: absolute;
+    left: 4px;
+    color: var(--theme-orange);
+    font-weight: bold;
+  }
+
+  .interaction-flow {
+    background: var(--bg-page);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-top: 12px;
+    font-size: 12px;
+  }
+  .interaction-flow h4 {
+    font-size: 12px;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+  .interaction-flow ol {
+    padding-left: 18px;
+    color: var(--text-secondary);
+  }
+  .interaction-flow ol li {
+    padding: 2px 0;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<h1>关联卡片预览 Dialog 原型</h1>
+<p class="subtitle">点击已关联 Chip 弹出的居中 Dialog，三种类型（待办/灵感/日期）显示不同内容</p>
+<div class="update-note">
+  <strong>设计原则：</strong>居中 Dialog 形式，轻量不打断编辑流。三种类型差异化展示关键信息，提供「取消关联」「跳转详情」「关闭」三个操作。
+</div>
+
+<!-- ============ 待办预览 ============ -->
+<div class="preview-row">
+  <div class="phone">
+    <div class="phone-bg">
+      <div class="phone-bg-content">
+        <div class="mock-box">☐ 完成季度复盘报告</div>
+        <div class="mock-box" style="height:80px">🔗 已关联 (3)<br><span style="font-size:10px;color:#1976D2;background:#E3F2FD;padding:2px 6px;border-radius:8px;">📝 季度总结会议 ×</span></div>
+      </div>
+    </div>
+    <div class="dialog-overlay">
+      <div class="dialog">
+        <div class="dialog-header">
+          <div class="type-icon todo">📝</div>
+          <div class="title-wrap">
+            <div class="title">季度总结会议</div>
+            <div class="type-tag">📝 待办</div>
+          </div>
+          <div class="close">×</div>
+        </div>
+        <div class="dialog-body">
+          <div class="info-row">
+            <div class="label">截止时间</div>
+            <div class="value highlight">今天 18:00</div>
+          </div>
+          <div class="info-row">
+            <div class="label">分类</div>
+            <div class="value">📁 工作</div>
+          </div>
+          <div class="info-row">
+            <div class="label">优先级</div>
+            <div class="value">● 中</div>
+          </div>
+          <div class="info-row">
+            <div class="label">子任务</div>
+            <div class="value">
+              <div class="progress-row" style="margin:0">
+                <div class="progress-bar"><div class="progress-fill" style="width:33%"></div></div>
+                <span style="font-size:10px;color:var(--text-hint)">1/3</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="dialog-footer">
+          <button class="btn btn-unlink">取消关联</button>
+          <button class="btn btn-jump">跳转详情</button>
+          <button class="btn btn-close">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="desc">
+    <h3>📝 待办预览</h3>
+    <span class="tag">类型: 待办</span>
+    <ul>
+      <li><strong>标题：</strong>📝 图标 + 待办标题 + 类型标签</li>
+      <li><strong>截止时间：</strong>橙色高亮显示（如"今天 18:00"）</li>
+      <li><strong>分类：</strong>📁 图标 + 分类名</li>
+      <li><strong>优先级：</strong>圆点 + 等级（无/低/中/高）</li>
+      <li><strong>子任务进度：</strong>进度条 + "1/3" 文字</li>
+      <li><strong>三个按钮：</strong>取消关联（红边框）/ 跳转详情（橙底白字）/ 关闭（灰底）</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ 灵感预览 ============ -->
+<div class="preview-row">
+  <div class="phone">
+    <div class="phone-bg">
+      <div class="phone-bg-content">
+        <div class="mock-box">☐ 完成季度复盘报告</div>
+        <div class="mock-box" style="height:80px">🔗 已关联 (3)<br><span style="font-size:10px;color:#E65100;background:#FFF3E0;padding:2px 6px;border-radius:8px;">💡 复盘方法论 ×</span></div>
+      </div>
+    </div>
+    <div class="dialog-overlay">
+      <div class="dialog">
+        <div class="dialog-header">
+          <div class="type-icon inspiration">💡</div>
+          <div class="title-wrap">
+            <div class="title">复盘方法论</div>
+            <div class="type-tag">💡 灵感</div>
+          </div>
+          <div class="close">×</div>
+        </div>
+        <div class="dialog-body">
+          <div class="info-row">
+            <div class="label">创建时间</div>
+            <div class="value">10月15日 14:30</div>
+          </div>
+          <div class="content-preview">
+            复盘的核心是「对比预期与实际」。三步法：1. 回顾目标 2. 评估结果 3. 分析原因...
+          </div>
+          <div class="thumb-row">
+            <div class="thumb"></div>
+            <div class="thumb" style="background:linear-gradient(135deg,#B5EAD7,#7EC8A0)"></div>
+            <div class="thumb more">+2</div>
+          </div>
+          <div class="tag-row">
+            <span class="tag-pill">#复盘</span>
+            <span class="tag-pill">#方法论</span>
+            <span class="tag-pill">#工作</span>
+          </div>
+        </div>
+        <div class="dialog-footer">
+          <button class="btn btn-unlink">取消关联</button>
+          <button class="btn btn-jump">跳转详情</button>
+          <button class="btn btn-close">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="desc">
+    <h3>💡 灵感预览</h3>
+    <span class="tag">类型: 灵感</span>
+    <ul>
+      <li><strong>标题：</strong>💡 图标 + 灵感标题 + 类型标签</li>
+      <li><strong>创建时间：</strong>日期 + 时间</li>
+      <li><strong>内容预览：</strong>渐变遮罩，最多 3 行</li>
+      <li><strong>图片缩略图：</strong>横向滚动，最多显示 3 张 + "+N"</li>
+      <li><strong>标签：</strong>#标签 形式</li>
+      <li><strong>三个按钮：</strong>同待办预览</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ 日期预览 ============ -->
+<div class="preview-row">
+  <div class="phone">
+    <div class="phone-bg">
+      <div class="phone-bg-content">
+        <div class="mock-box">☐ 完成季度复盘报告</div>
+        <div class="mock-box" style="height:80px">🔗 已关联 (3)<br><span style="font-size:10px;color:#C2185B;background:#FCE4EC;padding:2px 6px;border-radius:8px;">📅 项目截止日 ×</span></div>
+      </div>
+    </div>
+    <div class="dialog-overlay">
+      <div class="dialog">
+        <div class="dialog-header">
+          <div class="type-icon date">📅</div>
+          <div class="title-wrap">
+            <div class="title">项目截止日</div>
+            <div class="type-tag">📅 日期</div>
+          </div>
+          <div class="close">×</div>
+        </div>
+        <div class="dialog-body">
+          <div class="info-row">
+            <div class="label">目标日期</div>
+            <div class="value date-red">2026年12月31日</div>
+          </div>
+          <div class="countdown-box">
+            <span class="number">73</span><span class="unit">天</span>
+            <div class="label">剩余倒计时</div>
+          </div>
+          <div class="info-row">
+            <div class="label">备注</div>
+            <div class="value">年终交付，需提前一周完成</div>
+          </div>
+        </div>
+        <div class="dialog-footer">
+          <button class="btn btn-unlink">取消关联</button>
+          <button class="btn btn-jump">跳转详情</button>
+          <button class="btn btn-close">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="desc">
+    <h3>📅 日期预览</h3>
+    <span class="tag">类型: 日期</span>
+    <ul>
+      <li><strong>标题：</strong>📅 图标 + 日期标题 + 类型标签</li>
+      <li><strong>目标日期：</strong>完整日期（年月日）</li>
+      <li><strong>倒计时大数字：</strong>橙色渐变背景 + 大字号数字 + "天"单位</li>
+      <li><strong>备注：</strong>显示日期备注（如有）</li>
+      <li><strong>三个按钮：</strong>同待办预览</li>
+    </ul>
+
+    <div class="interaction-flow">
+      <h4>预览弹窗交互流程</h4>
+      <ol>
+        <li>用户在已关联区域点击某个 Chip</li>
+        <li>弹出居中 Dialog（带遮罩），背景编辑页模糊化</li>
+        <li>展示对应类型的预览内容</li>
+        <li>「取消关联」→ 立即从已关联列表移除该 Chip，关闭 Dialog</li>
+        <li>「跳转详情」→ 跳转到对应卡片的详情页（待办编辑/灵感编辑/日期详情）</li>
+        <li>「关闭」/ 点击遮罩 / 按返回键 → 关闭 Dialog，无操作</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

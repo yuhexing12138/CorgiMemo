@@ -1,0 +1,116 @@
+<h2>卡片区展示形态：哪种更合适？</h2>
+<p class="subtitle">参考待办/灵感弹窗（列表式）vs 日期页本身卡片样式（精致卡片式）</p>
+
+<div class="split">
+  <!-- 方案 A：列表式 -->
+  <div class="mockup">
+    <div class="mockup-header">方案 A — 列表式（复用 TodoCalendarDialog 结构）</div>
+    <div class="mockup-body" style="background:#F8F6F3;padding:0">
+      <!-- 顶部年月行 -->
+      <div style="display:flex;justify-content:space-between;padding:8px 12px;background:#FFFFFF;border-bottom:1px solid #EEEEEE">
+        <span style="font-weight:700;font-size:14px;color:#2D2D2D">2026年7月 ▼</span>
+        <span style="color:#666;font-size:14px">×</span>
+      </div>
+      <!-- 日历区 -->
+      <div style="background:#FFFFFF;padding:8px 12px;border-bottom:1px solid #EEEEEE">
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:10px;color:#999">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:11px;color:#2D2D2D;margin-top:4px">
+          <span style="color:#CCC">28</span><span style="color:#CCC">29</span><span style="color:#CCC">30</span>
+          <span>1</span><span>2</span><span>3</span><span>4</span>
+          <span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span><span>11</span>
+          <span>12</span><span>13</span><span style="background:#FF9A5C;color:#FFF;border-radius:50%;padding:2px 0">14</span><span>15</span><span>16</span><span>17</span><span>18</span>
+        </div>
+      </div>
+      <!-- 选中日期信息栏 -->
+      <div style="padding:8px 16px;background:#FFFFFF">
+        <span style="font-size:12px;font-weight:600;color:#2D2D2D">7月14日 周二 共 2 条</span>
+      </div>
+      <div style="height:1px;background:#EEEEEE"></div>
+      <!-- 卡片列表（列表式） -->
+      <div style="padding:8px 16px;background:#FFFFFF">
+        <div style="padding:8px 0;border-bottom:1px solid #EEEEEE;display:flex;align-items:center;gap:8px">
+          <span style="font-size:16px">🎂</span>
+          <span style="font-size:13px;font-weight:600;color:#2D2D2D;flex:1">妈妈生日</span>
+          <span style="font-size:10px;color:#FF6B9D;background:#FFE4EF;padding:1px 4px;border-radius:6px">生日</span>
+        </div>
+        <div style="padding:8px 0;display:flex;align-items:center;gap:8px">
+          <span style="font-size:16px">💕</span>
+          <span style="font-size:13px;font-weight:600;color:#2D2D2D;flex:1">恋爱5周年</span>
+          <span style="font-size:10px;color:#FF9A5C;background:#FFE4CC;padding:1px 4px;border-radius:6px">纪念日</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 方案 B：卡片式 -->
+  <div class="mockup">
+    <div class="mockup-header">方案 B — 卡片式（复用 SpecialDateCard 样式）</div>
+    <div class="mockup-body" style="background:#F8F6F3;padding:0">
+      <div style="display:flex;justify-content:space-between;padding:8px 12px;background:#FFFFFF;border-bottom:1px solid #EEEEEE">
+        <span style="font-weight:700;font-size:14px;color:#2D2D2D">2026年7月 ▼</span>
+        <span style="color:#666;font-size:14px">×</span>
+      </div>
+      <div style="background:#FFFFFF;padding:8px 12px;border-bottom:1px solid #EEEEEE">
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:10px;color:#999">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:11px;color:#2D2D2D;margin-top:4px">
+          <span style="color:#CCC">28</span><span style="color:#CCC">29</span><span style="color:#CCC">30</span>
+          <span>1</span><span>2</span><span>3</span><span>4</span>
+          <span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span><span>11</span>
+          <span>12</span><span>13</span><span style="background:#FF9A5C;color:#FFF;border-radius:50%;padding:2px 0">14</span><span>15</span><span>16</span><span>17</span><span>18</span>
+        </div>
+      </div>
+      <div style="padding:8px 16px;background:#FFFFFF">
+        <span style="font-size:12px;font-weight:600;color:#2D2D2D">7月14日 周二 共 2 条</span>
+      </div>
+      <div style="height:1px;background:#EEEEEE"></div>
+      <!-- 卡片列表（卡片式） -->
+      <div style="padding:12px 16px;background:#F8F6F3;display:flex;flex-direction:column;gap:8px">
+        <div style="background:#FFFFFF;border-radius:12px;padding:12px;box-shadow:0 1px 2px rgba(0,0,0,0.05)">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:36px;height:36px;border-radius:50%;background:#FFE4EF;display:flex;align-items:center;justify-content:center;font-size:18px">🎂</div>
+            <div style="flex:1">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:13px;font-weight:600;color:#2D2D2D">妈妈生日</span>
+                <span style="font-size:10px;color:#FF6B9D">🎂 生日</span>
+              </div>
+              <span style="font-size:11px;color:#666">2026年7月14日</span>
+            </div>
+          </div>
+        </div>
+        <div style="background:#FFFFFF;border-radius:12px;padding:12px;box-shadow:0 1px 2px rgba(0,0,0,0.05)">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:36px;height:36px;border-radius:50%;background:#FFE4CC;display:flex;align-items:center;justify-content:center;font-size:18px">💕</div>
+            <div style="flex:1">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:13px;font-weight:600;color:#2D2D2D">恋爱5周年</span>
+                <span style="font-size:10px;color:#FF9A5C">💕 纪念日</span>
+              </div>
+              <span style="font-size:11px;color:#666">2026年7月14日</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>列表式</h3>
+      <p>与待办/灵感弹窗视觉一致，单行简洁，无圆头像无阴影。开发最快，复用 TodoCalendarDialog 结构。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>卡片式（推荐）</h3>
+      <p>与日期页本身的卡片视觉一致，圆头像 + 圆角 + 阴影。直接复用 SpecialDateCard 组件代码。点击/跳转详情可保持原交互。</p>
+    </div>
+  </div>
+</div>

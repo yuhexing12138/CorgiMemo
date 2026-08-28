@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>关联选择 BottomSheet 弹窗原型</title>
+<style>
+  :root {
+    --bg-page: #F8F6F3;
+    --bg-card: #FFFFFF;
+    --text-primary: #2D2D2D;
+    --text-secondary: #666666;
+    --text-hint: #999999;
+    --divider: #EEEEEE;
+    --theme-orange: #FF9A5C;
+    --theme-orange-light: #FFF5EE;
+    --type-todo: #E3F2FD;
+    --type-date: #FCE4EC;
+    --type-inspiration: #FFF3E0;
+    --type-todo-text: #1976D2;
+    --type-date-text: #C2185B;
+    --type-inspiration-text: #E65100;
+    --overlay: rgba(0,0,0,0.5);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #ECEAE6;
+    color: var(--text-primary);
+    padding: 24px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .subtitle { color: var(--text-secondary); font-size: 14px; margin-bottom: 20px; }
+
+  .stage {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 32px;
+    background: var(--bg-card);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+
+  /* 手机屏幕 - 展示 BottomSheet 弹窗激活状态 */
+  .phone {
+    width: 340px;
+    height: 680px;
+    background: var(--bg-page);
+    border: 8px solid #2D2D2D;
+    border-radius: 28px;
+    overflow: hidden;
+    position: relative;
+    margin: 0 auto;
+  }
+  /* 模拟背景模糊的编辑页 */
+  .phone-bg {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-page);
+    filter: blur(2px);
+    opacity: 0.6;
+  }
+  .phone-bg-content {
+    padding: 30px 14px 14px;
+    color: var(--text-hint);
+    font-size: 11px;
+  }
+  .phone-bg-content .mock-box {
+    background: var(--bg-card);
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 8px;
+    border: 1px solid var(--divider);
+  }
+
+  /* BottomSheet 弹窗 */
+  .bottom-sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg-card);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
+    padding: 0 0 16px;
+    max-height: 85%;
+    display: flex;
+    flex-direction: column;
+  }
+  .sheet-handle {
+    width: 36px;
+    height: 4px;
+    background: var(--divider);
+    border-radius: 2px;
+    margin: 10px auto 8px;
+  }
+  .sheet-header {
+    display: flex;
+    align-items: center;
+    padding: 4px 16px 10px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .sheet-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+  }
+  .sheet-close {
+    color: var(--text-hint);
+    font-size: 18px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  /* 搜索框 */
+  .search-box {
+    margin: 12px 16px 8px;
+    background: var(--bg-page);
+    border-radius: 12px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .search-box .icon { color: var(--text-hint); font-size: 14px; }
+  .search-box input {
+    border: none;
+    background: transparent;
+    outline: none;
+    flex: 1;
+    font-size: 13px;
+    color: var(--text-primary);
+    font-family: inherit;
+  }
+  .search-box input::placeholder { color: var(--text-hint); }
+
+  /* 卡片列表 */
+  .card-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 16px 8px;
+    max-height: 380px;
+  }
+  .type-section {
+    margin-bottom: 12px;
+  }
+  .type-header {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin: 8px 0 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .type-header .count {
+    color: var(--text-hint);
+    font-weight: normal;
+    font-size: 11px;
+  }
+
+  .card-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 2px;
+    transition: background 0.15s;
+  }
+  .card-item:hover { background: var(--bg-page); }
+  .card-item.selected { background: var(--theme-orange-light); }
+
+  .card-checkbox {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    border: 1.5px solid var(--divider);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: var(--bg-card);
+  }
+  .card-item.selected .card-checkbox {
+    background: var(--theme-orange);
+    border-color: var(--theme-orange);
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+  }
+
+  .card-type-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .card-type-icon.todo { background: var(--type-todo); }
+  .card-type-icon.inspiration { background: var(--type-inspiration); }
+  .card-type-icon.date { background: var(--type-date); }
+
+  .card-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .card-title {
+    font-size: 13px;
+    color: var(--text-primary);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card-subtitle {
+    font-size: 10px;
+    color: var(--text-hint);
+    margin-top: 1px;
+  }
+
+  /* 底部操作栏 */
+  .sheet-footer {
+    border-top: 1px solid var(--divider);
+    padding: 10px 16px 4px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .selected-count {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .selected-count strong {
+    color: var(--theme-orange);
+    font-size: 14px;
+  }
+  .selected-count .limit {
+    color: var(--text-hint);
+    font-size: 11px;
+  }
+  .confirm-btn {
+    margin-left: auto;
+    background: var(--theme-orange);
+    color: white;
+    border: none;
+    padding: 8px 24px;
+    border-radius: 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .confirm-btn:disabled {
+    background: var(--divider);
+    color: var(--text-hint);
+    cursor: not-allowed;
+  }
+
+  /* === 右侧说明 === */
+  .desc h3 {
+    font-size: 17px;
+    margin-bottom: 6px;
+  }
+  .desc .tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    background: var(--type-inspiration);
+    color: var(--type-inspiration-text);
+    border-radius: 6px;
+    margin-bottom: 10px;
+  }
+  .desc ul { list-style: none; margin: 8px 0 12px 0; }
+  .desc ul li {
+    padding: 4px 0 4px 18px;
+    position: relative;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .desc ul li:before {
+    content: "•";
+    position: absolute;
+    left: 4px;
+    color: var(--theme-orange);
+    font-weight: bold;
+  }
+
+  .interaction-flow {
+    background: var(--bg-page);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-top: 12px;
+    font-size: 12px;
+  }
+  .interaction-flow h4 {
+    font-size: 12px;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+  .interaction-flow ol {
+    padding-left: 18px;
+    color: var(--text-secondary);
+  }
+  .interaction-flow ol li {
+    padding: 2px 0;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<h1>关联选择 BottomSheet 弹窗原型</h1>
+<p class="subtitle">展示弹窗激活时的完整布局：搜索框 + 按类型分组的卡片列表（带勾选）+ 底部已选数/完成按钮</p>
+
+<div class="stage">
+  <div class="phone">
+    <!-- 模糊背景（编辑页） -->
+    <div class="phone-bg">
+      <div class="phone-bg-content">
+        <div class="mock-box">☐ 完成季度复盘报告</div>
+        <div class="mock-box">☐ 收集 Q3 数据</div>
+        <div class="mock-box" style="height:60px">🔗 已关联 (1)</div>
+      </div>
+    </div>
+
+    <!-- BottomSheet 弹窗 -->
+    <div class="bottom-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-title">关联卡片</div>
+        <div class="sheet-close">×</div>
+      </div>
+
+      <div class="search-box">
+        <span class="icon">🔍</span>
+        <input type="text" placeholder="搜索卡片标题..." value="复盘">
+      </div>
+
+      <div class="card-list">
+        <!-- 待办分组 -->
+        <div class="type-section">
+          <div class="type-header">📝 待办 <span class="count">(2)</span></div>
+          <div class="card-item selected">
+            <div class="card-checkbox">✓</div>
+            <div class="card-type-icon todo">📝</div>
+            <div class="card-info">
+              <div class="card-title">季度总结会议</div>
+              <div class="card-subtitle">今天 18:00 · 工作</div>
+            </div>
+          </div>
+          <div class="card-item">
+            <div class="card-checkbox"></div>
+            <div class="card-type-icon todo">📝</div>
+            <div class="card-info">
+              <div class="card-title">收集销售数据</div>
+              <div class="card-subtitle">明天 · 工作</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 灵感分组 -->
+        <div class="type-section">
+          <div class="type-header">💡 灵感 <span class="count">(1)</span></div>
+          <div class="card-item selected">
+            <div class="card-checkbox">✓</div>
+            <div class="card-type-icon inspiration">💡</div>
+            <div class="card-info">
+              <div class="card-title">复盘方法论</div>
+              <div class="card-subtitle">10月15日</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 日期分组 -->
+        <div class="type-section">
+          <div class="type-header">📅 日期 <span class="count">(2)</span></div>
+          <div class="card-item">
+            <div class="card-checkbox"></div>
+            <div class="card-type-icon date">📅</div>
+            <div class="card-info">
+              <div class="card-title">项目截止日</div>
+              <div class="card-subtitle">12月31日 · 倒计时 73 天</div>
+            </div>
+          </div>
+          <div class="card-item">
+            <div class="card-checkbox"></div>
+            <div class="card-type-icon date">📅</div>
+            <div class="card-info">
+              <div class="card-title">复盘汇报会</div>
+              <div class="card-subtitle">11月5日 · 倒计时 17 天</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sheet-footer">
+        <div class="selected-count">
+          已选 <strong>2</strong><span class="limit"> / 10</span>
+        </div>
+        <button class="confirm-btn">完成</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="desc">
+    <h3>关联选择弹窗（BottomSheet）</h3>
+    <span class="tag">多选 · 搜索 · 类型分组</span>
+    <ul>
+      <li><strong>顶部：</strong>把手 + 标题"关联卡片" + 关闭×按钮</li>
+      <li><strong>搜索框：</strong>圆角输入框，实时搜索（输入"复盘"已过滤）</li>
+      <li><strong>卡片列表：</strong>按 待办/灵感/日期 三组排列，每项含勾选框+类型图标+标题+副信息</li>
+      <li><strong>已选项：</strong>橙色背景 + 实心橙勾，未选项灰边框</li>
+      <li><strong>底部栏：</strong>"已选 N / 10"计数 + 橙色"完成"按钮</li>
+      <li><strong>数量限制：</strong>每组最多 10 个，达到上限时禁止继续勾选并提示</li>
+    </ul>
+
+    <div class="interaction-flow">
+      <h4>交互流程</h4>
+      <ol>
+        <li>用户点击 Chips 行下方的 <strong>「＋」</strong> 或在编辑框输入 <strong>「@」</strong> 触发弹窗</li>
+        <li>弹窗从底部滑入，自动聚焦搜索框，默认列出全部卡片</li>
+        <li>用户输入关键词，列表实时过滤（跨三类型）</li>
+        <li>用户点击卡片项切换选中状态（橙色背景 + 勾选）</li>
+        <li>底部"已选 N/10"实时更新，达上限时禁止继续选</li>
+        <li>点击"完成"按钮 → 保存关联到当前分组 → 关闭弹窗 → Chips 行下方显示已选 Chip</li>
+        <li>点击 × / 遮罩 / 系统返回键 → 取消选择 → 关闭弹窗</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,108 @@
+<h2>最终设计 — 完整 mockup</h2>
+<p class="subtitle">日期页导航栏新增日期按钮 + 全屏弹窗（日历区 + 卡片区）</p>
+
+<div class="mockup">
+  <div class="mockup-header">导航栏（日期页 Tab） — 中间新增日期按钮</div>
+  <div class="mockup-body" style="background:#FFFFFF;padding:0">
+    <!-- 模拟手机顶部状态栏 -->
+    <div style="background:#F8F6F3;padding:6px 16px;display:flex;justify-content:space-between;font-size:10px;color:#2D2D2D">
+      <span>9:41</span>
+      <span>📶 🔋</span>
+    </div>
+    <!-- 导航栏 -->
+    <div style="background:#FFFFFF;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #EEEEEE">
+      <!-- 左侧菜单 -->
+      <span style="font-size:18px;color:#2D2D2D">☰</span>
+      <!-- 中间日期按钮（新增）-->
+      <div style="display:flex;align-items:flex-end;gap:6px;cursor:pointer">
+        <span style="font-size:22px;font-weight:700;color:#2D2D2D">14</span>
+        <span style="font-size:14px;color:#666">07月</span>
+        <span style="font-size:8px;color:#666">▼</span>
+      </div>
+      <!-- 右侧三点 + 统计 -->
+      <div style="display:flex;gap:8px">
+        <span style="font-size:16px;color:#2D2D2D">📊</span>
+        <span style="font-size:16px;color:#2D2D2D">⋮</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="height:12px"></div>
+
+<div class="mockup">
+  <div class="mockup-header">点击日期按钮 → 全屏弹窗</div>
+  <div class="mockup-body" style="background:#FFFFFF;padding:0">
+    <!-- 顶部行 -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #EEEEEE">
+      <div style="display:flex;align-items:center;gap:4px">
+        <span style="font-weight:700;font-size:14px;color:#2D2D2D">2026年7月</span>
+        <span style="font-size:10px;color:#999">▼</span>
+      </div>
+      <span style="color:#666;font-size:14px">×</span>
+    </div>
+
+    <!-- 日历区（CalendarMonthView 复用） -->
+    <div style="padding:8px 16px;border-bottom:1px solid #EEEEEE">
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:11px;color:#999">
+        <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:12px;color:#2D2D2D;margin-top:6px;row-gap:4px">
+        <span style="color:#CCC">29</span><span style="color:#CCC">30</span>
+        <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
+        <span>6</span><span>7</span><span>8</span><span>9</span><span>10</span><span>11</span><span>12</span>
+        <span>13</span>
+        <span style="background:#FF9A5C;color:#FFF;border-radius:8px;padding:2px 0;font-weight:600">14</span>
+        <span>15</span>
+        <span style="position:relative">16<span style="position:absolute;bottom:-2px;left:50%;transform:translateX(-50%);width:4px;height:4px;background:#FF6B9D;border-radius:50%"></span></span>
+        <span>17</span><span>18</span><span>19</span>
+        <span style="position:relative">20<span style="position:absolute;bottom:-2px;left:50%;transform:translateX(-50%);width:4px;height:4px;background:#4ECDC4;border-radius:50%"></span></span>
+        <span>21</span><span>22</span><span>23</span><span>24</span><span>25</span><span>26</span>
+      </div>
+    </div>
+
+    <!-- 选中日期信息栏 -->
+    <div style="padding:8px 16px">
+      <span style="font-size:12px;font-weight:600;color:#2D2D2D">7月14日 周二 共 2 条</span>
+    </div>
+    <div style="height:1px;background:#EEEEEE"></div>
+    <div style="height:8px"></div>
+
+    <!-- 卡片区（复用 SpecialDateCard） -->
+    <div style="padding:8px 16px 16px;display:flex;flex-direction:column;gap:8px">
+      <div style="background:#FFFFFF;border-radius:12px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border:1px solid #F0F0F0">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:36px;height:36px;border-radius:50%;background:#FFE4EF;display:flex;align-items:center;justify-content:center;font-size:18px">🎂</div>
+          <div style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:13px;font-weight:600;color:#2D2D2D">妈妈生日</span>
+              <span style="font-size:10px;color:#FF6B9D">🎂 生日</span>
+            </div>
+            <span style="font-size:11px;color:#666">2026年7月14日</span>
+          </div>
+        </div>
+      </div>
+      <div style="background:#FFFFFF;border-radius:12px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border:1px solid #F0F0F0">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:36px;height:36px;border-radius:50%;background:#FFE4CC;display:flex;align-items:center;justify-content:center;font-size:18px">💕</div>
+          <div style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:13px;font-weight:600;color:#2D2D2D">恋爱5周年</span>
+              <span style="font-size:10px;color:#FF9A5C">💕 纪念日</span>
+            </div>
+            <span style="font-size:11px;color:#666">2026年7月14日</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:16px;padding:12px;background:#FFF9E6;border-left:3px solid #FF9A5C;font-size:13px;color:#666;line-height:1.7">
+  <strong style="color:#2D2D2D">设计要点：</strong><br>
+  • 日期按钮完全复用 <code>DatePickerRow</code>（大号日 + 月 + ▼）<br>
+  • 弹窗布局对称于 <code>TodoCalendarDialog</code>：顶部行 [年月▼ ... ×] → 日历区 → 信息栏 → 分割线 → 卡片区<br>
+  • 日历圆点按 <code>DateCategory.color</code> 取色（生日粉/纪念日橙/节日青/其他绿）<br>
+  • 卡片直接复用 <code>SpecialDateCard</code> 组件<br>
+  • 点击卡片 → 跳转 <code>SpecialDateDetailScreen</code>
+</div>
