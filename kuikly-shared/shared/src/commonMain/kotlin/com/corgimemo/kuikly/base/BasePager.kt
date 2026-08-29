@@ -11,8 +11,8 @@ internal abstract class BasePager : Pager() {
 
     override fun createExternalModules(): Map<String, Module>? {
         val externalModules = hashMapOf<String, Module>()
-        // 阶段二：注册自定义桥接 Module，供待办详情页调用原生能力（标记完成等）
-        externalModules["KRCorgiBridgeModule"] = CorgiBridgeModule()
+        // 阶段二·桥体系化：注册统一的 CorgiBridge Module，供各 Kuikly 页面调用原生能力
+        externalModules["CorgiBridge"] = CorgiBridgeModule()
         return externalModules
     }
 

@@ -98,8 +98,8 @@ internal class TodoDetailPage : BasePager() {
                     click {
                         // 经 CorgiBridgeModule 回写主工程：切换为相反状态
                         val nextStatus = if (ctx.status == 1) 0 else 1
-                        ctx.acquireModule<CorgiBridgeModule>("KRCorgiBridgeModule")
-                            ?.setTodoStatus(ctx.todoId, nextStatus)
+                        ctx.acquireModule<CorgiBridgeModule>("CorgiBridge")
+                            ?.setStatus(ctx.todoId, nextStatus)
                     }
                 }
                 Text {

@@ -394,6 +394,50 @@ fun MainScreen(
         corgiButtonPosition = corgiPrefs.getFloatingCorgiPosition()
     }
 
+    // 桥体系化：在组合作用域内置入 Kuikly 统一桥（CorgiBridge）的全部处理器，
+    // 映射到 HomeViewModel 的原生能力，供任意 Kuikly 页面（详情/列表）调用。
+    // 写入类事件直接改 Room；读取类事件由 provider 从当前过滤列表转换出桥接 Map。
+    LaunchedEffect(Unit) {
+        KuiklyBridge.onSetStatus = { id, status -> homeViewModel.setTodoStatus(id, status) }
+        KuiklyBridge.onToggleComplete = { id -> homeViewModel.toggleComplete(id) }
+        KuiklyBridge.onTogglePin = { id -> homeViewModel.togglePin(id) }
+        KuiklyBridge.onDelete = { id -> homeViewModel.deleteTodo(id) }
+        KuiklyBridge.onUpdate = { map ->
+            val id = (map["todoId"] as? Number)?.toLong()
+            if (id != null) {
+                val title = map["title"] as? String
+                val content = map["content"] as? String
+                homeViewModel.updateTodoFields(id, title, content)
+            }
+        }
+        KuiklyBridge.todosProvider = {
+            homeViewModel.filteredTodos.value.map { t ->
+                mapOf(
+                    "todoId" to t.id,
+                    "title" to t.title,
+                    "content" to (t.content ?: ""),
+                    "dueDate" to (t.dueDate ?: 0L),
+                    "status" to t.status,
+                    "isPinned" to t.isPinned,
+                    "categoryId" to t.categoryId
+                )
+            }
+        }
+        KuiklyBridge.todoProvider = { id ->
+            homeViewModel.filteredTodos.value.find { it.id == id }?.let { t ->
+                mapOf(
+                    "todoId" to t.id,
+                    "title" to t.title,
+                    "content" to (t.content ?: ""),
+                    "dueDate" to (t.dueDate ?: 0L),
+                    "status" to t.status,
+                    "isPinned" to t.isPinned,
+                    "categoryId" to t.categoryId
+                )
+            } ?: emptyMap()
+        }
+    }
+
     /**
      * TopBar 标题计算（v2026-07-28 v2 跨维度改造）
      *
@@ -791,9 +835,7 @@ fun MainScreen(
                                     onKuiklyDemoClick = {
                                         val todo = filteredTodos.firstOrNull()
                                         if (todo != null) {
-                                            // 接线：Kuikly 页「标记完成」回写主工程 Room
-                                            KuiklyBridge.onSetTodoStatus =
-                                                { id, status -> homeViewModel.setTodoStatus(id, status) }
+                                            // 桥处理器已在组合作用域统一接线（LaunchedEffect），此处仅组装数据并跳转
                                             val data = JSONObject().apply {
                                                 put("todoId", todo.id)
                                                 put("title", todo.title)

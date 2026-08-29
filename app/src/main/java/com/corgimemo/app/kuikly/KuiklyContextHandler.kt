@@ -52,13 +52,13 @@ class KuiklyContextHandler(
             }
 
             /**
-             * 注册宿主侧自定义 Module，供 Kuikly 页调用原生能力
-             * （阶段二：KRCorgiBridgeModule 桥接「标记待办完成」等操作）
+             * 注册宿主侧统一桥接 Module，供 Kuikly 页调用原生能力
+             * （阶段二·桥体系化：CorgiBridge 统一桥，methodName 派发到各事件处理器）
              */
             override fun registerExternalModule(kuiklyRenderExport: IKuiklyRenderExport) {
                 super.registerExternalModule(kuiklyRenderExport)
                 with(kuiklyRenderExport) {
-                    moduleExport("KRCorgiBridgeModule") { KRCorgiBridgeModule() }
+                    moduleExport("CorgiBridge") { KRCorgiBridgeModule() }
                 }
             }
         }
