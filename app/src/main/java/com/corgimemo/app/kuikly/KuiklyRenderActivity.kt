@@ -1,11 +1,14 @@
 package com.corgimemo.app.kuikly
 
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import com.tencent.kuikly.core.render.android.adapter.KuiklyRenderAdapterManager
 import com.tencent.kuikly.core.render.android.expand.KuiklyRenderViewBaseDelegator
 import org.json.JSONObject
@@ -37,42 +40,80 @@ class KuiklyRenderActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 1. 创建 Kuikly 上下文处理器并初始化委托者
-        contextCodeHandler = KuiklyContextHandler(this, pageName)
-        kuiklyRenderViewDelegator = contextCodeHandler.initContextHandler()
+        // 返回键：Kuikly 单页场景下直接关闭承载页，回到主工程。
+        // 真实多页场景的页内返回由页面 router 在 Kuikly 内部处理，无需在此拦截。
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    finish()
+                }
+            }
+        )
 
-        // 2. 创建承载容器（用代码构建，避免新增布局资源文件）
+        // 创建承载容器（用代码构建，避免新增布局资源文件）
         val container = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         }
-        setContentView(container)
 
-        // 3. 打开 Kuikly 页面
-        contextCodeHandler.openPage(container, pageName, createPageData())
+        try {
+            // 1. 创建 Kuikly 上下文处理器并初始化委托者
+            contextCodeHandler = KuiklyContextHandler(this, pageName)
+            kuiklyRenderViewDelegator = contextCodeHandler.initContextHandler()
+
+            setContentView(container)
+
+            // 2. 打开 Kuikly 页面
+            contextCodeHandler.openPage(container, pageName, createPageData())
+        } catch (e: Throwable) {
+            // 渲染失败兜底：记录日志并提示用户（使用 AlertDialog，禁用系统 Toast）
+            Log.e(TAG, "Kuikly 页面加载失败", e)
+            showLoadFailedDialog()
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        kuiklyRenderViewDelegator.onResume()
+        if (::kuiklyRenderViewDelegator.isInitialized) {
+            kuiklyRenderViewDelegator.onResume()
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        kuiklyRenderViewDelegator.onPause()
+        if (::kuiklyRenderViewDelegator.isInitialized) {
+            kuiklyRenderViewDelegator.onPause()
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        kuiklyRenderViewDelegator.onDetach()
+        if (::kuiklyRenderViewDelegator.isInitialized) {
+            kuiklyRenderViewDelegator.onDetach()
+        }
     }
 
     /** 传给 Kuikly 页面的初始数据 */
     private fun createPageData(): Map<String, Any> = mutableMapOf("appId" to 1)
 
+    /**
+     * 渲染失败兜底：用 AlertDialog 提示用户（非系统 Toast，符合项目提示规范）。
+     * 点击「关闭」后结束承载页，回到主工程。
+     */
+    private fun showLoadFailedDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Kuikly 页面加载失败")
+            .setMessage("渲染器初始化或页面加载出现异常，已返回主工程。")
+            .setPositiveButton("关闭") { _, _ -> finish() }
+            .setCancelable(false)
+            .show()
+    }
+
     companion object {
+        private const val TAG = "KuiklyRenderActivity"
         private const val KEY_PAGE_NAME = "pageName"
         private const val KEY_PAGE_DATA = "pageData"
         private const val DEFAULT_PAGE_NAME = "router"

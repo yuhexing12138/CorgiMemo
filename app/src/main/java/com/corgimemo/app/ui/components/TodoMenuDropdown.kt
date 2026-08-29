@@ -15,6 +15,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.outlined.OpenInNew
+import com.corgimemo.app.kuikly.KuiklyRenderActivity
 
 /**
  * 我的待办页面功能菜单弹窗
@@ -129,6 +132,24 @@ fun TodoMenuDropdown(
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Outlined.DeleteOutline,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        )
+        // 7. Kuikly 演示（方案 D：AAR 桥接验证入口；真实页面接入后可移至对应功能菜单）
+        // LocalContext.current 必须在 Composable 作用域内获取，不能在 onClick 的普通 lambda 中调用
+        // （否则报 "@Composable invocations can only happen from the context of a @Composable function"）
+        val kuiklyContext = LocalContext.current
+        DropdownMenuItem(
+            text = { Text("Kuikly 演示") },
+            onClick = {
+                KuiklyRenderActivity.start(kuiklyContext)
+                onDismiss()
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Outlined.OpenInNew,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp)
                 )

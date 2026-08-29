@@ -152,7 +152,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import androidx.compose.ui.platform.LocalContext
-import com.corgimemo.app.kuikly.KuiklyRenderActivity
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.dimensionResource
 import kotlin.math.abs
@@ -661,27 +660,6 @@ fun HomeScreen(
                     modifier = Modifier.size(24.dp)
                 )
             }
-
-            // ===== 临时验证入口（Kuikly 方案 D：AAR 桥接）=====
-            // 位于铅笔 FAB 正上方：同一 BottomEnd 对齐，
-            // bottom = 16(铅笔底部间距) + 56(铅笔高度) + 8(两按钮间距)
-            // 验证通过后删除本按钮及其 import（KuiklyRenderActivity）即可完全还原
-            // LocalContext.current 必须在 Composable 作用域内获取，
-            // 不能在 onClick 的普通 lambda 中调用（否则报
-            // "@Composable invocations can only happen from the context of a @Composable function"）
-            val kuiklyContext = LocalContext.current
-            FloatingActionButton(
-                onClick = { KuiklyRenderActivity.start(kuiklyContext) },
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 20.dp, bottom = 16.dp + 56.dp + 8.dp)
-                    .zIndex(10f)
-            ) {
-                Text("K")
-            }
-            // ===== 临时验证入口 结束 =====
         }
 
             // 主内容区域使用 Column 垂直排列
