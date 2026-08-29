@@ -38,27 +38,13 @@ alwaysApply: true
 
 **仓库根**：`c:\Users\EDY\Desktop\CorgiMemo`
 
-4 个 Git 子模块（**源码不在 CorgiMemo 图谱内**，由 `.graphifyignore` 排除）：
+3 个 Git 子模块：
 
-| 子模块 | 用途 | 图谱中可见？ |
-| --- | --- | --- |
-| `graphify/` | 知识图谱工具（含 CLI） | ❌ 排除 |
-| `compose-rich-editor/` | 富文本编辑器 | ❌ 排除 |
-| `Reorderable/` | 拖拽排序组件 | ❌ 排除 |
-| `tyme4kt/` | 农历 / 节气 | ❌ 排除 |
-
-> 跨子模块的调用关系**不**在 CorgiMemo 图谱中（子模块各自的图谱独立）。
-
-## 4. 知识图谱（graphify）速查
-
-- **本项目已集成 graphify**，输出在 `graphify-out/`（被 `.gitignore` 排除，不入仓）
-- **`graphify watch .` 在后台持续运行**（PID 见 `graphify-out/.watch.pid`；flag 文件 `graphify-out/.watch_active`）
-- **代码改动 → AST 增量重建自动触发**（debounce 3 秒），无需手动跑 update
-- 完整规则：`.trae/rules/graphify知识图谱优先.md`
-
-**架构 / 跨模块问题** → 走 `graphify-out/GRAPH_REPORT.md` + `graphify query/path/explain`
-**有 wiki 时** → 优先走 `graphify-out/wiki/index.md`（更结构化）
-**绝不要**直接 grep 源码或凭记忆回答架构问题
+| 子模块 | 用途 |
+| --- | --- |
+| `compose-rich-editor/` | 富文本编辑器 |
+| `Reorderable/` | 拖拽排序组件 |
+| `tyme4kt/` | 农历 / 节气 |
 
 ## 5. 规则链（按优先级，必须全部遵守）
 
@@ -75,9 +61,8 @@ alwaysApply: true
 | 9 | `.trae/rules/优化建议.md` | 任务末尾提供优化建议 |
 | 10 | `.trae/rules/文档命名语言要求.md` | .md 文档用中文命名 |
 | 11 | `.trae/rules/git提交.md` | 任务后询问 commit，提交信息用中文 |
-| 12 | `.trae/rules/graphify知识图谱优先.md` | 架构问题走图谱 |
-| 13 | `.trae/rules/安卓应用开发.md` | Android 开发规范 |
-| 14 | `.trae/rules/巨石组件拆分规范.md` | 单文件 ≥ 800 行时按 model/sections/dialogs 拆分，薄壳保 API 兼容 |
+| 12 | `.trae/rules/安卓应用开发.md` | Android 开发规范 |
+| 13 | `.trae/rules/巨石组件拆分规范.md` | 单文件 ≥ 800 行时按 model/sections/dialogs 拆分，薄壳保 API 兼容 |
 
 ## 6. 主要命令
 
@@ -85,11 +70,6 @@ alwaysApply: true
 | --- | --- | --- |
 | 构建 Debug | `./gradlew assembleDebug` | **用户**（AI 不擅自执行） |
 | 跑测试 | `./gradlew test` | **用户**（AI 不擅自执行） |
-| 启动 graphify watch | `.\scripts\graphify-watch.ps1 start` | **AI 可执行**（已自动） |
-| 停止 graphify watch | `.\scripts\graphify-watch.ps1 stop` | **AI 可执行** |
-| 查看 watch 状态 | `.\scripts\graphify-watch.ps1 status` | **AI 可执行** |
-| 手动更新图谱 | `.venv\Scripts\graphify.exe update .` | **AI 可执行**（watch 在跑时无需） |
-| 完整重跑图谱 | `.venv\Scripts\graphify.exe . --code-only` | **AI 可执行**（首次） |
 
 ## 7. 重要约束（来自项目记忆）
 

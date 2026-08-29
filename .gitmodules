@@ -1,6 +1,3 @@
-[submodule "graphify"]
-	path = graphify
-	url = git@github.com:yuhexing12138/graphify.git
 [submodule "compose-rich-editor"]
 	path = compose-rich-editor
 	url = git@github.com:yuhexing12138/compose-rich-editor.git
