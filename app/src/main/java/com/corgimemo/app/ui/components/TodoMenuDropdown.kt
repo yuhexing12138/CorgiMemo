@@ -20,13 +20,17 @@ import androidx.compose.material.icons.outlined.OpenInNew
 /**
  * 我的待办页面功能菜单弹窗
  *
- * 点击右上角三点图标后弹出，包含 6 个功能项：
+ * 点击右上角三点图标后弹出，包含 7 个功能项：
  * 1. 隐藏/显示详情
  * 2. 隐藏/显示已完成
  * 3. 待办排序
  * 4. 批量选择
  * 5. 创建待办副本（弹 [DuplicateTodoDialog] 中心弹窗，让用户选择复制范围）
  * 6. 回收站
+ * 7. Kuikly 待办详情（跨端页面入口，打开 Kuikly 渲染的待办详情页）
+ *
+ * 说明：待办卡片的长按手势已专用于「跨区拖拽排序」，不再承载其他入口，
+ * 因此本菜单是进入 Kuikly 详情页的唯一入口。
  */
 @Composable
 fun TodoMenuDropdown(
@@ -40,8 +44,8 @@ fun TodoMenuDropdown(
     onBatchSelectClick: () -> Unit,
     onDuplicateTodoClick: () -> Unit,
     onRecycleBinClick: () -> Unit,
-    /** Kuikly 演示入口（阶段二）：打开 Kuikly 待办详情页，由 MainScreen 接线真实跳转 */
-    onKuiklyDemoClick: () -> Unit
+    /** Kuikly 待办详情入口：打开 Kuikly 渲染的待办详情页，由 MainScreen 接线真实跳转 */
+    onKuiklyDetailClick: () -> Unit
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -137,11 +141,11 @@ fun TodoMenuDropdown(
                 )
             }
         )
-        // 7. Kuikly 演示（阶段二：打开 Kuikly 待办详情页，双向数据桥验证入口）
+        // 7. Kuikly 待办详情（打开 Kuikly 渲染的详情页，支持编辑/完成/置顶/删除回写）
         DropdownMenuItem(
-            text = { Text("Kuikly 演示") },
+            text = { Text("Kuikly 待办详情") },
             onClick = {
-                onKuiklyDemoClick()
+                onKuiklyDetailClick()
                 onDismiss()
             },
             leadingIcon = {

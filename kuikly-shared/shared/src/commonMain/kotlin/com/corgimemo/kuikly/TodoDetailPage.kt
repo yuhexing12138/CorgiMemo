@@ -2,41 +2,76 @@ package com.corgimemo.kuikly
 
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
+import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.views.*
 import com.corgimemo.kuikly.base.BasePager
 
 /**
- * 待办详情页（第一个真实 Kuikly 页面，阶段二）
+ * 待办详情页（阶段三·完善）
  *
- * 通过 pageData.params 接收主工程传入的待办字段，渲染标题/内容/状态；
- * 「标记完成 / 取消完成」按钮经 [CorgiBridgeModule] 把操作回写主工程 Room。
+ * 通过 pageData.params 接收主工程传入的待办字段，支持四类写操作，均经 [CorgiBridgeModule]
+ * 回写主工程 Room：
+ * - 编辑标题 / 内容 → [CorgiBridgeModule.update]
+ * - 标记完成 / 取消完成 → [CorgiBridgeModule.setStatus]
+ * - 切换置顶 → [CorgiBridgeModule.togglePin]
+ * - 删除 → [CorgiBridgeModule.delete]，随后 [CorgiBridgeModule.closePage] 关闭承载页
+ *
+ * 状态设计（关键点）：
+ * - 状态类字段（完成状态 / 置顶 / 提示）用公开顶层 observable 委托声明，
+ *   读取处自动订阅依赖，赋值后仅刷新受影响的局部节点。
+ * - 采用**哨兵值 + 惰性读取**（而非在 body 中播种）：
+ *   `curStatus = -1` / `curPinned = null` 表示"尚未变更"，读取时回退到入参。
+ *   这样彻底避免在组合过程中写 observable（组合期写状态可能触发额外的
+ *   notifyValueChange，依赖 PagerManager 当前观察者，时机不当会有风险）。
+ * - 正在编辑的文本用**普通可空字段**保存（不用 observable）：若参与响应式，
+ *   每次按键都会触发重组并把 text 回写给输入框，导致光标跳动与输入错乱。
  *
  * 入参（pageData.params，均为可选，缺省有兜底）：
- * - todoId: Long    待办 ID
- * - title: String   标题
- * - content: String 内容（纯文本）
- * - dueDate: Long   截止时间（时间戳，0 表示无）
- * - status: Int     当前状态 1=完成 0=未完成
- * - isPinned: Boolean 是否置顶
+ * - todoId: Long / title: String / content: String / status: Int（1=完成）/ isPinned: Boolean
  */
 @Page("todoDetail", supportInLocal = true)
 internal class TodoDetailPage : BasePager() {
 
-    /** 待办 ID（无则 0，按钮点击后原生侧会因查不到记录而忽略）*/
-    private val todoId: Long
-        get() = pageData.params.optLong("todoId", 0L)
+    // ==================== 编辑中的文本（普通字段，避免输入时重组） ====================
 
-    private val title: String
-        get() = pageData.params.optString("title", "")
+    /** 编辑中的标题，由 Input 的 textDidChange 回写；null 表示尚未编辑 */
+    private var editTitle: String? = null
 
-    private val content: String
-        get() = pageData.params.optString("content", "")
+    /** 编辑中的内容，由 TextArea 的 textDidChange 回写；null 表示尚未编辑 */
+    private var editContent: String? = null
 
-    private val status: Int
-        get() = pageData.params.optInt("status", 0)
+    // ==================== 响应式状态（哨兵值表示"未变更"） ====================
 
-    private val isPinned: Boolean
-        get() = pageData.params.optBoolean("isPinned", false)
+    /** 当前完成状态：1 = 已完成，0 = 未完成，-1 = 尚未变更（回退入参） */
+    @Suppress("DEPRECATION")
+    private var curStatus: Int by observable(-1)
+
+    /** 当前是否置顶；null = 尚未变更（回退入参） */
+    @Suppress("DEPRECATION")
+    private var curPinned: Boolean? by observable(null)
+
+    /** 操作结果提示（空串时不显示） */
+    @Suppress("DEPRECATION")
+    private var hint: String by observable("")
+
+    // ==================== 惰性取值（读 observable 即完成依赖订阅） ====================
+
+    /** 待办 ID（为 0 时原生侧会因查不到记录而忽略写操作） */
+    private fun todoIdValue(): Long = pageData.params.optLong("todoId", 0L)
+
+    /** 标题展示值：未编辑时用入参，编辑后用用户输入 */
+    private fun titleValue(): String = editTitle ?: pageData.params.optString("title", "")
+
+    /** 内容展示值：未编辑时用入参，编辑后用用户输入 */
+    private fun contentValue(): String = editContent ?: pageData.params.optString("content", "")
+
+    /** 完成状态：未变更时回退入参 */
+    private fun statusValue(): Int =
+        if (curStatus < 0) pageData.params.optInt("status", 0) else curStatus
+
+    /** 置顶状态：未变更时回退入参 */
+    private fun pinnedValue(): Boolean =
+        curPinned ?: pageData.params.optBoolean("isPinned", false)
 
     override fun body(): ViewBuilder {
         val ctx = this
@@ -47,67 +82,161 @@ internal class TodoDetailPage : BasePager() {
                 padding(16f)
             }
 
-            Text {
+            // ---------- 标题 ----------
+            ctx.sectionLabel(this, "标题")
+            View {
                 attr {
-                    text(ctx.title.ifEmpty { "待办详情" })
-                    fontSize(22f)
-                    color(Color(0xFF000000.toInt()))
-                    fontWeightBold()
+                    marginTop(6f)
+                    padding(10f)
+                    borderRadius(8f)
+                    backgroundColor(Color(0xFFF2F2F2.toInt()))
+                }
+                Input {
+                    attr {
+                        text(ctx.titleValue())
+                        placeholder("请输入标题")
+                        fontSize(16f)
+                        color(Color(0xFF000000.toInt()))
+                    }
+                    event {
+                        textDidChange { params -> ctx.editTitle = params.text }
+                    }
                 }
             }
 
-            Text {
+            // ---------- 内容（多行） ----------
+            ctx.sectionLabel(this, "内容")
+            View {
                 attr {
-                    text(if (ctx.status == 1) "状态：已完成" else "状态：未完成")
-                    fontSize(16f)
-                    color(Color(0xFF888888.toInt()))
-                    marginTop(8f)
+                    marginTop(6f)
+                    height(120f)
+                    padding(10f)
+                    borderRadius(8f)
+                    backgroundColor(Color(0xFFF2F2F2.toInt()))
+                }
+                TextArea {
+                    attr {
+                        text(ctx.contentValue())
+                        placeholder("请输入内容")
+                        fontSize(15f)
+                        color(Color(0xFF000000.toInt()))
+                    }
+                    event {
+                        textDidChange { params -> ctx.editContent = params.text }
+                    }
                 }
             }
 
-            if (ctx.isPinned) {
+            // ---------- 状态行 ----------
+            Text {
+                attr {
+                    text(if (ctx.statusValue() == 1) "状态：已完成" else "状态：未完成")
+                    fontSize(15f)
+                    color(Color(0xFF666666.toInt()))
+                    marginTop(14f)
+                }
+            }
+
+            if (ctx.pinnedValue()) {
                 Text {
                     attr {
                         text("已置顶")
                         fontSize(14f)
-                        color(Color(0xFF888888.toInt()))
+                        color(Color(0xFFFF9800.toInt()))
                         marginTop(4f)
                     }
                 }
             }
 
-            Text {
-                attr {
-                    text(if (ctx.content.isNotEmpty()) ctx.content else "（无内容）")
-                    fontSize(16f)
-                    color(Color(0xFF000000.toInt()))
-                    marginTop(12f)
+            if (ctx.hint.isNotEmpty()) {
+                Text {
+                    attr {
+                        text(ctx.hint)
+                        fontSize(14f)
+                        color(Color(0xFF4CAF50.toInt()))
+                        marginTop(8f)
+                    }
                 }
             }
 
-            // 操作按钮：用 View 容器 + event.click 实现（避免依赖 Button 组件）
-            View {
+            // ---------- 操作按钮 ----------
+            ctx.actionButton(this, "保存修改", 0xFF2196F3.toInt()) {
+                ctx.bridge()?.update(
+                    mapOf(
+                        "todoId" to ctx.todoIdValue(),
+                        "title" to ctx.titleValue(),
+                        "content" to ctx.contentValue()
+                    )
+                )
+                ctx.hint = "已保存"
+            }
+
+            ctx.actionButton(
+                this,
+                if (ctx.statusValue() == 1) "取消完成" else "标记完成",
+                0xFF4CAF50.toInt()
+            ) {
+                val next = if (ctx.statusValue() == 1) 0 else 1
+                ctx.bridge()?.setStatus(ctx.todoIdValue(), next)
+                ctx.curStatus = next
+                ctx.hint = if (next == 1) "已标记为完成" else "已取消完成"
+            }
+
+            ctx.actionButton(this, "切换置顶", 0xFFFF9800.toInt()) {
+                val next = !ctx.pinnedValue()
+                ctx.bridge()?.togglePin(ctx.todoIdValue())
+                ctx.curPinned = next
+                ctx.hint = if (next) "已置顶" else "已取消置顶"
+            }
+
+            ctx.actionButton(this, "删除待办", 0xFFF44336.toInt()) {
+                ctx.bridge()?.delete(ctx.todoIdValue())
+                // 删除后页面失去意义，关闭承载页回到列表（列表由 Room 自动刷新）
+                ctx.bridge()?.closePage()
+            }
+        }
+    }
+
+    // ==================== 内部工具 ====================
+
+    /** 获取统一桥接 Module（未注册时返回 null，调用处用 ?. 安全调用） */
+    private fun bridge(): CorgiBridgeModule? = acquireModule<CorgiBridgeModule>("CorgiBridge")
+
+    /** 小节标题：灰色小字 */
+    private fun sectionLabel(container: ViewContainer<*, *>, label: String) {
+        container.Text {
+            attr {
+                text(label)
+                fontSize(13f)
+                color(Color(0xFF888888.toInt()))
+                marginTop(14f)
+            }
+        }
+    }
+
+    /** 操作按钮：圆角色块 + 点击回调 + 居中白色文字 */
+    private fun actionButton(
+        container: ViewContainer<*, *>,
+        label: String,
+        bgColor: Int,
+        onClick: () -> Unit
+    ) {
+        container.View {
+            attr {
+                marginTop(12f)
+                padding(12f)
+                borderRadius(8f)
+                backgroundColor(Color(bgColor))
+                allCenter()
+            }
+            event {
+                click { onClick() }
+            }
+            Text {
                 attr {
-                    marginTop(24f)
-                    padding(12f)
-                    borderRadius(8f)
-                    backgroundColor(Color(0xFF2196F3.toInt()))
-                    allCenter()
-                }
-                event {
-                    click {
-                        // 经 CorgiBridgeModule 回写主工程：切换为相反状态
-                        val nextStatus = if (ctx.status == 1) 0 else 1
-                        ctx.acquireModule<CorgiBridgeModule>("CorgiBridge")
-                            ?.setStatus(ctx.todoId, nextStatus)
-                    }
-                }
-                Text {
-                    attr {
-                        text(if (ctx.status == 1) "取消完成" else "标记完成")
-                        fontSize(16f)
-                        color(Color(0xFFFFFFFF.toInt()))
-                    }
+                    text(label)
+                    fontSize(16f)
+                    color(Color(0xFFFFFFFF.toInt()))
                 }
             }
         }

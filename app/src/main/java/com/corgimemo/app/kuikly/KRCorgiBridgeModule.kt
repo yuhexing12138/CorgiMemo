@@ -18,6 +18,7 @@ import org.json.JSONObject
  * - togglePin       → KuiklyBridge.onTogglePin(todoId)
  * - delete          → KuiklyBridge.onDelete(todoId)
  * - update          → KuiklyBridge.onUpdate(map)
+ * - closePage       → KuiklyBridge.onClosePage()（关闭承载页，回到主工程）
  * - loadTodos       → KuiklyBridge.todosProvider()（回调回传 JSON 列表）
  * - loadTodoDetail  → KuiklyBridge.todoProvider(todoId)（回调回传 JSON 单条）
  *
@@ -40,6 +41,7 @@ class KRCorgiBridgeModule : KuiklyRenderBaseModule() {
             "togglePin" -> handleIdOnly(params) { id -> KuiklyBridge.onTogglePin?.invoke(id) }
             "delete" -> handleIdOnly(params) { id -> KuiklyBridge.onDelete?.invoke(id) }
             "update" -> handleUpdate(params)
+            "closePage" -> handleClosePage()
             "loadTodos" -> handleLoadTodos(callback)
             "loadTodoDetail" -> handleLoadTodoDetail(params, callback)
             else -> super.call(method, params, callback)
@@ -116,6 +118,12 @@ class KRCorgiBridgeModule : KuiklyRenderBaseModule() {
             result[key] = json.opt(key)
         }
         return result
+    }
+
+    /** closePage：关闭承载页（回调由 KuiklyRenderActivity 注册为 finish） */
+    private fun handleClosePage(): Any? {
+        KuiklyBridge.onClosePage?.invoke()
+        return null
     }
 
     /** loadTodos：从 provider 取列表，序列化为 {"list":[...]} JSON 字符串回传 */

@@ -101,7 +101,6 @@ import java.util.concurrent.TimeUnit
  * @param categoryName 分类名称
  * @param categoryIcon 分类图标（emoji）
  * @param onToggleComplete 切换完成状态回调
- * @param onDelete 删除回调
  * @param onClick 点击回调（普通模式）
  * @param onSelectClick 选择回调（批量模式下点击）
  * @param onShareAsImage 分享为图片回调
@@ -127,7 +126,6 @@ fun TodoListItem(
     categoryName: String? = null,
     categoryIcon: String? = null,
     onToggleComplete: (Long, Boolean) -> Unit,
-    onDelete: (Long) -> Unit,
     onClick: () -> Unit = {},
     onSelectClick: () -> Unit = {},
     onShareAsImage: () -> Unit = {},

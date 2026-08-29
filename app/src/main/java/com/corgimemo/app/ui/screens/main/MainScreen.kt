@@ -832,7 +832,7 @@ fun MainScreen(
                                         homeViewModel.setShowDuplicateDialog(true)
                                     },
                                     onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("todo")) },
-                                    onKuiklyDemoClick = {
+                                    onKuiklyDetailClick = {
                                         val todo = filteredTodos.firstOrNull()
                                         if (todo != null) {
                                             // 桥处理器已在组合作用域统一接线（LaunchedEffect），此处仅组装数据并跳转

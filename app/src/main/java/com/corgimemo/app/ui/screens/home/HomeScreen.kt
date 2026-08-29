@@ -289,16 +289,6 @@ fun HomeScreen(
     /** ReminderPicker 弹窗显示状态（MoreOptions → 提醒时间） */
     var showReminderPickerSheet by remember { mutableStateOf(false) }
 
-    /**
-     * 单个待办删除二次确认状态（长按菜单删除走此流程）
-     *
-     * 区别于批量删除的 AlertDialog（showBatchDeleteDialog），这是单个待办
-     * 通过长按菜单触发"删除"后的二次确认，符合 spec 中"删除需二次确认"的要求。
-     *
-     * 状态：null = 不显示；非 null = 显示弹窗并传入要删除的 todoId
-     */
-    var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
-
     /** 左滑互斥展开状态：同时只允许一张卡片展开操作层 */
     var swipeExpandedTodoId by remember { mutableStateOf<Long?>(null) }
 
@@ -1128,7 +1118,8 @@ fun HomeScreen(
                                             // 原因：左滑手势本身就是明确的"删除"意图（红色背景 + 垃圾桶图标），
                                             // 加上 Snackbar 撤销兜底（HomeScreen.kt LaunchedEffect pendingDeletedTodo），
                                             // 用户随时可撤销，二次确认弹窗属于冗余交互
-                                            // 注意：长按面板的"删除"选项（TodoListItem.onDelete）仍保留二次确认
+                                            // 注：原「长按面板的删除选项」随长按面板一并移除，
+                                            // 其残留的 TodoListItem.onDelete 参数（只声明未调用）已删除。
                                             onDeleteClick = {
                                                 viewModel.onUserInteraction()
                                                 viewModel.deleteTodo(todo.id)
@@ -1147,10 +1138,6 @@ fun HomeScreen(
                                                 onToggleComplete = { id, isChecked ->
                                                     viewModel.onUserInteraction()
                                                     viewModel.toggleTodoStatus(id, isChecked)
-                                                },
-                                                onDelete = {
-                                                    viewModel.onUserInteraction()
-                                                    pendingDeleteId = it
                                                 },
                                                 onClick = {
                                                     viewModel.onUserInteraction()
@@ -1446,37 +1433,6 @@ fun HomeScreen(
             viewModel.duplicateAllTodos(range)
         },
     )
-
-    // 单个待办删除二次确认弹窗
-    // 区别于批量删除弹窗（showBatchDeleteDialog），本弹窗仅针对单个待办
-    pendingDeleteId?.let { targetId ->
-        AlertDialog(
-            onDismissRequest = { pendingDeleteId = null },
-            title = { Text("删除待办") },
-            text = {
-                Text(
-                    "确定要删除这个待办吗？\n此操作不可撤销。"
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingDeleteId = null
-                        // 不再立即显示"已删除" Snackbar，避免与后续 LaunchedEffect(pendingDeletedTodo)
-                        // 触发的"'XXX' 已删除 + 撤销"重复（详见 Snackbar 体验优化需求 3）
-                        viewModel.deleteTodo(targetId)
-                    }
-                ) {
-                    Text("删除", color = UiColors.Error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDeleteId = null }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
 
     // 批量移动分类选择底部弹窗
     if (showBatchMoveDialog) {

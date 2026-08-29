@@ -14,6 +14,7 @@ import com.tencent.kuikly.core.module.Module
  * - [togglePin]       切换置顶
  * - [delete]          删除待办
  * - [update]          整条更新（标题/内容等，Map 形式）
+ * - [closePage]       关闭当前 Kuikly 承载页（回到主工程）
  *
  * 读操作（带回调，宿主经 JSON 字符串回传，shared 侧自动解析为 Map）：
  * - [loadTodos]       拉取待办列表
@@ -72,6 +73,21 @@ class CorgiBridgeModule : Module() {
             keepCallbackAlive = false,
             methodName = "delete",
             param = mapOf("todoId" to todoId),
+            callback = null,
+            syncCall = false
+        )
+    }
+
+    /**
+     * 关闭当前 Kuikly 承载页（回到主工程）。
+     * 用于删除等终态操作后页面已无意义的场景；由宿主 [com.corgimemo.app.kuikly.KuiklyBridge.onClosePage]
+     * 执行 Activity.finish()。
+     */
+    fun closePage() {
+        toNative(
+            keepCallbackAlive = false,
+            methodName = "closePage",
+            param = emptyMap<String, Any?>(),
             callback = null,
             syncCall = false
         )

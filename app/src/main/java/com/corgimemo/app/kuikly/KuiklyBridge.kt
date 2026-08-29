@@ -29,6 +29,15 @@ object KuiklyBridge {
     /** 整条更新（标题/内容等），参数为规整后的 String 键 Map（至少含 todoId） */
     var onUpdate: ((Map<String, Any?>) -> Unit)? = null
 
+    /**
+     * 关闭当前 Kuikly 承载页（回到主工程）。
+     *
+     * 由 [com.corgimemo.app.kuikly.KuiklyRenderActivity] 在 onCreate 注册为 `finish()`，
+     * 用于删除等终态操作后页面已无意义的场景。注意本回调由 Activity 自己注册与清理，
+     * 不走 MainScreen 的统一接线。
+     */
+    var onClosePage: (() -> Unit)? = null
+
     // ==================== 读操作数据提供方 ====================
 
     /** 拉取待办列表（当前过滤结果），返回桥接用的 Map 列表 */

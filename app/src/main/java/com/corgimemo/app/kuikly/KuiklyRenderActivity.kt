@@ -52,6 +52,9 @@ class KuiklyRenderActivity : ComponentActivity() {
             }
         )
 
+        // 供 Kuikly 页面主动关闭本页（如删除待办后）；onDestroy 中置空避免持有 Activity 引用
+        KuiklyBridge.onClosePage = { finish() }
+
         // 创建承载容器（用代码构建，避免新增布局资源文件）
         val container = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
@@ -92,6 +95,10 @@ class KuiklyRenderActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // 先解绑关闭回调（它持有本 Activity 引用），再释放渲染器
+        if (KuiklyBridge.onClosePage != null) {
+            KuiklyBridge.onClosePage = null
+        }
         if (::kuiklyRenderViewDelegator.isInitialized) {
             kuiklyRenderViewDelegator.onDetach()
         }
