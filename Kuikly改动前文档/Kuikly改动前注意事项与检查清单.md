@@ -203,3 +203,158 @@ Kuikly 渲染器不知道你 App 的原生能力，需提供「翻译官」：
 - [x] 1.5 工程结构确认：✅ 现有 Android 工程
 
 > 下一步（待你定夺）：选 1.3 中方案 A / B / C 之一，再决定是否继续接入。
+
+---
+
+## 8. 方案 D（AAR 桥接）执行记录 —— 已产出 AAR ✅
+
+因 1.3 判定不兼容，改走**方案 D**：主工程**不降级**，另建独立 Kuikly 工程产出 AAR 供主工程引入。
+
+### 8.1 已完成
+
+| 项 | 状态 |
+|---|---|
+| 独立 Kuikly 工程 `CorgiMemo/kuikly-shared/` | ✅ 已生成，未被主工程 settings include（完全隔离） |
+| 版本组合（Gradle 8.11.1 + AGP 8.10.1 + Kotlin 2.1.21 + Kuikly 2.26.0-2.1.21） | ✅ 与官方支持范围匹配 |
+| `shared-release.aar` 构建 | ✅ `assembleRelease` BUILD SUCCESSFUL |
+| AAR 内容校验 | ✅ classes.jar 含 `RouterPage` / `BasePager` / **`KuiklyCoreEntry`**（页面注册入口）+ assets |
+
+- 主工程侧版本**保持原样**：Kotlin 2.4.0 / AGP 9.2.1 / Gradle 9.6.1，未做任何降级。
+
+### 8.2 过程中踩到的坑（重要，避免重复排查）
+
+| # | 现象 | 真实原因 | 解法 |
+|---|---|---|---|
+| 1 | Gradle 分发下载超时 | `services.gradle.org` 国内不可达 | 改用腾讯镜像 `https://mirrors.cloud.tencent.com/gradle/gradle-8.11.1-bin.zip`（阿里云该路径 404） |
+| 2 | `IOException: 文件名、目录名或卷标语法不正确` | 新工程**缺 `local.properties`**，AGP 拿到空 SDK 路径（报错极具误导性） | 复制主工程 `local.properties`（`sdk.dir` 需 `\:` 与 `\\` 转义） |
+| 3 | 同类 IOException / `jsBrowserDevelopmentExecutableDistribution not found` | Kuikly Gradle 插件**强依赖 js target** | `js(IR)` target 与 `KuiklyConfig.js{}` 必须**成对保留**（可只配置不编译）；iOS/CocoaPods 可安全移除 |
+| 4 | `compileCommonMainKotlinMetadata` 报 Unresolved reference | KSP 把 Android 专属 `KuiklyCoreEntry` 生成到了 commonMain metadata | 升级 Kuikly 2.26.0、清空 `kspCommonMainMetadata` 均无效 → **改用 `assembleRelease`**（Android 编译本身成功，不需要 metadata 产物） |
+| 5 | aapt2 `RES_TABLE_TYPE_TYPE entry offsets overlap` | AGP 8.10.1 **自带 aapt2**（与 build-tools 目录无关）解析不了本机新版 android.jar | 改 `buildToolsVersion` 无效；shared 无 res 资源 → 跳过 `verify*Resources` 任务 |
+| 6 | `rm -rf` / Gradle `clean` 失败 | 安全删除拦截 + 文件被 daemon 占用 | 先 `./gradlew --stop` |
+| 7 | 独立 `androidApp` 无法编译 | 它含 res 资源，不能跳过 aapt2 校验 | **取消独立 App 验证，改为直接在主工程（AGP 9.2.1）中接入并验证** |
+
+### 8.3 任务 4：主工程接入（代码已完成，编译验证中）
+
+#### 8.3.1 git 安全网（⚠️ 有一个必知的坑）
+
+已建分支 `kuikly/aar-bridge`（指向 `54cdd071`，与 master 同起点）。
+
+**坑**：本仓库安装了 graphify 的 `.githooks/post-checkout`，它会打断 `git checkout -b`，
+使 `.git/HEAD` 指向**不存在的** `refs/heads/kuikly/aar-bridge`。表现为：
+
+- `git log` 报 `your current branch does not have any commits yet`
+- **7768 个文件被误暂存为新增**（连 `.gitignore`、`.gitmodules` 都变成新文件）
+
+> ⚠️ **极度危险**：此状态下执行 `git commit` 会创建**无父提交的孤立根提交**，直接破坏提交历史。
+
+**修复**：`git branch` 与 `git update-ref` 均**静默失败**（返回成功但 ref 未创建），
+最终用底层写入解决（均不触发 post-checkout hook）：
+
+```bash
+mkdir -p .git/refs/heads/kuikly
+git rev-parse master > .git/refs/heads/kuikly/aar-bridge
+git symbolic-ref HEAD refs/heads/kuikly/aar-bridge
+```
+
+**结论：本仓库不要用 `git checkout -b` 建分支。**
+
+#### 8.3.2 新增文件（位于 `app/src/main/java/com/corgimemo/app/kuikly/`）
+
+| 文件 | 作用 |
+|---|---|
+| `KuiklyContextHandler.kt` | 上下文处理器（按官方 demo `ContextCodeHandler` 精简，去掉自定义 Module 与性能监控）；核心调用 `delegator.onAttach(container, "", pageName, pageData)` |
+| `KuiklyAdapters.kt` | `KRLogAdapter` / `KRRouterAdapter` / `KRThreadAdapter` / `KRImageAdapter` / `KRExceptionAdapter` |
+| `KuiklyRenderActivity.kt` | 承载页 + 适配器注册 + `start(context, pageName, pageData)` 跳转入口 |
+
+#### 8.3.3 修改的现有文件（新增式改动，不动业务代码）
+
+| 文件 | 改动 |
+|---|---|
+| `settings.gradle.kts` | 新增腾讯 Maven 源（`FAIL_ON_PROJECT_REPOS` 下仓库必须在 settings 声明） |
+| `app/build.gradle.kts` | 新增 `core` / `core-render-android` 2.26.0-2.1.21 + AAR 依赖 |
+| `AndroidManifest.xml` | 注册 `.kuikly.KuiklyRenderActivity`（`exported=false`） |
+| `ui/MainActivity.kt` | `OnboardingRouter` 的 Box 内新增临时悬浮按钮（左下角，文字 "K"）作为跳转入口 |
+
+#### 8.3.4 两个关键决策（避坑）
+
+1. **用 `ComponentActivity` 而非官方示例的 `AppCompatActivity`**
+   主工程主题为 `Theme.CorgiMemo`（非 AppCompat 主题），用 AppCompatActivity 启动即崩：
+   `You need to use a Theme.AppCompat theme (or descendant) with this activity`。
+   Kuikly 只需一个能承载原生 View 的 Activity，ComponentActivity 完全满足。
+
+2. **AAR 用 `files()` 而非 flatDir 写法**
+   Gradle 9.6.1 已不支持 `implementation(name = "...", ext = "aar")`，会报
+   `No parameter with name 'name' found`。改用：
+
+   ```kotlin
+   implementation(files("../kuikly-shared/shared/build/outputs/aar/shared-release.aar"))
+   ```
+
+#### 8.3.5 Kuikly API 来源（均经查证，非凭记忆）
+
+- 适配器包名：`com.tencent.kuikly.core.render.android.adapter.*`
+  （注意官方拼写是 `performace`，不是 performance）
+- 打开页面：`KuiklyRenderViewBaseDelegator.onAttach(ViewGroup, String, String, Map)`
+  第 2 个参数为 turboDisplayKey，传空串（与官方 demo 一致）
+- 执行模式：`KuiklyRenderCoreExecuteModeBase.JVM`
+- 适配器注册：`KuiklyRenderAdapterManager`
+- 官方参考实现：
+  `https://github.com/Tencent-TDS/KuiklyUI/blob/main/androidApp/src/main/java/com/tencent/kuikly/android/demo/ContextCodeHandler.kt`
+
+#### 8.3.6 验证方式（在 Android Studio 中）—— ✅ 已验证通过（2026-08-29）
+
+> ✅ **验证结果**：用户在 Android Studio 编译并装机成功；点击 "K" 按钮跳转到 Kuikly 页面，
+> 绿色 "hello kuikly" 正常显示。**方案 D（AAR 桥接）正式成立**——主工程 Kotlin 2.4.0
+> 成功读取 Kotlin 2.1.21 编译的 AAR，全程零降级、零破坏。
+
+> 说明：命令行编译在本机受沙箱限制（Gradle 无法访问 `~/.gradle` 缓存目录，报
+> `gradle-9.6.1-bin.zip.lck (拒绝访问.)`），因此验证改在 Android Studio 中进行。
+> 这也更直接 —— 可以一步完成「编译 + 装手机 + 看渲染」。
+
+**步骤：**
+
+1. 用 Android Studio 打开 `C:\Users\Lenovo\Desktop\CorgiMemo`
+2. 确认 Gradle JDK 为 17：
+   `Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK → 选 17`
+3. 同步：`File → Sync Project with Gradle Files`，等同步完成
+   - 首次同步会下载 Kuikly（`core` / `core-render-android`）依赖，需几分钟
+4. 编译：`Build → Make Project`（或 `Build → Build Bundle(s)/APK(s) → Build APK(s)`）
+   - **首次编译较慢**：KSP 处理 Room + Hilt 可能 10~20 分钟，请耐心等待、不要中断
+5. 装到手机：连接手机（开启 USB 调试），点 `Run ▶`
+6. 验证渲染：进入 App 主界面后，点击**铅笔 FAB 正上方的 "K" 悬浮按钮**
+   （已从原左下角上移，避免遮挡底部「待办」按钮）
+   - ✅ 成功：跳转到 Kuikly 页面，显示绿色文字 **hello kuikly**
+   - AAR 自带的 assets 示例图（`image_adapter/sample.png`）也会一并打包进 APK
+
+> **核心验证点**：主工程 Kotlin 2.4.0 能否成功编译并读取 Kotlin 2.1.21 编译的 AAR。
+
+#### 8.3.7 出问题怎么排查
+
+| 现象 | 原因 / 处理 |
+|---|---|
+| Sync 报 Kuikly 依赖找不到 | 检查 `settings.gradle.kts` 中腾讯 Maven 源已添加；或检查网络/代理 |
+| 报 `shared-release.aar` 不存在 | 需在 `kuikly-shared` 目录重新构建：`.\\gradlew :shared:assembleRelease` |
+| 编译停在 KSP 很久 | 正常（Room + Hilt 注解处理慢）；**不要中断**，中断会残留 `.lck` 锁文件 |
+| 点 "K" 后闪退 / 白屏 | 打开 Logcat，过滤 `KuiklyError` 或 `ContextCodeHandler` 查看异常 |
+| 报 `You need to use a Theme.AppCompat` | 说明基类被改回 AppCompatActivity，应保持 `ComponentActivity` |
+| Gradle wrapper 报 `.lck (拒绝访问)` | 有残留锁文件，删除 `C:\Users\Lenovo\.gradle\wrapper\dists\gradle-9.6.1-bin\<hash>\gradle-9.6.1-bin.zip.lck` |
+
+**若日后修改了 Kuikly 页面**，需重新产出 AAR（在 `kuikly-shared` 目录）：
+
+```bash
+./gradlew :shared:assembleRelease
+```
+
+#### 8.3.8 验证通过后如何移除临时入口
+
+> ✅ 验证已通过（2026-08-29）。
+
+**临时入口当前位于 `HomeScreen.kt`**（铅笔 FAB 正上方；原左下角位置会遮挡底部「待办」按钮，已上移）。
+删除 `HomeScreen.kt` 中「临时验证入口」代码块及 import
+`com.corgimemo.app.kuikly.KuiklyRenderActivity` 即可完全还原。
+（`MainActivity.kt` 已还原，无需再动。）
+
+> 若确定不再使用 Kuikly，可进一步删除 `app/src/main/java/com/corgimemo/app/kuikly/`
+> 整个目录、`AndroidManifest.xml` 中的 Activity 注册、`app/build.gradle.kts` 中的
+> Kuikly 依赖与 AAR 引用、`settings.gradle.kts` 中的腾讯 Maven 源，
+> 以及 `kuikly-shared/` 目录。

@@ -16,6 +16,8 @@ dependencyResolutionManagement {
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         google()
         mavenCentral()
+        // Kuikly 官方库托管在腾讯源（方案 D：AAR 桥接所需）
+        maven { url = uri("https://mirrors.tencent.com/nexus/repository/maven-tencent/") }
     }
 }
 

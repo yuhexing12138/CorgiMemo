@@ -54,6 +54,18 @@
             </intent-filter>
         </activity>
 
+        <!--
+            Kuikly 页面承载 Activity（方案 D：AAR 桥接）
+            使用 ComponentActivity：本工程主题为 Theme.CorgiMemo（非 AppCompat），
+            若用 AppCompatActivity 会抛 "You need to use a Theme.AppCompat theme"。
+            不设 exported，仅允许应用内跳转进入。
+        -->
+        <activity
+            android:name=".kuikly.KuiklyRenderActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- 语音播放前台服务 -->
         <service
             android:name=".service.VoicePlaybackService"

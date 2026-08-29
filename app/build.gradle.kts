@@ -186,4 +186,23 @@ dependencies {
     androidTestImplementation(libs.androidx.room.testing)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    /**
+     * Kuikly 渲染器与核心库（方案 D：AAR 桥接）
+     *
+     * 版本号必须与独立工程 kuikly-shared 中使用的 Kuikly 版本严格一致（2.26.0-2.1.21），
+     * 否则会出现 Kotlin 元数据 / API 不匹配问题。
+     * 说明：AAR 通过 flatDir 引入不会传递依赖，因此 core 与 core-render-android
+     * 必须在此显式声明。
+     */
+    implementation("com.tencent.kuikly-open:core:2.26.0-2.1.21")
+    implementation("com.tencent.kuikly-open:core-render-android:2.26.0-2.1.21")
+    /**
+     * Kuikly shared 模块产出的 AAR（含 @Page("router") 页面与 KuiklyCoreEntry 注册入口）
+     *
+     * 用 files() 而非 flatDir 的 implementation(name=..., ext=...) 写法：
+     * 后者在 Gradle 9.x 已不被支持，会报 No parameter with name 'name' found。
+     * 路径相对于本模块目录（app/）。
+     */
+    implementation(files("../kuikly-shared/shared/build/outputs/aar/shared-release.aar"))
 }
