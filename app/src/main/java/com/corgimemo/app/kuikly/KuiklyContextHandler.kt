@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import com.tencent.kuikly.core.render.android.context.KuiklyRenderCoreExecuteModeBase
 import com.tencent.kuikly.core.render.android.expand.KuiklyRenderViewBaseDelegator
 import com.tencent.kuikly.core.render.android.expand.KuiklyRenderViewBaseDelegatorDelegate
+import com.tencent.kuikly.core.render.android.IKuiklyRenderExport
 import com.tencent.kuikly.core.render.android.performace.KRMonitorType
 
 /**
@@ -48,6 +49,17 @@ class KuiklyContextHandler(
              */
             override fun performanceMonitorTypes(): List<KRMonitorType> {
                 return emptyList()
+            }
+
+            /**
+             * 注册宿主侧自定义 Module，供 Kuikly 页调用原生能力
+             * （阶段二：KRCorgiBridgeModule 桥接「标记待办完成」等操作）
+             */
+            override fun registerExternalModule(kuiklyRenderExport: IKuiklyRenderExport) {
+                super.registerExternalModule(kuiklyRenderExport)
+                with(kuiklyRenderExport) {
+                    moduleExport("KRCorgiBridgeModule") { KRCorgiBridgeModule() }
+                }
             }
         }
         delegator = KuiklyRenderViewBaseDelegator(delegate)

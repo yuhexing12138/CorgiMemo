@@ -4,12 +4,15 @@ import com.tencent.kuikly.core.pager.Pager
 import com.tencent.kuikly.core.module.Module
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.reactive.handler.*
+import com.corgimemo.kuikly.CorgiBridgeModule
 
 internal abstract class BasePager : Pager() {
     private var nightModel: Boolean? by observable(null)
 
     override fun createExternalModules(): Map<String, Module>? {
         val externalModules = hashMapOf<String, Module>()
+        // 阶段二：注册自定义桥接 Module，供待办详情页调用原生能力（标记完成等）
+        externalModules["KRCorgiBridgeModule"] = CorgiBridgeModule()
         return externalModules
     }
 

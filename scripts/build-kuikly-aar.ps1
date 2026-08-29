@@ -23,8 +23,11 @@ $SharedDir = Join-Path $ScriptDir '..' 'kuikly-shared'
 Write-Host "==> 进入 kuikly-shared 工程：$SharedDir"
 Set-Location $SharedDir
 
-Write-Host '==> 重建 shared-release.aar (gradlew :shared:assembleRelease)'
-& '.\gradlew.bat' :shared:assembleRelease
+Write-Host '==> 重建 shared-release.aar (gradlew :shared:clean :shared:assembleRelease)'
+# 注意：先 clean 再 assemble。Kuikly 的 core-ksp 会生成页面注册清单 KuiklyCoreEntry.kt，
+# 增量编译时新增的 @Page 类可能不会被重新扫进清单，导致 openPage("新页面名") 查不到页面而空白。
+# 加 clean 可强制 KSP 重新扫描所有 @Page，确保新页面被注册。
+& '.\gradlew.bat' :shared:clean :shared:assembleRelease
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Kuikly AAR 构建失败（exit=$LASTEXITCODE）"
     exit $LASTEXITCODE

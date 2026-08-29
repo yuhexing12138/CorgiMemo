@@ -11,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import com.tencent.kuikly.core.render.android.adapter.KuiklyRenderAdapterManager
 import com.tencent.kuikly.core.render.android.expand.KuiklyRenderViewBaseDelegator
+import com.tencent.kuikly.core.render.android.css.ktx.toMap
 import org.json.JSONObject
 
 /**
@@ -96,8 +97,18 @@ class KuiklyRenderActivity : ComponentActivity() {
         }
     }
 
-    /** 传给 Kuikly 页面的初始数据 */
-    private fun createPageData(): Map<String, Any> = mutableMapOf("appId" to 1)
+    /** 传给 Kuikly 页面的初始数据：把入口传入的 pageData JSON 平铺成 Map（顶层 key 即页面内 pageData.params.optX("key") 读取的 key），再补 appId */
+    private fun createPageData(): Map<String, Any> {
+        val param = argsToMap()
+        param["appId"] = 1
+        return param
+    }
+
+    /** 从 intent 取出入口传入的 pageData JSON 字符串，转成 Map（用 Kuikly 跨平台 JSONObject.toMap 扩展） */
+    private fun argsToMap(): MutableMap<String, Any> {
+        val jsonStr = intent.getStringExtra(KEY_PAGE_DATA) ?: return mutableMapOf()
+        return JSONObject(jsonStr).toMap()
+    }
 
     /**
      * 渲染失败兜底：用 AlertDialog 提示用户（非系统 Toast，符合项目提示规范）。

@@ -15,9 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.outlined.OpenInNew
-import com.corgimemo.app.kuikly.KuiklyRenderActivity
 
 /**
  * 我的待办页面功能菜单弹窗
@@ -41,7 +39,9 @@ fun TodoMenuDropdown(
     onSortClick: () -> Unit,
     onBatchSelectClick: () -> Unit,
     onDuplicateTodoClick: () -> Unit,
-    onRecycleBinClick: () -> Unit
+    onRecycleBinClick: () -> Unit,
+    /** Kuikly 演示入口（阶段二）：打开 Kuikly 待办详情页，由 MainScreen 接线真实跳转 */
+    onKuiklyDemoClick: () -> Unit
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -137,14 +137,11 @@ fun TodoMenuDropdown(
                 )
             }
         )
-        // 7. Kuikly 演示（方案 D：AAR 桥接验证入口；真实页面接入后可移至对应功能菜单）
-        // LocalContext.current 必须在 Composable 作用域内获取，不能在 onClick 的普通 lambda 中调用
-        // （否则报 "@Composable invocations can only happen from the context of a @Composable function"）
-        val kuiklyContext = LocalContext.current
+        // 7. Kuikly 演示（阶段二：打开 Kuikly 待办详情页，双向数据桥验证入口）
         DropdownMenuItem(
             text = { Text("Kuikly 演示") },
             onClick = {
-                KuiklyRenderActivity.start(kuiklyContext)
+                onKuiklyDemoClick()
                 onDismiss()
             },
             leadingIcon = {

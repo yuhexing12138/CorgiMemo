@@ -82,7 +82,17 @@ publishing {
 }
 
 ksp {
-    arg(KEY_PAGE_NAME, getPageName())
+    // pageName 对 core-ksp 而言是「页面名过滤器」，而非入口页名：
+    //   非空 → KSP 只注册这一个页面，其余 @Page 一律不进路由表，
+    //          宿主 openPage(其他页面名) 查不到页面类 → 渲染空白（且不抛异常，无失败提示）。
+    //   空串 → 不过滤，KSP 注册本模块所有 @Page 页面（router、todoDetail 等）。
+    // 因此这里固定传空串，让所有页面都被注册。
+    //
+    // 注意：kuikly Gradle 插件是「另外」从 project 属性 pageName 读值来构造 JS 产物路径的，
+    // 所以 gradle.properties 里的 pageName=router 必须保持非空，否则 Windows 上配置阶段会抛
+    //   java.io.IOException: 文件名、目录名或卷标语法不正确
+    // （即：插件用非空值、KSP 用空串，两者互不影响）。
+    arg(KEY_PAGE_NAME, "")
 }
 
 dependencies {

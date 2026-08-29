@@ -56,6 +56,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import com.corgimemo.app.kuikly.KuiklyBridge
+import com.corgimemo.app.kuikly.KuiklyRenderActivity
+import org.json.JSONObject
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -769,6 +772,7 @@ fun MainScreen(
                          */
                         dropdownContent = if (selectedTab == TabItem.TODO && !effectiveBatchMode) {
                             {
+                                val context = LocalContext.current
                                 TodoMenuDropdown(
                                     expanded = menuExpanded,
                                     onDismiss = { homeViewModel.setMenuExpanded(false) },
@@ -783,7 +787,24 @@ fun MainScreen(
                                     onDuplicateTodoClick = {
                                         homeViewModel.setShowDuplicateDialog(true)
                                     },
-                                    onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("todo")) }
+                                    onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("todo")) },
+                                    onKuiklyDemoClick = {
+                                        val todo = filteredTodos.firstOrNull()
+                                        if (todo != null) {
+                                            // 接线：Kuikly 页「标记完成」回写主工程 Room
+                                            KuiklyBridge.onSetTodoStatus =
+                                                { id, status -> homeViewModel.setTodoStatus(id, status) }
+                                            val data = JSONObject().apply {
+                                                put("todoId", todo.id)
+                                                put("title", todo.title)
+                                                put("content", todo.content ?: "")
+                                                put("dueDate", todo.dueDate ?: 0L)
+                                                put("status", todo.status)
+                                                put("isPinned", todo.isPinned)
+                                            }
+                                            KuiklyRenderActivity.start(context, "todoDetail", data)
+                                        }
+                                    }
                                 )
                             }
                         } else if (selectedTab == TabItem.DATE && !effectiveBatchMode) {

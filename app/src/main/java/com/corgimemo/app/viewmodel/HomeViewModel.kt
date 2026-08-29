@@ -3183,6 +3183,49 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 设置待办完成状态（显式，供 Kuikly 桥接回写使用）
+     *
+     * 与 [toggleComplete] 的区别：本方法按传入的 [status] 直接设定，而非取反。
+     * 由 Kuikly 原生桥（KRCorgiBridgeModule → KuiklyBridge.onSetTodoStatus）调用。
+     *
+     * @param id 待办 ID
+     * @param status 目标状态：1 = 已完成，0 = 未完成
+     */
+    fun setTodoStatus(id: Long, status: Int) {
+        viewModelScope.launch {
+            /** 1. 获取当前待办 */
+            val todo = todoRepository.getTodoById(id) ?: return@launch
+
+            /** 2. 已是目标状态则无需更新 */
+            if (todo.status == status) return@launch
+
+            val currentTime = System.currentTimeMillis()
+
+            /** 3. 按目标状态构造更新对象 */
+            val updatedTodo = if (status == 1) {
+                todo.copy(
+                    status = 1,
+                    completedAt = currentTime,
+                    updatedAt = currentTime
+                )
+            } else {
+                todo.copy(
+                    status = 0,
+                    completedAt = null,
+                    updatedAt = currentTime
+                )
+            }
+
+            todoRepository.updateTodo(updatedTodo)
+
+            /** 4. 完成操作时触发成就检测等副作用 */
+            if (status == 1) {
+                handleTaskCompleted(updatedTodo)
+            }
+        }
+    }
+
+    /**
      * 撤销完成操作
      * 恢复待办到操作前的状态
      */
