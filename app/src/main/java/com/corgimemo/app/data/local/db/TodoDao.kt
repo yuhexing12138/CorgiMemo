@@ -159,7 +159,7 @@ interface TodoDao {
      * @param query 搜索关键词
      * @return 匹配的待办列表
      */
-    @Query("SELECT * FROM todo_items WHERE title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%' ORDER BY createdAt DESC")
+    @Query("SELECT * FROM todo_items WHERE parentTitle LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%' ORDER BY createdAt DESC")
     suspend fun searchTodos(query: String): List<TodoItem>
 
     // ==================== 排序查询方法 ====================

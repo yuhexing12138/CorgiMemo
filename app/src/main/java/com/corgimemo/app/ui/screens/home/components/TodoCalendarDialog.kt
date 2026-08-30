@@ -289,7 +289,7 @@ private fun CalendarTodoItem(
 
         // 中间：标题
         Text(
-            text = todo.title,
+            text = todo.parentTitle,
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
             color = if (isCompleted) Color(0xFF999999) else MaterialTheme.colorScheme.onSurface,

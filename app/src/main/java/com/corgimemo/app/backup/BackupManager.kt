@@ -273,7 +273,7 @@ object BackupManager {
 
 private fun TodoItem.toBackupModel(): BackupTodoItem = BackupTodoItem(
     id = id,
-    title = title,
+    title = parentTitle,
     content = content,
     categoryId = categoryId,
     priority = priority,
@@ -295,7 +295,7 @@ private fun TodoItem.toBackupModel(): BackupTodoItem = BackupTodoItem(
 
 private fun BackupTodoItem.toModel(): TodoItem = TodoItem(
     id = id,
-    title = title,
+    parentTitle = title,
     content = content,
     categoryId = categoryId,
     priority = priority,

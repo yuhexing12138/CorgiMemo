@@ -23,7 +23,7 @@ class TodoZoneTest {
      */
     private fun buildItem(isPinned: Boolean, status: Int): TodoItem = TodoItem(
         id = 1,
-        title = "测试项",
+        parentTitle = "测试项",
         categoryId = 1L,
         priority = 1,
         status = status,

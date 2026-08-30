@@ -63,7 +63,7 @@ import androidx.compose.ui.unit.dp
  *     modifier = Modifier.fillMaxWidth()
  * ) {
  *     // 卡片内容...
- *     Text(text = todo.title)
+ *     Text(text = todo.parentTitle)
  * }
  * ```
  *

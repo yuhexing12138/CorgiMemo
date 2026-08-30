@@ -103,7 +103,7 @@ object WidgetDataManager {
                 val estimatedEndTime = getEstimatedEndTime(todo)
                 WidgetTodoItem(
                     id = todo.id,
-                    title = todo.title,
+                    title = todo.parentTitle,
                     dueTime = estimatedEndTime ?: todo.reminderTime,
                     dueTimeText = formatDueTime(estimatedEndTime ?: todo.reminderTime),
                     priority = todo.priority,

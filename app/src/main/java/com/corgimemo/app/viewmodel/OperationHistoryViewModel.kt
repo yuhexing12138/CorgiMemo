@@ -149,7 +149,7 @@ class OperationHistoryViewModel @Inject constructor(
 
             com.corgimemo.app.data.model.TodoItem(
                 id = id,
-                title = title,
+                parentTitle = title,
                 content = content,
                 categoryId = categoryId,
                 priority = priority,

@@ -34,7 +34,7 @@ data class DeletedTodo(
         fun fromTodoItem(todo: TodoItem): DeletedTodo {
             return DeletedTodo(
                 id = todo.id,
-                title = todo.title,
+                title = todo.parentTitle,
                 content = todo.content,
                 categoryId = todo.categoryId,
                 priority = todo.priority,
@@ -62,7 +62,7 @@ data class DeletedTodo(
         fun toTodoItem(deleted: DeletedTodo): TodoItem {
             return TodoItem(
                 id = deleted.id,
-                title = deleted.title,
+                parentTitle = deleted.title,
                 content = deleted.content,
                 categoryId = deleted.categoryId,
                 priority = deleted.priority,

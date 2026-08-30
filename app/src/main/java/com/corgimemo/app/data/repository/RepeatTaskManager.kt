@@ -179,7 +179,7 @@ object RepeatTaskManager {
         }
 
         val newTodo = TodoItem(
-            title = completedTodo.title,
+            parentTitle = completedTodo.parentTitle,
             content = completedTodo.content,
             categoryId = completedTodo.categoryId,
             priority = completedTodo.priority,

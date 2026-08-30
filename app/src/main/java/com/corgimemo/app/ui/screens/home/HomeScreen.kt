@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import com.corgimemo.app.kuikly.KuiklyEntry
 import com.corgimemo.app.ui.components.safeAreaForBottomBar /** 安全区域内边距：底栏导航栏*/
 import com.corgimemo.app.ui.components.SwipeableTodoBox
 import androidx.compose.foundation.layout.width
@@ -96,6 +97,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import com.corgimemo.app.ui.navigation.Screen
 import com.corgimemo.app.animation.BehaviorType
@@ -440,7 +442,7 @@ fun HomeScreen(
     LaunchedEffect(pendingDeletedTodo) {
         pendingDeletedTodo?.let { todo ->
             val result = snackbarHostState.showSnackbar(
-                message = "☑️ '${todo.title}' 已删除",
+                message = "☑️ '${todo.parentTitle}' 已删除",
                 actionLabel = "撤销",
                 duration = SnackbarDuration.Long
             )
@@ -471,7 +473,7 @@ fun HomeScreen(
         pendingCompleteTodo?.let { (todo, _) ->
             val result = try {
                 snackbarHostState.showSnackbar(
-                    message = "✅ '${todo.title}' 已完成",
+                    message = "✅ '${todo.parentTitle}' 已完成",
                     actionLabel = "撤销",
                     duration = SnackbarDuration.Short
                 )
@@ -797,7 +799,7 @@ fun HomeScreen(
                             var result = viewModel.applyFilterItems(list, selectedFilterItems, filterMode)
                             if (searchQuery.isNotBlank()) {
                                 result = result.filter { todo ->
-                                    todo.title.contains(searchQuery, ignoreCase = true) ||
+                                    todo.parentTitle.contains(searchQuery, ignoreCase = true) ||
                                     (todo.content?.contains(searchQuery, ignoreCase = true) ?: false) ||
                                     (todo.contentFormat.let { format ->
                                         com.corgimemo.app.util.MarkdownParser.stripMarkdown(format)
@@ -1153,6 +1155,12 @@ fun HomeScreen(
                                                 },
                                                 onToggleExpand = {
                                                     viewModel.toggleExpand(todo.id)
+                                                },
+                                                // 打开本条待办的 Kuikly 详情页（单条精准入口，挂起读取子任务）
+                                                onOpenKuiklyDetail = {
+                                                    viewModel.viewModelScope.launch {
+                                                        KuiklyEntry.openTodoDetail(context, todo)
+                                                    }
                                                 },
                                                 onToggleSubTask = { subTaskId ->
                                                     viewModel.onUserInteraction()
@@ -3294,7 +3302,7 @@ fun shareTodoAsImage(
             val shareIntent = ShareIntentHelper.createShareImageIntent(
                 context = context,
                 imageFile = imageFile,
-                text = "我在 CorgiMemo 创建了待办：${todo.title}"
+                text = "我在 CorgiMemo 创建了待办：${todo.parentTitle}"
             )
 
             shareIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)

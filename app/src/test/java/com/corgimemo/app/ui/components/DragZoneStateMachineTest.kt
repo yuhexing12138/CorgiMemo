@@ -15,7 +15,7 @@ class DragZoneStateMachineTest {
     private fun buildItem(id: Long = 1, isPinned: Boolean = false, status: Int = 0): TodoItem {
         return TodoItem(
             id = id,
-            title = "测试项",
+            parentTitle = "测试项",
             categoryId = 1L,
             priority = 1,
             status = status,

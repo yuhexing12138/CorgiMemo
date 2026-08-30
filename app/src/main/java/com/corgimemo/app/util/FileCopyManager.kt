@@ -183,7 +183,7 @@ class FileCopyManager @Inject constructor(
         val newContentBlocks = mutableListOf<ContentBlockEntity>()
 
         // 复制当前 todo 标题（用于进度条显示）
-        val currentTitle = originalTodo?.title.orEmpty()
+        val currentTitle = originalTodo?.parentTitle.orEmpty()
 
         var current = 0
         for (task in pendingFiles) {

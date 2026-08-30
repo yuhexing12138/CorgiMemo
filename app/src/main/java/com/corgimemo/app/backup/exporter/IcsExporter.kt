@@ -127,7 +127,7 @@ object IcsExporter {
             0 -> "🟢"
             else -> ""
         }
-        return "$priorityLabel [$categoryName] ${todo.title}"
+        return "$priorityLabel [$categoryName] ${todo.parentTitle}"
     }
 
     /**

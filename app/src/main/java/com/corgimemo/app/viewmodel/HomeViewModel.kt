@@ -442,7 +442,7 @@ class HomeViewModel @Inject constructor(
 
             if (query.isNotBlank()) {
                 result = result.filter { todo ->
-                    todo.title.contains(query, ignoreCase = true) ||
+                    todo.parentTitle.contains(query, ignoreCase = true) ||
                     (todo.content?.contains(query, ignoreCase = true) ?: false) ||
                     (todo.contentFormat.let { format ->
                         com.corgimemo.app.util.MarkdownParser.stripMarkdown(format)
@@ -2207,7 +2207,7 @@ class HomeViewModel @Inject constructor(
                 hour = hour,
                 isWeekend = isWeekend,
                 pendingTodoCount = pendingCount,
-                urgentTodoTitle = urgentTodo?.title,
+                urgentTodoTitle = urgentTodo?.parentTitle,
                 userName = userName,
                 weatherInfo = weatherInfo
             )
@@ -3238,7 +3238,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             val todo = todoRepository.getTodoById(id) ?: return@launch
             val updated = todo.copy(
-                title = title ?: todo.title,
+                parentTitle = title ?: todo.parentTitle,
                 content = content ?: todo.content,
                 updatedAt = System.currentTimeMillis()
             )
@@ -3369,7 +3369,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             template.todos.forEach { templateTodo ->
                 val newTodo = com.corgimemo.app.data.model.TodoItem(
-                    title = templateTodo.title,
+                    parentTitle = templateTodo.title,
                     content = "来自「${template.name}」模板",
                     categoryId = 0L,
                     priority = 1,
@@ -3399,7 +3399,7 @@ class HomeViewModel @Inject constructor(
     fun quickAddTodo(title: String, categoryId: Long, priority: Int) {
         viewModelScope.launch {
             val newTodo = com.corgimemo.app.data.model.TodoItem(
-                title = title,
+                parentTitle = title,
                 categoryId = categoryId,
                 priority = priority,
                 status = 0,
@@ -4308,7 +4308,7 @@ class HomeViewModel @Inject constructor(
         return buildString {
             append("{")
             append("\"id\":${todo.id},")
-            append("\"title\":\"${todo.title.replace("\"", "\\\"")}\",")
+            append("\"title\":\"${todo.parentTitle.replace("\"", "\\\"")}\",")
             append("\"content\":\"${(todo.content ?: "").replace("\"", "\\\"")}\",")
             append("\"categoryId\":${todo.categoryId},")
             append("\"priority\":${todo.priority},")

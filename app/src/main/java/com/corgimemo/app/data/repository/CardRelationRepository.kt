@@ -298,7 +298,7 @@ class CardRelationRepository @Inject constructor(
                     CardSearchResult(
                         cardType = "todo",
                         cardId = todo.id,
-                        title = todo.title
+                        title = todo.parentTitle
                     )
                 )
             }
@@ -331,7 +331,7 @@ class CardRelationRepository @Inject constructor(
      */
     suspend fun getCardTitle(cardType: String, cardId: Long): String? {
         return when (cardType) {
-            "todo" -> todoDao.getTodoById(cardId)?.title
+            "todo" -> todoDao.getTodoById(cardId)?.parentTitle
             "inspiration" -> inspirationDao.getInspirationById(cardId)?.title
             "date" -> specialDateDao.getSpecialDateById(cardId)?.title
             else -> null
@@ -368,7 +368,7 @@ class CardRelationRepository @Inject constructor(
                 }
                 CardDetail.TodoDetail(
                     cardId = cardId,
-                    title = todo.title,
+                    title = todo.parentTitle,
                     dueDate = todo.dueDate,
                     categoryName = categoryName,
                     priority = todo.priority,

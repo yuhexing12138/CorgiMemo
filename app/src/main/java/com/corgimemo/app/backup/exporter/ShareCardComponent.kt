@@ -242,7 +242,7 @@ object ShareCardComponent {
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = todo.title,
+                    text = todo.parentTitle,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF2D1B0E)
@@ -301,7 +301,7 @@ object ShareCardComponent {
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = todo.title,
+                    text = todo.parentTitle,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color(0xFF2D1B0E)

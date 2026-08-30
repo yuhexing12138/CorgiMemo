@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -105,6 +106,7 @@ import java.util.concurrent.TimeUnit
  * @param onSelectClick 选择回调（批量模式下点击）
  * @param onShareAsImage 分享为图片回调
  * @param onToggleExpand 切换展开状态回调
+ * @param onOpenKuiklyDetail 打开 Kuikly 待办详情页回调（卡片标题行右侧按钮，针对本条待办）
  * @param onToggleSubTask 切换子任务完成状态回调
  * @param relationHint 关联提示文字
  * @param searchQuery 搜索关键词（非空时对标题和内容进行高亮显示）
@@ -130,6 +132,14 @@ fun TodoListItem(
     onSelectClick: () -> Unit = {},
     onShareAsImage: () -> Unit = {},
     onToggleExpand: () -> Unit = {},
+    /**
+     * 打开 Kuikly 待办详情页（针对本条待办）。
+     *
+     * 说明：待办卡片的长按手势已专用于「跨区拖拽排序」，不能挂其他入口；
+     * 左滑面板已有置顶/删除/分享三个按钮。因此 Kuikly 详情页的**单条入口**
+     * 放在卡片标题行右侧的小图标按钮上，恒显示（不受子任务、简化模式影响）。
+     */
+    onOpenKuiklyDetail: () -> Unit = {},
     onToggleSubTask: (Long) -> Unit = {},
     relationHint: String? = null,
     /**
@@ -550,7 +560,7 @@ fun TodoListItem(
                             if (isHighlightActive) {
                                 val (titleRanges, titleHighlightColor) =
                                     com.corgimemo.app.util.HighlightUtil.buildHighlightRanges(
-                                        text = todo.title,
+                                        text = todo.parentTitle,
                                         searchQuery = searchQuery,
                                         containerBgColor = if (todo.backgroundColor != 0)
                                             Color(todo.backgroundColor) else null
@@ -587,7 +597,7 @@ fun TodoListItem(
                                 }
                             } else {
                                 Text(
-                                    text = todo.title,
+                                    text = todo.parentTitle,
                                     fontSize = 16.sp,
                                     fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                                     textDecoration = if (todo.status == 1) TextDecoration.LineThrough else TextDecoration.None,
@@ -611,6 +621,25 @@ fun TodoListItem(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                             }
+
+                            // Kuikly 详情页入口：样式与展开按钮保持一致（32dp 圆形 + 2dp 阴影）。
+                            // 放在展开按钮之前，使展开按钮仍留在行尾，最小化对既有布局的影响。
+                            Surface(
+                                onClick = { if (!isClickBlocked) onOpenKuiklyDetail() },
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                color = MaterialTheme.colorScheme.surface,
+                                shadowElevation = 2.dp,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.OpenInNew,
+                                        contentDescription = "在 Kuikly 中打开详情",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
 
                             // 展开/收起按钮：Surface 圆形阴影 2dp，两种模式下都保留显示
                             if (subTasks.isNotEmpty()) {

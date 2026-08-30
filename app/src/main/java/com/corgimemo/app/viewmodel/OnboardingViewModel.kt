@@ -232,7 +232,7 @@ class OnboardingViewModel @Inject constructor(
             try {
                 val now = System.currentTimeMillis()
                 val todo = TodoItem(
-                    title = title,
+                    parentTitle = title,
                     categoryId = 0L,
                     priority = priority,
                     status = 0,

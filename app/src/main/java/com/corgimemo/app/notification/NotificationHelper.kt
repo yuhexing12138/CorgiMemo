@@ -282,7 +282,7 @@ object NotificationHelper {
         val contentText = buildContentText(todo, categoryName)
 
         /** 使用「[柯基名]提醒你：该做[任务名]啦！」格式作为通知标题 */
-        val notificationTitle = "${corgiName}提醒你：该做${todo.title}啦！"
+        val notificationTitle = "${corgiName}提醒你：该做${todo.parentTitle}啦！"
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(getAppIconResId(context))
@@ -498,7 +498,7 @@ object NotificationHelper {
             .setBigContentTitle("你有 $count 个待办即将到期")
 
         pendingTodos.take(5).forEach { todo ->
-            inboxStyle.addLine("• ${todo.title}")
+            inboxStyle.addLine("• ${todo.parentTitle}")
         }
 
         if (pendingTodos.size > 5) {

@@ -45,7 +45,7 @@ class TodoSeedData(
 
         // ========== T1：TRAE 初赛参赛贴撰写 ==========
         val t1 = TodoItem(
-            title = "TRAE 初赛参赛贴撰写",
+            parentTitle = "TRAE 初赛参赛贴撰写",
             content = "基于项目实际开发过程，系统性整理参赛贴内容，涵盖产品概述、主要功能、创作思路、TRAE 实践过程和经验总结。",
             categoryId = categoryIds[1]!!, // 工作
             priority = 3, // 高
@@ -67,7 +67,7 @@ class TodoSeedData(
 
         // ========== T2：刻记+ 数据库架构设计 ==========
         val t2 = TodoItem(
-            title = "刻记+ 数据库架构设计",
+            parentTitle = "刻记+ 数据库架构设计",
             content = "设计 Room 数据库的 20 个 Entity 和 20 个 DAO，规划从 v2 到 v38 的 Migration 路径，确保数据层稳定演进。",
             categoryId = categoryIds[0]!!, // 学习
             priority = 2, // 中
@@ -89,7 +89,7 @@ class TodoSeedData(
 
         // ========== T3：悬浮柯基按钮交互优化 ==========
         val t3 = TodoItem(
-            title = "悬浮柯基按钮交互优化",
+            parentTitle = "悬浮柯基按钮交互优化",
             content = "解决悬浮按钮滑动阻尼、位置偏差和右屏限制问题，采用绝对位置追踪方案重写手势处理逻辑。",
             categoryId = categoryIds[1]!!, // 工作
             priority = 3, // 高
@@ -112,7 +112,7 @@ class TodoSeedData(
 
         // ========== T4：日期页侧滑栏重构 ==========
         val t4 = TodoItem(
-            title = "日期页侧滑栏重构",
+            parentTitle = "日期页侧滑栏重构",
             content = "移除旧的倒计时/正计时/已归档选项，改为类型分类（纪念日/生日），添加\"添加类型\"按钮，顶部柯基静态图替换为帧动画。",
             categoryId = categoryIds[2]!!, // 生活
             priority = 0, // 无优先级
@@ -135,7 +135,7 @@ class TodoSeedData(
 
         // ========== T5：灵感页富文本编辑器集成 ==========
         val t5 = TodoItem(
-            title = "灵感页富文本编辑器集成",
+            parentTitle = "灵感页富文本编辑器集成",
             content = "在灵感编辑页集成 Markdown 富文本编辑器，支持粗体/斜体/删除线/列表等格式，与 contentFormat 字段对接。",
             categoryId = categoryIds[0]!!, // 学习
             priority = 1, // 低
@@ -157,7 +157,7 @@ class TodoSeedData(
 
         // ========== T6：演示种子数据注入机制 ==========
         val t6 = TodoItem(
-            title = "演示种子数据注入机制",
+            parentTitle = "演示种子数据注入机制",
             content = "实现 Application.onCreate 首次启动自动注入演示数据，覆盖待办/灵感/日期三大模块及跨模块关联。",
             categoryId = categoryIds[1]!!, // 工作
             priority = 3, // 高
@@ -179,7 +179,7 @@ class TodoSeedData(
 
         // ========== T7：参赛贴最终校验与排版（高优先级，普通待办区） ==========
         val t7 = TodoItem(
-            title = "参赛贴最终校验与排版",
+            parentTitle = "参赛贴最终校验与排版",
             content = "完成参赛贴的最终内容校验、截图替换、排版优化和提交确认，确保文档质量符合评审标准。重点检查格式一致性、图片清晰度和链接有效性。",
             categoryId = categoryIds[1]!!, // 工作
             priority = 3, // 高

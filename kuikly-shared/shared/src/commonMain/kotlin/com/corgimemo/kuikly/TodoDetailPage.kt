@@ -5,6 +5,7 @@ import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.views.*
 import com.corgimemo.kuikly.base.BasePager
+import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 
 /**
  * 待办详情页（阶段三·完善）
@@ -27,7 +28,8 @@ import com.corgimemo.kuikly.base.BasePager
  *   每次按键都会触发重组并把 text 回写给输入框，导致光标跳动与输入错乱。
  *
  * 入参（pageData.params，均为可选，缺省有兜底）：
- * - todoId: Long / title: String / content: String / status: Int（1=完成）/ isPinned: Boolean
+ * - todoId: Long / parentTitle: String（父待办标题）/ content: String / status: Int（1=完成）/ isPinned: Boolean
+ * - childTitles: String（JSON 数组字符串，各子待办标题与完成态，见主工程 KuiklyEntry）
  */
 @Page("todoDetail", supportInLocal = true)
 internal class TodoDetailPage : BasePager() {
@@ -59,8 +61,8 @@ internal class TodoDetailPage : BasePager() {
     /** 待办 ID（为 0 时原生侧会因查不到记录而忽略写操作） */
     private fun todoIdValue(): Long = pageData.params.optLong("todoId", 0L)
 
-    /** 标题展示值：未编辑时用入参，编辑后用用户输入 */
-    private fun titleValue(): String = editTitle ?: pageData.params.optString("title", "")
+    /** 标题展示值（父待办标题）：未编辑时用入参，编辑后用用户输入 */
+    private fun titleValue(): String = editTitle ?: pageData.params.optString("parentTitle", "")
 
     /** 内容展示值：未编辑时用入参，编辑后用用户输入 */
     private fun contentValue(): String = editContent ?: pageData.params.optString("content", "")
@@ -75,6 +77,9 @@ internal class TodoDetailPage : BasePager() {
 
     override fun body(): ViewBuilder {
         val ctx = this
+        // 解析子待办标题列表（宿主以 JSON 字符串平铺传入，避免嵌套数组在 argsToMap 中丢失）
+        val childArr =
+            runCatching { JSONArray(pageData.params.optString("childTitles", "[]")) }.getOrNull()
         return {
             attr {
                 backgroundColor(Color(0xFFFFFFFF.toInt()))
@@ -82,8 +87,8 @@ internal class TodoDetailPage : BasePager() {
                 padding(16f)
             }
 
-            // ---------- 标题 ----------
-            ctx.sectionLabel(this, "标题")
+            // ---------- 父待办标题 ----------
+            ctx.sectionLabel(this, "父待办标题")
             View {
                 attr {
                     marginTop(6f)
@@ -130,6 +135,24 @@ internal class TodoDetailPage : BasePager() {
                     event {
                         textDidChange { params -> ctx.editContent = params.text }
                     }
+                }
+            }
+
+            // ---------- 子待办（区分父/子标题，展示各子待办实际值） ----------
+            ctx.sectionLabel(this, "子待办")
+            if (childArr == null || childArr.length() == 0) {
+                Text {
+                    attr {
+                        text("（无子待办）")
+                        fontSize(14f)
+                        color(Color(0xFF999999.toInt()))
+                        marginTop(6f)
+                    }
+                }
+            } else {
+                for (i in 0 until childArr.length()) {
+                    val obj = childArr.optJSONObject(i) ?: continue
+                    ctx.childRow(this, obj.optString("title", ""), obj.optBoolean("done", false))
                 }
             }
 
@@ -216,6 +239,42 @@ internal class TodoDetailPage : BasePager() {
                 fontSize(13f)
                 color(Color(0xFF888888.toInt()))
                 marginTop(14f)
+            }
+        }
+    }
+
+    /** 子待办单行：勾选框 + 标题（实际值）+ 完成态；只读展示，不做回写 */
+    private fun childRow(container: ViewContainer<*, *>, title: String, done: Boolean) {
+        container.View {
+            attr {
+                flexDirectionRow()
+                alignItemsCenter()
+                marginTop(6f)
+                padding(10f)
+                borderRadius(8f)
+                backgroundColor(Color(0xFFF2F2F2.toInt()))
+            }
+            Text {
+                attr {
+                    text(if (done) "☑" else "☐")
+                    fontSize(16f)
+                    marginRight(8f)
+                }
+            }
+            Text {
+                attr {
+                    text(title)
+                    fontSize(15f)
+                    color(Color(0xFF000000.toInt()))
+                    flex(1f)
+                }
+            }
+            Text {
+                attr {
+                    text(if (done) "已完成" else "未完成")
+                    fontSize(12f)
+                    color(Color(0xFF999999.toInt()))
+                }
             }
         }
     }

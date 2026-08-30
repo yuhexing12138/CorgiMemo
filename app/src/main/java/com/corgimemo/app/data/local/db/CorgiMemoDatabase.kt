@@ -34,7 +34,7 @@ import com.corgimemo.app.data.model.ProfileNavItem
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class, InspirationTagOrder::class, ProfileNavItem::class],
-    version = 55,
+    version = 56,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -108,7 +108,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56)
                     .build()
                 INSTANCE = instance
                 instance
@@ -2119,6 +2119,118 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             database.execSQL(
                 "CREATE INDEX IF NOT EXISTS index_categories_isPinned ON categories(isPinned)"
             )
+        }
+    }
+
+    /**
+     * 数据库迁移：版本 55 → 56（v2026-08-29 新增）
+     * 将 todo_items.title 列重命名为 parentTitle（对应实体字段 TodoItem.parentTitle），
+     * 并重建索引 index_todo_items_title → index_todo_items_parentTitle。
+     *
+     * **背景**：
+     * 业务概念澄清：待办只有"父待办标题"和各个"子待办标题"，原统一命名为 title 容易混淆。
+     * 父待办标题字段正式重命名为 parentTitle，DB 列名同步改名（子待办标题由 SubTask.title 承载，不受影响）。
+     *
+     * **SQLite RENAME COLUMN 兼容性说明**：
+     * minSdk = 26（内置 SQLite 3.18）不支持 `ALTER TABLE ... RENAME COLUMN`（需 SQLite 3.25+），
+     * 故采用项目既有"12-step 重建表"模式：关闭外键 → 事务 → 建新表 → 复制数据 → 删旧索引 →
+     * 删旧表 → RENAME → 重建全部 6 个索引 → 提交 → 开启外键。
+     *
+     * **依据 .trae/rules/实体与migration同步检查.md 规则**：
+     * - 新表 CREATE 语句与 Room 生成的 todo_items 建表语句逐列一致，仅 `title`→`parentTitle`。
+     * - 新索引 index_todo_items_parentTitle 与 [TodoItem] 的 @Index(value = ["parentTitle"]) 严格一致。
+     * - 旧索引 index_todo_items_title 在 DROP TABLE 时随表删除，此处显式 DROP 以兼容部分 ROM 缓存。
+     */
+    internal val MIGRATION_55_56 = object : Migration(55, 56) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // Step 1: 关闭外键（PRAGMA 不能在事务内执行）
+            database.execSQL("PRAGMA foreign_keys = OFF")
+
+            // Step 2: 开启事务
+            database.beginTransaction()
+            try {
+                // Step 3: 创建新表（title → parentTitle，其余列与 Room 生成语句逐列一致）
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS todo_items_new (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `parentTitle` TEXT NOT NULL,
+                        `content` TEXT,
+                        `categoryId` INTEGER NOT NULL,
+                        `priority` INTEGER NOT NULL,
+                        `status` INTEGER NOT NULL,
+                        `dueDate` INTEGER,
+                        `estimatedDurationMinutes` INTEGER,
+                        `reminderTime` INTEGER,
+                        `repeatType` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `completedAt` INTEGER,
+                        `geofenceLat` REAL,
+                        `geofenceLng` REAL,
+                        `geofenceRadius` REAL,
+                        `geofenceType` INTEGER NOT NULL,
+                        `geofenceEnabled` INTEGER NOT NULL,
+                        `geofenceAddress` TEXT,
+                        `hasSubTasks` INTEGER NOT NULL,
+                        `voiceNotePath` TEXT,
+                        `voiceDuration` INTEGER,
+                        `imagePaths` TEXT NOT NULL DEFAULT '',
+                        `backgroundColor` INTEGER NOT NULL DEFAULT 16777215,
+                        `contentFormat` TEXT NOT NULL DEFAULT '',
+                        `isPinned` INTEGER NOT NULL DEFAULT 0,
+                        `sortOrder` INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+
+                // Step 4: 复制数据（title → parentTitle 映射，其余列一一对应）
+                database.execSQL(
+                    """
+                    INSERT INTO todo_items_new (
+                        id, parentTitle, content, categoryId, priority, status,
+                        dueDate, estimatedDurationMinutes, reminderTime, repeatType,
+                        createdAt, updatedAt, completedAt,
+                        geofenceLat, geofenceLng, geofenceRadius,
+                        geofenceType, geofenceEnabled, geofenceAddress,
+                        hasSubTasks, voiceNotePath, voiceDuration,
+                        imagePaths, backgroundColor, contentFormat, isPinned, sortOrder
+                    )
+                    SELECT
+                        id, title, content, categoryId, priority, status,
+                        dueDate, estimatedDurationMinutes, reminderTime, repeatType,
+                        createdAt, updatedAt, completedAt,
+                        geofenceLat, geofenceLng, geofenceRadius,
+                        geofenceType, geofenceEnabled, geofenceAddress,
+                        hasSubTasks, voiceNotePath, voiceDuration,
+                        imagePaths, backgroundColor, contentFormat, isPinned, sortOrder
+                    FROM todo_items
+                    """.trimIndent()
+                )
+
+                // Step 5: 删除旧索引（随 DROP TABLE 一并删除，显式 DROP 以兼容索引缓存）
+                database.execSQL("DROP INDEX IF EXISTS index_todo_items_title")
+
+                // Step 6: 删除旧表（旧表上的 6 个索引随之删除）
+                database.execSQL("DROP TABLE todo_items")
+
+                // Step 7: 重命名新表
+                database.execSQL("ALTER TABLE todo_items_new RENAME TO todo_items")
+
+                // Step 8: 重建全部 6 个索引（与 [TodoItem] @Index 声明一一对应）
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_status_createdAt ON todo_items(status, createdAt)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_categoryId_status ON todo_items(categoryId, status)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_hasSubTasks ON todo_items(hasSubTasks)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_dueDate_status ON todo_items(dueDate, status)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_isPinned ON todo_items(isPinned)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_parentTitle ON todo_items(parentTitle)")
+
+                database.setTransactionSuccessful()
+            } finally {
+                database.endTransaction()
+                // Step 9: 恢复外键
+                database.execSQL("PRAGMA foreign_keys = ON")
+            }
         }
     }
     // companion object 闭合

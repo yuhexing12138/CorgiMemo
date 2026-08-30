@@ -148,7 +148,7 @@ class TemplateViewModel(application: Application) : AndroidViewModel(application
                 /** 批量创建待办 */
                 todoTitles.forEach { title ->
                     val newTodo = TodoItem(
-                        title = title,
+                        parentTitle = title,
                         content = "来自「${userTemplate.name}」模板",
                         categoryId = 0L,
                         priority = 1,

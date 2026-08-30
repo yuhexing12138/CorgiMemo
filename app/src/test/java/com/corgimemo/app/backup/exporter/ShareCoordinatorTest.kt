@@ -44,7 +44,7 @@ class ShareCoordinatorTest {
      */
     private fun makeTodo(id: Long, title: String = "测试 todo"): TodoItem = TodoItem(
         id = id,
-        title = title,
+        parentTitle = title,
         content = null,
         categoryId = 0L,
         priority = 0,

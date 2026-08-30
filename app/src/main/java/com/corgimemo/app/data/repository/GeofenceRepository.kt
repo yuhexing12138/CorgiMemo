@@ -117,11 +117,11 @@ class GeofenceRepository(private val context: Context) {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(if (iconResId != 0) iconResId else android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
-            .setContentText("${todo.title} - ${address}")
+            .setContentText("${todo.parentTitle} - ${address}")
             // 使用 BigTextStyle 展开显示完整内容
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("${todo.title}\n${address}")
+                    .bigText("${todo.parentTitle}\n${address}")
             )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)

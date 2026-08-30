@@ -14,17 +14,18 @@ import androidx.room.PrimaryKey
         Index(value = ["hasSubTasks"]),
         Index(value = ["dueDate", "status"]),
         Index(value = ["isPinned"]),
-        // v2026-07-22 新增：title 索引
+        // v2026-07-22 新增：父待办标题索引（原字段名 title）
         // 注：SQLite LIKE '%x%' 实际无法走 B-Tree 索引，但为后续 FTS5 切换铺垫
-        // 必须与 MIGRATION_44_TO_45 中创建的 index_todo_items_title 保持一致
-        // （参见 .trae/rules/entity与migration同步检查.md）
-        Index(value = ["title"])
+        // 必须与 MIGRATION_55_56 中创建的 index_todo_items_parentTitle 保持一致
+        // （字段/索引重命名见 MIGRATION_55_56；参见 .trae/rules/entity与migration同步检查.md）
+        Index(value = ["parentTitle"])
     ]
 )
 data class TodoItem(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-    val title: String,
+    /** 父待办标题（原字段名 title，v56 起重命名为 parentTitle，DB 列同步改名） */
+    val parentTitle: String,
     val content: String? = null,
     val categoryId: Long,
     val priority: Int,

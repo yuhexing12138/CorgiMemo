@@ -407,7 +407,7 @@ object ImageExporter {
         }
         // 标题截断：进度文本预留约 60dp 空间
         val titleMaxWidth = textAreaWidth - (60 * density)
-        val displayTitle = ellipsizeText(titlePaint, todo.title, titleMaxWidth)
+        val displayTitle = ellipsizeText(titlePaint, todo.parentTitle, titleMaxWidth)
         canvas.drawText(displayTitle, titleX, y + (16 * density), titlePaint)
 
         // 删除线（已完成态）

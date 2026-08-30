@@ -2105,7 +2105,7 @@ class TodoEditViewModel @Inject constructor(
 
             todoRepository.getTodoById(todoId)?.let { todo ->
                 existingTodo = todo
-                _title.value = todo.title
+                _title.value = todo.parentTitle
                 _content.value = todo.content ?: ""
                 // 单容器场景：groupId=0 持有该 todo 的分类
                 _groupCategoryIds.value = mapOf(0 to todo.categoryId)
@@ -2189,7 +2189,7 @@ class TodoEditViewModel @Inject constructor(
                  * 错误触发 [checkAndResetGroupSavedState] 重置保存状态。
                  */
                 val contentSnapshot = buildString {
-                    appendLine(todo.title)
+                    appendLine(todo.parentTitle)
                     subTasks.forEach { appendLine(it.title) }
                 }.trim()
 
@@ -2250,7 +2250,7 @@ class TodoEditViewModel @Inject constructor(
         }
 
         return TodoItem(
-            title = title,
+            parentTitle = title,
             content = content.ifBlank { null },
             categoryId = _groupCategoryIds.value[targetGroupId] ?: 0L,
             priority = _groupPriorities.value[targetGroupId] ?: 0,  // 使用分组独立优先级
@@ -2364,7 +2364,7 @@ class TodoEditViewModel @Inject constructor(
                     val existingTodo = todoRepository.getTodoById(existingSavedId)
                     if (existingTodo != null) {
                         val updatedTodo = existingTodo.copy(
-                            title = todoItem.title,
+                            parentTitle = todoItem.parentTitle,
                             content = todoItem.content,
                             categoryId = todoItem.categoryId,
                             priority = todoItem.priority,

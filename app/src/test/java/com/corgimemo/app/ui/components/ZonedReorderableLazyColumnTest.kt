@@ -24,7 +24,7 @@ class ZonedReorderableLazyColumnTest {
     ): TodoItem {
         return TodoItem(
             id = id,
-            title = "测试项$id",
+            parentTitle = "测试项$id",
             categoryId = 1L,
             priority = 1,
             status = status,

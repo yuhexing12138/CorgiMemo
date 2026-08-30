@@ -57,8 +57,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import com.corgimemo.app.kuikly.KuiklyBridge
-import com.corgimemo.app.kuikly.KuiklyRenderActivity
-import org.json.JSONObject
+import com.corgimemo.app.kuikly.KuiklyEntry
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -414,7 +413,7 @@ fun MainScreen(
             homeViewModel.filteredTodos.value.map { t ->
                 mapOf(
                     "todoId" to t.id,
-                    "title" to t.title,
+                    "title" to t.parentTitle,
                     "content" to (t.content ?: ""),
                     "dueDate" to (t.dueDate ?: 0L),
                     "status" to t.status,
@@ -427,7 +426,7 @@ fun MainScreen(
             homeViewModel.filteredTodos.value.find { it.id == id }?.let { t ->
                 mapOf(
                     "todoId" to t.id,
-                    "title" to t.title,
+                    "title" to t.parentTitle,
                     "content" to (t.content ?: ""),
                     "dueDate" to (t.dueDate ?: 0L),
                     "status" to t.status,
@@ -833,18 +832,12 @@ fun MainScreen(
                                     },
                                     onRecycleBinClick = { navController.navigate(Screen.RecycleBin.createRoute("todo")) },
                                     onKuiklyDetailClick = {
-                                        val todo = filteredTodos.firstOrNull()
-                                        if (todo != null) {
-                                            // 桥处理器已在组合作用域统一接线（LaunchedEffect），此处仅组装数据并跳转
-                                            val data = JSONObject().apply {
-                                                put("todoId", todo.id)
-                                                put("title", todo.title)
-                                                put("content", todo.content ?: "")
-                                                put("dueDate", todo.dueDate ?: 0L)
-                                                put("status", todo.status)
-                                                put("isPinned", todo.isPinned)
+                                        // 打开首条待办的 Kuikly 详情页（挂起：需读取子任务）。
+                                        // 针对「指定某条」的精准入口见待办卡片标题行右侧的小图标按钮（HomeScreen 接线）。
+                                        filteredTodos.firstOrNull()?.let { todo ->
+                                            coroutineScope.launch {
+                                                KuiklyEntry.openTodoDetail(context, todo)
                                             }
-                                            KuiklyRenderActivity.start(context, "todoDetail", data)
                                         }
                                     }
                                 )
