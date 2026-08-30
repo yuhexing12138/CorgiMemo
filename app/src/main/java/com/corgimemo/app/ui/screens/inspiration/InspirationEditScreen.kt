@@ -505,40 +505,57 @@ fun InspirationEditScreen(
              */
             richTextState.setMarkdown(contentFormat)
             hasInitializedWithData = true
-
-            /**
-             * v2026-08-30 内联迁移（顺序关键：必须在 setMarkdown 之后执行）
-             *
-             * 旧的 content_blocks（图片/语音）在新方案中不再作为独立内容块渲染，
-             * 这里把它们作为正文内联 atomic token 追加进编辑器，实现"内联展示"。
-             *
-             * 若顺序颠倒（先追加 token 再 setMarkdown），setMarkdown 会整体重建
-             * 内容，导致刚追加的 token 被覆盖丢失。
-             */
-            if (inspirationId != null) {
-                val dbBlocks = viewModel.loadContentBlocks(inspirationId)
-                dbBlocks.forEach { block ->
-                    when (block) {
-                        is ContentBlock.Image -> insertBlockImage(richTextState, block.path)
-                        is ContentBlock.Voice -> {
-                            val dur = block.duration ?: 0
-                            val mm = dur / 60
-                            val ss = dur % 60
-                            richTextState.addRichSpan(
-                                RichSpanStyle.Token(
-                                    triggerId = "voice",
-                                    id = "${block.path}|${dur}",
-                                    label = "🎤%02d:%02d".format(mm, ss)
-                                )
-                            )
-                        }
-                        is ContentBlock.Text -> { /* 不处理 */ }
-                    }
-                }
-            }
         } catch (e: Exception) {
             Log.e("InspirationEditScreen", "编辑器初始化异常（已捕获）", e)
             hasInitializedWithData = true
+        }
+    }
+
+    /** 旧 content_blocks 是否已迁移为正文内联媒体（避免重复迁移） */
+    var hasMigratedBlocks by remember { mutableStateOf(false) }
+
+    /**
+     * v2026-08-30：把旧的 content_blocks（图片/语音）迁移为正文内联媒体。
+     *
+     * **必须等 setMarkdown 完成之后再做，且要放在独立的 LaunchedEffect 中。**
+     *
+     * 实测（adb logcat）发现：若把命令式插入（addTextAfterSelection + addRichSpan）
+     * 紧接在 setMarkdown 之后写在同一段代码里，会被随后到达的 TextFieldValue 更新覆盖 ——
+     * 日志表现为迁移确实读到了 6 张图、inlineContentMap 也建了 6 条，
+     * 但正文 textLen 随即回到原值（340）、placeholders=0，图片全部丢失。
+     *
+     * 改为依赖 hasInitializedWithData、在初始化完成后的下一帧再插入，
+     * 与用户手动插入图片走同一条路径（该路径已验证可持久化）。
+     */
+    LaunchedEffect(hasInitializedWithData) {
+        if (!hasInitializedWithData || hasMigratedBlocks) return@LaunchedEffect
+        hasMigratedBlocks = true
+        if (inspirationId == null) return@LaunchedEffect
+
+        try {
+            val dbBlocks = viewModel.loadContentBlocks(inspirationId)
+            dbBlocks.forEach { block ->
+                when (block) {
+                    is ContentBlock.Image -> insertBlockImage(richTextState, block.path)
+                    is ContentBlock.Voice -> {
+                        val dur = block.duration ?: 0
+                        val mm = dur / 60
+                        val ss = dur % 60
+                        richTextState.addRichSpan(
+                            RichSpanStyle.Token(
+                                triggerId = "voice",
+                                id = "${block.path}|${dur}",
+                                label = "🎤%02d:%02d".format(mm, ss)
+                            )
+                        )
+                    }
+                    is ContentBlock.Text -> { /* 不处理 */ }
+                }
+            }
+            /** 迁移是真实内容变更，需置脏以便用户保存 */
+            viewModel.notifyInlineMediaChanged()
+        } catch (e: Exception) {
+            Log.e("InspirationEditScreen", "内联媒体迁移异常（已捕获）", e)
         }
     }
 

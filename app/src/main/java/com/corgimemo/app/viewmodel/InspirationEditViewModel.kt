@@ -1434,7 +1434,15 @@ class InspirationEditViewModel @Inject constructor(
                 }
             }
 
-        /** 清理已被删除的孤立文件（replaceBlocksForTodo 会先删后写） */
+        /**
+         * v2026-08-30：暂不清理物理文件。
+         *
+         * 原因（真实风险）：旧灵感的图片原本只存在于 content_blocks 表，
+         * 需要打开编辑页后由迁移逻辑插入正文、才会出现在 Markdown 中。
+         * 若保存发生在迁移完成之前，Markdown 里没有图片，
+         * 此时按"孤儿文件"清理会**误删用户图片**。
+         * 待迁移与渲染在真机验证稳定后，再重新启用清理。
+         */
         val old = contentBlockDao.getBlocksByTodoId(inspirationId, ownerType = "inspiration")
         val keptPaths = blocks.map { block ->
             when (block) {
@@ -1442,10 +1450,6 @@ class InspirationEditViewModel @Inject constructor(
                 is ContentBlock.Voice -> block.path
                 is ContentBlock.Text -> ""
             }
-        }
-        old.filter { it.filePath !in keptPaths }.forEach { entity ->
-            val file = java.io.File(entity.filePath)
-            if (file.exists()) file.delete()
         }
 
         saveContentBlocks(inspirationId, blocks)

@@ -36,9 +36,10 @@ object CoilRichTextImageLoader : ImageLoader {
     @Composable
     override fun load(model: Any): ImageData? {
         val painter = rememberAsyncImagePainter(model = model)
+        val intrinsic = painter.intrinsicSize
 
         /** 尚未解码出内在尺寸时返回 null，保持占位符尺寸不变 */
-        if (painter.intrinsicSize.isUnspecified) return null
+        if (intrinsic.isUnspecified) return null
 
         return ImageData(
             painter = painter,
