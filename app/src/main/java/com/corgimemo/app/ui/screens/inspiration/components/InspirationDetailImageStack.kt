@@ -381,7 +381,14 @@ private data class FlipState(
 fun InspirationDetailImageStack(
     imagePaths: List<String>,
     onImageClick: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * v2026-08-30 新增：拖动状态回调（true=正在拖动卡片）。
+     * 父级（HorizontalPager 等）可用此回调临时禁用同级水平手势，
+     * 避免卡片 pointerInput 与 Pager draggable 同时响应导致的「卡一下再回底」。
+     * 默认空实现，不影响其他调用方。
+     */
+    onDragStateChange: (Boolean) -> Unit = {}
 ) {
     val count = imagePaths.size
     if (count == 0) return
@@ -461,9 +468,19 @@ fun InspirationDetailImageStack(
             )
             Spacer(modifier = Modifier.height(12.dp))
         }
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val geom = computeGeom(maxWidth, order, ratios)
-            GalleryStage(
+        Box(
+            // v2026-08-30 修复：BoxWithConstraints 自身 RenderNode 默认 clip=true，
+            // 会把 GalleryStage 拖出 BoxWithConstraints 边界的顶卡裁掉（出现
+            // 「卡在 BoxWithConstraints 左缘再回底」的现象）。外层包一个
+            // graphicsLayer{clip=false} 的 Box，让 GalleryStage 可溢出 BoxWithConstraints
+            // bounds 继续绘制到 Column/InspirationViewCard 边界（形成完整不裁剪链）。
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { this.clip = false }
+        ) {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val geom = computeGeom(maxWidth, order, ratios)
+                GalleryStage(
                 progress = progress,
                 geom = geom,
                 order = order,
@@ -552,9 +569,12 @@ fun InspirationDetailImageStack(
                         scope.launch { dragOffsetX.animateTo(0f, BOUNCE_SPRING) }
                     }
                 },
+                // v2026-08-30 透传拖动状态回调到 GalleryStage → pointerInput
+                onDragStateChange = onDragStateChange,
                 modifier = Modifier
             )
         }
+        }  // 关闭外层 graphicsLayer{clip=false} 的 Box（与 464 行 Box( 对应）
     }
 }
 
@@ -586,6 +606,8 @@ private fun GalleryStage(
     onTopCardDrag: suspend (Float) -> Unit,
     onDragStart: suspend () -> Unit,
     onDragEnd: suspend (velocityX: Float) -> Unit,
+    // v2026-08-30 新增：透传拖动状态回调，供 pointerInput lambda 通知父级 HorizontalPager
+    onDragStateChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -594,18 +616,21 @@ private fun GalleryStage(
     // 展开态（progress ≥ 0.5）不叠加拖拽位移，与展开态禁用拖拽的判定保持一致
     val isStackedMode = progress < 0.5f
 
-    // ---- v2026-08-30 布局空间预借（彻底移除 Popup）----
-    // Popup 是独立 Window，位置经 WindowManager 异步更新，天然滞后 1-2 帧；
-    // 拖拽中 Stage 内顶卡（同步跟手）与 Popup（滞后）双渲染竞争，快速滑动时
-    // 表现为「卡片卡在原位再跳回」的闪烁。现在改为布局空间预借：
-    // ① Stage 左右各扩 StackHorizontalCompensation（130dp），顶卡在 layout 空间内同步平移；
-    // ② Stage 最外层 RenderNode clip=false，平移内容可溢出 Stage bounds 不被裁；
-    // ③ 父级 InspirationViewCard 已由 Material3 Card（内部 Surface 会 clip 圆角）改为
-    //    Box + shadow + background + graphicsLayer{clip=false}，不再裁剪子内容；
-    // ④ 可见边界由内容包装层 drawWithContent + clipRect 控制（左右各容 comp 溢出）。
-    // 单一渲染路径 + 同步跟手 → 与灵感首页 SwipeableImageStack 手感一致，无闪烁。
+    // ---- v2026-08-30 多层 RenderNode clip=false 链（修复居中失败与裁剪卡顿）----
+    // v2026-08-29 第一版「布局空间预借」用 Stage `offset(-comp) + requiredWidth(contentWidth+comp*2)`
+    // 组合（130dp 水平补偿 + clipRect 限位），但有两个未发现的裁剪源导致真机仍卡：
+    //   ① requiredWidth(>父 maxWidth=contentWidth) 被 BoxWithConstraints 截断到 contentWidth，
+    //      而 offset(-comp) 让 Stage 渲染位置左移 130dp → **堆叠区偏左 130dp**（居中失败）；
+    //   ② Column（InspirationViewCard）/ BoxWithConstraints / ContentWrap 三层 RenderNode
+    //      自身默认 clip=true，按层级链依次裁掉卡片溢出边界的部分 → 拖到一定距离时
+    //      卡片在裁剪边界被突然截断（"卡一下再回底"），clipRect 拓到 ±130dp 反而成为
+    //      新的视觉突变点。
+    // 修复：放弃 offset/requiredWidth 预借，让 Stage `fillMaxWidth()` 与父级 content 居中；
+    // 在 Column → Box(wrap BoxWithConstraints) → Stage Box → ContentWrap Box 四层
+    // 全部加 `graphicsLayer { clip = false }`，彻底打通不裁剪链；卡片可自由拖到
+    // InspirationViewCard 边界（再外被 Pager 等兜底裁回页面边界，不会污染屏幕其他区域）。
+    // 单一同步渲染路径 + 父链全不裁 → 与灵感首页 SwipeableImageStack 手感完全一致。
     val stageHeight = lerp(geom.stackedHeight, geom.expandedHeight, progress)
-    val comp = StackHorizontalCompensation
 
     // 逐卡目标值
     val targets = order.mapIndexed { displayIndex, cardIdx ->
@@ -668,36 +693,26 @@ private fun GalleryStage(
         label = "detailBadgeAlpha"
     )
 
-    // Stage Box：布局空间预借（左右各扩 comp），最外层 RenderNode 不裁剪
+    // Stage Box：与父级 content 居中对齐（fillMaxWidth = contentWidth），最外层 RenderNode
+    // 不裁剪。卡片溢出 Column/BoxWithConstraints/Stage 边界的部分会沿 clip=false 链
+    // 一直绘制到 InspirationViewCard Box 边界（再外被 Pager 等兜底裁回页面边界，
+    // 不会污染屏幕其他区域）。
     Box(
         modifier = modifier
-            // 左扩：Stage 左缘左移 comp，顶卡左滑有 layout 空间
-            .offset(x = -comp)
-            // 宽 = 内容宽 + comp×2（右扩同等量），高 = 展开/收起过渡高度
-            .requiredWidth(geom.contentWidth + comp * 2)
+            .fillMaxWidth()  // = contentWidth，与父级 content 居中对齐
             .requiredHeight(stageHeight)
-            // 最外层 RenderNode：clip = false，让顶卡平移可溢出 Stage bounds 绘制
             .graphicsLayer { this.clip = false }
     ) {
-        // 内容包装层：offset(+comp) 把内容推回原视觉位置；
-        // drawWithContent + clipRect 控制可见边界（左右各容 comp 溢出，上下不裁，
-        // 保证扇形旋转与阴影完整绘制）
+        // 内容包装层：fillMaxWidth = Stage 宽。graphicsLayer{clip=false} 让其子
+        // （Layout + placeables）可溢出 ContentWrap bounds 继续绘制。不再用 clipRect：
+        // 之前 clipRect 拓到 -130dp 是为了在父级裁剪存在时给卡片留溢出空间，但水平
+        // 方向反而成为新的"卡顿点"（拖到 clipRect 边界外卡片被裁断）。现在父链完全
+        // 不裁，卡片可自由拖到 InspirationViewCard 边界。
         Box(
             modifier = Modifier
-                .offset(x = comp)
-                .requiredWidth(geom.contentWidth)
+                .fillMaxWidth()
                 .requiredHeight(stageHeight)
-                .drawWithContent {
-                    val compPx = with(density) { comp.toPx() }
-                    clipRect(
-                        left = -compPx,
-                        top = -100000f,
-                        right = size.width + compPx,
-                        bottom = 100000f
-                    ) {
-                        this@drawWithContent.drawContent()
-                    }
-                }
+                .graphicsLayer { this.clip = false }
         ) {
             Layout(
                 modifier = Modifier.fillMaxSize(),
@@ -709,13 +724,19 @@ private fun GalleryStage(
                                 detectHorizontalDragGestures(
                                     onDragStart = {
                                         velocityTracker.resetTracking()
+                                        // v2026-08-30 新增：通知父级「正在拖动」，
+                                        // 父级 HorizontalPager 临时禁用 userScrollEnabled，
+                                        // 避免双层水平手势竞争导致的「卡一下再回底」
+                                        onDragStateChange(true)
                                         scope.launch { onDragStart() }
                                     },
                                     onDragEnd = {
                                         val vx = velocityTracker.calculateVelocity().x
+                                        onDragStateChange(false)
                                         scope.launch { onDragEnd(vx) }
                                     },
                                     onDragCancel = {
+                                        onDragStateChange(false)
                                         scope.launch { onDragEnd(0f) }
                                     }
                                 ) { change, dragAmount ->

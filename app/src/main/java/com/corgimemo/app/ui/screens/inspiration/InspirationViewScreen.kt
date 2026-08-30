@@ -186,6 +186,14 @@ fun InspirationViewScreen(
     var currentPageLayer by remember { mutableStateOf<GraphicsLayer?>(null) }
 
     /**
+     * v2026-08-30 新增：堆叠图拖动状态。
+     * 任一页面内的 InspirationDetailImageStack 开始拖动卡片时设为 true，松手/取消时设回 false；
+     * 用于临时禁用 HorizontalPager 的 userScrollEnabled，避免双层水平手势竞争导致的
+     * 「卡一下再回底」（Pager settle 动画与卡片 dragOffset spring 同时作用）。
+     */
+    var isImageStackDragging by remember { mutableStateOf(false) }
+
+    /**
      * 返回上一页辅助函数
      *
      * 在 popBackStack 之前设置 savedStateHandle["targetTab"] = "INSPIRE"，
@@ -252,6 +260,9 @@ fun InspirationViewScreen(
                         beyondViewportPageCount = 0,  // 不预渲染相邻页，提升性能
                         pageSpacing = 16.dp,
                         contentPadding = PaddingValues(horizontal = 18.dp),
+                        // v2026-08-30 新增：堆叠图拖动期间禁用 Pager 滚动，
+                        // 避免双层水平手势竞争导致的「卡一下再回底」
+                        userScrollEnabled = !isImageStackDragging,
                         modifier = Modifier.fillMaxSize()
                     ) { page ->
                         val ins = inspirations[page]
@@ -289,6 +300,11 @@ fun InspirationViewScreen(
                             },
                             onAddRelationClick = {
                                 showRelationPicker = true
+                            },
+                            // v2026-08-30 新增：堆叠图拖动状态回调 → 控制 Pager.userScrollEnabled，
+                            // 避免卡片拖动与 Pager settle 动画双层手势竞争
+                            onImageStackDragStateChange = { dragging ->
+                                isImageStackDragging = dragging
                             },
                             modifier = Modifier.fillMaxSize()
                         )

@@ -94,6 +94,13 @@ fun InspirationViewCard(
     onChipClick: (CardRelation) -> Unit = {},
     onChipDelete: (relationId: Long, groupId: Int) -> Unit = { _, _ -> },
     onAddRelationClick: () -> Unit = {},
+    /**
+     * v2026-08-30 新增：内部堆叠图拖动状态回调（true=正在拖动卡片）。
+     * 父级（HorizontalPager）可用此回调临时禁用同级水平手势，
+     * 避免双层手势竞争导致「卡一下再回底」。
+     * 默认空实现，不影响其他调用方。
+     */
+    onImageStackDragStateChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // 缓存：标签列表
@@ -162,6 +169,11 @@ fun InspirationViewCard(
                     modifier = Modifier
                         .padding(start = 18.dp, end = 18.dp, top = 36.dp, bottom = 18.dp)
                         .verticalScroll(rememberScrollState())
+                        // v2026-08-30 修复：Column 自身 RenderNode 默认 clip=true，会
+                        // 把 InspirationDetailImageStack 拖出 Column 边界的顶卡裁掉（出现
+                        // 「卡在 Column 左缘」的现象）。关闭后允许 Stage 卡片溢出 Column
+                        // padding 范围绘制，与外层 Box（已 clip=false）形成完整不裁剪链。
+                        .graphicsLayer { this.clip = false }
                 ) {
                     // 标题（18sp Medium）
                     Text(
@@ -197,7 +209,8 @@ fun InspirationViewCard(
                         Spacer(modifier = Modifier.height(12.dp))
                         InspirationDetailImageStack(
                             imagePaths = imagePaths,
-                            onImageClick = onImageClick
+                            onImageClick = onImageClick,
+                            onDragStateChange = onImageStackDragStateChange
                         )
                     }
                     // 标签（最多显示 5 个）
