@@ -10,8 +10,8 @@ import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import com.tencent.kuikly.core.render.android.adapter.KuiklyRenderAdapterManager
-import com.tencent.kuikly.core.render.android.expand.KuiklyRenderViewBaseDelegator
 import com.tencent.kuikly.core.render.android.css.ktx.toMap
+import com.tencent.kuikly.core.render.android.expand.KuiklyRenderViewBaseDelegator
 import org.json.JSONObject
 
 /**
@@ -104,14 +104,19 @@ class KuiklyRenderActivity : ComponentActivity() {
         }
     }
 
-    /** 传给 Kuikly 页面的初始数据：把入口传入的 pageData JSON 平铺成 Map（顶层 key 即页面内 pageData.params.optX("key") 读取的 key），再补 appId */
-    private fun createPageData(): Map<String, Any> {
-        val param = argsToMap()
-        param["appId"] = 1
-        return param
-    }
+    /**
+     * 传给 Kuikly 页面的初始数据。
+     *
+     * Kuikly 内部的 `KuiklyRenderView.generateWithParams` 会把用户传入的整个 pageData Map
+     * 作为 value 放在 `result["param"]` 这一层下（参见 core-render-android 字节码）。
+     * 所以这里只需要把入口的 pageData JSON 转成 Map 返回，KUIKLY 会自动加 `param` 嵌套。
+     *
+     * 业务字段直接在 [buildTodoDetailData] 里平铺构造即可（todoId / title / content / ...），
+     * **不要**在这里再补一个 `param` 嵌套，否则字段会落到 `param.param.title` 这种位置。
+     */
+    private fun createPageData(): Map<String, Any> = argsToMap()
 
-    /** 从 intent 取出入口传入的 pageData JSON 字符串，转成 Map（用 Kuikly 跨平台 JSONObject.toMap 扩展） */
+    /** 从 intent 取出入口传入的 pageData JSON 字符串，转成 Map（扁平字段） */
     private fun argsToMap(): MutableMap<String, Any> {
         val jsonStr = intent.getStringExtra(KEY_PAGE_DATA) ?: return mutableMapOf()
         return JSONObject(jsonStr).toMap()

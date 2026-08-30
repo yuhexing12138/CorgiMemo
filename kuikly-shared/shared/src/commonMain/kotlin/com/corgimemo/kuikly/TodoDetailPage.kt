@@ -93,7 +93,13 @@ internal class TodoDetailPage : BasePager() {
                 }
                 Input {
                     attr {
+                        // 注：Kuikly 2.26.0 的 Input 在首帧组合时，`text()` 写入的 "text" prop
+                        // 可能因原生 EditText 尚未就绪而未生效（TextArea 走 shadow 路径无此问题），
+                        // 表现为标题区空白。这里额外用 `textInputState` 作为初始值通道，
+                        // 它在原生侧经 setTextInputState（带 isSettingTextInputState 防回环标志）
+                        // 原子地写入文本与光标位置，可稳定首帧显示。
                         text(ctx.titleValue())
+                        textInputState(TextInputState(text = ctx.titleValue()))
                         placeholder("请输入标题")
                         fontSize(16f)
                         color(Color(0xFF000000.toInt()))
