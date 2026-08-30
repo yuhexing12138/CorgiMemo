@@ -1,15 +1,12 @@
 // app/src/main/java/com/corgimemo/app/ui/screens/inspiration/components/InspirationViewCard.kt
 package com.corgimemo.app.ui.screens.inspiration.components
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,8 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,19 +24,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.SubcomposeAsyncImage
-import coil3.request.ImageRequest
-import coil3.request.crossfade
 import com.corgimemo.app.R
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.Inspiration
@@ -123,27 +115,45 @@ fun InspirationViewCard(
         modifier = modifier
     ) {
         // 卡片主体
-        Card(
+        // v2026-08-29 改造：原 Material3 Card 内部 Surface 会用 Modifier.clip 裁掉子内容，
+        // 导致 InspirationDetailImageStack 顶卡拖出卡片范围时被裁（出现「卡一下回到底部」
+        // 的现象）。改用 Box + shadow + background 复刻视觉，Box 本身不裁剪子内容。
+        // 关键点 1：drawWithContent 录制层 GraphicsLayer 默认 clip=true，会把拖拽溢出的
+        //  顶卡裁掉，必须在录制前显式 graphicsLayer.clip = false。
+        // 关键点 2：drawWithContent 放在 shadow/background 之前（最外层 Draw 修饰），
+        //  录制内容 = 阴影 + 白色卡面 + 圆角 + 全部子内容，与截图分享所需一致。
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 10.dp)  // 18dp → 10dp：更紧凑
-                // 关键：把 drawWithContent 放到 Card 上，使 GraphicsLayer 录制的尺寸
-                // 就是 Card 实际尺寸（白色卡片+圆角+阴影），不会录制到外层 Box 的空白区域
+                // 截图录制：drawWithContent 放在 shadow/background 之前（最外层 Draw 修饰），
+                // 使 GraphicsLayer 录制的内容 = 阴影 + 白色卡面 + 圆角 + 全部子内容，
+                // 不会录制到外层 Box 的空白区域。
                 .then(
                     if (graphicsLayer != null) {
                         Modifier.drawWithContent {
+                            // 关键：录制层 clip=false —— GraphicsLayer 默认 clip=true，
+                            // 会把 InspirationDetailImageStack 拖拽溢出的顶卡裁掉（重新引入
+                            // 「卡片在详情卡片边界被裁」的问题）。关闭后录制层与实显都不裁剪。
+                            graphicsLayer.clip = false
                             graphicsLayer.record { this@drawWithContent.drawContent() }
                             drawLayer(graphicsLayer)
                         }
                     } else Modifier
-                ),
-            shape = RoundedCornerShape(12.dp),  // 20dp → 12dp：更小更精致
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                )
+                // 投影：4dp 阴影（与原 Card elevation 对齐），clip = false 让阴影 RenderNode 不裁剪
+                .shadow(
+                    elevation = 4.dp,
+                    shape = RoundedCornerShape(12.dp),
+                    clip = false
+                )
+                // 白色卡面 + 12dp 圆角（与原 Card shape 对齐；background 只裁背景自身，不裁子内容）
+                .background(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(12.dp)
+                )
         ) {
-            // Card 内层 Box：用于字数徽章自由贴边定位
+            // 内层 Box：用于字数徽章自由贴边定位
             Box(modifier = Modifier.fillMaxWidth()) {
                 // 内容 Column：标题、日期、正文、图片、标签、Logo
                 // 顶部 padding 36dp 留白给右上角的字数徽章
@@ -178,22 +188,17 @@ fun InspirationViewCard(
                         lineHeight = 22.sp,  // 21sp → 22sp
                         letterSpacing = 0.5.sp
                     )
-                    // 图片列表（如果有）
-                    // 竖向排列：每张图片占一行，宽度与灵感正文一致（fillMaxWidth），
-                    // 高度完全按原图比例计算（不限制最大高度）
+                    // 图片区（如果有）
+                    // v2026-08-29 改造：默认堆叠展示，点「展开 N」按钮向下展开为图片列并恢复
+                    // 图片原始宽高比；点图片本身则进入图片附件页（不触发展开/收起）。
+                    // 图片区宽 = 内容宽，由父级 Column 的 start/end = 18dp 内边距决定，
+                    // 组件内部**不再**额外叠加左右内边距，避免出现双重留白。
                     if (imagePaths.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(12.dp))
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            imagePaths.forEachIndexed { index, path ->
-                                ImageWithRatio(
-                                    path = path,
-                                    onClick = { onImageClick(index) }
-                                )
-                            }
-                        }
+                        InspirationDetailImageStack(
+                            imagePaths = imagePaths,
+                            onImageClick = onImageClick
+                        )
                     }
                     // 标签（最多显示 5 个）
                     if (tagsList.isNotEmpty()) {
@@ -279,68 +284,6 @@ fun InspirationViewCard(
                     )
                 }
             }
-        }
-    }
-}
-
-/**
- * 按原图比例显示的竖向图片项
- *
- * - 宽度严格撑满（fillMaxWidth），与灵感正文宽度一致
- * - 高度 = 宽度 / 原图宽高比（不设最大高度限制，按原比例完整显示）
- * - 使用 ContentScale.Crop 让图片填满 Box（不留白），保证宽度一致
- * - 使用 SubcomposeAsyncImage 在 lambda 内读取 painter.intrinsicSize
- *   获取真实宽高比
- *
- * @param path 图片路径
- * @param onClick 点击图片回调
- */
-@Composable
-private fun ImageWithRatio(
-    path: String,
-    onClick: () -> Unit
-) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-
-    SubcomposeAsyncImage(
-        model = coil3.request.ImageRequest.Builder(context)
-            .data(path)
-            .crossfade(true)
-            .build(),
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
-            .clickable(onClick = onClick)
-    ) {
-        val painter = this.painter
-        val intrinsicSize = painter.intrinsicSize
-        if (intrinsicSize.width > 0f && intrinsicSize.height > 0f) {
-            androidx.compose.foundation.layout.BoxWithConstraints(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                val containerWidth = maxWidth
-                val aspectRatio = intrinsicSize.width / intrinsicSize.height
-                // 高度 = 容器宽度 / 宽高比，完全按原图比例显示，不限制最大高度
-                val finalHeight = containerWidth / aspectRatio
-                Image(
-                    painter = painter,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(finalHeight)
-                )
-            }
-        } else {
-            // painter 尚未就绪（loading 状态），显示占位
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(120.dp)
-                    .background(Color(0xFFF5F5F5), RoundedCornerShape(6.dp))
-            )
         }
     }
 }

@@ -321,6 +321,10 @@
     <string name="inspiration_view_word_count_suffix">字</string>
     <string name="inspiration_view_logo_text">- 刻记+ -</string>
     <string name="inspiration_view_image_close">关闭</string>
+    <!-- 详情页图片区：堆叠展开/收起按钮与张数角标（v2026-08-29 新增） -->
+    <string name="inspiration_view_expand_images">展开 %1$d</string>
+    <string name="inspiration_view_collapse_images">收起 %1$d</string>
+    <string name="inspiration_view_image_counter">%1$d/%2$d</string>
 
     <!-- ==================== 批量复制附件（方案 B：仅失败 Snackbar） ==================== -->
     <string name="batch_duplicate_failure_hint">⚠️ 部分文件复制失败，请手动检查</string>

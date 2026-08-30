@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>灵感详情页 · 图片区展开原型（三种按钮变体对比）</title>
+    <style>
+        :root {
+            /* ============ 布局常量 ============ */
+            --phone-w: 390px;        /* 手机视口宽 */
+            --page-pad: 46px;        /* 详情页左右内边距（真实值：Pager 18 + 卡片外 10 + 卡片内容 18 = 46dp） */
+            --content-w: 298px;      /* 内容列宽 = 390 − 46×2（JS 同步） */
+            --stack-s: 168px;        /* 堆叠态卡片边长（详情页，正方形裁切） */
+            --card-gap: 8px;         /* 展开态卡片间距（对齐源码 cardGap） */
+            --card-radius: 12px;     /* 图片圆角 */
+            --screen-h: 780px;       /* 手机视口高（内容超出则内部滚动） */
+
+            /* ============ 按钮（三种变体共用） ============ */
+            --btn-size: 32px;        /* 圆形 / 胶囊 按钮高度（宽度随文字自适应） */
+            --btn-icon: 14px;        /* 箭头尺寸 */
+            --btn-txt: 12px;         /* 按钮文字尺寸 */
+            --pill-r: 12.6px;        /* 胶囊圆角 = btn-size × 11/28（JS 同步） */
+            --half-h: 32px;          /* 半胶囊高度（恒 < 宽度，扁平） */
+            --half-r: 0 16px 16px 0; /* 半胶囊圆角 = 0 H/2 H/2 0（JS 按朝向同步） */
+            --btn-zone: 60px;        /* 按钮区高度（三变体一致，保证对比起点相同） */
+            --btn-bg: rgba(242, 243, 245, 0.55);
+            --btn-fg: #4F5660;
+            --btn-blur: 0px;
+            --btn-border: 0px solid transparent;
+
+            /* ============ 动效 ============ */
+            --dur: 400ms;            /* 对齐源码 TRANSITION_400_SPEC */
+            --ease: cubic-bezier(0.22, 1, 0.36, 1);
+            --fade: 200ms;           /* 对齐源码 OPACITY_200_SPEC */
+
+            /* ============ 主题 ============ */
+            --bg: #FFFBF5;
+            --panel: #FFFFFF;
+            --line: #EDE7DE;
+            --ink: #2E2A26;
+            --ink-2: #6B645C;
+            --ink-3: #9A928A;
+            --brand: #9967FF;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--bg);
+            color: var(--ink);
+        }
+        .app { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+
+        /* ============ 控制面板 ============ */
+        .panel {
+            background: var(--panel);
+            border-right: 1px solid var(--line);
+            padding: 24px 20px 48px;
+            overflow-y: auto;
+            max-height: 100vh;
+        }
+        .panel h1 { font-size: 16px; margin: 0 0 4px; color: var(--brand); }
+        .panel .subtitle { font-size: 12px; color: var(--ink-3); margin-bottom: 20px; line-height: 1.7; }
+        .panel section { margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px dashed var(--line); }
+        .panel section:last-child { border-bottom: none; }
+        .panel h2 {
+            font-size: 12px; margin: 0 0 10px; color: var(--ink-2);
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .panel label { display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 4px; }
+        .panel label .val {
+            color: var(--brand); font-weight: 600; float: right;
+            font-family: ui-monospace, Menlo, monospace;
+        }
+        .panel input[type="range"] { width: 100%; margin-bottom: 10px; accent-color: var(--brand); }
+        .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+        .chip {
+            padding: 5px 10px; border: 1px solid #DDD; background: #FFF; color: var(--ink-2);
+            font-size: 12px; border-radius: 6px; cursor: pointer; font-family: inherit;
+            transition: all 0.15s;
+        }
+        .chip:hover { border-color: var(--brand); color: var(--brand); }
+        .chip.active { background: #F3EFFF; border-color: var(--brand); color: var(--brand); font-weight: 600; }
+        .switch { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); margin-bottom: 8px; }
+        .switch input { accent-color: var(--brand); }
+        .readout {
+            font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--brand);
+            background: #FBF8FF; border: 1px solid #EFE6FF; border-radius: 6px;
+            padding: 8px 10px; line-height: 1.7; white-space: pre-wrap; word-break: break-all;
+        }
+        .hint { font-size: 11px; color: var(--ink-3); line-height: 1.6; margin-bottom: 8px; }
+
+        /* ============ 预览舞台 ============ */
+        .stage { padding: 32px 24px 64px; overflow-x: auto; }
+        .stage-head { margin-bottom: 20px; }
+        .stage-head h2 { font-size: 14px; margin: 0 0 6px; color: var(--ink); }
+        .stage-head p { font-size: 12px; margin: 0; color: var(--ink-3); line-height: 1.7; }
+        .phones { display: flex; gap: 28px; align-items: flex-start; }
+
+        .variant-col { width: var(--phone-w); flex: 0 0 auto; }
+        .variant-label { margin-bottom: 10px; }
+        .variant-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+        .variant-desc { display: block; font-size: 11px; color: var(--ink-3); margin-top: 2px; font-family: ui-monospace, Menlo, monospace; }
+
+        .phone {
+            position: relative;
+            width: var(--phone-w);
+            max-height: var(--screen-h);
+            display: flex;
+            flex-direction: column;
+            background: #FFFDF9;
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+        }
+        /* 屏幕区：内容超出视口高时内部滚动（模拟真实详情页滚动） */
+        .screen {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+        }
+        .screen::-webkit-scrollbar { width: 4px; }
+        .screen::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.14); border-radius: 2px; }
+        .phone-bar {
+            height: 28px; display: flex; align-items: center; justify-content: space-between;
+            padding: 0 14px; font-size: 11px; color: var(--ink-3); border-bottom: 1px solid var(--line);
+            flex: 0 0 auto;
+        }
+        .appbar {
+            height: 48px; display: flex; align-items: center; gap: 12px;
+            padding: 0 8px; border-bottom: 1px solid #F5F1EA;
+        }
+        .appbar-back { font-size: 20px; color: var(--ink-2); line-height: 1; padding: 0 4px; }
+        .appbar-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+        .appbar-more { margin-left: auto; font-size: 16px; color: var(--ink-3); padding: 0 6px; letter-spacing: 1px; }
+
+        .detail { padding: 18px var(--page-pad) 40px; }
+        .detail-title { font-size: 21px; font-weight: 600; line-height: 1.45; margin: 0 0 8px; color: var(--ink); }
+        .detail-meta { font-size: 12px; color: var(--ink-3); margin-bottom: 14px; letter-spacing: 0.2px; }
+        .detail-body { font-size: 14px; line-height: 1.8; color: var(--ink-2); margin: 0 0 12px; text-wrap: pretty; }
+
+        /* ============ 图片区（紧随正文下方、水平居中） ============ */
+        .gallery { width: var(--content-w); margin: 8px auto 0; }
+
+        /* 按钮区：位于堆叠区与图片列的上方、水平居中 */
+        .btn-zone {
+            height: var(--btn-zone);
+            display: flex; align-items: flex-end; justify-content: center;
+            padding-bottom: 12px;
+        }
+        .tbtn {
+            display: inline-flex; align-items: center; justify-content: center;
+            gap: 3px;
+            background: var(--btn-bg);
+            border: var(--btn-border);
+            backdrop-filter: blur(var(--btn-blur));
+            -webkit-backdrop-filter: blur(var(--btn-blur));
+            color: var(--btn-fg);
+            padding: 0 12px;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: opacity var(--fade) ease, box-shadow 150ms ease, background 150ms ease;
+        }
+        .tbtn:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
+        .tbtn .tbtn-text {
+            font-size: var(--btn-txt); font-weight: 500; line-height: 1.4; letter-spacing: 0.2px;
+        }
+        .tbtn .chev {
+            width: var(--btn-icon); height: var(--btn-icon);
+            flex: 0 0 auto;
+            transition: transform var(--dur) var(--ease);
+        }
+        /* 三种变体仅圆角不同，宽度均由「文字 + 张数 + 箭头」内容撑开 */
+        .tbtn.circle { height: var(--btn-size); border-radius: 50%;          padding: 0 16px; }
+        .tbtn.pill   { height: var(--btn-size); border-radius: var(--pill-r); padding: 0 12px; }
+        /* 半胶囊：横边在上（直边）、弧形边在下，宽 > 高呈扁平 */
+        .tbtn.half   { height: var(--half-h);   border-radius: var(--half-r); padding: 0 16px; }
+        /* 展开态：箭头翻转 180°（下 → 上），与卡片动画同规格 */
+        .gallery.is-expanded .tbtn .chev { transform: rotate(180deg); }
+
+        /* 舞台：高度在堆叠态/展开态之间过渡 */
+        .gstage {
+            position: relative;
+            width: 100%;
+            overflow: visible;
+            transition: height var(--dur) var(--ease);
+        }
+
+        /* ============ 图片卡 ============ */
+        .pcard {
+            position: absolute; left: 0; top: 0;
+            border-radius: var(--card-radius);
+            overflow: hidden;
+            cursor: pointer;               /* 点击图片 = 进入图片附件页（不触发展开） */
+            will-change: transform, width, height;
+            transition: width var(--dur) var(--ease),
+                        height var(--dur) var(--ease),
+                        transform var(--dur) var(--ease),
+                        box-shadow var(--dur) var(--ease);
+        }
+        .pface {
+            width: 100%; height: 100%;
+            display: flex; align-items: flex-end; justify-content: flex-start;
+            padding: 10px 12px;
+        }
+        .pratio {
+            font-size: 11px; line-height: 1.4; letter-spacing: 0.4px;
+            color: #FFF; background: rgba(0, 0, 0, 0.26);
+            padding: 2px 7px; border-radius: 8px; white-space: nowrap;
+            opacity: 0; transition: opacity var(--fade) ease;
+        }
+        .gallery.is-expanded .pratio { opacity: 1; }
+
+        /* 张数角标（堆叠态显示于顶卡右下角，展开态淡出） */
+        .gbadge {
+            position: absolute;
+            background: #FFF3E0; color: #E8730C;
+            font-size: 10px; line-height: 16px; height: 16px;
+            border-radius: 8px; padding: 0 5px; white-space: nowrap;
+            transition: opacity var(--fade) ease;
+        }
+
+        /* ============ 参考线 ============ */
+        .guides { position: absolute; inset: 0; pointer-events: none; display: none; z-index: 60; }
+        .guides.on { display: block; }
+        .gv { position: absolute; top: 0; bottom: 0; width: 1px; background: repeating-linear-gradient(to bottom, #9967FF 0 4px, transparent 4px 8px); }
+        .gh { position: absolute; left: 0; right: 0; height: 1px; background: repeating-linear-gradient(to right, #2E7D32 0 4px, transparent 4px 8px); }
+        .gtag {
+            position: absolute; font-size: 10px; font-family: ui-monospace, Menlo, monospace;
+            color: #FFF; background: #9967FF; padding: 1px 4px; border-radius: 3px; white-space: nowrap;
+        }
+        .gtag.green { background: #2E7D32; }
+
+        /* ============ Snackbar（对齐 AppSnackbarHost.kt） ============
+           圆角 20dp、surface 底色、elevation 4dp、水平内边距 16dp、文字 14sp、
+           距底部 16dp；项目约定：所有用户可见提示走 Snackbar，禁用系统 Toast。 */
+        .snack {
+            position: absolute;
+            left: 50%; bottom: 16px;
+            transform: translateX(-50%);
+            max-width: calc(100% - 32px);
+            min-height: 40px;
+            display: flex; align-items: center;
+            padding: 8px 16px;
+            background: #FFFFFF;
+            color: var(--ink);
+            font-size: 14px; line-height: 1.5;
+            white-space: nowrap;
+            border-radius: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+            opacity: 0; pointer-events: none;
+            transition: opacity 200ms ease;
+            z-index: 80;
+        }
+        .snack.on { opacity: 1; }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <aside class="panel">
+            <h1>灵感详情页 · 图片区</h1>
+            <div class="subtitle">
+                图片区紧随正文下方、水平居中；默认堆叠，点按钮向下展开为图片列并恢复原始宽高比。
+                三栏分别为圆形 / 胶囊形 / 半胶囊形按钮变体，可单独或联动切换，用于对比按钮样式与展开动效。
+            </div>
+            <div class="hint" style="background:#FFF8EC;border:1px solid #F5E3C0;border-radius:6px;padding:8px 10px;margin-bottom:16px">
+                <b>交互分工</b><br />
+                · 点<b>按钮</b> → 展开 / 收起图片列<br />
+                · 点<b>图片</b>（堆叠或展开态）→ 进入图片附件页，<b>不触发展开</b>
+            </div>
+
+            <section>
+                <h2>页面与内容宽度</h2>
+                <label>左右内边距 <span class="val" id="val-pad">46px</span></label>
+                <input type="range" min="20" max="64" step="1" value="46" id="rng-pad" />
+                <div class="hint">真实值 <b>46dp</b> = 页面 Pager 18 + 卡片外 10 + 卡片内容 18（取自 InspirationViewScreen / InspirationViewCard）。</div>
+                <div class="readout" id="ro-width"></div>
+            </section>
+
+            <section>
+                <h2>图片与堆叠（对齐 SwipeableImageStack.kt）</h2>
+                <label>图片数量 <span class="val" id="val-count">4 张</span></label>
+                <input type="range" min="1" max="10" step="1" value="4" id="rng-count" />
+                <label>堆叠卡片边长 <span class="val" id="val-stack">168px</span></label>
+                <input type="range" min="140" max="220" step="2" value="168" id="rng-stack" />
+                <label>层间距 yOffset <span class="val" id="val-yoff">8px</span></label>
+                <input type="range" min="4" max="16" step="1" value="8" id="rng-yoff" />
+                <label>缩放步进 scaleStep <span class="val" id="val-scale">0.05</span></label>
+                <input type="range" min="0" max="0.08" step="0.01" value="0.05" id="rng-scale" />
+                <label>可见深度 visibleDepth <span class="val" id="val-depth">4</span></label>
+                <input type="range" min="2" max="6" step="1" value="4" id="rng-depth" />
+                <label>扇形角 fanAngle <span class="val" id="val-fan">-45°</span></label>
+                <input type="range" min="-75" max="0" step="1" value="-45" id="rng-fan" />
+                <div class="hint">
+                    源码：fanAngle = −(visibleDepth − 1) × 15，逐层步进 = fanAngle / (visibleDepth − 1)，
+                    默认恒定 <b>15°/层</b>。因此 2 张最大 15°、3 张 30°、4 张及以上 45°。
+                    改动深度会自动重算，之后仍可手动微调。
+                </div>
+                <div class="readout" id="ro-fan"></div>
+            </section>
+
+            <section>
+                <h2>展开态</h2>
+                <label>卡片间距 cardGap <span class="val" id="val-gap">8px</span></label>
+                <input type="range" min="0" max="24" step="1" value="8" id="rng-gap" />
+                <label>图片圆角 <span class="val" id="val-radius">12px</span></label>
+                <input type="range" min="0" max="20" step="1" value="12" id="rng-radius" />
+                <div class="chip-row" id="chips-width">
+                    <button class="chip active" data-width="fit">展开宽 = 内容宽</button>
+                    <button class="chip" data-width="nat">展开宽 = min(内容宽, 原始宽)</button>
+                </div>
+                <div class="hint">「内容宽」= 全宽等比；「原始宽」= 更贴近原始尺寸，图片宽度不再统一，列会呈锯齿状。</div>
+            </section>
+
+            <section>
+                <h2>按钮</h2>
+                <label>高度（圆形 / 胶囊）<span class="val" id="val-bsize">32px</span></label>
+                <input type="range" min="26" max="44" step="1" value="32" id="rng-bsize" />
+                <label>文字尺寸 <span class="val" id="val-txt">12px</span></label>
+                <input type="range" min="10" max="15" step="1" value="12" id="rng-txt" />
+                <label>箭头尺寸 <span class="val" id="val-icon">14px</span></label>
+                <input type="range" min="10" max="20" step="1" value="14" id="rng-icon" />
+                <div class="chip-row" id="chips-bg">
+                    <button class="chip active" data-bg="grey55">半透灰 55%</button>
+                    <button class="chip" data-bg="whiteBlur">半透白+模糊</button>
+                    <button class="chip" data-bg="solid">实心灰</button>
+                    <button class="chip" data-bg="none">无背景</button>
+                </div>
+                <label>半胶囊高度 <span class="val" id="val-half">32px</span></label>
+                <input type="range" min="24" max="44" step="1" value="32" id="rng-half" />
+                <div class="chip-row" id="chips-dir">
+                    <button class="chip active" data-dir="down">弧形边在下</button>
+                    <button class="chip" data-dir="up">弧形边在上</button>
+                </div>
+                <div class="chip-row" id="chips-curve">
+                    <button class="chip active" data-curve="ellipse">连续弧线（半椭圆）</button>
+                    <button class="chip" data-curve="corners">两端圆角（H/2，底边含直段）</button>
+                </div>
+                <div class="hint">
+                    按钮内容 = 文字 + 张数 + 箭头（「展开 4」/「收起 4」），宽度由内容撑开。<br />
+                    圆形：圆角 50% → 宽盒呈<b>椭圆</b>；胶囊：圆角 = 高 × 11/28；
+                    半胶囊：<b>横边（直边）在上、弧形边在下</b>，宽 &gt; 高呈扁平。
+                </div>
+            </section>
+
+            <section>
+                <h2>动效</h2>
+                <label>时长 <span class="val" id="val-dur">400ms</span></label>
+                <input type="range" min="200" max="800" step="20" value="400" id="rng-dur" />
+                <div class="chip-row" id="chips-ease">
+                    <button class="chip active" data-ease="proto">源码 0.22,1,0.36,1</button>
+                    <button class="chip" data-ease="std">FastOutSlowIn</button>
+                    <button class="chip" data-ease="los">LinearOutSlowIn</button>
+                    <button class="chip" data-ease="linear">线性</button>
+                </div>
+            </section>
+
+            <section>
+                <h2>场景</h2>
+                <div class="switch"><input type="checkbox" id="chk-linked" checked /> <label for="chk-linked" style="margin:0">三栏联动切换</label></div>
+                <div class="switch"><input type="checkbox" id="chk-guides" /> <label for="chk-guides" style="margin:0">显示对齐参考线</label></div>
+                <div class="switch"><input type="checkbox" id="chk-tag" checked /> <label for="chk-tag" style="margin:0">展开态显示比例标签</label></div>
+                <div class="switch"><input type="checkbox" id="chk-scroll" checked /> <label for="chk-scroll" style="margin:0">展开时滚动到图片区</label></div>
+                <label>手机视口高 <span class="val" id="val-screen">780px</span></label>
+                <input type="range" min="560" max="1100" step="20" value="780" id="rng-screen" />
+                <label>预览缩放 <span class="val" id="val-zoom">100%</span></label>
+                <input type="range" min="60" max="100" step="5" value="100" id="rng-zoom" />
+            </section>
+
+            <section>
+                <h2>落地数值</h2>
+                <div class="readout" id="readout"></div>
+            </section>
+        </aside>
+
+        <main class="stage">
+            <div class="stage-head">
+                <h2>灵感详情页图片区 —— 三种按钮变体对比</h2>
+                <p>
+                    <b>点击按钮</b> = 展开 / 收起图片列；<b>点击图片本身</b> = 进入图片附件页（不触发展开）。
+                    默认三栏联动，便于同时对比展开动效。堆叠参数（扇形角 / 层间距 / 缩放步进 /
+                    间距 / zIndex）与灵感首页 <code>SwipeableImageStack.kt</code> 一致，
+                    尺寸按详情页内容宽度自适应。
+                </p>
+            </div>
+
+            <div class="phones" id="phones">
+
+                <!-- ==================== 变体 A：圆形 ==================== -->
+                <section class="variant-col" data-variant="circle">
+                    <div class="variant-label">
+                        <span class="variant-name">变体 A · 圆形（椭圆）</span>
+                        <span class="variant-desc" id="desc-circle">32 × 32 · 圆角 50% · 纯图标</span>
+                    </div>
+                    <div class="phone">
+                        <div class="phone-bar"><span>9:41</span><span>CorgiMemo</span></div>
+                        <div class="screen">
+                        <div class="appbar">
+                            <span class="appbar-back">&#8249;</span>
+                            <span class="appbar-title">灵感详情</span>
+                            <span class="appbar-more">&#8942;</span>
+                        </div>
+                        <article class="detail">
+                            <h1 class="detail-title">周末的城市漫步路线</h1>
+                            <div class="detail-meta">08-28 15:41 · 灵感 · <span class="js-count">4</span> 张</div>
+                            <p class="detail-body">从老城区的石板路出发，沿河一路走到旧书市。午后的光线斜着穿过巷口的梧桐叶，落在斑驳的砖墙上，是很久没见过的那种干净。</p>
+                            <p class="detail-body">沿途记下几家值得再来的小店：一家只做手冲的咖啡馆、一家修补老钟表的铺子，还有转角那家把招牌藏在藤蔓后面的面馆。</p>
+
+                            <div class="gallery">
+                                <div class="btn-zone">
+                                    <button class="tbtn circle" type="button" aria-label="展开图片">
+                                        <span class="tbtn-text js-btntext">展开 4</span>
+                                        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                            <polyline points="6 9 12 15 18 9"></polyline>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="gstage">
+                                    <div class="pcards"></div>
+                                    <div class="gbadge">共 4 张</div>
+                                    <div class="guides">
+                                        <div class="gv gv-l"></div>
+                                        <div class="gv gv-r"></div>
+                                        <div class="gv gv-c"></div>
+                                        <div class="gh gh-top"></div>
+                                        <div class="gtag gtag-c"></div>
+                                        <div class="gtag green gtag-top"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </article>
+                        </div>
+                        <div class="snack js-snack" role="status"></div>
+                    </div>
+                </section>
+
+                <!-- ==================== 变体 B：胶囊形 ==================== -->
+                <section class="variant-col" data-variant="pill">
+                    <div class="variant-label">
+                        <span class="variant-name">变体 B · 胶囊形</span>
+                        <span class="variant-desc" id="desc-pill">43 × 32 · 圆角 12.6 · 纯图标</span>
+                    </div>
+                    <div class="phone">
+                        <div class="phone-bar"><span>9:41</span><span>CorgiMemo</span></div>
+                        <div class="screen">
+                        <div class="appbar">
+                            <span class="appbar-back">&#8249;</span>
+                            <span class="appbar-title">灵感详情</span>
+                            <span class="appbar-more">&#8942;</span>
+                        </div>
+                        <article class="detail">
+                            <h1 class="detail-title">周末的城市漫步路线</h1>
+                            <div class="detail-meta">08-28 15:41 · 灵感 · <span class="js-count">4</span> 张</div>
+                            <p class="detail-body">从老城区的石板路出发，沿河一路走到旧书市。午后的光线斜着穿过巷口的梧桐叶，落在斑驳的砖墙上，是很久没见过的那种干净。</p>
+                            <p class="detail-body">沿途记下几家值得再来的小店：一家只做手冲的咖啡馆、一家修补老钟表的铺子，还有转角那家把招牌藏在藤蔓后面的面馆。</p>
+
+                            <div class="gallery">
+                                <div class="btn-zone">
+                                    <button class="tbtn pill" type="button" aria-label="展开图片">
+                                        <span class="tbtn-text js-btntext">展开 4</span>
+                                        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                            <polyline points="6 9 12 15 18 9"></polyline>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="gstage">
+                                    <div class="pcards"></div>
+                                    <div class="gbadge">共 4 张</div>
+                                    <div class="guides">
+                                        <div class="gv gv-l"></div>
+                                        <div class="gv gv-r"></div>
+                                        <div class="gv gv-c"></div>
+                                        <div class="gh gh-top"></div>
+                                        <div class="gtag gtag-c"></div>
+                                        <div class="gtag green gtag-top"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </article>
+                        </div>
+                        <div class="snack js-snack" role="status"></div>
+                    </div>
+                </section>
+
+                <!-- ==================== 变体 C：半胶囊形 ==================== -->
+                <section class="variant-col" data-variant="half">
+                    <div class="variant-label">
+                        <span class="variant-name">变体 C · 半胶囊形（扁平）</span>
+                        <span class="variant-desc" id="desc-half">24 × 48 · 圆头朝下 · 纯图标</span>
+                    </div>
+                    <div class="phone">
+                        <div class="phone-bar"><span>9:41</span><span>CorgiMemo</span></div>
+                        <div class="screen">
+                        <div class="appbar">
+                            <span class="appbar-back">&#8249;</span>
+                            <span class="appbar-title">灵感详情</span>
+                            <span class="appbar-more">&#8942;</span>
+                        </div>
+                        <article class="detail">
+                            <h1 class="detail-title">周末的城市漫步路线</h1>
+                            <div class="detail-meta">08-28 15:41 · 灵感 · <span class="js-count">4</span> 张</div>
+                            <p class="detail-body">从老城区的石板路出发，沿河一路走到旧书市。午后的光线斜着穿过巷口的梧桐叶，落在斑驳的砖墙上，是很久没见过的那种干净。</p>
+                            <p class="detail-body">沿途记下几家值得再来的小店：一家只做手冲的咖啡馆、一家修补老钟表的铺子，还有转角那家把招牌藏在藤蔓后面的面馆。</p>
+
+                            <div class="gallery">
+                                <div class="btn-zone">
+                                    <button class="tbtn half" type="button" aria-label="展开图片">
+                                        <span class="tbtn-text js-btntext">展开 4</span>
+                                        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                            <polyline points="6 9 12 15 18 9"></polyline>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="gstage">
+                                    <div class="pcards"></div>
+                                    <div class="gbadge">共 4 张</div>
+                                    <div class="guides">
+                                        <div class="gv gv-l"></div>
+                                        <div class="gv gv-r"></div>
+                                        <div class="gv gv-c"></div>
+                                        <div class="gh gh-top"></div>
+                                        <div class="gtag gtag-c"></div>
+                                        <div class="gtag green gtag-top"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </article>
+                        </div>
+                        <div class="snack js-snack" role="status"></div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // ================================================================
+        // 常量（对齐 SwipeableImageStack.kt / 列表页原型 collapse-button-position.html）
+        // ================================================================
+        var PHONE_W = 390;        // 手机视口宽
+        var TOP_PAD = 8;          // 堆叠态 Stage 顶部留白（容纳扇形/阴影溢出）
+        var BOTTOM_PAD_STACK = 24;// 堆叠态 Stage 底部留白（顶卡 8dp 阴影扩散）
+        var BOTTOM_PAD_EXP = 4;   // 展开态 Stage 底部留白
+        var SINGLE_MODE = false;  // 由图片数量推导：单张恒展开、无收起语义
+
+        // 占位图：ar = 宽高比，natW = 原始宽度（dp，用于「原始宽」模式）
+        var PHOTOS = [
+            { label: "4:3",  ar: 4 / 3,  natW: 360, g: "linear-gradient(135deg, #FFC08A 0%, #FF7A45 100%)" },
+            { label: "3:4",  ar: 3 / 4,  natW: 270, g: "linear-gradient(135deg, #FFC9D4 0%, #EF7C9E 100%)" },
+            { label: "1:1",  ar: 1,      natW: 320, g: "linear-gradient(135deg, #AFDCC8 0%, #5FBF95 100%)" },
+            { label: "16:9", ar: 16 / 9, natW: 480, g: "linear-gradient(135deg, #A6D5F2 0%, #5B9BD5 100%)" },
+            { label: "2:3",  ar: 2 / 3,  natW: 240, g: "linear-gradient(135deg, #CDBAF6 0%, #8E6BE8 100%)" },
+            { label: "3:2",  ar: 3 / 2,  natW: 300, g: "linear-gradient(135deg, #FFE09B 0%, #F0AE37 100%)" },
+            { label: "1:1",  ar: 1,      natW: 340, g: "linear-gradient(135deg, #D2D9D4 0%, #8FA396 100%)" },
+            { label: "4:5",  ar: 4 / 5,  natW: 288, g: "linear-gradient(135deg, #F5AC9B 0%, #D9624B 100%)" },
+            { label: "5:4",  ar: 5 / 4,  natW: 400, g: "linear-gradient(135deg, #B9D8C4 0%, #6AAE8C 100%)" },
+            { label: "9:16", ar: 9 / 16, natW: 225, g: "linear-gradient(135deg, #E3C6F0 0%, #A76BD1 100%)" }
+        ];
+
+        var EASES = {
+            proto:  "cubic-bezier(0.22, 1, 0.36, 1)",
+            std:    "cubic-bezier(0.4, 0, 0.2, 1)",
+            los:    "cubic-bezier(0, 0, 0.2, 1)",
+            linear: "linear"
+        };
+        var EASE_LABEL = {
+            proto: "cubic-bezier(0.22,1,0.36,1)（源码 TRANSITION_400_SPEC）",
+            std: "cubic-bezier(0.4,0,0.2,1) FastOutSlowIn",
+            los: "cubic-bezier(0,0,0.2,1) LinearOutSlowIn",
+            linear: "linear"
+        };
+        var VARIANT_LABEL = { circle: "圆形", pill: "胶囊形", half: "半胶囊形" };
+
+        // ================================================================
+        // 状态
+        // ================================================================
+        var S = {
+            pad: 46,        // 真实详情页左右内边距（18+10+18）
+            count: 4,
+            stackS: 168,
+            yOff: 8,
+            scaleStep: 0.05,
+            visDepth: 4,
+            fanAngle: -45,
+            gap: 8,
+            radius: 12,
+            widthMode: "fit",   // fit = 内容宽 | nat = min(内容宽, 原始宽)
+            btnSize: 32,
+            btnIcon: 14,
+            btnTxt: 12,
+            bgMode: "grey55",
+            halfH: 32,
+            halfDir: "down",    // down = 横边在上、弧形边在下 | up = 弧形边在上
+            halfCurve: "ellipse", // ellipse = 连续半椭圆弧 | corners = 两端 H/2 圆角
+            dur: 400,
+            ease: "proto",
+            linked: true,
+            guides: false,
+            showTag: true,
+            autoScroll: true,
+            screenH: 780,
+            zoom: 100
+        };
+        var expanded = { circle: false, pill: false, half: false };
+        var geom = null;   // 最近一次几何计算结果
+        var descBase = { circle: "", pill: "", half: "" };  // 按钮描述（实测尺寸在 renderCol 里补前缀）
+        var snackTimer = {};
+
+        // ================================================================
+        // 几何计算
+        // ================================================================
+        function contentW() { return PHONE_W - 2 * S.pad; }
+
+        function computeGeom() {
+            var cw = contentW();
+            var n = S.count;
+            var items = [];
+            var i;
+            for (i = 0; i < n; i++) {
+                var p = PHOTOS[i % PHOTOS.length];
+                var w = (S.widthMode === "nat") ? Math.min(cw, p.natW) : cw;
+                var h = Math.round((w / p.ar) * 100) / 100;
+                items.push({ photo: p, w: w, h: h });
+            }
+            // 展开态：垂直列，间距 = cardGap
+            var y = 0;
+            var exp = [];
+            for (i = 0; i < n; i++) {
+                exp.push({ x: (cw - items[i].w) / 2, y: y });
+                y += items[i].h + S.gap;
+            }
+            var expH = Math.max(0, y - S.gap) + BOTTOM_PAD_EXP;
+
+            // 堆叠态：扇形包围盒 → 顶卡锚点 anchor 与 Stage 高度
+            // 对齐源码 calcCardTarget：denom 用 visibleDepth 参数（不是 min(visibleDepth, n)），
+            // 因此 2 张只铺到 15°、3 张铺到 30°，而不是每张都铺满 fanAngle。
+            var M = Math.min(S.visDepth, Math.max(1, n));   // 实际参与的层数
+            var denom = Math.max(S.visDepth - 1, 1);        // 源码 denom
+            var maxUp = 0, maxDown = 0;
+            var angles = [];
+            for (var ei = 0; ei < M; ei++) {
+                var sc = 1 - ei * S.scaleStep;
+                var th = n > 1 ? S.fanAngle * (ei / denom) : 0;
+                angles.push(Math.round(th * 10) / 10);
+                var rad = Math.abs(th) * Math.PI / 180;
+                var he = sc * S.stackS * (Math.cos(rad) + Math.sin(rad)) / 2;  // 旋转后半高
+                var cy = S.stackS / 2 - ei * S.yOff;                            // 相对 anchor 的中心 Y
+                maxUp = Math.max(maxUp, he - cy);
+                maxDown = Math.max(maxDown, he + cy);
+            }
+            var anchor = TOP_PAD + maxUp;
+            var stackH = anchor + maxDown + BOTTOM_PAD_STACK;
+
+            return {
+                cw: cw, n: n, items: items, exp: exp, expH: expH,
+                M: M, denom: denom, angles: angles, anchor: anchor, stackH: stackH
+            };
+        }
+
+        // 单卡目标（对齐 calcCardTarget 的堆叠 / 展开两个端点）
+        function cardTarget(i, isExpanded, g) {
+            if (isExpanded) {
+                return {
+                    w: g.items[i].w,
+                    h: g.items[i].h,
+                    tx: g.exp[i].x,
+                    ty: g.exp[i].y,
+                    rot: 0,
+                    scale: 1,
+                    z: 1,
+                    shadow: "none"
+                };
+            }
+            // 对齐源码 calcCardTarget 堆叠端点
+            var D = S.visDepth;                            // 源码 visibleDepth 参数
+            var ei = Math.min(i, D - 1);
+            var denom = Math.max(D - 1, 1);
+            var overflow = Math.max(0, i - (D - 1));       // V8.8 超深卡片沉底
+            return {
+                w: S.stackS,
+                h: S.stackS,
+                tx: (g.cw - S.stackS) / 2,
+                ty: g.anchor - ei * S.yOff,
+                rot: g.n > 1 ? S.fanAngle * (ei / denom) : 0,
+                scale: 1 - ei * S.scaleStep,
+                z: D - ei - overflow,
+                shadow: i === 0 ? "0 8px 24px rgba(0,0,0,0.18)" : "0 4px 12px rgba(0,0,0,0.10)"
+            };
+        }
+
+        // ================================================================
+        // 构建卡片
+        // ================================================================
+        function buildCards() {
+            var cols = document.querySelectorAll(".variant-col");
+            for (var c = 0; c < cols.length; c++) {
+                var wrap = cols[c].querySelector(".pcards");
+                wrap.innerHTML = "";
+                for (var i = 0; i < S.count; i++) {
+                    var p = PHOTOS[i % PHOTOS.length];
+                    var card = document.createElement("div");
+                    card.className = "pcard";
+                    card.setAttribute("data-index", i);
+                    var face = document.createElement("div");
+                    face.className = "pface";
+                    face.style.background = p.g;
+                    var tag = document.createElement("span");
+                    tag.className = "pratio";
+                    tag.textContent = p.label;
+                    face.appendChild(tag);
+                    card.appendChild(face);
+                    wrap.appendChild(card);
+                }
+            }
+            var counts = document.querySelectorAll(".js-count");
+            for (var k = 0; k < counts.length; k++) { counts[k].textContent = S.count; }
+        }
+
+        // ================================================================
+        // 渲染
+        // ================================================================
+        function render() {
+            SINGLE_MODE = (S.count === 1);
+            var g = computeGeom();
+            geom = g;
+            var cols = document.querySelectorAll(".variant-col");
+            for (var c = 0; c < cols.length; c++) {
+                renderCol(cols[c], g);
+            }
+            renderReadout(g);
+        }
+
+        function renderCol(col, g) {
+            var v = col.getAttribute("data-variant");
+            var exp = SINGLE_MODE ? true : expanded[v];
+            var gallery = col.querySelector(".gallery");
+            gallery.classList.toggle("is-expanded", exp);
+
+            var stage = col.querySelector(".gstage");
+            stage.style.height = (exp ? g.expH : g.stackH) + "px";
+
+            var cards = col.querySelectorAll(".pcard");
+            for (var i = 0; i < cards.length; i++) {
+                var t = cardTarget(i, exp, g);
+                cards[i].style.width = t.w + "px";
+                cards[i].style.height = t.h + "px";
+                cards[i].style.transform =
+                    "translate(" + t.tx + "px, " + t.ty + "px) rotate(" + t.rot + "deg) scale(" + t.scale + ")";
+                cards[i].style.zIndex = t.z;
+                cards[i].style.boxShadow = t.shadow;
+            }
+
+            var btn = col.querySelector(".tbtn");
+            btn.style.opacity = SINGLE_MODE ? "0" : "1";
+            btn.style.pointerEvents = SINGLE_MODE ? "none" : "auto";
+            btn.setAttribute("aria-label", (exp ? "收起" : "展开") + "图片，共 " + S.count + " 张");
+            col.querySelector(".js-btntext").textContent = (exp ? "收起 " : "展开 ") + S.count;
+
+            var tagEls = col.querySelectorAll(".pratio");
+            for (var k = 0; k < tagEls.length; k++) {
+                tagEls[k].style.display = S.showTag ? "" : "none";
+            }
+
+            var badge = col.querySelector(".gbadge");
+            badge.textContent = "1/" + S.count;
+            badge.style.opacity = (exp || S.count < 2) ? "0" : "1";
+            badge.style.left = (g.cw / 2 + S.stackS / 2 + 3) + "px";
+            badge.style.top = (g.anchor + S.stackS - 18) + "px";
+
+            // 按钮描述补实测尺寸前缀（宽度由内容撑开，只有浏览器布局后才有真实值）
+            var bRect = btn.getBoundingClientRect();
+            col.querySelector(".variant-desc").textContent =
+                (bRect.width > 0 ? (Math.round(bRect.width) + " × " + Math.round(bRect.height) + "  ") : "") +
+                descBase[v];
+
+            renderGuides(col, g, exp);
+        }
+
+        function renderGuides(col, g, exp) {
+            var guides = col.querySelector(".guides");
+            guides.classList.toggle("on", S.guides);
+            if (!S.guides) { return; }
+            var lines = col.querySelectorAll(".gv");
+            lines[0].style.left = "0px";
+            lines[1].style.left = (g.cw - 1) + "px";
+            lines[2].style.left = (g.cw / 2) + "px";
+
+            var topY = exp ? 0 : g.anchor;
+            col.querySelector(".gh-top").style.top = topY + "px";
+
+            var tc = col.querySelector(".gtag-c");
+            tc.textContent = "中线 " + (g.cw / 2);
+            tc.style.left = (g.cw / 2 + 4) + "px";
+            tc.style.top = "2px";
+
+            var tt = col.querySelector(".gtag-top");
+            tt.textContent = exp ? "列首上缘 0" : "顶卡上缘 " + (Math.round(g.anchor * 10) / 10);
+            tt.style.left = "4px";
+            tt.style.top = (topY + 4) + "px";
+        }
+
+        // ================================================================
+        // 落地数值（供 Compose 迁移）
+        // ================================================================
+        function round1(v) { return Math.round(v * 10) / 10; }
+
+        function renderReadout(g) {
+            var root = document.documentElement;
+            root.style.setProperty("--content-w", g.cw + "px");
+
+            document.getElementById("ro-width").textContent =
+                "内容宽 = " + g.cw + "dp  (= 390 − " + S.pad + " × 2)\n" +
+                "  真实内边距分解：Pager 18 + 卡片外 10 + 卡片内容 18 = 46dp（已同步）\n" +
+                "图片区宽 = 内容宽（居中，紧随正文下方）";
+
+            document.getElementById("ro-fan").textContent =
+                "逐层旋转角 = [" + g.angles.join(", ") + "]°\n" +
+                "步进 = fanAngle / (visibleDepth − 1) = " + S.fanAngle + " / " + g.denom +
+                " = " + (Math.round(S.fanAngle / g.denom * 10) / 10) + "°\n" +
+                "最大角 = " + (g.angles.length ? g.angles[g.angles.length - 1] : 0) + "°";
+
+            var pillR = Math.round(S.btnSize * 11 / 28 * 10) / 10;
+            var arcRRead = S.halfCurve === "ellipse" ? "50%" : (S.halfH / 2) + "dp";
+            var halfR = S.halfDir === "down"
+                ? ("0 0 " + arcRRead + " " + arcRRead)
+                : (arcRRead + " " + arcRRead + " 0 0");
+
+            var ys = [];
+            for (var i = 0; i < g.n; i++) { ys.push(round1(g.exp[i].y)); }
+
+            document.getElementById("readout").textContent =
+                "【堆叠态】\n" +
+                "  卡片 = " + S.stackS + " × " + S.stackS + " dp（正方形裁切）\n" +
+                "  visibleDepth = " + S.visDepth + "、参与层数 = " + g.M + "、fanAngle = " + S.fanAngle + "°\n" +
+                "  逐层旋转角 = [" + g.angles.join(", ") + "]°（步进 " + (Math.round(S.fanAngle / g.denom * 10) / 10) + "°）\n" +
+                "  yOffset = " + S.yOff + "dp、scaleStep = " + S.scaleStep + "、zIndex = D − ei − overflow\n" +
+                "  顶卡上缘 anchor = " + round1(g.anchor) + "dp（= topPad " + TOP_PAD + " + 扇形上溢 " + round1(g.anchor - TOP_PAD) + "）\n" +
+                "  Stage 高 = " + round1(g.stackH) + "dp\n" +
+                "  中心 X = 内容宽 / 2 = " + (g.cw / 2) + "dp（两态恒定，水平居中）\n" +
+                "【展开态】\n" +
+                "  宽 = " + (S.widthMode === "fit" ? ("内容宽 " + g.cw + "dp") : ("min(内容宽, 原始宽)，首图 " + g.items[0].w + "dp")) + "\n" +
+                "  高 = 宽 / 原始宽高比；间距 = " + S.gap + "dp；阴影 = 0\n" +
+                "  各图上缘 y = [" + ys.join(", ") + "]\n" +
+                "  Stage 高 = " + round1(g.expH) + "dp\n" +
+                "【按钮（三变体）】\n" +
+                "  内容 = 文字（展开/收起）+ 张数 + 箭头；宽由内容撑开，高固定\n" +
+                "  圆形   高 " + S.btnSize + " dp，圆角 50%（宽盒呈椭圆）\n" +
+                "  胶囊   高 " + S.btnSize + " dp，圆角 " + pillR + "dp（= H × 11/28）\n" +
+                "  半胶囊 高 " + S.halfH + " dp（宽 > 高，扁平）\n" +
+                "         横边（直边）在" + (S.halfDir === "down" ? "上" : "下") +
+                "、弧形边在" + (S.halfDir === "down" ? "下" : "上") + "\n" +
+                "         圆角 " + halfR + "（" + (S.halfCurve === "ellipse" ? "连续半椭圆弧" : "两端 H/2 圆角") + "）\n" +
+                "  文字 " + S.btnTxt + "sp、箭头 " + S.btnIcon + "dp、内边距 12dp（圆形/半胶囊 16dp）\n" +
+                "  位置 = 图片区上方、水平居中；按钮区高 " + parseInt(getComputedStyle(document.documentElement).getPropertyValue("--btn-zone"), 10) + "dp\n" +
+                "  背景 = " + bgLabel() + "；前景 #4F5660；箭头展开态旋转 180°\n" +
+                "【角标】格式 = 1/" + S.count + "，堆叠态显示于顶卡右下角\n" +
+                "【点击分工】按钮 = 展开/收起；图片 = 进入图片附件页（不触发展开）\n" +
+                "【动效】\n" +
+                "  " + S.dur + "ms " + EASE_LABEL[S.ease] + "；角标/标签淡入淡出 200ms" +
+                (SINGLE_MODE ? "\n\n※ 单张模式：恒展开、无收起语义（按钮隐藏）" : "");
+        }
+
+        function bgLabel() {
+            switch (S.bgMode) {
+                case "grey55": return "#F2F3F5 @ 55%";
+                case "whiteBlur": return "#FFF @ 70% + blur(8)";
+                case "solid": return "#F2F3F5 实心";
+                default: return "透明（裸图标）";
+            }
+        }
+
+        // ================================================================
+        // 状态切换
+        // ================================================================
+        function toggleVariant(v) {
+            if (SINGLE_MODE) { return; }
+            var next = !expanded[v];
+            if (S.linked) {
+                expanded.circle = next;
+                expanded.pill = next;
+                expanded.half = next;
+            } else {
+                expanded[v] = next;
+            }
+            render();
+            // 展开时把图片区滚到视口顶部（只滚动手机屏幕容器，不动外层页面）
+            if (next && S.autoScroll) { scrollGalleryIntoView(S.linked ? null : v); }
+        }
+
+        function scrollGalleryIntoView(onlyVariant) {
+            var cols = document.querySelectorAll(".variant-col");
+            for (var c = 0; c < cols.length; c++) {
+                var col = cols[c];
+                if (onlyVariant && col.getAttribute("data-variant") !== onlyVariant) { continue; }
+                var scr = col.querySelector(".screen");
+                var gallery = col.querySelector(".gallery");
+                if (!scr || !gallery) { continue; }
+                var delta = gallery.getBoundingClientRect().top - scr.getBoundingClientRect().top;
+                var top = Math.max(0, scr.scrollTop + delta - 16);
+                if (typeof scr.scrollTo === "function") {
+                    scr.scrollTo({ top: top, behavior: "smooth" });
+                } else {
+                    scr.scrollTop = top;   // 兜底：无平滑滚动 API 时直接定位
+                }
+            }
+        }
+
+        // ================================================================
+        // 样式同步
+        // ================================================================
+        function applySizes() {
+            var root = document.documentElement;
+            var pillR = Math.round(S.btnSize * 11 / 28 * 10) / 10;
+            // 半胶囊弧形半径：连续弧线用 50%（两个下圆角水平半径相加 = 全宽 → 合成一条连续弧）
+            // 两端圆角用 H/2（底边中间保留直段）
+            var arcR = S.halfCurve === "ellipse" ? "50%" : (S.halfH / 2) + "px";
+            var arcDown = (S.halfDir === "down");
+
+            root.style.setProperty("--btn-size", S.btnSize + "px");
+            root.style.setProperty("--btn-icon", S.btnIcon + "px");
+            root.style.setProperty("--btn-txt", S.btnTxt + "px");
+            root.style.setProperty("--pill-r", pillR + "px");
+            root.style.setProperty("--half-h", S.halfH + "px");
+            // CSS 圆角序：top-left / top-right / bottom-right / bottom-left
+            root.style.setProperty("--half-r", arcDown
+                ? ("0 0 " + arcR + " " + arcR)      // 横边在上，弧形边在下
+                : (arcR + " " + arcR + " 0 0"));    // 弧形边在上，横边在下
+            root.style.setProperty("--card-radius", S.radius + "px");
+            root.style.setProperty("--dur", S.dur + "ms");
+            root.style.setProperty("--ease", EASES[S.ease]);
+
+            descBase.circle = "圆角 50%（椭圆）· 文字+张数+箭头";
+            descBase.pill = "圆角 " + pillR + " · 文字+张数+箭头";
+            descBase.half = "横边在上、弧形" + (arcDown ? "朝下" : "朝上") +
+                " · " + (S.halfCurve === "ellipse" ? "连续弧线" : "两端圆角") + " · 文字+张数+箭头";
+        }
+
+        function applyBg() {
+            var root = document.documentElement;
+            if (S.bgMode === "grey55") {
+                root.style.setProperty("--btn-bg", "rgba(242,243,245,0.55)");
+                root.style.setProperty("--btn-blur", "0px");
+                root.style.setProperty("--btn-border", "0px solid transparent");
+                root.style.setProperty("--btn-fg", "#4F5660");
+            } else if (S.bgMode === "whiteBlur") {
+                root.style.setProperty("--btn-bg", "rgba(255,255,255,0.7)");
+                root.style.setProperty("--btn-blur", "8px");
+                root.style.setProperty("--btn-border", "0.5px solid rgba(0,0,0,0.06)");
+                root.style.setProperty("--btn-fg", "#4F5660");
+            } else if (S.bgMode === "solid") {
+                root.style.setProperty("--btn-bg", "#F2F3F5");
+                root.style.setProperty("--btn-blur", "0px");
+                root.style.setProperty("--btn-border", "0px solid transparent");
+                root.style.setProperty("--btn-fg", "#4F5660");
+            } else {
+                root.style.setProperty("--btn-bg", "transparent");
+                root.style.setProperty("--btn-blur", "0px");
+                root.style.setProperty("--btn-border", "0px solid transparent");
+                root.style.setProperty("--btn-fg", "#6B645C");
+            }
+        }
+
+        // ================================================================
+        // 参数绑定
+        // ================================================================
+        function bindRange(id, key, valId, suffix, after) {
+            var el = document.getElementById(id);
+            el.addEventListener("input", function () {
+                S[key] = parseFloat(this.value);
+                document.getElementById(valId).textContent = S[key] + suffix;
+                applySizes();
+                if (after) { after(); }
+                render();
+            });
+        }
+
+        bindRange("rng-pad", "pad", "val-pad", "px");
+        bindRange("rng-stack", "stackS", "val-stack", "px");
+        bindRange("rng-yoff", "yOff", "val-yoff", "px");
+        bindRange("rng-scale", "scaleStep", "val-scale", "");
+        bindRange("rng-fan", "fanAngle", "val-fan", "°");
+        bindRange("rng-gap", "gap", "val-gap", "px");
+        bindRange("rng-radius", "radius", "val-radius", "px");
+        bindRange("rng-bsize", "btnSize", "val-bsize", "px");
+        bindRange("rng-txt", "btnTxt", "val-txt", "px");
+        bindRange("rng-icon", "btnIcon", "val-icon", "px");
+        bindRange("rng-half", "halfH", "val-half", "px");
+        bindRange("rng-dur", "dur", "val-dur", "ms");
+
+        document.getElementById("rng-count").addEventListener("input", function () {
+            S.count = parseInt(this.value, 10);
+            document.getElementById("val-count").textContent = S.count + " 张";
+            buildCards();
+            render();
+        });
+
+        document.getElementById("rng-depth").addEventListener("input", function () {
+            S.visDepth = parseInt(this.value, 10);
+            S.fanAngle = -(S.visDepth - 1) * 15;          // 源码联动公式
+            document.getElementById("val-depth").textContent = S.visDepth;
+            document.getElementById("val-fan").textContent = S.fanAngle + "°";
+            document.getElementById("rng-fan").value = S.fanAngle;
+            render();
+        });
+
+        document.getElementById("rng-screen").addEventListener("input", function () {
+            S.screenH = parseInt(this.value, 10);
+            document.getElementById("val-screen").textContent = S.screenH + "px";
+            document.documentElement.style.setProperty("--screen-h", S.screenH + "px");
+        });
+
+        document.getElementById("rng-zoom").addEventListener("input", function () {
+            S.zoom = parseInt(this.value, 10);
+            document.getElementById("val-zoom").textContent = S.zoom + "%";
+            document.getElementById("phones").style.zoom = (S.zoom / 100);
+        });
+
+        document.getElementById("chk-linked").addEventListener("change", function () { S.linked = this.checked; });
+        document.getElementById("chk-guides").addEventListener("change", function () { S.guides = this.checked; render(); });
+        document.getElementById("chk-tag").addEventListener("change", function () { S.showTag = this.checked; render(); });
+        document.getElementById("chk-scroll").addEventListener("change", function () { S.autoScroll = this.checked; });
+
+        function bindChips(id, attr, handler) {
+            document.getElementById(id).addEventListener("click", function (e) {
+                var btn = e.target.closest(".chip");
+                if (!btn) { return; }
+                this.querySelectorAll(".chip").forEach(function (c) { c.classList.remove("active"); });
+                btn.classList.add("active");
+                handler(btn.getAttribute(attr));
+            });
+        }
+
+        bindChips("chips-width", "data-width", function (v) { S.widthMode = v; render(); });
+        bindChips("chips-bg", "data-bg", function (v) { S.bgMode = v; applyBg(); render(); });
+        bindChips("chips-ease", "data-ease", function (v) { S.ease = v; applySizes(); render(); });
+        bindChips("chips-dir", "data-dir", function (v) { S.halfDir = v; applySizes(); render(); });
+        bindChips("chips-curve", "data-curve", function (v) { S.halfCurve = v; applySizes(); render(); });
+
+        // ================================================================
+        // Snackbar（对齐 AppSnackbarHost.kt；项目约定禁用系统 Toast）
+        // ================================================================
+        function showSnack(col, msg) {
+            var el = col.querySelector(".js-snack");
+            var key = col.getAttribute("data-variant");
+            el.textContent = msg;
+            el.classList.add("on");
+            if (snackTimer[key]) { clearTimeout(snackTimer[key]); }
+            snackTimer[key] = setTimeout(function () { el.classList.remove("on"); }, 1800);
+        }
+
+        // 点击图片（事件委托：三栏共用）
+        // 语义：点击堆叠 / 展开后的单图 = 进入图片附件页（查看大图），
+        //       **不触发展开收起** —— 展开收起只由上方按钮控制。
+        document.getElementById("phones").addEventListener("click", function (e) {
+            var btn = e.target.closest(".tbtn");
+            if (btn) {
+                toggleVariant(btn.closest(".variant-col").getAttribute("data-variant"));
+                return;
+            }
+            var card = e.target.closest(".pcard");
+            if (!card) { return; }
+            var idx = parseInt(card.getAttribute("data-index"), 10) + 1;
+            showSnack(card.closest(".variant-col"),
+                "打开图片附件页 · 第 " + idx + " / " + S.count + " 张");
+        });
+
+        // ================================================================
+        // 初始化
+        // ================================================================
+        applySizes();
+        applyBg();
+        buildCards();
+        render();
+    </script>
+</body>
+</html>
