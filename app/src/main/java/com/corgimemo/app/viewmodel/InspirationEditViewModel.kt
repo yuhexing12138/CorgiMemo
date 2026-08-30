@@ -1392,25 +1392,47 @@ class InspirationEditViewModel @Inject constructor(
      * 现在图片/语音以内联 atomic token 形式存在于正文 Markdown，
      * 不再依赖独立的内容块列表。
      *
-     * Token 在 Markdown 中的序列化格式（与 # 标签 / @ 关联一致）：
-     * - 图片：`[🖼️](trigger:image:<绝对文件路径>)`
-     * - 语音：`[🎤00:12](trigger:voice:<绝对文件路径>|<时长秒>)`
+     * 正文 Markdown 中两种内联媒体的序列化格式：
+     * - 图片（现方案，块级）：`![alt](<绝对文件路径>)` —— RichSpanStyle.Image 的标准 Markdown 形式
+     * - 图片（旧数据兼容）：`[🖼️](trigger:image:<路径>)` —— 曾用 atomic token 承载
+     * - 语音：`[🎤00:12](trigger:voice:<路径>|<时长秒>)` —— 与 # 标签 / @ 关联同源的 token
      */
     private suspend fun saveInlineMediaBlocks(inspirationId: Long, markdown: String) {
-        val regex = Regex("""\]\(trigger:(image|voice):([^)]+)\)""")
         val blocks = mutableListOf<ContentBlock>()
-        regex.findAll(markdown).forEach { m ->
-            val type = m.groupValues[1]
-            val id = m.groupValues[2]
-            if (type == "image") {
-                blocks.add(ContentBlock.Image(id))
-            } else {
-                val parts = id.split("|", limit = 2)
-                val filePath = parts[0]
-                val duration = parts.getOrNull(1)?.toIntOrNull() ?: 0
-                blocks.add(ContentBlock.Voice(filePath, duration))
+        /** 按"类型:路径"去重，避免新旧两种格式同时命中同一文件 */
+        val seen = mutableSetOf<String>()
+
+        /** 1) 块级图片：标准 Markdown 图片语法 */
+        Regex("""!\[[^\]]*\]\(([^)]+)\)""")
+            .findAll(markdown)
+            .forEach { m ->
+                val path = m.groupValues[1].trim()
+                if (path.isNotBlank() && seen.add("image:$path")) {
+                    blocks.add(ContentBlock.Image(path))
+                }
             }
-        }
+
+        /** 2) 兼容旧数据：以 trigger:image token 内联的图片 */
+        Regex("""\]\(trigger:image:([^)]+)\)""")
+            .findAll(markdown)
+            .forEach { m ->
+                val path = m.groupValues[1].trim()
+                if (path.isNotBlank() && seen.add("image:$path")) {
+                    blocks.add(ContentBlock.Image(path))
+                }
+            }
+
+        /** 3) 语音：trigger:voice token，id 为 <路径>|<时长秒> */
+        Regex("""\]\(trigger:voice:([^)]+)\)""")
+            .findAll(markdown)
+            .forEach { m ->
+                val parts = m.groupValues[1].split("|", limit = 2)
+                val filePath = parts[0].trim()
+                val duration = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                if (filePath.isNotBlank() && seen.add("voice:$filePath")) {
+                    blocks.add(ContentBlock.Voice(filePath, duration))
+                }
+            }
 
         /** 清理已被删除的孤立文件（replaceBlocksForTodo 会先删后写） */
         val old = contentBlockDao.getBlocksByTodoId(inspirationId, ownerType = "inspiration")

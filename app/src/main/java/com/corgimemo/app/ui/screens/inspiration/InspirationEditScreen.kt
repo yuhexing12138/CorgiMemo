@@ -135,8 +135,11 @@ import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import com.mohamedrejeb.richeditor.ui.material3.TriggerSuggestions
+import com.mohamedrejeb.richeditor.model.LocalImageLoader
 import com.mohamedrejeb.richeditor.model.LocalTokenClickHandler
+import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.model.TokenClickHandler
+import com.corgimemo.app.ui.components.CoilRichTextImageLoader
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
@@ -147,6 +150,39 @@ import java.util.Date
 import java.util.Locale
 
 /** 内容块定义已提取至 com.corgimemo.app.ui.model.ContentBlock（公共模块），通过 import 复用 */
+
+/**
+ * v2026-08-30：插入「块级图片」到正文
+ *
+ * 采用 RichSpanStyle.Image（真实图片 span），而非文本 Token，
+ * 这样编辑态能直接看到图片本身，实现真正的图文混排。
+ *
+ * **前后各补一个换行是关键**：
+ * 库只为"整段仅含一张图片"的段落用 `ParagraphStyle.lineHeight = 图片高度`
+ * 预留纵向空间（见 RichTextState.imageBlockParagraphStyle）。
+ * 图片必须独立成段才会预留，否则编辑面（BasicTextField 不支持 inlineContent，
+ * 占位符不占空间）绘制出的图片会与后续文字重叠。
+ *
+ * 初始尺寸传 0：图片加载并解码后，库会按内在尺寸与容器宽度自动钳制并回填。
+ *
+ * @param richTextState 正文富文本状态
+ * @param path 图片在内部存储中的绝对路径
+ */
+@OptIn(ExperimentalRichTextApi::class)
+private fun insertBlockImage(
+    richTextState: RichTextState,
+    path: String,
+) {
+    richTextState.addTextAfterSelection("\n")
+    richTextState.addRichSpan(
+        RichSpanStyle.Image(
+            model = path,
+            width = 0.sp,
+            height = 0.sp,
+        )
+    )
+    richTextState.addTextAfterSelection("\n")
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalRichTextApi::class)
 @Composable
@@ -341,10 +377,8 @@ fun InspirationEditScreen(
                 coroutineScope.launch {
                     val savedPath = com.corgimemo.app.util.ImageUtils.copyUriToInternalStorage(context, uri)
                 savedPath?.let { path ->
-                    /** v2026-08-30 内联：图片作为正文内联 atomic token 插入（与 #/@ 同源机制） */
-                    richTextState.addRichSpan(
-                        RichSpanStyle.Token(triggerId = "image", id = path, label = "🖼️")
-                    )
+                    /** v2026-08-30 块级图片：真实图片 span 内联插入正文 */
+                    insertBlockImage(richTextState, path)
                     viewModel.notifyInlineMediaChanged()
                 }
                 }
@@ -365,10 +399,8 @@ fun InspirationEditScreen(
             uris.forEach { uri ->
                 val savedPath = ImageUtils.copyUriToInternalStorage(context, uri)
                 savedPath?.let { path ->
-                    /** v2026-08-30 内联：图片作为正文内联 atomic token 插入 */
-                    richTextState.addRichSpan(
-                        RichSpanStyle.Token(triggerId = "image", id = path, label = "🖼️")
-                    )
+                    /** v2026-08-30 块级图片：真实图片 span 内联插入正文 */
+                    insertBlockImage(richTextState, path)
                 }
             }
             viewModel.notifyInlineMediaChanged()
@@ -487,9 +519,7 @@ fun InspirationEditScreen(
                 val dbBlocks = viewModel.loadContentBlocks(inspirationId)
                 dbBlocks.forEach { block ->
                     when (block) {
-                        is ContentBlock.Image -> richTextState.addRichSpan(
-                            RichSpanStyle.Token(triggerId = "image", id = block.path, label = "🖼️")
-                        )
+                        is ContentBlock.Image -> insertBlockImage(richTextState, block.path)
                         is ContentBlock.Voice -> {
                             val dur = block.duration ?: 0
                             val mm = dur / 60
@@ -1422,7 +1452,10 @@ fun InspirationEditScreen(
              */
             Box(modifier = Modifier.fillMaxWidth()) {
             /** 富文本编辑器（使用 compose-rich-editor 库） */
-            CompositionLocalProvider(LocalTokenClickHandler provides mediaTokenClickHandler) {
+            CompositionLocalProvider(
+                LocalTokenClickHandler provides mediaTokenClickHandler,
+                LocalImageLoader provides CoilRichTextImageLoader,
+            ) {
             RichTextEditor(
                 state = richTextState,
                 modifier = Modifier
