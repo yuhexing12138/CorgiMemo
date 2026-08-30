@@ -1128,7 +1128,12 @@ class InspirationEditViewModel @Inject constructor(
          * 灵感模块的子任务目前不支持附件，所有附件均属于父灵感本身
          * （subTaskId=null, lineIndex=0）
          */
-        saveContentBlocks(inspirationId, _currentContentBlocks.value)
+        /**
+         * v2026-08-30 内联媒体：以编辑器原始 Markdown（liveMarkdown）解析内联 token，
+         * 而非 sanitize 后的版本——避免校验/清洗逻辑万一剥离 token 链接时，
+         * 误判为"媒体已删除"而清理掉用户的物理文件。
+         */
+        saveInlineMediaBlocks(inspirationId, liveMarkdown)
 
         // 保存关联关系（新建时将临时关联绑定到新ID）
         if (existingInspiration == null) {
@@ -1238,6 +1243,16 @@ class InspirationEditViewModel @Inject constructor(
     fun clearVoiceNote() {
         _voiceNotePath.value = null
         _voiceDuration.value = null
+        _isDirty.value = true
+    }
+
+    /**
+     * v2026-08-30 内联媒体：插入图片/语音内联 token 后标记内容已变更
+     *
+     * 图片/语音不再走 ContentBlock 列表，而是作为正文内联 atomic token 存在，
+     * 插入动作不会触发 BasicTextField 的 onValueChange，因此需手动置脏。
+     */
+    fun notifyInlineMediaChanged() {
         _isDirty.value = true
     }
 
@@ -1367,6 +1382,51 @@ class InspirationEditViewModel @Inject constructor(
         }.filterNotNull()
 
         contentBlockDao.replaceBlocksForTodo(inspirationId, entities, ownerType = "inspiration")
+    }
+
+    /**
+     * v2026-08-30 内联媒体：从正文 Markdown 解析内联图片/语音 token，
+     * 重建 content_blocks 表（单一数据源），并清理已被删除的孤立物理文件。
+     *
+     * 替代原 saveContentBlocks(inspirationId, _currentContentBlocks.value)：
+     * 现在图片/语音以内联 atomic token 形式存在于正文 Markdown，
+     * 不再依赖独立的内容块列表。
+     *
+     * Token 在 Markdown 中的序列化格式（与 # 标签 / @ 关联一致）：
+     * - 图片：`[🖼️](trigger:image:<绝对文件路径>)`
+     * - 语音：`[🎤00:12](trigger:voice:<绝对文件路径>|<时长秒>)`
+     */
+    private suspend fun saveInlineMediaBlocks(inspirationId: Long, markdown: String) {
+        val regex = Regex("""\]\(trigger:(image|voice):([^)]+)\)""")
+        val blocks = mutableListOf<ContentBlock>()
+        regex.findAll(markdown).forEach { m ->
+            val type = m.groupValues[1]
+            val id = m.groupValues[2]
+            if (type == "image") {
+                blocks.add(ContentBlock.Image(id))
+            } else {
+                val parts = id.split("|", limit = 2)
+                val filePath = parts[0]
+                val duration = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                blocks.add(ContentBlock.Voice(filePath, duration))
+            }
+        }
+
+        /** 清理已被删除的孤立文件（replaceBlocksForTodo 会先删后写） */
+        val old = contentBlockDao.getBlocksByTodoId(inspirationId, ownerType = "inspiration")
+        val keptPaths = blocks.map { block ->
+            when (block) {
+                is ContentBlock.Image -> block.path
+                is ContentBlock.Voice -> block.path
+                is ContentBlock.Text -> ""
+            }
+        }
+        old.filter { it.filePath !in keptPaths }.forEach { entity ->
+            val file = java.io.File(entity.filePath)
+            if (file.exists()) file.delete()
+        }
+
+        saveContentBlocks(inspirationId, blocks)
     }
 
     /**

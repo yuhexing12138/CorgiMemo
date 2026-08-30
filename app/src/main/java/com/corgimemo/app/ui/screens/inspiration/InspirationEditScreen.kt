@@ -135,6 +135,10 @@ import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import com.mohamedrejeb.richeditor.ui.material3.TriggerSuggestions
+import com.mohamedrejeb.richeditor.model.LocalTokenClickHandler
+import com.mohamedrejeb.richeditor.model.TokenClickHandler
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -144,7 +148,7 @@ import java.util.Locale
 
 /** 内容块定义已提取至 com.corgimemo.app.ui.model.ContentBlock（公共模块），通过 import 复用 */
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalRichTextApi::class)
 @Composable
 fun InspirationEditScreen(
     navController: NavController,
@@ -206,6 +210,24 @@ fun InspirationEditScreen(
 
     // 是否显示语音录制面板
     var showVoiceRecordSheet by remember { mutableStateOf(false) }
+
+    /**
+     * v2026-08-30 内联媒体：token 点击处理（图片查看 / 语音播放）
+     *
+     * 刻意声明在函数体顶层，而非 Scaffold 内容 lambda 内部：
+     * 底部的内联图片查看器 Dialog 位于同一顶层作用域，需要读写该状态；
+     * 若声明在嵌套 lambda 内，Dialog 处会因作用域不可见而报 Unresolved reference。
+     */
+    var inlineImageViewerPath by remember { mutableStateOf<String?>(null) }
+    val mediaTokenClickHandler = TokenClickHandler { token, _ ->
+        when (token.triggerId) {
+            "image" -> inlineImageViewerPath = token.id
+            "voice" -> {
+                val filePath = token.id.substringBefore("|")
+                voicePlayer.prepare(filePath).onSuccess { voicePlayer.play() }
+            }
+        }
+    }
     // 是否有录音权限（用于显示录制面板）
     var hasRecordPermission by remember { mutableStateOf(false) }
 
@@ -318,15 +340,13 @@ fun InspirationEditScreen(
             pendingPhotoUri?.let { uri ->
                 coroutineScope.launch {
                     val savedPath = com.corgimemo.app.util.ImageUtils.copyUriToInternalStorage(context, uri)
-                    savedPath?.let { path ->
-                        /** v2026-08-01 Phase 4 回退：图片作为独立 ContentBlock.Image 渲染 */
-                        viewModel.addImagePath(path)
-                        val insertIndex = contentBlocks.size
-                        contentBlocks.add(ContentBlock.Image(path))
-                        /** 推送插入操作到撤销栈 + 同步 ViewModel */
-                        viewModel.pushBlockInsertedOperation(insertIndex)
-                        viewModel.syncContentBlocks(contentBlocks.toList())
-                    }
+                savedPath?.let { path ->
+                    /** v2026-08-30 内联：图片作为正文内联 atomic token 插入（与 #/@ 同源机制） */
+                    richTextState.addRichSpan(
+                        RichSpanStyle.Token(triggerId = "image", id = path, label = "🖼️")
+                    )
+                    viewModel.notifyInlineMediaChanged()
+                }
                 }
             }
         }
@@ -345,15 +365,13 @@ fun InspirationEditScreen(
             uris.forEach { uri ->
                 val savedPath = ImageUtils.copyUriToInternalStorage(context, uri)
                 savedPath?.let { path ->
-                    /** v2026-08-01 Phase 4 回退：图片作为独立 ContentBlock.Image 渲染 */
-                    viewModel.addImagePath(path)
-                    val insertIndex = contentBlocks.size
-                    contentBlocks.add(ContentBlock.Image(path))
-                    /** 推送插入操作到撤销栈 + 同步 ViewModel */
-                    viewModel.pushBlockInsertedOperation(insertIndex)
-                    viewModel.syncContentBlocks(contentBlocks.toList())
+                    /** v2026-08-30 内联：图片作为正文内联 atomic token 插入 */
+                    richTextState.addRichSpan(
+                        RichSpanStyle.Token(triggerId = "image", id = path, label = "🖼️")
+                    )
                 }
             }
+            viewModel.notifyInlineMediaChanged()
         }
     }
 
@@ -455,6 +473,39 @@ fun InspirationEditScreen(
              */
             richTextState.setMarkdown(contentFormat)
             hasInitializedWithData = true
+
+            /**
+             * v2026-08-30 内联迁移（顺序关键：必须在 setMarkdown 之后执行）
+             *
+             * 旧的 content_blocks（图片/语音）在新方案中不再作为独立内容块渲染，
+             * 这里把它们作为正文内联 atomic token 追加进编辑器，实现"内联展示"。
+             *
+             * 若顺序颠倒（先追加 token 再 setMarkdown），setMarkdown 会整体重建
+             * 内容，导致刚追加的 token 被覆盖丢失。
+             */
+            if (inspirationId != null) {
+                val dbBlocks = viewModel.loadContentBlocks(inspirationId)
+                dbBlocks.forEach { block ->
+                    when (block) {
+                        is ContentBlock.Image -> richTextState.addRichSpan(
+                            RichSpanStyle.Token(triggerId = "image", id = block.path, label = "🖼️")
+                        )
+                        is ContentBlock.Voice -> {
+                            val dur = block.duration ?: 0
+                            val mm = dur / 60
+                            val ss = dur % 60
+                            richTextState.addRichSpan(
+                                RichSpanStyle.Token(
+                                    triggerId = "voice",
+                                    id = "${block.path}|${dur}",
+                                    label = "🎤%02d:%02d".format(mm, ss)
+                                )
+                            )
+                        }
+                        is ContentBlock.Text -> { /* 不处理 */ }
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e("InspirationEditScreen", "编辑器初始化异常（已捕获）", e)
             hasInitializedWithData = true
@@ -688,12 +739,12 @@ fun InspirationEditScreen(
     var hasInitializedBlocks by remember { mutableStateOf(false) }
     LaunchedEffect(inspirationId) {
         if (!hasInitializedBlocks && inspirationId != null) {
-            /** 仅从 content_blocks 表加载（单一数据源） */
-            val dbBlocks = viewModel.loadContentBlocks(inspirationId)
+            /**
+             * v2026-08-30 内联方案：图片/语音不再作为独立内容块渲染。
+             * 迁移逻辑已上移到 setMarkdown 之后执行（见 hasInitializedWithData 效果），
+             * 此处仅清空块列表并标记已初始化，避免重复迁移。
+             */
             contentBlocks.clear()
-            contentBlocks.addAll(dbBlocks)
-            /** 同步到 ViewModel */
-            viewModel.syncContentBlocks(contentBlocks.toList())
             hasInitializedBlocks = true
         }
     }
@@ -1371,6 +1422,7 @@ fun InspirationEditScreen(
              */
             Box(modifier = Modifier.fillMaxWidth()) {
             /** 富文本编辑器（使用 compose-rich-editor 库） */
+            CompositionLocalProvider(LocalTokenClickHandler provides mediaTokenClickHandler) {
             RichTextEditor(
                 state = richTextState,
                 modifier = Modifier
@@ -1459,6 +1511,7 @@ fun InspirationEditScreen(
                     errorIndicatorColor = Color.Transparent
                 )
             )
+            }
 
             /**
              * v2026-08-01 Phase 2：# 标签触发建议弹窗
@@ -1763,12 +1816,18 @@ fun InspirationEditScreen(
                     voiceRecorder = voiceRecorder,
                     voicePlayer = voicePlayer,
                     onSaved = { path, duration ->
-                        viewModel.setVoiceNote(path, duration)
-                        val insertIndex = contentBlocks.size
-                        contentBlocks.add(ContentBlock.Voice(path, duration))
-                        /** 推送插入操作到撤销栈 + 同步 ViewModel */
-                        viewModel.pushBlockInsertedOperation(insertIndex)
-                        viewModel.syncContentBlocks(contentBlocks.toList())
+                        val mm = duration / 60
+                        val ss = duration % 60
+                        val label = "🎤%02d:%02d".format(mm, ss)
+                        /** v2026-08-30 内联：语音作为正文内联 atomic token 插入 */
+                        richTextState.addRichSpan(
+                            RichSpanStyle.Token(
+                                triggerId = "voice",
+                                id = "$path|$duration",
+                                label = label
+                            )
+                        )
+                        viewModel.notifyInlineMediaChanged()
                         showVoiceRecordSheet = false
                     },
                     onDismiss = {
@@ -1804,6 +1863,24 @@ fun InspirationEditScreen(
             }
         }
     } // showVoiceRecordSheet
+
+    /** v2026-08-30 内联图片查看器：点击正文内联图片 token 后全屏预览 */
+    inlineImageViewerPath?.let { path ->
+        Dialog(onDismissRequest = { inlineImageViewerPath = null }) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .clickable { inlineImageViewerPath = null },
+                contentAlignment = Alignment.Center
+            ) {
+                com.corgimemo.app.ui.components.InlineImagePreview(
+                    imageUri = path,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    }
 
     /**
      * 删除/放弃确认对话框
