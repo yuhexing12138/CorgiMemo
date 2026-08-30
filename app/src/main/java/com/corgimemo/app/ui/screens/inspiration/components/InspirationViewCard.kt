@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -120,59 +121,75 @@ fun InspirationViewCard(
 
     Box(
         modifier = modifier
+            // 截图录制：drawWithContent 放最外层 Box，录制内容 = 卡面背景 + 内容层
+            .then(
+                if (graphicsLayer != null) {
+                    Modifier.drawWithContent {
+                        // 关键：录制层 clip=false —— GraphicsLayer 默认 clip=true，
+                        // 会把 InspirationDetailImageStack 拖拽溢出的顶卡裁掉。
+                        // 关闭后录制层与实显都不裁剪。
+                        graphicsLayer.clip = false
+                        graphicsLayer.record { this@drawWithContent.drawContent() }
+                        drawLayer(graphicsLayer)
+                    }
+                } else Modifier
+            )
+            // v2026-08-30 修复：最外层 Box 自身 RenderNode 默认 clip=true，
+            // 会裁掉 InspirationDetailImageStack 拖出的顶卡。关闭后允许内容一路溢出到
+            // Pager viewport / 屏幕边界（配合内部各层 clip=false 形成完整不裁剪链）。
+            .graphicsLayer { this.clip = false }
     ) {
-        // 卡片主体
-        // v2026-08-29 改造：原 Material3 Card 内部 Surface 会用 Modifier.clip 裁掉子内容，
-        // 导致 InspirationDetailImageStack 顶卡拖出卡片范围时被裁（出现「卡一下回到底部」
-        // 的现象）。改用 Box + shadow + background 复刻视觉，Box 本身不裁剪子内容。
-        // 关键点 1：drawWithContent 录制层 GraphicsLayer 默认 clip=true，会把拖拽溢出的
-        //  顶卡裁掉，必须在录制前显式 graphicsLayer.clip = false。
-        // 关键点 2：drawWithContent 放在 shadow/background 之前（最外层 Draw 修饰），
-        //  录制内容 = 阴影 + 白色卡面 + 圆角 + 全部子内容，与截图分享所需一致。
+        // v2026-08-30 重构（v12）：卡片主体 Box——高度随内容（wrap），恢复卡片下边缘。
+        // v8 曾把卡面 fillMaxSize 撑满 page 全高（当时为防默认 graphicsLayer 裁剪的过度设计），
+        // 导致卡片高度固定 = 屏高、下边缘被推到屏幕外（用户反馈「下边缘看不见」）。
+        // 现在：本 Box fillMaxWidth + wrap 高度，高度由内容 Column 决定；
+        // 卡面用 matchParentSize 跟随本 Box 尺寸（matchParentSize 不参与父测量）。
+        // 拖拽裁剪链与本 Box 无关（卡片在 Column 内，经根 Box→Pager 兜底），无需撑满。
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp)  // 18dp → 10dp：更紧凑
-                // 截图录制：drawWithContent 放在 shadow/background 之前（最外层 Draw 修饰），
-                // 使 GraphicsLayer 录制的内容 = 阴影 + 白色卡面 + 圆角 + 全部子内容，
-                // 不会录制到外层 Box 的空白区域。
-                .then(
-                    if (graphicsLayer != null) {
-                        Modifier.drawWithContent {
-                            // 关键：录制层 clip=false —— GraphicsLayer 默认 clip=true，
-                            // 会把 InspirationDetailImageStack 拖拽溢出的顶卡裁掉（重新引入
-                            // 「卡片在详情卡片边界被裁」的问题）。关闭后录制层与实显都不裁剪。
-                            graphicsLayer.clip = false
-                            graphicsLayer.record { this@drawWithContent.drawContent() }
-                            drawLayer(graphicsLayer)
-                        }
-                    } else Modifier
-                )
-                // 投影：4dp 阴影（与原 Card elevation 对齐），clip = false 让阴影 RenderNode 不裁剪
-                .shadow(
-                    elevation = 4.dp,
-                    shape = RoundedCornerShape(12.dp),
-                    clip = false
-                )
-                // 白色卡面 + 12dp 圆角（与原 Card shape 对齐；background 只裁背景自身，不裁子内容）
-                .background(
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = RoundedCornerShape(12.dp)
-                )
+                .graphicsLayer { this.clip = false }
         ) {
-            // 内层 Box：用于字数徽章自由贴边定位
-            Box(modifier = Modifier.fillMaxWidth()) {
+            // ① 白色卡面背景：matchParentSize 跟随卡片主体尺寸（= 内容 Column 高度），
+            // background/shadow 绘制在 padding 后的局部坐标（水平屏 28~362dp）→ 卡面留白
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .padding(horizontal = 28.dp)
+                    // 投影：4dp 阴影（与原 Card elevation 对齐），clip = false 让阴影 RenderNode 不裁剪
+                    .shadow(
+                        elevation = 4.dp,
+                        shape = RoundedCornerShape(12.dp),
+                        clip = false
+                    )
+                    // 白色卡面 + 12dp 圆角（与原 Card shape 对齐；background 只裁背景自身，不裁子内容）
+                    .background(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .graphicsLayer { this.clip = false }
+            )
                 // 内容 Column：标题、日期、正文、图片、标签、Logo
                 // 顶部 padding 36dp 留白给右上角的字数徽章
                 // 加 verticalScroll 允许内容超出时上下滚动（图片多时）
                 Column(
                     modifier = Modifier
-                        .padding(start = 18.dp, end = 18.dp, top = 36.dp, bottom = 18.dp)
+                        // v2026-08-30 修复（v11/v12）：padding 按轴拆分 + 高度随内容。
+                        // fillMaxWidth（不 fillMaxSize）：Column 高度 = 内容高度（内容不超屏时
+                        // 卡片高度随内容、下边缘可见；超屏时 = 屏高进入滚动）。
+                        // VerticalScrollableClipShape 源码（foundation 1.11）：
+                        //   横轴（交叉轴）= bounds ± 30dp 放宽；纵轴（滚动主轴）= 严格 bounds。
+                        //   垂直 padding(top=36, bottom=18) 在 verticalScroll 外层 → 滚动区垂直
+                        //     固定留白，内容滚动上/下边缘与 v9 一致；
+                        //   水平 padding(46) 在 verticalScroll 内层 → verticalScroll 水平 bounds =
+                        //     全宽 0~390dp，clip 水平 = −30~420dp → 拖拽图片到屏边缘不被裁。
+                        .fillMaxWidth()
+                        .padding(top = 36.dp, bottom = 18.dp)
                         .verticalScroll(rememberScrollState())
+                        .padding(start = 46.dp, end = 46.dp)
                         // v2026-08-30 修复：Column 自身 RenderNode 默认 clip=true，会
-                        // 把 InspirationDetailImageStack 拖出 Column 边界的顶卡裁掉（出现
-                        // 「卡在 Column 左缘」的现象）。关闭后允许 Stage 卡片溢出 Column
-                        // padding 范围绘制，与外层 Box（已 clip=false）形成完整不裁剪链。
+                        // 把 InspirationDetailImageStack 拖出 Column 边界的顶卡裁掉。关闭后
+                        // 允许 Stage 卡片溢出绘制，形成完整不裁剪链。
                         .graphicsLayer { this.clip = false }
                 ) {
                     // 标题（18sp Medium）
@@ -278,11 +295,19 @@ fun InspirationViewCard(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
+                        // v2026-08-30 修复（v12）：align 相对卡片主体 Box（宽 = 全宽），
+                        // 往左退回卡面右缘（卡面 28dp 边距），贴卡面右上角
+                        .padding(end = 28.dp)
                         .background(
                             Color(0xFFE0E0E0).copy(alpha = 0.6f),
                             RoundedCornerShape(
                                 topStart = 0.dp,       // 左上 0：与 Card 顶/左边内边距接触
-                                topEnd = 0.dp,         // 右上 0：贴 Card 顶/右边
+                                // v2026-08-30 修复（v14）：右上改 12dp 圆角。
+                                // 原 0dp 直角设计依赖父级 Material3 Card 裁掉突出圆角的部分；
+                                // v2 起父级全部 clip=false 无人裁 → 直角部分悬在卡面圆角外，
+                                // 半透明背景透出卡面阴影（「角标位置多出一点阴影」）。
+                                // 自带 12dp 圆角与卡面圆角贴合后不再悬空。
+                                topEnd = 12.dp,
                                 bottomEnd = 0.dp,      // 右下 0：贴 Card 右边
                                 bottomStart = 12.dp    // 左下 12dp：与 Card 圆角一致
                             )
@@ -298,5 +323,4 @@ fun InspirationViewCard(
                 }
             }
         }
-    }
 }

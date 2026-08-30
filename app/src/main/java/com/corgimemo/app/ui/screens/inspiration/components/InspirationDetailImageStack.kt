@@ -162,8 +162,15 @@ private const val FallbackAspectRatio = 4f / 3f
 /** 翻牌阈值：拖动距离超过此值即翻牌（源码 swipeThreshold 默认 10.dp，对齐原型 10px） */
 private val SwipeThreshold = 10.dp
 
-/** 弹性阻尼系数：越接近弹性边界阻力越大（源码公式 resistance = 1 − 0.3 × t^1.5） */
-private const val ElasticDamping = 0.3f
+/**
+ * 弹性阻尼系数：越接近弹性边界阻力越大（公式 resistance = 1 − ElasticDamping × t^1.5）。
+ *
+ * v2026-08-30 由 0.3 减至 0.1：详情页需要把卡片拖到**屏 0dp 完全移出**（dragOffset 达
+ * 100dp+，t 已到 0.5~1 弹性边界），旧值 0.3 时大位移 resistance 只有 0.7~0.78，
+ * 卡片明显跟不上手指 → 用户感觉「拖到头了」提前松手，卡片到不了屏 0dp。
+ * 0.1 时大位移 resistance ≈ 0.9~0.95，跟手性接近无阻尼，能轻松拖到屏幕边缘。
+ */
+private const val ElasticDamping = 0.1f
 
 /**
  * 拖拽中顶卡放大**系数**（源码 whileDrag: scale 1.05）
@@ -423,13 +430,16 @@ fun InspirationDetailImageStack(
 
     // 翻牌过渡：flipProgress 驱动被翻卡、reorderProgress 驱动下层顶进、flipZBoost 驱动层级下沉
     var flipState by remember { mutableStateOf<FlipState?>(null) }
+    // v2026-08-30 改进：移除 flipProgress.updateBounds(0f, 1f)。
+    // 之前 v1 为消除「快速甩手闪一下」加 bounds，但 bounds 同时**掐死了 spring 过冲**——
+    // 翻牌时顶卡直接到队尾位置停下、没有越过队尾再弹回的「回冲动画」。
+    // 新策略：
+    //   - Animatable 不设 bounds，让 FLIP_SPRING (ζ=0.577 欠阻尼) 自由过冲（保留回冲动画）
+    //   - lerpTarget 时把 flipProgress clamp 到 [0f, 1.3f]：
+    //       * 负值钳到 0 → spring 短期向 fs.from 方向过冲时卡片停在 fs.from，不会飞出屏幕
+    //       * 正向 1.0→1.3 过冲保留 → 顶卡越过队尾位置再弹回 = 回冲动画
+    //   - 同时保留 v1 的 pVelocity.coerceIn(-16f, 16f) 限幅（防止 pVelocity 极大）
     val flipProgress = remember { Animatable(1f) }
-    // 关键修复：掐掉翻牌过冲「外插」。
-    // 本组件堆叠态 x 与 index 无关、dyPx 仅 3×StackOffsetY，Δ 极小，pVelocity = (v·Δ)/|Δ|²
-    // 在快速松手时会被放得极大，使 flipProgress 冲到负值 → 顶卡被放大到 1.3~1.6 倍并向外飞，
-    // 表现为「快速甩一下闪一下」。加 bounds[0,1] 后即使 pVelocity 极大也只停在 0，
-    // 卡片从松手位置平滑 spring 回队尾，不再放大/飞出。
-    flipProgress.updateBounds(0f, 1f)
     val reorderProgress = remember { Animatable(1f) }
     val flipZBoost = remember { Animatable(0f) }
 
@@ -642,8 +652,12 @@ private fun GalleryStage(
         val fs = flipState
         if (fs != null) {
             if (cardIdx == fs.flippedCard) {
-                // 被翻的卡：松手快照 → 队尾新位置（FLIP_SPRING，带过冲）
-                val t = lerpTarget(fs.from, base, flipProgress)
+                // 被翻的卡：松手快照 → 队尾新位置（FLIP_SPRING，带过冲）。
+                // v2026-08-30：把 flipProgress clamp 到 [0f, 1.3f]——Animatable 已移除
+                // bounds 让 spring 自由过冲，但 lerp 阶段需限制：
+                //   负值钳到 0 → 防止 pVelocity 极端负值时卡片反向过冲飞出屏幕
+                //   正向 1.0→1.3 保留 → 翻牌时顶卡越过队尾位置再弹回的「回冲动画」
+                val t = lerpTarget(fs.from, base, flipProgress.coerceIn(0f, 1.3f))
                 return@mapIndexed t.copy(zIndex = base.zIndex + flipZBoost)
             }
             val dOld = fs.oldIndex[cardIdx]

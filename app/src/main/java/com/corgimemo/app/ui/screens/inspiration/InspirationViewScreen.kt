@@ -40,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalClipboard
@@ -248,22 +249,56 @@ fun InspirationViewScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                // v2026-08-30 修复：Box 自身 RenderNode 默认 clip=true，会裁掉
+                // InspirationDetailImageStack 拖出的顶卡。关闭后允许内容溢出到屏幕边界。
+                .graphicsLayer { this.clip = false }
         ) {
             if (inspirations.isEmpty()) {
                 // 数据加载中显示菊花
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             } else {
-                Box(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        // v2026-08-30 修复：同上，内层 Box 也需关闭裁剪
+                        .graphicsLayer { this.clip = false }
+                ) {
                     // 水平 Pager：左右滑动浏览所有灵感
                     HorizontalPager(
                         state = pagerState,
                         beyondViewportPageCount = 0,  // 不预渲染相邻页，提升性能
                         pageSpacing = 16.dp,
-                        contentPadding = PaddingValues(horizontal = 18.dp),
+                        // v2026-08-30 修复：contentPadding 改为 0。
+                        // 原本 18dp contentPadding 让 page slot 起点 = 屏 18dp，
+                        // InspirationViewCard 在 page slot 内（屏 18~372dp），
+                        // 其默认 graphicsLayer 仍 clip=true → 卡片溢出 InspirationViewCard 时
+                        // 被默认 layer 裁剪到屏 18dp，"卡片没到屏幕边缘就消失"。
+                        // 改为 0 后 page slot = 全屏（屏 0~390dp），InspirationViewCard 起点 = 屏 0dp，
+                        // 卡片可一路溢出到屏 0dp 才被默认 layer 裁剪（= 真正的屏幕边缘）。
+                        // 视觉边距由 InspirationViewCard 内部 padding(horizontal=28dp) 提供（10+18）。
+                        // v2026-08-30 修复（v13）：加垂直 contentPadding(bottom = 24dp)。
+                        // 内容多的卡片：Column 带 verticalScroll 的高度语义 = min(约束max, 内容高)，
+                        // 内容超屏时 Column 被钉在可用屏高 → 卡面下边缘正好贴屏幕底缘，
+                        // 圆角+阴影全在屏外 → 「下边缘不可见」（内容少的卡片高度=内容，可见）。
+                        // 预留 24dp 后 page 高 = 视口高 − 24dp，无论内容多少卡面下边缘都在屏内可见。
+                        // 水平保持 0dp（拖拽图片需到屏 0dp 才消失，不受影响）。
+                        // v2026-08-30 修复（v14）：加 contentPadding top = 8dp。
+                        // LazyLayout 的 viewport 绘制裁剪 = [viewport顶, viewport底+contentPadding]，
+                        // 顶部 padding=0 时裁剪线正好压在卡面上缘 → 卡面顶部阴影向上扩散的部分
+                        // 被 viewport 裁掉（「上边缘阴影被裁剪」）。top=8dp 让裁剪线上移，
+                        // 卡面顶部阴影（4dp elevation 约 6~8dp 视觉扩散）落在 padding 区内可见。
+                        // 副作用：卡片顶部与返回栏间距 +8dp，可接受。
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
                         // v2026-08-30 新增：堆叠图拖动期间禁用 Pager 滚动，
                         // 避免双层水平手势竞争导致的「卡一下再回底」
                         userScrollEnabled = !isImageStackDragging,
-                        modifier = Modifier.fillMaxSize()
+                        // v2026-08-30 修复：Pager 自身的 RenderNode 加 graphicsLayer{clip=false}
+                        // 让 InspirationDetailImageStack 拖出的顶卡可一路溢出到屏 0dp 消失
+                        // （Pager 内部 LazyLayout 的 viewport 裁剪仍会限制 page slot，但 Pager
+                        // 节点的 RenderNode 不再额外裁剪 → 卡片可溢出 page slot 到 viewport 边界）
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { this.clip = false }
                     ) { page ->
                         val ins = inspirations[page]
                         // v2026-08-24 修复灵感图片不可见 bug：
