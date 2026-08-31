@@ -188,8 +188,7 @@ app/src/main/java/com/corgimemo/app/ui/components/
 | 4 | **sealed class typealias 跨包 pattern match**：Kotlin 编译期展开，理论无问题，但 IDE 可能误报"unresolved" | 以 `./gradlew compileDebugKotlin` 为准；IDE 假红可忽略 |
 | 5 | **11 个新文件 import 容易遗漏**：每个文件 import 列表需精确 | 严格按照 Plan agent 输出的"每个文件的 import 列表"执行 |
 | 6 | **私有常量遗漏**：`DRAWER_ICON_ALL` / `categoryIcons` 等随 CategoryItem 一起迁到 CategoryItemRow.kt | 步骤 7 一并迁移 |
-| 7 | **graphify watch 重建延迟**：14 个文件改动后 watch 进程 debounce 3s 自动重建 | 无需手动干预，或可 `stop` + `start` 加速 |
-| 8 | **测试文件依赖**：项目可能有测试引用了原 AppDrawer.kt 的私有 Composable | 步骤 1 前用 `grep -r "AppDrawer" app/src/test app/src/androidTest` 验证 |
+| 7 | **测试文件依赖**：项目可能有测试引用了原 AppDrawer.kt 的私有 Composable | 步骤 1 前用 `grep -r "AppDrawer" app/src/test app/src/androidTest` 验证 |
 
 ---
 
@@ -230,14 +229,6 @@ git diff --stat app/src/test app/src/androidTest 2>$null
 - [ ] 5 个弹窗打开 / 关闭正常（添加 / 重命名 / 删除分类 / 添加类型）
 - [ ] 2 个长按菜单（Category / DateType）弹起 BottomSheet
 - [ ] sealed class pattern match 触发对应逻辑（长按分组图标 → ShowMenu → 显示 BottomSheet）
-
-### 4. graphify 图谱验证（可选）
-
-```powershell
-# 等待 watch 进程自动重建（约 3-5 秒）
-.venv\Scripts\graphify.exe query "AppDrawerContent"
-# 预期：能看到 AppDrawerContentImpl 节点 + 5 个 section + 5 个 dialog + 2 个 sealed class
-```
 
 ---
 

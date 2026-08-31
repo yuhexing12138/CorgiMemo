@@ -235,17 +235,9 @@ Kuikly 渲染器不知道你 App 的原生能力，需提供「翻译官」：
 
 ### 8.3 任务 4：主工程接入（代码已完成，编译验证中）
 
-#### 8.3.1 git 安全网（⚠️ 有一个必知的坑）
+#### 8.3.1 git 安全网
 
 已建分支 `kuikly/aar-bridge`（指向 `54cdd071`，与 master 同起点）。
-
-**坑**：本仓库安装了 graphify 的 `.githooks/post-checkout`，它会打断 `git checkout -b`，
-使 `.git/HEAD` 指向**不存在的** `refs/heads/kuikly/aar-bridge`。表现为：
-
-- `git log` 报 `your current branch does not have any commits yet`
-- **7768 个文件被误暂存为新增**（连 `.gitignore`、`.gitmodules` 都变成新文件）
-
-> ⚠️ **极度危险**：此状态下执行 `git commit` 会创建**无父提交的孤立根提交**，直接破坏提交历史。
 
 **修复**：`git branch` 与 `git update-ref` 均**静默失败**（返回成功但 ref 未创建），
 最终用底层写入解决（均不触发 post-checkout hook）：
