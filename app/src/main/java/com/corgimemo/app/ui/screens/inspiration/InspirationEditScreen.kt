@@ -126,6 +126,7 @@ import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.InspirationEditViewModel
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationEditBottomBar /** 灵感编辑页底部栏（5 按钮 + 可折叠格式工具栏）*/
+import com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery /** 灵感专用的沉浸式全屏图片画廊（编辑态预览复用） */
 import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils /** v2026-07-31 新增：标题与正文之间"时间戳+字数"行所需的字数统计工具 */
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
 import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
@@ -143,7 +144,6 @@ import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.model.TokenClickHandler
 import com.corgimemo.app.ui.components.CoilRichTextImageLoader
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -154,18 +154,33 @@ import java.util.Locale
 /** 内容块定义已提取至 com.corgimemo.app.ui.model.ContentBlock（公共模块），通过 import 复用 */
 
 /**
- * v2026-08-30：插入「块级图片」到正文
+ * v2026-08-30：插入「内联图片」到正文（编辑态内联渲染方案）
  *
- * 采用 RichSpanStyle.Image（真实图片 span），而非文本 Token，
- * 这样编辑态能直接看到图片本身，实现真正的图文混排。
+ * 本项目已对 compose-rich-editor 库做了内联渲染改造（参见
+ * compose-rich-editor/ui/InlineImageOverlay.kt 中的 drawInlineImages），
+ * 编辑态走覆盖层绘制真实位图 + 把位图尺寸写回 Image span 让段落 lineHeight 撑高。
  *
- * **前后各补一个换行是关键**：
- * 库只为"整段仅含一张图片"的段落用 `ParagraphStyle.lineHeight = 图片高度`
- * 预留纵向空间（见 RichTextState.imageBlockParagraphStyle）。
- * 图片必须独立成段才会预留，否则编辑面（BasicTextField 不支持 inlineContent，
- * 占位符不占空间）绘制出的图片会与后续文字重叠。
+ * **为什么这段插入逻辑需要这么写**：
+ * 1. 库把 RichSpanStyle.Image 设计为「输入触发型 span」——
+ *    `addRichSpan(Image)` 只是把 toAddRichSpanStyle 设为 Image；
+ *    必须紧跟一次 addText()，被插入的字符才会用 Image style 创建出实际的 Image span。
+ * 2. **连续插入两张图时会重叠的根因**：
+ *    上一次 addText 之后 toAddRichSpanStyle 仍是 Image，
+ *    下一次 insertBlockImage 调用的前导 \n 也会被 Image style 接管，
+ *    结果两个 Image span 落到同一段、lineHeight 取 max → 绘制位置相同 → 重叠。
+ * 3. **第一次插入也错位的原因**：
+ *    库要求 width/height 至少有一个 specified 但允许 0.sp。
+ *    初始 width=0/height=0 → 段高退化为"一行普通文字"，覆盖层 painter 解析完才回填。
+ *    解析完前的瞬间，图片压在后续文字上（与下方 1px 占位 placeholder 重叠）。
  *
- * 初始尺寸传 0：图片加载并解码后，库会按内在尺寸与容器宽度自动钳制并回填。
+ * **本函数的修复策略**：
+ * 1. 先 reset toAddRichSpanStyle 为 Default，强制下次 addText 出 Default \n（普通段落分隔）
+ * 2. addTextAfterSelection("\n") —— 给图片前面一个真正的段落断点
+ * 3. addRichSpan(Image) —— 把 toAdd 切到 Image
+ * 4. 紧接着 addTextAfterSelection("\n") —— 由 Image style 创建 Image span（占位 1 字符）
+ * 5. Image span 初始 width/height 给 200.sp × 200.sp 而非 0：
+ *    确保插入瞬间段落 lineHeight 已≥200sp（用户改造的 withImageBlockLineHeight 直接用 maxImageHeight 撑段高），
+ *    覆盖层 painter 解析完成后由 setResolvedSize 写回真实尺寸，lineHeight 再次更新。
  *
  * @param richTextState 正文富文本状态
  * @param path 图片在内部存储中的绝对路径
@@ -175,14 +190,24 @@ private fun insertBlockImage(
     richTextState: RichTextState,
     path: String,
 ) {
+    /** 1) 重置插入富文本样式为 Default，防止上一张图的 Image style 污染下一段 \n */
+    richTextState.addRichSpan(RichSpanStyle.Default)
+    /** 2) 段尾分隔：Default style 的 \n，会在 paragraph 边界处把当前段封闭 */
     richTextState.addTextAfterSelection("\n")
+    /** 3) 把 Image 设为下一个 span 的 richSpanStyle */
     richTextState.addRichSpan(
         RichSpanStyle.Image(
             model = path,
-            width = 0.sp,
-            height = 0.sp,
+            /** 初始尺寸给保守占位值 200.sp × 200.sp：
+             *  编辑态覆盖层 ApplyInlineImageSizes 会在 painter 解码后通过
+             *  setResolvedSize 写回真实尺寸（clampToMaxWidth 钳制为容器宽度），
+             *  并 trigger updateAnnotatedString 重建段落，让 lineHeight 同步更新。
+             *  若传 0.sp，初始段高退化成"一行文字"，与后续内容挤在一起。 */
+            width = 200.sp,
+            height = 200.sp,
         )
     )
+    /** 4) 用 Image style 创建出实际的 Image span（占位 1 字符，由 appendCustomContent 渲染为透明 inline content 占位 + 覆盖层位图） */
     richTextState.addTextAfterSelection("\n")
 }
 
@@ -491,6 +516,16 @@ fun InspirationEditScreen(
                     id = "mention",
                     char = '@',
                     style = { SpanStyle(color = Color(0xFF1976D2), fontWeight = FontWeight.Medium) }
+                )
+            )
+            // 🎤 语音 trigger：橙红色，用于 onSaved 中通过 Markdown 注入的 [🎤mm:ss](trigger:voice:path|dur) token 解析
+            // char 选 '/' 是因为 voice 不需要通过输入字符触发（录音成后整体插入 token），
+            // 这里只是为了 registerTrigger API 要求非空 char；真正入口在 setMarkdown/insertMarkdown 的解析路径
+            richTextState.registerTrigger(
+                Trigger(
+                    id = "voice",
+                    char = '/',
+                    style = { SpanStyle(color = Color(0xFFFF6B6B), fontWeight = FontWeight.Medium) }
                 )
             )
             hasTriggerRegistered = true
@@ -1431,10 +1466,12 @@ fun InspirationEditScreen(
 
                 when (block) {
                     /**
-                     * v2026-08-01 Phase 4 回退：图片作为独立 ContentBlock.Image 块状渲染。
-                     * 原因：Compose 1.11.0 的 BasicTextField 移除了 inlineContent 参数，
-                     * 编辑模式下 RichSpanStyle.Image 只能显示占位符，无法渲染实际图片。
-                     * 改回非内联方案，图片在编辑器下方/之间独立显示。
+                     * 编辑态以下两条分支（Voice / Image 的 ContentBlock 渲染）当前不会进入，
+                     * 因为 image 与 voice 已统一改为内联 RichSpan（图：RichSpanStyle.Image；
+                     * 语音：[label](trigger:voice:...) Markdown token），
+                     * 由编辑态覆盖层（InlineImageOverlay）+ BasicRichText 渲染。
+                     * ContentBlock 路径仅在旧数据（保存前为非内联形态）兼容期起作用，
+                     * 长期会随旧数据迁移完而自然淘汰。
                      */
                     is ContentBlock.Image -> {
                         com.corgimemo.app.ui.components.InlineImagePreview(
@@ -1886,14 +1923,28 @@ fun InspirationEditScreen(
                         val mm = duration / 60
                         val ss = duration % 60
                         val label = "🎤%02d:%02d".format(mm, ss)
-                        /** v2026-08-30 内联：语音作为正文内联 atomic token 插入 */
-                        richTextState.addRichSpan(
-                            RichSpanStyle.Token(
-                                triggerId = "voice",
-                                id = "$path|$duration",
-                                label = label
-                            )
-                        )
+                        /**
+                         * v2026-08-30 内联（修复 v2026-08-31）：语音作为正文内联 atomic token 插入。
+                         *
+                         * v2026-08-31 修复说明：
+                         * 旧的 `addRichSpan(RichSpanStyle.Token(...))` 是只对"已有选区"生效的样式附加 API，
+                         * 当 selection collapsed（光标闪烁）时它什么也不做 → 录音结束后正文里看不到任何标识。
+                         *
+                         * 改用库提供的公共 insertMarkdownAfterSelection：
+                         * - 把 token 序列化为标准的 Markdown 伪链接语法
+                         *   `[🎤mm:ss](trigger:voice:<path>|<duration>)`
+                         * - 库内部走 setMarkdown 的 Markdown→RichSpan 解析路径，
+                         *   会创建 RichSpan(text = "🎤mm:ss", richSpanStyle = Token(...))，
+                         *   label 自动作为 raw text 进入正文（rawText.append(richSpan.text) 路径），
+                         *   编辑态就能看见 🎤 + 时长了。
+                         * - 不依赖 activeTriggerQuery 是否激活（录音时不可能处于 voice trigger 状态，
+                         *   因此之前那种"用 insertToken"路径走不通）。
+                         * - voice trigger 仍需注册（用于 token 渲染颜色与解析时的样式查表），
+                         *   见文件上方 richTextState.registerTrigger(Trigger(id="voice", ...))。
+                         */
+                        val voiceMarkdownLink =
+                            "[$label](trigger:voice:$path|$duration)"
+                        richTextState.insertMarkdownAfterSelection(voiceMarkdownLink)
                         viewModel.notifyInlineMediaChanged()
                         showVoiceRecordSheet = false
                     },
@@ -1931,22 +1982,66 @@ fun InspirationEditScreen(
         }
     } // showVoiceRecordSheet
 
-    /** v2026-08-30 内联图片查看器：点击正文内联图片 token 后全屏预览 */
-    inlineImageViewerPath?.let { path ->
-        Dialog(onDismissRequest = { inlineImageViewerPath = null }) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black)
-                    .clickable { inlineImageViewerPath = null },
-                contentAlignment = Alignment.Center
-            ) {
-                com.corgimemo.app.ui.components.InlineImagePreview(
-                    imageUri = path,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
+    /**
+     * v2026-08-30 内联图片查看器（v2026-08-31 修复）：
+     * 点击编辑态正文中的图片 → 进入项目已有的「图片附件」全屏预览模式。
+     *
+     * **v2026-08-31 修复动机**：
+     * 旧的实现是 Dialog + Box + InlineImagePreview 单图预览，
+     * 与项目内 InspirationDetailImageStack 的多图横向堆叠体验不一致，
+     * 也缺失缩放/左右切换/删除/下载等标准动作。
+     *
+     * **新方案**：
+     * 复用 [InspirationImageGallery]（灵感专用的沉浸式全屏画廊），支持：
+     * - HorizontalPager 左右滑动切换所有图片
+     * - 双指缩放 + 双击放大还原（基于 ZoomableImage）
+     * - 顶部"图片附件"标题、关闭按钮、页码指示器 "n/m"
+     * - 左下角删除按钮（二次确认 AlertDialog，已自带）
+     * - 右下角下载按钮（保存到相册 + Snackbar 反馈）
+     *
+     * **图片路径来源**：
+     * 编辑态下图片以 RichSpanStyle.Image span（Markdown 序列化 `![](path)`）形式
+     * 散落在 RichTextState 中，并不直接维护在 contentBlocks 列表。
+     * 因此从 `richTextState.toMarkdown()` 中用项目已有的 Markdown 图片正则
+     * 扫描出所有图片路径，与 `inlineImageViewerPath` 取的初始索引对齐。
+     */
+    inlineImageViewerPath?.let { clickedPath ->
+        val bodyMarkdown = richTextState.toMarkdown()
+        val imagePathsInBody = Regex("""!\[[^\]]*\]\(([^)]+)\)""")
+            .findAll(bodyMarkdown)
+            .map { it.groupValues[1].trim() }
+            .filter { it.isNotBlank() }
+            .toList()
+        // 若被点击的图片不在正文图列表里（极端情况下被外部 setMarkdown 改过），
+        // 退化为 0 索引，避免 IllegalArgumentException
+        val initialIndex = imagePathsInBody.indexOf(clickedPath).coerceAtLeast(0)
+
+        InspirationImageGallery(
+            imagePaths = imagePathsInBody,
+            initialIndex = initialIndex,
+            /** 删除按钮：复用编辑页已有的图片删除路径（与 ReorderableColumn 走同一套） */
+            onDeleteClick = { idx ->
+                val targetPath = imagePathsInBody.getOrNull(idx) ?: return@InspirationImageGallery
+                /**
+                 * 注意：编辑态下图片不在 contentBlocks 列表里而是在 RichTextState 中，
+                 * 通过"先删除 RichTextState 中的图片 markdown 标记再 setMarkdown"的路径同步：
+                 *  1. 备份光标位置
+                 *  2. 从 markdown 中去掉对应 `![](<path>)` 行
+                 *  3. setMarkdown 重建（其余图片 span 位置不变，由覆盖层继续渲染）
+                 *  4. notifyInlineMediaChanged 标记脏，等 onValueChange 推送编辑快照并同步 contentBlocks
+                 */
+                val markdownBefore = richTextState.toMarkdown()
+                /** 匹配整行（允许行内前后空白），避免误删包含相同路径的其它链接文本 */
+                val markdownAfter = Regex("""!?\[[^\]]*\]\(""" + Regex.escape(targetPath) + """\)""")
+                    .replace(markdownBefore, "")
+                if (markdownAfter != markdownBefore) {
+                    richTextState.setMarkdown(markdownAfter)
+                    viewModel.notifyInlineMediaChanged()
+                }
+                inlineImageViewerPath = null
+            },
+            onDismiss = { inlineImageViewerPath = null }
+        )
     }
 
     /**
