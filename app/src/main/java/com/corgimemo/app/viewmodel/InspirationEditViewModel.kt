@@ -1422,11 +1422,18 @@ class InspirationEditViewModel @Inject constructor(
                 }
             }
 
-        /** 3) 语音：trigger:voice token，id 为 <路径>|<时长秒> */
+        /**
+         * 3) 语音：trigger:voice token，id 为 <路径>|<时长秒>|<时间戳>
+         *
+         * v2026-08-31 扩展：id 追加了毫秒时间戳（保证多次录音 id 唯一，避免
+         * markdown 解析时相邻同 style token 被合并）。这里用 split("|") 全拆分，
+         * 只取前两段：parts[0]=路径、parts[1]=时长，末尾时间戳忽略。
+         * 兼容旧数据（无时间戳，仅 <路径>|<时长> 两段）。
+         */
         Regex("""\]\(trigger:voice:([^)]+)\)""")
             .findAll(markdown)
             .forEach { m ->
-                val parts = m.groupValues[1].split("|", limit = 2)
+                val parts = m.groupValues[1].split("|")
                 val filePath = parts[0].trim()
                 val duration = parts.getOrNull(1)?.toIntOrNull() ?: 0
                 if (filePath.isNotBlank() && seen.add("voice:$filePath")) {

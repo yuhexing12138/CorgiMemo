@@ -175,13 +175,13 @@ import java.util.Locale
  * annotated string"）。raw text 字符 = U+FFFD，rendered = U+FFFD + inline-content，
  * **字符值一致**，offset 1-to-1 映射正确。
  *
- * **本函数改用 markdown 路径注入图片**：
- * 1. `insertMarkdownAfterSelection("\n\n![](path)\n\n")` 走 markdown 解析路径
- * 2. markdown parser 创建的 image span text = U+FFFD，与 placeholder 字符值对齐
- * 3. 前后各 2 个 \n 形成独立段（空行 = 段落结束），image 独占段
- * 4. 库会触发 updateAnnotatedString，覆盖层 painter 解析后
- *    setResolvedSize 写回真实尺寸，lineHeight 再次更新
- * 5. 覆盖层 drawInlineImages 按行绘制，两图分别在独立行 → 不重叠
+ * **本函数 v2026-08-31 改为调用库新增的 [RichTextState.insertImage]**：
+ * - 库方法内部用 `insertMarkdownAfterSelection("\n\n![alt](model)\n\n")`
+ *   走 markdown 解析路径，image span text = U+FFFD（与 placeholder 字符值对齐）
+ * - 前后各 2 个 \n 形成独立段，image 独占段
+ * - 库触发 updateAnnotatedString，覆盖层 painter 解析后
+ *   setResolvedSize 写回真实尺寸，lineHeight 再次更新
+ * - 覆盖层 drawInlineImages 按行绘制，两图分别在独立行 → 不重叠
  *
  * @param richTextState 正文富文本状态
  * @param path 图片在内部存储中的绝对路径
@@ -192,12 +192,11 @@ private fun insertBlockImage(
     path: String,
 ) {
     /**
-     * 用 markdown image 语法注入图片：
+     * 委托给库新增的 insertImage（内部走 markdown 路径）：
      * - 前后两个空行（"\n\n"）确保独占段落，图片不会与正文混在一行
      * - 空 alt（""）序列化为 `![](<path>)`，markdown parser 仍识别为图片
-     *   （参见 RichTextStateMarkdownParser 中 RichSpanStyle.Image 的解析路径）
      */
-    richTextState.insertMarkdownAfterSelection("\n\n![](" + path + ")\n\n")
+    richTextState.insertImage(model = path)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalRichTextApi::class)
@@ -572,12 +571,18 @@ fun InspirationEditScreen(
                         val dur = block.duration ?: 0
                         val mm = dur / 60
                         val ss = dur % 60
-                        richTextState.addRichSpan(
-                            RichSpanStyle.Token(
-                                triggerId = "voice",
-                                id = "${block.path}|${dur}",
-                                label = "🎤%02d:%02d".format(mm, ss)
-                            )
+                        /**
+                         * v2026-08-31 修复：迁移语音块时改用 markdown 路径注入 token，
+                         * 与 onSaved 手动插入保持完全一致。
+                         *
+                         * 旧代码用 addRichSpan(RichSpanStyle.Token(...))：
+                         * 1. collapsed selection（光标）下 addRichSpan 什么也不做 → 语音丢失；
+                         * 2. 即便生效，id 不带时间戳，重复语音可能被合并。
+                         */
+                        val tokenId =
+                            "${block.path}|${dur}|${System.currentTimeMillis()}"
+                        richTextState.insertMarkdownAfterSelection(
+                            "[🎤%02d:%02d](trigger:voice:$tokenId)".format(mm, ss)
                         )
                     }
                     is ContentBlock.Text -> { /* 不处理 */ }
@@ -1455,43 +1460,24 @@ fun InspirationEditScreen(
 
                 when (block) {
                     /**
-                     * 编辑态以下两条分支（Voice / Image 的 ContentBlock 渲染）当前不会进入，
-                     * 因为 image 与 voice 已统一改为内联 RichSpan（图：RichSpanStyle.Image；
-                     * 语音：[label](trigger:voice:...) Markdown token），
-                     * 由编辑态覆盖层（InlineImageOverlay）+ BasicRichText 渲染。
-                     * ContentBlock 路径仅在旧数据（保存前为非内联形态）兼容期起作用，
-                     * 长期会随旧数据迁移完而自然淘汰。
+                     * v2026-08-31：Image / Voice 两个 ContentBlock 渲染分支已删除。
+                     *
+                     * 原因：图片与语音已统一改为正文内联媒体——
+                     * - 图片：RichSpanStyle.Image（Markdown `![](path)`，编辑态由覆盖层
+                     *   InlineImageOverlay 绘制真实位图）
+                     * - 语音：[label](trigger:voice:...) Markdown token
+                     *
+                     * contentBlocks 列表在页面初始化时会被清空（见 hasInitializedBlocks
+                     * 逻辑），运行时只保留 Text 块；ReorderableColumn 的 items 过滤掉
+                     * Text 后恒为空列表，因此 Image/Voice 分支永远不会执行。
+                     * 旧数据的真正迁移路径在 hasInitializedWithData 的 LaunchedEffect 中
+                     * （loadContentBlocks → insertBlockImage / insertMarkdownAfterSelection），
+                     * 与这里的渲染无关。
+                     *
+                     * 此 when 保留 Text 空分支占位，避免语法报错；
+                     * 后续若完全移除 ReorderableColumn，需同步清理
+                     * blockVisibilityStates / highlightedIndex / onReorder 等关联逻辑。
                      */
-                    is ContentBlock.Image -> {
-                        com.corgimemo.app.ui.components.InlineImagePreview(
-                            imageUri = block.path,
-                            modifier = baseModifier,
-                            isHighlighted = index == highlightedIndex
-                            /** V2.8: 移除 isVisible 参数，图片始终渲染避免滚动时变成占位符 */
-                        )
-                    }
-                    is ContentBlock.Voice -> {
-                        com.corgimemo.app.ui.components.VoicePlayerComponent(
-                            voicePlayer = voicePlayer,
-                            filePath = block.path,
-                            totalDuration = block.duration,
-                            onDelete = {
-                                /** 通过删除按钮删除时也推入撤销栈 */
-                                val deleteIdx = contentBlocks.indexOf(block)
-                                if (deleteIdx >= 0) {
-                                    viewModel.pushBlockDeletedOperation(listOf(block), deleteIdx)
-                                    contentBlocks.removeAt(deleteIdx)
-                                    if (highlightedIndex == deleteIdx) highlightedIndex = -1
-                                    else if (highlightedIndex > deleteIdx) highlightedIndex--
-                                    viewModel.syncContentBlocks(contentBlocks.toList())
-                                }
-                            },
-                            isHighlighted = index == highlightedIndex,
-                            modifier = baseModifier,
-                            /** 语音块：进入视口时允许播放，离开视口时自动暂停释放资源 */
-                            isVisible = isBlockVisible
-                        )
-                    }
                     is ContentBlock.Text -> { /* 不应进入此分支 */ }
                 }
             }
@@ -1931,8 +1917,18 @@ fun InspirationEditScreen(
                          * - voice trigger 仍需注册（用于 token 渲染颜色与解析时的样式查表），
                          *   见文件上方 richTextState.registerTrigger(Trigger(id="voice", ...))。
                          */
+                        /**
+                         * v2026-08-31 新增：token id 追加时间戳，保证多次录音 id 全局唯一。
+                         *
+                         * 不追加时 id = "<路径>|<时长>"；若同一文件路径录制两次且时长恰好相同，
+                         * markdown 解析出的两个 RichSpanStyle.Token 会因 equals 相等被库
+                         * 合并成一个 span（相邻同 style 合并），编辑时删除一个会误删两个。
+                         * 追加毫秒时间戳后 id 永不相同，每个录音都是独立原子 span。
+                         */
+                        val tokenId =
+                            "$path|$duration|${System.currentTimeMillis()}"
                         val voiceMarkdownLink =
-                            "[$label](trigger:voice:$path|$duration)"
+                            "[$label](trigger:voice:$tokenId)"
                         richTextState.insertMarkdownAfterSelection(voiceMarkdownLink)
                         viewModel.notifyInlineMediaChanged()
                         showVoiceRecordSheet = false
@@ -2012,19 +2008,17 @@ fun InspirationEditScreen(
             onDeleteClick = { idx ->
                 val targetPath = imagePathsInBody.getOrNull(idx) ?: return@InspirationImageGallery
                 /**
-                 * 注意：编辑态下图片不在 contentBlocks 列表里而是在 RichTextState 中，
-                 * 通过"先删除 RichTextState 中的图片 markdown 标记再 setMarkdown"的路径同步：
-                 *  1. 备份光标位置
-                 *  2. 从 markdown 中去掉对应 `![](<path>)` 行
-                 *  3. setMarkdown 重建（其余图片 span 位置不变，由覆盖层继续渲染）
-                 *  4. notifyInlineMediaChanged 标记脏，等 onValueChange 推送编辑快照并同步 contentBlocks
+                 * v2026-08-31 优化：改用库新增的 [RichTextState.removeImage] 做局部删除，
+                 * 替代旧的"toMarkdown + 正则替换 + setMarkdown 全量重建"。
+                 *
+                 * removeImage 内部：
+                 * - 按 model（图片路径）找到对应的 Image span 的 textRange
+                 * - 用 removeTextRange 只删除该图片占位符（及独占行时的前后换行）
+                 * - 是局部文本编辑，其余图片 span、文字格式、selection 都不受影响
+                 * - 比 setMarkdown 重建整篇更省、不丢光标、不抖动
                  */
-                val markdownBefore = richTextState.toMarkdown()
-                /** 匹配整行（允许行内前后空白），避免误删包含相同路径的其它链接文本 */
-                val markdownAfter = Regex("""!?\[[^\]]*\]\(""" + Regex.escape(targetPath) + """\)""")
-                    .replace(markdownBefore, "")
-                if (markdownAfter != markdownBefore) {
-                    richTextState.setMarkdown(markdownAfter)
+                val removed = richTextState.removeImage(model = targetPath)
+                if (removed) {
                     viewModel.notifyInlineMediaChanged()
                 }
                 inlineImageViewerPath = null

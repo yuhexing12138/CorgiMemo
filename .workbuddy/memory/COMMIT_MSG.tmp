@@ -1,0 +1,32 @@
+feat(inspiration-edit): 落实四项优化（voice 唯一 id / 库 image API / 局部删除 / 清理死分支）
+
+# 第 2 项：voice token id 唯一化
+- onSaved 与旧数据迁移逻辑的 token id 追加毫秒时间戳
+  `$path|$duration|$ts`，避免同一路径/时长下 markdown 解析把相邻
+  同 style token 合并（删除一个会误删两个）
+- InspirationEditViewModel.saveInlineMediaBlocks 的 voice 解析由
+  split("|", limit = 2) 改为 split("|")（只取前两段，忽略时间戳；兼容旧数据）
+- 顺带修复：旧迁移逻辑用 addRichSpan(Token) 在 collapsed selection 下
+  不生效的隐患（改走 insertMarkdownAfterSelection）
+
+# 第 3 项：使用库新增的 insertImage
+- insertBlockImage 改调用 RichTextState.insertImage(model)，
+  内部走 markdown 解析路径（image span text = U+FFFD 与 placeholder 对齐）
+
+# 第 4 项：删除图片改用库新增的 removeImage 局部删除
+- 替代旧"toMarkdown + 正则替换 + setMarkdown 全量重建"
+- 不重置 selection、不影响其余图片/文字格式
+
+# 第 5 项：清理 ReorderableColumn 内 Image/Voice 死渲染分支
+- contentBlocks 初始化即清空、运行时只含 Text 块，两个分支永不执行
+- 保留 when 的 Text 空分支占位 + onReorder/baseModifier 骨架
+  （highlightedIndex 两步删除仍被 onPreviewKeyEvent 引用）
+- 保留第 569-570 行迁移逻辑（loadContentBlocks → insertBlockImage）
+
+# 子模块
+- compose-rich-editor 子模块指针更新（内部提交 91bf61e，新增 insertImage/removeImage）
+
+文件：
+- app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationEditScreen.kt
+- app/src/main/java/com/corgimemo/app/viewmodel/InspirationEditViewModel.kt
+- compose-rich-editor（子模块指针）
