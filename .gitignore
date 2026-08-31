@@ -31,8 +31,8 @@ Thumbs.db
 # Visual companion mockups（brainstorming skill 临时产物）
 .superpowers/
 
-# Workbuddy 工作辅助工具临时产物（memory/ 缓存 + extract_ui.py 脚本）
-.workbuddy/
+# Workbuddy 工作辅助工具：自 2026-08-31 起 .workbuddy/ 纳入版本跟踪并同步云端
+# （memory/ 工作记忆 + extract_ui.py 脚本，均为需要跨设备同步的轻量文件）
 
 # ============================================================
 # Python 虚拟环境（本地构建产物，几百 MB，绝对不能提交）
