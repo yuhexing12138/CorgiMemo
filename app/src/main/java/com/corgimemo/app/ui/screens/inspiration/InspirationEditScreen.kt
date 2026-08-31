@@ -1463,22 +1463,24 @@ fun InspirationEditScreen(
                      * v2026-08-31：Image / Voice 两个 ContentBlock 渲染分支已删除。
                      *
                      * 原因：图片与语音已统一改为正文内联媒体——
-                     * - 图片：RichSpanStyle.Image（Markdown `![](path)`，编辑态由覆盖层
-                     *   InlineImageOverlay 绘制真实位图）
+                     * - 图片：RichSpanStyle.Image（编辑态由覆盖层 InlineImageOverlay
+                     *   绘制真实位图）
                      * - 语音：[label](trigger:voice:...) Markdown token
                      *
                      * contentBlocks 列表在页面初始化时会被清空（见 hasInitializedBlocks
                      * 逻辑），运行时只保留 Text 块；ReorderableColumn 的 items 过滤掉
-                     * Text 后恒为空列表，因此 Image/Voice 分支永远不会执行。
+                     * Text 后恒为空列表，因此 Image/Voice 永远不会进入此 when。
                      * 旧数据的真正迁移路径在 hasInitializedWithData 的 LaunchedEffect 中
                      * （loadContentBlocks → insertBlockImage / insertMarkdownAfterSelection），
                      * 与这里的渲染无关。
                      *
-                     * 此 when 保留 Text 空分支占位，避免语法报错；
+                     * ContentBlock 是 sealed class，编译期要求 when 穷尽；
+                     * else 分支兜底 Image/Voice（实际不会执行）。
                      * 后续若完全移除 ReorderableColumn，需同步清理
                      * blockVisibilityStates / highlightedIndex / onReorder 等关联逻辑。
                      */
                     is ContentBlock.Text -> { /* 不应进入此分支 */ }
+                    else -> { /* Image / Voice 已内联化，不会出现在此列表 */ }
                 }
             }
 
