@@ -137,6 +137,8 @@ import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import com.mohamedrejeb.richeditor.ui.material3.TriggerSuggestions
 import com.mohamedrejeb.richeditor.model.LocalImageLoader
 import com.mohamedrejeb.richeditor.model.LocalTokenClickHandler
+import com.mohamedrejeb.richeditor.model.ImageClickHandler
+import com.mohamedrejeb.richeditor.model.LocalImageClickHandler
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.model.TokenClickHandler
 import com.corgimemo.app.ui.components.CoilRichTextImageLoader
@@ -253,6 +255,11 @@ fun InspirationEditScreen(
      * 刻意声明在函数体顶层，而非 Scaffold 内容 lambda 内部：
      * 底部的内联图片查看器 Dialog 位于同一顶层作用域，需要读写该状态；
      * 若声明在嵌套 lambda 内，Dialog 处会因作用域不可见而报 Unresolved reference。
+     *
+     * v2026-08-31 起职责收窄：
+     * - "image" 分支仅兼容旧数据（历史 markdown 中可能残留 trigger:image token）；
+     *   新插入的图片是 RichSpanStyle.Image（覆盖层绘制），点击走 LocalImageClickHandler。
+     * - "voice" 分支仍然有效：语音是 trigger:voice 的 atomic token。
      */
     var inlineImageViewerPath by remember { mutableStateOf<String?>(null) }
     val mediaTokenClickHandler = TokenClickHandler { token, _ ->
@@ -1472,6 +1479,16 @@ fun InspirationEditScreen(
             CompositionLocalProvider(
                 LocalTokenClickHandler provides mediaTokenClickHandler,
                 LocalImageLoader provides CoilRichTextImageLoader,
+                /**
+                 * v2026-08-31 编辑态点击内联图片 → 全屏预览。
+                 *
+                 * 图片现在是 RichSpanStyle.Image（由编辑面覆盖层绘制，不是 token），
+                 * 不再走 LocalTokenClickHandler 的 "image" 分支（该分支仅兼容旧数据
+                 * 的 trigger:image token），需通过 LocalImageClickHandler 接收点击。
+                 */
+                LocalImageClickHandler provides ImageClickHandler { image, _ ->
+                    (image.model as? String)?.let { path -> inlineImageViewerPath = path }
+                },
             ) {
             RichTextEditor(
                 state = richTextState,
