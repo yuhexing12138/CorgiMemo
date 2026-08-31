@@ -160,27 +160,28 @@ import java.util.Locale
  * compose-rich-editor/ui/InlineImageOverlay.kt 中的 drawInlineImages），
  * 编辑态走覆盖层绘制真实位图 + 把位图尺寸写回 Image span 让段落 lineHeight 撑高。
  *
- * **为什么这段插入逻辑需要这么写**：
- * 1. 库把 RichSpanStyle.Image 设计为「输入触发型 span」——
- *    `addRichSpan(Image)` 只是把 toAddRichSpanStyle 设为 Image；
- *    必须紧跟一次 addText()，被插入的字符才会用 Image style 创建出实际的 Image span。
- * 2. **连续插入两张图时会重叠的根因**：
- *    上一次 addText 之后 toAddRichSpanStyle 仍是 Image，
- *    下一次 insertBlockImage 调用的前导 \n 也会被 Image style 接管，
- *    结果两个 Image span 落到同一段、lineHeight 取 max → 绘制位置相同 → 重叠。
- * 3. **第一次插入也错位的原因**：
- *    库要求 width/height 至少有一个 specified 但允许 0.sp。
- *    初始 width=0/height=0 → 段高退化为"一行普通文字"，覆盖层 painter 解析完才回填。
- *    解析完前的瞬间，图片压在后续文字上（与下方 1px 占位 placeholder 重叠）。
+ * **v2026-08-31 末次修复（连续多张图重叠）**：
+ * 早期版本用 `addRichSpan + addText` 模式创建 Image span，
+ * addText("\n") 让 Image span 的 text 字段 = "\n"。
+ * 然而 Image.appendCustomContent 不 append(richSpan.text)，
+ * 渲染时只输出 inline-content placeholder（U+FFFD 占位符）。
+ * raw text 中的 "\n" 在 annotatedString 中被替换为 placeholder，
+ * **layout 不会把它当换行处理**，连续插入多张图片时两张图挤在同一行 →
+ * lineTop 重叠 → 视觉上叠在同一位置。
  *
- * **本函数的修复策略**：
- * 1. 先 reset toAddRichSpanStyle 为 Default，强制下次 addText 出 Default \n（普通段落分隔）
- * 2. addTextAfterSelection("\n") —— 给图片前面一个真正的段落断点
- * 3. addRichSpan(Image) —— 把 toAdd 切到 Image
- * 4. 紧接着 addTextAfterSelection("\n") —— 由 Image style 创建 Image span（占位 1 字符）
- * 5. Image span 初始 width/height 给 200.sp × 200.sp 而非 0：
- *    确保插入瞬间段落 lineHeight 已≥200sp（用户改造的 withImageBlockLineHeight 直接用 maxImageHeight 撑段高），
- *    覆盖层 painter 解析完成后由 setResolvedSize 写回真实尺寸，lineHeight 再次更新。
+ * markdown parser 解析 `![](path)` 时把 image span 的 text 设为 "\uFFFD"
+ * （见 RichTextStateMarkdownParser.kt："Image owns a single placeholder
+ * char in the raw text so span textRanges line up with the rendered
+ * annotated string"）。raw text 字符 = U+FFFD，rendered = U+FFFD + inline-content，
+ * **字符值一致**，offset 1-to-1 映射正确。
+ *
+ * **本函数改用 markdown 路径注入图片**：
+ * 1. `insertMarkdownAfterSelection("\n\n![](path)\n\n")` 走 markdown 解析路径
+ * 2. markdown parser 创建的 image span text = U+FFFD，与 placeholder 字符值对齐
+ * 3. 前后各 2 个 \n 形成独立段（空行 = 段落结束），image 独占段
+ * 4. 库会触发 updateAnnotatedString，覆盖层 painter 解析后
+ *    setResolvedSize 写回真实尺寸，lineHeight 再次更新
+ * 5. 覆盖层 drawInlineImages 按行绘制，两图分别在独立行 → 不重叠
  *
  * @param richTextState 正文富文本状态
  * @param path 图片在内部存储中的绝对路径
@@ -190,25 +191,13 @@ private fun insertBlockImage(
     richTextState: RichTextState,
     path: String,
 ) {
-    /** 1) 重置插入富文本样式为 Default，防止上一张图的 Image style 污染下一段 \n */
-    richTextState.addRichSpan(RichSpanStyle.Default)
-    /** 2) 段尾分隔：Default style 的 \n，会在 paragraph 边界处把当前段封闭 */
-    richTextState.addTextAfterSelection("\n")
-    /** 3) 把 Image 设为下一个 span 的 richSpanStyle */
-    richTextState.addRichSpan(
-        RichSpanStyle.Image(
-            model = path,
-            /** 初始尺寸给保守占位值 200.sp × 200.sp：
-             *  编辑态覆盖层 ApplyInlineImageSizes 会在 painter 解码后通过
-             *  setResolvedSize 写回真实尺寸（clampToMaxWidth 钳制为容器宽度），
-             *  并 trigger updateAnnotatedString 重建段落，让 lineHeight 同步更新。
-             *  若传 0.sp，初始段高退化成"一行文字"，与后续内容挤在一起。 */
-            width = 200.sp,
-            height = 200.sp,
-        )
-    )
-    /** 4) 用 Image style 创建出实际的 Image span（占位 1 字符，由 appendCustomContent 渲染为透明 inline content 占位 + 覆盖层位图） */
-    richTextState.addTextAfterSelection("\n")
+    /**
+     * 用 markdown image 语法注入图片：
+     * - 前后两个空行（"\n\n"）确保独占段落，图片不会与正文混在一行
+     * - 空 alt（""）序列化为 `![](<path>)`，markdown parser 仍识别为图片
+     *   （参见 RichTextStateMarkdownParser 中 RichSpanStyle.Image 的解析路径）
+     */
+    richTextState.insertMarkdownAfterSelection("\n\n![](" + path + ")\n\n")
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalRichTextApi::class)
