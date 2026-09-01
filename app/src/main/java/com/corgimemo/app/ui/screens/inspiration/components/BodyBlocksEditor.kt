@@ -779,15 +779,18 @@ private fun BlockTextItem(
 
     /**
      * v2026-09-01 块间距 = 块内行距：
-     * - 手柄去掉自身垂直 padding（旧 10dp×2 + min24dp = 44dp 会把整行撑高），
-     *   只保留最小高度，由文本块决定整行高度（verticalAlignment = CenterVertically）；
-     * - 编辑器 `minHeight = 0.dp`（库新增参数，默认 56dp 会撑高单行块）、
-     *   contentPadding 垂直 = 0（默认上下 16dp 是块间距大头）；
-     * - 这样每块高度 = 行数 × 行距，块间额外间距 = 0 →
-     *   视觉上两块文本的行距与块内严格一致；后续行距调整（改 textStyle
-     *   lineHeight）会同时作用于块内行高与块间，天然联动。
+     * - 手柄去掉自身垂直 padding（旧 10dp×2 + 24dp = 44dp 把整行撑高），
+     *   只保留 `minHeight = 24.dp`，作为「顶上把手」贴在块左上角；
+     * - Row 改为 `verticalAlignment = Top`：多行块也不把手柄浮到中间，
+     *   永远对齐第一行文本——这是 Notion / Linear / Capacities 等块编辑器
+     *   的把手标准对齐方式；
+     * - 编辑器 `minHeight = 0.dp`（库新增参数）+ contentPadding 垂直 = 0
+     *   → 块高 = 行数 × 行距，块间无额外间距；
+     * - 视觉上"两块文本之间的行距"与"块内两行之间的行距"完全相同；
+     *   后续调整 textStyle.lineHeight 会同时作用于块内行高与块间，
+     *   天然联动。
      */
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(verticalAlignment = Alignment.Top) {
         BlockDragHandle(dragHandleModifier)
 
         RichTextEditor(
@@ -890,7 +893,7 @@ private fun BlockImageItem(
     onImageTap: (String) -> Unit,
     dragHandleModifier: Modifier,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(verticalAlignment = Alignment.Top) {
         BlockDragHandle(dragHandleModifier)
 
         InlineImagePreview(
