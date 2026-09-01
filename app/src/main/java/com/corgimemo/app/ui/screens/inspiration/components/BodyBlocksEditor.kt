@@ -543,6 +543,22 @@ class BodyBlocksController(
      * undo/redo 时调用 [restoreCursor]，在重建后的块列表里找 `focusedText` 匹配的第一个
      * Text 块，把光标设回 `cursorOffset`。多个块文本相同时取首个（罕见兜底）。
      */
+    /**
+     * v2026-09-01 第二次修订（首插图撤销光标跳末尾）：
+     * 旧版把 `cursorOffset = focused.state.selection.start`（raw 坐标），
+     * 但用户从空块输入文字时，IME 把预置的 \U200B 推到字符串开头，
+     * state = `"\u200B12"` 而不是 `"12"`；raw 坐标 2 = 1和2 之间，但撤销时
+     * `createTextBlock("12")` 重建 state 是不带 ZWSP 的 `"12"`，
+     * pendingFocusOffset = 2 直接落到末尾，光标跳到 "12" 右边最后面。
+     *
+     * 修复：cursorOffset 改存**有效文本坐标**（先 `effectiveText(raw.substring(0, cursor))`
+     * 再 `.length`），剥掉 ZWSP 的影响。这样原 state 带不带 ZWSP 都对得上。
+     * restore 时也用 `effectiveText(...).length` 做 coerceIn 上界，空块场景
+     * 也会先临时落在 (0, 0)、再被 BlockTextItem 的 ZWSP 维护 LaunchedEffect 推到 (1, 1)。
+     *
+     * 副作用：第二次及以后的插入不再受影响——此时 state 已经是 `"12"`（没 ZWSP），
+     * raw 坐标本来就等于有效坐标。
+     */
     private data class BlockSnapshot(
         val markdown: String,
         val focusedText: String,
@@ -575,10 +591,16 @@ class BodyBlocksController(
         val md = toMarkdown()
         val focused = blocks.firstOrNull { it.id == focusedBlockId } as? BodyBlock.Text
         return if (focused != null) {
+            val rawText = focused.state.annotatedString.text
+            val rawCursor = focused.state.selection.start.coerceIn(0, rawText.length)
+            /** 光标从 raw 坐标映射到有效坐标（剥 ZWSP）：
+             *  rawText.substring(0, rawCursor) 拿到光标前的 raw 片段，
+             *  effectiveText(...) 剥 ZWSP，.length 拿到有效长度 */
+            val effectiveCursor = effectiveText(rawText.substring(0, rawCursor)).length
             BlockSnapshot(
                 markdown = md,
-                focusedText = effectiveText(focused.state.annotatedString.text),
-                cursorOffset = focused.state.selection.start,
+                focusedText = effectiveText(rawText),
+                cursorOffset = effectiveCursor,
             )
         } else {
             /** 无聚焦块（首次进入 / 聚焦在 Image 上）→ 用首 Text 块、offset 0 */
@@ -630,8 +652,11 @@ class BodyBlocksController(
             focusFirstTextBlock()
             return
         }
+        /** cursorOffset 是有效文本坐标（剥 ZWSP），用 effective length 做上界 coerceIn——
+         *  空块场景会先临时落在 (0, 0)，再被 BlockTextItem 的 ZWSP 维护 LaunchedEffect 推到 (1, 1) */
+        val effLen = effectiveText(target.state.annotatedString.text).length
         pendingFocusId = target.id
-        pendingFocusOffset = snapshot.cursorOffset.coerceIn(0, target.state.annotatedString.text.length)
+        pendingFocusOffset = snapshot.cursorOffset.coerceIn(0, effLen)
     }
 
     /** 撤销/重做后把焦点落到第一个 Text 块（兜底路径）。当前 undo/redo 主路径走 [restoreCursor]。 */
