@@ -541,13 +541,43 @@ class BodyBlocksController(
     }
 
     /**
-     * 软键盘退格合并：块首退格时由块的变更观察者调用。
+     * 退格合并（在块首 / 已折叠光标处按退格时由调用方调用）：
      * - 前一块是 Text → 合并（拼接 markdown，焦点与光标落接缝）
      * - 前一块是 Image → 两步删除（第一次高亮，第二次删除）
+     *
+     * v2026-09-01 修订（首空块退格）：原来 `if (idx <= 0) return` 把首块退格整段吞了。
+     * 现在按 idx 区分：
+     * - `idx > 0` → 走"前一块"逻辑（合并 Text / 两步删除 Image），与原行为一致
+     * - `idx == 0 && 自身空` → **删除自身**，把焦点放到下一 Text 块首（让首空块可被退格消掉）
+     * - `idx == 0 && 自身非空` → 没前驱可合，啥都不做（库默认 no-op）
+     *
+     * 已知限制（软键盘在空块上按退格）：snapshotFlow 观察者靠 `lastText.isNotEmpty()` +
+     * `text == lastText.drop(1)` 检测"首字符被删"——空块上退格 text/selection 都不变，observer
+     * 不发射，`onBackspaceAtStart` 不会被调。要彻底解决需给空 Text 块预置零宽字符 \u200B
+     * （让退格能"删"出一个状态变化），改造面较大不在本期。硬键盘走 onPreviewKeyEvent 不受此限。
      */
     fun onBackspaceAtStart(block: BodyBlock.Text) {
         val idx = blocks.indexOfFirst { it.id == block.id }
-        if (idx <= 0) return
+        if (idx < 0) return
+
+        if (idx == 0) {
+            if (block.state.annotatedString.text.isEmpty()) {
+                pushBlockSnapshot()
+                blocks.removeAt(0)
+                /** invariant: 至少一个 Text 块——若列表空了，重新加一个空块 */
+                ensureTextBlock(atEnd = true)
+                /** 把焦点放回当前首 Text 块（通常是下一块，可能是新建的空块）。
+                 *  id 不同才设 pendingFocus，否则 LaunchedEffect 不会触发。 */
+                val firstText = blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text
+                if (firstText != null && firstText.id != block.id) {
+                    pendingFocusId = firstText.id
+                    pendingFocusOffset = 0
+                }
+                onDocChanged?.invoke()
+            }
+            return
+        }
+
         when (val prev = blocks[idx - 1]) {
             is BodyBlock.Text -> mergeTextBlocks(prev, block)
             is BodyBlock.Image -> {
