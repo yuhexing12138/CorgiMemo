@@ -39,10 +39,10 @@ import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.components.InlineImagePreview
 import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
-import com.mohamedrejeb.richeditor.model.RichSpanStyle
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
+import com.mohamedrejeb.richeditor.ui.UndoBehavior
 import sh.calvin.reorderable.ReorderableItem
 
 // ==================== 零宽字符（用于软键盘空块退格检测） ====================
@@ -66,10 +66,21 @@ import sh.calvin.reorderable.ReorderableItem
  * （剥掉 ZWSP 后再判断），不让 ZWSP 泄漏到 markdown/UI 文本。
  */
 private const val ZWSP = "\u200B"
-private fun effectiveText(text: String): String = text.replace(ZWSP, "")
+private fun effectiveText(text: String): String =
+    text.filterNot { it == ZWSP[0] || it == IMAGE_PLACEHOLDER_CHAR }
 private fun isEffectivelyEmpty(text: String): Boolean = effectiveText(text).isEmpty()
 private fun isEffectivelyEmpty(state: RichTextState): Boolean =
     isEffectivelyEmpty(state.annotatedString.text)
+
+/**
+ * 库图片占位符：image span 在 raw text 中恰好占一个 U+FFFD 字符（与库
+ * `utils/InlineContent.kt` 的 `InlineContentPlaceholder` 同值——该常量是 internal，
+ * app 模块不可见，这里按值对齐）。
+ *
+ * [effectiveText] 剥该字符，防止边缘路径（如粘贴含图 markdown）让占位符
+ * 泄漏成可见文本。Text 块正常不持有 image span（插图即拆块）。
+ */
+private const val IMAGE_PLACEHOLDER_CHAR = '\uFFFD'
 
 /**
  * 路线 4（v2026-09-01）：块级图片编辑器（图文交错）
@@ -188,6 +199,11 @@ class BodyBlocksController(
         /** v2026-09-01 两类互斥配套：禁用库默认 500ms 合并窗口，每个字符都是独立 undo group，
          *  否则用户连打"abc"在 500ms 内会被合并成 1 个 group，undo 一次就把整段全删了——不是逐字回退 */
         state.history.coalesceWindowMs = 0L
+        /** v2026-09-01 关闭编辑态内联图片渲染（防御性）：插图已改为拆块
+         *  （Text 块 state 不持有 image span），正常路径覆盖层无图可画；
+         *  关掉开关可兜底边缘路径（如粘贴含图 markdown 进块内），避免覆盖层
+         *  在 Text 块内画出真图与 Image 块重复。 */
+        state.inlineImageRendering = false
         registerTriggers(state)
         if (markdown.isNotEmpty()) {
             state.setMarkdown(markdown)
@@ -226,12 +242,26 @@ class BodyBlocksController(
      * 组装整篇 markdown：Text 用 toMarkdown()，Image 还原为 `![](path)`，块间以空行连接。
      *
      * 加载时按 \n\n 切段 + 此处按 \n\n 拼接，保证已有文档往返一致。
+     *
+     * **v2026-09-01 串联时间线改造**：Text 块 state 可能持有 image span
+     * （插图不再拆块，图片渲染交给紧跟的 Image 标记块）——`state.toMarkdown()`
+     * 会把这些 image 也输出成 `![](path)`，与 Image 块的输出**重复**。
+     * 这里对 Text 块输出做"剥 image 段"处理：`parseMarkdownSegments` 切段后
+     * 只保留 TextSeg，段间以 `\n\n` 拼接（image 原本独占段落，语义等价）。
      */
     fun toMarkdown(): String =
         blocks.mapNotNull { block ->
             when (block) {
-                /** 剥掉空块预置的 ZWSP，保证 markdown 往返不带噪音 */
-                is BodyBlock.Text -> block.state.toMarkdown().replace(ZWSP, "")
+                is BodyBlock.Text -> {
+                    /** 剥掉空块预置的 ZWSP，保证 markdown 往返不带噪音 */
+                    val raw = block.state.toMarkdown().replace(ZWSP, "")
+                    parseMarkdownSegments(raw)
+                        .filterIsInstance<MdSegment.TextSeg>()
+                        .map { it.md.trim('\n') }
+                        .filter { it.isNotBlank() }
+                        .joinToString("\n\n")
+                        .ifEmpty { null }
+                }
                 is BodyBlock.Image -> "![](${block.path})"
             }
         }.filter { it.isNotBlank() }
@@ -274,34 +304,45 @@ class BodyBlocksController(
      * 出现 ▢ 占位字符。
      */
     fun insertImageAtFocused(path: String) {
-        /** v2026-09-01 串联时间线改造：图片插入由 `state.history` 自身捕获（库 `insertImage`
-         *  会被 recordHistory），所以这里不再压块快照、也不清 text history——
-         *  这样"打字→撤回→逐字回退"与"打字→插图→撤回→逐字回退"两类需求共用同一个 history，
-         *  按倒序自然衔接。块级快照栈留给"块拆分/合并/重排/删图"等真正改变块列表的操作。 */
         insertOneImageInternal(path)
     }
 
     /**
-     * v2026-09-01 串联时间线改造：批量插入也是同一个用户操作（多选相册确认），
-     * 全部走 `state.history`，不压块快照、整批 N 次连续记录，由 `history.coalesceWindowMs=0`
-     * 保证 N 个独立 undo group，逐张也能撤销回去。
+     * 批量插入（多选相册一次确认）= **一个撤销单位**：只压一次时间线快照，
+     * 整批连续拆块插入；撤销一次全部回退。
      */
     fun insertImagesAtFocused(paths: List<String>) {
         if (paths.isEmpty()) return
+        pushTimelineSnapshot()
         suppressDocChanged = true
+        /** 操作引发的 observer 文本差分不压栈（统一时间线只记这一个用户动作） */
+        val was = suppressTimeline
+        suppressTimeline = true
         try {
-            paths.forEach { insertOneImageInternal(it) }
+            paths.forEach { insertOneImageInternal(path = it, pushSnapshot = false) }
         } finally {
+            suppressTimeline = was
             suppressDocChanged = false
         }
         onDocChanged?.invoke()
     }
 
-    /** 内部：插入一张图片（**不推快照**，**不拆块**）。state.history 已捕获 insertImage 本身，
-     *  这里只需要在 blocks 列表里 focusedIdx+1 追加一个 Image 块作为渲染标记，
-     *  真实图片内容由原 Text 块的 state 持有——state 包含 image span + 完整 history。
-     *  撤销时 state 回滚 + observer 触发 [syncBlocksAfterState] 自动把 Image 标记块删掉。 */
-    private fun insertOneImageInternal(path: String) {
+    /**
+     * 内部：在聚焦 Text 块的**光标处**插入图片并拆块——
+     * 光标前后的文字各自成段：`[前半Text, Image, 后半Text]`。
+     *
+     * 实现走 `state.insertImage`（state 内部把段落拆成 [前半, 图段, 后半]，
+     * raw text 里图段是 1 个 U+FFFD 占位符）+ `replaceBlockWithParsed` 整块重解析，
+     * 得到干净的块序列——**Text 块 state 不残留 image span**（无占位符、无空隙），
+     * 真实图片完全由 Image 块渲染。
+     *
+     * 插入后：焦点移到图片后的第一个 Text 块 offset 0，并同步 [focusedBlockId]
+     * （批量插入时下一张图以此为锚点，保证多张图连续排列在光标处）。
+     *
+     * @param pushSnapshot 单张调用为 true（压撤销快照）；批量插入由
+     *   [insertImagesAtFocused] 统一压一次，传 false。
+     */
+    private fun insertOneImageInternal(path: String, pushSnapshot: Boolean = true) {
         val focusedIdx = focusedBlockId
             ?.let { id -> blocks.indexOfFirst { it.id == id } }
             ?.takeIf { it >= 0 }
@@ -314,13 +355,39 @@ class BodyBlocksController(
         when (val focused = blocks[focusedIdx]) {
             is BodyBlock.Image -> insertImageAtEnd(path)
             is BodyBlock.Text -> {
-                @OptIn(ExperimentalRichTextApi::class)
-                focused.state.insertImage(model = path)
-                /** v2026-09-01 串联时间线改造：不再调 replaceBlockWithParsed 拆块——
-                 *  保留原 state（含 image span + 完整 history），只在 focusedIdx+1
-                 *  追加一个 Image 块作为渲染标记。撤销时 state 回滚 + observer 触发
-                 *  [syncBlocksAfterState] 自动把 Image 标记块删掉。 */
-                blocks.add(focusedIdx + 1, BodyBlock.Image(newBodyBlockId(), path))
+                if (pushSnapshot) pushTimelineSnapshot()
+                /** 操作期间的 state 变化不作为"用户文本编辑"压栈 */
+                val was = suppressTimeline
+                suppressTimeline = true
+                try {
+                    @OptIn(ExperimentalRichTextApi::class)
+                    focused.state.insertImage(model = path)
+                    /** 整块重解析为 [前半Text, Image, 后半Text]；cursorOffset 取插图后
+                     *  state 的光标（占位符之后，raw 坐标），focusAtOffset 会跨块映射 */
+                    replaceBlockWithParsed(
+                        index = focusedIdx,
+                        markdown = focused.state.toMarkdown(),
+                        cursorOffset = focused.state.selection.start,
+                    )
+                } finally {
+                    suppressTimeline = was
+                }
+                /** 焦点/聚焦块同步到图片后的第一个 Text 块（批量插入的锚点）。
+                 *  关键：必须**立即**同步 [state.selection]，不能只设 [pendingFocusId]——
+                 *  pendingFocusId 由 LaunchedEffect 异步消费（在下次重组时设 selection），
+                 *  而批量循环是同步的，下一张图立即调 [state.insertImage] 读到的仍是上一轮
+                 *  的 selection（Text("2") 末尾），图片被插到末尾而不是块首，顺序错成
+                 *  `[1, 图A, 2, 图B]` 而不是 `[1, 图A, 图B, 2]`。setter 走
+                 *  [updateTextFieldValue]，suppressTimeline 已拦压栈。 */
+                val imgPos = blocks.indexOfFirst { it is BodyBlock.Image && it.path == path }
+                val nextText = blocks.drop(imgPos + 1)
+                    .firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text
+                if (nextText != null) {
+                    focusedBlockId = nextText.id
+                    pendingFocusId = nextText.id
+                    pendingFocusOffset = 0
+                    nextText.state.selection = TextRange(0)
+                }
             }
         }
     }
@@ -359,51 +426,6 @@ class BodyBlocksController(
         ensureTextBlock(atEnd = true)
         focusAtOffset(newBlocks, cursorOffset)
         if (!suppressDocChanged) onDocChanged?.invoke()
-    }
-
-    /**
-     * v2026-09-01 串联时间线改造关键同步器：
-     * 把 [stateBlockId] 对应 Text 块右侧的 Image 标记块数量与该 state 内 image span 数量对齐。
-     *
-     * 触发时机（由 BlockTextItem observer 检测 state 变化后调用）：
-     * - state.insertImage 后：state 多了 image span、blocks 也多了 Image 块 → 数量已对齐，幂等
-     * - state.history.undo 后：state 可能少了 image span（撤销插图）→ 删除对应数量的 Image 块
-     * - state.history.redo 后：state 可能多了 image span → 补 Image 块
-     *
-     * 是"按倒序串联撤销"能成立的关键——state 回滚到无图时，块列表必须跟着把
-     * Image 标记块删掉，否则视觉与内容不一致。
-     */
-    internal fun syncBlocksAfterState(stateBlockId: String) {
-        val focusedIdx = blocks.indexOfFirst { it.id == stateBlockId }
-        if (focusedIdx < 0) return
-        val focused = blocks[focusedIdx] as? BodyBlock.Text ?: return
-
-        /** 1. 从 state 里读出当前所有 image span，按顺序拿到 path 列表 */
-        val imagePaths: List<String> = focused.state.styledRichSpanList
-            .filter { it.richSpanStyle is RichSpanStyle.Image }
-            .mapNotNull { (it.richSpanStyle as? RichSpanStyle.Image)?.model?.toString() }
-
-        /** 2. 数 focusedIdx 之后连续的 Image 块数量（连续是因为我们约定"image 块紧跟所属 Text 块"） */
-        var existingCount = 0
-        var idx = focusedIdx + 1
-        while (idx < blocks.size && blocks[idx] is BodyBlock.Image) {
-            existingCount++
-            idx++
-        }
-
-        /** 3. 少则补（用 state 里的 path）、多则删；用闭包式 while 保证幂等 */
-        while (existingCount < imagePaths.size) {
-            blocks.add(
-                focusedIdx + 1 + existingCount,
-                BodyBlock.Image(newBodyBlockId(), imagePaths[existingCount]),
-            )
-            existingCount++
-        }
-        while (existingCount > imagePaths.size) {
-            blocks.removeAt(focusedIdx + 1 + imagePaths.size)
-            existingCount--
-        }
-        onDocChanged?.invoke()
     }
 
     /**
@@ -473,29 +495,43 @@ class BodyBlocksController(
      * （硬回车未插入换行）或 beforeEnd + 1（软键盘已插入 `\n`，跳过它）。
      */
     private fun splitTextBlock(block: BodyBlock.Text, beforeEnd: Int, afterStart: Int) {
-        pushBlockSnapshot()
+        pushTimelineSnapshot()
         val idx = blocks.indexOfFirst { it.id == block.id }
         if (idx < 0) return
         val text = block.state.annotatedString.text
         val beforeMd = if (beforeEnd > 0) block.state.toMarkdown(TextRange(0, beforeEnd)) else ""
         val afterMd = if (afterStart < text.length) block.state.toMarkdown(TextRange(afterStart, text.length)) else ""
 
-        block.state.setMarkdown(beforeMd)
-        val newBlock = createTextBlock(afterMd)
-        newBlock.state.selection = TextRange(0)
-        blocks.add(idx + 1, newBlock)
-        pendingFocusId = newBlock.id
+        /** 操作引发的 state 变化不作为"用户文本编辑"压栈（快照已在上面压过） */
+        val was = suppressTimeline
+        suppressTimeline = true
+        try {
+            block.state.setMarkdown(beforeMd)
+            val newBlock = createTextBlock(afterMd)
+            newBlock.state.selection = TextRange(0)
+            blocks.add(idx + 1, newBlock)
+        } finally {
+            suppressTimeline = was
+        }
+        pendingFocusId = newBlockId(blocks, idx + 1)
         pendingFocusOffset = 0
         onDocChanged?.invoke()
     }
+
+    /** 取 [index] 处块 id（拆块后焦点定位用，越界返回 null） */
+    private fun newBlockId(blocks: List<BodyBlock>, index: Int): String? =
+        blocks.getOrNull(index)?.id
 
     /**
      * 归一化：块内出现 `\n`（软键盘回车 / 粘贴多行）时按行拆成段落块。
      * 末尾连续空行保留为一个空块（回车在段尾 = 新起一段）；其余空行丢弃。
      * 焦点落到原光标所在的新块，偏移按行内位置换算。
+     *
+     * **不压撤销快照**：调用方是 observer（检测到 `\n`），observer 在调用前已把
+     * "变化前"快照压入统一时间线——那才是正确的撤销目标。这里若再压会压到
+     * "含 \n 的单块中间态"，撤销恢复它后 observer 又检测到 `\n` 又拆块，死循环。
      */
     fun normalizeBlockParagraphs(block: BodyBlock.Text) {
-        pushBlockSnapshot()
         val idx = blocks.indexOfFirst { it.id == block.id }
         if (idx < 0) return
         val text = block.state.annotatedString.text
@@ -570,35 +606,25 @@ class BodyBlocksController(
         onDocChanged?.invoke()
     }
 
-    // ---------- 块级撤销 / 重做（整篇 markdown + 光标快照栈） ----------
+    // ---------- 统一时间线撤销 / 重做 ----------
 
     /**
-     * v2026-09-01 修订（撤销时光标位置）：
-     * 旧快照是纯 markdown 字符串，undo/redo 后只 `focusFirstTextBlock()` → 永远回到
-     * 第一个 Text 块 offset 0，丢失了用户操作前的光标位置（多选相册批量插图场景下
-     * 撤销后光标跑到"12"最左端而非 1和2 之间）。
+     * v2026-09-01 第四次修订（统一时间线）：
      *
-     * 现在快照升级成 [BlockSnapshot]：
-     * - `markdown` — 整篇文本（含图片语法），用于 [BodyBlocksController.initialize]
-     * - `focusedText` — 快照时刻聚焦块的**有效文本**（剥 \U200B），用来在新块列表里匹配同块
-     * - `cursorOffset` — 块内光标偏移（raw text 坐标，含 \U200B；新块的 state 也有 \U200B 所以一致）
+     * 快照仍是结构化 [BlockSnapshot]（entries + 焦点索引 + 有效坐标光标，保留空块），
+     * 但栈的语义升级：**文本编辑与结构变更共用同一个撤销栈，天然按时间倒序串联**——
+     * - 每次用户文本变化（打字/删除/粘贴）由 BlockTextItem observer 压"变化前"快照
+     *   （[pushTextUndoSnapshot]），撤销一步回一个字符；
+     * - 每次结构变更（插图拆块 / Enter 拆块 / 合并 / 重排 / 删图）由操作入口压快照
+     *   （[pushTimelineSnapshot]）。
+     * 撤销 = 无脑 pop 栈顶恢复，"打字 → 插图 → 再打字"按倒序逐级回退，
+     * 不再依赖库 `state.history` 做跨块串联，也不需要"两类互斥"。
      *
-     * undo/redo 时调用 [restoreCursor]，在重建后的块列表里找 `focusedText` 匹配的第一个
-     * Text 块，把光标设回 `cursorOffset`。多个块文本相同时取首个（罕见兜底）。
-     */
-    /**
-     * v2026-09-01 第三次修订（保留空块结构）：
-     * 旧快照用 `markdown: String`，但 `toMarkdown()` 会 `.filter { it.isNotBlank() }`
-     * 把空块过滤掉、`initialize(markdown)` 又按 markdown 反向重建——所以
-     * `[Text("12"), Text("")]` 的快照只存 `"12"`，撤销后空块丢失。
+     * **去重**：结构操作先压快照、操作本身又引发 observer 压"变化前"快照，
+     * 两者内容相同 → [BlockSnapshot] data class equals 去重，不会重复入栈。
      *
-     * 修复：快照升级成 [BlockSnapshot]（entries + 焦点索引 + 光标），
-     * 每个 entry 显式标 Text（含空）/ Image，**空 Text 块不再丢**。
-     * `restoreFromSnapshot` 按 entries 精确重建；`toMarkdown()` 不变（仍过滤空块，
-     * 数据库内容不带 ZWSP 噪音），仅快照路径走新机制。
-     *
-     * 光标：用有效文本坐标（剥 \U200B），与上一轮一致——解决空块下光标跳末尾的另一个原因是
-     * `initialize` 只重建到 Text("12")，待重建的块**数量和位置**都变了，需要重新匹配。
+     * **suppressTimeline**：undo/redo 的恢复动作会改块内容，observer 若不拦截会把
+     * "恢复前状态"误压回撤销栈（多一步空撤销），恢复期间置 true。
      */
     private sealed class BlockSnapshotEntry {
         data class TextEntry(val effectiveText: String) : BlockSnapshotEntry()
@@ -611,31 +637,66 @@ class BodyBlocksController(
         val cursorOffset: Int,
     )
 
-    private val blockUndoStack = ArrayDeque<BlockSnapshot>()
-    private val blockRedoStack = ArrayDeque<BlockSnapshot>()
-    private val maxBlockHistory = 50
+    private val undoTimeline = ArrayDeque<BlockSnapshot>()
+    private val redoTimeline = ArrayDeque<BlockSnapshot>()
 
-    var canUndoBlocks by mutableStateOf(false)
-        private set
-    var canRedoBlocks by mutableStateOf(false)
+    /** 逐字快照耗栈快（每字符一条），深度放宽到 200 */
+    private val maxTimelineDepth = 200
+
+    /** 恢复操作期间为 true：observer 不压栈（否则把恢复前状态误压回撤销栈） */
+    internal var suppressTimeline = false
         private set
 
-    /** 结构变更前调用：压入当前块结构 + 光标（与栈顶 markdown 相同则跳过） */
-    private fun pushBlockSnapshot() {
+    var canUndoTimeline by mutableStateOf(false)
+        private set
+    var canRedoTimeline by mutableStateOf(false)
+        private set
+
+    /** 结构变更前调用：压入当前块结构 + 光标（与栈顶完全相同则跳过） */
+    private fun pushTimelineSnapshot() {
         val snapshot = captureCurrentSnapshot()
-        if (blockUndoStack.lastOrNull()?.entries != snapshot.entries) {
-            blockUndoStack.addLast(snapshot)
-            if (blockUndoStack.size > maxBlockHistory) blockUndoStack.removeFirst()
-            /** v2026-09-01 两类互斥：结构变更后清空所有 Text 块的 history，
-             *  文本 undo 不能跨过结构变更（用户在 Text("12") 里打 "x" → 插图 → 撤销块级，
-             *  不能继续撤销"x"，因为 history 已被清空） */
-            blocks.forEach { block ->
-                if (block is BodyBlock.Text) block.state.history.clear()
+        if (undoTimeline.lastOrNull() != snapshot) {
+            undoTimeline.addLast(snapshot)
+            if (undoTimeline.size > maxTimelineDepth) undoTimeline.removeFirst()
+        }
+        redoTimeline.clear()
+        canUndoTimeline = undoTimeline.isNotEmpty()
+        canRedoTimeline = false
+    }
+
+    /**
+     * 用户文本变化时由 BlockTextItem observer 调用：压"变化前"快照。
+     *
+     * [textBefore]/[selectionBefore] 是 observer 差分保存的变化前本块文本与光标；
+     * 其他块未受本次编辑影响，直接捕获当前状态即可。
+     * 本块不重建对象，只在快照数据里用 [BlockSnapshotEntry.TextEntry] 表达。
+     *
+     * 与栈顶完全相同则跳过（结构操作已压过同一份"变化前"快照）。
+     */
+    internal fun pushTextUndoSnapshot(blockId: String, textBefore: String, selectionBefore: TextRange) {
+        if (suppressTimeline) return
+        val idx = blocks.indexOfFirst { it.id == blockId }
+        if (idx < 0) return
+        val entries = blocks.mapIndexed { i, block ->
+            when (block) {
+                is BodyBlock.Text ->
+                    if (i == idx) BlockSnapshotEntry.TextEntry(effectiveText(textBefore))
+                    else BlockSnapshotEntry.TextEntry(effectiveText(block.state.annotatedString.text))
+                is BodyBlock.Image -> BlockSnapshotEntry.ImageEntry(block.path)
             }
         }
-        blockRedoStack.clear()
-        canUndoBlocks = blockUndoStack.isNotEmpty()
-        canRedoBlocks = false
+        /** 变化前光标（有效文本坐标，与 captureCurrentSnapshot 同坐标系） */
+        val cursorEffective = effectiveText(
+            textBefore.substring(0, selectionBefore.start.coerceIn(0, textBefore.length))
+        ).length
+        val snapshot = BlockSnapshot(entries, idx, cursorEffective)
+        if (undoTimeline.lastOrNull() != snapshot) {
+            undoTimeline.addLast(snapshot)
+            if (undoTimeline.size > maxTimelineDepth) undoTimeline.removeFirst()
+        }
+        redoTimeline.clear()
+        canUndoTimeline = undoTimeline.isNotEmpty()
+        canRedoTimeline = false
     }
 
     /** 捕获当前状态（块结构 + 聚焦 entry + 光标）作为快照 */
@@ -695,25 +756,35 @@ class BodyBlocksController(
         onDocChanged?.invoke()
     }
 
-    /** 块级撤销：按结构快照重建块列表，并恢复光标 */
-    fun undoBlocks(): Boolean {
-        val snapshot = blockUndoStack.removeLastOrNull() ?: return false
-        blockRedoStack.addLast(captureCurrentSnapshot())
-        restoreFromSnapshot(snapshot)
-        restoreCursor(snapshot)
-        canUndoBlocks = blockUndoStack.isNotEmpty()
-        canRedoBlocks = true
+    /** 统一时间线撤销：按快照重建块列表，并恢复光标 */
+    fun undoTimeline(): Boolean {
+        val snapshot = undoTimeline.removeLastOrNull() ?: return false
+        redoTimeline.addLast(captureCurrentSnapshot())
+        suppressTimeline = true
+        try {
+            restoreFromSnapshot(snapshot)
+            restoreCursor(snapshot)
+        } finally {
+            suppressTimeline = false
+        }
+        canUndoTimeline = undoTimeline.isNotEmpty()
+        canRedoTimeline = true
         return true
     }
 
-    /** 块级重做 */
-    fun redoBlocks(): Boolean {
-        val snapshot = blockRedoStack.removeLastOrNull() ?: return false
-        blockUndoStack.addLast(captureCurrentSnapshot())
-        restoreFromSnapshot(snapshot)
-        restoreCursor(snapshot)
-        canUndoBlocks = true
-        canRedoBlocks = blockRedoStack.isNotEmpty()
+    /** 统一时间线重做 */
+    fun redoTimeline(): Boolean {
+        val snapshot = redoTimeline.removeLastOrNull() ?: return false
+        undoTimeline.addLast(captureCurrentSnapshot())
+        suppressTimeline = true
+        try {
+            restoreFromSnapshot(snapshot)
+            restoreCursor(snapshot)
+        } finally {
+            suppressTimeline = false
+        }
+        canUndoTimeline = true
+        canRedoTimeline = redoTimeline.isNotEmpty()
         return true
     }
 
@@ -752,7 +823,7 @@ class BodyBlocksController(
     fun deleteImageBlock(blockId: String) {
         val idx = blocks.indexOfFirst { it.id == blockId }
         if (idx >= 0 && blocks[idx] is BodyBlock.Image) {
-            pushBlockSnapshot()
+            pushTimelineSnapshot()
             blocks.removeAt(idx)
             highlightedBlockId = null
             onDocChanged?.invoke()
@@ -763,7 +834,7 @@ class BodyBlocksController(
     fun deleteImageByPath(path: String): Boolean {
         val idx = blocks.indexOfFirst { it is BodyBlock.Image && it.path == path }
         if (idx < 0) return false
-        pushBlockSnapshot()
+        pushTimelineSnapshot()
         blocks.removeAt(idx)
         highlightedBlockId = null
         onDocChanged?.invoke()
@@ -792,7 +863,7 @@ class BodyBlocksController(
 
         if (idx == 0) {
             if (isEffectivelyEmpty(block.state)) {
-                pushBlockSnapshot()
+                pushTimelineSnapshot()
                 blocks.removeAt(0)
                 /** invariant: 至少一个 Text 块——若列表空了，重新加一个空块 */
                 ensureTextBlock(atEnd = true)
@@ -829,14 +900,21 @@ class BodyBlocksController(
     }
 
     private fun mergeTextBlocks(prev: BodyBlock.Text, cur: BodyBlock.Text) {
-        pushBlockSnapshot()
+        pushTimelineSnapshot()
         val prevMd = prev.state.toMarkdown()
         val curMd = cur.state.toMarkdown()
         val junction = prev.state.annotatedString.text.length
-        prev.state.setMarkdown(prevMd + curMd)
-        prev.state.selection = TextRange(junction)
-        val curIdx = blocks.indexOfFirst { it.id == cur.id }
-        if (curIdx >= 0) blocks.removeAt(curIdx)
+        /** 合并引发的 state 变化不作为"用户文本编辑"压栈（快照已在上面压过） */
+        val was = suppressTimeline
+        suppressTimeline = true
+        try {
+            prev.state.setMarkdown(prevMd + curMd)
+            prev.state.selection = TextRange(junction)
+            val curIdx = blocks.indexOfFirst { it.id == cur.id }
+            if (curIdx >= 0) blocks.removeAt(curIdx)
+        } finally {
+            suppressTimeline = was
+        }
         pendingFocusId = prev.id
         pendingFocusOffset = junction
         onDocChanged?.invoke()
@@ -847,7 +925,7 @@ class BodyBlocksController(
     /** 拖拽排序回调 */
     fun moveBlock(from: Int, to: Int) {
         if (from == to || from !in blocks.indices || to !in blocks.indices) return
-        pushBlockSnapshot()
+        pushTimelineSnapshot()
         val block = blocks.removeAt(from)
         blocks.add(to, block)
         onDocChanged?.invoke()
@@ -1005,10 +1083,12 @@ private fun BlockTextItem(
 
     /**
      * 变更观察者（软键盘无按键事件，全部靠状态差分）：
+     * 0. **v2026-09-01 统一时间线**：用户文本变化 → 压"变化前"快照到撤销栈
+     *    （[BodyBlocksController.pushTextUndoSnapshot]），撤销一步回一个字符；
      * 1. 块内出现 `\n` → 按段落拆块（Enter / 粘贴多行）
      * 2. 文本变短且退格前光标折叠在块首 → 与前一块合并 / 高亮前一个图片块
-     * 3. **v2026-09-01 新增**：空块软键盘退格（state 由 ZWSP 唯一变成 ""）
-     *    → 走 [BodyBlocksController.onBackspaceAtStart]；配合末尾的 ZWSP 不变量
+     * 3. 空块软键盘退格（state 由 ZWSP 唯一变成 ""）→ 走
+     *    [BodyBlocksController.onBackspaceAtStart]；配合末尾的 ZWSP 不变量
      *    维护 LaunchedEffect，软键盘场景也能删除空块。
      */
     LaunchedEffect(block.id) {
@@ -1021,17 +1101,28 @@ private fun BlockTextItem(
                     lastSelection = selection
                     return@collect
                 }
+                /** 统一时间线压栈：文本真变了（且非恢复操作、非 IME 组合中间态）→
+                 *  压"变化前"快照。与栈顶相同（结构操作已压过同一份）自动去重。
+                 *  退格合并 / 空块删除不在此压——onBackspaceAtStart 入口统一压
+                 *  （硬键盘路径 text 未变、observer 不触发，入口压栈才能覆盖两条路径）。
+                 *  已知取舍：中文 IME 组合结束后压的快照，"变化前"是组合最后一个
+                 *  中间态（如 "nihao"），撤销一步先回到拼音残迹再回空——后续可优化。 */
+                val backspaceMerge = lastText.isNotEmpty() && text == lastText.drop(1) &&
+                    lastSelection.collapsed && lastSelection.start == 0
+                val emptyBackspace = lastText == ZWSP && text == ""
+                if (text != lastText && !backspaceMerge && !emptyBackspace &&
+                    !controller.suppressTimeline && state.composition == null
+                ) {
+                    controller.pushTextUndoSnapshot(block.id, lastText, lastSelection)
+                }
                 when {
                     text.contains('\n') -> controller.normalizeBlockParagraphs(block)
                     /** 块首退格：文本恰好丢掉首字符 + 退格前光标折叠在 0
                      *  （用精确前缀匹配，避免拆块/撤销等其他缩文本场景误判） */
-                    lastText.isNotEmpty() && text == lastText.drop(1) &&
-                        lastSelection.collapsed && lastSelection.start == 0 ->
-                        controller.onBackspaceAtStart(block)
+                    backspaceMerge -> controller.onBackspaceAtStart(block)
                     /** 空块软键盘退格：IME 在 ZWSP 唯一态调用 deleteSurroundingText
                      *  把 ZWSP 删掉，text 变 "" → 走 onBackspaceAtStart（与硬键盘同路径） */
-                    lastText == ZWSP && text == "" ->
-                        controller.onBackspaceAtStart(block)
+                    emptyBackspace -> controller.onBackspaceAtStart(block)
                 }
                 /** ZWSP 不变量维护：空块恢复 \u200B + 光标 (1, 1)，否则软键盘退格下一次又无法检测。
                  *  注意：observer 条件检查必须在 setText 之前——否则 setText 让 text 从 "" 变 "\u200B"
@@ -1049,24 +1140,13 @@ private fun BlockTextItem(
             }
     }
 
-    /** 内容变化 → 通知 controller 同步 ViewModel + 按需同步 Image 标记块 */
+    /** 内容变化 → 通知 controller 同步 ViewModel */
     LaunchedEffect(block.id) {
-        /** v2026-09-01 串联时间线改造：image span 数量变化时（插图 undo/redo 引发）
-         *  必须调 syncBlocksAfterState 把块列表对齐——这是"按倒序串联撤销"能成立的关键拼图 */
-        var lastImageSpanCount = countImageSpans(state)
         snapshotFlow { state.annotatedString }
-            .collect { annStr ->
-                val currentImageSpanCount = countImageSpans(state)
-                if (currentImageSpanCount != lastImageSpanCount) {
-                    controller.syncBlocksAfterState(block.id)
-                    lastImageSpanCount = currentImageSpanCount
-                }
+            .collect {
                 controller.notifyBlockChanged()
             }
     }
-
-    private fun countImageSpans(state: RichTextState): Int =
-        state.styledRichSpanList.count { it.richSpanStyle is RichSpanStyle.Image }
 
     /**
      * v2026-09-01 块间距 = 块内行距：
@@ -1149,6 +1229,9 @@ private fun BlockTextItem(
                 null
             },
             readOnly = isLocked,
+            /** v2026-09-01 统一时间线：禁用库内 undo（含物理键盘 Ctrl+Z 快捷键拦截），
+             *  撤销/重做全部走 controller 的统一时间线快照栈 */
+            undoBehavior = UndoBehavior.Disabled,
             textStyle = MaterialTheme.typography.bodyLarge.copy(
                 color = MaterialTheme.colorScheme.onSurface
             ),

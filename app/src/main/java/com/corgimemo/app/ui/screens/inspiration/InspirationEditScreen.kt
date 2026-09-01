@@ -860,23 +860,17 @@ fun InspirationEditScreen(
                 /**
                  * 撤销 + 重做（紧凑组）
                  *
-                 * v2026-09-01 串联时间线改造：可用状态 = **块内 history ∨ 块级快照**，
-                 * 动作顺序按"时间倒序"——`richTextState.history.canUndo` 优先（捕获了打字 + 图片插入，
-                 * 这是最常发生的两类操作，逆序撤销最自然），块级快照栈留作兜底（块拆分/合并/重排等
-                 * 真正改变块列表的操作）。两类操作在时间线上自然衔接——比如"打字→插图→再打字"，
-                 * history 依次记录三条，逆序撤销按最近的"再打字"→"插图"→"打字"回退。
+                 * v2026-09-01 统一时间线：文本编辑（逐字）与结构变更（插图拆块/Enter/合并/
+                 * 重排/删图）共用 [BodyBlocksController] 内的同一个快照栈，天然按时间倒序
+                 * 串联，撤销 = pop 栈顶恢复 + 光标还原。不再依赖库 `state.history`——
+                 * 块编辑器的 `undoBehavior` 已设 Disabled，避免物理键盘 Ctrl+Z 走库内
+                 * history 与统一栈并存错乱。
                  */
-                val bodyCanUndo = bodyBlocks.canUndoBlocks || richTextState.history.canUndo
-                val bodyCanRedo = bodyBlocks.canRedoBlocks || richTextState.history.canRedo
+                val bodyCanUndo = bodyBlocks.canUndoTimeline
+                val bodyCanRedo = bodyBlocks.canRedoTimeline
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
-                        onClick = {
-                            if (richTextState.history.canUndo) {
-                                richTextState.history.undo()
-                            } else if (bodyBlocks.canUndoBlocks) {
-                                bodyBlocks.undoBlocks()
-                            }
-                        },
+                        onClick = { bodyBlocks.undoTimeline() },
                         enabled = bodyCanUndo && !isLocked,
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -888,13 +882,7 @@ fun InspirationEditScreen(
                         )
                     }
                     IconButton(
-                        onClick = {
-                            if (bodyBlocks.canRedoBlocks) {
-                                bodyBlocks.redoBlocks()
-                            } else {
-                                richTextState.history.redo()
-                            }
-                        },
+                        onClick = { bodyBlocks.redoTimeline() },
                         enabled = bodyCanRedo && !isLocked,
                         modifier = Modifier.size(36.dp)
                     ) {
