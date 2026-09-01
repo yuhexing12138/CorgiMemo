@@ -39,6 +39,7 @@ import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.components.InlineImagePreview
 import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
+import com.mohamedrejeb.richeditor.model.RichSpanStyle
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
@@ -273,24 +274,20 @@ class BodyBlocksController(
      * 出现 ▢ 占位字符。
      */
     fun insertImageAtFocused(path: String) {
-        pushBlockSnapshot()
+        /** v2026-09-01 串联时间线改造：图片插入由 `state.history` 自身捕获（库 `insertImage`
+         *  会被 recordHistory），所以这里不再压块快照、也不清 text history——
+         *  这样"打字→撤回→逐字回退"与"打字→插图→撤回→逐字回退"两类需求共用同一个 history，
+         *  按倒序自然衔接。块级快照栈留给"块拆分/合并/重排/删图"等真正改变块列表的操作。 */
         insertOneImageInternal(path)
     }
 
     /**
-     * v2026-09-01 新增（相册多选批量插入 + 单步撤销）：
-     *
-     * 与 [insertImageAtFocused] 行为差异：
-     * - 整批只推一个快照 → 多多选 N张后按一次回到 =图一的状态
-     * - 整批只触发一次 `onDocChanged`（suppressDocChanged 抑制子函数重复回调）
-     * - 逐张插入仍然走 [insertImageAtFocused]，每张都是独立快照，可以逐步撤销
-     *
-     * 不要做"边复制边插入"的事——批量插入是同一个用户操作（一次多选相册），
-     * 必须按单步撤销；中途复制失败会让一些图先出现、一些后出现，破坏原子性。
+     * v2026-09-01 串联时间线改造：批量插入也是同一个用户操作（多选相册确认），
+     * 全部走 `state.history`，不压块快照、整批 N 次连续记录，由 `history.coalesceWindowMs=0`
+     * 保证 N 个独立 undo group，逐张也能撤销回去。
      */
     fun insertImagesAtFocused(paths: List<String>) {
         if (paths.isEmpty()) return
-        pushBlockSnapshot()
         suppressDocChanged = true
         try {
             paths.forEach { insertOneImageInternal(it) }
@@ -300,7 +297,10 @@ class BodyBlocksController(
         onDocChanged?.invoke()
     }
 
-    /** 内部：插入一张图片（**不推快照**，由外层调用方管）。多张插入时复用以保证只在批开头推一次。 */
+    /** 内部：插入一张图片（**不推快照**，**不拆块**）。state.history 已捕获 insertImage 本身，
+     *  这里只需要在 blocks 列表里 focusedIdx+1 追加一个 Image 块作为渲染标记，
+     *  真实图片内容由原 Text 块的 state 持有——state 包含 image span + 完整 history。
+     *  撤销时 state 回滚 + observer 触发 [syncBlocksAfterState] 自动把 Image 标记块删掉。 */
     private fun insertOneImageInternal(path: String) {
         val focusedIdx = focusedBlockId
             ?.let { id -> blocks.indexOfFirst { it.id == id } }
@@ -316,16 +316,11 @@ class BodyBlocksController(
             is BodyBlock.Text -> {
                 @OptIn(ExperimentalRichTextApi::class)
                 focused.state.insertImage(model = path)
-                /**
-                 * insertImage 已在 richParagraphList 拆出 [前半段, Image段, 后半段]，
-                 * toMarkdown 输出形如 "图片前\n![](path)\n图片后"（段间用 \n），
-                 * parseMarkdownSegments 仍能正确切出 ImageSeg，剩下的文本段含 \n
-                 * 也由 split("\n\n") + trim('\n') 安全处理。
-                 *
-                 * 第二张起：cursor 已落在"图片后"块首（前一插的 focusAtOffset 放好的），
-                 * 继续 insertImage → 仍会在当前 Text 块光标前再插一张图片。
-                 */
-                replaceBlockWithParsed(focusedIdx, focused.state.toMarkdown(), focused.state.selection.start)
+                /** v2026-09-01 串联时间线改造：不再调 replaceBlockWithParsed 拆块——
+                 *  保留原 state（含 image span + 完整 history），只在 focusedIdx+1
+                 *  追加一个 Image 块作为渲染标记。撤销时 state 回滚 + observer 触发
+                 *  [syncBlocksAfterState] 自动把 Image 标记块删掉。 */
+                blocks.add(focusedIdx + 1, BodyBlock.Image(newBodyBlockId(), path))
             }
         }
     }
@@ -364,6 +359,51 @@ class BodyBlocksController(
         ensureTextBlock(atEnd = true)
         focusAtOffset(newBlocks, cursorOffset)
         if (!suppressDocChanged) onDocChanged?.invoke()
+    }
+
+    /**
+     * v2026-09-01 串联时间线改造关键同步器：
+     * 把 [stateBlockId] 对应 Text 块右侧的 Image 标记块数量与该 state 内 image span 数量对齐。
+     *
+     * 触发时机（由 BlockTextItem observer 检测 state 变化后调用）：
+     * - state.insertImage 后：state 多了 image span、blocks 也多了 Image 块 → 数量已对齐，幂等
+     * - state.history.undo 后：state 可能少了 image span（撤销插图）→ 删除对应数量的 Image 块
+     * - state.history.redo 后：state 可能多了 image span → 补 Image 块
+     *
+     * 是"按倒序串联撤销"能成立的关键——state 回滚到无图时，块列表必须跟着把
+     * Image 标记块删掉，否则视觉与内容不一致。
+     */
+    internal fun syncBlocksAfterState(stateBlockId: String) {
+        val focusedIdx = blocks.indexOfFirst { it.id == stateBlockId }
+        if (focusedIdx < 0) return
+        val focused = blocks[focusedIdx] as? BodyBlock.Text ?: return
+
+        /** 1. 从 state 里读出当前所有 image span，按顺序拿到 path 列表 */
+        val imagePaths: List<String> = focused.state.styledRichSpanList
+            .filter { it.richSpanStyle is RichSpanStyle.Image }
+            .mapNotNull { (it.richSpanStyle as? RichSpanStyle.Image)?.model?.toString() }
+
+        /** 2. 数 focusedIdx 之后连续的 Image 块数量（连续是因为我们约定"image 块紧跟所属 Text 块"） */
+        var existingCount = 0
+        var idx = focusedIdx + 1
+        while (idx < blocks.size && blocks[idx] is BodyBlock.Image) {
+            existingCount++
+            idx++
+        }
+
+        /** 3. 少则补（用 state 里的 path）、多则删；用闭包式 while 保证幂等 */
+        while (existingCount < imagePaths.size) {
+            blocks.add(
+                focusedIdx + 1 + existingCount,
+                BodyBlock.Image(newBodyBlockId(), imagePaths[existingCount]),
+            )
+            existingCount++
+        }
+        while (existingCount > imagePaths.size) {
+            blocks.removeAt(focusedIdx + 1 + imagePaths.size)
+            existingCount--
+        }
+        onDocChanged?.invoke()
     }
 
     /**
@@ -1009,11 +1049,24 @@ private fun BlockTextItem(
             }
     }
 
-    /** 内容变化 → 通知 controller 同步 ViewModel */
+    /** 内容变化 → 通知 controller 同步 ViewModel + 按需同步 Image 标记块 */
     LaunchedEffect(block.id) {
+        /** v2026-09-01 串联时间线改造：image span 数量变化时（插图 undo/redo 引发）
+         *  必须调 syncBlocksAfterState 把块列表对齐——这是"按倒序串联撤销"能成立的关键拼图 */
+        var lastImageSpanCount = countImageSpans(state)
         snapshotFlow { state.annotatedString }
-            .collect { controller.notifyBlockChanged() }
+            .collect { annStr ->
+                val currentImageSpanCount = countImageSpans(state)
+                if (currentImageSpanCount != lastImageSpanCount) {
+                    controller.syncBlocksAfterState(block.id)
+                    lastImageSpanCount = currentImageSpanCount
+                }
+                controller.notifyBlockChanged()
+            }
     }
+
+    private fun countImageSpans(state: RichTextState): Int =
+        state.styledRichSpanList.count { it.richSpanStyle is RichSpanStyle.Image }
 
     /**
      * v2026-09-01 块间距 = 块内行距：

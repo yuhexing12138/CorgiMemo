@@ -860,19 +860,21 @@ fun InspirationEditScreen(
                 /**
                  * 撤销 + 重做（紧凑组）
                  *
-                 * v2026-09-01 路线 4：可用状态 = **块级快照栈 ∨ 聚焦块内 history**，
-                 * 动作**块级优先**（结构变更走快照重建，文本输入走块内 history，
-                 * 两类互斥，合并后行为可预期）。
+                 * v2026-09-01 串联时间线改造：可用状态 = **块内 history ∨ 块级快照**，
+                 * 动作顺序按"时间倒序"——`richTextState.history.canUndo` 优先（捕获了打字 + 图片插入，
+                 * 这是最常发生的两类操作，逆序撤销最自然），块级快照栈留作兜底（块拆分/合并/重排等
+                 * 真正改变块列表的操作）。两类操作在时间线上自然衔接——比如"打字→插图→再打字"，
+                 * history 依次记录三条，逆序撤销按最近的"再打字"→"插图"→"打字"回退。
                  */
                 val bodyCanUndo = bodyBlocks.canUndoBlocks || richTextState.history.canUndo
                 val bodyCanRedo = bodyBlocks.canRedoBlocks || richTextState.history.canRedo
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = {
-                            if (bodyBlocks.canUndoBlocks) {
-                                bodyBlocks.undoBlocks()
-                            } else {
+                            if (richTextState.history.canUndo) {
                                 richTextState.history.undo()
+                            } else if (bodyBlocks.canUndoBlocks) {
+                                bodyBlocks.undoBlocks()
                             }
                         },
                         enabled = bodyCanUndo && !isLocked,
