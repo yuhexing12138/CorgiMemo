@@ -2,6 +2,7 @@ package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -704,7 +705,8 @@ private fun BlockDragHandle(dragHandleModifier: Modifier) {
     Box(
         modifier = dragHandleModifier
             .width(20.dp)
-            .padding(horizontal = 2.dp, vertical = 10.dp),
+            .heightIn(min = 24.dp)
+            .padding(horizontal = 2.dp),
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -775,7 +777,17 @@ private fun BlockTextItem(
             .collect { controller.notifyBlockChanged() }
     }
 
-    Row(verticalAlignment = Alignment.Top) {
+    /**
+     * v2026-09-01 块间距 = 块内行距：
+     * - 手柄去掉自身垂直 padding（旧 10dp×2 + min24dp = 44dp 会把整行撑高），
+     *   只保留最小高度，由文本块决定整行高度（verticalAlignment = CenterVertically）；
+     * - 编辑器 `minHeight = 0.dp`（库新增参数，默认 56dp 会撑高单行块）、
+     *   contentPadding 垂直 = 0（默认上下 16dp 是块间距大头）；
+     * - 这样每块高度 = 行数 × 行距，块间额外间距 = 0 →
+     *   视觉上两块文本的行距与块内严格一致；后续行距调整（改 textStyle
+     *   lineHeight）会同时作用于块内行高与块间，天然联动。
+     */
+    Row(verticalAlignment = Alignment.CenterVertically) {
         BlockDragHandle(dragHandleModifier)
 
         RichTextEditor(
@@ -786,7 +798,8 @@ private fun BlockTextItem(
                     min = if (controller.blocks.size == 1 && state.annotatedString.text.isEmpty()) {
                         160.dp
                     } else {
-                        40.dp
+                        /** 非初始空块：由 minLines=1 兜底一行高，不强制更大 */
+                        0.dp
                     }
                 )
                 .focusRequester(block.focusRequester)
@@ -844,6 +857,15 @@ private fun BlockTextItem(
             readOnly = isLocked,
             textStyle = MaterialTheme.typography.bodyLarge.copy(
                 color = MaterialTheme.colorScheme.onSurface
+            ),
+            /** 块高 = 内容行数 × 行距（消除库默认 56dp 强制最小高度） */
+            minHeight = 0.dp,
+            /** 垂直 padding 归零：块间距完全由行距决定（水平保留 16dp 与正文对齐） */
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = 0.dp,
+                end = 16.dp,
+                bottom = 0.dp,
             ),
             colors = RichTextEditorDefaults.richTextEditorColors(
                 containerColor = Color.Transparent,
