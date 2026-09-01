@@ -1275,9 +1275,11 @@ fun InspirationEditScreen(
              * - 字数统计规则：只统计正文字符数（去除空白），**不包含标题、标签、关联卡片**
              * - 时间戳来源：ViewModel.createdAt（新建模式 = 进入页面时记录；编辑模式 = 数据库 createdAt）
              * - 视觉样式：12sp 浅灰（Color(0xFF999999)），与详情页 InspirationViewCard 时间戳样式一致
-             * - 间距：上 Spacer 8dp + 内容行 + 下 Spacer 8dp，距离标题行与正文内容区距离相等
              *
-             * 字数实时响应 [content] 变化（用户输入时即时更新）。
+             * v2026-09-01 修订：标题↔时间↔内容三段空白距离严格相等（以"标题→时间"为基准）。
+             * - 标题 editor 自带 contentPadding(vertical=8.dp) → 标题文本下沿到时间文本上沿 = 8（title padding）+ 8（上方 Spacer）= 16dp
+             * - 下方 Spacer 改为 16dp 凑齐 16dp，让"时间→内容"等于 16dp
+             * - 不要把 BodyBlocksEditor 的 contentPadding top 改 8dp 来"抵消"——它是 per-block 的，会把每个块都加上 8dp 顶距，破坏图片与文字的紧贴关系
              */
             val createdAt by viewModel.createdAt.collectAsState()
             val timestampText = remember(createdAt) {
@@ -1319,7 +1321,7 @@ fun InspirationEditScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             /** ===== 块级内容编辑器区域（Text/Image 交错 + 手柄拖拽排序 + 两步删除） ===== */
 
