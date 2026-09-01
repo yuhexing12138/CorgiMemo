@@ -76,5 +76,46 @@ data class ContentBlockEntity(
      *
      * @ColumnInfo defaultValue 与 Migration DEFAULT 0 保持一致（项目规则：entity与migration同步检查）
      */
-    @ColumnInfo(defaultValue = "0") val lineIndex: Int = 0
+    @ColumnInfo(defaultValue = "0") val lineIndex: Int = 0,
+    /**
+     * 块稳定标识（v2026-09-01 路线 4 预留，MIGRATION_56_57）
+     *
+     * 编辑器块级模型中每块的唯一 id（UUID），用于跨编辑会话恢复
+     * RichTextState 映射与重组 key。旧行为 null（未分配）。
+     */
+    val blockId: String? = null,
+    /**
+     * 文本块内容（v2026-09-01 路线 4 预留，MIGRATION_56_57）
+     *
+     * 当 type 扩展为 "text" 时存放该段落的 markdown；当前正文仍以
+     * Inspiration.contentFormat 为单一真相源，此字段暂不写入。
+     */
+    val textContent: String? = null,
+    /**
+     * 图片备注（v2026-09-01 后续需求预留，MIGRATION_56_57）
+     *
+     * 图片的图注/说明文字。本期不写入，块级图片卡片实现时启用。
+     */
+    val note: String? = null,
+    /**
+     * 裁剪矩形（v2026-09-01 后续需求预留，MIGRATION_56_57）
+     *
+     * 格式 "left,top,right,bottom"（相对 originalPath 原图像素坐标）。
+     * 裁剪不覆盖原图：originalPath 存原图，filePath 存裁剪结果（或运行时裁剪）。
+     * 本期不写入。
+     */
+    val cropRect: String? = null,
+    /**
+     * 原图路径（v2026-09-01 后续需求预留，MIGRATION_56_57）
+     *
+     * 裁剪前的原始文件路径；未裁剪时为 null 或与 filePath 相同。
+     * 保证"重新裁剪"可还原。本期不写入。
+     */
+    val originalPath: String? = null,
+    /**
+     * 显示宽度比例（v2026-09-01 后续需求预留，MIGRATION_56_57）
+     *
+     * 相对可用宽度的缩放比例（0.1 ~ 1.0），1.0 = 全宽。本期不写入。
+     */
+    val displayWidthRatio: Float? = null
 )

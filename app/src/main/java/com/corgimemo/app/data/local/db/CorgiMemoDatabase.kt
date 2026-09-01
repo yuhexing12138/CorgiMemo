@@ -34,7 +34,7 @@ import com.corgimemo.app.data.model.ProfileNavItem
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class, InspirationTagOrder::class, ProfileNavItem::class],
-    version = 56,
+    version = 57,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -108,7 +108,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57)
                     .build()
                 INSTANCE = instance
                 instance
@@ -2231,6 +2231,28 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                 // Step 9: 恢复外键
                 database.execSQL("PRAGMA foreign_keys = ON")
             }
+        }
+    }
+
+    /**
+     * v2026-09-01 路线 4：content_blocks 新增块级模型预留字段
+     *
+     * - blockId：块的稳定标识（UUID），跨编辑会话恢复状态映射与重组 key
+     * - textContent：type="text" 块的 markdown 内容（正文当前仍以 contentFormat 为真相源）
+     * - note / cropRect / originalPath / displayWidthRatio：图片"备注 / 裁剪 / 缩放"需求预留
+     *   （裁剪不覆盖原图：originalPath 存原图，保证"重新裁剪"可还原）
+     *
+     * 全部为可空列、无默认值（与 duration/subTaskId 同款写法），旧行读出 null。
+     * 本期只有 schema 铺垫，不写入；块级图片卡片（裁剪/缩放/备注）落地时启用。
+     */
+    internal val MIGRATION_56_57 = object : Migration(56, 57) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE content_blocks ADD COLUMN blockId TEXT")
+            database.execSQL("ALTER TABLE content_blocks ADD COLUMN textContent TEXT")
+            database.execSQL("ALTER TABLE content_blocks ADD COLUMN note TEXT")
+            database.execSQL("ALTER TABLE content_blocks ADD COLUMN cropRect TEXT")
+            database.execSQL("ALTER TABLE content_blocks ADD COLUMN originalPath TEXT")
+            database.execSQL("ALTER TABLE content_blocks ADD COLUMN displayWidthRatio REAL")
         }
     }
     // companion object 闭合

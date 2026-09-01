@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,8 +32,6 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
@@ -70,10 +67,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -138,10 +132,10 @@ import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import com.mohamedrejeb.richeditor.ui.material3.TriggerSuggestions
 import com.mohamedrejeb.richeditor.model.LocalImageLoader
 import com.mohamedrejeb.richeditor.model.LocalTokenClickHandler
-import com.mohamedrejeb.richeditor.model.ImageClickHandler
-import com.mohamedrejeb.richeditor.model.LocalImageClickHandler
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.model.TokenClickHandler
+import com.corgimemo.app.ui.screens.inspiration.components.BodyBlocksEditor
+import com.corgimemo.app.ui.screens.inspiration.components.rememberBodyBlocksController
 import com.corgimemo.app.ui.components.CoilRichTextImageLoader
 import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.delay
@@ -175,29 +169,9 @@ import java.util.Locale
  * annotated string"）。raw text 字符 = U+FFFD，rendered = U+FFFD + inline-content，
  * **字符值一致**，offset 1-to-1 映射正确。
  *
- * **本函数 v2026-08-31 改为调用库新增的 [RichTextState.insertImage]**：
- * - 库方法内部用 `insertMarkdownAfterSelection("\n\n![alt](model)\n\n")`
- *   走 markdown 解析路径，image span text = U+FFFD（与 placeholder 字符值对齐）
- * - 前后各 2 个 \n 形成独立段，image 独占段
- * - 库触发 updateAnnotatedString，覆盖层 painter 解析后
- *   setResolvedSize 写回真实尺寸，lineHeight 再次更新
- * - 覆盖层 drawInlineImages 按行绘制，两图分别在独立行 → 不重叠
- *
- * @param richTextState 正文富文本状态
- * @param path 图片在内部存储中的绝对路径
+ * **v2026-09-01 路线 4 已废弃**：图片改为块级（BodyBlocksController.insertImageAtFocused），
+ * 本函数（insertBlockImage 内联插入）已被删除，此处保留注释说明历史原因。
  */
-@OptIn(ExperimentalRichTextApi::class)
-private fun insertBlockImage(
-    richTextState: RichTextState,
-    path: String,
-) {
-    /**
-     * 委托给库新增的 insertImage（内部走 markdown 路径）：
-     * - 前后两个空行（"\n\n"）确保独占段落，图片不会与正文混在一行
-     * - 空 alt（""）序列化为 `![](<path>)`，markdown parser 仍识别为图片
-     */
-    richTextState.insertImage(model = path)
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalRichTextApi::class)
 @Composable
@@ -211,9 +185,13 @@ fun InspirationEditScreen(
     val content by viewModel.content.collectAsState()
     /** 富文本格式化内容（Markdown 字符串），用于恢复编辑器的格式化显示 */
     val contentFormat by viewModel.contentFormat.collectAsState()
-    /** Undo/Redo 状态：控制撤销/重做按钮的启用状态 */
-    val canUndo by viewModel.canUndo.collectAsState()
-    val canRedo by viewModel.canRedo.collectAsState()
+    /**
+     * Undo/Redo 状态：控制撤销/重做按钮的启用状态
+     *
+     * v2026-09-01 路线 4：改用**当前聚焦块**的库内历史（VM 级 Undo 栈不再作用于正文），
+     * 因此不再从 viewModel.canUndo/canRedo 取值，按钮处直接读
+     * `richTextState.history.canUndo / canRedo`（快照状态，可观察）。
+     */
 
     // 地理围栏相关状态
     val geofenceLat by viewModel.geofenceLat.collectAsState()
@@ -292,23 +270,15 @@ fun InspirationEditScreen(
     val coroutineScope = rememberCoroutineScope()
     var pendingPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
-    /** 动态内容块列表（文本/图片/语音混合流） */
-    val contentBlocks = remember { androidx.compose.runtime.mutableStateListOf<ContentBlock>() }
-
-    /** 两步删除：高亮索引 (-1=无高亮, >=0=对应块高亮待删除) */
-    var highlightedIndex by remember { mutableIntStateOf(-1) }
-
     /**
-     * 内容块可见性追踪（Compose 1.9 onVisibilityChanged 懒加载）
+     * v2026-09-01 路线 4：正文改为 Text/Image 交错块列表
      *
-     * key = 非Text内容块在 contentBlocks 中的全局索引
-     * value = 是否当前在屏幕可见区域内
-     *
-     * 用途：
-     * - 图片块：仅在可见时渲染 AsyncImage（离开视口时显示占位符，减少内存）
-     * - 语音块：进入视口时预初始化播放器，离开时暂停释放资源
+     * 旧的 contentBlocks（SnapshotStateList）+ highlightedIndex（两步删除索引）
+     * + blockVisibilityStates（可见性追踪）三组状态已由块控制器
+     * [bodyBlocks]（见 components/BodyBlocksEditor.kt）统一取代：
+     * - 块列表 / 两步删除高亮：BodyBlocksController 内部状态
+     * - 可见性懒加载：块级 Composable 直接渲染，不再追踪
      */
-    val blockVisibilityStates = remember { mutableStateMapOf<Int, Boolean>() }
 
     /** 锁定编辑状态 */
     var isLocked by remember { mutableStateOf(false) }
@@ -363,21 +333,55 @@ fun InspirationEditScreen(
     val isDirty by viewModel.isDirty.collectAsState()
 
     /**
-     * 富文本编辑器状态（compose-rich-editor 库）
+     * 路线 4：块级正文编辑器控制器（Text/Image 交错块）
      *
-     * 使用 rememberRichTextState() 创建，支持：
-     * - toggleSpanStyle/toggleCodeSpan/toggleUnorderedList/toggleOrderedList
-     * - addLink/setMarkdown/toMarkdown
-     *
-     * 通过 ViewModel.setRichTextState() 注入到 ViewModel，
-     * 以便 ViewModel 调用 setMarkdown()/toMarkdown() 进行持久化。
+     * - 每个 Text 块一个 RichTextEditor；图片块是独立 Composable
+     * - Enter 拆块 / 块首退格合并 / 图片块两步删除 / 拖拽手柄排序
+     * - 语音 / 话题 / 关联 token 仍内联在 Text 块内（用户要求不变）
+     * 详见 components/BodyBlocksEditor.kt
      */
-    val richTextState = rememberRichTextState()
+    @OptIn(ExperimentalRichTextApi::class)
+    val bodyBlocks = rememberBodyBlocksController(
+        registerTriggers = { state ->
+            // # 标签 trigger：暖橙色，与原 FlowRow Chip 颜色一致
+            state.registerTrigger(
+                Trigger(
+                    id = "hashtag",
+                    char = '#',
+                    style = { SpanStyle(color = Color(0xFFFF9A5C), fontWeight = FontWeight.Medium) }
+                )
+            )
+            // @ 关联 trigger：蓝色
+            state.registerTrigger(
+                Trigger(
+                    id = "mention",
+                    char = '@',
+                    style = { SpanStyle(color = Color(0xFF1976D2), fontWeight = FontWeight.Medium) }
+                )
+            )
+            // 🎤 语音 trigger：橙红色，用于 markdown 注入的 [🎤mm:ss](trigger:voice:...) token 解析
+            // char 选 '/' 只为满足 registerTrigger 的非空 char 要求；真正入口在 setMarkdown 解析路径
+            state.registerTrigger(
+                Trigger(
+                    id = "voice",
+                    char = '/',
+                    style = { SpanStyle(color = Color(0xFFFF6B6B), fontWeight = FontWeight.Medium) }
+                )
+            )
+        },
+    )
 
-    /** 注入到 ViewModel（LaunchedEffect 确保只注入一次） */
-    androidx.compose.runtime.LaunchedEffect(richTextState) {
-        viewModel.setRichTextState(richTextState)
-    }
+    /**
+     * 兼容层：原"单编辑器富文本状态" → 当前聚焦文本块的状态。
+     *
+     * 工具栏 / 触发弹窗 / 复制 / 撤销重做 / 语音插入等既有代码继续以
+     * `richTextState` 命名工作，实际作用于"聚焦块"（未聚焦时回退第一个文本块）。
+     *
+     * 注意：这是**组合期求值**（Kotlin 局部变量不支持自定义 getter）——
+     * 聚焦块变化时 focusedBlockId 快照状态变化 → 重组 → 重新求值拿到新聚焦块，
+     * 因此与"点击时取当前聚焦块"在行为上等价。
+     */
+    val richTextState: RichTextState = bodyBlocks.focusedOrFirstTextState()
 
     /**
      * 相机拍照 Launcher
@@ -397,8 +401,8 @@ fun InspirationEditScreen(
                 coroutineScope.launch {
                     val savedPath = com.corgimemo.app.util.ImageUtils.copyUriToInternalStorage(context, uri)
                 savedPath?.let { path ->
-                    /** v2026-08-30 块级图片：真实图片 span 内联插入正文 */
-                    insertBlockImage(richTextState, path)
+                    /** 路线 4：图片作为块级节点插入聚焦块光标处（自动拆块） */
+                    bodyBlocks.insertImageAtFocused(path)
                     viewModel.notifyInlineMediaChanged()
                 }
                 }
@@ -419,8 +423,8 @@ fun InspirationEditScreen(
             uris.forEach { uri ->
                 val savedPath = ImageUtils.copyUriToInternalStorage(context, uri)
                 savedPath?.let { path ->
-                    /** v2026-08-30 块级图片：真实图片 span 内联插入正文 */
-                    insertBlockImage(richTextState, path)
+                    /** 路线 4：图片作为块级节点插入聚焦块光标处（自动拆块，多张按顺序） */
+                    bodyBlocks.insertImageAtFocused(path)
                 }
             }
             viewModel.notifyInlineMediaChanged()
@@ -484,78 +488,31 @@ fun InspirationEditScreen(
      * 3. 新数据（已含 token）：直接 setMarkdown，token 自动恢复。
      */
     var hasInitializedWithData by remember { mutableStateOf(false) }
-    var hasTriggerRegistered by remember { mutableStateOf(false) }
 
-    /** 注册 # hashtag trigger 和 @ mention trigger（在 setMarkdown 之前执行，确保 token 能被正确解析） */
-    @OptIn(ExperimentalRichTextApi::class)
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        if (!hasTriggerRegistered) {
-            // # 标签 trigger：暖橙色，与原 FlowRow Chip 颜色一致
-            richTextState.registerTrigger(
-                Trigger(
-                    id = "hashtag",
-                    char = '#',
-                    style = { SpanStyle(color = Color(0xFFFF9A5C), fontWeight = FontWeight.Medium) }
-                )
-            )
-            // @ 关联 trigger：蓝色（与待办/灵感 Chip 颜色区分）
-            richTextState.registerTrigger(
-                Trigger(
-                    id = "mention",
-                    char = '@',
-                    style = { SpanStyle(color = Color(0xFF1976D2), fontWeight = FontWeight.Medium) }
-                )
-            )
-            // 🎤 语音 trigger：橙红色，用于 onSaved 中通过 Markdown 注入的 [🎤mm:ss](trigger:voice:path|dur) token 解析
-            // char 选 '/' 是因为 voice 不需要通过输入字符触发（录音成后整体插入 token），
-            // 这里只是为了 registerTrigger API 要求非空 char；真正入口在 setMarkdown/insertMarkdown 的解析路径
-            richTextState.registerTrigger(
-                Trigger(
-                    id = "voice",
-                    char = '/',
-                    style = { SpanStyle(color = Color(0xFFFF6B6B), fontWeight = FontWeight.Medium) }
-                )
-            )
-            hasTriggerRegistered = true
-        }
-    }
-
-    /** 编辑器内容初始化：等待 trigger 注册完成后执行 setMarkdown */
-    androidx.compose.runtime.LaunchedEffect(hasTriggerRegistered, contentFormat) {
-        if (!hasTriggerRegistered || hasInitializedWithData) return@LaunchedEffect
+    /**
+     * 编辑器内容初始化：把整篇 markdown 解析为 Text/Image 交错块
+     *
+     * - trigger 注册已移入 bodyBlocks 的 registerTriggers（每个新建 Text 块都会注册）
+     * - 旧数据迁移已由 ViewModel.loadInspiration 统一处理（contentFormat 已含 token）
+     */
+    androidx.compose.runtime.LaunchedEffect(contentFormat) {
+        if (hasInitializedWithData) return@LaunchedEffect
         try {
-            /**
-             * 直接 setMarkdown(contentFormat)
-             *
-             * 旧数据迁移已由 ViewModel.loadInspiration 完成：
-             * - ViewModel 检测 inspiration.tags 非空但 contentFormat 无 token 时，
-             *   自动追加 token 到 markdown 末尾并更新 _contentFormat
-             * - UI 层读取的 contentFormat 已是迁移后的值（含 token）
-             * - 此处无需重复迁移，避免双重追加
-             */
-            richTextState.setMarkdown(contentFormat)
-            hasInitializedWithData = true
+            bodyBlocks.initialize(contentFormat)
         } catch (e: Exception) {
             Log.e("InspirationEditScreen", "编辑器初始化异常（已捕获）", e)
-            hasInitializedWithData = true
         }
+        hasInitializedWithData = true
     }
 
     /** 旧 content_blocks 是否已迁移为正文内联媒体（避免重复迁移） */
     var hasMigratedBlocks by remember { mutableStateOf(false) }
 
     /**
-     * v2026-08-30：把旧的 content_blocks（图片/语音）迁移为正文内联媒体。
+     * 路线 4：把旧的 content_blocks（图片/语音）迁移为交错块。
      *
-     * **必须等 setMarkdown 完成之后再做，且要放在独立的 LaunchedEffect 中。**
-     *
-     * 实测（adb logcat）发现：若把命令式插入（addTextAfterSelection + addRichSpan）
-     * 紧接在 setMarkdown 之后写在同一段代码里，会被随后到达的 TextFieldValue 更新覆盖 ——
-     * 日志表现为迁移确实读到了 6 张图、inlineContentMap 也建了 6 条，
-     * 但正文 textLen 随即回到原值（340）、placeholders=0，图片全部丢失。
-     *
-     * 改为依赖 hasInitializedWithData、在初始化完成后的下一帧再插入，
-     * 与用户手动插入图片走同一条路径（该路径已验证可持久化）。
+     * 按"markdown 中是否已含该路径"去重——8-30 内联化轮已迁移过的数据，
+     * 其 markdown 已包含图片/语音，重复插入会产生双份。
      */
     LaunchedEffect(hasInitializedWithData) {
         if (!hasInitializedWithData || hasMigratedBlocks) return@LaunchedEffect
@@ -564,26 +521,23 @@ fun InspirationEditScreen(
 
         try {
             val dbBlocks = viewModel.loadContentBlocks(inspirationId)
+            val existingMd = bodyBlocks.toMarkdown()
             dbBlocks.forEach { block ->
                 when (block) {
-                    is ContentBlock.Image -> insertBlockImage(richTextState, block.path)
+                    is ContentBlock.Image -> {
+                        if (!existingMd.contains(block.path)) {
+                            bodyBlocks.appendMediaMarkdown("![img](${block.path})")
+                        }
+                    }
                     is ContentBlock.Voice -> {
-                        val dur = block.duration ?: 0
-                        val mm = dur / 60
-                        val ss = dur % 60
-                        /**
-                         * v2026-08-31 修复：迁移语音块时改用 markdown 路径注入 token，
-                         * 与 onSaved 手动插入保持完全一致。
-                         *
-                         * 旧代码用 addRichSpan(RichSpanStyle.Token(...))：
-                         * 1. collapsed selection（光标）下 addRichSpan 什么也不做 → 语音丢失；
-                         * 2. 即便生效，id 不带时间戳，重复语音可能被合并。
-                         */
-                        val tokenId =
-                            "${block.path}|${dur}|${System.currentTimeMillis()}"
-                        richTextState.insertMarkdownAfterSelection(
-                            "[🎤%02d:%02d](trigger:voice:$tokenId)".format(mm, ss)
-                        )
+                        if (!existingMd.contains(block.path)) {
+                            val dur = block.duration ?: 0
+                            val tokenId =
+                                "${block.path}|$dur|${System.currentTimeMillis()}"
+                            bodyBlocks.appendMediaMarkdown(
+                                "[🎤%02d:%02d](trigger:voice:$tokenId)".format(dur / 60, dur % 60)
+                            )
+                        }
                     }
                     is ContentBlock.Text -> { /* 不处理 */ }
                 }
@@ -591,7 +545,7 @@ fun InspirationEditScreen(
             /** 迁移是真实内容变更，需置脏以便用户保存 */
             viewModel.notifyInlineMediaChanged()
         } catch (e: Exception) {
-            Log.e("InspirationEditScreen", "内联媒体迁移异常（已捕获）", e)
+            Log.e("InspirationEditScreen", "块级媒体迁移异常（已捕获）", e)
         }
     }
 
@@ -818,19 +772,10 @@ fun InspirationEditScreen(
      * - 旧的回退逻辑（从 imagePaths/voiceNotePath 恢复）已删除
      * - Migration 46→47 已将旧数据迁移到 content_blocks 表并清空旧字段
      * - 保存时已不再写入 imagePaths/voiceNotePath（置空）
+     *
+     * v2026-09-01 路线 4：内容块列表由 BodyBlocksController 管理，
+     * 本效果（清空旧列表）已无必要，直接移除。
      */
-    var hasInitializedBlocks by remember { mutableStateOf(false) }
-    LaunchedEffect(inspirationId) {
-        if (!hasInitializedBlocks && inspirationId != null) {
-            /**
-             * v2026-08-30 内联方案：图片/语音不再作为独立内容块渲染。
-             * 迁移逻辑已上移到 setMarkdown 之后执行（见 hasInitializedWithData 效果），
-             * 此处仅清空块列表并标记已初始化，避免重复迁移。
-             */
-            contentBlocks.clear()
-            hasInitializedBlocks = true
-        }
-    }
 
     /**
      * V2.7: 监听编辑历史时间线的恢复请求（NavResult API + 完整格式恢复）
@@ -876,8 +821,8 @@ fun InspirationEditScreen(
                 androidx.compose.ui.text.AnnotatedString(data)
             }
 
-            /** 将恢复的文本填充到 RichTextState（纯文本作为 Markdown 设置） */
-            richTextState.setMarkdown(restoredAnnotatedString.text)
+            /** 将恢复的文本重建为块列表（纯文本作为 Markdown 设置） */
+            bodyBlocks.initialize(restoredAnnotatedString.text)
             /** 一次性消费：清除 savedStateHandle 中的值，避免重复触发 */
             navController.currentBackStackEntry
                 ?.savedStateHandle
@@ -930,37 +875,49 @@ fun InspirationEditScreen(
 
                 Spacer(modifier = Modifier.width(4.dp))
 
-                /** 撤销 + 重做（紧凑组） */
+                /**
+                 * 撤销 + 重做（紧凑组）
+                 *
+                 * v2026-09-01 路线 4：可用状态 = **块级快照栈 ∨ 聚焦块内 history**，
+                 * 动作**块级优先**（结构变更走快照重建，文本输入走块内 history，
+                 * 两类互斥，合并后行为可预期）。
+                 */
+                val bodyCanUndo = bodyBlocks.canUndoBlocks || richTextState.history.canUndo
+                val bodyCanRedo = bodyBlocks.canRedoBlocks || richTextState.history.canRedo
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = {
-                            /** 推送当前状态后执行库的 undo */
-                            val markdownBefore = richTextState.toMarkdown()
-                            viewModel.pushRichTextSnapshot(markdownBefore)
-                            richTextState.history.undo()
+                            if (bodyBlocks.canUndoBlocks) {
+                                bodyBlocks.undoBlocks()
+                            } else {
+                                richTextState.history.undo()
+                            }
                         },
-                        enabled = canUndo && !isLocked,
+                        enabled = bodyCanUndo && !isLocked,
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Undo,
                             contentDescription = "撤销",
-                            tint = if (canUndo && !isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                            tint = if (bodyCanUndo && !isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                             modifier = Modifier.size(18.dp)
                         )
                     }
                     IconButton(
                         onClick = {
-                            /** 执行库的 redo */
-                            richTextState.history.redo()
+                            if (bodyBlocks.canRedoBlocks) {
+                                bodyBlocks.redoBlocks()
+                            } else {
+                                richTextState.history.redo()
+                            }
                         },
-                        enabled = canRedo && !isLocked,
+                        enabled = bodyCanRedo && !isLocked,
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Redo,
                             contentDescription = "重做",
-                            tint = if (canRedo && !isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                            tint = if (bodyCanRedo && !isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -1384,214 +1341,27 @@ fun InspirationEditScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            /** ===== 动态内容流编辑器区域（支持拖拽排序 + 两步删除） ===== */
+            /** ===== 块级内容编辑器区域（Text/Image 交错 + 手柄拖拽排序 + 两步删除） ===== */
 
             /**
-             * 使用 ReorderableColumn 包裹内容块列表
-             * 支持长按拖拽排序（无可见 DragHandle 图标）
-             */
-            com.corgimemo.app.ui.components.ReorderableColumn(
-                items = contentBlocks.filter { it !is ContentBlock.Text },
-                onReorder = { fromIndex, toIndex ->
-                    /**
-                     * 拖拽排序回调：
-                     * 1. 推送旧顺序到撤销栈（支持 Ctrl+Z 恢复）
-                     * 2. 更新 contentBlocks 列表顺序
-                     * 3. 同步到 ViewModel
-                     */
-                    val nonTextBlocks = contentBlocks.filter { it !is ContentBlock.Text }.toMutableList()
-                    viewModel.pushBlocksReorderedOperation(nonTextBlocks.toList())
-                    val moved = nonTextBlocks.removeAt(fromIndex)
-                    nonTextBlocks.add(toIndex, moved)
-
-                    /** 重建完整列表（保持 Text 块位置不变） */
-                    val textBlocks = contentBlocks.filter { it is ContentBlock.Text }
-                    val newOrder = mutableListOf<ContentBlock>()
-                    var nonTextIdx = 0
-                    contentBlocks.forEach { block ->
-                        if (block is ContentBlock.Text) {
-                            newOrder.add(block)
-                        } else {
-                            newOrder.add(nonTextBlocks[nonTextIdx++])
-                        }
-                    }
-                    contentBlocks.clear()
-                    contentBlocks.addAll(newOrder)
-                    highlightedIndex = -1
-                    viewModel.syncContentBlocks(contentBlocks.toList())
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) { index, block, isDragging ->
-                /**
-                 * Compose 1.9 onVisibilityChanged 懒加载：
-                 * 追踪每个非Text块是否在屏幕可见区域内。
-                 *
-                 * 可见性变化时更新 blockVisibilityStates，
-                 * 子组件根据 isVisible 决定是否加载实际资源。
-                 *
-                 * V2.8 调整：图片块（InlineImagePreview）已移除懒加载避免占位符问题，
-                 * 可见性追踪当前仅服务于语音块（VoicePlayerComponent）。
-                 */
-                val globalBlockIndex = contentBlocks.indexOf(block)
-                val isBlockVisible = blockVisibilityStates.getOrDefault(globalBlockIndex, false)
-
-                /** 基础 Modifier：包含可见性追踪 + 拖拽效果 */
-                val baseModifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    /** Compose 1.9 onVisibilityChanged：回调直接返回 Boolean（非 VisibilityInfo 对象） */
-                    .onVisibilityChanged { isVisible ->
-                        if (blockVisibilityStates[globalBlockIndex] != isVisible) {
-                            blockVisibilityStates[globalBlockIndex] = isVisible
-                        }
-                    }
-                    .then(
-                        if (isDragging) {
-                            Modifier.graphicsLayer(
-                                scaleX = 1.05f,
-                                scaleY = 1.05f,
-                                shadowElevation = 8f,
-                                translationY = (-4).dp.toPxFloat(density)
-                            )
-                        } else {
-                            Modifier
-                        }
-                    )
-
-                when (block) {
-                    /**
-                     * v2026-08-31：Image / Voice 两个 ContentBlock 渲染分支已删除。
-                     *
-                     * 原因：图片与语音已统一改为正文内联媒体——
-                     * - 图片：RichSpanStyle.Image（编辑态由覆盖层 InlineImageOverlay
-                     *   绘制真实位图）
-                     * - 语音：[label](trigger:voice:...) Markdown token
-                     *
-                     * contentBlocks 列表在页面初始化时会被清空（见 hasInitializedBlocks
-                     * 逻辑），运行时只保留 Text 块；ReorderableColumn 的 items 过滤掉
-                     * Text 后恒为空列表，因此 Image/Voice 永远不会进入此 when。
-                     * 旧数据的真正迁移路径在 hasInitializedWithData 的 LaunchedEffect 中
-                     * （loadContentBlocks → insertBlockImage / insertMarkdownAfterSelection），
-                     * 与这里的渲染无关。
-                     *
-                     * ContentBlock 是 sealed class，编译期要求 when 穷尽；
-                     * else 分支兜底 Image/Voice（实际不会执行）。
-                     * 后续若完全移除 ReorderableColumn，需同步清理
-                     * blockVisibilityStates / highlightedIndex / onReorder 等关联逻辑。
-                     */
-                    is ContentBlock.Text -> { /* 不应进入此分支 */ }
-                    else -> { /* Image / Voice 已内联化，不会出现在此列表 */ }
-                }
-            }
-
-            /**
-             * v2026-08-01 Phase 2：用 Box 包裹 RichTextEditor，
-             * 以便在其中叠加 TriggerSuggestions 弹窗（# 标签触发建议）
+             * v2026-09-01 路线 4：正文改为 Text/Image 交错块列表。
+             *
+             * - 图片从"正文内联 + 覆盖层绘制"（重叠根因）改为块级 Composable
+             * - 每个 Text 块一个独立 RichTextEditor；语音 token 仍内联在块内
+             * - Enter 拆块 / 块首退格合并 / 图片块两步删除 / 手柄拖拽排序
+             * 详见 components/BodyBlocksEditor.kt
              */
             Box(modifier = Modifier.fillMaxWidth()) {
-            /** 富文本编辑器（使用 compose-rich-editor 库） */
             CompositionLocalProvider(
                 LocalTokenClickHandler provides mediaTokenClickHandler,
                 LocalImageLoader provides CoilRichTextImageLoader,
-                /**
-                 * v2026-08-31 编辑态点击内联图片 → 全屏预览。
-                 *
-                 * 图片现在是 RichSpanStyle.Image（由编辑面覆盖层绘制，不是 token），
-                 * 不再走 LocalTokenClickHandler 的 "image" 分支（该分支仅兼容旧数据
-                 * 的 trigger:image token），需通过 LocalImageClickHandler 接收点击。
-                 */
-                LocalImageClickHandler provides ImageClickHandler { image, _ ->
-                    (image.model as? String)?.let { path -> inlineImageViewerPath = path }
-                },
             ) {
-            RichTextEditor(
-                state = richTextState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 200.dp)
-                    .onPreviewKeyEvent { keyEvent ->
-                        /** 仅处理按下事件 */
-                        if (keyEvent.nativeKeyEvent.action != AndroidKeyEvent.ACTION_DOWN) {
-                            return@onPreviewKeyEvent false
-                        }
-
-                        val isBackspace = keyEvent.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DEL
-                        val isDeleteKey = keyEvent.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_FORWARD_DEL
-
-                        if (!isBackspace && !isDeleteKey) {
-                            return@onPreviewKeyEvent false
-                        }
-
-                        /** 两步删除逻辑（保留原有内容块删除能力） */
-                        val selection = richTextState.selection
-                        val textLength = richTextState.annotatedString.length
-                        val cursorAtStart = selection.start == 0 && selection.end == 0
-                        val cursorAtEnd = selection.start == textLength && selection.end == textLength
-                        val editorEmpty = textLength == 0
-                        val hasNonTextBlocks = contentBlocks.any { it !is ContentBlock.Text }
-
-                        if (!hasNonTextBlocks) {
-                            return@onPreviewKeyEvent false
-                        }
-
-                        val shouldTrigger = editorEmpty ||
-                            (cursorAtStart && isBackspace) ||
-                            (cursorAtEnd && isDeleteKey)
-
-                        if (!shouldTrigger) {
-                            return@onPreviewKeyEvent false
-                        }
-
-                        /** 已有高亮项 → 第二次按键：确认删除 */
-                        if (highlightedIndex >= 0) {
-                            val deletedBlock = contentBlocks[highlightedIndex]
-                            viewModel.setContentBlockOperating(true)
-                            viewModel.pushBlockDeletedOperation(listOf(deletedBlock), highlightedIndex)
-                            contentBlocks.removeAt(highlightedIndex)
-                            highlightedIndex = -1
-                            viewModel.syncContentBlocks(contentBlocks.toList())
-                            viewModel.setContentBlockOperating(false)
-                            return@onPreviewKeyEvent true
-                        }
-
-                        /** 无高亮项 → 第一次按键：高亮目标块 */
-                        val targetIndex = when {
-                            isBackspace -> contentBlocks.indexOfLast { it !is ContentBlock.Text }
-                            isDeleteKey -> contentBlocks.indexOfFirst { it !is ContentBlock.Text }
-                            else -> -1
-                        }
-
-                        if (targetIndex >= 0) {
-                            highlightedIndex = targetIndex
-                            return@onPreviewKeyEvent true
-                        }
-
-                        false
-                    },
-                placeholder = {
-                    Text(
-                        text = "请在这里输入内容...",
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                    )
-                },
-                readOnly = isLocked,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface
-                ),
-                colors = RichTextEditorDefaults.richTextEditorColors(
-                    /** 容器背景透明，跟随全局主题色 */
-                    containerColor = Color.Transparent,
-                    /** v2026-08-01 光标颜色：暖橙，与标题统一 */
-                    cursorColor = Color(0xFFFF9A5C),
-                    /** 移除底部指示线（边界线） */
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
-                    errorIndicatorColor = Color.Transparent
+                BodyBlocksEditor(
+                    controller = bodyBlocks,
+                    isLocked = isLocked,
+                    onImageTap = { path -> inlineImageViewerPath = path },
+                    modifier = Modifier.fillMaxWidth(),
                 )
-            )
             }
 
             /**
@@ -1700,25 +1470,23 @@ fun InspirationEditScreen(
              * 关联的真相源仍是 card_relations 表（通过 viewModel.addRelation 即时入库）。
              */
 
-            /** 监听 RichTextState 文本变化：同步到 ViewModel + 触发防抖导出 */
-            androidx.compose.runtime.LaunchedEffect(richTextState.annotatedString) {
-                if (hasInitializedWithData) {
-                    val currentText = richTextState.annotatedString.text
-                    viewModel.setContent(currentText)
-                    viewModel.scheduleFormatExport(richTextState.annotatedString)
-
-                    /** 清除高亮状态 */
-                    if (highlightedIndex >= 0) {
-                        highlightedIndex = -1
+            /**
+             * 路线 4：块内容变化 → 组装整篇 markdown 同步到 ViewModel。
+             *
+             * 保存链路：VM 的 _richTextState 已不再注入（bodyBlocks 管理各块状态），
+             * saveInspiration 会走 `_contentFormat` 回退分支，因此这里必须实时
+             * 用 setContentFormat 维护整篇 markdown；setContent 维护纯文本。
+             *
+             * 用 SideEffect 而不是 LaunchedEffect 赋值 onDocChanged：SideEffect 在
+             * 每次组合生效后同步执行，保证任何 LaunchedEffect（初始化 / 媒体迁移 /
+             * 块内容观察者）触发变更时回调一定已就位，避免迁移内容漏同步。
+             */
+            androidx.compose.runtime.SideEffect {
+                bodyBlocks.onDocChanged = {
+                    if (hasInitializedWithData) {
+                        viewModel.setContent(bodyBlocks.plainText())
+                        viewModel.setContentFormat(bodyBlocks.toMarkdown())
                     }
-
-                    /**
-                     * v2026-07-22 改造：移除 @ 和 # 输入触发弹窗的逻辑
-                     * - @ 关联功能迁移到工具栏 @ 按钮（RelationPickerBottomSheet 多选弹窗）
-                     * - # 位置功能迁移到工具栏 📍 位置按钮（LocationPicker 弹窗）
-                     * - 标签功能由工具栏 # 按钮（插入 # 字符触发 TriggerSuggestions）触发
-                     * - 输入 @ 或 # 字符不再自动弹窗，避免与"普通文本中的 @ #"语义冲突
-                     */
                 }
             }
 
@@ -1931,7 +1699,7 @@ fun InspirationEditScreen(
                             "$path|$duration|${System.currentTimeMillis()}"
                         val voiceMarkdownLink =
                             "[$label](trigger:voice:$tokenId)"
-                        richTextState.insertMarkdownAfterSelection(voiceMarkdownLink)
+                        bodyBlocks.insertVoiceToken(voiceMarkdownLink)
                         viewModel.notifyInlineMediaChanged()
                         showVoiceRecordSheet = false
                     },
@@ -1993,7 +1761,7 @@ fun InspirationEditScreen(
      * 扫描出所有图片路径，与 `inlineImageViewerPath` 取的初始索引对齐。
      */
     inlineImageViewerPath?.let { clickedPath ->
-        val bodyMarkdown = richTextState.toMarkdown()
+        val bodyMarkdown = bodyBlocks.toMarkdown()
         val imagePathsInBody = Regex("""!\[[^\]]*\]\(([^)]+)\)""")
             .findAll(bodyMarkdown)
             .map { it.groupValues[1].trim() }
@@ -2010,16 +1778,10 @@ fun InspirationEditScreen(
             onDeleteClick = { idx ->
                 val targetPath = imagePathsInBody.getOrNull(idx) ?: return@InspirationImageGallery
                 /**
-                 * v2026-08-31 优化：改用库新增的 [RichTextState.removeImage] 做局部删除，
-                 * 替代旧的"toMarkdown + 正则替换 + setMarkdown 全量重建"。
-                 *
-                 * removeImage 内部：
-                 * - 按 model（图片路径）找到对应的 Image span 的 textRange
-                 * - 用 removeTextRange 只删除该图片占位符（及独占行时的前后换行）
-                 * - 是局部文本编辑，其余图片 span、文字格式、selection 都不受影响
-                 * - 比 setMarkdown 重建整篇更省、不丢光标、不抖动
+                 * v2026-09-01 路线 4：图片是块级节点，直接按路径删除对应 Image 块。
+                 * （仅移出块列表，不物理删文件——孤儿文件清理仍处于停用状态）
                  */
-                val removed = richTextState.removeImage(model = targetPath)
+                val removed = bodyBlocks.deleteImageByPath(targetPath)
                 if (removed) {
                     viewModel.notifyInlineMediaChanged()
                 }
