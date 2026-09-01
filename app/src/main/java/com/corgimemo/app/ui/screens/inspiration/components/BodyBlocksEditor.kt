@@ -38,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.components.InlineImagePreview
-import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
@@ -165,7 +164,6 @@ internal fun parseMarkdownSegments(markdown: String): List<MdSegment> {
  * 不变量：**列表中至少存在一个 Text 块**（兼容层 focusedOrFirstTextState 依赖）；
  * 列表末尾**尽量**是一个 Text 块（保证图片后仍可继续输入文字）。
  */
-@OptIn(ExperimentalRichTextApi::class)
 class BodyBlocksController(
     /** 给每个新建 Text 块的 state 注册 trigger（hashtag/mention/voice），由页面注入 */
     private val registerTriggers: (RichTextState) -> Unit,
@@ -331,10 +329,13 @@ class BodyBlocksController(
      * 内部：在聚焦 Text 块的**光标处**插入图片并拆块——
      * 光标前后的文字各自成段：`[前半Text, Image, 后半Text]`。
      *
-     * 实现走 `state.insertImage`（state 内部把段落拆成 [前半, 图段, 后半]，
-     * raw text 里图段是 1 个 U+FFFD 占位符）+ `replaceBlockWithParsed` 整块重解析，
-     * 得到干净的块序列——**Text 块 state 不残留 image span**（无占位符、无空隙），
-     * 真实图片完全由 Image 块渲染。
+     * **v2026-09-01 自实现拆块**：不调 [RichTextState.insertImage]（其内部段计数
+     *  与 selection 重置在某些路径下产生不确定输出），而是直接读 [RichTextState.selection]、
+     *  用 [RichTextState.toMarkdown]（[TextRange] 重载）按光标精确拆段。
+     * 内部 [RichTextState.extractRangeState] 按段落裁剪 spans，结果完全可预测且稳定。
+     *
+     * Text 块 state 不残留 image span（不调 [RichTextState.insertImage] 也就没有 ▢ 占位符），
+     * 无空隙，真实图片完全由 Image 块渲染。
      *
      * 插入后：焦点移到图片后的第一个 Text 块 offset 0，并同步 [focusedBlockId]
      * （批量插入时下一张图以此为锚点，保证多张图连续排列在光标处）。
@@ -360,34 +361,58 @@ class BodyBlocksController(
                 val was = suppressTimeline
                 suppressTimeline = true
                 try {
-                    @OptIn(ExperimentalRichTextApi::class)
-                    focused.state.insertImage(model = path)
-                    /** 整块重解析为 [前半Text, Image, 后半Text]；cursorOffset 取插图后
-                     *  state 的光标（占位符之后，raw 坐标），focusAtOffset 会跨块映射 */
-                    replaceBlockWithParsed(
-                        index = focusedIdx,
-                        markdown = focused.state.toMarkdown(),
-                        cursorOffset = focused.state.selection.start,
-                    )
+                    val state = focused.state
+                    val rawText = state.annotatedString.text
+                    val cursor = state.selection.start.coerceIn(0, rawText.length)
+
+                    /** v2026-09-01 自实现拆块：完全绕开 [RichTextState.insertImage]，
+                     *  按真实 [state.selection] 用 [RichTextState.toMarkdown] 拆段。
+                     *
+                     *  原路径（state.insertImage + replaceBlockWithParsed）**偶尔**产生错误
+                     *  拆分（如 [Image(A), Image(B), Text("12")]）——根因是库内
+                     *  `updateRichParagraphList` 会基于 `beforeTextLength` 重置
+                     *  `textFieldValue.selection`，而 `beforeTextLength` 在某些段落计数
+                     *  路径下计算异常，导致切段后 selection 落在意外位置；批量第二张图
+                     *  立即读到的 cursor 就是错的。
+                     *
+                     *  新路径直接读 `state.selection`（用户实际光标），调用
+                     *  [RichTextState.toMarkdown]（[TextRange] 重载）按光标精确拆段，
+                     *  内部 `extractRangeState` 按段落裁剪 spans——结果完全可预测且稳定，
+                     *  与库内段落计数无关。
+                     *  - cursor=0：[Image, Text("12")]（用户在块首点击 → 图片插在块前）
+                     *  - cursor=1（"1"和"2"字符间）：[Text("1"), Image, Text("2")] ✓
+                     *  - cursor=末尾：[Text("12"), Image]
+                     */
+                    val beforeMd = if (cursor > 0) state.toMarkdown(TextRange(0, cursor)) else ""
+                    val afterMd = if (cursor < rawText.length)
+                        state.toMarkdown(TextRange(cursor, rawText.length)) else ""
+
+                    val newBlocks = mutableListOf<BodyBlock>()
+                    if (beforeMd.isNotBlank()) newBlocks += createTextBlock(beforeMd)
+                    newBlocks += BodyBlock.Image(newBodyBlockId(), path)
+                    if (afterMd.isNotBlank()) newBlocks += createTextBlock(afterMd)
+
+                    blocks.removeAt(focusedIdx)
+                    blocks.addAll(focusedIdx, newBlocks)
+                    ensureTextBlock(atEnd = true)
+
+                    /** 焦点/聚焦块同步到图片后的第一个 Text 块（批量插入的锚点）。
+                     *  关键：必须**立即**同步 [state.selection]——pendingFocusId 由
+                     *  LaunchedEffect 异步消费，批量循环同步执行，下一张图立即读
+                     *  `state.selection` 仍可能拿到上一轮末尾 → 图片错位。 */
+                    val imgPos = focusedIdx + newBlocks.indexOfFirst { it is BodyBlock.Image }
+                    val nextText = blocks.drop(imgPos + 1)
+                        .firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text
+                    if (nextText != null) {
+                        focusedBlockId = nextText.id
+                        pendingFocusId = nextText.id
+                        pendingFocusOffset = 0
+                        nextText.state.selection = TextRange(0)
+                    }
                 } finally {
                     suppressTimeline = was
                 }
-                /** 焦点/聚焦块同步到图片后的第一个 Text 块（批量插入的锚点）。
-                 *  关键：必须**立即**同步 [state.selection]，不能只设 [pendingFocusId]——
-                 *  pendingFocusId 由 LaunchedEffect 异步消费（在下次重组时设 selection），
-                 *  而批量循环是同步的，下一张图立即调 [state.insertImage] 读到的仍是上一轮
-                 *  的 selection（Text("2") 末尾），图片被插到末尾而不是块首，顺序错成
-                 *  `[1, 图A, 2, 图B]` 而不是 `[1, 图A, 图B, 2]`。setter 走
-                 *  [updateTextFieldValue]，suppressTimeline 已拦压栈。 */
-                val imgPos = blocks.indexOfFirst { it is BodyBlock.Image && it.path == path }
-                val nextText = blocks.drop(imgPos + 1)
-                    .firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text
-                if (nextText != null) {
-                    focusedBlockId = nextText.id
-                    pendingFocusId = nextText.id
-                    pendingFocusOffset = 0
-                    nextText.state.selection = TextRange(0)
-                }
+                if (!suppressDocChanged) onDocChanged?.invoke()
             }
         }
     }
@@ -403,28 +428,6 @@ class BodyBlocksController(
         blocks.add(blocks.size - 1, BodyBlock.Image(newBodyBlockId(), path))
         pendingFocusId = (blocks.last() as BodyBlock.Text).id
         pendingFocusOffset = 0
-        if (!suppressDocChanged) onDocChanged?.invoke()
-    }
-
-    /** 把 [index] 处的块替换为其 markdown 重解析出的块序列，并把焦点放到 [cursorOffset] 所在块 */
-    private fun replaceBlockWithParsed(index: Int, markdown: String, cursorOffset: Int) {
-        val newBlocks = parseMarkdownSegments(markdown)
-            .flatMap { seg ->
-                when (seg) {
-                    is MdSegment.TextSeg -> seg.md.split("\n\n")
-                        .mapNotNull { para ->
-                            val trimmed = para.trim('\n')
-                            if (trimmed.isNotBlank()) createTextBlock(trimmed) else null
-                        }
-                    is MdSegment.ImageSeg -> listOf(BodyBlock.Image(newBodyBlockId(), seg.path))
-                }
-            }
-            .ifEmpty { listOf(createTextBlock("")) }
-
-        blocks.removeAt(index)
-        blocks.addAll(index, newBlocks)
-        ensureTextBlock(atEnd = true)
-        focusAtOffset(newBlocks, cursorOffset)
         if (!suppressDocChanged) onDocChanged?.invoke()
     }
 
