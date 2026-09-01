@@ -271,6 +271,34 @@ class BodyBlocksController(
      */
     fun insertImageAtFocused(path: String) {
         pushBlockSnapshot()
+        insertOneImageInternal(path)
+    }
+
+    /**
+     * v2026-09-01 新增（相册多选批量插入 + 单步撤销）：
+     *
+     * 与 [insertImageAtFocused] 行为差异：
+     * - 整批只推一个快照 → 多多选 N张后按一次回到 =图一的状态
+     * - 整批只触发一次 `onDocChanged`（suppressDocChanged 抑制子函数重复回调）
+     * - 逐张插入仍然走 [insertImageAtFocused]，每张都是独立快照，可以逐步撤销
+     *
+     * 不要做"边复制边插入"的事——批量插入是同一个用户操作（一次多选相册），
+     * 必须按单步撤销；中途复制失败会让一些图先出现、一些后出现，破坏原子性。
+     */
+    fun insertImagesAtFocused(paths: List<String>) {
+        if (paths.isEmpty()) return
+        pushBlockSnapshot()
+        suppressDocChanged = true
+        try {
+            paths.forEach { insertOneImageInternal(it) }
+        } finally {
+            suppressDocChanged = false
+        }
+        onDocChanged?.invoke()
+    }
+
+    /** 内部：插入一张图片（**不推快照**，由外层调用方管）。多张插入时复用以保证只在批开头推一次。 */
+    private fun insertOneImageInternal(path: String) {
         val focusedIdx = focusedBlockId
             ?.let { id -> blocks.indexOfFirst { it.id == id } }
             ?.takeIf { it >= 0 }
@@ -290,18 +318,27 @@ class BodyBlocksController(
                  * toMarkdown 输出形如 "图片前\n![](path)\n图片后"（段间用 \n），
                  * parseMarkdownSegments 仍能正确切出 ImageSeg，剩下的文本段含 \n
                  * 也由 split("\n\n") + trim('\n') 安全处理。
+                 *
+                 * 第二张起：cursor 已落在"图片后"块首（前一插的 focusAtOffset 放好的），
+                 * 继续 insertImage → 仍会在当前 Text 块光标前再插一张图片。
                  */
                 replaceBlockWithParsed(focusedIdx, focused.state.toMarkdown(), focused.state.selection.start)
             }
         }
     }
 
+    /**
+     * 批量插入期间抑制 [onDocChanged]，由 [insertImagesAtFocused] 在末尾统一调一次。
+     * （不然每张图都会触发一次 ViewModel.setContent/setContentFormat + 一次重组。）
+     */
+    private var suppressDocChanged: Boolean = false
+
     private fun insertImageAtEnd(path: String) {
         ensureTextBlock(atEnd = true)
         blocks.add(blocks.size - 1, BodyBlock.Image(newBodyBlockId(), path))
         pendingFocusId = (blocks.last() as BodyBlock.Text).id
         pendingFocusOffset = 0
-        onDocChanged?.invoke()
+        if (!suppressDocChanged) onDocChanged?.invoke()
     }
 
     /** 把 [index] 处的块替换为其 markdown 重解析出的块序列，并把焦点放到 [cursorOffset] 所在块 */
@@ -323,7 +360,7 @@ class BodyBlocksController(
         blocks.addAll(index, newBlocks)
         ensureTextBlock(atEnd = true)
         focusAtOffset(newBlocks, cursorOffset)
-        onDocChanged?.invoke()
+        if (!suppressDocChanged) onDocChanged?.invoke()
     }
 
     /**

@@ -394,18 +394,20 @@ fun InspirationEditScreen(
      * 相册多选 Launcher
      *
      * 使用 GetMultipleContents() 契约支持一次选择多张图片，
-     * 每张图片均复制到内部存储并添加到 ViewModel。
+     * 每张图片均复制到内部存储，最后**一次性**批量插入正文——保证多选相册
+     * 是一次"用户操作"（单步撤销，回到图一的状态）。
+     * 逐张插入走 cameraLauncher / 单图 picker，仍是每张一快照（逐步撤销）。
      */
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         coroutineScope.launch {
-            uris.forEach { uri ->
-                val savedPath = ImageUtils.copyUriToInternalStorage(context, uri)
-                savedPath?.let { path ->
-                    /** 路线 4：图片作为块级节点插入聚焦块光标处（自动拆块，多张按顺序） */
-                    bodyBlocks.insertImageAtFocused(path)
-                }
+            val paths = uris.mapNotNull { uri ->
+                ImageUtils.copyUriToInternalStorage(context, uri)
+            }
+            if (paths.isNotEmpty()) {
+                /** 路线 4：多张图片批量插入，整个 picker 动作作为单步撤销单位 */
+                bodyBlocks.insertImagesAtFocused(paths)
             }
             viewModel.notifyInlineMediaChanged()
         }
