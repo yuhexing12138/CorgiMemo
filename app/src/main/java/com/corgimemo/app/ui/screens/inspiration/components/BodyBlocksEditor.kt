@@ -292,7 +292,18 @@ class BodyBlocksController(
         onDocChanged?.invoke()
     }
 
-    /** 在 [newBlocks]（刚替换进列表的块序列）中找到 [cursorOffset] 落在的 Text 块并请求聚焦 */
+    /**
+     * 在 [newBlocks]（刚替换进列表的块序列）中找到 [cursorOffset] 落在的 Text 块并请求聚焦。
+     *
+     * **v2026-09-01 修复（光标落在"图片"和"后"之间）**：
+     * [cursorOffset] 来自库 raw text 坐标系——相邻段落之间有 1 个连接空格
+     * （`updateRichParagraphList` 的 `append(' ')`），且图片占位符 ▢ 占 1 字符。
+     * 旧实现 `consumed` 只累加块自身长度，与 raw 坐标系差"段间空格"，插图后
+     * 光标被算到后半块 offset 2（"图片"和"后"之间）而非 0。
+     * 修复：每跨过一个块，`consumed` 额外 +1（该块与其后块的段间连接空格）；
+     * 求出的偏移再 `coerceIn(0, len)` 兜住空块等边界（尾插时光标落空 Text 块
+     * 会算出 -1，coerce 回 0）。
+     */
     private fun focusAtOffset(newBlocks: List<BodyBlock>, cursorOffset: Int) {
         var consumed = 0
         for (b in newBlocks) {
@@ -302,10 +313,11 @@ class BodyBlocksController(
             }
             if (b is BodyBlock.Text && cursorOffset < consumed + len) {
                 pendingFocusId = b.id
-                pendingFocusOffset = cursorOffset - consumed
+                pendingFocusOffset = (cursorOffset - consumed).coerceIn(0, len)
                 return
             }
-            consumed += len
+            /** 跨块：下一块前有一个段间连接空格（raw text 坐标系） */
+            consumed += len + 1
         }
         (newBlocks.lastOrNull() as? BodyBlock.Text)?.let {
             pendingFocusId = it.id
