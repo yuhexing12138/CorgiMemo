@@ -544,24 +544,27 @@ class BodyBlocksController(
      * Text 块，把光标设回 `cursorOffset`。多个块文本相同时取首个（罕见兜底）。
      */
     /**
-     * v2026-09-01 第二次修订（首插图撤销光标跳末尾）：
-     * 旧版把 `cursorOffset = focused.state.selection.start`（raw 坐标），
-     * 但用户从空块输入文字时，IME 把预置的 \U200B 推到字符串开头，
-     * state = `"\u200B12"` 而不是 `"12"`；raw 坐标 2 = 1和2 之间，但撤销时
-     * `createTextBlock("12")` 重建 state 是不带 ZWSP 的 `"12"`，
-     * pendingFocusOffset = 2 直接落到末尾，光标跳到 "12" 右边最后面。
+     * v2026-09-01 第三次修订（保留空块结构）：
+     * 旧快照用 `markdown: String`，但 `toMarkdown()` 会 `.filter { it.isNotBlank() }`
+     * 把空块过滤掉、`initialize(markdown)` 又按 markdown 反向重建——所以
+     * `[Text("12"), Text("")]` 的快照只存 `"12"`，撤销后空块丢失。
      *
-     * 修复：cursorOffset 改存**有效文本坐标**（先 `effectiveText(raw.substring(0, cursor))`
-     * 再 `.length`），剥掉 ZWSP 的影响。这样原 state 带不带 ZWSP 都对得上。
-     * restore 时也用 `effectiveText(...).length` 做 coerceIn 上界，空块场景
-     * 也会先临时落在 (0, 0)、再被 BlockTextItem 的 ZWSP 维护 LaunchedEffect 推到 (1, 1)。
+     * 修复：快照升级成 [BlockSnapshot]（entries + 焦点索引 + 光标），
+     * 每个 entry 显式标 Text（含空）/ Image，**空 Text 块不再丢**。
+     * `restoreFromSnapshot` 按 entries 精确重建；`toMarkdown()` 不变（仍过滤空块，
+     * 数据库内容不带 ZWSP 噪音），仅快照路径走新机制。
      *
-     * 副作用：第二次及以后的插入不再受影响——此时 state 已经是 `"12"`（没 ZWSP），
-     * raw 坐标本来就等于有效坐标。
+     * 光标：用有效文本坐标（剥 \U200B），与上一轮一致——解决空块下光标跳末尾的另一个原因是
+     * `initialize` 只重建到 Text("12")，待重建的块**数量和位置**都变了，需要重新匹配。
      */
+    private sealed class BlockSnapshotEntry {
+        data class TextEntry(val effectiveText: String) : BlockSnapshotEntry()
+        data class ImageEntry(val path: String) : BlockSnapshotEntry()
+    }
+
     private data class BlockSnapshot(
-        val markdown: String,
-        val focusedText: String,
+        val entries: List<BlockSnapshotEntry>,
+        val focusedEntryIndex: Int,
         val cursorOffset: Int,
     )
 
@@ -574,10 +577,10 @@ class BodyBlocksController(
     var canRedoBlocks by mutableStateOf(false)
         private set
 
-    /** 结构变更前调用：压入当前整篇 markdown + 光标信息（与栈顶相同则跳过） */
+    /** 结构变更前调用：压入当前块结构 + 光标（与栈顶 markdown 相同则跳过） */
     private fun pushBlockSnapshot() {
         val snapshot = captureCurrentSnapshot()
-        if (blockUndoStack.lastOrNull()?.markdown != snapshot.markdown) {
+        if (blockUndoStack.lastOrNull()?.entries != snapshot.entries) {
             blockUndoStack.addLast(snapshot)
             if (blockUndoStack.size > maxBlockHistory) blockUndoStack.removeFirst()
         }
@@ -586,49 +589,79 @@ class BodyBlocksController(
         canRedoBlocks = false
     }
 
-    /** 捕获当前状态（整篇 markdown + 当前聚焦块文本/光标）作为快照 */
+    /** 捕获当前状态（块结构 + 聚焦 entry + 光标）作为快照 */
     private fun captureCurrentSnapshot(): BlockSnapshot {
-        val md = toMarkdown()
-        val focused = blocks.firstOrNull { it.id == focusedBlockId } as? BodyBlock.Text
-        return if (focused != null) {
-            val rawText = focused.state.annotatedString.text
-            val rawCursor = focused.state.selection.start.coerceIn(0, rawText.length)
-            /** 光标从 raw 坐标映射到有效坐标（剥 ZWSP）：
-             *  rawText.substring(0, rawCursor) 拿到光标前的 raw 片段，
-             *  effectiveText(...) 剥 ZWSP，.length 拿到有效长度 */
-            val effectiveCursor = effectiveText(rawText.substring(0, rawCursor)).length
-            BlockSnapshot(
-                markdown = md,
-                focusedText = effectiveText(rawText),
-                cursorOffset = effectiveCursor,
-            )
-        } else {
-            /** 无聚焦块（首次进入 / 聚焦在 Image 上）→ 用首 Text 块、offset 0 */
-            val firstText = blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text
-            BlockSnapshot(
-                markdown = md,
-                focusedText = firstText?.let { effectiveText(it.state.annotatedString.text) } ?: "",
-                cursorOffset = 0,
-            )
+        val entries = blocks.map { block ->
+            when (block) {
+                is BodyBlock.Text -> BlockSnapshotEntry.TextEntry(
+                    effectiveText(block.state.annotatedString.text)
+                )
+                is BodyBlock.Image -> BlockSnapshotEntry.ImageEntry(block.path)
+            }
         }
+        val focusedIdx = blocks.indexOfFirst { it.id == focusedBlockId }
+        val (focusedEntryIdx, cursorOffset) = if (focusedIdx >= 0) {
+            val focused = blocks[focusedIdx]
+            if (focused is BodyBlock.Text) {
+                val rawText = focused.state.annotatedString.text
+                val rawCursor = focused.state.selection.start.coerceIn(0, rawText.length)
+                /** 光标从 raw 坐标映射到有效坐标（剥 ZWSP） */
+                val effectiveCursor = effectiveText(rawText.substring(0, rawCursor)).length
+                focusedIdx to effectiveCursor
+            } else {
+                /** 聚焦在 Image 上 → 用首 Text 块、offset 0 兜底 */
+                val firstTextIdx = blocks.indexOfFirst { it is BodyBlock.Text }
+                if (firstTextIdx >= 0) firstTextIdx to 0 else -1 to -1
+            }
+        } else {
+            /** 无聚焦块 → 用首 Text 块、offset 0 */
+            val firstTextIdx = blocks.indexOfFirst { it is BodyBlock.Text }
+            if (firstTextIdx >= 0) firstTextIdx to 0 else -1 to -1
+        }
+        return BlockSnapshot(entries, focusedEntryIdx, cursorOffset)
     }
 
-    /** 块级撤销：回到上一次结构变更前，并把光标恢复到快照记录的位置。返回是否执行了撤销 */
+    /** 按 [snapshot.entries] 精确重建块列表（**保留空 Text 块**，markdown 做不到这点） */
+    private fun restoreFromSnapshot(snapshot: BlockSnapshot) {
+        blocks.clear()
+        snapshot.entries.forEach { entry ->
+            when (entry) {
+                is BlockSnapshotEntry.TextEntry -> {
+                    /** 空 effectiveText = 空 Text 块（createTextBlock("") 走 ZWSP 分支）；
+                     *  非空走 setMarkdown 分支（state 不带 ZWSP，与原一致） */
+                    blocks += if (entry.effectiveText.isEmpty()) {
+                        createTextBlock("")
+                    } else {
+                        createTextBlock(entry.effectiveText)
+                    }
+                }
+                is BlockSnapshotEntry.ImageEntry -> {
+                    blocks += BodyBlock.Image(newBodyBlockId(), entry.path)
+                }
+            }
+        }
+        ensureTextBlock()
+        focusedBlockId = null
+        highlightedBlockId = null
+        onDocChanged?.invoke()
+    }
+
+    /** 块级撤销：按结构快照重建块列表，并恢复光标 */
     fun undoBlocks(): Boolean {
         val snapshot = blockUndoStack.removeLastOrNull() ?: return false
         blockRedoStack.addLast(captureCurrentSnapshot())
-        initialize(snapshot.markdown)
+        restoreFromSnapshot(snapshot)
         restoreCursor(snapshot)
         canUndoBlocks = blockUndoStack.isNotEmpty()
         canRedoBlocks = true
         return true
     }
 
-    /** 块级重做。返回是否执行了重做 */
+    /** 块级重做 */
     fun redoBlocks(): Boolean {
         val snapshot = blockRedoStack.removeLastOrNull() ?: return false
         blockUndoStack.addLast(captureCurrentSnapshot())
-        initialize(snapshot.markdown)
+        restoreFromSnapshot(snapshot)
         restoreCursor(snapshot)
         canUndoBlocks = true
         canRedoBlocks = blockRedoStack.isNotEmpty()
@@ -636,19 +669,17 @@ class BodyBlocksController(
     }
 
     /**
-     * 在重建后的块列表里找到 [snapshot.focusedText] 匹配的第一个 Text 块，
-     * 把光标设回 [snapshot.cursorOffset]。匹配失败兜底为首 Text 块 + 0。
+     * 在重建后的块列表里找到 [snapshot.focusedEntryIndex] 处的 Text 块，
+     * 把光标设回 [snapshot.cursorOffset]。索引越界或该 entry 不是 Text → 兜底首 Text 块 + 0。
      */
     private fun restoreCursor(snapshot: BlockSnapshot) {
-        val target = if (snapshot.focusedText.isNotEmpty()) {
-            blocks.firstOrNull {
-                it is BodyBlock.Text &&
-                    effectiveText(it.state.annotatedString.text) == snapshot.focusedText
-            } as? BodyBlock.Text
-        } else {
-            null
+        val idx = snapshot.focusedEntryIndex
+        if (idx < 0 || idx >= blocks.size) {
+            focusFirstTextBlock()
+            return
         }
-        if (target == null) {
+        val target = blocks[idx]
+        if (target !is BodyBlock.Text) {
             focusFirstTextBlock()
             return
         }
@@ -659,7 +690,7 @@ class BodyBlocksController(
         pendingFocusOffset = snapshot.cursorOffset.coerceIn(0, effLen)
     }
 
-    /** 撤销/重做后把焦点落到第一个 Text 块（兜底路径）。当前 undo/redo 主路径走 [restoreCursor]。 */
+    /** 兜底：把焦点落到第一个 Text 块。 */
     private fun focusFirstTextBlock() {
         val firstText = blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text ?: return
         pendingFocusId = firstText.id
