@@ -184,6 +184,9 @@ class BodyBlocksController(
 
     fun createTextBlock(markdown: String): BodyBlock.Text {
         val state = RichTextState()
+        /** v2026-09-01 两类互斥配套：禁用库默认 500ms 合并窗口，每个字符都是独立 undo group，
+         *  否则用户连打"abc"在 500ms 内会被合并成 1 个 group，undo 一次就把整段全删了——不是逐字回退 */
+        state.history.coalesceWindowMs = 0L
         registerTriggers(state)
         if (markdown.isNotEmpty()) {
             state.setMarkdown(markdown)
@@ -583,6 +586,12 @@ class BodyBlocksController(
         if (blockUndoStack.lastOrNull()?.entries != snapshot.entries) {
             blockUndoStack.addLast(snapshot)
             if (blockUndoStack.size > maxBlockHistory) blockUndoStack.removeFirst()
+            /** v2026-09-01 两类互斥：结构变更后清空所有 Text 块的 history，
+             *  文本 undo 不能跨过结构变更（用户在 Text("12") 里打 "x" → 插图 → 撤销块级，
+             *  不能继续撤销"x"，因为 history 已被清空） */
+            blocks.forEach { block ->
+                if (block is BodyBlock.Text) block.state.history.clear()
+            }
         }
         blockRedoStack.clear()
         canUndoBlocks = blockUndoStack.isNotEmpty()
