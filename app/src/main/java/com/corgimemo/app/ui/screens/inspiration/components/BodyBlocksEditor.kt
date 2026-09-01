@@ -527,17 +527,30 @@ class BodyBlocksController(
         onDocChanged?.invoke()
     }
 
-    // ---------- 块级撤销 / 重做（整篇 markdown 快照栈） ----------
+    // ---------- 块级撤销 / 重做（整篇 markdown + 光标快照栈） ----------
 
     /**
-     * 结构变更（插图 / 拆块 / 合并 / 删块 / 重排）用整篇 markdown 快照做撤销：
-     * - 每次结构操作前 [pushBlockSnapshot] 压入当前整篇 markdown；
-     * - undo/redo 用快照重建块列表（[initialize]），天然回到操作前状态；
-     * - 纯文本输入不推快照（由各块内 RichTextState.history 覆盖），
-     *   两类撤销互不干扰：一次操作要么是输入、要么是结构变更。
+     * v2026-09-01 修订（撤销时光标位置）：
+     * 旧快照是纯 markdown 字符串，undo/redo 后只 `focusFirstTextBlock()` → 永远回到
+     * 第一个 Text 块 offset 0，丢失了用户操作前的光标位置（多选相册批量插图场景下
+     * 撤销后光标跑到"12"最左端而非 1和2 之间）。
+     *
+     * 现在快照升级成 [BlockSnapshot]：
+     * - `markdown` — 整篇文本（含图片语法），用于 [BodyBlocksController.initialize]
+     * - `focusedText` — 快照时刻聚焦块的**有效文本**（剥 \U200B），用来在新块列表里匹配同块
+     * - `cursorOffset` — 块内光标偏移（raw text 坐标，含 \U200B；新块的 state 也有 \U200B 所以一致）
+     *
+     * undo/redo 时调用 [restoreCursor]，在重建后的块列表里找 `focusedText` 匹配的第一个
+     * Text 块，把光标设回 `cursorOffset`。多个块文本相同时取首个（罕见兜底）。
      */
-    private val blockUndoStack = ArrayDeque<String>()
-    private val blockRedoStack = ArrayDeque<String>()
+    private data class BlockSnapshot(
+        val markdown: String,
+        val focusedText: String,
+        val cursorOffset: Int,
+    )
+
+    private val blockUndoStack = ArrayDeque<BlockSnapshot>()
+    private val blockRedoStack = ArrayDeque<BlockSnapshot>()
     private val maxBlockHistory = 50
 
     var canUndoBlocks by mutableStateOf(false)
@@ -545,11 +558,11 @@ class BodyBlocksController(
     var canRedoBlocks by mutableStateOf(false)
         private set
 
-    /** 结构变更前调用：压入当前整篇 markdown（与栈顶相同则跳过） */
+    /** 结构变更前调用：压入当前整篇 markdown + 光标信息（与栈顶相同则跳过） */
     private fun pushBlockSnapshot() {
-        val md = toMarkdown()
-        if (blockUndoStack.lastOrNull() != md) {
-            blockUndoStack.addLast(md)
+        val snapshot = captureCurrentSnapshot()
+        if (blockUndoStack.lastOrNull()?.markdown != snapshot.markdown) {
+            blockUndoStack.addLast(snapshot)
             if (blockUndoStack.size > maxBlockHistory) blockUndoStack.removeFirst()
         }
         blockRedoStack.clear()
@@ -557,12 +570,33 @@ class BodyBlocksController(
         canRedoBlocks = false
     }
 
-    /** 块级撤销：回到上一次结构变更前。返回是否执行了撤销 */
+    /** 捕获当前状态（整篇 markdown + 当前聚焦块文本/光标）作为快照 */
+    private fun captureCurrentSnapshot(): BlockSnapshot {
+        val md = toMarkdown()
+        val focused = blocks.firstOrNull { it.id == focusedBlockId } as? BodyBlock.Text
+        return if (focused != null) {
+            BlockSnapshot(
+                markdown = md,
+                focusedText = effectiveText(focused.state.annotatedString.text),
+                cursorOffset = focused.state.selection.start,
+            )
+        } else {
+            /** 无聚焦块（首次进入 / 聚焦在 Image 上）→ 用首 Text 块、offset 0 */
+            val firstText = blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text
+            BlockSnapshot(
+                markdown = md,
+                focusedText = firstText?.let { effectiveText(it.state.annotatedString.text) } ?: "",
+                cursorOffset = 0,
+            )
+        }
+    }
+
+    /** 块级撤销：回到上一次结构变更前，并把光标恢复到快照记录的位置。返回是否执行了撤销 */
     fun undoBlocks(): Boolean {
         val snapshot = blockUndoStack.removeLastOrNull() ?: return false
-        blockRedoStack.addLast(toMarkdown())
-        initialize(snapshot)
-        focusFirstTextBlock()
+        blockRedoStack.addLast(captureCurrentSnapshot())
+        initialize(snapshot.markdown)
+        restoreCursor(snapshot)
         canUndoBlocks = blockUndoStack.isNotEmpty()
         canRedoBlocks = true
         return true
@@ -571,15 +605,36 @@ class BodyBlocksController(
     /** 块级重做。返回是否执行了重做 */
     fun redoBlocks(): Boolean {
         val snapshot = blockRedoStack.removeLastOrNull() ?: return false
-        blockUndoStack.addLast(toMarkdown())
-        initialize(snapshot)
-        focusFirstTextBlock()
+        blockUndoStack.addLast(captureCurrentSnapshot())
+        initialize(snapshot.markdown)
+        restoreCursor(snapshot)
         canUndoBlocks = true
         canRedoBlocks = blockRedoStack.isNotEmpty()
         return true
     }
 
-    /** 撤销/重做后把焦点落到第一个 Text 块，避免光标丢失 */
+    /**
+     * 在重建后的块列表里找到 [snapshot.focusedText] 匹配的第一个 Text 块，
+     * 把光标设回 [snapshot.cursorOffset]。匹配失败兜底为首 Text 块 + 0。
+     */
+    private fun restoreCursor(snapshot: BlockSnapshot) {
+        val target = if (snapshot.focusedText.isNotEmpty()) {
+            blocks.firstOrNull {
+                it is BodyBlock.Text &&
+                    effectiveText(it.state.annotatedString.text) == snapshot.focusedText
+            } as? BodyBlock.Text
+        } else {
+            null
+        }
+        if (target == null) {
+            focusFirstTextBlock()
+            return
+        }
+        pendingFocusId = target.id
+        pendingFocusOffset = snapshot.cursorOffset.coerceIn(0, target.state.annotatedString.text.length)
+    }
+
+    /** 撤销/重做后把焦点落到第一个 Text 块（兜底路径）。当前 undo/redo 主路径走 [restoreCursor]。 */
     private fun focusFirstTextBlock() {
         val firstText = blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text ?: return
         pendingFocusId = firstText.id
