@@ -44,6 +44,32 @@ import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import sh.calvin.reorderable.ReorderableItem
 
+// ==================== 零宽字符（用于软键盘空块退格检测） ====================
+
+/**
+ * v2026-09-01 新增（软键盘空块退格修复）：
+ *
+ * **问题**：软键盘在空 Text 块上按退格，IME 调用 `deleteSurroundingText(1, 0)`，
+ * 但 text/selection 都不变 → snapshotFlow 不发射 → observer 触发不到
+ * `onBackspaceAtStart`。硬键盘走 `onPreviewKeyEvent` 不受此限。
+ *
+ * **解法**：逻辑空块预置一个零宽字符 U+200B，让退格能产生一次
+ * "ZWSP → \"\" 状态变化"供 observer 捕获，再走原 onBackspaceAtStart 路径。
+ *
+ * **状态不变量**（由 [BodyBlocksEditor] 的 LaunchedEffect 强制维持）：
+ * - 逻辑空块：`state.text == ZWSP`，光标在 (1, 1)
+ * - 逻辑非空块：`state.text == "<content>"`（不含 ZWSP；不在运行期强制追加）
+ * - 任何 `setText(ZWSP)` 都会丢失内容，所以只能对真正空的（""）调用
+ *
+ * **输出剥**：toMarkdown / plainText / 高度 / 占位符判断都要看"有效文本"
+ * （剥掉 ZWSP 后再判断），不让 ZWSP 泄漏到 markdown/UI 文本。
+ */
+private const val ZWSP = "\u200B"
+private fun effectiveText(text: String): String = text.replace(ZWSP, "")
+private fun isEffectivelyEmpty(text: String): Boolean = effectiveText(text).isEmpty()
+private fun isEffectivelyEmpty(state: RichTextState): Boolean =
+    isEffectivelyEmpty(state.annotatedString.text)
+
 /**
  * 路线 4（v2026-09-01）：块级图片编辑器（图文交错）
  *
@@ -159,7 +185,13 @@ class BodyBlocksController(
     fun createTextBlock(markdown: String): BodyBlock.Text {
         val state = RichTextState()
         registerTriggers(state)
-        if (markdown.isNotEmpty()) state.setMarkdown(markdown)
+        if (markdown.isNotEmpty()) {
+            state.setMarkdown(markdown)
+        } else {
+            /** 空块预置 ZWSP + 光标 (1, 1)：让软键盘退格能产生状态变化被 observer 捕获 */
+            state.setText(ZWSP)
+            state.selection = TextRange(1)
+        }
         return BodyBlock.Text(newBodyBlockId(), state)
     }
 
@@ -194,7 +226,8 @@ class BodyBlocksController(
     fun toMarkdown(): String =
         blocks.mapNotNull { block ->
             when (block) {
-                is BodyBlock.Text -> block.state.toMarkdown()
+                /** 剥掉空块预置的 ZWSP，保证 markdown 往返不带噪音 */
+                is BodyBlock.Text -> block.state.toMarkdown().replace(ZWSP, "")
                 is BodyBlock.Image -> "![](${block.path})"
             }
         }.filter { it.isNotBlank() }
@@ -203,7 +236,7 @@ class BodyBlocksController(
     /** 纯文本（字数统计 / 复制全文 / 同步 _content 用） */
     fun plainText(): String =
         blocks.filterIsInstance<BodyBlock.Text>()
-            .joinToString("\n") { it.state.annotatedString.text }
+            .joinToString("\n") { effectiveText(it.state.annotatedString.text) }
 
     // ---------- 兼容层：原单编辑器状态 → 聚焦块状态 ----------
 
@@ -561,7 +594,7 @@ class BodyBlocksController(
         if (idx < 0) return
 
         if (idx == 0) {
-            if (block.state.annotatedString.text.isEmpty()) {
+            if (isEffectivelyEmpty(block.state)) {
                 pushBlockSnapshot()
                 blocks.removeAt(0)
                 /** invariant: 至少一个 Text 块——若列表空了，重新加一个空块 */
@@ -777,6 +810,9 @@ private fun BlockTextItem(
      * 变更观察者（软键盘无按键事件，全部靠状态差分）：
      * 1. 块内出现 `\n` → 按段落拆块（Enter / 粘贴多行）
      * 2. 文本变短且退格前光标折叠在块首 → 与前一块合并 / 高亮前一个图片块
+     * 3. **v2026-09-01 新增**：空块软键盘退格（state 由 ZWSP 唯一变成 ""）
+     *    → 走 [BodyBlocksController.onBackspaceAtStart]；配合末尾的 ZWSP 不变量
+     *    维护 LaunchedEffect，软键盘场景也能删除空块。
      */
     LaunchedEffect(block.id) {
         var lastText = state.annotatedString.text
@@ -795,6 +831,21 @@ private fun BlockTextItem(
                     lastText.isNotEmpty() && text == lastText.drop(1) &&
                         lastSelection.collapsed && lastSelection.start == 0 ->
                         controller.onBackspaceAtStart(block)
+                    /** 空块软键盘退格：IME 在 ZWSP 唯一态调用 deleteSurroundingText
+                     *  把 ZWSP 删掉，text 变 "" → 走 onBackspaceAtStart（与硬键盘同路径） */
+                    lastText == ZWSP && text == "" ->
+                        controller.onBackspaceAtStart(block)
+                }
+                /** ZWSP 不变量维护：空块恢复 \u200B + 光标 (1, 1)，否则软键盘退格下一次又无法检测。
+                 *  注意：observer 条件检查必须在 setText 之前——否则 setText 让 text 从 "" 变 "\u200B"
+                 *  时，下一轮 collect 用 lastText == ZWSP 判断就漏判了（lastText 此时还是 ""）。 */
+                if (text.isEmpty()) {
+                    state.setText(ZWSP)
+                    state.selection = TextRange(1)
+                } else if (text == ZWSP && selection.start == 0) {
+                    /** 用户点击到 (0, 0)（ZWSP 之前），重置回 (1, 1) 让下一次退格能起作用。
+                     *  （0, 0）/ (1, 1) 对 \u200B 视觉都在「块起始」位置，不会有可见跳动。） */
+                    state.selection = TextRange(1)
                 }
                 lastText = text
                 lastSelection = selection
@@ -828,7 +879,7 @@ private fun BlockTextItem(
             modifier = Modifier
                 .weight(1f)
                 .heightIn(
-                    min = if (controller.blocks.size == 1 && state.annotatedString.text.isEmpty()) {
+                    min = if (controller.blocks.size == 1 && isEffectivelyEmpty(state)) {
                         160.dp
                     } else {
                         /** 非初始空块：由 minLines=1 兜底一行高，不强制更大 */
@@ -875,7 +926,7 @@ private fun BlockTextItem(
                         else -> false
                     }
                 },
-            placeholder = if (controller.blocks.size == 1 && state.annotatedString.text.isEmpty()) {
+            placeholder = if (controller.blocks.size == 1 && isEffectivelyEmpty(state)) {
                 {
                     Text(
                         text = "请在这里输入内容...",
