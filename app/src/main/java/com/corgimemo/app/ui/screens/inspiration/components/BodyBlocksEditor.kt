@@ -223,10 +223,17 @@ class BodyBlocksController(
     /**
      * 在当前聚焦块的光标处插入图片并拆块。
      *
-     * - 聚焦块是 Text → 用库的 insertMarkdownAfterSelection 在光标处插入
-     *   `![](path)`，随后把该块 markdown 重解析为 [Text, Image, Text]（自然拆分）；
+     * - 聚焦块是 Text → 调用库专用的 [RichTextState.insertImage]，
+     *   它手工构造一个带 ▢ 占位的 Image 段，并把原段落拆成 [前半段, Image段, 后半段]。
+     *   之后用整篇 markdown 重解析，得到 [Text, Image, Text] 三块序列；
      * - 聚焦块是 Image 或从未聚焦 → 插到列表末尾（末尾 Text 块之前）。
      * 插入后焦点移到图片后的第一个 Text 块。
+     *
+     * **不要用 `insertMarkdownAfterSelection("![](path)")`**：
+     * 库的 markdown encoder 对空 alt 的 `![](path)` 走 `onText("")` 后立即
+     * early-return，跳过 `text = ▢` 的赋值，导致 Image span text 为空、
+     * toMarkdown → parseMarkdownSegments 拆块错位，表现为 "图片后" 丢失 "后"字、
+     * 出现 ▢ 占位字符。
      */
     fun insertImageAtFocused(path: String) {
         pushBlockSnapshot()
@@ -242,7 +249,14 @@ class BodyBlocksController(
         when (val focused = blocks[focusedIdx]) {
             is BodyBlock.Image -> insertImageAtEnd(path)
             is BodyBlock.Text -> {
-                focused.state.insertMarkdownAfterSelection("![]($path)")
+                @OptIn(ExperimentalRichTextApi::class)
+                focused.state.insertImage(model = path)
+                /**
+                 * insertImage 已在 richParagraphList 拆出 [前半段, Image段, 后半段]，
+                 * toMarkdown 输出形如 "图片前\n![](path)\n图片后"（段间用 \n），
+                 * parseMarkdownSegments 仍能正确切出 ImageSeg，剩下的文本段含 \n
+                 * 也由 split("\n\n") + trim('\n') 安全处理。
+                 */
                 replaceBlockWithParsed(focusedIdx, focused.state.toMarkdown(), focused.state.selection.start)
             }
         }

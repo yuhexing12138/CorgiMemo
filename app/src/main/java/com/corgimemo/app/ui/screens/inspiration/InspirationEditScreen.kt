@@ -148,29 +148,9 @@ import java.util.Locale
 /** 内容块定义已提取至 com.corgimemo.app.ui.model.ContentBlock（公共模块），通过 import 复用 */
 
 /**
- * v2026-08-30：插入「内联图片」到正文（编辑态内联渲染方案）
- *
- * 本项目已对 compose-rich-editor 库做了内联渲染改造（参见
- * compose-rich-editor/ui/InlineImageOverlay.kt 中的 drawInlineImages），
- * 编辑态走覆盖层绘制真实位图 + 把位图尺寸写回 Image span 让段落 lineHeight 撑高。
- *
- * **v2026-08-31 末次修复（连续多张图重叠）**：
- * 早期版本用 `addRichSpan + addText` 模式创建 Image span，
- * addText("\n") 让 Image span 的 text 字段 = "\n"。
- * 然而 Image.appendCustomContent 不 append(richSpan.text)，
- * 渲染时只输出 inline-content placeholder（U+FFFD 占位符）。
- * raw text 中的 "\n" 在 annotatedString 中被替换为 placeholder，
- * **layout 不会把它当换行处理**，连续插入多张图片时两张图挤在同一行 →
- * lineTop 重叠 → 视觉上叠在同一位置。
- *
- * markdown parser 解析 `![](path)` 时把 image span 的 text 设为 "\uFFFD"
- * （见 RichTextStateMarkdownParser.kt："Image owns a single placeholder
- * char in the raw text so span textRanges line up with the rendered
- * annotated string"）。raw text 字符 = U+FFFD，rendered = U+FFFD + inline-content，
- * **字符值一致**，offset 1-to-1 映射正确。
- *
- * **v2026-09-01 路线 4 已废弃**：图片改为块级（BodyBlocksController.insertImageAtFocused），
- * 本函数（insertBlockImage 内联插入）已被删除，此处保留注释说明历史原因。
+ * v2026-09-01 路线 4：图片已改为**块级**（BodyBlocksController.insertImageAtFocused）。
+ * 本注释块原本挂在已删除的 `insertBlockImage`（路线 2 内联图片方案）上方，
+ * 路线 4 不再涉及内联渲染与 ▢ 占位字符，故整段删除。
  */
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalRichTextApi::class)
