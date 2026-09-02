@@ -21,8 +21,17 @@ import androidx.compose.ui.text.font.FontWeight
  */
 internal object FontWeightProbe {
 
-    /** 探测使用的样例文字（同时含横/竖/曲线笔画，放大对比差异） */
-    private const val SAMPLE_TEXT = "HwgAgyQ"
+    /**
+     * 探测结果缓存：以「排序后的候选字重列表」为键，整进程内只真实绘制一次位图。
+     * 工具栏每次重组（打字 / 选区变化 / 展开动画帧）都会调用 [distinctWeights]，
+     * 命中缓存即可直接返回，避免重复离屏位图渲染开销。
+     * 当前仅主线程调用（工具栏 remember 内），缓存读写已在 [distinctWeights] 上
+     * 用 @Synchronized 保证 check-then-put 原子，若日后改为后台线程计算也不会并发写坏。
+     */
+    private val cache = LinkedHashMap<List<Int>, Set<Int>>()
+
+    /** 探测使用的样例文字（同时含中文与拉丁字符：中文覆盖用户真实输入内容、拉丁含横/竖/曲线笔画，放大对比差异） */
+    private const val SAMPLE_TEXT = "字重Hg"
 
     /** 探测绘制字号（框架层单位为 px，放大更易分辨字形粗细差异） */
     private const val SAMPLE_TEXT_SIZE = 64f
@@ -35,7 +44,7 @@ internal object FontWeightProbe {
     private const val TEXT_COLOR = -0x1000000 // 0xFF000000 的不透明黑
 
     /**
-     * 计算候选档位中「有独立字面」的集合。
+     * 计算候选档位中「有独立字面」的集合（带整进程缓存，每个候选列表只真实绘制一次）。
      *
      * 比较基准采用递增级联：首个候选与基准常规字重比较；其后每个候选与
      * 「上一档已确认有独立字形的位图」比较。这样若某档被量化合并进更轻的可用字面，
@@ -45,7 +54,18 @@ internal object FontWeightProbe {
      * @param baseWeight 基准常规字重（默认 400），作为首个对比基准
      * @return 真正能渲染出独立字形的字重集合
      */
+    @Synchronized
     fun distinctWeights(candidates: List<Int>, baseWeight: Int = FontWeight.Normal.weight): Set<Int> {
+        val key = candidates.sorted()
+        // 命中缓存直接返回，避免工具栏每次重组重复离屏位图渲染
+        cache[key]?.let { return it }
+        val result = computeDistinctWeights(candidates, baseWeight)
+        cache[key] = result
+        return result
+    }
+
+    /** 真实探测逻辑（见 [distinctWeights] 的缓存与级联说明） */
+    private fun computeDistinctWeights(candidates: List<Int>, baseWeight: Int): Set<Int> {
         if (candidates.isEmpty()) return emptySet()
         // 基准位图：用基准常规字重绘制，作为首个对比基准
         var lastDistinctBitmap: Bitmap = renderBitmap(baseWeight)
