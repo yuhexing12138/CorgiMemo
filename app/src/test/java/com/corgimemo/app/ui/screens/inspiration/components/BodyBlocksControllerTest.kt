@@ -17,12 +17,16 @@ import org.robolectric.annotation.Config
  * BodyBlocksController 撤销栈回归测试（方案A：自建 Command 栈 + 库内 history 两套历史隔离）。
  *
  * 覆盖两个已修复的真实用户场景：
- * 1. 「插入图片后撤销 → 撤销键变灰、无法继续撤销文字」——[takePendingFocus] 与
- *    [ReplaceBlocksCommand] 暂存并原样还原原始块对象（保留块内 history）的修复；
- * 2. 「撤销图片后光标跑到『一』左边（offset 0）」——[pendingFocus] 取走即清空、
- *    焦点偏移原子落地的修复。
+ * 1. 「插入图片后撤销 → 撤销键变灰、无法继续撤销文字」——[ReplaceBlocksCommand]
+ *    暂存并原样还原原始块对象（保留块内 history）的修复；
+ * 2. 「撤销图片后光标跑到『一』左边」——根因是 [currentFocusSpec] 把光标存成了
+ *    **有效坐标**（剥 ZWSP 后长度），而所有落点还原入口都把 offset 当**原始坐标**
+ *    直接写进 selection；对带前导 ZWSP 的真实打字块（\u200B一二），effective 1 ≠ raw 1，
+ *    于是还原后落点变成「ZWSP 与『一』之间 = 『一』左边」。修复：统一 [FocusSpec.offset]
+ *    为 raw 坐标（[currentFocusSpec] 直接存 raw 光标）。
  *
- * 测试通过公开/内部 API 复刻真实交互：逐字输入产生带历史的块、移动光标、插入图片、撤销。
+ * 特别注意：本类特意保留一条「**直接打字**产生带前导 ZWSP 的块」的用例——否则用
+ * setText 重建的块无 ZWSP、effective==raw，旧 bug 代码反而能蒙混过关，测不出真 bug。
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -152,5 +156,44 @@ class BodyBlocksControllerTest {
         assertEquals("撤销后焦点应落在一/二之间（偏移 1），而非『一』左边（偏移 0）",
             1, controller.pendingFocus?.offset)
         assertEquals(a.id, controller.pendingFocus?.blockId)
+    }
+
+    // ==================== Bug 2（真场景）：带前导 ZWSP 的打字块 ====================
+
+    /**
+     * 复刻真实打字场景：不调 setText（那会清掉 ZWSP），而是直接在控制器自带、
+     * 预置了 ZWSP 的初始空块上逐字输入，得到与用户真实一致的「\u200B一二」块。
+     *
+     * 场景：type 一二 → 光标移到「一」「二」之间（raw 偏移 = 2，ZWSP 占 1 位）
+     *       → 插图片 → 撤销一次。
+     *
+     * 预期（修复后）：[BodyBlocksController.pendingFocus] 的 offset == 2（raw，一/二之间），
+     * 而非 1（旧「有效坐标」误算，落到 ZWSP 与『一』之间 = 『一』左边）。
+     *
+     * 这条用例用带 ZWSP 的块，才是触发并验证 Bug 2 真根因（effective≠raw）的用例；
+     * 上方无 ZWSP 的用例即便在修复前也会通过，不足以证明修复有效。
+     */
+    @Test
+    fun `带ZWSP的真实打字块，撤销图片后焦点落一/二之间 raw偏移`() {
+        val a = controller.blocks.first() as Text
+        // 直接在预置 ZWSP 的初始块上打字 → \u200B一二（保留前导 ZWSP，贴近真实）
+        "一二".forEach { a.state.addTextAfterSelection(it.toString()) }
+        assertTrue("打字块应保留前导 ZWSP（\u200B一二），否则无法复现该 bug",
+            a.state.annotatedString.text.startsWith('\u200B'))
+        // 光标移到「一」「二」之间：\u200B 一 二 → raw 偏移 2
+        a.state.selection = androidx.compose.ui.text.TextRange(2)
+        controller.focusSpec(FocusSpec(a.id, 2))
+
+        controller.insertImageAtFocused("/fake/image.png")
+        controller.undo()
+
+        assertNotNull(controller.pendingFocus)
+        assertEquals(a.id, controller.pendingFocus?.blockId)
+        assertEquals(
+            "撤销后焦点应落在「一」「二」之间（raw 偏移 2，含 ZWSP 1 位），而非『一』左边（偏移 1）",
+            2, controller.pendingFocus?.offset
+        )
+        // 还原块的 selection 也应是 raw 2（一/二之间），而非 raw 1（一左边）
+        assertEquals(2, a.state.selection.start)
     }
 }

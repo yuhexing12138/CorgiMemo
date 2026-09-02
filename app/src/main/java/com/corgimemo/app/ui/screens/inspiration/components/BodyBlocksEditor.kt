@@ -1036,14 +1036,26 @@ class BodyBlocksController(
         if (highlightedBlockId != null) highlightedBlockId = null
     }
 
-    /** 捕获当前焦点落点（Command 构造时的 focusBefore） */
+    /**
+     * 捕获当前焦点落点（Command 构造时的 focusBefore / focusAfter）。
+     *
+     * **返回原始坐标（raw offset，直接索引 [RichTextState.annotatedString.text]）**。
+     * 这是 [FocusSpec.offset] 的统一语义——[applyFocusAndCursor]、[focusSpec]、
+     * 以及 [BlockTextItem] 的 [LaunchedEffect] 都把 offset 当 raw 直接写进
+     * [RichTextState.selection]。
+     *
+     * 关键 bug 来源（见方案A撤销回归 #2）：之前这里把光标「映射到有效坐标
+     * （effectiveText(...).length，剥 ZWSP）」再存储。但对直接打字产生的块
+     * （如 \u200B一二，带前导 ZWSP），effective 1 ≠ raw 1——还原时把「有效 1」当
+     * raw 1 写进 selection，落点变成「ZWSP 与『一』之间 = 『一』左边」，撤销图片后
+     * 光标错位。改为直接存 raw 坐标，落点即用户真实的光标位置。
+     */
     private fun currentFocusSpec(): FocusSpec? {
         val focusKey = focusedBlockId ?: pendingFocus?.blockId ?: return null
         val focused = blocks.firstOrNull { it.id == focusKey } as? BodyBlock.Text ?: return null
         val rawText = focused.state.annotatedString.text
         val rawCursor = focused.state.selection.start.coerceIn(0, rawText.length)
-        /** 光标从 raw 坐标映射到有效坐标（剥 ZWSP） */
-        return FocusSpec(focused.id, effectiveText(rawText.substring(0, rawCursor)).length)
+        return FocusSpec(focused.id, rawCursor)
     }
 
     /** 按落点描述恢复焦点与光标（Command 的 focusBefore / focusAfter 落地） */
@@ -1053,12 +1065,16 @@ class BodyBlocksController(
             focusFirstTextBlock()
             return
         }
-        val effLen = effectiveText(target.state.annotatedString.text).length
-        applyFocusAndCursor(target, spec.offset.coerceIn(0, effLen))
+        /** offset 是 raw 坐标（索引 annotatedString.text）；按 raw 长度夹取而非有效长度 */
+        val rawLen = target.state.annotatedString.text.length
+        applyFocusAndCursor(target, spec.offset.coerceIn(0, rawLen))
     }
 
     /**
-     * 把焦点与光标**同步**落到 [target] 的 [offset]（有效文本坐标）。
+     * 把焦点与光标**同步**落到 [target] 的 [offset]。
+     *
+     * [offset] 的语义是**原始坐标（raw）**——直接索引进 [target.state.annotatedString.text]，
+     * 与 [FocusSpec.offset] 的统一定义一致（[currentFocusSpec] 也返回 raw）。
      *
      * 三处一起写，缺一不可：
      * 1. [pendingFocus]（[FocusSpec]，原子打包块 id + 偏移）——供块 Composable 的
@@ -1067,17 +1083,17 @@ class BodyBlocksController(
      *    读到过期的 offset（把已设好的光标覆盖成 0）；
      * 2. [focusedBlockId]——undo/redo 后的命令焦点依赖它定位焦点块，
      *    为 null 会导致 [currentFocusSpec] 捕获到错误落点；
-     * 3. [RichTextState.selection]——同步读取（如 [focusSpec] 的 coerce 上界）
-     *    需要立即生效的值，等异步则会读到初始 selection。
+     * 3. [RichTextState.selection]——同步写入（避免 [focusSpec] 后续 coerce 上界异步读到初始值）；
+     *    只改 selection 不改 text，不会触发 BlockTextItem observer 的结构检测
+     *    （markdown 不含光标信息）；重放期间 [replaying] 亦为 true。
      *
-     * 只改 selection 不改 text，不会触发 BlockTextItem observer 的结构检测
-     * （markdown 不含光标信息）；重放期间 [replaying] 亦为 true。
+     * 空块（text = ZWSP）由块内 ZWSP 维护 [LaunchedEffect] 兜底推到 (1, 1)；
+     * 非空块带前导 ZWSP（如直接打字产生的 \u200B一二）时，raw offset 已正确表达
+     * 「ZWSP 之后的真实位置」，无需再做有效/原始换算。
      */
     private fun applyFocusAndCursor(target: BodyBlock.Text, offset: Int) {
         pendingFocus = FocusSpec(target.id, offset)
         focusedBlockId = target.id
-        /** 与 BlockTextItem 消费 pendingFocus.offset 的口径保持一致：有效坐标直接作为 raw 偏移，
-         *  空块（text = ZWSP）由块内 ZWSP 维护 LaunchedEffect 兜底推到 (1, 1) */
         val rawLen = target.state.annotatedString.text.length
         target.state.selection = TextRange(offset.coerceIn(0, rawLen))
     }
