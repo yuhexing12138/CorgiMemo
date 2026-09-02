@@ -17,7 +17,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -29,6 +28,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -102,6 +103,20 @@ private const val IMAGE_PLACEHOLDER_CHAR = '\uFFFD'
  *
  * 数据库（content_blocks 表）与共享模型（ContentBlock）零改动：
  * content_blocks 继续由保存链路 saveInlineMediaBlocks 从 markdown 反解析维护。
+ *
+ * ## 撤销架构（v2026-09-02 方案A：自建 Command 命令栈，两套历史隔离）
+ *
+ * - **全局 Command 栈**（[BodyBlocksController.undoCommands] / [redoCommands]）：
+ *   只存操作增量 [BodyBlocksCommand]，不存全量快照——管块的增删、拖拽排序、
+ *   图片块属性编辑。controller 持有在 ViewModel（[InspirationEditViewModel]），
+ *   屏幕旋转不丢历史。
+ * - **块内富文本 history**（compose-rich-editor 自带 `RichTextState.history`）：
+ *   每个Text块的打字 / 加粗 / 样式自己管自己，**不进全局栈**——避免每敲一个字
+ *   把整个块列表压栈。
+ * - **统一调度**（[BodyBlocksController.undo] / [redo]，焦点判断是核心）：
+ *   聚焦块（未聚焦时回退首 Text 块）的 `history.canUndo` 非空 → 先回退块内文字；
+ *   块内回退完（或本就为空）→ 走全局 Command 栈。这样按撤销时行为可预期：
+ *   时而回退文字、时而回退块操作，但两者不会互相干扰。
  */
 
 // ==================== 块模型（UI 层，不影响共享的 ContentBlock） ====================
@@ -123,6 +138,160 @@ sealed class BodyBlock {
         override val id: String,
         val path: String,
     ) : BodyBlock()
+}
+
+// ==================== Command 体系（方案A：增量命令，不存全量快照） ====================
+
+/**
+ * 块的可重建描述——Command 的载荷。
+ *
+ * **绝不持有 Bitmap / 富文本 state 等重量级对象**（方案A坑点2）：
+ * Text 只存 markdown 字符串，Image 只存 uri（path）——将来图片属性三件套
+ * （裁剪 cropRect / 备注 note / 缩放 displayWidthRatio）落地时，沿用本模式
+ * 把字段加进 [ImageSpec] 即可，Command 的重建逻辑不用动。
+ */
+sealed class BlockSpec {
+    abstract val id: String
+
+    /** Text 块：markdown 剥过 ZWSP（见 [BodyBlocksController.blockMarkdown]） */
+    data class TextSpec(override val id: String, val markdown: String) : BlockSpec()
+
+    /** Image 块：只有 uri 路径 */
+    data class ImageSpec(override val id: String, val path: String) : BlockSpec()
+}
+
+/** 焦点落点描述：块 id + 块内有效文本偏移（剥 ZWSP 的坐标系） */
+data class FocusSpec(val blockId: String, val offset: Int)
+
+/**
+ * 块文档操作命令：`apply` = 执行（首次执行与 redo 重放共用），`revert` = 撤销。
+ *
+ * 设计约定：
+ * - 命令携带"操作前/后"的块描述（[BlockSpec]）与焦点（[FocusSpec]），
+ *   通过 [controller] 提供的重建辅助落盘，自身不直接触碰 Composable；
+ * - **redo 可达 ⇒ 各块当前内容 == 上次全局操作结束时的内容**（新编辑会清
+ *   redo 栈，见 observer），因此重放记录的 spec 是安全的；
+ * - undo 的对称语义由 Command 栈保证：revert 面对的列表 == 该命令 apply 后
+ *   的列表（中间的命令已全部回退）。
+ */
+sealed interface BodyBlocksCommand {
+    fun apply(controller: BodyBlocksController)
+    fun revert(controller: BodyBlocksController)
+}
+
+/**
+ * 区间替换命令：把 `[index, index + removedSpecs.size)` 的块替换为
+ * `insertedSpecs` 重建的块——覆盖块级操作的全部形态：
+ *
+ * - 插图拆块：removed = [源Text]，inserted = [前半Text, Image, 后半Text]
+ * - Enter 拆块：removed = [源Text(全文)]，inserted = [源Text(前半, 同id), 后半Text]
+ * - 粘贴多行归一化：removed = [源Text]，inserted = [N 个段落 Text]
+ * - 退格合并：removed = [前Text, 后Text]，inserted = [前Text(合并后, 同id)]
+ * - 删除图片块 / 首空块退格删除：removed = [目标块]，inserted = []
+ */
+class ReplaceBlocksCommand(
+    /** 被替换区间在 apply 前列表中的锚定索引 */
+    val index: Int,
+    /** 操作前的块描述（revert 的恢复目标） */
+    val removedSpecs: List<BlockSpec>,
+    /** 操作后的块描述（apply / redo 的重放目标） */
+    val insertedSpecs: List<BlockSpec>,
+    /** 操作前焦点（revert 后恢复） */
+    val focusBefore: FocusSpec?,
+    /** 操作后焦点（apply 后落点） */
+    val focusAfter: FocusSpec?,
+) : BodyBlocksCommand {
+
+    override fun apply(controller: BodyBlocksController) {
+        /** 当前列表 index 处应是"被替换区间"（首次 = removed 原状，重放 = removed 已恢复） */
+        val idx = controller.locateRangeStart(removedSpecs.firstOrNull()?.id, index)
+        controller.replaceBlockRange(idx, removedSpecs.size, insertedSpecs)
+        focusAfter?.let { controller.focusSpec(it) } ?: controller.focusFirstTextBlock()
+        controller.afterCommandMutation()
+    }
+
+    override fun revert(controller: BodyBlocksController) {
+        /** 当前列表 index 处应是"命令产物区间" */
+        val idx = controller.locateRangeStart(insertedSpecs.firstOrNull()?.id, index)
+        /**
+         * 先把产物块内未撤销的富文本编辑"显式回退到底"（drain 库内 history），
+         * 再替换——避免块级 undo 静默丢弃用户在产物块里打过的字
+         * （回退可见地发生，而非内容凭空消失）。
+         */
+        insertedSpecs.filterIsInstance<BlockSpec.TextSpec>().forEach {
+            controller.drainBlockHistory(it.id)
+        }
+        controller.replaceBlockRange(idx, insertedSpecs.size, removedSpecs)
+        focusBefore?.let { controller.focusSpec(it) } ?: controller.focusFirstTextBlock()
+        controller.afterCommandMutation()
+    }
+}
+
+/**
+ * 拖拽排序命令。
+ *
+ * **方案A坑点3**：拖拽过程中不压栈（预览由 ReorderableColumn 自行渲染），
+ * 只在 onSettle（手指抬起、落定）时由 [BodyBlocksController.moveBlock] 构造
+ * 一次本命令——一步拖拽恰好一条撤销记录。
+ *
+ * 索引防御：undo/redo 均先按 [blockId] 定位当前真实索引，再移动到目标索引；
+ * 正常路径下（栈式回退不变量）两者一致。
+ */
+class MoveBlockCommand(
+    val blockId: String,
+    val fromIndex: Int,
+    val toIndex: Int,
+) : BodyBlocksCommand {
+
+    override fun apply(controller: BodyBlocksController) {
+        controller.moveBlockById(blockId, toIndex)
+        controller.afterCommandMutation()
+    }
+
+    override fun revert(controller: BodyBlocksController) {
+        controller.moveBlockById(blockId, fromIndex)
+        controller.afterCommandMutation()
+    }
+}
+
+/**
+ * 图片块属性编辑命令（当前只有 path 可改；**暂无 UI 调用入口**，
+ * 作为将来裁剪 / 缩放 / 备注三件套的 Command 模板保留——
+ * 届时把属性集扩进 spec 即可，撤销语义不变）。
+ */
+class UpdateImageBlockCommand(
+    val blockId: String,
+    val oldPath: String,
+    val newPath: String,
+) : BodyBlocksCommand {
+
+    override fun apply(controller: BodyBlocksController) {
+        controller.updateImageBlockPath(blockId, newPath)
+        controller.afterCommandMutation()
+    }
+
+    override fun revert(controller: BodyBlocksController) {
+        controller.updateImageBlockPath(blockId, oldPath)
+        controller.afterCommandMutation()
+    }
+}
+
+/**
+ * 复合命令（方案A坑点5）：把多个原子命令打包成**一个撤销单位**——
+ * 批量插图（多选相册一次确认）、将来的批量删除等。
+ * apply 顺序执行，revert 逆序回退。
+ */
+class CompositeCommand(
+    val commands: List<BodyBlocksCommand>,
+) : BodyBlocksCommand {
+
+    override fun apply(controller: BodyBlocksController) {
+        commands.forEach { it.apply(controller) }
+    }
+
+    override fun revert(controller: BodyBlocksController) {
+        commands.asReversed().forEach { it.revert(controller) }
+    }
 }
 
 // ==================== Markdown ↔ 块列表 ====================
@@ -174,6 +343,15 @@ class BodyBlocksController(
     /** 当前聚焦的文本块 id（null = 尚未聚焦过） */
     private var focusedBlockId by mutableStateOf<String?>(null)
 
+    /**
+     * 是否已完成整篇初始化（旋转后不重跑 initialize 的关键）：
+     * 标志随 controller 存活在 ViewModel——旋转时 Screen 的 remember 全部丢失，
+     * 但 controller 的块列表与命令栈都还在，若重跑 [initialize] 会把它们清空
+     * （方案A坑点4 的破坏者）。Screen 的 LaunchedEffect 以此为守卫。
+     */
+    internal var hasInitialized by mutableStateOf(false)
+        private set
+
     /** 两步删除：当前高亮的块 id（仅图片块会被高亮） */
     var highlightedBlockId by mutableStateOf<String?>(null)
         private set
@@ -192,7 +370,13 @@ class BodyBlocksController(
 
     // ---------- 构建块 ----------
 
-    fun createTextBlock(markdown: String): BodyBlock.Text {
+    /**
+     * 新建 Text 块。
+     *
+     * @param id 块 id：Command 重放时传入原 id 复用（焦点/外部引用保持稳定），
+     *   缺省生成新 id。
+     */
+    fun createTextBlock(markdown: String, id: String = newBodyBlockId()): BodyBlock.Text {
         val state = RichTextState()
         /** v2026-09-01 关闭编辑态内联图片渲染（防御性）：插图已改为拆块
          *  （Text 块 state 不持有 image span），正常路径覆盖层无图可画；
@@ -207,8 +391,16 @@ class BodyBlocksController(
             state.setText(ZWSP)
             state.selection = TextRange(1)
         }
-        return BodyBlock.Text(newBodyBlockId(), state)
+        return BodyBlock.Text(id, state)
     }
+
+    /** Text 块 → [BlockSpec.TextSpec]（markdown 剥 ZWSP，Command 载荷统一出口） */
+    private fun textSpec(block: BodyBlock.Text): BlockSpec.TextSpec =
+        BlockSpec.TextSpec(block.id, blockMarkdown(block.state))
+
+    /** 块的 markdown 输出（剥 ZWSP——与 [toMarkdown] 的输出约定一致） */
+    internal fun blockMarkdown(state: RichTextState): String =
+        state.toMarkdown().replace(ZWSP, "")
 
     // ---------- 加载 / 导出 ----------
 
@@ -230,6 +422,9 @@ class BodyBlocksController(
         ensureTextBlock()
         focusedBlockId = null
         highlightedBlockId = null
+        /** 换了整篇文档：命令栈与块内 history 一并作废（新块的 history 本就是空的） */
+        clearCommandStacks()
+        hasInitialized = true
         onDocChanged?.invoke()
     }
 
@@ -284,46 +479,55 @@ class BodyBlocksController(
     // ---------- 图片插入 ----------
 
     /**
-     * 在当前聚焦块的光标处插入图片并拆块。
-     *
-     * - 聚焦块是 Text → 调用库专用的 [RichTextState.insertImage]，
-     *   它手工构造一个带 ▢ 占位的 Image 段，并把原段落拆成 [前半段, Image段, 后半段]。
-     *   之后用整篇 markdown 重解析，得到 [Text, Image, Text] 三块序列；
-     * - 聚焦块是 Image 或从未聚焦 → 插到列表末尾（末尾 Text 块之前）。
-     * 插入后焦点移到图片后的第一个 Text 块。
-     *
-     * **不要用 `insertMarkdownAfterSelection("![](path)")`**：
-     * 库的 markdown encoder 对空 alt 的 `![](path)` 走 `onText("")` 后立即
-     * early-return，跳过 `text = ▢` 的赋值，导致 Image span text 为空、
-     * toMarkdown → parseMarkdownSegments 拆块错位，表现为 "图片后" 丢失 "后"字、
-     * 出现 ▢ 占位字符。
+     * 在当前聚焦块的光标处插入图片并拆块（单张 = 一条 [ReplaceBlocksCommand]）。
      */
     fun insertImageAtFocused(path: String) {
-        insertOneImageInternal(path)
+        executeAndPush(buildInsertImageCommand(path))
     }
 
     /**
-     * 批量插入（多选相册一次确认）= **一个撤销单位**：只压一次时间线快照，
-     * 整批连续拆块插入；撤销一次全部回退。
+     * 批量插入（多选相册一次确认）= **一个撤销单位**（方案A坑点5）：
+     * 逐张"计算 + 立即应用"（下一张依赖上一张落定后的焦点位置），
+     * 全部命令打包进一个 [CompositeCommand] 后只 push 一次——撤销一步全部回退。
      */
     fun insertImagesAtFocused(paths: List<String>) {
         if (paths.isEmpty()) return
-        pushTimelineSnapshot()
-        suppressDocChanged = true
-        /** 操作引发的 observer 文本差分不压栈（统一时间线只记这一个用户动作） */
-        val was = suppressTimeline
-        suppressTimeline = true
-        try {
-            paths.forEach { insertOneImageInternal(path = it, pushSnapshot = false) }
-        } finally {
-            suppressTimeline = was
-            suppressDocChanged = false
+        if (paths.size == 1) {
+            insertImageAtFocused(paths.first())
+            return
         }
-        onDocChanged?.invoke()
+        val commands = mutableListOf<BodyBlocksCommand>()
+        replaying = true
+        suppressDocChanged = true
+        try {
+            paths.forEach { path ->
+                val cmd = buildInsertImageCommand(path)
+                cmd.apply(this)
+                commands += cmd
+            }
+        } finally {
+            suppressDocChanged = false
+            replaying = false
+        }
+        pushExecuted(CompositeCommand(commands))
+    }
+
+    /** 计算一次插图对应的替换命令（不落盘；[executeAndPush] 负责 apply + push） */
+    private fun buildInsertImageCommand(path: String): BodyBlocksCommand {
+        val focusedIdx = focusedBlockId
+            ?.let { id -> blocks.indexOfFirst { it.id == id } }
+            ?.takeIf { it >= 0 }
+
+        if (focusedIdx == null) return buildInsertImageAtEndCommand(path)
+
+        return when (val focused = blocks[focusedIdx]) {
+            is BodyBlock.Image -> buildInsertImageAtEndCommand(path)
+            is BodyBlock.Text -> buildInsertInTextCommand(focused, focusedIdx, path)
+        }
     }
 
     /**
-     * 内部：在聚焦 Text 块的**光标处**插入图片并拆块——
+     * 在聚焦 Text 块的**光标处**插入图片并拆块——
      * 光标前后的文字各自成段：`[前半Text, Image, 后半Text]`。
      *
      * **v2026-09-01 自实现拆块**：不调 [RichTextState.insertImage]（其内部段计数
@@ -331,87 +535,78 @@ class BodyBlocksController(
      *  用 [RichTextState.toMarkdown]（[TextRange] 重载）按光标精确拆段。
      * 内部 [RichTextState.extractRangeState] 按段落裁剪 spans，结果完全可预测且稳定。
      *
-     * Text 块 state 不残留 image span（不调 [RichTextState.insertImage] 也就没有 ▢ 占位符），
-     * 无空隙，真实图片完全由 Image 块渲染。
-     *
-     * 插入后：焦点移到图片后的第一个 Text 块 offset 0，并同步 [focusedBlockId]
-     * （批量插入时下一张图以此为锚点，保证多张图连续排列在光标处）。
-     *
-     * @param pushSnapshot 单张调用为 true（压撤销快照）；批量插入由
-     *   [insertImagesAtFocused] 统一压一次，传 false。
+     * 拆分结果进 [ReplaceBlocksCommand]：removed = [源块]，inserted = 产物序列
+     * （光标末尾无后半段时，补一个空尾块保证"图片后仍可输入"——ensureTextBlock
+     * 的产物也纳入 inserted，保证 undo/redo 对称）。
      */
-    private fun insertOneImageInternal(path: String, pushSnapshot: Boolean = true) {
-        val focusedIdx = focusedBlockId
-            ?.let { id -> blocks.indexOfFirst { it.id == id } }
-            ?.takeIf { it >= 0 }
+    private fun buildInsertInTextCommand(
+        focused: BodyBlock.Text,
+        focusedIdx: Int,
+        path: String,
+    ): ReplaceBlocksCommand {
+        val state = focused.state
+        val rawText = state.annotatedString.text
+        val cursor = state.selection.start.coerceIn(0, rawText.length)
 
-        if (focusedIdx == null) {
-            insertImageAtEnd(path)
-            return
+        val beforeMd = if (cursor > 0) state.toMarkdown(TextRange(0, cursor)).replace(ZWSP, "") else ""
+        val afterMd = if (cursor < rawText.length)
+            state.toMarkdown(TextRange(cursor, rawText.length)).replace(ZWSP, "") else ""
+
+        val inserted = mutableListOf<BlockSpec>()
+        if (beforeMd.isNotBlank()) inserted += BlockSpec.TextSpec(newBodyBlockId(), beforeMd)
+        val imgSpec = BlockSpec.ImageSpec(newBodyBlockId(), path)
+        inserted += imgSpec
+        if (afterMd.isNotBlank()) inserted += BlockSpec.TextSpec(newBodyBlockId(), afterMd)
+        /** 末块不是 Text（光标在段尾）→ 补空尾块（等价旧 ensureTextBlock(atEnd=true)） */
+        val needsTrailingText = inserted.last() !is BlockSpec.TextSpec
+        if (needsTrailingText) inserted += BlockSpec.TextSpec(newBodyBlockId(), "")
+
+        /** 焦点 → 图片后的第一个 Text 块 offset 0（批量插入时下一张以此为锚点） */
+        val focusAfter = FocusSpec(
+            blockId = (inserted.drop(inserted.indexOf(imgSpec) + 1)
+                .filterIsInstance<BlockSpec.TextSpec>()
+                .firstOrNull() ?: inserted.filterIsInstance<BlockSpec.TextSpec>().last()).id,
+            offset = 0,
+        )
+
+        return ReplaceBlocksCommand(
+            index = focusedIdx,
+            removedSpecs = listOf(textSpec(focused)),
+            insertedSpecs = inserted,
+            focusBefore = currentFocusSpec(),
+            focusAfter = focusAfter,
+        )
+    }
+
+    /**
+     * 尾插图片：插在末尾 Text 块之前（图片后保留输入位）。
+     * 覆盖：从未聚焦 / 聚焦块是 Image 两种场景。
+     */
+    private fun buildInsertImageAtEndCommand(path: String): ReplaceBlocksCommand {
+        val needsTrailingText = blocks.lastOrNull() !is BodyBlock.Text
+        val imgId = newBodyBlockId()
+        val trailingId = if (needsTrailingText) newBodyBlockId() else null
+        val inserted = buildList {
+            add(BlockSpec.ImageSpec(imgId, path))
+            if (trailingId != null) add(BlockSpec.TextSpec(trailingId, ""))
         }
-
-        when (val focused = blocks[focusedIdx]) {
-            is BodyBlock.Image -> insertImageAtEnd(path)
-            is BodyBlock.Text -> {
-                if (pushSnapshot) pushTimelineSnapshot()
-                /** 操作期间的 state 变化不作为"用户文本编辑"压栈 */
-                val was = suppressTimeline
-                suppressTimeline = true
-                try {
-                    val state = focused.state
-                    val rawText = state.annotatedString.text
-                    val cursor = state.selection.start.coerceIn(0, rawText.length)
-
-                    /** v2026-09-01 自实现拆块：完全绕开 [RichTextState.insertImage]，
-                     *  按真实 [state.selection] 用 [RichTextState.toMarkdown] 拆段。
-                     *
-                     *  原路径（state.insertImage + replaceBlockWithParsed）**偶尔**产生错误
-                     *  拆分（如 [Image(A), Image(B), Text("12")]）——根因是库内
-                     *  `updateRichParagraphList` 会基于 `beforeTextLength` 重置
-                     *  `textFieldValue.selection`，而 `beforeTextLength` 在某些段落计数
-                     *  路径下计算异常，导致切段后 selection 落在意外位置；批量第二张图
-                     *  立即读到的 cursor 就是错的。
-                     *
-                     *  新路径直接读 `state.selection`（用户实际光标），调用
-                     *  [RichTextState.toMarkdown]（[TextRange] 重载）按光标精确拆段，
-                     *  内部 `extractRangeState` 按段落裁剪 spans——结果完全可预测且稳定，
-                     *  与库内段落计数无关。
-                     *  - cursor=0：[Image, Text("12")]（用户在块首点击 → 图片插在块前）
-                     *  - cursor=1（"1"和"2"字符间）：[Text("1"), Image, Text("2")] ✓
-                     *  - cursor=末尾：[Text("12"), Image]
-                     */
-                    val beforeMd = if (cursor > 0) state.toMarkdown(TextRange(0, cursor)) else ""
-                    val afterMd = if (cursor < rawText.length)
-                        state.toMarkdown(TextRange(cursor, rawText.length)) else ""
-
-                    val newBlocks = mutableListOf<BodyBlock>()
-                    if (beforeMd.isNotBlank()) newBlocks += createTextBlock(beforeMd)
-                    newBlocks += BodyBlock.Image(newBodyBlockId(), path)
-                    if (afterMd.isNotBlank()) newBlocks += createTextBlock(afterMd)
-
-                    blocks.removeAt(focusedIdx)
-                    blocks.addAll(focusedIdx, newBlocks)
-                    ensureTextBlock(atEnd = true)
-
-                    /** 焦点/聚焦块同步到图片后的第一个 Text 块（批量插入的锚点）。
-                     *  关键：必须**立即**同步 [state.selection]——pendingFocusId 由
-                     *  LaunchedEffect 异步消费，批量循环同步执行，下一张图立即读
-                     *  `state.selection` 仍可能拿到上一轮末尾 → 图片错位。 */
-                    val imgPos = focusedIdx + newBlocks.indexOfFirst { it is BodyBlock.Image }
-                    val nextText = blocks.drop(imgPos + 1)
-                        .firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text
-                    if (nextText != null) {
-                        focusedBlockId = nextText.id
-                        pendingFocusId = nextText.id
-                        pendingFocusOffset = 0
-                        nextText.state.selection = TextRange(0)
-                    }
-                } finally {
-                    suppressTimeline = was
-                }
-                if (!suppressDocChanged) onDocChanged?.invoke()
-            }
-        }
+        /**
+         * 插入锚点（与旧 insertImageAtEnd 的 add(blocks.size - 1) 行为一致）：
+         * - 需补尾块：等效在原列表末尾追加 [Image, 空Text] → index = size
+         * - 末尾已是 Text：Image 插在它前面 → index = size - 1
+         */
+        val index = if (needsTrailingText) blocks.size else (blocks.size - 1).coerceAtLeast(0)
+        val focusAfter = FocusSpec(
+            blockId = if (needsTrailingText) trailingId!! else blocks.last<BodyBlock>().id,
+            offset = 0,
+        )
+        return ReplaceBlocksCommand(
+            index = index,
+            removedSpecs = emptyList(),
+            insertedSpecs = inserted,
+            focusBefore = currentFocusSpec(),
+            focusAfter = focusAfter,
+        )
     }
 
     /**
@@ -419,47 +614,6 @@ class BodyBlocksController(
      * （不然每张图都会触发一次 ViewModel.setContent/setContentFormat + 一次重组。）
      */
     private var suppressDocChanged: Boolean = false
-
-    private fun insertImageAtEnd(path: String) {
-        ensureTextBlock(atEnd = true)
-        blocks.add(blocks.size - 1, BodyBlock.Image(newBodyBlockId(), path))
-        pendingFocusId = (blocks.last() as BodyBlock.Text).id
-        pendingFocusOffset = 0
-        if (!suppressDocChanged) onDocChanged?.invoke()
-    }
-
-    /**
-     * 在 [newBlocks]（刚替换进列表的块序列）中找到 [cursorOffset] 落在的 Text 块并请求聚焦。
-     *
-     * **v2026-09-01 修复（光标落在"图片"和"后"之间）**：
-     * [cursorOffset] 来自库 raw text 坐标系——相邻段落之间有 1 个连接空格
-     * （`updateRichParagraphList` 的 `append(' ')`），且图片占位符 ▢ 占 1 字符。
-     * 旧实现 `consumed` 只累加块自身长度，与 raw 坐标系差"段间空格"，插图后
-     * 光标被算到后半块 offset 2（"图片"和"后"之间）而非 0。
-     * 修复：每跨过一个块，`consumed` 额外 +1（该块与其后块的段间连接空格）；
-     * 求出的偏移再 `coerceIn(0, len)` 兜住空块等边界（尾插时光标落空 Text 块
-     * 会算出 -1，coerce 回 0）。
-     */
-    private fun focusAtOffset(newBlocks: List<BodyBlock>, cursorOffset: Int) {
-        var consumed = 0
-        for (b in newBlocks) {
-            val len = when (b) {
-                is BodyBlock.Text -> b.state.annotatedString.text.length
-                is BodyBlock.Image -> 1
-            }
-            if (b is BodyBlock.Text && cursorOffset < consumed + len) {
-                pendingFocusId = b.id
-                pendingFocusOffset = (cursorOffset - consumed).coerceIn(0, len)
-                return
-            }
-            /** 跨块：下一块前有一个段间连接空格（raw text 坐标系） */
-            consumed += len + 1
-        }
-        (newBlocks.lastOrNull() as? BodyBlock.Text)?.let {
-            pendingFocusId = it.id
-            pendingFocusOffset = it.state.annotatedString.text.length
-        }
-    }
 
     // ---------- 语音（保持内联，行为不变） ----------
 
@@ -493,43 +647,41 @@ class BodyBlocksController(
      * 把块拆为 [0, beforeEnd) 与 [afterStart, len) 两段 markdown。
      * beforeEnd / afterStart 都是纯文本偏移；afterStart 通常等于 beforeEnd
      * （硬回车未插入换行）或 beforeEnd + 1（软键盘已插入 `\n`，跳过它）。
+     *
+     * v2026-09-02 Command 化：拆块 = [ReplaceBlocksCommand]
+     * （removed = [源块全文]，inserted = [前半（复用源 id）, 后半（新 id）]）。
      */
     private fun splitTextBlock(block: BodyBlock.Text, beforeEnd: Int, afterStart: Int) {
-        pushTimelineSnapshot()
         val idx = blocks.indexOfFirst { it.id == block.id }
         if (idx < 0) return
         val text = block.state.annotatedString.text
-        val beforeMd = if (beforeEnd > 0) block.state.toMarkdown(TextRange(0, beforeEnd)) else ""
-        val afterMd = if (afterStart < text.length) block.state.toMarkdown(TextRange(afterStart, text.length)) else ""
+        val beforeMd = if (beforeEnd > 0) block.state.toMarkdown(TextRange(0, beforeEnd)).replace(ZWSP, "") else ""
+        val afterMd = if (afterStart < text.length)
+            block.state.toMarkdown(TextRange(afterStart, text.length)).replace(ZWSP, "") else ""
 
-        /** 操作引发的 state 变化不作为"用户文本编辑"压栈（快照已在上面压过） */
-        val was = suppressTimeline
-        suppressTimeline = true
-        try {
-            block.state.setMarkdown(beforeMd)
-            val newBlock = createTextBlock(afterMd)
-            newBlock.state.selection = TextRange(0)
-            blocks.add(idx + 1, newBlock)
-        } finally {
-            suppressTimeline = was
-        }
-        pendingFocusId = newBlockId(blocks, idx + 1)
-        pendingFocusOffset = 0
-        onDocChanged?.invoke()
+        val newId = newBodyBlockId()
+        executeAndPush(
+            ReplaceBlocksCommand(
+                index = idx,
+                removedSpecs = listOf(textSpec(block)),
+                insertedSpecs = listOf(
+                    BlockSpec.TextSpec(block.id, beforeMd),
+                    BlockSpec.TextSpec(newId, afterMd),
+                ),
+                focusBefore = currentFocusSpec(),
+                focusAfter = FocusSpec(newId, 0),
+            )
+        )
     }
-
-    /** 取 [index] 处块 id（拆块后焦点定位用，越界返回 null） */
-    private fun newBlockId(blocks: List<BodyBlock>, index: Int): String? =
-        blocks.getOrNull(index)?.id
 
     /**
      * 归一化：块内出现 `\n`（软键盘回车 / 粘贴多行）时按行拆成段落块。
      * 末尾连续空行保留为一个空块（回车在段尾 = 新起一段）；其余空行丢弃。
      * 焦点落到原光标所在的新块，偏移按行内位置换算。
      *
-     * **不压撤销快照**：调用方是 observer（检测到 `\n`），observer 在调用前已把
-     * "变化前"快照压入统一时间线——那才是正确的撤销目标。这里若再压会压到
-     * "含 \n 的单块中间态"，撤销恢复它后 observer 又检测到 `\n` 又拆块，死循环。
+     * v2026-09-02 Command 化（拆块结果进 [ReplaceBlocksCommand]，"整块空白退化"
+     * 分支同样是替换命令）。调用方是 observer（检测到 `\n` 时）——Command 的
+     * apply 在 [replaying] 抑制下执行，重建的新块不含 `\n`，不会再次触发本路径。
      */
     fun normalizeBlockParagraphs(block: BodyBlock.Text) {
         val idx = blocks.indexOfFirst { it.id == block.id }
@@ -553,309 +705,306 @@ class BodyBlocksController(
         /** 最后一个非空行的下标 */
         val lastContent = ranges.indexOfLast { (s, e) -> e > s && text.substring(s, e).isNotBlank() }
         if (lastContent < 0) {
-            /** 整块都是空白（如全选删除后残留换行）→ 退化为单个空块 */
-            val empty = createTextBlock("")
-            blocks[idx] = empty
-            pendingFocusId = empty.id
-            pendingFocusOffset = 0
-            onDocChanged?.invoke()
+            /** 整块都是空白（如全选删除后残留换行）→ 退化为单个空块（复用原 id） */
+            executeAndPush(
+                ReplaceBlocksCommand(
+                    index = idx,
+                    removedSpecs = listOf(textSpec(block)),
+                    insertedSpecs = listOf(BlockSpec.TextSpec(block.id, "")),
+                    focusBefore = currentFocusSpec(),
+                    focusAfter = FocusSpec(block.id, 0),
+                )
+            )
             return
         }
 
-        val newBlocks = mutableListOf<BodyBlock>()
+        val inserted = mutableListOf<BlockSpec>()
+        var focusBlockId: String? = null
+        var focusOffset = 0
         for (i in 0..lastContent) {
             val (s, e) = ranges[i]
             if (e > s) {
-                val md = block.state.toMarkdown(TextRange(s, e))
-                if (md.isNotBlank()) newBlocks += createTextBlock(md)
-                /** 行内空段（双回车产生的中间空行）丢弃：markdown 渲染中 \n\n 只是段落分隔，不是可见空行 */
+                val md = block.state.toMarkdown(TextRange(s, e)).replace(ZWSP, "")
+                if (md.isNotBlank()) {
+                    val specId = if (inserted.isEmpty()) block.id else newBodyBlockId()
+                    inserted += BlockSpec.TextSpec(specId, md)
+                    /** 光标落点：cursor 落在这一行 → 该块 + 行内有效偏移
+                     *  （区间连续覆盖全文，cursor <= e 时必有 cursor >= s，substring 安全） */
+                    if (focusBlockId == null && cursor <= e) {
+                        focusBlockId = specId
+                        focusOffset = effectiveText(text.substring(s, cursor)).length
+                    }
+                    /** 行内空段（双回车产生的中间空行）丢弃：markdown 渲染中 \n\n 只是段落分隔，不是可见空行 */
+                }
             }
         }
         /** 末尾有连续空行 = 回车在段尾 → 保留一个空块作为新段落 */
         val trailingBlanks = ranges.size - 1 - lastContent
-        if (trailingBlanks > 0) newBlocks += createTextBlock("")
-        if (newBlocks.isEmpty()) newBlocks += createTextBlock("")
-
-        blocks.removeAt(idx)
-        blocks.addAll(idx, newBlocks)
-        ensureTextBlock(atEnd = true)
-
-        /** 焦点：原光标所在行对应的新块 */
-        var consumed = 0
-        var placed = false
-        for (b in newBlocks) {
-            if (b !is BodyBlock.Text) {
-                consumed += 1
-                continue
-            }
-            val len = b.state.annotatedString.text.length
-            if (cursor <= consumed + len) {
-                pendingFocusId = b.id
-                pendingFocusOffset = (cursor - consumed).coerceIn(0, len)
-                placed = true
-                break
-            }
-            consumed += len + 1
+        if (trailingBlanks > 0 || inserted.isEmpty()) {
+            inserted += BlockSpec.TextSpec(newBodyBlockId(), "")
         }
-        if (!placed) {
-            (newBlocks.lastOrNull() as? BodyBlock.Text)?.let {
-                pendingFocusId = it.id
-                pendingFocusOffset = it.state.annotatedString.text.length
-            }
+        if (focusBlockId == null) {
+            focusBlockId = (inserted.last() as BlockSpec.TextSpec).id
+            focusOffset = 0
         }
+
+        executeAndPush(
+            ReplaceBlocksCommand(
+                index = idx,
+                removedSpecs = listOf(textSpec(block)),
+                insertedSpecs = inserted,
+                focusBefore = currentFocusSpec(),
+                focusAfter = FocusSpec(focusBlockId, focusOffset),
+            )
+        )
+    }
+
+    // ---------- Command 命令栈（方案A：两套历史隔离） ----------
+
+    /**
+     * **全局命令栈**：只存操作增量 [BodyBlocksCommand]（不存全量快照）——
+     * 管块的增删、拖拽排序、图片块属性编辑。
+     *
+     * **方案A坑点4（屏幕旋转）**：controller 由 ViewModel 持有
+     * （[com.corgimemo.app.viewmodel.InspirationEditViewModel]），不用 remember——
+     * 配置变更（旋转）时 ViewModel 存活，命令栈与块内 history 都不丢。
+     *
+     * **块内富文本历史**（库自带 `RichTextState.history`）不进本栈：
+     * 打字 / 加粗 / 样式由每个 Text 块自己管理，避免每敲一个字把整个块列表压栈。
+     */
+    private val undoCommands = ArrayDeque<BodyBlocksCommand>()
+    private val redoCommands = ArrayDeque<BodyBlocksCommand>()
+
+    /** 命令是轻量增量（对比旧快照栈），100 条深度足够 */
+    private val maxCommandDepth = 100
+
+    /**
+     * Command 重放（apply / revert）与块内 history undo-redo 期间为 true。
+     * BlockTextItem observer 读它：跳过"新编辑清 redo 栈"与结构检测
+     * （\n 拆块 / 退格合并——重放不该再触发），但保留 ZWSP 不变量维护。
+     */
+    internal var replaying = false
+        private set
+
+    var canUndoBlocks by mutableStateOf(false)
+        private set
+    var canRedoBlocks by mutableStateOf(false)
+        private set
+
+    /**
+     * 统一调度入口的可见状态：块级命令栈 ∨ 聚焦块（未聚焦时回退首块）的库内 history。
+     * 与 [undo] / [redo] 的调度对象同源（focusedOrFirstTextState），按钮点亮状态
+     * 与实际撤销行为严格一致。history.canUndo 是快照状态（mutableStateOf 驱动），
+     * 聚焦块切换 / 块内编辑都会触发重组刷新。
+     */
+    val canUndo: Boolean
+        get() = canUndoBlocks || focusedOrFirstTextState().history.canUndo
+    val canRedo: Boolean
+        get() = canRedoBlocks || focusedOrFirstTextState().history.canRedo
+
+    /**
+     * 执行并压栈一条命令（所有结构操作入口的统一出口）：
+     * apply 期间 [replaying] = true，命令自身引发的状态差分不会被 observer
+     * 误判为"新编辑"（不清刚清空的 redo 栈、不二次触发结构检测）。
+     */
+    private fun executeAndPush(command: BodyBlocksCommand) {
+        replaying = true
+        try {
+            command.apply(this)
+        } finally {
+            replaying = false
+        }
+        pushExecuted(command)
+    }
+
+    /** 只压栈不执行（命令已被调用方 apply 过——批量插图的循环路径） */
+    private fun pushExecuted(command: BodyBlocksCommand) {
+        undoCommands.addLast(command)
+        if (undoCommands.size > maxCommandDepth) undoCommands.removeFirst()
+        redoCommands.clear()
+        canUndoBlocks = true
+        canRedoBlocks = false
         onDocChanged?.invoke()
     }
 
-    // ---------- 统一时间线撤销 / 重做 ----------
-
-    /**
-     * v2026-09-01 第四次修订（统一时间线）：
-     *
-     * 快照仍是结构化 [BlockSnapshot]（entries + 焦点索引 + 有效坐标光标，保留空块），
-     * 但栈的语义升级：**文本编辑与结构变更共用同一个撤销栈，天然按时间倒序串联**——
-     * - 每次用户文本变化（打字/删除/粘贴）由 BlockTextItem observer 压"变化前"快照
-     *   （[pushTextUndoSnapshot]），撤销一步回一个字符；
-     * - 每次结构变更（插图拆块 / Enter 拆块 / 合并 / 重排 / 删图）由操作入口压快照
-     *   （[pushTimelineSnapshot]）。
-     * 撤销 = 无脑 pop 栈顶恢复，"打字 → 插图 → 再打字"按倒序逐级回退，
-     * 不再依赖库 `state.history` 做跨块串联，也不需要"两类互斥"。
-     *
-     * **光标记录时机（v2026-09-02 明确）**：只有块内容或块结构**真的发生变化**才产生快照，
-     * 快照记录"变化那一刻"的光标（[BlockSnapshot.cursorOffset] = 聚焦块内的有效文本偏移）；
-     * **单纯移动光标不产生快照**——observer 以 `text != lastText` 为压栈条件，
-     * 仅 [RichTextState.selection] 变化会被忽略（见 BlockTextItem 的 observer）。
-     * 因此"撤销后光标回到哪里"只取决于当初那次变更发生的位置，
-     * 与用户在撤销前把光标移到了哪里无关。
-     *
-     * **光标落地必须同步（v2026-09-02 修复 redo 光标错位）**：[restoreCursor] 通过
-     * [applyFocusAndCursor] 一次性写齐 pendingFocus*、[focusedBlockId] 与
-     * [RichTextState.selection]；只设 pendingFocus* 会因异步时机差导致下一步
-     * [captureCurrentSnapshot] 读到未落盘的旧状态，redo 栈光标恒为 0。
-     *
-     * **去重**：结构操作先压快照、操作本身又引发 observer 压"变化前"快照，
-     * 两者内容相同 → [BlockSnapshot] data class equals 去重，不会重复入栈。
-     *
-     * **suppressTimeline**：undo/redo 的恢复动作会改块内容，observer 若不拦截会把
-     * "恢复前状态"误压回撤销栈（多一步空撤销），恢复期间置 true。
-     */
-    /**
-     * 快照条目。
-     *
-     * **v2026-09-02 升级：[TextEntry] 改存 markdown，不再存渲染后的纯文本。**
-     * 原因：`state.annotatedString.text` 是 setMarkdown 解析**之后**的纯文本，
-     * `**粗体**` 已被转成 SpanStyle，字面 `**` 并不存在于字符串中；把它存进快照，
-     * 恢复时 `createTextBlock(纯文本)` 走 setMarkdown 会把样式全部丢掉
-     * （表现为"撤销一步后整块的加粗/斜体/列表格式消失"）。
-     * 改用 [RichTextState.toMarkdown] 把样式序列化进快照，恢复时即可原样还原。
-     *
-     * **坐标系警告**：[BlockSnapshot.cursorOffset] 仍是**纯文本有效坐标**，
-     * 与 markdown 字符串的下标不是同一坐标系（markdown 含 `**` 等语法字符），
-     * 二者不可混用——内容取 markdown、光标取 annotatedString.text。
-     */
-    private sealed class BlockSnapshotEntry {
-        data class TextEntry(val markdown: String) : BlockSnapshotEntry()
-        data class ImageEntry(val path: String) : BlockSnapshotEntry()
-    }
-
-    private data class BlockSnapshot(
-        val entries: List<BlockSnapshotEntry>,
-        val focusedEntryIndex: Int,
-        val cursorOffset: Int,
-    )
-
-    private val undoTimeline = ArrayDeque<BlockSnapshot>()
-    private val redoTimeline = ArrayDeque<BlockSnapshot>()
-
-    /** 逐字快照耗栈快（每字符一条），深度放宽到 200 */
-    private val maxTimelineDepth = 200
-
-    /** 恢复操作期间为 true：observer 不压栈（否则把恢复前状态误压回撤销栈） */
-    internal var suppressTimeline = false
-        private set
-
-    var canUndoTimeline by mutableStateOf(false)
-        private set
-    var canRedoTimeline by mutableStateOf(false)
-        private set
-
-    /** 结构变更前调用：压入当前块结构 + 光标（与栈顶完全相同则跳过） */
-    private fun pushTimelineSnapshot() {
-        val snapshot = captureCurrentSnapshot()
-        if (undoTimeline.lastOrNull() != snapshot) {
-            undoTimeline.addLast(snapshot)
-            if (undoTimeline.size > maxTimelineDepth) undoTimeline.removeFirst()
+    /** 块级命令撤销（不含块内文字调度——那是 [undo] 的职责） */
+    private fun undoBlocks(): Boolean {
+        val command = undoCommands.removeLastOrNull() ?: return false
+        replaying = true
+        try {
+            command.revert(this)
+        } finally {
+            replaying = false
         }
-        redoTimeline.clear()
-        canUndoTimeline = undoTimeline.isNotEmpty()
-        canRedoTimeline = false
+        redoCommands.addLast(command)
+        canUndoBlocks = undoCommands.isNotEmpty()
+        canRedoBlocks = true
+        onDocChanged?.invoke()
+        return true
+    }
+
+    /** 块级命令重做 */
+    private fun redoBlocks(): Boolean {
+        val command = redoCommands.removeLastOrNull() ?: return false
+        replaying = true
+        try {
+            command.apply(this)
+        } finally {
+            replaying = false
+        }
+        undoCommands.addLast(command)
+        canUndoBlocks = true
+        canRedoBlocks = redoCommands.isNotEmpty()
+        onDocChanged?.invoke()
+        return true
     }
 
     /**
-     * 用户文本 / 样式变化时由 BlockTextItem observer 调用：压"变化前"快照。
+     * **统一撤销调度（方案A坑点1：焦点判断是核心）**——
+     * 聚焦块（未聚焦时回退首块）的库内 history 非空 → 先回退块内富文本
+     * （打字 / 删除 / 加粗等，按库的合并组粒度）；块内回退完 → 走全局命令栈。
      *
-     * **v2026-09-02**：observer 的差分对象改为 markdown（这样"加粗"等不改字符、
-     * 只改 SpanStyle 的操作也能被捕获入栈），因此需要两个"变化前"入参：
-     * - [markdownBefore]：变化前的 **markdown**，作为快照内容（保留富文本样式）；
-     * - [textBefore]：变化前的 **纯文本**，仅用于把 [selectionBefore] 换算成
-     *   [BlockSnapshot.cursorOffset]——markdown 含 `**` 等语法字符，与纯文本下标
-     *   不是同一坐标系，**绝不能用它换算光标**。
-     *
-     * 其他块未受本次编辑影响，直接捕获当前 markdown 即可。
-     * 本块不重建对象，只在快照数据里用 [BlockSnapshotEntry.TextEntry] 表达。
-     *
-     * 与栈顶完全相同则跳过（结构操作已压过同一份"变化前"快照）。
+     * 这样按撤销时行为可预期：时而回退文字、时而回退块操作，但两套历史互不干扰、
+     * 不会交替错乱。块内 history.undo() 由库恢复光标（快照含 selection）；
+     * 命令 revert 后的焦点由各命令的 focusBefore（如 [ReplaceBlocksCommand]）决定。
      */
-    internal fun pushTextUndoSnapshot(
-        blockId: String,
-        markdownBefore: String,
-        textBefore: String,
-        selectionBefore: TextRange,
-    ) {
-        if (suppressTimeline) return
+    fun undo(): Boolean {
+        val state = focusedOrFirstTextState()
+        if (state.history.canUndo) {
+            replaying = true
+            try {
+                return state.history.undo()
+            } finally {
+                replaying = false
+            }
+        }
+        return undoBlocks()
+    }
+
+    /** 统一重做调度（与 [undo] 对称：块内优先，空则命令栈） */
+    fun redo(): Boolean {
+        val state = focusedOrFirstTextState()
+        if (state.history.canRedo) {
+            replaying = true
+            try {
+                return state.history.redo()
+            } finally {
+                replaying = false
+            }
+        }
+        return redoBlocks()
+    }
+
+    /**
+     * 新的用户编辑使全局重做历史失效（BlockTextItem observer 在检测到
+     * **非重放**的 markdown 变化时调用）。
+     * 与库 history 的 redoStack.clear() 行为对齐——保证"redo 可达 ⇒ 各块当前
+     * 内容 == 上次全局操作结束时的内容"，命令重放的记录值因此是安全的。
+     */
+    internal fun clearGlobalRedo() {
+        if (redoCommands.isEmpty()) return
+        redoCommands.clear()
+        canRedoBlocks = false
+    }
+
+    /** 清空命令栈（initialize / 换文档时） */
+    private fun clearCommandStacks() {
+        undoCommands.clear()
+        redoCommands.clear()
+        canUndoBlocks = false
+        canRedoBlocks = false
+    }
+
+    // ---------- Command 落盘辅助 ----------
+
+    /**
+     * 定位命令锚定的区间起点。
+     *
+     * 正常路径（栈式回退不变量：revert 面对的列表 == 该命令 apply 后的列表）
+     * 下 [index] 处就是区间第一个块；防御性按 [anchorId]（当前列表中应存在的
+     * 区间首块 id）全局搜索定位，找不到才退回 [index]。
+     */
+    internal fun locateRangeStart(anchorId: String?, index: Int): Int {
+        if (anchorId != null) {
+            val idx = blocks.indexOfFirst { it.id == anchorId }
+            if (idx >= 0) return idx
+        }
+        return index.coerceIn(0, blocks.size)
+    }
+
+    /**
+     * 把 `[index, index + removeCount)` 的块替换为 [insertSpecs] 重建的块
+     * （[ReplaceBlocksCommand] 的落盘原语；id 复用保证焦点/外部引用稳定）。
+     */
+    internal fun replaceBlockRange(index: Int, removeCount: Int, insertSpecs: List<BlockSpec>) {
+        val safeIndex = index.coerceIn(0, blocks.size)
+        val safeCount = removeCount.coerceAtMost(blocks.size - safeIndex).coerceAtLeast(0)
+        repeat(safeCount) { blocks.removeAt(safeIndex) }
+        blocks.addAll(safeIndex, insertSpecs.map { rebuildBlock(it) })
+    }
+
+    /** 按 [BlockSpec] 重建块（Text 走 setMarkdown 还原富文本样式；Image 只存 uri） */
+    private fun rebuildBlock(spec: BlockSpec): BodyBlock = when (spec) {
+        is BlockSpec.TextSpec -> createTextBlock(spec.markdown, spec.id)
+        is BlockSpec.ImageSpec -> BodyBlock.Image(spec.id, spec.path)
+    }
+
+    /**
+     * 把块的库内 history 撤销到底（回到命令产物的初值）。
+     * [ReplaceBlocksCommand.revert] 在删除产物块前调用——让用户在产物块里
+     * 尚未撤销的编辑**显式回退**（文字逐步消失可见），而不是被块级 undo 静默丢弃。
+     * 必须在 [replaying] 抑制下执行（触发 observer 状态差分）。
+     */
+    internal fun drainBlockHistory(blockId: String) {
+        val block = blocks.firstOrNull { it.id == blockId } as? BodyBlock.Text ?: return
+        while (block.state.history.undo()) {
+            // 撤到底：撤销期间 observer 读 replaying = true，不会误触发结构检测
+        }
+    }
+
+    /** 图片块属性编辑落盘（[UpdateImageBlockCommand] 用；将来三件套沿此扩展） */
+    internal fun updateImageBlockPath(blockId: String, path: String) {
         val idx = blocks.indexOfFirst { it.id == blockId }
-        if (idx < 0) return
-        val entries = blocks.mapIndexed { i, block ->
-            when (block) {
-                is BodyBlock.Text ->
-                    /** 本块取"变化前"markdown，其余块取当前 markdown */
-                    if (i == idx) BlockSnapshotEntry.TextEntry(markdownBefore)
-                    else BlockSnapshotEntry.TextEntry(block.state.toMarkdown())
-                is BodyBlock.Image -> BlockSnapshotEntry.ImageEntry(block.path)
-            }
+        val block = blocks.getOrNull(idx)
+        if (block is BodyBlock.Image && block.path != path) {
+            blocks[idx] = BodyBlock.Image(blockId, path)
         }
-        /** 变化前光标（**纯文本**有效坐标，与 captureCurrentSnapshot 同坐标系） */
-        val cursorEffective = effectiveText(
-            textBefore.substring(0, selectionBefore.start.coerceIn(0, textBefore.length))
-        ).length
-        val snapshot = BlockSnapshot(entries, idx, cursorEffective)
-        if (undoTimeline.lastOrNull() != snapshot) {
-            undoTimeline.addLast(snapshot)
-            if (undoTimeline.size > maxTimelineDepth) undoTimeline.removeFirst()
-        }
-        redoTimeline.clear()
-        canUndoTimeline = undoTimeline.isNotEmpty()
-        canRedoTimeline = false
     }
 
-    /** 捕获当前状态（块结构 + 聚焦 entry + 光标）作为快照 */
-    private fun captureCurrentSnapshot(): BlockSnapshot {
-        val entries = blocks.map { block ->
-            when (block) {
-                is BodyBlock.Text -> BlockSnapshotEntry.TextEntry(
-                    /** v2026-09-02：存 markdown 以保留富文本样式（见 [BlockSnapshotEntry] 说明） */
-                    block.state.toMarkdown()
-                )
-                is BodyBlock.Image -> BlockSnapshotEntry.ImageEntry(block.path)
-            }
-        }
-        /** v2026-09-02：优先用 [focusedBlockId]；它为 null（restore 刚清空、焦点回调尚未到达）
-         *  时退回 [pendingFocusId]，避免误走下面的"首 Text 块 + offset 0"兜底而记录到错误光标 */
-        val focusKey = focusedBlockId ?: pendingFocusId
-        val focusedIdx = if (focusKey != null) blocks.indexOfFirst { it.id == focusKey } else -1
-        val (focusedEntryIdx, cursorOffset) = if (focusedIdx >= 0) {
-            val focused = blocks[focusedIdx]
-            if (focused is BodyBlock.Text) {
-                val rawText = focused.state.annotatedString.text
-                val rawCursor = focused.state.selection.start.coerceIn(0, rawText.length)
-                /** 光标从 raw 坐标映射到有效坐标（剥 ZWSP） */
-                val effectiveCursor = effectiveText(rawText.substring(0, rawCursor)).length
-                focusedIdx to effectiveCursor
-            } else {
-                /** 聚焦在 Image 上 → 用首 Text 块、offset 0 兜底 */
-                val firstTextIdx = blocks.indexOfFirst { it is BodyBlock.Text }
-                if (firstTextIdx >= 0) firstTextIdx to 0 else -1 to -1
-            }
-        } else {
-            /** 无聚焦块 → 用首 Text 块、offset 0 */
-            val firstTextIdx = blocks.indexOfFirst { it is BodyBlock.Text }
-            if (firstTextIdx >= 0) firstTextIdx to 0 else -1 to -1
-        }
-        return BlockSnapshot(entries, focusedEntryIdx, cursorOffset)
+    /** 拖拽排序落盘（[MoveBlockCommand] 用；按 id 定位防御索引漂移） */
+    internal fun moveBlockById(blockId: String, targetIndex: Int) {
+        val from = blocks.indexOfFirst { it.id == blockId }
+        if (from < 0) return
+        val to = targetIndex.coerceIn(0, blocks.lastIndex)
+        if (from == to) return
+        val block = blocks.removeAt(from)
+        blocks.add(to, block)
     }
 
-    /** 按 [snapshot.entries] 精确重建块列表（**保留空 Text 块**，markdown 做不到这点） */
-    private fun restoreFromSnapshot(snapshot: BlockSnapshot) {
-        blocks.clear()
-        snapshot.entries.forEach { entry ->
-            when (entry) {
-                is BlockSnapshotEntry.TextEntry -> {
-                    /** v2026-09-02：entry 存的是 **markdown**，交给 createTextBlock 走
-                     *  setMarkdown 还原富文本样式；空块判定仍需剥占位符——
-                     *  空块的 toMarkdown() 可能残留 ZWSP，直接判空会漏。 */
-                    blocks += if (effectiveText(entry.markdown).isEmpty()) {
-                        createTextBlock("")
-                    } else {
-                        createTextBlock(entry.markdown)
-                    }
-                }
-                is BlockSnapshotEntry.ImageEntry -> {
-                    blocks += BodyBlock.Image(newBodyBlockId(), entry.path)
-                }
-            }
-        }
-        ensureTextBlock()
-        focusedBlockId = null
-        highlightedBlockId = null
-        onDocChanged?.invoke()
+    /** Command 落盘后的通用收尾：两步删除的高亮态随结构变化清除 */
+    internal fun afterCommandMutation() {
+        if (highlightedBlockId != null) highlightedBlockId = null
     }
 
-    /** 统一时间线撤销：按快照重建块列表，并恢复光标 */
-    fun undoTimeline(): Boolean {
-        val snapshot = undoTimeline.removeLastOrNull() ?: return false
-        redoTimeline.addLast(captureCurrentSnapshot())
-        suppressTimeline = true
-        try {
-            restoreFromSnapshot(snapshot)
-            restoreCursor(snapshot)
-        } finally {
-            suppressTimeline = false
-        }
-        canUndoTimeline = undoTimeline.isNotEmpty()
-        canRedoTimeline = true
-        return true
+    /** 捕获当前焦点落点（Command 构造时的 focusBefore） */
+    private fun currentFocusSpec(): FocusSpec? {
+        val focusKey = focusedBlockId ?: pendingFocusId ?: return null
+        val focused = blocks.firstOrNull { it.id == focusKey } as? BodyBlock.Text ?: return null
+        val rawText = focused.state.annotatedString.text
+        val rawCursor = focused.state.selection.start.coerceIn(0, rawText.length)
+        /** 光标从 raw 坐标映射到有效坐标（剥 ZWSP） */
+        return FocusSpec(focused.id, effectiveText(rawText.substring(0, rawCursor)).length)
     }
 
-    /** 统一时间线重做 */
-    fun redoTimeline(): Boolean {
-        val snapshot = redoTimeline.removeLastOrNull() ?: return false
-        undoTimeline.addLast(captureCurrentSnapshot())
-        suppressTimeline = true
-        try {
-            restoreFromSnapshot(snapshot)
-            restoreCursor(snapshot)
-        } finally {
-            suppressTimeline = false
-        }
-        canUndoTimeline = true
-        canRedoTimeline = redoTimeline.isNotEmpty()
-        return true
-    }
-
-    /**
-     * 在重建后的块列表里找到 [snapshot.focusedEntryIndex] 处的 Text 块，
-     * 把光标设回 [snapshot.cursorOffset]。索引越界或该 entry 不是 Text → 兜底首 Text 块 + 0。
-     *
-     * **v2026-09-02 修复**：落地光标必须**同步**完成（[applyFocusAndCursor]），不能只设
-     * [pendingFocusId] / [pendingFocusOffset]。原因：这两个字段由块 Composable 的
-     * LaunchedEffect 在**下一帧**才消费，而连续撤销/重做时，下一步的
-     * [captureCurrentSnapshot] 会在此帧立刻执行，读到的是"尚未落盘"的旧状态——
-     * 表现为 redo 栈里记录的光标恒为 0（重做后光标总在最左侧）。
-     */
-    private fun restoreCursor(snapshot: BlockSnapshot) {
-        val idx = snapshot.focusedEntryIndex
-        if (idx < 0 || idx >= blocks.size) {
+    /** 按落点描述恢复焦点与光标（Command 的 focusBefore / focusAfter 落地） */
+    internal fun focusSpec(spec: FocusSpec) {
+        val target = blocks.firstOrNull { it.id == spec.blockId } as? BodyBlock.Text
+        if (target == null) {
             focusFirstTextBlock()
             return
         }
-        val target = blocks[idx]
-        if (target !is BodyBlock.Text) {
-            focusFirstTextBlock()
-            return
-        }
-        /** cursorOffset 是有效文本坐标（剥 ZWSP），用 effective length 做上界 coerceIn——
-         *  空块场景会先临时落在 (0, 0)，再被 BlockTextItem 的 ZWSP 维护 LaunchedEffect 推到 (1, 1) */
         val effLen = effectiveText(target.state.annotatedString.text).length
-        applyFocusAndCursor(target, snapshot.cursorOffset.coerceIn(0, effLen))
+        applyFocusAndCursor(target, spec.offset.coerceIn(0, effLen))
     }
 
     /**
@@ -864,14 +1013,13 @@ class BodyBlocksController(
      * 三处一起写，缺一不可：
      * 1. [pendingFocusId] / [pendingFocusOffset]——供块 Composable 的 LaunchedEffect
      *    申请真实焦点（[FocusRequester.requestFocus] 只能异步执行）；
-     * 2. [focusedBlockId]——[restoreFromSnapshot] 会把它置 null，而
-     *    [captureCurrentSnapshot] 依赖它定位焦点块，为 null 会走"首 Text 块 + offset 0"
-     *    兜底分支，导致下一步快照记录到错误光标；
-     * 3. [RichTextState.selection]——[captureCurrentSnapshot] 读的是它，若等异步生效
-     *    则本帧读到的仍是 [createTextBlock] 的初始 selection。
+     * 2. [focusedBlockId]——undo/redo 后的命令焦点依赖它定位焦点块，
+     *    为 null 会导致 [currentFocusSpec] 捕获到错误落点；
+     * 3. [RichTextState.selection]——同步读取（如 [focusSpec] 的 coerce 上界）
+     *    需要立即生效的值，等异步则会读到初始 selection。
      *
-     * 只改 selection 不改 text，不会触发 BlockTextItem observer 压栈（该 observer 以
-     * `text != lastText` 为条件）；undo/redo 期间 [suppressTimeline] 亦为 true。
+     * 只改 selection 不改 text，不会触发 BlockTextItem observer 的结构检测
+     * （markdown 不含光标信息）；重放期间 [replaying] 亦为 true。
      */
     private fun applyFocusAndCursor(target: BodyBlock.Text, offset: Int) {
         pendingFocusId = target.id
@@ -883,33 +1031,52 @@ class BodyBlocksController(
         target.state.selection = TextRange(offset.coerceIn(0, rawLen))
     }
 
-    /** 兜底：把焦点落到第一个 Text 块。 */
-    private fun focusFirstTextBlock() {
+    /**
+     * 兜底：把焦点落到第一个 Text 块。
+     * 可见性为 internal——除被本类内部的 [focusSpec] 调用外，
+     * 还被同包的顶层 [ReplaceBlocksCommand]（apply/revert 中通过 controller 引用）跨类调用。
+     */
+    internal fun focusFirstTextBlock() {
         val firstText = blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text ?: return
         applyFocusAndCursor(firstText, 0)
     }
 
     // ---------- 删除 / 合并 ----------
 
-    /** 按 id 删除图片块（两步删除的确认步） */
+    /**
+     * 按 id 删除图片块（两步删除的确认步）。
+     * v2026-09-02 Command 化：removed = [ImageSpec]，inserted = []。
+     */
     fun deleteImageBlock(blockId: String) {
         val idx = blocks.indexOfFirst { it.id == blockId }
-        if (idx >= 0 && blocks[idx] is BodyBlock.Image) {
-            pushTimelineSnapshot()
-            blocks.removeAt(idx)
-            highlightedBlockId = null
-            onDocChanged?.invoke()
-        }
+        val block = blocks.getOrNull(idx)
+        if (block !is BodyBlock.Image) return
+        executeAndPush(
+            ReplaceBlocksCommand(
+                index = idx,
+                removedSpecs = listOf(BlockSpec.ImageSpec(block.id, block.path)),
+                insertedSpecs = emptyList(),
+                focusBefore = currentFocusSpec(),
+                /** 删图时焦点本就不在图片上，保持当前落点即可 */
+                focusAfter = currentFocusSpec(),
+            )
+        )
     }
 
     /** 按路径删除图片块（画廊删除入口），返回是否删除 */
     fun deleteImageByPath(path: String): Boolean {
         val idx = blocks.indexOfFirst { it is BodyBlock.Image && it.path == path }
         if (idx < 0) return false
-        pushTimelineSnapshot()
-        blocks.removeAt(idx)
-        highlightedBlockId = null
-        onDocChanged?.invoke()
+        val block = blocks[idx] as BodyBlock.Image
+        executeAndPush(
+            ReplaceBlocksCommand(
+                index = idx,
+                removedSpecs = listOf(BlockSpec.ImageSpec(block.id, block.path)),
+                insertedSpecs = emptyList(),
+                focusBefore = currentFocusSpec(),
+                focusAfter = currentFocusSpec(),
+            )
+        )
         return true
     }
 
@@ -935,18 +1102,24 @@ class BodyBlocksController(
 
         if (idx == 0) {
             if (isEffectivelyEmpty(block.state)) {
-                pushTimelineSnapshot()
-                blocks.removeAt(0)
-                /** invariant: 至少一个 Text 块——若列表空了，重新加一个空块 */
-                ensureTextBlock(atEnd = true)
-                /** 把焦点放回当前首 Text 块（通常是下一块，可能是新建的空块）。
-                 *  id 不同才设 pendingFocus，否则 LaunchedEffect 不会触发。 */
-                val firstText = blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text
-                if (firstText != null && firstText.id != block.id) {
-                    pendingFocusId = firstText.id
-                    pendingFocusOffset = 0
-                }
-                onDocChanged?.invoke()
+                /** 下一 Text 块；列表只剩这个空块时用它换成一个新空块（保不变量） */
+                val nextText = blocks.drop(1).firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text
+                val inserted = if (nextText == null) {
+                    listOf(BlockSpec.TextSpec(newBodyBlockId(), ""))
+                } else emptyList()
+                executeAndPush(
+                    ReplaceBlocksCommand(
+                        index = 0,
+                        removedSpecs = listOf(textSpec(block)),
+                        insertedSpecs = inserted,
+                        focusBefore = currentFocusSpec(),
+                        focusAfter = if (nextText != null) {
+                            FocusSpec(nextText.id, 0)
+                        } else {
+                            FocusSpec((inserted.first() as BlockSpec.TextSpec).id, 0)
+                        },
+                    )
+                )
             }
             return
         }
@@ -971,36 +1144,39 @@ class BodyBlocksController(
         }
     }
 
+    /**
+     * 退格合并：前块吸收后块（[ReplaceBlocksCommand]）——
+     * removed = [前块, 后块]，inserted = [前块（同 id，拼接后 markdown）]。
+     * undo 拆回两块（各自原 id），焦点回后块块首；redo 重放合并，焦点回接缝。
+     */
     private fun mergeTextBlocks(prev: BodyBlock.Text, cur: BodyBlock.Text) {
-        pushTimelineSnapshot()
-        val prevMd = prev.state.toMarkdown()
-        val curMd = cur.state.toMarkdown()
-        val junction = prev.state.annotatedString.text.length
-        /** 合并引发的 state 变化不作为"用户文本编辑"压栈（快照已在上面压过） */
-        val was = suppressTimeline
-        suppressTimeline = true
-        try {
-            prev.state.setMarkdown(prevMd + curMd)
-            prev.state.selection = TextRange(junction)
-            val curIdx = blocks.indexOfFirst { it.id == cur.id }
-            if (curIdx >= 0) blocks.removeAt(curIdx)
-        } finally {
-            suppressTimeline = was
-        }
-        pendingFocusId = prev.id
-        pendingFocusOffset = junction
-        onDocChanged?.invoke()
+        val prevIdx = blocks.indexOfFirst { it.id == prev.id }
+        if (prevIdx < 0) return
+        val prevMd = blockMarkdown(prev.state)
+        val curMd = blockMarkdown(cur.state)
+        /** 接缝光标（有效坐标，剥 ZWSP） */
+        val junction = effectiveText(prev.state.annotatedString.text).length
+        executeAndPush(
+            ReplaceBlocksCommand(
+                index = prevIdx,
+                removedSpecs = listOf(textSpec(prev), textSpec(cur)),
+                insertedSpecs = listOf(BlockSpec.TextSpec(prev.id, prevMd + curMd)),
+                focusBefore = FocusSpec(cur.id, 0),
+                focusAfter = FocusSpec(prev.id, junction),
+            )
+        )
     }
 
     // ---------- 重排 / 焦点 ----------
 
-    /** 拖拽排序回调 */
+    /**
+     * 拖拽排序回调（ReorderableColumn 的 onSettle——**手指抬起落定后才到达这里**，
+     * 方案A坑点3：拖拽过程零压栈，一步拖拽恰好一条 [MoveBlockCommand] 撤销记录）。
+     */
     fun moveBlock(from: Int, to: Int) {
         if (from == to || from !in blocks.indices || to !in blocks.indices) return
-        pushTimelineSnapshot()
-        val block = blocks.removeAt(from)
-        blocks.add(to, block)
-        onDocChanged?.invoke()
+        val blockId = blocks[from].id
+        executeAndPush(MoveBlockCommand(blockId = blockId, fromIndex = from, toIndex = to))
     }
 
     /** 块获得焦点时回调（由块 Composable 的 onFocusChanged 触发） */
@@ -1031,11 +1207,11 @@ class BodyBlocksController(
     }
 }
 
-/** 页面侧 remember 工厂 */
-@Composable
-fun rememberBodyBlocksController(
-    registerTriggers: (RichTextState) -> Unit,
-): BodyBlocksController = remember { BodyBlocksController(registerTriggers) }
+/**
+ * v2026-09-02 方案A：controller 不再由 UI 层 remember——由
+ * [com.corgimemo.app.viewmodel.InspirationEditViewModel] 持有（屏幕旋转不丢
+ * 命令栈与块内 history），Screen 直接读 `viewModel.bodyBlocks`。
+ */
 
 // ==================== UI ====================
 
@@ -1154,22 +1330,21 @@ private fun BlockTextItem(
     }
 
     /**
-     * 变更观察者（软键盘无按键事件，全部靠状态差分）：
-     * 0. **v2026-09-01 统一时间线 / v2026-09-02 扩展到样式**：用户文本**或样式**变化 →
-     *    压"变化前"快照到撤销栈（[BodyBlocksController.pushTextUndoSnapshot]），
-     *    撤销一步回一个字符 / 一次格式变更（加粗、列表等）。
-     *    **仅移动光标不压栈**：压栈条件是下面的 `markdown != lastMarkdown`，而
-     *    markdown 不含光标信息，selection 变化不会让它改变 → 不产生快照。
-     *    因此"移动光标后撤销"撤销的是上一次真实变更，而不是光标移动本身；
-     * 1. 块内出现 `\n` → 按段落拆块（Enter / 粘贴多行）
-     * 2. 文本变短且退格前光标折叠在块首 → 与前一块合并 / 高亮前一个图片块
-     * 3. 空块软键盘退格（state 由 ZWSP 唯一变成 ""）→ 走
-     *    [BodyBlocksController.onBackspaceAtStart]；配合末尾的 ZWSP 不变量
-     *    维护 LaunchedEffect，软键盘场景也能删除空块。
+     * 变更观察者（软键盘无按键事件，全部靠状态差分）。v2026-09-02 方案A改造：
+     *
+     * 0. **文字 / 样式的撤销不再进全局栈**——库内 `state.history` 自动记录
+     *    （打字按合并组、加粗 / 列表按格式化单步），observer 只负责两件事：
+     *    a. 检测到**真实新编辑**（markdown 变化且非重放）→ 清空全局 redo 栈
+     *       （新编辑使命令重放不安全，与库 history 的 redoStack.clear 对齐）。
+     *       **仅移动光标不清栈**：markdown 不含光标信息，selection 变化不触发；
+     *    b. 结构检测：块内出现 `\n` → 拆块；块首退格 → 合并 / 两步删除；
+     *       空块软键盘退格（ZWSP 唯一态变 ""）→ 走 [BodyBlocksController.onBackspaceAtStart]。
+     *    两者在 [BodyBlocksController.replaying]（命令重放 / 块内 history 恢复）
+     *    期间全部跳过——重放不该再触发结构检测或误清 redo 栈。
+     *    ZWSP 不变量维护**不受 replaying 门控**（恢复出的空块也要预置退格锚点）。
      */
     LaunchedEffect(block.id) {
         var lastText = state.annotatedString.text
-        /** v2026-09-02：新增 markdown 维度的"变化前"基线（压栈判据，见下） */
         var lastMarkdown = state.toMarkdown()
         var lastSelection = state.selection
         /** v2026-09-02：差分对象从 `annotatedString.text` 换成**整个 annotatedString**——
@@ -1179,8 +1354,7 @@ private fun BlockTextItem(
             .collect { (annotated, selection, composition) ->
                 val text = annotated.text
                 /** toMarkdown() 会把 SpanStyle 序列化成 `**粗体**` 等语法，
-                 *  因此格式化操作也会让 markdown 变化 → 被下方条件捕获入栈。
-                 *  注意：markdown 不含光标信息，所以"仅移动光标"依旧不会压栈。 */
+                 *  因此格式化操作也会让 markdown 变化 → 被下方条件捕获。 */
                 val markdown = state.toMarkdown()
                 if (isLocked) {
                     lastText = text
@@ -1188,28 +1362,27 @@ private fun BlockTextItem(
                     lastSelection = selection
                     return@collect
                 }
-                /** 统一时间线压栈：文本真变了（且非恢复操作、非 IME 组合中间态）→
-                 *  压"变化前"快照。与栈顶相同（结构操作已压过同一份）自动去重。
-                 *  退格合并 / 空块删除不在此压——onBackspaceAtStart 入口统一压
-                 *  （硬键盘路径 text 未变、observer 不触发，入口压栈才能覆盖两条路径）。
-                 *  已知取舍：中文 IME 组合结束后压的快照，"变化前"是组合最后一个
-                 *  中间态（如 "nihao"），撤销一步先回到拼音残迹再回空——后续可优化。 */
                 val backspaceMerge = lastText.isNotEmpty() && text == lastText.drop(1) &&
                     lastSelection.collapsed && lastSelection.start == 0
                 val emptyBackspace = lastText == ZWSP && text == ""
-                if (markdown != lastMarkdown && !backspaceMerge && !emptyBackspace &&
-                    !controller.suppressTimeline && composition == null
-                ) {
-                    controller.pushTextUndoSnapshot(block.id, lastMarkdown, lastText, lastSelection)
-                }
-                when {
-                    text.contains('\n') -> controller.normalizeBlockParagraphs(block)
-                    /** 块首退格：文本恰好丢掉首字符 + 退格前光标折叠在 0
-                     *  （用精确前缀匹配，避免拆块/撤销等其他缩文本场景误判） */
-                    backspaceMerge -> controller.onBackspaceAtStart(block)
-                    /** 空块软键盘退格：IME 在 ZWSP 唯一态调用 deleteSurroundingText
-                     *  把 ZWSP 删掉，text 变 "" → 走 onBackspaceAtStart（与硬键盘同路径） */
-                    emptyBackspace -> controller.onBackspaceAtStart(block)
+                if (!controller.replaying) {
+                    /** 新编辑（非命令重放、非块内 history 恢复、非 IME 组合中间态）
+                     *  → 全局 redo 栈失效。退格合并 / 空块删除路径不在此清——
+                     *  onBackspaceAtStart 入口的命令会统一清（pushExecuted）。 */
+                    if (markdown != lastMarkdown && !backspaceMerge && !emptyBackspace &&
+                        composition == null
+                    ) {
+                        controller.clearGlobalRedo()
+                    }
+                    when {
+                        text.contains('\n') -> controller.normalizeBlockParagraphs(block)
+                        /** 块首退格：文本恰好丢掉首字符 + 退格前光标折叠在 0
+                         *  （用精确前缀匹配，避免拆块/撤销等其他缩文本场景误判） */
+                        backspaceMerge -> controller.onBackspaceAtStart(block)
+                        /** 空块软键盘退格：IME 在 ZWSP 唯一态调用 deleteSurroundingText
+                         *  把 ZWSP 删掉，text 变 "" → 走 onBackspaceAtStart（与硬键盘同路径） */
+                        emptyBackspace -> controller.onBackspaceAtStart(block)
+                    }
                 }
                 /** ZWSP 不变量维护：空块恢复 \u200B + 光标 (1, 1)，否则软键盘退格下一次又无法检测。
                  *  注意：observer 条件检查必须在 setText 之前——否则 setText 让 text 从 "" 变 "\u200B"
@@ -1277,6 +1450,21 @@ private fun BlockTextItem(
                     }
                     if (isLocked) return@onPreviewKeyEvent false
                     when (keyEvent.key) {
+                        /** 方案A：物理键盘撤销 / 重做统一调度到 controller（焦点判断：块内
+                         *  富文本 history 优先，空则全局命令栈）——与屏幕按钮同一入口，
+                         *  避免快捷键绕过两套历史的调度逻辑。 */
+                        Key.Z -> if (keyEvent.isCtrlPressed) {
+                            if (keyEvent.isShiftPressed) controller.redo() else controller.undo()
+                            true
+                        } else {
+                            false
+                        }
+                        Key.Y -> if (keyEvent.isCtrlPressed) {
+                            controller.redo()
+                            true
+                        } else {
+                            false
+                        }
                         Key.Enter, Key.NumPadEnter -> {
                             /** 硬回车：拦截，直接在光标处拆块（\n 不进文本） */
                             controller.splitTextBlockAtCursor(block)
@@ -1317,8 +1505,9 @@ private fun BlockTextItem(
                 null
             },
             readOnly = isLocked,
-            /** v2026-09-01 统一时间线：禁用库内 undo（含物理键盘 Ctrl+Z 快捷键拦截），
-             *  撤销/重做全部走 controller 的统一时间线快照栈 */
+            /** v2026-09-02 方案A：库的 undo 快捷键拦截仍禁用——物理键盘 Ctrl+Z 由上方
+             *  onPreviewKeyEvent 统一调度到 controller.undo()（块内 history 与全局
+             *  命令栈的两套历史入口），避免快捷键绕过焦点判断直接走单块 history。 */
             undoBehavior = UndoBehavior.Disabled,
             textStyle = MaterialTheme.typography.bodyLarge.copy(
                 color = MaterialTheme.colorScheme.onSurface

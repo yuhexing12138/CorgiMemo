@@ -125,7 +125,6 @@ import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils /** v2026-0
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
 import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
 import com.mohamedrejeb.richeditor.model.RichSpanStyle
-import com.mohamedrejeb.richeditor.model.trigger.Trigger
 import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
@@ -135,7 +134,6 @@ import com.mohamedrejeb.richeditor.model.LocalTokenClickHandler
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.model.TokenClickHandler
 import com.corgimemo.app.ui.screens.inspiration.components.BodyBlocksEditor
-import com.corgimemo.app.ui.screens.inspiration.components.rememberBodyBlocksController
 import com.corgimemo.app.ui.components.CoilRichTextImageLoader
 import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.delay
@@ -166,19 +164,18 @@ fun InspirationEditScreen(
     /** 富文本格式化内容（Markdown 字符串），用于恢复编辑器的格式化显示 */
     val contentFormat by viewModel.contentFormat.collectAsState()
     /**
-     * Undo/Redo 状态说明（v2026-09-02 更正，旧注释与实际实现已不符）：
+     * Undo/Redo 状态说明（v2026-09-02 方案A：两套历史隔离）：
      *
-     * 正文的撤销/重做**统一由 BodyBlocksController 的「统一时间线」栈驱动**——
-     * 文本编辑与结构变更共用同一条时间线，按发生顺序倒序逐步回退；
-     * 撤销/重做时光标随快照还原（快照记录的是「变化那一刻」的块内光标偏移）。
+     * 正文的撤销/重做由 **两套互相隔离的历史** 驱动，统一入口
+     * [BodyBlocksController.undo] / [redo]（焦点判断是核心）：
+     * - **全局命令栈**（bodyBlocks 内部）：只存操作增量 Command——管块的增删、
+     *   拖拽排序、图片块属性编辑。controller 由 ViewModel 持有，**屏幕旋转不丢历史**；
+     * - **块内富文本 history**（compose-rich-editor 库自带 `RichTextState.history`）：
+     *   聚焦块的打字 / 加粗 / 样式自己管自己，不进全局栈。
+     * 按撤销时：聚焦块库内 history 非空 → 先回退块内文字；空则走全局命令栈。
      *
-     * 按钮启用状态读 `bodyBlocks.canUndoTimeline / canRedoTimeline`（见下方撤销/重做按钮），
-     * 二者是可观察的快照状态。
-     *
-     * 已不再生效的两套，勿再引用：
-     * - ViewModel 级 Undo 栈 `viewModel.canUndo / canRedo`：UI 层已完全不消费；
-     * - 库内 `richTextState.history`：编辑器 `undoBehavior` 已设 `UndoBehavior.Disabled`
-     *   （连物理键盘 Ctrl+Z 一并拦截），避免库内历史与统一栈并存导致错乱。
+     * 按钮启用状态读 `bodyBlocks.canUndo / canRedo`（见下方撤销/重做按钮），
+     * 二者是可观察的快照状态（含聚焦块 history 的感知）。
      */
 
     // 地理围栏相关状态
@@ -328,36 +325,18 @@ fun InspirationEditScreen(
      * - 语音 / 话题 / 关联 token 仍内联在 Text 块内（用户要求不变）
      * 详见 components/BodyBlocksEditor.kt
      */
+    /**
+     * v2026-09-02 方案A：块编辑器 controller 改由 **ViewModel 持有**
+     * （trigger 注册一并移入 InspirationEditViewModel）——
+     * globalUndoStack（命令栈）随 ViewModel 存活，屏幕旋转不丢历史。
+     *
+     * - 每个 Text 块一个 RichTextEditor；图片块是独立 Composable
+     * - Enter 拆块 / 块首退格合并 / 图片块两步删除 / 拖拽手柄排序
+     * - 语音 / 话题 / 关联 token 仍内联在 Text 块内（用户要求不变）
+     * 详见 components/BodyBlocksEditor.kt
+     */
     @OptIn(ExperimentalRichTextApi::class)
-    val bodyBlocks = rememberBodyBlocksController(
-        registerTriggers = { state ->
-            // # 标签 trigger：暖橙色，与原 FlowRow Chip 颜色一致
-            state.registerTrigger(
-                Trigger(
-                    id = "hashtag",
-                    char = '#',
-                    style = { SpanStyle(color = Color(0xFFFF9A5C), fontWeight = FontWeight.Medium) }
-                )
-            )
-            // @ 关联 trigger：蓝色
-            state.registerTrigger(
-                Trigger(
-                    id = "mention",
-                    char = '@',
-                    style = { SpanStyle(color = Color(0xFF1976D2), fontWeight = FontWeight.Medium) }
-                )
-            )
-            // 🎤 语音 trigger：橙红色，用于 markdown 注入的 [🎤mm:ss](trigger:voice:...) token 解析
-            // char 选 '/' 只为满足 registerTrigger 的非空 char 要求；真正入口在 setMarkdown 解析路径
-            state.registerTrigger(
-                Trigger(
-                    id = "voice",
-                    char = '/',
-                    style = { SpanStyle(color = Color(0xFFFF6B6B), fontWeight = FontWeight.Medium) }
-                )
-            )
-        },
-    )
+    val bodyBlocks = viewModel.bodyBlocks
 
     /**
      * 兼容层：原"单编辑器富文本状态" → 当前聚焦文本块的状态。
@@ -477,25 +456,25 @@ fun InspirationEditScreen(
      *
      * 3. 新数据（已含 token）：直接 setMarkdown，token 自动恢复。
      */
-    var hasInitializedWithData by remember { mutableStateOf(false) }
-
     /**
      * 编辑器内容初始化：把整篇 markdown 解析为 Text/Image 交错块
      *
-     * - trigger 注册已移入 bodyBlocks 的 registerTriggers（每个新建 Text 块都会注册）
+     * - trigger 注册已移入 ViewModel 的 bodyBlocks.registerTriggers（每个新建 Text 块都会注册）
      * - 旧数据迁移已由 ViewModel.loadInspiration 统一处理（contentFormat 已含 token）
+     * - **初始化守卫用 bodyBlocks.hasInitialized（controller 持有，随 ViewModel 存活）**：
+     *   v2026-09-02 方案A——旋转后 remember 全丢，若守卫也丢失会重跑 initialize，
+     *   把 ViewModel 里辛苦保住的块列表与命令栈（撤销历史）一起清空。
      */
     androidx.compose.runtime.LaunchedEffect(contentFormat) {
-        if (hasInitializedWithData) return@LaunchedEffect
+        if (bodyBlocks.hasInitialized) return@LaunchedEffect
         try {
             bodyBlocks.initialize(contentFormat)
         } catch (e: Exception) {
             Log.e("InspirationEditScreen", "编辑器初始化异常（已捕获）", e)
         }
-        hasInitializedWithData = true
     }
 
-    /** 旧 content_blocks 是否已迁移为正文内联媒体（避免重复迁移） */
+    /** 旧 content_blocks 是否已迁移为正文内联媒体（避免重复迁移；迁移按 path 去重、幂等） */
     var hasMigratedBlocks by remember { mutableStateOf(false) }
 
     /**
@@ -504,8 +483,8 @@ fun InspirationEditScreen(
      * 按"markdown 中是否已含该路径"去重——8-30 内联化轮已迁移过的数据，
      * 其 markdown 已包含图片/语音，重复插入会产生双份。
      */
-    LaunchedEffect(hasInitializedWithData) {
-        if (!hasInitializedWithData || hasMigratedBlocks) return@LaunchedEffect
+    LaunchedEffect(bodyBlocks.hasInitialized) {
+        if (!bodyBlocks.hasInitialized || hasMigratedBlocks) return@LaunchedEffect
         hasMigratedBlocks = true
         if (inspirationId == null) return@LaunchedEffect
 
@@ -868,17 +847,17 @@ fun InspirationEditScreen(
                 /**
                  * 撤销 + 重做（紧凑组）
                  *
-                 * v2026-09-01 统一时间线：文本编辑（逐字）与结构变更（插图拆块/Enter/合并/
-                 * 重排/删图）共用 [BodyBlocksController] 内的同一个快照栈，天然按时间倒序
-                 * 串联，撤销 = pop 栈顶恢复 + 光标还原。不再依赖库 `state.history`——
-                 * 块编辑器的 `undoBehavior` 已设 Disabled，避免物理键盘 Ctrl+Z 走库内
-                 * history 与统一栈并存错乱。
+                 * v2026-09-02 方案A（两套历史隔离）：统一入口 [BodyBlocksController.undo]
+                 * / [redo] 做焦点判断——聚焦块库内 history 非空则先回退块内富文本
+                 * （打字 / 加粗 / 样式），空则回退全局命令栈（块的增删 / 排序 / 图片块编辑）。
+                 * 块编辑器的 `undoBehavior` 保持 Disabled：物理键盘 Ctrl+Z 由编辑器
+                 * onPreviewKeyEvent 拦截后调同一入口，两套历史不会交叉错乱。
                  */
-                val bodyCanUndo = bodyBlocks.canUndoTimeline
-                val bodyCanRedo = bodyBlocks.canRedoTimeline
+                val bodyCanUndo = bodyBlocks.canUndo
+                val bodyCanRedo = bodyBlocks.canRedo
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
-                        onClick = { bodyBlocks.undoTimeline() },
+                        onClick = { bodyBlocks.undo() },
                         enabled = bodyCanUndo && !isLocked,
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -890,7 +869,7 @@ fun InspirationEditScreen(
                         )
                     }
                     IconButton(
-                        onClick = { bodyBlocks.redoTimeline() },
+                        onClick = { bodyBlocks.redo() },
                         enabled = bodyCanRedo && !isLocked,
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -1110,15 +1089,15 @@ fun InspirationEditScreen(
                     isFormatExpanded = !isFormatExpanded
                 },
                 /**
-                 * v2026-09-02：以下格式化操作**不再手动推送撤销快照**。
+                 * v2026-09-02：格式化操作**无需任何手动撤销处理**（方案A两套历史隔离）。
                  *
-                 * 块编辑器（BodyBlocksController）的统一时间线 observer 已把差分对象
-                 * 改为 `state.toMarkdown()`，因此加粗 / 斜体 / 列表 / 对齐 / 代码等
-                 * "只改样式、不改字符"的操作也会被**自动捕获入栈**；
-                 * 且快照改存 markdown，撤销时能连同富文本样式一起还原。
+                 * 加粗 / 斜体 / 列表等作用于聚焦块（richTextState 兼容层 = 聚焦或首块），
+                 * 走 compose-rich-editor 库 `state.history` 的 Formatting 提交——
+                 * 块内富文本撤销由库自动记录，全局命令栈只管块的增删 / 排序，
+                 * 两套历史互不干扰。
                  *
                  * 原先这里调用的 `viewModel.pushRichTextSnapshot(...)` 属于
-                 * 已废弃的 VM 旧撤销栈（UI 层从不消费），一并移除。
+                 * 已废弃的 VM 旧撤销栈（UI 层从不消费），早已移除。
                  */
                 onToggleBold = {
                     richTextState.toggleSpanStyle(SpanStyle(fontWeight = FontWeight.Bold))
@@ -1453,7 +1432,7 @@ fun InspirationEditScreen(
              */
             androidx.compose.runtime.SideEffect {
                 bodyBlocks.onDocChanged = {
-                    if (hasInitializedWithData) {
+                    if (bodyBlocks.hasInitialized) {
                         viewModel.setContent(bodyBlocks.plainText())
                         viewModel.setContentFormat(bodyBlocks.toMarkdown())
                     }
@@ -1655,7 +1634,8 @@ fun InspirationEditScreen(
                          * - 不依赖 activeTriggerQuery 是否激活（录音时不可能处于 voice trigger 状态，
                          *   因此之前那种"用 insertToken"路径走不通）。
                          * - voice trigger 仍需注册（用于 token 渲染颜色与解析时的样式查表），
-                         *   见文件上方 richTextState.registerTrigger(Trigger(id="voice", ...))。
+                         *   见 InspirationEditViewModel.bodyBlocks 的 registerTriggers
+                         *   （v2026-09-02 随 controller 一并移入 ViewModel）。
                          */
                         /**
                          * v2026-08-31 新增：token id 追加时间戳，保证多次录音 id 全局唯一。

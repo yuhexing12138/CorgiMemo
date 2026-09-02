@@ -1,6 +1,9 @@
 package com.corgimemo.app.viewmodel
 
 import android.content.Context
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.corgimemo.app.data.local.db.ContentBlockDao
@@ -19,7 +22,9 @@ import com.corgimemo.app.data.repository.InspirationRepository
 import com.corgimemo.app.data.repository.SubTaskManager
 import com.corgimemo.app.model.UserType
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
+import com.corgimemo.app.ui.screens.inspiration.components.BodyBlocksController
 import com.mohamedrejeb.richeditor.model.RichTextState
+import com.mohamedrejeb.richeditor.model.trigger.Trigger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -341,9 +346,14 @@ class InspirationEditViewModel @Inject constructor(
      * - addLink（超链接）
      * - setMarkdown / toMarkdown（Markdown 导入导出）
      *
-     * **撤销/重做**：本项目的统一时间线撤销栈由 BodyBlocksController 在内存中维护
-     * （块级快照 + 光标位置），UI 层读取 bodyBlocks.canUndoTimeline / canRedoTimeline。
-     * 此处不再保留独立的 VM 级 Undo/Redo 栈，RichTextState 库自带 history 也已禁用。
+     * **撤销/重做（v2026-09-02 方案A：两套历史隔离）**：
+     * - **全局命令栈**（块的增删 / 拖拽排序 / 图片块编辑）由 [bodyBlocks] 在内存中维护，
+     *   controller 持有在本 ViewModel——屏幕旋转（配置变更）不丢历史；
+     * - **块内富文本历史**（打字 / 加粗 / 样式）由 compose-rich-editor 库自带的
+     *   `RichTextState.history` 管理，不进全局栈；
+     * - 统一调度入口 [BodyBlocksController.undo] / [redo]：聚焦块库内 history 优先，
+     *   空则回退全局命令栈（焦点判断是核心）。
+     * UI 层读取 bodyBlocks.canUndo / canRedo 控制按钮状态。
      *
      * **UI 层使用**：
      * - 编辑器组件：rememberRichTextState() 初始化，通过此字段访问
@@ -353,6 +363,44 @@ class InspirationEditViewModel @Inject constructor(
 
     /** 富文本编辑器状态（只读暴露） */
     val richTextState: RichTextState? get() = _richTextState
+
+    /**
+     * v2026-09-02 方案A：块编辑器 controller 由 ViewModel 持有（不再 UI remember）——
+     * **globalUndoStack（命令栈）随 ViewModel 存活，屏幕旋转不丢历史**。
+     *
+     * - trigger 注册（#hashtag / @mention / 语音 token）随 controller 一起移入，
+     *   每个新建 Text 块的 RichTextState 都会注册；
+     * - 保存链路照旧：onDocChanged → setContent / setContentFormat（Screen 接线）。
+     */
+    val bodyBlocks: BodyBlocksController = BodyBlocksController(
+        registerTriggers = { state ->
+            // # 标签 trigger：暖橙色，与原 FlowRow Chip 颜色一致
+            state.registerTrigger(
+                Trigger(
+                    id = "hashtag",
+                    char = '#',
+                    style = { SpanStyle(color = Color(0xFFFF9A5C), fontWeight = FontWeight.Medium) }
+                )
+            )
+            // @ 关联 trigger：蓝色
+            state.registerTrigger(
+                Trigger(
+                    id = "mention",
+                    char = '@',
+                    style = { SpanStyle(color = Color(0xFF1976D2), fontWeight = FontWeight.Medium) }
+                )
+            )
+            // 🎤 语音 trigger：橙红色，用于 markdown 注入的 [🎤mm:ss](trigger:voice:...) token 解析
+            // char 选 '/' 只为满足 registerTrigger 的非空 char 要求；真正入口在 setMarkdown 解析路径
+            state.registerTrigger(
+                Trigger(
+                    id = "voice",
+                    char = '/',
+                    style = { SpanStyle(color = Color(0xFFFF6B6B), fontWeight = FontWeight.Medium) }
+                )
+            )
+        },
+    )
 
     /** 关联列表 */
     private val _relations = MutableStateFlow<List<CardRelation>>(emptyList())
