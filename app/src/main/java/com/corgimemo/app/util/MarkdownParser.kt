@@ -197,6 +197,13 @@ object MarkdownParser {
      * 处理文本中的 **bold** 和 *italic* 标记，
      * 支持两种语法的混合使用。
      *
+     * **字重语义（与库侧 markdown 对齐）**：
+     * - `**` 表示标准粗体，映射为 `FontWeight.Bold(700)`，与 compose-rich-editor
+     *   库 `setMarkdown` 对 `**` 的解析保持一致（避免同份 `**` 在编辑态=700、
+     *   预览/加载态=800 的不一致）。
+     * - 非 700 字重（如 ExtraBold 800）不靠 `**` 表达，而是经 `parseSpanWeight`
+     *   由 `<span style="font-weight:N">` 还原，详见 [parseSpanWeight]。
+     *
      * @param text 输入文本
      * @return 应用粗体/斜体样式的 AnnotatedString
      */
@@ -219,8 +226,8 @@ object MarkdownParser {
                 /** 处理粗体前的普通文本（可能包含斜体） */
                 append(parseItalicOnly(before))
 
-                /** 处理粗体内容（内部可能包含斜体） */
-                withStyle(style = SpanStyle(fontWeight = FontWeight.ExtraBold)) {
+                /** 处理粗体内容（内部可能包含斜体）；`**` 映射标准 Bold(700) */
+                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
                     append(parseItalicOnly(content))
                 }
 
