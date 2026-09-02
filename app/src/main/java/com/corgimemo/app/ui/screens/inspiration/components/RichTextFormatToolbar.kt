@@ -50,13 +50,15 @@ import androidx.compose.ui.unit.sp
 import com.mohamedrejeb.richeditor.model.RichTextState
 
 /**
- * 加粗字重档位（数字越大加重程度越大）：B1=700 / B2=750 / B3=800。
+ * 加粗字重档位（数字越大加重程度越大）：B1=500(Medium) / B2=700(Bold) / B3=900(Black)。
  *
- * - 700 为标准粗体，markdown 中走 `**`；
- * - 750 / 800 为非标准加重，markdown 往返走 `<span style="font-weight:N">` 保留数值。
+ * - 500(Medium) / 700(Bold) / 900(Black) 三档，均为系统默认字体真实存在的字面，
+ *   保证在任意 Android 设备上三档视觉明显区分（系统字体无 600/750/800 独立字面，
+ *   会被量化到最近可用字面，故不采用此类中间值）。
+ * - 700 走 markdown `**`；500 / 900 走 `<span style="font-weight:N">` 保留数值。
  * 该常量同时作为「清除已选字重、避免叠加」的遍历来源。
  */
-private val BOLD_WEIGHT_TIERS = listOf(700, 750, 800)
+internal val BOLD_WEIGHT_TIERS = listOf(500, 700, 900)
 
 /**
  * 富文本格式工具栏（使用 compose-rich-editor 库）
@@ -70,7 +72,7 @@ private val BOLD_WEIGHT_TIERS = listOf(700, 750, 800)
  * 3. **对齐**: 左对齐、居中、右对齐（通过 toggleParagraphStyle）
  * 4. **高级**: 链接、代码块
  *
- * 加粗按钮交互：点击 B 展开同行 B1(700)/B2(750)/B3(800) 子按钮（其余按钮被推开）；
+ * 加粗按钮交互：点击 B 展开同行 B1(500)/B2(700)/B3(900) 子按钮（其余按钮被推开）；
  * 选中某档后子按钮自动收起，B 变为对应的 B1/B2/B3 并高亮（选中的档位）。
  * 再次点击当前已选档位可取消加粗（回到常规字重）。
  *
@@ -79,7 +81,7 @@ private val BOLD_WEIGHT_TIERS = listOf(700, 750, 800)
  *
  * @param state 库的 RichTextState 实例
  * @param modifier Modifier
- * @param onSetFontWeight 设置字重档位回调（参数为 700 / 750 / 800）
+ * @param onSetFontWeight 设置字重档位回调（参数为 500 / 700 / 900）
  * @param onToggleItalic 斜体回调
  * @param onToggleUnderline 下划线回调
  * @param onToggleStrikethrough 删除线回调
@@ -134,7 +136,7 @@ fun RichTextFormatToolbar(
                 onClick = { boldExpanded = !boldExpanded },
                 contentDescription = "加粗字重"
             )
-            /** 展开态：同行显示 B1(700)/B2(750)/B3(800)，选中后自动收起 */
+            /** 展开态：同行显示 B1(500)/B2(700)/B3(900)，选中后自动收起 */
             AnimatedVisibility(
                 visible = boldExpanded,
                 enter = expandHorizontally(),

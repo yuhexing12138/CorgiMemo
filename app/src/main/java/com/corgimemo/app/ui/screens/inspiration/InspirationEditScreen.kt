@@ -120,6 +120,7 @@ import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.InspirationEditViewModel
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationEditBottomBar /** 灵感编辑页底部栏（5 按钮 + 可折叠格式工具栏）*/
+import com.corgimemo.app.ui.screens.inspiration.components.BOLD_WEIGHT_TIERS /** 字重档位常量（与工具栏共用，保证选档/清除集合一致）*/
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery /** 灵感专用的沉浸式全屏图片画廊（编辑态预览复用） */
 import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils /** v2026-07-31 新增：标题与正文之间"时间戳+字数"行所需的字数统计工具 */
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
@@ -1120,11 +1121,12 @@ fun InspirationEditScreen(
                  * 已废弃的 VM 旧撤销栈（UI 层从不消费），早已移除。
                  */
                 onSetFontWeight = { weight ->
-                    // 设置字重档位（700/750/800）：先清除三档字重避免叠加，再 toggle 目标档。
+                    // 设置字重档位（500/700/900）：先清除全部档位字重避免叠加，再 toggle 目标档。
+                    // 清除集合与工具栏 BOLD_WEIGHT_TIERS 共用，保证选档/取消语义一致。
                     // toggle 语义：点当前已选档则取消加粗（回到常规字重）。
                     val target = FontWeight(weight)
                     val current = richTextState.currentSpanStyle.fontWeight
-                    listOf(700, 750, 800).forEach { w ->
+                    BOLD_WEIGHT_TIERS.forEach { w ->
                         richTextState.removeSpanStyle(SpanStyle(fontWeight = FontWeight(w)))
                     }
                     if (current != target) {
