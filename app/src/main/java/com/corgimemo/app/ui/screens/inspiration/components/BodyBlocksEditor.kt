@@ -160,7 +160,22 @@ sealed class BlockSpec {
     data class ImageSpec(override val id: String, val path: String) : BlockSpec()
 }
 
-/** 焦点落点描述：块 id + 块内有效文本偏移（剥 ZWSP 的坐标系） */
+/**
+ * 焦点落点描述：块 id + 块内光标偏移。
+ *
+ * **offset 一律为原始坐标（raw offset）**——直接索引进对应块的
+ * [RichTextState.annotatedString.text]（含前导 ZWSP 偏移），
+ * [focusSpec] / [applyFocusAndCursor] / [BlockTextItem] 的 LaunchedEffect 都按 raw 直接写
+ * [RichTextState.selection]。
+ *
+ * ⚠️ 历史坑（方案A撤销回归 #2）：曾把 offset 存成「有效坐标（剥 ZWSP）」，导致直接打字产生的块
+ * （如 `\u200B一二`）撤销后光标错位到『一』左边。故：本类所有生产者（[currentFocusSpec]、
+ * 各 Command 构造）都必须输出 raw；消费者无需换算。
+ *
+ * 唯一例外是 [normalizeBlockParagraphs] / [mergeTextBlocks] 里对「旧块」算折行接缝时用了
+ * [effectiveText]，但那是把旧块有效字数映射到「重建后的无 ZWSP 新块」的 raw 偏移，属有意换算，
+ * 不要误改成对旧块取 raw（旧块带 ZWSP 会整体 -1）。
+ */
 data class FocusSpec(val blockId: String, val offset: Int)
 
 /**
@@ -422,6 +437,10 @@ class BodyBlocksController(
         state.inlineImageRendering = false
         registerTriggers(state)
         if (markdown.isNotEmpty()) {
+            /** 非空块经 setMarkdown 重建，**不含**前导 ZWSP：
+             * 这是 [FocusSpec.offset] 统一为 raw 坐标的前提——由 [BlockSpec.TextSpec] 重建的
+             * 非空块 effective == raw，[normalizeBlockParagraphs] / [mergeTextBlocks] 里对
+             * 旧块用 [effectiveText] 算出的「有效字数」可直接当新块的 raw 偏移。 */
             state.setMarkdown(markdown)
         } else {
             /** 空块预置 ZWSP + 光标 (1, 1)：让软键盘退格能产生状态变化被 observer 捕获 */
@@ -765,8 +784,16 @@ class BodyBlocksController(
                 if (md.isNotBlank()) {
                     val specId = if (inserted.isEmpty()) block.id else newBodyBlockId()
                     inserted += BlockSpec.TextSpec(specId, md)
-                    /** 光标落点：cursor 落在这一行 → 该块 + 行内有效偏移
-                     *  （区间连续覆盖全文，cursor <= e 时必有 cursor >= s，substring 安全） */
+                    /**
+                     * 光标落点：cursor 落在这一行 → 该块 + 行内有效偏移。
+                     * （区间连续覆盖全文，cursor <= e 时必有 cursor >= s，substring 安全）
+                     *
+                     * 注意：focusBlockId 对应的块是 [BlockSpec.TextSpec](md) 经 setMarkdown 重建的
+                     * 非空块——**不含前导 ZWSP**，故其 effective == raw。
+                     * 此处用 effectiveText(substring).length 算出的「旧块该行有效字数」恰好等于
+                     * 「新块（无 ZWSP）的 raw 偏移」，属有意换算，不要误改成对旧块 text 取 raw
+                     * 坐标（旧块带 ZWSP 会导致偏移整体 -1）。
+                     */
                     if (focusBlockId == null && cursor <= e) {
                         focusBlockId = specId
                         focusOffset = effectiveText(text.substring(s, cursor)).length
@@ -1236,7 +1263,13 @@ class BodyBlocksController(
         if (prevIdx < 0) return
         val prevMd = blockMarkdown(prev.state)
         val curMd = blockMarkdown(cur.state)
-        /** 接缝光标（有效坐标，剥 ZWSP） */
+        /**
+         * 接缝光标（raw 偏移，作用于重建后的 prev 块）。
+         * 此处用 effectiveText 剥掉旧 prev 块的前导 ZWSP 得到「有效字数」，恰好等于
+         * 新 prev 块（[BlockSpec.TextSpec](prevMd + curMd)，经 setMarkdown 重建、不含 ZWSP）
+         * 的 raw 长度——即前块内容末尾、后块内容起始的接缝位置。
+         * 属有意换算，不要误改成对旧 prev 块 text 取 raw 坐标（旧块带 ZWSP 会使接缝整体 -1）。
+         */
         val junction = effectiveText(prev.state.annotatedString.text).length
         executeAndPush(
             ReplaceBlocksCommand(
