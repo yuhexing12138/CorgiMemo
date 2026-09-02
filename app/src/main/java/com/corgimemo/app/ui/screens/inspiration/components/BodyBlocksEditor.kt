@@ -201,10 +201,32 @@ class ReplaceBlocksCommand(
     /** 操作后焦点（apply 后落点） */
     val focusAfter: FocusSpec?,
 ) : BodyBlocksCommand {
+    /**
+     * 被替换的**原始块对象**（带各自 RichTextState 历史）的暂存。
+     *
+     * 修复方案A已知边界（setMarkdown 会清块内 history）：块级命令在 apply 时经
+     * setMarkdown 重建文字块会清空其库内 history（打字历史丢失）。若 revert 也走
+     * "从 markdown 重建"，则撤销命令后还原出的文字块历史已空，canUndo 仅靠命令栈
+     * （此时已空）判定 → 撤销键提前变灰、无法继续撤销到文字清空。
+     * 因此 apply 时把被替换的原始块对象整体暂存，revert 时**原样还原**这些对象
+     * （不再重建），保留用户在命令前打过的字，使"继续撤销直至文字消失"成为可能。
+     *
+     * 注意：暂存的是块对象引用（含 RichTextState），非 Bitmap；与 [BlockSpec]
+     * "绝不持 Bitmap" 的约束不冲突——那是 Command 载荷，此处是回收原始对象。
+     * 仅首次 apply 捕获；redo 重放不再覆盖（保留初值，避免把重放态误存为原始态）。
+     */
+    var stashedRemoved: List<BodyBlock>? = null
+        private set
 
     override fun apply(controller: BodyBlocksController) {
         /** 当前列表 index 处应是"被替换区间"（首次 = removed 原状，重放 = removed 已恢复） */
         val idx = controller.locateRangeStart(removedSpecs.firstOrNull()?.id, index)
+        /** 首次执行时暂存被替换的原始块；redo 重放不再覆盖（保留初值） */
+        if (stashedRemoved == null) {
+            stashedRemoved = controller.blocks
+                .subList(idx, (idx + removedSpecs.size).coerceAtMost(controller.blocks.size))
+                .toList()
+        }
         controller.replaceBlockRange(idx, removedSpecs.size, insertedSpecs)
         focusAfter?.let { controller.focusSpec(it) } ?: controller.focusFirstTextBlock()
         controller.afterCommandMutation()
@@ -221,7 +243,14 @@ class ReplaceBlocksCommand(
         insertedSpecs.filterIsInstance<BlockSpec.TextSpec>().forEach {
             controller.drainBlockHistory(it.id)
         }
-        controller.replaceBlockRange(idx, insertedSpecs.size, removedSpecs)
+        val stash = stashedRemoved
+        if (stash != null) {
+            /** 原样还原暂存的原始块（保留其 RichTextState 历史），而非从 markdown 重建 */
+            controller.restoreBlockRange(idx, insertedSpecs.size, stash)
+        } else {
+            /** 兜底（暂存缺失）：退回旧行为——从 markdown 重建（历史将丢失，与修复前一致） */
+            controller.replaceBlockRange(idx, insertedSpecs.size, removedSpecs)
+        }
         focusBefore?.let { controller.focusSpec(it) } ?: controller.focusFirstTextBlock()
         controller.afterCommandMutation()
     }
@@ -941,6 +970,19 @@ class BodyBlocksController(
         val safeCount = removeCount.coerceAtMost(blocks.size - safeIndex).coerceAtLeast(0)
         repeat(safeCount) { blocks.removeAt(safeIndex) }
         blocks.addAll(safeIndex, insertSpecs.map { rebuildBlock(it) })
+    }
+
+    /**
+     * 把 `[index, index + removeCount)` 的块移除，并**原样插入** [restored]（[ReplaceBlocksCommand.revert]
+     * 的落盘原语）。与 [replaceBlockRange] 不同：此处插入的是**已有的块对象**（带各自
+     * RichTextState 历史），不做 setMarkdown 重建——从而保留命令前的块内编辑历史，
+     * 修复"撤销块级命令后无法继续撤销文字"的问题。
+     */
+    internal fun restoreBlockRange(index: Int, removeCount: Int, restored: List<BodyBlock>) {
+        val safeIndex = index.coerceIn(0, blocks.size)
+        val safeCount = removeCount.coerceAtMost(blocks.size - safeIndex).coerceAtLeast(0)
+        repeat(safeCount) { blocks.removeAt(safeIndex) }
+        blocks.addAll(safeIndex, restored)
     }
 
     /** 按 [BlockSpec] 重建块（Text 走 setMarkdown 还原富文本样式；Image 只存 uri） */
