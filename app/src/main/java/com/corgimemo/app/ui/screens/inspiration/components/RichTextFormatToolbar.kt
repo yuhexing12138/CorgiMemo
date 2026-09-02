@@ -1,5 +1,8 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -15,17 +18,24 @@ import androidx.compose.material.icons.automirrored.filled.FormatAlignRight
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.FormatAlignCenter
-import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,9 +43,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mohamedrejeb.richeditor.model.RichTextState
+
+/**
+ * 加粗字重档位（数字越大加重程度越大）：B1=700 / B2=750 / B3=800。
+ *
+ * - 700 为标准粗体，markdown 中走 `**`；
+ * - 750 / 800 为非标准加重，markdown 往返走 `<span style="font-weight:N">` 保留数值。
+ * 该常量同时作为「清除已选字重、避免叠加」的遍历来源。
+ */
+private val BOLD_WEIGHT_TIERS = listOf(700, 750, 800)
 
 /**
  * 富文本格式工具栏（使用 compose-rich-editor 库）
@@ -44,17 +65,21 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * 工具栏分为 4 个功能组，每组用竖线分隔：
  *
  * **功能分组**:
- * 1. **基础样式**: 加粗(B)、斜体(I)、下划线(U)、删除线(S)
+ * 1. **基础样式**: 加粗(B，可展开字重菜单 B1/B2/B3)、斜体(I)、下划线(U)、删除线(S)
  * 2. **列表**: 无序列表、有序列表
  * 3. **对齐**: 左对齐、居中、右对齐（通过 toggleParagraphStyle）
  * 4. **高级**: 链接、代码块
+ *
+ * 加粗按钮交互：点击 B 展开同行 B1(700)/B2(750)/B3(800) 子按钮（其余按钮被推开）；
+ * 选中某档后子按钮自动收起，B 变为对应的 B1/B2/B3 并高亮（选中的档位）。
+ * 再次点击当前已选档位可取消加粗（回到常规字重）。
  *
  * 每个按钮支持激活状态显示（暖橙色高亮），
  * 符合项目整体 UI 设计规范（暖橙色主题 #FF9A5C）。
  *
  * @param state 库的 RichTextState 实例
  * @param modifier Modifier
- * @param onToggleBold 加粗回调
+ * @param onSetFontWeight 设置字重档位回调（参数为 700 / 750 / 800）
  * @param onToggleItalic 斜体回调
  * @param onToggleUnderline 下划线回调
  * @param onToggleStrikethrough 删除线回调
@@ -70,7 +95,7 @@ import com.mohamedrejeb.richeditor.model.RichTextState
 fun RichTextFormatToolbar(
     state: RichTextState,
     modifier: Modifier = Modifier,
-    onToggleBold: () -> Unit,
+    onSetFontWeight: (Int) -> Unit,
     onToggleItalic: () -> Unit,
     onToggleUnderline: () -> Unit,
     onToggleStrikethrough: () -> Unit,
@@ -82,6 +107,15 @@ fun RichTextFormatToolbar(
     onInsertLink: () -> Unit = {},
     onToggleCodeSpan: () -> Unit = {}
 ) {
+    /** 加粗字重菜单的展开状态（纯 UI 局部状态，置于函数体顶层，不在条件分支内） */
+    var boldExpanded by remember { mutableStateOf(false) }
+    /** 当前光标/选中区的字重档位（null 表示未处于三档之一） */
+    val currentWeight = state.currentSpanStyle.fontWeight?.weight
+    val currentTier = when (currentWeight) {
+        in BOLD_WEIGHT_TIERS -> BOLD_WEIGHT_TIERS.indexOf(currentWeight) + 1
+        else -> null
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -90,15 +124,36 @@ fun RichTextFormatToolbar(
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        /** ====== 第一组：基础样式 (B/I/U/S) ====== */
+        /** ====== 第一组：基础样式 (加粗字重菜单 / 斜体 / 下划线 / 删除线) ====== */
         FormatButtonGroup {
-            FormatIconButton(
-                imageVector = Icons.Default.FormatBold,
-                // 加粗阈值放宽到 Bold 及以上（v2026-09-02：加粗升级为 ExtraBold 后仍能正确高亮）
-                isActive = (state.currentSpanStyle.fontWeight?.weight ?: 0) >= FontWeight.Bold.weight,
-                onClick = onToggleBold,
-                contentDescription = "加粗"
+            /** 加粗主按钮：点击展开/收起字重菜单；展开时显示左箭头，收起时显示右箭头 */
+            FormatWeightButton(
+                tier = currentTier,
+                expanded = boldExpanded,
+                isActive = currentTier != null,
+                onClick = { boldExpanded = !boldExpanded },
+                contentDescription = "加粗字重"
             )
+            /** 展开态：同行显示 B1(700)/B2(750)/B3(800)，选中后自动收起 */
+            AnimatedVisibility(
+                visible = boldExpanded,
+                enter = expandHorizontally(),
+                exit = shrinkHorizontally()
+            ) {
+                Row {
+                    BOLD_WEIGHT_TIERS.forEachIndexed { index, weight ->
+                        val tier = index + 1
+                        FormatWeightTierButton(
+                            tier = tier,
+                            isActive = currentWeight == weight,
+                            onClick = {
+                                onSetFontWeight(weight)
+                                boldExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
             FormatIconButton(
                 imageVector = Icons.Default.FormatItalic,
                 isActive = state.currentSpanStyle.fontStyle == FontStyle.Italic,
@@ -253,5 +308,125 @@ private fun FormatIconButton(
             tint = tint,
             modifier = Modifier.size(22.dp)
         )
+    }
+}
+
+/**
+ * 加粗主按钮（可展开字重菜单）
+ *
+ * 显示「B」+ 可选右下标档位数字（B1/B2/B3）+ 展开方向箭头：
+ * - 收起态（未展开或未选中档位）：右箭头，暗示可展开；
+ * - 选中某档位后：显示对应档位下标并保持右箭头，激活态高亮；
+ * - 展开态：左箭头，暗示可收起。
+ *
+ * @param tier 当前选中档位（1/2/3 对应 B1/B2/B3），null 表示未选中任何档位
+ * @param expanded 字重菜单是否展开
+ * @param isActive 是否激活（选中了三档之一）
+ * @param onClick 点击回调（展开/收起菜单）
+ * @param contentDescription 无障碍描述
+ */
+@Composable
+private fun FormatWeightButton(
+    tier: Int?,
+    expanded: Boolean,
+    isActive: Boolean,
+    onClick: () -> Unit,
+    contentDescription: String
+) {
+    val backgroundColor = if (isActive) {
+        Color(0xFFFFE0C0)
+    } else {
+        Color.Transparent
+    }
+    val tint = if (isActive) {
+        Color(0xFFFF9A5C)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(backgroundColor)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "B",
+                fontWeight = FontWeight.Bold,
+                color = tint,
+                fontSize = 15.sp
+            )
+            /** 选中档位时显示右下标数字（1/2/3） */
+            if (tier != null) {
+                Text(
+                    text = tier.toString(),
+                    color = tint,
+                    fontSize = 9.sp,
+                    style = LocalTextStyle.current.copy(baselineShift = BaselineShift.Subscript)
+                )
+            }
+            /** 展开方向箭头：展开时左箭头，收起时右箭头 */
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowLeft else Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 加粗字重子按钮（B1/B2/B3）
+ *
+ * 显示「B」+ 右下标档位数字（固定 1/2/3），激活态高亮当前选中的档位。
+ *
+ * @param tier 档位数字（1/2/3 对应 B1/B2/B3）
+ * @param isActive 是否为当前选中档位
+ * @param onClick 点击回调（设置对应字重并收起菜单）
+ */
+@Composable
+private fun FormatWeightTierButton(
+    tier: Int,
+    isActive: Boolean,
+    onClick: () -> Unit
+) {
+    val backgroundColor = if (isActive) {
+        Color(0xFFFFE0C0)
+    } else {
+        Color.Transparent
+    }
+    val tint = if (isActive) {
+        Color(0xFFFF9A5C)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(backgroundColor)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "B",
+                fontWeight = FontWeight.Bold,
+                color = tint,
+                fontSize = 15.sp
+            )
+            Text(
+                text = tier.toString(),
+                color = tint,
+                fontSize = 9.sp,
+                style = LocalTextStyle.current.copy(baselineShift = BaselineShift.Subscript)
+            )
+        }
     }
 }

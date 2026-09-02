@@ -485,7 +485,9 @@ fun InspirationEditScreen(
     androidx.compose.runtime.LaunchedEffect(Unit) {
         if (inspirationId == null && !bodyBlocks.hasInitialized) {
             try {
-                bodyBlocks.initialize("")
+                // triggerDocChanged=false：新建灵感的空块初始化属于载入，不是用户编辑，
+                // 不应把 _isDirty 置脏，否则未输入就按返回会误弹"放弃修改？"
+                bodyBlocks.initialize("", triggerDocChanged = false)
             } catch (e: Exception) {
                 Log.e("InspirationEditScreen", "编辑器初始化异常（已捕获）", e)
             }
@@ -1117,8 +1119,17 @@ fun InspirationEditScreen(
                  * 原先这里调用的 `viewModel.pushRichTextSnapshot(...)` 属于
                  * 已废弃的 VM 旧撤销栈（UI 层从不消费），早已移除。
                  */
-                onToggleBold = {
-                    richTextState.toggleSpanStyle(SpanStyle(fontWeight = FontWeight.ExtraBold))
+                onSetFontWeight = { weight ->
+                    // 设置字重档位（700/750/800）：先清除三档字重避免叠加，再 toggle 目标档。
+                    // toggle 语义：点当前已选档则取消加粗（回到常规字重）。
+                    val target = FontWeight(weight)
+                    val current = richTextState.currentSpanStyle.fontWeight
+                    listOf(700, 750, 800).forEach { w ->
+                        richTextState.removeSpanStyle(SpanStyle(fontWeight = FontWeight(w)))
+                    }
+                    if (current != target) {
+                        richTextState.toggleSpanStyle(SpanStyle(fontWeight = target))
+                    }
                 },
                 onToggleItalic = {
                     richTextState.toggleSpanStyle(SpanStyle(fontStyle = FontStyle.Italic))
