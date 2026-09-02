@@ -55,11 +55,18 @@ internal object FontWeightProbe {
             if (!bitmapsEqual(bitmap, lastDistinctBitmap)) {
                 // 与上一已确认档位像素不同 → 有独立字形
                 result.add(weight)
+                // 根因修复（v2026-09-02）：刚创建的 bitmap 将成为下一轮的对比基准，
+                // 必须保留、绝不能在本轮回收；改为回收“上一档”位图（previous），
+                // 保证 lastDistinctBitmap 始终指向存活位图，避免对回收位图调 getPixels 崩溃。
+                val previous = lastDistinctBitmap
                 lastDistinctBitmap = bitmap
+                previous.recycle()
+            } else {
+                // 与上一档像素相同 → 无独立字面，本候选位图不再使用，直接回收
+                bitmap.recycle()
             }
-            // 相同 → 无独立字面，按钮应置灰，不加入结果集
-            bitmap.recycle()
         }
+        // 循环结束，lastDistinctBitmap 指向最后一个有独立字形的位图（或基准位图），回收之
         lastDistinctBitmap.recycle()
         return result
     }
