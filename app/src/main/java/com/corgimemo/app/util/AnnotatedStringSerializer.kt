@@ -63,8 +63,8 @@ object AnnotatedStringSerializer {
             val styleObj = org.json.JSONObject()
             val style = range.item
 
-            // 粗体
-            if (style.fontWeight == FontWeight.Bold) {
+            // 粗体（阈值放宽到 Bold 及以上，兼容 ExtraBold 加重；存储标记仍为 "bold"）
+            if (style.fontWeight != null && style.fontWeight.weight >= FontWeight.Bold.weight) {
                 styleObj.put("fontWeight", "bold")
             }
             // 斜体
@@ -131,7 +131,8 @@ object AnnotatedStringSerializer {
 
                 /** 解析 SpanStyle 属性 */
                 val spanStyle = SpanStyle(
-                    fontWeight = if (styleObj.has("fontWeight") && styleObj.getString("fontWeight") == "bold") FontWeight.Bold else null,
+                    // "bold" 标记统一恢复为 ExtraBold（v2026-09-02 加粗加重）
+                    fontWeight = if (styleObj.has("fontWeight") && styleObj.getString("fontWeight") == "bold") FontWeight.ExtraBold else null,
                     fontStyle = if (styleObj.has("fontStyle") && styleObj.getString("fontStyle") == "italic") FontStyle.Italic else null,
                     textDecoration = if (styleObj.has("textDecoration")) {
                         val decos = styleObj.getJSONArray("textDecoration")

@@ -210,7 +210,7 @@ object MarkdownParser {
                 append(parseItalicOnly(before))
 
                 /** 处理粗体内容（内部可能包含斜体） */
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                withStyle(style = SpanStyle(fontWeight = FontWeight.ExtraBold)) {
                     append(parseItalicOnly(content))
                 }
 
@@ -305,11 +305,12 @@ object MarkdownParser {
             /** 提取样式范围内的文本 */
             val styledText = text.substring(spanStyle.start, spanStyle.end)
 
-            /** 根据 SpanType 添加 Markdown 标记 */
+            /** 根据 SpanType 添加 Markdown 标记（加粗阈值放宽到 Bold 及以上，兼容 ExtraBold 加重） */
+            val fw = spanStyle.item.fontWeight
             val markdownTag = when {
-                spanStyle.item.fontWeight == FontWeight.Bold &&
+                fw != null && fw.weight >= FontWeight.Bold.weight &&
                 spanStyle.item.fontStyle == FontStyle.Italic -> "***"
-                spanStyle.item.fontWeight == FontWeight.Bold -> "**"
+                fw != null && fw.weight >= FontWeight.Bold.weight -> "**"
                 spanStyle.item.fontStyle == FontStyle.Italic -> "*"
                 spanStyle.item.textDecoration?.contains(TextDecoration.LineThrough) == true -> "~~"
                 else -> ""

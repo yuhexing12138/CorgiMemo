@@ -1100,7 +1100,7 @@ fun InspirationEditScreen(
                  * 已废弃的 VM 旧撤销栈（UI 层从不消费），早已移除。
                  */
                 onToggleBold = {
-                    richTextState.toggleSpanStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                    richTextState.toggleSpanStyle(SpanStyle(fontWeight = FontWeight.ExtraBold))
                 },
                 onToggleItalic = {
                     richTextState.toggleSpanStyle(SpanStyle(fontStyle = FontStyle.Italic))

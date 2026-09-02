@@ -94,7 +94,8 @@ fun RichTextFormatToolbar(
         FormatButtonGroup {
             FormatIconButton(
                 imageVector = Icons.Default.FormatBold,
-                isActive = state.currentSpanStyle.fontWeight == FontWeight.Bold,
+                // 加粗阈值放宽到 Bold 及以上（v2026-09-02：加粗升级为 ExtraBold 后仍能正确高亮）
+                isActive = (state.currentSpanStyle.fontWeight?.weight ?: 0) >= FontWeight.Bold.weight,
                 onClick = onToggleBold,
                 contentDescription = "加粗"
             )
