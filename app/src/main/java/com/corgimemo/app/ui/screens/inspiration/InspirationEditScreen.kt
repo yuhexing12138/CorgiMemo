@@ -1121,7 +1121,8 @@ fun InspirationEditScreen(
                  * 已废弃的 VM 旧撤销栈（UI 层从不消费），早已移除。
                  */
                 onSetFontWeight = { weight ->
-                    // 设置字重档位（500/700/900）：先清除全部档位字重避免叠加，再 toggle 目标档。
+                    // 设置字重档位（候选 500/700/900，档数固定；无独立字形的档位已置灰禁用、不会进入此回调）：
+                    // 先清除全部档位字重避免叠加，再 toggle 目标档。
                     // 清除集合与工具栏 BOLD_WEIGHT_TIERS 共用，保证选档/取消语义一致。
                     // toggle 语义：点当前已选档则取消加粗（回到常规字重）。
                     val target = FontWeight(weight)

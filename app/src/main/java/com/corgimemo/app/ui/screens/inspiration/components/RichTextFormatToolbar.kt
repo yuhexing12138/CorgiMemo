@@ -48,12 +48,15 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.corgimemo.app.ui.theme.BOLD_WEIGHT_TIERS
+import com.corgimemo.app.ui.theme.FontWeightProbe
 import com.mohamedrejeb.richeditor.model.RichTextState
 
 /**
- * 加粗字重档位（B1 / B2 / B3）由 [BOLD_WEIGHT_TIERS] 提供，该常量定义在字体配置
- * [com.corgimemo.app.ui.theme.Type] 中，随当前字体切换自动派生「默认字重(400)往上紧邻的
- * 三个更大字重」。本文件只消费档位、不持有字体知识，换字体无需改动此处。
+ * 加粗字重候选档位（B1 / B2 / B3 = 500 / 700 / 900）由 [BOLD_WEIGHT_TIERS] 提供，该常量定义在字体配置
+ * [com.corgimemo.app.ui.theme.Type] 中。但某个候选档位是否真能渲染出独立字形，无法靠常量静态判断
+ * （系统字体常缺 500 字面、被量化合并），故用 [FontWeightProbe] 运行时像素探测：
+ * 探测不到独立字形的档位，其按钮置灰禁用，避免用户选中却「视觉无变化」的困惑。
+ * 本文件只消费档位与探测结果、不持有字体知识，换字体无需改动此处。
  */
 
 /**
@@ -68,7 +71,8 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * 3. **对齐**: 左对齐、居中、右对齐（通过 toggleParagraphStyle）
  * 4. **高级**: 链接、代码块
  *
- * 加粗按钮交互：点击 B 展开同行 B1/B2/B3 子按钮（档位由 BOLD_WEIGHT_TIERS 动态派生：默认字重往上紧邻的三个更大字重），其余按钮被推开；
+ * 加粗按钮交互：点击 B 展开同行 B1/B2/B3 子按钮（候选档位由 BOLD_WEIGHT_TIERS 给出：500/700/900），其余按钮被推开；
+ * 档位是否真正可用由 [FontWeightProbe] 运行时像素探测决定，探测不到独立字形的档位按钮置灰禁用；
  * 选中某档后子按钮自动收起，B 变为对应的 B1/B2/B3 并高亮（选中的档位）。
  * 再次点击当前已选档位可取消加粗（回到常规字重）。
  *
@@ -77,7 +81,8 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  *
  * @param state 库的 RichTextState 实例
  * @param modifier Modifier
- * @param onSetFontWeight 设置字重档位回调（参数为 BOLD_WEIGHT_TIERS 动态档位，当前字体下为 500/700/900）
+ * @param onSetFontWeight 设置字重档位回调（参数为 BOLD_WEIGHT_TIERS 候选档位：500/700/900；
+ *      其中经像素探测无独立字形的档位在工具栏中置灰禁用，不会回调）
  * @param onToggleItalic 斜体回调
  * @param onToggleUnderline 下划线回调
  * @param onToggleStrikethrough 删除线回调
@@ -113,6 +118,11 @@ fun RichTextFormatToolbar(
         in BOLD_WEIGHT_TIERS -> BOLD_WEIGHT_TIERS.indexOf(currentWeight) + 1
         else -> null
     }
+    /**
+     * 运行时像素探测得到的「有独立字面」字重集合（remember 仅算一次）。
+     * 不在集合内的候选档位按钮将置灰禁用，避免选中却无视觉变化。
+     */
+    val distinctWeights = remember { FontWeightProbe.distinctWeights(BOLD_WEIGHT_TIERS) }
 
     Row(
         modifier = modifier
@@ -132,7 +142,7 @@ fun RichTextFormatToolbar(
                 onClick = { boldExpanded = !boldExpanded },
                 contentDescription = "加粗字重"
             )
-            /** 展开态：同行显示 B1/B2/B3 子按钮（档位由 BOLD_WEIGHT_TIERS 动态派生，当前字体下为 500/700/900），选中后自动收起 */
+            /** 展开态：同行显示 B1/B2/B3 子按钮（候选档位 500/700/900；经像素探测无独立字形的档位置灰禁用），选中后自动收起 */
             AnimatedVisibility(
                 visible = boldExpanded,
                 enter = expandHorizontally(),
@@ -144,6 +154,7 @@ fun RichTextFormatToolbar(
                         FormatWeightTierButton(
                             tier = tier,
                             isActive = currentWeight == weight,
+                            enabled = weight in distinctWeights,
                             onClick = {
                                 onSetFontWeight(weight)
                                 boldExpanded = false
@@ -383,15 +394,19 @@ private fun FormatWeightButton(
  * 加粗字重子按钮（B1/B2/B3）
  *
  * 显示「B」+ 右下标档位数字（固定 1/2/3），激活态高亮当前选中的档位。
+ * 当该档位经 [FontWeightProbe] 探测无独立字面时（[enabled]=false）置灰禁用，
+ * 点击无效，提示用户该档在当前字体下与更轻档位视觉一致、无需可选。
  *
  * @param tier 档位数字（1/2/3 对应 B1/B2/B3）
  * @param isActive 是否为当前选中档位
+ * @param enabled 是否有独立字面（运行时像素探测结果），false 时置灰禁用
  * @param onClick 点击回调（设置对应字重并收起菜单）
  */
 @Composable
 private fun FormatWeightTierButton(
     tier: Int,
     isActive: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     val backgroundColor = if (isActive) {
@@ -399,14 +414,16 @@ private fun FormatWeightTierButton(
     } else {
         Color.Transparent
     }
-    val tint = if (isActive) {
-        Color(0xFFFF9A5C)
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+    val tint = when {
+        // 无独立字面：置灰（采用 Material 标准禁用透明度），避免误操作
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+        isActive -> Color(0xFFFF9A5C)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     IconButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier
             .size(40.dp)
             .clip(RoundedCornerShape(8.dp))
