@@ -385,13 +385,15 @@ class BodyBlocksController(
     var highlightedBlockId by mutableStateOf<String?>(null)
         private set
 
-    /** 请求聚焦的块 id 与光标位置（由块 Composable 消费后置空） */
     /**
      * 待落焦描述（块 id + 光标偏移，原子打包）。
      * 原实现用两个独立 [mutableStateOf]（pendingFocusId / pendingFocusOffset），
      * [LaunchedEffect] 以 id 为 key 重发射、再读 offset——两条独立状态在快照边界上可能
      * 读到过期 offset（旧交互残留的 0），把已正确设好的光标覆盖成 0。
      * 改为单一 [FocusSpec]，id 变化与 offset 是同一次写入，从根上消除该竞态。
+     *
+     * 消费方式：块 Composable 通过 [takePendingFocus]「取走即清空」——仅命中块（id 匹配）
+     * 取走一次后把本字段置空，避免同帧其它块 effect 读到过期/重复值。
      */
     internal var pendingFocus by mutableStateOf<FocusSpec?>(null)
 
@@ -1081,6 +1083,21 @@ class BodyBlocksController(
     }
 
     /**
+     * 原子地取走并清空待落焦描述（[pendingFocus]）。
+     *
+     * 供块 Composable 在 [LaunchedEffect] 中做「取走即清空」式消费：命中块（id 匹配）
+     * 取走一次后即把字段置空，避免同帧其它块 effect 读到过期/重复值、或在此后某次
+     * 重组重发射时二次应用光标。返回 null 表示当前无待落焦请求。
+     *
+     * 注意：调用方须先确认 [FocusSpec.blockId] 命中本块再调用，避免误清空其它块的请求。
+     */
+    internal fun takePendingFocus(): FocusSpec? {
+        val pf = pendingFocus
+        pendingFocus = null
+        return pf
+    }
+
+    /**
      * 兜底：把焦点落到第一个 Text 块。
      * 可见性为 internal——除被本类内部的 [focusSpec] 调用外，
      * 还被同包的顶层 [ReplaceBlocksCommand]（apply/revert 中通过 controller 引用）跨类调用。
@@ -1371,12 +1388,13 @@ private fun BlockTextItem(
 
     /** 聚焦到本块（拆分 / 合并 / 插图 / 撤销后由 controller.pendingFocus 驱动） */
     LaunchedEffect(controller.pendingFocus) {
-        val pf = controller.pendingFocus
-        if (pf != null && pf.blockId == block.id) {
-            block.state.selection = TextRange(pf.offset)
-            block.focusRequester.requestFocus()
-            controller.pendingFocus = null
-        }
+        val pf = controller.pendingFocus ?: return@LaunchedEffect
+        /** 非命中块直接跳过，不可取走——否则会误清空其它块的待落焦请求 */
+        if (pf.blockId != block.id) return@LaunchedEffect
+        /** 取走即清空：命中块只消费一次后置空，避免同帧其它块 effect 读到过期/重复值 */
+        controller.takePendingFocus()
+        block.state.selection = TextRange(pf.offset)
+        block.focusRequester.requestFocus()
     }
 
     /**
