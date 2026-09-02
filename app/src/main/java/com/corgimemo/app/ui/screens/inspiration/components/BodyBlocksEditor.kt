@@ -460,8 +460,18 @@ class BodyBlocksController(
 
     // ---------- 加载 / 导出 ----------
 
-    /** 用整篇 markdown 重建块列表（初始化与历史恢复共用） */
-    fun initialize(markdown: String) {
+    /**
+     * 用整篇 markdown 重建块列表（初始化与历史恢复共用）。
+     *
+     * @param markdown           整篇 Markdown 源。
+     * @param triggerDocChanged  是否触发 onDocChanged 通知（默认 true）。
+     *        - 初始化载入（新建灵感 / loadInspiration 回填）传 false：
+     *          此时只是把已保存内容还原成块列表，并非用户编辑，不应把
+     *          `_isDirty` 误置为 true（否则未编辑就按返回会误弹"放弃修改？"）。
+     *        - 历史恢复（如系统重建后从 savedStateHandle 恢复文本）传 true：
+     *          恢复内容属于内容变化，应正常置脏以便保存链路感知。
+     */
+    fun initialize(markdown: String, triggerDocChanged: Boolean = true) {
         blocks.clear()
         parseMarkdownSegments(markdown).forEach { seg ->
             when (seg) {
@@ -481,7 +491,8 @@ class BodyBlocksController(
         /** 换了整篇文档：命令栈与块内 history 一并作废（新块的 history 本就是空的） */
         clearCommandStacks()
         hasInitialized = true
-        onDocChanged?.invoke()
+        /** 仅当内容确实由编辑/历史恢复触发时才通知；初始化载入不应置脏 */
+        if (triggerDocChanged) onDocChanged?.invoke()
     }
 
     /**

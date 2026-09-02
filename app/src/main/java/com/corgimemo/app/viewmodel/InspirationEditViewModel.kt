@@ -854,7 +854,10 @@ class InspirationEditViewModel @Inject constructor(
                  * 调用，由 Screen 的 LaunchedEffect(Unit) 负责 initialize("")。
                  */
                 if (!bodyBlocks.hasInitialized) {
-                    bodyBlocks.initialize(_contentFormat.value)
+                    // triggerDocChanged=false：把已保存内容还原成块列表属于载入，
+                    // 不是用户编辑，不应把 _isDirty 置脏；同时保持 _contentFormat
+                    // 为 loadInspiration 迁移后的最终值（避免被 toMarkdown 二次序列化改写）。
+                    bodyBlocks.initialize(_contentFormat.value, triggerDocChanged = false)
                 }
 
                 /**
