@@ -386,8 +386,14 @@ class BodyBlocksController(
         private set
 
     /** 请求聚焦的块 id 与光标位置（由块 Composable 消费后置空） */
-    internal var pendingFocusId by mutableStateOf<String?>(null)
-    internal var pendingFocusOffset by mutableStateOf(0)
+    /**
+     * 待落焦描述（块 id + 光标偏移，原子打包）。
+     * 原实现用两个独立 [mutableStateOf]（pendingFocusId / pendingFocusOffset），
+     * [LaunchedEffect] 以 id 为 key 重发射、再读 offset——两条独立状态在快照边界上可能
+     * 读到过期 offset（旧交互残留的 0），把已正确设好的光标覆盖成 0。
+     * 改为单一 [FocusSpec]，id 变化与 offset 是同一次写入，从根上消除该竞态。
+     */
+    internal var pendingFocus by mutableStateOf<FocusSpec?>(null)
 
     /** 任何块内容/结构变化后的回调（页面用它同步 ViewModel） */
     var onDocChanged: (() -> Unit)? = null
@@ -1030,7 +1036,7 @@ class BodyBlocksController(
 
     /** 捕获当前焦点落点（Command 构造时的 focusBefore） */
     private fun currentFocusSpec(): FocusSpec? {
-        val focusKey = focusedBlockId ?: pendingFocusId ?: return null
+        val focusKey = focusedBlockId ?: pendingFocus?.blockId ?: return null
         val focused = blocks.firstOrNull { it.id == focusKey } as? BodyBlock.Text ?: return null
         val rawText = focused.state.annotatedString.text
         val rawCursor = focused.state.selection.start.coerceIn(0, rawText.length)
@@ -1053,8 +1059,10 @@ class BodyBlocksController(
      * 把焦点与光标**同步**落到 [target] 的 [offset]（有效文本坐标）。
      *
      * 三处一起写，缺一不可：
-     * 1. [pendingFocusId] / [pendingFocusOffset]——供块 Composable 的 LaunchedEffect
-     *    申请真实焦点（[FocusRequester.requestFocus] 只能异步执行）；
+     * 1. [pendingFocus]（[FocusSpec]，原子打包块 id + 偏移）——供块 Composable 的
+     *    [LaunchedEffect] 申请真实焦点（[FocusRequester.requestFocus] 只能异步执行）；
+     *    用单一状态而非两个独立 [mutableStateOf]，避免 LaunchedEffect 以 id 为 key 重发射时
+     *    读到过期的 offset（把已设好的光标覆盖成 0）；
      * 2. [focusedBlockId]——undo/redo 后的命令焦点依赖它定位焦点块，
      *    为 null 会导致 [currentFocusSpec] 捕获到错误落点；
      * 3. [RichTextState.selection]——同步读取（如 [focusSpec] 的 coerce 上界）
@@ -1064,10 +1072,9 @@ class BodyBlocksController(
      * （markdown 不含光标信息）；重放期间 [replaying] 亦为 true。
      */
     private fun applyFocusAndCursor(target: BodyBlock.Text, offset: Int) {
-        pendingFocusId = target.id
-        pendingFocusOffset = offset
+        pendingFocus = FocusSpec(target.id, offset)
         focusedBlockId = target.id
-        /** 与 BlockTextItem 消费 pendingFocusOffset 的口径保持一致：有效坐标直接作为 raw 偏移，
+        /** 与 BlockTextItem 消费 pendingFocus.offset 的口径保持一致：有效坐标直接作为 raw 偏移，
          *  空块（text = ZWSP）由块内 ZWSP 维护 LaunchedEffect 兜底推到 (1, 1) */
         val rawLen = target.state.annotatedString.text.length
         target.state.selection = TextRange(offset.coerceIn(0, rawLen))
@@ -1362,12 +1369,13 @@ private fun BlockTextItem(
 ) {
     val state = block.state
 
-    /** 聚焦到本块（拆分 / 合并 / 插图后由 controller.pendingFocusId 驱动） */
-    LaunchedEffect(controller.pendingFocusId) {
-        if (controller.pendingFocusId == block.id) {
-            block.state.selection = TextRange(controller.pendingFocusOffset)
+    /** 聚焦到本块（拆分 / 合并 / 插图 / 撤销后由 controller.pendingFocus 驱动） */
+    LaunchedEffect(controller.pendingFocus) {
+        val pf = controller.pendingFocus
+        if (pf != null && pf.blockId == block.id) {
+            block.state.selection = TextRange(pf.offset)
             block.focusRequester.requestFocus()
-            controller.pendingFocusId = null
+            controller.pendingFocus = null
         }
     }
 
