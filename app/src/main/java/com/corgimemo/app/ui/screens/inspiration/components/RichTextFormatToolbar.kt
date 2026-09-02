@@ -50,15 +50,29 @@ import androidx.compose.ui.unit.sp
 import com.mohamedrejeb.richeditor.model.RichTextState
 
 /**
- * 加粗字重档位（数字越大加重程度越大）：B1=500(Medium) / B2=700(Bold) / B3=900(Black)。
+ * 加粗字重档位：取「当前字体默认字重（Normal=400）往上紧邻的三个更大字重」。
  *
- * - 500(Medium) / 700(Bold) / 900(Black) 三档，均为系统默认字体真实存在的字面，
- *   保证在任意 Android 设备上三档视觉明显区分（系统字体无 600/750/800 独立字面，
- *   会被量化到最近可用字面，故不采用此类中间值）。
- * - 700 走 markdown `**`；500 / 900 走 `<span style="font-weight:N">` 保留数值。
+ * 设计要点：Compose 无法在运行时枚举字体实际支持哪些字面重（无公开 API），
+ * 故用 [FONT_AVAILABLE_WEIGHTS] 表示「当前所用字体真实支持的字重集合」，
+ * 档位 = 该集合中 `> FontWeight.Normal.weight` 的前三档。换字体时只需更新
+ * [FONT_AVAILABLE_WEIGHTS] 一个常量，档位派生逻辑不动。
+ *
+ * 当前字体：FontFamily.Default（系统字体，典型为 Roboto）实际字面为
+ * 100 / 300 / 400 / 500 / 700 / 900，故派生结果 = [500, 700, 900]，三档在当前设备上
+ * 视觉明显区分。若某设备系统字体字面更少（如仅 400/700），take(3) 会少于三档，
+ * 工具栏按实际档位数渲染子按钮（不强行凑三档，避免制造视觉相同的重复档）。
+ *
+ * 兼容性：
+ * - 700 走 markdown `**`；其余档走 `<span style="font-weight:N">` 保留数值
+ *   （库侧 `parseCssFontWeight` 已支持任意整数字重兜底）。
+ * - 引入含完整字重的自定义字体（如 Inter / Noto Sans 100~900）时，把
+ *   [FONT_AVAILABLE_WEIGHTS] 改为该字体真实字重，档位即自动变为 500 / 600 / 700。
+ *
  * 该常量同时作为「清除已选字重、避免叠加」的遍历来源。
  */
-internal val BOLD_WEIGHT_TIERS = listOf(500, 700, 900)
+private val FONT_AVAILABLE_WEIGHTS = listOf(100, 300, 400, 500, 700, 900)
+internal val BOLD_WEIGHT_TIERS: List<Int> =
+    FONT_AVAILABLE_WEIGHTS.filter { it > FontWeight.Normal.weight }.take(3)
 
 /**
  * 富文本格式工具栏（使用 compose-rich-editor 库）
@@ -72,7 +86,7 @@ internal val BOLD_WEIGHT_TIERS = listOf(500, 700, 900)
  * 3. **对齐**: 左对齐、居中、右对齐（通过 toggleParagraphStyle）
  * 4. **高级**: 链接、代码块
  *
- * 加粗按钮交互：点击 B 展开同行 B1(500)/B2(700)/B3(900) 子按钮（其余按钮被推开）；
+ * 加粗按钮交互：点击 B 展开同行 B1/B2/B3 子按钮（档位由 BOLD_WEIGHT_TIERS 动态派生：默认字重往上紧邻的三个更大字重），其余按钮被推开；
  * 选中某档后子按钮自动收起，B 变为对应的 B1/B2/B3 并高亮（选中的档位）。
  * 再次点击当前已选档位可取消加粗（回到常规字重）。
  *
@@ -81,7 +95,7 @@ internal val BOLD_WEIGHT_TIERS = listOf(500, 700, 900)
  *
  * @param state 库的 RichTextState 实例
  * @param modifier Modifier
- * @param onSetFontWeight 设置字重档位回调（参数为 500 / 700 / 900）
+ * @param onSetFontWeight 设置字重档位回调（参数为 BOLD_WEIGHT_TIERS 动态档位，当前字体下为 500/700/900）
  * @param onToggleItalic 斜体回调
  * @param onToggleUnderline 下划线回调
  * @param onToggleStrikethrough 删除线回调
@@ -136,7 +150,7 @@ fun RichTextFormatToolbar(
                 onClick = { boldExpanded = !boldExpanded },
                 contentDescription = "加粗字重"
             )
-            /** 展开态：同行显示 B1(500)/B2(700)/B3(900)，选中后自动收起 */
+            /** 展开态：同行显示 B1/B2/B3 子按钮（档位由 BOLD_WEIGHT_TIERS 动态派生，当前字体下为 500/700/900），选中后自动收起 */
             AnimatedVisibility(
                 visible = boldExpanded,
                 enter = expandHorizontally(),
