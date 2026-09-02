@@ -64,7 +64,9 @@ object AnnotatedStringSerializer {
             val style = range.item
 
             // 粗体（阈值放宽到 Bold 及以上，兼容 ExtraBold 加重；存储标记仍为 "bold"）
-            if (style.fontWeight != null && style.fontWeight.weight >= FontWeight.Bold.weight) {
+            // 注意：fontWeight 是跨模块 public 属性，无法智能转换，须先缓存到局部 val
+            val fontWeight = style.fontWeight
+            if (fontWeight != null && fontWeight.weight >= FontWeight.Bold.weight) {
                 styleObj.put("fontWeight", "bold")
             }
             // 斜体
