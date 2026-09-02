@@ -19,6 +19,7 @@ import androidx.compose.ui.text.withStyle
  * - **粗体**: `**text**` 或 `__text__`
  * - **斜体**: `*text*` 或 `_text_`
  * - **删除线**: `~~text~~`
+ * - **字重档位**: `<span style="font-weight:800">text</span>`（非标准粗体如 ExtraBold，与 `**` 并存，用于往返保留字重数值）
  * - **无序列表**: `- item` 或 `* item`
  * - **有序列表**: `1. item`
  * - **待办列表**: `- [ ] 未完成` / `- [x] 已完成`
@@ -53,6 +54,14 @@ object MarkdownParser {
 
         /** 斜体模式：*text* 或 _text_（排除已匹配的粗体） */
         val ITALIC = Regex("""(?<!\*)(\*|_)(?=\S)(.+?)(?<=\S)\1(?!\*)""")
+
+        /** 字重 span 模式：<span style="font-weight:800">text</span>
+         *  用于保留非标准粗体档位（如 ExtraBold 800），与库侧 markdown 往返一致：
+         *  标准 Bold(700) 走 `**`，非 700 字重（含 750/800/900 任意数值）走 HTML span 表达。 */
+        val FONT_WEIGHT_SPAN = Regex(
+            """<span\s+style\s*=\s*["']font-weight\s*:\s*(\d+)\s*["']\s*>([\s\S]+?)</span>""",
+            RegexOption.IGNORE_CASE
+        )
 
         /** 删除线模式：~~text~~ */
         val STRIKETHROUGH = Regex("""(~~)(?=\S)(.+?)(?<=\S)\1""")
@@ -144,10 +153,11 @@ object MarkdownParser {
     }
 
     /**
-     * 解析行内格式（粗体、斜体、删除线）
+     * 解析行内格式（删除线、字重 span、粗体、斜体）
      *
      * 处理单行文本中的字符级样式标记，
      * 支持嵌套和重叠的格式组合。
+     * 层级顺序（由外到内）：删除线 > 字重 span > 粗体 > 斜体。
      *
      * @param line 单行文本
      * @return 带有行内样式的 AnnotatedString
@@ -160,24 +170,24 @@ object MarkdownParser {
         return buildAnnotatedString {
             var remainingText = line
 
-            /** 查找并应用删除线样式（优先级最高） */
+            /** 查找并应用删除线样式（优先级最高），内部仍支持字重 span/粗体/斜体 */
             var strikethroughMatches = Patterns.STRIKETHROUGH.findAll(remainingText).toList()
             strikethroughMatches.forEach { match ->
                 val before = remainingText.substring(0, match.range.first)
                 val content = match.groupValues[2]
                 val after = remainingText.substring(match.range.last + 1)
 
-                append(parseBoldAndItalic(before))
+                append(parseSpanWeight(before))
 
                 withStyle(style = SpanStyle(textDecoration = TextDecoration.LineThrough)) {
-                    append(parseBoldAndItalic(content))
+                    append(parseSpanWeight(content))
                 }
 
                 remainingText = after
             }
 
-            /** 处理剩余未匹配的文本 */
-            append(parseBoldAndItalic(remainingText))
+            /** 处理剩余未匹配的文本（含字重 span/粗体/斜体） */
+            append(parseSpanWeight(remainingText))
         }
     }
 
@@ -219,6 +229,49 @@ object MarkdownParser {
 
             /** 处理剩余文本 */
             append(parseItalicOnly(remainingText))
+        }
+    }
+
+    /**
+     * 解析字重 span 标记：<span style="font-weight:N">text</span>
+     *
+     * 还原经 markdown 往返保留的非标准字重档位（如 ExtraBold 800），
+     * 与库侧 RichTextStateMarkdownParser 的 encode/decode 保持一致：
+     * 标准 Bold(700) 用 `**`，非 700 字重（含 750/800/900 任意数值）用 HTML `<span style>` 表达。
+     * span 内部仍可嵌套粗体/斜体，故委托 parseBoldAndItalic 处理其内容。
+     *
+     * @param text 输入文本
+     * @return 应用对应字重样式的 AnnotatedString
+     */
+    private fun parseSpanWeight(text: String): AnnotatedString {
+        val spanPattern = Patterns.FONT_WEIGHT_SPAN
+        if (!spanPattern.containsMatchIn(text)) {
+            return parseBoldAndItalic(text)
+        }
+
+        return buildAnnotatedString {
+            var remainingText = text
+
+            /** 查找所有字重 span 匹配 */
+            spanPattern.findAll(remainingText).toList().forEach { match ->
+                val before = remainingText.substring(0, match.range.first)
+                val weight = match.groupValues[1].toIntOrNull() ?: 400
+                val content = match.groupValues[2]
+                val after = remainingText.substring(match.range.last + 1)
+
+                /** span 前的文本（可能含粗体/斜体） */
+                append(parseBoldAndItalic(before))
+
+                /** span 内容按字重渲染（内部仍支持粗体/斜体） */
+                withStyle(style = SpanStyle(fontWeight = FontWeight(weight))) {
+                    append(parseBoldAndItalic(content))
+                }
+
+                remainingText = after
+            }
+
+            /** 处理剩余文本 */
+            append(parseBoldAndItalic(remainingText))
         }
     }
 
@@ -270,11 +323,13 @@ object MarkdownParser {
      * 将其转换为对应的 Markdown 标记。
      *
      * **导出规则**:
-     * - Bold + Italic → `***text***`
-     * - Bold → `**text**`
+     * - Bold(700) + Italic → `***text***`
+     * - Bold(700) → `**text**`
+     * - 非 700 字重（如 ExtraBold 800）+ 斜体 → `<span style="font-weight:800">*text*</span>`
+     * - 非 700 字重（如 ExtraBold 800）→ `<span style="font-weight:800">text</span>`
      * - Italic → `*text*`
      * - Strikethrough → `~~text~~`
-     * - 组合样式按上述顺序叠加
+     * - 组合样式按上述顺序叠加（字重数值 700/750/800/900 等任意档位均保留）
      *
      * @param annotatedString 带样式的 AnnotatedString 对象
      * @return Markdown 格式的字符串
@@ -305,22 +360,34 @@ object MarkdownParser {
             /** 提取样式范围内的文本 */
             val styledText = text.substring(spanStyle.start, spanStyle.end)
 
-            /** 根据 SpanType 添加 Markdown 标记（加粗阈值放宽到 Bold 及以上，兼容 ExtraBold 加重） */
+            /** 根据 SpanStyle 计算 Markdown 包裹标记（支持 700/800 多字重档位）
+             *  标准 Bold(700) 用 `**` 兼容通用 markdown；非 700 字重（如 ExtraBold 800）
+             *  改用 HTML `<span style="font-weight:N">` 表达，使字重数值在 markdown 往返中保留。 */
             val fw = spanStyle.item.fontWeight
-            val markdownTag = when {
-                fw != null && fw.weight >= FontWeight.Bold.weight &&
-                spanStyle.item.fontStyle == FontStyle.Italic -> "***"
-                fw != null && fw.weight >= FontWeight.Bold.weight -> "**"
-                spanStyle.item.fontStyle == FontStyle.Italic -> "*"
-                spanStyle.item.textDecoration?.contains(TextDecoration.LineThrough) == true -> "~~"
-                else -> ""
+            val isItalic = spanStyle.item.fontStyle == FontStyle.Italic
+            val isStrike = spanStyle.item.textDecoration?.contains(TextDecoration.LineThrough) == true
+
+            val (openTag, closeTag) = when {
+                // 非 700 字重 + 斜体：外层 span 包裹内层斜体标记
+                fw != null && fw.weight > 400 && fw.weight != 700 && isItalic ->
+                    "<span style=\"font-weight:${fw.weight}\">*" to "*</span>"
+                // 非 700 字重（如 ExtraBold 800）：HTML span 表达字重数值
+                fw != null && fw.weight > 400 && fw.weight != 700 ->
+                    "<span style=\"font-weight:${fw.weight}\">" to "</span>"
+                // 标准 Bold(700) + 斜体
+                fw != null && fw.weight > 400 && isItalic -> "***" to "***"
+                // 标准 Bold(700)
+                fw != null && fw.weight > 400 -> "**" to "**"
+                isItalic -> "*" to "*"
+                isStrike -> "~~" to "~~"
+                else -> "" to ""
             }
 
             /** 包裹样式标记 */
-            if (markdownTag.isNotEmpty()) {
-                result.append(markdownTag)
+            if (openTag.isNotEmpty()) {
+                result.append(openTag)
                 result.append(styledText)
-                result.append(markdownTag)
+                result.append(closeTag)
             } else {
                 result.append(styledText)
             }
@@ -349,6 +416,7 @@ object MarkdownParser {
         return Patterns.BOLD.containsMatchIn(text) ||
                 Patterns.ITALIC.containsMatchIn(text) ||
                 Patterns.STRIKETHROUGH.containsMatchIn(text) ||
+                Patterns.FONT_WEIGHT_SPAN.containsMatchIn(text) ||
                 Patterns.HEADING.containsMatchIn(text) ||
                 Patterns.TODO_LIST.containsMatchIn(text) ||
                 Patterns.UNORDERED_LIST.containsMatchIn(text) ||
@@ -369,6 +437,7 @@ object MarkdownParser {
         /** 按照从复杂到简单的顺序移除标记（避免冲突） */
         result = result.replace(Patterns.STRIKETHROUGH, "$2")
         result = result.replace(Patterns.BOLD, "$2")
+        result = result.replace(Patterns.FONT_WEIGHT_SPAN, "$2")
         result = result.replace(Patterns.ITALIC, "$2")
         result = result.replace(Patterns.HEADING, "$2")
         result = result.replace(Patterns.TODO_LIST, "$3")
