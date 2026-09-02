@@ -166,11 +166,19 @@ fun InspirationEditScreen(
     /** 富文本格式化内容（Markdown 字符串），用于恢复编辑器的格式化显示 */
     val contentFormat by viewModel.contentFormat.collectAsState()
     /**
-     * Undo/Redo 状态：控制撤销/重做按钮的启用状态
+     * Undo/Redo 状态说明（v2026-09-02 更正，旧注释与实际实现已不符）：
      *
-     * v2026-09-01 路线 4：改用**当前聚焦块**的库内历史（VM 级 Undo 栈不再作用于正文），
-     * 因此不再从 viewModel.canUndo/canRedo 取值，按钮处直接读
-     * `richTextState.history.canUndo / canRedo`（快照状态，可观察）。
+     * 正文的撤销/重做**统一由 BodyBlocksController 的「统一时间线」栈驱动**——
+     * 文本编辑与结构变更共用同一条时间线，按发生顺序倒序逐步回退；
+     * 撤销/重做时光标随快照还原（快照记录的是「变化那一刻」的块内光标偏移）。
+     *
+     * 按钮启用状态读 `bodyBlocks.canUndoTimeline / canRedoTimeline`（见下方撤销/重做按钮），
+     * 二者是可观察的快照状态。
+     *
+     * 已不再生效的两套，勿再引用：
+     * - ViewModel 级 Undo 栈 `viewModel.canUndo / canRedo`：UI 层已完全不消费；
+     * - 库内 `richTextState.history`：编辑器 `undoBehavior` 已设 `UndoBehavior.Disabled`
+     *   （连物理键盘 Ctrl+Z 一并拦截），避免库内历史与统一栈并存导致错乱。
      */
 
     // 地理围栏相关状态
@@ -1101,67 +1109,55 @@ fun InspirationEditScreen(
                     /** 只有 ⋮ 按钮切换工具栏展开/折叠 */
                     isFormatExpanded = !isFormatExpanded
                 },
+                /**
+                 * v2026-09-02：以下格式化操作**不再手动推送撤销快照**。
+                 *
+                 * 块编辑器（BodyBlocksController）的统一时间线 observer 已把差分对象
+                 * 改为 `state.toMarkdown()`，因此加粗 / 斜体 / 列表 / 对齐 / 代码等
+                 * "只改样式、不改字符"的操作也会被**自动捕获入栈**；
+                 * 且快照改存 markdown，撤销时能连同富文本样式一起还原。
+                 *
+                 * 原先这里调用的 `viewModel.pushRichTextSnapshot(...)` 属于
+                 * 已废弃的 VM 旧撤销栈（UI 层从不消费），一并移除。
+                 */
                 onToggleBold = {
-                    /** 推送快照后应用加粗（支持撤销） */
-                    val markdownBefore = richTextState.toMarkdown()
-                    viewModel.pushRichTextSnapshot(markdownBefore)
                     richTextState.toggleSpanStyle(SpanStyle(fontWeight = FontWeight.Bold))
                 },
                 onToggleItalic = {
-                    val markdownBefore = richTextState.toMarkdown()
-                    viewModel.pushRichTextSnapshot(markdownBefore)
                     richTextState.toggleSpanStyle(SpanStyle(fontStyle = FontStyle.Italic))
                 },
                 onToggleUnderline = {
-                    val markdownBefore = richTextState.toMarkdown()
-                    viewModel.pushRichTextSnapshot(markdownBefore)
                     richTextState.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.Underline))
                 },
                 onToggleStrikethrough = {
-                    val markdownBefore = richTextState.toMarkdown()
-                    viewModel.pushRichTextSnapshot(markdownBefore)
                     richTextState.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.LineThrough))
                 },
                 onInsertUnorderedList = {
-                    val markdownBefore = richTextState.toMarkdown()
-                    viewModel.pushRichTextSnapshot(markdownBefore)
                     richTextState.toggleUnorderedList()
                 },
                 onInsertOrderedList = {
-                    val markdownBefore = richTextState.toMarkdown()
-                    viewModel.pushRichTextSnapshot(markdownBefore)
                     richTextState.toggleOrderedList()
                 },
                 onAlignLeft = {
-                    val markdownBefore = richTextState.toMarkdown()
-                    viewModel.pushRichTextSnapshot(markdownBefore)
                     richTextState.toggleParagraphStyle(
                         androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.Start)
                     )
                 },
                 onAlignCenter = {
-                    val markdownBefore = richTextState.toMarkdown()
-                    viewModel.pushRichTextSnapshot(markdownBefore)
                     richTextState.toggleParagraphStyle(
                         androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.Center)
                     )
                 },
                 onAlignRight = {
-                    val markdownBefore = richTextState.toMarkdown()
-                    viewModel.pushRichTextSnapshot(markdownBefore)
                     richTextState.toggleParagraphStyle(
                         androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.End)
                     )
                 },
                 onInsertLink = {
                     /** 简化实现：为当前选区插入示例链接，后续可扩展为弹窗输入 */
-                    val markdownBefore = richTextState.toMarkdown()
-                    viewModel.pushRichTextSnapshot(markdownBefore)
                     richTextState.addLinkToSelection(url = "https://example.com")
                 },
                 onToggleCodeSpan = {
-                    val markdownBefore = richTextState.toMarkdown()
-                    viewModel.pushRichTextSnapshot(markdownBefore)
                     richTextState.toggleCodeSpan()
                 },
                 modifier = Modifier.safeAreaForEditBar()

@@ -194,9 +194,6 @@ class BodyBlocksController(
 
     fun createTextBlock(markdown: String): BodyBlock.Text {
         val state = RichTextState()
-        /** v2026-09-01 两类互斥配套：禁用库默认 500ms 合并窗口，每个字符都是独立 undo group，
-         *  否则用户连打"abc"在 500ms 内会被合并成 1 个 group，undo 一次就把整段全删了——不是逐字回退 */
-        state.history.coalesceWindowMs = 0L
         /** v2026-09-01 关闭编辑态内联图片渲染（防御性）：插图已改为拆块
          *  （Text 块 state 不持有 image span），正常路径覆盖层无图可画；
          *  关掉开关可兜底边缘路径（如粘贴含图 markdown 进块内），避免覆盖层
@@ -623,14 +620,40 @@ class BodyBlocksController(
      * 撤销 = 无脑 pop 栈顶恢复，"打字 → 插图 → 再打字"按倒序逐级回退，
      * 不再依赖库 `state.history` 做跨块串联，也不需要"两类互斥"。
      *
+     * **光标记录时机（v2026-09-02 明确）**：只有块内容或块结构**真的发生变化**才产生快照，
+     * 快照记录"变化那一刻"的光标（[BlockSnapshot.cursorOffset] = 聚焦块内的有效文本偏移）；
+     * **单纯移动光标不产生快照**——observer 以 `text != lastText` 为压栈条件，
+     * 仅 [RichTextState.selection] 变化会被忽略（见 BlockTextItem 的 observer）。
+     * 因此"撤销后光标回到哪里"只取决于当初那次变更发生的位置，
+     * 与用户在撤销前把光标移到了哪里无关。
+     *
+     * **光标落地必须同步（v2026-09-02 修复 redo 光标错位）**：[restoreCursor] 通过
+     * [applyFocusAndCursor] 一次性写齐 pendingFocus*、[focusedBlockId] 与
+     * [RichTextState.selection]；只设 pendingFocus* 会因异步时机差导致下一步
+     * [captureCurrentSnapshot] 读到未落盘的旧状态，redo 栈光标恒为 0。
+     *
      * **去重**：结构操作先压快照、操作本身又引发 observer 压"变化前"快照，
      * 两者内容相同 → [BlockSnapshot] data class equals 去重，不会重复入栈。
      *
      * **suppressTimeline**：undo/redo 的恢复动作会改块内容，observer 若不拦截会把
      * "恢复前状态"误压回撤销栈（多一步空撤销），恢复期间置 true。
      */
+    /**
+     * 快照条目。
+     *
+     * **v2026-09-02 升级：[TextEntry] 改存 markdown，不再存渲染后的纯文本。**
+     * 原因：`state.annotatedString.text` 是 setMarkdown 解析**之后**的纯文本，
+     * `**粗体**` 已被转成 SpanStyle，字面 `**` 并不存在于字符串中；把它存进快照，
+     * 恢复时 `createTextBlock(纯文本)` 走 setMarkdown 会把样式全部丢掉
+     * （表现为"撤销一步后整块的加粗/斜体/列表格式消失"）。
+     * 改用 [RichTextState.toMarkdown] 把样式序列化进快照，恢复时即可原样还原。
+     *
+     * **坐标系警告**：[BlockSnapshot.cursorOffset] 仍是**纯文本有效坐标**，
+     * 与 markdown 字符串的下标不是同一坐标系（markdown 含 `**` 等语法字符），
+     * 二者不可混用——内容取 markdown、光标取 annotatedString.text。
+     */
     private sealed class BlockSnapshotEntry {
-        data class TextEntry(val effectiveText: String) : BlockSnapshotEntry()
+        data class TextEntry(val markdown: String) : BlockSnapshotEntry()
         data class ImageEntry(val path: String) : BlockSnapshotEntry()
     }
 
@@ -668,27 +691,39 @@ class BodyBlocksController(
     }
 
     /**
-     * 用户文本变化时由 BlockTextItem observer 调用：压"变化前"快照。
+     * 用户文本 / 样式变化时由 BlockTextItem observer 调用：压"变化前"快照。
      *
-     * [textBefore]/[selectionBefore] 是 observer 差分保存的变化前本块文本与光标；
-     * 其他块未受本次编辑影响，直接捕获当前状态即可。
+     * **v2026-09-02**：observer 的差分对象改为 markdown（这样"加粗"等不改字符、
+     * 只改 SpanStyle 的操作也能被捕获入栈），因此需要两个"变化前"入参：
+     * - [markdownBefore]：变化前的 **markdown**，作为快照内容（保留富文本样式）；
+     * - [textBefore]：变化前的 **纯文本**，仅用于把 [selectionBefore] 换算成
+     *   [BlockSnapshot.cursorOffset]——markdown 含 `**` 等语法字符，与纯文本下标
+     *   不是同一坐标系，**绝不能用它换算光标**。
+     *
+     * 其他块未受本次编辑影响，直接捕获当前 markdown 即可。
      * 本块不重建对象，只在快照数据里用 [BlockSnapshotEntry.TextEntry] 表达。
      *
      * 与栈顶完全相同则跳过（结构操作已压过同一份"变化前"快照）。
      */
-    internal fun pushTextUndoSnapshot(blockId: String, textBefore: String, selectionBefore: TextRange) {
+    internal fun pushTextUndoSnapshot(
+        blockId: String,
+        markdownBefore: String,
+        textBefore: String,
+        selectionBefore: TextRange,
+    ) {
         if (suppressTimeline) return
         val idx = blocks.indexOfFirst { it.id == blockId }
         if (idx < 0) return
         val entries = blocks.mapIndexed { i, block ->
             when (block) {
                 is BodyBlock.Text ->
-                    if (i == idx) BlockSnapshotEntry.TextEntry(effectiveText(textBefore))
-                    else BlockSnapshotEntry.TextEntry(effectiveText(block.state.annotatedString.text))
+                    /** 本块取"变化前"markdown，其余块取当前 markdown */
+                    if (i == idx) BlockSnapshotEntry.TextEntry(markdownBefore)
+                    else BlockSnapshotEntry.TextEntry(block.state.toMarkdown())
                 is BodyBlock.Image -> BlockSnapshotEntry.ImageEntry(block.path)
             }
         }
-        /** 变化前光标（有效文本坐标，与 captureCurrentSnapshot 同坐标系） */
+        /** 变化前光标（**纯文本**有效坐标，与 captureCurrentSnapshot 同坐标系） */
         val cursorEffective = effectiveText(
             textBefore.substring(0, selectionBefore.start.coerceIn(0, textBefore.length))
         ).length
@@ -707,12 +742,16 @@ class BodyBlocksController(
         val entries = blocks.map { block ->
             when (block) {
                 is BodyBlock.Text -> BlockSnapshotEntry.TextEntry(
-                    effectiveText(block.state.annotatedString.text)
+                    /** v2026-09-02：存 markdown 以保留富文本样式（见 [BlockSnapshotEntry] 说明） */
+                    block.state.toMarkdown()
                 )
                 is BodyBlock.Image -> BlockSnapshotEntry.ImageEntry(block.path)
             }
         }
-        val focusedIdx = blocks.indexOfFirst { it.id == focusedBlockId }
+        /** v2026-09-02：优先用 [focusedBlockId]；它为 null（restore 刚清空、焦点回调尚未到达）
+         *  时退回 [pendingFocusId]，避免误走下面的"首 Text 块 + offset 0"兜底而记录到错误光标 */
+        val focusKey = focusedBlockId ?: pendingFocusId
+        val focusedIdx = if (focusKey != null) blocks.indexOfFirst { it.id == focusKey } else -1
         val (focusedEntryIdx, cursorOffset) = if (focusedIdx >= 0) {
             val focused = blocks[focusedIdx]
             if (focused is BodyBlock.Text) {
@@ -740,12 +779,13 @@ class BodyBlocksController(
         snapshot.entries.forEach { entry ->
             when (entry) {
                 is BlockSnapshotEntry.TextEntry -> {
-                    /** 空 effectiveText = 空 Text 块（createTextBlock("") 走 ZWSP 分支）；
-                     *  非空走 setMarkdown 分支（state 不带 ZWSP，与原一致） */
-                    blocks += if (entry.effectiveText.isEmpty()) {
+                    /** v2026-09-02：entry 存的是 **markdown**，交给 createTextBlock 走
+                     *  setMarkdown 还原富文本样式；空块判定仍需剥占位符——
+                     *  空块的 toMarkdown() 可能残留 ZWSP，直接判空会漏。 */
+                    blocks += if (effectiveText(entry.markdown).isEmpty()) {
                         createTextBlock("")
                     } else {
-                        createTextBlock(entry.effectiveText)
+                        createTextBlock(entry.markdown)
                     }
                 }
                 is BlockSnapshotEntry.ImageEntry -> {
@@ -794,6 +834,12 @@ class BodyBlocksController(
     /**
      * 在重建后的块列表里找到 [snapshot.focusedEntryIndex] 处的 Text 块，
      * 把光标设回 [snapshot.cursorOffset]。索引越界或该 entry 不是 Text → 兜底首 Text 块 + 0。
+     *
+     * **v2026-09-02 修复**：落地光标必须**同步**完成（[applyFocusAndCursor]），不能只设
+     * [pendingFocusId] / [pendingFocusOffset]。原因：这两个字段由块 Composable 的
+     * LaunchedEffect 在**下一帧**才消费，而连续撤销/重做时，下一步的
+     * [captureCurrentSnapshot] 会在此帧立刻执行，读到的是"尚未落盘"的旧状态——
+     * 表现为 redo 栈里记录的光标恒为 0（重做后光标总在最左侧）。
      */
     private fun restoreCursor(snapshot: BlockSnapshot) {
         val idx = snapshot.focusedEntryIndex
@@ -809,15 +855,38 @@ class BodyBlocksController(
         /** cursorOffset 是有效文本坐标（剥 ZWSP），用 effective length 做上界 coerceIn——
          *  空块场景会先临时落在 (0, 0)，再被 BlockTextItem 的 ZWSP 维护 LaunchedEffect 推到 (1, 1) */
         val effLen = effectiveText(target.state.annotatedString.text).length
+        applyFocusAndCursor(target, snapshot.cursorOffset.coerceIn(0, effLen))
+    }
+
+    /**
+     * 把焦点与光标**同步**落到 [target] 的 [offset]（有效文本坐标）。
+     *
+     * 三处一起写，缺一不可：
+     * 1. [pendingFocusId] / [pendingFocusOffset]——供块 Composable 的 LaunchedEffect
+     *    申请真实焦点（[FocusRequester.requestFocus] 只能异步执行）；
+     * 2. [focusedBlockId]——[restoreFromSnapshot] 会把它置 null，而
+     *    [captureCurrentSnapshot] 依赖它定位焦点块，为 null 会走"首 Text 块 + offset 0"
+     *    兜底分支，导致下一步快照记录到错误光标；
+     * 3. [RichTextState.selection]——[captureCurrentSnapshot] 读的是它，若等异步生效
+     *    则本帧读到的仍是 [createTextBlock] 的初始 selection。
+     *
+     * 只改 selection 不改 text，不会触发 BlockTextItem observer 压栈（该 observer 以
+     * `text != lastText` 为条件）；undo/redo 期间 [suppressTimeline] 亦为 true。
+     */
+    private fun applyFocusAndCursor(target: BodyBlock.Text, offset: Int) {
         pendingFocusId = target.id
-        pendingFocusOffset = snapshot.cursorOffset.coerceIn(0, effLen)
+        pendingFocusOffset = offset
+        focusedBlockId = target.id
+        /** 与 BlockTextItem 消费 pendingFocusOffset 的口径保持一致：有效坐标直接作为 raw 偏移，
+         *  空块（text = ZWSP）由块内 ZWSP 维护 LaunchedEffect 兜底推到 (1, 1) */
+        val rawLen = target.state.annotatedString.text.length
+        target.state.selection = TextRange(offset.coerceIn(0, rawLen))
     }
 
     /** 兜底：把焦点落到第一个 Text 块。 */
     private fun focusFirstTextBlock() {
         val firstText = blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text ?: return
-        pendingFocusId = firstText.id
-        pendingFocusOffset = 0
+        applyFocusAndCursor(firstText, 0)
     }
 
     // ---------- 删除 / 合并 ----------
@@ -1086,8 +1155,12 @@ private fun BlockTextItem(
 
     /**
      * 变更观察者（软键盘无按键事件，全部靠状态差分）：
-     * 0. **v2026-09-01 统一时间线**：用户文本变化 → 压"变化前"快照到撤销栈
-     *    （[BodyBlocksController.pushTextUndoSnapshot]），撤销一步回一个字符；
+     * 0. **v2026-09-01 统一时间线 / v2026-09-02 扩展到样式**：用户文本**或样式**变化 →
+     *    压"变化前"快照到撤销栈（[BodyBlocksController.pushTextUndoSnapshot]），
+     *    撤销一步回一个字符 / 一次格式变更（加粗、列表等）。
+     *    **仅移动光标不压栈**：压栈条件是下面的 `markdown != lastMarkdown`，而
+     *    markdown 不含光标信息，selection 变化不会让它改变 → 不产生快照。
+     *    因此"移动光标后撤销"撤销的是上一次真实变更，而不是光标移动本身；
      * 1. 块内出现 `\n` → 按段落拆块（Enter / 粘贴多行）
      * 2. 文本变短且退格前光标折叠在块首 → 与前一块合并 / 高亮前一个图片块
      * 3. 空块软键盘退格（state 由 ZWSP 唯一变成 ""）→ 走
@@ -1096,11 +1169,22 @@ private fun BlockTextItem(
      */
     LaunchedEffect(block.id) {
         var lastText = state.annotatedString.text
+        /** v2026-09-02：新增 markdown 维度的"变化前"基线（压栈判据，见下） */
+        var lastMarkdown = state.toMarkdown()
         var lastSelection = state.selection
-        snapshotFlow { Pair(state.annotatedString.text, state.selection) }
-            .collect { (text, selection) ->
+        /** v2026-09-02：差分对象从 `annotatedString.text` 换成**整个 annotatedString**——
+         *  只读 `.text` 无法感知 SpanStyle 变化，加粗/斜体/列表这类"只改样式、不改字符"
+         *  的操作不会触发 collect；读整个 annotatedString 才会被 snapshot 系统追踪到。 */
+        snapshotFlow { Triple(state.annotatedString, state.selection, state.composition) }
+            .collect { (annotated, selection, composition) ->
+                val text = annotated.text
+                /** toMarkdown() 会把 SpanStyle 序列化成 `**粗体**` 等语法，
+                 *  因此格式化操作也会让 markdown 变化 → 被下方条件捕获入栈。
+                 *  注意：markdown 不含光标信息，所以"仅移动光标"依旧不会压栈。 */
+                val markdown = state.toMarkdown()
                 if (isLocked) {
                     lastText = text
+                    lastMarkdown = markdown
                     lastSelection = selection
                     return@collect
                 }
@@ -1113,10 +1197,10 @@ private fun BlockTextItem(
                 val backspaceMerge = lastText.isNotEmpty() && text == lastText.drop(1) &&
                     lastSelection.collapsed && lastSelection.start == 0
                 val emptyBackspace = lastText == ZWSP && text == ""
-                if (text != lastText && !backspaceMerge && !emptyBackspace &&
-                    !controller.suppressTimeline && state.composition == null
+                if (markdown != lastMarkdown && !backspaceMerge && !emptyBackspace &&
+                    !controller.suppressTimeline && composition == null
                 ) {
-                    controller.pushTextUndoSnapshot(block.id, lastText, lastSelection)
+                    controller.pushTextUndoSnapshot(block.id, lastMarkdown, lastText, lastSelection)
                 }
                 when {
                     text.contains('\n') -> controller.normalizeBlockParagraphs(block)
@@ -1139,6 +1223,7 @@ private fun BlockTextItem(
                     state.selection = TextRange(1)
                 }
                 lastText = text
+                lastMarkdown = markdown
                 lastSelection = selection
             }
     }
