@@ -161,8 +161,6 @@ fun InspirationEditScreen(
 ) {
     val title by viewModel.title.collectAsState()
     val content by viewModel.content.collectAsState()
-    /** 富文本格式化内容（Markdown 字符串），用于恢复编辑器的格式化显示 */
-    val contentFormat by viewModel.contentFormat.collectAsState()
     /**
      * Undo/Redo 状态说明（v2026-09-02 方案A：两套历史隔离）：
      *
@@ -465,12 +463,32 @@ fun InspirationEditScreen(
      *   v2026-09-02 方案A——旋转后 remember 全丢，若守卫也丢失会重跑 initialize，
      *   把 ViewModel 里辛苦保住的块列表与命令栈（撤销历史）一起清空。
      */
-    androidx.compose.runtime.LaunchedEffect(contentFormat) {
-        if (bodyBlocks.hasInitialized) return@LaunchedEffect
-        try {
-            bodyBlocks.initialize(contentFormat)
-        } catch (e: Exception) {
-            Log.e("InspirationEditScreen", "编辑器初始化异常（已捕获）", e)
+    /**
+     * 编辑器内容初始化（v2026-09-02 修复「重新进入编辑页正文丢失」回归）
+     *
+     * **旧实现的问题**：原先是 `LaunchedEffect(contentFormat)` 驱动
+     * `bodyBlocks.initialize(contentFormat)`，并用 `bodyBlocks.hasInitialized` 守卫。
+     * 但 `contentFormat` 初始值为 ""，首帧会先以 "" 触发 `initialize("")` 并把
+     * `hasInitialized` 置 `true`；随后 `loadInspiration` 异步写入真实正文使
+     * `contentFormat` 变化、再次触发该效果，却被守卫 `return` 掉 → 真实正文永远
+     * 不回填到块列表，表现为「仅标题保留、正文全空」。
+     *
+     * **新方案（职责拆分）**：
+     * - **已有灵感**：初始化改由 `InspirationEditViewModel.loadInspiration()` 在数据库
+     *   读取（含旧标签/关联迁移）完成后，用最终 `_contentFormat` 直接驱动，
+     *   且用 `!hasInitialized` 守卫避免屏幕旋转重跑（旋转时 ViewModel 存活、不丢编辑）。
+     * - **新建灵感**（inspirationId 为 null，没有 loadInspiration 调用）：本效果负责
+     *   以 `""` 初始化出一个空文本块，且仅在尚未初始化时执行一次。
+     *
+     * 因此此处不再监听 `contentFormat`，只处理新建模式的空块初始化。
+     */
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (inspirationId == null && !bodyBlocks.hasInitialized) {
+            try {
+                bodyBlocks.initialize("")
+            } catch (e: Exception) {
+                Log.e("InspirationEditScreen", "编辑器初始化异常（已捕获）", e)
+            }
         }
     }
 

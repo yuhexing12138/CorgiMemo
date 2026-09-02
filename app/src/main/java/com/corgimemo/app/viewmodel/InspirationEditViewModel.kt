@@ -838,6 +838,26 @@ class InspirationEditViewModel @Inject constructor(
                 }
 
                 /**
+                 * v2026-09-02 修复「重新进入编辑页正文丢失（仅标题保留）」的根因。
+                 *
+                 * **旧逻辑**：初始化由 InspirationEditScreen 的
+                 * `LaunchedEffect(contentFormat)` 驱动 `bodyBlocks.initialize(contentFormat)`，
+                 * 并用 `bodyBlocks.hasInitialized` 守卫。但 `contentFormat` 初始值为 ""，
+                 * 首帧先以 "" 触发 `initialize("")` 把 `hasInitialized` 置 `true`；随后本方法
+                 * 异步写入真实正文使 `contentFormat` 变化、再次触发该效果，却被守卫跳过 →
+                 * 真实正文永远不回填到块列表。
+                 *
+                 * **新逻辑**：初始化改在此处——数据库读取（含旧标签/关联迁移）完成后，
+                 * 用最终 `_contentFormat` 直接初始化块列表，彻底消除「"" 先占位、真实内容
+                 * 被跳过」的竞态。用 `!hasInitialized` 守卫：屏幕旋转时 ViewModel 存活、
+                 * controller 与命令栈都还在，不应清空重跑；新建灵感没有 loadInspiration
+                 * 调用，由 Screen 的 LaunchedEffect(Unit) 负责 initialize("")。
+                 */
+                if (!bodyBlocks.hasInitialized) {
+                    bodyBlocks.initialize(_contentFormat.value)
+                }
+
+                /**
                  * v2026-08-01 Phase 4 回退：图片不再迁移为 Markdown 内联语法。
                  * 图片作为独立 ContentBlock.Image 块加载，由 UI 层 contentBlocks 渲染。
                  * _imagePaths 从数据库的 Image 块同步（用于文件清理追踪）。
