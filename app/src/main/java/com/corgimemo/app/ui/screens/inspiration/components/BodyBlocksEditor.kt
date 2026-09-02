@@ -66,6 +66,16 @@ import sh.calvin.reorderable.ReorderableItem
  * （剥掉 ZWSP 后再判断），不让 ZWSP 泄漏到 markdown/UI 文本。
  */
 private const val ZWSP = "\u200B"
+/**
+ * 空白块占位符（U+00A0 不换行空格）。
+ *
+ * 空块在编辑态以 ZWSP 预置退格锚点，其 toMarkdown 输出剥 ZWSP 后为空串。
+ * 若直接把空串写进整篇 markdown，会与相邻图片块（块间以 `\n\n` 分隔）的「段间空段」
+ * 混为一体，导致重新进入编辑页时图片边界多/少空块。故空块序列化时用 NBSP 占位，
+ * 让该段在 markdown 中保持非空、块边界无歧义；加载时再把「整段恰为 NBSP」的段
+ * 还原为空块（与编辑态空块语义一致）。
+ */
+private const val EMPTY_BLOCK_PLACEHOLDER = "\u00A0"
 private fun effectiveText(text: String): String =
     text.filterNot { it == ZWSP[0] || it == IMAGE_PLACEHOLDER_CHAR }
 private fun isEffectivelyEmpty(text: String): Boolean = effectiveText(text).isEmpty()
@@ -473,18 +483,35 @@ class BodyBlocksController(
      */
     fun initialize(markdown: String, triggerDocChanged: Boolean = true) {
         blocks.clear()
-        parseMarkdownSegments(markdown).forEach { seg ->
+        val segs = parseMarkdownSegments(markdown)
+        segs.forEachIndexed { index, seg ->
             when (seg) {
-                is MdSegment.TextSeg ->
-                    // Text 段按 \n\n 再拆成段落块；单 \n 的软换行保留在块内；
-                    // 空白段（空段落）不再丢弃——需重建为空白块，否则保存后再进入会丢失；
-                    // 整篇为空时由 ensureTextBlock 兜底生成一个空块。
-                    seg.md.split("\n\n").forEach { para ->
+                is MdSegment.TextSeg -> {
+                    // Text 段按 \n\n 再拆成段落块；单 \n 的软换行保留在块内。
+                    // 段内真实多段（非空）与独立的空白块都要保留；
+                    // 但紧贴图片块的「边界空段」只是块间 `\n\n` 分隔符的副作用，
+                    // 并非真空白块——丢弃它，否则图片相邻会凭空多出空块。
+                    val prevIsImage = index > 0 && segs[index - 1] is MdSegment.ImageSeg
+                    val nextIsImage = index < segs.lastIndex && segs[index + 1] is MdSegment.ImageSeg
+                    val paras = seg.md.split("\n\n")
+                    paras.forEachIndexed { pIdx, para ->
                         val trimmed = para.trim('\n')
-                        // 空白段 trimmed 为空串 → createTextBlock("") 预置 ZWSP 退格锚点，
-                        // 与编辑态空块语义一致；含空格的段落按原样保留
-                        blocks += createTextBlock(trimmed)
+                        val isImageLeadingBoundary = pIdx == 0 && prevIsImage
+                        val isImageTrailingBoundary = pIdx == paras.lastIndex && nextIsImage
+                        // 图片边界的空段 → 跳过（分隔符，非空白块）
+                        if ((isImageLeadingBoundary || isImageTrailingBoundary) && trimmed.isEmpty()) {
+                            return@forEachIndexed
+                        }
+                        // 空白段（空段落 / 旧格式空段 / NBSP 占位符）重建为空白块，
+                        // 否则按原样建块；整篇为空时由 ensureTextBlock 兜底生成一个空块。
+                        if (trimmed.isEmpty() || trimmed == EMPTY_BLOCK_PLACEHOLDER) {
+                            // 空白块：createTextBlock("") 预置 ZWSP 退格锚点，与编辑态空块语义一致
+                            blocks += createTextBlock("")
+                        } else {
+                            blocks += createTextBlock(trimmed)
+                        }
                     }
+                }
                 is MdSegment.ImageSeg -> blocks += BodyBlock.Image(newBodyBlockId(), seg.path)
             }
         }
@@ -515,17 +542,24 @@ class BodyBlocksController(
                 is BodyBlock.Text -> {
                     /** 剥掉空块预置的 ZWSP，保证 markdown 往返不带噪音 */
                     val raw = block.state.toMarkdown().replace(ZWSP, "")
-                    parseMarkdownSegments(raw)
-                        .filterIsInstance<MdSegment.TextSeg>()
-                        .map { it.md.trim('\n') }
-                        // 不再丢弃空白段（空段落）：空白块需参与序列化，
-                        // 否则保存后再进入会丢失；与 initialize 重建空块对称
-                        .joinToString("\n\n")
+                    if (raw.isEmpty()) {
+                        /** 空白块：用 NBSP 占位符序列化，使该段在 markdown 中非空，
+                         * 避免与相邻图片块（块间以 `\n\n` 分隔）的「段间空段」混为一体，
+                         * 导致重新进入时图片边界多/少空块；加载侧再把占位符还原为空块。 */
+                        EMPTY_BLOCK_PLACEHOLDER
+                    } else {
+                        parseMarkdownSegments(raw)
+                            .filterIsInstance<MdSegment.TextSeg>()
+                            .map { it.md.trim('\n') }
+                            // 不再丢弃空白段（空段落）：空白块需参与序列化，
+                            // 否则保存后再进入会丢失；与 initialize 重建空块对称
+                            .joinToString("\n\n")
+                    }
                 }
                 is BodyBlock.Image -> "![](${block.path})"
             }
         }
-        // 不再过滤空段：块间以空行连接，空白块对应一个空段，保证往返对称
+        // 不再过滤空段：块间以空行连接，空白块对应一个非空占位段，保证往返对称
         .joinToString("\n\n")
 
     /** 纯文本（字数统计 / 复制全文 / 同步 _content 用） */
