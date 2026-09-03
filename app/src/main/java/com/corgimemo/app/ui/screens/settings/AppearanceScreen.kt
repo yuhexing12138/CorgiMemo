@@ -46,6 +46,18 @@ import com.corgimemo.app.ui.screens.profile.components.ThemePresets
 import com.corgimemo.app.ui.theme.FontCatalog
 import com.corgimemo.app.ui.theme.FontEntry
 import com.corgimemo.app.viewmodel.SettingsViewModel
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.os.Build
+import android.util.LruCache
+import android.util.TypedValue
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.res.ResourcesCompat
 
 /**
  * 外观设置页面
@@ -222,12 +234,12 @@ fun AppearanceScreen(
                                 val isSelected = fontId == entry.id
                                 AppearanceFontOption(
                                     title = entry.displayName,
-                                    previewText = entry.displayName,
-                                    // 未选中的正文字体预览用系统字体，避免一次性把 14~19MB 的
-                                    // CJK 字体文件全部加载进 Compose 永久 Typeface 缓存而撑爆
-                                    // 低内存设备（见 app崩溃信息收集）。选中的字体已由全局
-                                    // Typography 加载，预览直接复用，零额外内存开销。
-                                    previewFontFamily = if (isSelected) entry.family else FontFamily.Default,
+                                    // 真实预览：选中行走全局 Typography 已加载字体（零额外内存）；
+                                    // 未选中行用有界 Bitmap 缓存渲染真实字形（绕过 Compose 永久
+                                    // Typeface 缓存，见 FontBodyPreview）。全部保留完整字形集。
+                                    preview = { color ->
+                                        FontBodyPreview(entry = entry, selected = isSelected, color = color)
+                                    },
                                     licenseLabel = "${entry.licenseName} · ${entry.boldTiers.size} 档加粗",
                                     selected = isSelected,
                                     onClick = { viewModel.setFontId(entry.id) }
@@ -259,8 +271,14 @@ fun AppearanceScreen(
                             // 默认（系统字体）：不叠加拉丁回退层，英文/数字走正文字体自带拉丁字形
                             AppearanceFontOption(
                                 title = "默认（系统字体）",
-                                previewText = "Ag 0123 Gg 4567",
-                                previewFontFamily = null,
+                                preview = { color ->
+                                    Text(
+                                        text = "Ag 0123 Gg 4567",
+                                        fontSize = 18.sp,
+                                        fontFamily = null,
+                                        color = color
+                                    )
+                                },
                                 licenseLabel = "英文/数字走正文字体自带拉丁字形",
                                 selected = latinFontId == "",
                                 onClick = { viewModel.setLatinFontId("") }
@@ -268,8 +286,14 @@ fun AppearanceScreen(
                             FontCatalog.latinEntries.forEach { entry ->
                                 AppearanceFontOption(
                                     title = entry.displayName,
-                                    previewText = "Ag 0123 Gg 4567",
-                                    previewFontFamily = entry.family,
+                                    preview = { color ->
+                                        Text(
+                                            text = "Ag 0123 Gg 4567",
+                                            fontSize = 18.sp,
+                                            fontFamily = entry.family,
+                                            color = color
+                                        )
+                                    },
                                     licenseLabel = "${entry.licenseName} · ${entry.boldTiers.size} 档加粗",
                                     selected = latinFontId == entry.id,
                                     onClick = { viewModel.setLatinFontId(entry.id) }
@@ -429,15 +453,113 @@ private fun AppearanceColorOption(
 }
 
 /**
+ * 正文字体预览有界缓存。
+ *
+ * 设置页需同时展示全部 CJK 正文字体（单文件 14~19MB）的真实预览。若直接让 Compose 用各自
+ * 的 [FontFamily] 渲染，[androidx.compose.ui.text.font.FontFamilyResolver] 会把每个字体
+ * 永久缓存进进程，10 款累计可撑爆低内存设备堆而 OOM（见 app崩溃信息收集）。
+ *
+ * 解法：正文预览改为「按需把字体画进一张小 Bitmap（ARGB_8888，单行约数十 KB），画完即释放
+ * Typeface」——通过 [android.graphics.Typeface.Builder] 从资源流即时构建 Typeface（API≥26
+ * 走 InputStream 分支，框架不缓存，渲染后随局部引用离开作用域被 GC 回收），仅常驻极小位图。
+ * [LruCache] 容量 12，避免每次重组重绘；位图按 `entry.id` 缓存，主题切换（onSurface 变化）
+ * 时经 remember 依赖重渲染。配合 AndroidManifest 的 `android:largeHeap="true"` 作安全网。
+ */
+private val fontPreviewCache = object : LruCache<String, Bitmap>(12) {
+    override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
+}
+
+/** sp → px（用于预览位图文字尺寸） */
+private fun spToPx(sp: Float, context: Context): Float =
+    TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, context.resources.displayMetrics)
+
+/**
+ * 取预览用 Typeface：系统默认条目用 [Typeface.DEFAULT]；内置字体从 `res/font` 资源流即时
+ * 构建（API≥26 走 [Typeface.Builder] 的 InputStream 分支，框架不缓存，渲染后释放；低版本
+ * 回退 [ResourcesCompat.getFont]）。失败一律回退系统字体，绝不抛异常。
+ */
+private fun loadPreviewTypeface(context: Context, entry: FontEntry): Typeface {
+    if (entry.isSystemDefault || entry.resByWeight.isEmpty()) return Typeface.DEFAULT
+    val resId = entry.resByWeight.values.first()
+    return runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.resources.openRawResource(resId).use { stream ->
+                Typeface.Builder(stream).build()
+            }
+        } else {
+            ResourcesCompat.getFont(context, resId)
+        }
+    }.getOrDefault(Typeface.DEFAULT)
+}
+
+/**
+ * 把单款字体的预览文字渲染成 Bitmap（颜色取 [colorArgb]，与未选中行文字色一致）。字体文件
+ * 仅在本次调用期间以 ~17MB 暂存，函数返回后局部 Typeface/Paint 引用离开作用域，由 GC 回收，
+ * 预览常驻内存仅这张小位图。
+ */
+private fun renderFontPreviewBitmap(
+    context: Context,
+    entry: FontEntry,
+    text: String,
+    colorArgb: Int
+): Bitmap {
+    val textSizePx = spToPx(18f, context)
+    val typeface = loadPreviewTypeface(context, entry)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        this.typeface = typeface
+        this.color = colorArgb
+        textSize = textSizePx
+    }
+    val width = (paint.measureText(text) + 4f).toInt().coerceAtLeast(1)
+    val fm = paint.fontMetrics
+    val height = (fm.descent - fm.ascent + 4f).toInt().coerceAtLeast(1)
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    Canvas(bitmap).drawText(text, 2f, -fm.ascent + 2f, paint)
+    return bitmap
+}
+
+/**
+ * 正文（CJK）字体预览：未选中项用有界缓存 Bitmap 渲染真实字形（绕过 Compose 永久 Typeface
+ * 缓存）；选中项直接走 [FontFamily] 实时文本（选中字体本就是全局 Typography 已加载字体，
+ * 零额外内存，且颜色随选中态精确匹配）。[color] 为当前行文字色（未选中恒为 onSurface，与
+ * 位图烘焙色一致）。
+ */
+@Composable
+private fun FontBodyPreview(
+    entry: FontEntry,
+    selected: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    if (selected) {
+        Text(
+            text = entry.displayName,
+            fontSize = 18.sp,
+            fontFamily = entry.family,
+            color = color
+        )
+    } else {
+        val context = LocalContext.current
+        val onSurfaceArgb = MaterialTheme.colorScheme.onSurface.toArgb()
+        val bitmap = remember(entry.id, onSurfaceArgb) {
+            fontPreviewCache.get(entry.id) ?: renderFontPreviewBitmap(
+                context, entry, entry.displayName, onSurfaceArgb
+            ).also { fontPreviewCache.put(entry.id, it) }
+        }
+        Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, modifier = modifier)
+    }
+}
+
+/**
  * 字体单选行（正文字体 / 英文·数字字体 通用）
  *
- * 一行展示一款字体：以 [previewFontFamily]（为 null 时走系统默认）渲染 [previewText] 预览，
- * 下方标注「名称 · 授权/档位」；选中态用主色容器 + "✓" 标记。
- * 点击调用 [onClick]，由调用方决定写入正文字体还是拉丁回退层偏好。
+ * 一行展示一款字体：以调用方注入的 [preview]（`(color: Color) -> Unit` 可组合 lambda）渲染
+ * 预览，下方标注「名称 · 授权/档位」；选中态用主色容器 + "✓" 标记。
+ * 预览的内容与颜色由调用方决定——正文字体经有界 Bitmap 缓存渲染真实字形（见 [FontBodyPreview]），
+ * 拉丁字体用实时文本。点击调用 [onClick]，由调用方决定写入正文字体还是拉丁回退层偏好。
  *
  * @param title 字体名称（显示在副标题）
- * @param previewText 预览文本（正文字体显示中文名；英文/数字字体显示 Ag 0123 等样例）
- * @param previewFontFamily 预览所用字体族（null = 系统默认）
+ * @param preview 预览可组合 lambda，参数为当前行文字色（随选中态切换）
  * @param licenseLabel 副标题授权/档位说明
  * @param selected 是否当前选中
  * @param onClick 点击回调
@@ -446,8 +568,7 @@ private fun AppearanceColorOption(
 @Composable
 private fun AppearanceFontOption(
     title: String,
-    previewText: String,
-    previewFontFamily: FontFamily?,
+    preview: @Composable (color: Color) -> Unit,
     licenseLabel: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -473,13 +594,8 @@ private fun AppearanceFontOption(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            // 以指定字体渲染预览（previewFontFamily 为 null 时走系统默认），直观反映字形风格
-            Text(
-                text = previewText,
-                fontSize = 18.sp,
-                fontFamily = previewFontFamily,
-                color = titleColor
-            )
+            // 预览由调用方注入：正文字体经有界 Bitmap 缓存渲染真实字形；拉丁字体实时文本
+            preview(titleColor)
             Text(
                 text = "$title · $licenseLabel",
                 fontSize = 12.sp,
