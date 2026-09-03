@@ -16,19 +16,28 @@ import androidx.compose.ui.text.font.FontWeight
  * 对每个候选字重离屏把同一段文字绘制到 Bitmap，与「已确认有独立字形的最轻档位」
  * 逐像素比较，不同才算该档有独立字形。
  *
+ * **⚠️ 探测所用字体必须与 App 实际渲染的字体一致**：
+ * 项目已内置思源黑体（[SourceHanSansCN]），其 400/500/700/900 各有独立字体文件。
+ * 若仍拿 `Typeface.DEFAULT` 探测，会得出「500 无独立字面」的**错误结论**——那是系统字体的
+ * 情况，内置字体并非如此——导致本该可用的 B1 档被误置灰，内置字体白做。
+ * 因此调用方**必须**通过 `typefaceOf` 传入与应用渲染相同的字体，并用 `fontTag` 隔离缓存。
+ *
  * 用法：在 UI 中用 remember 调用一次 [distinctWeights]，得到真正可用的字重集合，
  * 不在集合内的候选档位按钮应在工具栏中置灰禁用（见 RichTextFormatToolbar）。
  */
 internal object FontWeightProbe {
 
+    /** 系统默认字体的缓存标签。传入自定义字体时必须另给 fontTag，否则会串读到本字体的探测结果。 */
+    const val FONT_TAG_DEFAULT = "default"
+
     /**
-     * 探测结果缓存：以「排序后的候选字重列表」为键，整进程内只真实绘制一次位图。
+     * 探测结果缓存：以「字体标签 + 排序后的候选字重列表」为键，整进程内只真实绘制一次位图。
      * 工具栏每次重组（打字 / 选区变化 / 展开动画帧）都会调用 [distinctWeights]，
      * 命中缓存即可直接返回，避免重复离屏位图渲染开销。
      * 当前仅主线程调用（工具栏 remember 内），缓存读写已在 [distinctWeights] 上
      * 用 @Synchronized 保证 check-then-put 原子，若日后改为后台线程计算也不会并发写坏。
      */
-    private val cache = LinkedHashMap<List<Int>, Set<Int>>()
+    private val cache = LinkedHashMap<String, Set<Int>>()
 
     /** 探测使用的样例文字（同时含中文与拉丁字符：中文覆盖用户真实输入内容、拉丁含横/竖/曲线笔画，放大对比差异） */
     private const val SAMPLE_TEXT = "字重Hg"
@@ -44,7 +53,7 @@ internal object FontWeightProbe {
     private const val TEXT_COLOR = -0x1000000 // 0xFF000000 的不透明黑
 
     /**
-     * 计算候选档位中「有独立字面」的集合（带整进程缓存，每个候选列表只真实绘制一次）。
+     * 计算候选档位中「有独立字面」的集合（带整进程缓存，每个「字体 + 候选列表」只真实绘制一次）。
      *
      * 比较基准采用递增级联：首个候选与基准常规字重比较；其后每个候选与
      * 「上一档已确认有独立字形的位图」比较。这样若某档被量化合并进更轻的可用字面，
@@ -52,26 +61,38 @@ internal object FontWeightProbe {
      *
      * @param candidates 候选字重列表（如 [500, 700, 900]）
      * @param baseWeight 基准常规字重（默认 400），作为首个对比基准
+     * @param fontTag 字体标识，用于隔离缓存；换字体必须换 tag，否则读到旧字体的探测结果
+     * @param typefaceOf 字重 → Typeface 的映射，**必须返回应用实际渲染的字体**；
+     *                   默认走系统默认字体（[defaultTypefaceForWeight]）
      * @return 真正能渲染出独立字形的字重集合
      */
     @Synchronized
-    fun distinctWeights(candidates: List<Int>, baseWeight: Int = FontWeight.Normal.weight): Set<Int> {
-        val key = candidates.sorted()
+    fun distinctWeights(
+        candidates: List<Int>,
+        baseWeight: Int = FontWeight.Normal.weight,
+        fontTag: String = FONT_TAG_DEFAULT,
+        typefaceOf: (Int) -> Typeface = ::defaultTypefaceForWeight
+    ): Set<Int> {
+        val key = "$fontTag|${candidates.sorted()}"
         // 命中缓存直接返回，避免工具栏每次重组重复离屏位图渲染
         cache[key]?.let { return it }
-        val result = computeDistinctWeights(candidates, baseWeight)
+        val result = computeDistinctWeights(candidates, baseWeight, typefaceOf)
         cache[key] = result
         return result
     }
 
     /** 真实探测逻辑（见 [distinctWeights] 的缓存与级联说明） */
-    private fun computeDistinctWeights(candidates: List<Int>, baseWeight: Int): Set<Int> {
+    private fun computeDistinctWeights(
+        candidates: List<Int>,
+        baseWeight: Int,
+        typefaceOf: (Int) -> Typeface
+    ): Set<Int> {
         if (candidates.isEmpty()) return emptySet()
         // 基准位图：用基准常规字重绘制，作为首个对比基准
-        var lastDistinctBitmap: Bitmap = renderBitmap(baseWeight)
+        var lastDistinctBitmap: Bitmap = renderBitmap(baseWeight, typefaceOf)
         val result = mutableSetOf<Int>()
         for (weight in candidates.sorted()) {
-            val bitmap = renderBitmap(weight)
+            val bitmap = renderBitmap(weight, typefaceOf)
             if (!bitmapsEqual(bitmap, lastDistinctBitmap)) {
                 // 与上一已确认档位像素不同 → 有独立字形
                 result.add(weight)
@@ -93,18 +114,17 @@ internal object FontWeightProbe {
 
     /**
      * 用指定字重离屏绘制样例文字到 Bitmap。
-     * 字体取系统默认无衬线（与 Compose FontFamily.Default 对应），
-     * [Typeface.create] 的 weight 参数由系统量化到最近可用字面，正好用于探测。
      *
-     * 兼容说明：带 weight 参数的 [Typeface.create] 重载需 API 28+；
-     * 在更低版本（minSdk=26）上 Typeface 不支持任意字重，退化为常规/粗体二值映射——
-     * 此时 500 等中间字重本就渲染为常规，探测结果与其一致（置灰）也属正确行为。
+     * @param weight 要探测的字重
+     * @param typefaceOf 字重 → Typeface 映射；由调用方决定「用哪个字体探测」。
+     *                   默认（[defaultTypefaceForWeight]）取系统默认无衬线，
+     *                   其 [Typeface.create] 的 weight 参数由系统量化到最近可用字面，正好用于探测。
      */
-    private fun renderBitmap(weight: Int): Bitmap {
+    private fun renderBitmap(weight: Int, typefaceOf: (Int) -> Typeface): Bitmap {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = SAMPLE_TEXT_SIZE
             color = TEXT_COLOR
-            typeface = typefaceForWeight(weight)
+            typeface = typefaceOf(weight)
             // 左对齐，保证不同字重在同一基线绘制，仅字形粗细不同
             textAlign = Paint.Align.LEFT
         }
@@ -133,11 +153,15 @@ internal object FontWeightProbe {
     }
 
     /**
-     * 按字重取对应的 Typeface。
+     * 按字重取**系统默认字体**的 Typeface（探测的默认字体来源）。
+     *
      * API 28+ 用带 weight 的重载，由系统量化到最近可用字面（用于探测）；
      * 更低版本退化为常规/粗体二值，使中间字重探测结果保守（置灰）。
+     *
+     * ⚠️ 仅适用于「App 使用系统字体」的场景。项目已内置思源黑体，
+     * 调用方应传入对应内置字体文件的 Typeface，否则探测结论与真实渲染不符。
      */
-    private fun typefaceForWeight(weight: Int): Typeface {
+    private fun defaultTypefaceForWeight(weight: Int): Typeface {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Typeface.create(Typeface.DEFAULT, weight, false)
         } else {

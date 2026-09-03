@@ -44,11 +44,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corgimemo.app.ui.theme.APP_FONT_TAG
 import com.corgimemo.app.ui.theme.BOLD_WEIGHT_TIERS
 import com.corgimemo.app.ui.theme.FontWeightProbe
+import com.corgimemo.app.ui.theme.appTypefaceForWeight
 import com.mohamedrejeb.richeditor.model.RichTextState
 
 /**
@@ -121,8 +124,20 @@ fun RichTextFormatToolbar(
     /**
      * 运行时像素探测得到的「有独立字面」字重集合（remember 仅算一次）。
      * 不在集合内的候选档位按钮将置灰禁用，避免选中却无视觉变化。
+     *
+     * **必须传入应用实际渲染的字体**：本 App 已内置思源黑体（[SourceHanSansCN]），
+     * 若不指定 `typefaceOf` 就会退化成用系统默认字体探测，而系统字体缺 500 字面，
+     * 会得出「B1(500) 无独立字面」的错误结论、把本该可用的档位误置灰。
+     * 故这里用 [appTypefaceForWeight] 提供内置字体的 Typeface，并用 [APP_FONT_TAG] 隔离缓存。
      */
-    val distinctWeights = remember { FontWeightProbe.distinctWeights(BOLD_WEIGHT_TIERS) }
+    val context = LocalContext.current
+    val distinctWeights = remember(context) {
+        FontWeightProbe.distinctWeights(
+            candidates = BOLD_WEIGHT_TIERS,
+            fontTag = APP_FONT_TAG,
+            typefaceOf = { weight -> appTypefaceForWeight(context, weight) }
+        )
+    }
 
     Row(
         modifier = modifier
