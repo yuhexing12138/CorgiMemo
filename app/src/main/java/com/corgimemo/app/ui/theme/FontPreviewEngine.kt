@@ -5,6 +5,9 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.util.LruCache
 import android.util.TypedValue
 import kotlinx.coroutines.Dispatchers
@@ -143,4 +146,65 @@ object FontPreviewEngine {
 
     /** 清空位图缓存（一般无需调用；主题切换/内存压力下可调用）。 */
     fun clearBitmaps() = bitmapCache.evictAll()
+
+    // ========== 编辑内容「点选即预览」多行渲染（不常驻任何 Typeface） ==========
+
+    /** 正文预览最大采样字符数（够判断观感即可，避免渲染过宽位图）。 */
+    private const val MAX_PREVIEW_CHARS = 1200
+
+    /** 正文预览位图最大高度（px，超出截断显示顶部；避免超大头图占内存）。 */
+    private const val MAX_PREVIEW_HEIGHT_PX = 2048
+
+    /** 面板点选时异步渲染：把一段正文按所选字体画成多行「白色蒙版」位图（IO/Default 线程）。 */
+    suspend fun contentPreviewAsync(
+        context: Context,
+        cjkFontId: String,
+        text: String,
+        textSizeSp: Float,
+        maxWidthPx: Int
+    ): Bitmap? = withContext(Dispatchers.Default) {
+        contentPreviewBitmap(context, cjkFontId, text, textSizeSp, maxWidthPx)
+    }
+
+    /**
+     * 把正文文本按指定字体渲染成多行白色蒙版位图（StaticLayout 换行）。
+     * 字体经有界池取 Typeface（画完即弃、不常驻）；Compose 端 tint 到文字色。
+     * 系统默认条目/[FontCatalog.get] 兜底 → [Typeface.DEFAULT]。失败一律返回 null。
+     */
+    fun contentPreviewBitmap(
+        context: Context,
+        cjkFontId: String,
+        text: String,
+        textSizeSp: Float,
+        maxWidthPx: Int
+    ): Bitmap? {
+        if (maxWidthPx <= 0 || text.isBlank()) return null
+        val sample = if (text.length > MAX_PREVIEW_CHARS) text.take(MAX_PREVIEW_CHARS) else text
+        return runCatching {
+            val entry = FontCatalog.get(cjkFontId)
+            val typeface = if (entry.isSystemDefault || entry.resByWeight.isEmpty()) {
+                Typeface.DEFAULT
+            } else {
+                acquireTypeface(context, entry, entry.resByWeight.values.first())
+            }
+            val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                this.typeface = typeface
+                this.color = 0xFFFFFFFF.toInt() // 白色蒙版，compose 端 tint
+                this.textSize = TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_SP, textSizeSp, context.resources.displayMetrics
+                )
+            }
+            val layout = StaticLayout.Builder
+                .obtain(sample, 0, sample.length, textPaint, maxWidthPx)
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                .setLineSpacing(0f, 1.3f)
+                .setIncludePad(false)
+                .build()
+            val height = layout.height.coerceIn(1, MAX_PREVIEW_HEIGHT_PX)
+            val bitmap = Bitmap.createBitmap(maxWidthPx, height, Bitmap.Config.ARGB_8888)
+            // 超出 bitmap 高度的行由 Canvas clip 自动截断，只保留顶部预览
+            layout.draw(Canvas(bitmap))
+            bitmap
+        }.getOrNull()
+    }
 }

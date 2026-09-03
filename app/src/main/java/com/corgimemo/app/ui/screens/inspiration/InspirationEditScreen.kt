@@ -53,6 +53,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.corgimemo.app.ui.theme.LocalContentTypography
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.onSizeChanged
+import com.corgimemo.app.ui.theme.FontPreviewEngine
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -459,6 +466,24 @@ fun InspirationEditScreen(
      */
     val contentFontEntry by ContentFontManager.currentEntry.collectAsState()
     val contentLatinFontId by ContentFontManager.currentLatinId.collectAsState()
+
+    /**
+     * v2026-09-03 OOM 根治（点选即预览 + 完成应用）：字体面板「pending」本地态 + 正文预览位图。
+     *
+     * 平台约束（已核实 compose-ui 1.11）：FontFamilyResolver 对每款点选过的字体按 (族,字重) **永久缓存**，
+     * `FontFamily.Resolver` 无清缓存 API；整页 UI 用多字重，每款实际驻留 ~20-50MB，256MB 堆下
+     * 反复点选必然 OOM（设置页+编辑页均复现）。故：
+     * - 点选字体**只更新 pending**（面板高亮走 pending），不实时写 ContentFontManager/不重建内容排版；
+     * - 同时异步渲染一张「正文按 pending 字体的多行预览位图」盖在正文区（[FontPreviewEngine]，
+     *   引擎位图、零 Compose 缓存）→ 编辑区视觉上**即时换字**，但内存不累积；
+     * - 点「完成」才一次性把 pending 写入 VM（正文真正换字体，每选一次仅常驻 1 款新字体）。
+     */
+    var pendingCjkFontId by remember(contentFontEntry.id) { mutableStateOf(contentFontEntry.id) }
+    var pendingLatinFontId by remember(contentLatinFontId) { mutableStateOf(contentLatinFontId) }
+    /** 面板展开期间正文预览位图（所选字体的正文渲染）；收起/提交后清空 */
+    var fontPreviewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    /** 正文预览渲染宽度（px，随布局测量，0 表示尚未测量） */
+    var bodyPreviewWidthPx by remember { mutableStateOf(0) }
 
     /**
      * v2026-08-01 Phase 2：注册 # hashtag trigger + 编辑器内容初始化
@@ -1082,8 +1107,8 @@ fun InspirationEditScreen(
             InspirationEditBottomBar(
                 isFormatExpanded = isFormatExpanded,
                 isFontPanelOpen = isFontPanelExpanded,
-                currentCjkId = contentFontEntry.id,
-                currentLatinId = contentLatinFontId,
+                currentCjkId = pendingCjkFontId,
+                currentLatinId = pendingLatinFontId,
                 richTextState = richTextState,
                 onPhotoClick = {
                     showImagePicker = true
@@ -1140,27 +1165,42 @@ fun InspirationEditScreen(
                 onFontPickerClick = {
                     if (isFontPanelExpanded) {
                         isFontPanelExpanded = false
+                        fontPreviewBitmap = null
                     } else {
+                        // 展开前把 pending 重置为当前内容字体（高亮与内容一致），并清掉旧预览
+                        pendingCjkFontId = contentFontEntry.id
+                        pendingLatinFontId = contentLatinFontId
+                        fontPreviewBitmap = null
                         keyboardController?.hide()
                         isFontPanelExpanded = true
                     }
                 },
-                /** 面板头「完成」按钮：收起面板（键盘不自动弹回，由输入框焦点决定） */
+                /**
+                 * 面板头「完成」按钮：**一次性提交 pending**（内容真正换字体，每选一次仅常驻 1 款新字体），
+                 * 清掉预览层并收起面板（键盘不自动弹回，由输入框焦点决定）。
+                 */
                 onFontPanelDismiss = {
+                    // 关键：点选过程只更新 pending（面板高亮 + 正文预览位图），此处才写 ContentFontManager，
+                    // 避免逐次点选经 FontFamilyResolver 永久缓存各款字体而 OOM（见 pending 态注释）
+                    if (pendingCjkFontId != contentFontEntry.id) {
+                        viewModel.onCjkFontSelected(pendingCjkFontId)
+                    }
+                    if (pendingLatinFontId != contentLatinFontId) {
+                        viewModel.onLatinFontSelected(pendingLatinFontId)
+                    }
+                    fontPreviewBitmap = null
                     isFontPanelExpanded = false
                 },
                 /**
-                 * 中文字体选择：实时更新内容字体（编辑内容即时预览）并置脏，保存时写回 inspirations.fontId。
-                 * 实时预览不崩的前提是面板预览不再常驻字体（见 [FontPreviewEngine]：有界 Typeface 池 +
-                 * 位图缓存，预渲染后池即清空、面板常态 0 常驻字体），使编辑内容经 FontFamilyResolver 加载的
-                 * 字体成为堆里唯一常驻集合（≤12 款 CJK ≈204MB < 256MB），顺序点选不 OOM。
+                 * 中文字体选择：只更新 pending 高亮；正文区「点选即预览」由下方 LaunchedEffect
+                 * 按 pending 渲染所选字体的正文位图（引擎渲染，零 Compose 缓存）。
                  */
                 onCjkFontSelect = { fontId ->
-                    viewModel.onCjkFontSelected(fontId)
+                    pendingCjkFontId = fontId
                 },
-                /** 英文/数字字体选择：再点已选项由面板回调空串（取消，跟随中文），保存时写回 latinFontId */
+                /** 英文/数字字体选择：同上，只更新 pending（再点已选项回调空串 = 跟随中文） */
                 onLatinFontSelect = { fontId ->
-                    viewModel.onLatinFontSelected(fontId)
+                    pendingLatinFontId = fontId
                 },
                 /**
                  * v2026-09-02：格式化操作**无需任何手动撤销处理**（方案A两套历史隔离）。
@@ -1388,7 +1428,12 @@ fun InspirationEditScreen(
              * - Enter 拆块 / 块首退格合并 / 图片块两步删除 / 手柄拖拽排序
              * 详见 components/BodyBlocksEditor.kt
              */
-            Box(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    /** 记录正文可视宽度（px），供字体预览按实际宽度换行渲染 */
+                    .onSizeChanged { bodyPreviewWidthPx = it.width }
+            ) {
             CompositionLocalProvider(
                 LocalTokenClickHandler provides mediaTokenClickHandler,
                 LocalImageLoader provides CoilRichTextImageLoader,
@@ -1399,6 +1444,52 @@ fun InspirationEditScreen(
                     onImageTap = { path -> inlineImageViewerPath = path },
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+
+            /**
+             * 字体面板「点选即预览」层（OOM 根治，见 pendingCjkFontId 注释）：
+             * 点选只更新 pending，此处按 pending 渲染一张「正文按所选字体」的多行白色蒙版位图
+             * （[FontPreviewEngine] StaticLayout 渲染，**零 Compose 字体缓存**）盖住正文区，
+             * 视觉上即时换字；点「完成」才真正写 ContentFontManager——正文每选一次仅常驻 1 款新字体。
+             */
+            if (isFontPanelExpanded) {
+                val previewContext = LocalContext.current
+                // content 可能为空（空灵感）；空正文给一段占位文本便于观察字形
+                val previewSource = ((content as? String).orEmpty()).ifBlank {
+                    "（这是一段占位示例：正文当前为空）\n\n春眠不觉晓，处处闻啼鸟。\n夜来风雨声，花落知多少。\n"
+                }
+                LaunchedEffect(pendingCjkFontId, bodyPreviewWidthPx, content) {
+                    fontPreviewBitmap = if (bodyPreviewWidthPx > 0) {
+                        FontPreviewEngine.contentPreviewAsync(
+                            context = previewContext,
+                            cjkFontId = pendingCjkFontId,
+                            text = previewSource,
+                            textSizeSp = 17f,
+                            maxWidthPx = bodyPreviewWidthPx
+                        )
+                    } else null
+                }
+                fontPreviewBitmap?.let { bmp ->
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(MaterialTheme.colorScheme.surface)
+                            /** 吞掉点击，避免下层正文编辑器被误触发 */
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {}
+                    ) {
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = "字体预览",
+                            colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                        )
+                    }
+                }
             }
 
             /**

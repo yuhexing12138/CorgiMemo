@@ -29,8 +29,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -86,10 +90,24 @@ fun AppearanceScreen(
     val latinFontId by viewModel.latinFontId.collectAsState()
 
     // OOM 根治（结构层）：预渲染设置页全部字体行预览位图（各字体自身名称，IO 线程），完成后
-    // 清空 Typeface 池 → 设置页预览常态 0 常驻字体；内容字体（全局 Typography）单独经
-    // FontFamilyResolver 加载（≤12 款 CJK ≈ 204MB），与预览隔离，整体常驻 < 256MB，反复点选不再闪退。
+    // 清空 Typeface 池 → 设置页预览常态 0 常驻字体；行预览全走引擎位图、绝不实时改全局字体。
     val previewContext = LocalContext.current
     LaunchedEffect(Unit) { FontPreviewEngine.prerenderBodyRows(previewContext) }
+
+    /**
+     * v2026-09-03 OOM 根治（点选即预览 + 离页应用）：本页**不再逐次实时写全局字体**。
+     * 平台约束：FontFamilyResolver 对每款点选字体永久缓存且无清缓存 API，256MB 堆反复点选必 OOM
+     *（已复现）。故点选只更新本地 pending（行高亮即移 + 行预览引擎位图即时可见所选字形），
+     * 全局字体（MaterialTheme）仅在本页**退出时**一次性应用 → 每次进页只常驻 1 款新字体。
+     */
+    var pendingFontId by remember(fontId) { mutableStateOf(fontId) }
+    var pendingLatinFontId by remember(latinFontId) { mutableStateOf(latinFontId) }
+    DisposableEffect(Unit) {
+        onDispose {
+            if (pendingFontId != fontId) viewModel.setFontId(pendingFontId)
+            if (pendingLatinFontId != latinFontId) viewModel.setLatinFontId(pendingLatinFontId)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -231,18 +249,17 @@ fun AppearanceScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             FontCatalog.entries.forEach { entry ->
-                                val isSelected = fontId == entry.id
+                                val isSelected = pendingFontId == entry.id
                                 AppearanceFontOption(
                                     title = entry.displayName,
-                                    // 真实预览：选中行走全局 Typography 已加载字体（零额外内存）；
-                                    // 未选中行用有界 Bitmap 缓存渲染真实字形（绕过 Compose 永久
-                                    // Typeface 缓存，见 FontBodyPreview）。全部保留完整字形集。
+                                    // OOM 根治：行预览全走引擎位图（真实字形、零 Compose 缓存）；
+                                    // 点选只更新 pending（离页才应用），绝不实时改全局字体。
                                     preview = { color ->
-                                        FontBodyPreview(entry = entry, selected = isSelected, color = color)
+                                        FontBodyPreview(entry = entry, color = color)
                                     },
                                     licenseLabel = "${entry.licenseName} · ${entry.boldTiers.size} 档加粗",
                                     selected = isSelected,
-                                    onClick = { viewModel.setFontId(entry.id) }
+                                    onClick = { pendingFontId = entry.id }
                                 )
                             }
                         }
@@ -271,16 +288,14 @@ fun AppearanceScreen(
                             FontCatalog.latinEntries.forEach { entry ->
                                 AppearanceFontOption(
                                     title = entry.displayName,
-                                    // 预览显示字体自身名称：选中行走全局 Typography 已加载字体（零额外内存），
-                                    // 未选中行经 FontPreviewEngine 有界位图渲染（预览不常驻 Typeface）。
+                                    // OOM 根治：行预览全走引擎位图；点选只更新 pending（离页才应用）
                                     preview = { color ->
-                                        FontBodyPreview(entry = entry, selected = latinFontId == entry.id, color = color)
+                                        FontBodyPreview(entry = entry, color = color)
                                     },
                                     licenseLabel = "${entry.licenseName} · ${entry.boldTiers.size} 档加粗",
-                                    selected = latinFontId == entry.id,
-                                    // 再次点击已选中的拉丁字体则取消（回到不叠加拉丁回退层），
-                                    // 替代原「默认（系统字体）」选项，避免分组内出现伪系统选项。
-                                    onClick = { viewModel.setLatinFontId(if (latinFontId == entry.id) "" else entry.id) }
+                                    selected = pendingLatinFontId == entry.id,
+                                    // 再次点击已选中的拉丁字体则取消（回到不叠加拉丁回退层）
+                                    onClick = { pendingLatinFontId = if (pendingLatinFontId == entry.id) "" else entry.id }
                                 )
                             }
                         }
@@ -437,40 +452,28 @@ private fun AppearanceColorOption(
 }
 
 /**
- * 正文（CJK）/ 拉丁字体预览（设置页字体行）。
+ * 正文（CJK）/ 拉丁字体预览（设置页字体行，OOM 根治后**全部行**走引擎位图）。
  *
- * 选中项：直接走 [FontFamily] 实时文本——选中字体本就是全局 Typography 已加载字体
- * （正文字体）或当前拉丁回退层（拉丁字体），零额外内存，颜色随选中态精确匹配。
- * 未选中项：经 [FontPreviewEngine]（有界 Typeface 池 + 位图缓存）渲染「白色字形蒙版」Bitmap
- * 再 `tint` 到目标文字色——**预览不创建/持有 Typeface**，页面预渲染完成后 Typeface 池即清空，
- * 常态 0 常驻字体；反复点选不 OOM（见 FontPreviewEngine 类头）。[color] 为当前行文字色。
+ * 经 [FontPreviewEngine]（有界 Typeface 池 + 位图缓存）渲染「白色字形蒙版」Bitmap 再 `tint`
+ * 到目标文字色——预览**永不创建/持有 Typeface**，页面预渲染完成后 Typeface 池即清空，常态
+ * 0 常驻字体；点选只更新 pending（离页才应用全局字体），反复点选不 OOM。[color] 为行文字色。
  */
 @Composable
 private fun FontBodyPreview(
     entry: FontEntry,
-    selected: Boolean,
     color: Color,
     modifier: Modifier = Modifier
 ) {
-    if (selected) {
-        Text(
-            text = entry.displayName,
-            fontSize = 18.sp,
-            fontFamily = entry.family,
-            color = color
-        )
-    } else {
-        val context = LocalContext.current
-        // 引擎位图缓存命中即返回（预渲染已填满），未命中由有界池取 Typeface 渲染，绝不常驻
-        val bitmap = FontPreviewEngine.getBitmap(context, entry, entry.displayName, 18)
-        // 白色蒙版位图经 tint 实时着色为目标文字色，主题切换无需重渲染
-        Image(
-            bitmap = bitmap.asImageBitmap(),
-            contentDescription = null,
-            colorFilter = ColorFilter.tint(color),
-            modifier = modifier
-        )
-    }
+    val context = LocalContext.current
+    // 引擎位图缓存命中即返回（预渲染已填满），未命中由有界池取 Typeface 渲染，绝不常驻
+    val bitmap = FontPreviewEngine.getBitmap(context, entry, entry.displayName, 18)
+    // 白色蒙版位图经 tint 实时着色为目标文字色，主题切换无需重渲染
+    Image(
+        bitmap = bitmap.asImageBitmap(),
+        contentDescription = null,
+        colorFilter = ColorFilter.tint(color),
+        modifier = modifier
+    )
 }
 
 /**
