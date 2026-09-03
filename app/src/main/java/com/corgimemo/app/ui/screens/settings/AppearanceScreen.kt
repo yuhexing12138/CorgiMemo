@@ -269,21 +269,6 @@ fun AppearanceScreen(
                                 .padding(8.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            // 默认（系统字体）：不叠加拉丁回退层，英文/数字走正文字体自带拉丁字形
-                            AppearanceFontOption(
-                                title = "默认（系统字体）",
-                                preview = { color ->
-                                    Text(
-                                        text = "默认（系统字体）",
-                                        fontSize = 18.sp,
-                                        fontFamily = null,
-                                        color = color
-                                    )
-                                },
-                                licenseLabel = "英文/数字走正文字体自带拉丁字形",
-                                selected = latinFontId == "",
-                                onClick = { viewModel.setLatinFontId("") }
-                            )
                             FontCatalog.latinEntries.forEach { entry ->
                                 AppearanceFontOption(
                                     title = entry.displayName,
@@ -299,7 +284,9 @@ fun AppearanceScreen(
                                     },
                                     licenseLabel = "${entry.licenseName} · ${entry.boldTiers.size} 档加粗",
                                     selected = latinFontId == entry.id,
-                                    onClick = { viewModel.setLatinFontId(entry.id) }
+                                    // 再次点击已选中的拉丁字体则取消（回到不叠加拉丁回退层），
+                                    // 替代原「默认（系统字体）」选项，避免分组内出现伪系统选项。
+                                    onClick = { viewModel.setLatinFontId(if (latinFontId == entry.id) "" else entry.id) }
                                 )
                             }
                         }
