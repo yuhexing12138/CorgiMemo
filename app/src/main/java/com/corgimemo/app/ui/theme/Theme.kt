@@ -7,8 +7,11 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontFamily
 import androidx.core.view.WindowCompat
 
 @Composable
@@ -35,9 +38,15 @@ fun CorgiMemoTheme(
         }
     }
 
+    val fontEntry by FontManager.currentEntry.collectAsState()
+    val latinEntry by FontManager.latinEntry.collectAsState()
+    val bodyFamily = remember(fontEntry, latinEntry) {
+        FontManager.combinedFamily(fontEntry, latinEntry)
+    }
+
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = buildTypography(FontManager.collectCurrentEntry().family),
+        typography = buildTypography(bodyFamily),
         content = content
     )
 }

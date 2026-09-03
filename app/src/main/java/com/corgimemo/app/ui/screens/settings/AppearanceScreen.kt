@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -76,6 +77,7 @@ fun AppearanceScreen(
     val themeMode by viewModel.themeMode.collectAsState()
     val themeColor by viewModel.themeColor.collectAsState()
     val fontId by viewModel.fontId.collectAsState()
+    val latinFontId by viewModel.latinFontId.collectAsState()
 
     Scaffold(
         topBar = {
@@ -218,9 +220,54 @@ fun AppearanceScreen(
                         ) {
                             FontCatalog.entries.forEach { entry ->
                                 AppearanceFontOption(
-                                    entry = entry,
+                                    title = entry.displayName,
+                                    previewText = entry.displayName,
+                                    previewFontFamily = entry.family,
+                                    licenseLabel = "${entry.licenseName} · ${entry.boldTiers.size} 档加粗",
                                     selected = fontId == entry.id,
                                     onClick = { viewModel.setFontId(entry.id) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ========== 分组 4：英文/数字字体（拉丁回退层，OFL 1.1）==========
+            item {
+                Column {
+                    AppearanceSectionTitle("英文/数字字体")
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            // 默认（系统字体）：不叠加拉丁回退层，英文/数字走正文字体自带拉丁字形
+                            AppearanceFontOption(
+                                title = "默认（系统字体）",
+                                previewText = "Ag 0123 Gg 4567",
+                                previewFontFamily = null,
+                                licenseLabel = "英文/数字走正文字体自带拉丁字形",
+                                selected = latinFontId == "",
+                                onClick = { viewModel.setLatinFontId("") }
+                            )
+                            FontCatalog.latinEntries.forEach { entry ->
+                                AppearanceFontOption(
+                                    title = entry.displayName,
+                                    previewText = "Ag 0123 Gg 4567",
+                                    previewFontFamily = entry.family,
+                                    licenseLabel = "${entry.licenseName} · ${entry.boldTiers.size} 档加粗",
+                                    selected = latinFontId == entry.id,
+                                    onClick = { viewModel.setLatinFontId(entry.id) }
                                 )
                             }
                         }
@@ -377,20 +424,26 @@ private fun AppearanceColorOption(
 }
 
 /**
- * 正文字体单选行
+ * 字体单选行（正文字体 / 英文·数字字体 通用）
  *
- * 一行展示一款内置字体：以该字体**自身**渲染名称预览（直观反映字形风格）、
- * 下方标注授权与加粗档位数；选中态用主色容器 + "✓" 标记。
- * 点击调用 [SettingsViewModel.setFontId]，全 App 正文字体即时切换。
+ * 一行展示一款字体：以 [previewFontFamily]（为 null 时走系统默认）渲染 [previewText] 预览，
+ * 下方标注「名称 · 授权/档位」；选中态用主色容器 + "✓" 标记。
+ * 点击调用 [onClick]，由调用方决定写入正文字体还是拉丁回退层偏好。
  *
- * @param entry 字体注册表条目（[FontCatalog]）
- * @param selected 是否当前选中字体
+ * @param title 字体名称（显示在副标题）
+ * @param previewText 预览文本（正文字体显示中文名；英文/数字字体显示 Ag 0123 等样例）
+ * @param previewFontFamily 预览所用字体族（null = 系统默认）
+ * @param licenseLabel 副标题授权/档位说明
+ * @param selected 是否当前选中
  * @param onClick 点击回调
  * @param modifier 外部 Modifier
  */
 @Composable
 private fun AppearanceFontOption(
-    entry: FontEntry,
+    title: String,
+    previewText: String,
+    previewFontFamily: FontFamily?,
+    licenseLabel: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -415,15 +468,15 @@ private fun AppearanceFontOption(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            // 以本字体自身渲染预览，直观反映字形风格
+            // 以指定字体渲染预览（previewFontFamily 为 null 时走系统默认），直观反映字形风格
             Text(
-                text = entry.displayName,
+                text = previewText,
                 fontSize = 18.sp,
-                fontFamily = entry.family,
+                fontFamily = previewFontFamily,
                 color = titleColor
             )
             Text(
-                text = "${entry.licenseName} · ${entry.boldTiers.size} 档加粗",
+                text = "$title · $licenseLabel",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

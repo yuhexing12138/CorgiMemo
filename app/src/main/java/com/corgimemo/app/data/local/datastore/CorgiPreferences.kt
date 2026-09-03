@@ -176,6 +176,8 @@ class CorgiPreferences(
         const val DATE_CATEGORY_ORDER = "date_category_order"
         /** 🆕 v2026-09-03：正文字体 id（对应 FontCatalog 条目 id；默认 source_han_sans_cn） */
         const val FONT_ID = "font_id"
+        /** 🆕 v2026-09-03：「英文/数字字体」id（拉丁回退层；空串 = 系统默认，不叠加） */
+        const val LATIN_FONT_ID = "latin_font_id"
     }
 
     // ==================== 数据迁移（DataStore → ESP）====================
@@ -727,6 +729,23 @@ class CorgiPreferences(
     /** 持久化正文字体 id（由 SettingsViewModel.setFontId 调用，同时驱动内存状态） */
     suspend fun saveFontId(id: String) = withContext(Dispatchers.IO) {
         esp.edit().putString(Keys.FONT_ID, id).apply()
+    }
+
+    /**
+     * 当前「英文/数字字体」(拉丁回退层) id 的 Flow。
+     *
+     * 默认值字面量 `""`（空串 = 系统默认，不叠加拉丁回退层），与 [FontCatalog.DEFAULT_LATIN_ID] 一致；
+     * 这里用字面量而非引用，避免 data 层反向依赖 ui.theme 包。
+     * 空串 / 未知 id 由 [FontCatalog.getLatin] 返回 null（不叠加）。
+     */
+    val latinFontId: Flow<String> = callbackFlow {
+        trySend(esp.getString(Keys.LATIN_FONT_ID, "") ?: "")
+        close()
+    }
+
+    /** 持久化「英文/数字字体」id（由 SettingsViewModel.setLatinFontId 调用，同时驱动内存状态） */
+    suspend fun saveLatinFontId(id: String) = withContext(Dispatchers.IO) {
+        esp.edit().putString(Keys.LATIN_FONT_ID, id).apply()
     }
 
     // ==================== 首次引导状态 ====================

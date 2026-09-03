@@ -57,6 +57,15 @@ class SettingsViewModel @Inject constructor(
     val fontId: StateFlow<String> = _fontId.asStateFlow()
 
     /**
+     * 当前「英文/数字字体」(拉丁回退层) id（v2026-09-03 新增）
+     *
+     * 与 [FontManager] 共享同一份内存状态；默认值取 [FontCatalog.DEFAULT_LATIN_ID]（空串 = 不叠加），
+     * 启动时由 ESP 实际偏好覆盖。UI 层（外观设置页「英文/数字字体」分组）订阅本 StateFlow 展示选中态。
+     */
+    private val _latinFontId = MutableStateFlow(FontCatalog.DEFAULT_LATIN_ID)
+    val latinFontId: StateFlow<String> = _latinFontId.asStateFlow()
+
+    /**
      * 单行图片附件上限（v2026-07-27 新增）
      *
      * 与 [com.corgimemo.app.viewmodel.TodoEditViewModel.maxImagesPerLine] 共享同一份 ESP 存储。
@@ -94,6 +103,11 @@ class SettingsViewModel @Inject constructor(
             _fontId.value = loadedFontId
             FontManager.initFont(loadedFontId)
 
+            // v2026-09-03 新增：加载「英文/数字字体」回退层并同步 FontManager 内存状态
+            val loadedLatinFontId = corgiPreferences.latinFontId.first()
+            _latinFontId.value = loadedLatinFontId
+            FontManager.initLatin(loadedLatinFontId)
+
             // v2026-07-27 新增：加载「单行图片上限」
             _maxImagesPerLine.value = corgiPreferences.maxImagesPerLine.first()
         }
@@ -129,6 +143,23 @@ class SettingsViewModel @Inject constructor(
             _fontId.value = id
             FontManager.setFont(id)
             corgiPreferences.saveFontId(id)
+        }
+    }
+
+    /**
+     * 设置「英文/数字字体」(拉丁回退层)（v2026-09-03 新增）
+     *
+     * 同步写入内存 StateFlow、[FontManager] 内存状态与 ESP 持久化。
+     * 主题体系（[CorgiMemoTheme]）通过 [FontManager.combinedFamily] 合成「拉丁在前、中文在后」的
+     * 字形回退链，全 App 即时生效，无需手动通知。空串 id 表示不叠加（英文/数字走正文字体自带拉丁字形）。
+     *
+     * @param id [FontCatalog] 中的拉丁字体条目 id（空串 = 系统默认）
+     */
+    fun setLatinFontId(id: String) {
+        viewModelScope.launch {
+            _latinFontId.value = id
+            FontManager.setLatin(id)
+            corgiPreferences.saveLatinFontId(id)
         }
     }
 

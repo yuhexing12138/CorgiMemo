@@ -29,10 +29,23 @@ data class FontEntry(
     /** 供 [FontWeightProbe] 隔离不同字体探测结果的缓存标签 */
     val tag: String,
     /** 字重 → `R.font.*` 资源 id 映射（必须与 [family] 注册的 [Font] 一一对应） */
-    val resByWeight: Map<Int, Int>
+    val resByWeight: Map<Int, Int>,
+    /**
+     * 是否为「英文/数字字体」（拉丁回退层）。
+     * true 时该条目不进入「正文字体」列表，而是作为选中正文字体的字形回退层：
+     * 中文走正文字体，英文/数字走本字体（见 [FontManager] / Theme.kt 的 FontFamily 合成）。
+     */
+    val isLatin: Boolean = false
 ) {
     /** 本字体真实提供的字重档位（升序） */
     val availableWeights: List<Int> get() = resByWeight.keys.sorted()
+
+    /**
+     * 由 [resByWeight] 派生的 [Font] 列表（按字重建 [Font]）。
+     * 用于与正文字体合成「拉丁在前、中文在后」的字形回退链
+     * （[FontManager] / Theme.kt），避免重复维护两份字体清单。
+     */
+    val fonts: List<Font> get() = resByWeight.map { (w, resId) -> Font(resId, FontWeight(w)) }
 
     /**
      * 加粗程度候选档位（对应工具栏 B1 / B2 / B3）：
@@ -221,7 +234,59 @@ object FontCatalog {
         )
     )
 
-    /** 全部可选字体（顺序即设置页展示顺序） */
+    // ========== Space Grotesk（拉丁·无衬线，Florian Karsten，英文/数字）==========
+    // 现代几何无衬线，数字设计有特色；4 档：Light/Regular/Medium/Bold。
+    // 仅含拉丁字形，作为正文字体的「英文/数字回退层」（isLatin=true），不进正文字体列表。
+    private val SPACE_GROTESK = FontEntry(
+        id = "space_grotesk",
+        displayName = "Space Grotesk",
+        licenseName = "SIL OFL 1.1",
+        licenseAsset = "licenses/SpaceGrotesk-OFL-1.1.txt",
+        copyright = "Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk).",
+        family = FontFamily(
+            Font(R.font.space_grotesk_light, FontWeight.Light),       // 300
+            Font(R.font.space_grotesk_regular, FontWeight.Normal),     // 400
+            Font(R.font.space_grotesk_medium, FontWeight.Medium),      // 500
+            Font(R.font.space_grotesk_bold, FontWeight.Bold)           // 700
+        ),
+        tag = "space-grotesk",
+        resByWeight = mapOf(
+            300 to R.font.space_grotesk_light,
+            400 to R.font.space_grotesk_regular,
+            500 to R.font.space_grotesk_medium,
+            700 to R.font.space_grotesk_bold
+        ),
+        isLatin = true
+    )
+
+    // ========== Maple Mono（拉丁·等宽，Subframe7536，代码/数字对齐）==========
+    // 现代等宽字体，8 档 + 斜体；取 5 档直立字（Light/Regular/Medium/SemiBold/Bold）。
+    // 等宽特性使数字严格对齐，适合代码块、账目、时间线；作为正文字体英文/数字回退层。
+    private val MAPLE_MONO = FontEntry(
+        id = "maple_mono",
+        displayName = "Maple Mono",
+        licenseName = "SIL OFL 1.1",
+        licenseAsset = "licenses/MapleMono-OFL-1.1.txt",
+        copyright = "Copyright 2022 The Maple Mono Project Authors (https://github.com/subframe7536/maple-font).",
+        family = FontFamily(
+            Font(R.font.maple_mono_light, FontWeight.Light),          // 300
+            Font(R.font.maple_mono_regular, FontWeight.Normal),        // 400
+            Font(R.font.maple_mono_medium, FontWeight.Medium),         // 500
+            Font(R.font.maple_mono_semibold, FontWeight.SemiBold),     // 600
+            Font(R.font.maple_mono_bold, FontWeight.Bold)              // 700
+        ),
+        tag = "maple-mono",
+        resByWeight = mapOf(
+            300 to R.font.maple_mono_light,
+            400 to R.font.maple_mono_regular,
+            500 to R.font.maple_mono_medium,
+            600 to R.font.maple_mono_semibold,
+            700 to R.font.maple_mono_bold
+        ),
+        isLatin = true
+    )
+
+    /** 全部可选正文字体（顺序即设置页展示顺序） */
     val entries: List<FontEntry> = listOf(
         SOURCE_HAN_SANS,
         SOURCE_HAN_SERIF,
@@ -231,9 +296,21 @@ object FontCatalog {
         EARLY_SUMMER_MINCHO
     )
 
+    /** 全部可选「英文/数字字体」（拉丁回退层；空表示不覆盖，英文/数字走正文字体自带拉丁字形） */
+    val latinEntries: List<FontEntry> = listOf(
+        SPACE_GROTESK,
+        MAPLE_MONO
+    )
+
     /** 默认字体 id（思源黑体，内置 4 档、最通用） */
     val DEFAULT_ID: String = SOURCE_HAN_SANS.id
 
-    /** 按 id 取字体条目；未知 id 回退默认字体，避免空指针 */
+    /** 「英文/数字字体」默认 id（空串 = 系统默认，不叠加拉丁回退层） */
+    const val DEFAULT_LATIN_ID: String = ""
+
+    /** 按 id 取正文字体条目；未知 id 回退默认字体，避免空指针 */
     fun get(id: String): FontEntry = entries.firstOrNull { it.id == id } ?: entries.first()
+
+    /** 按 id 取「英文/数字字体」条目；空串/未知 id 返回 null（表示不叠加拉丁回退层） */
+    fun getLatin(id: String): FontEntry? = if (id.isBlank()) null else latinEntries.firstOrNull { it.id == id }
 }
