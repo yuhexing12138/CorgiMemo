@@ -1149,7 +1149,12 @@ fun InspirationEditScreen(
                 onFontPanelDismiss = {
                     isFontPanelExpanded = false
                 },
-                /** 中文字体选择：更新内容字体（编辑内容即时生效）并置脏，保存时写回 inspirations.fontId */
+                /**
+                 * 中文字体选择：实时更新内容字体（编辑内容即时预览）并置脏，保存时写回 inspirations.fontId。
+                 * 实时预览不崩的前提是面板预览不再常驻字体（见 [FontPreviewEngine]：有界 Typeface 池 +
+                 * 位图缓存，预渲染后池即清空、面板常态 0 常驻字体），使编辑内容经 FontFamilyResolver 加载的
+                 * 字体成为堆里唯一常驻集合（≤12 款 CJK ≈204MB < 256MB），顺序点选不 OOM。
+                 */
                 onCjkFontSelect = { fontId ->
                     viewModel.onCjkFontSelected(fontId)
                 },

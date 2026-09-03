@@ -2,7 +2,6 @@ package com.corgimemo.app.ui.theme
 
 import android.content.Context
 import android.graphics.Typeface
-import android.os.Build
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -77,19 +76,8 @@ data class FontEntry(
      * 与 Compose FontFamily 的字重匹配策略一致。
      */
     fun typefaceForWeight(context: Context, weight: Int): Typeface {
-        if (isSystemDefault) {
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                Typeface.create(Typeface.DEFAULT, weight, false)
-            } else {
-                Typeface.create(
-                    Typeface.DEFAULT,
-                    if (weight >= 700) Typeface.BOLD else Typeface.NORMAL
-                )
-            }
-        }
-        val chosen = availableWeights.filter { it <= weight }.maxOrNull() ?: availableWeights.first()
-        return runCatching { context.resources.getFont(resByWeight.getValue(chosen)) }
-            .getOrDefault(Typeface.DEFAULT)
+        // 统一走有界字体池（FontPreviewEngine），避免探测再额外常驻一套字体文件
+        return FontPreviewEngine.typefaceForWeight(context, this, weight)
     }
 }
 

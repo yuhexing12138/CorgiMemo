@@ -46,19 +46,12 @@ import com.corgimemo.app.ui.screens.profile.components.ThemePresets
 import com.corgimemo.app.ui.theme.FontCatalog
 import com.corgimemo.app.ui.theme.FontEntry
 import com.corgimemo.app.viewmodel.SettingsViewModel
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Typeface
-import android.util.LruCache
-import android.util.TypedValue
 import androidx.compose.foundation.Image
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.res.ResourcesCompat
+import com.corgimemo.app.ui.theme.FontPreviewEngine
 
 /**
  * 外观设置页面
@@ -91,6 +84,12 @@ fun AppearanceScreen(
     val themeColor by viewModel.themeColor.collectAsState()
     val fontId by viewModel.fontId.collectAsState()
     val latinFontId by viewModel.latinFontId.collectAsState()
+
+    // OOM 根治（结构层）：预渲染设置页全部字体行预览位图（各字体自身名称，IO 线程），完成后
+    // 清空 Typeface 池 → 设置页预览常态 0 常驻字体；内容字体（全局 Typography）单独经
+    // FontFamilyResolver 加载（≤12 款 CJK ≈ 204MB），与预览隔离，整体常驻 < 256MB，反复点选不再闪退。
+    val previewContext = LocalContext.current
+    LaunchedEffect(Unit) { FontPreviewEngine.prerenderBodyRows(previewContext) }
 
     Scaffold(
         topBar = {
@@ -272,15 +271,10 @@ fun AppearanceScreen(
                             FontCatalog.latinEntries.forEach { entry ->
                                 AppearanceFontOption(
                                     title = entry.displayName,
-                                    // 预览显示字体自身名称（与「正文字体」分组一致），每款拉丁字体
-                                    // 用各自字形渲染，行与行之间名称可区分；不再用统一的样例字符串。
+                                    // 预览显示字体自身名称：选中行走全局 Typography 已加载字体（零额外内存），
+                                    // 未选中行经 FontPreviewEngine 有界位图渲染（预览不常驻 Typeface）。
                                     preview = { color ->
-                                        Text(
-                                            text = entry.displayName,
-                                            fontSize = 18.sp,
-                                            fontFamily = entry.family,
-                                            color = color
-                                        )
+                                        FontBodyPreview(entry = entry, selected = latinFontId == entry.id, color = color)
                                     },
                                     licenseLabel = "${entry.licenseName} · ${entry.boldTiers.size} 档加粗",
                                     selected = latinFontId == entry.id,
@@ -443,71 +437,13 @@ private fun AppearanceColorOption(
 }
 
 /**
- * 正文字体预览有界缓存。
+ * 正文（CJK）/ 拉丁字体预览（设置页字体行）。
  *
- * 设置页需同时展示全部 CJK 正文字体（单文件 14~19MB）的真实预览。若直接让 Compose 用各自
- * 的 [FontFamily] 渲染，[androidx.compose.ui.text.font.FontFamilyResolver] 会把每个字体
- * 永久缓存进进程，10 款累计可撑爆低内存设备堆而 OOM（见 app崩溃信息收集）。
- *
- * 解法：正文预览改为「按需把字体画进一张小 Bitmap（ARGB_8888，单行约数十 KB），仅常驻极小
- * 位图」——每个字体经 [ResourcesCompat.getFont] 取 Typeface 后即时绘制，位图缓存于 [LruCache]
- * （容量 12），之后不再走 Compose 的永久 [FontFamily] 缓存。框架按 resId 的 Typeface 缓存有界
- * （≤ 字体数），配合 AndroidManifest 的 `android:largeHeap="true"` 安全网即可容纳首次渲染的
- * 峰值。位图为「白色字形蒙版」，主题切换时经 [ColorFilter.tint] 实时着色，与主题无关、无需重渲染。
- */
-private val fontPreviewCache = object : LruCache<String, Bitmap>(12) {
-    // 以条目数计容量（每张位图约数十 KB），容量 12 即最多常驻 12 款字体预览位图
-    override fun sizeOf(key: String, value: Bitmap): Int = 1
-}
-
-/** sp → px（用于预览位图文字尺寸） */
-private fun spToPx(sp: Float, context: Context): Float =
-    TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, context.resources.displayMetrics)
-
-/**
- * 取预览用 Typeface：系统默认条目用 [Typeface.DEFAULT]；内置字体经 [ResourcesCompat.getFont]
- * （框架按 resId 缓存，有界 ≤ 字体数，配合 [android:largeHeap] 安全网）加载，失败一律回退
- * 系统字体，绝不抛异常。正文预览通过位图缓存只渲染一次，避免 Compose [FontFamily] 永久缓存
- * 同时持有全部 14~19MB 字体文件而 OOM。
- */
-private fun loadPreviewTypeface(context: Context, entry: FontEntry): Typeface {
-    if (entry.isSystemDefault || entry.resByWeight.isEmpty()) return Typeface.DEFAULT
-    val resId = entry.resByWeight.values.first()
-    return runCatching { ResourcesCompat.getFont(context, resId) }
-        .getOrNull() ?: Typeface.DEFAULT
-}
-
-/**
- * 把单款字体的预览文字渲染成「白色字形 + 透明底」的 Bitmap（颜色无关的蒙版）。
- * 实际文字色在 Compose 端经 [androidx.compose.ui.graphics.ColorFilter.tint] 即时着色，
- * 因此位图与主题无关、只渲染一次并缓存。字体文件仅在本次调用期间以 ~17MB 暂存，函数返回后
- * 局部 Typeface/Paint 引用离开作用域，由 GC 回收，预览常驻内存仅这张小位图。
- */
-private fun renderFontPreviewBitmap(
-    context: Context,
-    entry: FontEntry,
-    text: String
-): Bitmap {
-    val textSizePx = spToPx(18f, context)
-    val typeface = loadPreviewTypeface(context, entry)
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        this.typeface = typeface
-        this.color = 0xFFFFFFFF.toInt() // 白色蒙版，compose 端再 tint 到目标文字色
-        textSize = textSizePx
-    }
-    val width = (paint.measureText(text) + 4f).toInt().coerceAtLeast(1)
-    val fm = paint.fontMetrics
-    val height = (fm.descent - fm.ascent + 4f).toInt().coerceAtLeast(1)
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    Canvas(bitmap).drawText(text, 2f, -fm.ascent + 2f, paint)
-    return bitmap
-}
-
-/**
- * 正文（CJK）字体预览：未选中项用有界缓存 Bitmap 渲染真实字形（绕过 Compose 永久 Typeface
- * 缓存）；选中项直接走 [FontFamily] 实时文本（选中字体本就是全局 Typography 已加载字体，
- * 零额外内存，且颜色随选中态精确匹配）。[color] 为当前行文字色（未选中恒为 onSurface，与
- * 位图烘焙色一致）。
+ * 选中项：直接走 [FontFamily] 实时文本——选中字体本就是全局 Typography 已加载字体
+ * （正文字体）或当前拉丁回退层（拉丁字体），零额外内存，颜色随选中态精确匹配。
+ * 未选中项：经 [FontPreviewEngine]（有界 Typeface 池 + 位图缓存）渲染「白色字形蒙版」Bitmap
+ * 再 `tint` 到目标文字色——**预览不创建/持有 Typeface**，页面预渲染完成后 Typeface 池即清空，
+ * 常态 0 常驻字体；反复点选不 OOM（见 FontPreviewEngine 类头）。[color] 为当前行文字色。
  */
 @Composable
 private fun FontBodyPreview(
@@ -525,10 +461,8 @@ private fun FontBodyPreview(
         )
     } else {
         val context = LocalContext.current
-        val bitmap = remember(entry.id) {
-            fontPreviewCache.get(entry.id) ?: renderFontPreviewBitmap(context, entry, entry.displayName)
-                .also { fontPreviewCache.put(entry.id, it) }
-        }
+        // 引擎位图缓存命中即返回（预渲染已填满），未命中由有界池取 Typeface 渲染，绝不常驻
+        val bitmap = FontPreviewEngine.getBitmap(context, entry, entry.displayName, 18)
         // 白色蒙版位图经 tint 实时着色为目标文字色，主题切换无需重渲染
         Image(
             bitmap = bitmap.asImageBitmap(),

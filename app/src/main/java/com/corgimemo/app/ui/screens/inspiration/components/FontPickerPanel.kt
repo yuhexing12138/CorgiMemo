@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,17 +26,21 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.corgimemo.app.ui.theme.FontCatalog
+import com.corgimemo.app.ui.theme.FontEntry
+import com.corgimemo.app.ui.theme.FontPreviewEngine
 
 /**
  * 编辑页字体选择面板（内联面板，非底部弹窗）。
@@ -48,7 +53,7 @@ import com.corgimemo.app.ui.theme.FontCatalog
  * - 网格：每行固定 4 块（`GridCells.Fixed(4)`），gap 8dp，左右内边距 16dp
  * - 中文组标题「中文字体」→ 每块显示「刻记」（26sp）
  * - 拉丁组标题「英文/数字字体」→ 每块显示「Corgi」（19sp）
- * - **预览块不显示字体名**（用户决策 3）：隐藏后块高 44dp、预览字号放大，一屏看更多、
+ * - 预览块不显示字体名（用户决策 3）：隐藏后块高 44dp、预览字号放大，一屏看更多、
  *   更利于逐块对比字形；数据源按 [FontCatalog.entries] / [FontCatalog.latinEntries] 逐款渲染，
  *   拉丁组不含系统字体占位项（用户决策 5：默认跟随中文，见 [currentLatinId]）
  *
@@ -56,11 +61,16 @@ import com.corgimemo.app.ui.theme.FontCatalog
  * 取 `WindowInsets.ime` 记录的最近一次键盘高度，键盘未弹出过时兜底 291dp），
  * 内容超出时网格纵向滚动。
  *
+ * **OOM 防护（结构层，见 [FontPreviewEngine]）**：CJK 字体单文件 14~19MB。预览不常驻任何字体——
+ * 全部预览位图经 [FontPreviewEngine]（有界 Typeface 池 + 位图缓存）渲染，池容量有界、渲染后清空，
+ * 面板**常态 0 常驻字体**；编辑内容经 Compose `FontFamilyResolver` 加载的字体（≤12 款 CJK ≈ 204MB）
+ * 与面板预览完全隔离，故整体常驻 ≈ 204MB < 256MB，点选实时预览不崩。
+ *
  * **选择语义**：
  * - 中文组：点选即选中（中文字体必选，无取消态）
  * - 拉丁组：**再点当前已选项 = 取消**，本面板直接回调空串，
  *   对应 `inspirations.latinFontId = ""`（英文/数字跟随中文字体，
-   * 与 [FontCatalog.DEFAULT_LATIN_ID] 语义一致）
+ *  与 [FontCatalog.DEFAULT_LATIN_ID] 语义一致）
  *
  * @param panelHeight 面板总高度（= 键盘高度；内容区超出时纵向滚动）
  * @param currentCjkId 当前中文字体 id（回显选中态）
@@ -79,6 +89,11 @@ fun FontPickerPanel(
     onDone: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    // 预渲染全部预览位图（IO 线程：拷字体 + 构建 Typeface + 绘制），完成后清空 Typeface 池 →
+    // 面板常态 0 常驻字体，单元格只从位图缓存读取。这是 OOM 根治的关键一步。
+    LaunchedEffect(Unit) { FontPreviewEngine.prerenderAll(context) }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface
@@ -148,7 +163,7 @@ fun FontPickerPanel(
                 ) { entry ->
                     FontPreviewCell(
                         previewText = "刻记",
-                        fontFamily = entry.family,
+                        entry = entry,
                         fontSize = 26,
                         selected = entry.id == currentCjkId,
                         onClick = { onCjkSelect(entry.id) }
@@ -165,7 +180,7 @@ fun FontPickerPanel(
                 ) { entry ->
                     FontPreviewCell(
                         previewText = "Corgi",
-                        fontFamily = entry.family,
+                        entry = entry,
                         fontSize = 19,
                         selected = entry.id == currentLatinId,
                         onClick = {
@@ -223,13 +238,18 @@ private fun GroupTitle(text: String, hint: String? = null) {
 
 /**
  * 单个字体预览块（无字体名，用户决策 3）：
- * 中文「刻记」/ 拉丁「Corgi」用该字体真实字形渲染，块高 44dp、圆角 8dp。
+ * 中文「刻记」/ 拉丁「Corgi」渲染真实字形，块高 44dp、圆角 8dp。
+ *
+ * **OOM 安全渲染（关键，见 [FontPreviewEngine]）**：单元格只从 [FontPreviewEngine] 的位图缓存读取
+ * 「白色字形蒙版」Bitmap 再 `tint` 到目标文字色，**绝不在此创建/持有 Typeface**。字体文件仅预览引擎
+ * 借用、渲染后即弃，面板常态 0 常驻字体。选中/未选中仅靠 `tint` 颜色（primary vs onSurface）区分。
+ *
  * 选中态 = 暖橙边框 + 浅暖橙底（`colorScheme.primary` / `primary` 12% 透明度）。
  */
 @Composable
 private fun FontPreviewCell(
     previewText: String,
-    fontFamily: androidx.compose.ui.text.font.FontFamily,
+    entry: FontEntry,
     fontSize: Int,
     selected: Boolean,
     onClick: () -> Unit
@@ -250,6 +270,9 @@ private fun FontPreviewCell(
         MaterialTheme.colorScheme.onSurface
     }
     val interactionSource = remember { MutableInteractionSource() }
+    val context = LocalContext.current
+    // 直接读取引擎位图缓存（命中即返回，无 Typeface 创建）；未命中由引擎取有界池 Typeface 渲染
+    val bitmap = FontPreviewEngine.getBitmap(context, entry, previewText, fontSize)
 
     Box(
         modifier = Modifier
@@ -266,15 +289,11 @@ private fun FontPreviewCell(
             ),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = previewText,
-            fontFamily = fontFamily,
-            fontSize = fontSize.sp,
-            color = textColor,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Clip,
-            modifier = Modifier.fillMaxWidth()
+        // 位图按原生像素尺寸居中显示（引擎渲染时已含密度/字体缩放），不经 fillMaxWidth 拉伸失真
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = null,
+            colorFilter = ColorFilter.tint(textColor)
         )
     }
 }
