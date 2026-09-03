@@ -45,7 +45,18 @@
 - 本地残留（被 safe-delete/genie-trash 守卫拦截）：输出目录 watch 日志、虚拟环境 Scripts 下 CLI 可执行文件，须本机文件管理器删。用户 10:54 手动删除后四层验证全过。
 - 遗留：git 历史对象库可能仍含旧字样（清理提交 `564e19b8` 及更早历史），属 `.git` 对象库不出现在工作区，改写风险大故不动；服务端用户配置可能仍注入旧指令（需在平台用户设置清理）。
 
+## 中文字体选型（2026-09-03 拉取 free-font 库后确定，详见 `free-font-可商用字体库调研报告.md`）
+- **字体素材库**：`jaywcjlove/free-font` 已拉取到 `C:\Users\EDY\Desktop\CorgiMemo\free-font\`（浅克隆 `--depth=1`，13 GB / 4,272 文件）。**13 GB 不入库**：建议主仓库 `.gitignore` 加 `/free-font/`（绝不可作子模块）。拉取须剥离代理变量（见用户级记忆的代理坑）。
+- **库存规模**：1,048 款字体（`scripts/data.json` 1,048 条记录，与实际文件一一对应）、81 个系列、8.39 GB；格式 ttf 806/otf 177/ttc 65，**全静态字重、无可变字体**；授权 OFL-1.1 占 65.8%，**未标注 302 条（28.8%）商用前必须回官方核实**。
+- **★ 解决「B1/B2/B3 字重撞档」的根本办法 = 内置多字重中文字体**（系统默认字体仅 400/700/900 字面，500 被量化合并，故 B1 与 B2 视觉相同；当前靠 `FontWeightProbe` 像素探测置灰，属治标）。
+- **首选思源黑体**（`docs/fonts/思源字体系列/思源黑体/`，6 档 30,888 字形 55.8 MB）：实际 7 个文件约 8 MB/个，其中 **Medium(500)/Bold(700)/Heavy(900) 精确对应 B1/B2/B3**，只内置这 3 档约 **24.8 MB**。
+- **次选阿里巴巴普惠体**（5 档 28,987 字形 **38.6 MB**，体积最优，同样含 Medium/Bold/Heavy）；档数最多为小米 MiSans（8 档 76.9 MB）；满覆盖为源音黑體（6 档 65,535 字形 120.6 MB）。梦源宋体/黑体虽 10 档 65535 字形但 643–994 MB，不适合 App 内置。
+- **落地路径**：拷贝所需档位到 `app/src/main/res/font/`（**不要子模块**）→ 建 FontFamily → 改 `Type.kt` 的 `fontFamily = FontFamily.Default` → 同步字重可用集合常量（`Type.kt`，与字体定义同处）→ 档位自动派生 500/700/900 三档分明。`FontWeightProbe` 保留作兜底（换设备/字体仍能自动置灰无独立字面档位）。
+- **数据分析坑（复用）**：该库 `subfamilyName` 不可靠（思源系列字重写在 `familyName`，sub 恒为 Regular/Bold），**判断字重必须从文件名提取且文件名优先于 subfamilyName**；带字重后缀的 familyName（如「梦源宋体-W3…W9」）会被误拆字族，**应按文件所在目录归组**。
+- **风险**：商用授权以官方为准（license 为人工维护、缺失率高）；避开 AGPL-3.0(12)/GPL(4) 传染性协议；排除明确不可商用 8 条（个人免费 4/需要授权 2/CC BY-NC 1/个人非商业 1）。
+
 ## 资源位置
 - 设计稿：Ardot `刻记+ APP 线框图与交互原型`（fileId 707225018209249）。
 - 堆叠图原型：`图片库/preview_stack.html`（已本地化 vendor 依赖，可离线打开）；`designs/stack-collapse-button/collapse-button-position.html` + `overview.md`。
+- 字体素材库：`free-font/`（13 GB，本地参考）+ 报告 `free-font-可商用字体库调研报告.md`。
 - 源码：`app/.../ui/components/SwipeableImageStack.kt`、`TimelineInspirationItem.kt`、`InspirationEditScreen` 等。
