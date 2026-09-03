@@ -174,7 +174,7 @@ class CorgiPreferences(
         const val STATUS_FILTER_ORDER = "status_filter_order"
         /** 🆕 v2026-07-28：DATE Tab 内置日期类型顺序（逗号分隔的 DateCategory.name） */
         const val DATE_CATEGORY_ORDER = "date_category_order"
-        /** 🆕 v2026-09-03：正文字体 id（对应 FontCatalog 条目 id；默认 source_han_sans_cn） */
+        /** 🆕 v2026-09-03：正文字体 id（对应 FontCatalog 条目 id；默认 system_default = 系统默认字体） */
         const val FONT_ID = "font_id"
         /** 🆕 v2026-09-03：「英文/数字字体」id（拉丁回退层；空串 = 系统默认，不叠加） */
         const val LATIN_FONT_ID = "latin_font_id"
@@ -717,12 +717,12 @@ class CorgiPreferences(
     /**
      * 当前正文字体 id 的 Flow。
      *
-     * 默认值字面量 `"source_han_sans_cn"`（思源黑体），与 [FontCatalog.DEFAULT_ID] 保持一致；
+     * 默认值字面量 `"system_default"`（系统默认字体），与 [FontCatalog.DEFAULT_ID] 保持一致；
      * 这里用字面量而非引用，避免 data 层反向依赖 ui.theme 包。
-     * 未知 id 由 [FontCatalog.get] 自动回退默认字体。
+     * 未知 id 由 [FontCatalog.get] 自动回退默认字体（系统默认字体）。
      */
     val fontId: Flow<String> = callbackFlow {
-        trySend(esp.getString(Keys.FONT_ID, "source_han_sans_cn") ?: "source_han_sans_cn")
+        trySend(esp.getString(Keys.FONT_ID, "system_default") ?: "system_default")
         close()
     }
 

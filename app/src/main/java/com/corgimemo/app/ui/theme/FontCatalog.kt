@@ -2,6 +2,7 @@ package com.corgimemo.app.ui.theme
 
 import android.content.Context
 import android.graphics.Typeface
+import android.os.Build
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -35,31 +36,57 @@ data class FontEntry(
      * true 时该条目不进入「正文字体」列表，而是作为选中正文字体的字形回退层：
      * 中文走正文字体，英文/数字走本字体（见 [FontManager] / Theme.kt 的 FontFamily 合成）。
      */
-    val isLatin: Boolean = false
+    val isLatin: Boolean = false,
+    /**
+     * 是否为「系统默认字体」占位条目：渲染用 [FontFamily.Default]（设备系统字体），
+     * 不内置字体文件、不依赖 [resByWeight]；加粗档位与字重探测走系统字体
+     * （[Typeface.DEFAULT]，见 [typefaceForWeight] / [boldTiers]）。
+     */
+    val isSystemDefault: Boolean = false
 ) {
-    /** 本字体真实提供的字重档位（升序） */
-    val availableWeights: List<Int> get() = resByWeight.keys.sorted()
+    /** 本字体真实提供的字重档位（升序）。系统默认条目返回标准候选档位集合。 */
+    val availableWeights: List<Int>
+        get() = if (isSystemDefault) listOf(400, 500, 700, 900)
+                else resByWeight.keys.sorted()
 
     /**
      * 由 [resByWeight] 派生的 [Font] 列表（按字重建 [Font]）。
      * 用于与正文字体合成「拉丁在前、中文在后」的字形回退链
      * （[FontManager] / Theme.kt），避免重复维护两份字体清单。
+     * 系统默认条目无内置字体文件，返回空（合成时由 Compose 回退到系统字体）。
      */
-    val fonts: List<Font> get() = resByWeight.map { (w, resId) -> Font(resId, FontWeight(w)) }
+    val fonts: List<Font>
+        get() = if (isSystemDefault) emptyList()
+                else resByWeight.map { (w, resId) -> Font(resId, FontWeight(w)) }
 
     /**
-     * 加粗程度候选档位（对应工具栏 B1 / B2 / B3）：
-     * 取大于正文常规字重(400)的前三档。各字体均有独立字面，不再撞档。
+     * 加粗程度候选档位（对应工具栏 B1 / B2 / B3）：取大于正文常规字重(400)的前三档。
+     * 系统默认条目用标准候选 [500, 700, 900]，实际可用档位由 [FontWeightProbe]
+     * 按系统字体像素探测决定（通常 500 被量化合并而置灰）。
      */
-    val boldTiers: List<Int> get() = availableWeights.filter { it > FontWeight.Normal.weight }.take(3)
+    val boldTiers: List<Int>
+        get() = if (isSystemDefault) listOf(500, 700, 900)
+                else availableWeights.filter { it > FontWeight.Normal.weight }.take(3)
 
     /**
      * 按字重取本字体对应的 [Typeface]（供 [FontWeightProbe] 像素探测）。
      *
-     * 就近取档：取 ≤ weight 的最大可用档；无更小档则取最小可用档
-     * （与 Compose FontFamily 的字重匹配策略一致）。
+     * 系统默认条目：直接取设备系统字体在指定字重的 Typeface（由系统量化到最近可用字面，
+     * 正好用于探测），不读取 [resByWeight]。
+     * 内置字体：就近取档（取 ≤ weight 的最大可用档；无更小档取最小可用档），
+     * 与 Compose FontFamily 的字重匹配策略一致。
      */
     fun typefaceForWeight(context: Context, weight: Int): Typeface {
+        if (isSystemDefault) {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                Typeface.create(Typeface.DEFAULT, weight, false)
+            } else {
+                Typeface.create(
+                    Typeface.DEFAULT,
+                    if (weight >= 700) Typeface.BOLD else Typeface.NORMAL
+                )
+            }
+        }
         val chosen = availableWeights.filter { it <= weight }.maxOrNull() ?: availableWeights.first()
         return runCatching { context.resources.getFont(resByWeight.getValue(chosen)) }
             .getOrDefault(Typeface.DEFAULT)
@@ -69,6 +96,8 @@ data class FontEntry(
 /**
  * 内置可商用中文字体注册表（当前均为 SIL OFL 1.1：允许商用、修改、再分发，
  * 唯一限制是不得单独售卖字体；随附授权文本见 [FontEntry.licenseAsset]）。
+ * 首个条目 [SYSTEM_DEFAULT] 为**非内置占位项**（渲染走设备系统字体，受 `isSystemDefault` 特殊处理），
+ * 不随 APK 分发、无 OFL 授权，其余条目均为内置 OFL-1.1 字体。
  *
  * 来源：本地 `free-font` 库（已核实 name 表版权与 OFL 标记，见仓库根 `licenses/`）。
  * 选定「精选中文多字重」范围（已排除单族近 1GB 的梦源系列与小米/阿里自定义授权族）。
@@ -78,6 +107,22 @@ data class FontEntry(
  * 无需改动其他代码；[FontManager] 与 [buildTypography] 会自动跟随。
  */
 object FontCatalog {
+
+    // ========== 系统默认字体（设备系统字体占位条目，非内置）==========
+    // 渲染走 FontFamily.Default；加粗档位/字重探测走系统字体（见 FontEntry.isSystemDefault）。
+    // 作为「正文字体」分组首项与全局默认（DEFAULT_ID），满足「默认即系统字体」诉求，
+    // 同时保留其他内置字体为可选项。无内置字体文件、不随 APK 分发。
+    private val SYSTEM_DEFAULT = FontEntry(
+        id = "system_default",
+        displayName = "系统默认字体",
+        licenseName = "系统字体",
+        licenseAsset = null,
+        copyright = "使用设备系统默认字体（随设备/厂商定制，版权归设备厂商，App 不作内置分发）",
+        family = FontFamily.Default,
+        tag = "system-default",
+        resByWeight = emptyMap(),
+        isSystemDefault = true
+    )
 
     // ========== 思源黑体（Source Han Sans CN，Adobe，简体黑体）==========
     private val SOURCE_HAN_SANS = FontEntry(
@@ -357,8 +402,9 @@ object FontCatalog {
         isLatin = true
     )
 
-    /** 全部可选正文字体（顺序即设置页展示顺序） */
+    /** 全部可选正文字体（顺序即设置页展示顺序；首项为系统默认字体并作为全局默认） */
     val entries: List<FontEntry> = listOf(
+        SYSTEM_DEFAULT,
         SOURCE_HAN_SANS,
         SOURCE_HAN_SERIF,
         GENNE_GOTHIC,
@@ -377,8 +423,8 @@ object FontCatalog {
         CAVEAT
     )
 
-    /** 默认字体 id（思源黑体，内置 4 档、最通用） */
-    val DEFAULT_ID: String = SOURCE_HAN_SANS.id
+    /** 默认字体 id（系统默认字体；不内置字体文件，渲染走设备系统字体） */
+    val DEFAULT_ID: String = SYSTEM_DEFAULT.id
 
     /** 「英文/数字字体」默认 id（空串 = 系统默认，不叠加拉丁回退层） */
     const val DEFAULT_LATIN_ID: String = ""

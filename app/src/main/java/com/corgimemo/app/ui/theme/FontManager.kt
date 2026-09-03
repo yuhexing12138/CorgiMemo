@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * 当前选中的正文字体（反应式单例，镜像 [ThemeManager]）。
  *
- * 默认思源黑体（[FontCatalog.DEFAULT_ID]）。App 启动时由 [SettingsViewModel.loadSettings]
+ * 默认系统默认字体（[FontCatalog.DEFAULT_ID] = "system_default"，渲染走设备系统字体）。
+ * App 启动时由 [SettingsViewModel.loadSettings]
  * 调用 [initFont] 从 ESP 读取用户偏好并同步；设置页切换时调用 [setFont] 同时更新内存与持久化。
  *
  * 另持有「英文/数字字体」回退层（[latinEntry]，可为 null）。合成规则见 [combinedFamily]：
