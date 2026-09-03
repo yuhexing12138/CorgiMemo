@@ -219,12 +219,17 @@ fun AppearanceScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             FontCatalog.entries.forEach { entry ->
+                                val isSelected = fontId == entry.id
                                 AppearanceFontOption(
                                     title = entry.displayName,
                                     previewText = entry.displayName,
-                                    previewFontFamily = entry.family,
+                                    // 未选中的正文字体预览用系统字体，避免一次性把 14~19MB 的
+                                    // CJK 字体文件全部加载进 Compose 永久 Typeface 缓存而撑爆
+                                    // 低内存设备（见 app崩溃信息收集）。选中的字体已由全局
+                                    // Typography 加载，预览直接复用，零额外内存开销。
+                                    previewFontFamily = if (isSelected) entry.family else FontFamily.Default,
                                     licenseLabel = "${entry.licenseName} · ${entry.boldTiers.size} 档加粗",
-                                    selected = fontId == entry.id,
+                                    selected = isSelected,
                                     onClick = { viewModel.setFontId(entry.id) }
                                 )
                             }
