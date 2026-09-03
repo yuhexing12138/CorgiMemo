@@ -51,10 +51,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
-import android.os.Build
 import android.util.LruCache
 import android.util.TypedValue
 import androidx.compose.foundation.Image
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.res.ResourcesCompat
@@ -459,14 +459,15 @@ private fun AppearanceColorOption(
  * 的 [FontFamily] 渲染，[androidx.compose.ui.text.font.FontFamilyResolver] 会把每个字体
  * 永久缓存进进程，10 款累计可撑爆低内存设备堆而 OOM（见 app崩溃信息收集）。
  *
- * 解法：正文预览改为「按需把字体画进一张小 Bitmap（ARGB_8888，单行约数十 KB），画完即释放
- * Typeface」——通过 [android.graphics.Typeface.Builder] 从资源流即时构建 Typeface（API≥26
- * 走 InputStream 分支，框架不缓存，渲染后随局部引用离开作用域被 GC 回收），仅常驻极小位图。
- * [LruCache] 容量 12，避免每次重组重绘；位图按 `entry.id` 缓存，主题切换（onSurface 变化）
- * 时经 remember 依赖重渲染。配合 AndroidManifest 的 `android:largeHeap="true"` 作安全网。
+ * 解法：正文预览改为「按需把字体画进一张小 Bitmap（ARGB_8888，单行约数十 KB），仅常驻极小
+ * 位图」——每个字体经 [ResourcesCompat.getFont] 取 Typeface 后即时绘制，位图缓存于 [LruCache]
+ * （容量 12），之后不再走 Compose 的永久 [FontFamily] 缓存。框架按 resId 的 Typeface 缓存有界
+ * （≤ 字体数），配合 AndroidManifest 的 `android:largeHeap="true"` 安全网即可容纳首次渲染的
+ * 峰值。位图按 `entry.id` 缓存，主题切换（onSurface 变化）时经 remember 依赖重渲染。
  */
 private val fontPreviewCache = object : LruCache<String, Bitmap>(12) {
-    override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
+    // 以条目数计容量（每张位图约数十 KB），容量 12 即最多常驻 12 款字体预览位图
+    override fun sizeOf(key: String, value: Bitmap): Int = 1
 }
 
 /** sp → px（用于预览位图文字尺寸） */
@@ -474,22 +475,16 @@ private fun spToPx(sp: Float, context: Context): Float =
     TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, context.resources.displayMetrics)
 
 /**
- * 取预览用 Typeface：系统默认条目用 [Typeface.DEFAULT]；内置字体从 `res/font` 资源流即时
- * 构建（API≥26 走 [Typeface.Builder] 的 InputStream 分支，框架不缓存，渲染后释放；低版本
- * 回退 [ResourcesCompat.getFont]）。失败一律回退系统字体，绝不抛异常。
+ * 取预览用 Typeface：系统默认条目用 [Typeface.DEFAULT]；内置字体经 [ResourcesCompat.getFont]
+ * （框架按 resId 缓存，有界 ≤ 字体数，配合 [android:largeHeap] 安全网）加载，失败一律回退
+ * 系统字体，绝不抛异常。正文预览通过位图缓存只渲染一次，避免 Compose [FontFamily] 永久缓存
+ * 同时持有全部 14~19MB 字体文件而 OOM。
  */
 private fun loadPreviewTypeface(context: Context, entry: FontEntry): Typeface {
     if (entry.isSystemDefault || entry.resByWeight.isEmpty()) return Typeface.DEFAULT
     val resId = entry.resByWeight.values.first()
-    return runCatching {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.resources.openRawResource(resId).use { stream ->
-                Typeface.Builder(stream).build()
-            }
-        } else {
-            ResourcesCompat.getFont(context, resId)
-        }
-    }.getOrDefault(Typeface.DEFAULT)
+    return runCatching { ResourcesCompat.getFont(context, resId) }
+        .getOrDefault(Typeface.DEFAULT)
 }
 
 /**
