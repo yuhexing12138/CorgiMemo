@@ -274,7 +274,7 @@ fun AppearanceScreen(
                                 title = "默认（系统字体）",
                                 preview = { color ->
                                     Text(
-                                        text = "Ag 0123 Gg 4567",
+                                        text = "默认（系统字体）",
                                         fontSize = 18.sp,
                                         fontFamily = null,
                                         color = color
@@ -287,9 +287,11 @@ fun AppearanceScreen(
                             FontCatalog.latinEntries.forEach { entry ->
                                 AppearanceFontOption(
                                     title = entry.displayName,
+                                    // 预览显示字体自身名称（与「正文字体」分组一致），每款拉丁字体
+                                    // 用各自字形渲染，行与行之间名称可区分；不再用统一的样例字符串。
                                     preview = { color ->
                                         Text(
-                                            text = "Ag 0123 Gg 4567",
+                                            text = entry.displayName,
                                             fontSize = 18.sp,
                                             fontFamily = entry.family,
                                             color = color
