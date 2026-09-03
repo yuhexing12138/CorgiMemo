@@ -286,6 +286,77 @@ object FontCatalog {
         isLatin = true
     )
 
+    // ========== 马善政毛笔楷书（Ma Shan Zheng，Google Fonts，中文手写·毛笔楷书）==========
+    // 单档 400 Regular；中文笔记手写体，作「正文字体」可选项（标题/摘录手写感）。
+    private val MA_SHAN_ZHENG = FontEntry(
+        id = "ma_shan_zheng",
+        displayName = "马善政毛笔楷书",
+        licenseName = "SIL OFL 1.1",
+        licenseAsset = "licenses/MaShanZheng-OFL-1.1.txt",
+        copyright = "Copyright 2018 The Ma Shan Zheng Project Authors (https://github.com/googlefonts/ma-shan-zheng).",
+        family = FontFamily(
+            Font(R.font.ma_shan_zheng_regular, FontWeight.Normal)        // 400
+        ),
+        tag = "ma-shan-zheng",
+        resByWeight = mapOf(
+            400 to R.font.ma_shan_zheng_regular
+        )
+    )
+
+    // ========== 钟齐志莽行书（Zhi Mang Xing，Google Fonts，中文手写·行书）==========
+    // 单档 400 Regular；潇洒行书，作「正文字体」可选项。
+    private val ZHI_MANG_XING = FontEntry(
+        id = "zhi_mang_xing",
+        displayName = "钟齐志莽行书",
+        licenseName = "SIL OFL 1.1",
+        licenseAsset = "licenses/ZhiMangXing-OFL-1.1.txt",
+        copyright = "Copyright 2018 The Liu Jian Mao Cao Project Authors (https://github.com/googlefonts/liu-jian-mao-cao).",
+        family = FontFamily(
+            Font(R.font.zhi_mang_xing_regular, FontWeight.Normal)        // 400
+        ),
+        tag = "zhi-mang-xing",
+        resByWeight = mapOf(
+            400 to R.font.zhi_mang_xing_regular
+        )
+    )
+
+    // ========== 寒蝉·龙藏楷书（Long Cang，ChillType，中文手写·楷书）==========
+    // 单档 400 Regular；清秀楷书，作「正文字体」可选项。
+    private val CHILL_LONG_CANG_KAISHU = FontEntry(
+        id = "chill_long_cang_kaishu",
+        displayName = "寒蝉·龙藏楷书",
+        licenseName = "SIL OFL 1.1",
+        licenseAsset = "licenses/LongCangKaiShu-OFL-1.1.txt",
+        copyright = "Copyright (c) 2018-2022 ChillType.",
+        family = FontFamily(
+            Font(R.font.chill_long_cang_kaishu_regular, FontWeight.Normal)   // 400
+        ),
+        tag = "chill-long-cang-kaishu",
+        resByWeight = mapOf(
+            400 to R.font.chill_long_cang_kaishu_regular
+        )
+    )
+
+    // ========== Caveat（拉丁·手写，Pabla Stanley，英文手写体）==========
+    // 取 2 档（Regular/Bold）；作为「英文/数字」拉丁回退层，中文手写正文里的英文/数字走手写感。
+    private val CAVEAT = FontEntry(
+        id = "caveat",
+        displayName = "Caveat",
+        licenseName = "SIL OFL 1.1",
+        licenseAsset = "licenses/Caveat-OFL-1.1.txt",
+        copyright = "Copyright 2014 The Caveat Project Authors (https://github.com/googlefonts/caveat).",
+        family = FontFamily(
+            Font(R.font.caveat_regular, FontWeight.Normal),     // 400
+            Font(R.font.caveat_bold, FontWeight.Bold)           // 700
+        ),
+        tag = "caveat",
+        resByWeight = mapOf(
+            400 to R.font.caveat_regular,
+            700 to R.font.caveat_bold
+        ),
+        isLatin = true
+    )
+
     /** 全部可选正文字体（顺序即设置页展示顺序） */
     val entries: List<FontEntry> = listOf(
         SOURCE_HAN_SANS,
@@ -293,13 +364,17 @@ object FontCatalog {
         GENNE_GOTHIC,
         SWEI_HALF_MOON,
         YOZAI,
-        EARLY_SUMMER_MINCHO
+        EARLY_SUMMER_MINCHO,
+        MA_SHAN_ZHENG,
+        ZHI_MANG_XING,
+        CHILL_LONG_CANG_KAISHU
     )
 
     /** 全部可选「英文/数字字体」（拉丁回退层；空表示不覆盖，英文/数字走正文字体自带拉丁字形） */
     val latinEntries: List<FontEntry> = listOf(
         SPACE_GROTESK,
-        MAPLE_MONO
+        MAPLE_MONO,
+        CAVEAT
     )
 
     /** 默认字体 id（思源黑体，内置 4 档、最通用） */

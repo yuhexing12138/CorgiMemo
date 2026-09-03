@@ -16,6 +16,10 @@
 | 初夏明朝體 | EarlySummerMincho | EarlySummerMincho-OFL-1.1.txt | free-font/docs/fonts/初夏明朝體/ | early_summer_mincho_*（7档：200/300/400/500/600/700/900） |
 | Space Grotesk | SpaceGrotesk | SpaceGrotesk-OFL-1.1.txt | free-font/docs/fonts/english/SpaceGrotesk/ | space_grotesk_*（4档：300/400/500/700）· 英文/数字·拉丁回退层 |
 | Maple Mono | MapleMono | MapleMono-OFL-1.1.txt | free-font/docs/fonts/english/MapleMono/ | maple_mono_*（5档：300/400/500/600/700）· 英文/数字·拉丁回退层 |
+| 马善政毛笔楷书 | Ma Shan Zheng | MaShanZheng-OFL-1.1.txt | Google Fonts（github.com/googlefonts/ma-shan-zheng） | ma_shan_zheng_regular（1档：400）· 正文字体·中文手写 |
+| 钟齐志莽行书 | Zhi Mang Xing | ZhiMangXing-OFL-1.1.txt | Google Fonts（github.com/googlefonts/liu-jian-mao-cao） | zhi_mang_xing_regular（1档：400）· 正文字体·中文手写 |
+| 寒蝉·龙藏楷书 | Long Cang | LongCangKaiShu-OFL-1.1.txt | free-font/docs/fonts/寒蝉字型/寒蝉书体·龙藏楷书.otf | chill_long_cang_kaishu_regular（1档：400）· 正文字体·中文手写 |
+| Caveat | Caveat | Caveat-OFL-1.1.txt | free-font/docs/fonts/english/caveat/ | caveat_*（2档：400/700）· 英文/数字·拉丁回退层·手写 |
 
 ## 运行期接入（v2026-09-03）
 
@@ -38,3 +42,20 @@
 - 合成规则：`FontManager.combinedFamily(cjk, latin)` = `FontFamily(latin.fonts + cjk.fonts)`（拉丁在前、中文在后，Compose 按字形回退）；
 - 偏好键 `latin_font_id`（空串 = 不叠加，英文/数字走正文字体自带拉丁字形），持久化于同一 `EncryptedSharedPreferences`；
 - 加粗档位（B1/B2/B3）仍由正文字体决定，Latin 字体只作字形回退，不参与工具栏档位探测。
+
+## 手写字体（v2026-09-03 新增）
+
+原 6 款正文 + 2 款拉丁均无手写体。本轮精选 4 款严格 OFL-1.1 的手写体接入，覆盖「中文手写正文」与「英文/数字手写回退」两类需求：
+
+- **马善政毛笔楷书（Ma Shan Zheng）**：Google Fonts 毛笔楷书，单档 400；作「正文字体」可选项，适合标题、摘录、手账感中文。
+- **钟齐志莽行书（Zhi Mang Xing）**：Google Fonts 行书，单档 400；潇洒连贯，适合随手记、随感。
+- **寒蝉·龙藏楷书（Long Cang）**：ChillType 楷书，单档 400；清秀克制，适合笔记正文手写化。
+- **Caveat**：拉丁手写体（Pabla Stanley），2 档（Regular/Bold）；标记 `isLatin = true`，作「英文/数字」拉丁回退层，使中文手写正文里的英文/数字也带手写感。
+
+**接入方式**：
+
+- 3 款中文手写单档（仅 400 Regular），`boldTiers` 自动为空 —— 设置页切换为手写体后，工具栏加粗档位（B1/B2/B3）会置灰（手写体无更重字面，符合既有「无独立字面则置灰」行为）；渲染按字面正常显示。
+- Caveat 走拉丁回退层（与 Space Grotesk / Maple Mono 同机制），中文手写正文里英文/数字走 Caveat、中文走选中的手写正文字体。
+- 3 款中文手写体与 Caveat 版权头与授权正文均经 `licenses/*-OFL-1.1.txt` 随 APK 分发于 `app/src/main/assets/licenses/`。
+
+> 说明：马善政毛笔楷书与钟齐志莽行书在本地 free-font 快照中缺失，由 Google Fonts 上游仓库直接取得（版权头与 github 仓库一致、OFL-1.1 授权）；寒蝉·龙藏楷书与 Caveat 取自 free-font 库。
