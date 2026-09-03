@@ -55,6 +55,7 @@ import android.util.LruCache
 import android.util.TypedValue
 import androidx.compose.foundation.Image
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.res.ResourcesCompat
@@ -463,7 +464,7 @@ private fun AppearanceColorOption(
  * 位图」——每个字体经 [ResourcesCompat.getFont] 取 Typeface 后即时绘制，位图缓存于 [LruCache]
  * （容量 12），之后不再走 Compose 的永久 [FontFamily] 缓存。框架按 resId 的 Typeface 缓存有界
  * （≤ 字体数），配合 AndroidManifest 的 `android:largeHeap="true"` 安全网即可容纳首次渲染的
- * 峰值。位图按 `entry.id` 缓存，主题切换（onSurface 变化）时经 remember 依赖重渲染。
+ * 峰值。位图为「白色字形蒙版」，主题切换时经 [ColorFilter.tint] 实时着色，与主题无关、无需重渲染。
  */
 private val fontPreviewCache = object : LruCache<String, Bitmap>(12) {
     // 以条目数计容量（每张位图约数十 KB），容量 12 即最多常驻 12 款字体预览位图
@@ -484,25 +485,25 @@ private fun loadPreviewTypeface(context: Context, entry: FontEntry): Typeface {
     if (entry.isSystemDefault || entry.resByWeight.isEmpty()) return Typeface.DEFAULT
     val resId = entry.resByWeight.values.first()
     return runCatching { ResourcesCompat.getFont(context, resId) }
-        .getOrDefault(Typeface.DEFAULT)
+        .getOrNull() ?: Typeface.DEFAULT
 }
 
 /**
- * 把单款字体的预览文字渲染成 Bitmap（颜色取 [colorArgb]，与未选中行文字色一致）。字体文件
- * 仅在本次调用期间以 ~17MB 暂存，函数返回后局部 Typeface/Paint 引用离开作用域，由 GC 回收，
- * 预览常驻内存仅这张小位图。
+ * 把单款字体的预览文字渲染成「白色字形 + 透明底」的 Bitmap（颜色无关的蒙版）。
+ * 实际文字色在 Compose 端经 [androidx.compose.ui.graphics.ColorFilter.tint] 即时着色，
+ * 因此位图与主题无关、只渲染一次并缓存。字体文件仅在本次调用期间以 ~17MB 暂存，函数返回后
+ * 局部 Typeface/Paint 引用离开作用域，由 GC 回收，预览常驻内存仅这张小位图。
  */
 private fun renderFontPreviewBitmap(
     context: Context,
     entry: FontEntry,
-    text: String,
-    colorArgb: Int
+    text: String
 ): Bitmap {
     val textSizePx = spToPx(18f, context)
     val typeface = loadPreviewTypeface(context, entry)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         this.typeface = typeface
-        this.color = colorArgb
+        this.color = 0xFFFFFFFF.toInt() // 白色蒙版，compose 端再 tint 到目标文字色
         textSize = textSizePx
     }
     val width = (paint.measureText(text) + 4f).toInt().coerceAtLeast(1)
@@ -535,13 +536,17 @@ private fun FontBodyPreview(
         )
     } else {
         val context = LocalContext.current
-        val onSurfaceArgb = MaterialTheme.colorScheme.onSurface.toArgb()
-        val bitmap = remember(entry.id, onSurfaceArgb) {
-            fontPreviewCache.get(entry.id) ?: renderFontPreviewBitmap(
-                context, entry, entry.displayName, onSurfaceArgb
-            ).also { fontPreviewCache.put(entry.id, it) }
+        val bitmap = remember(entry.id) {
+            fontPreviewCache.get(entry.id) ?: renderFontPreviewBitmap(context, entry, entry.displayName)
+                .also { fontPreviewCache.put(entry.id, it) }
         }
-        Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, modifier = modifier)
+        // 白色蒙版位图经 tint 实时着色为目标文字色，主题切换无需重渲染
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = null,
+            colorFilter = ColorFilter.tint(color),
+            modifier = modifier
+        )
     }
 }
 
