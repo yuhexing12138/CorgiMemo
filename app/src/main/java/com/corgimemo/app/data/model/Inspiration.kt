@@ -128,5 +128,23 @@ data class Inspiration(
      * 存储完整的 Markdown 格式文本，保留粗体/斜体/删除线/列表等格式信息
      */
     @ColumnInfo(defaultValue = "")
-    val contentFormat: String = ""
+    val contentFormat: String = "",
+
+    // ========== 每条灵感独立的字体字段（v58 新增，编辑页字体选择器） ==========
+
+    /**
+     * 本条灵感的中文字体 id。
+     * 空串 = 系统默认字体（[com.corgimemo.app.ui.theme.FontCatalog.get] 对未知/空 id
+     * 回退 entries 首项，即系统默认字体条目）。
+     */
+    @ColumnInfo(defaultValue = "")
+    val fontId: String = "",
+
+    /**
+     * 本条灵感的英文/数字字体 id（拉丁回退层）。
+     * 空串 = 跟随中文字体（不叠加拉丁层，
+     * [com.corgimemo.app.ui.theme.FontCatalog.getLatin] 对空 id 返回 null）。
+     */
+    @ColumnInfo(defaultValue = "")
+    val latinFontId: String = ""
 )

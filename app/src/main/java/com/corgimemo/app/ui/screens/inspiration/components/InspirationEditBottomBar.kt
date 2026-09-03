@@ -6,7 +6,9 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,10 +25,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.mohamedrejeb.richeditor.model.RichTextState
 
@@ -34,7 +41,9 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * 灵感编辑页底部导航栏
  *
  * 布局结构：
- * - 上行（可折叠）：RichTextFormatToolbar（仅当 isFormatExpanded=true 时显示）
+ * - 上行一（可折叠）：RichTextFormatToolbar（仅当 isFormatExpanded=true 时显示）
+ * - 上行二（可折叠）：FontPickerPanel 字体选择面板（仅当 isFontPanelOpen=true 时显示，
+ *   高度 = 软键盘高度；展开时相机行被向下推开，见原型「工具栏/灵感编辑页字体选择面板.html」）
  * - 下行（始终显示）：6 个核心按钮
  *   - 📷 相机（onPhotoClick）
  *   - 🎤 麦克风（onVoiceClick）
@@ -45,10 +54,14 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  *
  * **交互规则**：
  * - 只有 ⋮ 按钮切换工具栏展开/折叠
+ * - 字体选择按钮（工具栏 B 左侧）切换字体面板展开/收起，同时由调用方收起软键盘
  * - 其他按钮的操作不影响工具栏状态
  * - 默认折叠（isFormatExpanded=false）
  *
  * @param isFormatExpanded 格式工具栏是否展开
+ * @param isFontPanelOpen 字体选择面板是否展开
+ * @param currentCjkId 当前灵感的中文字体 id（面板回显选中态；空 = 系统默认字体）
+ * @param currentLatinId 当前灵感的英文/数字字体 id（空 = 跟随中文，无选中高亮）
  * @param richTextState 库的 RichTextState 实例（传给 RichTextFormatToolbar）
  * @param onPhotoClick 相机按钮回调
  * @param onVoiceClick 麦克风按钮回调
@@ -56,6 +69,10 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * @param onMentionClick 关联按钮回调（v2026-07-22 改造：触发 RelationPickerBottomSheet）
  * @param onLocationClick 位置按钮回调（v2026-07-22 新增：触发位置提醒弹窗）
  * @param onFormatToggleClick 格式按钮回调（切换展开/折叠）
+ * @param onFontPickerClick 字体选择按钮回调（切换面板展开/收起；调用方同时收起软键盘）
+ * @param onFontPanelDismiss 字体面板「完成」按钮回调（收起面板）
+ * @param onCjkFontSelect 中文字体选择回调（参数为字体 id）
+ * @param onLatinFontSelect 英文/数字字体选择回调；再点已选项时回调空串表示取消（跟随中文）
  * @param onSetFontWeight 设置字重档位回调（参数为当前字体 FontEntry.boldTiers 候选档位；
  *      其中经像素探测无独立字形的档位在工具栏中置灰禁用）
  * @param onToggleItalic 斜体回调
@@ -74,6 +91,9 @@ import com.mohamedrejeb.richeditor.model.RichTextState
 @Composable
 fun InspirationEditBottomBar(
     isFormatExpanded: Boolean,
+    isFontPanelOpen: Boolean,
+    currentCjkId: String,
+    currentLatinId: String,
     richTextState: RichTextState,
     onPhotoClick: () -> Unit,
     onVoiceClick: () -> Unit,
@@ -81,6 +101,10 @@ fun InspirationEditBottomBar(
     onMentionClick: () -> Unit,
     onLocationClick: () -> Unit,
     onFormatToggleClick: () -> Unit,
+    onFontPickerClick: () -> Unit,
+    onFontPanelDismiss: () -> Unit,
+    onCjkFontSelect: (String) -> Unit,
+    onLatinFontSelect: (String) -> Unit,
     onSetFontWeight: (Int) -> Unit,
     onToggleItalic: () -> Unit,
     onToggleUnderline: () -> Unit,
@@ -95,6 +119,22 @@ fun InspirationEditBottomBar(
     modifier: Modifier = Modifier,
     backgroundColor: Color = MaterialTheme.colorScheme.background
 ) {
+    /**
+     * 软键盘高度记录（字体面板高度 = 键盘高度，用户决策 2）。
+     *
+     * `WindowInsets.ime` 在键盘收起时归零，为保留「最近一次完整键盘高度」，
+     * 只在 ime 增大时更新（取 max）：键盘弹出动画递增→记录完整值；
+     * 收起动画递减→不覆盖，面板高度保持稳定。键盘从未弹出过时兜底 291dp
+     * （Android 中文键盘典型高度，与原型一致）。
+     */
+    val density = LocalDensity.current
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    var keyboardHeight by remember { mutableStateOf(291.dp) }
+    if (imeBottomPx > 0) {
+        val imeDp = with(density) { imeBottomPx.toDp() }
+        if (imeDp > keyboardHeight) keyboardHeight = imeDp
+    }
+
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
@@ -103,7 +143,7 @@ fun InspirationEditBottomBar(
         tonalElevation = 1.dp
     ) {
         Column {
-            /** 上行：可折叠的格式工具栏 */
+            /** 上行一：可折叠的格式工具栏 */
             AnimatedVisibility(
                 visible = isFormatExpanded,
                 enter = expandVertically(),
@@ -111,6 +151,8 @@ fun InspirationEditBottomBar(
             ) {
                 RichTextFormatToolbar(
                     state = richTextState,
+                    isFontPanelOpen = isFontPanelOpen,
+                    onFontPickerClick = onFontPickerClick,
                     onSetFontWeight = onSetFontWeight,
                     onToggleItalic = onToggleItalic,
                     onToggleUnderline = onToggleUnderline,
@@ -122,6 +164,28 @@ fun InspirationEditBottomBar(
                     onAlignRight = onAlignRight,
                     onInsertLink = onInsertLink,
                     onToggleCodeSpan = onToggleCodeSpan
+                )
+            }
+
+            /**
+             * 上行二：字体选择面板（v2026-09-03 新增，用户决策后按原型落地）。
+             *
+             * 展开时占据「格式工具栏与相机行之间」，把相机行向下推开：
+             * 键盘收起让出 ime inset + 面板占据自身高度，相机行从键盘上方
+             * 下移到屏幕底部（位移 = 键盘高度），与原型交互一致。
+             */
+            AnimatedVisibility(
+                visible = isFontPanelOpen,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                FontPickerPanel(
+                    panelHeight = keyboardHeight,
+                    currentCjkId = currentCjkId,
+                    currentLatinId = currentLatinId,
+                    onCjkSelect = onCjkFontSelect,
+                    onLatinSelect = onLatinFontSelect,
+                    onDone = onFontPanelDismiss
                 )
             }
 

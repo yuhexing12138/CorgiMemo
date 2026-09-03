@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import com.corgimemo.app.util.TagUtils
+import com.corgimemo.app.ui.theme.ContentFontManager /** 内容字体（每条灵感单独记录）：编辑页打开/选择/保存字体的单一状态源 */
 import javax.inject.Inject
 
 /**
@@ -236,6 +237,14 @@ class InspirationEditViewModel @Inject constructor(
     val savedTags: StateFlow<List<String>> = _savedTags.asStateFlow()
 
     init {
+        /**
+         * 内容字体复位为默认（中文 = 系统默认字体，英文/数字 = 跟随中文）。
+         *
+         * VM 由 hiltViewModel() 在每次进入编辑页时创建 → 复位即「新建灵感的初始字体」；
+         * 编辑已有灵感时 [loadInspiration] 随后按该条记录的 fontId/latinFontId 覆盖装载。
+         * （引用 ui.theme 单例：编辑态内容排版与字重探测都以此为准，见 ContentFontManager 类头）
+         */
+        ContentFontManager.resetToDefault()
         /** 加载历史标签：从所有灵感的 tags 字段聚合去重 */
         loadSavedTags()
     }
@@ -642,6 +651,28 @@ class InspirationEditViewModel @Inject constructor(
      * - 底部 # 按钮改为 `richTextState.addTextAfterSelection("#")` 触发建议弹窗
      */
 
+    // ==================== 字体选择（v2026-09-03 新增，每条灵感单独记字体） ====================
+
+    /**
+     * 中文字体选择回调（字体面板中文组）：
+     * 更新 [ContentFontManager]（编辑内容排版与字重探测即时生效）并置脏，
+     * 保存时由 [saveInspiration] 写回 `inspirations.fontId`。
+     */
+    fun onCjkFontSelected(fontId: String) {
+        ContentFontManager.setCjkFont(fontId)
+        _isDirty.value = true
+    }
+
+    /**
+     * 英文/数字字体选择回调（字体面板拉丁组）：
+     * 再点已选项时面板回调**空串** = 取消（跟随中文字体），同样置脏；
+     * 保存时写回 `inspirations.latinFontId`。
+     */
+    fun onLatinFontSelected(latinId: String) {
+        ContentFontManager.setLatinFont(latinId)
+        _isDirty.value = true
+    }
+
     // ==================== 加载方法 ====================
 
     /**
@@ -664,6 +695,12 @@ class InspirationEditViewModel @Inject constructor(
         viewModelScope.launch {
             inspirationRepository.getInspirationById(inspirationId)?.let { inspiration ->
                 existingInspiration = inspiration
+                /**
+                 * 装载本条灵感的内容字体（v58 每条灵感单独记字体）：
+                 * 编辑内容排版（LocalContentTypography）与工具栏字重探测即时跟随；
+                 * 面板回显由 Screen collect ContentFontManager 获得。
+                 */
+                ContentFontManager.setFonts(inspiration.fontId, inspiration.latinFontId)
                 _title.value = inspiration.title
                 _content.value = inspiration.content
                 /**
@@ -1034,6 +1071,9 @@ class InspirationEditViewModel @Inject constructor(
                  */
                 tags = encodeTags(extractTagsFromMarkdown(liveMarkdown)),
                 backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
+                /** 每条灵感独立字体（v58）：保存时写回 ContentFontManager 当前选择 */
+                fontId = ContentFontManager.currentEntry.value.id,
+                latinFontId = ContentFontManager.currentLatinId.value,
                 contentFormat = safeContentFormat /** 持久化同步导出的最新富文本内容（Markdown）*/
             )
             inspirationRepository.update(inspiration)
@@ -1074,6 +1114,9 @@ class InspirationEditViewModel @Inject constructor(
                 voiceNotePath = null,
                 voiceDuration = null,
                 backgroundColor = _backgroundColor.value, /** 持久化背景颜色 */
+                /** 每条灵感独立字体（v58）：新建时写回 ContentFontManager 当前选择（默认空=系统默认/跟随中文） */
+                fontId = ContentFontManager.currentEntry.value.id,
+                latinFontId = ContentFontManager.currentLatinId.value,
                 contentFormat = safeContentFormat /** 持久化同步导出的最新富文本内容（Markdown）*/
             )
             inspirationRepository.insert(inspiration)

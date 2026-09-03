@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.corgimemo.app.ui.theme.ContentFontManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -106,6 +107,12 @@ fun InspirationViewCard(
 ) {
     // 缓存：标签列表
     val tagsList = remember(inspiration.tags) { InspirationTextUtils.parseTags(inspiration.tags) }
+    /** 本条灵感的内容字体族（每条灵感单独记字体；空 fontId=系统默认，空 latinFontId=跟随中文） */
+    val inspirationFontFamily = remember(
+        inspiration.fontId, inspiration.latinFontId
+    ) {
+        ContentFontManager.contentFontFamily(inspiration.fontId, inspiration.latinFontId)
+    }
     // v2026-08-24 修复灵感图片不可见 bug：
     // - 移除原 `remember(inspiration.imagePaths) { org.json.JSONArray(...) }` 解析逻辑
     // - 改为直接使用父级传入的 [imagePaths] 参数
@@ -192,9 +199,10 @@ fun InspirationViewCard(
                         // 允许 Stage 卡片溢出绘制，形成完整不裁剪链。
                         .graphicsLayer { this.clip = false }
                 ) {
-                    // 标题（18sp Medium）
+                    // 标题（18sp Medium）——按本条灵感记录的字体渲染
                     Text(
                         text = inspiration.title,
+                        fontFamily = inspirationFontFamily,
                         fontSize = 18.sp,  // 16sp → 18sp
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -209,9 +217,10 @@ fun InspirationViewCard(
                         letterSpacing = 0.5.sp
                     )
                     Spacer(modifier = Modifier.height(9.dp))
-                    // 正文（15sp，行高 22sp，#666666）
+                    // 正文（15sp，行高 22sp，#666666）——按本条灵感记录的字体渲染
                     Text(
                         text = inspiration.content,
+                        fontFamily = inspirationFontFamily,
                         fontSize = 15.sp,  // 14sp → 15sp
                         color = Color(0xFF666666),
                         lineHeight = 22.sp,  // 21sp → 22sp

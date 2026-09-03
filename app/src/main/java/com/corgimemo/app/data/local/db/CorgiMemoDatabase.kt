@@ -34,7 +34,7 @@ import com.corgimemo.app.data.model.ProfileNavItem
  */
 @Database(
     entities = [TodoItem::class, CorgiData::class, Category::class, DeletedTodo::class, DeletedInspiration::class, MoodHistory::class, SubTask::class, AchievementEntity::class, TaskDailyStats::class, UserTemplateEntity::class, OperationLogEntity::class, Inspiration::class, InspirationRelation::class, SpecialDate::class, SpecialDateRelation::class, CardRelation::class, ContentBlockEntity::class, DeletedSpecialDate::class, CustomDateType::class, InspirationTagOrder::class, ProfileNavItem::class],
-    version = 57,
+    version = 58,
     exportSchema = false
 )
 abstract class CorgiMemoDatabase : RoomDatabase() {
@@ -108,7 +108,7 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
                     CorgiMemoDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_TO_43, MIGRATION_43_TO_44, MIGRATION_44_TO_45, MIGRATION_45_TO_46, MIGRATION_46_TO_47, MIGRATION_47_TO_48, MIGRATION_48_TO_49, MIGRATION_49_TO_50, MIGRATION_50_TO_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58)
                     .build()
                 INSTANCE = instance
                 instance
@@ -2253,6 +2253,32 @@ abstract class CorgiMemoDatabase : RoomDatabase() {
             database.execSQL("ALTER TABLE content_blocks ADD COLUMN cropRect TEXT")
             database.execSQL("ALTER TABLE content_blocks ADD COLUMN originalPath TEXT")
             database.execSQL("ALTER TABLE content_blocks ADD COLUMN displayWidthRatio REAL")
+        }
+    }
+
+    /**
+     * v57→v58：灵感相关表新增「每条灵感独立字体」字段（编辑页字体选择器，原型已审核）。
+     *
+     * - fontId：本条灵感的中文字体 id；空串 = 系统默认字体
+     *   （FontCatalog.get 对空/未知 id 回退 entries 首项 = 系统默认字体条目）
+     * - latinFontId：本条灵感的英文/数字字体 id；空串 = 跟随中文字体
+     *   （FontCatalog.getLatin 对空 id 返回 null = 不叠加拉丁回退层）
+     *
+     * 同步处理两张表：
+     * 1. inspirations：主表，字段随保存写回；
+     * 2. deleted_inspirations：回收站镜像（DeletedInspiration 实体逐字段拷贝），
+     *    删除时保留字体、恢复时还原，避免回收站往返后字体丢失。
+     *
+     * 空串默认即用户决策的默认语义（系统默认 / 跟随中文），
+     * 旧行升级后读出空串自动落到默认，无需数据回填。
+     * NOT NULL DEFAULT '' 与实体 @ColumnInfo(defaultValue = "") 的 schema 校验一致。
+     */
+    internal val MIGRATION_57_58 = object : Migration(57, 58) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN fontId TEXT NOT NULL DEFAULT ''")
+            database.execSQL("ALTER TABLE inspirations ADD COLUMN latinFontId TEXT NOT NULL DEFAULT ''")
+            database.execSQL("ALTER TABLE deleted_inspirations ADD COLUMN fontId TEXT NOT NULL DEFAULT ''")
+            database.execSQL("ALTER TABLE deleted_inspirations ADD COLUMN latinFontId TEXT NOT NULL DEFAULT ''")
         }
     }
     // companion object 闭合

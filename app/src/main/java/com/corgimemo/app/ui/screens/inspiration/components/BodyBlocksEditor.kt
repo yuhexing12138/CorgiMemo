@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.corgimemo.app.ui.theme.LocalContentTypography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -1662,7 +1663,7 @@ private fun BlockTextItem(
                 {
                     Text(
                         text = "请在这里输入内容...",
-                        style = MaterialTheme.typography.bodyLarge.copy(
+                        style = LocalContentTypography.current.bodyLarge.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
                     )
@@ -1675,7 +1676,7 @@ private fun BlockTextItem(
              *  onPreviewKeyEvent 统一调度到 controller.undo()（块内 history 与全局
              *  命令栈的两套历史入口），避免快捷键绕过焦点判断直接走单块 history。 */
             undoBehavior = UndoBehavior.Disabled,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(
+            textStyle = LocalContentTypography.current.bodyLarge.copy(
                 color = MaterialTheme.colorScheme.onSurface
             ),
             /** 块高 = 内容行数 × 行距（消除库默认 56dp 强制最小高度） */

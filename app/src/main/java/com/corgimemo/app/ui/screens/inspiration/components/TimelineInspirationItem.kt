@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.corgimemo.app.ui.theme.ContentFontManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -156,6 +157,13 @@ fun TimelineInspirationItem(
     onRelationCountClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    /** 本条灵感的内容字体族（每条灵感单独记字体；空 fontId=系统默认，空 latinFontId=跟随中文） */
+    val inspirationFontFamily = remember(
+        inspiration.fontId, inspiration.latinFontId
+    ) {
+        ContentFontManager.contentFontFamily(inspiration.fontId, inspiration.latinFontId)
+    }
+
     // ===== 堆叠图 展开态 外部托管状态 =====
     // - 收起按钮必须独立一行，padding(start=contentStartX) 与 标题/时间/正文/标签行 严格左对齐
     //   （用户硬约束：截图可见"收起 >"现在位于卡片区垂直中间=严重不符合原型）
@@ -342,6 +350,7 @@ fun TimelineInspirationItem(
                     }
                     Text(
                         text = inspiration.title,
+                        fontFamily = inspirationFontFamily,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -372,6 +381,7 @@ fun TimelineInspirationItem(
                         val plainContent = removeHtmlTags(inspiration.content)
                         Text(
                             text = plainContent,
+                            fontFamily = inspirationFontFamily,
                             fontSize = 14.sp,
                             lineHeight = 21.sp,
                             color = Color(0xFF666666),

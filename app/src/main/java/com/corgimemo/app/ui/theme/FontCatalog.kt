@@ -429,6 +429,9 @@ object FontCatalog {
     /** 「英文/数字字体」默认 id（空串 = 系统默认，不叠加拉丁回退层） */
     const val DEFAULT_LATIN_ID: String = ""
 
+    /** 系统默认字体占位条目（渲染走设备系统字体）；内容字体与工具栏字重探测的默认基准。 */
+    val systemDefault: FontEntry get() = SYSTEM_DEFAULT
+
     /** 按 id 取正文字体条目；未知 id 回退默认字体，避免空指针 */
     fun get(id: String): FontEntry = entries.firstOrNull { it.id == id } ?: entries.first()
 

@@ -39,6 +39,10 @@ data class DeletedInspiration(
     val backgroundColor: Int = -1,
     val position: Int = 0,
     val contentFormat: String = "",
+    /** 本条灵感的中文字体 id（空 = 系统默认字体；v58 与 Inspiration.fontId 同步新增，删除时保留、恢复后不丢） */
+    val fontId: String = "",
+    /** 本条灵感的英文/数字字体 id（空 = 跟随中文；v58 与 Inspiration.latinFontId 同步新增） */
+    val latinFontId: String = "",
     val deletedAt: Long = System.currentTimeMillis()
 ) {
     companion object {
@@ -74,6 +78,8 @@ data class DeletedInspiration(
                 backgroundColor = inspiration.backgroundColor,
                 position = inspiration.position,
                 contentFormat = inspiration.contentFormat,
+                fontId = inspiration.fontId,
+                latinFontId = inspiration.latinFontId,
                 deletedAt = System.currentTimeMillis()
             )
         }
@@ -109,7 +115,9 @@ data class DeletedInspiration(
                 voiceDuration = deleted.voiceDuration,
                 backgroundColor = deleted.backgroundColor,
                 position = deleted.position,
-                contentFormat = deleted.contentFormat
+                contentFormat = deleted.contentFormat,
+                fontId = deleted.fontId,
+                latinFontId = deleted.latinFontId
             )
         }
     }

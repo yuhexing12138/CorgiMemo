@@ -52,6 +52,7 @@ import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import com.corgimemo.app.ui.theme.LocalContentTypography
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -85,6 +86,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.corgimemo.app.util.toPxFloat
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -119,8 +121,8 @@ import com.corgimemo.app.util.VoicePlayer
 import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.InspirationEditViewModel
-import com.corgimemo.app.ui.screens.inspiration.components.InspirationEditBottomBar /** 灵感编辑页底部栏（5 按钮 + 可折叠格式工具栏）*/
-import com.corgimemo.app.ui.theme.FontManager /** 当前选中字体（含 boldTiers 加粗档位，与工具栏共用，保证选档/清除集合一致）*/
+import com.corgimemo.app.ui.screens.inspiration.components.InspirationEditBottomBar /** 灵感编辑页底部栏（5 按钮 + 可折叠格式工具栏 + 字体选择面板）*/
+import com.corgimemo.app.ui.theme.ContentFontManager /** 内容字体（每条灵感单独记录；boldTiers 清除集合与工具栏探测共用同一字体，保证选档/取消语义一致）*/
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery /** 灵感专用的沉浸式全屏图片画廊（编辑态预览复用） */
 import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils /** v2026-07-31 新增：标题与正文之间"时间戳+字数"行所需的字数统计工具 */
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
@@ -439,6 +441,24 @@ fun InspirationEditScreen(
 
     /** 格式工具栏展开/折叠状态（由底部栏 ⋮ 按钮切换） */
     var isFormatExpanded by remember { mutableStateOf(false) }
+
+    /**
+     * 字体选择面板展开/收起状态（v2026-09-03 新增）。
+     * 由工具栏「字体选择按钮」（B 左侧）与面板头「完成」按钮切换；
+     * 展开时同时收起软键盘（键盘与面板不同屏共存，面板占键盘位）。
+     */
+    var isFontPanelExpanded by remember { mutableStateOf(false) }
+
+    /** 软键盘控制器：展开字体面板前收起键盘（面板高度 = 键盘高度，二者不同屏共存） */
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    /**
+     * 当前内容字体（[ContentFontManager]「当前」状态 = 正在编辑的这条灵感的字体）。
+     * 装载时机：VM 构造复位默认 → loadInspiration 按灵感覆盖（见 InspirationEditViewModel）。
+     * 选择即时生效：编辑内容排版（LocalContentTypography）与工具栏字重探测自动跟随。
+     */
+    val contentFontEntry by ContentFontManager.currentEntry.collectAsState()
+    val contentLatinFontId by ContentFontManager.currentLatinId.collectAsState()
 
     /**
      * v2026-08-01 Phase 2：注册 # hashtag trigger + 编辑器内容初始化
@@ -1061,6 +1081,9 @@ fun InspirationEditScreen(
             /** 灵感编辑页底部导航栏（6 按钮 + 可折叠格式工具栏） */
             InspirationEditBottomBar(
                 isFormatExpanded = isFormatExpanded,
+                isFontPanelOpen = isFontPanelExpanded,
+                currentCjkId = contentFontEntry.id,
+                currentLatinId = contentLatinFontId,
                 richTextState = richTextState,
                 onPhotoClick = {
                     showImagePicker = true
@@ -1110,6 +1133,31 @@ fun InspirationEditScreen(
                     isFormatExpanded = !isFormatExpanded
                 },
                 /**
+                 * 字体选择按钮（工具栏 B 左侧，v2026-09-03 新增）：
+                 * 切换字体面板展开/收起；展开时先收起软键盘——键盘与面板不同屏共存，
+                 * 面板高度 = 键盘高度（BottomBar 内 WindowInsets.ime 记录），展开即占据原键盘位。
+                 */
+                onFontPickerClick = {
+                    if (isFontPanelExpanded) {
+                        isFontPanelExpanded = false
+                    } else {
+                        keyboardController?.hide()
+                        isFontPanelExpanded = true
+                    }
+                },
+                /** 面板头「完成」按钮：收起面板（键盘不自动弹回，由输入框焦点决定） */
+                onFontPanelDismiss = {
+                    isFontPanelExpanded = false
+                },
+                /** 中文字体选择：更新内容字体（编辑内容即时生效）并置脏，保存时写回 inspirations.fontId */
+                onCjkFontSelect = { fontId ->
+                    viewModel.onCjkFontSelected(fontId)
+                },
+                /** 英文/数字字体选择：再点已选项由面板回调空串（取消，跟随中文），保存时写回 latinFontId */
+                onLatinFontSelect = { fontId ->
+                    viewModel.onLatinFontSelected(fontId)
+                },
+                /**
                  * v2026-09-02：格式化操作**无需任何手动撤销处理**（方案A两套历史隔离）。
                  *
                  * 加粗 / 斜体 / 列表等作用于聚焦块（richTextState 兼容层 = 聚焦或首块），
@@ -1121,14 +1169,16 @@ fun InspirationEditScreen(
                  * 已废弃的 VM 旧撤销栈（UI 层从不消费），早已移除。
                  */
                 onSetFontWeight = { weight ->
-                    // 设置字重档位（候选为当前字体 FontManager.boldTiers，档数随字体变化；
+                    // 设置字重档位（候选为当前内容字体 ContentFontManager.boldTiers，档数随字体变化；
                     // 无独立字形的档位已置灰禁用、不会进入此回调）：
                     // 先清除全部档位字重避免叠加，再 toggle 目标档。
-                    // 清除集合与工具栏 FontManager.boldTiers 共用，保证选档/取消语义一致。
+                    // 清除集合与工具栏 FontWeightProbe 探测基准（ContentFontManager，内容字体）共用，
+                    // 保证选档/取消语义一致——若遍历设置页「正文字体」(FontManager) 的 boldTiers，
+                    // 两者字体不同时会出现「按 B1 取消不掉加粗」的档位错配 bug（v2026-09-03 修复）。
                     // toggle 语义：点当前已选档则取消加粗（回到常规字重）。
                     val target = FontWeight(weight)
                     val current = richTextState.currentSpanStyle.fontWeight
-                    FontManager.currentEntry.value.boldTiers.forEach { w ->
+                    ContentFontManager.currentEntry.value.boldTiers.forEach { w ->
                         richTextState.removeSpanStyle(SpanStyle(fontWeight = FontWeight(w)))
                     }
                     if (current != target) {
@@ -1236,13 +1286,13 @@ fun InspirationEditScreen(
                 placeholder = {
                     Text(
                         "标题",
-                        style = MaterialTheme.typography.headlineMedium.copy(
+                        style = LocalContentTypography.current.headlineMedium.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
                     )
                 },
                 readOnly = isLocked,
-                textStyle = MaterialTheme.typography.headlineMedium.copy(
+                textStyle = LocalContentTypography.current.headlineMedium.copy(
                     color = MaterialTheme.colorScheme.onSurface
                 ),
                 colors = RichTextEditorDefaults.richTextEditorColors(

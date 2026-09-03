@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material.icons.filled.FontDownload
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Link
@@ -49,7 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.corgimemo.app.ui.theme.FontManager
+import com.corgimemo.app.ui.theme.ContentFontManager
 import com.corgimemo.app.ui.theme.FontWeightProbe
 import com.mohamedrejeb.richeditor.model.RichTextState
 
@@ -83,6 +84,8 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  *
  * @param state 库的 RichTextState 实例
  * @param modifier Modifier
+ * @param isFontPanelOpen 字体选择面板是否展开（字体按钮激活态高亮用）
+ * @param onFontPickerClick 字体选择按钮回调（展开/收起字体面板；同时由调用方收起软键盘）
  * @param onSetFontWeight 设置字重档位回调（参数为当前字体 [com.corgimemo.app.ui.theme.FontEntry.boldTiers] 候选档位；
  *      其中经像素探测无独立字形的档位在工具栏中置灰禁用，不会回调）
  * @param onToggleItalic 斜体回调
@@ -100,6 +103,8 @@ import com.mohamedrejeb.richeditor.model.RichTextState
 fun RichTextFormatToolbar(
     state: RichTextState,
     modifier: Modifier = Modifier,
+    isFontPanelOpen: Boolean = false,
+    onFontPickerClick: () -> Unit = {},
     onSetFontWeight: (Int) -> Unit,
     onToggleItalic: () -> Unit,
     onToggleUnderline: () -> Unit,
@@ -117,30 +122,33 @@ fun RichTextFormatToolbar(
     /** 当前光标/选中区的字重档位（null 表示未处于候选档之一） */
     val currentWeight = state.currentSpanStyle.fontWeight?.weight
     /**
-     * 当前选中字体（[FontManager] 反应式持有）。必须在 `currentTier` 之前声明，
-     * 否则 Kotlin 报「Unresolved reference 'fontEntry'」——局部 `val` 不可前置引用。
+     * 当前**内容**字体（[ContentFontManager] 反应式持有；默认系统默认字体）。
+     * 必须在 `currentTier` 之前声明，否则 Kotlin 报「Unresolved reference 'contentEntry'」——
+     * 局部 `val` 不可前置引用。
+     *
+     * 注意：这里取的是**内容字体**而非设置页「正文字体」([FontManager])——
+     * 编辑页用户内容默认用系统字体（请求 M：设置字体只影响 App chrome），
+     * 工具栏加粗档位必须与实际渲染的内容字体一致，否则探测字体与渲染字体不符。
      */
-    val fontEntry by FontManager.currentEntry.collectAsState()
+    val contentEntry by ContentFontManager.currentEntry.collectAsState()
     val currentTier = when (currentWeight) {
-        in fontEntry.boldTiers -> fontEntry.boldTiers.indexOf(currentWeight) + 1
+        in contentEntry.boldTiers -> contentEntry.boldTiers.indexOf(currentWeight) + 1
         else -> null
     }
     /**
      * 运行时像素探测得到的「有独立字面」字重集合（remember 仅算一次）。
      * 不在集合内的候选档位按钮将置灰禁用，避免选中却无视觉变化。
      *
-     * **必须传入应用实际渲染的字体**：当前选中字体由 [FontManager] 持有
-     * （各款均为静态字重字体，每档一个独立文件），若不指定 `typefaceOf` 就会退化成用
-     * 系统默认字体探测，而系统字体缺 500 字面，会得出「B1(500) 无独立字面」的错误结论、
-     * 把本该可用的档位误置灰。故这里用 [FontManager.typefaceForWeight] 提供当前字体的
-     * Typeface，并用 [FontManager.tag] 隔离缓存。字体切换时 tag 变化 → 重新探测。
+     * **必须传入应用实际渲染的字体**：内容字体由 [ContentFontManager] 持有
+     * （默认系统默认字体），用 [ContentFontManager.typefaceForWeight] 提供 Typeface、
+     * 用 [ContentFontManager.tag] 隔离缓存；内容字体切换时 tag 变化 → 重新探测。
      */
     val context = LocalContext.current
-    val distinctWeights = remember(context, fontEntry.tag) {
+    val distinctWeights = remember(context, contentEntry.tag) {
         FontWeightProbe.distinctWeights(
-            candidates = fontEntry.boldTiers,
-            fontTag = fontEntry.tag,
-            typefaceOf = { weight -> fontEntry.typefaceForWeight(context, weight) }
+            candidates = contentEntry.boldTiers,
+            fontTag = contentEntry.tag,
+            typefaceOf = { weight -> contentEntry.typefaceForWeight(context, weight) }
         )
     }
 
@@ -152,8 +160,19 @@ fun RichTextFormatToolbar(
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        /** ====== 第一组：基础样式 (加粗字重菜单 / 斜体 / 下划线 / 删除线) ====== */
+        /** ====== 第一组：基础样式 (字体选择 / 加粗字重菜单 / 斜体 / 下划线 / 删除线) ====== */
         FormatButtonGroup {
+            /**
+             * 字体选择按钮（v2026-09-03 新增，位于加粗 B 左侧）：
+             * 点击展开/收起字体选择面板（面板由 [InspirationEditBottomBar] 插入在工具栏与相机行之间，
+             * 展开时收起软键盘并把相机行向下推开）；激活态高亮提示面板当前展开。
+             */
+            FormatIconButton(
+                imageVector = Icons.Default.FontDownload,
+                isActive = isFontPanelOpen,
+                onClick = onFontPickerClick,
+                contentDescription = "字体"
+            )
             /** 加粗主按钮：点击展开/收起字重菜单；展开时显示左箭头，收起时显示右箭头 */
             FormatWeightButton(
                 tier = currentTier,
@@ -169,7 +188,7 @@ fun RichTextFormatToolbar(
                 exit = shrinkHorizontally()
             ) {
                 Row {
-                    fontEntry.boldTiers.forEachIndexed { index, weight ->
+                    contentEntry.boldTiers.forEachIndexed { index, weight ->
                         val tier = index + 1
                         FormatWeightTierButton(
                             tier = tier,

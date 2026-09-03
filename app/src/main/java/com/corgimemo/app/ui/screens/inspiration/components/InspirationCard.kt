@@ -17,7 +17,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.corgimemo.app.ui.theme.ContentFontManager
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +56,12 @@ fun InspirationCard(
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    /** 本条灵感的内容字体族（每条灵感单独记字体；空 fontId=系统默认，空 latinFontId=跟随中文） */
+    val inspirationFontFamily = remember(
+        inspiration.fontId, inspiration.latinFontId
+    ) {
+        ContentFontManager.contentFontFamily(inspiration.fontId, inspiration.latinFontId)
+    }
     Card(
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -79,9 +87,10 @@ fun InspirationCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
-                /** 标题（最多1行省略） */
+                /** 标题（最多1行省略）——按本条灵感记录的字体渲染（每条灵感单独记字体） */
                 Text(
                     text = inspiration.title,
+                    fontFamily = inspirationFontFamily,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -107,6 +116,7 @@ fun InspirationCard(
                 val plainContent = removeHtmlTags(inspiration.content)
                 Text(
                     text = plainContent,
+                    fontFamily = inspirationFontFamily,
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
