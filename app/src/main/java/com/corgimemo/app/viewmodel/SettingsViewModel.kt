@@ -6,6 +6,8 @@ import com.corgimemo.app.backup.BackupManager
 import com.corgimemo.app.backup.BackupManager.ExportFormat
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.model.UserType
+import com.corgimemo.app.ui.theme.FontCatalog
+import com.corgimemo.app.ui.theme.FontManager
 import com.corgimemo.app.ui.theme.ThemeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +48,15 @@ class SettingsViewModel @Inject constructor(
     val themeColor: StateFlow<String> = _themeColor.asStateFlow()
 
     /**
+     * 当前正文字体 id（v2026-09-03 新增）
+     *
+     * 与 [FontManager] 共享同一份内存状态；默认值取 [FontCatalog.DEFAULT_ID]，
+     * 启动时由 ESP 实际偏好覆盖。UI 层（外观设置页字体分组）订阅本 StateFlow 展示选中态。
+     */
+    private val _fontId = MutableStateFlow(FontCatalog.DEFAULT_ID)
+    val fontId: StateFlow<String> = _fontId.asStateFlow()
+
+    /**
      * 单行图片附件上限（v2026-07-27 新增）
      *
      * 与 [com.corgimemo.app.viewmodel.TodoEditViewModel.maxImagesPerLine] 共享同一份 ESP 存储。
@@ -78,6 +89,11 @@ class SettingsViewModel @Inject constructor(
             _themeColor.value = loadedColor
             ThemeManager.initTheme(loadedMode, loadedColor)
 
+            // v2026-09-03 新增：加载「正文字体」并同步 FontManager 内存状态
+            val loadedFontId = corgiPreferences.fontId.first()
+            _fontId.value = loadedFontId
+            FontManager.initFont(loadedFontId)
+
             // v2026-07-27 新增：加载「单行图片上限」
             _maxImagesPerLine.value = corgiPreferences.maxImagesPerLine.first()
         }
@@ -96,6 +112,23 @@ class SettingsViewModel @Inject constructor(
             _themeColor.value = color
             ThemeManager.setThemeColor(color)
             corgiPreferences.saveThemeColor(color)
+        }
+    }
+
+    /**
+     * 设置正文字体（v2026-09-03 新增）
+     *
+     * 同步写入内存 StateFlow、[FontManager] 内存状态与 ESP 持久化。
+     * 主题体系（[CorgiMemoTheme]）与编辑工具栏通过订阅 [FontManager] 自动应用新字体，
+     * 全 App 即时生效，无需手动通知。
+     *
+     * @param id [FontCatalog] 中的字体条目 id
+     */
+    fun setFontId(id: String) {
+        viewModelScope.launch {
+            _fontId.value = id
+            FontManager.setFont(id)
+            corgiPreferences.saveFontId(id)
         }
     }
 

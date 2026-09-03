@@ -17,10 +17,10 @@ import androidx.compose.ui.text.font.FontWeight
  * 逐像素比较，不同才算该档有独立字形。
  *
  * **⚠️ 探测所用字体必须与 App 实际渲染的字体一致**：
- * 项目已内置思源黑体（[SourceHanSansCN]），其 400/500/700/900 各有独立字体文件。
+ * 项目已内置多款静态字重中文字体（见 [FontCatalog]），每款各档均有独立字体文件。
  * 若仍拿 `Typeface.DEFAULT` 探测，会得出「500 无独立字面」的**错误结论**——那是系统字体的
  * 情况，内置字体并非如此——导致本该可用的 B1 档被误置灰，内置字体白做。
- * 因此调用方**必须**通过 `typefaceOf` 传入与应用渲染相同的字体，并用 `fontTag` 隔离缓存。
+ * 因此调用方**必须**通过 `typefaceOf` 传入当前选中字体（[FontManager.typefaceForWeight]），并用 `fontTag`（[FontManager.tag]）隔离缓存。
  *
  * 用法：在 UI 中用 remember 调用一次 [distinctWeights]，得到真正可用的字重集合，
  * 不在集合内的候选档位按钮应在工具栏中置灰禁用（见 RichTextFormatToolbar）。
@@ -158,8 +158,9 @@ internal object FontWeightProbe {
      * API 28+ 用带 weight 的重载，由系统量化到最近可用字面（用于探测）；
      * 更低版本退化为常规/粗体二值，使中间字重探测结果保守（置灰）。
      *
-     * ⚠️ 仅适用于「App 使用系统字体」的场景。项目已内置思源黑体，
-     * 调用方应传入对应内置字体文件的 Typeface，否则探测结论与真实渲染不符。
+     * ⚠️ 仅适用于「App 使用系统字体」的场景。项目已内置多款静态字重中文字体，
+     * 调用方应通过 [FontManager.typefaceForWeight] 传入对应字体文件的 Typeface，
+     * 否则探测结论与真实渲染不符。
      */
     private fun defaultTypefaceForWeight(weight: Int): Typeface {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

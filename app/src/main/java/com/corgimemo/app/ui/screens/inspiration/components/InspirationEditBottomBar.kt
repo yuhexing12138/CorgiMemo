@@ -56,7 +56,7 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * @param onMentionClick 关联按钮回调（v2026-07-22 改造：触发 RelationPickerBottomSheet）
  * @param onLocationClick 位置按钮回调（v2026-07-22 新增：触发位置提醒弹窗）
  * @param onFormatToggleClick 格式按钮回调（切换展开/折叠）
- * @param onSetFontWeight 设置字重档位回调（参数为 BOLD_WEIGHT_TIERS 候选档位 500/700/900；
+ * @param onSetFontWeight 设置字重档位回调（参数为当前字体 FontEntry.boldTiers 候选档位；
  *      其中经像素探测无独立字形的档位在工具栏中置灰禁用）
  * @param onToggleItalic 斜体回调
  * @param onToggleUnderline 下划线回调

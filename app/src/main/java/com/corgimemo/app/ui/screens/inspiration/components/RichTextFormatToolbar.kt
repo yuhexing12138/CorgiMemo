@@ -32,6 +32,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,16 +49,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.corgimemo.app.ui.theme.APP_FONT_TAG
-import com.corgimemo.app.ui.theme.BOLD_WEIGHT_TIERS
+import com.corgimemo.app.ui.theme.FontManager
 import com.corgimemo.app.ui.theme.FontWeightProbe
-import com.corgimemo.app.ui.theme.appTypefaceForWeight
 import com.mohamedrejeb.richeditor.model.RichTextState
 
 /**
- * 加粗字重候选档位（B1 / B2 / B3 = 500 / 700 / 900）由 [BOLD_WEIGHT_TIERS] 提供，该常量定义在字体配置
- * [com.corgimemo.app.ui.theme.Type] 中。但某个候选档位是否真能渲染出独立字形，无法靠常量静态判断
- * （系统字体常缺 500 字面、被量化合并），故用 [FontWeightProbe] 运行时像素探测：
+ * 加粗字重候选档位（B1 / B2 / B3 对应各字体 [com.corgimemo.app.ui.theme.FontEntry.boldTiers]，
+ * 当前字体由 [com.corgimemo.app.ui.theme.FontManager] 持有）。但某个候选档位是否真能渲染出独立字形，
+ * 无法靠常量静态判断（系统字体常缺 500 字面、被量化合并），故用 [FontWeightProbe] 运行时像素探测：
  * 探测不到独立字形的档位，其按钮置灰禁用，避免用户选中却「视觉无变化」的困惑。
  * 本文件只消费档位与探测结果、不持有字体知识，换字体无需改动此处。
  */
@@ -74,7 +73,7 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * 3. **对齐**: 左对齐、居中、右对齐（通过 toggleParagraphStyle）
  * 4. **高级**: 链接、代码块
  *
- * 加粗按钮交互：点击 B 展开同行 B1/B2/B3 子按钮（候选档位由 BOLD_WEIGHT_TIERS 给出：500/700/900），其余按钮被推开；
+ * 加粗按钮交互：点击 B 展开同行 B1/B2/B3 子按钮（候选档位由当前字体 [com.corgimemo.app.ui.theme.FontEntry.boldTiers] 给出），其余按钮被推开；
  * 档位是否真正可用由 [FontWeightProbe] 运行时像素探测决定，探测不到独立字形的档位按钮置灰禁用；
  * 选中某档后子按钮自动收起，B 变为对应的 B1/B2/B3 并高亮（选中的档位）。
  * 再次点击当前已选档位可取消加粗（回到常规字重）。
@@ -84,7 +83,7 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  *
  * @param state 库的 RichTextState 实例
  * @param modifier Modifier
- * @param onSetFontWeight 设置字重档位回调（参数为 BOLD_WEIGHT_TIERS 候选档位：500/700/900；
+ * @param onSetFontWeight 设置字重档位回调（参数为当前字体 [com.corgimemo.app.ui.theme.FontEntry.boldTiers] 候选档位；
  *      其中经像素探测无独立字形的档位在工具栏中置灰禁用，不会回调）
  * @param onToggleItalic 斜体回调
  * @param onToggleUnderline 下划线回调
@@ -115,27 +114,33 @@ fun RichTextFormatToolbar(
 ) {
     /** 加粗字重菜单的展开状态（纯 UI 局部状态，置于函数体顶层，不在条件分支内） */
     var boldExpanded by remember { mutableStateOf(false) }
-    /** 当前光标/选中区的字重档位（null 表示未处于三档之一） */
+    /** 当前光标/选中区的字重档位（null 表示未处于候选档之一） */
     val currentWeight = state.currentSpanStyle.fontWeight?.weight
+    /**
+     * 当前选中字体（[FontManager] 反应式持有）。必须在 `currentTier` 之前声明，
+     * 否则 Kotlin 报「Unresolved reference 'fontEntry'」——局部 `val` 不可前置引用。
+     */
+    val fontEntry by FontManager.currentEntry.collectAsState()
     val currentTier = when (currentWeight) {
-        in BOLD_WEIGHT_TIERS -> BOLD_WEIGHT_TIERS.indexOf(currentWeight) + 1
+        in fontEntry.boldTiers -> fontEntry.boldTiers.indexOf(currentWeight) + 1
         else -> null
     }
     /**
      * 运行时像素探测得到的「有独立字面」字重集合（remember 仅算一次）。
      * 不在集合内的候选档位按钮将置灰禁用，避免选中却无视觉变化。
      *
-     * **必须传入应用实际渲染的字体**：本 App 已内置思源黑体（[SourceHanSansCN]），
-     * 若不指定 `typefaceOf` 就会退化成用系统默认字体探测，而系统字体缺 500 字面，
-     * 会得出「B1(500) 无独立字面」的错误结论、把本该可用的档位误置灰。
-     * 故这里用 [appTypefaceForWeight] 提供内置字体的 Typeface，并用 [APP_FONT_TAG] 隔离缓存。
+     * **必须传入应用实际渲染的字体**：当前选中字体由 [FontManager] 持有
+     * （各款均为静态字重字体，每档一个独立文件），若不指定 `typefaceOf` 就会退化成用
+     * 系统默认字体探测，而系统字体缺 500 字面，会得出「B1(500) 无独立字面」的错误结论、
+     * 把本该可用的档位误置灰。故这里用 [FontManager.typefaceForWeight] 提供当前字体的
+     * Typeface，并用 [FontManager.tag] 隔离缓存。字体切换时 tag 变化 → 重新探测。
      */
     val context = LocalContext.current
-    val distinctWeights = remember(context) {
+    val distinctWeights = remember(context, fontEntry.tag) {
         FontWeightProbe.distinctWeights(
-            candidates = BOLD_WEIGHT_TIERS,
-            fontTag = APP_FONT_TAG,
-            typefaceOf = { weight -> appTypefaceForWeight(context, weight) }
+            candidates = fontEntry.boldTiers,
+            fontTag = fontEntry.tag,
+            typefaceOf = { weight -> fontEntry.typefaceForWeight(context, weight) }
         )
     }
 
@@ -164,7 +169,7 @@ fun RichTextFormatToolbar(
                 exit = shrinkHorizontally()
             ) {
                 Row {
-                    BOLD_WEIGHT_TIERS.forEachIndexed { index, weight ->
+                    fontEntry.boldTiers.forEachIndexed { index, weight ->
                         val tier = index + 1
                         FormatWeightTierButton(
                             tier = tier,

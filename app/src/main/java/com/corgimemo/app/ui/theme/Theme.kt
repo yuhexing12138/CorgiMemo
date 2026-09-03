@@ -37,7 +37,7 @@ fun CorgiMemoTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = buildTypography(FontManager.collectCurrentEntry().family),
         content = content
     )
 }

@@ -174,6 +174,8 @@ class CorgiPreferences(
         const val STATUS_FILTER_ORDER = "status_filter_order"
         /** 🆕 v2026-07-28：DATE Tab 内置日期类型顺序（逗号分隔的 DateCategory.name） */
         const val DATE_CATEGORY_ORDER = "date_category_order"
+        /** 🆕 v2026-09-03：正文字体 id（对应 FontCatalog 条目 id；默认 source_han_sans_cn） */
+        const val FONT_ID = "font_id"
     }
 
     // ==================== 数据迁移（DataStore → ESP）====================
@@ -706,6 +708,25 @@ class CorgiPreferences(
 
     suspend fun saveThemeColor(color: String) = withContext(Dispatchers.IO) {
         esp.edit().putString(Keys.THEME_COLOR, color).apply()
+    }
+
+    // ==================== 正文字体设置（v2026-09-03 新增）====================
+
+    /**
+     * 当前正文字体 id 的 Flow。
+     *
+     * 默认值字面量 `"source_han_sans_cn"`（思源黑体），与 [FontCatalog.DEFAULT_ID] 保持一致；
+     * 这里用字面量而非引用，避免 data 层反向依赖 ui.theme 包。
+     * 未知 id 由 [FontCatalog.get] 自动回退默认字体。
+     */
+    val fontId: Flow<String> = callbackFlow {
+        trySend(esp.getString(Keys.FONT_ID, "source_han_sans_cn") ?: "source_han_sans_cn")
+        close()
+    }
+
+    /** 持久化正文字体 id（由 SettingsViewModel.setFontId 调用，同时驱动内存状态） */
+    suspend fun saveFontId(id: String) = withContext(Dispatchers.IO) {
+        esp.edit().putString(Keys.FONT_ID, id).apply()
     }
 
     // ==================== 首次引导状态 ====================

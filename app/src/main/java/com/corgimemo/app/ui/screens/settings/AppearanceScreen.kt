@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.ui.screens.profile.components.ThemePresets
+import com.corgimemo.app.ui.theme.FontCatalog
+import com.corgimemo.app.ui.theme.FontEntry
 import com.corgimemo.app.viewmodel.SettingsViewModel
 
 /**
@@ -73,6 +75,7 @@ fun AppearanceScreen(
     // ========== 状态收集 ==========
     val themeMode by viewModel.themeMode.collectAsState()
     val themeColor by viewModel.themeColor.collectAsState()
+    val fontId by viewModel.fontId.collectAsState()
 
     Scaffold(
         topBar = {
@@ -189,6 +192,36 @@ fun AppearanceScreen(
                                         Box(modifier = Modifier.weight(1f))
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ========== 分组 3：正文字体（内置可商用中文多字重，OFL 1.1）==========
+            item {
+                Column {
+                    AppearanceSectionTitle("正文字体")
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            FontCatalog.entries.forEach { entry ->
+                                AppearanceFontOption(
+                                    entry = entry,
+                                    selected = fontId == entry.id,
+                                    onClick = { viewModel.setFontId(entry.id) }
+                                )
                             }
                         }
                     }
@@ -340,5 +373,68 @@ private fun AppearanceColorOption(
             },
             modifier = Modifier.padding(top = 6.dp)
         )
+    }
+}
+
+/**
+ * 正文字体单选行
+ *
+ * 一行展示一款内置字体：以该字体**自身**渲染名称预览（直观反映字形风格）、
+ * 下方标注授权与加粗档位数；选中态用主色容器 + "✓" 标记。
+ * 点击调用 [SettingsViewModel.setFontId]，全 App 正文字体即时切换。
+ *
+ * @param entry 字体注册表条目（[FontCatalog]）
+ * @param selected 是否当前选中字体
+ * @param onClick 点击回调
+ * @param modifier 外部 Modifier
+ */
+@Composable
+private fun AppearanceFontOption(
+    entry: FontEntry,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val titleColor = if (selected) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(containerColor)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            // 以本字体自身渲染预览，直观反映字形风格
+            Text(
+                text = entry.displayName,
+                fontSize = 18.sp,
+                fontFamily = entry.family,
+                color = titleColor
+            )
+            Text(
+                text = "${entry.licenseName} · ${entry.boldTiers.size} 档加粗",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (selected) {
+            Text(
+                text = "✓",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
     }
 }
