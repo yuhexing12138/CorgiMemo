@@ -61,7 +61,7 @@ object FontManager {
      *
      * - [latin] 为 null：直接返回正文字体族 [FontEntry.family]（中文单一字体，行为不变）。
      * - [latin] 非 null：交由 [FontCatalog.combinedFamilyFonts] 生成**按字重回退链**的字体列表，
-     *   每个字重单元格用 `Typeface.Builder(latin).setFallback(cjk).build()` 串成单一 Typeface，
+     *   每个字重单元格用 `Typeface.CustomFallbackBuilder` 把拉丁作 base、中文作 `addCustomFallback` 串成单一按字形回退的 Typeface，
      *   从而拉丁字形走拉丁字体、中文字形走中文字体（修复旧实现同字重只解析单一 Typeface、中文落到系统兜底的问题）。
      */
     fun combinedFamily(cjk: FontEntry, latin: FontEntry?): FontFamily =

@@ -10,6 +10,10 @@ import androidx.compose.ui.text.font.FontLoadingStrategy
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import android.os.Build
+import android.graphics.fonts.Font as GFont
+import android.graphics.fonts.FontFamily as GFontFamily
+import android.graphics.fonts.FontStyle as GFontStyle
 import com.corgimemo.app.R
 import java.io.File
 
@@ -36,8 +40,8 @@ import java.io.File
  * 本加载器把 resId 拷到 cacheDir 后用 `Typeface.Builder(path).build()`（native mmap，不占 Java 堆），
  * 从根上消除该 byte[]，与 [FontPreviewEngine] 预览路径一致。
  */
-private val fileTypefaceCache = object : LruCache<Int, Typeface>(64) {
-    override fun sizeOf(key: Int, value: Typeface): Int = 1
+private val fileTypefaceCache = object : LruCache<Long, Typeface>(64) {
+    override fun sizeOf(key: Long, value: Typeface): Int = 1
 }
 
 /**
@@ -62,7 +66,7 @@ private fun fontCacheVersion(context: Context): String {
  */
 private class FilePathTypefaceLoader(private val resId: Int) : AndroidFont.TypefaceLoader {
     override fun loadBlocking(context: Context, font: AndroidFont): Typeface? {
-        fileTypefaceCache.get(resId)?.let { return it }
+        fileTypefaceCache.get(resId.toLong())?.let { return it }
         val file = File(context.cacheDir, "ff_font_${resId}_v${fontCacheVersion(context)}.ttf")
         if (!file.exists()) {
             runCatching {
@@ -72,7 +76,7 @@ private class FilePathTypefaceLoader(private val resId: Int) : AndroidFont.Typef
             }.onFailure { return Typeface.DEFAULT }
         }
         val tf = Typeface.Builder(file.absolutePath).build() ?: Typeface.DEFAULT
-        fileTypefaceCache.put(resId, tf)
+        fileTypefaceCache.put(resId.toLong(), tf)
         return tf
     }
 
@@ -120,42 +124,31 @@ private fun cacheFontFile(context: Context, resId: Int): File? {
 /**
  * 合成「拉丁优先 + 中文兜底」的单一 Typeface 加载器（按字重）。
  *
- * **修复背景**：Compose 的 [androidx.compose.ui.text.font.FontListFontFamilyTypefaceAdapter] 对每个
+ * **根因**：Compose 的 [androidx.compose.ui.text.font.FontListFontFamilyTypefaceAdapter] 对每个
  * (字重,字型) 单元格只会从合成族里取**一个** Typeface（[FontMatcher] 同字重精确匹配返回两者时取列表首位），
  * 缺失字形交给 Android 的**系统**兜底链，而非族内另一个 App 字体。旧实现 `FontFamily(latin.fonts + cjk.fonts)`
  * 把拉丁放前列，导致同字重中文被拉丁字体覆盖后落到系统字体，表现为「选了中文但中文不变、选了英文英文变了」。
  *
- * **修复方式**：用 `Typeface.Builder(latinPath).setFallback(cjkPath).build()` 把两款字体串成
- * **单一按字形回退的 Typeface**——拉丁字形走拉丁字体，中文字形走中文字体，二者互不打架。
+ * **修复方式（字形级回退，而非族级合并）**：用 [android.graphics.Typeface.CustomFallbackBuilder]
+ * （API 29+）把拉丁 [GFontFamily] 作为 base、中文 [GFontFamily] 作为自定义兜底，构建**单一按字形回退的
+ * Typeface**——拉丁字形走拉丁字体、中文字形走中文字体，二者互不打架。
+ * 注意：不能用 `Typeface.Builder.setFallback(String)`，该重载只接受**系统已注册的字族名**（如 "sans-serif"），
+ * 传文件路径会找不到家族导致回退链失效（中文落系统字体，正是上一版 bug 的真正成因）。
+ * 改用 `CustomFallbackBuilder.addCustomFallback` 才能把**任意资源字体**挂为回退层。
  * [cjkResId] 为 0（中文=系统默认、无内置文件）时只加载拉丁字体，中文回落设备系统字体（符合预期）；
  * [latinResId] 为 null 时只加载中文字体（等价于旧 `latin==null` 分支）。
- * 要求 minSdk >= 26（`setFallback` API 级别，自 API 26 起可用；本项目 minSdk=26 满足）。
+ * 运行时按 [Build.VERSION.SDK_INT] 降级：API 26–28 无公开自定义回退 API，退化到单一字体、优先中文。
  */
 private class CombinedTypefaceLoader(
     private val latinResId: Int?,
-    private val cjkResId: Int
+    private val cjkResId: Int,
+    private val weight: Int
 ) : AndroidFont.TypefaceLoader {
     override fun loadBlocking(context: Context, font: AndroidFont): Typeface? {
-        // 合成键：拉丁 resId 与中文 resId 组合，确保不同组合互不串缓存
-        val key = (latinResId ?: 0) * 1_000_003 + (if (cjkResId > 0) cjkResId else 0)
+        // 合成键：拉丁 resId + 中文 resId + 字重三者组合，确保不同组合/字重互不串缓存
+        val key = combinedKey(latinResId, cjkResId, weight)
         fileTypefaceCache.get(key)?.let { return it }
-        val tf = if (latinResId != null) {
-            val latinFile = cacheFontFile(context, latinResId) ?: return Typeface.DEFAULT
-            if (cjkResId > 0) {
-                val cjkFile = cacheFontFile(context, cjkResId) ?: return Typeface.DEFAULT
-                // 拉丁优先、中文兜底：单一 Typeface 内按字形回退，中文不再落到系统字体
-                Typeface.Builder(latinFile.absolutePath)
-                    .setFallback(cjkFile.absolutePath)
-                    .build()
-            } else {
-                // 中文=系统默认（无内置文件）：仅拉丁，中文走设备系统兜底
-                Typeface.Builder(latinFile.absolutePath).build()
-            }
-        } else {
-            // 仅中文（latinResId == null 时 cjkResId 必 > 0）
-            val cjkFile = cacheFontFile(context, cjkResId) ?: return Typeface.DEFAULT
-            Typeface.Builder(cjkFile.absolutePath).build()
-        } ?: Typeface.DEFAULT
+        val tf = buildCombinedTypeface(context, latinResId, cjkResId, weight) ?: Typeface.DEFAULT
         fileTypefaceCache.put(key, tf)
         return tf
     }
@@ -164,6 +157,59 @@ private class CombinedTypefaceLoader(
         loadBlocking(context, font)
 }
 
+/** 合成缓存键：拉丁 resId、中文 resId、字重三者组合成 Long，避免不同组合/字重串缓存或 Int 溢出。 */
+private fun combinedKey(latinResId: Int?, cjkResId: Int, weight: Int): Long {
+    val l = (latinResId ?: 0).toLong()
+    val c = (if (cjkResId > 0) cjkResId else 0).toLong()
+    return (l * 1_000_003L + c) * 1_000_003L + weight.toLong()
+}
+
+/**
+ * 构建「拉丁优先 + 中文兜底」的单一按字形回退 Typeface。
+ * - API 29+：用 [android.graphics.Typeface.CustomFallbackBuilder] 串成「拉丁 base + 中文兜底」。
+ * - API 26–28：无公开自定义回退 API，退化到单一字体（优先中文，保证中文渲染在所选中文字体内；
+ *   拉丁字形会沿用该中文字体自带的拉丁字形，属可接受的降级）。
+ */
+private fun buildCombinedTypeface(
+    context: Context,
+    latinResId: Int?,
+    cjkResId: Int,
+    weight: Int
+): Typeface? = runCatching {
+    val style = GFontStyle(weight, GFontStyle.FONT_SLANT_UPRIGHT)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val latinFamily = latinResId?.let { buildFontFamily(context, it, weight) }
+        val cjkFamily = if (cjkResId > 0) buildFontFamily(context, cjkResId, weight) else null
+        when {
+            latinFamily != null && cjkFamily != null ->
+                Typeface.CustomFallbackBuilder(latinFamily).addCustomFallback(cjkFamily).setStyle(style).build()
+            latinFamily != null ->
+                Typeface.CustomFallbackBuilder(latinFamily).setStyle(style).build()
+            cjkFamily != null ->
+                Typeface.CustomFallbackBuilder(cjkFamily).setStyle(style).build()
+            else -> null
+        }
+    } else {
+        // 低于 API 29：无公开自定义回退链，退化为单一字体（优先中文）
+        val file = when {
+            cjkResId > 0 -> cacheFontFile(context, cjkResId)
+            latinResId != null -> cacheFontFile(context, latinResId)
+            else -> null
+        }
+        file?.let { Typeface.createFromFile(it) }
+    }
+}.getOrNull()
+
+/** 由 resId 构建单个 [GFontFamily]（缓存文件 → [GFont] → [GFontFamily]）。 */
+private fun buildFontFamily(context: Context, resId: Int, weight: Int): GFontFamily? = runCatching {
+    val file = cacheFontFile(context, resId) ?: return null
+    val font = GFont.Builder(file)
+        .setWeight(weight)
+        .setSlant(GFontStyle.FONT_SLANT_UPRIGHT)
+        .build()
+    GFontFamily.Builder(font).build()
+}.getOrNull()
+
 /** 合成「拉丁优先 + 中文兜底」的 [AndroidFont]：每个字重串成单一按字形回退的 Typeface。 */
 private class CombinedAndroidFont(
     weight: FontWeight,
@@ -171,7 +217,7 @@ private class CombinedAndroidFont(
     cjkResId: Int
 ) : AndroidFont(
     loadingStrategy = FontLoadingStrategy.Blocking,
-    typefaceLoader = CombinedTypefaceLoader(latinResId, cjkResId),
+    typefaceLoader = CombinedTypefaceLoader(latinResId, cjkResId, weight.weight),
     variationSettings = FontVariation.Settings(weight, FontStyle.Normal)
 ) {
     override val weight: FontWeight = weight
@@ -601,7 +647,7 @@ object FontCatalog {
      * 把「中文主体 + 拉丁回退层」合成**按字重的回退链字体列表**，供 [FontManager.combinedFamily] 构建合成族。
      *
      * 每个字重单元格取「拉丁字体(优先) + 中文字体(兜底)」串成单一 Typeface（见 [CombinedAndroidFont]），
-     * 由 [CombinedTypefaceLoader] 用 `Typeface.Builder.setFallback` 实现**按字形回退**：
+     * 由 [CombinedTypefaceLoader] 用 `Typeface.CustomFallbackBuilder.addCustomFallback` 实现**按字形回退**：
      * 拉丁字形走拉丁字体、中文字形走中文字体，二者互不打架（修复「同字重只解析单一 Typeface、
      * 中文被拉丁覆盖后落到系统兜底」的中文不生效问题）。
      *
