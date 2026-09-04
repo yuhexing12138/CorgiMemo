@@ -137,8 +137,9 @@ private fun cacheFontFile(context: Context, resId: Int): File? {
  * 改用 `CustomFallbackBuilder.addCustomFallback` 才能把**任意资源字体**挂为回退层。
  * [cjkResId] 为 0（中文=系统默认、无内置文件）时只加载拉丁字体，中文回落设备系统字体（符合预期）；
  * [latinResId] 为 null 时只加载中文字体（等价于旧 `latin==null` 分支）。
- * 单档 400 书法体在标题 Bold(700) 请求下，由 [buildFontFamily] 在回退族内同时挂「请求字重」与「真实字重」两份字体，
- * 确保中文回退层不被字重不匹配跳过（详见 [buildFontFamily] 注释）。
+ * 单档 400 书法体在标题 Bold(700) 请求下，[buildFontFamily] 改为按**文件真实（自然）字重**构建回退族
+ * （不再把 400 档文件声明为 700 字重），单字体回退族天然覆盖所有字重，确保中文回退层不被字重不匹配跳过
+ * （详见 [buildFontFamily] 注释）。
  * 运行时按 [Build.VERSION.SDK_INT] 降级：API 26–28 无公开自定义回退 API，退化到单一字体、优先中文。
  */
 private class CombinedTypefaceLoader(
@@ -180,8 +181,8 @@ private fun buildCombinedTypeface(
 ): Typeface? = runCatching {
     val style = GFontStyle(weight, GFontStyle.FONT_SLANT_UPRIGHT)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        val latinFamily = latinResId?.let { buildFontFamily(context, it, weight) }
-        val cjkFamily = if (cjkResId > 0) buildFontFamily(context, cjkResId, weight) else null
+        val latinFamily = latinResId?.let { buildFontFamily(context, it) }
+        val cjkFamily = if (cjkResId > 0) buildFontFamily(context, cjkResId) else null
         // 优先级：拉丁+中文合成 > 仅中文 > 仅拉丁；任一构建失败都不静默丢弃中文
         // （cjk 一旦构建成功必被使用，避免单档书法体在粗体标题下回退层被跳过而落到系统字体）。
         when {
@@ -208,26 +209,16 @@ private fun buildCombinedTypeface(
 /**
  * 由 resId 构建单个 [GFontFamily]（缓存文件 → [GFont] → [GFontFamily]）。
  *
- * **单档字体 + 粗体标题修复**：单档 400 书法体在标题 Bold(700) 请求下，若只按「请求字重」声明一个
- * [GFont]，CustomFallbackBuilder 的中文回退层会因字重不匹配被跳过（正文 400 因精确匹配正常）。
- * 这里在回退族里**同时挂两份**——「按请求字重声明的字体」(主匹配项，与 setStyle 精确命中)
- * 与「文件真实（自然）字重的字体」(兜底，覆盖请求字重被跳过的边界)——
- * 确保任意字重请求都能命中中文回退，且不破坏多档字体（精确档位仍是主匹配项）。
+ * **关键修复（单档字体 + 粗体标题）**：旧实现用 `GFont.Builder(file).setWeight(请求字重)` 把 400 档文件
+ * 声明为 700 字重挂进回退族。单档书法体在标题 Bold(700) 请求下，因「声明字重 ≠ 文件真实字重」
+ * 导致 CustomFallbackBuilder 的中文回退层被跳过（正文 400 因精确匹配正常），且上一轮「再加一份真实字重」
+ * 仍失败——因为 matcher 在 700 请求下优先命中那份「声明 700」的主字体而跳过真实字重副本。
+ * 现改为**只按文件真实（自然）字重**构建：单字体回退族天然覆盖所有 (字重,字型) 请求，
+ * 任意字重（含粗体 700）都能命中中文回退；多档字体由字体文件自身的多档保证精确匹配，不受影响。
  */
-private fun buildFontFamily(context: Context, resId: Int, weight: Int): GFontFamily? = runCatching {
+private fun buildFontFamily(context: Context, resId: Int): GFontFamily? = runCatching {
     val file = cacheFontFile(context, resId) ?: return null
-    // 主字体：按请求字重声明，与 CustomFallbackBuilder.setStyle(请求字重) 精确对齐
-    val primary = GFont.Builder(file)
-        .setWeight(weight)
-        .setSlant(GFontStyle.FONT_SLANT_UPRIGHT)
-        .build()
-    val builder = GFontFamily.Builder(primary)
-    // 兜底字体：文件真实（自然）字重，确保中文字形在任意字重下恒可回退
-    runCatching {
-        val natural = GFont.Builder(file).build()
-        builder.addFont(natural)
-    }
-    builder.build()
+    GFontFamily.Builder(GFont.Builder(file).build()).build()
 }.getOrNull()
 
 /** 合成「拉丁优先 + 中文兜底」的 [AndroidFont]：每个字重串成单一按字形回退的 Typeface。 */
@@ -245,15 +236,20 @@ private class CombinedAndroidFont(
 }
 
 /**
- * 取目标字重对应资源：精确命中优先，否则取最近字重（先上方档后下方档，与 Compose [FontMatcher] 一致）；
- * 映射为空返回 null。用于把拉丁/中文各字重配对到合成族的同一字重单元格。
+ * 取目标字重对应资源（resId）：精确命中优先，否则取最近字重（先上方档后下方档，与 Compose [FontMatcher] 一致）；
+ * 映射为空返回 null。
+ *
+ * **注意返回值语义**：返回的是 `map[key]` 的 **resId value**，不是字重 key 本身。
+ * 单档书法体 `resByWeight = mapOf(400 to R.font.xxx)` 在粗体标题(700) 请求下无精确 key，
+ * 此时 `closestRes` 必须返回 `map[400]`（真实 resId），而非把字重 key(400) 当 resId 传给 [buildFontFamily]
+ * —— 否则会拿错误 resId 加载字体失败、中文回退层被丢弃。这是标题中文不生效的根因修复点。
  */
 private fun closestRes(map: Map<Int, Int>, target: Int): Int? {
     if (map.isEmpty()) return null
     map[target]?.let { return it }
     val above = map.keys.filter { it > target }.minOrNull()
     val below = map.keys.filter { it < target }.maxOrNull()
-    return above ?: below ?: map.values.first()
+    return above?.let { map[it] } ?: below?.let { map[it] } ?: map.values.first()
 }
 
 data class FontEntry(
