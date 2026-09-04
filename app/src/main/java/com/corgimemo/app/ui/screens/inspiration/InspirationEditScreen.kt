@@ -463,18 +463,23 @@ fun InspirationEditScreen(
     /**
      * v2026-09-04 分离式预览：字体面板「pending」本地态（取代旧的「点选即预览」位图复刻）。
      *
-     * 平台约束（已核实 compose-ui 1.11）：FontFamilyResolver 对每款用过的字体按 (族,字重) **永久缓存**，
-     * `FontFamily.Resolver` 无清缓存 API；整页 UI 用多字重，每款实际驻留 ~20-50MB，256MB 堆下
-     * 反复切字体必然 OOM（设置页+编辑页均复现）。故采用**分离式预览**：
+     * 平台约束（已核实 compose-ui 1.11.2 源码）：FontFamilyResolver 的 typeface 缓存是
+     * **进程级全局单例**（createFontFamilyResolver 各实例共享），按 (族,字重) 长期持有
+     * 14~19MB 的 CJK Typeface，反复切字体必然 OOM（设置页+编辑页均复现）。故采用
+     * **分离式预览 + Theme 层硬约束**（见 Theme.kt 的 FontResolverPolicy 注入）：
      * - 点选字体**只更新 pending**（面板高亮走 pending），正文区保持原字体、不做任何预览；
-     * - 点面板右上角「完成」才一次性把 pending 写入 VM → 内容字体真正切换，
-     *   正文换字、格式工具栏字重按钮（B1/B2/B3 档位与可用态）随新字体同步更新；
-     * - 全程保证**一次最多只同时加载两种字体**（中文字体 1 + 英文/数字字体 1）：
-     *   面板预览走 [FontPreviewEngine] 位图（预览池容量 2、预渲染后即清空，常态 0 常驻），
-     *   提交前再清一次预览池，杜绝预览字体与应用字体共存。
+     * - 点面板右上角按钮（「应用」/「完成」见 [hasPendingFontChange]）才一次性把 pending
+     *   写入 VM → 内容字体真正切换，正文换字、格式工具栏字重按钮（B1/B2/B3 档位与可用态）
+     *   随新字体同步更新；**应用后保持面板展开**，便于连续点选多款对比；
+     * - 面板预览走 [FontPreviewEngine] 位图（预览池容量 2、预渲染后即清空，常态 0 常驻），
+     *   提交后再清一次池，杜绝预览字体与应用字体共存。
      */
     var pendingCjkFontId by remember(contentFontEntry.id) { mutableStateOf(contentFontEntry.id) }
     var pendingLatinFontId by remember(contentLatinFontId) { mutableStateOf(contentLatinFontId) }
+
+    /** 是否存在「已点选但尚未应用」的字体改动（决定面板头按钮显示「应用」还是「完成」）。 */
+    val hasPendingFontChange =
+        pendingCjkFontId != contentFontEntry.id || pendingLatinFontId != contentLatinFontId
 
     /**
      * v2026-08-01 Phase 2：注册 # hashtag trigger + 编辑器内容初始化
@@ -1100,6 +1105,7 @@ fun InspirationEditScreen(
                 isFontPanelOpen = isFontPanelExpanded,
                 currentCjkId = pendingCjkFontId,
                 currentLatinId = pendingLatinFontId,
+                hasPendingChange = hasPendingFontChange,
                 richTextState = richTextState,
                 onPhotoClick = {
                     showImagePicker = true
@@ -1165,30 +1171,36 @@ fun InspirationEditScreen(
                     }
                 },
                 /**
-                 * 面板头「完成」按钮：**分离式预览的提交点**——一次性把 pending 写入内容字体。
-                 *
-                 * 提交后：正文立即换为新字体，格式工具栏字重按钮（B1/B2/B3 档位 + 像素探测可用态）
-                 * 随 [ContentFontManager] 自动同步；同时清空预览字体池，保证常驻字体
-                 * 回到「中文 1 + 拉丁 1」两种（见 pending 态注释）。键盘不自动弹回，由输入框焦点决定。
+                 * 字体面板头按钮（「应用」/「完成」，语义见 [hasPendingFontChange]）：
+                 * **有改动 = 应用但不收起**——一次性把 pending 写入内容字体，正文立即换字、
+                 * 格式工具栏字重按钮（B1/B2/B3 档位 + 像素探测可用态）随 [ContentFontManager]
+                 * 同步，面板保持展开以便连续点选多款字体对比；**无改动 = 收起面板**
+                 * （键盘不自动弹回，由输入框焦点决定）。
                  */
                 onFontPanelDismiss = {
-                    // 关键：点选过程只更新 pending（面板高亮），此处才写内容字体，
-                    // 避免逐次点选经 FontFamilyResolver 永久缓存各款字体而 OOM（见 pending 态注释）
-                    if (pendingCjkFontId != contentFontEntry.id) {
-                        viewModel.onCjkFontSelected(pendingCjkFontId)
+                    val cjkChanged = pendingCjkFontId != contentFontEntry.id
+                    val latinChanged = pendingLatinFontId != contentLatinFontId
+                    if (cjkChanged || latinChanged) {
+                        // 应用：点选过程只更新 pending（面板高亮），此处才写内容字体，
+                        // 避免逐次点选经 FontFamilyResolver 全局缓存累积各款字体而 OOM
+                        if (cjkChanged) {
+                            viewModel.onCjkFontSelected(pendingCjkFontId)
+                        }
+                        if (latinChanged) {
+                            viewModel.onLatinFontSelected(pendingLatinFontId)
+                        }
+                        // 清预览池 + 字重探测池：预览位图已缓存、探测结果亦按字体 tag 缓存，
+                        // 释放 Typeface 无损；配合 Theme 层隔离 resolver，常驻字体
+                        // 恒定在「中文 1 + 拉丁 1」两种。应用后 pending == 已应用，
+                        // 面板头按钮变回「完成」，再点一次即收起。
+                        FontPreviewEngine.clearTypefaces()
+                    } else {
+                        isFontPanelExpanded = false
                     }
-                    if (pendingLatinFontId != contentLatinFontId) {
-                        viewModel.onLatinFontSelected(pendingLatinFontId)
-                    }
-                    // 清掉预览池 + 字重探测池：预览位图已缓存、探测结果亦按字体 tag 缓存，
-                    // 故释放 Typeface 无损；此举确保常驻字体回到「中文 1 + 拉丁 1」两种
-                    // （旧字体的字重文件不残留），新字体的档位会在工具栏下次重组时按需重探测。
-                    FontPreviewEngine.clearTypefaces()
-                    isFontPanelExpanded = false
                 },
                 /**
                  * 中文字体选择：只更新 pending 高亮（分离式预览，正文此时不换字）；
-                 * 真正应用发生在点「完成」时（见 onFontPanelDismiss）。
+                 * 真正应用发生在点面板头「应用」时（见 onFontPanelDismiss）。
                  */
                 onCjkFontSelect = { fontId ->
                     pendingCjkFontId = fontId

@@ -62,6 +62,8 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * @param isFontPanelOpen 字体选择面板是否展开
  * @param currentCjkId 当前灵感的中文字体 id（面板回显选中态；空 = 系统默认字体）
  * @param currentLatinId 当前灵感的英文/数字字体 id（空 = 跟随中文，无选中高亮）
+ * @param hasPendingChange 字体面板是否存在「已点选未应用」的改动
+ *   （true = 面板头按钮显示「应用」且点击后不收起；false = 显示「完成」且点击收起）
  * @param richTextState 库的 RichTextState 实例（传给 RichTextFormatToolbar）
  * @param onPhotoClick 相机按钮回调
  * @param onVoiceClick 麦克风按钮回调
@@ -70,7 +72,7 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * @param onLocationClick 位置按钮回调（v2026-07-22 新增：触发位置提醒弹窗）
  * @param onFormatToggleClick 格式按钮回调（切换展开/折叠）
  * @param onFontPickerClick 字体选择按钮回调（切换面板展开/收起；调用方同时收起软键盘）
- * @param onFontPanelDismiss 字体面板「完成」按钮回调（收起面板）
+ * @param onFontPanelDismiss 字体面板头按钮回调（「应用」= 应用字体不收起；「完成」= 收起面板）
  * @param onCjkFontSelect 中文字体选择回调（参数为字体 id）
  * @param onLatinFontSelect 英文/数字字体选择回调；再点已选项时回调空串表示取消（跟随中文）
  * @param onSetFontWeight 设置字重档位回调（参数为当前字体 FontEntry.boldTiers 候选档位；
@@ -94,6 +96,7 @@ fun InspirationEditBottomBar(
     isFontPanelOpen: Boolean,
     currentCjkId: String,
     currentLatinId: String,
+    hasPendingChange: Boolean,
     richTextState: RichTextState,
     onPhotoClick: () -> Unit,
     onVoiceClick: () -> Unit,
@@ -183,6 +186,7 @@ fun InspirationEditBottomBar(
                     panelHeight = keyboardHeight,
                     currentCjkId = currentCjkId,
                     currentLatinId = currentLatinId,
+                    hasPendingChange = hasPendingChange,
                     onCjkSelect = onCjkFontSelect,
                     onLatinSelect = onLatinFontSelect,
                     onDone = onFontPanelDismiss

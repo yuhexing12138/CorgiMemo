@@ -63,15 +63,19 @@ import com.corgimemo.app.ui.theme.FontPreviewEngine
  *
  * **分离式预览（v2026-09-04，取代旧的「点选即预览」位图复刻）**：
  * 点选字体**只改变本面板的选中高亮**（pending），编辑区正文**不会**立即换字；
- * 只有点击右上角「完成」才把选择一次性应用到内容字体
+ * 点击右上角按钮才把选择一次性应用到内容字体
  * （[com.corgimemo.app.ui.theme.ContentFontManager]）——
  * 此时正文换为新字体，格式工具栏的字重按钮（B1/B2/B3 档位与可用态）也随新字体同步更新。
+ *
+ * **「应用但不收起」（v2026-09-04）**：存在待应用改动时按钮显示**「应用」**，点击后
+ * 应用字体但**保持面板展开**，便于连续点选多款字体对比；应用后 pending 与已应用一致，
+ * 按钮变回**「完成」**，再点一次才收起面板。
  *
  * **内存约束（结构层，见 [FontPreviewEngine]）**：CJK 字体单文件 14~19MB，故强行保证
  * **一次最多只同时加载两种字体（中文字体 1 + 英文/数字字体 1）**：
  * - 面板预览一律走 [FontPreviewEngine] 位图（白色字形蒙版 + tint），预览池容量 2、
  *   预渲染后即清空 → 预览**常态 0 常驻字体**；
- * - 字体种类只在「完成」时变化一次，且提交前会清空预览池，避免预览字体与应用字体共存；
+ * - 字体种类只在「应用」时变化一次，且提交后会清空预览池，避免预览字体与应用字体共存；
  * - 字重探测走独立的探测池（同一款字体的 B1/B2/B3 三档），不引入第三种字体。
  *
  * **选择语义**：
@@ -81,17 +85,20 @@ import com.corgimemo.app.ui.theme.FontPreviewEngine
  *  与 [FontCatalog.DEFAULT_LATIN_ID] 语义一致）
  *
  * @param panelHeight 面板总高度（= 键盘高度；内容区超出时纵向滚动）
- * @param currentCjkId 当前中文字体 id（pending 态回显；点「完成」后才真正生效）
+ * @param currentCjkId 当前中文字体 id（pending 态回显；点「应用」后才真正生效）
  * @param currentLatinId 当前英文/数字字体 id（pending 态回显）；空串 = 跟随中文（无选中高亮）
+ * @param hasPendingChange 是否存在「已点选但尚未应用」的字体改动
+ *   （true = 面板头按钮显示「应用」，应用后保持面板展开；false = 显示「完成」，点击收起面板）
  * @param onCjkSelect 中文组点击回调（参数为字体 id；只更新 pending，不应用）
  * @param onLatinSelect 拉丁组点击回调；再点已选项时回调**空串**表示取消（跟随中文）
- * @param onDone 点击「完成」：应用 pending 字体到内容并收起面板
+ * @param onDone 点击面板头按钮：有改动时「应用」pending 字体（不收起），无改动时收起面板
  */
 @Composable
 fun FontPickerPanel(
     panelHeight: Dp,
     currentCjkId: String,
     currentLatinId: String,
+    hasPendingChange: Boolean,
     onCjkSelect: (String) -> Unit,
     onLatinSelect: (String) -> Unit,
     onDone: () -> Unit,
@@ -111,7 +118,7 @@ fun FontPickerPanel(
                 .fillMaxWidth()
                 .height(panelHeight)
         ) {
-            /** ---- 面板头：标题 + 当前选中名 | 完成 ---- */
+            /** ---- 面板头：标题 + 当前选中名 | 应用（有 pending 改动）/ 完成（无改动） ---- */
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -137,7 +144,9 @@ fun FontPickerPanel(
                 )
                 TextButton(onClick = onDone) {
                     Text(
-                        text = "完成",
+                        // 有待应用改动 → 「应用」（应用后保持面板展开，便于连续对比）；
+                        // 无改动 → 「完成」（收起面板）
+                        text = if (hasPendingChange) "应用" else "完成",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary

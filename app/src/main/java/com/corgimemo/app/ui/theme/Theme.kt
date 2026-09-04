@@ -14,6 +14,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.core.view.WindowCompat
@@ -71,13 +72,31 @@ fun CorgiMemoTheme(
         buildTypography(ContentFontManager.currentFamily(contentEntry, contentLatinId))
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = buildTypography(bodyFamily),
-        content = {
-            CompositionLocalProvider(LocalContentTypography provides contentTypography) {
-                content()
+    /**
+     * v2026-09-04 FontFamilyResolver **硬约束**：「一次最多只同时加载两种字体」的底层保障。
+     *
+     * Compose 默认 resolver 的 typeface 缓存是进程级全局单例，按 (族,字重) 长期持有
+     * 14~19MB 的 CJK Typeface——反复切字体必然累积（本项目 256MB 堆下已多次 OOM）。
+     * 这里以「当前生效的字体组合」为 key（chrome 中文/拉丁 + 内容中文/拉丁），注入
+     * **私有缓存**的隔离 resolver：组合一变即换新实例，旧实例连同缓存整体丢弃，
+     * 同时清空 androidx.core 的静态 Typeface 缓存（见 [FontResolverPolicy]）。
+     * 常驻字体由此恒定在「正在显示的那几款」，切换痕迹不再累积。
+     */
+    val appContext = LocalContext.current
+    val fontCacheKey = "${fontEntry.id}|${latinEntry?.id.orEmpty()}|${contentEntry.id}|$contentLatinId"
+    val fontFamilyResolver = remember(appContext, fontCacheKey) {
+        FontResolverPolicy.createIsolatedResolver(appContext)
+    }
+
+    CompositionLocalProvider(LocalFontFamilyResolver provides fontFamilyResolver) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = buildTypography(bodyFamily),
+            content = {
+                CompositionLocalProvider(LocalContentTypography provides contentTypography) {
+                    content()
+                }
             }
-        }
-    )
+        )
+    }
 }
