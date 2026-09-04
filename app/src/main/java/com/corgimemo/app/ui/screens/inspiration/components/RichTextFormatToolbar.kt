@@ -3,7 +3,6 @@ package com.corgimemo.app.ui.screens.inspiration.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
 import androidx.compose.material.icons.automirrored.filled.FormatAlignRight
@@ -22,7 +20,6 @@ import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
-import androidx.compose.material.icons.filled.FontDownload
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Link
@@ -40,7 +37,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontStyle
@@ -53,6 +49,9 @@ import androidx.compose.ui.unit.sp
 import com.corgimemo.app.ui.theme.ContentFontManager
 import com.corgimemo.app.ui.theme.FontWeightProbe
 import com.mohamedrejeb.richeditor.model.RichTextState
+import compose.icons.LucideIcons
+import compose.icons.lucideicons.CaseSensitive
+import compose.icons.lucideicons.Type
 
 /**
  * 加粗字重候选档位（B1 / B2 / B3 对应各字体 [com.corgimemo.app.ui.theme.FontEntry.boldTiers]，
@@ -79,13 +78,16 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * 选中某档后子按钮自动收起，B 变为对应的 B1/B2/B3 并高亮（选中的档位）。
  * 再次点击当前已选档位可取消加粗（回到常规字重）。
  *
- * 每个按钮支持激活状态显示（暖橙色高亮），
+ * 每个按钮支持激活状态显示（图标变主题 primary 暖橙色，无背景色块——
+ * v2026-09-04 按用户要求去掉激活态的浅暖橙背景块，改为按钮图标本身变色），
  * 符合项目整体 UI 设计规范（暖橙色主题 #FF9A5C）。
  *
  * @param state 库的 RichTextState 实例
  * @param modifier Modifier
  * @param isFontPanelOpen 字体选择面板是否展开（字体按钮激活态高亮用）
  * @param onFontPickerClick 字体选择按钮回调（展开/收起字体面板；同时由调用方收起软键盘）
+ * @param isSizeColorPanelOpen 字号与颜色面板是否展开（字号颜色按钮激活态高亮用；与字体面板互斥）
+ * @param onSizeColorPanelClick 字号与颜色按钮回调（展开/收起字号与颜色面板；同时由调用方收起软键盘）
  * @param onSetFontWeight 设置字重档位回调（参数为当前字体 [com.corgimemo.app.ui.theme.FontEntry.boldTiers] 候选档位；
  *      其中经像素探测无独立字形的档位在工具栏中置灰禁用，不会回调）
  * @param onToggleItalic 斜体回调
@@ -105,6 +107,8 @@ fun RichTextFormatToolbar(
     modifier: Modifier = Modifier,
     isFontPanelOpen: Boolean = false,
     onFontPickerClick: () -> Unit = {},
+    isSizeColorPanelOpen: Boolean = false,
+    onSizeColorPanelClick: () -> Unit = {},
     onSetFontWeight: (Int) -> Unit,
     onToggleItalic: () -> Unit,
     onToggleUnderline: () -> Unit,
@@ -163,15 +167,28 @@ fun RichTextFormatToolbar(
         /** ====== 第一组：基础样式 (字体选择 / 加粗字重菜单 / 斜体 / 下划线 / 删除线) ====== */
         FormatButtonGroup {
             /**
-             * 字体选择按钮（v2026-09-03 新增，位于加粗 B 左侧）：
+             * 字体选择按钮（位于加粗 B 左侧）：
+             * v2026-09-04 图标由 Material FontDownload 换为 Lucide「Type」（描边风格，
+             * 与字号颜色按钮的 CaseSensitive 配套，视觉更轻盈统一）。
              * 点击展开/收起字体选择面板（面板由 [InspirationEditBottomBar] 插入在工具栏与相机行之间，
-             * 展开时收起软键盘并把相机行向下推开）；激活态高亮提示面板当前展开。
+             * 展开时收起软键盘并把相机行向下推开）；激活态 = 图标变主题 primary 色。
              */
             FormatIconButton(
-                imageVector = Icons.Default.FontDownload,
+                imageVector = LucideIcons.Type,
                 isActive = isFontPanelOpen,
                 onClick = onFontPickerClick,
                 contentDescription = "字体"
+            )
+            /**
+             * 字号与颜色按钮（v2026-09-04 新增，位于字体按钮与加粗 B 之间）：
+             * Lucide「CaseSensitive」图标（与已审核原型一致）；点击展开/收起字号与颜色面板
+             * （与字体面板互斥、占同一槽位，见 [InspirationEditBottomBar]）；激活态与字体按钮同款。
+             */
+            FormatIconButton(
+                imageVector = LucideIcons.CaseSensitive,
+                isActive = isSizeColorPanelOpen,
+                onClick = onSizeColorPanelClick,
+                contentDescription = "字号与颜色"
             )
             /** 加粗主按钮：点击展开/收起字重菜单；展开时显示左箭头，收起时显示右箭头 */
             FormatWeightButton(
@@ -317,7 +334,7 @@ private fun ToolbarDivider() {
  * 单个格式化图标按钮
  *
  * 统一使用 IconButton 40dp + Icon 22dp，与下层 BottomBarButton 一致。
- * 激活态：浅暖橙背景 + 主题 primary 图标色。
+ * 激活态：主题 primary 图标色（v2026-09-04 去掉浅暖橙背景色块，改为按钮图标本身变色）。
  *
  * @param imageVector Material Icon 图标
  * @param isActive 是否激活
@@ -331,12 +348,10 @@ private fun FormatIconButton(
     onClick: () -> Unit,
     contentDescription: String
 ) {
-    val backgroundColor = if (isActive) {
-        Color(0xFFFFE0C0) // 浅暖橙色背景（激活态）
-    } else {
-        Color.Transparent
-    }
-
+    /**
+     * 激活态 = 图标本身变色（主题 primary），无背景色块
+     * （v2026-09-04 用户要求：原激活态的浅暖橙背景块视觉似「橙色阴影」，改为图标变色）。
+     */
     val tint = if (isActive) {
         Color(0xFFFF9A5C) // 主题 primary（激活态，与下层 ⋮ 按钮一致）
     } else {
@@ -345,10 +360,7 @@ private fun FormatIconButton(
 
     IconButton(
         onClick = onClick,
-        modifier = Modifier
-            .size(40.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(backgroundColor)
+        modifier = Modifier.size(40.dp)
     ) {
         Icon(
             imageVector = imageVector,
@@ -381,11 +393,7 @@ private fun FormatWeightButton(
     onClick: () -> Unit,
     contentDescription: String
 ) {
-    val backgroundColor = if (isActive) {
-        Color(0xFFFFE0C0)
-    } else {
-        Color.Transparent
-    }
+    /** 激活态 = 图标/文字变色（v2026-09-04 去掉浅暖橙背景色块，与 FormatIconButton 一致） */
     val tint = if (isActive) {
         Color(0xFFFF9A5C)
     } else {
@@ -394,10 +402,7 @@ private fun FormatWeightButton(
 
     IconButton(
         onClick = onClick,
-        modifier = Modifier
-            .size(40.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(backgroundColor)
+        modifier = Modifier.size(40.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -448,11 +453,7 @@ private fun FormatWeightTierButton(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
-    val backgroundColor = if (isActive) {
-        Color(0xFFFFE0C0)
-    } else {
-        Color.Transparent
-    }
+    /** 激活态 = 图标/文字变色（v2026-09-04 去掉浅暖橙背景色块，与 FormatIconButton 一致） */
     val tint = when {
         // 无独立字面：置灰（采用 Material 标准禁用透明度），避免误操作
         !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
@@ -463,10 +464,7 @@ private fun FormatWeightTierButton(
     IconButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier
-            .size(40.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(backgroundColor)
+        modifier = Modifier.size(40.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(

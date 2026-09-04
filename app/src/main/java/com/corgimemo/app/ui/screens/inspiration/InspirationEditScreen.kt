@@ -78,6 +78,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontStyle
@@ -89,13 +90,18 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.corgimemo.app.util.toPxFloat
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import android.graphics.Color as AndroidColor
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CardSearchResult /** v2026-08-01 Phase 3：@ Trigger 搜索结果数据类 */
 import com.corgimemo.app.ui.components.AppSnackbarHost
+import com.corgimemo.app.ui.screens.inspiration.components.DEFAULT_BODY_SP
+import com.corgimemo.app.ui.screens.inspiration.components.FONT_SIZE_TIERS
+import com.corgimemo.app.ui.screens.inspiration.components.TEXT_COLORS
 /**
  * v2026-08-01 Phase 3：以下 import 已移除（关联改为 @ Trigger 内联插入）
  * - LinkedCardsRow（关联 Chip 流展示，改用 @ atomic token）
@@ -145,6 +151,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /** 内容块定义已提取至 com.corgimemo.app.ui.model.ContentBlock（公共模块），通过 import 复用 */
 
@@ -449,6 +456,14 @@ fun InspirationEditScreen(
      */
     var isFontPanelExpanded by remember { mutableStateOf(false) }
 
+    /**
+     * 字号与颜色面板展开/收起状态（v2026-09-04 新增）。
+     * 与字体面板**互斥占同一槽位**（展开前先关字体面板，由 [onSizeColorPanelClick] 保证）；
+     * 由工具栏「字号与颜色按钮」（字体按钮与 B 之间）与面板头「完成」切换；
+     * 展开时同时收起软键盘（键盘与面板不同屏共存，面板占键盘位）。
+     */
+    var isSizeColorPanelExpanded by remember { mutableStateOf(false) }
+
     /** 软键盘控制器：展开字体面板前收起键盘（面板高度 = 键盘高度，二者不同屏共存） */
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -480,6 +495,30 @@ fun InspirationEditScreen(
     /** 是否存在「已点选但尚未应用」的字体改动（决定面板头按钮显示「应用」还是「完成」）。 */
     val hasPendingFontChange =
         pendingCjkFontId != contentFontEntry.id || pendingLatinFontId != contentLatinFontId
+
+    /**
+     * 字号/颜色面板回显状态（v2026-09-04）：直接从 [richTextState.currentSpanStyle] 派生
+     * （真实来源 = 光标/选区的 SpanStyle），**不另持双份状态**，面板高亮天然跟随正文。
+     * - 字号：未指定回落 [DEFAULT_BODY_SP]（正文默认 16sp）
+     * - 颜色：与 [TEXT_COLORS] 预设匹配 → 下标高亮；不匹配的已指定色 → 自定义色 hex
+     *   （自定义色高亮时预设色让位，与面板内互斥语义一致）
+     */
+    val currentFontSizeSp = richTextState.currentSpanStyle.fontSize
+        .takeIf { it.isSpecified }?.value?.roundToInt() ?: DEFAULT_BODY_SP
+
+    val currentSpanColor = richTextState.currentSpanStyle.color
+    val currentColorIdx = if (currentSpanColor.isSpecified) {
+        TEXT_COLORS.indexOfFirst { it.color == currentSpanColor }.coerceAtLeast(0)
+    } else {
+        0
+    }
+    val customColorHex = if (currentSpanColor.isSpecified &&
+        TEXT_COLORS.none { it.color == currentSpanColor }
+    ) {
+        String.format(Locale.US, "#%06X", currentSpanColor.toArgb() and 0xFFFFFF)
+    } else {
+        null
+    }
 
     /**
      * v2026-08-01 Phase 2：注册 # hashtag trigger + 编辑器内容初始化
@@ -1103,9 +1142,13 @@ fun InspirationEditScreen(
             InspirationEditBottomBar(
                 isFormatExpanded = isFormatExpanded,
                 isFontPanelOpen = isFontPanelExpanded,
+                isSizeColorPanelOpen = isSizeColorPanelExpanded,
                 currentCjkId = pendingCjkFontId,
                 currentLatinId = pendingLatinFontId,
                 hasPendingChange = hasPendingFontChange,
+                currentFontSize = currentFontSizeSp,
+                currentColorIdx = currentColorIdx,
+                customColorHex = customColorHex,
                 richTextState = richTextState,
                 onPhotoClick = {
                     showImagePicker = true
@@ -1166,6 +1209,8 @@ fun InspirationEditScreen(
                         // 展开前把 pending 重置为当前内容字体（面板高亮与正文实际字体一致）
                         pendingCjkFontId = contentFontEntry.id
                         pendingLatinFontId = contentLatinFontId
+                        /** 与字号颜色面板互斥（二者占同一槽位，见 InspirationEditBottomBar） */
+                        isSizeColorPanelExpanded = false
                         keyboardController?.hide()
                         isFontPanelExpanded = true
                     }
@@ -1196,6 +1241,78 @@ fun InspirationEditScreen(
                         FontPreviewEngine.clearTypefaces()
                     } else {
                         isFontPanelExpanded = false
+                    }
+                },
+                /**
+                 * 字号与颜色按钮（v2026-09-04 新增，字体按钮与 B 之间）：
+                 * 切换字号颜色面板展开/收起；与字体面板**互斥**（展开前先关字体面板，
+                 * 二者占同一槽位）；展开时收起软键盘（面板高度 = 键盘高度，不同屏共存）。
+                 */
+                onSizeColorPanelClick = {
+                    if (isSizeColorPanelExpanded) {
+                        isSizeColorPanelExpanded = false
+                    } else {
+                        isFontPanelExpanded = false
+                        keyboardController?.hide()
+                        isSizeColorPanelExpanded = true
+                    }
+                },
+                /** 字号颜色面板头「完成」：收起面板（字号/颜色已即时生效，无 pending 两段式） */
+                onSizeColorPanelDismiss = {
+                    isSizeColorPanelExpanded = false
+                },
+                /**
+                 * 字号点选（即时生效，与加粗字重写入同构）：
+                 * 先枚举清除全部档位字号（removeSpanStyle 仅在值匹配时生效，防叠加残留），
+                 * 再写目标档；点默认档（[DEFAULT_BODY_SP] = 16sp）只清除不写入（回落正文默认）。
+                 */
+                onFontSizeSelect = { sp ->
+                    val target = sp.sp
+                    val current = richTextState.currentSpanStyle.fontSize
+                    FONT_SIZE_TIERS.forEach { tier ->
+                        richTextState.removeSpanStyle(SpanStyle(fontSize = tier.sp))
+                    }
+                    if (sp != DEFAULT_BODY_SP && current != target) {
+                        richTextState.toggleSpanStyle(SpanStyle(fontSize = target))
+                    }
+                },
+                /**
+                 * 预设色点选（即时生效）：先枚举清除全部预设色 + 当前色
+                 * （removeSpanStyle 仅在值匹配时生效，防历史叠加残留），再写目标色；
+                 * 「默认」项（color = null）只清除不写入（回落主题文字色）。
+                 */
+                onPresetColorSelect = { idx ->
+                    val targetColor = TEXT_COLORS.getOrNull(idx)?.color
+                    val current = richTextState.currentSpanStyle.color
+                    TEXT_COLORS.forEach { entry ->
+                        entry.color?.let {
+                            richTextState.removeSpanStyle(SpanStyle(color = it))
+                        }
+                    }
+                    if (current.isSpecified && current != targetColor) {
+                        richTextState.removeSpanStyle(SpanStyle(color = current))
+                    }
+                    if (targetColor != null && current != targetColor) {
+                        richTextState.toggleSpanStyle(SpanStyle(color = targetColor))
+                    }
+                },
+                /**
+                 * 自定义取色（拖动每帧回调，即时生效）：清除当前色后写入新色。
+                 * 拖动性能考虑不做预设枚举（仅 remove 当前 common 值；
+                 * 库的 applyRichSpanStyleToSelectedText 会以新值分段覆盖选区）。
+                 * hex 来自面板 hsvToHex（格式可信），parse 失败静默忽略本次。
+                 */
+                onCustomColorSelect = { hex ->
+                    val parsed = runCatching { Color(AndroidColor.parseColor(hex)) }.getOrNull()
+                    if (parsed != null) {
+                        val targetColor = parsed
+                        val current = richTextState.currentSpanStyle.color
+                        if (current.isSpecified && current != targetColor) {
+                            richTextState.removeSpanStyle(SpanStyle(color = current))
+                        }
+                        if (current != targetColor) {
+                            richTextState.toggleSpanStyle(SpanStyle(color = targetColor))
+                        }
                     }
                 },
                 /**

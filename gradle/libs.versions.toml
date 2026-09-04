@@ -29,6 +29,9 @@ workmanager = "2.9.0"
 glance = "1.0.0"
 kotlinxSerializationJson = "1.6.2"
 reorderable = "3.1.0"
+# Lucide 描边图标库（compose-icons，DevSrSouza 风格 API：LucideIcons.Type / LucideIcons.CaseSensitive）
+# KMP 库：Android 项目依赖根坐标即可，Gradle Module Metadata 自动解析 lucide-android 变体
+composeIconsLucide = "2.0.7"
 mockk = "1.14.3"
 turbine = "1.1.0"
 sqliteJdbc = "3.45.1.0"
@@ -86,6 +89,7 @@ androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-te
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
+compose-icons-lucide = { group = "io.github.ardasoyturk.compose.icons", name = "lucide", version.ref = "composeIconsLucide" }
 
 [plugins]
 android-application = { id = "com.android.application", version = "9.2.1" }

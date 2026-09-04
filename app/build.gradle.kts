@@ -123,6 +123,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.compose.icons.lucide)       // Lucide 描边图标（编辑页工具栏字体/字号颜色按钮）
 
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

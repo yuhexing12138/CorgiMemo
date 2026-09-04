@@ -44,6 +44,9 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * - 上行一（可折叠）：RichTextFormatToolbar（仅当 isFormatExpanded=true 时显示）
  * - 上行二（可折叠）：FontPickerPanel 字体选择面板（仅当 isFontPanelOpen=true 时显示，
  *   高度 = 软键盘高度；展开时相机行被向下推开，见原型「工具栏/灵感编辑页字体选择面板.html」）
+ * - 上行二b（可折叠）：FontSizeColorPanel 字号与颜色面板（v2026-09-04 新增，
+ *   仅当 isSizeColorPanelOpen=true 时显示；与字体面板**互斥、占同一槽位、同高度**；
+ *   字号/颜色点选即时生效，面板头只保留「完成」收起）
  * - 下行（始终显示）：6 个核心按钮
  *   - 📷 相机（onPhotoClick）
  *   - 🎤 麦克风（onVoiceClick）
@@ -55,15 +58,20 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * **交互规则**：
  * - 只有 ⋮ 按钮切换工具栏展开/折叠
  * - 字体选择按钮（工具栏 B 左侧）切换字体面板展开/收起，同时由调用方收起软键盘
+ * - 字号与颜色按钮（字体按钮与 B 之间）切换字号颜色面板展开/收起，与字体面板互斥，同时由调用方收起软键盘
  * - 其他按钮的操作不影响工具栏状态
  * - 默认折叠（isFormatExpanded=false）
  *
  * @param isFormatExpanded 格式工具栏是否展开
  * @param isFontPanelOpen 字体选择面板是否展开
+ * @param isSizeColorPanelOpen 字号与颜色面板是否展开（与字体面板互斥，由调用方保证）
  * @param currentCjkId 当前灵感的中文字体 id（面板回显选中态；空 = 系统默认字体）
  * @param currentLatinId 当前灵感的英文/数字字体 id（空 = 跟随中文，无选中高亮）
  * @param hasPendingChange 字体面板是否存在「已点选未应用」的改动
  *   （true = 面板头按钮显示「应用」且点击后不收起；false = 显示「完成」且点击收起）
+ * @param currentFontSize 当前生效字号（sp；字号颜色面板高亮回显，未指定 = DEFAULT_BODY_SP）
+ * @param currentColorIdx 当前生效的预设色下标（0 = 默认；自定义色生效时高亮让位）
+ * @param customColorHex 当前生效的自定义色（"#RRGGBB"）；null = 无自定义色
  * @param richTextState 库的 RichTextState 实例（传给 RichTextFormatToolbar）
  * @param onPhotoClick 相机按钮回调
  * @param onVoiceClick 麦克风按钮回调
@@ -73,6 +81,11 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * @param onFormatToggleClick 格式按钮回调（切换展开/折叠）
  * @param onFontPickerClick 字体选择按钮回调（切换面板展开/收起；调用方同时收起软键盘）
  * @param onFontPanelDismiss 字体面板头按钮回调（「应用」= 应用字体不收起；「完成」= 收起面板）
+ * @param onSizeColorPanelClick 字号与颜色按钮回调（切换面板展开/收起；调用方同时收起软键盘、关字体面板）
+ * @param onSizeColorPanelDismiss 字号颜色面板头「完成」回调（收起面板）
+ * @param onFontSizeSelect 字号点选回调（参数为档位 sp；调用方写 fontSize SpanStyle，点选即时生效）
+ * @param onPresetColorSelect 预设色点选回调（参数为 TEXT_COLORS 下标；调用方写 color SpanStyle）
+ * @param onCustomColorSelect 自定义取色回调（拖动每帧回调，参数 "#RRGGBB"）
  * @param onCjkFontSelect 中文字体选择回调（参数为字体 id）
  * @param onLatinFontSelect 英文/数字字体选择回调；再点已选项时回调空串表示取消（跟随中文）
  * @param onSetFontWeight 设置字重档位回调（参数为当前字体 FontEntry.boldTiers 候选档位；
@@ -94,9 +107,13 @@ import com.mohamedrejeb.richeditor.model.RichTextState
 fun InspirationEditBottomBar(
     isFormatExpanded: Boolean,
     isFontPanelOpen: Boolean,
+    isSizeColorPanelOpen: Boolean,
     currentCjkId: String,
     currentLatinId: String,
     hasPendingChange: Boolean,
+    currentFontSize: Int,
+    currentColorIdx: Int,
+    customColorHex: String?,
     richTextState: RichTextState,
     onPhotoClick: () -> Unit,
     onVoiceClick: () -> Unit,
@@ -106,6 +123,11 @@ fun InspirationEditBottomBar(
     onFormatToggleClick: () -> Unit,
     onFontPickerClick: () -> Unit,
     onFontPanelDismiss: () -> Unit,
+    onSizeColorPanelClick: () -> Unit,
+    onSizeColorPanelDismiss: () -> Unit,
+    onFontSizeSelect: (Int) -> Unit,
+    onPresetColorSelect: (Int) -> Unit,
+    onCustomColorSelect: (String) -> Unit,
     onCjkFontSelect: (String) -> Unit,
     onLatinFontSelect: (String) -> Unit,
     onSetFontWeight: (Int) -> Unit,
@@ -156,6 +178,8 @@ fun InspirationEditBottomBar(
                     state = richTextState,
                     isFontPanelOpen = isFontPanelOpen,
                     onFontPickerClick = onFontPickerClick,
+                    isSizeColorPanelOpen = isSizeColorPanelOpen,
+                    onSizeColorPanelClick = onSizeColorPanelClick,
                     onSetFontWeight = onSetFontWeight,
                     onToggleItalic = onToggleItalic,
                     onToggleUnderline = onToggleUnderline,
@@ -190,6 +214,29 @@ fun InspirationEditBottomBar(
                     onCjkSelect = onCjkFontSelect,
                     onLatinSelect = onLatinFontSelect,
                     onDone = onFontPanelDismiss
+                )
+            }
+
+            /**
+             * 上行二b：字号与颜色面板（v2026-09-04 新增，按已审核原型落地）。
+             *
+             * 与字体面板**互斥、占同一槽位、同高度**（同用 keyboardHeight，互斥切换不跳动）；
+             * 字号/颜色点选即时生效（SpanStyle 由调用方写入），面板头只保留「完成」收起。
+             */
+            AnimatedVisibility(
+                visible = isSizeColorPanelOpen,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                FontSizeColorPanel(
+                    panelHeight = keyboardHeight,
+                    currentFontSize = currentFontSize,
+                    currentColorIdx = currentColorIdx,
+                    customColorHex = customColorHex,
+                    onFontSizeSelect = onFontSizeSelect,
+                    onPresetColorSelect = onPresetColorSelect,
+                    onCustomColorSelect = onCustomColorSelect,
+                    onDone = onSizeColorPanelDismiss
                 )
             }
 
