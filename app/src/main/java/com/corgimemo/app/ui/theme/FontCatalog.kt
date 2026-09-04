@@ -41,6 +41,21 @@ private val fileTypefaceCache = object : LruCache<Int, Typeface>(64) {
 }
 
 /**
+ * cacheDir 字体副本的文件名版本后缀：取 App versionName，资源/版本更新后旧副本自动失效，避免 stale 字体。
+ * 本项目 BuildConfig 不生成，故改从 PackageManager 读取 versionName（与 SettingsScreen 一致）。仅首次加载时读取并缓存。
+ */
+private var fontCacheVersion: String? = null
+private fun fontCacheVersion(context: Context): String {
+    fontCacheVersion?.let { return it }
+    val v = runCatching {
+        @Suppress("DEPRECATION")
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0"
+    }.getOrDefault("0").replace(Regex("[^A-Za-z0-9._-]"), "_")
+    fontCacheVersion = v
+    return v
+}
+
+/**
  * 自定义 [AndroidFont.TypefaceLoader]：按 resId 把字体拷到 cacheDir（仅首次、幂等），
  * 再以 `Typeface.Builder(path)` 内存映射方式构建 Typeface，规避整文件读入 Java 堆 byte[]。
  * 同一 resId 的 Typeface 在本进程内复用 [fileTypefaceCache]，避免重复 mmap。
@@ -48,7 +63,7 @@ private val fileTypefaceCache = object : LruCache<Int, Typeface>(64) {
 private class FilePathTypefaceLoader(private val resId: Int) : AndroidFont.TypefaceLoader {
     override fun loadBlocking(context: Context, font: AndroidFont): Typeface? {
         fileTypefaceCache.get(resId)?.let { return it }
-        val file = File(context.cacheDir, "ff_font_$resId.ttf")
+        val file = File(context.cacheDir, "ff_font_${resId}_v${fontCacheVersion(context)}.ttf")
         if (!file.exists()) {
             runCatching {
                 context.resources.openRawResource(resId).use { input ->

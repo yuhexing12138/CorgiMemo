@@ -61,6 +61,19 @@ stack_logs.txt
 /编译错误.md
 
 # ============================================================
+# OOM 内存排查一次性调试产物（堆转储 / 内存快照 / hprof 解析脚本，非工程文件）
+# 详见 .workbuddy/memory 中「连续换字 OOM」调查记录；这些文件体量巨大且不可提交
+# ============================================================
+heap*.hprof
+heap_*.txt
+mem_*.txt
+drift_out.txt
+referrers_*.txt
+scripts/hprof_*.py
+scripts/capture_heap_on_leak.sh
+.workbuddy/tmp_androidfont/
+
+# ============================================================
 # 字体素材库（2026-09-03 拉取，13 GB，本地选型参考，不纳入版本跟踪）
 # jaywcjlove/free-font，浅克隆拉取；详见 free-font-可商用字体库调研报告.md
 # 注意：体量过大，绝不可提交入库，也不应注册为 git 子模块

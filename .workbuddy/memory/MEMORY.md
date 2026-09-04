@@ -2,6 +2,8 @@
 
 ## 项目约定
 - 不需要自动编译：Kotlin/代码改动后不主动跑 gradlew，除非用户明确要求。
+- **BuildConfig 不生成**：本项目（AGP 配置）不会生成 `BuildConfig` 类，读取 App 版本号须走 `Context.packageManager.getPackageInfo(packageName, 0).versionName`（见 `SettingsScreen.kt:126` 注释）。字体 cacheDir 副本用 versionName 作文件名后缀（`ff_font_<resId>_v<versionName>.ttf`），资源/版本更新后旧副本自动失效，避免 stale 字体。
+- **查依赖真实 API 签名**：遇到 AndroidX/Compose API 编译报错（抽象类误实例化、`overrides nothing`、参数不匹配等），用 `~/.workbuddy/skills/gradle-cache-source-lookup` 技能——从 gradle 缓存 `*-sources.jar` 抽真实 `.kt` 源码核对，不要凭记忆猜签名（曾因 `AndroidFont` 旧签名误用导致编译反复）。
 
 ## 正文字体体系（2026-09-03 落地，2026-09-03 改默认=系统字体）
 - 内置 9 款 OFL 1.1 可商用中文（思源黑体/思源宋体/源音黑體/獅尾半月SC/悠哉/初夏明朝/马善政毛笔楷书/钟齐志莽行书/寒蝉·龙藏楷书）+ 3 款拉丁（Space Grotesk/Maple Mono/Caveat，作英文·数字回退层），共 49 资源文件在 `res/font/`；授权随 APK 分发于 `assets/licenses/`（索引 `THIRD_PARTY_FONTS.md`）。
