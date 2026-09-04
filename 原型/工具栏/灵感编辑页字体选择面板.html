@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>灵感编辑页 · 字体选择面板</title>
+<title>灵感编辑页 · 字体 & 字号颜色面板</title>
 
 <!-- 预览用真实字体（CDN 不可达时自动降级到系统字体栈，布局不受影响） -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -84,7 +84,8 @@ body{
   font-size:24px;font-weight:700;line-height:1.35;margin-bottom:10px;color:#2D2D2D;
 }
 .editor-body{
-  font-size:15px;line-height:1.85;color:#4A4A4A;
+  /* 16px = 源码 bodyLarge 的 16sp（正文默认字号，对应字号组的默认档） */
+  font-size:16px;line-height:1.85;color:#4A4A4A;
 }
 .editor-body .lat{ /* 英文/数字部分：受拉丁字体控制 */ }
 .editor-meta{margin-top:10px;font-size:12px;color:#B0B0B0;}
@@ -139,6 +140,13 @@ body{
   width:6px;height:6px;border-radius:50%;background:var(--cm-primary);
 }
 
+/* 字号与颜色按钮（新增：字体按钮与 B 之间），激活态与字体按钮同款 */
+.style-btn.on{
+  background:var(--cm-primary-soft);
+  color:var(--cm-primary-deep);
+}
+.style-btn.on svg{stroke:var(--cm-primary-deep);}
+
 /* 加粗 B 按钮（含档位下标 + 展开箭头） */
 .btn-b{
   flex:none;display:inline-flex;align-items:center;justify-content:center;gap:1px;
@@ -162,7 +170,8 @@ body{
 }
 .font-panel.open{height:388px;}
 .panel-head{
-  height:34px;display:flex;align-items:center;justify-content:space-between;
+  /* 40dp：与源码 FontPickerPanel 一致（34dp 会裁切「完成」TextButton 的触摸区） */
+  height:40px;display:flex;align-items:center;justify-content:space-between;
   padding:0 16px;border-bottom:1px solid var(--cm-border);
 }
 .panel-head .t{font-size:12px;font-weight:600;color:#8A8A8A;letter-spacing:.3px;}
@@ -173,7 +182,7 @@ body{
   font-family:var(--cm-font-sans);
 }
 .panel-scroll{
-  height:354px;overflow-y:auto;padding:12px 16px 16px;
+  height:348px;overflow-y:auto;padding:12px 16px 16px;
 }
 .panel-group+.panel-group{margin-top:16px;}
 .group-title{
@@ -217,7 +226,7 @@ body{
 
 /* ---- 紧凑模式（隐藏字体名）：块变矮 + 预览字号放大，便于逐块对比字形 ---- */
 .font-panel.open.compact{height:304px;}
-.font-panel.compact .panel-scroll{height:270px;}
+.font-panel.compact .panel-scroll{height:264px;}
 .font-panel.compact .font-cell{height:44px;padding:2px 3px;}
 .font-panel.compact .cell-preview{height:40px;line-height:40px;}
 .font-panel.compact .cell-preview.cjk{font-size:26px;}
@@ -238,6 +247,71 @@ body{
 .panel-toggle .ico-off{display:none;}
 .panel-toggle.on .ico-on{display:none;}
 .panel-toggle.on .ico-off{display:inline-flex;}
+
+/* ---- 行 2b：字号与颜色面板（与字体面板同槽位、同高度、同头部规格） ---- */
+.size-panel{
+  height:0;overflow:hidden;background:#FFFFFF;
+  transition:height .30s cubic-bezier(.32,.72,0,1);
+}
+/* 默认高度 304px = 字体区默认（隐藏字体名）高度，保持两者默认区域高度一致；
+   格子统一 44px，与字体区紧凑模式同尺寸 */
+.size-panel.open{height:304px;}
+.size-panel .panel-scroll{height:264px;}
+.size-panel .font-cell{height:44px;padding:2px 3px;}
+
+/* 字号格：左侧 Aa 按档位真实缩放，右侧小字标数值 */
+.size-inner{
+  display:inline-flex;align-items:baseline;justify-content:center;gap:5px;
+}
+.size-inner .aa{line-height:1;color:#2D2D2D;}
+.size-inner .num{font-size:11px;color:#9A9A9A;line-height:1;}
+.font-cell.sel .size-inner .aa{color:var(--cm-primary-deep);}
+.font-cell.sel .size-inner .num{color:var(--cm-primary-deep);opacity:.8;}
+
+/* 颜色格：居中圆形色块（浅色也能看清，自带 1px 内描边） */
+.swatch{
+  width:26px;height:26px;border-radius:50%;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.10);
+}
+.swatch.slashed{
+  background:#FFFFFF !important;
+  box-shadow:inset 0 0 0 1px #D0D0D2;
+  position:relative;
+}
+.swatch.slashed::after{
+  content:"";position:absolute;left:50%;top:50%;
+  width:20px;height:1.5px;background:#C4C4C6;border-radius:1px;
+  transform:translate(-50%,-50%) rotate(-45deg);
+}
+
+/* 自定义取色器 */
+.hue-bar{
+  position:relative;height:18px;border-radius:9px;cursor:pointer;
+  background:linear-gradient(to right,#FF0000,#FFFF00,#00FF00,#00FFFF,#0000FF,#FF00FF,#FF0000);
+}
+.hue-knob{
+  position:absolute;top:-3px;width:6px;height:24px;border-radius:3px;
+  background:#FFFFFF;box-shadow:0 0 0 1.5px rgba(0,0,0,.30);
+  transform:translateX(-3px);pointer-events:none;
+}
+.sv-pad{
+  position:relative;height:84px;margin-top:8px;border-radius:8px;
+  cursor:crosshair;overflow:hidden;border:1px solid var(--cm-border);
+}
+.sv-white{
+  position:absolute;inset:0;
+  background:linear-gradient(to right,#FFFFFF,rgba(255,255,255,0));
+}
+.sv-black{
+  position:absolute;inset:0;
+  background:linear-gradient(to top,#000000,rgba(0,0,0,0));
+}
+.sv-dot{
+  position:absolute;width:14px;height:14px;border-radius:50%;
+  border:2px solid #FFFFFF;box-shadow:0 0 0 1px rgba(0,0,0,.40);
+  transform:translate(-7px,-7px);pointer-events:none;
+}
+
 
 /* --- 行 3：相机行（6 按钮，始终显示） --- */
 .camera-row{
@@ -305,6 +379,21 @@ body{
 .state-btn .d{display:block;font-size:11px;color:#9A9A9A;margin-top:2px;font-weight:400;}
 .state-btn.cur .d{color:var(--cm-primary-deep);opacity:.75;}
 
+/* 按钮图标候选切换（4 选 1，点击即时换掉工具栏里的按钮图标） */
+.icon-picks{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.icon-pick{
+  height:58px;border-radius:var(--cm-radius-md);border:1px solid var(--cm-border);
+  background:#FFFFFF;cursor:pointer;padding:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  color:#5A5A5A;font-family:var(--cm-font-sans);
+  transition:border-color .15s,background .15s;
+}
+.icon-pick:hover{border-color:#D5D5D8;background:#FAFAFA;}
+.icon-pick.cur{border-color:var(--cm-primary);background:var(--cm-primary-soft);color:var(--cm-primary-deep);}
+.icon-pick svg{width:20px;height:20px;}
+.icon-pick .nm{font-size:9px;line-height:1.15;text-align:center;letter-spacing:0;}
+.icon-note{margin:10px 0 0;font-size:11.5px;color:#8A8A8A;line-height:1.75;}
+
 .flow{margin:0;padding-left:18px;font-size:12.5px;line-height:2;color:#555;}
 .flow b{color:var(--cm-primary-deep);}
 
@@ -349,19 +438,25 @@ table.spec-table code{
 <div class="page">
 
   <header class="page-header">
-    <h1>灵感编辑页 · 字体选择面板</h1>
+    <h1>灵感编辑页 · 字体 & 字号颜色面板</h1>
     <p class="lead">
       在格式工具栏「加粗按钮 B」的<b>左侧</b>新增字体选择按钮。点击后<b>收起软键盘</b>，并在格式工具栏与「相机行」之间展开字体面板，
       把带相机图标的那一行编辑栏<b>向下推开</b>，面板占据原键盘位置。面板内分两组网格预览：中文字体显示「刻记」，英文/数字字体显示「Corgi」，<b>每行 4 块</b>。
       英文/数字组只列 3 款真实拉丁字体（无系统字体占位项），<b>再次点击已选项可取消</b>，回到英文/数字跟随中文字体的状态。
     </p>
     <ul class="rules">
-      <li>推荐图标 <b>Material Icons <code>font_download</code></b>（<code>Icons.Default.FontDownload</code>，字体语义最准；<code>material-icons-extended</code> 已引入）</li>
+      <li>字体按钮图标 <b>Material Icons <code>font_download</code></b>（<code>Icons.Default.FontDownload</code>，字体语义最准；<code>material-icons-extended</code> 已引入）。<b>原型右侧备选 4 个候选</b>（font_download / text_fields / title / text_format）可点击对比。</li>
       <li>面板展开时 <b>键盘必须收起</b>，二者不同屏共存（避免双重占位挤压正文）</li>
       <li>面板高度建议 <b>= 软键盘高度</b>（Android 典型 291dp），内容超出时纵向滚动；本原型为便于一次审核全部分组，高度取 388px</li>
       <li>数据源：<b>中文字体 <code>FontCatalog.entries</code>（10 款）</b> + <b>英文/数字 <code>FontCatalog.latinEntries</code>（3 款）</b></li>
       <li>选中态写入 <b><code>ContentFontManager</code></b>（内容字体），与设置页「正文字体」（<code>FontManager</code>，仅 App chrome）互不影响</li>
       <li>面板头右侧 <b>眼睛按钮</b> 可 <b>显示 / 隐藏预览块的字体名</b>：隐藏后块高 66→44dp、预览字号放大（中文 22→26sp），一屏看更多、更利于逐块对比字形；隐藏时 hover 仍可看到字体名</li>
+      <li>
+        <b>本次新增</b>：在「字体按钮」与「加粗 B」之间插入 <b>字号与颜色按钮</b>（图标 4 选 1，见右侧切换器），
+        点击后在<b>同一槽位</b>展开「字号 + 颜色」面板——与字体面板<b>互斥、同高度</b>，切换不跳动。
+        面板含三组：<b>字号（8 档 12~32sp）</b> / <b>颜色（12 色文字色板）</b> / <b>自定义颜色（HSV 取色器）</b>，
+        头部规格、网格列数、格子尺寸与字体面板完全一致。字号与颜色<b>点选即时生效</b>（写 SpanStyle），不做 pending「应用」两段式。
+      </li>
     </ul>
   </header>
 
@@ -396,12 +491,15 @@ table.spec-table code{
           <!-- 行 1：格式工具栏 -->
           <div class="format-row" id="formatRow">
             <div class="format-scroll">
-              <!-- ★ 新增：字体选择按钮（位于 B 左侧） -->
+              <!-- ★ 字体选择按钮（位于 B 左侧；图标 JS 注入以便 4 选 1 对比） -->
               <button class="fmt-btn font-btn" id="fontBtn" title="字体">
-                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.93 13.5h4.14L12 7.98zM20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-4.05 16.5l-1.14-3H9.19l-1.14 3H5.96l5.11-13h1.86l5.11 13h-2.09z"/></svg>
+                <svg id="fontIcon" viewBox="0 0 24 24" fill="currentColor"></svg>
               </button>
 
-              <!-- 加粗 B（可展开 B1/B2/B3） -->
+              <!-- ★ 新增：字号与颜色按钮（位于字体按钮与加粗 B 之间） -->
+              <button class="fmt-btn style-btn" id="styleBtn" title="字号与颜色">
+                <svg id="styleIcon" viewBox="0 0 24 24" fill="currentColor"></svg>
+              </button>
               <button class="btn-b" id="btnB" title="加粗字重">
                 <span class="b">B</span>
               </button>
@@ -462,6 +560,35 @@ table.spec-table code{
               <div class="panel-group">
                 <div class="group-title">英文/数字字体<span class="cnt" id="cntLatin"></span><span class="hint">再点已选可取消</span></div>
                 <div class="font-grid" id="gridLatin"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 行 2b：字号与颜色面板（与字体面板互斥，占同一槽位） -->
+          <div class="size-panel" id="sizePanel">
+            <div class="panel-head">
+              <div><span class="t">字号与颜色</span><span class="cur" id="curStyle">16sp · 默认</span></div>
+              <div class="head-right">
+                <button class="panel-done" id="sizePanelDone">完成</button>
+              </div>
+            </div>
+            <div class="panel-scroll">
+              <div class="panel-group">
+                <div class="group-title">字号<span class="cnt">（8 档）</span><span class="hint">正文默认 16sp</span></div>
+                <div class="font-grid" id="gridSize"></div>
+              </div>
+              <div class="panel-group">
+                <div class="group-title">颜色<span class="cnt">（12 色）</span><span class="hint">点选即时生效</span></div>
+                <div class="font-grid" id="gridColor"></div>
+              </div>
+              <div class="panel-group">
+                <div class="group-title">自定义颜色<span class="hint">拖动取色</span></div>
+                <div class="hue-bar" id="hueBar"><span class="hue-knob" id="hueKnob"></span></div>
+                <div class="sv-pad" id="svPad">
+                  <span class="sv-white"></span>
+                  <span class="sv-black"></span>
+                  <span class="sv-dot" id="svDot"></span>
+                </div>
               </div>
             </div>
           </div>
@@ -530,7 +657,23 @@ table.spec-table code{
             ③ 点字体按钮 → 展开面板
             <span class="d">键盘收起 + 相机行向下推开 + 面板占原键盘位</span>
           </button>
+          <button class="state-btn" data-state="style">
+            ④ 点字号/颜色按钮 → 展开面板
+            <span class="d">与③互斥，同槽位同高度，切换不跳动</span>
+          </button>
         </div>
+      </div>
+
+      <div class="side-card">
+        <h3>字号/颜色按钮 · 图标候选（8 选 1 · Material + Lucide，点击切换）</h3>
+        <div class="icon-picks" id="iconPicks"></div>
+        <p class="icon-note" id="iconNote"></p>
+      </div>
+
+      <div class="side-card">
+        <h3>字体按钮 · 图标候选（8 选 1 · Material + Lucide，点击切换）</h3>
+        <div class="icon-picks" id="fontIconPicks"></div>
+        <p class="icon-note" id="fontIconNote"></p>
       </div>
 
       <div class="side-card">
@@ -543,6 +686,8 @@ table.spec-table code{
           <li>点 <b>完成</b> / 再次点字体按钮 → 面板收起</li>
           <li>面板头 <b>👁 眼睛按钮</b> → 显示/隐藏字体名（紧凑对比模式）</li>
           <li>英文/数字组 <b>再点已选项</b> → 取消，回到跟随中文</li>
+          <li>点 <b>字号/颜色按钮</b>（字体与 B 之间）→ 收键盘 + 展开字号颜色面板（<b>与字体面板互斥</b>）</li>
+          <li>字号 / 颜色均<b>点选即时生效</b>（无需「应用」），面板头右侧只保留「完成」收起</li>
         </ol>
       </div>
 
@@ -550,7 +695,9 @@ table.spec-table code{
         <h3>当前选中</h3>
         <p style="margin:0;font-size:13px;line-height:1.9;color:#555;">
           中文字体：<b id="selCjk" style="color:var(--cm-primary-deep)">系统默认字体</b><br>
-          英文/数字：<b id="selLatin" style="color:var(--cm-primary-deep)">未设置（跟随中文）</b>
+          英文/数字：<b id="selLatin" style="color:var(--cm-primary-deep)">未设置（跟随中文）</b><br>
+          字号：<b id="selSize" style="color:var(--cm-primary-deep)">16sp（默认）</b><br>
+          颜色：<b id="selColor" style="color:var(--cm-primary-deep)">默认（跟随主题）</b>
         </p>
       </div>
     </div>
@@ -610,6 +757,36 @@ table.spec-table code{
         <tr>
           <td>紧凑模式（隐藏字体名）</td><td>块 44dp / 面板 304dp</td><td>中文 26sp / 拉丁 15sp</td>
           <td>面板头眼睛按钮切换；<code>.cell-name</code> 隐藏，预览区 40dp；高度差 84dp 由面板收缩吸收，<b>鼠标悬停仍能看字体名</b>（<code>title</code>）</td>
+        </tr>
+
+        <tr class="cat-row"><th colspan="4">二b、字号与颜色面板（本次新增）</th></tr>
+        <tr>
+          <td>触发按钮</td><td>按钮 36dp / 图标 19dp</td><td>激活底 <code>#FFF0E5</code> / 图标 <code>#E88A4D</code></td>
+          <td>位于 <code>FormatButtonGroup</code> 第一组内、<b>字体按钮之后、<code>FormatWeightButton</code> 之前</b>；图标候选 4 选 1（见右侧切换器）</td>
+        </tr>
+        <tr>
+          <td>面板容器</td><td>高 <b>388dp</b>（与字体面板一致）</td><td><code>surface</code> #FFFFFF</td>
+          <td>与字体面板<b>共用同一槽位且互斥</b>（同时只展一个），同高度 → 互相切换无跳动；内容纵向滚动</td>
+        </tr>
+        <tr>
+          <td>面板头</td><td>高 40dp</td><td>同字体面板</td>
+          <td>左「字号与颜色」+ 当前值（如「16sp · 墨黑」）；右「完成」（<b>无「应用」态</b>，字号/颜色点选即时生效）</td>
+        </tr>
+        <tr>
+          <td>字号组</td><td>8 档 / 2 行 × 4 列</td><td>—</td>
+          <td><b>12 / 14 / 16 / 18 / 20 / 24 / 28 / 32</b>；格内左侧「Aa」按档位<b>真实缩放</b>、右侧 11sp 灰色标数值；正文默认 <code>bodyLarge = 16sp</code></td>
+        </tr>
+        <tr>
+          <td>颜色组</td><td>12 色 / 3 行 × 4 列</td><td>圆形色块 26dp</td>
+          <td>第 1 格「默认」= 白底 + 45° 斜线圆（回落 <code>onSurface</code>）；其余 11 色均为<b>白底可读</b>的文字色（深灰 / 暖橙 / 砖红 / 玫红 / 紫 / 靛蓝 / 青 / 绿 / 棕 / 金 / 墨黑）</td>
+        </tr>
+        <tr>
+          <td>自定义取色器</td><td>色相条 18dp + SV 板 84dp + 预览行 44dp</td><td>—</td>
+          <td>拖动取色，HEX 实时回显；选中自定义色时颜色组的高亮自动清除（二者互斥单选）</td>
+        </tr>
+        <tr>
+          <td>选中态</td><td>—</td><td>边框 <code>#FF9A5C</code> + 底 <code>#FFF0E5</code></td>
+          <td>与字体面板<b>完全一致</b>；文字转 <code>#E88A4D</code>（颜色格除外——颜色格保留自身色块，不染色）</td>
         </tr>
 
         <tr class="cat-row"><th colspan="4">三、动画与键盘</th></tr>
@@ -678,7 +855,33 @@ table.spec-table code{
     </div>
 
     <div class="qa">
-      <div class="q">6. 顺带发现的一处不一致（非本次需求，建议一并修）</div>
+      <div class="q">6. 字号 / 颜色如何写进正文？（项目目前完全没有这两项功能）</div>
+      <div class="a">
+        <b>字号：</b>走 <code>RichTextState.toggleSpanStyle(SpanStyle(fontSize = 20.sp))</code>；
+        <b>颜色：</b>走 <code>toggleSpanStyle(SpanStyle(color = Color(0xFF…)))</code>。当前值读取用
+        <code>state.currentSpanStyle.fontSize</code> / <code>.color</code>（对照现有 <code>.fontWeight</code> 用法）。<br>
+        <b>两个坑：</b>① 源码 <code>RichTextState.kt:1088-1093</code> 写死
+        <code>recordHistory(enabled = !selection.collapsed)</code>——<b>光标未选中文本时只改暂存样式、不进撤销栈</b>，属库行为，需接受；
+        ② 换值时必须<b>先 <code>removeSpanStyle</code> 清旧值、再 <code>toggleSpanStyle</code> 设新值</b>
+        （照抄 <code>InspirationEditScreen.kt:1231-1238</code> 的加粗写法），否则旧字号 / 旧颜色 SpanStyle 会叠加残留。<br>
+        <b>作用域：</b>有选区 → 作用于选区；仅光标 → 作用于后续输入。
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="q">7. 新面板与字体面板的状态关系？为什么它只有「完成」没有「应用」？</div>
+      <div class="a">
+        新增 <code>isSizeColorPanelExpanded</code>，与 <code>isFontPanelOpen</code> <b>互斥</b>（点开一个自动关掉另一个）；
+        两者插在 <code>InspirationEditBottomBar</code> Column 的<b>同一位置</b>，都用
+        <code>AnimatedVisibility(expandVertically/shrinkVertically)</code> + <code>panelHeight = keyboardHeight</code>，
+        因此同高、切换无跳动；展开时同样 <code>keyboardController?.hide()</code>。<br>
+        <b>刻意不做 pending「应用」</b>：字体面板需要两段式是因为换字体要<b>重建 Typeface</b>（CJK 单文件 14~19MB，反复实时换必 OOM）；
+        而字号/颜色只是写 <code>SpanStyle</code>，成本极低，点选即生效反而更顺手，故面板头只保留「完成」收起。
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="q">8. 顺带发现的一处不一致（非本次需求，建议一并修）</div>
       <div class="a">
         <code>InspirationEditScreen.kt:1132</code> 清除字重时遍历的是 <code>FontManager.currentEntry.value.boldTiers</code>
         （<b>设置字体</b>），而工具栏探测（<code>RichTextFormatToolbar.kt:142</code>）用的是 <code>ContentFontManager</code>
@@ -718,20 +921,164 @@ const LATIN_FONTS = [
   { id:'caveat',        name:'Caveat',        css:'"Caveat", cursive' }
 ];
 
+/* ============ 字号档位（新增，正文默认 bodyLarge = 16sp） ============
+   12/14/16/18/20/24/28/32 共 8 档，4 列网格正好 2 行。 */
+const SIZE_TIERS = [12, 14, 16, 18, 20, 24, 28, 32];
+const DEFAULT_SP = 16;
+
+/* ============ 文字色板（新增） ============
+   注意：项目现有 ColorPickerBottomSheet 的 12 色预设是「卡片背景色」，普遍偏浅，
+   直接当文字色会看不清，故另建一套白底可读的文字色。
+   第 1 项 isDefault 表示「不叠加 SpanStyle(color)」，回落 onSurface。 */
+const TEXT_COLORS = [
+  { name:'默认', hex:'#2D2D2D', isDefault:true },
+  { name:'墨黑', hex:'#1C1B1F' },
+  { name:'深灰', hex:'#5F6368' },
+  { name:'暖橙', hex:'#E88A4D' },
+  { name:'砖红', hex:'#D93025' },
+  { name:'玫红', hex:'#C2185B' },
+  { name:'紫',   hex:'#7B1FA2' },
+  { name:'靛蓝', hex:'#1976D2' },
+  { name:'青',   hex:'#00796B' },
+  { name:'绿',   hex:'#2E7D32' },
+  { name:'棕',   hex:'#795548' },
+  { name:'金',   hex:'#F9A825' }
+];
+
+/* ============ 字体按钮 · 图标候选（8 选 1：Material Icons 4 + Lucide 4） ============
+   字体语义相关：Material 4 款（font_download / text_fields / title / text_format）
+   + Lucide 4 款（type / text / baseline / case-sensitive）。
+   Material 为填充模式（mode 缺省 = 'fill'）；Lucide 为描边模式（mode:'stroke'）。
+   路径：Material 取自官方 SVG；Lucide 取自 lucide-static 官方 SVG（viewBox 0 0 24 24）。 */
+const FONT_ICONS = [
+  {
+    id:'font_download', kotlin:'Icons.Default.FontDownload', lib:'Material',
+    note:'「A↓」带下箭头，字体语义最直白，原型当前默认；体积稍复杂但辨识度高。',
+    svg:'<path d="M9.93 13.5h4.14L12 7.98zM20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-4.05 16.5l-1.14-3H9.19l-1.14 3H5.96l5.11-13h1.86l5.11 13h-2.09z"/>'
+  },
+  {
+    id:'text_fields', kotlin:'Icons.Default.TextFields', lib:'Material',
+    note:'两个「T」形字段，偏排版/字段语义，与「选字体」关联稍弱但视觉简洁。',
+    svg:'<path d="M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z"/>'
+  },
+  {
+    id:'title', kotlin:'Icons.Default.Title', lib:'Material',
+    note:'大写「T」加下划线，类似文档标题样式，字体感强；线条最简、最清爽。',
+    svg:'<path d="M5 4v3h5.5v12h3V7H19V4z"/>'
+  },
+  {
+    id:'text_format', kotlin:'Icons.Default.TextFormat', lib:'Material',
+    note:'「A」上下两条横线，泛指文字排版，与字号/颜色面板里的 A↑↓ 风格接近，可能造成辨识混淆。',
+    svg:'<path d="M5 17v2h14v-2H5zm4.5-4.2h5l.9 2.2h2.1L12.75 4h-1.5L6.5 15h2.1l.9-2.2zM12 5.98L13.87 11h-3.74L12 5.98z"/>'
+  },
+  {
+    id:'type', kotlin:'LucideIcons.Type', lib:'Lucide', mode:'stroke',
+    note:'Lucide「A」字（带上下短横），表达「文字/字形」最贴近，描边线稿更轻。',
+    svg:'<path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/>'
+  },
+  {
+    id:'text', kotlin:'LucideIcons.Text', lib:'Lucide', mode:'stroke',
+    note:'Lucide「T」带衬线横线，纯文字语义，比 Material 的 TextFields 更纤细。',
+    svg:'<path d="M21 5H3"/><path d="M15 12H3"/><path d="M17 19H3"/>'
+  },
+  {
+    id:'baseline', kotlin:'LucideIcons.Baseline', lib:'Lucide', mode:'stroke',
+    note:'Lucide「A」坐在基线上，强调字形基线，适合「字体/排版」语境。',
+    svg:'<path d="M4 20h16"/><path d="m6 16 6-12 6 12"/><path d="M8 12h8"/>'
+  },
+  {
+    id:'case-sensitive', kotlin:'LucideIcons.CaseSensitive', lib:'Lucide', mode:'stroke',
+    note:'Lucide「Aa」大小写对比，表达字体族的字重/字形差异，语义偏细节。',
+    svg:'<path d="m2 16 4.039-9.69a.5.5 0 0 1 .923 0L11 16"/><path d="M22 9v7"/><path d="M3.304 13h6.392"/><circle cx="18.5" cy="12.5" r="3.5"/>'
+  }
+];
+
+/* ============ 字号/颜色按钮 · 图标候选（8 选 1：Material Icons 4 + Lucide 4） ============
+   混合「字号」与「颜色」两种语义：Material 4 款（format_size / format_color_text /
+   text_format / text_fields）+ Lucide 4 款（type / baseline / palette / paint-bucket）。
+   Material 为填充模式（mode 缺省 = 'fill'）；Lucide 为描边模式（mode:'stroke'）。
+   format_color_text 的下方色条是原图标自带的 36% 透明度层。 */
+const STYLE_ICONS = [
+  {
+    id:'format_size', kotlin:'Icons.Default.FormatSize', lib:'Material',
+    note:'「A↑A↓」双箭头，字号语义最直观；字号是面板里更高频的操作。',
+    svg:'<path d="M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z"/>'
+  },
+  {
+    id:'format_color_text', kotlin:'Icons.Default.FormatColorText', lib:'Material',
+    note:'「A」下方带颜色横线，文字颜色语义最准；但会让人以为面板只有颜色。',
+    svg:'<path fill-opacity=".36" d="M0 20h24v4H0z"/><path d="M11 3L5.5 17h2.25l1.12-3h6.25l1.12 3h2.25L13 3h-2zm-1.38 9L12 5.67 14.38 12H9.62z"/>'
+  },
+  {
+    id:'text_format', kotlin:'Icons.Default.TextFormat', lib:'Material',
+    note:'通用「文字格式」图标，不偏向字号或颜色任一方，但语义也最模糊。',
+    svg:'<path d="M5 17v2h14v-2H5zm4.5-4.2h5l.9 2.2h2.1L12.75 4h-1.5L6.5 15h2.1l.9-2.2zM12 5.98L13.87 11h-3.74L12 5.98z"/>'
+  },
+  {
+    id:'text_fields', kotlin:'Icons.Default.TextFields', lib:'Material',
+    note:'两个「T」形字段，偏排版/字段语义，与字号颜色的关联最弱。',
+    svg:'<path d="M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z"/>'
+  },
+  {
+    id:'type', kotlin:'LucideIcons.Type', lib:'Lucide', mode:'stroke',
+    note:'Lucide「A」字，表达「字号/字形」最贴近；线条轻，与「A↑↓」形成粗细对比。',
+    svg:'<path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/>'
+  },
+  {
+    id:'baseline', kotlin:'LucideIcons.Baseline', lib:'Lucide', mode:'stroke',
+    note:'Lucide「A」坐基线，强调字形；适合代表「字号/排版」一侧。',
+    svg:'<path d="M4 20h16"/><path d="m6 16 6-12 6 12"/><path d="M8 12h8"/>'
+  },
+  {
+    id:'palette', kotlin:'LucideIcons.Palette', lib:'Lucide', mode:'stroke',
+    note:'Lucide 调色板，颜色语义最准；内部小圆点为填充，外框描边。',
+    svg:'<path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>'
+  },
+  {
+    id:'paint-bucket', kotlin:'LucideIcons.PaintBucket', lib:'Lucide', mode:'stroke',
+    note:'Lucide 油漆桶，颜色填充语义；与 palette 互补，偏「填色」动作。',
+    svg:'<path d="M11 7 6 2"/><path d="M18.992 12H2.041"/><path d="M21.145 18.38A3.34 3.34 0 0 1 20 16.5a3.3 3.3 0 0 1-1.145 1.88c-.575.46-.855 1.02-.855 1.595A2 2 0 0 0 20 22a2 2 0 0 0 2-2.025c0-.58-.285-1.13-.855-1.595"/><path d="m8.5 4.5 2.148-2.148a1.205 1.205 0 0 1 1.704 0l7.296 7.296a1.205 1.205 0 0 1 0 1.704l-7.592 7.592a3.615 3.615 0 0 1-5.112 0l-3.888-3.888a3.615 3.615 0 0 1 0-5.112L5.67 7.33"/>'
+  }
+];
+
 /* ============ 状态 ============ */
 const state = {
   formatOpen:false,   // 格式工具栏
   fontPanel:false,    // 字体面板
+  sizePanel:false,    // 字号与颜色面板（与 fontPanel 互斥）
   keyboard:true,      // 键盘
-  showNames:true,     // 预览块是否显示字体名（false = 紧凑对比模式）
+  showNames:false,    // 字体区域默认隐藏字体名（false = 紧凑对比模式），点眼睛按钮可切换显示
   cjkId:'system_default',
-  latinId:''
+  latinId:'',
+  sp:DEFAULT_SP,      // 当前字号（sp）
+  colorIdx:0,         // 当前文字色在 TEXT_COLORS 中的下标（0 = 默认）
+  customHex:null,     // 自定义色（非 null 时 colorIdx 高亮让位）
+  iconIdx:0,          // 字号/颜色按钮图标候选下标
+  fontIconIdx:0       // 字体按钮图标候选下标
 };
 
 const el = {
   surface:  document.getElementById('editSurface'),
   formatRow:document.getElementById('formatRow'),
   panel:    document.getElementById('fontPanel'),
+  sizePanel:document.getElementById('sizePanel'),
+  styleBtn: document.getElementById('styleBtn'),
+  styleIcon:document.getElementById('styleIcon'),
+  sizeDone: document.getElementById('sizePanelDone'),
+  iconPicks:document.getElementById('iconPicks'),
+  iconNote: document.getElementById('iconNote'),
+  fontIcon: document.getElementById('fontIcon'),
+  fontIconPicks:document.getElementById('fontIconPicks'),
+  fontIconNote: document.getElementById('fontIconNote'),
+  gridSize: document.getElementById('gridSize'),
+  gridColor:document.getElementById('gridColor'),
+  curStyle: document.getElementById('curStyle'),
+  selSize:  document.getElementById('selSize'),
+  selColor: document.getElementById('selColor'),
+  hueBar:   document.getElementById('hueBar'),
+  hueKnob:  document.getElementById('hueKnob'),
+  svPad:    document.getElementById('svPad'),
+  svDot:    document.getElementById('svDot'),
   keyboard: document.getElementById('keyboard'),
   fontBtn:  document.getElementById('fontBtn'),
   moreBtn:  document.getElementById('moreBtn'),
@@ -746,7 +1093,8 @@ const el = {
   selCjk:   document.getElementById('selCjk'),
   selLatin: document.getElementById('selLatin'),
   bodyCjk:  document.getElementById('bodyCjk'),
-  bodyLat:  document.getElementById('bodyLat')
+  bodyLat:  document.getElementById('bodyLat'),
+  body:     document.querySelector('.editor-body'),
 };
 
 /* ============ 渲染网格（每行 4 块） ============ */
@@ -809,14 +1157,227 @@ function cjkCssOf(id){
   return f ? f.css : 'inherit';
 }
 
+/* ============ 字号组渲染（每格：Aa 按档位真实缩放 + 右侧数值） ============ */
+function renderSizeGrid(){
+  el.gridSize.innerHTML = '';
+  SIZE_TIERS.forEach(sp => {
+    const cell = document.createElement('div');
+    cell.className = 'font-cell' + (sp === state.sp ? ' sel' : '');
+    cell.title = sp + 'sp' + (sp === DEFAULT_SP ? '（正文默认）' : '');
+
+    const inner = document.createElement('div');
+    inner.className = 'size-inner';
+
+    const aa = document.createElement('span');
+    aa.className = 'aa';
+    aa.style.fontSize = sp + 'px';   // 原型 1:1 映射：1sp ≈ 1px
+    aa.textContent = 'Aa';
+
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = sp;
+
+    inner.appendChild(aa);
+    inner.appendChild(num);
+    cell.appendChild(inner);
+    cell.addEventListener('click', () => pickSize(sp));
+    el.gridSize.appendChild(cell);
+  });
+}
+
+/* ============ 颜色组渲染（每格：居中圆形色块） ============ */
+function renderColorGrid(){
+  el.gridColor.innerHTML = '';
+  TEXT_COLORS.forEach((c, i) => {
+    const cell = document.createElement('div');
+    // 自定义色生效时，预设色全部取消高亮（二者互斥单选）
+    const selected = (state.customHex === null) && (i === state.colorIdx);
+    cell.className = 'font-cell' + (selected ? ' sel' : '');
+    cell.title = c.isDefault ? '默认（跟随主题文字色）' : c.name + ' ' + c.hex;
+
+    const dot = document.createElement('span');
+    dot.className = 'swatch' + (c.isDefault ? ' slashed' : '');
+    if(!c.isDefault) dot.style.background = c.hex;
+
+    cell.appendChild(dot);
+    cell.addEventListener('click', () => pickColor(i));
+    el.gridColor.appendChild(cell);
+  });
+}
+
+/* ============ 选取回调 ============ */
+
+/** 字号点选：即时生效（写 SpanStyle(fontSize)），同步正文预览与面板头回显。 */
+function pickSize(sp){
+  state.sp = sp;
+  el.body.style.fontSize = (sp === DEFAULT_SP ? '' : sp + 'px');
+  el.selSize.textContent = sp + 'sp' + (sp === DEFAULT_SP ? '（默认）' : '');
+  renderSizeGrid();
+  syncStyleLabel();
+}
+
+/**
+ * 预设色点选：即时生效（写 SpanStyle(color)）。
+ * 选中第 0 项「默认」= 不叠加颜色 SpanStyle，回落 onSurface。
+ */
+function pickColor(idx){
+  state.colorIdx = idx;
+  state.customHex = null;                       // 选预设色 → 清掉自定义色
+  const c = TEXT_COLORS[idx];
+  el.body.style.color = c.isDefault ? '' : c.hex;
+  el.selColor.textContent = c.isDefault ? '默认（跟随主题）' : c.name + ' ' + c.hex;
+  syncCustomFromHex(c.hex);                     // 取色器同步到该色，便于微调
+  renderColorGrid();
+  syncStyleLabel();
+}
+
+/** 自定义色生效：清掉预设色高亮，正文与面板头同步。 */
+function applyCustom(hex){
+  // 首次从「预设色」切到「自定义色」时才重建颜色网格（拖动过程中无需每帧重排 12 格）
+  const wasCustom = state.customHex !== null;
+  state.customHex = hex;
+  el.body.style.color = hex;
+  el.selColor.textContent = '自定义 ' + hex.toUpperCase();
+  if(!wasCustom) renderColorGrid();
+  syncStyleLabel();
+}
+
+/* ============ HSV 取色器 ============ */
+const hsv = { h:24, s:0.62, v:0.91 };   // 初值 ≈ #E88A4D（暖橙）
+
+/** HSL→RGB（s、l ∈ [0,1]），返回 0~255 整数三元组。 */
+function hslToRgb(h, s, l){
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hp = h / 60;
+  const x = c * (1 - Math.abs(hp % 2 - 1));
+  let r = 0, g = 0, b = 0;
+  if(hp >= 0 && hp < 1){ r = c; g = x; }
+  else if(hp < 2){ r = x; g = c; }
+  else if(hp < 3){ g = c; b = x; }
+  else if(hp < 4){ g = x; b = c; }
+  else if(hp < 5){ r = x; b = c; }
+  else { r = c; b = x; }
+  const m = l - c / 2;
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+}
+
+/** 当前 hsv 对应的 HEX 字符串（大写）。 */
+function hsvToHex(){
+  // SV 板语义：横轴 = 饱和度，纵轴 = 明度倒数 → 换算成 HSL 的 l
+  const l = hsv.v * (1 - hsv.s / 2);
+  const s = (l === 0 || l === 1) ? 0 : (hsv.v - l) / Math.min(l, 1 - l);
+  const [r, g, b] = hslToRgb(hsv.h, s, l);
+  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+/** 由 HEX 反推 hue，用于「选了预设色后取色器同步到该色」。 */
+function syncCustomFromHex(hex){
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  if(d === 0){ hsv.h = 0; }
+  else if(max === r){ hsv.h = 60 * (((g - b) / d) % 6); }
+  else if(max === g){ hsv.h = 60 * ((b - r) / d + 2); }
+  else { hsv.h = 60 * ((r - g) / d + 4); }
+  if(hsv.h < 0) hsv.h += 360;
+  renderPicker();
+}
+
+/** 刷新取色器外观：色相条把手位置、SV 板底色、圆点位置。 */
+function renderPicker(){
+  const w = el.hueBar.clientWidth || 1;
+  el.hueKnob.style.left = (hsv.h / 360 * w) + 'px';
+
+  // SV 板底色 = 纯色相色（上层再叠白→透明、透明→黑 两个渐变）
+  const [r, g, b] = hslToRgb(hsv.h, 1, 0.5);
+  el.svPad.style.backgroundColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+
+  const pw = el.svPad.clientWidth || 1;
+  const ph = el.svPad.clientHeight || 1;
+  el.svDot.style.left = (hsv.s * pw) + 'px';
+  el.svDot.style.top  = ((1 - hsv.v) * ph) + 'px';
+}
+
+/** 面板头与侧栏回显「16sp · 墨黑」形式的当前值。 */
+function syncStyleLabel(){
+  const activeHex = (state.customHex !== null) ? state.customHex : TEXT_COLORS[state.colorIdx].hex;
+  const name = (state.customHex !== null)
+    ? state.customHex
+    : (TEXT_COLORS[state.colorIdx].isDefault ? '默认' : TEXT_COLORS[state.colorIdx].name);
+  el.curStyle.textContent = state.sp + 'sp · ' + name;
+}
+
+/* 根据图标 mode 设置 svg 元素属性：
+   fill（Material 等填充库）/ stroke（Lucide 等描边库）。 */
+function applyIcon(svgEl, icon){
+  if(icon.mode === 'stroke'){
+    svgEl.setAttribute('fill','none');
+    svgEl.setAttribute('stroke','currentColor');
+    svgEl.setAttribute('stroke-width','2');
+    svgEl.setAttribute('stroke-linecap','round');
+    svgEl.setAttribute('stroke-linejoin','round');
+  } else {
+    svgEl.setAttribute('fill','currentColor');
+    svgEl.removeAttribute('stroke');
+    svgEl.removeAttribute('stroke-width');
+    svgEl.removeAttribute('stroke-linecap');
+    svgEl.removeAttribute('stroke-linejoin');
+  }
+  svgEl.innerHTML = icon.svg;
+}
+
+/* ============ 按钮图标候选切换 ============ */
+function renderIconPicks(){
+  el.iconPicks.innerHTML = '';
+  STYLE_ICONS.forEach((ic, i) => {
+    const b = document.createElement('button');
+    b.className = 'icon-pick' + (i === state.iconIdx ? ' cur' : '');
+    const open = (ic.mode === 'stroke')
+      ? 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+      : 'viewBox="0 0 24 24" fill="currentColor"';
+    b.innerHTML = '<svg ' + open + '>' + ic.svg + '</svg><span class="nm">' + ic.id + '</span>';
+    b.addEventListener('click', () => {
+      state.iconIdx = i;
+      renderIconPicks();
+    });
+    el.iconPicks.appendChild(b);
+  });
+  const cur = STYLE_ICONS[state.iconIdx];
+  applyIcon(el.styleIcon, cur);
+  el.iconNote.innerHTML = '<b>' + cur.kotlin + '</b>（' + (cur.lib || 'Material') + '） — ' + cur.note;
+}
+
+/* ============ 字体按钮 · 图标候选切换 ============ */
+function renderFontIconPicks(){
+  el.fontIconPicks.innerHTML = '';
+  FONT_ICONS.forEach((ic, i) => {
+    const b = document.createElement('button');
+    b.className = 'icon-pick' + (i === state.fontIconIdx ? ' cur' : '');
+    const open = (ic.mode === 'stroke')
+      ? 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+      : 'viewBox="0 0 24 24" fill="currentColor"';
+    b.innerHTML = '<svg ' + open + '>' + ic.svg + '</svg><span class="nm">' + ic.id + '</span>';
+    b.addEventListener('click', () => {
+      state.fontIconIdx = i;
+      renderFontIconPicks();
+    });
+    el.fontIconPicks.appendChild(b);
+  });
+  const cur = FONT_ICONS[state.fontIconIdx];
+  applyIcon(el.fontIcon, cur);
+  el.fontIconNote.innerHTML = '<b>' + cur.kotlin + '</b>（' + (cur.lib || 'Material') + '） — ' + cur.note;
+}
+
 /* ============ 状态应用 ============ */
 function apply(){
   // 键盘：面板展开时必定收起
   el.keyboard.classList.toggle('hidden', !state.keyboard);
   el.surface.style.setProperty('--kb', state.keyboard ? '291px' : '0px');
 
-  // 行 1：格式工具栏（面板展开时强制展开）
-  const formatOn = state.formatOpen || state.fontPanel;
+  // 行 1：格式工具栏（任一面板展开时强制展开）
+  const anyPanel = state.fontPanel || state.sizePanel;
+  const formatOn = state.formatOpen || anyPanel;
   el.formatRow.classList.toggle('open', formatOn);
 
   // 行 2：字体面板（紧凑模式 = 隐藏字体名）
@@ -824,17 +1385,24 @@ function apply(){
   el.panel.classList.toggle('compact', !state.showNames);
   el.nameToggle.classList.toggle('on', state.showNames);
 
+  // 行 2b：字号与颜色面板（与字体面板互斥，同槽位同高度）
+  el.sizePanel.classList.toggle('open', state.sizePanel);
+  if(state.sizePanel) renderPicker();   // 面板展开后再量一次宽度，避免 0 高度下的测量误差
+
   // 按钮态
   el.fontBtn.classList.toggle('on', state.fontPanel);
+  el.styleBtn.classList.toggle('on', state.sizePanel);
   el.moreBtn.classList.toggle('on', state.formatOpen);
 
   // 档位徽标：面板展开时隐藏（B 未展开档位菜单）
   syncStateButtons();
+  syncStyleLabel();
 }
 
 function syncStateButtons(){
   let cur;
-  if(state.fontPanel) cur = 'font';
+  if(state.sizePanel) cur = 'style';
+  else if(state.fontPanel) cur = 'font';
   else if(state.formatOpen) cur = 'format';
   else cur = 'idle';
   document.querySelectorAll('.state-btn').forEach(b => {
@@ -845,19 +1413,33 @@ function syncStateButtons(){
 /* ============ 事件 ============ */
 el.moreBtn.addEventListener('click', () => {
   state.formatOpen = !state.formatOpen;
-  if(!state.formatOpen){ state.fontPanel = false; }
+  if(!state.formatOpen){ state.fontPanel = false; state.sizePanel = false; }
   apply();
 });
 
 el.fontBtn.addEventListener('click', () => {
   state.fontPanel = !state.fontPanel;
-  // 面板展开 → 键盘收起；收起面板不主动唤起键盘
-  if(state.fontPanel){ state.keyboard = false; }
+  if(state.fontPanel) state.sizePanel = false;   // 互斥：同一槽位只展一个
+  if(state.fontPanel || state.sizePanel){ state.keyboard = false; }
+  apply();
+});
+
+/** 字号与颜色按钮：与字体面板互斥，展开时同样收起软键盘。 */
+el.styleBtn.addEventListener('click', () => {
+  state.sizePanel = !state.sizePanel;
+  if(state.sizePanel) state.fontPanel = false;   // 互斥：同一槽位只展一个
+  if(state.sizePanel || state.fontPanel){ state.keyboard = false; }
   apply();
 });
 
 el.panelDone.addEventListener('click', () => {
   state.fontPanel = false;
+  apply();
+});
+
+/** 字号与颜色面板的「完成」：只收起面板（字号/颜色已即时生效，无 pending）。 */
+el.sizeDone.addEventListener('click', () => {
+  state.sizePanel = false;
   apply();
 });
 
@@ -874,15 +1456,68 @@ el.btnB.addEventListener('click', () => {
 document.querySelectorAll('.state-btn').forEach(b => {
   b.addEventListener('click', () => {
     const s = b.dataset.state;
-    if(s === 'idle'){   state.formatOpen=false; state.fontPanel=false; state.keyboard=true;  }
-    if(s === 'format'){ state.formatOpen=true;  state.fontPanel=false; state.keyboard=true;  }
-    if(s === 'font'){   state.formatOpen=true;  state.fontPanel=true;  state.keyboard=false; }
+    if(s === 'idle'){   state.formatOpen=false; state.fontPanel=false; state.sizePanel=false; state.keyboard=true;  }
+    if(s === 'format'){ state.formatOpen=true;  state.fontPanel=false; state.sizePanel=false; state.keyboard=true;  }
+    if(s === 'font'){   state.formatOpen=true;  state.fontPanel=true;  state.sizePanel=false; state.keyboard=false; }
+    if(s === 'style'){  state.formatOpen=true;  state.fontPanel=false; state.sizePanel=true;  state.keyboard=false; }
     apply();
   });
 });
 
+/* ============ 取色器拖动 ============ */
+
+/**
+ * 通用拖动绑定：按下即回调一次，移动持续回调，坐标按元素尺寸归一化到 0~1。
+ * @param node 目标元素
+ * @param onMove (x, y) => void，x/y 均为 0~1
+ */
+function bindDrag(node, onMove){
+  let dragging = false;
+  const update = (ev) => {
+    const r = node.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / (r.width  || 1)));
+    const y = Math.min(1, Math.max(0, (ev.clientY - r.top)  / (r.height || 1)));
+    onMove(x, y);
+  };
+  node.addEventListener('pointerdown', (ev) => {
+    dragging = true;
+    try { node.setPointerCapture(ev.pointerId); } catch(e) {}
+    update(ev);
+    ev.preventDefault();
+  });
+  node.addEventListener('pointermove', (ev) => { if(dragging) update(ev); });
+  const stop = (ev) => {
+    if(!dragging) return;
+    dragging = false;
+    try { node.releasePointerCapture(ev.pointerId); } catch(e) {}
+  };
+  node.addEventListener('pointerup', stop);
+  node.addEventListener('pointercancel', stop);
+}
+
+/** 色相条：横轴 = 色相 0~360° */
+bindDrag(el.hueBar, (x) => {
+  hsv.h = x * 360;
+  renderPicker();
+  applyCustom(hsvToHex());
+});
+
+/** SV 板：横轴 = 饱和度，纵轴 = 明度（上亮下暗） */
+bindDrag(el.svPad, (x, y) => {
+  hsv.s = x;
+  hsv.v = 1 - y;
+  renderPicker();
+  applyCustom(hsvToHex());
+});
+
 /* ============ 初始化 ============ */
 renderAll();
+renderSizeGrid();
+renderColorGrid();
+renderIconPicks();
+renderFontIconPicks();
+renderPicker();
+syncStyleLabel();
 apply();
 </script>
 </body>
