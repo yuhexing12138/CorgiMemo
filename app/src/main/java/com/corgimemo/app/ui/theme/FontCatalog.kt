@@ -2,10 +2,15 @@ package com.corgimemo.app.ui.theme
 
 import android.content.Context
 import android.graphics.Typeface
+import android.util.LruCache
+import androidx.compose.ui.text.font.AndroidFont
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import com.corgimemo.app.R
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
+import java.io.File
 
 /**
  * 一款已内置、可商用（SIL OFL 1.1）中文字体的注册表条目。
@@ -18,6 +23,51 @@ import com.corgimemo.app.R
  * 因此像素探测必须按字重挑文件，不能用 `Typeface.create(weight)` 量化
  * ——否则得到的是系统字体的字面，与 App 实际渲染字体不符，探测结论会出错。
  */
+/**
+ * 以「文件路径 + 内存映射」加载字体，取代默认的 ResourceFont 路径。
+ *
+ * **为什么必须绕开 ResourceFont**：Compose 解析 `Font(resId)` 走
+ * `AndroidFontLoader` → `TypefaceCompat.createFromResources` → `Typeface.createFromInputStream`，
+ * 会把整份字体文件（14~19MB）读进一个 Java 堆 `byte[]`。每个字体被 chrome resolver、
+ * content resolver、框架字体缓存各留一份，常驻 3~4 份 → 连续换字体累积 ~500MB 致 OOM
+ * （堆转储实证：byte[] 总量 ≈ 502MB，最大项均为 13~18MB，恰与字体文件尺寸吻合）。
+ *
+ * 本加载器把 resId 拷到 cacheDir 后用 `Typeface.Builder(path).build()`（native mmap，不占 Java 堆），
+ * 从根上消除该 byte[]，与 [FontPreviewEngine] 预览路径一致。
+ */
+private val fileTypefaceCache = object : LruCache<Int, Typeface>(64) {
+    override fun sizeOf(key: Int, value: Typeface): Int = 1
+}
+
+/**
+ * 自定义 [AndroidFont.TypefaceLoader]：按 resId 把字体拷到 cacheDir（仅首次、幂等），
+ * 再以 `Typeface.Builder(path)` 内存映射方式构建 Typeface，规避整文件读入 Java 堆 byte[]。
+ * 同一 resId 的 Typeface 在本进程内复用 [fileTypefaceCache]，避免重复 mmap。
+ */
+private class FilePathTypefaceLoader(private val resId: Int) : AndroidFont.TypefaceLoader {
+    override fun loadBlocked(context: Context, font: Font): Typeface? {
+        fileTypefaceCache.get(resId)?.let { return it }
+        val file = File(context.cacheDir, "ff_font_$resId.ttf")
+        if (!file.exists()) {
+            runCatching {
+                context.resources.openRawResource(resId).use { input ->
+                    file.outputStream().use { input.copyTo(it) }
+                }
+            }.onFailure { return Typeface.DEFAULT }
+        }
+        val tf = Typeface.Builder(file.absolutePath).build() ?: Typeface.DEFAULT
+        fileTypefaceCache.put(resId, tf)
+        return tf
+    }
+
+    override fun awaitLoad(context: Context, font: Font): Deferred<Typeface?> =
+        CompletableDeferred(loadBlocked(context, font))
+}
+
+/** 由 resId 构建走文件路径 mmap 加载的 [AndroidFont]，替代 ResourceFont，根除 18MB byte[] 泄漏。 */
+private fun filePathFont(resId: Int, weight: FontWeight): Font =
+    AndroidFont(weight, FilePathTypefaceLoader(resId), "ff_$resId")
+
 data class FontEntry(
     val id: String,
     val displayName: String,
@@ -49,14 +99,13 @@ data class FontEntry(
                 else resByWeight.keys.sorted()
 
     /**
-     * 由 [resByWeight] 派生的 [Font] 列表（按字重建 [Font]）。
-     * 用于与正文字体合成「拉丁在前、中文在后」的字形回退链
-     * （[FontManager] / Theme.kt），避免重复维护两份字体清单。
-     * 系统默认条目无内置字体文件，返回空（合成时由 Compose 回退到系统字体）。
+     * 由 [resByWeight] 派生的 [Font] 列表（按字重建 [AndroidFont]，走文件路径 mmap 加载，
+     * 不把字体文件读入 Java 堆 byte[]），用于与正文字体合成「拉丁在前、中文在后」的字形回退链
+     * （[FontManager] / Theme.kt）。系统默认条目无内置字体文件，返回空。
      */
     val fonts: List<Font>
         get() = if (isSystemDefault) emptyList()
-                else resByWeight.map { (w, resId) -> Font(resId, FontWeight(w)) }
+                else resByWeight.map { (w, resId) -> filePathFont(resId, FontWeight(w)) }
 
     /**
      * 加粗程度候选档位（对应工具栏 B1 / B2 / B3）：取大于正文常规字重(400)的前三档。
@@ -120,10 +169,10 @@ object FontCatalog {
         licenseAsset = "licenses/SourceHanSansCN-OFL-1.1.txt",
         copyright = "Copyright © 2014 Adobe Systems Incorporated. All Rights Reserved.",
         family = FontFamily(
-            Font(R.font.source_hans_sans_cn_regular, FontWeight.Normal),    // 400
-            Font(R.font.source_hans_sans_cn_medium, FontWeight.Medium),     // 500
-            Font(R.font.source_hans_sans_cn_bold, FontWeight.Bold),         // 700
-            Font(R.font.source_hans_sans_cn_heavy, FontWeight.Black)        // 900
+            filePathFont(R.font.source_hans_sans_cn_regular, FontWeight.Normal),    // 400
+            filePathFont(R.font.source_hans_sans_cn_medium, FontWeight.Medium),     // 500
+            filePathFont(R.font.source_hans_sans_cn_bold, FontWeight.Bold),         // 700
+            filePathFont(R.font.source_hans_sans_cn_heavy, FontWeight.Black)        // 900
         ),
         tag = "source-han-sans-cn",
         resByWeight = mapOf(
@@ -142,13 +191,13 @@ object FontCatalog {
         licenseAsset = "licenses/SourceHanSerifCN-OFL-1.1.txt",
         copyright = "Copyright © 2017 Adobe Systems Incorporated (http://www.adobe.com/), with Reserved Font Name 'Source'.",
         family = FontFamily(
-            Font(R.font.source_han_serif_cn_extralight, FontWeight.ExtraLight), // 200
-            Font(R.font.source_han_serif_cn_light, FontWeight.Light),           // 300
-            Font(R.font.source_han_serif_cn_regular, FontWeight.Normal),        // 400
-            Font(R.font.source_han_serif_cn_medium, FontWeight.Medium),         // 500
-            Font(R.font.source_han_serif_cn_semibold, FontWeight.SemiBold),     // 600
-            Font(R.font.source_han_serif_cn_bold, FontWeight.Bold),             // 700
-            Font(R.font.source_han_serif_cn_heavy, FontWeight.Black)            // 900
+            filePathFont(R.font.source_han_serif_cn_extralight, FontWeight.ExtraLight), // 200
+            filePathFont(R.font.source_han_serif_cn_light, FontWeight.Light),           // 300
+            filePathFont(R.font.source_han_serif_cn_regular, FontWeight.Normal),        // 400
+            filePathFont(R.font.source_han_serif_cn_medium, FontWeight.Medium),         // 500
+            filePathFont(R.font.source_han_serif_cn_semibold, FontWeight.SemiBold),     // 600
+            filePathFont(R.font.source_han_serif_cn_bold, FontWeight.Bold),             // 700
+            filePathFont(R.font.source_han_serif_cn_heavy, FontWeight.Black)            // 900
         ),
         tag = "source-han-serif-cn",
         resByWeight = mapOf(
@@ -171,12 +220,12 @@ object FontCatalog {
         licenseAsset = "licenses/GenneGothic-OFL-1.1.txt",
         copyright = "Copyright © 2017, 2018 MoneMizuno. Copyright © 2014, 2015 Adobe Systems Incorporated. with Reserved Font Name 'Source'.",
         family = FontFamily(
-            Font(R.font.genne_gothic_extralight, FontWeight.ExtraLight),  // 200
-            Font(R.font.genne_gothic_light, FontWeight.Light),            // 300
-            Font(R.font.genne_gothic_regular, FontWeight.Normal),         // 400
-            Font(R.font.genne_gothic_medium, FontWeight.Medium),          // 500
-            Font(R.font.genne_gothic_bold, FontWeight.Bold),              // 700
-            Font(R.font.genne_gothic_heavy, FontWeight.Black)             // 900
+            filePathFont(R.font.genne_gothic_extralight, FontWeight.ExtraLight),  // 200
+            filePathFont(R.font.genne_gothic_light, FontWeight.Light),            // 300
+            filePathFont(R.font.genne_gothic_regular, FontWeight.Normal),         // 400
+            filePathFont(R.font.genne_gothic_medium, FontWeight.Medium),          // 500
+            filePathFont(R.font.genne_gothic_bold, FontWeight.Bold),              // 700
+            filePathFont(R.font.genne_gothic_heavy, FontWeight.Black)             // 900
         ),
         tag = "genne-gothic",
         resByWeight = mapOf(
@@ -197,13 +246,13 @@ object FontCatalog {
         licenseAsset = "licenses/SweiHalfMoonSC-OFL-1.1.txt",
         copyright = "Copyright (c) 2020, Chun yu Yao, with Reserved Font Name Untitled6.",
         family = FontFamily(
-            Font(R.font.swei_half_moon_sc_thin, FontWeight.Thin),         // 100
-            Font(R.font.swei_half_moon_sc_light, FontWeight.Light),       // 300
-            Font(R.font.swei_half_moon_sc_demilight, FontWeight(350)),    // 350
-            Font(R.font.swei_half_moon_sc_regular, FontWeight.Normal),    // 400
-            Font(R.font.swei_half_moon_sc_medium, FontWeight.Medium),     // 500
-            Font(R.font.swei_half_moon_sc_bold, FontWeight.Bold),         // 700
-            Font(R.font.swei_half_moon_sc_black, FontWeight.Black)        // 900
+            filePathFont(R.font.swei_half_moon_sc_thin, FontWeight.Thin),         // 100
+            filePathFont(R.font.swei_half_moon_sc_light, FontWeight.Light),       // 300
+            filePathFont(R.font.swei_half_moon_sc_demilight, FontWeight(350)),    // 350
+            filePathFont(R.font.swei_half_moon_sc_regular, FontWeight.Normal),    // 400
+            filePathFont(R.font.swei_half_moon_sc_medium, FontWeight.Medium),     // 500
+            filePathFont(R.font.swei_half_moon_sc_bold, FontWeight.Bold),         // 700
+            filePathFont(R.font.swei_half_moon_sc_black, FontWeight.Black)        // 900
         ),
         tag = "swei-half-moon-sc",
         resByWeight = mapOf(
@@ -225,10 +274,10 @@ object FontCatalog {
         licenseAsset = "licenses/Yozai-OFL-1.1.txt",
         copyright = "Copyright (C) 2020 LXGW. Original Font Data Copyright (C) Y.OzVox.",
         family = FontFamily(
-            Font(R.font.yozai_light, FontWeight.Light),      // 300
-            Font(R.font.yozai_regular, FontWeight.Normal),    // 400
-            Font(R.font.yozai_medium, FontWeight.Medium),     // 500
-            Font(R.font.yozai_bold, FontWeight.Bold)          // 700
+            filePathFont(R.font.yozai_light, FontWeight.Light),      // 300
+            filePathFont(R.font.yozai_regular, FontWeight.Normal),    // 400
+            filePathFont(R.font.yozai_medium, FontWeight.Medium),     // 500
+            filePathFont(R.font.yozai_bold, FontWeight.Bold)          // 700
         ),
         tag = "yozai",
         resByWeight = mapOf(
@@ -247,13 +296,13 @@ object FontCatalog {
         licenseAsset = "licenses/EarlySummerMincho-OFL-1.1.txt",
         copyright = "Copyright © 2020 Early Summer Foundry. (OFL 1.1；具体版权头以字体 name 表为准)",
         family = FontFamily(
-            Font(R.font.early_summer_mincho_extralight, FontWeight.ExtraLight), // 200
-            Font(R.font.early_summer_mincho_light, FontWeight.Light),           // 300
-            Font(R.font.early_summer_mincho_regular, FontWeight.Normal),        // 400
-            Font(R.font.early_summer_mincho_medium, FontWeight.Medium),         // 500
-            Font(R.font.early_summer_mincho_semibold, FontWeight.SemiBold),     // 600
-            Font(R.font.early_summer_mincho_bold, FontWeight.Bold),             // 700
-            Font(R.font.early_summer_mincho_heavy, FontWeight.Black)            // 900
+            filePathFont(R.font.early_summer_mincho_extralight, FontWeight.ExtraLight), // 200
+            filePathFont(R.font.early_summer_mincho_light, FontWeight.Light),           // 300
+            filePathFont(R.font.early_summer_mincho_regular, FontWeight.Normal),        // 400
+            filePathFont(R.font.early_summer_mincho_medium, FontWeight.Medium),         // 500
+            filePathFont(R.font.early_summer_mincho_semibold, FontWeight.SemiBold),     // 600
+            filePathFont(R.font.early_summer_mincho_bold, FontWeight.Bold),             // 700
+            filePathFont(R.font.early_summer_mincho_heavy, FontWeight.Black)            // 900
         ),
         tag = "early-summer-mincho",
         resByWeight = mapOf(
@@ -277,10 +326,10 @@ object FontCatalog {
         licenseAsset = "licenses/SpaceGrotesk-OFL-1.1.txt",
         copyright = "Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk).",
         family = FontFamily(
-            Font(R.font.space_grotesk_light, FontWeight.Light),       // 300
-            Font(R.font.space_grotesk_regular, FontWeight.Normal),     // 400
-            Font(R.font.space_grotesk_medium, FontWeight.Medium),      // 500
-            Font(R.font.space_grotesk_bold, FontWeight.Bold)           // 700
+            filePathFont(R.font.space_grotesk_light, FontWeight.Light),       // 300
+            filePathFont(R.font.space_grotesk_regular, FontWeight.Normal),     // 400
+            filePathFont(R.font.space_grotesk_medium, FontWeight.Medium),      // 500
+            filePathFont(R.font.space_grotesk_bold, FontWeight.Bold)           // 700
         ),
         tag = "space-grotesk",
         resByWeight = mapOf(
@@ -302,11 +351,11 @@ object FontCatalog {
         licenseAsset = "licenses/MapleMono-OFL-1.1.txt",
         copyright = "Copyright 2022 The Maple Mono Project Authors (https://github.com/subframe7536/maple-font).",
         family = FontFamily(
-            Font(R.font.maple_mono_light, FontWeight.Light),          // 300
-            Font(R.font.maple_mono_regular, FontWeight.Normal),        // 400
-            Font(R.font.maple_mono_medium, FontWeight.Medium),         // 500
-            Font(R.font.maple_mono_semibold, FontWeight.SemiBold),     // 600
-            Font(R.font.maple_mono_bold, FontWeight.Bold)              // 700
+            filePathFont(R.font.maple_mono_light, FontWeight.Light),          // 300
+            filePathFont(R.font.maple_mono_regular, FontWeight.Normal),        // 400
+            filePathFont(R.font.maple_mono_medium, FontWeight.Medium),         // 500
+            filePathFont(R.font.maple_mono_semibold, FontWeight.SemiBold),     // 600
+            filePathFont(R.font.maple_mono_bold, FontWeight.Bold)              // 700
         ),
         tag = "maple-mono",
         resByWeight = mapOf(
@@ -328,7 +377,7 @@ object FontCatalog {
         licenseAsset = "licenses/MaShanZheng-OFL-1.1.txt",
         copyright = "Copyright 2018 The Ma Shan Zheng Project Authors (https://github.com/googlefonts/ma-shan-zheng).",
         family = FontFamily(
-            Font(R.font.ma_shan_zheng_regular, FontWeight.Normal)        // 400
+            filePathFont(R.font.ma_shan_zheng_regular, FontWeight.Normal)        // 400
         ),
         tag = "ma-shan-zheng",
         resByWeight = mapOf(
@@ -345,7 +394,7 @@ object FontCatalog {
         licenseAsset = "licenses/ZhiMangXing-OFL-1.1.txt",
         copyright = "Copyright 2018 The Liu Jian Mao Cao Project Authors (https://github.com/googlefonts/liu-jian-mao-cao).",
         family = FontFamily(
-            Font(R.font.zhi_mang_xing_regular, FontWeight.Normal)        // 400
+            filePathFont(R.font.zhi_mang_xing_regular, FontWeight.Normal)        // 400
         ),
         tag = "zhi-mang-xing",
         resByWeight = mapOf(
@@ -362,7 +411,7 @@ object FontCatalog {
         licenseAsset = "licenses/LongCangKaiShu-OFL-1.1.txt",
         copyright = "Copyright (c) 2018-2022 ChillType.",
         family = FontFamily(
-            Font(R.font.chill_long_cang_kaishu_regular, FontWeight.Normal)   // 400
+            filePathFont(R.font.chill_long_cang_kaishu_regular, FontWeight.Normal)   // 400
         ),
         tag = "chill-long-cang-kaishu",
         resByWeight = mapOf(
@@ -379,8 +428,8 @@ object FontCatalog {
         licenseAsset = "licenses/Caveat-OFL-1.1.txt",
         copyright = "Copyright 2014 The Caveat Project Authors (https://github.com/googlefonts/caveat).",
         family = FontFamily(
-            Font(R.font.caveat_regular, FontWeight.Normal),     // 400
-            Font(R.font.caveat_bold, FontWeight.Bold)           // 700
+            filePathFont(R.font.caveat_regular, FontWeight.Normal),     // 400
+            filePathFont(R.font.caveat_bold, FontWeight.Bold)           // 700
         ),
         tag = "caveat",
         resByWeight = mapOf(
