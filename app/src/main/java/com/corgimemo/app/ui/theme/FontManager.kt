@@ -57,11 +57,15 @@ object FontManager {
     }
 
     /**
-     * 合成最终正文字体族：拉丁回退层在前（优先拉丁字形），正文字体在后（CJK 回退）。
-     * null 拉丁层时直接返回正文字体族。
+     * 合成最终正文字体族：拉丁回退层优先（拉丁字形走拉丁字体），中文走中文字体，二者按字形各取所需。
+     *
+     * - [latin] 为 null：直接返回正文字体族 [FontEntry.family]（中文单一字体，行为不变）。
+     * - [latin] 非 null：交由 [FontCatalog.combinedFamilyFonts] 生成**按字重回退链**的字体列表，
+     *   每个字重单元格用 `Typeface.Builder(latin).addCustomFallback(cjk).build()` 串成单一 Typeface，
+     *   从而拉丁字形走拉丁字体、中文字形走中文字体（修复旧实现同字重只解析单一 Typeface、中文落到系统兜底的问题）。
      */
     fun combinedFamily(cjk: FontEntry, latin: FontEntry?): FontFamily =
-        if (latin == null) cjk.family else FontFamily(latin.fonts + cjk.fonts)
+        if (latin == null) cjk.family else FontFamily(FontCatalog.combinedFamilyFonts(cjk, latin))
 
     /** 便捷：当前正文字体标签（供 [FontWeightProbe] 缓存隔离） */
     val tag: String get() = _currentEntry.value.tag
