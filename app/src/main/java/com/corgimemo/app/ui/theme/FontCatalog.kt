@@ -6,10 +6,11 @@ import android.util.LruCache
 import androidx.compose.ui.text.font.AndroidFont
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontLoadingStrategy
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import com.corgimemo.app.R
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Deferred
 import java.io.File
 
 /**
@@ -45,7 +46,7 @@ private val fileTypefaceCache = object : LruCache<Int, Typeface>(64) {
  * 同一 resId 的 Typeface 在本进程内复用 [fileTypefaceCache]，避免重复 mmap。
  */
 private class FilePathTypefaceLoader(private val resId: Int) : AndroidFont.TypefaceLoader {
-    override fun loadBlocked(context: Context, font: Font): Typeface? {
+    override fun loadBlocking(context: Context, font: AndroidFont): Typeface? {
         fileTypefaceCache.get(resId)?.let { return it }
         val file = File(context.cacheDir, "ff_font_$resId.ttf")
         if (!file.exists()) {
@@ -60,13 +61,30 @@ private class FilePathTypefaceLoader(private val resId: Int) : AndroidFont.Typef
         return tf
     }
 
-    override fun awaitLoad(context: Context, font: Font): Deferred<Typeface?> =
-        CompletableDeferred(loadBlocked(context, font))
+    override suspend fun awaitLoad(context: Context, font: AndroidFont): Typeface? =
+        loadBlocking(context, font)
 }
 
-/** 由 resId 构建走文件路径 mmap 加载的 [AndroidFont]，替代 ResourceFont，根除 18MB byte[] 泄漏。 */
+/**
+ * [AndroidFont] 的私有子类：按 resId 走文件路径 mmap 加载，替代 ResourceFont 以根除 18MB byte[] 泄漏。
+ * [AndroidFont] 为抽象类，此处承载 [Font] 接口要求的 [weight]/[style]；
+ * 加载策略用 [FontLoadingStrategy.Blocking]（mmap 同步、首帧即就绪，适合本地小字体）。
+ */
+private class FilePathAndroidFont(
+    resId: Int,
+    weight: FontWeight,
+) : AndroidFont(
+    loadingStrategy = FontLoadingStrategy.Blocking,
+    typefaceLoader = FilePathTypefaceLoader(resId),
+    variationSettings = FontVariation.Settings(weight, FontStyle.Normal),
+) {
+    override val weight: FontWeight = weight
+    override val style: FontStyle = FontStyle.Normal
+}
+
+/** 由 resId 构建走文件路径 mmap 加载的 [Font]，替代 ResourceFont，根除 18MB byte[] 泄漏。 */
 private fun filePathFont(resId: Int, weight: FontWeight): Font =
-    AndroidFont(weight, FilePathTypefaceLoader(resId), "ff_$resId")
+    FilePathAndroidFont(resId, weight)
 
 data class FontEntry(
     val id: String,
