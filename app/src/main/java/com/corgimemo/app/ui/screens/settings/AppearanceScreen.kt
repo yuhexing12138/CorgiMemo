@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,10 +28,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,9 +62,11 @@ import com.corgimemo.app.ui.theme.FontPreviewEngine
 /**
  * 外观设置页面
  *
- * 从 SettingsScreen 拆出独立页，承载两类外观设置：
+ * 从 SettingsScreen 拆出独立页，承载三类外观设置：
  * 1. 深色模式：跟随系统 / 亮色 / 深色（三选一，立即生效，写入 DataStore）
  * 2. 主题色：6 种 UI 设计规范 12.1.3 配色（暖阳橙/樱花粉/薄荷绿/天空蓝/薰衣紫/奶茶棕）
+ * 3. 字体：正文字体（CJK）+ 英文/数字字体（拉丁回退层），**分离式预览**——
+ *    点选只更新 pending 高亮，点分组标题右侧「确定」才应用为全 App 系统字体
  *
  * 入口路径：
  * - 「我的」页 → 主题配色卡 → 整卡点击 → `Screen.Appearance.route`
@@ -90,23 +94,38 @@ fun AppearanceScreen(
     val latinFontId by viewModel.latinFontId.collectAsState()
 
     // OOM 根治（结构层）：预渲染设置页全部字体行预览位图（各字体自身名称，IO 线程），完成后
-    // 清空 Typeface 池 → 设置页预览常态 0 常驻字体；行预览全走引擎位图、绝不实时改全局字体。
+    // 清空预览 Typeface 池 → 设置页预览常态 0 常驻字体；行预览全走引擎位图、绝不实时改全局字体。
     val previewContext = LocalContext.current
     LaunchedEffect(Unit) { FontPreviewEngine.prerenderBodyRows(previewContext) }
 
     /**
-     * v2026-09-03 OOM 根治（点选即预览 + 离页应用）：本页**不再逐次实时写全局字体**。
-     * 平台约束：FontFamilyResolver 对每款点选字体永久缓存且无清缓存 API，256MB 堆反复点选必 OOM
-     *（已复现）。故点选只更新本地 pending（行高亮即移 + 行预览引擎位图即时可见所选字形），
-     * 全局字体（MaterialTheme）仅在本页**退出时**一次性应用 → 每次进页只常驻 1 款新字体。
+     * v2026-09-04 分离式预览（取代旧的「点选即高亮 + 离页自动应用」）。
+     *
+     * 平台约束：FontFamilyResolver 对每款用过的字体永久缓存且无清缓存 API，256MB 堆下
+     * 反复实时切字体必 OOM（已复现）。故全局字体**只在点「确定」时应用一次**：
+     * - 点选字体行 → 只更新本地 pending（行高亮移动；行上的字形预览本就是引擎位图，
+     *   与全局字体无关，故「按钮上的字体」始终是真实的位图预览）；
+     * - 点分组标题右侧「确定」→ 把 pending 写入 [com.corgimemo.app.ui.theme.FontManager]
+     *   与持久化，全 App 系统字体即时生效；
+     * - **未点确定直接返回 = 丢弃本次选择**（不再沿用离页自动应用，严格「确认才生效」）；
+     * - 提交时清空预览字体池，保证常驻字体恒定在「中文 1 + 拉丁 1」两种。
      */
     var pendingFontId by remember(fontId) { mutableStateOf(fontId) }
     var pendingLatinFontId by remember(latinFontId) { mutableStateOf(latinFontId) }
-    DisposableEffect(Unit) {
-        onDispose {
-            if (pendingFontId != fontId) viewModel.setFontId(pendingFontId)
-            if (pendingLatinFontId != latinFontId) viewModel.setLatinFontId(pendingLatinFontId)
-        }
+
+    /** 是否存在「已点选但尚未确定」的改动（决定两处「确定」按钮的可用态）。 */
+    val hasPendingFontChange = pendingFontId != fontId || pendingLatinFontId != latinFontId
+
+    /**
+     * 确定应用 pending 字体：两个分组标题右侧的「确定」共用本函数，一次提交中文 + 拉丁两项。
+     * 内存状态与持久化由 [SettingsViewModel.setFontId] / [SettingsViewModel.setLatinFontId] 完成，
+     * 全 App 即时生效；随后清空预览池与字重探测池（预览位图与探测结果均已缓存，释放 Typeface 无损），
+     * 杜绝预览字体/旧字体字重文件与刚应用的两款字体共存。
+     */
+    fun confirmPendingFonts() {
+        if (pendingFontId != fontId) viewModel.setFontId(pendingFontId)
+        if (pendingLatinFontId != latinFontId) viewModel.setLatinFontId(pendingLatinFontId)
+        FontPreviewEngine.clearTypefaces()
     }
 
     Scaffold(
@@ -233,7 +252,16 @@ fun AppearanceScreen(
             // ========== 分组 3：正文字体（内置可商用中文多字重，OFL 1.1）==========
             item {
                 Column {
-                    AppearanceSectionTitle("正文字体")
+                    /**
+                     * 分组标题 + 右侧「确定」：点选只移动 pending 高亮，**点此才真正应用**全局字体
+                     * （与灵感编辑页字体面板右上角「完成」同语义）。无待应用改动时置灰。
+                     */
+                    AppearanceSectionTitle("正文字体") {
+                        FontConfirmButton(
+                            enabled = hasPendingFontChange,
+                            onClick = { confirmPendingFonts() }
+                        )
+                    }
                     Card(
                         shape = RoundedCornerShape(20.dp),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -252,8 +280,8 @@ fun AppearanceScreen(
                                 val isSelected = pendingFontId == entry.id
                                 AppearanceFontOption(
                                     title = entry.displayName,
-                                    // OOM 根治：行预览全走引擎位图（真实字形、零 Compose 缓存）；
-                                    // 点选只更新 pending（离页才应用），绝不实时改全局字体。
+                                    // 分离式预览：按钮上的字形本身就是引擎位图实时预览（零 Compose
+                                    // 字体缓存）；点选只更新 pending，点「确定」才改全局字体。
                                     preview = { color ->
                                         FontBodyPreview(entry = entry, color = color)
                                     },
@@ -270,7 +298,13 @@ fun AppearanceScreen(
             // ========== 分组 4：英文/数字字体（拉丁回退层，OFL 1.1）==========
             item {
                 Column {
-                    AppearanceSectionTitle("英文/数字字体")
+                    /** 同上：与正文字体共用同一个提交点（一次提交中文 + 拉丁两项） */
+                    AppearanceSectionTitle("英文/数字字体") {
+                        FontConfirmButton(
+                            enabled = hasPendingFontChange,
+                            onClick = { confirmPendingFonts() }
+                        )
+                    }
                     Card(
                         shape = RoundedCornerShape(20.dp),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -288,7 +322,7 @@ fun AppearanceScreen(
                             FontCatalog.latinEntries.forEach { entry ->
                                 AppearanceFontOption(
                                     title = entry.displayName,
-                                    // OOM 根治：行预览全走引擎位图；点选只更新 pending（离页才应用）
+                                    // 分离式预览：字形预览走引擎位图；点选只更新 pending，点「确定」才应用
                                     preview = { color ->
                                         FontBodyPreview(entry = entry, color = color)
                                     },
@@ -307,20 +341,69 @@ fun AppearanceScreen(
 }
 
 /**
+ * 字体「确定」按钮（分组标题行右侧）。
+ *
+ * 与灵感编辑页字体面板右上角「完成」同语义：点选字体只更新 pending，**点此才应用**。
+ * 无待应用改动（[enabled] = false）时置灰，避免无效点击。
+ *
+ * @param enabled 是否存在待应用的 pending 改动
+ * @param onClick 点击回调（提交 pending 字体）
+ */
+@Composable
+private fun FontConfirmButton(
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        // 压到 36dp 高、横向内边距 10dp：与 13sp 分组标题同排时保持标题行紧凑
+        // （TextButton 默认最小触摸高度 48dp，会把标题行撑高）
+        modifier = Modifier.height(36.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+    ) {
+        Text(
+            text = "确定",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = if (enabled) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+            }
+        )
+    }
+}
+
+/**
  * 外观设置分组标题
  * 与 SettingsScreen 的 SettingSectionTitle 视觉一致（13sp Medium + onSurfaceVariant）
  *
  * @param title 标题文案
+ * @param action 标题行右侧的可组合插槽（字体分组用其放置「确定」按钮）；不传则只显示标题
  */
 @Composable
-private fun AppearanceSectionTitle(title: String) {
-    Text(
-        text = title,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.Medium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-    )
+private fun AppearanceSectionTitle(
+    title: String,
+    action: (@Composable () -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (action != null) {
+            Spacer(modifier = Modifier.weight(1f))
+            action()
+        }
+    }
 }
 
 /**
@@ -452,11 +535,12 @@ private fun AppearanceColorOption(
 }
 
 /**
- * 正文（CJK）/ 拉丁字体预览（设置页字体行，OOM 根治后**全部行**走引擎位图）。
+ * 正文（CJK）/ 拉丁字体预览（设置页字体行，**全部行**走引擎位图）。
  *
- * 经 [FontPreviewEngine]（有界 Typeface 池 + 位图缓存）渲染「白色字形蒙版」Bitmap 再 `tint`
- * 到目标文字色——预览**永不创建/持有 Typeface**，页面预渲染完成后 Typeface 池即清空，常态
- * 0 常驻字体；点选只更新 pending（离页才应用全局字体），反复点选不 OOM。[color] 为行文字色。
+ * 这是「按钮上的字体本身用位图实时预览」的落点：每行以该字体自身名称渲染一张「白色字形蒙版」
+ * Bitmap 再 `tint` 到目标文字色，位图由 [FontPreviewEngine] 的有界预览池（容量 2）渲染一次即缓存，
+ * 预渲染完成后池即清空 → 行预览**不常驻任何字体**，与全局字体（点「确定」后才切换）完全解耦，
+ * 反复点选/滚动都不 OOM。[color] 为行文字色（随选中态切换）。
  */
 @Composable
 private fun FontBodyPreview(
@@ -481,8 +565,9 @@ private fun FontBodyPreview(
  *
  * 一行展示一款字体：以调用方注入的 [preview]（`(color: Color) -> Unit` 可组合 lambda）渲染
  * 预览，下方标注「名称 · 授权/档位」；选中态用主色容器 + "✓" 标记。
- * 预览的内容与颜色由调用方决定——正文字体经有界 Bitmap 缓存渲染真实字形（见 [FontBodyPreview]），
- * 拉丁字体用实时文本。点击调用 [onClick]，由调用方决定写入正文字体还是拉丁回退层偏好。
+ * 预览的内容与颜色由调用方决定——正文字体与拉丁字体**都**经引擎位图渲染真实字形
+ * （见 [FontBodyPreview]，零 Compose 字体缓存）。点击调用 [onClick]，由调用方决定
+ * 更新哪个 pending（真正写入全局字体发生在点「确定」时）。
  *
  * @param title 字体名称（显示在副标题）
  * @param preview 预览可组合 lambda，参数为当前行文字色（随选中态切换）
@@ -520,7 +605,7 @@ private fun AppearanceFontOption(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            // 预览由调用方注入：正文字体经有界 Bitmap 缓存渲染真实字形；拉丁字体实时文本
+            // 预览由调用方注入：两条分组的行预览都走引擎位图（真实字形、零字体常驻）
             preview(titleColor)
             Text(
                 text = "$title · $licenseLabel",

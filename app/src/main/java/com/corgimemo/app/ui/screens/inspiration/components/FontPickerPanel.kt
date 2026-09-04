@@ -61,10 +61,18 @@ import com.corgimemo.app.ui.theme.FontPreviewEngine
  * 取 `WindowInsets.ime` 记录的最近一次键盘高度，键盘未弹出过时兜底 291dp），
  * 内容超出时网格纵向滚动。
  *
- * **OOM 防护（结构层，见 [FontPreviewEngine]）**：CJK 字体单文件 14~19MB。预览不常驻任何字体——
- * 全部预览位图经 [FontPreviewEngine]（有界 Typeface 池 + 位图缓存）渲染，池容量有界、渲染后清空，
- * 面板**常态 0 常驻字体**；编辑内容经 Compose `FontFamilyResolver` 加载的字体（≤12 款 CJK ≈ 204MB）
- * 与面板预览完全隔离，故整体常驻 ≈ 204MB < 256MB，点选实时预览不崩。
+ * **分离式预览（v2026-09-04，取代旧的「点选即预览」位图复刻）**：
+ * 点选字体**只改变本面板的选中高亮**（pending），编辑区正文**不会**立即换字；
+ * 只有点击右上角「完成」才把选择一次性应用到内容字体
+ * （[com.corgimemo.app.ui.theme.ContentFontManager]）——
+ * 此时正文换为新字体，格式工具栏的字重按钮（B1/B2/B3 档位与可用态）也随新字体同步更新。
+ *
+ * **内存约束（结构层，见 [FontPreviewEngine]）**：CJK 字体单文件 14~19MB，故强行保证
+ * **一次最多只同时加载两种字体（中文字体 1 + 英文/数字字体 1）**：
+ * - 面板预览一律走 [FontPreviewEngine] 位图（白色字形蒙版 + tint），预览池容量 2、
+ *   预渲染后即清空 → 预览**常态 0 常驻字体**；
+ * - 字体种类只在「完成」时变化一次，且提交前会清空预览池，避免预览字体与应用字体共存；
+ * - 字重探测走独立的探测池（同一款字体的 B1/B2/B3 三档），不引入第三种字体。
  *
  * **选择语义**：
  * - 中文组：点选即选中（中文字体必选，无取消态）
@@ -73,11 +81,11 @@ import com.corgimemo.app.ui.theme.FontPreviewEngine
  *  与 [FontCatalog.DEFAULT_LATIN_ID] 语义一致）
  *
  * @param panelHeight 面板总高度（= 键盘高度；内容区超出时纵向滚动）
- * @param currentCjkId 当前中文字体 id（回显选中态）
- * @param currentLatinId 当前英文/数字字体 id；空串 = 跟随中文（无选中高亮）
- * @param onCjkSelect 中文组点击回调（参数为字体 id）
+ * @param currentCjkId 当前中文字体 id（pending 态回显；点「完成」后才真正生效）
+ * @param currentLatinId 当前英文/数字字体 id（pending 态回显）；空串 = 跟随中文（无选中高亮）
+ * @param onCjkSelect 中文组点击回调（参数为字体 id；只更新 pending，不应用）
  * @param onLatinSelect 拉丁组点击回调；再点已选项时回调**空串**表示取消（跟随中文）
- * @param onDone 点击「完成」收起面板
+ * @param onDone 点击「完成」：应用 pending 字体到内容并收起面板
  */
 @Composable
 fun FontPickerPanel(
