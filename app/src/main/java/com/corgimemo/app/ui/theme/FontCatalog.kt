@@ -137,6 +137,8 @@ private fun cacheFontFile(context: Context, resId: Int): File? {
  * 改用 `CustomFallbackBuilder.addCustomFallback` 才能把**任意资源字体**挂为回退层。
  * [cjkResId] 为 0（中文=系统默认、无内置文件）时只加载拉丁字体，中文回落设备系统字体（符合预期）；
  * [latinResId] 为 null 时只加载中文字体（等价于旧 `latin==null` 分支）。
+ * 单档 400 书法体在标题 Bold(700) 请求下，由 [buildFontFamily] 在回退族内同时挂「请求字重」与「真实字重」两份字体，
+ * 确保中文回退层不被字重不匹配跳过（详见 [buildFontFamily] 注释）。
  * 运行时按 [Build.VERSION.SDK_INT] 降级：API 26–28 无公开自定义回退 API，退化到单一字体、优先中文。
  */
 private class CombinedTypefaceLoader(
@@ -180,14 +182,17 @@ private fun buildCombinedTypeface(
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         val latinFamily = latinResId?.let { buildFontFamily(context, it, weight) }
         val cjkFamily = if (cjkResId > 0) buildFontFamily(context, cjkResId, weight) else null
+        // 优先级：拉丁+中文合成 > 仅中文 > 仅拉丁；任一构建失败都不静默丢弃中文
+        // （cjk 一旦构建成功必被使用，避免单档书法体在粗体标题下回退层被跳过而落到系统字体）。
         when {
             latinFamily != null && cjkFamily != null ->
                 Typeface.CustomFallbackBuilder(latinFamily).addCustomFallback(cjkFamily).setStyle(style).build()
-            latinFamily != null ->
-                Typeface.CustomFallbackBuilder(latinFamily).setStyle(style).build()
             cjkFamily != null ->
                 Typeface.CustomFallbackBuilder(cjkFamily).setStyle(style).build()
-            else -> null
+            latinFamily != null ->
+                Typeface.CustomFallbackBuilder(latinFamily).setStyle(style).build()
+            // 兜底：中文资源有效却双双构建失败，直接用中文文件构建，绝不静默丢弃中文
+            else -> if (cjkResId > 0) cacheFontFile(context, cjkResId)?.let { Typeface.createFromFile(it) } else null
         }
     } else {
         // 低于 API 29：无公开自定义回退链，退化为单一字体（优先中文）
@@ -200,14 +205,29 @@ private fun buildCombinedTypeface(
     }
 }.getOrNull()
 
-/** 由 resId 构建单个 [GFontFamily]（缓存文件 → [GFont] → [GFontFamily]）。 */
+/**
+ * 由 resId 构建单个 [GFontFamily]（缓存文件 → [GFont] → [GFontFamily]）。
+ *
+ * **单档字体 + 粗体标题修复**：单档 400 书法体在标题 Bold(700) 请求下，若只按「请求字重」声明一个
+ * [GFont]，CustomFallbackBuilder 的中文回退层会因字重不匹配被跳过（正文 400 因精确匹配正常）。
+ * 这里在回退族里**同时挂两份**——「按请求字重声明的字体」(主匹配项，与 setStyle 精确命中)
+ * 与「文件真实（自然）字重的字体」(兜底，覆盖请求字重被跳过的边界)——
+ * 确保任意字重请求都能命中中文回退，且不破坏多档字体（精确档位仍是主匹配项）。
+ */
 private fun buildFontFamily(context: Context, resId: Int, weight: Int): GFontFamily? = runCatching {
     val file = cacheFontFile(context, resId) ?: return null
-    val font = GFont.Builder(file)
+    // 主字体：按请求字重声明，与 CustomFallbackBuilder.setStyle(请求字重) 精确对齐
+    val primary = GFont.Builder(file)
         .setWeight(weight)
         .setSlant(GFontStyle.FONT_SLANT_UPRIGHT)
         .build()
-    GFontFamily.Builder(font).build()
+    val builder = GFontFamily.Builder(primary)
+    // 兜底字体：文件真实（自然）字重，确保中文字形在任意字重下恒可回退
+    runCatching {
+        val natural = GFont.Builder(file).build()
+        builder.addFont(natural)
+    }
+    builder.build()
 }.getOrNull()
 
 /** 合成「拉丁优先 + 中文兜底」的 [AndroidFont]：每个字重串成单一按字形回退的 Typeface。 */
