@@ -348,8 +348,16 @@ fun InspirationViewCard(
  * 现版本编码器已将这两项以 `<span style="font-size:Npx;color:#RRGGBB">` 内联往返保留，
  * 详情页只需改用 [RichText] 渲染 [contentFormat] 即可还原。
  *
+ * **v2026-09-05 二次修复「段间多出空行」**：库把 markdown 段落分隔 `\n\n` 解码为一个
+ * **可见空段**（`[a, b]` ⇄ `a\n\nb` 双向自洽的库内语义），而编辑页 `BodyBlocksEditor`
+ * 加载时按 `\n\n` 拆成单段落块、空段丢弃——两边渲染不一致。故详情页**镜像编辑页的分段**：
+ * 复用 [parseMarkdownSegments] 切段、Text 段按 `\n\n` 拆段逐段渲染（段间零间距=相邻行），
+ * 保证编辑页看到的换行间距与详情页一致。图片段跳过（由下方 InspirationDetailImageStack
+ * 统一渲染，避免 markdown 内联图片与图片堆叠重复显示）。
+ *
  * @param contentFormat 富文本 Markdown（由编辑页 `RichTextState.toMarkdown()` 导出）。
- * @param fallbackContent 旧记录 `contentFormat` 为空时的纯文本回退（保证历史数据不丢）。
+ * @param fallbackContent 旧记录 `contentFormat` 为空时的纯文本回退（按改造前的纯 Text
+ *   渲染，不喂给 markdown 解析，避免旧文本里的 `*` 等字符被误当语法）。
  * @param fontFamily 本条灵感记录的字体族（与标题、编辑页一致）。
  */
 @Composable
@@ -359,26 +367,67 @@ private fun InspirationBodyRichText(
     fontFamily: FontFamily,
     modifier: Modifier = Modifier,
 ) {
-    // contentFormat 非空优先（携带逐字排版）；旧记录无 contentFormat 时回退纯文本 content。
-    val markdown = contentFormat.ifEmpty { fallbackContent }
-    val richTextState = rememberRichTextState()
-    LaunchedEffect(markdown) {
-        if (markdown.isNotEmpty()) {
-            // setMarkdown 非 suspend，直接调用；状态变更后 RichText 自动重组渲染。
-            richTextState.setMarkdown(markdown)
-        }
-    }
-    if (markdown.isNotEmpty()) {
-        RichText(
-            state = richTextState,
-            modifier = modifier,
-            // 基础样式与改造前纯 Text 完全一致：未设置排版的字符回落下列值，
-            // 已设 fontSize/color 的字符以 span 内联值为准（覆盖基础样式）。
+    if (contentFormat.isEmpty()) {
+        // 旧记录无富文本（contentFormat 未迁移）：保持改造前的纯 Text 渲染，
+        // 不走 markdown 解析（旧纯文本可能含 `*` 等字符，解析会误判为语法）。
+        Text(
+            text = fallbackContent,
             fontFamily = fontFamily,
             fontSize = 15.sp,
             color = Color(0xFF666666),
             lineHeight = 22.sp,
-            letterSpacing = 0.5.sp,
+            letterSpacing = 0.5.sp
         )
+        return
     }
+
+    // 与编辑页 initialize 同源的分段：图片段独立（此处跳过），Text 段按 \n\n 拆段。
+    // 每段一个 RichText、Column 零间距堆叠 → 视觉上与编辑页的相邻段落块一致。
+    val paragraphs = remember(contentFormat) {
+        parseMarkdownSegments(contentFormat)
+            .filterIsInstance<MdSegment.TextSeg>()
+            .flatMap { it.md.split("\n\n") }
+            .map { it.trim('\n') }
+            .filter { it.isNotEmpty() }
+    }
+    Column(modifier = modifier) {
+        paragraphs.forEach { para ->
+            InspirationBodyParagraph(
+                markdown = para,
+                fontFamily = fontFamily,
+            )
+        }
+    }
+}
+
+/**
+ * 详情页正文单段渲染：把单段 markdown 解析进独立 [RichTextState] 后用只读 [RichText] 展示。
+ *
+ * 基础样式（15sp / #666666 / 行高 22sp / 字距 0.5sp）与改造前纯 Text 一致；
+ * 段内逐字 span 的 fontSize/color 覆盖基础值，未设置处回落基础样式。
+ * 空白块占位段（NBSP）会渲染为一行空白，与编辑页空白块语义一致。
+ *
+ * @param markdown 单段 markdown（不含 `\n\n` 段落分隔）。
+ * @param fontFamily 本条灵感记录的字体族。
+ */
+@Composable
+private fun InspirationBodyParagraph(
+    markdown: String,
+    fontFamily: FontFamily,
+) {
+    val richTextState = rememberRichTextState()
+    LaunchedEffect(markdown) {
+        // setMarkdown 非 suspend，直接调用；状态变更后 RichText 自动重组渲染。
+        richTextState.setMarkdown(markdown)
+    }
+    RichText(
+        state = richTextState,
+        // 基础样式与改造前纯 Text 完全一致：未设置排版的字符回落下列值，
+        // 已设 fontSize/color 的字符以 span 内联值为准（覆盖基础样式）。
+        fontFamily = fontFamily,
+        fontSize = 15.sp,
+        color = Color(0xFF666666),
+        lineHeight = 22.sp,
+        letterSpacing = 0.5.sp,
+    )
 }
