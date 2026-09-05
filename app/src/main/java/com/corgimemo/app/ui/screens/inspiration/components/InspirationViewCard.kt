@@ -416,6 +416,9 @@ private fun InspirationBodyParagraph(
     fontFamily: FontFamily,
 ) {
     val richTextState = rememberRichTextState()
+    /** 列表无缩进：详情页正文列表与编辑页一致（圆点/数字紧贴文字左侧、与正文左对齐）。
+     *  默认 38sp 缩进过宽，需求要求去掉；与编辑页 BodyBlocksEditor 的 config.listIndent=0 保持一致。 */
+    richTextState.config.listIndent = 0
     LaunchedEffect(markdown) {
         // setMarkdown 非 suspend，直接调用；状态变更后 RichText 自动重组渲染。
         richTextState.setMarkdown(markdown)

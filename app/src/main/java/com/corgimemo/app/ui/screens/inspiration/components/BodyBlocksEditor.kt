@@ -441,6 +441,10 @@ class BodyBlocksController(
      */
     fun createTextBlock(markdown: String, id: String = newBodyBlockId()): BodyBlock.Text {
         val state = RichTextState()
+        /** 列表无缩进：圆点/数字紧贴文字左侧、与正文左对齐（默认 38sp 缩进过宽，需求要求去掉）。
+         *  通过 [com.mohamedrejeb.richeditor.model.RichTextConfig.listIndent] 控制，
+         *  影响所有新建/重建的 Text 块（含从 markdown 载入的列表项）。 */
+        state.config.listIndent = 0
         /** v2026-09-01 关闭编辑态内联图片渲染（防御性）：插图已改为拆块
          *  （Text 块 state 不持有 image span），正常路径覆盖层无图可画；
          *  关掉开关可兜底边缘路径（如粘贴含图 markdown 进块内），避免覆盖层

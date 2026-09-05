@@ -1431,6 +1431,9 @@ fun InspirationEditScreen(
              * 3. 防循环：用 if (currentText != title) 判断避免重复触发
              */
             val titleRichTextState = rememberRichTextState()
+            /** 标题为纯文本（无列表），此处同步关闭列表缩进仅作一致性兜底，
+             *  与编辑页正文块、详情页正文保持一致（RichTextConfig.listIndent=0）。 */
+            titleRichTextState.config.listIndent = 0
 
             /** 单向同步：viewModel.title 变化时（loadInspiration / 外部调用 setTitle）→ state */
             LaunchedEffect(title) {
