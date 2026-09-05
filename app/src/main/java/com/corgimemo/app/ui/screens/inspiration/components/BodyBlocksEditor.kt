@@ -489,6 +489,26 @@ class BodyBlocksController(
     }
 
     /**
+     * 取当前有序列表块的字面编号（用于拆块续行时计算下一行编号）。
+     *
+     * 以 [blockMarkdown]（即库的 [RichTextState.toMarkdown]）为准：库对有序列表
+     * 始终序列化为 `"N. "` 字面编号（见 [com.mohamedrejeb.richeditor.parser.markdown.RichTextStateMarkdownParser]
+     * 中 OrderedList 的编码 `"${type.number}. "`），与列表缩进/视觉前缀格式无关。
+     *
+     * 注意：不能直接读 [RichTextState.annotatedString] 的 marker 前缀——在
+     * listIndent=0 等场景下 marker 可能不含结尾空格（如 `"2.测试"`），用
+     * `^(\d+)\.\s` 会失配回退成 1，导致连续回车永远只续出 `"2."` 而非递增编号
+     * （如编辑为 `"2.测试"` 后再回车应得 `"3."`，旧逻辑却给出 `"2."`）。
+     *
+     * @return 当前编号（如 `"2. 测试"` → 2）；非有序列表返回 null。
+     */
+    private fun currentOrderedNumber(state: RichTextState): Int? {
+        if (!state.isOrderedList) return null
+        val md = blockMarkdown(state)
+        return Regex("^(\\d+)\\.").find(md)?.groupValues?.get(1)?.toIntOrNull()
+    }
+
+    /**
      * 新建 Text 块。
      *
      * @param id 块 id：Command 重放时传入原 id 复用（焦点/外部引用保持稳定），
@@ -894,14 +914,9 @@ class BodyBlocksController(
             else -> null
         }
         val listForNewBlocks = srcListType
-        /** 有序列表续号：取源块 marker 里的字面编号，新块起始编号 = 源块编号 +1。
-         *  源块 annotatedString 形如 "1. 测试" / "2. 测试"，用正则取首数字。 */
-        val srcOrderedNumber = if (block.state.isOrderedList) {
-            Regex("^(\\d+)\\.\\s").find(block.state.annotatedString.text)
-                ?.groupValues?.get(1)?.toIntOrNull() ?: 1
-        } else {
-            null
-        }
+        /** 有序列表续号：取源块字面编号（以 markdown 序列化结果为准，避免 marker 缺空格失配），
+         *  新块起始编号 = 源块编号 +1。源块 markdown 形如 "1. 测试" / "2. 测试"。 */
+        val srcOrderedNumber = currentOrderedNumber(block.state)
         executeAndPush(
             ReplaceBlocksCommand(
                 index = idx,
