@@ -161,11 +161,26 @@ sealed class BodyBlock {
  * （裁剪 cropRect / 备注 note / 缩放 displayWidthRatio）落地时，沿用本模式
  * 把字段加进 [ImageSpec] 即可，Command 的重建逻辑不用动。
  */
+/**
+ * 列表类型（拆块时用于让新行继续列表）。
+ * 与 [com.mohamedrejeb.richeditor.model.RichTextState] 的列表样式对应，
+ * 在此处独立定义以避免 App 层在 spec 中直接流转子模块内部类型。
+ */
+private enum class InheritedListType {
+    Unordered,
+    Ordered,
+}
+
 sealed class BlockSpec {
     abstract val id: String
 
     /** Text 块：markdown 剥过 ZWSP（见 [BodyBlocksController.blockMarkdown]） */
-    data class TextSpec(override val id: String, val markdown: String) : BlockSpec()
+    data class TextSpec(
+        override val id: String,
+        val markdown: String,
+        /** 拆块/归一化时新块继承的列表类型；null = 不强制，沿用 markdown 自带样式 */
+        val initialListType: InheritedListType? = null,
+    ) : BlockSpec()
 
     /** Image 块：只有 uri 路径 */
     data class ImageSpec(override val id: String, val path: String) : BlockSpec()
@@ -439,7 +454,52 @@ class BodyBlocksController(
      * @param id 块 id：Command 重放时传入原 id 复用（焦点/外部引用保持稳定），
      *   缺省生成新 id。
      */
-    fun createTextBlock(markdown: String, id: String = newBodyBlockId()): BodyBlock.Text {
+    /**
+     * 判断列表块是否为“空列表项”：仅有 marker（• / 1. 等）而无实际文字。
+     * 用于回车退出列表的判断（空列表项回车 → 普通空行）。
+     * 用 markdown 去掉列表前缀后判断是否还剩文字，规避 marker 作为内联文本
+     * 导致 [RichTextState.annotatedString] 非空造成的误判。
+     */
+    private fun isEmptyListItem(state: RichTextState): Boolean {
+        if (!state.isList) return false
+        val md = state.toMarkdown().replace(ZWSP, "").trim()
+        // 去掉有序/无序列表前缀（允许前导缩进与可选空格）："- " / "* " / "+ " / "1. " / "1) "
+        val content = md.replaceFirst(Regex("^\\s*([-*+]|\\d+[.)])\\s*"), "")
+        return content.isBlank()
+    }
+
+    /**
+     * 列表续行后纠正新列表块光标：Command 落地时默认 raw 偏移 0 会落在 bullet（marker）
+     * 之前，导致后续输入字符插到 bullet 前面（如 "a• "）。此处把光标移到 marker 之后
+     * （内容起点）。
+     *
+     * marker 长度用块的 [RichTextState.annotatedString] 前缀正则反推，不依赖子模块
+     * internal 字段（richParagraphList / startText 均不可从 App 访问）。
+     * 覆盖默认无序前缀（• / ◦ / ▪）+ 空格，以及有序（数字 + "." + 空格，兼容 1. / 10.）。
+     */
+    private fun refocusListBlock(blockId: String) {
+        val block = blocks.firstOrNull { it is BodyBlock.Text && it.id == blockId } as? BodyBlock.Text
+            ?: return
+        if (!block.state.isList) return
+        val text = block.state.annotatedString.text
+        val markerEnd = Regex("^[•◦▪]\\s|\\d+\\.\\s").find(text)?.range?.last?.plus(1) ?: 0
+        focusSpec(FocusSpec(blockId, markerEnd))
+    }
+
+    /**
+     * 新建 Text 块。
+     *
+     * @param id 块 id：Command 重放时传入原 id 复用（焦点/外部引用保持稳定），
+     *   缺省生成新 id。
+     * @param initialListType 拆块/归一化时新块应继承的列表类型；null = 沿用 markdown 自带样式。
+     *   非空 markdown 若已含列表 marker（如软键盘切分），创建后 [RichTextState.isList] 已为真，
+     *   内部会跳过避免重复添加 marker。
+     */
+    fun createTextBlock(
+        markdown: String,
+        id: String = newBodyBlockId(),
+        initialListType: InheritedListType? = null,
+    ): BodyBlock.Text {
         val state = RichTextState()
         /** 列表无缩进：圆点/数字紧贴文字左侧、与正文左对齐（默认 38sp 缩进过宽，需求要求去掉）。
          *  通过 [com.mohamedrejeb.richeditor.model.RichTextConfig.listIndent] 控制，
@@ -461,6 +521,15 @@ class BodyBlocksController(
             /** 空块预置 ZWSP + 光标 (1, 1)：让软键盘退格能产生状态变化被 observer 捕获 */
             state.setText(ZWSP)
             state.selection = TextRange(1)
+        }
+        /** 列表续行：源块为列表且新块自身尚未带列表样式时，继承为同类型列表项
+         *  （实现“回车后下一行继续列表”）。
+         *  非空 markdown 若已含列表 marker（如软键盘切分），state.isList 已为真，跳过避免重复添加。 */
+        if (initialListType != null && !state.isList) {
+            when (initialListType) {
+                InheritedListType.Unordered -> state.addUnorderedList()
+                InheritedListType.Ordered -> state.addOrderedList()
+            }
         }
         return BodyBlock.Text(id, state)
     }
@@ -770,18 +839,34 @@ class BodyBlocksController(
             block.state.toMarkdown(TextRange(afterStart, text.length)).replace(ZWSP, "") else ""
 
         val newId = newBodyBlockId()
+        /** 列表续行：源块为列表时，新行（前半/后半块）继承同类型列表；
+         *  但源块本身是“空列表项”（只有 marker 无文字）时回车退出列表，
+         *  成为普通空行（标准编辑器行为，便于结束列表）。 */
+        val srcListType: InheritedListType? = when {
+            block.state.isUnorderedList -> InheritedListType.Unordered
+            block.state.isOrderedList -> InheritedListType.Ordered
+            else -> null
+        }
+        val listForNewBlocks = if (srcListType != null && !isEmptyListItem(block.state)) {
+            srcListType
+        } else {
+            null
+        }
         executeAndPush(
             ReplaceBlocksCommand(
                 index = idx,
                 removedSpecs = listOf(textSpec(block)),
                 insertedSpecs = listOf(
-                    BlockSpec.TextSpec(block.id, beforeMd),
-                    BlockSpec.TextSpec(newId, afterMd),
+                    BlockSpec.TextSpec(block.id, beforeMd, listForNewBlocks),
+                    BlockSpec.TextSpec(newId, afterMd, listForNewBlocks),
                 ),
                 focusBefore = currentFocusSpec(),
                 focusAfter = FocusSpec(newId, 0),
             )
         )
+        /** 修正新列表块光标：落在 marker 之后（默认偏移 0 会落在 bullet 之前）。
+         *  仅在继续列表（listForNewBlocks != null）时调用；退出列表的普通空块无需修正。 */
+        if (listForNewBlocks != null) refocusListBlock(newId)
     }
 
     /**
@@ -798,6 +883,19 @@ class BodyBlocksController(
         if (idx < 0) return
         val text = block.state.annotatedString.text
         if (!text.contains('\n')) return
+
+        /** 列表续行：软键盘回车/粘贴多行拆块时，新行继承源块列表类型；
+         *  空列表项整体退化为空块（下方 lastContent<0 分支）即退出列表。 */
+        val srcListType: InheritedListType? = when {
+            block.state.isUnorderedList -> InheritedListType.Unordered
+            block.state.isOrderedList -> InheritedListType.Ordered
+            else -> null
+        }
+        val listForNewBlocks = if (srcListType != null && !isEmptyListItem(block.state)) {
+            srcListType
+        } else {
+            null
+        }
 
         val cursor = block.state.selection.start.coerceIn(0, text.length)
 
@@ -837,7 +935,7 @@ class BodyBlocksController(
                 val md = block.state.toMarkdown(TextRange(s, e)).replace(ZWSP, "")
                 if (md.isNotBlank()) {
                     val specId = if (inserted.isEmpty()) block.id else newBodyBlockId()
-                    inserted += BlockSpec.TextSpec(specId, md)
+                    inserted += BlockSpec.TextSpec(specId, md, listForNewBlocks)
                     /**
                      * 光标落点：cursor 落在这一行 → 该块 + 行内有效偏移。
                      * （区间连续覆盖全文，cursor <= e 时必有 cursor >= s，substring 安全）
@@ -859,7 +957,7 @@ class BodyBlocksController(
         /** 末尾有连续空行 = 回车在段尾 → 保留一个空块作为新段落 */
         val trailingBlanks = ranges.size - 1 - lastContent
         if (trailingBlanks > 0 || inserted.isEmpty()) {
-            inserted += BlockSpec.TextSpec(newBodyBlockId(), "")
+            inserted += BlockSpec.TextSpec(newBodyBlockId(), "", listForNewBlocks)
         }
         if (focusBlockId == null) {
             focusBlockId = (inserted.last() as BlockSpec.TextSpec).id
@@ -875,6 +973,9 @@ class BodyBlocksController(
                 focusAfter = FocusSpec(focusBlockId, focusOffset),
             )
         )
+        /** 修正新列表块光标：若焦点落在新列表块（继续列表）上，移到 marker 之后；
+         *  普通块（isList=false）refocusListBlock 内部直接跳过，无副作用。 */
+        refocusListBlock(focusBlockId)
     }
 
     // ---------- Command 命令栈（方案A：两套历史隔离） ----------
@@ -1076,7 +1177,7 @@ class BodyBlocksController(
 
     /** 按 [BlockSpec] 重建块（Text 走 setMarkdown 还原富文本样式；Image 只存 uri） */
     private fun rebuildBlock(spec: BlockSpec): BodyBlock = when (spec) {
-        is BlockSpec.TextSpec -> createTextBlock(spec.markdown, spec.id)
+        is BlockSpec.TextSpec -> createTextBlock(spec.markdown, spec.id, spec.initialListType)
         is BlockSpec.ImageSpec -> BodyBlock.Image(spec.id, spec.path)
     }
 
