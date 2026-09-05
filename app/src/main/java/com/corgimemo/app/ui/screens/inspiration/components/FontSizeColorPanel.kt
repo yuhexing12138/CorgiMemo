@@ -392,9 +392,13 @@ private data class Hsv(val h: Float, val s: Float, val v: Float)
 /** 取色器初值（对照原型 hsv = { h:24, s:0.62, v:0.91 } ≈ #E88A4D 暖橙）。 */
 private val DEFAULT_HSV = Hsv(h = 24f, s = 0.62f, v = 0.91f)
 
+/** [Hsv] → Compose [Color]（走平台 HSVToColor，低 32 位即 ARGB，交给 `Color(Long)` 打包）。 */
+private fun hsvToColor(hsv: Hsv): Color =
+    Color(AndroidColor.HSVToColor(floatArrayOf(hsv.h, hsv.s, hsv.v)).toLong() and 0xFFFFFFFFL)
+
 /** 色相条渐变停靠色（红→黄→绿→青→蓝→品红→红，对照原型 CSS 六段渐变）。 */
 private val HUE_COLORS = listOf(0f, 60f, 120f, 180f, 240f, 300f, 360f).map { h ->
-    Color(AndroidColor.HSVToColor(floatArrayOf(h, 1f, 1f)).toLong() and 0xFFFFFFFFL)
+    hsvToColor(Hsv(h = h, s = 1f, v = 1f))
 }
 
 /**
@@ -458,7 +462,7 @@ private fun HsvPicker(
                         change.consume()
                         update(
                             hsv.copy(
-                                h = (change.position().x / barWidthPx.coerceAtLeast(1) * 360f)
+                                h = (change.position.x / barWidthPx.coerceAtLeast(1) * 360f)
                                     .coerceIn(0f, 360f)
                             )
                         )
@@ -515,9 +519,9 @@ private fun HsvPicker(
                         change.consume()
                         update(
                             hsv.copy(
-                                s = (change.position().x / padSize.width.coerceAtLeast(1))
+                                s = (change.position.x / padSize.width.coerceAtLeast(1))
                                     .coerceIn(0f, 1f),
-                                v = (1f - change.position().y / padSize.height.coerceAtLeast(1))
+                                v = (1f - change.position.y / padSize.height.coerceAtLeast(1))
                                     .coerceIn(0f, 1f)
                             )
                         )
