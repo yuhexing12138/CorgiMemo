@@ -456,6 +456,9 @@ class BodyBlocksController(
      * @param id 块 id：Command 重放时传入原 id 复用（焦点/外部引用保持稳定），
      *   缺省生成新 id。
      */
+    /** 列表 marker 前缀（markdown 形态）：`"- "`/`"* "`/`"+ "`/`"1. "`/`"1) "`，允许前导缩进与可选空格 */
+    private val ListMarkerPrefixRegex = Regex("^\\s*([-*+]|\\d+[.)])\\s*")
+
     /**
      * 判断列表块是否为“空列表项”：仅有 marker（• / 1. 等）而无实际文字。
      * 用于回车退出列表的判断（空列表项回车 → 普通空行）。
@@ -465,10 +468,16 @@ class BodyBlocksController(
     private fun isEmptyListItem(state: RichTextState): Boolean {
         if (!state.isList) return false
         val md = state.toMarkdown().replace(ZWSP, "").trim()
-        // 去掉有序/无序列表前缀（允许前导缩进与可选空格）："- " / "* " / "+ " / "1. " / "1) "
-        val content = md.replaceFirst(Regex("^\\s*([-*+]|\\d+[.)])\\s*"), "")
-        return content.isBlank()
+        return isMarkerOnlyMarkdown(md)
     }
+
+    /**
+     * 判断 markdown 片段是否「仅列表 marker（或纯空白）」：去掉可选 marker 前缀后内容为空白。
+     * 与 [isEmptyListItem] 同口径，但作用于 markdown 字符串而非 state——用于拆块时识别
+     * range 版 toMarkdown 对 ZWSP-only 尾部产出的 marker-only 片段（如 `"2. "`/`"• "`）。
+     */
+    private fun isMarkerOnlyMarkdown(md: String): Boolean =
+        md.replaceFirst(ListMarkerPrefixRegex, "").isBlank()
 
     /**
      * 列表续行后纠正新列表块光标：Command 落地时默认 raw 偏移 0 会落在 bullet（marker）
@@ -903,8 +912,6 @@ class BodyBlocksController(
 
         val text = block.state.annotatedString.text
         val beforeMd = if (beforeEnd > 0) block.state.toMarkdown(TextRange(0, beforeEnd)).replace(ZWSP, "") else ""
-        val afterMd = if (afterStart < text.length)
-            block.state.toMarkdown(TextRange(afterStart, text.length)).replace(ZWSP, "") else ""
 
         val newId = newBodyBlockId()
         /** 列表续行：源块为列表类型（空列表项回车已在上方前置分支退出列表，不会走到这里） */
@@ -917,6 +924,31 @@ class BodyBlocksController(
         /** 有序列表续号：取源块字面编号（以 markdown 序列化结果为准，避免 marker 缺空格失配），
          *  新块起始编号 = 源块编号 +1。源块 markdown 形如 "1. 测试" / "2. 测试"。 */
         val srcOrderedNumber = currentOrderedNumber(block.state)
+
+        /**
+         * 拆块尾部 markdown 归一化（真机 logcat 证实的不递增根因）：
+         * 列表块带尾随 ZWSP（refocusListBlock 把光标放在 marker 之后、ZWSP 之前，
+         * 用户打字后 ZWSP 恒尾随、光标恒在 ZWSP 前），行尾回车时 afterStart 落在
+         * ZWSP 之前 → `afterStart < text.length` 恒成立，range 版 toMarkdown 对
+         * 「只剩 ZWSP 的尾部」产出 **marker-only** 的 `"2. "`/`"• "`。直接拿它建块：
+         * setMarkdown 已带旧编号使 isList=true，**绕过 orderedStartNumber 续号分支**
+         * （新行显示源块旧编号，如 "2.测试2" 回车得 "2.测试3"），且新块缺 ZWSP 退格锚点。
+         * 处理：
+         * ① marker-only / 空白尾部 → 视为「行尾回车」（afterMd=""），走标准续行路径
+         *   （orderedStartNumber 续号 + 空列表项补尾随 ZWSP）。
+         * ② 非 marker-only 尾部（行中间回车）→ 剥掉 range 编码拼接的列表 marker 前缀
+         *   （该前缀携带的是**源块**编号），交由 initialListType/orderedStartNumber 统一重建，
+         *   保证行中间拆分同样递增编号。
+         */
+        val rawAfterMd = if (afterStart < text.length)
+            block.state.toMarkdown(TextRange(afterStart, text.length)).replace(ZWSP, "") else ""
+        val afterMd = when {
+            rawAfterMd.isEmpty() -> ""
+            isMarkerOnlyMarkdown(rawAfterMd) -> ""
+            listForNewBlocks != null -> rawAfterMd.replaceFirst(ListMarkerPrefixRegex, "")
+            else -> rawAfterMd
+        }
+
         executeAndPush(
             ReplaceBlocksCommand(
                 index = idx,
