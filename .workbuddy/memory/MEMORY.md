@@ -3,7 +3,8 @@
 ## 项目约定
 - 不需要自动编译：Kotlin/代码改动后不主动跑 gradlew，除非用户明确要求。
 - **BuildConfig 不生成**：本项目（AGP 配置）不会生成 `BuildConfig` 类，读取 App 版本号须走 `Context.packageManager.getPackageInfo(packageName, 0).versionName`（见 `SettingsScreen.kt:126` 注释）。字体 cacheDir 副本用 versionName 作文件名后缀（`ff_font_<resId>_v<versionName>.ttf`），资源/版本更新后旧副本自动失效，避免 stale 字体。
-- **查依赖真实 API 签名**：遇到 AndroidX/Compose API 编译报错（抽象类误实例化、`overrides nothing`、参数不匹配等），用项目级技能 `CorgiMemo/.workbuddy/skills/gradle-cache-source-lookup`（仅本仓库共享）——从 gradle 缓存 `*-sources.jar` 抽真实 `.kt` 源码核对，不要凭记忆猜签名（曾因 `AndroidFont` 旧签名误用导致编译反复）。
+- **查依赖真实 API 签名**：遇到 AndroidX/Compose API 编译报错（抽象类误实例化、`overrides nothing`、参数不匹配、`cannot be invoked as a function` 等），用项目级技能 `CorgiMemo/.workbuddy/skills/gradle-cache-source-lookup`（仅本仓库共享）——从 gradle 缓存 `*-sources.jar` 抽真实 `.kt` 源码核对，不要凭记忆猜签名（曾因 `AndroidFont` 旧签名误用导致编译反复）。要点：① 先跑 `scripts/find_sources_jar.py --class <裸类名> [--group androidx.compose.ui]` 定位 jar（hash 目录名无法拼，全缓存扫描 ~3s），再跑 `extract_source.py` 抽取；② `files-2.1` 的 group 目录是**点分隔扁平名** `androidx.compose.ui`，不是 `androidx/compose/ui`；③ `--match/--class` 只传裸类名（真实条目是 `AndroidFont.android.kt` 这类带 source-set 后缀的名字，带 `.kt` 匹配不到）；④ `-android` 产物里同样含 `commonMain/`（如 `PointerInputChange` 在 `ui-android` 而非 `ui`）。
+- **检索点目录（`.workbuddy`、`.gradle`）**：Glob 要把绝对路径放在 `path` 参数、`pattern` 只用相对通配；把绝对路径写进 `pattern` 会静默返回空，容易被误判成「目录不存在」。
 
 ## 正文字体体系（2026-09-03 落地，2026-09-03 改默认=系统字体）
 - 内置 9 款 OFL 1.1 可商用中文（思源黑体/思源宋体/源音黑體/獅尾半月SC/悠哉/初夏明朝/马善政毛笔楷书/钟齐志莽行书/寒蝉·龙藏楷书）+ 3 款拉丁（Space Grotesk/Maple Mono/Caveat，作英文·数字回退层），共 49 资源文件在 `res/font/`；授权随 APK 分发于 `assets/licenses/`（索引 `THIRD_PARTY_FONTS.md`）。
