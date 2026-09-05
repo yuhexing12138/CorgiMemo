@@ -534,15 +534,19 @@ class BodyBlocksController(
      *
      * marker 长度用块的 [RichTextState.annotatedString] 前缀正则反推，不依赖子模块
      * internal 字段（richParagraphList / startText 均不可从 App 访问）。
-     * 覆盖默认无序前缀（• / ◦ / ▪）+ 空格，以及有序（数字 + "." + 空格，兼容 1. / 10.）；
-     * 允许前导空格（v2026-09-05 层级缩进：嵌套行的 annotatedString 以缩进空格开头）。
+     * 覆盖全部层级 marker 形态（v2026-09-05 缩进按钮层级样式）：
+     * 一级 `1.` / 二级 `(1)` / 三级 `①` / 四级 `a.` / 五级 `Ⅰ.` / 六级 `i.` + 无序
+     * `• ◦ ▪`（正则失配时 markerEnd 回退 0，光标会落在 marker 左侧——层级样式加入后
+     * `(2)` 曾因此失配，光标落在括号左侧）。
      */
     private fun refocusListBlock(blockId: String) {
         val block = blocks.firstOrNull { it is BodyBlock.Text && it.id == blockId } as? BodyBlock.Text
             ?: return
         if (!block.state.isList) return
         val text = block.state.annotatedString.text
-        val markerEnd = Regex("^\\s*(?:[•◦▪]\\s|\\d+\\.\\s)").find(text)?.range?.last?.plus(1) ?: 0
+        val markerEnd = Regex(
+            "^\\s*(?:[•◦▪]\\s|\\(\\d+\\)\\s|[①-⑳]\\s|\\d+\\.\\s|[a-z]+\\.\\s|[Ⅰ-Ⅿ]+\\.\\s)"
+        ).find(text)?.range?.last?.plus(1) ?: 0
         focusSpec(FocusSpec(blockId, markerEnd))
     }
 
