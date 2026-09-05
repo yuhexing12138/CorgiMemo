@@ -833,25 +833,41 @@ class BodyBlocksController(
     private fun splitTextBlock(block: BodyBlock.Text, beforeEnd: Int, afterStart: Int) {
         val idx = blocks.indexOfFirst { it.id == block.id }
         if (idx < 0) return
+
+        /**
+         * 空列表项回车 = 退出列表（用户选定的标准行为）：把该块**整体**替换为普通空块。
+         * 不能走下面的拆两块流程——拆块会把 marker 前后切开，afterMd 带出 marker-only
+         * 的 `"- "` markdown，setMarkdown 重建出**残留空列表项**，且此时
+         * listForNewBlocks=null 跳过 refocusListBlock、光标落 0 在 bullet 之前——
+         * 正是真机日志序列②「多一行空白 + 光标在 bullet 前」两个缺陷的共同根因。
+         */
+        if (isEmptyListItem(block.state)) {
+            executeAndPush(
+                ReplaceBlocksCommand(
+                    index = idx,
+                    removedSpecs = listOf(textSpec(block)),
+                    insertedSpecs = listOf(BlockSpec.TextSpec(block.id, "")),
+                    focusBefore = currentFocusSpec(),
+                    /** 普通空块 raw 长度 1（ZWSP），偏移 1 = ZWSP 之后，与空块光标约定 (1,1) 一致 */
+                    focusAfter = FocusSpec(block.id, 1),
+                )
+            )
+            return
+        }
+
         val text = block.state.annotatedString.text
         val beforeMd = if (beforeEnd > 0) block.state.toMarkdown(TextRange(0, beforeEnd)).replace(ZWSP, "") else ""
         val afterMd = if (afterStart < text.length)
             block.state.toMarkdown(TextRange(afterStart, text.length)).replace(ZWSP, "") else ""
 
         val newId = newBodyBlockId()
-        /** 列表续行：源块为列表时，新行（前半/后半块）继承同类型列表；
-         *  但源块本身是“空列表项”（只有 marker 无文字）时回车退出列表，
-         *  成为普通空行（标准编辑器行为，便于结束列表）。 */
+        /** 列表续行：源块为列表类型（空列表项回车已在上方前置分支退出列表，不会走到这里） */
         val srcListType: InheritedListType? = when {
             block.state.isUnorderedList -> InheritedListType.Unordered
             block.state.isOrderedList -> InheritedListType.Ordered
             else -> null
         }
-        val listForNewBlocks = if (srcListType != null && !isEmptyListItem(block.state)) {
-            srcListType
-        } else {
-            null
-        }
+        val listForNewBlocks = srcListType
         executeAndPush(
             ReplaceBlocksCommand(
                 index = idx,
@@ -884,8 +900,26 @@ class BodyBlocksController(
         val text = block.state.annotatedString.text
         if (!text.contains('\n')) return
 
-        /** 列表续行：软键盘回车/粘贴多行拆块时，新行继承源块列表类型；
-         *  空列表项整体退化为空块（下方 lastContent<0 分支）即退出列表。 */
+        /**
+         * 空列表项内出现换行（软键盘回车/粘贴）= 退出列表：整体替换为普通空块，
+         * 与 [splitTextBlock] 的空列表项分支同语义——否则按行拆分时 marker-only 行
+         * 会产出 `"- "` markdown 重建出残留 bullet 块。
+         */
+        if (isEmptyListItem(block.state)) {
+            executeAndPush(
+                ReplaceBlocksCommand(
+                    index = idx,
+                    removedSpecs = listOf(textSpec(block)),
+                    insertedSpecs = listOf(BlockSpec.TextSpec(block.id, "")),
+                    focusBefore = currentFocusSpec(),
+                    focusAfter = FocusSpec(block.id, 1),
+                )
+            )
+            return
+        }
+
+        /** 列表续行：软键盘回车/粘贴多行拆块时，新行继承源块列表类型
+         *  （空列表项已在上方前置分支整体退出列表，不会走到这里）。 */
         val srcListType: InheritedListType? = when {
             block.state.isUnorderedList -> InheritedListType.Unordered
             block.state.isOrderedList -> InheritedListType.Ordered
@@ -1615,7 +1649,15 @@ private fun BlockTextItem(
      *    期间全部跳过——重放不该再触发结构检测或误清 redo 栈。
      *    ZWSP 不变量维护**不受 replaying 门控**（恢复出的空块也要预置退格锚点）。
      */
-    LaunchedEffect(block.id) {
+    /**
+     * key 用 [block.state]（对象身份）而非 block.id：Command 重建（拆块前半 / 合并 / 退块等）
+     * 会**复用 id 换新 RichTextState**，以 id 为 key 时 effect 不重启、闭包仍持旧 state——
+     * TextField 渲染新 state 而 observer 监听旧 state，重建块上的退格合并 / 换行拆块检测
+     * 全部失灵（真机症状：退出列表后的空行退格无反应、光标留在空行）。
+     * 以 state 为 key，重建即重启并按新 state 重新锚定 lastText / lastMarkdown 基线；
+     * 正常打字期间 state 对象不变，重启不发生，行为与按 id 一致。
+     */
+    LaunchedEffect(block.state) {
         var lastText = state.annotatedString.text
         var lastMarkdown = state.toMarkdown()
         var lastSelection = state.selection
@@ -1673,8 +1715,8 @@ private fun BlockTextItem(
             }
     }
 
-    /** 内容变化 → 通知 controller 同步 ViewModel */
-    LaunchedEffect(block.id) {
+    /** 内容变化 → 通知 controller 同步 ViewModel（key 同 observer：用 state 对象身份，防重建后失联） */
+    LaunchedEffect(block.state) {
         snapshotFlow { state.annotatedString }
             .collect {
                 controller.notifyBlockChanged()
