@@ -943,6 +943,37 @@ class BodyBlocksController(
         renumberOrderedBlocks()
     }
 
+    /**
+     * 聚焦块当前是否可「增加缩进」（工具栏按钮置灰用，视觉降级）：
+     * - 普通文本行恒可（自动转列表）；
+     * - 列表行：层级未到 [MAX_LIST_LEVEL] 才可（到顶后按钮置灰）。
+     *
+     * 快照响应式：`focusedBlockId` / `annotatedString` / `toMarkdown()`（读段落树）均为
+     * 快照读取，组合中注册依赖后可在焦点切换、内容/层级变化时自动触发重组刷新。
+     * **必须显式读 [RichTextState.annotatedString]**：段落 `type` 是普通 var（非快照状态），
+     * setListMarker 换层级只写 annotatedString/textFieldValue——不读它，到顶置灰不会刷新
+     * （真机表现：缩进按钮到顶不置灰而减少按钮正常）。
+     */
+    val canIncreaseIndent: Boolean
+        get() {
+            val state = focusedOrFirstTextState()
+            state.annotatedString
+            if (!state.isList) return true
+            return listLevelOfMd(state.toMarkdown()) < MAX_LIST_LEVEL
+        }
+
+    /**
+     * 聚焦块当前是否可「减少缩进」（工具栏按钮置灰用，视觉降级）：
+     * 仅列表行可减（一级再减 = 退出列表）；普通文本行减缩进本就无效果，按钮置灰。
+     * 依赖注册同 [canIncreaseIndent]（显式读 annotatedString）。
+     */
+    val canDecreaseIndent: Boolean
+        get() {
+            val state = focusedOrFirstTextState()
+            state.annotatedString
+            return state.isList
+        }
+
     // ---------- 图片插入 ----------
 
     /**
