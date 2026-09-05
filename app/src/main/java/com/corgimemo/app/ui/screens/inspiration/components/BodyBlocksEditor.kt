@@ -41,6 +41,7 @@ import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.components.InlineImagePreview
 import com.mohamedrejeb.richeditor.model.RichTextState
+import com.mohamedrejeb.richeditor.paragraph.type.OrderedListStyleType
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import com.mohamedrejeb.richeditor.ui.UndoBehavior
@@ -77,6 +78,49 @@ private const val ZWSP = "\u200B"
  * 还原为空块（与编辑态空块语义一致）。
  */
 private const val EMPTY_BLOCK_PLACEHOLDER = "\u00A0"
+
+/**
+ * 列表层级缩进步长（sp）：二级起每级缩进 30sp ≈ 正文 15sp 的两字符（「增加缩进」需求）。
+ * 一级列表 base = 30 × (1-1) = 0，仍贴左缘（「列表无缩进」需求不变）。
+ * 库公式见 `OrderedList.getNewParagraphStyle`（base = indent × (level-1)）。
+ */
+internal const val LIST_LEVEL_INDENT_SP = 30
+
+/** 列表层级上限：一级贴左缘（0 缩进）+ 最多 5 次连续「增加缩进」（第 2~6 级），
+ *  每级 [LIST_LEVEL_INDENT_SP]（30sp ≈ 两字符）逐级累加；到顶后再点无效。 */
+private const val MAX_LIST_LEVEL = 6
+
+/** 二级 marker：带括号阿拉伯数字 `"(1) "`（用户指定层级循环 1./(1)/①/a./Ⅰ./i.） */
+private object ParenthesizedDecimalStyle : OrderedListStyleType {
+    override fun format(number: Int, listLevel: Int): String = "($number)"
+    override fun getSuffix(listLevel: Int): String = " "
+}
+
+/** 三级 marker：带圈数字 `"① "`（U+2460 起，1~20；超出范围按 ⑳ 封顶） */
+private object CircledDecimalStyle : OrderedListStyleType {
+    override fun format(number: Int, listLevel: Int): String =
+        (0x2460 + number.coerceIn(1, 20) - 1).toChar().toString()
+    override fun getSuffix(listLevel: Int): String = " "
+}
+
+/**
+ * 有序列表 marker 按层级循环样式（v2026-09-05 缩进按钮需求，用户指定）：
+ * 一级 `1.` / 二级 `(1)` / 三级 `①` / 四级 `a.` / 五级 `Ⅰ.` / 六级 `i.`
+ * （更深 clamp 到最后一级）。
+ * 库默认 Multiple(Decimal, LowerRoman, LowerAlpha) 的二级是小写罗马 "i."，不符用户预期，故覆盖。
+ * 注意：markdown 序列化恒为字面 `"N. "`（库编码器硬编码，与样式无关），样式纯视觉、
+ * 由 config 在渲染端还原；编号（位置语义）与层级（前缀空格）照常持久化。
+ */
+internal val AppOrderedListStyleType: OrderedListStyleType =
+    OrderedListStyleType.Multiple(
+        OrderedListStyleType.Decimal,
+        ParenthesizedDecimalStyle,
+        CircledDecimalStyle,
+        OrderedListStyleType.LowerAlpha,
+        OrderedListStyleType.UpperRoman,
+        OrderedListStyleType.LowerRoman,
+    )
+
 private fun effectiveText(text: String): String =
     text.filterNot { it == ZWSP[0] || it == IMAGE_PLACEHOLDER_CHAR }
 private fun isEffectivelyEmpty(text: String): Boolean = effectiveText(text).isEmpty()
@@ -182,6 +226,10 @@ sealed class BlockSpec {
         val initialListType: InheritedListType? = null,
         /** 拆块续行时新有序列表块的起始编号（源块编号 +1）；null = 不指定，沿用默认/字面编号 */
         val orderedStartNumber: Int? = null,
+        /** 块的列表层级（1 起，源块层级，有序/无序通用）；null = 一级。
+         *  层级不依赖 markdown 前缀重建（独立块 ≥4 空格前缀会被 CommonMark 当代码块），
+         *  而是重建后经 [RichTextState.setListMarker] 直接设置。 */
+        val listLevel: Int? = null,
     ) : BlockSpec()
 
     /** Image 块：只有 uri 路径 */
@@ -486,45 +534,61 @@ class BodyBlocksController(
      *
      * marker 长度用块的 [RichTextState.annotatedString] 前缀正则反推，不依赖子模块
      * internal 字段（richParagraphList / startText 均不可从 App 访问）。
-     * 覆盖默认无序前缀（• / ◦ / ▪）+ 空格，以及有序（数字 + "." + 空格，兼容 1. / 10.）。
+     * 覆盖默认无序前缀（• / ◦ / ▪）+ 空格，以及有序（数字 + "." + 空格，兼容 1. / 10.）；
+     * 允许前导空格（v2026-09-05 层级缩进：嵌套行的 annotatedString 以缩进空格开头）。
      */
     private fun refocusListBlock(blockId: String) {
         val block = blocks.firstOrNull { it is BodyBlock.Text && it.id == blockId } as? BodyBlock.Text
             ?: return
         if (!block.state.isList) return
         val text = block.state.annotatedString.text
-        val markerEnd = Regex("^[•◦▪]\\s|\\d+\\.\\s").find(text)?.range?.last?.plus(1) ?: 0
+        val markerEnd = Regex("^\\s*(?:[•◦▪]\\s|\\d+\\.\\s)").find(text)?.range?.last?.plus(1) ?: 0
         focusSpec(FocusSpec(blockId, markerEnd))
     }
+
+    /**
+     * 读块 markdown 的列表层级（1 起）：库对嵌套列表按每级 2 空格前缀编码
+     * （`"  ".repeat(type.level - 1) + marker`，见 MarkdownParser 的
+     * appendParagraphStartText），故前导空格数 / 2 + 1 即层级。
+     */
+    private fun listLevelOfMd(md: String): Int {
+        val leading = md.indexOfFirst { it != ' ' }.let { if (it < 0) md.length else it }
+        return leading / 2 + 1
+    }
+
+    /**
+     * 读块 markdown 的有序编号（字面数字）：先剥层级缩进前导空格再匹配 `^(\d+)\.`
+     * （库对有序列表始终序列化为 `"N. "` 字面编号；嵌套行带前导空格，正则须容忍）。
+     *
+     * @return 当前编号（如 `"  2. 测试"` → 2）；无编号前缀返回 null。
+     */
+    private fun orderedNumberOfMd(md: String): Int? =
+        Regex("^(\\d+)\\.").find(md.trimStart(' '))?.groupValues?.get(1)?.toIntOrNull()
 
     /**
      * 取当前有序列表块的字面编号（用于拆块续行时计算下一行编号）。
      *
      * 以 [blockMarkdown]（即库的 [RichTextState.toMarkdown]）为准：库对有序列表
-     * 始终序列化为 `"N. "` 字面编号（见 [com.mohamedrejeb.richeditor.parser.markdown.RichTextStateMarkdownParser]
-     * 中 OrderedList 的编码 `"${type.number}. "`），与列表缩进/视觉前缀格式无关。
+     * 始终序列化为 `"N. "` 字面编号，与列表缩进/视觉前缀格式无关。
      *
-     * 注意：不能直接读 [RichTextState.annotatedString] 的 marker 前缀——在
-     * listIndent=0 等场景下 marker 可能不含结尾空格（如 `"2.测试"`），用
-     * `^(\d+)\.\s` 会失配回退成 1，导致连续回车永远只续出 `"2."` 而非递增编号
-     * （如编辑为 `"2.测试"` 后再回车应得 `"3."`，旧逻辑却给出 `"2."`）。
+     * 注意：不能直接读 [RichTextState.annotatedString] 的 marker 前缀——marker 可能
+     * 不含结尾空格或带层级缩进前缀，用带 `\s` 锚定的正则会失配回退，导致编号不递增。
      *
      * @return 当前编号（如 `"2. 测试"` → 2）；非有序列表返回 null。
      */
     private fun currentOrderedNumber(state: RichTextState): Int? {
         if (!state.isOrderedList) return null
-        val md = blockMarkdown(state)
-        return Regex("^(\\d+)\\.").find(md)?.groupValues?.get(1)?.toIntOrNull()
+        return orderedNumberOfMd(blockMarkdown(state))
     }
 
     /**
-     * 跨块有序列表重编号（位置语义）：连续的有序 Text 块视为一个列表 run，按块序
-     * 编 1..n；任何非有序块（普通文本 / 空块 / 图片块）都会打断 run、计数归零。
+     * 跨块有序列表重编号（层级感知的位置语义）：连续的有序 Text 块视为一个列表 run，
+     * 按块序编 1..n；任何非有序块（普通文本 / 空块 / 图片块 / 无序列表块）都会打断
+     * run、清空全部计数。
      *
-     * 背景：块架构下每个块是独立 [RichTextState]，库只做 state 内编号；用户删掉某块
-     * marker 字符时库自动把该块退列表（type → DefaultParagraph），但**后续块的编号
-     * 不会联动**。用户预期："1.测试1 / 2.测试2 / 3.测试3" 删掉 "2." 后 "3.测试3"
-     * 应变 "1.测试3"；再删掉 "测试2" 与空行后应变 "2.测试3"。
+     * v2026-09-05 升级为**层级感知**（配合缩进按钮）：嵌套项在父项下重新从 1 编号——
+     * `1. a / [缩进]1. b / 2. c` 中 b 是 a 的子项（编号 1）、c 与 a 同级（编号 2）。
+     * 每层独立计数，出现更浅层时清掉更深层计数（兄弟层切换）。
      *
      * 位置语义是块序列的**确定性函数**（编号 = 连续序位），因此撤销/重做/命令重放后
      * 再跑一遍即自动收敛一致，无需为重编号单独设计撤销。
@@ -539,46 +603,40 @@ class BodyBlocksController(
      * 只在编号与序位不一致时才重写（打字等常规路径零开销）。
      */
     fun renumberOrderedBlocks() {
-        var counter = 0
+        /** 层级 → 该层当前计数（1 起） */
+        val counters = mutableMapOf<Int, Int>()
         for (block in blocks) {
             val textBlock = block as? BodyBlock.Text
             if (textBlock == null || !textBlock.state.isOrderedList) {
-                counter = 0
+                counters.clear()
                 continue
             }
-            counter++
             val state = textBlock.state
-            if (currentOrderedNumber(state) != counter) {
-                rewriteOrderedMarker(state, counter)
+            val md = blockMarkdown(state)
+            val level = listLevelOfMd(md)
+            /** 更浅层出现 = 同层的兄弟序列推进 → 清掉所有更深层计数 */
+            counters.keys.retainAll { it <= level }
+            val expected = (counters[level] ?: 0) + 1
+            counters[level] = expected
+            if (orderedNumberOfMd(md) != expected) {
+                rewriteOrderedMarker(state, level, expected)
             }
         }
     }
 
     /**
-     * 就地把有序块的 marker 编号改写为 [n]（不经过命令栈、不产生库内 history 条目——
-     * setMarkdown 不走 recordHistory，撤销语义不受污染）。
+     * 就地把有序块的 marker 改写为 [level] 层的编号 [n]（v2026-09-05 改版：直接走库
+     * [RichTextState.setListMarker] 改段落类型，**不再经 setMarkdown 重建**）。
      *
-     * 用 [RichTextState.setMarkdown] 在**同一 state 对象**上重写：observer 以 state 对象
-     * 身份为 key，同对象变更不重启 effect；重写后该块回归「markdown 重建态」不变量
-     * （无尾随 ZWSP，raw == effective）。光标按新长度钳制恢复（1 位数编号改写前后
-     * marker 等长，通常无感；10→9 等位数变化由钳制兜底）。
-     * 空列表项（仅 marker）保持「尾随 ZWSP + 光标在 marker 后」的退格锚点约定。
+     * 为什么不能走 markdown：层级前缀（每级 2 空格）+ 字面编号经 setMarkdown 往返时，
+     * 独立块的 ≥4 空格前缀（三级及以上）会被 CommonMark 解析为缩进代码块，层级直接丢失
+     * （真机表现：连续缩进后 marker 在 "i."/"1." 间循环、同级后续项编号被错误改写）。
+     * setListMarker 只换段落类型（marker 文本 + 缩进样式，updateParagraphType 自动校正
+     * 光标），内容与光标完全不动；commitHistory = false 不产生块内撤销步（撤销收敛由
+     * 位置语义重编号保证）。
      */
-    private fun rewriteOrderedMarker(state: RichTextState, n: Int) {
-        val content = blockMarkdown(state).replaceFirst(ListMarkerPrefixRegex, "")
-        val oldSelection = state.selection
-        state.setMarkdown("$n. $content")
-        if (content.isBlank()) {
-            /** 空有序列表项：补尾随 ZWSP（软键盘退格锚点），光标落在 marker 之后 */
-            state.addTextAtIndex(state.annotatedString.text.length, ZWSP)
-            state.selection = TextRange(state.annotatedString.text.length)
-        } else {
-            val len = state.annotatedString.text.length
-            state.selection = TextRange(
-                oldSelection.min.coerceAtMost(len),
-                oldSelection.max.coerceAtMost(len),
-            )
-        }
+    private fun rewriteOrderedMarker(state: RichTextState, level: Int, n: Int) {
+        state.setListMarker(level = level, number = n, commitHistory = false)
     }
 
     /**
@@ -596,24 +654,48 @@ class BodyBlocksController(
         initialListType: InheritedListType? = null,
         /** 有序列表续行时新块的起始编号（源块编号 +1）；null = 不指定，交库默认/字面编号决定 */
         orderedStartNumber: Int? = null,
+        /** 块的列表层级（1 起，源块层级，有序/无序通用）；null = 一级。
+         *  经 [RichTextState.setListMarker] 直接设置（不走 markdown 前缀往返）。 */
+        listLevel: Int? = null,
+        /** 是否剥离 markdown 的层级缩进前导空格（每级 2 空格）。命令重建路径传 true：
+         *  独立块的前缀经 setMarkdown 往返时 ≥4 空格会被 CommonMark 解析成缩进代码块
+         *  导致层级丢失，故剥离后经 [RichTextState.setListMarker] 直接设置层级。
+         *  initialize 加载传 false（默认）：多行嵌套段依赖前缀解码，且 ≤3 空格可安全解码。 */
+        stripListLevelPrefix: Boolean = false,
     ): BodyBlock.Text {
         val state = RichTextState()
-        /** 列表无缩进：圆点/数字紧贴文字左侧、与正文左对齐（默认 38sp 缩进过宽，需求要求去掉）。
-         *  通过 [com.mohamedrejeb.richeditor.model.RichTextConfig.listIndent] 控制，
-         *  影响所有新建/重建的 Text 块（含从 markdown 载入的列表项）。 */
-        state.config.listIndent = 0
+        /**
+         * 列表缩进配置（v2026-09-05 缩进按钮需求）：
+         * - 一级列表仍贴左缘（库公式 base = indent × (level-1)，level=1 时 base=0），
+         *   保持「列表无缩进」需求不变；
+         * - 二级起每级缩进 [LIST_LEVEL_INDENT_SP]（30sp ≈ 正文 15sp 的两字符），
+         *   供工具栏「增加/减少缩进」按钮产生可见层级。
+         *  注意不能用 listIndent=0（它是 ordered/unordered 的快捷 setter，会把层级缩进一并清零）。
+         */
+        state.config.orderedListIndent = LIST_LEVEL_INDENT_SP
+        state.config.unorderedListIndent = LIST_LEVEL_INDENT_SP
+        /** marker 按层级循环（1./(1)/①/a./Ⅰ./i.，见 [AppOrderedListStyleType]） */
+        state.config.orderedListStyleType = AppOrderedListStyleType
         /** v2026-09-01 关闭编辑态内联图片渲染（防御性）：插图已改为拆块
          *  （Text 块 state 不持有 image span），正常路径覆盖层无图可画；
          *  关掉开关可兜底边缘路径（如粘贴含图 markdown 进块内），避免覆盖层
          *  在 Text 块内画出真图与 Image 块重复。 */
         state.inlineImageRendering = false
         registerTriggers(state)
-        if (markdown.isNotEmpty()) {
+        /**
+         * 层级前缀剥离（仅单行）：命令重建路径的 markdown 可能带「每级 2 空格」层级前缀，
+         * 独立块 setMarkdown 时 ≥4 空格会落入缩进代码块，故剥离后经 setListMarker 还原层级。
+         * 多行 markdown（initialize 的嵌套段落）保留前缀——多行上下文里解码器按 AST+源码缩进
+         * 正确还原嵌套。
+         */
+        val isSingleLine = !markdown.contains('\n')
+        val effectiveMarkdown = if (stripListLevelPrefix && isSingleLine) markdown.trimStart(' ') else markdown
+        if (effectiveMarkdown.isNotEmpty()) {
             /** 非空块经 setMarkdown 重建，**不含**前导 ZWSP：
              * 这是 [FocusSpec.offset] 统一为 raw 坐标的前提——由 [BlockSpec.TextSpec] 重建的
              * 非空块 effective == raw，[normalizeBlockParagraphs] / [mergeTextBlocks] 里对
              * 旧块用 [effectiveText] 算出的「有效字数」可直接当新块的 raw 偏移。 */
-            state.setMarkdown(markdown)
+            state.setMarkdown(effectiveMarkdown)
         } else {
             /** 空块预置 ZWSP + 光标 (1, 1)：让软键盘退格能产生状态变化被 observer 捕获 */
             state.setText(ZWSP)
@@ -631,12 +713,11 @@ class BodyBlocksController(
                      *  使新行显示 "2."/"3."… 且序列化（toMarkdown）也输出正确编号。
                      *  orderedStartNumber 仅在「拆块续行」时由调用方传入（源块编号 +1）；
                      *  其余场景（markdown 已自带编号、或空 markdown 无编号）走 addOrderedList 默认 1。 */
-                    val looksOrdered = Regex("^\\d+\\.\\s").containsMatchIn(markdown)
+                    val looksOrdered = Regex("^\\s*\\d+\\.\\s").containsMatchIn(effectiveMarkdown)
                     if (orderedStartNumber != null && !looksOrdered) {
                         val n = orderedStartNumber
-                        val md = if (markdown.isNotEmpty()) "$n. $markdown" else "$n. "
-                        state.setMarkdown(md)
-                        if (markdown.isEmpty()) {
+                        state.setMarkdown(if (effectiveMarkdown.isNotEmpty()) "$n. $effectiveMarkdown" else "$n. ")
+                        if (effectiveMarkdown.isEmpty()) {
                             /** 空有序列表项：在保留列表类型的前提下尾随 ZWSP，
                              *  与无序列表 '• ␣' 一致，使软键盘退格可被 observer 检测并触发合并退出。
                              *  （不能用 setText——它会重置段落类型丢失 "N." 编号；
@@ -648,6 +729,18 @@ class BodyBlocksController(
                         state.addOrderedList()
                     }
                 }
+            }
+        }
+        /**
+         * 层级还原（缩进按钮需求）：单行块经剥离后层级归一为 1，此处按 [listLevel] 直接设置。
+         * 编号保留 markdown 字面值（setListMarker 只改层级时不传 number 会重置为 1，故显式回填）。
+         * commitHistory = false：程序性重建不产生块内撤销步。
+         */
+        if (state.isList && isSingleLine) {
+            val lvl = (listLevel ?: 1).coerceAtLeast(1)
+            if (lvl > 1) {
+                val num = orderedNumberOfMd(state.toMarkdown()) ?: 1
+                state.setListMarker(level = lvl, number = num, commitHistory = false)
             }
         }
         return BodyBlock.Text(id, state)
@@ -773,6 +866,81 @@ class BodyBlocksController(
         }
         return (blocks.firstOrNull { it is BodyBlock.Text } as BodyBlock.Text).state
     }
+
+    /**
+     * 工具栏「增加/减少缩进」（v2026-09-05）：对聚焦块做列表层级缩进。
+     *
+     * 层级变更**直接走库 API**（[RichTextState.setListMarker] / add/removeXxxList，
+     * 均为 recordHistory Structural——块内 history 可撤销；updateParagraphType 自动换
+     * marker 文本/缩进样式并校正光标），**不经 markdown 前缀往返**：独立块的 ≥4 空格
+     * 前缀会被 CommonMark 解析成缩进代码块导致层级丢失（真机表现：连续缩进在
+     * "i."/"1." 间循环、「3.测试3」被错误改写为「1.测试3」）。
+     *
+     * 规则（用户选定）：
+     * - 列表行：加缩进 = 层级 +1（[MAX_LIST_LEVEL] 封顶 = 一级贴左缘 + 最多 5 次缩进，
+     *   每级 [LIST_LEVEL_INDENT_SP] ≈ 两字符；到顶后点击无效果）；减缩进 = 层级 -1，
+     *   一级再减 = 退出列表变普通文本。
+     * - 普通文本行：减缩进无效果；加缩进自动转列表项——前一块是列表则继承其类型与
+     *   层级 +1（成为其子项），否则转为无序列表一级。
+     *
+     * 变更后调 [renumberOrderedBlocks]（层级感知位置语义）收敛编号；重编号对其他块的
+     * 改写会使 markdown 变化 → observer 自动清全局 redo 栈（与本操作是真实编辑一致）。
+     * 撤销：块内 history 撤销后由 [undo] 尾部的重编号收敛回位置语义。
+     */
+    fun indentFocusedBlock(delta: Int) {
+        /** 解析焦点 Text 块（与 [focusedOrFirstTextState] 同源：聚焦优先，回退首块） */
+        val block = focusedBlockId?.let { id -> blocks.firstOrNull { it.id == id } }
+            ?.let { it as? BodyBlock.Text }
+            ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
+            ?: return
+        val idx = blocks.indexOfFirst { it.id == block.id }
+        if (idx < 0) return
+        val state = block.state
+        val md = blockMarkdown(state)
+
+        if (!state.isList) {
+            if (delta <= 0) return
+            /** 普通文本行 + 加缩进 = 自动转列表（用户选定）：继承前一块列表类型与层级 +1
+             *  （成为其子项），无前列表则转无序列表一级 */
+            val prev = blocks.getOrNull(idx - 1) as? BodyBlock.Text
+            val inherits = prev != null && prev.state.isList
+            val (markerLevel, useOrdered) = if (inherits && prev != null) {
+                val prevLevel = listLevelOfMd(blockMarkdown(prev.state))
+                (prevLevel + 1).coerceAtMost(MAX_LIST_LEVEL) to prev.state.isOrderedList
+            } else {
+                1 to false
+            }
+            if (useOrdered) state.addOrderedList() else state.addUnorderedList()
+            if (markerLevel > 1) {
+                state.setListMarker(level = markerLevel, number = 1)
+            }
+        } else {
+            val level = listLevelOfMd(md)
+            val newLevel = level + delta
+            if (delta > 0 && newLevel > MAX_LIST_LEVEL) return
+            /** 空列表项（仅 marker）的层级变化无视觉/语义效果（marker 形态不变），
+             *  直接忽略，避免产生无意义的撤销记录 */
+            if (contentAfterListMarker(md).isBlank() && newLevel >= 1) {
+                return
+            }
+            if (newLevel >= 1) {
+                /** 层级变化：内容不动，仅换层级（updateParagraphType 按新层级换 marker
+                 *  文本与缩进样式，光标自动校正） */
+                state.setListMarker(
+                    level = newLevel,
+                    number = orderedNumberOfMd(md) ?: 1,
+                )
+            } else {
+                /** 一级再减 = 退出列表：移除列表类型变普通文本 */
+                if (state.isOrderedList) state.removeOrderedList() else state.removeUnorderedList()
+            }
+        }
+        renumberOrderedBlocks()
+    }
+
+    /** 取列表 markdown 的 marker 后内容（剥层级缩进前缀与 marker）。 */
+    private fun contentAfterListMarker(md: String): String =
+        md.trimStart(' ').replaceFirst(ListMarkerPrefixRegex, "")
 
     // ---------- 图片插入 ----------
 
@@ -986,8 +1154,13 @@ class BodyBlocksController(
         }
         val listForNewBlocks = srcListType
         /** 有序列表续号：取源块字面编号（以 markdown 序列化结果为准，避免 marker 缺空格失配），
-         *  新块起始编号 = 源块编号 +1。源块 markdown 形如 "1. 测试" / "2. 测试"。 */
+         *  新块起始编号 = 源块编号 +1；续行新块继承源块层级（缩进按钮需求，markdown 每级 2 空格）。 */
         val srcOrderedNumber = currentOrderedNumber(block.state)
+        val srcOrderedLevel = if (block.state.isOrderedList) {
+            listLevelOfMd(blockMarkdown(block.state))
+        } else {
+            null
+        }
 
         /**
          * 拆块尾部 markdown 归一化（真机 logcat 证实的不递增根因）：
@@ -1018,12 +1191,18 @@ class BodyBlocksController(
                 index = idx,
                 removedSpecs = listOf(textSpec(block)),
                 insertedSpecs = listOf(
-                    BlockSpec.TextSpec(block.id, beforeMd, listForNewBlocks),
+                    BlockSpec.TextSpec(
+                        block.id,
+                        beforeMd,
+                        listForNewBlocks,
+                        listLevel = srcOrderedLevel,
+                    ),
                     BlockSpec.TextSpec(
                         newId,
                         afterMd,
                         listForNewBlocks,
                         orderedStartNumber = srcOrderedNumber?.plus(1),
+                        listLevel = srcOrderedLevel,
                     ),
                 ),
                 focusBefore = currentFocusSpec(),
@@ -1119,7 +1298,14 @@ class BodyBlocksController(
                 val md = block.state.toMarkdown(TextRange(s, e)).replace(ZWSP, "")
                 if (md.isNotBlank()) {
                     val specId = if (inserted.isEmpty()) block.id else newBodyBlockId()
-                    inserted += BlockSpec.TextSpec(specId, md, listForNewBlocks)
+                    inserted += BlockSpec.TextSpec(
+                        specId,
+                        md,
+                        listForNewBlocks,
+                        /** 行自带层级前缀（toMarkdown 按 type.level 编码），createTextBlock
+                         *  剥离后经 setListMarker 还原（v2026-09-05 层级缩进） */
+                        listLevel = listLevelOfMd(md),
+                    )
                     /**
                      * 光标落点：cursor 落在这一行 → 该块 + 行内有效偏移。
                      * （区间连续覆盖全文，cursor <= e 时必有 cursor >= s，substring 安全）
@@ -1373,13 +1559,16 @@ class BodyBlocksController(
         blocks.addAll(safeIndex, restored)
     }
 
-    /** 按 [BlockSpec] 重建块（Text 走 setMarkdown 还原富文本样式；Image 只存 uri） */
+    /** 按 [BlockSpec] 重建块（Text 走 setMarkdown 还原富文本样式；Image 只存 uri）。
+     *  命令重建路径剥离层级前缀（stripListLevelPrefix=true），层级经 setListMarker 还原。 */
     private fun rebuildBlock(spec: BlockSpec): BodyBlock = when (spec) {
         is BlockSpec.TextSpec -> createTextBlock(
             spec.markdown,
             spec.id,
             spec.initialListType,
             spec.orderedStartNumber,
+            spec.listLevel,
+            stripListLevelPrefix = true,
         )
         is BlockSpec.ImageSpec -> BodyBlock.Image(spec.id, spec.path)
     }

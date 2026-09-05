@@ -16,6 +16,8 @@ import androidx.compose.material.icons.automirrored.filled.FormatAlignRight
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.FormatAlignCenter
+import androidx.compose.material.icons.filled.FormatIndentDecrease
+import androidx.compose.material.icons.filled.FormatIndentIncrease
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
@@ -115,6 +117,10 @@ fun RichTextFormatToolbar(
     onToggleStrikethrough: () -> Unit,
     onInsertUnorderedList: () -> Unit,
     onInsertOrderedList: () -> Unit,
+    /** 增加缩进回调（v2026-09-05）：列表行层级 +1，普通文本行自动转列表项；可连续加 */
+    onIncreaseIndent: () -> Unit = {},
+    /** 减少缩进回调（v2026-09-05）：列表行层级 -1，一级再减退出列表；可连续减 */
+    onDecreaseIndent: () -> Unit = {},
     onAlignLeft: () -> Unit = {},
     onAlignCenter: () -> Unit = {},
     onAlignRight: () -> Unit = {},
@@ -254,6 +260,23 @@ fun RichTextFormatToolbar(
                 isActive = state.isOrderedList,
                 onClick = onInsertOrderedList,
                 contentDescription = "有序列表"
+            )
+            /**
+             * 增加/减少缩进（v2026-09-05 新增，紧邻有序列表右侧，图标与 UI 原型一致）：
+             * 列表行做层级缩进（每级视觉 ≈ 两字符，可连续叠加），普通文本行点「增加缩进」
+             * 自动转列表项；无激活态（操作型按钮）。
+             */
+            FormatIconButton(
+                imageVector = Icons.Default.FormatIndentIncrease,
+                isActive = false,
+                onClick = onIncreaseIndent,
+                contentDescription = "增加缩进"
+            )
+            FormatIconButton(
+                imageVector = Icons.Default.FormatIndentDecrease,
+                isActive = false,
+                onClick = onDecreaseIndent,
+                contentDescription = "减少缩进"
             )
         }
 

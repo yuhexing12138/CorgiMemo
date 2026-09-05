@@ -1369,6 +1369,14 @@ fun InspirationEditScreen(
                 onInsertOrderedList = {
                     richTextState.toggleOrderedList()
                 },
+                onIncreaseIndent = {
+                    /** 增加缩进（v2026-09-05）：对聚焦正文块做列表层级 +1（普通文本行自动转列表） */
+                    bodyBlocks.indentFocusedBlock(delta = +1)
+                },
+                onDecreaseIndent = {
+                    /** 减少缩进（v2026-09-05）：对聚焦正文块做列表层级 -1（一级再减退出列表） */
+                    bodyBlocks.indentFocusedBlock(delta = -1)
+                },
                 onAlignLeft = {
                     richTextState.toggleParagraphStyle(
                         androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.Start)

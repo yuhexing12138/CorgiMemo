@@ -416,9 +416,18 @@ private fun InspirationBodyParagraph(
     fontFamily: FontFamily,
 ) {
     val richTextState = rememberRichTextState()
-    /** 列表无缩进：详情页正文列表与编辑页一致（圆点/数字紧贴文字左侧、与正文左对齐）。
-     *  默认 38sp 缩进过宽，需求要求去掉；与编辑页 BodyBlocksEditor 的 config.listIndent=0 保持一致。 */
-    richTextState.config.listIndent = 0
+    /**
+     * 列表缩进配置（与编辑页 BodyBlocksEditor 一致，v2026-09-05 缩进按钮需求）：
+     * - 一级列表贴左缘（库公式 base = indent × (level-1)，level=1 时 base=0），
+     *   保持「列表无缩进」需求不变；
+     * - 二级起每级缩进 LIST_LEVEL_INDENT_SP（30sp ≈ 两字符），嵌套列表在详情页
+     *  渲染出层级（markdown 每级 2 空格前缀保存/还原）。
+     *  注意不能用 listIndent=0（它是 ordered/unordered 的快捷 setter，会清掉层级缩进）。
+     */
+    richTextState.config.orderedListIndent = LIST_LEVEL_INDENT_SP
+    richTextState.config.unorderedListIndent = LIST_LEVEL_INDENT_SP
+    /** marker 按层级循环（1./(1)/①/a./Ⅰ./i.），与编辑页一致 */
+    richTextState.config.orderedListStyleType = AppOrderedListStyleType
     LaunchedEffect(markdown) {
         // setMarkdown 非 suspend，直接调用；状态变更后 RichText 自动重组渲染。
         richTextState.setMarkdown(markdown)

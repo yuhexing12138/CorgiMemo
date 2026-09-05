@@ -136,6 +136,10 @@ fun InspirationEditBottomBar(
     onToggleStrikethrough: () -> Unit,
     onInsertUnorderedList: () -> Unit,
     onInsertOrderedList: () -> Unit,
+    /** 增加缩进回调（v2026-09-05）：透传给 [RichTextFormatToolbar] */
+    onIncreaseIndent: () -> Unit = {},
+    /** 减少缩进回调（v2026-09-05）：透传给 [RichTextFormatToolbar] */
+    onDecreaseIndent: () -> Unit = {},
     onAlignLeft: () -> Unit = {},
     onAlignCenter: () -> Unit = {},
     onAlignRight: () -> Unit = {},
@@ -186,6 +190,8 @@ fun InspirationEditBottomBar(
                     onToggleStrikethrough = onToggleStrikethrough,
                     onInsertUnorderedList = onInsertUnorderedList,
                     onInsertOrderedList = onInsertOrderedList,
+                    onIncreaseIndent = onIncreaseIndent,
+                    onDecreaseIndent = onDecreaseIndent,
                     onAlignLeft = onAlignLeft,
                     onAlignCenter = onAlignCenter,
                     onAlignRight = onAlignRight,
