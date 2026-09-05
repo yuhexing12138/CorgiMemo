@@ -180,6 +180,8 @@ sealed class BlockSpec {
         val markdown: String,
         /** 拆块/归一化时新块继承的列表类型；null = 不强制，沿用 markdown 自带样式 */
         val initialListType: InheritedListType? = null,
+        /** 拆块续行时新有序列表块的起始编号（源块编号 +1）；null = 不指定，沿用默认/字面编号 */
+        val orderedStartNumber: Int? = null,
     ) : BlockSpec()
 
     /** Image 块：只有 uri 路径 */
@@ -499,6 +501,8 @@ class BodyBlocksController(
         markdown: String,
         id: String = newBodyBlockId(),
         initialListType: InheritedListType? = null,
+        /** 有序列表续行时新块的起始编号（源块编号 +1）；null = 不指定，交库默认/字面编号决定 */
+        orderedStartNumber: Int? = null,
     ): BodyBlock.Text {
         val state = RichTextState()
         /** 列表无缩进：圆点/数字紧贴文字左侧、与正文左对齐（默认 38sp 缩进过宽，需求要求去掉）。
@@ -528,7 +532,29 @@ class BodyBlocksController(
         if (initialListType != null && !state.isList) {
             when (initialListType) {
                 InheritedListType.Unordered -> state.addUnorderedList()
-                InheritedListType.Ordered -> state.addOrderedList()
+                InheritedListType.Ordered -> {
+                    /** 有序列表续号：每个块是独立的 RichTextState（单段落），库默认把新块渲染成 "1."。
+                     *  此处用字面编号 markdown 续号——库解析器保留 markdown 字面数字（#734），
+                     *  使新行显示 "2."/"3."… 且序列化（toMarkdown）也输出正确编号。
+                     *  orderedStartNumber 仅在「拆块续行」时由调用方传入（源块编号 +1）；
+                     *  其余场景（markdown 已自带编号、或空 markdown 无编号）走 addOrderedList 默认 1。 */
+                    val looksOrdered = Regex("^\\d+\\.\\s").containsMatchIn(markdown)
+                    if (orderedStartNumber != null && !looksOrdered) {
+                        val n = orderedStartNumber
+                        val md = if (markdown.isNotEmpty()) "$n. $markdown" else "$n. "
+                        state.setMarkdown(md)
+                        if (markdown.isEmpty()) {
+                            /** 空有序列表项：在保留列表类型的前提下尾随 ZWSP，
+                             *  与无序列表 '• ␣' 一致，使软键盘退格可被 observer 检测并触发合并退出。
+                             *  （不能用 setText——它会重置段落类型丢失 "N." 编号；
+                             *  用 addTextAtIndex 在 marker 之后显式插入，位置确定不依赖当前 selection） */
+                            state.addTextAtIndex(state.annotatedString.text.length, ZWSP)
+                            state.selection = TextRange(state.annotatedString.text.length)
+                        }
+                    } else {
+                        state.addOrderedList()
+                    }
+                }
             }
         }
         return BodyBlock.Text(id, state)
@@ -868,13 +894,26 @@ class BodyBlocksController(
             else -> null
         }
         val listForNewBlocks = srcListType
+        /** 有序列表续号：取源块 marker 里的字面编号，新块起始编号 = 源块编号 +1。
+         *  源块 annotatedString 形如 "1. 测试" / "2. 测试"，用正则取首数字。 */
+        val srcOrderedNumber = if (block.state.isOrderedList) {
+            Regex("^(\\d+)\\.\\s").find(block.state.annotatedString.text)
+                ?.groupValues?.get(1)?.toIntOrNull() ?: 1
+        } else {
+            null
+        }
         executeAndPush(
             ReplaceBlocksCommand(
                 index = idx,
                 removedSpecs = listOf(textSpec(block)),
                 insertedSpecs = listOf(
                     BlockSpec.TextSpec(block.id, beforeMd, listForNewBlocks),
-                    BlockSpec.TextSpec(newId, afterMd, listForNewBlocks),
+                    BlockSpec.TextSpec(
+                        newId,
+                        afterMd,
+                        listForNewBlocks,
+                        orderedStartNumber = srcOrderedNumber?.plus(1),
+                    ),
                 ),
                 focusBefore = currentFocusSpec(),
                 focusAfter = FocusSpec(newId, 0),
@@ -1211,7 +1250,12 @@ class BodyBlocksController(
 
     /** 按 [BlockSpec] 重建块（Text 走 setMarkdown 还原富文本样式；Image 只存 uri） */
     private fun rebuildBlock(spec: BlockSpec): BodyBlock = when (spec) {
-        is BlockSpec.TextSpec -> createTextBlock(spec.markdown, spec.id, spec.initialListType)
+        is BlockSpec.TextSpec -> createTextBlock(
+            spec.markdown,
+            spec.id,
+            spec.initialListType,
+            spec.orderedStartNumber,
+        )
         is BlockSpec.ImageSpec -> BodyBlock.Image(spec.id, spec.path)
     }
 
