@@ -166,7 +166,7 @@ sealed class BodyBlock {
  * 与 [com.mohamedrejeb.richeditor.model.RichTextState] 的列表样式对应，
  * 在此处独立定义以避免 App 层在 spec 中直接流转子模块内部类型。
  */
-private enum class InheritedListType {
+enum class InheritedListType {
     Unordered,
     Ordered,
 }
