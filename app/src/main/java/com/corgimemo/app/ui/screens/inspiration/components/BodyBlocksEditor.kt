@@ -1,6 +1,5 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
-import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -898,25 +897,14 @@ class BodyBlocksController(
         val block = focusedBlockId?.let { id -> blocks.firstOrNull { it.id == id } }
             ?.let { it as? BodyBlock.Text }
             ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
-            ?: run {
-                Log.d("OlIndentDebug", "Enter | 无可用 Text 块 delta=$delta")
-                return
-            }
+            ?: return
         val idx = blocks.indexOfFirst { it.id == block.id }
         if (idx < 0) return
         val state = block.state
         val md = blockMarkdown(state)
-        Log.d(
-            "OlIndentDebug",
-            "Enter | id=${block.id} delta=$delta focused=${focusedBlockId == block.id} " +
-                "isList=${state.isList} isOl=${state.isOrderedList} md='$md'"
-        )
 
         if (!state.isList) {
-            if (delta <= 0) {
-                Log.d("OlIndentDebug", "Exit | 普通行减缩进无效果")
-                return
-            }
+            if (delta <= 0) return
             /** 普通文本行 + 加缩进 = 自动转列表（用户选定）：继承前一块列表类型与层级 +1
              *  （成为其子项），无前列表则转无序列表一级 */
             val prev = blocks.getOrNull(idx - 1) as? BodyBlock.Text
@@ -931,46 +919,25 @@ class BodyBlocksController(
             if (markerLevel > 1) {
                 state.setListMarker(level = markerLevel, number = 1)
             }
-            Log.d(
-                "OlIndentDebug",
-                "PlainToList | markerLevel=$markerLevel useOrdered=$useOrdered " +
-                    "mdAfter='${blockMarkdown(state)}' isOl=${state.isOrderedList}"
-            )
         } else {
             val level = listLevelOfMd(md)
             val newLevel = level + delta
-            if (delta > 0 && newLevel > MAX_LIST_LEVEL) {
-                Log.d("OlIndentDebug", "Exit | 已到顶 level=$level")
-                return
-            }
+            if (delta > 0 && newLevel > MAX_LIST_LEVEL) return
             /** 一级 = 「未缩进」底线（用户 18:05 修正）：再减无效果、**不退出列表**——
              *  列表归属由有序/无序按钮管理，按有序按钮产生的一级 1./2. 不会被减少缩进退掉 */
-            if (newLevel < 1) {
-                Log.d("OlIndentDebug", "Exit | 已到一级底线 level=$level")
-                return
-            }
+            if (newLevel < 1) return
             /**
              * 空列表项（如回车产生的 "2. ␣"）同样正确缩进（用户 17:39 明确）：
              * 层级变化会同时改变 marker 形态（2. → (2) → ① …）与段落缩进，视觉效果明确，
              * 不可忽略。ZWSP 退格锚点在 raw 内容里，setListMarker 只换段落类型不碰内容，
              * 锚点保持有效。
              */
-            if (newLevel >= 1) {
-                /** 层级变化：内容不动，仅换层级（updateParagraphType 按新层级换 marker
-                 *  文本与缩进样式，光标自动校正） */
-                state.setListMarker(
-                    level = newLevel,
-                    number = orderedNumberOfMd(md) ?: 1,
-                )
-                Log.d(
-                    "OlIndentDebug",
-                    "LevelChange | $level→$newLevel mdAfter='${blockMarkdown(state)}' " +
-                        "isOl=${state.isOrderedList}"
-                )
-            }
+            state.setListMarker(
+                level = newLevel,
+                number = orderedNumberOfMd(md) ?: 1,
+            )
         }
         renumberOrderedBlocks()
-        Log.d("OlIndentDebug", "Done | md='${blockMarkdown(state)}'")
     }
 
     /**
