@@ -518,6 +518,70 @@ class BodyBlocksController(
     }
 
     /**
+     * 跨块有序列表重编号（位置语义）：连续的有序 Text 块视为一个列表 run，按块序
+     * 编 1..n；任何非有序块（普通文本 / 空块 / 图片块）都会打断 run、计数归零。
+     *
+     * 背景：块架构下每个块是独立 [RichTextState]，库只做 state 内编号；用户删掉某块
+     * marker 字符时库自动把该块退列表（type → DefaultParagraph），但**后续块的编号
+     * 不会联动**。用户预期："1.测试1 / 2.测试2 / 3.测试3" 删掉 "2." 后 "3.测试3"
+     * 应变 "1.测试3"；再删掉 "测试2" 与空行后应变 "2.测试3"。
+     *
+     * 位置语义是块序列的**确定性函数**（编号 = 连续序位），因此撤销/重做/命令重放后
+     * 再跑一遍即自动收敛一致，无需为重编号单独设计撤销。
+     *
+     * 调用约定：
+     * - 必须在 replaying 门控内调用（executeAndPush / undo / redo 内部已满足），
+     *   避免被重写块的 observer 把重编号误判为新编辑清掉 redo 栈；
+     * - 打字路径（删 marker / 工具栏切换列表）由块 observer 检测 isOrderedList 翻转
+     *   时调用（此时不在门控内，redo 本就应因新编辑失效，语义正确）；
+     * - [initialize] 加载不调用——外部 markdown 的字面起始编号在首次编辑前保持原样。
+     *
+     * 只在编号与序位不一致时才重写（打字等常规路径零开销）。
+     */
+    fun renumberOrderedBlocks() {
+        var counter = 0
+        for (block in blocks) {
+            val textBlock = block as? BodyBlock.Text
+            if (textBlock == null || !textBlock.state.isOrderedList) {
+                counter = 0
+                continue
+            }
+            counter++
+            val state = textBlock.state
+            if (currentOrderedNumber(state) != counter) {
+                rewriteOrderedMarker(state, counter)
+            }
+        }
+    }
+
+    /**
+     * 就地把有序块的 marker 编号改写为 [n]（不经过命令栈、不产生库内 history 条目——
+     * setMarkdown 不走 recordHistory，撤销语义不受污染）。
+     *
+     * 用 [RichTextState.setMarkdown] 在**同一 state 对象**上重写：observer 以 state 对象
+     * 身份为 key，同对象变更不重启 effect；重写后该块回归「markdown 重建态」不变量
+     * （无尾随 ZWSP，raw == effective）。光标按新长度钳制恢复（1 位数编号改写前后
+     * marker 等长，通常无感；10→9 等位数变化由钳制兜底）。
+     * 空列表项（仅 marker）保持「尾随 ZWSP + 光标在 marker 后」的退格锚点约定。
+     */
+    private fun rewriteOrderedMarker(state: RichTextState, n: Int) {
+        val content = blockMarkdown(state).replaceFirst(ListMarkerPrefixRegex, "")
+        val oldSelection = state.selection
+        state.setMarkdown("$n. $content")
+        if (content.isBlank()) {
+            /** 空有序列表项：补尾随 ZWSP（软键盘退格锚点），光标落在 marker 之后 */
+            state.addTextAtIndex(state.annotatedString.text.length, ZWSP)
+            state.selection = TextRange(state.annotatedString.text.length)
+        } else {
+            val len = state.annotatedString.text.length
+            state.selection = TextRange(
+                oldSelection.min.coerceAtMost(len),
+                oldSelection.max.coerceAtMost(len),
+            )
+        }
+    }
+
+    /**
      * 新建 Text 块。
      *
      * @param id 块 id：Command 重放时传入原 id 复用（焦点/外部引用保持稳定），
@@ -1150,6 +1214,9 @@ class BodyBlocksController(
         replaying = true
         try {
             command.apply(this)
+            /** 结构变更（拆块/合并/退列表/插图等）后按位置语义重排连续有序块编号，
+             *  在 replaying 门控内执行，避免被重写块的 observer 误清 redo 栈。 */
+            renumberOrderedBlocks()
         } finally {
             replaying = false
         }
@@ -1172,6 +1239,8 @@ class BodyBlocksController(
         replaying = true
         try {
             command.revert(this)
+            /** 撤销恢复的 specs 带历史编号，按位置语义重排收敛（确定性函数，幂等） */
+            renumberOrderedBlocks()
         } finally {
             replaying = false
         }
@@ -1188,6 +1257,8 @@ class BodyBlocksController(
         replaying = true
         try {
             command.apply(this)
+            /** 与 undoBlocks 对称：重放后按位置语义收敛有序块编号 */
+            renumberOrderedBlocks()
         } finally {
             replaying = false
         }
@@ -1212,7 +1283,11 @@ class BodyBlocksController(
         if (state.history.canUndo) {
             replaying = true
             try {
-                return state.history.undo()
+                val result = state.history.undo()
+                /** 块内 history 撤销可能恢复/移除列表 marker（如撤销"删 marker 退列表"），
+                 *  重排后续连续有序块编号以收敛到位置语义（其余场景为幂等空转） */
+                renumberOrderedBlocks()
+                return result
             } finally {
                 replaying = false
             }
@@ -1226,7 +1301,10 @@ class BodyBlocksController(
         if (state.history.canRedo) {
             replaying = true
             try {
-                return state.history.redo()
+                val result = state.history.redo()
+                /** 与 undo 对称：块内 history 重做后按位置语义收敛有序块编号 */
+                renumberOrderedBlocks()
+                return result
             } finally {
                 replaying = false
             }
@@ -1752,6 +1830,9 @@ private fun BlockTextItem(
         var lastText = state.annotatedString.text
         var lastMarkdown = state.toMarkdown()
         var lastSelection = state.selection
+        /** 本块列表成员基线：删除 marker 字符（库自动退列表）/ 工具栏加列表 / 打字自动识别
+         *  "N. " 都会翻转 isOrderedList → 触发跨块有序重编号（renumberOrderedBlocks） */
+        var lastIsOl = state.isOrderedList
         /** v2026-09-02：差分对象从 `annotatedString.text` 换成**整个 annotatedString**——
          *  只读 `.text` 无法感知 SpanStyle 变化，加粗/斜体/列表这类"只改样式、不改字符"
          *  的操作不会触发 collect；读整个 annotatedString 才会被 snapshot 系统追踪到。 */
@@ -1788,6 +1869,14 @@ private fun BlockTextItem(
                          *  把 ZWSP 删掉，text 变 "" → 走 onBackspaceAtStart（与硬键盘同路径） */
                         emptyBackspace -> controller.onBackspaceAtStart(block)
                     }
+                    /** 列表成员变化（删 marker 退列表 / 工具栏切换 / 打字自动识别）：
+                     *  跨块有序重编号。composition != null 时跳过（IME 组合中间态不稳定，
+                     *  等组合结束后的下一轮 collect 再处理）。 */
+                    val isOl = state.isOrderedList
+                    if (isOl != lastIsOl && composition == null) {
+                        controller.renumberOrderedBlocks()
+                    }
+                    lastIsOl = isOl
                 }
                 /** ZWSP 不变量维护：空块恢复 \u200B + 光标 (1, 1)，否则软键盘退格下一次又无法检测。
                  *  注意：observer 条件检查必须在 setText 之前——否则 setText 让 text 从 "" 变 "\u200B"
