@@ -121,6 +121,10 @@ fun RichTextFormatToolbar(
     onIncreaseIndent: () -> Unit = {},
     /** 减少缩进回调（v2026-09-05）：列表行层级 -1，一级再减退出列表；可连续减 */
     onDecreaseIndent: () -> Unit = {},
+    /** 是否可增加缩进（v2026-09-05 视觉降级）：列表到顶（6 级）时置灰禁用 */
+    canIncreaseIndent: Boolean = true,
+    /** 是否可减少缩进（v2026-09-05 视觉降级）：非列表行置灰禁用（减缩进无效果） */
+    canDecreaseIndent: Boolean = true,
     onAlignLeft: () -> Unit = {},
     onAlignCenter: () -> Unit = {},
     onAlignRight: () -> Unit = {},
@@ -264,17 +268,20 @@ fun RichTextFormatToolbar(
             /**
              * 增加/减少缩进（v2026-09-05 新增，紧邻有序列表右侧，图标与 UI 原型一致）：
              * 列表行做层级缩进（每级视觉 ≈ 两字符，可连续叠加），普通文本行点「增加缩进」
-             * 自动转列表项；无激活态（操作型按钮）。
+             * 自动转列表项；无激活态（操作型按钮）。到边界时置灰禁用（视觉降级）：
+             * 增加缩进在列表到顶（6 级）后置灰，减少缩进在非列表行置灰。
              */
             FormatIconButton(
                 imageVector = Icons.Default.FormatIndentIncrease,
                 isActive = false,
+                enabled = canIncreaseIndent,
                 onClick = onIncreaseIndent,
                 contentDescription = "增加缩进"
             )
             FormatIconButton(
                 imageVector = Icons.Default.FormatIndentDecrease,
                 isActive = false,
+                enabled = canDecreaseIndent,
                 onClick = onDecreaseIndent,
                 contentDescription = "减少缩进"
             )
@@ -358,9 +365,11 @@ private fun ToolbarDivider() {
  *
  * 统一使用 IconButton 40dp + Icon 22dp，与下层 BottomBarButton 一致。
  * 激活态：主题 primary 图标色（v2026-09-04 去掉浅暖橙背景色块，改为按钮图标本身变色）。
+ * 禁用态（enabled=false）：图标 38% 透明度置灰 + 不可点击（与加粗档位子按钮同款视觉降级）。
  *
  * @param imageVector Material Icon 图标
  * @param isActive 是否激活
+ * @param enabled 是否可点击（false 时置灰禁用，默认 true）
  * @param onClick 点击回调
  * @param contentDescription 无障碍描述
  */
@@ -369,20 +378,23 @@ private fun FormatIconButton(
     imageVector: ImageVector,
     isActive: Boolean,
     onClick: () -> Unit,
-    contentDescription: String
+    contentDescription: String,
+    enabled: Boolean = true,
 ) {
     /**
      * 激活态 = 图标本身变色（主题 primary），无背景色块
      * （v2026-09-04 用户要求：原激活态的浅暖橙背景块视觉似「橙色阴影」，改为图标变色）。
+     * 禁用态 = 38% 透明度置灰（与 [FormatWeightTierButton] 同款）。
      */
-    val tint = if (isActive) {
-        Color(0xFFFF9A5C) // 主题 primary（激活态，与下层 ⋮ 按钮一致）
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+    val tint = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+        isActive -> Color(0xFFFF9A5C) // 主题 primary（激活态，与下层 ⋮ 按钮一致）
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     IconButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.size(40.dp)
     ) {
         Icon(

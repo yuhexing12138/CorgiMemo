@@ -1377,6 +1377,8 @@ fun InspirationEditScreen(
                     /** 减少缩进（v2026-09-05）：对聚焦正文块做列表层级 -1（一级再减退出列表） */
                     bodyBlocks.indentFocusedBlock(delta = -1)
                 },
+                canIncreaseIndent = bodyBlocks.canIncreaseIndent,
+                canDecreaseIndent = bodyBlocks.canDecreaseIndent,
                 onAlignLeft = {
                     richTextState.toggleParagraphStyle(
                         androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.Start)

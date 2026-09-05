@@ -140,6 +140,10 @@ fun InspirationEditBottomBar(
     onIncreaseIndent: () -> Unit = {},
     /** 减少缩进回调（v2026-09-05）：透传给 [RichTextFormatToolbar] */
     onDecreaseIndent: () -> Unit = {},
+    /** 是否可增加缩进（v2026-09-05 视觉降级）：列表到顶时置灰，透传给 [RichTextFormatToolbar] */
+    canIncreaseIndent: Boolean = true,
+    /** 是否可减少缩进（v2026-09-05 视觉降级）：非列表行置灰，透传给 [RichTextFormatToolbar] */
+    canDecreaseIndent: Boolean = true,
     onAlignLeft: () -> Unit = {},
     onAlignCenter: () -> Unit = {},
     onAlignRight: () -> Unit = {},
@@ -192,6 +196,8 @@ fun InspirationEditBottomBar(
                     onInsertOrderedList = onInsertOrderedList,
                     onIncreaseIndent = onIncreaseIndent,
                     onDecreaseIndent = onDecreaseIndent,
+                    canIncreaseIndent = canIncreaseIndent,
+                    canDecreaseIndent = canDecreaseIndent,
                     onAlignLeft = onAlignLeft,
                     onAlignCenter = onAlignCenter,
                     onAlignRight = onAlignRight,
