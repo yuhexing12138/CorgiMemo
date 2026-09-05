@@ -22,7 +22,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import com.corgimemo.app.ui.theme.ContentFontManager
+import com.mohamedrejeb.richeditor.model.rememberRichTextState
+import com.mohamedrejeb.richeditor.ui.material3.RichText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +36,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -218,13 +222,14 @@ fun InspirationViewCard(
                     )
                     Spacer(modifier = Modifier.height(9.dp))
                     // 正文（15sp，行高 22sp，#666666）——按本条灵感记录的字体渲染
-                    Text(
-                        text = inspiration.content,
+                    // v2026-09-05 修复「字号/字体颜色设置后丢失」：改用只读 [RichText] 渲染
+                    // 富文本 [Inspiration.contentFormat]（含逐字 fontSize/color 内联 span），
+                    // 使编辑页设置的排版在详情页同样生效。基础样式与改造前纯 Text 一致，
+                    // 未设置排版的字符回落基础样式；旧记录 contentFormat 为空时回退纯文本 content。
+                    InspirationBodyRichText(
+                        contentFormat = inspiration.contentFormat,
+                        fallbackContent = inspiration.content,
                         fontFamily = inspirationFontFamily,
-                        fontSize = 15.sp,  // 14sp → 15sp
-                        color = Color(0xFF666666),
-                        lineHeight = 22.sp,  // 21sp → 22sp
-                        letterSpacing = 0.5.sp
                     )
                     // 图片区（如果有）
                     // v2026-08-29 改造：默认堆叠展示，点「展开 N」按钮向下展开为图片列并恢复
@@ -332,4 +337,48 @@ fun InspirationViewCard(
                 }
             }
         }
+}
+
+/**
+ * 灵感详情页正文渲染：用只读 [RichText] 展示富文本 [contentFormat]（含逐字字号 / 字体颜色
+ * 内联 span），使编辑页设置的排版在详情页同样持久生效。
+ *
+ * **修复背景**：库旧版 markdown 编码器在 `toMarkdown()` 时丢弃 `SpanStyle.fontSize` 与
+ * `SpanStyle.color`，仅保留字重；故此前「编辑页设的字号/颜色」无法落库、再进入即丢失。
+ * 现版本编码器已将这两项以 `<span style="font-size:Npx;color:#RRGGBB">` 内联往返保留，
+ * 详情页只需改用 [RichText] 渲染 [contentFormat] 即可还原。
+ *
+ * @param contentFormat 富文本 Markdown（由编辑页 `RichTextState.toMarkdown()` 导出）。
+ * @param fallbackContent 旧记录 `contentFormat` 为空时的纯文本回退（保证历史数据不丢）。
+ * @param fontFamily 本条灵感记录的字体族（与标题、编辑页一致）。
+ */
+@Composable
+private fun InspirationBodyRichText(
+    contentFormat: String,
+    fallbackContent: String,
+    fontFamily: FontFamily,
+    modifier: Modifier = Modifier,
+) {
+    // contentFormat 非空优先（携带逐字排版）；旧记录无 contentFormat 时回退纯文本 content。
+    val markdown = contentFormat.ifEmpty { fallbackContent }
+    val richTextState = rememberRichTextState()
+    LaunchedEffect(markdown) {
+        if (markdown.isNotEmpty()) {
+            // setMarkdown 非 suspend，直接调用；状态变更后 RichText 自动重组渲染。
+            richTextState.setMarkdown(markdown)
+        }
+    }
+    if (markdown.isNotEmpty()) {
+        RichText(
+            state = richTextState,
+            modifier = modifier,
+            // 基础样式与改造前纯 Text 完全一致：未设置排版的字符回落下列值，
+            // 已设 fontSize/color 的字符以 span 内联值为准（覆盖基础样式）。
+            fontFamily = fontFamily,
+            fontSize = 15.sp,
+            color = Color(0xFF666666),
+            lineHeight = 22.sp,
+            letterSpacing = 0.5.sp,
+        )
+    }
 }
