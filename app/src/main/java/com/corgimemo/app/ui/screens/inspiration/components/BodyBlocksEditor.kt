@@ -922,11 +922,12 @@ class BodyBlocksController(
             val level = listLevelOfMd(md)
             val newLevel = level + delta
             if (delta > 0 && newLevel > MAX_LIST_LEVEL) return
-            /** 空列表项（仅 marker）的层级变化无视觉/语义效果（marker 形态不变），
-             *  直接忽略，避免产生无意义的撤销记录 */
-            if (contentAfterListMarker(md).isBlank() && newLevel >= 1) {
-                return
-            }
+            /**
+             * 空列表项（如回车产生的 "2. ␣"）同样正确缩进（用户 17:39 明确）：
+             * 层级变化会同时改变 marker 形态（2. → (2) → ① …）与段落缩进，视觉效果明确，
+             * 不可忽略。ZWSP 退格锚点在 raw 内容里，setListMarker 只换段落类型不碰内容，
+             * 锚点保持有效。
+             */
             if (newLevel >= 1) {
                 /** 层级变化：内容不动，仅换层级（updateParagraphType 按新层级换 marker
                  *  文本与缩进样式，光标自动校正） */
@@ -941,10 +942,6 @@ class BodyBlocksController(
         }
         renumberOrderedBlocks()
     }
-
-    /** 取列表 markdown 的 marker 后内容（剥层级缩进前缀与 marker）。 */
-    private fun contentAfterListMarker(md: String): String =
-        md.trimStart(' ').replaceFirst(ListMarkerPrefixRegex, "")
 
     // ---------- 图片插入 ----------
 
