@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -880,10 +881,11 @@ class BodyBlocksController(
      * 前缀会被 CommonMark 解析成缩进代码块导致层级丢失（真机表现：连续缩进在
      * "i."/"1." 间循环、「3.测试3」被错误改写为「1.测试3」）。
      *
-     * 规则（用户选定）：
+     * 规则（用户 18:05 修正）：
      * - 列表行：加缩进 = 层级 +1（[MAX_LIST_LEVEL] 封顶 = 一级贴左缘 + 最多 5 次缩进，
      *   每级 [LIST_LEVEL_INDENT_SP] ≈ 两字符；到顶后点击无效果）；减缩进 = 层级 -1，
-     *   一级再减 = 退出列表变普通文本。
+     *   **一级 = 「未缩进」底线，再减无效果（不退出列表）**——列表归属由有序/无序按钮管理，
+     *   缩进按钮只调层级（按有序按钮产生的一级 1./2. 不会被减少缩进退掉）。
      * - 普通文本行：减缩进无效果；加缩进自动转列表项——前一块是列表则继承其类型与
      *   层级 +1（成为其子项），否则转为无序列表一级。
      *
@@ -896,14 +898,25 @@ class BodyBlocksController(
         val block = focusedBlockId?.let { id -> blocks.firstOrNull { it.id == id } }
             ?.let { it as? BodyBlock.Text }
             ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
-            ?: return
+            ?: run {
+                Log.d("OlIndentDebug", "Enter | 无可用 Text 块 delta=$delta")
+                return
+            }
         val idx = blocks.indexOfFirst { it.id == block.id }
         if (idx < 0) return
         val state = block.state
         val md = blockMarkdown(state)
+        Log.d(
+            "OlIndentDebug",
+            "Enter | id=${block.id} delta=$delta focused=${focusedBlockId == block.id} " +
+                "isList=${state.isList} isOl=${state.isOrderedList} md='$md'"
+        )
 
         if (!state.isList) {
-            if (delta <= 0) return
+            if (delta <= 0) {
+                Log.d("OlIndentDebug", "Exit | 普通行减缩进无效果")
+                return
+            }
             /** 普通文本行 + 加缩进 = 自动转列表（用户选定）：继承前一块列表类型与层级 +1
              *  （成为其子项），无前列表则转无序列表一级 */
             val prev = blocks.getOrNull(idx - 1) as? BodyBlock.Text
@@ -918,10 +931,24 @@ class BodyBlocksController(
             if (markerLevel > 1) {
                 state.setListMarker(level = markerLevel, number = 1)
             }
+            Log.d(
+                "OlIndentDebug",
+                "PlainToList | markerLevel=$markerLevel useOrdered=$useOrdered " +
+                    "mdAfter='${blockMarkdown(state)}' isOl=${state.isOrderedList}"
+            )
         } else {
             val level = listLevelOfMd(md)
             val newLevel = level + delta
-            if (delta > 0 && newLevel > MAX_LIST_LEVEL) return
+            if (delta > 0 && newLevel > MAX_LIST_LEVEL) {
+                Log.d("OlIndentDebug", "Exit | 已到顶 level=$level")
+                return
+            }
+            /** 一级 = 「未缩进」底线（用户 18:05 修正）：再减无效果、**不退出列表**——
+             *  列表归属由有序/无序按钮管理，按有序按钮产生的一级 1./2. 不会被减少缩进退掉 */
+            if (newLevel < 1) {
+                Log.d("OlIndentDebug", "Exit | 已到一级底线 level=$level")
+                return
+            }
             /**
              * 空列表项（如回车产生的 "2. ␣"）同样正确缩进（用户 17:39 明确）：
              * 层级变化会同时改变 marker 形态（2. → (2) → ① …）与段落缩进，视觉效果明确，
@@ -935,12 +962,15 @@ class BodyBlocksController(
                     level = newLevel,
                     number = orderedNumberOfMd(md) ?: 1,
                 )
-            } else {
-                /** 一级再减 = 退出列表：移除列表类型变普通文本 */
-                if (state.isOrderedList) state.removeOrderedList() else state.removeUnorderedList()
+                Log.d(
+                    "OlIndentDebug",
+                    "LevelChange | $level→$newLevel mdAfter='${blockMarkdown(state)}' " +
+                        "isOl=${state.isOrderedList}"
+                )
             }
         }
         renumberOrderedBlocks()
+        Log.d("OlIndentDebug", "Done | md='${blockMarkdown(state)}'")
     }
 
     /**
@@ -964,14 +994,16 @@ class BodyBlocksController(
 
     /**
      * 聚焦块当前是否可「减少缩进」（工具栏按钮置灰用，视觉降级）：
-     * 仅列表行可减（一级再减 = 退出列表）；普通文本行减缩进本就无效果，按钮置灰。
+     * 仅**层级 ≥ 2** 的列表行可减（一级 = 「未缩进」底线，再减无效果、不退出列表——
+     * 列表归属由有序/无序按钮管理）；普通文本行与一级列表行均置灰。
      * 依赖注册同 [canIncreaseIndent]（显式读 annotatedString）。
      */
     val canDecreaseIndent: Boolean
         get() {
             val state = focusedOrFirstTextState()
             state.annotatedString
-            return state.isList
+            if (!state.isList) return false
+            return listLevelOfMd(state.toMarkdown()) > 1
         }
 
     // ---------- 图片插入 ----------
