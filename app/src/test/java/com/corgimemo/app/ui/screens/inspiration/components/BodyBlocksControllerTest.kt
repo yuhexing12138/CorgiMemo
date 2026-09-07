@@ -292,4 +292,41 @@ class BodyBlocksControllerTest {
         assertTrue(second.state.isOrderedList)
         assertEquals("  1. ", controller.blockMarkdown(second.state))
     }
+
+    /**
+     * 六级空项（marker 实为 ASCII "i. "，库罗马数字用 ASCII 拼写）回车降入五级
+     * （ASCII "I. "）时，光标应落在 marker 之后（raw 偏移 3），而非 marker 左侧。
+     *
+     * 回归背景：refocusListBlock 旧正则 `[Ⅰ-Ⅿ]`（Unicode 罗马区间）匹配不了 ASCII
+     * "I."，`[a-z]+` 只覆盖小写——五级两头落空失配，markerEnd 回退 0，光标落 marker
+     * 左侧（真机截图：六级 "ⅰ." 空项回车降为 "Ⅰ." 后光标在左侧）。修复为 `[a-zA-Z]+`。
+     */
+    @Test
+    fun `空六级罗马项回车降五级光标落marker右侧`() {
+        controller.initialize("1. 测试1")
+        val first = controller.blocks.first() as Text
+        first.state.selection =
+            androidx.compose.ui.text.TextRange(first.state.annotatedString.text.length)
+        controller.onBlockFocused(first.id)
+        controller.splitTextBlockAtCursor(first)
+        assertEquals(2, controller.blocks.size)
+        val second = controller.blocks[1] as Text
+
+        // 连续加缩进到六级（层级循环：2 "(1)" → 3 "①" → 4 "a." → 5 "I." → 6 "i."，
+        // renumber 收敛为该层第 1 项；level 6 编码前缀 = 10 空格）
+        controller.onBlockFocused(second.id)
+        repeat(5) { controller.indentFocusedBlock(+1) }
+        assertEquals("          1. ", controller.blockMarkdown(second.state))
+
+        // 六级空项回车 → 降五级 "I."，光标应在 marker 之后（"I. " 长度 3）
+        controller.splitTextBlockAtCursor(second)
+        assertEquals(2, controller.blocks.size)
+        val dedented = controller.blocks[1] as Text
+        assertTrue(dedented.state.isOrderedList)
+        assertEquals("        1. ", controller.blockMarkdown(dedented.state))
+        val focus = controller.takePendingFocus()
+        assertNotNull(focus)
+        assertEquals(dedented.id, focus?.blockId)
+        assertEquals("光标应落在 I. marker 之后而非左侧", 3, focus?.offset)
+    }
 }

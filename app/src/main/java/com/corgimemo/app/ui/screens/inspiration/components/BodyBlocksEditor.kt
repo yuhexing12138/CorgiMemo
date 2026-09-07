@@ -538,6 +538,13 @@ class BodyBlocksController(
      * 一级 `1.` / 二级 `(1)` / 三级 `①` / 四级 `a.` / 五级 `Ⅰ.` / 六级 `i.` + 无序
      * `• ◦ ▪`（正则失配时 markerEnd 回退 0，光标会落在 marker 左侧——层级样式加入后
      * `(2)` 曾因此失配，光标落在括号左侧）。
+     *
+     * v2026-09-07 修正：库的罗马数字（LowerRoman/UpperRoman）用 **ASCII 字母**拼写
+     * （"i"/"I"、"ii"/"II"，见库 `OrderedListStyleType.formatToRomanNumber`），并非
+     * Unicode 罗马字符 ⅰ/Ⅰ——旧正则 `[Ⅰ-Ⅿ]`（U+2160-216F）匹配不了 ASCII "I."，
+     * `[a-z]+` 又只覆盖小写，五级 "I." 两头落空失配 → 光标落在 marker 左侧
+     * （六级 "i." 空项回车降入五级时暴露）。现合并为 `[a-zA-Z]+`（同时覆盖四级
+     * `a.` 与大小写字母样式）；Unicode 罗马分支删除（库从不输出该形态）。
      */
     private fun refocusListBlock(blockId: String) {
         val block = blocks.firstOrNull { it is BodyBlock.Text && it.id == blockId } as? BodyBlock.Text
@@ -545,7 +552,7 @@ class BodyBlocksController(
         if (!block.state.isList) return
         val text = block.state.annotatedString.text
         val markerEnd = Regex(
-            "^\\s*(?:[•◦▪]\\s|\\(\\d+\\)\\s|[①-⑳]\\s|\\d+\\.\\s|[a-z]+\\.\\s|[Ⅰ-Ⅿ]+\\.\\s)"
+            "^\\s*(?:[•◦▪]\\s|\\(\\d+\\)\\s|[①-⑳]\\s|\\d+\\.\\s|[a-zA-Z]+\\.\\s)"
         ).find(text)?.range?.last?.plus(1) ?: 0
         focusSpec(FocusSpec(blockId, markerEnd))
     }
