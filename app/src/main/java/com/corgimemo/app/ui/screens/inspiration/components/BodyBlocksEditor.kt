@@ -243,6 +243,17 @@ sealed class BodyBlock {
         override val id: String,
         val state: RichTextState,
         val focusRequester: FocusRequester = FocusRequester(),
+        /**
+         * 复选框块勾选状态（v2026-09-07 新增）：null = 普通文本块；
+         * false / true = 复选框块（未勾选 / 已勾选）。
+         *
+         * 勾选状态**不进块内 [RichTextState]**（前缀只在块边界处理，见
+         * [CHECKBOX_MD_UNCHECKED]），渲染时由 BlockTextItem 在编辑器左侧画
+         * 复选框、勾选态文字视觉降级；序列化走 [BodyBlocksController.toMarkdown]
+         * 拼前缀 / [BodyBlocksController.initialize] 剥前缀。
+         * 就地翻转（保持 state 对象与焦点稳定）走 [BodyBlocksController.setCheckboxChecked]。
+         */
+        val checked: Boolean? = null,
     ) : BodyBlock()
 
     class Image(
@@ -287,7 +298,9 @@ enum class InheritedListType {
 sealed class BlockSpec {
     abstract val id: String
 
-    /** Text 块：markdown 剥过 ZWSP（见 [BodyBlocksController.blockMarkdown]） */
+    /**
+     * Text 块：markdown 剥过 ZWSP（见 [BodyBlocksController.blockMarkdown]）
+     */
     data class TextSpec(
         override val id: String,
         val markdown: String,
@@ -299,6 +312,12 @@ sealed class BlockSpec {
          *  层级不依赖 markdown 前缀重建（独立块 ≥4 空格前缀会被 CommonMark 当代码块），
          *  而是重建后经 [RichTextState.setListMarker] 直接设置。 */
         val listLevel: Int? = null,
+        /**
+         * 复选框块勾选状态（v2026-09-07 新增）：null = 普通文本块；false/true = 复选框块。
+         * [markdown] 载荷为**剥掉复选框前缀**的内容（前缀不进块内 RichTextState），
+         * 重建时由 [BodyBlocksController.rebuildBlock] 原样传给 createTextBlock。
+         */
+        val checked: Boolean? = null,
     ) : BlockSpec()
 
     /** Image 块：只有 uri 路径 */
@@ -469,6 +488,31 @@ class UpdateImageBlockCommand(
 }
 
 /**
+ * 复选框勾选状态切换命令（v2026-09-07）：点击复选框标识勾选 / 取消勾选。
+ *
+ * **不做块重建**：勾选切换是纯视觉属性翻转（state 对象与光标保持不动），
+ * 经 [BodyBlocksController.setCheckboxChecked] 就地替换块对象——重建会让
+ * 块内 history 丢失、光标重置，交互上不可接受。
+ * apply/revert 对称翻转，撤销一步还原勾选态。
+ */
+class SetCheckboxCheckedCommand(
+    val blockId: String,
+    val oldChecked: Boolean,
+    val newChecked: Boolean,
+) : BodyBlocksCommand {
+
+    override fun apply(controller: BodyBlocksController) {
+        controller.setCheckboxChecked(blockId, newChecked)
+        controller.afterCommandMutation()
+    }
+
+    override fun revert(controller: BodyBlocksController) {
+        controller.setCheckboxChecked(blockId, oldChecked)
+        controller.afterCommandMutation()
+    }
+}
+
+/**
  * 复合命令（方案A坑点5）：把多个原子命令打包成**一个撤销单位**——
  * 批量插图（多选相册一次确认）、将来的批量删除等。
  * apply 顺序执行，revert 逆序回退。
@@ -507,6 +551,41 @@ internal const val DIVIDER_MD = "---"
 
 /** 判断单段 markdown（已按 `\n\n` 拆出）是否为分割线段 */
 internal fun isDividerMarkdown(para: String): Boolean = para.trim() == DIVIDER_MD
+
+// ==================== 复选框（v2026-09-07） ====================
+
+/**
+ * 复选框块的 markdown 载体：GFM 任务列表语法，独占一个段落（块间以 `\n\n` 连接）。
+ *
+ * - 未勾选：`- [ ] 内容`；已勾选：`- [x] 内容`（小写 x 为 App 自生成形态）；
+ * - **前缀只在块边界处理、绝不进块内 [RichTextState]**：库不认识 task list，
+ *   直接喂会把 `- [ ]` 解析成无序列表 + 字面 `[ ]` 文本；因此勾选状态是
+ *   [BodyBlock.Text.checked] 属性，序列化时由 [BodyBlocksController.toMarkdown]
+ *   拼前缀、加载时由 [BodyBlocksController.initialize] 剥前缀；
+ * - 只识别段首**恰好**为上述两个前缀的形态（App 自身生成的唯一形态，保守
+ *   避免把用户手输的 `- [X] ` / `-[ ]` 等变体误判；与 [DIVIDER_MD] 同哲学）；
+ * - 编辑页 [BodyBlocksController.initialize] 与详情页
+ *   [com.corgimemo.app.ui.screens.inspiration.components.InspirationViewCard]
+ *   共用本判定，保证两端往返一致。
+ */
+internal const val CHECKBOX_MD_UNCHECKED = "- [ ] "
+internal const val CHECKBOX_MD_CHECKED = "- [x] "
+
+/**
+ * 判断单段 markdown（已按 `\n\n` 拆出）是否为复选框段。
+ *
+ * @return 命中时返回 (勾选状态, 剥掉前缀后的内容 markdown)；未命中返回 null。
+ *   内容为空串表示空复选框项（序列化输出即前缀本身，往返对称）。
+ */
+internal fun checkboxMarkdownInfo(para: String): Pair<Boolean, String>? = when {
+    para.startsWith(CHECKBOX_MD_UNCHECKED) -> false to para.removePrefix(CHECKBOX_MD_UNCHECKED)
+    para.startsWith(CHECKBOX_MD_CHECKED) -> true to para.removePrefix(CHECKBOX_MD_CHECKED)
+    else -> null
+}
+
+/** 复选框块的 markdown 前缀（按勾选状态）；[checked]=null 返回空串（普通块无前缀） */
+internal fun checkboxMdPrefix(checked: Boolean?): String =
+    if (checked == null) "" else if (checked) CHECKBOX_MD_CHECKED else CHECKBOX_MD_UNCHECKED
 
 /**
  * 把整篇 markdown 按图片语法切成段。
@@ -760,6 +839,12 @@ class BodyBlocksController(
          *  导致层级丢失，故剥离后经 [RichTextState.setListMarker] 直接设置层级。
          *  initialize 加载传 false（默认）：多行嵌套段依赖前缀解码，且 ≤3 空格可安全解码。 */
         stripListLevelPrefix: Boolean = false,
+        /**
+         * 复选框块勾选状态（v2026-09-07 新增）：null = 普通文本块；false/true = 复选框块。
+         * 注意 [markdown] 参数必须是**已剥掉复选框前缀**的内容
+         * （前缀由调用方 [BodyBlocksController.initialize] 处理，不进块内 state）。
+         */
+        checked: Boolean? = null,
     ): BodyBlock.Text {
         val state = RichTextState()
         /**
@@ -841,7 +926,8 @@ class BodyBlocksController(
                 state.setListMarker(level = lvl, number = num, commitHistory = false)
             }
         }
-        return BodyBlock.Text(id, state)
+        /** 复选框块：checked 属性随块对象携带（markdown 已由调用方剥掉前缀，v2026-09-07） */
+        return BodyBlock.Text(id, state, checked = checked)
     }
 
     /** Text 块 → [BlockSpec.TextSpec]（markdown 剥 ZWSP，Command 载荷统一出口） */
@@ -894,6 +980,11 @@ class BodyBlocksController(
                         } else if (isDividerMarkdown(trimmed)) {
                             // 分割线段（"---"，v2026-09-07）：重建为 Divider 块（无富文本状态）
                             blocks += BodyBlock.Divider(newBodyBlockId())
+                        } else if (checkboxMarkdownInfo(trimmed) != null) {
+                            // 复选框段（v2026-09-07，"- [ ] 内容" / "- [x] 内容"）：
+                            // 剥掉前缀后建 Text 块并携带勾选状态（前缀不进块内 RichTextState）
+                            val (wasChecked, contentMd) = checkboxMarkdownInfo(trimmed)!!
+                            blocks += createTextBlock(contentMd, checked = wasChecked)
                         } else {
                             blocks += createTextBlock(trimmed)
                         }
@@ -929,7 +1020,22 @@ class BodyBlocksController(
                 is BodyBlock.Text -> {
                     /** 剥掉空块预置的 ZWSP，保证 markdown 往返不带噪音 */
                     val raw = block.state.toMarkdown().replace(ZWSP, "")
-                    if (raw.isEmpty()) {
+                    if (block.checked != null) {
+                        /**
+                         * 复选框块（v2026-09-07）：输出 GFM 任务列表前缀 + 内容。
+                         * 空 checkbox 块（内容为空串）输出前缀本身——段落非空、
+                         * 勾选属性随段落往返（加载侧 [checkboxMarkdownInfo] 还原为空 checkbox 项）。
+                         */
+                        val body = if (raw.isEmpty()) {
+                            ""
+                        } else {
+                            parseMarkdownSegments(raw)
+                                .filterIsInstance<MdSegment.TextSeg>()
+                                .map { it.md.trim('\n') }
+                                .joinToString("\n\n")
+                        }
+                        checkboxMdPrefix(block.checked) + body
+                    } else if (raw.isEmpty()) {
                         /** 空白块：用 NBSP 占位符序列化，使该段在 markdown 中非空，
                          * 避免与相邻图片块（块间以 `\n\n` 分隔）的「段间空段」混为一体，
                          * 导致重新进入时图片边界多/少空块；加载侧再把占位符还原为空块。 */
@@ -1085,6 +1191,20 @@ class BodyBlocksController(
                 return plainIndentLevelOfMd(state.toMarkdown()) > 1
             }
             return listLevelOfMd(state.toMarkdown()) > 1
+        }
+
+    /**
+     * 聚焦块当前是否为复选框块（v2026-09-07，工具栏复选框按钮激活态高亮用）。
+     *
+     * 快照响应式：[focusedBlockId]（mutableStateOf）与 [blocks]（SnapshotStateList
+     * 结构性读取）均为快照状态；勾选切换经 [setCheckboxChecked] 替换块对象（结构性
+     * 写入）同样可追踪——聚焦块切换 / 勾选翻转都会触发读取方重组刷新。
+     */
+    val isFocusedBlockCheckbox: Boolean
+        get() {
+            val block = focusedBlockId
+                ?.let { id -> blocks.firstOrNull { it.id == id } }
+            return block is BodyBlock.Text && block.checked != null
         }
 
     // ---------- 图片插入 ----------
@@ -1365,6 +1485,112 @@ class BodyBlocksController(
         highlightedBlockId = if (highlightedBlockId == blockId) null else blockId
     }
 
+    // ---------- 复选框（v2026-09-07） ----------
+
+    /**
+     * 工具栏「复选框」按钮入口：聚焦块在 复选框块 ↔ 普通文本块 之间切换。
+     *
+     * - 聚焦 Text 块 → 整块转换（[buildToggleCheckboxCommand]，同 [ReplaceBlocksCommand]
+     *   撤销时 stash 原块对象、内容与块内 history 无损）；
+     * - 未聚焦 / 聚焦块是图片或分割线（不持有光标）→ 尾插一个空复选框项
+     *   （[buildAppendCheckboxCommand]，焦点落到新项）。
+     */
+    fun toggleCheckboxAtFocused() {
+        val focusedIdx = focusedBlockId
+            ?.let { id -> blocks.indexOfFirst { it.id == id } }
+            ?.takeIf { it >= 0 }
+
+        if (focusedIdx == null) {
+            executeAndPush(buildAppendCheckboxCommand())
+            return
+        }
+        when (val focused = blocks[focusedIdx]) {
+            is BodyBlock.Text -> executeAndPush(buildToggleCheckboxCommand(focused, focusedIdx))
+            /** 图片/分割线块不持有光标：尾插空复选框项 */
+            else -> executeAndPush(buildAppendCheckboxCommand())
+        }
+    }
+
+    /**
+     * 聚焦 Text 块的整体转换命令：普通块 → 复选框块（checked=false），
+     * 复选框块 → 普通块（checked=null）。内容 markdown 不变，仅翻转换属性；
+     * 焦点保持当前光标位置（重建块文本与原块完全一致，raw 偏移仍有效）。
+     */
+    private fun buildToggleCheckboxCommand(
+        focused: BodyBlock.Text,
+        focusedIdx: Int,
+    ): ReplaceBlocksCommand {
+        val newChecked = if (focused.checked == null) false else null
+        return ReplaceBlocksCommand(
+            index = focusedIdx,
+            removedSpecs = listOf(textSpec(focused)),
+            insertedSpecs = listOf(textSpec(focused).copy(checked = newChecked)),
+            focusBefore = currentFocusSpec(),
+            focusAfter = currentFocusSpec(),
+        )
+    }
+
+    /**
+     * 尾插空复选框项（未聚焦 / 聚焦块非 Text 时）：插在末尾 Text 块之前，
+     * 焦点落到新项（可直接输入待办内容）。
+     */
+    private fun buildAppendCheckboxCommand(): ReplaceBlocksCommand {
+        val checkboxSpec = BlockSpec.TextSpec(newBodyBlockId(), "", checked = false)
+        /** 末尾是 Text → 插在它前面（保留「末尾可继续输入」不变量）；否则直接追加 */
+        val index = if (blocks.lastOrNull() is BodyBlock.Text) blocks.size - 1 else blocks.size
+        return ReplaceBlocksCommand(
+            index = index.coerceAtLeast(0),
+            removedSpecs = emptyList(),
+            insertedSpecs = listOf(checkboxSpec),
+            focusBefore = currentFocusSpec(),
+            /** 空 checkbox 块 raw 长度 1（ZWSP）；偏移 0 由 ZWSP 不变量维护兜底推到 (1, 1) */
+            focusAfter = FocusSpec(checkboxSpec.id, 0),
+        )
+    }
+
+    /**
+     * 点击复选框标识（块 Composable 入口）：勾选 / 取消勾选。
+     * 走 [SetCheckboxCheckedCommand]（一步一撤销），markdown 随 onDocChanged 链路
+     * 自动同步保存（`- [ ] ` ↔ `- [x] ` 前缀翻转）。
+     */
+    fun toggleCheckboxChecked(blockId: String) {
+        val block = blocks.firstOrNull { it.id == blockId } as? BodyBlock.Text ?: return
+        val current = block.checked ?: return
+        executeAndPush(SetCheckboxCheckedCommand(blockId, current, !current))
+    }
+
+    /**
+     * 勾选状态落盘（[SetCheckboxCheckedCommand] 用）：就地替换块对象，
+     * **保持 state / focusRequester 引用不变**——不触发 observer 重启、不丢块内
+     * 编辑历史、光标位置不动。
+     */
+    internal fun setCheckboxChecked(blockId: String, checked: Boolean) {
+        val idx = blocks.indexOfFirst { it.id == blockId }
+        val block = blocks.getOrNull(idx)
+        if (block is BodyBlock.Text && block.checked != checked) {
+            blocks[idx] = BodyBlock.Text(block.id, block.state, block.focusRequester, checked)
+        }
+    }
+
+    /**
+     * 复选框块内容起点退格（[onBackspaceAtStart] 的复选框分支实现）：
+     * **退出复选框**（checked = null，文字保留）——与空列表项退格退出列表同语义；
+     * 第二次退格按普通块继续走合并 / 删除。
+     */
+    private fun convertCheckboxBlockToText(block: BodyBlock.Text) {
+        val idx = blocks.indexOfFirst { it.id == block.id }
+        if (idx < 0) return
+        executeAndPush(
+            ReplaceBlocksCommand(
+                index = idx,
+                removedSpecs = listOf(textSpec(block)),
+                insertedSpecs = listOf(textSpec(block).copy(checked = null)),
+                focusBefore = currentFocusSpec(),
+                focusAfter = currentFocusSpec(),
+            )
+        )
+    }
+
     // ---------- 语音（保持内联，行为不变） ----------
 
     /** 在聚焦块光标处插入语音 token markdown */
@@ -1468,6 +1694,26 @@ class BodyBlocksController(
         if (idx < 0) return
 
         /**
+         * 空复选框项回车（v2026-09-07）= **退出复选框** → 普通空块（与空列表项
+         * 回车退出列表同语义）。口径用 [isEffectivelyBlankLine]（剥 ZWSP 外还兼容
+         * 软键盘已插入的 `\n`），硬键盘（本函数）与软键盘（[normalizeBlockParagraphs]
+         * 的同款前置分支）两路共用。
+         */
+        if (block.checked != null && isEffectivelyBlankLine(block.state)) {
+            executeAndPush(
+                ReplaceBlocksCommand(
+                    index = idx,
+                    removedSpecs = listOf(textSpec(block)),
+                    insertedSpecs = listOf(BlockSpec.TextSpec(block.id, "")),
+                    focusBefore = currentFocusSpec(),
+                    /** 普通空块 raw 长度 1（ZWSP），偏移 1 = ZWSP 之后，与空块光标约定一致 */
+                    focusAfter = FocusSpec(block.id, 1),
+                )
+            )
+            return
+        }
+
+        /**
          * 空纯文本缩进行回车（v2026-09-07，用户需求 1）= **减一级缩进**（原地），
          * 不拆块——与内容起点退格（[dedentPlainBlockAtContentStart]）对称的 Word
          * 标准行为：逐级返回，到无缩进时空行回车才正常新起一行（走下方主路径）。
@@ -1563,6 +1809,8 @@ class BodyBlocksController(
                         beforeMd,
                         listForNewBlocks,
                         listLevel = srcOrderedLevel,
+                        /** 复选框块拆块（v2026-09-07）：前半块保留源勾选状态 */
+                        checked = block.checked,
                     ),
                     BlockSpec.TextSpec(
                         newId,
@@ -1570,6 +1818,9 @@ class BodyBlocksController(
                         listForNewBlocks,
                         orderedStartNumber = srcOrderedNumber?.plus(1),
                         listLevel = srcOrderedLevel,
+                        /** 复选框续行（v2026-09-07，用户确认）：回车新行 = 未勾选的复选框项；
+                         *  非复选框块保持 null */
+                        checked = if (block.checked != null) false else null,
                     ),
                 ),
                 focusBefore = currentFocusSpec(),
@@ -1607,6 +1858,24 @@ class BodyBlocksController(
         }
 
         /**
+         * 空复选框项回车（软键盘，v2026-09-07）= 退出复选框 → 普通空块。
+         * 与 [splitTextBlock] 的空复选框分支同语义（口径用 [isEffectivelyBlankLine]：
+         * 软键盘回车已在文本中插入 `\n`，isEffectivelyEmpty 判不出来）。
+         */
+        if (block.checked != null && isEffectivelyBlankLine(block.state)) {
+            executeAndPush(
+                ReplaceBlocksCommand(
+                    index = idx,
+                    removedSpecs = listOf(textSpec(block)),
+                    insertedSpecs = listOf(BlockSpec.TextSpec(block.id, "")),
+                    focusBefore = currentFocusSpec(),
+                    focusAfter = FocusSpec(block.id, 1),
+                )
+            )
+            return
+        }
+
+        /**
          * 空纯文本缩进行回车（软键盘，v2026-09-07 用户需求 1）= 减一级缩进
          * （与 [splitTextBlock] 的空缩进行分支同语义，逐级返回）。
          * 空白口径用 [isEffectivelyBlankLine]（含 \n）：软键盘回车已在文本中插入 \n，
@@ -1634,6 +1903,11 @@ class BodyBlocksController(
             block.state.isOrderedList -> InheritedListType.Ordered
             else -> null
         }
+        /**
+         * 复选框属性（v2026-09-07）：源块的勾选状态。行拆分时首块继承（含勾选态），
+         * 续行块 = 未勾选的复选框项（与回车续行一致）；非复选框块保持 null。
+         */
+        val srcChecked = block.checked
         val listForNewBlocks = if (srcListType != null && !isEmptyListItem(block.state)) {
             srcListType
         } else {
@@ -1685,6 +1959,12 @@ class BodyBlocksController(
                         /** 行自带层级前缀（toMarkdown 按 type.level 编码），createTextBlock
                          *  剥离后经 setListMarker 还原（v2026-09-05 层级缩进） */
                         listLevel = listLevelOfMd(md),
+                        /** 复选框拆行（v2026-09-07）：首块继承源勾选态，续行块 = 未勾选复选框项 */
+                        checked = when {
+                            inserted.isEmpty() -> srcChecked
+                            srcChecked != null -> false
+                            else -> null
+                        },
                     )
                     /**
                      * 光标落点：cursor 落在这一行 → 该块 + 行内有效偏移。
@@ -1709,7 +1989,13 @@ class BodyBlocksController(
         val trailingBlanks = ranges.size - 1 - lastContent
         if (trailingBlanks > 0 || inserted.isEmpty()) {
             val tailMd = if (srcPlainLevel > 1) plainIndentPrefix(srcPlainLevel) + ZWSP else ""
-            inserted += BlockSpec.TextSpec(newBodyBlockId(), tailMd, listForNewBlocks)
+            inserted += BlockSpec.TextSpec(
+                newBodyBlockId(),
+                tailMd,
+                listForNewBlocks,
+                /** 源块为复选框时（v2026-09-07）：尾部空行 = 未勾选的空复选框项（继续待办） */
+                checked = if (srcChecked != null) false else null,
+            )
         }
         if (focusBlockId == null) {
             focusBlockId = (inserted.last() as BlockSpec.TextSpec).id
@@ -1943,7 +2229,8 @@ class BodyBlocksController(
 
     /** 按 [BlockSpec] 重建块（Text 走 setMarkdown 还原富文本样式；Image 只存 uri；
      *  Divider 零参数重建）。命令重建路径剥离层级前缀（stripListLevelPrefix=true），
-     *  层级经 setListMarker 还原。 */
+     *  层级经 setListMarker 还原。复选框块（v2026-09-07）checked 随 spec 透传，
+     *  spec.markdown 已剥复选框前缀（不进块内 state）。 */
     private fun rebuildBlock(spec: BlockSpec): BodyBlock = when (spec) {
         is BlockSpec.TextSpec -> createTextBlock(
             spec.markdown,
@@ -1952,6 +2239,7 @@ class BodyBlocksController(
             spec.orderedStartNumber,
             spec.listLevel,
             stripListLevelPrefix = true,
+            checked = spec.checked,
         )
         is BlockSpec.ImageSpec -> BodyBlock.Image(spec.id, spec.path)
         is BlockSpec.DividerSpec -> BodyBlock.Divider(spec.id)
@@ -2180,6 +2468,16 @@ class BodyBlocksController(
         if (idx < 0) return
 
         /**
+         * 复选框块块首退格（v2026-09-07，硬键盘内容起点拦截 / 空块软键盘转发汇聚）：
+         * **退出复选框**（checked = null，文字保留）——与空列表项退格退出列表同语义；
+         * 第二次退格按普通块继续走下方合并 / 删除逻辑。
+         */
+        if (block.checked != null) {
+            convertCheckboxBlockToText(block)
+            return
+        }
+
+        /**
          * 纯文本缩进块（v2026-09-07 整段缩进）：内容起点退格 = **减一级缩进**
          * （Word/Notion 标准行为），不删字、不合并；一级（无缩进）时回落到
          * 下方原合并/删除语义。硬键盘（内容起点拦截，文本未变）与软键盘
@@ -2280,7 +2578,9 @@ class BodyBlocksController(
             ReplaceBlocksCommand(
                 index = prevIdx,
                 removedSpecs = listOf(textSpec(prev), textSpec(cur)),
-                insertedSpecs = listOf(BlockSpec.TextSpec(prev.id, prevMd + curMd)),
+                /** 合并块继承前块的复选框属性（v2026-09-07）：前块普通 → 后块 checkbox
+                 *  标记消失、内容并入（Notion 同款语义）；前块 checkbox → 合并块仍是 checkbox */
+                insertedSpecs = listOf(BlockSpec.TextSpec(prev.id, prevMd + curMd, checked = prev.checked)),
                 focusBefore = FocusSpec(cur.id, 0),
                 focusAfter = FocusSpec(prev.id, junction),
             )
@@ -2587,6 +2887,20 @@ private fun BlockTextItem(
     Row(verticalAlignment = Alignment.Top) {
         BlockDragHandle(dragHandleModifier)
 
+        /**
+         * 复选框标识（v2026-09-07）：checked != null（复选框块）时渲染在编辑器左侧。
+         * 点击切换勾选（[BodyBlocksController.toggleCheckboxChecked]，一步一撤销，
+         * markdown 前缀 `- [ ] ` ↔ `- [x] ` 随 onDocChanged 链路自动保存）；
+         * 锁定态不可点击；top padding 让 18dp 框体与第一行文字中线对齐。
+         */
+        if (block.checked != null) {
+            CheckboxBoxIcon(
+                checked = block.checked,
+                onClick = if (isLocked) null else ({ controller.toggleCheckboxChecked(block.id) }),
+                modifier = Modifier.padding(start = 2.dp, top = 2.dp),
+            )
+        }
+
         RichTextEditor(
             state = state,
             modifier = Modifier
@@ -2681,7 +2995,12 @@ private fun BlockTextItem(
              *  命令栈的两套历史入口），避免快捷键绕过焦点判断直接走单块 history。 */
             undoBehavior = UndoBehavior.Disabled,
             textStyle = LocalContentTypography.current.bodyLarge.copy(
-                color = MaterialTheme.colorScheme.onSurface
+                /** 勾选态文字视觉降级（v2026-09-07，与确认截图图三一致）：40% 透明度 */
+                color = if (block.checked == true) {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
             ),
             /** 块高 = 内容行数 × 行距（消除库默认 56dp 强制最小高度） */
             minHeight = 0.dp,

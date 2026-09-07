@@ -92,6 +92,8 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  *      其中经像素探测无独立字形的档位在工具栏中置灰禁用）
  * @param onDecreaseIndent 减少缩进回调（透传格式工具栏）
  * @param onInsertDivider 插入分割线回调（v2026-09-07 新增：聚焦块光标处拆块插入，透传格式工具栏）
+ * @param onToggleCheckbox 复选框回调（v2026-09-07 新增：聚焦块在 复选框块 ↔ 普通块 间切换，透传格式工具栏）
+ * @param isCheckboxActive 聚焦块是否为复选框块（v2026-09-07 新增：复选框按钮激活态高亮，透传格式工具栏）
  * @param onToggleItalic 斜体回调
  * @param onToggleUnderline 下划线回调
  * @param onToggleStrikethrough 删除线回调
@@ -144,10 +146,14 @@ fun InspirationEditBottomBar(
     onDecreaseIndent: () -> Unit = {},
     /** 插入分割线回调（v2026-09-07）：透传给 [RichTextFormatToolbar]，聚焦块光标处拆块插入 */
     onInsertDivider: () -> Unit = {},
+    /** 复选框回调（v2026-09-07）：透传给 [RichTextFormatToolbar]，聚焦块切换复选框属性 */
+    onToggleCheckbox: () -> Unit = {},
     /** 是否可增加缩进（v2026-09-05 视觉降级）：列表到顶时置灰，透传给 [RichTextFormatToolbar] */
     canIncreaseIndent: Boolean = true,
     /** 是否可减少缩进（v2026-09-05 视觉降级）：非列表行置灰，透传给 [RichTextFormatToolbar] */
     canDecreaseIndent: Boolean = true,
+    /** 聚焦块是否为复选框块（v2026-09-07）：复选框按钮激活态，透传给 [RichTextFormatToolbar] */
+    isCheckboxActive: Boolean = false,
     onAlignLeft: () -> Unit = {},
     onAlignCenter: () -> Unit = {},
     onAlignRight: () -> Unit = {},
@@ -201,8 +207,10 @@ fun InspirationEditBottomBar(
                     onIncreaseIndent = onIncreaseIndent,
                     onDecreaseIndent = onDecreaseIndent,
                     onInsertDivider = onInsertDivider,
+                    onToggleCheckbox = onToggleCheckbox,
                     canIncreaseIndent = canIncreaseIndent,
                     canDecreaseIndent = canDecreaseIndent,
+                    isCheckboxActive = isCheckboxActive,
                     onAlignLeft = onAlignLeft,
                     onAlignCenter = onAlignCenter,
                     onAlignRight = onAlignRight,

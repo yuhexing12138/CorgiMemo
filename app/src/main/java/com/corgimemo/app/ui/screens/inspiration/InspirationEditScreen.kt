@@ -1383,6 +1383,14 @@ fun InspirationEditScreen(
                         bodyBlocks.insertDividerAtFocused()
                     }
                 },
+                onToggleCheckbox = {
+                    /** 复选框（v2026-09-07）：聚焦块在 复选框块 ↔ 普通块 间切换，可撤销；
+                     *  行首复选框标识可点击勾选（文字视觉降级），markdown 以 `- [ ] `/`- [x] ` 持久化 */
+                    if (!isLocked) {
+                        bodyBlocks.toggleCheckboxAtFocused()
+                    }
+                },
+                isCheckboxActive = bodyBlocks.isFocusedBlockCheckbox,
                 canIncreaseIndent = bodyBlocks.canIncreaseIndent,
                 canDecreaseIndent = bodyBlocks.canDecreaseIndent,
                 onAlignLeft = {

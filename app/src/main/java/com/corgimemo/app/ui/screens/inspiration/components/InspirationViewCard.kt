@@ -108,6 +108,15 @@ fun InspirationViewCard(
      * 默认空实现，不影响其他调用方。
      */
     onImageStackDragStateChange: (Boolean) -> Unit = {},
+    /**
+     * v2026-09-07 新增：复选框勾选切换回调（参数 = 勾选态翻转后的整篇 markdown）。
+     *
+     * 详情页正文中的复选框段（`- [ ] ` / `- [x] ` 前缀）可点击勾选 / 取消勾选，
+     * 点击后本组件把翻转结果组装回整篇 markdown 回调给父级持久化（数据库更新后
+     * Flow 刷新重组）。默认 null = 只读渲染（复选框不可点击），离屏截图
+     * （[com.corgimemo.app.util.InspirationScreenshot]）等调用方无需感知。
+     */
+    onCheckboxToggle: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     // 缓存：标签列表
@@ -231,6 +240,8 @@ fun InspirationViewCard(
                         contentFormat = inspiration.contentFormat,
                         fallbackContent = inspiration.content,
                         fontFamily = inspirationFontFamily,
+                        /** 复选框点击（v2026-09-07）：翻转勾选并回调父级持久化 */
+                        onCheckboxToggle = onCheckboxToggle,
                     )
                     // 图片区（如果有）
                     // v2026-08-29 改造：默认堆叠展示，点「展开 N」按钮向下展开为图片列并恢复
@@ -367,6 +378,8 @@ private fun InspirationBodyRichText(
     fallbackContent: String,
     fontFamily: FontFamily,
     modifier: Modifier = Modifier,
+    /** 复选框勾选切换回调（v2026-09-07，参数 = 翻转后的整篇 markdown）；null = 只读 */
+    onCheckboxToggle: ((String) -> Unit)? = null,
 ) {
     if (contentFormat.isEmpty()) {
         // 旧记录无富文本（contentFormat 未迁移）：保持改造前的纯 Text 渲染，
@@ -382,39 +395,93 @@ private fun InspirationBodyRichText(
         return
     }
 
-    // 与编辑页 initialize 同源的分段：图片段独立（此处跳过），Text 段按 \n\n 拆段。
-    // 每段一个 RichText、Column 零间距堆叠 → 视觉上与编辑页的相邻段落块一致。
-    val paragraphs = remember(contentFormat) {
-        parseMarkdownSegments(contentFormat)
-            .filterIsInstance<MdSegment.TextSeg>()
-            .flatMap { it.md.split("\n\n") }
-            .map { it.trim('\n') }
-            .filter { it.isNotEmpty() }
-    }
+    /**
+     * v2026-09-07 改造：迭代单元改为**原始段落序列**（整篇按 `\n\n` 切分、逐段决策），
+     * 保留原始段落索引——复选框勾选翻转后按索引替换段落、重组整篇 markdown
+     * （split / join 严格互逆）往返无损；原 parseMarkdownSegments 过滤管线会把
+     * 图片段 / 空段过滤掉，索引无法映射回原文，不能作为编辑锚点。
+     *
+     * 自生成 contentFormat 的段落结构与编辑页块列表一一对应（Text 块内部不含
+     * `\n\n`、图片 / 分割线 / NBSP 占位各独立成段）。渲染决策与原管线等价：
+     * 空段跳过（原 filter{isNotEmpty}）、图片段跳过（原 filterIsInstance<TextSeg>
+     * 丢弃——图片由卡面独立图片区展示）、其余段落照常渲染。
+     */
+    val paragraphs = remember(contentFormat) { contentFormat.split("\n\n") }
     Column(modifier = modifier) {
-        paragraphs.forEach { para ->
-            if (isDividerMarkdown(para)) {
-                /**
-                 * 分割线段（"---"，v2026-09-07）：渲染为一条水平细线（与编辑页
-                 * BlockDividerItem 常态同视觉），不喂给 markdown 解析——库不认识
-                 * thematic break，会把 "---" 渲染成字面文本。
-                 */
-                HorizontalDivider(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 10.dp),
-                    thickness = 1.dp,
-                    color = Color(0xFFDDDDDD)
-                )
-            } else {
-                InspirationBodyParagraph(
-                    markdown = para,
-                    fontFamily = fontFamily,
-                )
+        paragraphs.forEachIndexed { pIdx, rawPara ->
+            val para = rawPara.trim('\n')
+            when {
+                /** 空段（含图片边界空段）：不渲染（与原过滤管线一致） */
+                para.isEmpty() -> Unit
+                /** 图片段（整段恰为 `![alt](path)`，与 parseMarkdownSegments 的图片
+                 *  正则同源）：由卡面独立图片区展示，此处跳过 */
+                InspirationImageSegmentRegex.matches(para) -> Unit
+                isDividerMarkdown(para) -> {
+                    /**
+                     * 分割线段（"---"，v2026-09-07）：渲染为一条水平细线（与编辑页
+                     * BlockDividerItem 常态同视觉），不喂给 markdown 解析——库不认识
+                     * thematic break，会把 "---" 渲染成字面文本。
+                     */
+                    HorizontalDivider(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp),
+                        thickness = 1.dp,
+                        color = Color(0xFFDDDDDD)
+                    )
+                }
+                else -> {
+                    /** 复选框段判定（"- [ ] 内容" / "- [x] 内容"，v2026-09-07） */
+                    val checkboxInfo = checkboxMarkdownInfo(para)
+                    if (checkboxInfo != null) {
+                        /**
+                         * 复选框段（v2026-09-07）：复选框标识 + 剥前缀后的富文本，
+                         * 勾选态文字视觉降级（与确认截图图三一致）。**前缀不喂给
+                         * markdown 解析**——库不认识 task list，会把 "- [ ]" 渲染成
+                         * 无序列表 + 字面文本。点击复选框翻转前缀、按原始段落索引
+                         * 重组整篇 markdown 回调父级持久化。
+                         */
+                        val (checked, bodyMd) = checkboxInfo
+                        Row(verticalAlignment = Alignment.Top) {
+                            CheckboxBoxIcon(
+                                checked = checked,
+                                onClick = if (onCheckboxToggle != null) {
+                                    {
+                                        val newParas = paragraphs.toMutableList()
+                                        newParas[pIdx] = checkboxMdPrefix(!checked) + bodyMd
+                                        onCheckboxToggle.invoke(newParas.joinToString("\n\n"))
+                                    }
+                                } else {
+                                    null
+                                },
+                                modifier = Modifier.padding(start = 2.dp, top = 3.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            InspirationBodyParagraph(
+                                markdown = bodyMd,
+                                fontFamily = fontFamily,
+                                dimmed = checked,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    } else {
+                        InspirationBodyParagraph(
+                            markdown = para,
+                            fontFamily = fontFamily,
+                        )
+                    }
+                }
             }
         }
     }
 }
+
+/**
+ * 图片段判定正则（v2026-09-07）：整段恰为标准图片语法 `![任意alt](路径)`——
+ * 与 [parseMarkdownSegments] 的切段正则同源（锚定 ^$，避免把以 `![` 开头的
+ * 普通文本误跳过）。
+ */
+private val InspirationImageSegmentRegex = Regex("""^!\[[^\]]*\]\([^)]+\)$""")
 
 /**
  * 详情页正文单段渲染：把单段 markdown 解析进独立 [RichTextState] 后用只读 [RichText] 展示。
@@ -425,11 +492,15 @@ private fun InspirationBodyRichText(
  *
  * @param markdown 单段 markdown（不含 `\n\n` 段落分隔）。
  * @param fontFamily 本条灵感记录的字体族。
+ * @param modifier 布局参数（复选框段的 Row 内 weight(1f) 用，v2026-09-07 新增）。
+ * @param dimmed 勾选态文字视觉降级（v2026-09-07 新增，复选框段勾选时传入；基础色降透明度）。
  */
 @Composable
 private fun InspirationBodyParagraph(
     markdown: String,
     fontFamily: FontFamily,
+    modifier: Modifier = Modifier,
+    dimmed: Boolean = false,
 ) {
     val richTextState = rememberRichTextState()
     /**
@@ -450,11 +521,12 @@ private fun InspirationBodyParagraph(
     }
     RichText(
         state = richTextState,
+        modifier = modifier,
         // 基础样式与改造前纯 Text 完全一致：未设置排版的字符回落下列值，
         // 已设 fontSize/color 的字符以 span 内联值为准（覆盖基础样式）。
         fontFamily = fontFamily,
         fontSize = 15.sp,
-        color = Color(0xFF666666),
+        color = if (dimmed) Color(0xFF666666).copy(alpha = 0.45f) else Color(0xFF666666),
         lineHeight = 22.sp,
         letterSpacing = 0.5.sp,
     )

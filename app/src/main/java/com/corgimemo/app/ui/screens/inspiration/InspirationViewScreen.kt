@@ -321,6 +321,12 @@ fun InspirationViewScreen(
                                 imageGalleryInitialIndex = index
                                 showImageGallery = true
                             },
+                            // v2026-09-07 新增：详情页复选框勾选切换持久化——
+                            // 组件已把勾选翻转重组为整篇 markdown；VM 以库内最新实体为基准
+                            // 只合并 contentFormat 字段（避免连续快速勾选时用界面旧快照覆盖前次勾选）
+                            onCheckboxToggle = { newMarkdown ->
+                                viewModel.updateInspirationContentFormat(ins.id, newMarkdown)
+                            },
                             // 传入当前 page 独立的 GraphicsLayer，使卡片内容被录制以供后续截图分享
                             graphicsLayer = pageLayer,
                             // v2026-07-22 新增：只在当前 page 传入关联数据，避免其他 page 显示错误关联

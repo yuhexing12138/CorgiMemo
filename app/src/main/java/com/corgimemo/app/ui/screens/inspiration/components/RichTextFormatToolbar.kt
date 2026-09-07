@@ -54,6 +54,7 @@ import com.mohamedrejeb.richeditor.model.RichTextState
 import compose.icons.LucideIcons
 import compose.icons.lucideicons.CaseSensitive
 import compose.icons.lucideicons.SeparatorHorizontal
+import compose.icons.lucideicons.SquareCheck
 import compose.icons.lucideicons.Type
 
 /**
@@ -124,10 +125,14 @@ fun RichTextFormatToolbar(
     onDecreaseIndent: () -> Unit = {},
     /** 插入分割线回调（v2026-09-07）：在聚焦块光标处拆块插入分割线（可撤销） */
     onInsertDivider: () -> Unit = {},
+    /** 复选框回调（v2026-09-07）：聚焦块在 复选框块 ↔ 普通块 间切换（可撤销） */
+    onToggleCheckbox: () -> Unit = {},
     /** 是否可增加缩进（v2026-09-05 视觉降级）：列表到顶（6 级）时置灰禁用 */
     canIncreaseIndent: Boolean = true,
     /** 是否可减少缩进（v2026-09-05 视觉降级）：非列表行置灰禁用（减缩进无效果） */
     canDecreaseIndent: Boolean = true,
+    /** 聚焦块是否为复选框块（v2026-09-07 视觉降级）：复选框按钮激活态高亮用 */
+    isCheckboxActive: Boolean = false,
     onAlignLeft: () -> Unit = {},
     onAlignCenter: () -> Unit = {},
     onAlignRight: () -> Unit = {},
@@ -256,6 +261,18 @@ fun RichTextFormatToolbar(
 
         /** ====== 第二组：列表 ====== */
         FormatButtonGroup {
+            /**
+             * 复选框（v2026-09-07 新增，位于无序列表左侧，按需求图一）：
+             * Lucide「SquareCheck」（方框内对勾描边图标，与组内 Lucide 图标统一）。
+             * 点击把聚焦块转换为复选框块（行首出现复选框标识，可点击勾选），
+             * 聚焦块已是复选框时再点转回普通块；激活态 = 聚焦块为复选框块。
+             */
+            FormatIconButton(
+                imageVector = LucideIcons.SquareCheck,
+                isActive = isCheckboxActive,
+                onClick = onToggleCheckbox,
+                contentDescription = "复选框"
+            )
             FormatIconButton(
                 imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
                 isActive = state.isUnorderedList,

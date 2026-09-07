@@ -734,6 +734,29 @@ class InspirationViewModel @Inject constructor(
     }
 
     /**
+     * 更新灵感正文的富文本 markdown（v2026-09-07：详情页复选框勾选持久化专用）。
+     *
+     * **先读库内最新实体再合并 contentFormat 字段**，而不是 copy 界面快照实体——
+     * 用户快速连续勾选两个不同复选框时，前一次 Room 写入可能尚未经 Flow 回流重组，
+     * 界面快照的整篇 markdown 仍是旧勾选态，直接 copy 会把前一次的勾选覆盖掉；
+     * 以库内最新值为基准只替换 contentFormat 字段即可消除该覆盖窗口。
+     *
+     * @param id 灵感 ID
+     * @param newContentFormat 勾选态翻转后重组的整篇 markdown
+     */
+    fun updateInspirationContentFormat(id: Long, newContentFormat: String) {
+        viewModelScope.launch {
+            val latest = inspirationRepository.getInspirationById(id) ?: return@launch
+            inspirationRepository.update(
+                latest.copy(
+                    contentFormat = newContentFormat,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    /**
      * 删除灵感（软删除 + 设置撤销状态 + 启动 5s 撤销倒计时）
      *
      * 流程：
