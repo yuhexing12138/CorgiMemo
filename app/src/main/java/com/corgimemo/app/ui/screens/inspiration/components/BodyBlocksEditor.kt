@@ -115,6 +115,18 @@ private const val PLAIN_INDENT_STEP = 2
 private fun plainIndentLevelOfMd(md: String): Int =
     md.countLeadingPlainIndentChars() / PLAIN_INDENT_STEP + 1
 
+/** 纯文本缩进的 markdown 前缀：level 级 = 段首 EM×2×(level-1)（与库编码端同款） */
+private fun plainIndentPrefix(level: Int): String =
+    PLAIN_INDENT_CHAR.toString().repeat(PLAIN_INDENT_STEP * (level - 1))
+
+/**
+ * 空白行判定：剥 ZWSP / 图片占位后剩余内容全是空白字符（含软键盘回车插入的
+ * `\n`）——「空行」可携带缩进属性，供空缩进行回车逐级返回的判定使用
+ * （[isEffectivelyEmpty] 不剥 `\n`，软键盘回车后的空块文本 "\u200B\n" 判不出来）。
+ */
+private fun isEffectivelyBlankLine(state: RichTextState): Boolean =
+    effectiveText(state.annotatedString.text).isBlank()
+
 /** 读 markdown 的前导全角空格（U+2003）个数 */
 private fun String.countLeadingPlainIndentChars(): Int {
     var n = 0
@@ -1276,6 +1288,21 @@ class BodyBlocksController(
         if (idx < 0) return
 
         /**
+         * 空纯文本缩进行回车（v2026-09-07，用户需求 1）= **减一级缩进**（原地），
+         * 不拆块——与内容起点退格（[dedentPlainBlockAtContentStart]）对称的 Word
+         * 标准行为：逐级返回，到无缩进时空行回车才正常新起一行（走下方主路径）。
+         * 硬键盘 text 无 \n；软键盘（text 已含 \n）由 [normalizeBlockParagraphs]
+         * 的同款前置分支处理。
+         */
+        if (!block.state.isList && isEffectivelyBlankLine(block.state)) {
+            val level = plainIndentLevelOfMd(blockMarkdown(block.state))
+            if (level > 1) {
+                dedentPlainBlockAtContentStart(block)
+                return
+            }
+        }
+
+        /**
          * 空列表项回车（v2026-09-07 按层级区分）：一级 = 退出列表变普通空块；
          * 二级及以上 = 降一级为上一层级同类型空列表项（如空的 "(1)" 回车 → "2."）。
          * 统一走 [exitListOrDedentEmptyListItem]，不能走下面的拆两块流程——
@@ -1323,10 +1350,24 @@ class BodyBlocksController(
          *   （该前缀携带的是**源块**编号），交由 initialListType/orderedStartNumber 统一重建，
          *   保证行中间拆分同样递增编号。
          */
+        /**
+         * 源块纯文本缩进层级（1 = 无缩进；列表块恒 1，层级走 listForNewBlocks 体系）。
+         * 供行尾回车时新空行继承层级（v2026-09-07 用户需求 2）。
+         */
+        val srcPlainLevel = if (!block.state.isList) plainIndentLevelOfMd(blockMarkdown(block.state)) else 1
+
         val rawAfterMd = if (afterStart < text.length)
             block.state.toMarkdown(TextRange(afterStart, text.length)).replace(ZWSP, "") else ""
         val afterMd = when {
-            rawAfterMd.isEmpty() -> ""
+            rawAfterMd.isEmpty() -> {
+                /**
+                 * 行尾回车（v2026-09-07 用户需求 2）：纯文本缩进块的新行**继承源块层级**
+                 * （空内容 + 同级 EM 前缀 + ZWSP 退格锚点）；无缩进维持空 markdown。
+                 * 行中回车（rawAfterMd 非空）由 range 版编码自动携带前缀（段落 copy
+                 * 保留缩进属性），无需处理。
+                 */
+                if (srcPlainLevel > 1) plainIndentPrefix(srcPlainLevel) + ZWSP else ""
+            }
             isMarkerOnlyMarkdown(rawAfterMd) -> ""
             listForNewBlocks != null -> rawAfterMd.replaceFirst(ListMarkerPrefixRegex, "")
             else -> rawAfterMd
@@ -1384,6 +1425,27 @@ class BodyBlocksController(
             exitListOrDedentEmptyListItem(block, idx)
             return
         }
+
+        /**
+         * 空纯文本缩进行回车（软键盘，v2026-09-07 用户需求 1）= 减一级缩进
+         * （与 [splitTextBlock] 的空缩进行分支同语义，逐级返回）。
+         * 空白口径用 [isEffectivelyBlankLine]（含 \n）：软键盘回车已在文本中插入 \n，
+         * 且 range 版编码会让空白行的 markdown 带 EM 前缀（非 blank），不能靠下方
+         * lastContent < 0 的空白退化分支兜底。
+         */
+        if (!block.state.isList && isEffectivelyBlankLine(block.state)) {
+            val level = plainIndentLevelOfMd(blockMarkdown(block.state))
+            if (level > 1) {
+                dedentPlainBlockAtContentStart(block)
+                return
+            }
+        }
+
+        /**
+         * 源块纯文本缩进层级（1 = 无缩进）：末尾空行/兜底空块继承层级用
+         * （v2026-09-07 用户需求 2，行内容块的层级由 range 版编码自动携带）。
+         */
+        val srcPlainLevel = if (!block.state.isList) plainIndentLevelOfMd(blockMarkdown(block.state)) else 1
 
         /** 列表续行：软键盘回车/粘贴多行拆块时，新行继承源块列表类型
          *  （空列表项已在上方前置分支退出列表/降级，不会走到这里）。 */
@@ -1462,10 +1524,12 @@ class BodyBlocksController(
                 }
             }
         }
-        /** 末尾有连续空行 = 回车在段尾 → 保留一个空块作为新段落 */
+        /** 末尾有连续空行 = 回车在段尾 → 保留一个空块作为新段落
+         *  （纯文本缩进块的新空行**继承源块层级**：同前缀 + ZWSP 锚点，v2026-09-07 需求 2） */
         val trailingBlanks = ranges.size - 1 - lastContent
         if (trailingBlanks > 0 || inserted.isEmpty()) {
-            inserted += BlockSpec.TextSpec(newBodyBlockId(), "", listForNewBlocks)
+            val tailMd = if (srcPlainLevel > 1) plainIndentPrefix(srcPlainLevel) + ZWSP else ""
+            inserted += BlockSpec.TextSpec(newBodyBlockId(), tailMd, listForNewBlocks)
         }
         if (focusBlockId == null) {
             focusBlockId = (inserted.last() as BlockSpec.TextSpec).id
@@ -1900,8 +1964,7 @@ class BodyBlocksController(
         val level = plainIndentLevelOfMd(blockMarkdown(block.state))
         if (level <= 1) return
         val content = blockMarkdown(block.state).dropLeadingPlainIndent()
-        val dedentMd =
-            PLAIN_INDENT_CHAR.toString().repeat(PLAIN_INDENT_STEP * (level - 2)) + ZWSP + content
+        val dedentMd = plainIndentPrefix(level - 1) + ZWSP + content
         executeAndPush(
             ReplaceBlocksCommand(
                 index = idx,

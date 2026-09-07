@@ -460,4 +460,73 @@ class BodyBlocksControllerTest {
         controller.undo()
         assertEquals(12, controller.blockMarkdown(controller.blocks.first() as Text).takeWhile { it == em }.length)
     }
+
+    // ==================== 空缩进行回车逐级返回 / 回车继承层级（v2026-09-07） ====================
+
+    /**
+     * 空缩进行回车（用户需求 1）：**减一级缩进**（原地，不拆块），逐级返回；
+     * 到无缩进后空行回车才正常新起一行。与内容起点退格逐级减缩进对称。
+     */
+    @Test
+    fun `空缩进行回车逐级返回`() {
+        val a = controller.blocks.first() as Text
+        controller.onBlockFocused(a.id)
+        repeat(6) { controller.indentFocusedBlock(+1) }
+        assertEquals(12, controller.blockMarkdown(a.state).takeWhile { it == em }.length)
+
+        // 每次回车减一级（原地，不拆块）：6 → 1
+        repeat(5) { controller.splitTextBlockAtCursor(controller.blocks.first() as Text) }
+        assertEquals("逐级返回期间不应拆出新块", 1, controller.blocks.size)
+        val remain = controller.blocks.first() as Text
+        assertEquals(0, controller.blockMarkdown(remain).takeWhile { it == em }.length)
+        assertTrue(!remain.state.isList)
+
+        // 无缩进空行回车 = 正常新起一行
+        controller.splitTextBlockAtCursor(remain)
+        assertEquals(2, controller.blocks.size)
+    }
+
+    /**
+     * 缩进行**行尾**回车（用户需求 2）：新行继承源块层级（空内容 + 同级 EM 前缀 +
+     * ZWSP 退格锚点）；前块内容与层级不变。
+     */
+    @Test
+    fun `缩进行尾回车新行继承层级`() {
+        val a = controller.blocks.first() as Text
+        "测试".forEach { a.state.addTextAfterSelection(it.toString()) }
+        controller.onBlockFocused(a.id)
+        repeat(3) { controller.indentFocusedBlock(+1) } // 3 级 = 4 个 EM
+        a.state.selection = androidx.compose.ui.text.TextRange(a.state.annotatedString.text.length)
+
+        controller.splitTextBlockAtCursor(a)
+        assertEquals(2, controller.blocks.size)
+        val first = controller.blocks[0] as Text
+        val second = controller.blocks[1] as Text
+        assertEquals("前块保持内容与层级", "${em}${em}${em}${em}测试", controller.blockMarkdown(first))
+        assertEquals("新行继承层级", "${em}${em}${em}${em}", controller.blockMarkdown(second))
+        assertEquals("新行应为 ZWSP 空块（退格锚点）", "\u200B", second.state.annotatedString.text)
+        assertTrue("新行应可继续减少缩进", controller.canDecreaseIndent)
+    }
+
+    /**
+     * 缩进行**行中**回车：新行同样继承层级（range 版编码经段落 copy 自动携带
+     * EM 前缀，解码端还原——此用例锁定该自动行为防回归）。
+     */
+    @Test
+    fun `缩进行中回车新行继承层级`() {
+        val a = controller.blocks.first() as Text
+        "一二三四".forEach { a.state.addTextAfterSelection(it.toString()) } // \u200B一二三四
+        controller.onBlockFocused(a.id)
+        repeat(3) { controller.indentFocusedBlock(+1) }
+        a.state.selection = androidx.compose.ui.text.TextRange(2) // 「一」「二」之间
+
+        controller.splitTextBlockAtCursor(a)
+        assertEquals(2, controller.blocks.size)
+        val first = controller.blocks[0] as Text
+        val second = controller.blocks[1] as Text
+        assertEquals("${em}${em}${em}${em}一", controller.blockMarkdown(first))
+        assertEquals("${em}${em}${em}${em}二三四", controller.blockMarkdown(second))
+        assertEquals("一二三四",
+            effective(first.state.annotatedString.text) + effective(second.state.annotatedString.text))
+    }
 }
