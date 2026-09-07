@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -392,10 +393,25 @@ private fun InspirationBodyRichText(
     }
     Column(modifier = modifier) {
         paragraphs.forEach { para ->
-            InspirationBodyParagraph(
-                markdown = para,
-                fontFamily = fontFamily,
-            )
+            if (isDividerMarkdown(para)) {
+                /**
+                 * 分割线段（"---"，v2026-09-07）：渲染为一条水平细线（与编辑页
+                 * BlockDividerItem 常态同视觉），不喂给 markdown 解析——库不认识
+                 * thematic break，会把 "---" 渲染成字面文本。
+                 */
+                HorizontalDivider(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp),
+                    thickness = 1.dp,
+                    color = Color(0xFFDDDDDD)
+                )
+            } else {
+                InspirationBodyParagraph(
+                    markdown = para,
+                    fontFamily = fontFamily,
+                )
+            }
         }
     }
 }

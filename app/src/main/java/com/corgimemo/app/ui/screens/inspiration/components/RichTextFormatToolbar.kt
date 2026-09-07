@@ -53,6 +53,7 @@ import com.corgimemo.app.ui.theme.FontWeightProbe
 import com.mohamedrejeb.richeditor.model.RichTextState
 import compose.icons.LucideIcons
 import compose.icons.lucideicons.CaseSensitive
+import compose.icons.lucideicons.SeparatorHorizontal
 import compose.icons.lucideicons.Type
 
 /**
@@ -121,6 +122,8 @@ fun RichTextFormatToolbar(
     onIncreaseIndent: () -> Unit = {},
     /** 减少缩进回调（v2026-09-05）：列表行层级 -1，一级再减退出列表；可连续减 */
     onDecreaseIndent: () -> Unit = {},
+    /** 插入分割线回调（v2026-09-07）：在聚焦块光标处拆块插入分割线（可撤销） */
+    onInsertDivider: () -> Unit = {},
     /** 是否可增加缩进（v2026-09-05 视觉降级）：列表到顶（6 级）时置灰禁用 */
     canIncreaseIndent: Boolean = true,
     /** 是否可减少缩进（v2026-09-05 视觉降级）：非列表行置灰禁用（减缩进无效果） */
@@ -284,6 +287,18 @@ fun RichTextFormatToolbar(
                 enabled = canDecreaseIndent,
                 onClick = onDecreaseIndent,
                 contentDescription = "减少缩进"
+            )
+            /**
+             * 插入分割线（v2026-09-07 新增，紧邻「减少缩进」右侧）：
+             * 在聚焦 Text 块光标处拆块插入分割线（`---` 独占段，可撤销/可删除）。
+             * Lucide「SeparatorHorizontal」图标（描边风格与组内 Lucide 图标统一）；
+             * 无激活态（操作型按钮）。
+             */
+            FormatIconButton(
+                imageVector = LucideIcons.SeparatorHorizontal,
+                isActive = false,
+                onClick = onInsertDivider,
+                contentDescription = "分割线"
             )
         }
 

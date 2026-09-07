@@ -1377,6 +1377,12 @@ fun InspirationEditScreen(
                     /** 减少缩进（v2026-09-05）：对聚焦正文块做列表层级 -1（一级再减退出列表） */
                     bodyBlocks.indentFocusedBlock(delta = -1)
                 },
+                onInsertDivider = {
+                    /** 插入分割线（v2026-09-07）：聚焦块光标处拆块插入 `---` 段，可撤销/可退格删除 */
+                    if (!isLocked) {
+                        bodyBlocks.insertDividerAtFocused()
+                    }
+                },
                 canIncreaseIndent = bodyBlocks.canIncreaseIndent,
                 canDecreaseIndent = bodyBlocks.canDecreaseIndent,
                 onAlignLeft = {

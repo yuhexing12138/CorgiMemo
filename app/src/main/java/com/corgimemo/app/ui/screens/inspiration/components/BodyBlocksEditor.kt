@@ -1,6 +1,8 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import com.corgimemo.app.ui.theme.LocalContentTypography
@@ -18,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -244,6 +248,19 @@ sealed class BodyBlock {
         override val id: String,
         val path: String,
     ) : BodyBlock()
+
+    /**
+     * 分割线块（v2026-09-07 新增）：无内容的纯视觉块（一条水平细线）。
+     *
+     * - markdown 载体为独占段 `"---"`（CommonMark thematic break，见 [DIVIDER_MD]）；
+     * - 无 RichTextState，不参与字数统计（[BodyBlocksController.plainText] 只聚合 Text 块）；
+     * - 交互：点击切换高亮（选中态）；删除走相邻 Text 块块首退格（两步删除：
+     *   第一次高亮、第二次删除，与图片块语义一致）或撤销；
+     * - 可参与拖拽排序（[MoveBlockCommand] 按块 id 移动，对此类型透明）。
+     */
+    class Divider(
+        override val id: String,
+    ) : BodyBlock()
 }
 
 // ==================== Command 体系（方案A：增量命令，不存全量快照） ====================
@@ -285,6 +302,9 @@ sealed class BlockSpec {
 
     /** Image 块：只有 uri 路径 */
     data class ImageSpec(override val id: String, val path: String) : BlockSpec()
+
+    /** Divider 块（v2026-09-07）：无载荷（id 即全部，重建时零参数） */
+    data class DividerSpec(override val id: String) : BlockSpec()
 }
 
 /**
@@ -472,6 +492,21 @@ internal sealed class MdSegment {
     data class ImageSeg(val path: String) : MdSegment()
 }
 
+// ==================== 分割线（v2026-09-07） ====================
+
+/**
+ * 分割线的 markdown 载体：CommonMark thematic break，独占一个段落（块间以 `\n\n` 连接）。
+ *
+ * 只识别整段**恰好**为 `"---"` 的形态（App 自身生成的唯一形态，保守避免把用户
+ * 手输的 `***` / `- - -` 等变体误判成分割线）；编辑页 [BodyBlocksController.initialize]
+ * 与详情页 [com.corgimemo.app.ui.screens.inspiration.components.InspirationViewCard]
+ * 共用本判定，保证两端往返一致。
+ */
+internal const val DIVIDER_MD = "---"
+
+/** 判断单段 markdown（已按 `\n\n` 拆出）是否为分割线段 */
+internal fun isDividerMarkdown(para: String): Boolean = para.trim() == DIVIDER_MD
+
 /**
  * 把整篇 markdown 按图片语法切成段。
  *
@@ -523,7 +558,7 @@ class BodyBlocksController(
     internal var hasInitialized by mutableStateOf(false)
         private set
 
-    /** 两步删除：当前高亮的块 id（仅图片块会被高亮） */
+    /** 两步删除 / 点击选中的高亮块 id（图片块与分割线块，v2026-09-07 起含分割线） */
     var highlightedBlockId by mutableStateOf<String?>(null)
         private set
 
@@ -855,6 +890,9 @@ class BodyBlocksController(
                         if (trimmed.isEmpty() || trimmed == EMPTY_BLOCK_PLACEHOLDER) {
                             // 空白块：createTextBlock("") 预置 ZWSP 退格锚点，与编辑态空块语义一致
                             blocks += createTextBlock("")
+                        } else if (isDividerMarkdown(trimmed)) {
+                            // 分割线段（"---"，v2026-09-07）：重建为 Divider 块（无富文本状态）
+                            blocks += BodyBlock.Divider(newBodyBlockId())
                         } else {
                             blocks += createTextBlock(trimmed)
                         }
@@ -905,6 +943,8 @@ class BodyBlocksController(
                     }
                 }
                 is BodyBlock.Image -> "![](${block.path})"
+                /** 分割线块：输出独占段 `---`（thematic break），与 [initialize] 识别对称 */
+                is BodyBlock.Divider -> DIVIDER_MD
             }
         }
         // 不再过滤空段：块间以空行连接，空白块对应一个非空占位段，保证往返对称
@@ -1091,8 +1131,9 @@ class BodyBlocksController(
         if (focusedIdx == null) return buildInsertImageAtEndCommand(path)
 
         return when (val focused = blocks[focusedIdx]) {
-            is BodyBlock.Image -> buildInsertImageAtEndCommand(path)
             is BodyBlock.Text -> buildInsertInTextCommand(focused, focusedIdx, path)
+            /** 图片 / 分割线块（v2026-09-07）不持有光标：插图退化为尾插 */
+            else -> buildInsertImageAtEndCommand(path)
         }
     }
 
@@ -1184,6 +1225,144 @@ class BodyBlocksController(
      * （不然每张图都会触发一次 ViewModel.setContent/setContentFormat + 一次重组。）
      */
     private var suppressDocChanged: Boolean = false
+
+    // ---------- 分割线插入 / 删除 / 高亮（v2026-09-07） ----------
+
+    /**
+     * 在聚焦块的光标处插入分割线（工具栏按钮入口）。
+     *
+     * 与插图同构的 [ReplaceBlocksCommand]：光标处拆块 `[前半Text, Divider, 后半Text]`；
+     * 未聚焦 / 聚焦块是图片 / 分割线时退化为尾插。撤销/重做由命令栈自动承载。
+     */
+    fun insertDividerAtFocused() {
+        val focusedIdx = focusedBlockId
+            ?.let { id -> blocks.indexOfFirst { it.id == id } }
+            ?.takeIf { it >= 0 }
+
+        if (focusedIdx == null) {
+            executeAndPush(buildInsertDividerAtEndCommand())
+            return
+        }
+        when (val focused = blocks[focusedIdx]) {
+            is BodyBlock.Text -> executeAndPush(buildInsertDividerInTextCommand(focused, focusedIdx))
+            /** 图片/分割线块不持有光标：分割线插到文档末尾（末尾 Text 块之前） */
+            else -> executeAndPush(buildInsertDividerAtEndCommand())
+        }
+    }
+
+    /**
+     * 在聚焦 Text 块的**光标处**插入分割线并拆块——
+     * 光标前后的文字各自成段：`[前半Text, Divider, 后半Text]`。
+     *
+     * 拆段方式与 [buildInsertInTextCommand] 完全同源（[RichTextState.toMarkdown] 的
+     * [TextRange] 重载按光标精确拆段），差异只在焦点落点：
+     * - 光标在段中间：焦点落拆出的后半块 offset 0；
+     * - 光标在段尾且原列表后方已有 Text 块（如「测试一|」+「测试二」两块）：
+     *   **不补空尾块**，分割线直接落在两块之间，焦点落到已有块 offset 0
+     *   （视觉与参考交互一致：分割线紧贴前后文字，无空行）；
+     * - 光标在段尾且后方无 Text 块：补一个空尾块（保证分割线后仍可继续输入）。
+     */
+    private fun buildInsertDividerInTextCommand(
+        focused: BodyBlock.Text,
+        focusedIdx: Int,
+    ): ReplaceBlocksCommand {
+        val state = focused.state
+        val rawText = state.annotatedString.text
+        val cursor = state.selection.start.coerceIn(0, rawText.length)
+
+        val beforeMd = if (cursor > 0) state.toMarkdown(TextRange(0, cursor)).replace(ZWSP, "") else ""
+        val afterMd = if (cursor < rawText.length)
+            state.toMarkdown(TextRange(cursor, rawText.length)).replace(ZWSP, "") else ""
+
+        val dividerSpec = BlockSpec.DividerSpec(newBodyBlockId())
+        val inserted = mutableListOf<BlockSpec>()
+        if (beforeMd.isNotBlank()) inserted += BlockSpec.TextSpec(newBodyBlockId(), beforeMd)
+        inserted += dividerSpec
+        if (afterMd.isNotBlank()) inserted += BlockSpec.TextSpec(newBodyBlockId(), afterMd)
+
+        /** 焦点落点：分割线之后的第一个 Text 块（含兜底补的空尾块） */
+        val focusId: String
+        val nextExistingText = blocks.drop(focusedIdx + 1).filterIsInstance<BodyBlock.Text>().firstOrNull()
+        if (inserted.last() is BlockSpec.TextSpec) {
+            /** 段中间拆块：后半块必为列表尾（afterMd 非空），焦点落它 */
+            focusId = (inserted.last() as BlockSpec.TextSpec).id
+        } else if (nextExistingText != null) {
+            /** 段尾且原列表后方已有 Text 块：不补空块，焦点落到该已有块 */
+            focusId = nextExistingText.id
+        } else {
+            /** 段尾且后方无 Text 块（文档末尾）：补空尾块保证线后可输入 */
+            val tail = BlockSpec.TextSpec(newBodyBlockId(), "")
+            inserted += tail
+            focusId = tail.id
+        }
+
+        return ReplaceBlocksCommand(
+            index = focusedIdx,
+            removedSpecs = listOf(textSpec(focused)),
+            insertedSpecs = inserted,
+            focusBefore = currentFocusSpec(),
+            focusAfter = FocusSpec(focusId, 0),
+        )
+    }
+
+    /**
+     * 尾插分割线（未聚焦 / 聚焦块非 Text 时）：插在末尾 Text 块之前。
+     * 末尾已是 Text → 焦点落它（分割线与末块之间继续输入）；否则补空尾块。
+     */
+    private fun buildInsertDividerAtEndCommand(): ReplaceBlocksCommand {
+        val dividerSpec = BlockSpec.DividerSpec(newBodyBlockId())
+        val inserted = mutableListOf<BlockSpec>(dividerSpec)
+        val focusId: String
+        if (blocks.lastOrNull() is BodyBlock.Text) {
+            focusId = blocks.last<BodyBlock>().id
+        } else {
+            val tail = BlockSpec.TextSpec(newBodyBlockId(), "")
+            inserted += tail
+            focusId = tail.id
+        }
+        /**
+         * 插入锚点（与 [buildInsertImageAtEndCommand] 同款）：
+         * - 末尾已是 Text（inserted 只有 Divider）：插在它前面 → index = size - 1
+         * - 需补尾块（inserted = [Divider, 空Text]）：等效末尾追加 → index = size
+         */
+        val index = if (inserted.size == 1) (blocks.size - 1).coerceAtLeast(0) else blocks.size
+        return ReplaceBlocksCommand(
+            index = index,
+            removedSpecs = emptyList(),
+            insertedSpecs = inserted,
+            focusBefore = currentFocusSpec(),
+            focusAfter = FocusSpec(focusId, 0),
+        )
+    }
+
+    /**
+     * 按 id 删除分割线块（两步删除的确认步，退格键触发）。
+     * removed = [DividerSpec]，inserted = []——撤销即原位恢复。
+     */
+    fun deleteDividerBlock(blockId: String) {
+        val idx = blocks.indexOfFirst { it.id == blockId }
+        if (idx < 0 || blocks.getOrNull(idx) !is BodyBlock.Divider) return
+        executeAndPush(
+            ReplaceBlocksCommand(
+                index = idx,
+                removedSpecs = listOf(BlockSpec.DividerSpec(blockId)),
+                insertedSpecs = emptyList(),
+                focusBefore = currentFocusSpec(),
+                /** 删除时焦点本就不在分割线上，保持当前落点即可 */
+                focusAfter = currentFocusSpec(),
+            )
+        )
+    }
+
+    /**
+     * 点击分割线（块 Composable 入口）：**切换高亮**（选中态）。
+     * 未高亮 → 高亮（主题色）；已高亮 → 取消高亮。
+     * 删除不走点击——用户通过相邻 Text 块块首退格完成（见 [onBackspaceAtStart]，
+     * 高亮态退格一次即删）。
+     */
+    fun onDividerTapped(blockId: String) {
+        highlightedBlockId = if (highlightedBlockId == blockId) null else blockId
+    }
 
     // ---------- 语音（保持内联，行为不变） ----------
 
@@ -1761,8 +1940,9 @@ class BodyBlocksController(
         blocks.addAll(safeIndex, restored)
     }
 
-    /** 按 [BlockSpec] 重建块（Text 走 setMarkdown 还原富文本样式；Image 只存 uri）。
-     *  命令重建路径剥离层级前缀（stripListLevelPrefix=true），层级经 setListMarker 还原。 */
+    /** 按 [BlockSpec] 重建块（Text 走 setMarkdown 还原富文本样式；Image 只存 uri；
+     *  Divider 零参数重建）。命令重建路径剥离层级前缀（stripListLevelPrefix=true），
+     *  层级经 setListMarker 还原。 */
     private fun rebuildBlock(spec: BlockSpec): BodyBlock = when (spec) {
         is BlockSpec.TextSpec -> createTextBlock(
             spec.markdown,
@@ -1773,6 +1953,7 @@ class BodyBlocksController(
             stripListLevelPrefix = true,
         )
         is BlockSpec.ImageSpec -> BodyBlock.Image(spec.id, spec.path)
+        is BlockSpec.DividerSpec -> BodyBlock.Divider(spec.id)
     }
 
     /**
@@ -2041,17 +2222,32 @@ class BodyBlocksController(
                 if (highlightedBlockId == prev.id) deleteImageBlock(prev.id)
                 else highlightedBlockId = prev.id
             }
+            /**
+             * 前一块是分割线（v2026-09-07）：两步删除——第一次退格先高亮
+             * （视觉确认目标），第二次退格删除（可撤销）。点击选中已高亮后
+             * 退格一次即删（与图片块交互语义一致）。
+             */
+            is BodyBlock.Divider -> {
+                if (highlightedBlockId == prev.id) deleteDividerBlock(prev.id)
+                else highlightedBlockId = prev.id
+            }
         }
     }
 
-    /** 硬键盘 Delete（块尾）：若下一块是图片 → 两步删除 */
+    /** 硬键盘 Delete（块尾）：若下一块是图片 / 分割线 → 两步删除 */
     fun onDeleteAtEnd(block: BodyBlock.Text) {
         val idx = blocks.indexOfFirst { it.id == block.id }
         if (idx < 0 || idx == blocks.lastIndex) return
-        val next = blocks[idx + 1]
-        if (next is BodyBlock.Image) {
-            if (highlightedBlockId == next.id) deleteImageBlock(next.id)
-            else highlightedBlockId = next.id
+        when (val next = blocks[idx + 1]) {
+            is BodyBlock.Image -> {
+                if (highlightedBlockId == next.id) deleteImageBlock(next.id)
+                else highlightedBlockId = next.id
+            }
+            is BodyBlock.Divider -> {
+                if (highlightedBlockId == next.id) deleteDividerBlock(next.id)
+                else highlightedBlockId = next.id
+            }
+            else -> Unit
         }
     }
 
@@ -2169,6 +2365,13 @@ fun BodyBlocksEditor(
                 isDragging = isDragging,
                 isLocked = isLocked,
                 onImageTap = onImageTap,
+                dragHandleModifier = dragHandleModifier,
+            )
+            is BodyBlock.Divider -> BlockDividerItem(
+                controller = controller,
+                block = block,
+                isDragging = isDragging,
+                isLocked = isLocked,
                 dragHandleModifier = dragHandleModifier,
             )
         }
@@ -2529,5 +2732,67 @@ private fun BlockImageItem(
                 { onImageTap(block.path) }
             },
         )
+    }
+}
+
+// ==================== Divider 块（v2026-09-07） ====================
+
+/** 分割线块高亮（选中态）颜色：主题 primary 暖橙，与工具栏激活态一致 */
+private val DividerHighlightColor = Color(0xFFFF9A5C)
+
+/**
+ * 分割线块：拖拽手柄 + 一条水平细线（可点击切换高亮）。
+ *
+ * - **常态**：1dp 细线，`onSurfaceVariant` 35% 透明度（与拖拽手柄同灰调）；
+ * - **高亮态**（点击选中 / 退格两步删除的第一步）：2dp 主题暖橙线，参照已确认交互稿；
+ * - **点击**：整行热区（线上下各 12dp padding）切换高亮（[BodyBlocksController.onDividerTapped]），
+ *   去水波纹（`indication = null` 必须显式传 `interactionSource`，否则不生效）；
+ * - **删除**：不走点击——由相邻 Text 块块首退格两步删除（高亮后一次退格即删，可撤销）；
+ * - 锁定态（isLocked）不可点击；拖拽时 60% 透明度（与 Text/Image 块一致）。
+ */
+@Composable
+private fun BlockDividerItem(
+    controller: BodyBlocksController,
+    block: BodyBlock.Divider,
+    isDragging: Boolean,
+    isLocked: Boolean,
+    dragHandleModifier: Modifier,
+) {
+    /** 是否处于高亮（选中）态：点击切换 / 退格第一步点亮，随 controller 状态响应式刷新 */
+    val highlighted = controller.highlightedBlockId == block.id
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        BlockDragHandle(dragHandleModifier)
+
+        /**
+         * 线体容器：clickable 在 padding 之前声明，让「线上下 12dp」整体作为点击热区
+         * （细线本体 1dp 无法指头点中）；graphicsLayer 只影响绘制不影响点击，
+         * 拖拽置灰照常生效。
+         */
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .graphicsLayer {
+                    if (isDragging) {
+                        alpha = 0.6f
+                    }
+                }
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    enabled = !isLocked,
+                ) { controller.onDividerTapped(block.id) }
+                .padding(vertical = 12.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            HorizontalDivider(
+                modifier = Modifier.fillMaxWidth(),
+                thickness = if (highlighted) 2.dp else 1.dp,
+                color = if (highlighted) {
+                    DividerHighlightColor
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                },
+            )
+        }
     }
 }

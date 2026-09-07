@@ -90,6 +90,8 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * @param onLatinFontSelect 英文/数字字体选择回调；再点已选项时回调空串表示取消（跟随中文）
  * @param onSetFontWeight 设置字重档位回调（参数为当前字体 FontEntry.boldTiers 候选档位；
  *      其中经像素探测无独立字形的档位在工具栏中置灰禁用）
+ * @param onDecreaseIndent 减少缩进回调（透传格式工具栏）
+ * @param onInsertDivider 插入分割线回调（v2026-09-07 新增：聚焦块光标处拆块插入，透传格式工具栏）
  * @param onToggleItalic 斜体回调
  * @param onToggleUnderline 下划线回调
  * @param onToggleStrikethrough 删除线回调
@@ -140,6 +142,8 @@ fun InspirationEditBottomBar(
     onIncreaseIndent: () -> Unit = {},
     /** 减少缩进回调（v2026-09-05）：透传给 [RichTextFormatToolbar] */
     onDecreaseIndent: () -> Unit = {},
+    /** 插入分割线回调（v2026-09-07）：透传给 [RichTextFormatToolbar]，聚焦块光标处拆块插入 */
+    onInsertDivider: () -> Unit = {},
     /** 是否可增加缩进（v2026-09-05 视觉降级）：列表到顶时置灰，透传给 [RichTextFormatToolbar] */
     canIncreaseIndent: Boolean = true,
     /** 是否可减少缩进（v2026-09-05 视觉降级）：非列表行置灰，透传给 [RichTextFormatToolbar] */
@@ -196,6 +200,7 @@ fun InspirationEditBottomBar(
                     onInsertOrderedList = onInsertOrderedList,
                     onIncreaseIndent = onIncreaseIndent,
                     onDecreaseIndent = onDecreaseIndent,
+                    onInsertDivider = onInsertDivider,
                     canIncreaseIndent = canIncreaseIndent,
                     canDecreaseIndent = canDecreaseIndent,
                     onAlignLeft = onAlignLeft,
