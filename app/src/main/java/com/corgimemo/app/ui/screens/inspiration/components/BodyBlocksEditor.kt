@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -2745,10 +2746,12 @@ private val DividerHighlightColor = Color(0xFFFF9A5C)
  *
  * - **常态**：1dp 细线，`onSurfaceVariant` 35% 透明度（与拖拽手柄同灰调）；
  * - **高亮态**（点击选中 / 退格两步删除的第一步）：2dp 主题暖橙线，参照已确认交互稿；
- * - **点击**：整行热区（线上下各 12dp padding）切换高亮（[BodyBlocksController.onDividerTapped]），
+ * - **点击**：整行热区（固定 25dp 高的线体容器）切换高亮（[BodyBlocksController.onDividerTapped]），
  *   去水波纹（`indication = null` 必须显式传 `interactionSource`，否则不生效）；
  * - **删除**：不走点击——由相邻 Text 块块首退格两步删除（高亮后一次退格即删，可撤销）；
- * - 锁定态（isLocked）不可点击；拖拽时 60% 透明度（与 Text/Image 块一致）。
+ * - 锁定态（isLocked）不可点击；拖拽时 60% 透明度（与 Text/Image 块一致）；
+ * - **零位移约束**：高亮增厚（1dp→2dp）时容器高度恒定、线居中扩展——块总高不变，
+ *   不会推挤下方内容（v2026-09-07 用户反馈修复）。
  */
 @Composable
 private fun BlockDividerItem(
@@ -2767,6 +2770,11 @@ private fun BlockDividerItem(
          * 线体容器：clickable 在 padding 之前声明，让「线上下 12dp」整体作为点击热区
          * （细线本体 1dp 无法指头点中）；graphicsLayer 只影响绘制不影响点击，
          * 拖拽置灰照常生效。
+         *
+         * **高度恒定（v2026-09-07 位移修复）**：容器固定 25dp（= 常态 1dp 线 + 上下
+         * 12dp padding 的总高）。高亮时线厚 1dp→2dp 若不锁高，整行会变高 1dp、把下方
+         * 内容推下去（可见位移）；固定后线在容器内**居中增厚**（中心不动、上下各多
+         * 0.5dp 仍留在容器内），块总高恒定 → 零位移。
          */
         Box(
             modifier = Modifier
@@ -2781,8 +2789,8 @@ private fun BlockDividerItem(
                     indication = null,
                     enabled = !isLocked,
                 ) { controller.onDividerTapped(block.id) }
-                .padding(vertical = 12.dp),
-            contentAlignment = Alignment.CenterStart,
+                .height(25.dp),
+            contentAlignment = Alignment.Center,
         ) {
             HorizontalDivider(
                 modifier = Modifier.fillMaxWidth(),
