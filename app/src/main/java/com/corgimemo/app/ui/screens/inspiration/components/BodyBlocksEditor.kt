@@ -1132,6 +1132,68 @@ class BodyBlocksController(
     // ---------- Enter 拆块 ----------
 
     /**
+     * 空列表项回车的统一分支（硬键盘 [splitTextBlock] / 软键盘 [normalizeBlockParagraphs]
+     * 共用，v2026-09-07 起按层级区分行为，取代旧版"一刀切退出列表"）：
+     *
+     * - **一级**空列表项回车 = 退出列表 → 整块替换为普通空块（原行为不变）；
+     * - **二级及以上**空列表项回车 = 降一级（dedent，Word/Notion 标准行为）→ 整块替换为
+     *   上一层级**同类型**空列表项。有序编号无需手动续算：[executeAndPush] 内的
+     *   [renumberOrderedBlocks] 会按位置语义自动重排——如 "1. 测试1" 下空的 "(1)" 回车
+     *   后新块显示 "2."；无序则回到上一级 bullet 形态。
+     *
+     * 两条路径都必须**整体替换**而不能走拆两块流程：拆块会把 marker 前后切开，
+     * afterMd 带出 marker-only 的 `"- "` markdown，setMarkdown 重建出**残留空列表项**，
+     * 且此时 listForNewBlocks=null 跳过 refocusListBlock、光标落 0 在 bullet 之前——
+     * 正是真机日志序列②「多一行空白 + 光标在 bullet 前」两个缺陷的共同根因。
+     *
+     * 撤销语义：[ReplaceBlocksCommand.revert] 经 stash 原样还原旧块（层级/类型无损），
+     * 撤销后 renumberOrderedBlocks 幂等收敛编号。
+     */
+    private fun exitListOrDedentEmptyListItem(block: BodyBlock.Text, idx: Int) {
+        /** 源块层级（listLevelOfMd 按每级 2 空格前缀解码；块序列化恒带层级前缀） */
+        val srcLevel = listLevelOfMd(blockMarkdown(block.state))
+        if (srcLevel <= 1) {
+            /** 一级：退出列表 → 普通空块（ZWSP 退格锚点） */
+            executeAndPush(
+                ReplaceBlocksCommand(
+                    index = idx,
+                    removedSpecs = listOf(textSpec(block)),
+                    insertedSpecs = listOf(BlockSpec.TextSpec(block.id, "")),
+                    focusBefore = currentFocusSpec(),
+                    /** 普通空块 raw 长度 1（ZWSP），偏移 1 = ZWSP 之后，与空块光标约定 (1,1) 一致 */
+                    focusAfter = FocusSpec(block.id, 1),
+                )
+            )
+            return
+        }
+        /** 二级及以上：降一级，重建为上一层级同类型空列表项（空 markdown → ZWSP 退格锚点） */
+        val listType = if (block.state.isOrderedList) {
+            InheritedListType.Ordered
+        } else {
+            InheritedListType.Unordered
+        }
+        executeAndPush(
+            ReplaceBlocksCommand(
+                index = idx,
+                removedSpecs = listOf(textSpec(block)),
+                insertedSpecs = listOf(
+                    BlockSpec.TextSpec(
+                        block.id,
+                        "",
+                        initialListType = listType,
+                        listLevel = srcLevel - 1,
+                    )
+                ),
+                focusBefore = currentFocusSpec(),
+                /** 降级块是列表块，精确落点随后由 [refocusListBlock] 修正到 marker 之后 */
+                focusAfter = FocusSpec(block.id, 0),
+            )
+        )
+        /** 光标修正到 marker 之后（内容起点），避免后续输入插到 marker 前面 */
+        refocusListBlock(block.id)
+    }
+
+    /**
      * 硬键盘回车（尚未插入 \n）：在光标处拆成两个块。
      * 用库的 toMarkdown(range)（纯文本坐标）做精确的"光标 → markdown"映射。
      */
@@ -1153,23 +1215,15 @@ class BodyBlocksController(
         if (idx < 0) return
 
         /**
-         * 空列表项回车 = 退出列表（用户选定的标准行为）：把该块**整体**替换为普通空块。
-         * 不能走下面的拆两块流程——拆块会把 marker 前后切开，afterMd 带出 marker-only
-         * 的 `"- "` markdown，setMarkdown 重建出**残留空列表项**，且此时
-         * listForNewBlocks=null 跳过 refocusListBlock、光标落 0 在 bullet 之前——
-         * 正是真机日志序列②「多一行空白 + 光标在 bullet 前」两个缺陷的共同根因。
+         * 空列表项回车（v2026-09-07 按层级区分）：一级 = 退出列表变普通空块；
+         * 二级及以上 = 降一级为上一层级同类型空列表项（如空的 "(1)" 回车 → "2."）。
+         * 统一走 [exitListOrDedentEmptyListItem]，不能走下面的拆两块流程——
+         * 拆块会把 marker 前后切开，afterMd 带出 marker-only 的 `"- "` markdown，
+         * setMarkdown 重建出**残留空列表项**，且此时 listForNewBlocks=null 跳过
+         * refocusListBlock、光标落 0 在 bullet 之前（真机日志序列②缺陷根因）。
          */
         if (isEmptyListItem(block.state)) {
-            executeAndPush(
-                ReplaceBlocksCommand(
-                    index = idx,
-                    removedSpecs = listOf(textSpec(block)),
-                    insertedSpecs = listOf(BlockSpec.TextSpec(block.id, "")),
-                    focusBefore = currentFocusSpec(),
-                    /** 普通空块 raw 长度 1（ZWSP），偏移 1 = ZWSP 之后，与空块光标约定 (1,1) 一致 */
-                    focusAfter = FocusSpec(block.id, 1),
-                )
-            )
+            exitListOrDedentEmptyListItem(block, idx)
             return
         }
 
@@ -1177,7 +1231,7 @@ class BodyBlocksController(
         val beforeMd = if (beforeEnd > 0) block.state.toMarkdown(TextRange(0, beforeEnd)).replace(ZWSP, "") else ""
 
         val newId = newBodyBlockId()
-        /** 列表续行：源块为列表类型（空列表项回车已在上方前置分支退出列表，不会走到这里） */
+        /** 列表续行：源块为列表类型（空列表项回车已在上方前置分支退出列表/降级，不会走到这里） */
         val srcListType: InheritedListType? = when {
             block.state.isUnorderedList -> InheritedListType.Unordered
             block.state.isOrderedList -> InheritedListType.Ordered
@@ -1261,25 +1315,17 @@ class BodyBlocksController(
         if (!text.contains('\n')) return
 
         /**
-         * 空列表项内出现换行（软键盘回车/粘贴）= 退出列表：整体替换为普通空块，
-         * 与 [splitTextBlock] 的空列表项分支同语义——否则按行拆分时 marker-only 行
-         * 会产出 `"- "` markdown 重建出残留 bullet 块。
+         * 空列表项内出现换行（软键盘回车/粘贴）= 与 [splitTextBlock] 的空列表项分支同语义
+         * （v2026-09-07 按层级区分：一级退出列表 / 二级及以上降一级），否则按行拆分时
+         * marker-only 行会产出 `"- "` markdown 重建出残留 bullet 块。
          */
         if (isEmptyListItem(block.state)) {
-            executeAndPush(
-                ReplaceBlocksCommand(
-                    index = idx,
-                    removedSpecs = listOf(textSpec(block)),
-                    insertedSpecs = listOf(BlockSpec.TextSpec(block.id, "")),
-                    focusBefore = currentFocusSpec(),
-                    focusAfter = FocusSpec(block.id, 1),
-                )
-            )
+            exitListOrDedentEmptyListItem(block, idx)
             return
         }
 
         /** 列表续行：软键盘回车/粘贴多行拆块时，新行继承源块列表类型
-         *  （空列表项已在上方前置分支整体退出列表，不会走到这里）。 */
+         *  （空列表项已在上方前置分支退出列表/降级，不会走到这里）。 */
         val srcListType: InheritedListType? = when {
             block.state.isUnorderedList -> InheritedListType.Unordered
             block.state.isOrderedList -> InheritedListType.Ordered

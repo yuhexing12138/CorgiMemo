@@ -196,4 +196,100 @@ class BodyBlocksControllerTest {
         // 还原块的 selection 也应是 raw 2（一/二之间），而非 raw 1（一左边）
         assertEquals(2, a.state.selection.start)
     }
+
+    // ==================== 空列表项回车：按层级区分（v2026-09-07） ====================
+
+    /**
+     * 场景（复刻真实用户操作路径，对应反馈截图）：
+     * "1. 测试1" 行尾回车（拆块续行 "2."）→ 增加缩进（变二级 "(1)"）→ 在空的 "(1)" 行回车。
+     *
+     * 修复前：整块替换为普通空块 → "1. 测试1" + 空行（bug）。
+     * 预期（修复后）：**降一级**为一级有序空项，编号由 renumberOrderedBlocks 按位置语义
+     * 自动续为 "2."（即 "1. 测试1" + "2."），块数不变（整体替换而非拆出新块），
+     * 光标落在 marker 之后。
+     */
+    @Test
+    fun `空二级有序项回车降一级续号为2`() {
+        controller.initialize("1. 测试1")
+        val first = controller.blocks.first() as Text
+        // 光标移到行尾，硬键盘回车拆块 → 新块续号 "2. "
+        first.state.selection =
+            androidx.compose.ui.text.TextRange(first.state.annotatedString.text.length)
+        controller.onBlockFocused(first.id)
+        controller.splitTextBlockAtCursor(first)
+        assertEquals(2, controller.blocks.size)
+        val second = controller.blocks[1] as Text
+        assertTrue(second.state.isOrderedList)
+        assertEquals("2. ", controller.blockMarkdown(second.state))
+
+        // 增加缩进 → 二级 "(1)"（编号按嵌套语义重排为 1）
+        controller.onBlockFocused(second.id)
+        controller.indentFocusedBlock(+1)
+        assertEquals("  1. ", controller.blockMarkdown(second.state))
+
+        // 空的 "(1)" 回车 → 降一级为 "2."（核心断言；注意 split 后块对象被重建，需重新取）
+        controller.splitTextBlockAtCursor(second)
+        assertEquals("整体替换不应新增块", 2, controller.blocks.size)
+        val dedented = controller.blocks[1] as Text
+        assertTrue("降级后仍应为有序列表项", dedented.state.isOrderedList)
+        assertEquals("2. ", controller.blockMarkdown(dedented.state))
+
+        // 光标应落在 marker 之后（"2. " 长度 3），而非 marker 之前
+        val focus = controller.takePendingFocus()
+        assertNotNull(focus)
+        assertEquals(dedented.id, focus?.blockId)
+        assertEquals("光标应落在 marker 之后", 3, focus?.offset)
+    }
+
+    /**
+     * 一级空有序项回车 → 维持既有"退出列表"行为：普通空块（isList=false）。
+     */
+    @Test
+    fun `空一级有序项回车退出列表为普通空块`() {
+        controller.initialize("1. 测试1\n\n2. ")
+        val second = controller.blocks[1] as Text
+        assertTrue(second.state.isOrderedList)
+
+        controller.splitTextBlockAtCursor(second)
+        assertEquals(2, controller.blocks.size)
+        val blank = controller.blocks[1] as Text
+        assertTrue("一级空项回车应退出列表", !blank.state.isList)
+        assertEquals("", controller.blockMarkdown(blank.state))
+    }
+
+    /**
+     * 二级空无序列表项回车 → 对称降一级为一级 bullet（"- "），而非退出列表。
+     */
+    @Test
+    fun `空二级无序项回车降一级为一级bullet`() {
+        controller.initialize("- 甲\n\n  - ")
+        val second = controller.blocks[1] as Text
+        assertTrue(second.state.isUnorderedList)
+
+        controller.splitTextBlockAtCursor(second)
+        assertEquals(2, controller.blocks.size)
+        val dedented = controller.blocks[1] as Text
+        assertTrue(dedented.state.isUnorderedList)
+        assertEquals("- ", controller.blockMarkdown(dedented.state))
+    }
+
+    /**
+     * 降级可撤销：撤销后经 stash 原样还原为二级空项（层级/类型无损，编号幂等收敛）。
+     */
+    @Test
+    fun `空二级有序项回车降级后可撤销还原`() {
+        controller.initialize("1. 测试1\n\n  1. ")
+        val second = controller.blocks[1] as Text
+        assertEquals("  1. ", controller.blockMarkdown(second.state))
+
+        controller.splitTextBlockAtCursor(second)
+        val dedented = controller.blocks[1] as Text
+        assertEquals("2. ", controller.blockMarkdown(dedented.state))
+
+        controller.undo()
+        // stash 原样还原的是拆块时的原始块对象（second 引用），层级/类型无损
+        assertSame(second, controller.blocks[1])
+        assertTrue(second.state.isOrderedList)
+        assertEquals("  1. ", controller.blockMarkdown(second.state))
+    }
 }
