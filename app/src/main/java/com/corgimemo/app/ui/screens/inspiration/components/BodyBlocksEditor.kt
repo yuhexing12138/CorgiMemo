@@ -91,23 +91,31 @@ internal const val LIST_LEVEL_INDENT_SP = 30
 private const val MAX_LIST_LEVEL = 6
 
 /**
- * 纯文本缩进字符（v2026-09-07）：全角空格 U+2003（EM SPACE），每级 [PLAIN_INDENT_STEP]
- * 个 ≈ 两字符宽，视觉为**首行缩进两字符**，不产生列表 marker。
- * - 持久化零成本：U+2003 是普通文本字符（CommonMark 不视作缩进空格/代码块前缀），
- *   随 markdown 原样保存、加载即还原；
- * - 字数统计不受影响（InspirationTextUtils 按 isWhitespace 过滤空白字符）；
- * - 撤销走块内 history（库 onTextFieldValueChange 统一记录，一次缩进 = 一个撤销步）。
+ * 纯文本整段缩进（v2026-09-07 第二版，取代首版 EM 文本前缀方案）：
+ * 缩进是**段落属性**（库 [DefaultParagraph.level]，样式 TextIndent firstLine = restLine，
+ * 整段左移），不是文本字符——EM 文本前缀只能实现首行缩进（折行后第二行顶格），
+ * 不符合「整体缩进」需求。
+ *
+ * markdown 持久化载体仍为段首全角空格（[PLAIN_INDENT_CHAR]，每级 [PLAIN_INDENT_STEP] 个），
+ * 由**库编解码两端透明处理**（编码端 appendParagraphStartText 输出前缀 / 解码端 PARAGRAPH
+ * 钩子剥前缀还原 level）——拆块/合并/保存/加载等一切 markdown 路径自动往返，App 只需：
+ * - 缩进按钮调库 API [RichTextState.setParagraphIndent]；
+ * - 层级读 markdown 前缀（[plainIndentLevelOfMd]，与 listLevelOfMd 同款模式）。
+ * U+2003 是普通文本字符，CommonMark 不视作缩进/代码块前缀，持久化无损。
  */
 private const val PLAIN_INDENT_CHAR = '\u2003'
 
-/** 纯文本缩进步长：每按一次「增加/减少缩进」增删的全角空格个数（两字符） */
+/** 纯文本缩进步长：每个缩进层级对应的段首全角空格个数（≈ 两字符宽） */
 private const val PLAIN_INDENT_STEP = 2
 
-/** 读纯文本块的前导全角空格缩进级数（0 起；[MAX_LIST_LEVEL] 封顶，与列表层级一致） */
-private fun plainIndentLevelOf(text: String): Int =
-    text.countLeadingPlainIndentChars() / PLAIN_INDENT_STEP
+/**
+ * 读 markdown 的纯文本缩进层级（1 = 无缩进；段首全角空格每级 2 个，
+ * 由库编码端对 [DefaultParagraph.level]>1 输出）。
+ */
+private fun plainIndentLevelOfMd(md: String): Int =
+    md.countLeadingPlainIndentChars() / PLAIN_INDENT_STEP + 1
 
-/** 读文本的前导全角空格（U+2003）个数 */
+/** 读 markdown 的前导全角空格（U+2003）个数 */
 private fun String.countLeadingPlainIndentChars(): Int {
     var n = 0
     for (ch in this) {
@@ -116,6 +124,10 @@ private fun String.countLeadingPlainIndentChars(): Int {
     }
     return n
 }
+
+/** 剥掉 markdown 的纯文本缩进前缀（退格合并时丢弃后块缩进，见 [BodyBlocksController.mergeTextBlocks]） */
+private fun String.dropLeadingPlainIndent(): String =
+    drop(countLeadingPlainIndentChars())
 
 /** 二级 marker：带括号阿拉伯数字 `"(1) "`（用户指定层级循环 1./(1)/①/a./Ⅰ./i.） */
 private object ParenthesizedDecimalStyle : OrderedListStyleType {
@@ -961,39 +973,25 @@ class BodyBlocksController(
     }
 
     /**
-     * 纯文本缩进（v2026-09-07，取代旧"普通文本 + 加缩进 = 自动转列表"行为）：
-     * 段首插入/删除 [PLAIN_INDENT_STEP] 个全角空格（[PLAIN_INDENT_CHAR]，每级 ≈ 两字符宽），
-     * 视觉为**首行缩进两字符**，不产生列表 marker。
+     * 纯文本整段缩进（v2026-09-07 第二版：段落属性，取代首版 EM 文本前缀首行缩进）：
+     * 层级 ±1 经库 API [RichTextState.setParagraphIndent] 直接改段落缩进属性
+     * （TextIndent firstLine = restLine = 步长 × (level-1)，**整段所有行左移**），
+     * 不产生列表 marker，不经 markdown 往返（与列表缩进 [indentFocusedBlock] 同款机制）。
      *
-     * - **持久化零成本**：U+2003 是普通文本字符（CommonMark 不视作缩进空格/代码块前缀，
-     *   库 toMarkdown 原样输出、setMarkdown 原样还原），随块 markdown 保存加载；
-     * - **字数统计不受影响**：InspirationTextUtils 按 isWhitespace 过滤，U+2003 属空白；
-     * - **撤销**：add/removeTextRange 经库 onTextFieldValueChange 统一记录块内 history，
-     *   一次缩进/减少 = 一个撤销步；
-     * - **封顶**：[MAX_LIST_LEVEL] 级（与列表一致），到顶后「增加缩进」无效；
-     * - **光标/选区**：操作后保持相对位置（整体平移 ∓[PLAIN_INDENT_STEP]）。
+     * - **持久化**：库编码端把 level>1 编码为段首全角空格前缀（每级 2 个），解码端
+     *   （PARAGRAPH 钩子）剥前缀还原——保存/加载/拆块/合并全透明；
+     * - **字数统计不受影响**：EM 前缀只存在于 markdown 载体，不在段落文本里；
+     * - **撤销**：setParagraphIndent 默认记录块内 history，一次缩进/减少 = 一步；
+     * - **封顶**：[MAX_LIST_LEVEL] 级（与列表一致），到顶/到底后无效；
+     * - **光标**：updateParagraphType 自动校正（setListMarker 同款）。
      *
-     * @param delta +1 = 增加缩进（段首插全角空格）；-1 = 减少缩进（删段首全角空格）
+     * @param delta +1 = 增加缩进；-1 = 减少缩进
      */
     private fun indentPlainBlock(state: RichTextState, delta: Int) {
-        val text = state.annotatedString.text
-        val before = state.selection
-        if (delta > 0) {
-            /** 封顶：前导全角空格已达 [MAX_LIST_LEVEL] 级后无效 */
-            if (plainIndentLevelOf(text) >= MAX_LIST_LEVEL) return
-            state.addTextAtIndex(0, PLAIN_INDENT_CHAR.toString().repeat(PLAIN_INDENT_STEP))
-        } else {
-            /** 无缩进可减（前导无全角空格）时无效 */
-            if (plainIndentLevelOf(text) <= 0) return
-            state.removeTextRange(TextRange(0, PLAIN_INDENT_STEP))
-        }
-        /** 库 API 会把 selection 置为插入尾/删除点，此处恢复光标/选区的相对位置 */
-        val newLen = state.annotatedString.text.length
-        val shift = delta * PLAIN_INDENT_STEP
-        state.selection = TextRange(
-            (before.start + shift).coerceIn(0, newLen),
-            (before.end + shift).coerceIn(0, newLen),
-        )
+        val level = plainIndentLevelOfMd(blockMarkdown(state))
+        val newLevel = level + delta
+        if (newLevel > MAX_LIST_LEVEL || newLevel < 1) return
+        state.setParagraphIndent(level = newLevel)
     }
 
     /**
@@ -1012,8 +1010,8 @@ class BodyBlocksController(
             val state = focusedOrFirstTextState()
             state.annotatedString
             if (!state.isList) {
-                /** 纯文本：全角空格级数封顶判断（v2026-09-07） */
-                return plainIndentLevelOf(state.annotatedString.text) < MAX_LIST_LEVEL
+                /** 纯文本：缩进级数封顶判断（读 markdown 段首 EM 前缀，v2026-09-07 整段缩进） */
+                return plainIndentLevelOfMd(state.toMarkdown()) < MAX_LIST_LEVEL
             }
             return listLevelOfMd(state.toMarkdown()) < MAX_LIST_LEVEL
         }
@@ -1030,8 +1028,8 @@ class BodyBlocksController(
             val state = focusedOrFirstTextState()
             state.annotatedString
             if (!state.isList) {
-                /** 纯文本：有前导全角空格即可减（v2026-09-07） */
-                return plainIndentLevelOf(state.annotatedString.text) > 0
+                /** 纯文本：缩进级数 >1 即可减（读 markdown 段首 EM 前缀，v2026-09-07 整段缩进） */
+                return plainIndentLevelOfMd(state.toMarkdown()) > 1
             }
             return listLevelOfMd(state.toMarkdown()) > 1
         }
@@ -1949,7 +1947,13 @@ class BodyBlocksController(
         val prevIdx = blocks.indexOfFirst { it.id == prev.id }
         if (prevIdx < 0) return
         val prevMd = blockMarkdown(prev.state)
-        val curMd = blockMarkdown(cur.state)
+        /**
+         * 后块 markdown 剥掉纯文本缩进前缀（v2026-09-07 整段缩进）：合并是 markdown 直接
+         * 拼接（prevMd + curMd），后块的段首 EM 前缀拼到前块末尾后不再是"段首"，解码端
+         * 不会剥除、会残留成可见宽空格——故合并时丢弃后块缩进（与 Word「合并到前段格式」
+         * 一致）；前块缩进前缀保留（合并块继承前块缩进）。
+         */
+        val curMd = blockMarkdown(cur.state).dropLeadingPlainIndent()
         /**
          * 接缝光标（raw 偏移，作用于重建后的 prev 块）。
          * 此处用 effectiveText 剥掉旧 prev 块的前导 ZWSP 得到「有效字数」，恰好等于
