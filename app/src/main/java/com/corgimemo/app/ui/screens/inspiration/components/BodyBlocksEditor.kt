@@ -90,6 +90,33 @@ internal const val LIST_LEVEL_INDENT_SP = 30
  *  每级 [LIST_LEVEL_INDENT_SP]（30sp ≈ 两字符）逐级累加；到顶后再点无效。 */
 private const val MAX_LIST_LEVEL = 6
 
+/**
+ * 纯文本缩进字符（v2026-09-07）：全角空格 U+2003（EM SPACE），每级 [PLAIN_INDENT_STEP]
+ * 个 ≈ 两字符宽，视觉为**首行缩进两字符**，不产生列表 marker。
+ * - 持久化零成本：U+2003 是普通文本字符（CommonMark 不视作缩进空格/代码块前缀），
+ *   随 markdown 原样保存、加载即还原；
+ * - 字数统计不受影响（InspirationTextUtils 按 isWhitespace 过滤空白字符）；
+ * - 撤销走块内 history（库 onTextFieldValueChange 统一记录，一次缩进 = 一个撤销步）。
+ */
+private const val PLAIN_INDENT_CHAR = '\u2003'
+
+/** 纯文本缩进步长：每按一次「增加/减少缩进」增删的全角空格个数（两字符） */
+private const val PLAIN_INDENT_STEP = 2
+
+/** 读纯文本块的前导全角空格缩进级数（0 起；[MAX_LIST_LEVEL] 封顶，与列表层级一致） */
+private fun plainIndentLevelOf(text: String): Int =
+    text.countLeadingPlainIndentChars() / PLAIN_INDENT_STEP
+
+/** 读文本的前导全角空格（U+2003）个数 */
+private fun String.countLeadingPlainIndentChars(): Int {
+    var n = 0
+    for (ch in this) {
+        if (ch != PLAIN_INDENT_CHAR) break
+        n++
+    }
+    return n
+}
+
 /** 二级 marker：带括号阿拉伯数字 `"(1) "`（用户指定层级循环 1./(1)/①/a./Ⅰ./i.） */
 private object ParenthesizedDecimalStyle : OrderedListStyleType {
     override fun format(number: Int, listLevel: Int): String = "($number)"
@@ -887,13 +914,14 @@ class BodyBlocksController(
      * 前缀会被 CommonMark 解析成缩进代码块导致层级丢失（真机表现：连续缩进在
      * "i."/"1." 间循环、「3.测试3」被错误改写为「1.测试3」）。
      *
-     * 规则（用户 18:05 修正）：
+     * 规则：
      * - 列表行：加缩进 = 层级 +1（[MAX_LIST_LEVEL] 封顶 = 一级贴左缘 + 最多 5 次缩进，
      *   每级 [LIST_LEVEL_INDENT_SP] ≈ 两字符；到顶后点击无效果）；减缩进 = 层级 -1，
-     *   **一级 = 「未缩进」底线，再减无效果（不退出列表）**——列表归属由有序/无序按钮管理，
+     *   一级 = 「未缩进」底线，再减无效果（不退出列表）——列表归属由有序/无序按钮管理，
      *   缩进按钮只调层级（按有序按钮产生的一级 1./2. 不会被减少缩进退掉）。
-     * - 普通文本行：减缩进无效果；加缩进自动转列表项——前一块是列表则继承其类型与
-     *   层级 +1（成为其子项），否则转为无序列表一级。
+     * - 普通文本行（v2026-09-07 改版，取代旧"加缩进自动转列表"）：段首增删
+     *   [PLAIN_INDENT_STEP] 个全角空格（[PLAIN_INDENT_CHAR]，≈ 首行缩进两字符），
+     *   不产生列表 marker；层级封顶 [MAX_LIST_LEVEL]（与列表一致）。详见 [indentPlainBlock]。
      *
      * 变更后调 [renumberOrderedBlocks]（层级感知位置语义）收敛编号；重编号对其他块的
      * 改写会使 markdown 变化 → observer 自动清全局 redo 栈（与本操作是真实编辑一致）。
@@ -905,27 +933,12 @@ class BodyBlocksController(
             ?.let { it as? BodyBlock.Text }
             ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
             ?: return
-        val idx = blocks.indexOfFirst { it.id == block.id }
-        if (idx < 0) return
         val state = block.state
         val md = blockMarkdown(state)
 
         if (!state.isList) {
-            if (delta <= 0) return
-            /** 普通文本行 + 加缩进 = 自动转列表（用户选定）：继承前一块列表类型与层级 +1
-             *  （成为其子项），无前列表则转无序列表一级 */
-            val prev = blocks.getOrNull(idx - 1) as? BodyBlock.Text
-            val inherits = prev != null && prev.state.isList
-            val (markerLevel, useOrdered) = if (inherits && prev != null) {
-                val prevLevel = listLevelOfMd(blockMarkdown(prev.state))
-                (prevLevel + 1).coerceAtMost(MAX_LIST_LEVEL) to prev.state.isOrderedList
-            } else {
-                1 to false
-            }
-            if (useOrdered) state.addOrderedList() else state.addUnorderedList()
-            if (markerLevel > 1) {
-                state.setListMarker(level = markerLevel, number = 1)
-            }
+            /** 纯文本缩进（v2026-09-07）：段首全角空格 ±2 字符，不转列表（见 [indentPlainBlock]） */
+            indentPlainBlock(state, delta)
         } else {
             val level = listLevelOfMd(md)
             val newLevel = level + delta
@@ -948,8 +961,44 @@ class BodyBlocksController(
     }
 
     /**
+     * 纯文本缩进（v2026-09-07，取代旧"普通文本 + 加缩进 = 自动转列表"行为）：
+     * 段首插入/删除 [PLAIN_INDENT_STEP] 个全角空格（[PLAIN_INDENT_CHAR]，每级 ≈ 两字符宽），
+     * 视觉为**首行缩进两字符**，不产生列表 marker。
+     *
+     * - **持久化零成本**：U+2003 是普通文本字符（CommonMark 不视作缩进空格/代码块前缀，
+     *   库 toMarkdown 原样输出、setMarkdown 原样还原），随块 markdown 保存加载；
+     * - **字数统计不受影响**：InspirationTextUtils 按 isWhitespace 过滤，U+2003 属空白；
+     * - **撤销**：add/removeTextRange 经库 onTextFieldValueChange 统一记录块内 history，
+     *   一次缩进/减少 = 一个撤销步；
+     * - **封顶**：[MAX_LIST_LEVEL] 级（与列表一致），到顶后「增加缩进」无效；
+     * - **光标/选区**：操作后保持相对位置（整体平移 ∓[PLAIN_INDENT_STEP]）。
+     *
+     * @param delta +1 = 增加缩进（段首插全角空格）；-1 = 减少缩进（删段首全角空格）
+     */
+    private fun indentPlainBlock(state: RichTextState, delta: Int) {
+        val text = state.annotatedString.text
+        val before = state.selection
+        if (delta > 0) {
+            /** 封顶：前导全角空格已达 [MAX_LIST_LEVEL] 级后无效 */
+            if (plainIndentLevelOf(text) >= MAX_LIST_LEVEL) return
+            state.addTextAtIndex(0, PLAIN_INDENT_CHAR.toString().repeat(PLAIN_INDENT_STEP))
+        } else {
+            /** 无缩进可减（前导无全角空格）时无效 */
+            if (plainIndentLevelOf(text) <= 0) return
+            state.removeTextRange(TextRange(0, PLAIN_INDENT_STEP))
+        }
+        /** 库 API 会把 selection 置为插入尾/删除点，此处恢复光标/选区的相对位置 */
+        val newLen = state.annotatedString.text.length
+        val shift = delta * PLAIN_INDENT_STEP
+        state.selection = TextRange(
+            (before.start + shift).coerceIn(0, newLen),
+            (before.end + shift).coerceIn(0, newLen),
+        )
+    }
+
+    /**
      * 聚焦块当前是否可「增加缩进」（工具栏按钮置灰用，视觉降级）：
-     * - 普通文本行恒可（自动转列表）；
+     * - 纯文本行（v2026-09-07）：前导全角空格级数未到 [MAX_LIST_LEVEL] 才可（封顶置灰）；
      * - 列表行：层级未到 [MAX_LIST_LEVEL] 才可（到顶后按钮置灰）。
      *
      * 快照响应式：`focusedBlockId` / `annotatedString` / `toMarkdown()`（读段落树）均为
@@ -962,21 +1011,28 @@ class BodyBlocksController(
         get() {
             val state = focusedOrFirstTextState()
             state.annotatedString
-            if (!state.isList) return true
+            if (!state.isList) {
+                /** 纯文本：全角空格级数封顶判断（v2026-09-07） */
+                return plainIndentLevelOf(state.annotatedString.text) < MAX_LIST_LEVEL
+            }
             return listLevelOfMd(state.toMarkdown()) < MAX_LIST_LEVEL
         }
 
     /**
      * 聚焦块当前是否可「减少缩进」（工具栏按钮置灰用，视觉降级）：
-     * 仅**层级 ≥ 2** 的列表行可减（一级 = 「未缩进」底线，再减无效果、不退出列表——
-     * 列表归属由有序/无序按钮管理）；普通文本行与一级列表行均置灰。
+     * - 纯文本行（v2026-09-07）：有前导全角空格即可减，否则置灰；
+     * - 列表行：仅**层级 ≥ 2** 可减（一级 = 「未缩进」底线，再减无效果、不退出列表——
+     *   列表归属由有序/无序按钮管理）。
      * 依赖注册同 [canIncreaseIndent]（显式读 annotatedString）。
      */
     val canDecreaseIndent: Boolean
         get() {
             val state = focusedOrFirstTextState()
             state.annotatedString
-            if (!state.isList) return false
+            if (!state.isList) {
+                /** 纯文本：有前导全角空格即可减（v2026-09-07） */
+                return plainIndentLevelOf(state.annotatedString.text) > 0
+            }
             return listLevelOfMd(state.toMarkdown()) > 1
         }
 

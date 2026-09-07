@@ -329,4 +329,91 @@ class BodyBlocksControllerTest {
         assertEquals(dedented.id, focus?.blockId)
         assertEquals("光标应落在 I. marker 之后而非左侧", 3, focus?.offset)
     }
+
+    // ==================== 纯文本缩进（v2026-09-07：段首全角空格，不转列表） ====================
+
+    /** 全角空格（U+2003 EM SPACE）：纯文本缩进的载体字符 */
+    private val em = '\u2003'
+
+    /**
+     * 纯文本块按「增加缩进」：段首插入 2 个全角空格（首行缩进两字符），
+     * **不转无序列表**（v2026-09-07 改版，取代旧"自动转列表"行为）；
+     * markdown 序列化保留全角空格（随文本持久化）。
+     */
+    @Test
+    fun `纯文本按缩进插全角空格不转列表`() {
+        val a = controller.blocks.first() as Text
+        "一二".forEach { a.state.addTextAfterSelection(it.toString()) } // \u200B一二
+        controller.onBlockFocused(a.id)
+
+        controller.indentFocusedBlock(+1)
+        assertTrue("纯文本缩进不应转列表", !a.state.isList)
+        assertEquals("$em$em\u200B一二", a.state.annotatedString.text)
+        // markdown 序列化保留全角空格（ZWSP 被剥，缩进字符随文本持久化）
+        assertEquals("${em}${em}一二", controller.blockMarkdown(a.state))
+    }
+
+    /**
+     * 纯文本缩进可撤销：块内 history 回退后缩进字符消失。
+     * （不锁定 undo 次数：库的 Typing 合并策略可能把缩进与相邻打字并组，故循环回退
+     * 直到 EM SPACE 消失——对合并粒度鲁棒，只验证"缩进可被撤销"这一行为契约。）
+     */
+    @Test
+    fun `纯文本缩进可撤销`() {
+        val a = controller.blocks.first() as Text
+        "一二".forEach { a.state.addTextAfterSelection(it.toString()) }
+        controller.onBlockFocused(a.id)
+        controller.indentFocusedBlock(+1)
+        assertEquals("$em$em\u200B一二", a.state.annotatedString.text)
+
+        var undoCount = 0
+        while (a.state.annotatedString.text.contains(em) && controller.canUndo) {
+            controller.undo()
+            undoCount++
+        }
+        assertTrue("缩进应至少可撤销一次", undoCount >= 1)
+        assertTrue("撤销后不应残留缩进字符", !a.state.annotatedString.text.contains(em))
+        assertEquals("\u200B一二", a.state.annotatedString.text)
+    }
+
+    /**
+     * 连续缩进 6 级封顶（与列表层级上限一致）：第 7 次无效、按钮置灰；
+     * 「减少缩进」逐级回退，减完置灰。
+     */
+    @Test
+    fun `纯文本连续缩进6级封顶且减少正常`() {
+        val a = controller.blocks.first() as Text
+        "内容".forEach { a.state.addTextAfterSelection(it.toString()) }
+        controller.onBlockFocused(a.id)
+
+        repeat(6) { controller.indentFocusedBlock(+1) }
+        assertEquals(12, a.state.annotatedString.text.takeWhile { it == em }.length)
+        assertTrue("6 级到顶后按钮应置灰", !controller.canIncreaseIndent)
+        controller.indentFocusedBlock(+1)
+        assertEquals("到顶后再按应无效", 12, a.state.annotatedString.text.takeWhile { it == em }.length)
+
+        controller.indentFocusedBlock(-1)
+        assertEquals(10, a.state.annotatedString.text.takeWhile { it == em }.length)
+        assertTrue(controller.canIncreaseIndent)
+        repeat(5) { controller.indentFocusedBlock(-1) }
+        assertEquals(0, a.state.annotatedString.text.takeWhile { it == em }.length)
+        assertTrue("缩进减完后按钮应置灰", !controller.canDecreaseIndent)
+    }
+
+    /**
+     * 全角空格缩进随 markdown 往返保留：加载（setMarkdown）后视觉缩进还原，
+     * 且「减少缩进」按钮可用（前导 EM SPACE 被识别）。
+     */
+    @Test
+    fun `全角空格缩进随markdown往返保留`() {
+        controller.initialize("${em}${em}缩进内容")
+        val a = controller.blocks.first() as Text
+        assertEquals("${em}${em}缩进内容", controller.blockMarkdown(a.state))
+        assertTrue(!a.state.isList)
+
+        controller.onBlockFocused(a.id)
+        assertTrue("加载后的缩进块应可减少缩进", controller.canDecreaseIndent)
+        controller.indentFocusedBlock(-1)
+        assertEquals("缩进内容", controller.blockMarkdown(a.state))
+    }
 }
