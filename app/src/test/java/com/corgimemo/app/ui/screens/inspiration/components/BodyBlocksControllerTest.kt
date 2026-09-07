@@ -417,4 +417,47 @@ class BodyBlocksControllerTest {
         controller.indentFocusedBlock(-1)
         assertEquals("缩进内容", controller.blockMarkdown(a.state))
     }
+
+    // ==================== 缩进块内容起点退格：逐级减缩进（v2026-09-07） ====================
+
+    /**
+     * 缩进块内容起点退格（用户需求：6 级缩进的内容，在"测"左侧退格应一级一级删除缩进）。
+     *
+     * 场景复刻软键盘：IME 先删掉了前导 ZWSP（live 文本 = 纯内容），observer 检测后
+     * 转发块首退格入口。断言：每次退格减一级（markdown EM 前缀 -2）、重建块保持
+     * 打字结构（ZWSP 补回，软键盘可继续逐级退格）、文本内容不变、块数不变；
+     * 减到一级后回落原合并/删除语义（首块非空无前驱 → no-op）；撤销完美恢复。
+     */
+    @Test
+    fun `缩进块内容起点退格逐级减缩进`() {
+        val a = controller.blocks.first() as Text
+        "测试".forEach { a.state.addTextAfterSelection(it.toString()) } // \u200B测试
+        controller.onBlockFocused(a.id)
+        repeat(6) { controller.indentFocusedBlock(+1) }
+        assertEquals(12, controller.blockMarkdown(a.state).takeWhile { it == em }.length)
+
+        // 模拟软键盘：IME 删掉前导 ZWSP（live 文本 = "测试"，无 ZWSP）
+        a.state.removeTextRange(androidx.compose.ui.text.TextRange(0, 1))
+        assertEquals("测试", a.state.annotatedString.text)
+
+        // 内容起点退格 → 减一级（6→5），ZWSP 补回（打字结构），文本内容不变
+        controller.onBackspaceAtStart(a)
+        assertEquals(10, controller.blockMarkdown(a.state).takeWhile { it == em }.length)
+        assertEquals("\u200B测试", a.state.annotatedString.text)
+        assertEquals("整体替换不应增减块数", 1, controller.blocks.size)
+
+        // 连续退格逐级递减：5 → 1（前缀 10 → 0）
+        repeat(4) { controller.onBackspaceAtStart(controller.blocks.first() as Text) }
+        assertEquals(0, controller.blockMarkdown(controller.blocks.first() as Text).takeWhile { it == em }.length)
+        assertTrue("一级时不应再算缩进块", !controller.isPlainIndentedBlock(controller.blocks.first() as Text))
+
+        // 一级再退格：回落原语义（首块非空、无前驱可合并 → no-op）
+        val before = controller.blockMarkdown(controller.blocks.first() as Text)
+        controller.onBackspaceAtStart(controller.blocks.first() as Text)
+        assertEquals(before, controller.blockMarkdown(controller.blocks.first() as Text))
+
+        // 撤销：stash 原样还原，缩进完美恢复
+        controller.undo()
+        assertEquals(12, controller.blockMarkdown(controller.blocks.first() as Text).takeWhile { it == em }.length)
+    }
 }

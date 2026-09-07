@@ -1875,6 +1875,46 @@ class BodyBlocksController(
     }
 
     /**
+     * 聚焦块是否为「有缩进的纯文本块」（level > 1）：软键盘 observer 判定
+     * 「内容起点退格（IME 删掉前导 ZWSP）」是否要转块首退格处理用。
+     */
+    fun isPlainIndentedBlock(block: BodyBlock.Text): Boolean =
+        !block.state.isList && plainIndentLevelOfMd(blockMarkdown(block.state)) > 1
+
+    /**
+     * 纯文本缩进块内容起点退格：减一级缩进（[onBackspaceAtStart] 的缩进分支实现）。
+     *
+     * 走 [ReplaceBlocksCommand] 重建（一次命令一步撤销，revert 经 stash 完美还原）：
+     * 重建 markdown = **上一级 EM 前缀 + ZWSP + 内容**——ZWSP 让重建块保持「打字结构」
+     * （前导退格锚点），软键盘光标落内容起点时后续退格仍可继续逐级减缩进（否则
+     * setMarkdown 结构无 ZWSP，光标 0 的软键盘退格成为检测死角）。
+     *
+     * 软键盘场景 IME 已先删掉原前导 ZWSP（live 文本 = 纯内容），重建时补回；
+     * 硬键盘场景 live 文本未变（拦截在删除前），重建后 ZWSP 等价还原。
+     * 两种场景 live markdown 都无 ZWSP（[blockMarkdown] 剥除），构造公式统一：
+     * `EM×2×(level-2) + ZWSP + 内容`。
+     */
+    private fun dedentPlainBlockAtContentStart(block: BodyBlock.Text) {
+        val idx = blocks.indexOfFirst { it.id == block.id }
+        if (idx < 0) return
+        val level = plainIndentLevelOfMd(blockMarkdown(block.state))
+        if (level <= 1) return
+        val content = blockMarkdown(block.state).dropLeadingPlainIndent()
+        val dedentMd =
+            PLAIN_INDENT_CHAR.toString().repeat(PLAIN_INDENT_STEP * (level - 2)) + ZWSP + content
+        executeAndPush(
+            ReplaceBlocksCommand(
+                index = idx,
+                removedSpecs = listOf(textSpec(block)),
+                insertedSpecs = listOf(BlockSpec.TextSpec(block.id, dedentMd)),
+                focusBefore = currentFocusSpec(),
+                /** 重建块 raw = ZWSP + 内容：偏移 1 = ZWSP 之后 = 内容起点 */
+                focusAfter = FocusSpec(block.id, 1),
+            )
+        )
+    }
+
+    /**
      * 退格合并（在块首 / 已折叠光标处按退格时由调用方调用）：
      * - 前一块是 Text → 合并（拼接 markdown，焦点与光标落接缝）
      * - 前一块是 Image → 两步删除（第一次高亮，第二次删除）
@@ -1893,6 +1933,20 @@ class BodyBlocksController(
     fun onBackspaceAtStart(block: BodyBlock.Text) {
         val idx = blocks.indexOfFirst { it.id == block.id }
         if (idx < 0) return
+
+        /**
+         * 纯文本缩进块（v2026-09-07 整段缩进）：内容起点退格 = **减一级缩进**
+         * （Word/Notion 标准行为），不删字、不合并；一级（无缩进）时回落到
+         * 下方原合并/删除语义。硬键盘（内容起点拦截，文本未变）与软键盘
+         * （IME 已删前导 ZWSP，observer 检测转发）都汇聚到本入口。
+         */
+        if (!block.state.isList) {
+            val level = plainIndentLevelOfMd(blockMarkdown(block.state))
+            if (level > 1) {
+                dedentPlainBlockAtContentStart(block)
+                return
+            }
+        }
 
         if (idx == 0) {
             if (isEffectivelyEmpty(block.state)) {
@@ -2184,6 +2238,18 @@ private fun BlockTextItem(
                 val backspaceMerge = lastText.isNotEmpty() && text == lastText.drop(1) &&
                     lastSelection.collapsed && lastSelection.start == 0
                 val emptyBackspace = lastText == ZWSP && text == ""
+
+                /**
+                 * 缩进块内容起点退格（软键盘，v2026-09-07 整段缩进）：IME 删掉了前导
+                 * ZWSP（光标在 ZWSP 之后 = 内容起点，删除后落到 0）。与 backspaceMerge
+                 * （光标 raw 0）互补——仅缩进块（level>1）转发块首退格（减一级缩进）；
+                 * 非缩进块维持现状（ZWSP 被静默删除，无感操作）。
+                 */
+                val plainIndentBackspace = lastText.startsWith(ZWSP) &&
+                    text == lastText.drop(1) &&
+                    lastSelection.collapsed && lastSelection.start == 1 &&
+                    controller.isPlainIndentedBlock(block)
+
                 if (!controller.replaying) {
                     /** 新编辑（非命令重放、非块内 history 恢复、非 IME 组合中间态）
                      *  → 全局 redo 栈失效。退格合并 / 空块删除路径不在此清——
@@ -2198,6 +2264,8 @@ private fun BlockTextItem(
                         /** 块首退格：文本恰好丢掉首字符 + 退格前光标折叠在 0
                          *  （用精确前缀匹配，避免拆块/撤销等其他缩文本场景误判） */
                         backspaceMerge -> controller.onBackspaceAtStart(block)
+                        /** 缩进块内容起点退格：转发块首退格入口（减一级缩进） */
+                        plainIndentBackspace -> controller.onBackspaceAtStart(block)
                         /** 空块软键盘退格：IME 在 ZWSP 唯一态调用 deleteSurroundingText
                          *  把 ZWSP 删掉，text 变 "" → 走 onBackspaceAtStart（与硬键盘同路径） */
                         emptyBackspace -> controller.onBackspaceAtStart(block)
@@ -2299,7 +2367,16 @@ private fun BlockTextItem(
                         }
                         Key.Backspace -> {
                             val sel = state.selection
-                            if (sel.start == 0 && sel.end == 0) {
+                            /**
+                             * 内容起点退格（v2026-09-07 扩展，原条件 sel.start == 0）：
+                             * 光标之前无有效文本（raw 0，或前导 ZWSP 之后的 raw 1）即视为
+                             * 块首退格——缩进块逐级减缩进、无缩进块走合并/删除语义。
+                             * 拦截发生在删除之前（return true 吞掉事件），文本无损。
+                             */
+                            val atContentStart = sel.collapsed &&
+                                sel.start <= state.annotatedString.text.length &&
+                                effectiveText(state.annotatedString.text.substring(0, sel.start)).isEmpty()
+                            if (atContentStart) {
                                 controller.onBackspaceAtStart(block)
                                 true
                             } else {
