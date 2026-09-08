@@ -286,7 +286,7 @@ sealed class BodyBlock {
          * 持久化载体：markdown 的 `- [ ] ` 前缀之后、内容之前的全角空格
          * （U+2003，每级 [PLAIN_INDENT_STEP] 个），由 [checkboxMarkdownInfo] 解析、
          * [BodyBlocksController.toMarkdown] 拼接——**只在块边界处理、不进 state**。
-         * 缩进操作经 [BodyBlocksController.setCheckboxIndent] 就地换块对象
+         * 缩进操作经 [BodyBlocksController.setBlockIndent] 就地换块对象
          * （state/history/光标无损）。
          */
         val indentLevel: Int = 1,
@@ -555,27 +555,28 @@ class SetCheckboxCheckedCommand(
 }
 
 /**
- * 复选框块缩进档位变更命令（v2026-09-08）：「增加 / 减少缩进」按钮对复选框块生效。
+ * 块缩进档位变更命令（v2026-09-08）：「增加 / 减少缩进」按钮对**所有非列表块**
+ * （普通文本块 + 复选框块）生效。
  *
- * **App 布局级缩进**：复选框块的缩进不走库的段落 TextIndent（其渲染量与 Row 外
- * 复选框图标无法对齐），而是记在 [BodyBlock.Text.indentLevel] 上，渲染由 Row 内
- * 复选框与编辑器各自的 start padding 承载（同一偏移推动两者，同步布局恒等）。
- * 命令只翻转档位（就地换块对象，state / history / 光标无损）；markdown 载体
- * （`- [ ] ` 后的 EM 前缀）由 toMarkdown 按 indentLevel 生成，随 onDocChanged 保存。
+ * **App 布局级缩进**：非列表块的缩进不走库的段落 TextIndent（其渲染量与理论公式
+ * 不符、且与 Row 外复选框图标无法对齐），而是记在 [BodyBlock.Text.indentLevel] 上，
+ * 渲染由 App 侧 start padding 承载（编辑器 / 复选框+编辑器）。命令只翻转档位
+ * （就地换块对象，state / history / 光标无损）；markdown 载体（段首 EM 前缀）由
+ * toMarkdown 按 indentLevel 生成，随 onDocChanged 保存。
  */
-class SetCheckboxIndentCommand(
+class SetBlockIndentCommand(
     val blockId: String,
     val oldLevel: Int,
     val newLevel: Int,
 ) : BodyBlocksCommand {
 
     override fun apply(controller: BodyBlocksController) {
-        controller.setCheckboxIndent(blockId, newLevel)
+        controller.setBlockIndent(blockId, newLevel)
         controller.afterCommandMutation()
     }
 
     override fun revert(controller: BodyBlocksController) {
-        controller.setCheckboxIndent(blockId, oldLevel)
+        controller.setBlockIndent(blockId, oldLevel)
         controller.afterCommandMutation()
     }
 }
@@ -1073,7 +1074,16 @@ class BodyBlocksController(
                                 indentLevel = wasIndentLevel,
                             )
                         } else {
-                            blocks += createTextBlock(trimmed)
+                            // 普通段（v2026-09-08）：缩进载体（EM，App 自管）解析后剥除，
+                            // state 恒干净无 TextIndent；渲染由 App 侧 start padding 承载。
+                            // 兼容旧数据（库 TextIndent 编码的 EM 形态相同，直接沿用）。
+                            val plainLevel = plainIndentLevelOfMd(trimmed)
+                            val plainContent = if (plainLevel > 1) {
+                                trimmed.dropLeadingPlainIndent()
+                            } else {
+                                trimmed
+                            }
+                            blocks += createTextBlock(plainContent, indentLevel = plainLevel)
                         }
                     }
                 }
@@ -1123,6 +1133,16 @@ class BodyBlocksController(
                                 .joinToString("\n\n")
                         }
                         checkboxMdPrefix(block.checked) + plainIndentPrefix(block.indentLevel) + body
+                    } else if (block.indentLevel > 1) {
+                        /**
+                         * 普通块带缩进（v2026-09-08）：缩进载体（EM 前缀）由 App 拼，
+                         * state 恒无 TextIndent——与复选框块同款载体，加载侧统一剥除。
+                         */
+                        val body = parseMarkdownSegments(raw)
+                            .filterIsInstance<MdSegment.TextSeg>()
+                            .map { it.md.trim('\n') }
+                            .joinToString("\n\n")
+                        plainIndentPrefix(block.indentLevel) + body
                     } else if (raw.isEmpty()) {
                         /** 空白块：用 NBSP 占位符序列化，使该段在 markdown 中非空，
                          * 避免与相邻图片块（块间以 `\n\n` 分隔）的「段间空段」混为一体，
@@ -1178,9 +1198,10 @@ class BodyBlocksController(
      *   每级 [LIST_LEVEL_INDENT_SP] ≈ 两字符；到顶后点击无效果）；减缩进 = 层级 -1，
      *   一级 = 「未缩进」底线，再减无效果（不退出列表）——列表归属由有序/无序按钮管理，
      *   缩进按钮只调层级（按有序按钮产生的一级 1./2. 不会被减少缩进退掉）。
-     * - 普通文本行（v2026-09-07 改版，取代旧"加缩进自动转列表"）：段首增删
-     *   [PLAIN_INDENT_STEP] 个全角空格（[PLAIN_INDENT_CHAR]，≈ 首行缩进两字符），
-     *   不产生列表 marker；层级封顶 [MAX_LIST_LEVEL]（与列表一致）。详见 [indentPlainBlock]。
+     * - 普通文本行 / 复选框块（v2026-09-08 统一为 App 布局级缩进）：就地换块对象的
+     *   [BodyBlock.Text.indentLevel]（[SetBlockIndentCommand]，不进库排版）；渲染由
+     *   App 侧 start padding 承载（每级 [LIST_LEVEL_INDENT_SP]），跨段左缘精确同列；
+     *   层级封顶 [MAX_LIST_LEVEL]（与列表一致）。
      *
      * 变更后调 [renumberOrderedBlocks]（层级感知位置语义）收敛编号；重编号对其他块的
      * 改写会使 markdown 变化 → observer 自动清全局 redo 栈（与本操作是真实编辑一致）。
@@ -1194,66 +1215,42 @@ class BodyBlocksController(
             ?: return
 
         /**
-         * 复选框块（v2026-09-08）：**App 布局级缩进**——不调库 setParagraphIndent
-         * （其 TextIndent 渲染量与 Row 外复选框图标无法对齐，真机实测约 2 倍），
-         * 改就地换块对象的 [BodyBlock.Text.indentLevel]（[SetCheckboxIndentCommand]，
-         * state / 块内 history / 光标无损）；渲染由 Row 内复选框与编辑器各自的
-         * start padding 承载（同一偏移推动两者，同步布局恒等，间距恒定）。
+         * **非列表块（普通文本块 + 复选框块，v2026-09-08 统一）：App 布局级缩进**——
+         * 不调库 setParagraphIndent（其 TextIndent 渲染量与理论公式不符，真机实测约
+         * 2 倍，且与 Row 外复选框图标无法对齐），改就地换块对象的
+         * [BodyBlock.Text.indentLevel]（[SetBlockIndentCommand]，state / 块内 history /
+         * 光标无损）；渲染由 App 侧 start padding 承载（编辑器普通块 / 复选框+编辑器
+         * 复选框块），缩进量对所有块统一 = (档位-1) × [LIST_LEVEL_INDENT_SP]，跨段
+         * 左缘精确同列（复选框标识左缘与相邻普通段落文本左缘对齐）。
          */
-        if (block.checked != null) {
+        if (!block.state.isList) {
             val newLevel = (block.indentLevel + delta).coerceIn(1, MAX_LIST_LEVEL)
             if (newLevel != block.indentLevel) {
-                executeAndPush(SetCheckboxIndentCommand(block.id, block.indentLevel, newLevel))
+                executeAndPush(SetBlockIndentCommand(block.id, block.indentLevel, newLevel))
             }
             return
         }
+
         val state = block.state
         val md = blockMarkdown(state)
 
-        if (!state.isList) {
-            /** 纯文本缩进（v2026-09-07）：段首全角空格 ±2 字符，不转列表（见 [indentPlainBlock]） */
-            indentPlainBlock(state, delta)
-        } else {
-            val level = listLevelOfMd(md)
-            val newLevel = level + delta
-            if (delta > 0 && newLevel > MAX_LIST_LEVEL) return
-            /** 一级 = 「未缩进」底线（用户 18:05 修正）：再减无效果、**不退出列表**——
-             *  列表归属由有序/无序按钮管理，按有序按钮产生的一级 1./2. 不会被减少缩进退掉 */
-            if (newLevel < 1) return
-            /**
-             * 空列表项（如回车产生的 "2. ␣"）同样正确缩进（用户 17:39 明确）：
-             * 层级变化会同时改变 marker 形态（2. → (2) → ① …）与段落缩进，视觉效果明确，
-             * 不可忽略。ZWSP 退格锚点在 raw 内容里，setListMarker 只换段落类型不碰内容，
-             * 锚点保持有效。
-             */
-            state.setListMarker(
-                level = newLevel,
-                number = orderedNumberOfMd(md) ?: 1,
-            )
-        }
-        renumberOrderedBlocks()
-    }
-
-    /**
-     * 纯文本整段缩进（v2026-09-07 第二版：段落属性，取代首版 EM 文本前缀首行缩进）：
-     * 层级 ±1 经库 API [RichTextState.setParagraphIndent] 直接改段落缩进属性
-     * （TextIndent firstLine = restLine = 步长 × (level-1)，**整段所有行左移**），
-     * 不产生列表 marker，不经 markdown 往返（与列表缩进 [indentFocusedBlock] 同款机制）。
-     *
-     * - **持久化**：库编码端把 level>1 编码为段首全角空格前缀（每级 2 个），解码端
-     *   （PARAGRAPH 钩子）剥前缀还原——保存/加载/拆块/合并全透明；
-     * - **字数统计不受影响**：EM 前缀只存在于 markdown 载体，不在段落文本里；
-     * - **撤销**：setParagraphIndent 默认记录块内 history，一次缩进/减少 = 一步；
-     * - **封顶**：[MAX_LIST_LEVEL] 级（与列表一致），到顶/到底后无效；
-     * - **光标**：updateParagraphType 自动校正（setListMarker 同款）。
-     *
-     * @param delta +1 = 增加缩进；-1 = 减少缩进
-     */
-    private fun indentPlainBlock(state: RichTextState, delta: Int) {
-        val level = plainIndentLevelOfMd(blockMarkdown(state))
+        val level = listLevelOfMd(md)
         val newLevel = level + delta
-        if (newLevel > MAX_LIST_LEVEL || newLevel < 1) return
-        state.setParagraphIndent(level = newLevel)
+        if (delta > 0 && newLevel > MAX_LIST_LEVEL) return
+        /** 一级 = 「未缩进」底线（用户 18:05 修正）：再减无效果、**不退出列表**——
+         *  列表归属由有序/无序按钮管理，按有序按钮产生的一级 1./2. 不会被减少缩进退掉 */
+        if (newLevel < 1) return
+        /**
+         * 空列表项（如回车产生的 "2. ␣"）同样正确缩进（用户 17:39 明确）：
+         * 层级变化会同时改变 marker 形态（2. → (2) → ① …）与段落缩进，视觉效果明确，
+         * 不可忽略。ZWSP 退格锚点在 raw 内容里，setListMarker 只换段落类型不碰内容，
+         * 锚点保持有效。
+         */
+        state.setListMarker(
+            level = newLevel,
+            number = orderedNumberOfMd(md) ?: 1,
+        )
+        renumberOrderedBlocks()
     }
 
     /**
@@ -1273,18 +1270,15 @@ class BodyBlocksController(
                 as? BodyBlock.Text
                 ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
                 ?: return false
-            /** 复选框块（v2026-09-08）：缩进走 App 布局级档位（读块对象 indentLevel，
+            /** 非列表块（v2026-09-08）：缩进走 App 布局级档位（读块对象 indentLevel，
              *  就地换块对象 = blocks 结构性写入，读它会随缩进重组刷新） */
-            if (block.checked != null) {
+            if (!block.state.isList) {
                 return block.indentLevel < MAX_LIST_LEVEL
             }
-            val state = block.state
-            state.annotatedString
-            if (!state.isList) {
-                /** 纯文本：缩进级数封顶判断（读 markdown 段首 EM 前缀，v2026-09-07 整段缩进） */
-                return plainIndentLevelOfMd(state.toMarkdown()) < MAX_LIST_LEVEL
-            }
-            return listLevelOfMd(state.toMarkdown()) < MAX_LIST_LEVEL
+            /** 列表块：setListMarker 只写 annotatedString（段落 type 非快照），
+             *  必须显式读它，到顶置灰才会刷新（v2026-09-07 同款坑） */
+            block.state.annotatedString
+            return listLevelOfMd(blockMarkdown(block.state)) < MAX_LIST_LEVEL
         }
 
     /**
@@ -1300,17 +1294,13 @@ class BodyBlocksController(
                 as? BodyBlock.Text
                 ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
                 ?: return false
-            /** 复选框块（v2026-09-08）：缩进走 App 布局级档位（读块对象 indentLevel） */
-            if (block.checked != null) {
+            /** 非列表块（v2026-09-08）：缩进走 App 布局级档位（读块对象 indentLevel） */
+            if (!block.state.isList) {
                 return block.indentLevel > 1
             }
-            val state = block.state
-            state.annotatedString
-            if (!state.isList) {
-                /** 纯文本：缩进级数 >1 即可减（读 markdown 段首 EM 前缀，v2026-09-07 整段缩进） */
-                return plainIndentLevelOfMd(state.toMarkdown()) > 1
-            }
-            return listLevelOfMd(state.toMarkdown()) > 1
+            /** 列表块：同上，显式读 annotatedString 保证刷新 */
+            block.state.annotatedString
+            return listLevelOfMd(blockMarkdown(block.state)) > 1
         }
 
     /**
@@ -1716,14 +1706,14 @@ class BodyBlocksController(
     }
 
     /**
-     * 缩进档位落盘（[SetCheckboxIndentCommand] 用，v2026-09-08）：就地替换块对象，
+     * 缩进档位落盘（[SetBlockIndentCommand] 用，v2026-09-08）：就地替换块对象，
      * **保持 state / focusRequester 引用不变**——不触发 observer 重启、不丢块内
      * 编辑历史、光标位置不动。markdown 载体随 onDocChanged 链路自动保存。
      */
-    internal fun setCheckboxIndent(blockId: String, indentLevel: Int) {
+    internal fun setBlockIndent(blockId: String, indentLevel: Int) {
         val idx = blocks.indexOfFirst { it.id == blockId }
         val block = blocks.getOrNull(idx)
-        if (block is BodyBlock.Text && block.checked != null && block.indentLevel != indentLevel) {
+        if (block is BodyBlock.Text && block.indentLevel != indentLevel) {
             blocks[idx] = BodyBlock.Text(
                 block.id,
                 block.state,
@@ -1877,18 +1867,15 @@ class BodyBlocksController(
         }
 
         /**
-         * 空纯文本缩进行回车（v2026-09-07，用户需求 1）= **减一级缩进**（原地），
-         * 不拆块——与内容起点退格（[dedentPlainBlockAtContentStart]）对称的 Word
-         * 标准行为：逐级返回，到无缩进时空行回车才正常新起一行（走下方主路径）。
-         * 硬键盘 text 无 \n；软键盘（text 已含 \n）由 [normalizeBlockParagraphs]
+         * 空纯文本缩进行回车（v2026-09-07，用户需求 1；v2026-09-08 改 App 档位）=
+         * **减一级缩进**（原地），不拆块——与内容起点退格（[dedentBlockAtContentStart]）
+         * 对称的 Word 标准行为：逐级返回，到无缩进时空行回车才正常新起一行（走下方
+         * 主路径）。硬键盘 text 无 \n；软键盘（text 已含 \n）由 [normalizeBlockParagraphs]
          * 的同款前置分支处理。
          */
-        if (!block.state.isList && isEffectivelyBlankLine(block.state)) {
-            val level = plainIndentLevelOfMd(blockMarkdown(block.state))
-            if (level > 1) {
-                dedentPlainBlockAtContentStart(block)
-                return
-            }
+        if (!block.state.isList && isEffectivelyBlankLine(block.state) && block.indentLevel > 1) {
+            dedentBlockAtContentStart(block)
+            return
         }
 
         /**
@@ -1940,23 +1927,19 @@ class BodyBlocksController(
          *   保证行中间拆分同样递增编号。
          */
         /**
-         * 源块纯文本缩进层级（1 = 无缩进；列表块恒 1，层级走 listForNewBlocks 体系）。
-         * 供行尾回车时新空行继承层级（v2026-09-07 用户需求 2）。
+         * 源块缩进档位（v2026-09-08，App 布局级，1 = 无缩进；列表块恒 1，层级走
+         * listForNewBlocks 体系）。拆出的两块继承（原为读库 EM 载体，载体已改块属性）。
          */
-        val srcPlainLevel = if (!block.state.isList) plainIndentLevelOfMd(blockMarkdown(block.state)) else 1
+        val srcIndentLevel = if (!block.state.isList) block.indentLevel else 1
 
         val rawAfterMd = if (afterStart < text.length)
             block.state.toMarkdown(TextRange(afterStart, text.length)).replace(ZWSP, "") else ""
         val afterMd = when {
-            rawAfterMd.isEmpty() -> {
-                /**
-                 * 行尾回车（v2026-09-07 用户需求 2）：纯文本缩进块的新行**继承源块层级**
-                 * （空内容 + 同级 EM 前缀 + ZWSP 退格锚点）；无缩进维持空 markdown。
-                 * 行中回车（rawAfterMd 非空）由 range 版编码自动携带前缀（段落 copy
-                 * 保留缩进属性），无需处理。
-                 */
-                if (srcPlainLevel > 1) plainIndentPrefix(srcPlainLevel) + ZWSP else ""
-            }
+            /**
+             * 行尾回车：afterMd 置空（缩进档位走块属性 [indentLevel] 继承，不写
+             * EM 载体进 state——v2026-09-08 起 EM 载体只在块边界拼/剥）。
+             */
+            rawAfterMd.isEmpty() -> ""
             isMarkerOnlyMarkdown(rawAfterMd) -> ""
             listForNewBlocks != null -> rawAfterMd.replaceFirst(ListMarkerPrefixRegex, "")
             else -> rawAfterMd
@@ -2043,25 +2026,14 @@ class BodyBlocksController(
         }
 
         /**
-         * 空纯文本缩进行回车（软键盘，v2026-09-07 用户需求 1）= 减一级缩进
-         * （与 [splitTextBlock] 的空缩进行分支同语义，逐级返回）。
-         * 空白口径用 [isEffectivelyBlankLine]（含 \n）：软键盘回车已在文本中插入 \n，
-         * 且 range 版编码会让空白行的 markdown 带 EM 前缀（非 blank），不能靠下方
-         * lastContent < 0 的空白退化分支兜底。
+         * 空纯文本缩进行回车（软键盘，v2026-09-07 用户需求 1；v2026-09-08 改 App 档位）
+         * = 减一级缩进（与 [splitTextBlock] 的空缩进行分支同语义，逐级返回）。
+         * 空白口径用 [isEffectivelyBlankLine]（含 \n）：软键盘回车已在文本中插入 \n。
          */
-        if (!block.state.isList && isEffectivelyBlankLine(block.state)) {
-            val level = plainIndentLevelOfMd(blockMarkdown(block.state))
-            if (level > 1) {
-                dedentPlainBlockAtContentStart(block)
-                return
-            }
+        if (!block.state.isList && isEffectivelyBlankLine(block.state) && block.indentLevel > 1) {
+            dedentBlockAtContentStart(block)
+            return
         }
-
-        /**
-         * 源块纯文本缩进层级（1 = 无缩进）：末尾空行/兜底空块继承层级用
-         * （v2026-09-07 用户需求 2，行内容块的层级由 range 版编码自动携带）。
-         */
-        val srcPlainLevel = if (!block.state.isList) plainIndentLevelOfMd(blockMarkdown(block.state)) else 1
 
         /** 列表续行：软键盘回车/粘贴多行拆块时，新行继承源块列表类型
          *  （空列表项已在上方前置分支退出列表/降级，不会走到这里）。 */
@@ -2156,13 +2128,12 @@ class BodyBlocksController(
             }
         }
         /** 末尾有连续空行 = 回车在段尾 → 保留一个空块作为新段落
-         *  （纯文本缩进块的新空行**继承源块层级**：同前缀 + ZWSP 锚点，v2026-09-07 需求 2） */
+         *  （缩进档位走块属性继承 v2026-09-08，tailMd 不再写 EM 载体进 state） */
         val trailingBlanks = ranges.size - 1 - lastContent
         if (trailingBlanks > 0 || inserted.isEmpty()) {
-            val tailMd = if (srcPlainLevel > 1) plainIndentPrefix(srcPlainLevel) + ZWSP else ""
             inserted += BlockSpec.TextSpec(
                 newBodyBlockId(),
-                tailMd,
+                "",
                 listForNewBlocks,
                 /** 源块为复选框时（v2026-09-07）：尾部空行 = 未勾选的空复选框项（继续待办） */
                 checked = if (srcChecked != null) false else null,
@@ -2583,41 +2554,17 @@ class BodyBlocksController(
     }
 
     /**
-     * 聚焦块是否为「有缩进的纯文本块」（level > 1）：软键盘 observer 判定
-     * 「内容起点退格（IME 删掉前导 ZWSP）」是否要转块首退格处理用。
-     */
-    fun isPlainIndentedBlock(block: BodyBlock.Text): Boolean =
-        !block.state.isList && plainIndentLevelOfMd(blockMarkdown(block.state)) > 1
-
-    /**
-     * 纯文本缩进块内容起点退格：减一级缩进（[onBackspaceAtStart] 的缩进分支实现）。
+     * 缩进块内容起点退格：减一级缩进（[onBackspaceAtStart] 的缩进分支实现，
+     * v2026-09-08 改 App 布局级）。
      *
-     * 走 [ReplaceBlocksCommand] 重建（一次命令一步撤销，revert 经 stash 完美还原）：
-     * 重建 markdown = **上一级 EM 前缀 + ZWSP + 内容**——ZWSP 让重建块保持「打字结构」
-     * （前导退格锚点），软键盘光标落内容起点时后续退格仍可继续逐级减缩进（否则
-     * setMarkdown 结构无 ZWSP，光标 0 的软键盘退格成为检测死角）。
-     *
-     * 软键盘场景 IME 已先删掉原前导 ZWSP（live 文本 = 纯内容），重建时补回；
-     * 硬键盘场景 live 文本未变（拦截在删除前），重建后 ZWSP 等价还原。
-     * 两种场景 live markdown 都无 ZWSP（[blockMarkdown] 剥除），构造公式统一：
-     * `EM×2×(level-2) + ZWSP + 内容`。
+     * 走 [SetBlockIndentCommand] 就地换块对象（indentLevel -1，state / history /
+     * 光标无损，一步撤销）——不再经 ReplaceBlocksCommand 重建（旧版 EM+ZWSP
+     * 重建方案随库 TextIndent 缩进一并废弃）。
      */
-    private fun dedentPlainBlockAtContentStart(block: BodyBlock.Text) {
-        val idx = blocks.indexOfFirst { it.id == block.id }
-        if (idx < 0) return
-        val level = plainIndentLevelOfMd(blockMarkdown(block.state))
-        if (level <= 1) return
-        val content = blockMarkdown(block.state).dropLeadingPlainIndent()
-        val dedentMd = plainIndentPrefix(level - 1) + ZWSP + content
+    private fun dedentBlockAtContentStart(block: BodyBlock.Text) {
+        if (block.indentLevel <= 1) return
         executeAndPush(
-            ReplaceBlocksCommand(
-                index = idx,
-                removedSpecs = listOf(textSpec(block)),
-                insertedSpecs = listOf(BlockSpec.TextSpec(block.id, dedentMd)),
-                focusBefore = currentFocusSpec(),
-                /** 重建块 raw = ZWSP + 内容：偏移 1 = ZWSP 之后 = 内容起点 */
-                focusAfter = FocusSpec(block.id, 1),
-            )
+            SetBlockIndentCommand(block.id, block.indentLevel, block.indentLevel - 1)
         )
     }
 
@@ -2652,17 +2599,14 @@ class BodyBlocksController(
         }
 
         /**
-         * 纯文本缩进块（v2026-09-07 整段缩进）：内容起点退格 = **减一级缩进**
-         * （Word/Notion 标准行为），不删字、不合并；一级（无缩进）时回落到
-         * 下方原合并/删除语义。硬键盘（内容起点拦截，文本未变）与软键盘
-         * （IME 已删前导 ZWSP，observer 检测转发）都汇聚到本入口。
+         * 缩进块（普通 / 复选框，v2026-09-08 App 布局级）：内容起点退格 =
+         * **减一级缩进**（Word/Notion 标准行为），不删字、不合并；一级（无缩进）
+         * 时回落到下方原合并/删除语义。硬键盘（内容起点拦截，文本未变）汇聚到
+         * 本入口；软键盘在非 ZWSP 前缀块上是检测死角（既有局限，与普通块一致）。
          */
-        if (!block.state.isList) {
-            val level = plainIndentLevelOfMd(blockMarkdown(block.state))
-            if (level > 1) {
-                dedentPlainBlockAtContentStart(block)
-                return
-            }
+        if (!block.state.isList && block.indentLevel > 1) {
+            dedentBlockAtContentStart(block)
+            return
         }
 
         if (idx == 0) {
@@ -2930,7 +2874,8 @@ private fun BlockTextItem(
     val state = block.state
 
     /**
-     * 复选框块的**布局级缩进偏移**（v2026-09-08）：`(indentLevel - 1) × LIST_LEVEL_INDENT_SP`。
+     * 复选框图标的**布局级缩进偏移**（v2026-09-08，仅复选框块非零）：
+     * `(indentLevel - 1) × LIST_LEVEL_INDENT_SP`。
      *
      * 缩进时复选框图标与文本必须同步位移——但库对纯文本段的 TextIndent 渲染量
      * 与理论公式不符（真机实测约 2 倍），Row 外图标的任何"估算/测量对齐"都不可靠
@@ -2946,6 +2891,20 @@ private fun BlockTextItem(
      * sp→dp 在组合期转换（LocalDensity）。
      */
     val checkboxIndentPadding = if (block.checked != null) {
+        with(LocalDensity.current) {
+            ((block.indentLevel - 1) * LIST_LEVEL_INDENT_SP).sp.toDp()
+        }
+    } else {
+        0.dp
+    }
+
+    /**
+     * **普通文本块**（checked == null）的布局级缩进偏移（v2026-09-08）：公式同上，
+     * 加在编辑器的 start padding 上——普通块没有复选框占位，缩进全靠编辑器自身
+     * padding（文本整体右移，每级 [LIST_LEVEL_INDENT_SP]）。列表块恒 0
+     * （缩进走库 setListMarker 的 TextIndent 体系）。
+     */
+    val plainBlockIndentPadding = if (block.checked == null && !block.state.isList) {
         with(LocalDensity.current) {
             ((block.indentLevel - 1) * LIST_LEVEL_INDENT_SP).sp.toDp()
         }
@@ -3028,17 +2987,6 @@ private fun BlockTextItem(
                     lastSelection.collapsed && lastSelection.start == 0
                 val emptyBackspace = lastText == ZWSP && text == ""
 
-                /**
-                 * 缩进块内容起点退格（软键盘，v2026-09-07 整段缩进）：IME 删掉了前导
-                 * ZWSP（光标在 ZWSP 之后 = 内容起点，删除后落到 0）。与 backspaceMerge
-                 * （光标 raw 0）互补——仅缩进块（level>1）转发块首退格（减一级缩进）；
-                 * 非缩进块维持现状（ZWSP 被静默删除，无感操作）。
-                 */
-                val plainIndentBackspace = lastText.startsWith(ZWSP) &&
-                    text == lastText.drop(1) &&
-                    lastSelection.collapsed && lastSelection.start == 1 &&
-                    controller.isPlainIndentedBlock(block)
-
                 if (!controller.replaying) {
                     /** 新编辑（非命令重放、非块内 history 恢复、非 IME 组合中间态）
                      *  → 全局 redo 栈失效。退格合并 / 空块删除路径不在此清——
@@ -3053,8 +3001,6 @@ private fun BlockTextItem(
                         /** 块首退格：文本恰好丢掉首字符 + 退格前光标折叠在 0
                          *  （用精确前缀匹配，避免拆块/撤销等其他缩文本场景误判） */
                         backspaceMerge -> controller.onBackspaceAtStart(block)
-                        /** 缩进块内容起点退格：转发块首退格入口（减一级缩进） */
-                        plainIndentBackspace -> controller.onBackspaceAtStart(block)
                         /** 空块软键盘退格：IME 在 ZWSP 唯一态调用 deleteSurroundingText
                          *  把 ZWSP 删掉，text 变 "" → 走 onBackspaceAtStart（与硬键盘同路径） */
                         emptyBackspace -> controller.onBackspaceAtStart(block)
@@ -3117,13 +3063,24 @@ private fun BlockTextItem(
          * （[checkboxIndentPadding]），与编辑器同偏移推动 → 同步位移、间距恒定；
          * top padding 让 18dp 框体与第一行文字中线对齐。
          */
+        /**
+         * 复选框标识（v2026-09-07）：checked != null（复选框块）时渲染在编辑器左侧。
+         * 点击切换勾选（[BodyBlocksController.toggleCheckboxChecked]，一步一撤销，
+         * markdown 前缀 `- [ ] ` ↔ `- [x] ` 随 onDocChanged 链路自动保存）；
+         * 锁定态不可点击。
+         *
+         * **左缘对齐（v2026-09-08）**：start padding = 16dp（= 编辑器 contentPadding，
+         * 即普通段落文本左缘）+ 布局级缩进偏移 [checkboxIndentPadding]——复选框标识
+         * 左缘与普通段落文本左缘同列（缩进档位相同时精确对齐）；top padding 让 18dp
+         * 框体与第一行文字中线对齐。复选框右移同时经 Row 布局自然推动编辑器。
+         */
         if (block.checked != null) {
             CheckboxBoxIcon(
                 checked = block.checked,
                 onClick = if (isLocked) null else ({ controller.toggleCheckboxChecked(block.id) }),
                 modifier = Modifier
                     .offset(x = alignmentOffset)
-                    .padding(start = 2.dp + checkboxIndentPadding, top = 2.dp),
+                    .padding(start = 16.dp + checkboxIndentPadding, top = 2.dp),
             )
         }
 
@@ -3131,6 +3088,7 @@ private fun BlockTextItem(
             state = state,
             modifier = Modifier
                 .weight(1f)
+                .padding(start = plainBlockIndentPadding)
                 .heightIn(
                     min = if (controller.blocks.size == 1 && isEffectivelyEmpty(state)) {
                         160.dp
