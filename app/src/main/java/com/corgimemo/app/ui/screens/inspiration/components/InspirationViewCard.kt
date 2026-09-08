@@ -443,11 +443,12 @@ private fun InspirationBodyRichText(
                          */
                         val (checked, bodyMd) = checkboxInfo
                         /**
-                         * 跟随缩进（v2026-09-07）：详情页正文固定 15sp，按段落自身的
-                         * 缩进层级换算复选框偏移——与编辑页视觉一致（编辑页缩进后，
-                         * 详情页的复选框标识同样跟着右移）。
+                         * 跟随缩进（v2026-09-07）：按段落自身缩进层级 × 每级 30sp
+                         * （= LIST_LEVEL_INDENT_SP，与详情页 state.config 的列表缩进一致、
+                         * 也等于库渲染 TextIndent 的步长）换算偏移，与编辑页视觉一致，
+                         * 且复选框与文本间距恒定。
                          */
-                        val indentDp = checkboxIndentDp(bodyMarkdown = bodyMd, fontSize = 15.sp)
+                        val indentDp = checkboxIndentDp(bodyMarkdown = bodyMd)
                         Row(verticalAlignment = Alignment.Top) {
                             CheckboxBoxIcon(
                                 checked = checked,

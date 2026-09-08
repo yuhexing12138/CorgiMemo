@@ -19,9 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 
 /**
@@ -32,33 +30,31 @@ private val CheckboxListMarkerRegex = Regex("^\\s*([-*+]|\\d+[.)])\\s")
 
 /**
  * 复选框标识的**跟随缩进宽度**（v2026-09-07）：点击「增加 / 减少缩进」时，
- * 文本段的缩进由库在文本层实现——纯文本段是段首全角空格（库编解码透明处理）、
- * 列表段是段落 textIndent（`LIST_LEVEL_INDENT_SP` × (层级-1)），而复选框标识是
- * Row 内的独立组件、**不会**随文本移动。本函数按段落自身缩进层级换算等宽偏移，
- * 由调用方作为 start padding 加到复选框上，使标识与文本第一行一起右移。
+ * 文本段的缩进由库以**段落样式 TextIndent** 实现（整段左移），而复选框标识是
+ * Row 内的独立组件、不参与文本排版 → 用本函数换算等宽偏移加到复选框上，
+ * 使标识与文本**同步位移、两者间距保持不变**。
  *
- * 每级宽度：
- * - 列表段：[LIST_LEVEL_INDENT_SP]（30sp，与库列表缩进公式 base = indent × (level-1) 一致）；
- * - 纯文本段：[PLAIN_INDENT_STEP]（2）× 字号（EM 空格 U+2003 宽度 = 1em = 字号），
- *   与段首实际插入的两个全角空格等宽；字号未指定时按 15sp 兜底。
+ * **每级宽度 = [perLevelSp]（默认 [LIST_LEVEL_INDENT_SP] = 30sp）**，依据库的真实公式：
+ * - 纯文本段（`DefaultParagraph`）：`TextIndent(firstLine = restLine = indent × (level-1))`，
+ *   步长 `indent = config.orderedListIndent`（App 配 [LIST_LEVEL_INDENT_SP]）；
+ * - 列表段（`OrderedList` / `UnorderedList`）：同为 `base = indent × (level-1)`。
+ *
+ * ⚠️ 坑（v2026-09-07 首版踩过）：**不能用段首全角空格（U+2003）个数 × 字号估算**——
+ * 那两个 EM 空格只是 **markdown 持久化载体**（编码端输出 / 解码端剥除还原 level），
+ * 并非渲染出来的字符，与字号无关；按字号估算会与文本实际缩进量不等，缩进层级
+ * 越深偏差越大（表现为复选框与文本间距逐渐变化）。
  *
  * @param bodyMarkdown 复选框段**剥掉复选框前缀后**的内容 markdown
  *   （编辑页 = 块 markdown；详情页 = 段落去掉 `- [ ] ` / `- [x] ` 后的正文）
- * @param fontSize 正文字号（编辑页取 LocalContentTypography.bodyLarge，详情页固定 15sp）
+ * @param perLevelSp 每级缩进宽度（sp）：编辑页传块的 `state.config.orderedListIndent`
+ *   以严格对齐库实际值；详情页默认 [LIST_LEVEL_INDENT_SP]（与详情页 config 一致）
  * @return 复选框应右移的宽度（一级无缩进返回 0dp）
  */
 @Composable
-internal fun checkboxIndentDp(bodyMarkdown: String, fontSize: TextUnit): Dp {
+internal fun checkboxIndentDp(bodyMarkdown: String, perLevelSp: Int = LIST_LEVEL_INDENT_SP): Dp {
     val isList = CheckboxListMarkerRegex.containsMatchIn(bodyMarkdown)
     val level = if (isList) listLevelOfMd(bodyMarkdown) else plainIndentLevelOfMd(bodyMarkdown)
     if (level <= 1) return 0.dp
-    val perLevelSp = if (isList) {
-        LIST_LEVEL_INDENT_SP.toFloat()
-    } else {
-        /** EM 空格宽度 = 1em = 字号；TextUnit 未指定时按正文 15sp 兜底 */
-        val sizeSp = if (fontSize.isSpecified) fontSize.value else 15f
-        sizeSp * PLAIN_INDENT_STEP
-    }
     return with(LocalDensity.current) { ((level - 1) * perLevelSp).sp.toDp() }
 }
 

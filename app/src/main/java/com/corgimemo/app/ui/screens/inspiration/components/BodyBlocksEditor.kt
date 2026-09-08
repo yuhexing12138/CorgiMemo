@@ -2905,9 +2905,14 @@ private fun BlockTextItem(
              * 不跟随（与 canIncreaseIndent「到顶不置灰」同款坑）。
              */
             state.annotatedString
+            /**
+             * 每级缩进宽度直接取块 state 的列表缩进配置（= 库渲染 TextIndent 的步长），
+             * 与文本实际缩进量**严格相等** → 复选框与文本同步位移、间距恒定。
+             * （不可用段首 EM 空格 × 字号估算：EM 只是持久化载体，不参与渲染。）
+             */
             val indentDp = checkboxIndentDp(
                 bodyMarkdown = controller.blockMarkdown(state),
-                fontSize = LocalContentTypography.current.bodyLarge.fontSize,
+                perLevelSp = state.config.orderedListIndent,
             )
             CheckboxBoxIcon(
                 checked = block.checked,
