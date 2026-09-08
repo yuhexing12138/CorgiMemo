@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -2952,6 +2953,22 @@ private fun BlockTextItem(
         0.dp
     }
 
+    /** 组合期捕获 density（对齐跟随的 onTextLayout 回调内不可读 CompositionLocal） */
+    val density = LocalDensity.current
+
+    /**
+     * 复选框跟随**对齐**的偏移（v2026-09-08）：对齐按钮改变段落 textAlign 后，
+     * 文本行的实际左缘随之变化（Start = 0 / Center = 居中偏移 / End = 靠右偏移），
+     * 由 [RichTextEditor.onTextLayout] 实测 `getLineLeft(0)` 回写，复选框用
+     * `offset`（绘制偏移，不影响布局）同步跟随；toggle 取消对齐后自动归 0。
+     *
+     * 说明：textAlign 的行盒测量与 TextIndent **机制不同**——前者由排版的对齐
+     * 处理、行盒随对齐整体移动（getLineLeft 反映真实偏移）；后者只移字形起点
+     * （getLineLeft 恒 0，缩进场景不可用、已由布局级缩进替代）。
+     * 初值 0dp（默认左对齐），onTextLayout 首次布局后即刷新。
+     */
+    var alignmentOffset by remember(block.state) { mutableStateOf(0.dp) }
+
     /** 聚焦到本块（拆分 / 合并 / 插图 / 撤销后由 controller.pendingFocus 驱动） */
     LaunchedEffect(controller.pendingFocus) {
         val pf = controller.pendingFocus ?: return@LaunchedEffect
@@ -3104,7 +3121,9 @@ private fun BlockTextItem(
             CheckboxBoxIcon(
                 checked = block.checked,
                 onClick = if (isLocked) null else ({ controller.toggleCheckboxChecked(block.id) }),
-                modifier = Modifier.padding(start = 2.dp + checkboxIndentPadding, top = 2.dp),
+                modifier = Modifier
+                    .offset(x = alignmentOffset)
+                    .padding(start = 2.dp + checkboxIndentPadding, top = 2.dp),
             )
         }
 
@@ -3226,6 +3245,18 @@ private fun BlockTextItem(
                 disabledIndicatorColor = Color.Transparent,
                 errorIndicatorColor = Color.Transparent,
             ),
+            onTextLayout = { textLayoutResult ->
+                /**
+                 * 复选框跟随对齐（v2026-09-08）：实测文本**首行左缘**并回写。
+                 * textAlign（Start/Center/End）由排版的对齐处理、行盒随对齐整体
+                 * 移动，`getLineLeft(0)` 反映真实偏移（与 TextIndent 只移字形起点的
+                 * 机制不同，后者 getLineLeft 恒 0）。对齐变化触发重排 → 回调刷新 →
+                 * 复选框同步。非复选框块跳过。density 已在组合期捕获。
+                 */
+                if (block.checked != null) {
+                    alignmentOffset = with(density) { textLayoutResult.getLineLeft(0).toDp() }
+                }
+            },
         )
     }
 }
