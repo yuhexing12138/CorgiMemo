@@ -27,7 +27,10 @@ import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -36,7 +39,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -407,6 +412,8 @@ private fun InspirationBodyRichText(
      * 丢弃——图片由卡面独立图片区展示）、其余段落照常渲染。
      */
     val paragraphs = remember(contentFormat) { contentFormat.split("\n\n") }
+    /** 组合期捕获 density（复选框段的 onTextLayout 回调内不可读 CompositionLocal，v2026-09-07） */
+    val density = LocalDensity.current
     Column(modifier = modifier) {
         paragraphs.forEachIndexed { pIdx, rawPara ->
             val para = rawPara.trim('\n')
@@ -443,12 +450,12 @@ private fun InspirationBodyRichText(
                          */
                         val (checked, bodyMd) = checkboxInfo
                         /**
-                         * 跟随缩进（v2026-09-07）：按段落自身缩进层级 × 每级 30sp
-                         * （= LIST_LEVEL_INDENT_SP，与详情页 state.config 的列表缩进一致、
-                         * 也等于库渲染 TextIndent 的步长）换算偏移，与编辑页视觉一致，
-                         * 且复选框与文本间距恒定。
+                         * 跟随缩进（v2026-09-07，测量级同步）：复选框偏移 = 文本首行
+                         * **实测左缘**（[InspirationBodyParagraph] 的 onTextLayout 回写
+                         * `getLineLeft(0)`，即库渲染的实际缩进量）——与文本同步位移、
+                         * 间距恒定；[checkboxIndentDp] 公式值仅作首帧初值，权威值恒为实测。
                          */
-                        val indentDp = checkboxIndentDp(bodyMarkdown = bodyMd)
+                        var indentDp by remember(bodyMd) { mutableStateOf(checkboxIndentDp(bodyMd)) }
                         Row(verticalAlignment = Alignment.Top) {
                             CheckboxBoxIcon(
                                 checked = checked,
@@ -469,6 +476,9 @@ private fun InspirationBodyRichText(
                                 fontFamily = fontFamily,
                                 dimmed = checked,
                                 modifier = Modifier.weight(1f),
+                                onTextLayout = { textLayoutResult ->
+                                    indentDp = with(density) { textLayoutResult.getLineLeft(0).toDp() }
+                                },
                             )
                         }
                     } else {
@@ -501,6 +511,8 @@ private val InspirationImageSegmentRegex = Regex("""^!\[[^\]]*\]\([^)]+\)$""")
  * @param fontFamily 本条灵感记录的字体族。
  * @param modifier 布局参数（复选框段的 Row 内 weight(1f) 用，v2026-09-07 新增）。
  * @param dimmed 勾选态文字视觉降级（v2026-09-07 新增，复选框段勾选时传入；基础色降透明度）。
+ * @param onTextLayout 文本布局回调（v2026-09-07 新增：复选框段用它实测首行左缘，
+ *   驱动复选框跟随缩进；透传给 [RichText]）。
  */
 @Composable
 private fun InspirationBodyParagraph(
@@ -508,6 +520,7 @@ private fun InspirationBodyParagraph(
     fontFamily: FontFamily,
     modifier: Modifier = Modifier,
     dimmed: Boolean = false,
+    onTextLayout: ((TextLayoutResult) -> Unit)? = null,
 ) {
     val richTextState = rememberRichTextState()
     /**
@@ -529,6 +542,7 @@ private fun InspirationBodyParagraph(
     RichText(
         state = richTextState,
         modifier = modifier,
+        onTextLayout = { onTextLayout?.invoke(it) },
         // 基础样式与改造前纯 Text 完全一致：未设置排版的字符回落下列值，
         // 已设 fontSize/color 的字符以 span 内联值为准（覆盖基础样式）。
         fontFamily = fontFamily,

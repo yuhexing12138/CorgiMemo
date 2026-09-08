@@ -29,26 +29,21 @@ import androidx.compose.ui.unit.sp
 private val CheckboxListMarkerRegex = Regex("^\\s*([-*+]|\\d+[.)])\\s")
 
 /**
- * 复选框标识的**跟随缩进宽度**（v2026-09-07）：点击「增加 / 减少缩进」时，
- * 文本段的缩进由库以**段落样式 TextIndent** 实现（整段左移），而复选框标识是
- * Row 内的独立组件、不参与文本排版 → 用本函数换算等宽偏移加到复选框上，
- * 使标识与文本**同步位移、两者间距保持不变**。
+ * 复选框跟随缩进的**首帧初值公式**（v2026-09-07）：按段落自身缩进层级换算预估偏移。
  *
- * **每级宽度 = [perLevelSp]（默认 [LIST_LEVEL_INDENT_SP] = 30sp）**，依据库的真实公式：
- * - 纯文本段（`DefaultParagraph`）：`TextIndent(firstLine = restLine = indent × (level-1))`，
- *   步长 `indent = config.orderedListIndent`（App 配 [LIST_LEVEL_INDENT_SP]）；
- * - 列表段（`OrderedList` / `UnorderedList`）：同为 `base = indent × (level-1)`。
+ * ⚠️ **这只是初值近似**——真机实测发现库对纯文本段的实际渲染缩进量与该公式
+ * 不符（约为公式 2 倍，内部机制待查），因此**权威值恒为 `onTextLayout` 实测**
+ * （`TextLayoutResult.getLineLeft(0)`，编辑页 [RichTextEditor] / 详情页 [RichText]
+ * 均已接线）。本函数只在文本首次布局前提供一个接近正确的初值，避免复选框闪跳；
+ * onTextLayout 首次回调后即被覆盖。
  *
- * ⚠️ 坑（v2026-09-07 首版踩过）：**不能用段首全角空格（U+2003）个数 × 字号估算**——
- * 那两个 EM 空格只是 **markdown 持久化载体**（编码端输出 / 解码端剥除还原 level），
- * 并非渲染出来的字符，与字号无关；按字号估算会与文本实际缩进量不等，缩进层级
- * 越深偏差越大（表现为复选框与文本间距逐渐变化）。
+ * 公式（近似）：每级 = [perLevelSp]（默认 [LIST_LEVEL_INDENT_SP] = 30sp，即库
+ * `DefaultParagraph`/列表段落 TextIndent 的理论步长）；层级判定：列表段用
+ * [listLevelOfMd]，纯文本段用 [plainIndentLevelOfMd]。
  *
  * @param bodyMarkdown 复选框段**剥掉复选框前缀后**的内容 markdown
- *   （编辑页 = 块 markdown；详情页 = 段落去掉 `- [ ] ` / `- [x] ` 后的正文）
- * @param perLevelSp 每级缩进宽度（sp）：编辑页传块的 `state.config.orderedListIndent`
- *   以严格对齐库实际值；详情页默认 [LIST_LEVEL_INDENT_SP]（与详情页 config 一致）
- * @return 复选框应右移的宽度（一级无缩进返回 0dp）
+ * @param perLevelSp 每级缩进的理论宽度（sp）；编辑页传 `state.config.orderedListIndent`
+ * @return 复选框的首帧预估偏移（一级无缩进返回 0dp）
  */
 @Composable
 internal fun checkboxIndentDp(bodyMarkdown: String, perLevelSp: Int = LIST_LEVEL_INDENT_SP): Dp {

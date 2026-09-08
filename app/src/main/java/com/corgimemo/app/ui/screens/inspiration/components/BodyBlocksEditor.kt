@@ -40,6 +40,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import com.corgimemo.app.animation.HapticFeedbackManager
@@ -2751,6 +2752,31 @@ private fun BlockTextItem(
 ) {
     val state = block.state
 
+    /**
+     * 复选框块文本首行的**实测左缘**（dp，[RichTextEditor.onTextLayout] 回写）。
+     *
+     * 缩进时复选框要与文本同步位移——但库对纯文本段的缩进渲染量无法从外部公式
+     * 可靠推算（v2026-09-07 真机实测：按 `config.orderedListIndent × (层级-1)` 估算
+     * 与实际渲染不符，文本实际位移约为公式的 2 倍），故改为**测量级同步**：
+     * `TextLayoutResult.getLineLeft(0)` 就是库渲染出的首行左缘（= 实际缩进量 px），
+     * 复选框按它偏移，无论库内部公式如何，两者位移量恒等、间距恒定。
+     *
+     * 初值用 [checkboxIndentDp] 公式近似（大多数场景公式正确），onTextLayout
+     * 首次布局后即以实测值覆盖——公式仅影响首帧，权威值恒为实测。
+     */
+    var measuredCheckboxIndent by remember(block.state) {
+        mutableStateOf(
+            if (block.checked != null) {
+                checkboxIndentDp(
+                    bodyMarkdown = controller.blockMarkdown(state),
+                    perLevelSp = state.config.orderedListIndent,
+                )
+            } else {
+                0.dp
+            }
+        )
+    }
+
     /** 聚焦到本块（拆分 / 合并 / 插图 / 撤销后由 controller.pendingFocus 驱动） */
     LaunchedEffect(controller.pendingFocus) {
         val pf = controller.pendingFocus ?: return@LaunchedEffect
@@ -2891,33 +2917,21 @@ private fun BlockTextItem(
     Row(verticalAlignment = Alignment.Top) {
         BlockDragHandle(dragHandleModifier)
 
+        /** 组合期捕获 density（onTextLayout 回调内不可读 CompositionLocal，v2026-09-07） */
+        val density = LocalDensity.current
+
         /**
          * 复选框标识（v2026-09-07）：checked != null（复选框块）时渲染在编辑器左侧。
          * 点击切换勾选（[BodyBlocksController.toggleCheckboxChecked]，一步一撤销，
          * markdown 前缀 `- [ ] ` ↔ `- [x] ` 随 onDocChanged 链路自动保存）；
-         * 锁定态不可点击；top padding 让 18dp 框体与第一行文字中线对齐。
+         * 锁定态不可点击；偏移 = 文本首行实测左缘（[measuredCheckboxIndent]），
+         * 与文本同步位移、间距恒定；top padding 让 18dp 框体与第一行文字中线对齐。
          */
         if (block.checked != null) {
-            /**
-             * 跟随缩进（v2026-09-07）：**必须显式读 annotatedString 注册快照依赖**——
-             * setParagraphIndent / setListMarker 换层级只写 annotatedString（段落 type
-             * 是普通 var，非快照状态），不读它则缩进层级变化不会触发重组、复选框
-             * 不跟随（与 canIncreaseIndent「到顶不置灰」同款坑）。
-             */
-            state.annotatedString
-            /**
-             * 每级缩进宽度直接取块 state 的列表缩进配置（= 库渲染 TextIndent 的步长），
-             * 与文本实际缩进量**严格相等** → 复选框与文本同步位移、间距恒定。
-             * （不可用段首 EM 空格 × 字号估算：EM 只是持久化载体，不参与渲染。）
-             */
-            val indentDp = checkboxIndentDp(
-                bodyMarkdown = controller.blockMarkdown(state),
-                perLevelSp = state.config.orderedListIndent,
-            )
             CheckboxBoxIcon(
                 checked = block.checked,
                 onClick = if (isLocked) null else ({ controller.toggleCheckboxChecked(block.id) }),
-                modifier = Modifier.padding(start = 2.dp + indentDp, top = 2.dp),
+                modifier = Modifier.padding(start = 2.dp + measuredCheckboxIndent, top = 2.dp),
             )
         }
 
@@ -3039,6 +3053,18 @@ private fun BlockTextItem(
                 disabledIndicatorColor = Color.Transparent,
                 errorIndicatorColor = Color.Transparent,
             ),
+            onTextLayout = { textLayoutResult ->
+                /**
+                 * 复选框跟随缩进（v2026-09-07）：实测文本首行左缘并回写。
+                 * `getLineLeft(0)` = 库渲染出的首行左缘（含 TextIndent 的实际缩进量，
+                 * px，相对文本区、不含 contentPadding）；缩进层级变化必然触发文本
+                 * 重排 → 本回调刷新 → 复选框同步位移。非复选框块跳过（无人读取，
+                 * 避免无谓重组）。density 须在组合期捕获（回调内不可读 CompositionLocal）。
+                 */
+                if (block.checked != null) {
+                    measuredCheckboxIndent = with(density) { textLayoutResult.getLineLeft(0).toDp() }
+                }
+            },
         )
     }
 }
