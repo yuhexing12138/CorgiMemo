@@ -1664,6 +1664,12 @@ class BodyBlocksController(
         val idx = blocks.indexOfFirst { it.id == blockId }
         if (idx < 0 || blocks.getOrNull(idx) !is BodyBlock.Divider) return
         val emptySpec = BlockSpec.TextSpec(newBodyBlockId(), "")
+        /**
+         * 焦点迁移期保持光标隐藏（v2026-09-08）：删除后焦点要从"下一行"迁到这条
+         * 新空行，迁移跨帧完成；若此刻就让光标可见，会先在下一行行首闪一下再跳过来。
+         * 由 [onBlockFocused] 在焦点落定后解除（[hideCursorUntilFocusBlockId]）。
+         */
+        hideCursorUntilFocusBlockId = emptySpec.id
         executeAndPush(
             ReplaceBlocksCommand(
                 index = idx,
@@ -2601,6 +2607,35 @@ class BodyBlocksController(
     }
 
     /**
+     * 「焦点迁移期间保持光标隐藏」的目标块 id（v2026-09-08 光标跳变修复）。
+     *
+     * **问题**：删除分割线后焦点要从"下一行"迁到"新空行"，但焦点迁移是**异步**的
+     * （[focusSpec] 只写 [pendingFocus]，真正的 `requestFocus` 由块 Composable 的
+     * [LaunchedEffect] 在下一帧执行）；而 [afterCommandMutation] 是**同步**的——
+     * 它在命令 apply 的末尾就把选中态清掉、让 `cursorColor` 恢复不透明。于是中间
+     * 那一帧焦点仍在旧块上、光标却已可见 ⇒ 用户看到"光标在下一行行首亮一下，
+     * 再跳到分割线行行首"的跳变。
+     *
+     * **解法**：删除时把新块 id 记在这里，光标隐藏状态延续到**焦点真正落定**
+     * （[onBlockFocused]）才解除——整段迁移期光标都不可见，落定后在目标行首
+     * 直接出现，视觉上不跳。
+     *
+     * 兜底：[isCursorVisuallyHidden] 会校验该块是否还存在于 [blocks]
+     * （块被移除则自动恢复），[onBlockFocused] 亦无条件解除（任何块获焦都恢复）。
+     */
+    internal var hideCursorUntilFocusBlockId by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * 光标是否应**视觉隐藏**（[BlockTextItem] 的 `cursorColor` 判据）：
+     * 点选非文本块期间（[selectedAnchorTextId]）或焦点迁移期间
+     * （[hideCursorUntilFocusBlockId]，且目标块仍在列表中）。
+     */
+    val isCursorVisuallyHidden: Boolean
+        get() = selectedAnchorTextId != null ||
+            (hideCursorUntilFocusBlockId?.let { id -> blocks.any { it.id == id } } == true)
+
+    /**
      * 捕获当前焦点落点（Command 构造时的 focusBefore / focusAfter）。
      *
      * **返回原始坐标（raw offset，直接索引 [RichTextState.annotatedString.text]）**。
@@ -2907,6 +2942,12 @@ class BodyBlocksController(
      */
     fun onBlockFocused(blockId: String) {
         focusedBlockId = blockId
+        /**
+         * 焦点迁移落定 ⇒ 解除"迁移期隐藏光标"（[hideCursorUntilFocusBlockId]）：
+         * 无条件解除——无论焦点最终落在预期目标还是别的块，光标都该在**新位置**
+         * 显示出来，绝不该留在旧位置闪现。
+         */
+        if (hideCursorUntilFocusBlockId != null) hideCursorUntilFocusBlockId = null
         val anchor = selectedAnchorTextId
         if (anchor != null) {
             if (blockId != anchor) clearBlockSelection()
@@ -3397,10 +3438,14 @@ private fun BlockTextItem(
              * "聚焦但光标透明"两全：TextField 仍持有输入连接（键盘不收），只是看不见
              * 光标；按退格由 [BodyBlocksController.onBackspaceAtStart] 接管删除分割线。
              * 取消选中 / 编辑其它块 / 开始输入都会清掉选中态，光标随即恢复。
+             *
+             * 判据用 [BodyBlocksController.isCursorVisuallyHidden]：除"点选态"外还覆盖
+             * **焦点迁移期**（删除分割线后焦点从下一行迁到新空行的跨帧间隙），
+             * 避免光标先在旧位置闪一下再跳走（v2026-09-08 跳变修复）。
              */
             colors = RichTextEditorDefaults.richTextEditorColors(
                 containerColor = Color.Transparent,
-                cursorColor = if (controller.selectedAnchorTextId != null) {
+                cursorColor = if (controller.isCursorVisuallyHidden) {
                     Color.Transparent
                 } else {
                     Color(0xFFFF9A5C)
