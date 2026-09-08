@@ -330,14 +330,15 @@ class BodyBlocksControllerTest {
         assertEquals("光标应落在 I. marker 之后而非左侧", 3, focus?.offset)
     }
 
-    // ==================== 纯文本整段缩进（v2026-09-07 第二版：段落属性 + EM markdown 载体） ====================
+    // ==================== 纯文本整段缩进（v2026-09-08 第三版：App 布局级档位 + EM markdown 载体） ====================
 
     /** 全角空格（U+2003 EM SPACE）：整段缩进的 markdown 编码载体（段首前缀，每级 2 个） */
     private val em = '\u2003'
 
     /**
-     * 纯文本块按「增加缩进」：缩进为**段落属性**（库 setParagraphIndent，整段左移），
-     * **不转无序列表**、**不污染段落文本**（EM 只出现在 markdown 载体里）。
+     * 纯文本块按「增加缩进」：缩进为 **App 布局级档位**（v2026-09-08，块对象
+     * indentLevel，不进库排版），**不转无序列表**、**不污染段落文本**
+     * （EM 只出现在 controller.toMarkdown() 拼接的载体里，state 级 blockMarkdown 无 EM）。
      */
     @Test
     fun `纯文本按缩进整段缩进不转列表`() {
@@ -347,15 +348,14 @@ class BodyBlocksControllerTest {
 
         controller.indentFocusedBlock(+1)
         assertTrue("纯文本缩进不应转列表", !a.state.isList)
-        assertEquals("缩进是段落属性，不应污染段落文本", "\u200B一二", a.state.annotatedString.text)
-        // markdown 载体：段首 EM 前缀（每级 2 个）+ 内容（ZWSP 被剥）
-        assertEquals("${em}${em}一二", controller.blockMarkdown(a.state))
+        assertEquals("缩进是布局档位，不应污染段落文本", "\u200B一二", a.state.annotatedString.text)
+        assertEquals("state 级 markdown 不应含载体", "一二", controller.blockMarkdown(a.state))
+        // markdown 载体（controller.toMarkdown）：段首 EM 前缀（每级 2 个）+ 内容（ZWSP 被剥）
+        assertEquals("${em}${em}一二", controller.toMarkdown())
     }
 
     /**
-     * 纯文本缩进可撤销：块内 history 回退后 markdown 载体的 EM 前缀消失。
-     * （不锁定 undo 次数：库的 history 合并策略可能把缩进与相邻操作并组，故循环回退
-     * 直到 EM 前缀消失——对合并粒度鲁棒，只验证"缩进可被撤销"这一行为契约。）
+     * 纯文本缩进可撤销：命令栈回退后 indentLevel 归位、toMarkdown 载体消失。
      */
     @Test
     fun `纯文本缩进可撤销`() {
@@ -363,15 +363,11 @@ class BodyBlocksControllerTest {
         "一二".forEach { a.state.addTextAfterSelection(it.toString()) }
         controller.onBlockFocused(a.id)
         controller.indentFocusedBlock(+1)
-        assertEquals("${em}${em}一二", controller.blockMarkdown(a.state))
+        assertEquals("${em}${em}一二", controller.toMarkdown())
 
-        var undoCount = 0
-        while (controller.blockMarkdown(a.state).contains(em) && controller.canUndo) {
-            controller.undo()
-            undoCount++
-        }
-        assertTrue("缩进应至少可撤销一次", undoCount >= 1)
-        assertTrue("撤销后 markdown 不应残留缩进载体", !controller.blockMarkdown(a.state).contains(em))
+        controller.undo()
+        assertEquals("撤销后缩进载体应消失", "一二", controller.toMarkdown())
+        assertEquals("撤销后 indentLevel 应归位", 1, a.indentLevel)
         assertEquals("\u200B一二", a.state.annotatedString.text)
     }
 
@@ -385,48 +381,53 @@ class BodyBlocksControllerTest {
         "内容".forEach { a.state.addTextAfterSelection(it.toString()) }
         controller.onBlockFocused(a.id)
 
+        fun levelOf() = (controller.blocks.first() as Text).indentLevel
+
         repeat(6) { controller.indentFocusedBlock(+1) }
-        assertEquals(12, controller.blockMarkdown(a.state).takeWhile { it == em }.length)
+        assertEquals(6, levelOf())
+        assertEquals(12, controller.toMarkdown().takeWhile { it == em }.length)
         assertTrue("6 级到顶后按钮应置灰", !controller.canIncreaseIndent)
         controller.indentFocusedBlock(+1)
-        assertEquals("到顶后再按应无效", 12, controller.blockMarkdown(a.state).takeWhile { it == em }.length)
+        assertEquals("到顶后再按应无效", 6, levelOf())
 
         controller.indentFocusedBlock(-1)
-        assertEquals(10, controller.blockMarkdown(a.state).takeWhile { it == em }.length)
+        assertEquals(5, levelOf())
+        assertEquals(10, controller.toMarkdown().takeWhile { it == em }.length)
         assertTrue(controller.canIncreaseIndent)
         repeat(5) { controller.indentFocusedBlock(-1) }
-        assertEquals(0, controller.blockMarkdown(a.state).takeWhile { it == em }.length)
+        assertEquals(1, levelOf())
+        assertEquals(0, controller.toMarkdown().takeWhile { it == em }.length)
         assertTrue("缩进减完后按钮应置灰", !controller.canDecreaseIndent)
     }
 
     /**
-     * 缩进随 markdown 往返保留：加载（setMarkdown → 库解码端剥段首 EM 前缀、还原为
-     * 段落缩进属性）后段落文本干净、再次编码（blockMarkdown）输出等价前缀；
+     * 缩进随 markdown 往返保留：加载（initialize 解析段首 EM 载体 → indentLevel，
+     * state 文本干净、无库段落缩进）后再次编码（toMarkdown）输出等价前缀；
      * 「减少缩进」按钮可用且正常回退。
      */
     @Test
     fun `缩进随markdown往返保留`() {
         controller.initialize("${em}${em}缩进内容")
         val a = controller.blocks.first() as Text
-        assertEquals("解码端应剥掉 EM 前缀（缩进转为段落属性）", "缩进内容", a.state.annotatedString.text)
-        assertEquals("${em}${em}缩进内容", controller.blockMarkdown(a.state))
+        assertEquals("解码应剥掉 EM 载体（缩进转为布局档位）", "缩进内容", a.state.annotatedString.text)
+        assertEquals(2, a.indentLevel)
+        assertEquals("${em}${em}缩进内容", controller.toMarkdown())
         assertTrue(!a.state.isList)
 
         controller.onBlockFocused(a.id)
         assertTrue("加载后的缩进块应可减少缩进", controller.canDecreaseIndent)
         controller.indentFocusedBlock(-1)
-        assertEquals("缩进内容", controller.blockMarkdown(a.state))
+        assertEquals("缩进内容", controller.toMarkdown())
     }
 
-    // ==================== 缩进块内容起点退格：逐级减缩进（v2026-09-07） ====================
+    // ==================== 缩进块内容起点退格：逐级减缩进（v2026-09-08 布局级） ====================
 
     /**
      * 缩进块内容起点退格（用户需求：6 级缩进的内容，在"测"左侧退格应一级一级删除缩进）。
      *
-     * 场景复刻软键盘：IME 先删掉了前导 ZWSP（live 文本 = 纯内容），observer 检测后
-     * 转发块首退格入口。断言：每次退格减一级（markdown EM 前缀 -2）、重建块保持
-     * 打字结构（ZWSP 补回，软键盘可继续逐级退格）、文本内容不变、块数不变；
-     * 减到一级后回落原合并/删除语义（首块非空无前驱 → no-op）；撤销完美恢复。
+     * 场景 = 硬键盘内容起点拦截（onPreviewKeyEvent → onBackspaceAtStart）。
+     * 断言：每次退格减一级（indentLevel -1、toMarkdown 前缀 -2）、文本内容不变、
+     * 块数不变；减到一级后回落原合并/删除语义（首块非空无前驱 → no-op）；撤销恢复。
      */
     @Test
     fun `缩进块内容起点退格逐级减缩进`() {
@@ -434,34 +435,31 @@ class BodyBlocksControllerTest {
         "测试".forEach { a.state.addTextAfterSelection(it.toString()) } // \u200B测试
         controller.onBlockFocused(a.id)
         repeat(6) { controller.indentFocusedBlock(+1) }
-        assertEquals(12, controller.blockMarkdown(a.state).takeWhile { it == em }.length)
+        assertEquals(6, a.indentLevel)
 
-        // 模拟软键盘：IME 删掉前导 ZWSP（live 文本 = "测试"，无 ZWSP）
-        a.state.removeTextRange(androidx.compose.ui.text.TextRange(0, 1))
-        assertEquals("测试", a.state.annotatedString.text)
-
-        // 内容起点退格 → 减一级（6→5），ZWSP 补回（打字结构），文本内容不变
+        // 内容起点退格（硬键盘拦截语义）→ 减一级（6→5），文本内容不变
         controller.onBackspaceAtStart(a)
-        assertEquals(10, controller.blockMarkdown(a.state).takeWhile { it == em }.length)
+        assertEquals(5, a.indentLevel)
+        assertEquals(10, controller.toMarkdown().takeWhile { it == em }.length)
         assertEquals("\u200B测试", a.state.annotatedString.text)
-        assertEquals("整体替换不应增减块数", 1, controller.blocks.size)
+        assertEquals("就地换对象不应增减块数", 1, controller.blocks.size)
 
         // 连续退格逐级递减：5 → 1（前缀 10 → 0）
         repeat(4) { controller.onBackspaceAtStart(controller.blocks.first() as Text) }
-        assertEquals(0, controller.blockMarkdown(controller.blocks.first() as Text).takeWhile { it == em }.length)
-        assertTrue("一级时不应再算缩进块", !controller.isPlainIndentedBlock(controller.blocks.first() as Text))
+        assertEquals(1, (controller.blocks.first() as Text).indentLevel)
+        assertEquals(0, controller.toMarkdown().takeWhile { it == em }.length)
 
         // 一级再退格：回落原语义（首块非空、无前驱可合并 → no-op）
-        val before = controller.blockMarkdown(controller.blocks.first() as Text)
+        val before = controller.toMarkdown()
         controller.onBackspaceAtStart(controller.blocks.first() as Text)
-        assertEquals(before, controller.blockMarkdown(controller.blocks.first() as Text))
+        assertEquals(before, controller.toMarkdown())
 
-        // 撤销：stash 原样还原，缩进完美恢复
+        // 撤销：命令 revert，缩进完美恢复
         controller.undo()
-        assertEquals(12, controller.blockMarkdown(controller.blocks.first() as Text).takeWhile { it == em }.length)
+        assertEquals(6, (controller.blocks.first() as Text).indentLevel)
     }
 
-    // ==================== 空缩进行回车逐级返回 / 回车继承层级（v2026-09-07） ====================
+    // ==================== 空缩进行回车逐级返回 / 回车继承层级（v2026-09-08 布局级） ====================
 
     /**
      * 空缩进行回车（用户需求 1）：**减一级缩进**（原地，不拆块），逐级返回；
@@ -472,13 +470,14 @@ class BodyBlocksControllerTest {
         val a = controller.blocks.first() as Text
         controller.onBlockFocused(a.id)
         repeat(6) { controller.indentFocusedBlock(+1) }
-        assertEquals(12, controller.blockMarkdown(a.state).takeWhile { it == em }.length)
+        assertEquals(6, a.indentLevel)
 
         // 每次回车减一级（原地，不拆块）：6 → 1
         repeat(5) { controller.splitTextBlockAtCursor(controller.blocks.first() as Text) }
         assertEquals("逐级返回期间不应拆出新块", 1, controller.blocks.size)
         val remain = controller.blocks.first() as Text
-        assertEquals(0, controller.blockMarkdown(remain).takeWhile { it == em }.length)
+        assertEquals(1, remain.indentLevel)
+        assertEquals(0, controller.toMarkdown().takeWhile { it == em }.length)
         assertTrue(!remain.state.isList)
 
         // 无缩进空行回车 = 正常新起一行
@@ -487,8 +486,8 @@ class BodyBlocksControllerTest {
     }
 
     /**
-     * 缩进行**行尾**回车（用户需求 2）：新行继承源块层级（空内容 + 同级 EM 前缀 +
-     * ZWSP 退格锚点）；前块内容与层级不变。
+     * 缩进行**行尾**回车（用户需求 2）：新行继承源块缩进档位（块属性）；
+     * 前块内容与档位不变。
      */
     @Test
     fun `缩进行尾回车新行继承层级`() {
@@ -502,15 +501,17 @@ class BodyBlocksControllerTest {
         assertEquals(2, controller.blocks.size)
         val first = controller.blocks[0] as Text
         val second = controller.blocks[1] as Text
-        assertEquals("前块保持内容与层级", "${em}${em}${em}${em}测试", controller.blockMarkdown(first))
-        assertEquals("新行继承层级", "${em}${em}${em}${em}", controller.blockMarkdown(second))
+        assertEquals("前块保持内容与档位", 3, first.indentLevel)
+        assertEquals("前块内容不变", "\u200B测试", first.state.annotatedString.text)
+        assertEquals("新行继承档位", 3, second.indentLevel)
         assertEquals("新行应为 ZWSP 空块（退格锚点）", "\u200B", second.state.annotatedString.text)
         assertTrue("新行应可继续减少缩进", controller.canDecreaseIndent)
+        assertEquals("前块载体", "${em}${em}${em}${em}测试", controller.toMarkdown())
+        assertEquals("新行载体", "${em}${em}${em}${em}", controller.toMarkdown().substringAfter("${em}${em}${em}${em}测试\n\n"))
     }
 
     /**
-     * 缩进行**行中**回车：新行同样继承层级（range 版编码经段落 copy 自动携带
-     * EM 前缀，解码端还原——此用例锁定该自动行为防回归）。
+     * 缩进行**行中**回车：新行同样继承档位（块属性，EM 载体只在 toMarkdown 拼接）。
      */
     @Test
     fun `缩进行中回车新行继承层级`() {
@@ -524,9 +525,13 @@ class BodyBlocksControllerTest {
         assertEquals(2, controller.blocks.size)
         val first = controller.blocks[0] as Text
         val second = controller.blocks[1] as Text
-        assertEquals("${em}${em}${em}${em}一", controller.blockMarkdown(first))
-        assertEquals("${em}${em}${em}${em}二三四", controller.blockMarkdown(second))
+        assertEquals("前块档位", 3, first.indentLevel)
+        assertEquals("新行档位", 3, second.indentLevel)
         assertEquals("一二三四",
             effective(first.state.annotatedString.text) + effective(second.state.annotatedString.text))
+        assertEquals(
+            "${em}${em}${em}${em}一\n\n${em}${em}${em}${em}二三四",
+            controller.toMarkdown()
+        )
     }
 }

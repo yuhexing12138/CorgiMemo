@@ -450,8 +450,9 @@ private fun InspirationBodyRichText(
                          * `(indentLevel - 1) × 30sp` 加在**复选框图标**的 start padding 上——
                          * 复选框右移会经 Row 布局**自然推动**其后的段落同距右移，
                          * 间距恒定；与编辑页同模式。点击勾选翻转前缀时保留缩进载体。
-                         * ⚠️ 切勿再给段落额外加同一 padding（复选框已推过，叠加即双倍、
-                         * 间距增大 P——v2026-09-08 踩坑）。
+                         * **左缘对齐**：复选框标识 padding 不再加额外基准（start = P），
+                         * 左缘与普通段落文本左缘（0 + 同档缩进）精确同列。
+                         * ⚠️ 切勿再给段落额外加同一 padding（复选框已推过，叠加即双倍）。
                          */
                         val checkboxIndentPadding = with(density) {
                             ((indentLevel - 1) * LIST_LEVEL_INDENT_SP).sp.toDp()
@@ -470,7 +471,7 @@ private fun InspirationBodyRichText(
                                     null
                                 },
                                 modifier = Modifier.padding(
-                                    start = 2.dp + checkboxIndentPadding,
+                                    start = checkboxIndentPadding,
                                     top = 3.dp,
                                 ),
                             )
@@ -483,9 +484,26 @@ private fun InspirationBodyRichText(
                             )
                         }
                     } else {
+                        /**
+                         * 普通段落（v2026-09-08）：解析缩进载体（EM，App 自管）并剥除
+                         * （不喂给 markdown 解析——库 TextIndent 渲染量与编辑页 App
+                         * padding 不同源，会导致跨段错位），渲染由 start padding 承载，
+                         * 与编辑页缩进量一致（每级 30sp）、与复选框标识左缘同列。
+                         */
+                        val indentLevel = plainIndentLevelOfMd(para)
+                        val content = if (indentLevel > 1) {
+                            para.dropLeadingPlainIndent()
+                        } else {
+                            para
+                        }
                         InspirationBodyParagraph(
-                            markdown = para,
+                            markdown = content,
                             fontFamily = fontFamily,
+                            modifier = Modifier.padding(
+                                start = with(density) {
+                                    ((indentLevel - 1) * LIST_LEVEL_INDENT_SP).sp.toDp()
+                                }
+                            ),
                         )
                     }
                 }
