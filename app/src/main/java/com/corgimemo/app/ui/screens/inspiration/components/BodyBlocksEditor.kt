@@ -762,6 +762,18 @@ class BodyBlocksController(
         private set
 
     /**
+     * 点选（点击分割线）时的手指 x（px，相对分割线行）；null = 高亮**非**来自点击。
+     *
+     * 它同时承担"高亮来源"的判据（v2026-09-08）：退格 / Delete 两步删除点亮的高亮
+     * **不弹悬浮删除按钮**（[highlightForTwoStepDelete] 置 null），避免按钮凭空出现在
+     * 行首或上次点击的旧位置；只有 [onDividerTapped] 点亮才记录手指位置并弹按钮。
+     * [BlockDividerItem] 以 `highlightedBlockId == 本块 && highlightedTapX != null`
+     * 决定是否渲染按钮。
+     */
+    var highlightedTapX by mutableStateOf<Float?>(null)
+        private set
+
+    /**
      * 待落焦描述（块 id + 光标偏移，原子打包）。
      * 原实现用两个独立 [mutableStateOf]（pendingFocusId / pendingFocusOffset），
      * [LaunchedEffect] 以 id 为 key 重发射、再读 offset——两条独立状态在快照边界上可能
@@ -1724,17 +1736,44 @@ class BodyBlocksController(
     }
 
     /**
+     * 两步删除第一步（相邻块退格 / Delete 点亮）：**只高亮，不弹悬浮按钮**——
+     * 高亮来源是键盘操作而非点击，没有"手指位置"可言；按钮若在此时弹出，会
+     * 凭空出现在行首（tapX=0）或上次点击的旧位置，观感突兀（v2026-09-08 用户反馈）。
+     * 图片与分割线的高亮统一走此入口，[highlightedTapX] 置 null 以示区分。
+     */
+    private fun highlightForTwoStepDelete(blockId: String) {
+        highlightedBlockId = blockId
+        highlightedTapX = null
+    }
+
+    /**
      * 点击分割线（块 Composable 入口）：**切换选中态**（v2026-09-08 第四版）。
      * 未高亮 → 高亮；已高亮 → 取消。**全程不动焦点**——焦点留在原 Text 块，
      * 软键盘不收起。
      *
-     * 删除入口改为高亮态的**悬浮"删除"按钮**（[BlockDividerItem] 用 `Popup`
-     * 渲染，x 跟随点击手指位置）——软键盘退格无法拦截（IME 走
+     * 删除入口为高亮态的**悬浮"删除"按钮**（[BlockDividerItem] 用 `Popup`
+     * 渲染，x 跟随本参数 tapX 手指位置）——软键盘退格无法拦截（IME 走
      * `deleteSurroundingText`，Compose 无对应 API），触屏删除改走按钮。
-     * 光标存在时的两步删除（[onBackspaceAtStart] / [onDeleteAtEnd]）保留不变。
+     * 光标存在时的两步删除（[onBackspaceAtStart] / [onDeleteAtEnd]）保留不变，
+     * 其点亮路径见 [highlightForTwoStepDelete]（不弹按钮）。
+     *
+     * 已高亮时的再点击语义按来源区分：
+     * - 点选态（有按钮）→ 取消选中；
+     * - 退格两步删除点亮（无按钮）→ **补弹按钮**（把点击位置交给按钮），再点才取消。
      */
-    fun onDividerTapped(blockId: String) {
-        highlightedBlockId = if (highlightedBlockId == blockId) null else blockId
+    fun onDividerTapped(blockId: String, tapX: Float) {
+        if (highlightedBlockId == blockId) {
+            if (highlightedTapX != null) {
+                /** 已是点选态（按钮在场）→ 再点分割线 = 取消选中 */
+                clearBlockSelection()
+            } else {
+                /** 退格两步删除点亮的高亮（无按钮）→ 点击补弹按钮，不取消 */
+                highlightedTapX = tapX
+            }
+            return
+        }
+        highlightedBlockId = blockId
+        highlightedTapX = tapX
     }
 
     // ---------- 复选框（v2026-09-07） ----------
@@ -2611,12 +2650,14 @@ class BodyBlocksController(
         get() = hideCursorUntilFocusBlockId?.let { id -> blocks.any { it.id == id } } == true
 
     /**
-     * 退出「点选非文本块」态：清高亮（焦点/键盘不动，光标不受影响）。
-     * 开始输入字符（文本变长）、执行任何命令（[afterCommandMutation]）都会走到这里。
+     * 退出「点选非文本块」态：清高亮 + 清点选手指位置（焦点/键盘不动）。
+     * 开始输入字符（文本变长）、执行任何命令（[afterCommandMutation]）、
+     * 点击其它文本块（[onBlockFocused]）都会走到这里。
      */
     fun clearBlockSelection() {
-        if (highlightedBlockId == null) return
+        if (highlightedBlockId == null && highlightedTapX == null) return
         highlightedBlockId = null
+        highlightedTapX = null
     }
 
     /**
@@ -2828,16 +2869,16 @@ class BodyBlocksController(
             is BodyBlock.Text -> mergeTextBlocks(prev, block)
             is BodyBlock.Image -> {
                 if (highlightedBlockId == prev.id) deleteImageBlock(prev.id)
-                else highlightedBlockId = prev.id
+                else highlightForTwoStepDelete(prev.id)
             }
             /**
              * 前一块是分割线（v2026-09-07）：两步删除——第一次退格先高亮
-             * （视觉确认目标），第二次退格删除（可撤销）。点击选中已高亮后
-             * 退格一次即删（与图片块交互语义一致）。
+             * （视觉确认目标，**不弹悬浮按钮**，见 [highlightForTwoStepDelete]），
+             * 第二次退格删除（可撤销）。点选（带按钮）高亮后退格一次即删。
              */
             is BodyBlock.Divider -> {
                 if (highlightedBlockId == prev.id) deleteDividerBlock(prev.id)
-                else highlightedBlockId = prev.id
+                else highlightForTwoStepDelete(prev.id)
             }
         }
     }
@@ -2849,11 +2890,11 @@ class BodyBlocksController(
         when (val next = blocks[idx + 1]) {
             is BodyBlock.Image -> {
                 if (highlightedBlockId == next.id) deleteImageBlock(next.id)
-                else highlightedBlockId = next.id
+                else highlightForTwoStepDelete(next.id)
             }
             is BodyBlock.Divider -> {
                 if (highlightedBlockId == next.id) deleteDividerBlock(next.id)
-                else highlightedBlockId = next.id
+                else highlightForTwoStepDelete(next.id)
             }
             else -> Unit
         }
@@ -2926,7 +2967,7 @@ class BodyBlocksController(
     fun onBlockFocused(blockId: String) {
         focusedBlockId = blockId
         if (hideCursorUntilFocusBlockId != null) hideCursorUntilFocusBlockId = null
-        if (highlightedBlockId != null) highlightedBlockId = null
+        clearBlockSelection()
     }
 
     /** 块内容变化时回调（由块 Composable 的观察者触发） */
@@ -3481,9 +3522,11 @@ private val DividerHighlightColor = Color(0xFFFF9A5C)
  * - **点击**：`pointerInput + detectTapGestures` 替代 `clickable`——除切换高亮外
  *   还要**捕获手指 x 坐标**（删除按钮悬浮位置跟随点击点），`clickable` 拿不到位置；
  *   detectTapGestures 本身无水波纹，等价于原"去波纹 clickable"；
- * - **悬浮删除按钮（v2026-09-08 第四版）**：高亮时用 `Popup` 渲染（独立窗口，
- *   **不被任何父容器裁剪**），水平中心 = 手指 x（clamp 到行内），垂直悬在分割线
- *   上方；点击按钮删除分割线（那一行变空行、焦点落空行行首、可撤销）。
+ * - **悬浮删除按钮（v2026-09-08 第四版）**：高亮**且高亮来自点击**时用 `Popup` 渲染
+ *   （独立窗口，**不被任何父容器裁剪**），水平中心 = 手指 x（clamp 到行内），垂直
+ *   悬在分割线上方；点击按钮删除分割线（那一行变空行、焦点落空行行首、可撤销）。
+ *   退格 / Delete 两步删除点亮的高亮**不弹按钮**（[BodyBlocksController.highlightForTwoStepDelete]，
+ *   避免按钮凭空出现在行首/旧位置）；此时再点击分割线 = 补弹按钮。
  *   放弃"点选后软键盘退格删除"（IME 走 `deleteSurroundingText`，Compose 无 API
  *   可拦截，见 [BodyBlocksController.onDividerTapped] 注释）；
  * - **焦点全程不动**：点击分割线不改变焦点，软键盘不收起；
@@ -3502,8 +3545,14 @@ private fun BlockDividerItem(
     /** 是否处于高亮（选中）态：点击切换 / 退格第一步点亮，随 controller 状态响应式刷新 */
     val highlighted = controller.highlightedBlockId == block.id
 
-    /** 手指点击位置（相对线体容器的 px.x）：删除按钮悬浮在该 x 正上方 */
-    var tapX by remember(block.id) { mutableStateOf(0f) }
+    /**
+     * 悬浮删除按钮的显示条件（v2026-09-08）：
+     * - 本块高亮 **且** [BodyBlocksController.highlightedTapX] 非空（高亮来自**点击**，
+     *   有手指位置可跟随）——退格 / Delete 两步删除点亮的高亮**不弹按钮**（无手指
+     *   位置，凭空出现在行首/旧位置很突兀），见 [BodyBlocksController.highlightForTwoStepDelete]；
+     * - 非锁定态。
+     */
+    val showDeleteButton = highlighted && !isLocked && controller.highlightedTapX != null
 
     /** 线体容器宽度（px）：删除按钮水平 clamp 的边界 */
     var rowWidthPx by remember(block.id) { mutableStateOf(0) }
@@ -3533,10 +3582,9 @@ private fun BlockDividerItem(
                         Modifier
                     } else {
                         Modifier.pointerInput(block.id) {
-                            /** 记录手指 x → 悬浮删除按钮出现在手指正上方 */
+                            /** 手指 x 交给 controller（highlightedTapX），决定按钮悬浮位置 */
                             detectTapGestures { offset ->
-                                tapX = offset.x
-                                controller.onDividerTapped(block.id)
+                                controller.onDividerTapped(block.id, offset.x)
                             }
                         }
                     }
@@ -3555,8 +3603,8 @@ private fun BlockDividerItem(
                 },
             )
 
-            if (highlighted && !isLocked) {
-                DividerDeletePopup(tapX = tapX, rowWidthPx = rowWidthPx) {
+            if (showDeleteButton) {
+                DividerDeletePopup(tapX = controller.highlightedTapX ?: 0f, rowWidthPx = rowWidthPx) {
                     controller.deleteDividerBlock(block.id)
                 }
             }
