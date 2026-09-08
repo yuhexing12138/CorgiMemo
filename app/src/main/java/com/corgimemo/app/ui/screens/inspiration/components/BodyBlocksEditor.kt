@@ -1206,7 +1206,6 @@ class BodyBlocksController(
             }
             return
         }
-
         val state = block.state
         val md = blockMarkdown(state)
 
@@ -2936,9 +2935,14 @@ private fun BlockTextItem(
      * 与理论公式不符（真机实测约 2 倍），Row 外图标的任何"估算/测量对齐"都不可靠
      * （公式、getLineLeft、getHorizontalPosition 三轮均失败）。最终方案：**缩进
      * 不进库排版**（记在 [BodyBlock.Text.indentLevel]，markdown 载体由 App 自管），
-     * 渲染时把**同一个偏移量**加到复选框图标与编辑器两者的 start padding 上——
-     * 两者被同一个偏移推动，同步是**布局恒等**的，与库渲染行为完全解耦；这正是
-     * 列表项「marker + 文本整体缩进」的行为模式。sp→dp 在组合期转换（LocalDensity）。
+     * 渲染时把偏移量加到**复选框图标的 start padding** 上——复选框右移会经 Row
+     * 布局**自然推动**其后的编辑器与文本同距右移，间距恒定；这正是列表项
+     * 「marker + 文本整体缩进」的行为模式。
+     *
+     * ⚠️ **切勿再给编辑器额外加同一 padding**（v2026-09-08 踩坑）：编辑器排在
+     * 复选框之后，复选框的 padding 已经推了它；再叠一次文本就位移 2 倍、间距
+     * 增大 P（真机日志证实：render padding=90dp 正确，但文本移了 180dp）。
+     * sp→dp 在组合期转换（LocalDensity）。
      */
     val checkboxIndentPadding = if (block.checked != null) {
         with(LocalDensity.current) {
@@ -3108,7 +3112,6 @@ private fun BlockTextItem(
             state = state,
             modifier = Modifier
                 .weight(1f)
-                .padding(start = checkboxIndentPadding)
                 .heightIn(
                     min = if (controller.blocks.size == 1 && isEffectivelyEmpty(state)) {
                         160.dp

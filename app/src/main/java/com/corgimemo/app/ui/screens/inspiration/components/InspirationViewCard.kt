@@ -446,11 +446,12 @@ private fun InspirationBodyRichText(
                          */
                         val (checked, indentLevel, bodyMd) = checkboxInfo
                         /**
-                         * 跟随缩进（v2026-09-08，**布局级同步**）：复选框与文本段落
-                         * 各自加同一个 start padding（`(indentLevel - 1) × 30sp`，
-                         * 与编辑页同公式）——同一偏移推动两者，同步位移、间距恒定；
-                         * 与库渲染行为完全解耦（缩进载体由 App 自管，EM 不进渲染）。
-                         * 点击勾选翻转前缀时同样保留缩进载体。
+                         * 跟随缩进（v2026-09-08，**布局级同步**）：偏移
+                         * `(indentLevel - 1) × 30sp` 加在**复选框图标**的 start padding 上——
+                         * 复选框右移会经 Row 布局**自然推动**其后的段落同距右移，
+                         * 间距恒定；与编辑页同模式。点击勾选翻转前缀时保留缩进载体。
+                         * ⚠️ 切勿再给段落额外加同一 padding（复选框已推过，叠加即双倍、
+                         * 间距增大 P——v2026-09-08 踩坑）。
                          */
                         val checkboxIndentPadding = with(density) {
                             ((indentLevel - 1) * LIST_LEVEL_INDENT_SP).sp.toDp()
@@ -478,9 +479,7 @@ private fun InspirationBodyRichText(
                                 markdown = bodyMd,
                                 fontFamily = fontFamily,
                                 dimmed = checked,
-                                modifier = Modifier
-                                    .padding(start = checkboxIndentPadding)
-                                    .weight(1f),
+                                modifier = Modifier.weight(1f),
                             )
                         }
                     } else {
