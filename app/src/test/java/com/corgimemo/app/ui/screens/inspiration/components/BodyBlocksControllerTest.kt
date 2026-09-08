@@ -330,6 +330,48 @@ class BodyBlocksControllerTest {
         assertEquals("光标应落在 I. marker 之后而非左侧", 3, focus?.offset)
     }
 
+    /**
+     * 无序二级行尾回车：**前块与新行都继承二级**（真机 bug 回归，v2026-09-08）。
+     *
+     * 回归背景：splitTextBlock 此前只给有序列表传 listLevel（srcOrderedLevel），
+     * 无序列表传 null——而列表块的 markdown 层级前缀在命令重建路径会被
+     * stripListLevelPrefix 剥掉（防 ≥4 空格缩进代码块），层级只能靠 spec.listLevel
+     * 还原。结果无序列表行尾回车后前块与新行全部掉回一级（真机截图：
+     * "• 第一行 / • 缩进一次 / •" 三行全顶格）。修复：层级有序/无序通用显式随 spec。
+     */
+    @Test
+    fun `无序二级行尾回车前后块均继承层级`() {
+        controller.initialize("- 第一行\n\n  - 缩进一次")
+        val second = controller.blocks[1] as Text
+        // 前置：孤立 "  - " 前缀经解码端「源码行首缩进」还原为二级
+        assertEquals("  - 缩进一次", controller.blockMarkdown(second.state))
+        assertTrue(second.state.isUnorderedList)
+
+        // 行尾硬键盘回车拆块
+        second.state.selection =
+            androidx.compose.ui.text.TextRange(second.state.annotatedString.text.length)
+        controller.onBlockFocused(second.id)
+        controller.splitTextBlockAtCursor(second)
+        assertEquals(2, controller.blocks.size)
+
+        // 前块：仍是二级无序项（不掉回一级）
+        val before = controller.blocks[0] as Text
+        assertTrue(before.state.isUnorderedList)
+        assertEquals("前块应保持二级缩进前缀", "  - 缩进一次", controller.blockMarkdown(before.state))
+
+        // 新行：继承二级（空项 "  - "），而非一级 "- "
+        val after = controller.blocks[1] as Text
+        assertTrue(after.state.isUnorderedList)
+        assertEquals("回车新行应继承上一行层级", "  - ", controller.blockMarkdown(after.state))
+
+        // 撤销整次拆块：原块原样还原，层级无损（textSpec 携带 listLevel）
+        controller.undo()
+        assertEquals(2, controller.blocks.size)
+        val restored = controller.blocks[1] as Text
+        assertTrue(restored.state.isUnorderedList)
+        assertEquals("撤销后原块层级应无损", "  - 缩进一次", controller.blockMarkdown(restored.state))
+    }
+
     // ==================== 纯文本整段缩进（v2026-09-08 第三版：App 布局级档位 + EM markdown 载体） ====================
 
     /** 全角空格（U+2003 EM SPACE）：整段缩进的 markdown 编码载体（段首前缀，每级 2 个） */

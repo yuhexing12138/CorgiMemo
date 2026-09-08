@@ -1036,6 +1036,9 @@ class BodyBlocksController(
             blockMarkdown(block.state),
             checked = block.checked,
             indentLevel = block.indentLevel,
+            /** 撤销还原用（v2026-09-08）：层级显式随 spec——removed 块经 rebuildBlock 重建时
+             *  会剥掉 markdown 层级前缀（stripListLevelPrefix=true），不传层级则撤销后掉回一级 */
+            listLevel = listLevelOfMd(blockMarkdown(block.state)).takeIf { block.state.isList },
         )
 
     /** 块的 markdown 输出（剥 ZWSP——与 [toMarkdown] 的输出约定一致） */
@@ -1958,13 +1961,17 @@ class BodyBlocksController(
         }
         val listForNewBlocks = srcListType
         /** 有序列表续号：取源块字面编号（以 markdown 序列化结果为准，避免 marker 缺空格失配），
-         *  新块起始编号 = 源块编号 +1；续行新块继承源块层级（缩进按钮需求，markdown 每级 2 空格）。 */
+         *  新块起始编号 = 源块编号 +1。 */
         val srcOrderedNumber = currentOrderedNumber(block.state)
-        val srcOrderedLevel = if (block.state.isOrderedList) {
-            listLevelOfMd(blockMarkdown(block.state))
-        } else {
-            null
-        }
+        /**
+         * 源块列表层级（v2026-09-08 修复「无序列表回车掉级」）：**有序/无序通用**，
+         * 显式随 spec 走、由 [createTextBlock] 的 setListMarker 还原。此前只传有序
+         * （srcOrderedLevel），无序列表回车后前/后块都掉回一级——列表块的 markdown
+         * 前缀在拆块路径上不可靠：range 版 toMarkdown 对「仅分隔符入范围」的段落会
+         * 退化为无前缀的默认段落，且独立块前缀还会被 stripListLevelPrefix 剥掉
+         * （≥4 空格防缩进代码块），层级只能靠 spec.listLevel 显式携带。
+         */
+        val srcListLevel = if (block.state.isList) listLevelOfMd(blockMarkdown(block.state)) else null
 
         /**
          * 拆块尾部 markdown 归一化（真机 logcat 证实的不递增根因）：
@@ -2009,7 +2016,8 @@ class BodyBlocksController(
                         block.id,
                         beforeMd,
                         listForNewBlocks,
-                        listLevel = srcOrderedLevel,
+                        /** 源块层级显式随 spec（有序/无序通用，回车续行继承层级，v2026-09-08） */
+                        listLevel = srcListLevel,
                         /** 复选框块拆块（v2026-09-07）：前半块保留源勾选状态 */
                         checked = block.checked,
                         /** 缩进档位（v2026-09-08）：前半块保留源档位 */
@@ -2020,7 +2028,8 @@ class BodyBlocksController(
                         afterMd,
                         listForNewBlocks,
                         orderedStartNumber = srcOrderedNumber?.plus(1),
-                        listLevel = srcOrderedLevel,
+                        /** 续行块继承源块层级（回车后下一行 = 上一行的层级，v2026-09-08） */
+                        listLevel = srcListLevel,
                         /** 复选框续行（v2026-09-07，用户确认）：回车新行 = 未勾选的复选框项；
                          *  非复选框块保持 null */
                         checked = if (block.checked != null) false else null,
@@ -2098,6 +2107,14 @@ class BodyBlocksController(
             else -> null
         }
         /**
+         * 源块列表层级（v2026-09-08 修复「无序列表回车掉级」，与 [splitTextBlock] 同源）：
+         * 行 md 前缀不可靠时（range 版 toMarkdown 对「仅分隔符入范围」的段落会退化为
+         * 无前缀的默认段落）由 spec.listLevel 显式还原。
+         */
+        val srcListLevel = if (block.state.isList) listLevelOfMd(blockMarkdown(block.state)) else null
+        /** 最后一个已确定层级的行（尾块继承「最后内容行」层级 = 行尾回车续行语义） */
+        var lastSpecLevel: Int? = null
+        /**
          * 复选框属性（v2026-09-07）：源块的勾选状态。行拆分时首块继承（含勾选态），
          * 续行块 = 未勾选的复选框项（与回车续行一致）；非复选框块保持 null。
          * 缩进档位（v2026-09-08）：各行继承源档位（与列表项续行同缩进惯例）。
@@ -2148,13 +2165,26 @@ class BodyBlocksController(
                 val md = block.state.toMarkdown(TextRange(s, e)).replace(ZWSP, "")
                 if (md.isNotBlank()) {
                     val specId = if (inserted.isEmpty()) block.id else newBodyBlockId()
+                    /**
+                     * 行层级（v2026-09-08 修复无序列表回车掉级）：行 md 自带层级前缀
+                     * （多行嵌套段，每行按自身 type.level 编码）时信前缀；行无前缀
+                     * （range 版 toMarkdown 对「仅分隔符入范围」的段落会退化为无前缀的
+                     * 默认段落）时继承源块层级——回车续行 = 上一行的层级。
+                     * [lastSpecLevel] 供尾部空行块继承「最后内容行」层级。
+                     */
+                    val lineLevel = listLevelOfMd(md)
+                    val specLevel = when {
+                        !block.state.isList -> null
+                        lineLevel > 1 -> lineLevel
+                        else -> srcListLevel
+                    }
+                    if (specLevel != null) lastSpecLevel = specLevel
                     inserted += BlockSpec.TextSpec(
                         specId,
                         md,
                         listForNewBlocks,
-                        /** 行自带层级前缀（toMarkdown 按 type.level 编码），createTextBlock
-                         *  剥离后经 setListMarker 还原（v2026-09-05 层级缩进） */
-                        listLevel = listLevelOfMd(md),
+                        /** 行层级：前缀优先、无前缀继承源块（见上方 specLevel 注释） */
+                        listLevel = specLevel,
                         /** 复选框拆行（v2026-09-07）：首块继承源勾选态，续行块 = 未勾选复选框项 */
                         checked = when {
                             inserted.isEmpty() -> srcChecked
@@ -2190,6 +2220,9 @@ class BodyBlocksController(
                 newBodyBlockId(),
                 "",
                 listForNewBlocks,
+                /** 尾块继承最后内容行的列表层级（行尾回车 = 续行，v2026-09-08；
+                 *  此前漏传 → 无序列表回车后新行掉回一级） */
+                listLevel = lastSpecLevel,
                 /** 源块为复选框时（v2026-09-07）：尾部空行 = 未勾选的空复选框项（继续待办） */
                 checked = if (srcChecked != null) false else null,
                 /** 缩进档位（v2026-09-08）：尾部空行继承源档位 */
