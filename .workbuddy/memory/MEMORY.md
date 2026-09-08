@@ -1,34 +1,33 @@
 # CorgiMemo 项目长期记忆
 
 ## 项目约定
-- 不需要自动编译：Kotlin/代码改动后不主动跑 gradlew，除非用户明确要求。
-- **BuildConfig 不生成**：本项目（AGP 配置）不会生成 `BuildConfig` 类，读取 App 版本号须走 `Context.packageManager.getPackageInfo(packageName, 0).versionName`（见 `SettingsScreen.kt:126` 注释）。字体 cacheDir 副本用 versionName 作文件名后缀（`ff_font_<resId>_v<versionName>.ttf`），资源/版本更新后旧副本自动失效，避免 stale 字体。
-- **查依赖真实 API 签名**：遇到 AndroidX/Compose API 编译报错（抽象类误实例化、`overrides nothing`、参数不匹配、`cannot be invoked as a function` 等），用项目级技能 `CorgiMemo/.workbuddy/skills/gradle-cache-source-lookup`（仅本仓库共享）——从 gradle 缓存 `*-sources.jar` 抽真实 `.kt` 源码核对，不要凭记忆猜签名（曾因 `AndroidFont` 旧签名误用导致编译反复）。要点：① 先跑 `scripts/find_sources_jar.py --class <裸类名> [--group androidx.compose.ui]` 定位 jar（hash 目录名无法拼，全缓存扫描 ~3s），再跑 `extract_source.py` 抽取；② `files-2.1` 的 group 目录是**点分隔扁平名** `androidx.compose.ui`，不是 `androidx/compose/ui`；③ `--match/--class` 只传裸类名（真实条目是 `AndroidFont.android.kt` 这类带 source-set 后缀的名字，带 `.kt` 匹配不到）；④ `-android` 产物里同样含 `commonMain/`（如 `PointerInputChange` 在 `ui-android` 而非 `ui`）。
-- **检索点目录（`.workbuddy`、`.gradle`）**：Glob 要把绝对路径放在 `path` 参数、`pattern` 只用相对通配；把绝对路径写进 `pattern` 会静默返回空，容易被误判成「目录不存在」。
+- 不主动编译：Kotlin 改动后不跑 gradlew，除非用户明确要求。
+- **无 BuildConfig**：读版本号走 `packageManager.getPackageInfo(pkg,0).versionName`（`SettingsScreen.kt:126`）。字体 cacheDir 副本名 `ff_font_<resId>_v<versionName>.ttf`。
+- **核对依赖真实签名**：AndroidX/Compose 编译报错时用项目技能 `.workbuddy/skills/gradle-cache-source-lookup`（扫 gradle 缓存 `*-sources.jar`）核对，勿凭记忆。要点：先 `find_sources_jar.py --class <裸类名> [--group androidx.compose.ui]`（group 目录是点分隔扁平名）；`--class` 只传裸类名；`-android` 产物也含 `commonMain/`。
+- **检索点目录**（`.workbuddy`/`.gradle`）：Glob 绝对路径放 `path`、`pattern` 只写相对通配。
 
-## 正文字体体系（2026-09-03 落地，2026-09-03 改默认=系统字体）
-- 内置 9 款 OFL 1.1 可商用中文（思源黑体/思源宋体/源音黑體/獅尾半月SC/悠哉/初夏明朝/马善政毛笔楷书/钟齐志莽行书/寒蝉·龙藏楷书）+ 3 款拉丁（Space Grotesk/Maple Mono/Caveat，作英文·数字回退层），共 49 资源文件在 `res/font/`；授权随 APK 分发于 `assets/licenses/`（索引 `THIRD_PARTY_FONTS.md`）。
-- 架构：`FontCatalog`(注册表 `FontEntry`：id/显示名/授权/FontFamily/字重→resId；`isSystemDefault` 占位条目 `SYSTEM_DEFAULT` 用 `FontFamily.Default`，`isLatin` 区分拉丁回退层) + `FontManager`(反应式当前选中单例) + `buildTypography(fontFamily)`(动态 Typography)。
-- 默认字体 = **系统默认字体**（`FontCatalog.DEFAULT_ID = "system_default"`，`CorgiPreferences.fontId` 默认值已改）；偏好存 `font_id` 键，设置页 `AppearanceScreen`「正文字体」分组切换，全 App 即时生效。
-- 加粗档位 `FontEntry.boldTiers`(>400 前三档) 随字体派生；`FontWeightProbe` 像素探测按 `tag` 隔离缓存、用 `typefaceForWeight` 取当前字体 Typeface（系统默认走 `Typeface.DEFAULT`）。
-- **字体加载结构（2026-09-03 五次 OOM 后根治；2026-09-04 改为分离式预览；预览统一走 `ui/theme/FontPreviewEngine.kt`）**：CJK 单文件 14~19MB，凡预览批量渲染都不可让字体常驻。引擎 = 两个**按用途分离**的有界池（字体资源拷 `cacheDir` 后 `Typeface.Builder(String)` 即时构建，**刻意绕过 TypefaceCompat**；注意本工程 android.jar **无 `Typeface.Builder(InputStream)` 重载**，只有 File/FileDescriptor/String）：`previewTypefacePool`(容量 **2** = 中文1+拉丁1，预览位图渲染专用，预渲染后 `clearPreviewTypefaces()` 清空) + `probeTypefacePool`(容量 3 = 同一款字体 B1/B2/B3 三档字重文件，供 `FontWeightProbe`)；另有预览位图 `LruCache(32)`（白色字形蒙版、compose 端 tint 着色，与主题无关；32 ≥ 两页各 13 张，避免滚动重渲染）。页面 `LaunchedEffect` 里 `prerenderAll`（编辑页 刻记26sp/Corgi19sp）或 `prerenderBodyRows`（设置页 各字体 displayName@18sp）在 IO 线程顺序渲染 → **预览常态 0 常驻字体（只留位图）**。**结构性铁律：预览绝不用 `ResourcesCompat.getFont`/`Text(fontFamily)` 批量渲染**——那会把字体驻留进 TypefaceCompat LruCache(16)/FontFamilyResolver 永久缓存，与「内容」字体双计 → 低内存设备堆 OOM（设置页+编辑页均崩过，栈 `FontFamilyResolverImpl`→`TypefaceCompat`）。系统默认条目用 `Typeface.DEFAULT` 渲染预览。`AndroidManifest` `android:largeHeap="true"` 为安全网。
-- **分离式预览（2026-09-04 最终行为，取代「点选即预览」位图复刻）**：反复实时换字必 OOM（compose 全局缓存按 (族,字重) 长期持有 ~20-50MB/款）。硬约束 = **一次最多只同时加载两种字体（中文字体 1 + 英文/数字字体 1）**，预览一律走引擎位图、不常驻字体：① 编辑页：面板点选**只改 pending 高亮**、正文**不**预览（已删除旧的 `contentPreviewBitmap/Async` 正文位图覆盖层），面板头按钮**「应用」= 应用字体但保持面板展开**（连续点选对比），应用后变「完成」= 再点才收起（`hasPendingChange` 参数控制文案与行为），应用走 `viewModel.onCjk/LatinFontSelected` 写 ContentFontManager → 正文换字 + 工具栏字重按钮（档位/探测可用态）随新字体同步更新；② 设置页：「正文字体」「英文/数字字体」两个分组标题行右侧各一个「确定」按钮（`FontConfirmButton`，无 pending 改动时置灰），点选只改 pending，点「确定」才 `setFontId/setLatinFontId` 写全局字体，**未点确定直接返回 = 丢弃选择**（已删除原 `DisposableEffect` 离页自动应用）；行上的字形预览本身恒为引擎位图。两处提交后都调 `FontPreviewEngine.clearTypefaces()` 清预览池+探测池（位图与探测结果均已缓存，释放 Typeface 无损）。
-- **FontFamilyResolver 硬约束（2026-09-04，`ui/theme/FontResolverPolicy.kt` + Theme.kt 注入 `LocalFontFamilyResolver`）**：compose-ui-text 1.11.2 源码核实——`createFontFamilyResolver` 的**所有实例共享进程级全局缓存**（GlobalTypefaceRequestCache=LruCache(16) + GlobalAsyncTypefaceCache），**换实例不丢缓存**；真丢弃需 `emptyCacheFontFamilyResolver`（@InternalTextApi+@RestrictTo(LIBRARY_GROUP)，私有缓存，官方给测试/基准用）+ `androidx.core.graphics.TypefaceCompat.clearCache()`（**公开 API**，清 ResourcesCompat 静态 LruCache(16)——Compose 加载 ResourceFont 的实际通道）。Theme.kt 以 `fontCacheKey = chrome中文|chrome拉丁|内容中文|内容拉丁` 为 key `remember { FontResolverPolicy.createIsolatedResolver(appContext) }`，组合一变即换新实例并清 core 静态缓存 → 旧字体全部强引用断开可 GC。已知取舍：① 隔离 resolver 不带 AndroidFontResolveInterceptor（系统「粗体文字」无障碍字重加成失效；兜底路径不受影响）；② 每次切字体整树重解析+当前字体文件重读（单次几十 ms）；③ 反射性失败兜底回退 `createFontFamilyResolver`（退化为软约束）；④ 列表页多款内容字体同屏属合法显示需求，不算违反约束。
-- **合成族「拉丁+中文」必须按字重串成单一回退 Typeface（2026-09-04 修复的坑）**：Compose 的 `FontListFontFamilyTypefaceAdapter` 对每个 (字重,字型) 单元格只取合成族里**一个** Typeface（`FontMatcher.matchFont` 同字重精确匹配返回两者、取列首；缺失字形走 Android **系统**兜底链，而非族内另一个 App 字体）。故**绝不能**用 `FontFamily(latin.fonts + cjk.fonts)` 让拉丁放前列（同字重中文会被拉丁字体覆盖→落到系统字体，表现为「选了中文但中文不变」）。正确做法：`FontCatalog.combinedFamilyFonts(cjk,latin)` 按字重配对，每档用 `Typeface.Builder(latin).addCustomFallback(cjk).build()` 串成单一**按字形回退** Typeface（拉丁字形走拉丁字体、中文走中文字体）；`FontManager.combinedFamily` 走此函数。`addCustomFallback` 需 minSdk>=26（本项目满足）。系统默认中文(cjkResId=0)时只加载拉丁、中文回落系统字体。
-- 新增字体：拷资源→`FontCatalog` 登记一条，设置页自动列出。
-- **字体作用域解耦（2026-09-02，请求 M）**：设置页「正文字体」只影响 App chrome（`MaterialTheme.typography`，由 `FontManager` 驱动）；用户编辑内容（灵感编辑/详情/主页）默认系统字体，与设置字体解耦。新增 `ContentFontManager`(默认 `FontCatalog.systemDefault`) + `LocalContentTypography` CompositionLocal（Theme.kt 注入，默认 `buildTypography(FontFamily.Default)`）；内容文本改走 `LocalContentTypography.current`，编辑工具栏 `FontWeightProbe` 探测改 `ContentFontManager`。未来编辑页专用字体选择器调 `ContentFontManager.setContentFont` 即可统一覆盖。编辑页内 UI 控件（RelationSelector/ImagePicker 标签、工具栏按钮）仍属 chrome，保留设置字体。
+## 正文字体体系
+- 9 款 OFL 中文 + 3 款拉丁（回退层），49 文件在 `res/font/`；授权随 APK 分发 `assets/licenses/`。
+- 架构：`FontCatalog`(`FontEntry`: id/名/授权/FontFamily/字重→resId，`isSystemDefault`，`isLatin`) + `FontManager` + `buildTypography(family)`。默认 = **系统默认字体**（`FontCatalog.DEFAULT_ID="system_default"`，偏好键 `font_id`），设置页 `AppearanceScreen` 切换即时生效。
+- 预览/探测统一走 `ui/theme/FontPreviewEngine.kt`：两个有界池（`previewTypefacePool` 容量2、`probeTypefacePool` 容量3）+ 位图 `LruCache(32)`；字体资源拷 cacheDir 后 `Typeface.Builder(String)` 构建（本工程 android.jar 无 InputStream 重载）。**铁律：预览绝不用 `ResourcesCompat.getFont`/`Text(fontFamily)` 批量渲染**（会驻留 TypefaceCompat LruCache(16)/FontFamilyResolver → OOM，曾五次崩溃）。
+- **分离式预览**：一次最多同时加载两种字体（中文1+拉丁1）。编辑页面板点选只改 pending，「应用」= 应用但保持展开，再点「完成」收起；设置页两个分组各一个「确定」按钮，未点直接返回=丢弃。
+- **FontFamilyResolver**：`createFontFamilyResolver` 所有实例共享进程级全局缓存，换实例不丢缓存；真丢弃需 `emptyCacheFontFamilyResolver`(私有缓存) + `TypefaceCompat.clearCache()`。`ui/theme/FontResolverPolicy.kt` + Theme.kt 按 `fontCacheKey` remember 隔离 resolver。代价：无 AndroidFontResolveInterceptor（无障碍粗体加成失效）。
+- **合成族必须按字重串成单一回退 Typeface**：`FontFamily(latin.fonts+cjk.fonts)` 会让同字重中文被拉丁覆盖→回落系统字体。正确：`FontCatalog.combinedFamilyFonts(cjk,latin)` 每档 `Typeface.Builder(latin).addCustomFallback(cjk).build()`（minSdk≥26）。
+- **作用域解耦**：设置字体只管 App chrome（`MaterialTheme.typography`）；用户内容走 `ContentFontManager` + `LocalContentTypography`（默认系统字体）。工具栏 `FontWeightProbe` 用 ContentFontManager。
+- 新增字体：拷资源 → `FontCatalog` 登记一条。
 
-## 编辑态图文混排（路线 4，2026-09-01 决策）
-- Compose 1.11 BasicTextField 无 inlineContent，覆盖层方案收敛性无保证→走**块级图文交错**（`BodyBlocksEditor` + 每块一个 RichTextEditor）。语音保持 `trigger:voice` 内联。详情见 `docs/路线4-块级图片-实施方案.md`。
-- 撤销：自建 Command 命令栈（管块增删/排序/图片属性）+ 库内 `RichTextState.history`（管块内富文本），两套历史隔离；焦点判断是调度核心。
-- 后续需求：图片裁剪/缩放/备注（存 `originalPath`+`cropRect`，不覆盖原图）。
-- 警惕：`compose-rich-editor` 子模块指针可能指向已丢失提交，需重新提交指针。
-- **分割线块（2026-09-07，第三种块类型）**：`BodyBlock.Divider`（无 RichTextState）+ `BlockSpec.DividerSpec`；markdown 载体=独占段 `---`（只认整段恰为 `---`）；工具栏「减少缩进」右侧 Lucide `SeparatorHorizontal` 按钮触发 `insertDividerAtFocused`（光标拆块 `[前半,Divider,后半]`；段尾且后方已有 Text 块时不补空块直接落两块之间）；点击仅切换高亮（`highlightedBlockId`，2dp 暖橙），删除走相邻块退格两步删除（高亮后一次退格即删，`ReplaceBlocksCommand` 可撤销）；详情页 `InspirationBodyRichText` 识别 `---` 段渲染 HorizontalDivider（不喂库——库会把 `---` 渲染成字面文本）；字数/摘要零影响（plainText 与 content 纯文本均不含分割线）。**新增 sealed 块子类时必须全项目 Grep `is BodyBlock.` 补穷尽 when**（`buildInsertImageCommand` 的 return when 曾因此需补 else）。
-- **复选框块（2026-09-07，Text 块属性方案）**：不加新子类，`BodyBlock.Text` 加 `checked: Boolean?`（null=普通块）——observer/拆块/合并全复用。markdown 载体=GFM 任务列表 `- [ ] `/`- [x] ` 前缀，**前缀只在块边界处理、绝不进块内 RichTextState**（库会把 task list 渲染成列表+字面 `[ ]` 文本）；只认 App 自生成形态（保守同 `---`）。工具栏「无序列表」左侧 Lucide `SquareCheck` 按钮 → `toggleCheckboxAtFocused()` 整块转换（ReplaceBlocksCommand+textSpec.copy）；勾选点击 → `SetCheckboxCheckedCommand` → `setCheckboxChecked` **就地换块对象但保持 state/focusRequester 引用**（不重建不丢 history 光标不动，区别于拆块类命令）；回车续未勾选项、空项回车退出、块首退格退出保留文字、合并继承前块 checked（`isEffectivelyBlankLine` 口径判空项，软键盘 \n 场景 isEffectivelyEmpty 判不出）。视觉走共享组件 `CheckboxIcon.kt`（18dp 圆角5dp；勾选=primary 填充+白 Check，用户选定主题橙非截图黄）；勾选态文字 onSurface 40% 降级。详情页 `InspirationBodyRichText` 迭代改 `contentFormat.split("\n\n")` **原始段序列**（保留索引供勾选重组；旧 parseMarkdownSegments 过滤管线丢图片/空段索引无法映射回原文），图片段用同源正则 `InspirationImageSegmentRegex` 整段匹配跳过；点击勾选 → `InspirationViewModel.updateInspirationContentFormat(id,md)` **读库最新实体只合并 contentFormat**（防快速连点时界面旧快照覆盖前次勾选）；`onCheckboxToggle` 默认 null 兼容截图离屏调用。字数统计天然含 checkbox 文本（前缀不进 state）。
+## 编辑态块结构（路线 4，块级图文交错）
+- `BodyBlocksEditor` + 每块一个 RichTextEditor（Compose 1.11 BasicTextField 无 inlineContent）。语音保持 `trigger:voice` 内联。详见 `docs/路线4-块级图片-实施方案.md`。
+- 撤销：自建 Command 栈（块增删/排序/图片属性）+ 库内 `RichTextState.history`（块内富文本），两套历史隔离，焦点判断是调度核心。
+- 子模块 `compose-rich-editor` 指针可能指向丢失提交，需重提。
+- **分割线块** `BodyBlock.Divider`：markdown 独占段 `---`（整段恰为 `---`）；工具栏 `SeparatorHorizontal` 按钮插入；点击仅高亮（`highlightedBlockId`），退格两步删除，可撤销；详情页识别 `---` 渲染 HorizontalDivider（不喂库）。
+- **复选框块**（Text 块属性 `checked: Boolean?`）：GFM `- [ ] `/`- [x] ` 前缀只在块边界处理，**绝不进 RichTextState**。工具栏 `SquareCheck` 整块转换；勾选走 `SetCheckboxCheckedCommand` **就地换块对象、保持 state/focusRequester 引用**（不丢 history、光标不动）。视觉 `CheckboxIcon.kt`（18dp/圆角5dp，勾选=primary 填充）。**缩进 = App 布局级同步**：`indentLevel:Int`(1..6)，markdown 用 `- [ ] ` 后的 EM(U+2003) 前缀（每级2个），state 恒无 TextIndent；渲染时 Row 内图标与编辑器各加 `(L-1)×30sp` start padding。**教训：跨排版体系对齐要改架构（同容器整体变换），别对齐外部数值**。详情页 `InspirationBodyRichText` 迭代 `split("\n\n")` 原始段序列；勾选写库只读最新实体合并 contentFormat。
+- **新增 sealed 块子类必须全项目 Grep `is BodyBlock.` 补穷尽 when**。
+- **无序列表缩进不换符号（2026-09-08）**：库默认符号表 `DefaultUnorderedListStyleType` 改为单元素 `from("•")`，任意层级 marker 恒为黑色圆点（缩进只移动位置）。层级→符号取 `prefixes[(level-1).coerceIn(indices)]`，单元素表即恒取首项。有序列表编号轮换（1.→(2)→①）保持不动。App 侧 `refocusListBlock` 正则仍保留 `[•◦▪]` 兼容旧数据/自定义符号表。
+- **缩进数据源同源**：`indentFocusedBlock` / `canIncreaseIndent` / `canDecreaseIndent` 三处判断顺序必须一致——复选框块（含「复选框+列表」组合态）**优先**读块对象 `indentLevel`（App 布局级），纯列表块才读库层级（`listLevelOfMd`），否则按钮置灰会失准。
 
-## SwipeableImageStack（灵感页堆叠图）
-- 可见深度锁 4；扇形按 `ei=min(stackIndex,M-1)` 夹取；旋转角 `-(M-1)*15`。
-- 展开态收起按钮半胶囊吸附时间线竖线左缘 77dp；祖先 `animateContentSize` 裁剪→用「Stage 左扩 + 内容层补偿」机制。
+## SwipeableImageStack
+- 可见深度锁 4；扇形 `ei=min(stackIndex,M-1)`；旋转角 `-(M-1)*15`。展开态收起按钮半胶囊吸附时间线竖线；祖先 `animateContentSize` 会裁剪 →「Stage 左扩 + 内容层 offset 补偿」。
 
 ## 资源位置
-- 设计稿 Ardot fileId 707225018209249；字体素材库 `free-font/`(13GB,本地,.gitignore)；报告 `free-font-可商用字体库调研报告.md`。
+- 设计稿 Ardot fileId 707225018209249；字体素材 `free-font/`；报告 `free-font-可商用字体库调研报告.md`。

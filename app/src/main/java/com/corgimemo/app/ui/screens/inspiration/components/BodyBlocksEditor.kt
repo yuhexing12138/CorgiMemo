@@ -783,8 +783,11 @@ class BodyBlocksController(
      * internal 字段（richParagraphList / startText 均不可从 App 访问）。
      * 覆盖全部层级 marker 形态（v2026-09-05 缩进按钮层级样式）：
      * 一级 `1.` / 二级 `(1)` / 三级 `①` / 四级 `a.` / 五级 `Ⅰ.` / 六级 `i.` + 无序
-     * `• ◦ ▪`（正则失配时 markerEnd 回退 0，光标会落在 marker 左侧——层级样式加入后
+     * 符号（正则失配时 markerEnd 回退 0，光标会落在 marker 左侧——层级样式加入后
      * `(2)` 曾因此失配，光标落在括号左侧）。
+     *
+     * 无序符号（v2026-09-08）：库默认符号表已改为单元素 `•`，**各层级 marker 恒为
+     * 黑色圆点**（缩进只移动位置），字符类仍保留 `◦ ▪` 以兼容自定义符号表与旧数据。
      *
      * v2026-09-07 修正：库的罗马数字（LowerRoman/UpperRoman）用 **ASCII 字母**拼写
      * （"i"/"I"、"ii"/"II"，见库 `OrderedListStyleType.formatToRomanNumber`），并非
@@ -1273,6 +1276,9 @@ class BodyBlocksController(
          * 层级变化会同时改变 marker 形态（2. → (2) → ① …）与段落缩进，视觉效果明确，
          * 不可忽略。ZWSP 退格锚点在 raw 内容里，setListMarker 只换段落类型不碰内容，
          * 锚点保持有效。
+         *
+         * **无序列表例外（v2026-09-08）**：库默认符号表已改为单元素 `•`，层级变化
+         * 只改段落缩进、marker 恒为黑色圆点（用户明确要求「缩进不换标识」）。
          */
         state.setListMarker(
             level = newLevel,
@@ -2620,23 +2626,22 @@ class BodyBlocksController(
         if (idx < 0) return
 
         /**
-         * 复选框块块首退格（v2026-09-07，硬键盘内容起点拦截 / 空块软键盘转发汇聚）：
-         * **退出复选框**（checked = null，文字保留）——与空列表项退格退出列表同语义；
-         * 第二次退格按普通块继续走下方合并 / 删除逻辑。
+         * 缩进块（普通 / 复选框 / 组合态，v2026-09-08 App 布局级）：内容起点退格 =
+         * **减一级缩进**（Word/Notion 标准行为，一级一级回退），不删字、不合并；
+         * 减到一级后回落下方语义（复选框块退出复选框 / 普通块合并删除）。
          */
-        if (block.checked != null) {
-            convertCheckboxBlockToText(block)
+        if (block.indentLevel > 1) {
+            dedentBlockAtContentStart(block)
             return
         }
 
         /**
-         * 缩进块（普通 / 复选框，v2026-09-08 App 布局级）：内容起点退格 =
-         * **减一级缩进**（Word/Notion 标准行为），不删字、不合并；一级（无缩进）
-         * 时回落到下方原合并/删除语义。硬键盘（内容起点拦截，文本未变）汇聚到
-         * 本入口；软键盘在非 ZWSP 前缀块上是检测死角（既有局限，与普通块一致）。
+         * 复选框块（已到一级缩进）块首退格：**退出复选框**（checked = null，文字
+         * 保留，缩进同步归位）——与空列表项退格退出列表同语义；再退格按普通块
+         * 继续走下方合并 / 删除逻辑。
          */
-        if (!block.state.isList && block.indentLevel > 1) {
-            dedentBlockAtContentStart(block)
+        if (block.checked != null) {
+            convertCheckboxBlockToText(block)
             return
         }
 
