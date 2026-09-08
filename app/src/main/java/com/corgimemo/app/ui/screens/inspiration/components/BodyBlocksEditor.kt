@@ -2,7 +2,6 @@ package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -39,7 +38,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
@@ -304,27 +302,18 @@ sealed class BodyBlock {
      *
      * - markdown 载体为独占段 `"---"`（CommonMark thematic break，见 [DIVIDER_MD]）；
      * - 无 RichTextState，不参与字数统计（[BodyBlocksController.plainText] 只聚合 Text 块）；
-     * - 交互（v2026-09-08 修订）：
-     *   - **点击** → 高亮 + **焦点迁移到本块**（[focusRequester]）：Text 块失焦后光标
-     *     消失、软键盘收起，硬键盘的 Backspace / Delete 由本块自己接收并删除自己
-     *     （详见 [BlockDividerItem] 的 onKeyEvent）；
-     *   - **光标存在时**（[BodyBlocksController.onBackspaceAtStart] /
-     *     [BodyBlocksController.onDeleteAtEnd]）→ 两步删除：第一次退格/删除先高亮，
-     *     第二次删除，语义与图片块一致；
+     * - 交互（v2026-09-08 第三版）：
+     *   - **点击** → 高亮 + 光标安置到「分割线之后最近的 Text 块」块首
+     *     （[BodyBlocksController.onDividerTapped]）：焦点**始终留在文本世界**，
+     *     软键盘不收起；选中期间光标颜色置透明（视觉上"光标消失"）；
+     *   - **删除**：光标既在块首 → 退格落到 [BodyBlocksController.onBackspaceAtStart]
+     *     的"前一块是分割线"分支 → 已高亮即删除（软/硬键盘同一路径）；
+     *     光标存在时的两步删除（第一次高亮、第二次删除）原样保留；
      *   - 删除可撤销（[ReplaceBlocksCommand]）；
      * - 可参与拖拽排序（[MoveBlockCommand] 按块 id 移动，对此类型透明）。
      */
     class Divider(
         override val id: String,
-        /**
-         * 键盘焦点锚点（v2026-09-08 新增）：点击分割线时把焦点从当前 Text 块
-         * **迁移到本块**——Text 块失焦 ⇒ 光标消失（点击分割线的预期），随后硬键盘
-         * 的 Backspace / Delete 才可能由本块（而非 Text 块）接收。
-         *
-         * 与 [Text.focusRequester] 同构：撤销 / 重做重建块时换新实例，不影响正确性
-         * （焦点只在点击当下请求一次）。
-         */
-        val focusRequester: FocusRequester = FocusRequester(),
     ) : BodyBlock()
 }
 
@@ -1688,17 +1677,51 @@ class BodyBlocksController(
     }
 
     /**
-     * 点击分割线（块 Composable 入口）：**切换高亮**（选中态），并把键盘焦点
-     * 迁移到分割线块本身（由 Composable 调 [BodyBlock.Divider.focusRequester]）。
+     * 点击分割线（块 Composable 入口）：**切换选中态**，选中时把光标安置到
+     * 「分割线之后最近的 Text 块」块首（[focusAfterDividerSelection]）。
      *
-     * **焦点迁移的意义（v2026-09-08）**：焦点留在 Text 块时，按键由 Text 块接收
-     * （退格 = 删字 / 跨块合并），点选分割线后无法用删除键删它；迁移后 Text 块失焦
-     * ⇒ **光标消失**，删除键由分割线块自己接收（[BlockDividerItem] 的 onKeyEvent）。
+     * **设计要点（v2026-09-08 第三版，取代上一版的"焦点迁移到分割线"）**：
+     * - 焦点**始终留在 Text 块** ⇒ 软键盘不收起（上一版夺焦点会让键盘消失，
+     *   触屏用户反而按不到删除键）；
+     * - 光标**视觉消失**由 `cursorColor = Transparent` 实现（[BlockTextItem] 按
+     *   [selectedAnchorTextId] 切换），而非真的失焦；
+     * - 光标被安置到分割线**之后**那行的行首 ⇒ 退格落在"块首"语义上，由
+     *   [onBackspaceAtStart] 命中"前一块是已高亮的分割线"分支 → 一次退格即删
+     *   （软键盘：空块走 ZWSP 差分检测；硬键盘：走 atContentStart 拦截）。
      *
      * 光标存在时的两步删除（[onBackspaceAtStart] / [onDeleteAtEnd]）保留不变。
      */
     fun onDividerTapped(blockId: String) {
-        highlightedBlockId = if (highlightedBlockId == blockId) null else blockId
+        if (highlightedBlockId == blockId) {
+            /** 再次点击同一条 = 取消选中：光标恢复可见，焦点/键盘保持不动 */
+            clearBlockSelection()
+            return
+        }
+        highlightedBlockId = blockId
+        selectedAnchorTextId = focusAfterDividerSelection(blockId)
+    }
+
+    /**
+     * 选中分割线后的光标安置：优先落到**分割线之后**最近的 Text 块块首（offset 0）；
+     * 分割线是最后一块时退到**之前**最近的 Text 块块尾（此时软键盘退格会删字，
+     * 属既有死区；硬键盘 Delete 走 [onDeleteAtEnd] 仍可删）。
+     *
+     * @return 被安置的 Text 块 id（作为 [selectedAnchorTextId]）；无 Text 块时 null
+     */
+    private fun focusAfterDividerSelection(dividerId: String): String? {
+        val idx = blocks.indexOfFirst { it.id == dividerId }
+        if (idx < 0) return null
+        val next = blocks.drop(idx + 1).firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text
+        if (next != null) {
+            focusSpec(FocusSpec(next.id, 0))
+            return next.id
+        }
+        val prev = blocks.take(idx).lastOrNull { it is BodyBlock.Text } as? BodyBlock.Text
+        if (prev != null) {
+            focusSpec(FocusSpec(prev.id, prev.state.annotatedString.text.length))
+            return prev.id
+        }
+        return null
     }
 
     // ---------- 复选框（v2026-09-07） ----------
@@ -2541,9 +2564,40 @@ class BodyBlocksController(
         blocks.add(to, block)
     }
 
-    /** Command 落盘后的通用收尾：两步删除的高亮态随结构变化清除 */
+    /** Command 落盘后的通用收尾：两步删除的高亮态随结构变化清除（含选中态锚点） */
     internal fun afterCommandMutation() {
-        if (highlightedBlockId != null) highlightedBlockId = null
+        clearBlockSelection()
+    }
+
+    // ---------- 非文本块「点选」态（v2026-09-08 第三版） ----------
+
+    /**
+     * 「点选非文本块」态下，光标被安置到的那个 Text 块 id（null = 不在该态）。
+     *
+     * **为什么需要它**：点击分割线要让"光标消失 + 键盘不消失 + 按键能删分割线"，
+     * 而 Android 软键盘（IME）只跟随**聚焦的编辑框**——焦点离开 TextField 键盘必然收起，
+     * 且软键盘退格走 `InputConnection.deleteSurroundingText`（Compose 的
+     * `onPreInterceptKeyBeforeSoftKeyboard` 按官方注释只拦硬件键盘转交给 IME 的事件，
+     * 拦不住屏幕键盘自身的删除）。故唯一可行解是：**焦点留在 Text 块**，用
+     * `cursorColor = Transparent` 让光标视觉消失，并把光标安置到"分割线之后最近 Text
+     * 块的块首"——那里退格无字可删，会被引擎的块首退格检测捕获（空块走 ZWSP 差分、
+     * 硬键盘走 atContentStart），进而命中 [onBackspaceAtStart] 的分割线分支。
+     *
+     * 该字段同时是 UI 隐藏光标的开关（快照状态，变化触发重组）与焦点归属的判据：
+     * 焦点回到本块 = 选中流程自身的落焦（不清高亮）；落到其它块 = 用户去编辑别的块
+     * （退出选中态）。
+     */
+    internal var selectedAnchorTextId by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * 退出「点选非文本块」态：清高亮 + 清锚点 → 光标恢复可见（焦点/键盘不动）。
+     * 再次点击同一分割线、点击其它 Text 块、开始输入字符、执行任何命令都会走到这里。
+     */
+    fun clearBlockSelection() {
+        if (highlightedBlockId == null && selectedAnchorTextId == null) return
+        highlightedBlockId = null
+        selectedAnchorTextId = null
     }
 
     /**
@@ -2843,9 +2897,21 @@ class BodyBlocksController(
         executeAndPush(MoveBlockCommand(blockId = blockId, fromIndex = from, toIndex = to))
     }
 
-    /** 块获得焦点时回调（由块 Composable 的 onFocusChanged 触发） */
+    /**
+     * 块获得焦点时回调（由块 Composable 的 onFocusChanged 触发）。
+     *
+     * **选中态特判（v2026-09-08 第三版）**：点选分割线后本回调会被"安置落焦"触发
+     * ——那是选中流程自己的落焦，不能当作"用户去编辑别的块"而清掉高亮（否则高亮
+     * 刚点亮就熄灭）。判据是 [selectedAnchorTextId]：焦点回到安置块 ⇒ 保留；
+     * 落到**其它**块 ⇒ 用户开始编辑别处，退出选中态（高亮清、光标恢复可见）。
+     */
     fun onBlockFocused(blockId: String) {
         focusedBlockId = blockId
+        val anchor = selectedAnchorTextId
+        if (anchor != null) {
+            if (blockId != anchor) clearBlockSelection()
+            return
+        }
         if (highlightedBlockId != null) highlightedBlockId = null
     }
 
@@ -3106,6 +3172,16 @@ private fun BlockTextItem(
                 val emptyBackspace = lastText == ZWSP && text == ""
 
                 if (!controller.replaying) {
+                    /**
+                     * 开始输入 ⇒ 退出「点选非文本块」态（v2026-09-08 第三版）：
+                     * 选中分割线期间光标是透明的，用户一旦打字就该恢复光标、取消选中。
+                     * 判据用**文本变长**（输入 / 上屏），退格变短不触发——否则会先清掉
+                     * 高亮再进 [BodyBlocksController.onBackspaceAtStart]，两步删除退化成
+                     * "永远只能高亮、删不掉"。IME 组合中间态跳过，等上屏那轮再清。
+                     */
+                    if (text.length > lastText.length && composition == null) {
+                        controller.clearBlockSelection()
+                    }
                     /** 新编辑（非命令重放、非块内 history 恢复、非 IME 组合中间态）
                      *  → 全局 redo 栈失效。退格合并 / 空块删除路径不在此清——
                      *  onBackspaceAtStart 入口的命令会统一清（pushExecuted）。 */
@@ -3313,9 +3389,22 @@ private fun BlockTextItem(
                 end = 16.dp,
                 bottom = 0.dp,
             ),
+            /**
+             * 光标颜色：选中非文本块（分割线）期间置**透明**（v2026-09-08 第三版）。
+             *
+             * 目的：满足"点选分割线后光标消失"的预期，同时**不夺焦点**——焦点一离开
+             * TextField，软键盘立刻收起，触屏用户就没法按删除键删分割线了。这里用
+             * "聚焦但光标透明"两全：TextField 仍持有输入连接（键盘不收），只是看不见
+             * 光标；按退格由 [BodyBlocksController.onBackspaceAtStart] 接管删除分割线。
+             * 取消选中 / 编辑其它块 / 开始输入都会清掉选中态，光标随即恢复。
+             */
             colors = RichTextEditorDefaults.richTextEditorColors(
                 containerColor = Color.Transparent,
-                cursorColor = Color(0xFFFF9A5C),
+                cursorColor = if (controller.selectedAnchorTextId != null) {
+                    Color.Transparent
+                } else {
+                    Color(0xFFFF9A5C)
+                },
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
                 disabledIndicatorColor = Color.Transparent,
@@ -3381,15 +3470,15 @@ private val DividerHighlightColor = Color(0xFFFF9A5C)
  * - **高亮态**（点击选中 / 退格两步删除的第一步）：2dp 主题暖橙线，参照已确认交互稿；
  * - **点击**：整行热区（固定 25dp 高的线体容器）切换高亮（[BodyBlocksController.onDividerTapped]），
  *   去水波纹（`indication = null` 必须显式传 `interactionSource`，否则不生效）；
- * - **焦点迁移（v2026-09-08）**：容器 `.focusable()` 成为焦点目标，点击时
- *   `requestFocus()` 把焦点从 Text 块夺过来 ⇒ **光标消失**（用户点击分割线的预期：
- *   选中了"对象"而非停留在文本里）；软键盘随之收起，硬键盘按键由本块接收；
- * - **删除**（两条路径并存）：
- *   1. 点选高亮后按 Backspace / Delete（焦点在本块，由 onKeyEvent 处理）；
- *   2. 光标存在时由相邻 Text 块块首退格 / 块尾删除两步删除（[BodyBlocksController.onBackspaceAtStart]
- *      / [BodyBlocksController.onDeleteAtEnd]：第一次高亮、第二次删除）——本次改动保留该逻辑；
- *   两者都走 [BodyBlocksController.deleteDividerBlock]（分割线行变空行、焦点落行首、可撤销）；
- * - 锁定态（isLocked）不可点击、不可聚焦；拖拽时 60% 透明度（与 Text/Image 块一致）；
+ * - **焦点不迁移（v2026-09-08 第三版）**：本块**不**申请焦点——焦点一离开 TextField
+ *   软键盘就收起，触屏用户反而按不到删除键。改为：点击后由控制器把光标安置到
+ *   「分割线之后最近 Text 块的块首」（[BodyBlocksController.onDividerTapped]），
+ *   焦点始终在文本世界 ⇒ 键盘不收；光标**视觉消失**由该 Text 块的 cursorColor
+ *   置透明实现（[BlockTextItem] 读 [BodyBlocksController.selectedAnchorTextId]）；
+ * - **删除**：光标既在块首 ⇒ 退格命中 [BodyBlocksController.onBackspaceAtStart] 的
+ *   "前一块是已高亮分割线"分支，一次退格即删；两步删除（第一次高亮、第二次删除）
+ *   保留；两者都走 [BodyBlocksController.deleteDividerBlock]（行变空行、可撤销）；
+ * - 锁定态（isLocked）不可点击；拖拽时 60% 透明度（与 Text/Image 块一致）；
  * - **零位移约束**：高亮增厚（1dp→2dp）时容器高度恒定、线居中扩展——块总高不变，
  *   不会推挤下方内容（v2026-09-07 用户反馈修复）。
  */
@@ -3428,52 +3517,7 @@ private fun BlockDividerItem(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     enabled = !isLocked,
-                ) {
-                    controller.onDividerTapped(block.id)
-                    /**
-                     * 焦点迁移（v2026-09-08）：把键盘焦点从当前 Text 块夺到本块——
-                     * Text 块失焦 ⇒ 光标消失（点击分割线的预期），且后续硬键盘的
-                     * Backspace / Delete 由下方 onKeyEvent 接收（否则按键被 Text 块
-                     * 吃掉，永远走不到"删除分割线"）。锁定态不迁移（保持只读）。
-                     */
-                    if (!isLocked) block.focusRequester.requestFocus()
-                }
-                .focusRequester(block.focusRequester)
-                /** 成为焦点目标才能接收硬键盘事件；锁定态不可聚焦 */
-                .focusable(enabled = !isLocked)
-                .onKeyEvent { keyEvent ->
-                    if (keyEvent.type != KeyEventType.KeyDown) return@onKeyEvent false
-                    if (isLocked || !highlighted) return@onKeyEvent false
-                    when (keyEvent.key) {
-                        /**
-                         * 点选（高亮）后按退格 / 删除 → 删除本分割线（那一行变空行，
-                         * 焦点落到空行行首，见 [BodyBlocksController.deleteDividerBlock]）。
-                         * 未高亮（如二次点击取消选中后焦点仍在本块）不吞事件。
-                         */
-                        Key.Backspace, Key.Delete -> {
-                            controller.deleteDividerBlock(block.id)
-                            true
-                        }
-                        /**
-                         * 与 Text 块同款的撤销 / 重做快捷键：焦点在本块时按键到不了
-                         * Text 块（其 onPreviewKeyEvent 不在焦点链上），此处补上，
-                         * 调度入口与屏幕按钮一致（[BodyBlocksController.undo]）。
-                         */
-                        Key.Z -> if (keyEvent.isCtrlPressed) {
-                            if (keyEvent.isShiftPressed) controller.redo() else controller.undo()
-                            true
-                        } else {
-                            false
-                        }
-                        Key.Y -> if (keyEvent.isCtrlPressed) {
-                            controller.redo()
-                            true
-                        } else {
-                            false
-                        }
-                        else -> false
-                    }
-                }
+                ) { controller.onDividerTapped(block.id) }
                 .height(25.dp),
             contentAlignment = Alignment.Center,
         ) {
