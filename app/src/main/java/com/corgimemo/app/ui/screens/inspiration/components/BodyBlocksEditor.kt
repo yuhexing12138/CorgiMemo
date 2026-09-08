@@ -2,6 +2,7 @@ package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -2661,6 +2662,18 @@ class BodyBlocksController(
     }
 
     /**
+     * Text 块被按下（v2026-09-08）：**任何**按下动作都退出分割线 / 图片选中态。
+     *
+     * 为什么需要它：点击**光标所在的已聚焦块**不产生焦点变化
+     * （[onBlockFocused] 不会被调用），高亮原本会残留；由 [BlockTextItem] 的
+     * Row 用非消费的 `awaitFirstDown` 观测按下并调到这里（不影响 TextField
+     * 自身的点击定位 / 长按选择手势）。
+     */
+    fun onTextBlockPressed() {
+        clearBlockSelection()
+    }
+
+    /**
      * 捕获当前焦点落点（Command 构造时的 focusBefore / focusAfter）。
      *
      * **返回原始坐标（raw offset，直接索引 [RichTextState.annotatedString.text]）**。
@@ -3301,17 +3314,29 @@ private fun BlockTextItem(
      *   后续调整 textStyle.lineHeight 会同时作用于块内行高与块间，
      *   天然联动。
      */
-    Row(verticalAlignment = Alignment.Top) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier.pointerInput(Unit) {
+            /**
+             * 按下即退出分割线 / 图片选中态（v2026-09-08）：覆盖**"点击光标所在的
+             * 已聚焦块"**——那种点击不产生焦点变化，[androidx.compose.ui.focus.onFocusChanged]
+             * 不会再发事件，[BodyBlocksController.onBlockFocused] 不会被调用，
+             * 高亮原本会残留。
+             *
+             * `awaitFirstDown(requireUnconsumed = false)` 只**观察**按下、不消费事件
+             * ——TextField 自身的点击定位光标 / 长按选择 / 双击选词手势完全不受影响；
+             * 挂在 Row 上让手柄、复选框、文本区任何位置的按下都算"回到文本操作"。
+             */
+            awaitPointerEventScope {
+                while (true) {
+                    awaitFirstDown(requireUnconsumed = false)
+                    controller.onTextBlockPressed()
+                }
+            }
+        },
+    ) {
         BlockDragHandle(dragHandleModifier)
 
-        /**
-         * 复选框标识（v2026-09-07）：checked != null（复选框块）时渲染在编辑器左侧。
-         * 点击切换勾选（[BodyBlocksController.toggleCheckboxChecked]，一步一撤销，
-         * markdown 前缀 `- [ ] ` ↔ `- [x] ` 随 onDocChanged 链路自动保存）；
-         * 锁定态不可点击；start padding = 基准 2dp + 布局级缩进偏移
-         * （[checkboxIndentPadding]），与编辑器同偏移推动 → 同步位移、间距恒定；
-         * top padding 让 18dp 框体与第一行文字中线对齐。
-         */
         /**
          * 复选框标识（v2026-09-07）：checked != null（复选框块）时渲染在编辑器左侧。
          * 点击切换勾选（[BodyBlocksController.toggleCheckboxChecked]，一步一撤销，
