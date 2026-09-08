@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.components.InlineImagePreview
@@ -112,7 +113,7 @@ private const val MAX_LIST_LEVEL = 6
 private const val PLAIN_INDENT_CHAR = '\u2003'
 
 /** 纯文本缩进步长：每个缩进层级对应的段首全角空格个数（≈ 两字符宽）。
- *  internal：复选框标识跟随缩进时按它换算每级宽度（v2026-09-07，见 [checkboxIndentDp]） */
+ *  internal：复选框块缩进档位的载体步长（v2026-09-08，渲染侧按它换算每级 padding） */
 internal const val PLAIN_INDENT_STEP = 2
 
 /**
@@ -130,13 +131,14 @@ internal fun listLevelOfMd(md: String): Int {
 /**
  * 读 markdown 的纯文本缩进层级（1 = 无缩进；段首全角空格每级 2 个，
  * 由库编码端对 [DefaultParagraph.level]>1 输出）。
- * internal：复选框标识跟随缩进时按它读层级（v2026-09-07，见 [checkboxIndentDp]）。
+ * internal：复选框块缩进载体解析用它读档位（v2026-09-08，见 [checkboxMarkdownInfo]）。
  */
 internal fun plainIndentLevelOfMd(md: String): Int =
     md.countLeadingPlainIndentChars() / PLAIN_INDENT_STEP + 1
 
-/** 纯文本缩进的 markdown 前缀：level 级 = 段首 EM×2×(level-1)（与库编码端同款） */
-private fun plainIndentPrefix(level: Int): String =
+/** 纯文本缩进的 markdown 前缀：level 级 = 段首 EM×2×(level-1)（与库编码端同款）。
+ *  internal：复选框块缩进载体（v2026-09-08）拼接/解析共用 */
+internal fun plainIndentPrefix(level: Int): String =
     PLAIN_INDENT_CHAR.toString().repeat(PLAIN_INDENT_STEP * (level - 1))
 
 /**
@@ -158,7 +160,8 @@ private fun String.countLeadingPlainIndentChars(): Int {
 }
 
 /** 剥掉 markdown 的纯文本缩进前缀（退格合并时丢弃后块缩进，见 [BodyBlocksController.mergeTextBlocks]） */
-private fun String.dropLeadingPlainIndent(): String =
+/** 剥掉 markdown 的纯文本缩进前缀（复选框块缩进载体解析也用它，v2026-09-08） */
+internal fun String.dropLeadingPlainIndent(): String =
     drop(countLeadingPlainIndentChars())
 
 /** 二级 marker：带括号阿拉伯数字 `"(1) "`（用户指定层级循环 1./(1)/①/a./Ⅰ./i.） */
@@ -269,6 +272,23 @@ sealed class BodyBlock {
          * 就地翻转（保持 state 对象与焦点稳定）走 [BodyBlocksController.setCheckboxChecked]。
          */
         val checked: Boolean? = null,
+        /**
+         * 复选框块的缩进档位（v2026-09-08 新增，1 = 无缩进，上限 [MAX_LIST_LEVEL]）。
+         *
+         * **为什么不走库的段落缩进（TextIndent）**：真机实测库对纯文本段的
+         * TextIndent 渲染量与理论公式不符（约为公式 2 倍），编辑器外（Row 内）
+         * 的复选框图标无法可靠对齐。改为 **App 布局级缩进**：复选框图标与编辑器
+         * 在 Row 内各自加同一个 `indentLevel` 对应的 start padding——两者被同一
+         * 个偏移量推动，**同步是布局恒等的**，与库渲染行为完全解耦（这也正是
+         * 列表项 marker+文本整体缩进的行为模式）。
+         *
+         * 持久化载体：markdown 的 `- [ ] ` 前缀之后、内容之前的全角空格
+         * （U+2003，每级 [PLAIN_INDENT_STEP] 个），由 [checkboxMarkdownInfo] 解析、
+         * [BodyBlocksController.toMarkdown] 拼接——**只在块边界处理、不进 state**。
+         * 缩进操作经 [BodyBlocksController.setCheckboxIndent] 就地换块对象
+         * （state/history/光标无损）。
+         */
+        val indentLevel: Int = 1,
     ) : BodyBlock()
 
     class Image(
@@ -333,6 +353,12 @@ sealed class BlockSpec {
          * 重建时由 [BodyBlocksController.rebuildBlock] 原样传给 createTextBlock。
          */
         val checked: Boolean? = null,
+        /**
+         * 复选框块缩进档位（v2026-09-08 新增，1 = 无缩进）：与 [checked] 成对出现；
+         * [markdown] 载荷不含缩进（EM 前缀在 [BodyBlocksController.toMarkdown] 拼接、
+         * [BodyBlocksController.initialize] 解析），state 干净、不参与库的段落缩进。
+         */
+        val indentLevel: Int = 1,
     ) : BlockSpec()
 
     /** Image 块：只有 uri 路径 */
@@ -528,6 +554,32 @@ class SetCheckboxCheckedCommand(
 }
 
 /**
+ * 复选框块缩进档位变更命令（v2026-09-08）：「增加 / 减少缩进」按钮对复选框块生效。
+ *
+ * **App 布局级缩进**：复选框块的缩进不走库的段落 TextIndent（其渲染量与 Row 外
+ * 复选框图标无法对齐），而是记在 [BodyBlock.Text.indentLevel] 上，渲染由 Row 内
+ * 复选框与编辑器各自的 start padding 承载（同一偏移推动两者，同步布局恒等）。
+ * 命令只翻转档位（就地换块对象，state / history / 光标无损）；markdown 载体
+ * （`- [ ] ` 后的 EM 前缀）由 toMarkdown 按 indentLevel 生成，随 onDocChanged 保存。
+ */
+class SetCheckboxIndentCommand(
+    val blockId: String,
+    val oldLevel: Int,
+    val newLevel: Int,
+) : BodyBlocksCommand {
+
+    override fun apply(controller: BodyBlocksController) {
+        controller.setCheckboxIndent(blockId, newLevel)
+        controller.afterCommandMutation()
+    }
+
+    override fun revert(controller: BodyBlocksController) {
+        controller.setCheckboxIndent(blockId, oldLevel)
+        controller.afterCommandMutation()
+    }
+}
+
+/**
  * 复合命令（方案A坑点5）：把多个原子命令打包成**一个撤销单位**——
  * 批量插图（多选相册一次确认）、将来的批量删除等。
  * apply 顺序执行，revert 逆序回退。
@@ -589,13 +641,25 @@ internal const val CHECKBOX_MD_CHECKED = "- [x] "
 /**
  * 判断单段 markdown（已按 `\n\n` 拆出）是否为复选框段。
  *
- * @return 命中时返回 (勾选状态, 剥掉前缀后的内容 markdown)；未命中返回 null。
- *   内容为空串表示空复选框项（序列化输出即前缀本身，往返对称）。
+ * 缩进载体：前缀之后的**前导全角空格**（U+2003，每级 [PLAIN_INDENT_STEP] 个）
+ * 是复选框块的缩进档位（v2026-09-08，App 自管、不经库编码端）——解析后从内容里剥除，
+ * 内容 markdown 保持干净（state / 详情页 RichText 都不应看到 EM 载体）。
+ *
+ * @return 命中时返回 (勾选状态, 缩进档位, 剥掉前缀与缩进载体后的内容 markdown)；
+ *   未命中返回 null。内容为空串表示空复选框项（序列化输出即前缀本身，往返对称）。
  */
-internal fun checkboxMarkdownInfo(para: String): Pair<Boolean, String>? = when {
-    para.startsWith(CHECKBOX_MD_UNCHECKED) -> false to para.removePrefix(CHECKBOX_MD_UNCHECKED)
-    para.startsWith(CHECKBOX_MD_CHECKED) -> true to para.removePrefix(CHECKBOX_MD_CHECKED)
-    else -> null
+internal fun checkboxMarkdownInfo(para: String): Triple<Boolean, Int, String>? {
+    val body = when {
+        para.startsWith(CHECKBOX_MD_UNCHECKED) -> para.removePrefix(CHECKBOX_MD_UNCHECKED)
+        para.startsWith(CHECKBOX_MD_CHECKED) -> para.removePrefix(CHECKBOX_MD_CHECKED)
+        else -> return null
+    }
+    val indentLevel = body.countLeadingPlainIndentChars() / PLAIN_INDENT_STEP + 1
+    return Triple(
+        para.startsWith(CHECKBOX_MD_CHECKED),
+        indentLevel,
+        body.dropLeadingPlainIndent(),
+    )
 }
 
 /** 复选框块的 markdown 前缀（按勾选状态）；[checked]=null 返回空串（普通块无前缀） */
@@ -850,6 +914,12 @@ class BodyBlocksController(
          * （前缀由调用方 [BodyBlocksController.initialize] 处理，不进块内 state）。
          */
         checked: Boolean? = null,
+        /**
+         * 复选框块缩进档位（v2026-09-08 新增，1 = 无缩进）：App 布局级缩进，
+         * 不调库 setParagraphIndent（TextIndent 渲染与复选框无法对齐）；
+         * [markdown] 参数必须是**已剥掉缩进载体（EM 前缀）**的内容。
+         */
+        indentLevel: Int = 1,
     ): BodyBlock.Text {
         val state = RichTextState()
         /**
@@ -931,13 +1001,19 @@ class BodyBlocksController(
                 state.setListMarker(level = lvl, number = num, commitHistory = false)
             }
         }
-        /** 复选框块：checked 属性随块对象携带（markdown 已由调用方剥掉前缀，v2026-09-07） */
-        return BodyBlock.Text(id, state, checked = checked)
+        /** 复选框块：checked / indentLevel 属性随块对象携带（markdown 已由调用方剥掉
+         *  复选框前缀与缩进载体，v2026-09-07 / v2026-09-08） */
+        return BodyBlock.Text(id, state, checked = checked, indentLevel = indentLevel)
     }
 
-    /** Text 块 → [BlockSpec.TextSpec]（markdown 剥 ZWSP，Command 载荷统一出口） */
+    /** Text 块 → [BlockSpec.TextSpec]（markdown 剥 ZWSP；checked / indentLevel 随 spec，Command 载荷统一出口） */
     private fun textSpec(block: BodyBlock.Text): BlockSpec.TextSpec =
-        BlockSpec.TextSpec(block.id, blockMarkdown(block.state))
+        BlockSpec.TextSpec(
+            block.id,
+            blockMarkdown(block.state),
+            checked = block.checked,
+            indentLevel = block.indentLevel,
+        )
 
     /** 块的 markdown 输出（剥 ZWSP——与 [toMarkdown] 的输出约定一致） */
     internal fun blockMarkdown(state: RichTextState): String =
@@ -987,9 +1063,14 @@ class BodyBlocksController(
                             blocks += BodyBlock.Divider(newBodyBlockId())
                         } else if (checkboxMarkdownInfo(trimmed) != null) {
                             // 复选框段（v2026-09-07，"- [ ] 内容" / "- [x] 内容"）：
-                            // 剥掉前缀后建 Text 块并携带勾选状态（前缀不进块内 RichTextState）
-                            val (wasChecked, contentMd) = checkboxMarkdownInfo(trimmed)!!
-                            blocks += createTextBlock(contentMd, checked = wasChecked)
+                            // 剥掉前缀与缩进载体（EM，v2026-09-08）后建 Text 块并携带
+                            // 勾选状态与缩进档位（均不进块内 RichTextState）
+                            val (wasChecked, wasIndentLevel, contentMd) = checkboxMarkdownInfo(trimmed)!!
+                            blocks += createTextBlock(
+                                contentMd,
+                                checked = wasChecked,
+                                indentLevel = wasIndentLevel,
+                            )
                         } else {
                             blocks += createTextBlock(trimmed)
                         }
@@ -1027,9 +1108,10 @@ class BodyBlocksController(
                     val raw = block.state.toMarkdown().replace(ZWSP, "")
                     if (block.checked != null) {
                         /**
-                         * 复选框块（v2026-09-07）：输出 GFM 任务列表前缀 + 内容。
-                         * 空 checkbox 块（内容为空串）输出前缀本身——段落非空、
-                         * 勾选属性随段落往返（加载侧 [checkboxMarkdownInfo] 还原为空 checkbox 项）。
+                         * 复选框块（v2026-09-07）：输出 GFM 任务列表前缀 + 缩进载体
+                         * （EM×2×(indentLevel-1)，App 自管档位，v2026-09-08）+ 内容。
+                         * 空 checkbox 块（内容为空串）输出前缀+载体本身——段落非空、
+                         * 勾选/缩进属性随段落往返（加载侧 [checkboxMarkdownInfo] 还原）。
                          */
                         val body = if (raw.isEmpty()) {
                             ""
@@ -1039,7 +1121,7 @@ class BodyBlocksController(
                                 .map { it.md.trim('\n') }
                                 .joinToString("\n\n")
                         }
-                        checkboxMdPrefix(block.checked) + body
+                        checkboxMdPrefix(block.checked) + plainIndentPrefix(block.indentLevel) + body
                     } else if (raw.isEmpty()) {
                         /** 空白块：用 NBSP 占位符序列化，使该段在 markdown 中非空，
                          * 避免与相邻图片块（块间以 `\n\n` 分隔）的「段间空段」混为一体，
@@ -1109,6 +1191,22 @@ class BodyBlocksController(
             ?.let { it as? BodyBlock.Text }
             ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
             ?: return
+
+        /**
+         * 复选框块（v2026-09-08）：**App 布局级缩进**——不调库 setParagraphIndent
+         * （其 TextIndent 渲染量与 Row 外复选框图标无法对齐，真机实测约 2 倍），
+         * 改就地换块对象的 [BodyBlock.Text.indentLevel]（[SetCheckboxIndentCommand]，
+         * state / 块内 history / 光标无损）；渲染由 Row 内复选框与编辑器各自的
+         * start padding 承载（同一偏移推动两者，同步布局恒等，间距恒定）。
+         */
+        if (block.checked != null) {
+            val newLevel = (block.indentLevel + delta).coerceIn(1, MAX_LIST_LEVEL)
+            if (newLevel != block.indentLevel) {
+                executeAndPush(SetCheckboxIndentCommand(block.id, block.indentLevel, newLevel))
+            }
+            return
+        }
+
         val state = block.state
         val md = blockMarkdown(state)
 
@@ -1171,7 +1269,16 @@ class BodyBlocksController(
      */
     val canIncreaseIndent: Boolean
         get() {
-            val state = focusedOrFirstTextState()
+            val block = focusedBlockId?.let { id -> blocks.firstOrNull { it.id == id } }
+                as? BodyBlock.Text
+                ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
+                ?: return false
+            /** 复选框块（v2026-09-08）：缩进走 App 布局级档位（读块对象 indentLevel，
+             *  就地换块对象 = blocks 结构性写入，读它会随缩进重组刷新） */
+            if (block.checked != null) {
+                return block.indentLevel < MAX_LIST_LEVEL
+            }
+            val state = block.state
             state.annotatedString
             if (!state.isList) {
                 /** 纯文本：缩进级数封顶判断（读 markdown 段首 EM 前缀，v2026-09-07 整段缩进） */
@@ -1189,7 +1296,15 @@ class BodyBlocksController(
      */
     val canDecreaseIndent: Boolean
         get() {
-            val state = focusedOrFirstTextState()
+            val block = focusedBlockId?.let { id -> blocks.firstOrNull { it.id == id } }
+                as? BodyBlock.Text
+                ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
+                ?: return false
+            /** 复选框块（v2026-09-08）：缩进走 App 布局级档位（读块对象 indentLevel） */
+            if (block.checked != null) {
+                return block.indentLevel > 1
+            }
+            val state = block.state
             state.annotatedString
             if (!state.isList) {
                 /** 纯文本：缩进级数 >1 即可减（读 markdown 段首 EM 前缀，v2026-09-07 整段缩进） */
@@ -1290,10 +1405,27 @@ class BodyBlocksController(
             state.toMarkdown(TextRange(cursor, rawText.length)).replace(ZWSP, "") else ""
 
         val inserted = mutableListOf<BlockSpec>()
-        if (beforeMd.isNotBlank()) inserted += BlockSpec.TextSpec(newBodyBlockId(), beforeMd)
+        /** 拆出的前后半继承源块的复选框属性与缩进档位（v2026-09-08 修复遗漏） */
+        val inheritedChecked = focused.checked
+        val inheritedIndentLevel = focused.indentLevel
+        if (beforeMd.isNotBlank()) {
+            inserted += BlockSpec.TextSpec(
+                newBodyBlockId(),
+                beforeMd,
+                checked = inheritedChecked,
+                indentLevel = inheritedIndentLevel,
+            )
+        }
         val imgSpec = BlockSpec.ImageSpec(newBodyBlockId(), path)
         inserted += imgSpec
-        if (afterMd.isNotBlank()) inserted += BlockSpec.TextSpec(newBodyBlockId(), afterMd)
+        if (afterMd.isNotBlank()) {
+            inserted += BlockSpec.TextSpec(
+                newBodyBlockId(),
+                afterMd,
+                checked = inheritedChecked,
+                indentLevel = inheritedIndentLevel,
+            )
+        }
         /** 末块不是 Text（光标在段尾）→ 补空尾块（等价旧 ensureTextBlock(atEnd=true)） */
         val needsTrailingText = inserted.last() !is BlockSpec.TextSpec
         if (needsTrailingText) inserted += BlockSpec.TextSpec(newBodyBlockId(), "")
@@ -1573,7 +1705,32 @@ class BodyBlocksController(
         val idx = blocks.indexOfFirst { it.id == blockId }
         val block = blocks.getOrNull(idx)
         if (block is BodyBlock.Text && block.checked != checked) {
-            blocks[idx] = BodyBlock.Text(block.id, block.state, block.focusRequester, checked)
+            blocks[idx] = BodyBlock.Text(
+                block.id,
+                block.state,
+                block.focusRequester,
+                checked,
+                block.indentLevel,
+            )
+        }
+    }
+
+    /**
+     * 缩进档位落盘（[SetCheckboxIndentCommand] 用，v2026-09-08）：就地替换块对象，
+     * **保持 state / focusRequester 引用不变**——不触发 observer 重启、不丢块内
+     * 编辑历史、光标位置不动。markdown 载体随 onDocChanged 链路自动保存。
+     */
+    internal fun setCheckboxIndent(blockId: String, indentLevel: Int) {
+        val idx = blocks.indexOfFirst { it.id == blockId }
+        val block = blocks.getOrNull(idx)
+        if (block is BodyBlock.Text && block.checked != null && block.indentLevel != indentLevel) {
+            blocks[idx] = BodyBlock.Text(
+                block.id,
+                block.state,
+                block.focusRequester,
+                block.checked,
+                indentLevel,
+            )
         }
     }
 
@@ -1589,7 +1746,8 @@ class BodyBlocksController(
             ReplaceBlocksCommand(
                 index = idx,
                 removedSpecs = listOf(textSpec(block)),
-                insertedSpecs = listOf(textSpec(block).copy(checked = null)),
+                /** 退出复选框（v2026-09-08）：checked 置空 + 缩进档位归 1（转普通块） */
+                insertedSpecs = listOf(textSpec(block).copy(checked = null, indentLevel = 1)),
                 focusBefore = currentFocusSpec(),
                 focusAfter = currentFocusSpec(),
             )
@@ -1816,6 +1974,8 @@ class BodyBlocksController(
                         listLevel = srcOrderedLevel,
                         /** 复选框块拆块（v2026-09-07）：前半块保留源勾选状态 */
                         checked = block.checked,
+                        /** 缩进档位（v2026-09-08）：前半块保留源档位 */
+                        indentLevel = block.indentLevel,
                     ),
                     BlockSpec.TextSpec(
                         newId,
@@ -1826,6 +1986,8 @@ class BodyBlocksController(
                         /** 复选框续行（v2026-09-07，用户确认）：回车新行 = 未勾选的复选框项；
                          *  非复选框块保持 null */
                         checked = if (block.checked != null) false else null,
+                        /** 缩进档位（v2026-09-08）：续行块继承源档位（列表项续行同缩进惯例） */
+                        indentLevel = block.indentLevel,
                     ),
                 ),
                 focusBefore = currentFocusSpec(),
@@ -1911,8 +2073,10 @@ class BodyBlocksController(
         /**
          * 复选框属性（v2026-09-07）：源块的勾选状态。行拆分时首块继承（含勾选态），
          * 续行块 = 未勾选的复选框项（与回车续行一致）；非复选框块保持 null。
+         * 缩进档位（v2026-09-08）：各行继承源档位（与列表项续行同缩进惯例）。
          */
         val srcChecked = block.checked
+        val srcIndentLevel = block.indentLevel
         val listForNewBlocks = if (srcListType != null && !isEmptyListItem(block.state)) {
             srcListType
         } else {
@@ -1970,6 +2134,8 @@ class BodyBlocksController(
                             srcChecked != null -> false
                             else -> null
                         },
+                        /** 缩进档位（v2026-09-08）：各行继承源档位 */
+                        indentLevel = srcIndentLevel,
                     )
                     /**
                      * 光标落点：cursor 落在这一行 → 该块 + 行内有效偏移。
@@ -2000,6 +2166,8 @@ class BodyBlocksController(
                 listForNewBlocks,
                 /** 源块为复选框时（v2026-09-07）：尾部空行 = 未勾选的空复选框项（继续待办） */
                 checked = if (srcChecked != null) false else null,
+                /** 缩进档位（v2026-09-08）：尾部空行继承源档位 */
+                indentLevel = srcIndentLevel,
             )
         }
         if (focusBlockId == null) {
@@ -2245,6 +2413,7 @@ class BodyBlocksController(
             spec.listLevel,
             stripListLevelPrefix = true,
             checked = spec.checked,
+            indentLevel = spec.indentLevel,
         )
         is BlockSpec.ImageSpec -> BodyBlock.Image(spec.id, spec.path)
         is BlockSpec.DividerSpec -> BodyBlock.Divider(spec.id)
@@ -2584,8 +2753,16 @@ class BodyBlocksController(
                 index = prevIdx,
                 removedSpecs = listOf(textSpec(prev), textSpec(cur)),
                 /** 合并块继承前块的复选框属性（v2026-09-07）：前块普通 → 后块 checkbox
-                 *  标记消失、内容并入（Notion 同款语义）；前块 checkbox → 合并块仍是 checkbox */
-                insertedSpecs = listOf(BlockSpec.TextSpec(prev.id, prevMd + curMd, checked = prev.checked)),
+                 *  标记消失、内容并入（Notion 同款语义）；前块 checkbox → 合并块仍是 checkbox。
+                 *  缩进档位（v2026-09-08）同样继承前块。 */
+                insertedSpecs = listOf(
+                    BlockSpec.TextSpec(
+                        prev.id,
+                        prevMd + curMd,
+                        checked = prev.checked,
+                        indentLevel = prev.indentLevel,
+                    )
+                ),
                 focusBefore = FocusSpec(cur.id, 0),
                 focusAfter = FocusSpec(prev.id, junction),
             )
@@ -2753,29 +2930,23 @@ private fun BlockTextItem(
     val state = block.state
 
     /**
-     * 复选框块文本首行的**实测左缘**（dp，[RichTextEditor.onTextLayout] 回写）。
+     * 复选框块的**布局级缩进偏移**（v2026-09-08）：`(indentLevel - 1) × LIST_LEVEL_INDENT_SP`。
      *
-     * 缩进时复选框要与文本同步位移——但库对纯文本段的缩进渲染量无法从外部公式
-     * 可靠推算（v2026-09-07 真机实测：按 `config.orderedListIndent × (层级-1)` 估算
-     * 与实际渲染不符，文本实际位移约为公式的 2 倍），故改为**测量级同步**：
-     * `TextLayoutResult.getHorizontalPosition(0)` 就是首字符的实际绘制 x（= 实际缩进量 px），
-     * 复选框按它偏移，无论库内部公式如何，两者位移量恒等、间距恒定。
-     *
-     * 初值用 [checkboxIndentDp] 公式近似（大多数场景公式正确），onTextLayout
-     * 首次布局后即以实测值覆盖——公式仅影响首帧，权威值恒为实测。
-     * 注意：初值必须在 remember **外**先算好——remember 的 calculation lambda
-     * 不是 Composable 上下文，内不能调用 @Composable 的 [checkboxIndentDp]。
+     * 缩进时复选框图标与文本必须同步位移——但库对纯文本段的 TextIndent 渲染量
+     * 与理论公式不符（真机实测约 2 倍），Row 外图标的任何"估算/测量对齐"都不可靠
+     * （公式、getLineLeft、getHorizontalPosition 三轮均失败）。最终方案：**缩进
+     * 不进库排版**（记在 [BodyBlock.Text.indentLevel]，markdown 载体由 App 自管），
+     * 渲染时把**同一个偏移量**加到复选框图标与编辑器两者的 start padding 上——
+     * 两者被同一个偏移推动，同步是**布局恒等**的，与库渲染行为完全解耦；这正是
+     * 列表项「marker + 文本整体缩进」的行为模式。sp→dp 在组合期转换（LocalDensity）。
      */
-    val initialCheckboxIndent =
-        if (block.checked != null) {
-            checkboxIndentDp(
-                bodyMarkdown = controller.blockMarkdown(state),
-                perLevelSp = state.config.orderedListIndent,
-            )
-        } else {
-            0.dp
+    val checkboxIndentPadding = if (block.checked != null) {
+        with(LocalDensity.current) {
+            ((block.indentLevel - 1) * LIST_LEVEL_INDENT_SP).sp.toDp()
         }
-    var measuredCheckboxIndent by remember(block.state) { mutableStateOf(initialCheckboxIndent) }
+    } else {
+        0.dp
+    }
 
     /** 聚焦到本块（拆分 / 合并 / 插图 / 撤销后由 controller.pendingFocus 驱动） */
     LaunchedEffect(controller.pendingFocus) {
@@ -2917,21 +3088,19 @@ private fun BlockTextItem(
     Row(verticalAlignment = Alignment.Top) {
         BlockDragHandle(dragHandleModifier)
 
-        /** 组合期捕获 density（onTextLayout 回调内不可读 CompositionLocal，v2026-09-07） */
-        val density = LocalDensity.current
-
         /**
          * 复选框标识（v2026-09-07）：checked != null（复选框块）时渲染在编辑器左侧。
          * 点击切换勾选（[BodyBlocksController.toggleCheckboxChecked]，一步一撤销，
          * markdown 前缀 `- [ ] ` ↔ `- [x] ` 随 onDocChanged 链路自动保存）；
-         * 锁定态不可点击；偏移 = 文本首行实测左缘（[measuredCheckboxIndent]），
-         * 与文本同步位移、间距恒定；top padding 让 18dp 框体与第一行文字中线对齐。
+         * 锁定态不可点击；start padding = 基准 2dp + 布局级缩进偏移
+         * （[checkboxIndentPadding]），与编辑器同偏移推动 → 同步位移、间距恒定；
+         * top padding 让 18dp 框体与第一行文字中线对齐。
          */
         if (block.checked != null) {
             CheckboxBoxIcon(
                 checked = block.checked,
                 onClick = if (isLocked) null else ({ controller.toggleCheckboxChecked(block.id) }),
-                modifier = Modifier.padding(start = 2.dp + measuredCheckboxIndent, top = 2.dp),
+                modifier = Modifier.padding(start = 2.dp + checkboxIndentPadding, top = 2.dp),
             )
         }
 
@@ -2939,6 +3108,7 @@ private fun BlockTextItem(
             state = state,
             modifier = Modifier
                 .weight(1f)
+                .padding(start = checkboxIndentPadding)
                 .heightIn(
                     min = if (controller.blocks.size == 1 && isEffectivelyEmpty(state)) {
                         160.dp
@@ -3053,24 +3223,6 @@ private fun BlockTextItem(
                 disabledIndicatorColor = Color.Transparent,
                 errorIndicatorColor = Color.Transparent,
             ),
-            onTextLayout = { textLayoutResult ->
-                /**
-                 * 复选框跟随缩进（v2026-09-07）：实测文本**首字符绘制 x** 并回写。
-                 *
-                 * ⚠️ 不能用 `getLineLeft(0)`——它返回**行盒子左缘**（LTR 下恒 0），
-                 * 而 TextIndent 只移动字形绘制起点、不改变行盒子，用它测缩进恒得 0
-                 * （真机实测：复选框因此完全不跟随）。`getHorizontalPosition(0, true)`
-                 * 返回首字符的实际绘制 x（含缩进量），语义精确。
-                 *
-                 * 缩进层级变化必然触发文本重排 → 本回调刷新 → 复选框同步位移。
-                 * density 须在组合期捕获（回调内不可读 CompositionLocal）。
-                 */
-                if (block.checked != null && textLayoutResult.layoutInput.text.text.isNotEmpty()) {
-                    measuredCheckboxIndent = with(density) {
-                        textLayoutResult.getHorizontalPosition(0, true).toDp()
-                    }
-                }
-            },
         )
     }
 }

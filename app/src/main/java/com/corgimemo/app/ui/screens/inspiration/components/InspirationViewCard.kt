@@ -27,10 +27,7 @@ import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -41,7 +38,6 @@ import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -448,51 +444,43 @@ private fun InspirationBodyRichText(
                          * 无序列表 + 字面文本。点击复选框翻转前缀、按原始段落索引
                          * 重组整篇 markdown 回调父级持久化。
                          */
-                        val (checked, bodyMd) = checkboxInfo
+                        val (checked, indentLevel, bodyMd) = checkboxInfo
                         /**
-                         * 跟随缩进（v2026-09-07，测量级同步）：复选框偏移 = 文本首行
-                         * **实测左缘**（[InspirationBodyParagraph] 的 onTextLayout 回写
-                         * `getHorizontalPosition(0)`，即库渲染的实际缩进量）——与文本同步位移、
-                         * 间距恒定；[checkboxIndentDp] 公式值仅作首帧初值，权威值恒为实测。
-                         * 初值在 remember **外**先算（calculation lambda 内不可调用
-                         * @Composable 函数）。
+                         * 跟随缩进（v2026-09-08，**布局级同步**）：复选框与文本段落
+                         * 各自加同一个 start padding（`(indentLevel - 1) × 30sp`，
+                         * 与编辑页同公式）——同一偏移推动两者，同步位移、间距恒定；
+                         * 与库渲染行为完全解耦（缩进载体由 App 自管，EM 不进渲染）。
+                         * 点击勾选翻转前缀时同样保留缩进载体。
                          */
-                        val initialIndent = checkboxIndentDp(bodyMd)
-                        var indentDp by remember(bodyMd) { mutableStateOf(initialIndent) }
+                        val checkboxIndentPadding = with(density) {
+                            ((indentLevel - 1) * LIST_LEVEL_INDENT_SP).sp.toDp()
+                        }
                         Row(verticalAlignment = Alignment.Top) {
                             CheckboxBoxIcon(
                                 checked = checked,
                                 onClick = if (onCheckboxToggle != null) {
                                     {
                                         val newParas = paragraphs.toMutableList()
-                                        newParas[pIdx] = checkboxMdPrefix(!checked) + bodyMd
+                                        newParas[pIdx] = checkboxMdPrefix(!checked) +
+                                            plainIndentPrefix(indentLevel) + bodyMd
                                         onCheckboxToggle.invoke(newParas.joinToString("\n\n"))
                                     }
                                 } else {
                                     null
                                 },
-                                modifier = Modifier.padding(start = 2.dp + indentDp, top = 3.dp),
+                                modifier = Modifier.padding(
+                                    start = 2.dp + checkboxIndentPadding,
+                                    top = 3.dp,
+                                ),
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             InspirationBodyParagraph(
                                 markdown = bodyMd,
                                 fontFamily = fontFamily,
                                 dimmed = checked,
-                                modifier = Modifier.weight(1f),
-                                onTextLayout = { textLayoutResult ->
-                                    /**
-                                     * 实测首字符绘制 x（getHorizontalPosition(0)）——
-                                     * 不能用 getLineLeft(0)（行盒子左缘，LTR 恒 0，
-                                     * TextIndent 只移字形不移行盒子，真机实测不跟随）。
-                                     */
-                                    indentDp = with(density) {
-                                        if (textLayoutResult.layoutInput.text.text.isNotEmpty()) {
-                                            textLayoutResult.getHorizontalPosition(0, true).toDp()
-                                        } else {
-                                            0.dp
-                                        }
-                                    }
-                                },
+                                modifier = Modifier
+                                    .padding(start = checkboxIndentPadding)
+                                    .weight(1f),
                             )
                         }
                     } else {
@@ -523,10 +511,8 @@ private val InspirationImageSegmentRegex = Regex("""^!\[[^\]]*\]\([^)]+\)$""")
  *
  * @param markdown 单段 markdown（不含 `\n\n` 段落分隔）。
  * @param fontFamily 本条灵感记录的字体族。
- * @param modifier 布局参数（复选框段的 Row 内 weight(1f) 用，v2026-09-07 新增）。
+ * @param modifier 布局参数（复选框段的 Row 内 weight(1f) + 缩进 padding 用，v2026-09-08）。
  * @param dimmed 勾选态文字视觉降级（v2026-09-07 新增，复选框段勾选时传入；基础色降透明度）。
- * @param onTextLayout 文本布局回调（v2026-09-07 新增：复选框段用它实测首行左缘，
- *   驱动复选框跟随缩进；透传给 [RichText]）。
  */
 @Composable
 private fun InspirationBodyParagraph(
@@ -534,7 +520,6 @@ private fun InspirationBodyParagraph(
     fontFamily: FontFamily,
     modifier: Modifier = Modifier,
     dimmed: Boolean = false,
-    onTextLayout: ((TextLayoutResult) -> Unit)? = null,
 ) {
     val richTextState = rememberRichTextState()
     /**
@@ -556,7 +541,6 @@ private fun InspirationBodyParagraph(
     RichText(
         state = richTextState,
         modifier = modifier,
-        onTextLayout = { onTextLayout?.invoke(it) },
         // 基础样式与改造前纯 Text 完全一致：未设置排版的字符回落下列值，
         // 已设 fontSize/color 的字符以 span 内联值为准（覆盖基础样式）。
         fontFamily = fontFamily,

@@ -17,41 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-
-/**
- * 列表 marker 前缀判定（v2026-09-07）：`- ` / `* ` / `+ ` / `1. ` / `1) `，允许前导缩进空格。
- * 用于判断复选框段的内容 markdown 是否同时是列表项（决定按列表层级还是纯文本层级算缩进）。
- */
-private val CheckboxListMarkerRegex = Regex("^\\s*([-*+]|\\d+[.)])\\s")
-
-/**
- * 复选框跟随缩进的**首帧初值公式**（v2026-09-07）：按段落自身缩进层级换算预估偏移。
- *
- * ⚠️ **这只是初值近似**——真机实测发现库对纯文本段的实际渲染缩进量与该公式
- * 不符（约为公式 2 倍，内部机制待查），因此**权威值恒为 `onTextLayout` 实测**
- * （`TextLayoutResult.getHorizontalPosition(0)`，编辑页 [RichTextEditor] / 详情页 [RichText]
- * 均已接线）。本函数只在文本首次布局前提供一个接近正确的初值，避免复选框闪跳；
- * onTextLayout 首次回调后即被覆盖。
- *
- * 公式（近似）：每级 = [perLevelSp]（默认 [LIST_LEVEL_INDENT_SP] = 30sp，即库
- * `DefaultParagraph`/列表段落 TextIndent 的理论步长）；层级判定：列表段用
- * [listLevelOfMd]，纯文本段用 [plainIndentLevelOfMd]。
- *
- * @param bodyMarkdown 复选框段**剥掉复选框前缀后**的内容 markdown
- * @param perLevelSp 每级缩进的理论宽度（sp）；编辑页传 `state.config.orderedListIndent`
- * @return 复选框的首帧预估偏移（一级无缩进返回 0dp）
- */
-@Composable
-internal fun checkboxIndentDp(bodyMarkdown: String, perLevelSp: Int = LIST_LEVEL_INDENT_SP): Dp {
-    val isList = CheckboxListMarkerRegex.containsMatchIn(bodyMarkdown)
-    val level = if (isList) listLevelOfMd(bodyMarkdown) else plainIndentLevelOfMd(bodyMarkdown)
-    if (level <= 1) return 0.dp
-    return with(LocalDensity.current) { ((level - 1) * perLevelSp).sp.toDp() }
-}
 
 /**
  * 复选框标识（v2026-09-07）：编辑页块级复选框（BlockTextItem）与详情页正文
@@ -64,6 +30,11 @@ internal fun checkboxIndentDp(bodyMarkdown: String, perLevelSp: Int = LIST_LEVEL
  * - 交互：[onClick] 非空时整框可点击（去水波纹——`indication = null` 必须显式传
  *   `interactionSource`，否则不生效）；null 时不可点击（详情页截图离屏渲染等
  *   只读场景）。
+ *
+ * 跟随缩进（v2026-09-08）：复选框块改用 **App 布局级缩进**（[BodyBlock.Text.indentLevel]，
+ * 复选框与编辑器各自加同一 start padding，同步布局恒等）——本文件不再提供任何
+ * 缩进量估算函数（历次公式估算 / getLineLeft / getHorizontalPosition 实测均不可靠，
+ * 已全部移除；缩进偏移统一由调用方按 `indentLevel × LIST_LEVEL_INDENT_SP` 计算）。
  *
  * @param checked 是否处于勾选态
  * @param onClick 点击回调；null = 不可点击（只读）
