@@ -2758,24 +2758,24 @@ private fun BlockTextItem(
      * 缩进时复选框要与文本同步位移——但库对纯文本段的缩进渲染量无法从外部公式
      * 可靠推算（v2026-09-07 真机实测：按 `config.orderedListIndent × (层级-1)` 估算
      * 与实际渲染不符，文本实际位移约为公式的 2 倍），故改为**测量级同步**：
-     * `TextLayoutResult.getLineLeft(0)` 就是库渲染出的首行左缘（= 实际缩进量 px），
+     * `TextLayoutResult.getHorizontalPosition(0)` 就是首字符的实际绘制 x（= 实际缩进量 px），
      * 复选框按它偏移，无论库内部公式如何，两者位移量恒等、间距恒定。
      *
      * 初值用 [checkboxIndentDp] 公式近似（大多数场景公式正确），onTextLayout
      * 首次布局后即以实测值覆盖——公式仅影响首帧，权威值恒为实测。
+     * 注意：初值必须在 remember **外**先算好——remember 的 calculation lambda
+     * 不是 Composable 上下文，内不能调用 @Composable 的 [checkboxIndentDp]。
      */
-    var measuredCheckboxIndent by remember(block.state) {
-        mutableStateOf(
-            if (block.checked != null) {
-                checkboxIndentDp(
-                    bodyMarkdown = controller.blockMarkdown(state),
-                    perLevelSp = state.config.orderedListIndent,
-                )
-            } else {
-                0.dp
-            }
-        )
-    }
+    val initialCheckboxIndent =
+        if (block.checked != null) {
+            checkboxIndentDp(
+                bodyMarkdown = controller.blockMarkdown(state),
+                perLevelSp = state.config.orderedListIndent,
+            )
+        } else {
+            0.dp
+        }
+    var measuredCheckboxIndent by remember(block.state) { mutableStateOf(initialCheckboxIndent) }
 
     /** 聚焦到本块（拆分 / 合并 / 插图 / 撤销后由 controller.pendingFocus 驱动） */
     LaunchedEffect(controller.pendingFocus) {
@@ -3055,14 +3055,20 @@ private fun BlockTextItem(
             ),
             onTextLayout = { textLayoutResult ->
                 /**
-                 * 复选框跟随缩进（v2026-09-07）：实测文本首行左缘并回写。
-                 * `getLineLeft(0)` = 库渲染出的首行左缘（含 TextIndent 的实际缩进量，
-                 * px，相对文本区、不含 contentPadding）；缩进层级变化必然触发文本
-                 * 重排 → 本回调刷新 → 复选框同步位移。非复选框块跳过（无人读取，
-                 * 避免无谓重组）。density 须在组合期捕获（回调内不可读 CompositionLocal）。
+                 * 复选框跟随缩进（v2026-09-07）：实测文本**首字符绘制 x** 并回写。
+                 *
+                 * ⚠️ 不能用 `getLineLeft(0)`——它返回**行盒子左缘**（LTR 下恒 0），
+                 * 而 TextIndent 只移动字形绘制起点、不改变行盒子，用它测缩进恒得 0
+                 * （真机实测：复选框因此完全不跟随）。`getHorizontalPosition(0, true)`
+                 * 返回首字符的实际绘制 x（含缩进量），语义精确。
+                 *
+                 * 缩进层级变化必然触发文本重排 → 本回调刷新 → 复选框同步位移。
+                 * density 须在组合期捕获（回调内不可读 CompositionLocal）。
                  */
-                if (block.checked != null) {
-                    measuredCheckboxIndent = with(density) { textLayoutResult.getLineLeft(0).toDp() }
+                if (block.checked != null && textLayoutResult.layoutInput.text.text.isNotEmpty()) {
+                    measuredCheckboxIndent = with(density) {
+                        textLayoutResult.getHorizontalPosition(0, true).toDp()
+                    }
                 }
             },
         )

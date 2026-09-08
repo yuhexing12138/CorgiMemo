@@ -452,10 +452,13 @@ private fun InspirationBodyRichText(
                         /**
                          * 跟随缩进（v2026-09-07，测量级同步）：复选框偏移 = 文本首行
                          * **实测左缘**（[InspirationBodyParagraph] 的 onTextLayout 回写
-                         * `getLineLeft(0)`，即库渲染的实际缩进量）——与文本同步位移、
+                         * `getHorizontalPosition(0)`，即库渲染的实际缩进量）——与文本同步位移、
                          * 间距恒定；[checkboxIndentDp] 公式值仅作首帧初值，权威值恒为实测。
+                         * 初值在 remember **外**先算（calculation lambda 内不可调用
+                         * @Composable 函数）。
                          */
-                        var indentDp by remember(bodyMd) { mutableStateOf(checkboxIndentDp(bodyMd)) }
+                        val initialIndent = checkboxIndentDp(bodyMd)
+                        var indentDp by remember(bodyMd) { mutableStateOf(initialIndent) }
                         Row(verticalAlignment = Alignment.Top) {
                             CheckboxBoxIcon(
                                 checked = checked,
@@ -477,7 +480,18 @@ private fun InspirationBodyRichText(
                                 dimmed = checked,
                                 modifier = Modifier.weight(1f),
                                 onTextLayout = { textLayoutResult ->
-                                    indentDp = with(density) { textLayoutResult.getLineLeft(0).toDp() }
+                                    /**
+                                     * 实测首字符绘制 x（getHorizontalPosition(0)）——
+                                     * 不能用 getLineLeft(0)（行盒子左缘，LTR 恒 0，
+                                     * TextIndent 只移字形不移行盒子，真机实测不跟随）。
+                                     */
+                                    indentDp = with(density) {
+                                        if (textLayoutResult.layoutInput.text.text.isNotEmpty()) {
+                                            textLayoutResult.getHorizontalPosition(0, true).toDp()
+                                        } else {
+                                            0.dp
+                                        }
+                                    }
                                 },
                             )
                         }

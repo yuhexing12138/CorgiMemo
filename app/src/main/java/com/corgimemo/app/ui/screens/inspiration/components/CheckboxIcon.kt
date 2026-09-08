@@ -33,7 +33,7 @@ private val CheckboxListMarkerRegex = Regex("^\\s*([-*+]|\\d+[.)])\\s")
  *
  * ⚠️ **这只是初值近似**——真机实测发现库对纯文本段的实际渲染缩进量与该公式
  * 不符（约为公式 2 倍，内部机制待查），因此**权威值恒为 `onTextLayout` 实测**
- * （`TextLayoutResult.getLineLeft(0)`，编辑页 [RichTextEditor] / 详情页 [RichText]
+ * （`TextLayoutResult.getHorizontalPosition(0)`，编辑页 [RichTextEditor] / 详情页 [RichText]
  * 均已接线）。本函数只在文本首次布局前提供一个接近正确的初值，避免复选框闪跳；
  * onTextLayout 首次回调后即被覆盖。
  *
