@@ -1561,9 +1561,27 @@ class BodyBlocksController(
 
         val dividerSpec = BlockSpec.DividerSpec(newBodyBlockId())
         val inserted = mutableListOf<BlockSpec>()
-        if (beforeMd.isNotBlank()) inserted += BlockSpec.TextSpec(newBodyBlockId(), beforeMd)
+        /** 拆出的前后半继承源块的复选框属性与缩进档位（v2026-09-08 修复：分割线
+         *  拆块曾丢失 checked/indentLevel，导致上一行复选框消失） */
+        val inheritedChecked = focused.checked
+        val inheritedIndentLevel = focused.indentLevel
+        if (beforeMd.isNotBlank()) {
+            inserted += BlockSpec.TextSpec(
+                newBodyBlockId(),
+                beforeMd,
+                checked = inheritedChecked,
+                indentLevel = inheritedIndentLevel,
+            )
+        }
         inserted += dividerSpec
-        if (afterMd.isNotBlank()) inserted += BlockSpec.TextSpec(newBodyBlockId(), afterMd)
+        if (afterMd.isNotBlank()) {
+            inserted += BlockSpec.TextSpec(
+                newBodyBlockId(),
+                afterMd,
+                checked = inheritedChecked,
+                indentLevel = inheritedIndentLevel,
+            )
+        }
 
         /** 焦点落点：分割线之后的第一个 Text 块（含兜底补的空尾块） */
         val focusId: String
@@ -1884,6 +1902,18 @@ class BodyBlocksController(
         if (idx < 0) return
 
         /**
+         * 空缩进行回车（普通 / 复选框 / 组合态，v2026-09-08 App 布局级）= **减一级
+         * 缩进**（原地，不拆块，与内容起点退格对称的 Word 标准行为）：逐级返回，
+         * 到一级后空复选框项回车才退出复选框（见下方分支）、无缩进空行回车才正常
+         * 新起一行（走下方主路径）。硬键盘 text 无 \n；软键盘（text 已含 \n）由
+         * [normalizeBlockParagraphs] 的同款前置分支处理。
+         */
+        if (isEffectivelyBlankLine(block.state) && block.indentLevel > 1) {
+            dedentBlockAtContentStart(block)
+            return
+        }
+
+        /**
          * 空复选框项回车（v2026-09-07）= **退出复选框** → 普通空块（与空列表项
          * 回车退出列表同语义）。口径用 [isEffectivelyBlankLine]（剥 ZWSP 外还兼容
          * 软键盘已插入的 `\n`），硬键盘（本函数）与软键盘（[normalizeBlockParagraphs]
@@ -1900,18 +1930,6 @@ class BodyBlocksController(
                     focusAfter = FocusSpec(block.id, 1),
                 )
             )
-            return
-        }
-
-        /**
-         * 空纯文本缩进行回车（v2026-09-07，用户需求 1；v2026-09-08 改 App 档位）=
-         * **减一级缩进**（原地），不拆块——与内容起点退格（[dedentBlockAtContentStart]）
-         * 对称的 Word 标准行为：逐级返回，到无缩进时空行回车才正常新起一行（走下方
-         * 主路径）。硬键盘 text 无 \n；软键盘（text 已含 \n）由 [normalizeBlockParagraphs]
-         * 的同款前置分支处理。
-         */
-        if (!block.state.isList && isEffectivelyBlankLine(block.state) && block.indentLevel > 1) {
-            dedentBlockAtContentStart(block)
             return
         }
 
@@ -2045,6 +2063,16 @@ class BodyBlocksController(
         }
 
         /**
+         * 空缩进行回车（软键盘，普通 / 复选框 / 组合态，v2026-09-08 App 布局级）=
+         * 减一级缩进（与 [splitTextBlock] 的空缩进行分支同语义，逐级返回）。
+         * 空白口径用 [isEffectivelyBlankLine]（含 \n）：软键盘回车已在文本中插入 \n。
+         */
+        if (isEffectivelyBlankLine(block.state) && block.indentLevel > 1) {
+            dedentBlockAtContentStart(block)
+            return
+        }
+
+        /**
          * 空复选框项回车（软键盘，v2026-09-07）= 退出复选框 → 普通空块。
          * 与 [splitTextBlock] 的空复选框分支同语义（口径用 [isEffectivelyBlankLine]：
          * 软键盘回车已在文本中插入 `\n`，isEffectivelyEmpty 判不出来）。
@@ -2059,16 +2087,6 @@ class BodyBlocksController(
                     focusAfter = FocusSpec(block.id, 1),
                 )
             )
-            return
-        }
-
-        /**
-         * 空纯文本缩进行回车（软键盘，v2026-09-07 用户需求 1；v2026-09-08 改 App 档位）
-         * = 减一级缩进（与 [splitTextBlock] 的空缩进行分支同语义，逐级返回）。
-         * 空白口径用 [isEffectivelyBlankLine]（含 \n）：软键盘回车已在文本中插入 \n。
-         */
-        if (!block.state.isList && isEffectivelyBlankLine(block.state) && block.indentLevel > 1) {
-            dedentBlockAtContentStart(block)
             return
         }
 
