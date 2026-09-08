@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -42,6 +43,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -128,6 +130,28 @@ internal fun listLevelOfMd(md: String): Int {
     val leading = md.indexOfFirst { it != ' ' }.let { if (it < 0) md.length else it }
     return leading / 2 + 1
 }
+
+/**
+ * 单行列表段判定（v2026-09-08）：段首可选半角空格缩进 + 列表 marker + 空格。
+ * marker 形态与库编码端/渲染端一致：`- `/`* `/`+ `（无序）、`N. `/`N) `（有序）。
+ *
+ * 用于加载端（[BodyBlocksController.initialize]）与详情页渲染
+ * （InspirationBodyParagraph）识别「孤立列表行」——**不匹配多行段**（调用方需
+ * 另行排除 `\n`，多行嵌套段的列表结构由 AST 完整解析，前缀不可剥）。
+ */
+internal val SingleLineListMdRegex = Regex("""^\s*(?:[-*+] |\d+[.)] )""")
+
+/**
+ * 读 markdown 的有序编号（字面数字）：先剥层级缩进前导空格再匹配 `^(\d+)\.`
+ * （库对有序列表始终序列化为 `"N. "` 字面编号；嵌套行带前导空格，正则须容忍）。
+ *
+ * 顶层 internal：编辑页（拆块续号/层级还原）与详情页（列表段 setListMarker 回填）
+ * 共用（v2026-09-08 由 controller 内 private 提升）。
+ *
+ * @return 当前编号（如 `"  2. 测试"` → 2）；无编号前缀返回 null。
+ */
+internal fun orderedNumberOfMd(md: String): Int? =
+    Regex("^(\\d+)\\.").find(md.trimStart(' '))?.groupValues?.get(1)?.toIntOrNull()
 
 /**
  * 读 markdown 的纯文本缩进层级（1 = 无缩进；段首全角空格每级 2 个，
@@ -814,15 +838,6 @@ class BodyBlocksController(
     }
 
     /**
-     * 读块 markdown 的有序编号（字面数字）：先剥层级缩进前导空格再匹配 `^(\d+)\.`
-     * （库对有序列表始终序列化为 `"N. "` 字面编号；嵌套行带前导空格，正则须容忍）。
-     *
-     * @return 当前编号（如 `"  2. 测试"` → 2）；无编号前缀返回 null。
-     */
-    private fun orderedNumberOfMd(md: String): Int? =
-        Regex("^(\\d+)\\.").find(md.trimStart(' '))?.groupValues?.get(1)?.toIntOrNull()
-
-    /**
      * 取当前有序列表块的字面编号（用于拆块续行时计算下一行编号）。
      *
      * 以 [blockMarkdown]（即库的 [RichTextState.toMarkdown]）为准：库对有序列表
@@ -1102,6 +1117,24 @@ class BodyBlocksController(
                                 contentMd,
                                 checked = wasChecked,
                                 indentLevel = wasIndentLevel,
+                            )
+                        } else if (!trimmed.contains('\n') && SingleLineListMdRegex.containsMatchIn(trimmed)) {
+                            /**
+                             * 列表段（v2026-09-08 修复「多级列表保存后加载掉级/字面化」）：
+                             * 孤立缩进列表行经库 decode **不可靠**——层级前缀每级 2 空格，
+                             * ≥4 空格（三级起）会被 CommonMark 解析成**缩进代码块**
+                             * （CODE_LINE 字面输出，如 "    - 第三行" 渲染成字面 "- 第三行"，
+                             * 不再是列表 marker；真机截图：多级无序列表重进编辑页后
+                             * 三级及以下全部变成字面文本）。
+                             * 与命令重建路径（stripListLevelPrefix）同款：剥前缀 +
+                             * [createTextBlock] 的 listLevel 经 setListMarker 显式还原，
+                             * 层级不再依赖 markdown 前缀往返。有序段剥前缀后字面编号
+                             * 由库保留（#734），编号/层级都无损。
+                             */
+                            blocks += createTextBlock(
+                                trimmed.trimStart(' '),
+                                listLevel = listLevelOfMd(trimmed),
+                                stripListLevelPrefix = true,
                             )
                         } else {
                             // 普通段（v2026-09-08）：缩进载体（EM，App 自管）解析后剥除，
@@ -3153,6 +3186,9 @@ private fun BlockTextItem(
      */
     var alignmentOffset by remember(block.state) { mutableStateOf(0.dp) }
 
+    /** 软键盘控制器：用于"焦点已在目标块"时显式唤起键盘（见下方 LaunchedEffect） */
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     /** 聚焦到本块（拆分 / 合并 / 插图 / 撤销后由 controller.pendingFocus 驱动） */
     LaunchedEffect(controller.pendingFocus) {
         val pf = controller.pendingFocus ?: return@LaunchedEffect
@@ -3162,6 +3198,24 @@ private fun BlockTextItem(
         controller.takePendingFocus()
         block.state.selection = TextRange(pf.offset)
         block.focusRequester.requestFocus()
+        /**
+         * 点选分割线落焦时**显式唤起软键盘**（v2026-09-08 修复"收键盘后点分割线不出键盘"）。
+         *
+         * 原因：手动收起键盘（返回键 / 收起键）**只隐藏 IME，不会让 TextField 失焦**——
+         * 焦点仍在本块上，于是 `requestFocus()` 是空操作、不产生"焦点变化事件"；
+         * 而系统键盘是**由 BasicTextField 的焦点事件自动显示/隐藏**的
+         * （`SoftwareKeyboardController.show()` 官方文档：手动 hide 之后不会再自动显示），
+         * 所以键盘不会再弹出来，用户也就按不到删除键。
+         *
+         * 解法：命中"点选态的安置块"时在 requestFocus 之后显式 `show()`。
+         * 先等一帧（`withFrameNanos`）确保焦点事务已生效——`show()` 在文本框未聚焦时
+         * 会被系统静默忽略（文档原文：never show if there is no composable that will
+         * accept text input）。键盘本来就在时 show() 是空操作，无副作用。
+         */
+        if (controller.selectedAnchorTextId == block.id) {
+            withFrameNanos { }
+            keyboardController?.show()
+        }
     }
 
     /**

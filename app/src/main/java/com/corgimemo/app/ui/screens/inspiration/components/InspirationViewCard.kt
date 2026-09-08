@@ -552,8 +552,26 @@ private fun InspirationBodyParagraph(
     /** marker 按层级循环（1./(1)/①/a./Ⅰ./i.），与编辑页一致 */
     richTextState.config.orderedListStyleType = AppOrderedListStyleType
     LaunchedEffect(markdown) {
-        // setMarkdown 非 suspend，直接调用；状态变更后 RichText 自动重组渲染。
-        richTextState.setMarkdown(markdown)
+        /**
+         * 列表段层级显式还原（v2026-09-08，与编辑页 initialize 同款修复）：孤立缩进
+         * 列表行的层级前缀（每级 2 空格）≥4 空格（三级起）时会被 CommonMark 解析成
+         * **缩进代码块**（CODE_LINE 字面输出，渲染成字面 "- 第三行" 而非列表）。
+         * 剥前缀后 setMarkdown + setListMarker 还原层级，不再依赖前缀往返。
+         * 多行段（含 \n 的嵌套列表）AST 结构成立，保持原样喂库。
+         */
+        val isSingleLineList = !markdown.contains('\n') && SingleLineListMdRegex.containsMatchIn(markdown)
+        val listLevel = listLevelOfMd(markdown)
+        if (isSingleLineList && listLevel > 1) {
+            richTextState.setMarkdown(markdown.trimStart(' '))
+            richTextState.setListMarker(
+                level = listLevel,
+                number = orderedNumberOfMd(markdown) ?: 1,
+                commitHistory = false,
+            )
+        } else {
+            // setMarkdown 非 suspend，直接调用；状态变更后 RichText 自动重组渲染。
+            richTextState.setMarkdown(markdown)
+        }
     }
     RichText(
         state = richTextState,

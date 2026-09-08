@@ -372,6 +372,31 @@ class BodyBlocksControllerTest {
         assertEquals("撤销后原块层级应无损", "  - 缩进一次", controller.blockMarkdown(restored.state))
     }
 
+    /**
+     * 多级列表的保存形态（块间 \n\n 分隔、二级/三级行带 2/4 空格前缀）加载后应还原层级。
+     *
+     * 回归背景（v2026-09-08 真机截图）：三级行 "    - 第三行"（4 空格前缀）被
+     * CommonMark 解析成**缩进代码块**（CODE_LINE 字面输出），重新进入编辑页后
+     * 渲染成字面文本 "- 第三行"（不再是列表 marker，层级丢失）。修复：加载端对
+     * 单行列表段剥前缀 + spec.listLevel 经 setListMarker 显式还原。
+     */
+    @Test
+    fun `多级列表孤立段落加载还原层级`() {
+        controller.initialize("- 第一行\n\n  - 第二行\n\n    - 第三行")
+        assertEquals(3, controller.blocks.size)
+
+        val second = controller.blocks[1] as Text
+        assertTrue("二级段应为列表", second.state.isUnorderedList)
+        assertEquals("二级段层级应还原", "  - 第二行", controller.blockMarkdown(second.state))
+
+        val third = controller.blocks[2] as Text
+        assertTrue(
+            "三级段不应退化为字面文本（≥4 空格前缀曾被解析成缩进代码块）",
+            third.state.isUnorderedList
+        )
+        assertEquals("三级段层级应还原", "    - 第三行", controller.blockMarkdown(third.state))
+    }
+
     // ==================== 纯文本整段缩进（v2026-09-08 第三版：App 布局级档位 + EM markdown 载体） ====================
 
     /** 全角空格（U+2003 EM SPACE）：整段缩进的 markdown 编码载体（段首前缀，每级 2 个） */
