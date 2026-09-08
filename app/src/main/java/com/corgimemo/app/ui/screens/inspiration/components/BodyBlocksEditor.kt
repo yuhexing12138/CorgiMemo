@@ -110,14 +110,28 @@ private const val MAX_LIST_LEVEL = 6
  */
 private const val PLAIN_INDENT_CHAR = '\u2003'
 
-/** 纯文本缩进步长：每个缩进层级对应的段首全角空格个数（≈ 两字符宽） */
-private const val PLAIN_INDENT_STEP = 2
+/** 纯文本缩进步长：每个缩进层级对应的段首全角空格个数（≈ 两字符宽）。
+ *  internal：复选框标识跟随缩进时按它换算每级宽度（v2026-09-07，见 [checkboxIndentDp]） */
+internal const val PLAIN_INDENT_STEP = 2
+
+/**
+ * 读 markdown 的列表层级（1 起）：库对嵌套列表按每级 2 空格前缀编码
+ * （`"  ".repeat(type.level - 1) + marker`，见 MarkdownParser 的
+ * appendParagraphStartText），故前导空格数 / 2 + 1 即层级。
+ *
+ * internal：编辑页块与详情页段落的复选框标识缩进换算共用（v2026-09-07）。
+ */
+internal fun listLevelOfMd(md: String): Int {
+    val leading = md.indexOfFirst { it != ' ' }.let { if (it < 0) md.length else it }
+    return leading / 2 + 1
+}
 
 /**
  * 读 markdown 的纯文本缩进层级（1 = 无缩进；段首全角空格每级 2 个，
  * 由库编码端对 [DefaultParagraph.level]>1 输出）。
+ * internal：复选框标识跟随缩进时按它读层级（v2026-09-07，见 [checkboxIndentDp]）。
  */
-private fun plainIndentLevelOfMd(md: String): Int =
+internal fun plainIndentLevelOfMd(md: String): Int =
     md.countLeadingPlainIndentChars() / PLAIN_INDENT_STEP + 1
 
 /** 纯文本缩进的 markdown 前缀：level 级 = 段首 EM×2×(level-1)（与库编码端同款） */
@@ -721,16 +735,6 @@ class BodyBlocksController(
             "^\\s*(?:[•◦▪]\\s|\\(\\d+\\)\\s|[①-⑳]\\s|\\d+\\.\\s|[a-zA-Z]+\\.\\s)"
         ).find(text)?.range?.last?.plus(1) ?: 0
         focusSpec(FocusSpec(blockId, markerEnd))
-    }
-
-    /**
-     * 读块 markdown 的列表层级（1 起）：库对嵌套列表按每级 2 空格前缀编码
-     * （`"  ".repeat(type.level - 1) + marker`，见 MarkdownParser 的
-     * appendParagraphStartText），故前导空格数 / 2 + 1 即层级。
-     */
-    private fun listLevelOfMd(md: String): Int {
-        val leading = md.indexOfFirst { it != ' ' }.let { if (it < 0) md.length else it }
-        return leading / 2 + 1
     }
 
     /**
@@ -2894,10 +2898,21 @@ private fun BlockTextItem(
          * 锁定态不可点击；top padding 让 18dp 框体与第一行文字中线对齐。
          */
         if (block.checked != null) {
+            /**
+             * 跟随缩进（v2026-09-07）：**必须显式读 annotatedString 注册快照依赖**——
+             * setParagraphIndent / setListMarker 换层级只写 annotatedString（段落 type
+             * 是普通 var，非快照状态），不读它则缩进层级变化不会触发重组、复选框
+             * 不跟随（与 canIncreaseIndent「到顶不置灰」同款坑）。
+             */
+            state.annotatedString
+            val indentDp = checkboxIndentDp(
+                bodyMarkdown = controller.blockMarkdown(state),
+                fontSize = LocalContentTypography.current.bodyLarge.fontSize,
+            )
             CheckboxBoxIcon(
                 checked = block.checked,
                 onClick = if (isLocked) null else ({ controller.toggleCheckboxChecked(block.id) }),
-                modifier = Modifier.padding(start = 2.dp, top = 2.dp),
+                modifier = Modifier.padding(start = 2.dp + indentDp, top = 2.dp),
             )
         }
 

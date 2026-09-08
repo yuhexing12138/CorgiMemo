@@ -442,6 +442,12 @@ private fun InspirationBodyRichText(
                          * 重组整篇 markdown 回调父级持久化。
                          */
                         val (checked, bodyMd) = checkboxInfo
+                        /**
+                         * 跟随缩进（v2026-09-07）：详情页正文固定 15sp，按段落自身的
+                         * 缩进层级换算复选框偏移——与编辑页视觉一致（编辑页缩进后，
+                         * 详情页的复选框标识同样跟着右移）。
+                         */
+                        val indentDp = checkboxIndentDp(bodyMarkdown = bodyMd, fontSize = 15.sp)
                         Row(verticalAlignment = Alignment.Top) {
                             CheckboxBoxIcon(
                                 checked = checked,
@@ -454,7 +460,7 @@ private fun InspirationBodyRichText(
                                 } else {
                                     null
                                 },
-                                modifier = Modifier.padding(start = 2.dp, top = 3.dp),
+                                modifier = Modifier.padding(start = 2.dp + indentDp, top = 3.dp),
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             InspirationBodyParagraph(
