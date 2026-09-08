@@ -1005,7 +1005,25 @@ class BodyBlocksController(
         }
         /** 复选框块：checked / indentLevel 属性随块对象携带（markdown 已由调用方剥掉
          *  复选框前缀与缩进载体，v2026-09-07 / v2026-09-08） */
-        return BodyBlock.Text(id, state, checked = checked, indentLevel = indentLevel)
+        return BodyBlock.Text(id, state, checked = checked, indentLevel = indentLevel).also { block ->
+            /**
+             * 组合态归位（v2026-09-08）：复选框块叠加列表段落（如历史数据
+             * "- [ ] ␣␣- 内容" 的二级列表编码）时，库列表 TextIndent 会与 App
+             * 布局级缩进双源叠加（缩进键动文本不动复选框）。加载时把库层级归 1
+             * （marker 变一级形态，commitHistory=false），缩进量由 indentLevel
+             * 全权承载——与 [BodyBlocksController.indentFocusedBlock] 的迁移对称。
+             */
+            if (checked != null && state.isList) {
+                val listLevel = listLevelOfMd(state.toMarkdown())
+                if (listLevel > 1) {
+                    state.setListMarker(
+                        level = 1,
+                        number = orderedNumberOfMd(state.toMarkdown()) ?: 1,
+                        commitHistory = false,
+                    )
+                }
+            }
+        }
     }
 
     /** Text 块 → [BlockSpec.TextSpec]（markdown 剥 ZWSP；checked / indentLevel 随 spec，Command 载荷统一出口） */
@@ -1215,15 +1233,25 @@ class BodyBlocksController(
             ?: return
 
         /**
-         * **非列表块（普通文本块 + 复选框块，v2026-09-08 统一）：App 布局级缩进**——
-         * 不调库 setParagraphIndent（其 TextIndent 渲染量与理论公式不符，真机实测约
-         * 2 倍，且与 Row 外复选框图标无法对齐），改就地换块对象的
+         * **复选框块（v2026-09-08 扩展到组合态）：App 布局级缩进**——不调库
+         * setParagraphIndent / setListMarker（其 TextIndent 渲染量与 Row 外复选框
+         * 图标无法对齐，真机实测约 2 倍），改就地换块对象的
          * [BodyBlock.Text.indentLevel]（[SetBlockIndentCommand]，state / 块内 history /
-         * 光标无损）；渲染由 App 侧 start padding 承载（编辑器普通块 / 复选框+编辑器
-         * 复选框块），缩进量对所有块统一 = (档位-1) × [LIST_LEVEL_INDENT_SP]，跨段
-         * 左缘精确同列（复选框标识左缘与相邻普通段落文本左缘对齐）。
+         * 光标无损）；渲染由 App 侧 start padding 承载，跨段左缘精确同列。
+         *
+         * **组合态（复选框 + 列表段落）迁移**：复选框块上叠加列表（isList=true）时，
+         * 库列表自身的 TextIndent 会与 App padding 双源叠加——缩进操作时把库层级
+         * 归 1（marker 变一级形态，commitHistory=false 不产生块内撤销步），缩进量
+         * 由 App 档位全权承载。加载侧在 [createTextBlock] 做同样归位。
          */
-        if (!block.state.isList) {
+        if (block.checked != null) {
+            if (block.state.isList && listLevelOfMd(blockMarkdown(block.state)) > 1) {
+                block.state.setListMarker(
+                    level = 1,
+                    number = orderedNumberOfMd(blockMarkdown(block.state)) ?: 1,
+                    commitHistory = false,
+                )
+            }
             val newLevel = (block.indentLevel + delta).coerceIn(1, MAX_LIST_LEVEL)
             if (newLevel != block.indentLevel) {
                 executeAndPush(SetBlockIndentCommand(block.id, block.indentLevel, newLevel))
@@ -1270,12 +1298,14 @@ class BodyBlocksController(
                 as? BodyBlock.Text
                 ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
                 ?: return false
-            /** 非列表块（v2026-09-08）：缩进走 App 布局级档位（读块对象 indentLevel，
-             *  就地换块对象 = blocks 结构性写入，读它会随缩进重组刷新） */
-            if (!block.state.isList) {
+            /** 复选框块（**含列表组合态**，v2026-09-08）与非列表块：缩进走 App 布局级
+             *  档位（读块对象 indentLevel；组合块的库层级已归 1，不能读它——
+             *  否则增加键永不置灰、减少键恒灰）。就地换块对象 = blocks 结构性写入，
+             *  读它会随缩进重组刷新 */
+            if (block.checked != null || !block.state.isList) {
                 return block.indentLevel < MAX_LIST_LEVEL
             }
-            /** 列表块：setListMarker 只写 annotatedString（段落 type 非快照），
+            /** 纯列表块：setListMarker 只写 annotatedString（段落 type 非快照），
              *  必须显式读它，到顶置灰才会刷新（v2026-09-07 同款坑） */
             block.state.annotatedString
             return listLevelOfMd(blockMarkdown(block.state)) < MAX_LIST_LEVEL
@@ -1294,11 +1324,12 @@ class BodyBlocksController(
                 as? BodyBlock.Text
                 ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
                 ?: return false
-            /** 非列表块（v2026-09-08）：缩进走 App 布局级档位（读块对象 indentLevel） */
-            if (!block.state.isList) {
+            /** 复选框块（**含列表组合态**，v2026-09-08）与非列表块：缩进走 App 布局级
+             *  档位（读块对象 indentLevel；组合块的库层级已归 1，不能读它） */
+            if (block.checked != null || !block.state.isList) {
                 return block.indentLevel > 1
             }
-            /** 列表块：同上，显式读 annotatedString 保证刷新 */
+            /** 纯列表块：同上，显式读 annotatedString 保证刷新 */
             block.state.annotatedString
             return listLevelOfMd(blockMarkdown(block.state)) > 1
         }
