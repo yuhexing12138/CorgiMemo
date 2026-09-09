@@ -1,6 +1,5 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -35,6 +34,7 @@ import androidx.compose.material3.Text
 import com.corgimemo.app.ui.theme.LocalContentTypography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
@@ -3584,9 +3584,6 @@ private fun BlockTextItem(
         snapshotFlow { Triple(state.annotatedString, state.selection, state.composition) }
             .collect { (annotated, selection, composition) ->
                 val text = annotated.text
-                /** 【临时诊断探针】对照"标题点全选不高亮"：输出正文块选区轨迹，
-                 *  logcat 过滤 CorgiBodySel。定位完成后移除。 */
-                Log.d("CorgiBodySel", "block=${block.id} sel=$selection textLen=${text.length}")
                 /** toMarkdown() 会把 SpanStyle 序列化成 `**粗体**` 等语法，
                  *  因此格式化操作也会让 markdown 变化 → 被下方条件捕获。 */
                 val markdown = state.toMarkdown()
@@ -3697,11 +3694,6 @@ private fun BlockTextItem(
                      * 浮动工具栏后，再次轻点正文行即隐藏（与标题行为一致）。
                      * 按下时刻工具栏尚未弹出，故长按时 hide() 为空操作，不会误伤长按。
                      */
-                    /** 【临时诊断探针】按下时刻工具栏状态（定位"工具栏未收起"，定位后移除）。 */
-                    Log.d(
-                        "CorgiBodySel",
-                        "body pointerDown -> hide(), status=${textToolbar.status}"
-                    )
                     textToolbar.hide()
                 }
             }
@@ -3884,8 +3876,8 @@ private fun BlockTextItem(
  */
 private val BLOCK_CONTENT_PADDING = 16.dp
 
-/** 图片选中工具栏宽度：5×24dp 按钮 + 4×24dp 间距 + 左右 22dp 内边距（缩小选中态定位偏移用） */
-private val ImageToolbarWidth = 260.dp
+/** 图片选中工具栏宽度：5×40dp 触控区 + 4×8dp 间距 + 左右 12dp 内边距（缩小选中态定位偏移用） */
+private val ImageToolbarWidth = 256.dp
 
 /**
  * 块级图片：拖拽手柄 + 图片 + 备注 + 选中工具栏（v2026-09-09）。
@@ -3925,6 +3917,18 @@ private fun BlockImageItem(
     /** 图片块内容区宽度（px，padding 后）——缩小选中态的工具栏定位基准 */
     var contentWidthPx by remember { mutableStateOf(0) }
     val density = LocalDensity.current
+
+    /**
+     * 工具栏定位/图标用的缩小态快照（v2026-09-09 跳动修复）：
+     * 点击按钮（缩小/恢复）会同时翻转 shrunk 与退出选中——若定位直接读
+     * block.shrunk，退出动画期间工具栏会从点击时的位置跳到新尺寸的位置。
+     * [SideEffect] 只在**可见期间**同步最新值；变为不可见的那次重组不同步，
+     * 快照冻结在**点击瞬间的位置**，工具栏原地播放退出动画、不跳动。
+     */
+    var lastVisibleShrunk by remember { mutableStateOf(false) }
+    SideEffect {
+        if (toolbarVisible) lastVisibleShrunk = block.shrunk
+    }
 
     Row(verticalAlignment = Alignment.Top) {
         BlockDragHandle(dragHandleModifier)
@@ -4023,8 +4027,10 @@ private fun BlockImageItem(
                     /**
                      * 缩小选中：工具栏中心 = 缩小图右缘（= 内容区宽 50%），
                      * 即一半在图上、一半在图外；偏移 = 中心 - 半个工具栏宽。
+                     * 用 [lastVisibleShrunk]（点击瞬间快照）而非 block.shrunk——
+                     * 退出动画期间原地消失、不随尺寸翻转跳动。
                      */
-                    block.shrunk -> Modifier
+                    lastVisibleShrunk -> Modifier
                         .align(Alignment.CenterStart)
                         .offset(x = with(density) { (contentWidthPx / 2f).toDp() } - ImageToolbarWidth / 2)
                     /** 撑满选中：工具栏在图片正中 */
@@ -4032,7 +4038,8 @@ private fun BlockImageItem(
                 },
             ) {
                 ImageBlockToolbar(
-                    shrunk = block.shrunk,
+                    /** 图标同样用点击瞬间快照：退出动画期间保持原样 */
+                    shrunk = lastVisibleShrunk,
                     onNoteClick = {
                         /** 原型交互：备注编辑时退出选中（高亮与工具栏消失，焦点交给输入框） */
                         noteEditing = true
@@ -4049,6 +4056,10 @@ private fun BlockImageItem(
  * 图片块选中工具栏（v2026-09-09）：白色胶囊 + 5 按钮（备注 / 缩小恢复 / 图片附件页 /
  * 复制图片 / 删除图片），图标为 Lucide 描边风格（与原型一致）。位置由调用方 modifier 决定。
  *
+ * **触控区**（v2026-09-09 调整）：每按钮 40×40dp（图标 22dp 居中），按钮盒之间
+ * 由 [Arrangement.spacedBy] 保证 8dp 正间距——布局级保证**触控区互不重叠**，
+ * 也不会误触相邻按钮。总宽 = 5×40 + 4×8 + 2×12 = 256dp（[ImageToolbarWidth]）。
+ *
  * 本期「备注」「缩小/恢复原尺寸」接实际功能；**附件页 / 复制 / 删除为占位**
  * （onClick = null，点击无操作，后续迭代接入）。
  */
@@ -4063,8 +4074,8 @@ private fun ImageBlockToolbar(
         modifier = modifier
             .shadow(elevation = 6.dp, shape = CircleShape, clip = false)
             .background(color = Color.White.copy(alpha = 0.97f), shape = CircleShape)
-            .padding(horizontal = 22.dp, vertical = 13.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
+            .padding(horizontal = 12.dp, vertical = 5.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ImageToolbarButton(LucideIcons.MessageSquareText, "备注", onNoteClick)
@@ -4081,7 +4092,9 @@ private fun ImageBlockToolbar(
 }
 
 /**
- * 工具栏单按钮：24dp 触控区 + 22dp Lucide 图标；[onClick] = null 时为占位（不挂手势）。
+ * 工具栏单按钮：40×40dp 触控区（≥48dp 建议线附近的合理取值，受胶囊高度约束）
+ * + 22dp Lucide 图标居中；[onClick] = null 时为占位（不挂手势）。
+ * 触控区即按钮盒本身，由父 Row 的正间距保证相邻按钮触控区**不重叠**。
  */
 @Composable
 private fun ImageToolbarButton(
@@ -4091,7 +4104,7 @@ private fun ImageToolbarButton(
 ) {
     Box(
         modifier = Modifier
-            .size(24.dp)
+            .size(40.dp)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
