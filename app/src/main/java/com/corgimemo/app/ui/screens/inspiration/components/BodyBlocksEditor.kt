@@ -1280,10 +1280,44 @@ class BodyBlocksController(
         // 不再过滤空段：块间以空行连接，空白块对应一个非空占位段，保证往返对称
         .joinToString("\n\n")
 
-    /** 纯文本（字数统计 / 复制全文 / 同步 _content 用） */
-    fun plainText(): String =
-        blocks.filterIsInstance<BodyBlock.Text>()
-            .joinToString("\n") { effectiveText(it.state.annotatedString.text) }
+    /**
+     * 纯文本（字数统计 / 复制全文 / 同步 _content 用）。
+     *
+     * **v2026-09-09 跳过"图片间载体空行"**：编辑页为「两图之间可输入」强制插入的
+     * 空 Text 块（[InsertImageSeparatorCommand]）只对编辑态有意义——首页时间线的
+     * 正文预览（content 纯文本）不该出现这行空白。判定：块为空白 Text 块
+     * （剥 ZWSP 后 isBlank），且**向前 / 向后最近的非空白块都是 Image** → 不输出行。
+     * 非图片间的空白块（用户主动留的空段落）照常输出，行为不变。
+     * 注意：content 在保存时落库，本修复只对**之后保存**的笔记生效（用户已确认
+     * 不做旧数据迁移）。
+     */
+    fun plainText(): String {
+        /** 块的有效文本（Text 剥 ZWSP）；非 Text 块返回 null（不参与行输出） */
+        fun textOf(block: BodyBlock): String? =
+            (block as? BodyBlock.Text)?.let { effectiveText(it.state.annotatedString.text) }
+
+        /** 是否"空白块"：仅 Text 块可能空白（Image / Divider 恒为非空白，会阻断配对） */
+        fun isBlankAt(i: Int): Boolean = textOf(blocks[i])?.isBlank() == true
+
+        /** 从 from 出发按 step 方向找最近的非空白块（越界返回 null） */
+        fun nearestNonBlank(from: Int, step: Int): BodyBlock? {
+            var i = from + step
+            while (i in blocks.indices) {
+                if (!isBlankAt(i)) return blocks[i]
+                i += step
+            }
+            return null
+        }
+
+        return blocks.mapIndexedNotNull { i, block ->
+            val text = textOf(block) ?: return@mapIndexedNotNull null
+            /** 空文本块且前后最近的非空白块都是图片 → 图片间载体空行，纯文本不输出 */
+            val isImageGapFiller = text.isBlank() &&
+                nearestNonBlank(i, -1) is BodyBlock.Image &&
+                nearestNonBlank(i, +1) is BodyBlock.Image
+            if (isImageGapFiller) null else text
+        }.joinToString("\n")
+    }
 
     // ---------- 兼容层：原单编辑器状态 → 聚焦块状态 ----------
 

@@ -406,12 +406,44 @@ private fun InspirationBodyRichText(
      * `\n\n`、图片 / 分割线 / NBSP 占位各独立成段）。渲染决策与原管线等价：
      * 空段跳过（原 filter{isNotEmpty}）、图片段跳过（原 filterIsInstance<TextSeg>
      * 丢弃——图片由卡面独立图片区展示）、其余段落照常渲染。
+     *
+     * v2026-09-09 追加：**两个图片段之间的空白段（编辑页强制插入的"图片间空行"）
+     * 不渲染**——图片区自行堆叠留白，阅读态不需要这行空白（skipRenderIndexes）。
      */
     val paragraphs = remember(contentFormat) { contentFormat.split("\n\n") }
+
+    /**
+     * 应跳过渲染的"图片间空白段"索引集合（v2026-09-09）：
+     * 编辑页保证任意两图之间都有一个空 Text 块（markdown 载体为 NBSP 占位段，
+     * 见 BodyBlocksEditor 的 EMPTY_BLOCK_PLACEHOLDER），阅读态不需要这行空白——
+     * 图片由卡面图片区堆叠展示、自行留白。判定：段为空白段，且其**前后最近的
+     * 非空白段**都是图片段 → 跳过（连续多个空白段同时满足时全部跳过）。
+     *
+     * 只影响渲染：paragraphs 保留原始序列与索引，复选框勾选回写（按原始索引
+     * 替换段落、重组整篇 markdown）不受影响。
+     */
+    val skipRenderIndexes: Set<Int> = remember(contentFormat) {
+        val paras = contentFormat.split("\n\n").map { it.trim('\n') }
+        val isImage = paras.map { InspirationImageSegmentRegex.matches(it) }
+        val isBlank = paras.map { isBlankBodyParagraph(it) }
+        buildSet {
+            paras.indices.forEach { i ->
+                if (!isBlank[i]) return@forEach
+                var prev = i - 1
+                while (prev >= 0 && isBlank[prev]) prev--
+                var next = i + 1
+                while (next < paras.size && isBlank[next]) next++
+                if (prev >= 0 && next < paras.size && isImage[prev] && isImage[next]) add(i)
+            }
+        }
+    }
+
     /** 组合期捕获 density（复选框段的 onTextLayout 回调内不可读 CompositionLocal，v2026-09-07） */
     val density = LocalDensity.current
     Column(modifier = modifier) {
         paragraphs.forEachIndexed { pIdx, rawPara ->
+            /** 图片间载体空行：阅读态不渲染（v2026-09-09，集合计算见 skipRenderIndexes） */
+            if (pIdx in skipRenderIndexes) return@forEachIndexed
             val para = rawPara.trim('\n')
             when {
                 /** 空段（含图片边界空段）：不渲染（与原过滤管线一致） */
@@ -520,11 +552,23 @@ private fun InspirationBodyRichText(
 private val InspirationImageSegmentRegex = Regex("""^!\[[^\]]*\]\([^)]+\)$""")
 
 /**
+ * 正文段是否为"空白段"（v2026-09-09）：空、纯空白字符，或编辑页空块占位
+ * （NBSP `\u00A0`，即 BodyBlocksEditor 的 EMPTY_BLOCK_PLACEHOLDER；ZWSP 一并按空处理）。
+ *
+ * ⚠️ 不能直接用 `isBlank()`：Kotlin 的 `Char.isWhitespace('\u00A0')` 对 NBSP 返回
+ * false（不中断空白不参与 isBlank 判定），占位段会被误判为非空，必须先显式剔除。
+ */
+private fun isBlankBodyParagraph(para: String): Boolean =
+    para.replace("\u00A0", "").replace("\u200B", "").isBlank()
+
+/**
  * 详情页正文单段渲染：把单段 markdown 解析进独立 [RichTextState] 后用只读 [RichText] 展示。
  *
  * 基础样式（15sp / #666666 / 行高 22sp / 字距 0.5sp）与改造前纯 Text 一致；
  * 段内逐字 span 的 fontSize/color 覆盖基础值，未设置处回落基础样式。
- * 空白块占位段（NBSP）会渲染为一行空白，与编辑页空白块语义一致。
+ * 空白块占位段（NBSP）渲染为一行空白，与编辑页空白块语义一致——**例外**：
+ * 位于两个图片段之间的空白段是编辑页"图片间可输入"的载体空行，阅读态不渲染
+ * （v2026-09-09，见 [InspirationBodyRichText] 的 skipRenderIndexes）。
  *
  * @param markdown 单段 markdown（不含 `\n\n` 段落分隔）。
  * @param fontFamily 本条灵感记录的字体族。
