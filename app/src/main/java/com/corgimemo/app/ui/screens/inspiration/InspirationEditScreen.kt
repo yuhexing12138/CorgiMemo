@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,7 +73,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,9 +86,11 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalTextToolbar
 import com.corgimemo.app.util.toPxFloat
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
@@ -1421,14 +1423,6 @@ fun InspirationEditScreen(
         }
     ) { innerPadding ->
         /**
-         * 标题选区态（供父容器 verticalScroll 滚动开关使用）：
-         * 用户正在框选标题（选区展开）时置 true，让竖向拖拽只服务于选区扩展，
-         * 不被滚动容器吞掉（修复"标题无法全选"主因）。选区收起即恢复滚动。
-         */
-        val titleSelectionActive = remember { mutableStateOf(false) }
-        val titleScrollState = rememberScrollState()
-
-        /**
          * 内容区布局：单层Column，Modifier顺序决定背景范围。
          * - background 在 horizontal padding 之前 → 用户自选背景色铺满全宽无空隙
          * - 默认透明（Color.Transparent），仅用户主动选择颜色时显示背景
@@ -1442,7 +1436,7 @@ fun InspirationEditScreen(
                 .background(contentBackgroundColor)
                 /** 内容区内边距在背景之后，不影响背景范围 */
                 .padding(horizontal = 8.dp)
-                .verticalScroll(titleScrollState, enabled = !titleSelectionActive.value),
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             /**
@@ -1464,22 +1458,17 @@ fun InspirationEditScreen(
              * 2. state → viewModel.title：用户输入时同步，用 annotatedString.text 读取纯文本；
              *    本方向只上送、绝不触碰选区，框选过程零干扰。
              * 3. 防循环：用 if (currentText != title) 判断避免重复触发。
-             * 4. 另：选区展开时父容器 verticalScroll 临时停用（见下方 titleSelectionActive），避免滚动吞掉选区手势。
              */
+            /**
+             * 系统浮动工具栏句柄（长按弹出的"全选 / 复制 / 粘贴"菜单）。
+             * 供下方"按下即收起工具栏"的被动观察使用。
+             */
+            val textToolbar = LocalTextToolbar.current
+
             val titleRichTextState = rememberRichTextState()
             /** 标题为纯文本（无列表），此处同步关闭列表缩进仅作一致性兜底，
              *  与编辑页正文块、详情页正文保持一致（RichTextConfig.listIndent=0）。 */
             titleRichTextState.config.listIndent = 0
-
-            /**
-             * 驱动标题选区态：选区展开（用户正在框选）→ titleSelectionActive=true，
-             * 父容器 verticalScroll 临时停用，避免选区手势被滚动吞掉；选区收起→恢复滚动。
-             * selection 经 mutableStateOf 的 textFieldValue 暴露，组合中读取即可随选区变化重组。
-             */
-            LaunchedEffect(titleRichTextState) {
-                snapshotFlow { !titleRichTextState.selection.collapsed }
-                    .collect { titleSelectionActive.value = it }
-            }
 
             /**
              * 单向同步：viewModel.title → state（loadInspiration / 外部 setTitle 时回填）。
@@ -1512,7 +1501,24 @@ fun InspirationEditScreen(
 
             RichTextEditor(
                 state = titleRichTextState,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    /**
+                     * 按下即收起系统浮动工具栏（v2026-09-09）：
+                     * 长按标题弹出含"全选"的浮动工具栏后，再次轻点标题行即隐藏工具栏。
+                     *
+                     * `awaitFirstDown(requireUnconsumed = false)` 只**观察**按下、不消费事件，
+                     * 故 TextField 自身的点击定位光标 / 长按选择 / 双击选词手势完全不受影响；
+                     * 按下时刻工具栏尚未弹出，长按时 hide() 为空操作，不会误伤长按。
+                     */
+                    .pointerInput(textToolbar) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitFirstDown(requireUnconsumed = false)
+                                textToolbar.hide()
+                            }
+                        }
+                    },
                 placeholder = {
                     Text(
                         "标题",

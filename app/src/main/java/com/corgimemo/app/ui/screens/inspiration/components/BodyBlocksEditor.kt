@@ -49,6 +49,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -3145,6 +3146,12 @@ private fun BlockTextItem(
     val state = block.state
 
     /**
+     * 系统浮动工具栏句柄（长按弹出的"全选 / 复制 / 粘贴"菜单）。
+     * 与标题一致：按下正文行即收起该工具栏（见下方 Row 的被动按下观察）。
+     */
+    val textToolbar = LocalTextToolbar.current
+
+    /**
      * 复选框图标的**布局级缩进偏移**（v2026-09-08，仅复选框块非零）：
      * `(indentLevel - 1) × LIST_LEVEL_INDENT_SP`。
      *
@@ -3350,6 +3357,12 @@ private fun BlockTextItem(
                 while (true) {
                     awaitFirstDown(requireUnconsumed = false)
                     controller.onTextBlockPressed()
+                    /**
+                     * v2026-09-09：按下即收起系统浮动工具栏——长按正文弹出含"全选"的
+                     * 浮动工具栏后，再次轻点正文行即隐藏（与标题行为一致）。
+                     * 按下时刻工具栏尚未弹出，故长按时 hide() 为空操作，不会误伤长按。
+                     */
+                    textToolbar.hide()
                 }
             }
         },
