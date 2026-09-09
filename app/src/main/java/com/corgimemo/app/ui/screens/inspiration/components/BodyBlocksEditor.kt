@@ -1,6 +1,7 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -48,6 +49,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -60,9 +62,13 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
@@ -70,9 +76,11 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.components.InlineImagePreview
+import com.corgimemo.app.ui.model.IMAGE_SHRUNK_WIDTH_RATIO
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.paragraph.type.OrderedListStyleType
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
@@ -86,6 +94,7 @@ import compose.icons.lucideicons.MessageSquareText
 import compose.icons.lucideicons.Shrink
 import compose.icons.lucideicons.Trash2
 import sh.calvin.reorderable.ReorderableItem
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 // ==================== 零宽字符（用于软键盘空块退格检测） ====================
@@ -3359,6 +3368,12 @@ fun BodyBlocksEditor(
     controller: BodyBlocksController,
     isLocked: Boolean,
     modifier: Modifier = Modifier,
+    /**
+     * 编辑器滚动容器的窗口可视 bounds 提供者（v2026-09-09）：
+     * 图片选中工具栏垂直 clamp 依据——图片中心滚出屏幕展示边界时工具栏贴边显示。
+     * 返回 null = 不 clamp（默认）。lambda 延迟读取，滚动期间零重组开销。
+     */
+    viewportBoundsProvider: () -> Rect? = { null },
 ) {
     BlocksReorderableColumn(
         items = controller.blocks.toList(),
@@ -3380,6 +3395,7 @@ fun BodyBlocksEditor(
                 block = block,
                 isDragging = isDragging,
                 isLocked = isLocked,
+                viewportBoundsProvider = viewportBoundsProvider,
                 dragHandleModifier = dragHandleModifier,
             )
             is BodyBlock.Divider -> BlockDividerItem(
@@ -3876,14 +3892,26 @@ private fun BlockTextItem(
  */
 private val BLOCK_CONTENT_PADDING = 16.dp
 
-/** 图片选中工具栏宽度：5×40dp 触控区 + 4×8dp 间距 + 左右 12dp 内边距（缩小选中态定位偏移用） */
+/** 图片选中工具栏尺寸：宽 = 5×40dp 触控区 + 4×8dp 间距 + 左右 12dp 内边距；高 = 40dp 触控区 + 上下 5dp 内边距 */
 private val ImageToolbarWidth = 256.dp
+private val ImageToolbarHeight = 50.dp
+
+/**
+ * 图片缩小/恢复动画与工具栏退场动画**共用**的时长（v2026-09-09 同步要求）：
+ * 点「缩小/恢复」按钮时两者同帧启动、等长播放、同时结束——时长必须单一真相源。
+ */
+private const val ImageScaleAnimationDurationMillis = 250
+
+/** Popup 挂载保持时长（毫秒，Long 供 [kotlinx.coroutines.delay]）：须 ≥ [ImageScaleAnimationDurationMillis]（退场动画播完）+ 余量，过早卸载会截断退场 */
+private const val ImageToolbarPopupUnmountDelayMillis = 350L
 
 /**
  * 块级图片：拖拽手柄 + 图片 + 备注 + 选中工具栏（v2026-09-09）。
  *
  * - **宽度**：撑满块内容区（与文本块左右边界对齐）；缩小态为原宽的一半
- *   （[BodyBlock.Image.shrunk]，`widthFraction = 0.5f`，等比、高随比例减半）；
+ *   （[BodyBlock.Image.shrunk]，`widthFraction = [IMAGE_SHRUNK_WIDTH_RATIO]`，
+ *   等比、高随比例减半）；缩小/恢复由宽度比例动画平滑过渡（见
+ *   [ImageScaleAnimationDurationMillis]，与工具栏退场同步）；
  * - **点选**：点击图片 → 高亮 + 工具栏（[BodyBlocksController.imageToolbarBlockId]）；
  *   工具栏位置：撑满选中 = 图片正中，缩小选中 = 垂直居中、水平中心锚定缩小图右缘
  *   （一半在图上、一半在图外）；
@@ -3898,11 +3926,28 @@ private fun BlockImageItem(
     block: BodyBlock.Image,
     isDragging: Boolean,
     isLocked: Boolean,
+    viewportBoundsProvider: () -> Rect?,
     dragHandleModifier: Modifier,
 ) {
     /** 点选态（工具栏可见）：两步删除高亮不算（见 imageToolbarBlockId 注释） */
     val toolbarVisible = !isLocked && controller.imageToolbarBlockId == block.id
     val selected = controller.highlightedBlockId == block.id
+
+    /**
+     * 图片宽度比例动画（v2026-09-09）：点「缩小/恢复」时 [block.shrunk] 翻转，
+     * 宽度比例在 1f ⇄ [IMAGE_SHRUNK_WIDTH_RATIO] 间平滑过渡——高度按真实比例
+     * 逐帧跟随，图片整体**真实缩放**（而非 animateContentSize 的容器裁切式）。
+     * 与工具栏退场动画共用 [ImageScaleAnimationDurationMillis]：两者同帧启动
+     * （toggleImageShrunk 内同帧翻转 shrunk + 清选中）、等长播放、同时结束。
+     * 首组合即为目标值——已缩小块加载时不播动画。
+     */
+    val animatedWidthFraction by animateFloatAsState(
+        targetValue = if (block.shrunk) IMAGE_SHRUNK_WIDTH_RATIO else 1f,
+        animationSpec = tween(durationMillis = ImageScaleAnimationDurationMillis),
+    )
+
+    /** 选中图片时收起软键盘用（v2026-09-09） */
+    val softwareKeyboardController = LocalSoftwareKeyboardController.current
 
     /** 备注编辑态：点「备注」为 true；失焦且无内容（本地与已落块对象均空）时退出 */
     var noteEditing by remember(block.id) { mutableStateOf(false) }
@@ -3914,20 +3959,101 @@ private fun BlockImageItem(
         if (noteEditing) noteFocusRequester.requestFocus()
     }
 
-    /** 图片块内容区宽度（px，padding 后）——缩小选中态的工具栏定位基准 */
-    var contentWidthPx by remember { mutableStateOf(0) }
-    val density = LocalDensity.current
+    /**
+     * 图片 frame 的实测布局信息（v2026-09-09）：onGloballyPositioned 采集
+     * frame 相对直接父（Column，其顶 = 工具栏 offset 的坐标原点）的位置与尺寸。
+     *
+     * **以测量为准、零推算**——padding、间隙等一切布局因素自动包含在测量值里。
+     * 此前的"frameHeightPx / 2"推算法在真机上固定偏下 ~17dp（布局链中存在
+     * 未建模的顶部间隙），实测方案无论来源都精确居中。
+     */
+    var frameTopPx by remember { mutableStateOf(0f) }
+    var frameLeftPx by remember { mutableStateOf(0f) }
+    var frameWidthPx by remember { mutableStateOf(0f) }
+    var frameHeightPx by remember { mutableStateOf(0f) }
+
+    /** 图片 frame 在**窗口**坐标中的 top（滚动实时）——工具栏垂直 clamp 的坐标桥接 */
+    var frameWindowTopPx by remember { mutableStateOf(0f) }
 
     /**
-     * 工具栏定位/图标用的缩小态快照（v2026-09-09 跳动修复）：
-     * 点击按钮（缩小/恢复）会同时翻转 shrunk 与退出选中——若定位直接读
-     * block.shrunk，退出动画期间工具栏会从点击时的位置跳到新尺寸的位置。
-     * [SideEffect] 只在**可见期间**同步最新值；变为不可见的那次重组不同步，
-     * 快照冻结在**点击瞬间的位置**，工具栏原地播放退出动画、不跳动。
+     * 工具栏定位/图标用的「点击瞬间」快照（v2026-09-09 跳动修复）：
+     * 点按钮（缩小/恢复）会同帧翻转 shrunk 并退出选中——布局随之变化
+     * （frame 半宽、高度减半），基于动态对齐/实时尺寸的定位都会让退出动画
+     * 期间的工具栏滑向新位置。快照在工具栏可见期间同步、不可见即冻结，
+     * 工具栏在**触摸瞬间的原始位置**原地缩放淡出。
      */
     var lastVisibleShrunk by remember { mutableStateOf(false) }
+    var lastFrameTopPx by remember { mutableStateOf(0f) }
+    var lastFrameLeftPx by remember { mutableStateOf(0f) }
+    var lastFrameWidthPx by remember { mutableStateOf(0f) }
+    var lastFrameHeightPx by remember { mutableStateOf(0f) }
     SideEffect {
-        if (toolbarVisible) lastVisibleShrunk = block.shrunk
+        if (toolbarVisible) {
+            lastVisibleShrunk = block.shrunk
+            lastFrameTopPx = frameTopPx
+            lastFrameLeftPx = frameLeftPx
+            lastFrameWidthPx = frameWidthPx
+            lastFrameHeightPx = frameHeightPx
+        }
+    }
+
+    /**
+     * Popup 挂载窗口（v2026-09-09 边界遮挡修复）：工具栏由 [Popup] 独立窗口渲染。
+     *
+     * **为什么必须 Popup**：此前 AnimatedVisibility 画在图片块自己的 Box 里，
+     * 父级 Column 中**后续兄弟块组合更晚、绘制在上层**——viewport clamp 把工具栏
+     * 钉到滚动区上下边界时，它正好延伸进下一块图片的区域，被下一块整体盖住，
+     * 触摸也被下一块的 clickable 拦截（「缩小/复原」很难点中）。Popup 独立窗口
+     * 永远浮在所有兄弟块之上，遮挡与触摸拦截同时消除（与分割线删除按钮同模式）。
+     *
+     * 挂载与可见性分离：toolbarVisible 翻 false 后需等**退场动画播完**
+     * （时长 = [ImageScaleAnimationDurationMillis]，与图片缩小/恢复动画同步）
+     * 再卸载 Popup，否则 scaleOut/fadeOut 被直接截断——延迟由
+     * [ImageToolbarPopupUnmountDelayMillis] 保证 ≥ 动画时长 + 余量。
+     * 快速重新选中时 delay 被取消（LaunchedEffect key 重启）、Popup 保持挂载，
+     * 动画从退出进度反向接续。
+     */
+    var toolbarPopupMounted by remember { mutableStateOf(false) }
+    LaunchedEffect(toolbarVisible) {
+        if (toolbarVisible) {
+            toolbarPopupMounted = true
+        } else if (toolbarPopupMounted) {
+            // 退场动画（时长 = 图片缩放动画）播完 + 余量再卸载 Popup，否则被截断
+            delay(ImageToolbarPopupUnmountDelayMillis)
+            toolbarPopupMounted = false
+        }
+    }
+
+    /**
+     * Popup offset（组合期计算，与旧 lambda offset 同式）：锚点 = 内层 [Column]
+     * （Popup 挂在其中，TopStart 即 Column 左上角）——[frameTopPx] 等实测坐标
+     * 也相对同一 Column，**零补偿**。快照（last*）与 viewport clamp 逻辑原样保留。
+     */
+    val density = LocalDensity.current
+    val toolbarPopupOffset = if (!toolbarPopupMounted) {
+        IntOffset.Zero
+    } else {
+        with(density) {
+            val centerX = if (lastVisibleShrunk) {
+                lastFrameLeftPx + lastFrameWidthPx
+            } else {
+                lastFrameLeftPx + lastFrameWidthPx / 2f
+            }
+            val centerY = lastFrameTopPx + lastFrameHeightPx / 2f
+
+            val centerWindowY = frameWindowTopPx + lastFrameHeightPx / 2f
+            val marginPx = ImageToolbarHeight.toPx() / 2f + 8.dp.toPx()
+            val clampedWindowY = viewportBoundsProvider()
+                ?.takeIf { it.height > 0f }
+                ?.let { vp -> centerWindowY.coerceIn(vp.top + marginPx, vp.bottom - marginPx) }
+                ?: centerWindowY
+            val dy = clampedWindowY - centerWindowY
+
+            IntOffset(
+                (centerX - ImageToolbarWidth.toPx() / 2f).roundToInt(),
+                (centerY + dy - ImageToolbarHeight.toPx() / 2f).roundToInt(),
+            )
+        }
     }
 
     Row(verticalAlignment = Alignment.Top) {
@@ -3940,25 +4066,40 @@ private fun BlockImageItem(
                  * 水平 16dp = 编辑器 contentPadding——图片与备注都以此为左右边界，
                  * 与文本块文字严格对齐；垂直 4dp 与内部 8dp 叠加成块间留白。
                  */
-                .padding(vertical = 4.dp, horizontal = BLOCK_CONTENT_PADDING)
-                .onSizeChanged { contentWidthPx = it.width },
+                .padding(vertical = 4.dp, horizontal = BLOCK_CONTENT_PADDING),
         ) {
             Column {
                 InlineImagePreview(
                     imageUri = block.path,
-                    /** 宽度占满块内容区（缩小态 50%），高度按真实比例 */
+                    /** 宽度占满块内容区（缩小态 50%），高度按真实比例；动画值驱动平滑缩放 */
                     fillMaxWidth = true,
-                    widthFraction = if (block.shrunk) 0.5f else 1f,
+                    widthFraction = animatedWidthFraction,
                     modifier = Modifier
+                        .onGloballyPositioned { coords ->
+                            /** 实测 frame 相对直接父（Column）的 bounds——工具栏定位依据 */
+                            frameTopPx = coords.positionInParent().y
+                            frameLeftPx = coords.positionInParent().x
+                            frameWidthPx = coords.size.width.toFloat()
+                            frameHeightPx = coords.size.height.toFloat()
+                            /** 窗口 top（滚动实时）——垂直 clamp 的窗口坐标桥接 */
+                            frameWindowTopPx = coords.positionInWindow().y
+                        }
                         .graphicsLayer {
                             if (isDragging) {
                                 alpha = 0.6f
                             }
                         },
-                    isHighlighted = selected,
-                    onClick = if (isLocked) null else {
-                        { controller.onImageBlockTapped(block.id) }
-                    },
+                isHighlighted = selected,
+                onClick = if (isLocked) null else {
+                    {
+                        /**
+                         * 选中图片时收起软键盘（v2026-09-09）：键盘展开会遮挡正文，
+                         * 也影响工具栏可视区域；未展开时 hide 无副作用。
+                         */
+                        softwareKeyboardController?.hide()
+                        controller.onImageBlockTapped(block.id)
+                    }
+                },
                 )
 
                 /**
@@ -4002,51 +4143,64 @@ private fun BlockImageItem(
                         )
                     }
                 }
-            }
 
-            /**
-             * 工具栏弹出/收起：scale + fade 入退场（v2026-09-09，贴近原型质感）。
-             * 定位 modifier 挂在 [AnimatedVisibility] 上；退出期间 shrunk 已翻转时
-             * 位置会跟随新值（与原型 CSS 的即时切换行为一致）。
-             *
-             * ⚠️ 用完全限定名调用：此处处于 BoxScope，外层还有 Row 隐式接收者，
-             * 简名 `AnimatedVisibility` 会被解析成 `RowScope.AnimatedVisibility`
-             * 扩展（隔层 receiver 不合法，编译报 "cannot be called in this context"）。
-             */
-            androidx.compose.animation.AnimatedVisibility(
-                visible = toolbarVisible,
-                enter = scaleIn(
-                    initialScale = 0.85f,
-                    animationSpec = tween(durationMillis = 180),
-                ) + fadeIn(animationSpec = tween(durationMillis = 180)),
-                exit = scaleOut(
-                    targetScale = 0.85f,
-                    animationSpec = tween(durationMillis = 150),
-                ) + fadeOut(animationSpec = tween(durationMillis = 150)),
-                modifier = when {
-                    /**
-                     * 缩小选中：工具栏中心 = 缩小图右缘（= 内容区宽 50%），
-                     * 即一半在图上、一半在图外；偏移 = 中心 - 半个工具栏宽。
-                     * 用 [lastVisibleShrunk]（点击瞬间快照）而非 block.shrunk——
-                     * 退出动画期间原地消失、不随尺寸翻转跳动。
-                     */
-                    lastVisibleShrunk -> Modifier
-                        .align(Alignment.CenterStart)
-                        .offset(x = with(density) { (contentWidthPx / 2f).toDp() } - ImageToolbarWidth / 2)
-                    /** 撑满选中：工具栏在图片正中 */
-                    else -> Modifier.align(Alignment.Center)
-                },
-            ) {
-                ImageBlockToolbar(
-                    /** 图标同样用点击瞬间快照：退出动画期间保持原样 */
-                    shrunk = lastVisibleShrunk,
-                    onNoteClick = {
-                        /** 原型交互：备注编辑时退出选中（高亮与工具栏消失，焦点交给输入框） */
-                        noteEditing = true
-                        controller.clearBlockSelection()
-                    },
-                    onScaleClick = { controller.toggleImageShrunk(block.id) },
-                )
+                /**
+                 * 工具栏：**Popup 独立窗口渲染**（v2026-09-09 边界遮挡修复）。
+                 *
+                 * 此前工具栏画在本块的 Box 内——父级 Column 中后续兄弟块组合更晚、
+                 * 绘制在上层：viewport clamp 把工具栏钉到滚动区上下边界时，它正好
+                 * 延伸进下一块图片的区域，被下一块整体盖住，触摸也被下一块的
+                 * clickable 拦截（「缩小/复原」很难点中）。Popup 是独立窗口，
+                 * 永远浮在所有兄弟块之上，遮挡与触摸拦截同时消除
+                 * （与分割线高亮删除按钮同一模式：focusable=false 不抢焦点）。
+                 *
+                 * 定位：锚点即本 Column（TopStart = Column 左上角），offset 用
+                 * [toolbarPopupOffset]（实测 frame 坐标 + 快照冻结 + viewport clamp，
+                 * 与旧 lambda offset 同式，坐标系一致零补偿）。
+                 */
+                if (toolbarPopupMounted) {
+                    Popup(
+                        alignment = Alignment.TopStart,
+                        offset = toolbarPopupOffset,
+                        /** focusable=false：不抢焦点、软键盘状态不受影响；
+                         *  clippingEnabled=false：位置完全由 clamp 计算，禁止平台自动挪位 */
+                        properties = PopupProperties(focusable = false, clippingEnabled = false),
+                    ) {
+                        /**
+                         * Popup 首次组合时 [toolbarVisible] 已为 true——若直接以
+                         * visible=true 初始化，AnimatedVisibility 不播 enter 动画。
+                         * 先以 false 挂载一帧、下一帧置 true，让 scale+fade 正常入场。
+                         */
+                        var toolbarAnimatedIn by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) { toolbarAnimatedIn = true }
+
+                        /** 全限定名：作用域链上有 RowScope，裸名会误解析到
+                         *  RowScope.AnimatedVisibility（横滑扩展，语义不同） */
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = toolbarVisible && toolbarAnimatedIn,
+                            enter = scaleIn(
+                                initialScale = 0.85f,
+                                animationSpec = tween(durationMillis = 180),
+                            ) + fadeIn(animationSpec = tween(durationMillis = 180)),
+                            exit = scaleOut(
+                                targetScale = 0.85f,
+                                /** 与图片缩小/恢复动画等长（共用常量）：同帧启动、同时结束 */
+                                animationSpec = tween(durationMillis = ImageScaleAnimationDurationMillis),
+                            ) + fadeOut(animationSpec = tween(durationMillis = ImageScaleAnimationDurationMillis)),
+                        ) {
+                            ImageBlockToolbar(
+                                /** 图标取点击瞬间快照：退出动画期间保持原样 */
+                                shrunk = lastVisibleShrunk,
+                                onNoteClick = {
+                                    /** 原型交互：备注编辑时退出选中（高亮与工具栏消失，焦点交给输入框） */
+                                    noteEditing = true
+                                    controller.clearBlockSelection()
+                                },
+                                onScaleClick = { controller.toggleImageShrunk(block.id) },
+                            )
+                        }
+                    }
+                }
             }
         }
     }

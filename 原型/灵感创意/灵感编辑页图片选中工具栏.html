@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灵感编辑页 · 图片块选中工具栏（布局 + 缩小/恢复交互）</title>
+
+<style>
+/* ============================================================
+   CorgiMemo 设计令牌（与「工具栏/灵感编辑页字体选择面板.html」一致）
+   ============================================================ */
+:root{
+  --cm-primary:#FF9A5C;
+  --cm-primary-deep:#E88A4D;
+  --cm-background:#F4F4F6;
+  --cm-foreground:#2D2D2D;
+  --cm-card:#FFFFFF;
+  --cm-border:#E8E8EA;
+
+  /* 图片块选中高亮（源码 InlineImagePreview.kt 的既有参数） */
+  --hl-border:rgba(255,183,77,.40);   /* border 1dp #FFB74D @40% */
+  --hl-glow:rgba(255,183,77,.60);     /* innerShadow #FFB74D @60% */
+  --hl-bg:#FFF8E1;                    /* 选中浅黄底 */
+
+  --cm-font-sans:"Inter","Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--cm-background);
+  color:var(--cm-foreground);
+  font-family:var(--cm-font-sans);
+  -webkit-font-smoothing:antialiased;
+}
+.page{max-width:1180px;margin:0 auto;padding:32px 24px 64px;}
+
+/* ---------- 页头说明 ---------- */
+.page-header{margin-bottom:26px;}
+.page-header h1{font-size:26px;margin:0 0 8px;letter-spacing:-.3px;}
+.page-header .lead{margin:0 0 12px;color:#666;font-size:14px;line-height:1.8;max-width:880px;}
+.rules{margin:0;padding-left:20px;color:#555;font-size:13px;line-height:1.9;}
+.rules b{color:var(--cm-primary-deep);}
+
+/* ---------- 手机舞台 ---------- */
+.stage{display:flex;gap:36px;align-items:flex-start;flex-wrap:wrap;margin-bottom:36px;}
+.phone-col{display:flex;flex-direction:column;gap:12px;}
+.phone-tag{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:13px;font-weight:600;color:#555;
+}
+.phone-tag .dot{width:8px;height:8px;border-radius:50%;background:var(--cm-primary);}
+
+.phone{
+  width:375px;height:812px;flex:none;
+  background:#111;border-radius:44px;padding:11px;
+  box-shadow:0 20px 50px -12px rgba(15,23,42,.45);
+}
+.phone-screen{
+  position:relative;width:100%;height:100%;
+  background:#FFFFFF;border-radius:34px;overflow:hidden;
+  display:flex;flex-direction:column;
+}
+
+/* 状态栏 */
+.status-bar{
+  height:42px;flex:none;padding:0 22px;
+  display:flex;align-items:center;justify-content:space-between;
+  font-size:14px;font-weight:600;color:#1B1B1B;
+}
+.status-bar .right{display:flex;gap:6px;align-items:center;font-size:11px;font-weight:500;color:#1B1B1B;}
+.batt{
+  width:22px;height:11px;border:1.2px solid #1B1B1B;border-radius:3px;position:relative;
+  display:inline-flex;align-items:center;padding:1.2px;
+}
+.batt::after{content:"";position:absolute;right:-3px;top:3px;width:2px;height:4px;background:#1B1B1B;border-radius:0 1px 1px 0;}
+.batt .lv{height:100%;width:69%;background:#1B1B1B;border-radius:1px;}
+
+/* 顶栏 */
+.app-bar{
+  height:50px;flex:none;padding:0 14px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.app-bar .grp{display:flex;align-items:center;gap:4px;}
+.icon-btn{
+  width:38px;height:38px;border:none;background:transparent;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#3A3A3A;padding:0;
+}
+.icon-btn svg{width:21px;height:21px;}
+
+/* 标题与元信息 */
+.title{font-size:24px;font-weight:700;color:#1F1F1F;padding:6px 24px 0;letter-spacing:.2px;}
+.meta{
+  padding:8px 24px 12px;font-size:12px;color:#A0A0A0;
+  display:flex;align-items:center;gap:10px;
+}
+.meta .sep{width:1px;height:11px;background:#D9D9DC;}
+
+/* 正文区 */
+.body-area{flex:1;min-height:0;padding:2px 24px 0;overflow:hidden;position:relative;}
+.para{font-size:16px;line-height:1.85;color:#4A4A4A;}
+
+/* ---------- 图片块（四态状态机） ---------- */
+.imgblock{position:relative;margin:10px 0;}
+.img-frame{
+  position:relative;border-radius:16px;overflow:hidden;
+  background:#A9D7F2;aspect-ratio:1/1;
+  width:100%;
+  border:1px solid transparent;
+  /* 宽度缩放与高亮切换都走过渡（源码实现可用 animateContentSize） */
+  transition:width .25s ease, background .2s ease, box-shadow .2s ease;
+  cursor:pointer;
+}
+
+/* 选中高亮（撑满选中 / 缩小选中共用） */
+.s-selected .img-frame,
+.s-shrunk-selected .img-frame{
+  background:var(--hl-bg);
+  border-color:var(--hl-border);
+  box-shadow:inset 0 0 12px var(--hl-glow);
+}
+
+/* 缩小态：宽度 = 原尺寸的一半（等比，高度随比例减半，下方内容自然上移） */
+.s-shrunk .img-frame,
+.s-shrunk-selected .img-frame{
+  width:50%;
+}
+
+/* 占位测试图（自绘，等效截图中的浅蓝测试图） */
+.test-img{position:absolute;inset:0;width:100%;height:100%;display:block;}
+
+/* ---------- 悬浮工具栏 ---------- */
+.img-toolbar{
+  position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  display:none;
+  align-items:center;gap:24px;
+  padding:13px 22px;
+  background:rgba(255,255,255,.97);
+  border-radius:999px;
+  box-shadow:0 6px 24px rgba(15,23,42,.18), 0 1px 3px rgba(15,23,42,.12);
+}
+/* 位置（两种选中态数值相同，原理不同）：
+   - 撑满选中：frame 占满整行 → 中心 = 行宽 50%；
+   - 缩小选中：frame 宽 50% → 其右缘（工具栏中心锚点，一半在图上、一半在图外）也 = 行宽 50%。
+   故工具栏恒定锚定行宽 50% 处，无需按状态切换 left。 */
+.s-selected .img-toolbar,
+.s-shrunk-selected .img-toolbar{display:flex;}
+
+.tb-btn{
+  width:24px;height:24px;padding:0;border:none;background:transparent;
+  display:inline-flex;align-items:center;justify-content:center;
+  cursor:pointer;color:#3A3A3A;
+}
+.tb-btn svg{width:22px;height:22px;}
+
+/* 第二个按钮的图标随状态切换：缩小 ⇄ 恢复原尺寸 */
+.ic-restore{display:none;}
+.s-shrunk-selected .ic-shrink{display:none;}
+.s-shrunk-selected .ic-restore{display:inline-block;}
+
+/* ---------- 图片备注（点「备注」后出现，宽度跟随图片） ---------- */
+.img-note{
+  display:none;
+  margin:6px 0 0;
+  width:100%;
+  border:none;outline:none;background:transparent;
+  font-family:inherit;
+  /* 视觉降级：比正文（16px #4A4A4A）字号更小、颜色更淡 */
+  font-size:13px;color:#9E9E9E;letter-spacing:.3px;
+  /* 光标黄色，与主题/截图一致 */
+  caret-color:var(--cm-primary);
+  padding:2px 4px;border-radius:6px;
+}
+/* 出现时机：聚焦编辑中，或已有内容（常显） */
+.img-note.show{display:block;}
+/* 缩小态：备注区域宽度跟随图片（也变为 50%） */
+.s-shrunk .img-note,
+.s-shrunk-selected .img-note{width:50%;}
+/* 占位提示语（图一："图片描述"） */
+.img-note::placeholder{color:#C9C9CC;}
+/* 非编辑且已填写：淡黄底，与图片选中高亮呼应（图三） */
+.img-note.filled:not(:focus){background:#FFF6DC;}
+
+/* Android 底部导航条 */
+.home-bar{flex:none;height:22px;display:flex;align-items:center;justify-content:center;}
+.home-bar i{width:120px;height:4px;border-radius:2px;background:#1B1B1B;opacity:.85;}
+
+/* 演示机下方的实时状态行 */
+.state-line{font-size:13px;color:#666;display:flex;align-items:center;gap:10px;}
+.state-line b{color:var(--cm-primary-deep);}
+.state-line a{color:var(--cm-primary-deep);cursor:pointer;text-decoration:none;}
+
+/* ---------- 右侧说明列 ---------- */
+.side-col{display:flex;flex-direction:column;gap:14px;max-width:420px;flex:1;min-width:320px;}
+.spec-card{
+  background:var(--cm-card);border:1px solid var(--cm-border);border-radius:14px;
+  padding:18px 20px;
+}
+.spec-card h3{margin:0 0 10px;font-size:14px;color:#3A3A3A;}
+.spec-card ul{margin:0;padding-left:18px;color:#666;font-size:13px;line-height:2;}
+.spec-card code{
+  font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;
+  background:#F5F3EE;border-radius:4px;padding:1px 5px;color:#8A5A34;
+}
+.flow{margin:0;padding:0;list-style:none;}
+.flow li{
+  position:relative;padding:0 0 14px 26px;
+  font-size:13px;color:#555;line-height:1.7;
+}
+.flow li::before{
+  content:"";position:absolute;left:5px;top:6px;
+  width:8px;height:8px;border-radius:50%;background:var(--cm-primary);
+}
+.flow li:not(:last-child)::after{
+  content:"";position:absolute;left:8.5px;top:18px;bottom:-2px;
+  width:1.5px;background:#EBD9C8;
+}
+.flow b{color:#3A3A3A;}
+.flow .trig{color:var(--cm-primary-deep);font-weight:600;}
+
+/* ---------- 按钮清单图例 ---------- */
+.section-title{font-size:17px;font-weight:700;margin:0 0 14px;}
+.legend{
+  display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:32px;
+}
+.lg-card{
+  background:var(--cm-card);border:1px solid var(--cm-border);border-radius:14px;
+  padding:16px 14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;
+}
+.lg-card .ic{
+  width:40px;height:40px;border-radius:10px;background:#FFF3E7;
+  display:inline-flex;align-items:center;justify-content:center;color:#8A5A34;
+}
+.lg-card .ic svg{width:21px;height:21px;}
+.lg-card b{font-size:14px;}
+.lg-card p{margin:0;font-size:12.5px;color:#777;line-height:1.7;}
+.lg-card .no{font-size:11px;color:#B8B8BC;font-weight:600;}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="page-header">
+    <h1>灵感编辑页 · 图片块选中工具栏</h1>
+    <p class="lead">
+      点击正文中的图片块：图片高亮（源码既有选中视觉），同时出现悬浮工具栏，
+      <b>按钮在图片上居中显示</b>。已实现两组交互（左侧演示机可直接操作）：
+      ① <b>「缩小 / 恢复原尺寸」</b>——点「缩小」图片宽度变为原尺寸一半并退出选中；再点缩小后的图片，
+      工具栏改为垂直居中、水平一半在图片上一半在图片外，按钮切「恢复原尺寸」；点「恢复原尺寸」图片复原。
+      ② <b>「备注」</b>——选中后点「备注」，图片下方出现「图片描述」占位输入；输入的备注以
+      <b>降级小字</b>显示（比正文字号小、颜色更淡），<b>缩放图片后备注保留</b>，缩小图下方同样可加备注。
+      其余按钮仍为布局占位；<b>源码未改动</b>，定稿后再实现。
+    </p>
+    <ul class="rules">
+      <li>按钮共 <b>5 个</b>，从左到右：备注 → 缩小/恢复原尺寸 → 图片附件页 → 复制图片 → 删除图片（截图参考稿中的手写笔迹图标不含）。</li>
+      <li>状态机共 <b>4 态</b>（见右侧图解）；点击图片切换选中，点按钮执行缩放并<b>退出选中</b>。</li>
+      <li>高亮视觉取自源码 <b>InlineImagePreview</b> 既有参数：#FFB74D 边框 40% + 内阴影 60%、底色 #FFF8E1、圆角 16dp。</li>
+      <li>图片块几何以当前源码为准：<b>宽度撑满文本区、左右缘与文字对齐</b>；缩小为等比缩放（宽度减半、高度随比例）。</li>
+    </ul>
+  </header>
+
+  <div class="stage">
+
+    <!-- ===== 可交互演示机 ===== -->
+    <div class="phone-col">
+      <span class="phone-tag"><span class="dot"></span>可交互演示（点击图片与按钮试试）</span>
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="status-bar">
+            <span>13:54</span>
+            <span class="right">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#1B1B1B" stroke-width="2" stroke-linecap="round"><path d="M2 20h.01M7 20v-4M12 20v-8M17 20V8"/></svg>
+              <span>5G</span>
+              <span class="batt"><span class="lv"></span></span>
+            </span>
+          </div>
+          <div class="app-bar">
+            <div class="grp">
+              <button class="icon-btn" aria-label="返回">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+              </button>
+            </div>
+            <div class="grp">
+              <button class="icon-btn" aria-label="分享">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v13"/><path d="m8 6 4-4 4 4"/><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/></svg>
+              </button>
+              <button class="icon-btn" aria-label="调色板">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.6-.7 1.6-1.7 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1a1.6 1.6 0 0 1 1.7-1.7h2c3 0 5.6-2.5 5.6-5.6C21.9 6 17.5 2 12 2z"/></svg>
+              </button>
+              <button class="icon-btn" aria-label="更多">
+                <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="title">测试图片</div>
+          <div class="meta"><span>9月9日 13:54</span><span class="sep"></span><span>2字</span></div>
+          <div class="body-area">
+            <p class="para">前</p>
+
+            <!-- 图片块：四态状态机（s-normal / s-selected / s-shrunk / s-shrunk-selected） -->
+            <div class="imgblock s-normal" id="demoBlock">
+              <div class="img-frame" id="demoFrame">
+                <svg class="test-img" viewBox="0 0 330 330" preserveAspectRatio="none" aria-hidden="true">
+                  <rect width="330" height="330" fill="#A9D7F2"/>
+                  <line x1="165" y1="0" x2="165" y2="330" stroke="#E23B3B" stroke-width="1.5"/>
+                  <text x="26" y="64" font-size="52" font-weight="700" fill="#1B4F8A" font-family="Arial, sans-serif">2</text>
+                  <text x="304" y="64" font-size="52" font-weight="700" fill="#1B4F8A" text-anchor="end" font-family="Arial, sans-serif">2</text>
+                  <text x="26" y="312" font-size="52" font-weight="700" fill="#1B4F8A" font-family="Arial, sans-serif">2</text>
+                  <text x="304" y="312" font-size="52" font-weight="700" fill="#1B4F8A" text-anchor="end" font-family="Arial, sans-serif">2</text>
+                  <text x="165" y="230" font-size="170" font-weight="700" fill="#123C6D" text-anchor="middle" font-family="Arial, sans-serif">2</text>
+                  <text x="322" y="252" font-size="11" fill="#FFFFFF" opacity=".75" text-anchor="end" font-family="sans-serif">豆包AI生成</text>
+                </svg>
+              </div>
+
+              <!-- 图片备注：点「备注」后聚焦输入；placeholder=图片描述；宽度跟随图片（缩放后仍在） -->
+              <input class="img-note" id="demoNote" type="text" placeholder="图片描述" aria-label="图片描述">
+
+              <!-- 悬浮工具栏：位置/图标随状态机切换 -->
+              <div class="img-toolbar" role="toolbar" aria-label="图片操作" id="demoToolbar">
+                <span class="tb-btn" id="btnNote" title="备注">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M13 8H7"/><path d="M17 12H7"/></svg>
+                </span>
+                <span class="tb-btn" id="btnScale" title="缩小 / 恢复原尺寸">
+                  <!-- 缩小（撑满选中态显示）：方框右下开口 + 中心指向左上的箭头 -->
+                  <svg class="ic-shrink" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6"/><path d="M12 12 7.5 7.5"/><path d="M7.5 11.5v-4h4"/></svg>
+                  <!-- 恢复原尺寸（缩小选中态显示）：方框左上开口 + 中心指向右下的箭头 -->
+                  <svg class="ic-restore" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6"/><path d="m12 12 4.5 4.5"/><path d="M16.5 12.5v4h-4"/></svg>
+                </span>
+                <span class="tb-btn" title="图片附件页">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                </span>
+                <span class="tb-btn" title="复制图片">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                </span>
+                <span class="tb-btn" title="删除图片">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                </span>
+              </div>
+            </div>
+
+            <p class="para">后</p>
+          </div>
+          <div class="home-bar"><i></i></div>
+        </div>
+      </div>
+      <div class="state-line">
+        当前状态：<b id="stateLabel">常态（撑满）</b>
+        <a id="resetLink">重置</a>
+      </div>
+    </div>
+
+    <!-- ===== 状态机与交互细节 ===== -->
+    <div class="side-col">
+      <div class="spec-card">
+        <h3>状态机（4 态）</h3>
+        <ul class="flow">
+          <li><b>常态</b>（撑满，未选中）<br><span class="trig">点击图片 →</span> 选中 · 工具栏图片正中</li>
+          <li><b>选中 · 工具栏正中</b><br><span class="trig">点「缩小」→</span> 图片宽度减半，<b>退出选中</b>（工具栏消失）</li>
+          <li><b>缩小</b>（半宽，未选中）<br><span class="trig">点击图片 →</span> 缩小选中 · 工具栏一半在图外，按钮切「恢复原尺寸」</li>
+          <li><b>缩小选中 · 一半内外</b><br><span class="trig">点「恢复原尺寸」→</span> 图片复原回常态</li>
+          <li>任何选中态<b>再点图片</b> = 取消选中（高亮与工具栏消失，尺寸不变）</li>
+          <li>选中态<span class="trig">点「备注」→</span> 退出选中，图片下方出现「图片描述」输入；
+              备注以降级小字常显，<b>缩放 / 选中切换后保留</b>，缩小图下方同样可加备注</li>
+        </ul>
+      </div>
+      <div class="spec-card">
+        <h3>缩小态规格</h3>
+        <ul>
+          <li>宽度 = 原尺寸 <b>50%</b>，等比缩放（高随比例减半），靠左与文本对齐</li>
+          <li>工具栏：垂直居中；<b>水平中心 = 图片右缘</b>（一半在图上、一半在图外）</li>
+          <li>按钮 2 图标切换：缩小（箭头指左上）⇄ 恢复原尺寸（箭头指右下）</li>
+          <li>宽度过渡 0.25s ease（源码实现可用 <code>animateContentSize</code> 或 <code>Modifier.width</code> 动画）</li>
+        </ul>
+      </div>
+    <div class="spec-card">
+      <h3>备注规格（图一 / 二 / 三）</h3>
+      <ul>
+        <li>入口：任意选中态点「备注」→ 退出选中，图片下方出现输入框，占位「图片描述」</li>
+        <li>文字降级：13px（正文 16px）、<code>#9E9E9E</code>（正文 #4A4A4A）、占位 <code>#C9C9CC</code></li>
+        <li>光标：主题黄（<code>caret-color</code>，对应截图黄色光标）</li>
+        <li>非编辑且已填写：淡黄底 <code>#FFF6DC</code> 小圆角（图三效果）</li>
+        <li>宽度跟随图片（缩小态同步变 50%）；缩放 / 选中切换后<b>备注保留</b></li>
+      </ul>
+    </div>
+    <div class="spec-card">
+      <h3>验证辅助</h3>
+        <ul>
+          <li>URL 参数直达状态：<code>?state=selected</code> / <code>?state=shrunk</code> / <code>?state=shrunk-selected</code></li>
+          <li>演示机下方实时显示当前状态，<b>重置</b>可回到常态</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===== 按钮清单 ===== -->
+  <h2 class="section-title">工具栏按钮清单（左 → 右）</h2>
+  <div class="legend">
+    <div class="lg-card">
+      <span class="no">1</span>
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M13 8H7"/><path d="M17 12H7"/></svg></span>
+      <b>备注</b>
+      <p>已接演示交互：图片下方出现「图片描述」输入，降级小字常显、缩放后保留</p>
+    </div>
+    <div class="lg-card">
+      <span class="no">2</span>
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6"/><path d="M12 12 7.5 7.5"/><path d="M7.5 11.5v-4h4"/></svg></span>
+      <b>缩小 / 恢复原尺寸</b>
+      <p>已接演示交互：缩小（宽度 50%）⇄ 恢复，图标随态切换</p>
+    </div>
+    <div class="lg-card">
+      <span class="no">3</span>
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>
+      <b>图片附件页</b>
+      <p>进入该图片的全屏查看器（占位）</p>
+    </div>
+    <div class="lg-card">
+      <span class="no">4</span>
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span>
+      <b>复制图片</b>
+      <p>复制该图片（占位）</p>
+    </div>
+    <div class="lg-card">
+      <span class="no">5</span>
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg></span>
+      <b>删除图片</b>
+      <p>删除该图片块（占位）</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   图片块四态状态机（演示用；源码实现时映射到 BodyBlocksController）
+   ============================================================ */
+(function () {
+  "use strict";
+
+  /** 四个合法状态 → 状态条展示文案 */
+  var STATES = {
+    "s-normal": "常态（撑满）",
+    "s-selected": "选中 · 工具栏正中",
+    "s-shrunk": "缩小（未选中）",
+    "s-shrunk-selected": "缩小选中 · 工具栏一半内外",
+  };
+
+  var block = document.getElementById("demoBlock");
+  var stateLabel = document.getElementById("stateLabel");
+  var btnScale = document.getElementById("btnScale");
+  var btnNote = document.getElementById("btnNote");
+  var note = document.getElementById("demoNote");
+
+  /** 当前状态类名（imgblock 上同时只挂一个 s-* 类） */
+  function currentState() {
+    var classes = block.className.split(/\s+/);
+    for (var i = 0; i < classes.length; i++) {
+      if (STATES.hasOwnProperty(classes[i])) return classes[i];
+    }
+    return "s-normal";
+  }
+
+  /** 切换状态并刷新状态条文案 */
+  function setState(state) {
+    Object.keys(STATES).forEach(function (cls) {
+      block.classList.remove(cls);
+    });
+    block.classList.add(state);
+    stateLabel.textContent = STATES[state];
+  }
+
+  /** 点击图片本体：切换选中态（尺寸不变） */
+  function toggleSelect() {
+    var cur = currentState();
+    if (cur === "s-normal") setState("s-selected");
+    else if (cur === "s-selected") setState("s-normal");
+    else if (cur === "s-shrunk") setState("s-shrunk-selected");
+    else if (cur === "s-shrunk-selected") setState("s-shrunk");
+  }
+
+  /** 点击图片 → 选中切换（点击工具栏时不触发，见下方 stopPropagation） */
+  document.getElementById("demoFrame").addEventListener("click", function () {
+    toggleSelect();
+  });
+
+  /** 工具栏内的点击不冒泡到图片（避免点按钮时误触发选中切换） */
+  document.getElementById("demoToolbar").addEventListener("click", function (e) {
+    e.stopPropagation();
+  });
+
+  /** 按钮 2：缩小 / 恢复原尺寸 */
+  btnScale.addEventListener("click", function () {
+    var cur = currentState();
+    if (cur === "s-selected") {
+      /* 撑满选中 → 缩小，并退出选中（工具栏消失，等待再次点击图片） */
+      setState("s-shrunk");
+    } else if (cur === "s-shrunk-selected") {
+      /* 缩小选中 → 恢复原尺寸，回到常态 */
+      setState("s-normal");
+    }
+  });
+
+  /** 按钮 1：备注——退出选中，聚焦图片下方的备注输入（placeholder「图片描述」） */
+  btnNote.addEventListener("click", function () {
+    var cur = currentState();
+    if (cur === "s-selected") setState("s-normal");
+    else if (cur === "s-shrunk-selected") setState("s-shrunk");
+    note.classList.add("show");
+    note.focus();
+  });
+
+  /** 备注输入：有内容时挂 filled（非编辑态显示淡黄底，呼应图三） */
+  note.addEventListener("input", function () {
+    note.classList.toggle("filled", note.value.length > 0);
+  });
+
+  /** 备注焦点：聚焦即显示；失焦且为空 → 隐藏（不残留空占位行） */
+  note.addEventListener("focus", function () {
+    note.classList.add("show");
+  });
+  note.addEventListener("blur", function () {
+    if (note.value.length === 0) note.classList.remove("show");
+  });
+
+  /** 重置回常态 */
+  document.getElementById("resetLink").addEventListener("click", function () {
+    setState("s-normal");
+  });
+
+  /** URL 参数直达状态（供无头渲染分态验证）：?state=selected|shrunk|shrunk-selected
+      &note=<文本> → 同步填入备注（模拟图二 / 图三的已填写效果） */
+  var params = new URLSearchParams(window.location.search);
+  var initial = params.get("state");
+  if (initial === "selected") setState("s-selected");
+  else if (initial === "shrunk") setState("s-shrunk");
+  else if (initial === "shrunk-selected") setState("s-shrunk-selected");
+  var noteText = params.get("note");
+  if (noteText) {
+    note.value = noteText;
+    note.classList.add("filled");
+    note.classList.add("show");
+  }
+})();
+</script>
+</body>
+</html>

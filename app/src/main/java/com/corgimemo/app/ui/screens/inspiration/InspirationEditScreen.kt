@@ -77,6 +77,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
@@ -253,6 +256,14 @@ fun InspirationEditScreen(
      * 仅剩旧数据 trigger:image token 一条入口。
      */
     var inlineImageViewerPath by remember { mutableStateOf<String?>(null) }
+
+    /**
+     * 编辑器滚动容器（内容区 Column）在窗口中的可视边界（v2026-09-09）：
+     * 图片选中工具栏的垂直 clamp 依据——图片中心滚出屏幕上/下展示边界时，
+     * 工具栏贴可视边界固定显示而不是留在屏外中心。onGloballyPositioned 写入、
+     * 工具栏定位时经 lambda 延迟读取（滚动期间不触发重组）。
+     */
+    var editorViewportBounds by remember { mutableStateOf<Rect?>(null) }
     val mediaTokenClickHandler = TokenClickHandler { token, _ ->
         when (token.triggerId) {
             "image" -> inlineImageViewerPath = token.id
@@ -1434,6 +1445,20 @@ fun InspirationEditScreen(
             )
         }
     ) { innerPadding ->
+        /** 内容区滚动状态（v2026-09-09 提出：滚动开始即退出图片/分割线选中态） */
+        val contentScrollState = rememberScrollState()
+
+        /**
+         * 滚动开始 → 清除块选中态（v2026-09-09）：图片/分割线高亮与悬浮工具栏
+         * 随滚动立即消失——滚动时图片位置在变，工具栏会遮挡内容或悬在空中。
+         * isScrollInProgress 覆盖手指拖动与惯性滑动全程，滚动停止自动复位。
+         */
+        LaunchedEffect(contentScrollState.isScrollInProgress) {
+            if (contentScrollState.isScrollInProgress) {
+                bodyBlocks.clearBlockSelection()
+            }
+        }
+
         /**
          * 内容区布局：单层Column，Modifier顺序决定背景范围。
          * - background 在 horizontal padding 之前 → 用户自选背景色铺满全宽无空隙
@@ -1448,7 +1473,12 @@ fun InspirationEditScreen(
                 .background(contentBackgroundColor)
                 /** 内容区内边距在背景之后，不影响背景范围 */
                 .padding(horizontal = 8.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(contentScrollState)
+                /**
+                 * 采集滚动容器窗口 bounds（v2026-09-09）：图片选中工具栏的
+                 * 垂直 clamp 边界（即"屏幕展示边界"，见 editorViewportBounds）。
+                 */
+                .onGloballyPositioned { editorViewportBounds = it.boundsInWindow() },
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             /**
@@ -1648,6 +1678,8 @@ fun InspirationEditScreen(
                 BodyBlocksEditor(
                     controller = bodyBlocks,
                     isLocked = isLocked,
+                    /** 图片选中工具栏的垂直 clamp 边界（滚动容器窗口 bounds） */
+                    viewportBoundsProvider = { editorViewportBounds },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

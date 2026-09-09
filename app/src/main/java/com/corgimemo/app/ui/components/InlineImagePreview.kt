@@ -1,7 +1,6 @@
 package com.corgimemo.app.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -18,8 +17,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.innerShadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -88,11 +92,20 @@ fun InlineImagePreview(
     val context = LocalContext.current
 
     /**
-     * 宽度策略：撑满时用 [Modifier.fillMaxWidth]（可带 [widthFraction] 比例，缩小态 0.5f），
-     * 否则沿用 [maxWidth] 上限。内/外层容器与图片共用同一策略，三者宽度始终一致。
+     * 宽度策略（两层区分，v2026-09-09 修复缩小尺寸）：
+     * - [outerWidthModifier] 挂**最外层 Box**：撑满态带 [widthFraction] 比例
+     *   （`fillMaxWidth(0.5f)` = 原宽一半）——fraction 只在这一层生效；
+     * - [innerWidthModifier] 挂内层 Box / SubcomposeAsyncImage / 图片：撑满态用
+     *   `fillMaxWidth()`（1f，撑满外层给定的宽度）。
+     *
+     * ⚠️ 不能四层共用同一个 `fillMaxWidth(fraction)`：fraction 相对**各自父约束**，
+     * 每层叠一次就乘一次（0.5⁴ ≈ 6%），缩小态会小到不可用；撑满态全 1f 相乘
+     * 不变，所以此 bug 只在缩小态暴露。
      */
-    val widthModifier: Modifier =
+    val outerWidthModifier: Modifier =
         if (fillMaxWidth) Modifier.fillMaxWidth(widthFraction) else Modifier.widthIn(max = maxWidth)
+    val innerWidthModifier: Modifier =
+        if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier.widthIn(max = maxWidth)
 
     /**
      * 内边距：撑满态**只保留垂直留白**——水平留白改由调用方给出（如块级图片传
@@ -120,30 +133,43 @@ fun InlineImagePreview(
         Modifier.height(180.dp)
     }
 
-    /** 外层容器：按宽度策略限宽，高度由子元素（Image）真实比例决定 */
+    /** 外层容器：按宽度策略限宽（fraction 只在这一层生效），高度由子元素真实比例决定 */
     Box(
         modifier = modifier
-            .then(widthModifier)
+            .then(outerWidthModifier)
             .wrapContentHeight()
             .then(paddingModifier)
             .then(
                 if (isHighlighted) {
-                    /** 高亮时显示内阴影 + 浅黄底色 */
+                    /**
+                     * 高亮（v2026-09-09 加粗外扩）：内阴影不变；描边由 1dp 内侧 border
+                     * 改为 **2dp 外扩描边**（drawBehind 画在边界外侧，不挤压图片内容），
+                     * 透明度 0.40 → 0.55 提升辨识度。
+                     */
                     Modifier
                         .innerShadow(shape = RoundedCornerShape(16.dp)) {
                             color = Color(0xFFFFB74D).copy(alpha = 0.6f)
                             radius = 6f
                         }
-                        .border(1.dp, Color(0xFFFFB74D).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                        .drawBehind {
+                            val strokePx = 2.dp.toPx()
+                            drawRoundRect(
+                                color = Color(0xFFFFB74D).copy(alpha = 0.55f),
+                                topLeft = Offset(-strokePx / 2f, -strokePx / 2f),
+                                size = Size(size.width + strokePx, size.height + strokePx),
+                                cornerRadius = CornerRadius(16.dp.toPx() + strokePx / 2f),
+                                style = Stroke(width = strokePx),
+                            )
+                        }
                 } else {
                     Modifier
                 }
             )
     ) {
-        /** 内层容器：圆角 + 背景 + 点击（宽度策略与外层一致） */
+        /** 内层容器：圆角 + 背景 + 点击（撑满外层给定宽度，不再叠加 fraction） */
         Box(
             modifier = Modifier
-                .then(widthModifier)
+                .then(innerWidthModifier)
                 .wrapContentHeight()
                 .clip(RoundedCornerShape(16.dp))
                 .background(if (isHighlighted) Color(0xFFFFF8E1) else Color.Transparent)
@@ -172,13 +198,13 @@ fun InlineImagePreview(
                 contentDescription = "插入的图片",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .then(widthModifier)
+                    .then(innerWidthModifier)
                     .wrapContentHeight(),
                 loading = {
                     /** 加载中：占满宽度 + 缓存比例（或 180dp）占位高度，避免高度塌陷 */
                     Box(
                         modifier = Modifier
-                            .then(widthModifier)
+                            .then(innerWidthModifier)
                             .then(placeholderModifier)
                             .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
@@ -205,7 +231,7 @@ fun InlineImagePreview(
                         contentDescription = "插入的图片",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
-                            .then(widthModifier)
+                            .then(innerWidthModifier)
                             .then(
                                 when {
                                     !fillMaxWidth -> Modifier.wrapContentHeight()
@@ -220,7 +246,7 @@ fun InlineImagePreview(
                     /** 加载失败：占满宽度 + 缓存比例（或 180dp）占位高度 */
                     Box(
                         modifier = Modifier
-                            .then(widthModifier)
+                            .then(innerWidthModifier)
                             .then(placeholderModifier)
                             .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
