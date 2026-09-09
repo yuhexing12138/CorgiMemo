@@ -72,6 +72,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1420,6 +1421,14 @@ fun InspirationEditScreen(
         }
     ) { innerPadding ->
         /**
+         * 标题选区态（供父容器 verticalScroll 滚动开关使用）：
+         * 用户正在框选标题（选区展开）时置 true，让竖向拖拽只服务于选区扩展，
+         * 不被滚动容器吞掉（修复"标题无法全选"主因）。选区收起即恢复滚动。
+         */
+        val titleSelectionActive = remember { mutableStateOf(false) }
+        val titleScrollState = rememberScrollState()
+
+        /**
          * 内容区布局：单层Column，Modifier顺序决定背景范围。
          * - background 在 horizontal padding 之前 → 用户自选背景色铺满全宽无空隙
          * - 默认透明（Color.Transparent），仅用户主动选择颜色时显示背景
@@ -1433,7 +1442,7 @@ fun InspirationEditScreen(
                 .background(contentBackgroundColor)
                 /** 内容区内边距在背景之后，不影响背景范围 */
                 .padding(horizontal = 8.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(titleScrollState, enabled = !titleSelectionActive.value),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             /**
@@ -1449,26 +1458,51 @@ fun InspirationEditScreen(
              * - 光标颜色与正文统一为暖橙 Color(0xFFFF9A5C)
              * - contentPadding 水平 0.dp 保证与正文左对齐（起点 8dp）
              *
-             * 双向同步策略：
-             * 1. viewModel.title → state：loadInspiration / 外部 setTitle 时同步，用 setText() 纯文本设置
-             * 2. state → viewModel.title：用户输入时同步，用 annotatedString.text 读取纯文本
-             * 3. 防循环：用 if (currentText != title) 判断避免重复触发
+             * 双向同步策略（v2026-09-09 修订，修复"标题无法全选"）：
+             * 1. viewModel.title → state：loadInspiration / 外部 setTitle 时同步，用 setText() 纯文本设置；
+             *    仅在「文本不一致」且「选区已折叠」时写入，避免把用户正在框选的选区折叠到行尾。
+             * 2. state → viewModel.title：用户输入时同步，用 annotatedString.text 读取纯文本；
+             *    本方向只上送、绝不触碰选区，框选过程零干扰。
+             * 3. 防循环：用 if (currentText != title) 判断避免重复触发。
+             * 4. 另：选区展开时父容器 verticalScroll 临时停用（见下方 titleSelectionActive），避免滚动吞掉选区手势。
              */
             val titleRichTextState = rememberRichTextState()
             /** 标题为纯文本（无列表），此处同步关闭列表缩进仅作一致性兜底，
              *  与编辑页正文块、详情页正文保持一致（RichTextConfig.listIndent=0）。 */
             titleRichTextState.config.listIndent = 0
 
-            /** 单向同步：viewModel.title 变化时（loadInspiration / 外部调用 setTitle）→ state */
+            /**
+             * 驱动标题选区态：选区展开（用户正在框选）→ titleSelectionActive=true，
+             * 父容器 verticalScroll 临时停用，避免选区手势被滚动吞掉；选区收起→恢复滚动。
+             * selection 经 mutableStateOf 的 textFieldValue 暴露，组合中读取即可随选区变化重组。
+             */
+            LaunchedEffect(titleRichTextState) {
+                snapshotFlow { !titleRichTextState.selection.collapsed }
+                    .collect { titleSelectionActive.value = it }
+            }
+
+            /**
+             * 单向同步：viewModel.title → state（loadInspiration / 外部 setTitle 时回填）。
+             * 仅在「文本真的不一致」且「用户当前没有正在选择的选区」时才 setText：
+             * - loadInspiration / 语音回填时选区是折叠的，正常写入；
+             * - 用户正在框选标题时即使 title 因外部原因重发，也绝不调用 setText 把选区折叠到行尾
+             *   （setText 默认 selection=TextRange(text.length)，见 RichTextState.kt:5418）。
+             * 仍保留 currentText != title 守卫，避免自我回环。
+             */
             LaunchedEffect(title) {
                 val currentText = titleRichTextState.annotatedString.text
-                if (currentText != title) {
+                if (currentText != title && titleRichTextState.selection.collapsed) {
                     /** 用 setText 设置纯文本，不解析任何 markdown/html 格式 */
                     titleRichTextState.setText(title)
                 }
             }
 
-            /** 单向同步：state 文本变化时（用户输入）→ viewModel.title */
+            /**
+             * 单向同步：state → ViewModel（用户输入时）。
+             * 仅文本变化才上送，且本方向只调用 setTitleWithRecommendation、绝不触碰选区，
+             * 因此选区伸缩不会触发、也不会破坏用户正在进行的框选（选区零干扰）。
+             * 标题为纯文本无背景色 span，选区变化不会重建 annotatedString，本 effect 不会在框选时重跑。
+             */
             LaunchedEffect(titleRichTextState.annotatedString) {
                 val newText = titleRichTextState.annotatedString.text
                 if (newText != title && !isLocked) {
