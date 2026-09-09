@@ -73,6 +73,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -247,6 +248,10 @@ fun InspirationEditScreen(
      * - "image" 分支仅兼容旧数据（历史 markdown 中可能残留 trigger:image token）；
      *   新插入的图片是 RichSpanStyle.Image（覆盖层绘制），点击走 LocalImageClickHandler。
      * - "voice" 分支仍然有效：语音是 trigger:voice 的 atomic token。
+     *
+     * v2026-09-09 再收窄：**块级图片点击不再打开本查看器**（用户要求移除该入口，
+     * 改为块内选中高亮，见 BodyBlocksController.onImageBlockTapped）——全屏画廊
+     * 仅剩旧数据 trigger:image token 一条入口。
      */
     var inlineImageViewerPath by remember { mutableStateOf<String?>(null) }
     val mediaTokenClickHandler = TokenClickHandler { token, _ ->
@@ -1471,6 +1476,23 @@ fun InspirationEditScreen(
             titleRichTextState.config.listIndent = 0
 
             /**
+             * 【临时诊断探针】标题选区变化轨迹（定位"点全选整段不高亮"，定位后移除）。
+             * 被动观测，不写任何状态。logcat 过滤 CorgiTitleSel。三种读数：
+             * - 点全选后 sel 变为 (0, len) 且保持 → 选区已写入 state，问题在渲染层；
+             * - sel 变为 (0, len) 后又跳回 → 库内某处在改写选区（钳制/同步链）；
+             * - sel 纹丝不动 → selectAll 的 onValueChange 未到达 state（被 readOnly/maxLength/manager 吞掉）。
+             */
+            LaunchedEffect(titleRichTextState) {
+                snapshotFlow { titleRichTextState.selection }
+                    .collect { selection ->
+                        Log.d(
+                            "CorgiTitleSel",
+                            "sel=$selection textLen=${titleRichTextState.annotatedString.text.length}"
+                        )
+                    }
+            }
+
+            /**
              * 单向同步：viewModel.title → state（loadInspiration / 外部 setTitle 时回填）。
              * 仅在「文本真的不一致」且「用户当前没有正在选择的选区」时才 setText：
              * - loadInspiration / 语音回填时选区是折叠的，正常写入；
@@ -1627,7 +1649,6 @@ fun InspirationEditScreen(
                 BodyBlocksEditor(
                     controller = bodyBlocks,
                     isLocked = isLocked,
-                    onImageTap = { path -> inlineImageViewerPath = path },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

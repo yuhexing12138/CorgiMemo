@@ -1,5 +1,6 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -1877,6 +1878,28 @@ class BodyBlocksController(
         highlightedTapX = tapX
     }
 
+    /**
+     * 点击图片块（块 Composable 入口）：**切换选中态**（v2026-09-09）。
+     * 未高亮 → 高亮；已高亮 → 取消。**全程不动焦点**——焦点留在原 Text 块，
+     * 软键盘不收起。
+     *
+     * v2026-09-09 行为变更：图片点击**不再打开全屏图片查看器**（用户要求移除
+     * 该入口），改为与分割线一致的点选高亮。与分割线的两点差异：
+     * - **没有悬浮删除按钮**——删除仍走光标退格 / Delete 的两步删除
+     *   （[highlightForTwoStepDelete] 点亮，再按一次删除）；
+     * - 退格两步删除点亮后**再点图片 = 直接取消选中**（无按钮可补弹，
+     *   与分割线"补弹按钮"分支不同）。
+     */
+    fun onImageBlockTapped(blockId: String) {
+        if (highlightedBlockId == blockId) {
+            clearBlockSelection()
+        } else {
+            highlightedBlockId = blockId
+            /** 图片无悬浮按钮，恒为 null（与两步删除点亮态同形，仅视觉高亮） */
+            highlightedTapX = null
+        }
+    }
+
     // ---------- 复选框（v2026-09-07） ----------
 
     /**
@@ -3175,12 +3198,14 @@ class BodyBlocksController(
  * 块编辑器主体：Text / Image 交错渲染。
  *
  * 拖拽：每个块右侧有拖拽手柄（长按手柄拖动），文本区长按仍是文本选择，互不冲突。
+ *
+ * v2026-09-09：图片块点击不再外抛（[BodyBlocksController.onImageBlockTapped]
+ * 内部处理选中态），[BodyBlocksEditor] 不再接收 onImageTap 回调。
  */
 @Composable
 fun BodyBlocksEditor(
     controller: BodyBlocksController,
     isLocked: Boolean,
-    onImageTap: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BlocksReorderableColumn(
@@ -3203,7 +3228,6 @@ fun BodyBlocksEditor(
                 block = block,
                 isDragging = isDragging,
                 isLocked = isLocked,
-                onImageTap = onImageTap,
                 dragHandleModifier = dragHandleModifier,
             )
             is BodyBlock.Divider -> BlockDividerItem(
@@ -3408,6 +3432,9 @@ private fun BlockTextItem(
         snapshotFlow { Triple(state.annotatedString, state.selection, state.composition) }
             .collect { (annotated, selection, composition) ->
                 val text = annotated.text
+                /** 【临时诊断探针】对照"标题点全选不高亮"：输出正文块选区轨迹，
+                 *  logcat 过滤 CorgiBodySel。定位完成后移除。 */
+                Log.d("CorgiBodySel", "block=${block.id} sel=$selection textLen=${text.length}")
                 /** toMarkdown() 会把 SpanStyle 序列化成 `**粗体**` 等语法，
                  *  因此格式化操作也会让 markdown 变化 → 被下方条件捕获。 */
                 val markdown = state.toMarkdown()
@@ -3706,6 +3733,10 @@ private val BLOCK_CONTENT_PADDING = 16.dp
  * 图片宽度 = Row 中 `weight(1f)` 的宽度减去两侧 [BLOCK_CONTENT_PADDING]，即
  * **文本块文字的左右边界**——与文本严格左右对齐；高度按图片真实比例换算
  * （长图不截、不限高，由 [InlineImagePreview] 的 `fillMaxWidth` 负责）。
+ *
+ * **点击**（v2026-09-09 变更）：不再打开全屏图片查看器，改为**切换选中态**
+ * （[BodyBlocksController.onImageBlockTapped]：高亮 ↔ 取消，全程不动焦点）；
+ * 锁定态（isLocked）不挂点击手势。
  */
 @Composable
 private fun BlockImageItem(
@@ -3713,7 +3744,6 @@ private fun BlockImageItem(
     block: BodyBlock.Image,
     isDragging: Boolean,
     isLocked: Boolean,
-    onImageTap: (String) -> Unit,
     dragHandleModifier: Modifier,
 ) {
     Row(verticalAlignment = Alignment.Top) {
@@ -3738,7 +3768,7 @@ private fun BlockImageItem(
                 },
             isHighlighted = controller.highlightedBlockId == block.id,
             onClick = if (isLocked) null else {
-                { onImageTap(block.path) }
+                { controller.onImageBlockTapped(block.id) }
             },
         )
     }
