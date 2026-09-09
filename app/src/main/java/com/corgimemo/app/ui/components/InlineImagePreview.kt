@@ -70,6 +70,8 @@ import coil3.size.Scale
  * @param modifier Modifier（可选）
  * @param maxWidth 图片最大宽度限制（默认 300.dp，仅在 [fillMaxWidth] = false 时生效）
  * @param fillMaxWidth true = 宽度占满父容器可用宽度（块级图片），false = 沿用最大宽度限制
+ * @param widthFraction 占满态的宽度比例（1f = 撑满，0.5f = 原宽一半，v2026-09-09 缩小态）；
+ *   仅 [fillMaxWidth] = true 时生效
  * @param isHighlighted 是否处于选中高亮态（内阴影 + 浅黄底）
  * @param onClick 图片点击回调（可选）
  */
@@ -79,17 +81,18 @@ fun InlineImagePreview(
     modifier: Modifier = Modifier,
     maxWidth: Dp = 300.dp,
     fillMaxWidth: Boolean = false,
+    widthFraction: Float = 1f,
     isHighlighted: Boolean = false,
     onClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
 
     /**
-     * 宽度策略：撑满时用 [Modifier.fillMaxWidth]，否则沿用 [maxWidth] 上限。
-     * 内/外层容器与图片共用同一策略，三者宽度始终一致。
+     * 宽度策略：撑满时用 [Modifier.fillMaxWidth]（可带 [widthFraction] 比例，缩小态 0.5f），
+     * 否则沿用 [maxWidth] 上限。内/外层容器与图片共用同一策略，三者宽度始终一致。
      */
     val widthModifier: Modifier =
-        if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier.widthIn(max = maxWidth)
+        if (fillMaxWidth) Modifier.fillMaxWidth(widthFraction) else Modifier.widthIn(max = maxWidth)
 
     /**
      * 内边距：撑满态**只保留垂直留白**——水平留白改由调用方给出（如块级图片传

@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,7 +17,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -34,11 +37,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -52,6 +58,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,6 +72,11 @@ import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import com.mohamedrejeb.richeditor.ui.UndoBehavior
 import compose.icons.LucideIcons
+import compose.icons.lucideicons.Copy
+import compose.icons.lucideicons.Expand
+import compose.icons.lucideicons.Image
+import compose.icons.lucideicons.MessageSquareText
+import compose.icons.lucideicons.Shrink
 import compose.icons.lucideicons.Trash2
 import sh.calvin.reorderable.ReorderableItem
 import kotlin.math.roundToInt
@@ -328,9 +340,20 @@ sealed class BodyBlock {
         val indentLevel: Int = 1,
     ) : BodyBlock()
 
+    /**
+     * 图片块（v2026-09-09 扩展：备注 + 缩小态）。
+     *
+     * @param note 图片备注（null = 未添加）。编辑页图片下方降级小字显示；
+     *   由「备注」按钮创建/编辑，onValueChange 直写（与正文文字同级，不进全局命令栈）。
+     *   **暂为编辑会话内存态**——markdown/Room 落库待既定的图片属性 migration 接入。
+     * @param shrunk 是否处于缩小态（宽度 = 原尺寸的一半）。「缩小/恢复原尺寸」按钮切换，
+     *   走 [UpdateImagePropsCommand] 可撤销。
+     */
     class Image(
         override val id: String,
         val path: String,
+        val note: String? = null,
+        val shrunk: Boolean = false,
     ) : BodyBlock()
 
     /**
@@ -404,8 +427,16 @@ sealed class BlockSpec {
         val indentLevel: Int = 1,
     ) : BlockSpec()
 
-    /** Image 块：只有 uri 路径 */
-    data class ImageSpec(override val id: String, val path: String) : BlockSpec()
+    /**
+     * Image 块：路径 + 备注 + 缩小态（v2026-09-09 扩展后两者随命令 spec 往返，
+     * 防止重建路径丢属性；既有构造点默认值不变）。
+     */
+    data class ImageSpec(
+        override val id: String,
+        val path: String,
+        val note: String? = null,
+        val shrunk: Boolean = false,
+    ) : BlockSpec()
 
     /** Divider 块（v2026-09-07）：无载荷（id 即全部，重建时零参数） */
     data class DividerSpec(override val id: String) : BlockSpec()
@@ -574,6 +605,32 @@ class InsertImageSeparatorCommand(
 
     override fun revert(controller: BodyBlocksController) {
         controller.removeBlockById(spec.id)
+        controller.afterCommandMutation()
+    }
+}
+
+/**
+ * 图片块属性更新命令（v2026-09-09 新增 UI 入口：缩小/恢复原尺寸）。
+ *
+ * 缩小（shrunk）是显式用户操作，与既有块级操作同级——进全局命令栈、可撤销；
+ * apply / revert 均为就地换块对象（Image 块无 RichTextState，重建零损失）。
+ * 备注（note）不走本命令：备注输入与正文打字同级，onValueChange 直写、不进全局栈。
+ */
+class UpdateImagePropsCommand(
+    val blockId: String,
+    val oldNote: String?,
+    val oldShrunk: Boolean,
+    val newNote: String?,
+    val newShrunk: Boolean,
+) : BodyBlocksCommand {
+
+    override fun apply(controller: BodyBlocksController) {
+        controller.updateImagePropsById(blockId, newNote, newShrunk)
+        controller.afterCommandMutation()
+    }
+
+    override fun revert(controller: BodyBlocksController) {
+        controller.updateImagePropsById(blockId, oldNote, oldShrunk)
         controller.afterCommandMutation()
     }
 }
@@ -804,6 +861,18 @@ class BodyBlocksController(
      * 决定是否渲染按钮。
      */
     var highlightedTapX by mutableStateOf<Float?>(null)
+        private set
+
+    /**
+     * 图片点选态（悬浮工具栏可见）的块 id（v2026-09-09）。
+     *
+     * 与 [highlightedBlockId] 分离的原因：退格 / Delete 两步删除也会高亮图片块
+     * （[highlightForTwoStepDelete]，只设 highlightedBlockId），但那不是点选——
+     * **不应弹出工具栏**（与分割线用 highlightedTapX 区分高亮来源同理，图片
+     * 没有 tapX 需求，用独立字段表达）。UI 以 `imageToolbarBlockId == 本块 id`
+     * 决定是否渲染工具栏。
+     */
+    var imageToolbarBlockId by mutableStateOf<String?>(null)
         private set
 
     /**
@@ -1846,6 +1915,8 @@ class BodyBlocksController(
     private fun highlightForTwoStepDelete(blockId: String) {
         highlightedBlockId = blockId
         highlightedTapX = null
+        /** 两步删除高亮不是点选 → 不弹图片工具栏（若此前点选过本块则一并收起） */
+        imageToolbarBlockId = null
     }
 
     /**
@@ -1891,11 +1962,13 @@ class BodyBlocksController(
      *   与分割线"补弹按钮"分支不同）。
      */
     fun onImageBlockTapped(blockId: String) {
-        if (highlightedBlockId == blockId) {
+        if (highlightedBlockId == blockId && imageToolbarBlockId == blockId) {
+            /** 已是点选态（工具栏在场）→ 再点图片 = 取消选中 */
             clearBlockSelection()
         } else {
+            /** 未选中 / 仅被两步删除点亮 → 进入点选态（工具栏出现） */
             highlightedBlockId = blockId
-            /** 图片无悬浮按钮，恒为 null（与两步删除点亮态同形，仅视觉高亮） */
+            imageToolbarBlockId = blockId
             highlightedTapX = null
         }
     }
@@ -2727,7 +2800,7 @@ class BodyBlocksController(
             checked = spec.checked,
             indentLevel = spec.indentLevel,
         )
-        is BlockSpec.ImageSpec -> BodyBlock.Image(spec.id, spec.path)
+        is BlockSpec.ImageSpec -> BodyBlock.Image(spec.id, spec.path, spec.note, spec.shrunk)
         is BlockSpec.DividerSpec -> BodyBlock.Divider(spec.id)
     }
 
@@ -2749,7 +2822,54 @@ class BodyBlocksController(
         val idx = blocks.indexOfFirst { it.id == blockId }
         val block = blocks.getOrNull(idx)
         if (block is BodyBlock.Image && block.path != path) {
-            blocks[idx] = BodyBlock.Image(blockId, path)
+            /** 就地换对象：保留 note / shrunk（v2026-09-09 起图片块携带属性） */
+            blocks[idx] = BodyBlock.Image(blockId, path, block.note, block.shrunk)
+        }
+    }
+
+    /**
+     * 图片块属性落盘原语（[UpdateImagePropsCommand] 的 apply/revert 共用）：
+     * 就地换块对象（Image 块无 RichTextState，重建零损失）。
+     */
+    internal fun updateImagePropsById(blockId: String, note: String?, shrunk: Boolean) {
+        val idx = blocks.indexOfFirst { it.id == blockId }
+        val block = blocks.getOrNull(idx) as? BodyBlock.Image ?: return
+        if (block.note != note || block.shrunk != shrunk) {
+            blocks[idx] = BodyBlock.Image(blockId, block.path, note, shrunk)
+        }
+    }
+
+    /**
+     * 工具栏「缩小 / 恢复原尺寸」入口（v2026-09-09）：翻转 [BodyBlock.Image.shrunk]，
+     * 走 [UpdateImagePropsCommand] 可撤销；缩放动作后<b>退出选中</b>（原型交互：
+     * 工具栏消失，用户再次点击缩小图重新选中，见 [onImageBlockTapped]）。
+     */
+    fun toggleImageShrunk(blockId: String) {
+        val block = blocks.firstOrNull { it.id == blockId } as? BodyBlock.Image ?: return
+        executeAndPush(
+            UpdateImagePropsCommand(
+                blockId = blockId,
+                oldNote = block.note,
+                oldShrunk = block.shrunk,
+                newNote = block.note,
+                newShrunk = !block.shrunk,
+            )
+        )
+    }
+
+    /**
+     * 图片备注编辑（工具栏「备注」入口后的输入，v2026-09-09）：
+     * onValueChange 直写块对象并触发文档保存——与正文打字同级，**不进全局命令栈**
+     * （正文文字也走块内 history 而非命令栈；图片无库内 history，备注撤销暂不支持）。
+     * 空白文本归一化为 null（未添加备注）。
+     */
+    fun updateImageNote(blockId: String, text: String) {
+        val idx = blocks.indexOfFirst { it.id == blockId }
+        val block = blocks.getOrNull(idx) as? BodyBlock.Image ?: return
+        val newNote = text.takeIf { it.isNotBlank() }
+        if (block.note != newNote) {
+            blocks[idx] = BodyBlock.Image(blockId, block.path, newNote, block.shrunk)
+            notifyBlockChanged()
         }
     }
 
@@ -2816,9 +2936,10 @@ class BodyBlocksController(
      * 点击其它文本块（[onBlockFocused]）都会走到这里。
      */
     fun clearBlockSelection() {
-        if (highlightedBlockId == null && highlightedTapX == null) return
+        if (highlightedBlockId == null && highlightedTapX == null && imageToolbarBlockId == null) return
         highlightedBlockId = null
         highlightedTapX = null
+        imageToolbarBlockId = null
     }
 
     /**
@@ -2933,7 +3054,8 @@ class BodyBlocksController(
         executeAndPush(
             ReplaceBlocksCommand(
                 index = idx,
-                removedSpecs = listOf(BlockSpec.ImageSpec(block.id, block.path)),
+                /** removedSpecs 带 note / shrunk（v2026-09-09），兜底重建路径不丢属性 */
+                removedSpecs = listOf(BlockSpec.ImageSpec(block.id, block.path, block.note, block.shrunk)),
                 insertedSpecs = emptyList(),
                 focusBefore = currentFocusSpec(),
                 /** 删图时焦点本就不在图片上，保持当前落点即可 */
@@ -2950,7 +3072,7 @@ class BodyBlocksController(
         executeAndPush(
             ReplaceBlocksCommand(
                 index = idx,
-                removedSpecs = listOf(BlockSpec.ImageSpec(block.id, block.path)),
+                removedSpecs = listOf(BlockSpec.ImageSpec(block.id, block.path, block.note, block.shrunk)),
                 insertedSpecs = emptyList(),
                 focusBefore = currentFocusSpec(),
                 focusAfter = currentFocusSpec(),
@@ -3545,6 +3667,11 @@ private fun BlockTextItem(
                      * 浮动工具栏后，再次轻点正文行即隐藏（与标题行为一致）。
                      * 按下时刻工具栏尚未弹出，故长按时 hide() 为空操作，不会误伤长按。
                      */
+                    /** 【临时诊断探针】按下时刻工具栏状态（定位"工具栏未收起"，定位后移除）。 */
+                    Log.d(
+                        "CorgiBodySel",
+                        "body pointerDown -> hide(), status=${textToolbar.status}"
+                    )
                     textToolbar.hide()
                 }
             }
@@ -3727,16 +3854,21 @@ private fun BlockTextItem(
  */
 private val BLOCK_CONTENT_PADDING = 16.dp
 
+/** 图片选中工具栏宽度：5×24dp 按钮 + 4×24dp 间距 + 左右 22dp 内边距（缩小选中态定位偏移用） */
+private val ImageToolbarWidth = 260.dp
+
 /**
- * 块级图片：拖拽手柄 + 图片（v2026-09-09 宽度占满块内容区）。
+ * 块级图片：拖拽手柄 + 图片 + 备注 + 选中工具栏（v2026-09-09）。
  *
- * 图片宽度 = Row 中 `weight(1f)` 的宽度减去两侧 [BLOCK_CONTENT_PADDING]，即
- * **文本块文字的左右边界**——与文本严格左右对齐；高度按图片真实比例换算
- * （长图不截、不限高，由 [InlineImagePreview] 的 `fillMaxWidth` 负责）。
- *
- * **点击**（v2026-09-09 变更）：不再打开全屏图片查看器，改为**切换选中态**
- * （[BodyBlocksController.onImageBlockTapped]：高亮 ↔ 取消，全程不动焦点）；
- * 锁定态（isLocked）不挂点击手势。
+ * - **宽度**：撑满块内容区（与文本块左右边界对齐）；缩小态为原宽的一半
+ *   （[BodyBlock.Image.shrunk]，`widthFraction = 0.5f`，等比、高随比例减半）；
+ * - **点选**：点击图片 → 高亮 + 工具栏（[BodyBlocksController.imageToolbarBlockId]）；
+ *   工具栏位置：撑满选中 = 图片正中，缩小选中 = 垂直居中、水平中心锚定缩小图右缘
+ *   （一半在图上、一半在图外）；
+ * - **备注**：点「备注」退出选中并在图片下方出现输入（占位「图片描述」），
+ *   文字视觉降级（13sp / #9E9E9E），宽度跟随图片（缩小态同步 50%），
+ *   缩放 / 选中切换后保留；失焦且为空自动隐藏；
+ * - 锁定态（isLocked）不挂点击手势；拖拽时 60% 透明度。
  */
 @Composable
 private fun BlockImageItem(
@@ -3746,30 +3878,179 @@ private fun BlockImageItem(
     isLocked: Boolean,
     dragHandleModifier: Modifier,
 ) {
+    /** 点选态（工具栏可见）：两步删除高亮不算（见 imageToolbarBlockId 注释） */
+    val toolbarVisible = !isLocked && controller.imageToolbarBlockId == block.id
+    val selected = controller.highlightedBlockId == block.id
+
+    /** 备注编辑态：点「备注」为 true；失焦且无内容（本地与已落块对象均空）时退出 */
+    var noteEditing by remember(block.id) { mutableStateOf(false) }
+    var noteText by remember(block.id) { mutableStateOf(block.note ?: "") }
+    val noteFocusRequester = remember(block.id) { FocusRequester() }
+
+    /** noteEditing 置 true 的下一帧（输入框已组合）再请求焦点 */
+    LaunchedEffect(noteEditing) {
+        if (noteEditing) noteFocusRequester.requestFocus()
+    }
+
+    /** 图片块内容区宽度（px，padding 后）——缩小选中态的工具栏定位基准 */
+    var contentWidthPx by remember { mutableStateOf(0) }
+    val density = LocalDensity.current
+
     Row(verticalAlignment = Alignment.Top) {
         BlockDragHandle(dragHandleModifier)
 
-        InlineImagePreview(
-            imageUri = block.path,
-            /** 宽度占满块内容区（与文本块左右边界对齐），高度按真实比例 */
-            fillMaxWidth = true,
+        Box(
             modifier = Modifier
                 .weight(1f)
                 /**
-                 * 水平 16dp = 编辑器 contentPadding（Material3 TextFieldPadding）——
-                 * 文本块文字的左右缘即距块内容边界 16dp，图片取同一数值才能
-                 * **与文本左右严格对齐**；垂直 4dp 与内部 8dp 叠加成块间留白。
+                 * 水平 16dp = 编辑器 contentPadding——图片与备注都以此为左右边界，
+                 * 与文本块文字严格对齐；垂直 4dp 与内部 8dp 叠加成块间留白。
                  */
                 .padding(vertical = 4.dp, horizontal = BLOCK_CONTENT_PADDING)
-                .graphicsLayer {
-                    if (isDragging) {
-                        alpha = 0.6f
+                .onSizeChanged { contentWidthPx = it.width },
+        ) {
+            Column {
+                InlineImagePreview(
+                    imageUri = block.path,
+                    /** 宽度占满块内容区（缩小态 50%），高度按真实比例 */
+                    fillMaxWidth = true,
+                    widthFraction = if (block.shrunk) 0.5f else 1f,
+                    modifier = Modifier
+                        .graphicsLayer {
+                            if (isDragging) {
+                                alpha = 0.6f
+                            }
+                        },
+                    isHighlighted = selected,
+                    onClick = if (isLocked) null else {
+                        { controller.onImageBlockTapped(block.id) }
+                    },
+                )
+
+                /**
+                 * 备注（图一/二/三）：点「备注」出现输入；有内容常显（降级小字 +
+                 * 非编辑态淡黄底），宽度跟随图片（缩小态同步 50%），缩放后保留。
+                 */
+                if (noteEditing || block.note != null) {
+                    Box {
+                        if (noteText.isEmpty()) {
+                            /** 占位「图片描述」（BasicTextField 无 placeholder 参数，叠加渲染） */
+                            Text(
+                                text = "图片描述",
+                                fontSize = 13.sp,
+                                color = Color(0xFFC9C9CC),
+                                modifier = Modifier.padding(start = 5.dp, top = 3.dp),
+                            )
+                        }
+                        BasicTextField(
+                            value = noteText,
+                            onValueChange = { text ->
+                                noteText = text
+                                controller.updateImageNote(block.id, text)
+                            },
+                            singleLine = true,
+                            textStyle = TextStyle(fontSize = 13.sp, color = Color(0xFF9E9E9E)),
+                            cursorBrush = SolidColor(Color(0xFFFF9A5C)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(noteFocusRequester)
+                                .onFocusChanged { focusState ->
+                                    /** 失焦即退出编辑态：有内容转常显（淡黄底）；空则整行隐藏 */
+                                    if (!focusState.isFocused && noteEditing) {
+                                        noteEditing = false
+                                    }
+                                }
+                                .background(
+                                    color = if (noteEditing) Color.Transparent else Color(0xFFFFF6DC),
+                                    shape = RoundedCornerShape(6.dp),
+                                )
+                                .padding(horizontal = 5.dp, vertical = 3.dp),
+                        )
                     }
-                },
-            isHighlighted = controller.highlightedBlockId == block.id,
-            onClick = if (isLocked) null else {
-                { controller.onImageBlockTapped(block.id) }
-            },
+                }
+            }
+
+            if (toolbarVisible) {
+                ImageBlockToolbar(
+                    shrunk = block.shrunk,
+                    onNoteClick = {
+                        /** 原型交互：备注编辑时退出选中（高亮与工具栏消失，焦点交给输入框） */
+                        noteEditing = true
+                        controller.clearBlockSelection()
+                    },
+                    onScaleClick = { controller.toggleImageShrunk(block.id) },
+                    modifier = when {
+                        /**
+                         * 缩小选中：工具栏中心 = 缩小图右缘（= 内容区宽 50%），
+                         * 即一半在图上、一半在图外；偏移 = 中心 - 半个工具栏宽。
+                         */
+                        block.shrunk -> Modifier
+                            .align(Alignment.CenterStart)
+                            .offset(x = with(density) { (contentWidthPx / 2f).toDp() } - ImageToolbarWidth / 2)
+                        /** 撑满选中：工具栏在图片正中 */
+                        else -> Modifier.align(Alignment.Center)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 图片块选中工具栏（v2026-09-09）：白色胶囊 + 5 按钮（备注 / 缩小恢复 / 图片附件页 /
+ * 复制图片 / 删除图片），图标为 Lucide 描边风格（与原型一致）。位置由调用方 modifier 决定。
+ *
+ * 本期「备注」「缩小/恢复原尺寸」接实际功能；**附件页 / 复制 / 删除为占位**
+ * （onClick = null，点击无操作，后续迭代接入）。
+ */
+@Composable
+private fun ImageBlockToolbar(
+    shrunk: Boolean,
+    onNoteClick: () -> Unit,
+    onScaleClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .shadow(elevation = 6.dp, shape = CircleShape, clip = false)
+            .background(color = Color.White.copy(alpha = 0.97f), shape = CircleShape)
+            .padding(horizontal = 22.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ImageToolbarButton(LucideIcons.MessageSquareText, "备注", onNoteClick)
+        /** 图标随状态切换：缩小（箭头指左上）⇄ 恢复原尺寸（箭头指右下） */
+        ImageToolbarButton(
+            icon = if (shrunk) LucideIcons.Expand else LucideIcons.Shrink,
+            contentDescription = "缩小 / 恢复原尺寸",
+            onClick = onScaleClick,
+        )
+        ImageToolbarButton(LucideIcons.Image, "图片附件页", null)
+        ImageToolbarButton(LucideIcons.Copy, "复制图片", null)
+        ImageToolbarButton(LucideIcons.Trash2, "删除图片", null)
+    }
+}
+
+/**
+ * 工具栏单按钮：24dp 触控区 + 22dp Lucide 图标；[onClick] = null 时为占位（不挂手势）。
+ */
+@Composable
+private fun ImageToolbarButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: (() -> Unit)?,
+) {
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = Color(0xFF3A3A3A),
+            modifier = Modifier.size(22.dp),
         )
     }
 }
