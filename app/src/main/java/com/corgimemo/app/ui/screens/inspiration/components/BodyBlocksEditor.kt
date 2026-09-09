@@ -3504,6 +3504,21 @@ private fun BlockTextItem(
 
 // ==================== Image 块 ====================
 
+/**
+ * 块内容区水平留白 = [BlockTextItem] 里 RichTextEditor 的 contentPadding（start/end = 16.dp）。
+ *
+ * 文本块的文字左右缘即距块内容边界各 16dp，图片等非文本块取同一数值才能
+ * **与文本左右严格对齐**；改动此处务必同步 [BlockTextItem] 的 contentPadding。
+ */
+private val BLOCK_CONTENT_PADDING = 16.dp
+
+/**
+ * 块级图片：拖拽手柄 + 图片（v2026-09-09 宽度占满块内容区）。
+ *
+ * 图片宽度 = Row 中 `weight(1f)` 的宽度减去两侧 [BLOCK_CONTENT_PADDING]，即
+ * **文本块文字的左右边界**——与文本严格左右对齐；高度按图片真实比例换算
+ * （长图不截、不限高，由 [InlineImagePreview] 的 `fillMaxWidth` 负责）。
+ */
 @Composable
 private fun BlockImageItem(
     controller: BodyBlocksController,
@@ -3518,9 +3533,16 @@ private fun BlockImageItem(
 
         InlineImagePreview(
             imageUri = block.path,
+            /** 宽度占满块内容区（与文本块左右边界对齐），高度按真实比例 */
+            fillMaxWidth = true,
             modifier = Modifier
                 .weight(1f)
-                .padding(vertical = 4.dp)
+                /**
+                 * 水平 16dp = 编辑器 contentPadding（Material3 TextFieldPadding）——
+                 * 文本块文字的左右缘即距块内容边界 16dp，图片取同一数值才能
+                 * **与文本左右严格对齐**；垂直 4dp 与内部 8dp 叠加成块间留白。
+                 */
+                .padding(vertical = 4.dp, horizontal = BLOCK_CONTENT_PADDING)
                 .graphicsLayer {
                     if (isDragging) {
                         alpha = 0.6f

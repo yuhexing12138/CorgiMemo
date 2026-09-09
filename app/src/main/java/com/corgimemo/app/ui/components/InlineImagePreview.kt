@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.innerShadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -57,9 +59,18 @@ import coil3.size.Scale
  * - V2.8.2 方案 C：移除 `aspectRatio`，用 `wrapContentHeight()` 自适应
  * - V2.8.3 根因定位：上游 ImageUtils 拉伸为正方形是问题源
  *
+ * **V2.9.0 块级撑满（v2026-09-09）**：
+ * 灵感编辑页的图片已改为块级（Text/Image 交错块），用户要求"插入后图片宽度占满块宽"。
+ * 新增 [fillMaxWidth] 开关：
+ * - `true` → 宽度 = 父容器可用宽度（即块内容区，与文本块文字左右边界对齐），
+ *   高度由 painter 真实比例换算（`Modifier.aspectRatio`），**严格等比、不裁切**；
+ * - `false` → 旧行为不变（`widthIn(max = maxWidth)`，最大 300.dp）。
+ *
  * @param imageUri 图片的 Uri 地址
  * @param modifier Modifier（可选）
- * @param maxWidth 图片最大宽度限制（默认 300.dp）
+ * @param maxWidth 图片最大宽度限制（默认 300.dp，仅在 [fillMaxWidth] = false 时生效）
+ * @param fillMaxWidth true = 宽度占满父容器可用宽度（块级图片），false = 沿用最大宽度限制
+ * @param isHighlighted 是否处于选中高亮态（内阴影 + 浅黄底）
  * @param onClick 图片点击回调（可选）
  */
 @Composable
@@ -67,17 +78,36 @@ fun InlineImagePreview(
     imageUri: String,
     modifier: Modifier = Modifier,
     maxWidth: Dp = 300.dp,
+    fillMaxWidth: Boolean = false,
     isHighlighted: Boolean = false,
     onClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
 
-    /** 外层容器：限制最大宽度，让子元素（Image）按 drawable 真实比例渲染 */
+    /**
+     * 宽度策略：撑满时用 [Modifier.fillMaxWidth]，否则沿用 [maxWidth] 上限。
+     * 内/外层容器与图片共用同一策略，三者宽度始终一致。
+     */
+    val widthModifier: Modifier =
+        if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier.widthIn(max = maxWidth)
+
+    /**
+     * 内边距：撑满态**只保留垂直留白**——水平留白改由调用方给出（如块级图片传
+     * 16dp 的编辑器 contentPadding，才能与文本块文字左右缘对齐），内部若再叠加
+     * 会让图片比文字窄一圈；非撑满态维持原 4dp 水平留白。
+     */
+    val paddingModifier: Modifier = if (fillMaxWidth) {
+        Modifier.padding(vertical = 8.dp)
+    } else {
+        Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
+    }
+
+    /** 外层容器：按宽度策略限宽，高度由子元素（Image）真实比例决定 */
     Box(
         modifier = modifier
-            .widthIn(max = maxWidth)
+            .then(widthModifier)
             .wrapContentHeight()
-            .padding(vertical = 8.dp, horizontal = 4.dp)
+            .then(paddingModifier)
             .then(
                 if (isHighlighted) {
                     /** 高亮时显示内阴影 + 浅黄底色 */
@@ -92,10 +122,10 @@ fun InlineImagePreview(
                 }
             )
     ) {
-        /** 内层容器：圆角 + 背景 + 点击 */
+        /** 内层容器：圆角 + 背景 + 点击（宽度策略与外层一致） */
         Box(
             modifier = Modifier
-                .widthIn(max = maxWidth)
+                .then(widthModifier)
                 .wrapContentHeight()
                 .clip(RoundedCornerShape(16.dp))
                 .background(if (isHighlighted) Color(0xFFFFF8E1) else Color.Transparent)
@@ -109,11 +139,11 @@ fun InlineImagePreview(
             contentAlignment = Alignment.Center
         ) {
             /**
-             * 方案 C 核心：移除 aspectRatio，使用 wrapContentHeight + ContentScale.Fit
-             * - 加载中/失败：显示固定高度占位符（避免 wrapContentHeight 在无 drawable 时高度=0）
-             * - 加载成功：直接用 state.painter 渲染，wrapContentHeight 让 Image 高度
-             *             = drawable.intrinsicHeight × (实际宽度 / drawable.intrinsicWidth)
-             * - ContentScale.Fit 保证图片不变形
+             * 宽度策略（v2026-09-09 分叉）：
+             * - **撑满态（fillMaxWidth）**：宽度 = 块内容区，高度用 painter 真实比例
+             *   `Modifier.aspectRatio` 换算 → 严格等比、不裁切（用户要求长图也不限制高度）；
+             * - **旧行为**：`widthIn(max) + wrapContentHeight`，宽度由 drawable 决定、上限 300.dp。
+             * 两种态都保留固定高度占位符，避免无 drawable 时高度为 0 造成布局抖动。
              */
             SubcomposeAsyncImage(
                 model = ImageRequest.Builder(context)
@@ -124,13 +154,13 @@ fun InlineImagePreview(
                 contentDescription = "插入的图片",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .widthIn(max = maxWidth)
+                    .then(widthModifier)
                     .wrapContentHeight(),
                 loading = {
-                    /** 加载中：固定 180dp 高度 + 相机占位符（避免布局抖动） */
+                    /** 加载中：占满宽度 + 固定 180dp 高度 + 相机占位符（避免布局抖动） */
                     Box(
                         modifier = Modifier
-                            .widthIn(max = maxWidth)
+                            .then(widthModifier)
                             .height(180.dp)
                             .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
@@ -144,26 +174,33 @@ fun InlineImagePreview(
                 },
                 success = { state ->
                     /**
-                     * 关键：直接用 state.painter + Image
-                     * - wrapContentHeight() 会让 Image 高度 = drawable 真实高度
-                     * - widthIn(max = maxWidth) 限制最大宽度
-                     * - ContentScale.Fit 让图片按比例缩放
-                     * - 三者结合：图片完美按原比例显示，无任何预设 aspectRatio
+                     * 关键：直接用 state.painter + Image。
+                     * - 撑满态：`fillMaxWidth + aspectRatio(真实比例)` → 宽 = 块宽、高 = 宽 / 比例，
+                     *   ContentScale.Fit 与容器比例一致，等比铺满、无形变、无留白；
+                     * - 旧行为：`widthIn(max) + wrapContentHeight` 按 drawable 真实尺寸渲染。
                      */
+                    val ratio = painterAspectRatio(state.painter)
                     Image(
                         painter = state.painter,
                         contentDescription = "插入的图片",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
-                            .widthIn(max = maxWidth)
-                            .wrapContentHeight()
+                            .then(widthModifier)
+                            .then(
+                                when {
+                                    !fillMaxWidth -> Modifier.wrapContentHeight()
+                                    /** 比例可用 → 等比定高；不可用 → 退回固定占位高度 */
+                                    ratio != null -> Modifier.aspectRatio(ratio)
+                                    else -> Modifier.height(180.dp)
+                                }
+                            )
                     )
                 },
                 error = {
-                    /** 加载失败：固定高度占位符 */
+                    /** 加载失败：占满宽度 + 固定高度占位符 */
                     Box(
                         modifier = Modifier
-                            .widthIn(max = maxWidth)
+                            .then(widthModifier)
                             .height(180.dp)
                             .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
@@ -178,6 +215,20 @@ fun InlineImagePreview(
             )
         }
     }
+}
+
+/**
+ * 取 [Painter] 的真实宽高比（宽 / 高），用于撑满宽度时按 `Modifier.aspectRatio` 等比定高。
+ *
+ * **判空技巧**：未加载完成 / 尺寸未知时 [Painter.intrinsicSize] 返回 `Size.Unspecified`
+ * （宽高为 NaN），而 NaN 与任何数比较恒为 false，故 `> 0f` 已能同时排除 NaN 与 0/负值，
+ * 无需额外 `isNaN()` 判断（历史踩坑：NaN 参与比较极易写错判据）。
+ *
+ * @return 宽高比；比例不可用时返回 null，由调用方退回固定占位高度
+ */
+private fun painterAspectRatio(painter: Painter): Float? {
+    val size = painter.intrinsicSize
+    return if (size.width > 0f && size.height > 0f) size.width / size.height else null
 }
 
 /**
