@@ -549,6 +549,35 @@ class MoveBlockCommand(
 }
 
 /**
+ * 图片分隔块命令（v2026-09-09 新增）：在 [index] 处插入一个**空 Text 块**。
+ *
+ * **用途**：保证任意两个 Image 块之间都留有一行可输入的空白块——插入图片 /
+ * 拖拽排序都可能造成「图-图相邻」，此时用户无法在两图之间打字。
+ *
+ * 与 [ReplaceBlocksCommand] 的三点差异（这正是另开一个命令类的原因）：
+ * 1. **完全不动焦点**：拖拽落定后不该抢焦点、弹软键盘（[ReplaceBlocksCommand]
+ *    会按 focusAfter 落焦、缺失时回退 [BodyBlocksController.focusFirstTextBlock]）；
+ * 2. **不暂存原始块**：唯一产物就是那个空 Text 块，revert 直接按 [spec.id] 移除；
+ * 3. **不重建任何已有块**：纯插入，不影响其它块的 RichTextState 历史。
+ */
+class InsertImageSeparatorCommand(
+    /** 插入位置（插到该索引**之前**，即「后一张图」的索引） */
+    val index: Int,
+    /** 空 Text 块描述（markdown 为空 → 重建时预置 ZWSP 与光标） */
+    val spec: BlockSpec.TextSpec,
+) : BodyBlocksCommand {
+    override fun apply(controller: BodyBlocksController) {
+        controller.insertBlockAt(index, spec)
+        controller.afterCommandMutation()
+    }
+
+    override fun revert(controller: BodyBlocksController) {
+        controller.removeBlockById(spec.id)
+        controller.afterCommandMutation()
+    }
+}
+
+/**
  * 图片块属性编辑命令（当前只有 path 可改；**暂无 UI 调用入口**，
  * 作为将来裁剪 / 缩放 / 备注三件套的 Command 模板保留——
  * 届时把属性集扩进 spec 即可，撤销语义不变）。
@@ -1423,15 +1452,23 @@ class BodyBlocksController(
 
     /**
      * 在当前聚焦块的光标处插入图片并拆块（单张 = 一条 [ReplaceBlocksCommand]）。
+     *
+     * v2026-09-09：插图后若与**前一张图片贴在一起**（典型场景：光标停在两图
+     * 之间的空行行首再插一张），自动在两图之间补一个空 Text 块——两图之间必须
+     * 有可输入的一行。补块与本命令打包成 [CompositeCommand]，一次撤销整体回退。
      */
     fun insertImageAtFocused(path: String) {
-        executeAndPush(buildInsertImageCommand(path))
+        executeAndPushWithImageSeparators(buildInsertImageCommand(path))
     }
 
     /**
      * 批量插入（多选相册一次确认）= **一个撤销单位**（方案A坑点5）：
      * 逐张"计算 + 立即应用"（下一张依赖上一张落定后的焦点位置），
      * 全部命令打包进一个 [CompositeCommand] 后只 push 一次——撤销一步全部回退。
+     *
+     * v2026-09-09：整批插完后再统一跑一次「两图相邻」校验——批量插入的落点是
+     * "上一张图后的 Text 块行首"，连插多张天然形成 `[图,图,图]`，必须等全部插完
+     * 才补空行（逐张补会让下一张的插入锚点错位）。补块同样并入同一个 Composite。
      */
     fun insertImagesAtFocused(paths: List<String>) {
         if (paths.isEmpty()) return
@@ -1448,6 +1485,8 @@ class BodyBlocksController(
                 cmd.apply(this)
                 commands += cmd
             }
+            /** 整批落定后统一补空行（此时才形成最终的相邻关系） */
+            commands += buildImageSeparatorCommands().onEach { it.apply(this) }
         } finally {
             suppressDocChanged = false
             replaying = false
@@ -1568,6 +1607,31 @@ class BodyBlocksController(
             focusBefore = currentFocusSpec(),
             focusAfter = focusAfter,
         )
+    }
+
+    /**
+     * 扫描当前块列表，为每一处「两个 Image 块直接相邻」生成一条
+     * [InsertImageSeparatorCommand]（在两图之间插入一个空 Text 块）。
+     *
+     * **自后向前扫描**：先插大索引、后插小索引——插入发生在更靠前的位置时，
+     * 不会影响后面（更大索引）已经算好的位置；反之自前向后会让后续索引整体 +1。
+     *
+     * **幂等**：两图之间已有任何非 Image 块时都不产生命令，因此可安全地在
+     * 任何结构操作之后调用（插图、批量插图、拖拽落位三个入口共用）。
+     *
+     * 只处理 Image-Image 相邻：Divider 等非文本块与图片相邻属用户主动排版，不强拆。
+     */
+    private fun buildImageSeparatorCommands(): List<InsertImageSeparatorCommand> {
+        val commands = mutableListOf<InsertImageSeparatorCommand>()
+        for (i in blocks.lastIndex downTo 1) {
+            if (blocks[i] is BodyBlock.Image && blocks[i - 1] is BodyBlock.Image) {
+                commands += InsertImageSeparatorCommand(
+                    index = i,
+                    spec = BlockSpec.TextSpec(newBodyBlockId(), ""),
+                )
+            }
+        }
+        return commands
     }
 
     /**
@@ -2418,6 +2482,29 @@ class BodyBlocksController(
         pushExecuted(command)
     }
 
+    /**
+     * 执行并压栈一条命令，**并在其产物造成「两个 Image 块相邻」时补空 Text 块**
+     * （v2026-09-09，插图路径专用）。
+     *
+     * 补块与主命令打包成一个 [CompositeCommand]：**一次撤销整体回退**
+     * （revert 逆序执行 → 先移除补的空块，再回退主命令），用户不会看到
+     * "撤销一次只撤掉空行、顺序还没变"的中间态。
+     */
+    private fun executeAndPushWithImageSeparators(command: BodyBlocksCommand) {
+        val extra = mutableListOf<BodyBlocksCommand>()
+        replaying = true
+        try {
+            command.apply(this)
+            /** 结构变更（拆块/合并/退列表/插图等）后按位置语义重排连续有序块编号 */
+            renumberOrderedBlocks()
+            extra += buildImageSeparatorCommands().onEach { it.apply(this) }
+            if (extra.isNotEmpty()) renumberOrderedBlocks()
+        } finally {
+            replaying = false
+        }
+        pushExecuted(if (extra.isEmpty()) command else CompositeCommand(listOf(command) + extra))
+    }
+
     /** 只压栈不执行（命令已被调用方 apply 过——批量插图的循环路径） */
     private fun pushExecuted(command: BodyBlocksCommand) {
         undoCommands.addLast(command)
@@ -2617,6 +2704,20 @@ class BodyBlocksController(
         if (from == to) return
         val block = blocks.removeAt(from)
         blocks.add(to, block)
+    }
+
+    /**
+     * 在 [index] 处插入一个由 [spec] 重建的块（[InsertImageSeparatorCommand] 的落盘原语）。
+     * 索引钳到 `[0, size]`，保证命令 apply/revert 不因边界越界抛错。
+     */
+    internal fun insertBlockAt(index: Int, spec: BlockSpec) {
+        blocks.add(index.coerceIn(0, blocks.size), rebuildBlock(spec))
+    }
+
+    /** 按 id 移除块（[InsertImageSeparatorCommand.revert] 的落盘原语；已不存在则忽略） */
+    internal fun removeBlockById(blockId: String) {
+        val idx = blocks.indexOfFirst { it.id == blockId }
+        if (idx >= 0) blocks.removeAt(idx)
     }
 
     /** Command 落盘后的通用收尾：两步删除的高亮态随结构变化清除（含选中态锚点） */
@@ -2966,10 +3067,31 @@ class BodyBlocksController(
      * 拖拽排序回调（ReorderableColumn 的 onSettle——**手指抬起落定后才到达这里**，
      * 方案A坑点3：拖拽过程零压栈，一步拖拽恰好一条 [MoveBlockCommand] 撤销记录）。
      */
+    /**
+     * 拖拽落位（[sh.calvin.reorderable] 的 onSettle）：移动 + 「相邻图片补空行」
+     * 打包成**一个撤销单位**（v2026-09-09）。
+     *
+     * 为什么必须补：把图片拖到另一张图旁边会形成 `[图,图]`，两图之间没有
+     * 可以打字的位置，用户只能再拖一次才能插入文字。
+     *
+     * 为什么不直接用 [executeAndPush]：需要在 move 之后**基于新顺序**计算需要
+     * 补块的位置，再把两条命令合成一条压栈（两步会因中间的列表变化而互相干扰）。
+     */
     fun moveBlock(from: Int, to: Int) {
         if (from == to || from !in blocks.indices || to !in blocks.indices) return
         val blockId = blocks[from].id
-        executeAndPush(MoveBlockCommand(blockId = blockId, fromIndex = from, toIndex = to))
+        val move = MoveBlockCommand(blockId = blockId, fromIndex = from, toIndex = to)
+        val extra = mutableListOf<BodyBlocksCommand>()
+        replaying = true
+        try {
+            move.apply(this)
+            renumberOrderedBlocks()
+            /** 落位后若与相邻图片贴在一起 → 补空 Text 块（自后向前，索引不漂移） */
+            extra += buildImageSeparatorCommands().onEach { it.apply(this) }
+        } finally {
+            replaying = false
+        }
+        pushExecuted(if (extra.isEmpty()) move else CompositeCommand(listOf(move) + extra))
     }
 
     /**
