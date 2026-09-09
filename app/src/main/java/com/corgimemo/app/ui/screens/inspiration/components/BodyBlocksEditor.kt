@@ -30,10 +30,12 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import com.corgimemo.app.ui.theme.LocalContentTypography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -68,6 +70,7 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.text.TextRange
@@ -79,6 +82,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
+import com.corgimemo.app.ui.components.ImageHighlightColor
 import com.corgimemo.app.ui.components.InlineImagePreview
 import com.corgimemo.app.ui.model.IMAGE_SHRUNK_WIDTH_RATIO
 import com.mohamedrejeb.richeditor.model.RichTextState
@@ -3949,10 +3953,38 @@ private fun BlockImageItem(
     /** 选中图片时收起软键盘用（v2026-09-09） */
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
 
+    /** 点图片时清除输入框焦点用（备注正在编辑时点图片 → 备注转常显并跟随图片高亮） */
+    val focusManager = LocalFocusManager.current
+
+    /**
+     * 备注文本样式（v2026-09-09）：输入框 / 占位 / 常显**三条渲染路径共用同一份**。
+     *
+     * **为什么必须统一提供**：`BasicTextField` 的样式**只取 textStyle 参数**（源码对
+     * LocalTextStyle 零引用），而 material3 的 `Text` 会 `LocalTextStyle.current.merge(style)`
+     * ——继承 MaterialTheme 的 lineHeight / fontFamily。两者排版不同 → 首行基线不同，
+     * 表现为占位「图片描述」比输入的文字偏下。故用 CompositionLocalProvider 把同一个
+     * style 直供给 Text，与输入框逐字段一致。
+     */
+    val noteTextStyle = TextStyle(fontSize = 13.sp, color = Color(0xFF9E9E9E))
+
     /** 备注编辑态：点「备注」为 true；失焦且无内容（本地与已落块对象均空）时退出 */
     var noteEditing by remember(block.id) { mutableStateOf(false) }
     var noteText by remember(block.id) { mutableStateOf(block.note ?: "") }
     val noteFocusRequester = remember(block.id) { FocusRequester() }
+
+    /**
+     * 备注输入框**是否真正获得过焦点**（v2026-09-09 修复备注闪退）：
+     *
+     * [androidx.compose.ui.focus.onFocusChanged] 在节点附加时会立即分发一次当前
+     * 焦点状态（未聚焦 = Inactive）——源码 `FocusChangedNode` 的 `focusState` 初值
+     * 为 `null`，与首次分发的 Inactive 不等，**必然回调一次 isFocused=false**。
+     * 而此时 noteEditing 刚被置 true，若按"失焦即退出编辑态"处理，会在同一帧把
+     * noteEditing 改回 false：备注行与「图片描述」占位**闪一帧就消失**，且
+     * [LaunchedEffect] 的 requestFocus 也来不及执行（key 已从 true 变回 false，
+     * 协程被取消 → 焦点从未进入、软键盘不弹）。
+     * 故只有"聚焦过之后"的失焦才算用户真的离开输入框。
+     */
+    var noteHasBeenFocused by remember(block.id) { mutableStateOf(false) }
 
     /** noteEditing 置 true 的下一帧（输入框已组合）再请求焦点 */
     LaunchedEffect(noteEditing) {
@@ -4097,50 +4129,122 @@ private fun BlockImageItem(
                          * 也影响工具栏可视区域；未展开时 hide 无副作用。
                          */
                         softwareKeyboardController?.hide()
+                        /**
+                         * 清除输入框焦点（v2026-09-09）：图片**不是可聚焦组件**，点它不会
+                         * 自动让备注输入框失焦 → noteEditing 仍为 true，备注停在编辑态
+                         * （编辑态无底色）→ 「文字级高亮」永远不出现。clearFocus 触发
+                         * onFocusChanged(false) → 转常显态 → 跟随图片选中显示高亮底。
+                         */
+                        focusManager.clearFocus()
                         controller.onImageBlockTapped(block.id)
                     }
                 },
                 )
 
                 /**
-                 * 备注（图一/二/三）：点「备注」出现输入；有内容常显（降级小字 +
-                 * 非编辑态淡黄底），宽度跟随图片（缩小态同步 50%），缩放后保留。
+                 * 备注（v2026-09-09 调整）：
+                 * - **排版一致（占位偏下的根因）**：[noteTextStyle] 由 CompositionLocalProvider
+                 *   直供给 Text——`BasicTextField` 只认 textStyle 参数（源码对 LocalTextStyle
+                 *   **零引用**），而 material3 的 `Text` 会 `LocalTextStyle.current.merge(style)`
+                 *   继承主题的行高与字体，两者排版不同 → 首行基线不同 → 占位比输入的文字偏下。
+                 * - **占位位置**：占位放进 BasicTextField 的 `decorationBox`、与 innerTextField
+                 *   同一容器同一坐标系（外层独立 Text 自加 padding 的做法同样会偏）。
+                 * - **文字级高亮**：有内容的备注**仅在图片选中高亮时**加底色，背景贴合
+                 *   **文字本身宽度**（Text wrap content + background），**不是整行**；
+                 *   其余情况（编辑中 / 未选中）一律不加底色。
+                 * - **可再次编辑**：常显态是**只读** Text，必须给它 clickable 才能点回编辑态。
+                 * - 宽度跟随图片（缩小态同步 50%），缩放后保留。
                  */
-                if (noteEditing || block.note != null) {
-                    Box {
-                        if (noteText.isEmpty()) {
-                            /** 占位「图片描述」（BasicTextField 无 placeholder 参数，叠加渲染） */
-                            Text(
-                                text = "图片描述",
-                                fontSize = 13.sp,
-                                color = Color(0xFFC9C9CC),
-                                modifier = Modifier.padding(start = 5.dp, top = 3.dp),
+                CompositionLocalProvider(LocalTextStyle provides noteTextStyle) {
+                    when {
+                        /** 编辑态：输入框 + 占位（无底色） */
+                        noteEditing -> {
+                            BasicTextField(
+                                value = noteText,
+                                onValueChange = { text ->
+                                    noteText = text
+                                    controller.updateImageNote(block.id, text)
+                                },
+                                singleLine = true,
+                                textStyle = noteTextStyle,
+                                cursorBrush = SolidColor(Color(0xFFFF9A5C)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(noteFocusRequester)
+                                    .onFocusChanged { focusState ->
+                                        if (focusState.isFocused) {
+                                            /** 真正聚焦过：此后的失焦才是"用户离开了输入框" */
+                                            noteHasBeenFocused = true
+                                        } else if (noteHasBeenFocused && noteEditing) {
+                                            /**
+                                             * 真失焦 → 退出编辑态：有内容转常显；空则整行隐藏。
+                                             * 守卫 [noteHasBeenFocused] 挡掉节点附加时的初始
+                                             * Inactive 回调（否则备注行刚出现即被判定失焦而消失）。
+                                             */
+                                            noteEditing = false
+                                            noteHasBeenFocused = false
+                                        }
+                                    }
+                                    .padding(horizontal = 5.dp, vertical = 3.dp),
+                                /**
+                                 * 官方 placeholder 方案：占位与 innerTextField 共处一个 Box
+                                 * （propagateMinConstraints 保证输入框拿到最小宽度约束）。
+                                 */
+                                decorationBox = { innerTextField ->
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        propagateMinConstraints = true,
+                                    ) {
+                                        if (noteText.isEmpty()) {
+                                            /** style 由外层 CompositionLocalProvider 提供 = [noteTextStyle] */
+                                            Text(
+                                                text = "图片描述",
+                                                color = Color(0xFFC9C9CC),
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                },
                             )
                         }
-                        BasicTextField(
-                            value = noteText,
-                            onValueChange = { text ->
-                                noteText = text
-                                controller.updateImageNote(block.id, text)
-                            },
-                            singleLine = true,
-                            textStyle = TextStyle(fontSize = 13.sp, color = Color(0xFF9E9E9E)),
-                            cursorBrush = SolidColor(Color(0xFFFF9A5C)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(noteFocusRequester)
-                                .onFocusChanged { focusState ->
-                                    /** 失焦即退出编辑态：有内容转常显（淡黄底）；空则整行隐藏 */
-                                    if (!focusState.isFocused && noteEditing) {
-                                        noteEditing = false
+
+                        /** 常显态：降级小字；图片选中时仅给**文字部分**加高亮底 */
+                        block.note != null -> {
+                            /**
+                             * 文本取块对象的权威值 [block.note]（不是本地 [noteText]）：
+                             * 撤销/重做、加载回填等外部变更只更新块对象，本地 remember
+                             * 不会重建，用本地值会显示过期文本。编辑态才用 [noteText]。
+                             */
+                            Text(
+                                text = block.note ?: "",
+                                modifier = Modifier
+                                    /**
+                                     * 常显态是只读 Text —— 必须接点击才能再次编辑备注
+                                     * （indication = null 去涟漪）。
+                                     */
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) {
+                                        noteHasBeenFocused = false
+                                        noteText = block.note ?: ""
+                                        noteEditing = true
                                     }
-                                }
-                                .background(
-                                    color = if (noteEditing) Color.Transparent else Color(0xFFFFF6DC),
-                                    shape = RoundedCornerShape(6.dp),
-                                )
-                                .padding(horizontal = 5.dp, vertical = 3.dp),
-                        )
+                                    /**
+                                     * 高亮底色 = 图片高亮外边框色 [ImageHighlightColor]（同色同透明度），
+                                     * 仅在图片选中时出现；背景贴合**文字本身宽度**，不是整行。
+                                     */
+                                    .background(
+                                        color = if (selected) {
+                                            ImageHighlightColor.copy(alpha = 0.55f)
+                                        } else {
+                                            Color.Transparent
+                                        },
+                                        shape = RoundedCornerShape(4.dp),
+                                    )
+                                    .padding(horizontal = 5.dp, vertical = 3.dp),
+                            )
+                        }
                     }
                 }
 
@@ -4193,6 +4297,10 @@ private fun BlockImageItem(
                                 shrunk = lastVisibleShrunk,
                                 onNoteClick = {
                                     /** 原型交互：备注编辑时退出选中（高亮与工具栏消失，焦点交给输入框） */
+                                    /** 进入编辑态前重置聚焦守卫：否则上次的聚焦记录会让初始回调立刻退出 */
+                                    noteHasBeenFocused = false
+                                    /** 以块对象权威值作为编辑起点（undo/回填后避免编辑到过期文本） */
+                                    noteText = block.note ?: ""
                                     noteEditing = true
                                     controller.clearBlockSelection()
                                 },

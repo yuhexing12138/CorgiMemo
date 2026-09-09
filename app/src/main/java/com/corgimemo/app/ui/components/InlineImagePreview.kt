@@ -79,6 +79,15 @@ import coil3.size.Scale
  * @param isHighlighted 是否处于选中高亮态（内阴影 + 浅黄底）
  * @param onClick 图片点击回调（可选）
  */
+/**
+ * 图片选中高亮色（v2026-09-09）：2dp 外扩描边与内阴影共用此色。
+ *
+ * **单一真相源**：灵感编辑页里备注文字的"选中高亮"底色也取此色（见
+ * `BodyBlocksEditor` 的备注常显态），保证图片高亮与备注高亮视觉语言一致——
+ * 用户要求两者同色，改动此处即同步两处。
+ */
+internal val ImageHighlightColor = Color(0xFFFFB74D)
+
 @Composable
 fun InlineImagePreview(
     imageUri: String,
@@ -148,13 +157,13 @@ fun InlineImagePreview(
                      */
                     Modifier
                         .innerShadow(shape = RoundedCornerShape(16.dp)) {
-                            color = Color(0xFFFFB74D).copy(alpha = 0.6f)
+                            color = ImageHighlightColor.copy(alpha = 0.6f)
                             radius = 6f
                         }
                         .drawBehind {
                             val strokePx = 2.dp.toPx()
                             drawRoundRect(
-                                color = Color(0xFFFFB74D).copy(alpha = 0.55f),
+                                color = ImageHighlightColor.copy(alpha = 0.55f),
                                 topLeft = Offset(-strokePx / 2f, -strokePx / 2f),
                                 size = Size(size.width + strokePx, size.height + strokePx),
                                 cornerRadius = CornerRadius(16.dp.toPx() + strokePx / 2f),
