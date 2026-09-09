@@ -85,6 +85,8 @@ scripts/capture_heap_on_leak.sh
 # kuikly_src/  ：Kuikly 开发时从 gradle 缓存提取的框架视图源码，纯本地参考
 # memory/      ：本机新生成的工作日志不跟踪；远端已跟踪的 2026-08-31 及之后
 #                的日志不受 gitignore 影响，仍会正常同步
+# tmp/         ：会话级临时目录（临时提交信息文件、源码检索中转产物等）
 # ============================================================
 .workbuddy/kuikly_src/
 .workbuddy/memory/
+.workbuddy/tmp/
