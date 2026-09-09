@@ -599,6 +599,14 @@ fun InspirationEditScreen(
 
         try {
             val dbBlocks = viewModel.loadContentBlocks(inspirationId)
+            /**
+             * 回填图片块持久化属性（备注 / 缩放态，v2026-09-09 启用 v57 预留列）：
+             * initialize 只能从 markdown 还原 path，属性按 path 匹配回填；
+             * 须在旧数据迁移 append 之前执行（迁移插入的旧附件无属性）。
+             */
+            bodyBlocks.applyImageProps(
+                dbBlocks.filterIsInstance<ContentBlock.Image>().associateBy { it.path }
+            )
             val existingMd = bodyBlocks.toMarkdown()
             dbBlocks.forEach { block ->
                 when (block) {
@@ -1471,9 +1479,18 @@ fun InspirationEditScreen(
             val textToolbar = LocalTextToolbar.current
 
             val titleRichTextState = rememberRichTextState()
-            /** 标题为纯文本（无列表），此处同步关闭列表缩进仅作一致性兜底，
-             *  与编辑页正文块、详情页正文保持一致（RichTextConfig.listIndent=0）。 */
-            titleRichTextState.config.listIndent = 0
+            /**
+             * 标题为纯文本（无列表），此处同步关闭列表缩进仅作一致性兜底，
+             * 与编辑页正文块、详情页正文保持一致（RichTextConfig.listIndent=0）。
+             *
+             * ⚠️ 必须包 remember 只执行一次（v2026-09-09 全选塌缩修复）：
+             * config 的每个 setter 都会无条件触发 updateRichParagraphList 全量重建，
+             * 而重建把 selection 折叠为单光标（TextRange(selection.min)）。此前本行
+             * 在每次重组都执行——点「全选」写入 (0,len) 后下一帧重组又跑到这里，
+             * 选区被打回 (0,0)，表现为"全选后整段不高亮、光标跑到最左侧"。
+             * 库侧 RichTextConfig setter 已同步加值守卫双保险。
+             */
+            remember(titleRichTextState) { titleRichTextState.config.listIndent = 0 }
 
             /**
              * 【临时诊断探针】标题选区变化轨迹（定位"点全选整段不高亮"，定位后移除）。
@@ -1537,6 +1554,11 @@ fun InspirationEditScreen(
                         awaitPointerEventScope {
                             while (true) {
                                 awaitFirstDown(requireUnconsumed = false)
+                                /** 【临时诊断探针】按下时刻工具栏状态（定位"工具栏未收起"，定位后移除）。 */
+                                Log.d(
+                                    "CorgiTitleSel",
+                                    "title pointerDown -> hide(), status=${textToolbar.status}"
+                                )
                                 textToolbar.hide()
                             }
                         }

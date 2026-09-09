@@ -22,6 +22,8 @@ import com.corgimemo.app.data.repository.InspirationRepository
 import com.corgimemo.app.data.repository.SubTaskManager
 import com.corgimemo.app.model.UserType
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
+import com.corgimemo.app.ui.model.IMAGE_SHRUNK_WIDTH_RATIO /** 缩小态宽度比例（0.5f） */
+import com.corgimemo.app.ui.screens.inspiration.components.BodyBlock /** 编辑器图片块（备注/缩放态来源） */
 import com.corgimemo.app.ui.screens.inspiration.components.BodyBlocksController
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.model.trigger.Trigger
@@ -1351,7 +1353,12 @@ class InspirationEditViewModel @Inject constructor(
                  * 原因：编辑模式下 BasicTextField 不支持 inlineContent，无法渲染内联图片，
                  * 改回非内联方案，图片作为独立块在编辑器下方/之间显示。
                  */
-                "image" -> ContentBlock.Image(entity.filePath)
+                "image" -> ContentBlock.Image(
+                    path = entity.filePath,
+                    /** v2026-09-09 启用 v57 预留列：备注 / 显示宽度比例随行读出 */
+                    note = entity.note,
+                    displayWidthRatio = entity.displayWidthRatio,
+                )
                 "voice" -> ContentBlock.Voice(entity.filePath, entity.duration)
                 else -> ContentBlock.Text("") // 兜底
             }
@@ -1384,6 +1391,9 @@ class InspirationEditViewModel @Inject constructor(
                 is ContentBlock.Image -> ContentBlockEntity(
                     todoId = inspirationId, ownerType = "inspiration",
                     type = "image", filePath = block.path,
+                    /** v2026-09-09 启用 v57 预留列：备注 / 显示宽度比例随行写入 */
+                    note = block.note,
+                    displayWidthRatio = block.displayWidthRatio,
                     orderIndex = index, subTaskId = subTaskId, lineIndex = lineIndex
                 )
                 is ContentBlock.Voice -> ContentBlockEntity(
@@ -1417,13 +1427,29 @@ class InspirationEditViewModel @Inject constructor(
         /** 按"类型:路径"去重，避免新旧两种格式同时命中同一文件 */
         val seen = mutableSetOf<String>()
 
+        /**
+         * 块级图片属性（备注 / 缩放态）按 path 索引（v2026-09-09）：
+         * 属性不在 markdown 里，从编辑器块列表收集，写入 content_blocks 的
+         * v57 预留列（note / displayWidthRatio），保存重开不丢失。
+         */
+        val imagePropsByPath = bodyBlocks.blocks
+            .filterIsInstance<BodyBlock.Image>()
+            .associateBy { it.path }
+
         /** 1) 块级图片：标准 Markdown 图片语法 */
         Regex("""!\[[^\]]*\]\(([^)]+)\)""")
             .findAll(markdown)
             .forEach { m ->
                 val path = m.groupValues[1].trim()
                 if (path.isNotBlank() && seen.add("image:$path")) {
-                    blocks.add(ContentBlock.Image(path))
+                    val img = imagePropsByPath[path]
+                    blocks.add(
+                        ContentBlock.Image(
+                            path = path,
+                            note = img?.note,
+                            displayWidthRatio = if (img?.shrunk == true) IMAGE_SHRUNK_WIDTH_RATIO else 1f,
+                        )
+                    )
                 }
             }
 
@@ -1433,7 +1459,14 @@ class InspirationEditViewModel @Inject constructor(
             .forEach { m ->
                 val path = m.groupValues[1].trim()
                 if (path.isNotBlank() && seen.add("image:$path")) {
-                    blocks.add(ContentBlock.Image(path))
+                    val img = imagePropsByPath[path]
+                    blocks.add(
+                        ContentBlock.Image(
+                            path = path,
+                            note = img?.note,
+                            displayWidthRatio = if (img?.shrunk == true) IMAGE_SHRUNK_WIDTH_RATIO else 1f,
+                        )
+                    )
                 }
             }
 

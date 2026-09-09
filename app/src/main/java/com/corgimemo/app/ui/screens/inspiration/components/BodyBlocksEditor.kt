@@ -1,6 +1,12 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
 import android.util.Log
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -8,6 +14,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -2873,6 +2880,29 @@ class BodyBlocksController(
         }
     }
 
+    /**
+     * 按图片路径回填持久化属性（备注 / 显示宽度比例，v2026-09-09）。
+     *
+     * 编辑页加载时调用：`initialize` 解析 markdown 只能还原 path（note / 缩放态
+     * 不在 markdown 里），需要把 content_blocks 表（v57 预留列）读出的属性
+     * 按 **path**（图片文件路径天然唯一）回填到对应 Image 块。
+     *
+     * - ratio < 1.0 → 缩小态（[com.corgimemo.app.ui.model.IMAGE_SHRUNK_WIDTH_RATIO]）
+     * - 回填**不触发** onDocChanged（还原持久化状态不算编辑）
+     * - markdown 里没有的 path 自然不命中，旧数据零影响
+     */
+    fun applyImageProps(props: Map<String, com.corgimemo.app.ui.model.ContentBlock.Image>) {
+        for (i in blocks.indices) {
+            val block = blocks[i] as? BodyBlock.Image ?: continue
+            val prop = props[block.path] ?: continue
+            val newNote = prop.note?.takeIf { it.isNotBlank() }
+            val newShrunk = (prop.displayWidthRatio ?: 1f) < 1f
+            if (block.note != newNote || block.shrunk != newShrunk) {
+                blocks[i] = BodyBlock.Image(block.id, block.path, newNote, newShrunk)
+            }
+        }
+    }
+
     /** 拖拽排序落盘（[MoveBlockCommand] 用；按 id 定位防御索引漂移） */
     internal fun moveBlockById(blockId: String, targetIndex: Int) {
         val from = blocks.indexOfFirst { it.id == blockId }
@@ -3970,7 +4000,33 @@ private fun BlockImageItem(
                 }
             }
 
-            if (toolbarVisible) {
+            /**
+             * 工具栏弹出/收起：scale + fade 入退场（v2026-09-09，贴近原型质感）。
+             * 定位 modifier 挂在 [AnimatedVisibility] 上；退出期间 shrunk 已翻转时
+             * 位置会跟随新值（与原型 CSS 的即时切换行为一致）。
+             */
+            AnimatedVisibility(
+                visible = toolbarVisible,
+                enter = scaleIn(
+                    initialScale = 0.85f,
+                    animationSpec = tween(durationMillis = 180),
+                ) + fadeIn(animationSpec = tween(durationMillis = 180)),
+                exit = scaleOut(
+                    targetScale = 0.85f,
+                    animationSpec = tween(durationMillis = 150),
+                ) + fadeOut(animationSpec = tween(durationMillis = 150)),
+                modifier = when {
+                    /**
+                     * 缩小选中：工具栏中心 = 缩小图右缘（= 内容区宽 50%），
+                     * 即一半在图上、一半在图外；偏移 = 中心 - 半个工具栏宽。
+                     */
+                    block.shrunk -> Modifier
+                        .align(Alignment.CenterStart)
+                        .offset(x = with(density) { (contentWidthPx / 2f).toDp() } - ImageToolbarWidth / 2)
+                    /** 撑满选中：工具栏在图片正中 */
+                    else -> Modifier.align(Alignment.Center)
+                },
+            ) {
                 ImageBlockToolbar(
                     shrunk = block.shrunk,
                     onNoteClick = {
@@ -3979,17 +4035,6 @@ private fun BlockImageItem(
                         controller.clearBlockSelection()
                     },
                     onScaleClick = { controller.toggleImageShrunk(block.id) },
-                    modifier = when {
-                        /**
-                         * 缩小选中：工具栏中心 = 缩小图右缘（= 内容区宽 50%），
-                         * 即一半在图上、一半在图外；偏移 = 中心 - 半个工具栏宽。
-                         */
-                        block.shrunk -> Modifier
-                            .align(Alignment.CenterStart)
-                            .offset(x = with(density) { (contentWidthPx / 2f).toDp() } - ImageToolbarWidth / 2)
-                        /** 撑满选中：工具栏在图片正中 */
-                        else -> Modifier.align(Alignment.Center)
-                    },
                 )
             }
         }
