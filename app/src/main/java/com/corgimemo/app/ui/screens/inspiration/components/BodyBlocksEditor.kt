@@ -25,6 +25,7 @@ import com.corgimemo.app.ui.theme.LocalContentTypography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -3029,6 +3030,8 @@ fun BodyBlocksEditor(
         items = controller.blocks.toList(),
         onReorder = { from, to -> controller.moveBlock(from, to) },
         modifier = modifier.fillMaxWidth(),
+        /** 组合身份锚定块 id：交换时不复用槽位，图片不重载（见函数注释） */
+        itemKey = { it.id },
     ) { _, block, isDragging, dragHandleModifier ->
         when (block) {
             is BodyBlock.Text -> BlockTextItem(
@@ -3061,12 +3064,21 @@ fun BodyBlocksEditor(
  * 块级重排列：与全局 [com.corgimemo.app.ui.components.ReorderableColumn] 行为一致，
  * 差异在于把手 modifier 交给每个块的 content 自行放置（挂在手柄图标上而非整块），
  * 避免长按拖拽与文本长按选择冲突。
+ *
+ * **itemKey（v2026-09-09 必填）**：库内部是 `Column { list.forEachIndexed { ... } }`
+ * （`sh.calvin.reorderable.ReorderableList.kt`），**item 没有 key**——交换两块时，
+ * 第 i 个组合槽位被复用去渲染另一个块，图片块的 `SubcomposeAsyncImage` 因此
+ * 重新发起加载，高度先回落到占位高度再弹回，表现为"交换完成瞬间上下跳动"。
+ * 用 [key] 把内容按块 id 锚定后，组合身份**跟随块移动**（而非槽位复用），
+ * painter 状态随之迁移、不重新加载。
  */
 @Composable
 private fun <T> BlocksReorderableColumn(
     items: List<T>,
     onReorder: (fromIndex: Int, toIndex: Int) -> Unit,
     modifier: Modifier = Modifier,
+    /** 块的稳定身份（块 id）——交换时用 [key] 保持组合身份 */
+    itemKey: (T) -> Any?,
     content: @Composable (index: Int, item: T, isDragging: Boolean, dragHandleModifier: Modifier) -> Unit,
 ) {
     val context = LocalContext.current
@@ -3085,7 +3097,14 @@ private fun <T> BlocksReorderableColumn(
         modifier = modifier,
     ) { index, item, isDragging ->
         ReorderableItem {
-            content(index, item, isDragging, Modifier.longPressDraggableHandle())
+            /**
+             * 用块 id 锚定组合身份（v2026-09-09）：拖拽交换后组合跟着块走，
+             * 而不是"槽位原地换成另一块"——图片不会重新加载，高度不再抖动。
+             * 手柄 modifier 仍在 key 内取用（绑定的是当前 index，交换后已对应新块）。
+             */
+            key(itemKey(item)) {
+                content(index, item, isDragging, Modifier.longPressDraggableHandle())
+            }
         }
     }
 }

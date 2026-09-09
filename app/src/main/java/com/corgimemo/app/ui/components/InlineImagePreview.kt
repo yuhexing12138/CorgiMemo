@@ -102,6 +102,21 @@ fun InlineImagePreview(
         Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
     }
 
+    /**
+     * 占位态（加载中 / 失败）高度修饰（v2026-09-09）：撑满态优先用**缓存比例**等比定高。
+     *
+     * 图片重载期间（拖拽交换后、屏幕旋转、详情页返回等）若占位高度固定 180dp，
+     * 高度会先塌陷再弹回 → 列表上下跳动；命中缓存则占位高度与加载完成后的高度
+     * **完全一致**，视觉零跳动。未命中（首次加载）才退回 180dp。
+     */
+    val placeholderModifier: Modifier = if (fillMaxWidth) {
+        ImageAspectRatioCache.get(imageUri)
+            ?.let { Modifier.aspectRatio(it) }
+            ?: Modifier.height(180.dp)
+    } else {
+        Modifier.height(180.dp)
+    }
+
     /** 外层容器：按宽度策略限宽，高度由子元素（Image）真实比例决定 */
     Box(
         modifier = modifier
@@ -157,11 +172,11 @@ fun InlineImagePreview(
                     .then(widthModifier)
                     .wrapContentHeight(),
                 loading = {
-                    /** 加载中：占满宽度 + 固定 180dp 高度 + 相机占位符（避免布局抖动） */
+                    /** 加载中：占满宽度 + 缓存比例（或 180dp）占位高度，避免高度塌陷 */
                     Box(
                         modifier = Modifier
                             .then(widthModifier)
-                            .height(180.dp)
+                            .then(placeholderModifier)
                             .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
@@ -177,9 +192,11 @@ fun InlineImagePreview(
                      * 关键：直接用 state.painter + Image。
                      * - 撑满态：`fillMaxWidth + aspectRatio(真实比例)` → 宽 = 块宽、高 = 宽 / 比例，
                      *   ContentScale.Fit 与容器比例一致，等比铺满、无形变、无留白；
-                     * - 旧行为：`widthIn(max) + wrapContentHeight` 按 drawable 真实尺寸渲染。
+                     * - 旧行为：`widthIn(max) + wrapContentHeight` 按 drawable 真实尺寸渲染；
+                     * - 比例顺带写进 [ImageAspectRatioCache]，供下次重载的占位态复用（防高度跳动）。
                      */
                     val ratio = painterAspectRatio(state.painter)
+                        .also { ImageAspectRatioCache.put(imageUri, it) }
                     Image(
                         painter = state.painter,
                         contentDescription = "插入的图片",
@@ -197,11 +214,11 @@ fun InlineImagePreview(
                     )
                 },
                 error = {
-                    /** 加载失败：占满宽度 + 固定高度占位符 */
+                    /** 加载失败：占满宽度 + 缓存比例（或 180dp）占位高度 */
                     Box(
                         modifier = Modifier
                             .then(widthModifier)
-                            .height(180.dp)
+                            .then(placeholderModifier)
                             .background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
@@ -229,6 +246,33 @@ fun InlineImagePreview(
 private fun painterAspectRatio(painter: Painter): Float? {
     val size = painter.intrinsicSize
     return if (size.width > 0f && size.height > 0f) size.width / size.height else null
+}
+
+/**
+ * 图片真实宽高比缓存（进程级，v2026-09-09）：`图片路径 → 宽/高`。
+ *
+ * **存在理由**：图片重载期间（拖拽交换后、屏幕旋转、详情页返回等）会短暂回到
+ * loading 态，若占位高度固定 180dp，块高会先塌陷再弹回 → 列表上下跳动。
+ * 缓存比例后，占位高度 = `宽 / 缓存比例`，与加载完成后的高度**一致**，视觉零跳动。
+ *
+ * - 写入：加载成功时（[painterAspectRatio] 算出真实比例）；
+ * - 读取：loading / error 占位态（[InlineImagePreview] 的 placeholderModifier）；
+ * - 线程：Coil 回调可能在任意线程，用 `ConcurrentHashMap`；
+ * - 失效：同一路径被新图覆盖时 `put` 会直接覆盖；本项目图片按时间戳/uuid 落盘、
+ *   路径不复用，故不额外清理（进程退出自然回收）。
+ */
+private object ImageAspectRatioCache {
+    private val ratios = java.util.concurrent.ConcurrentHashMap<String, Float>()
+
+    /** 取缓存比例；未缓存返回 null */
+    fun get(path: String): Float? = ratios[path]
+
+    /** 写入比例；null / NaN / 非正值忽略（NaN 参与比较恒为 false） */
+    fun put(path: String, ratio: Float?) {
+        if (ratio != null && ratio > 0f) {
+            ratios[path] = ratio
+        }
+    }
 }
 
 /**
