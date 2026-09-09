@@ -10,6 +10,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ComposeFoundationFlags
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -75,8 +77,22 @@ class MainActivity : ComponentActivity() {
     private var exportLauncher: ActivityResultLauncher<Intent>? = null
     private var importLauncher: ActivityResultLauncher<Intent>? = null
 
+    @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        /**
+         * v2026-09-09 工具栏收起修复：切回旧版文本选择工具栏体系。
+         *
+         * Compose 1.11 默认 isNewContextMenuEnabled = true，选择工具栏由 foundation
+         * 内部的 toolbarRequester 弹出，LocalTextToolbar（AndroidTextToolbar）被完全
+         * 绕开——App 侧的 textToolbar.hide()（"按下即收起工具栏"）对它无效，导致
+         * "长按弹出工具栏后再次点击文本无法收起"。切回 false 后工具栏由
+         * LocalTextToolbar 接管，配合主题层提供的 QuietTextToolbar（hide 后静默
+         * 窗口拦住重组重弹），实现"再次点击文本行即收起"。
+         * 影响：全 App 文本选择工具栏回到系统 FloatingActionMode 样式（功能一致）。
+         */
+        ComposeFoundationFlags.isNewContextMenuEnabled = false
 
         // V6.0 修复：灵感页堆叠图顶卡左滑裁剪问题 - 关闭 Android View 层级裁剪
         // - 根因：Compose graphicsLayer { clip=false } 只能关闭 Compose RenderNode 的裁剪，

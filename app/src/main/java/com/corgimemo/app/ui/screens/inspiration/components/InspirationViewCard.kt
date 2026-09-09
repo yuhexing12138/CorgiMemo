@@ -590,11 +590,16 @@ private fun InspirationBodyParagraph(
      * - 二级起每级缩进 LIST_LEVEL_INDENT_SP（30sp ≈ 两字符），嵌套列表在详情页
      *  渲染出层级（markdown 每级 2 空格前缀保存/还原）。
      *  注意不能用 listIndent=0（它是 ordered/unordered 的快捷 setter，会清掉层级缩进）。
+     *
+     * ⚠️ 包 remember 只执行一次（v2026-09-09）：config setter 会触发全量重建，
+     * 组合期每次重组重复设置纯属浪费（库侧 setter 守卫已双保险，此处一并规范）。
      */
-    richTextState.config.orderedListIndent = LIST_LEVEL_INDENT_SP
-    richTextState.config.unorderedListIndent = LIST_LEVEL_INDENT_SP
-    /** marker 按层级循环（1./(1)/①/a./Ⅰ./i.），与编辑页一致 */
-    richTextState.config.orderedListStyleType = AppOrderedListStyleType
+    remember(richTextState) {
+        richTextState.config.orderedListIndent = LIST_LEVEL_INDENT_SP
+        richTextState.config.unorderedListIndent = LIST_LEVEL_INDENT_SP
+        /** marker 按层级循环（1./(1)/①/a./Ⅰ./i.），与编辑页一致 */
+        richTextState.config.orderedListStyleType = AppOrderedListStyleType
+    }
     LaunchedEffect(markdown) {
         /**
          * 列表段层级显式还原（v2026-09-08，与编辑页 initialize 同款修复）：孤立缩进

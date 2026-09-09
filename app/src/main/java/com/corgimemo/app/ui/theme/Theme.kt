@@ -15,9 +15,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFontFamilyResolver
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.core.view.WindowCompat
+import com.corgimemo.app.ui.components.QuietTextToolbar
 import com.corgimemo.app.ui.theme.ContentFontManager
 
 /**
@@ -88,7 +90,18 @@ fun CorgiMemoTheme(
         FontResolverPolicy.createIsolatedResolver(appContext)
     }
 
-    CompositionLocalProvider(LocalFontFamilyResolver provides fontFamilyResolver) {
+    // ---- 文本选择工具栏（v2026-09-09）：静默窗口装饰器 ----
+    // 包装默认 AndroidTextToolbar：hide() 后短暂忽略 showMenu，拦住
+    // "长按弹出工具栏 → 再次点击文本收起 → 重组重弹"的竞态（详见
+    // QuietTextToolbar KDoc）。配套改动见 MainActivity 的
+    // isNewContextMenuEnabled = false（切回旧体系，让本装饰器真正接管显隐）。
+    val baseToolbar = LocalTextToolbar.current
+    val quietToolbar = remember(baseToolbar) { QuietTextToolbar(baseToolbar) }
+
+    CompositionLocalProvider(
+        LocalFontFamilyResolver provides fontFamilyResolver,
+        LocalTextToolbar provides quietToolbar,
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = buildTypography(bodyFamily),

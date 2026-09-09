@@ -4004,8 +4004,12 @@ private fun BlockImageItem(
              * 工具栏弹出/收起：scale + fade 入退场（v2026-09-09，贴近原型质感）。
              * 定位 modifier 挂在 [AnimatedVisibility] 上；退出期间 shrunk 已翻转时
              * 位置会跟随新值（与原型 CSS 的即时切换行为一致）。
+             *
+             * ⚠️ 用完全限定名调用：此处处于 BoxScope，外层还有 Row 隐式接收者，
+             * 简名 `AnimatedVisibility` 会被解析成 `RowScope.AnimatedVisibility`
+             * 扩展（隔层 receiver 不合法，编译报 "cannot be called in this context"）。
              */
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = toolbarVisible,
                 enter = scaleIn(
                     initialScale = 0.85f,
