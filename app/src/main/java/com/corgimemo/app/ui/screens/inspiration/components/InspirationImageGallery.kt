@@ -1075,14 +1075,26 @@ private fun ZoomableImage(
                          * 缩放区间下限 [MinZoomScale] 特意小于 1f，让"初始状态捏合"也有真实的
                          * 缩小反馈；松手后弹回 1f —— 与主流相册一致：最小最终仍停在"适配屏幕"，
                          * 不会让图片留在比屏幕更小、四周留黑边的状态。
+                         *
+                         * **缩放与平移必须合并进同一段动画**：若只对 `scale` 做补间、等它结束后
+                         * 再把 `offsetX/Y` 瞬间归零，非中心位置捏合时会看到"先缩回原尺寸、再瞬移
+                         * 到屏幕中心"两段生硬的动作。这里用一个 0→1 的进度同时插值两者，
+                         * 收尾再对齐到精确值（消除浮点残差）。
                          */
                         if (scale < 1f) {
+                            val fromScale = scale
+                            val fromOffsetX = offsetX
+                            val fromOffsetY = offsetY
                             zoomScope.launch {
                                 animate(
-                                    initialValue = scale,
+                                    initialValue = 0f,
                                     targetValue = 1f,
                                     animationSpec = ZoomReboundSpec,
-                                ) { value, _ -> scale = value }
+                                ) { progress, _ ->
+                                    scale = fromScale + (1f - fromScale) * progress
+                                    offsetX = fromOffsetX * (1f - progress)
+                                    offsetY = fromOffsetY * (1f - progress)
+                                }
                                 scale = 1f
                                 offsetX = 0f
                                 offsetY = 0f
