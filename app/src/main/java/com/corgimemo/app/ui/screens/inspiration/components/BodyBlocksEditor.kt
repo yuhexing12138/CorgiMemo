@@ -47,7 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -55,6 +55,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -75,6 +76,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -3378,6 +3380,12 @@ fun BodyBlocksEditor(
      * 返回 null = 不 clamp（默认）。lambda 延迟读取，滚动期间零重组开销。
      */
     viewportBoundsProvider: () -> Rect? = { null },
+    /**
+     * 图片块工具栏「图片附件页」按钮回调（v2026-09-10 接线）：
+     * 传入该图片块的绝对路径，由页面打开全屏附件页（[InspirationImageGallery]）。
+     * 默认空实现（不接线的页面点击无操作）。
+     */
+    onOpenImageGallery: (String) -> Unit = {},
 ) {
     BlocksReorderableColumn(
         items = controller.blocks.toList(),
@@ -3401,6 +3409,7 @@ fun BodyBlocksEditor(
                 isLocked = isLocked,
                 viewportBoundsProvider = viewportBoundsProvider,
                 dragHandleModifier = dragHandleModifier,
+                onOpenImageGallery = onOpenImageGallery,
             )
             is BodyBlock.Divider -> BlockDividerItem(
                 controller = controller,
@@ -3932,6 +3941,8 @@ private fun BlockImageItem(
     isLocked: Boolean,
     viewportBoundsProvider: () -> Rect?,
     dragHandleModifier: Modifier,
+    /** 工具栏「图片附件页」：传入本块图片路径，由页面打开全屏附件页 */
+    onOpenImageGallery: (String) -> Unit,
 ) {
     /** 点选态（工具栏可见）：两步删除高亮不算（见 imageToolbarBlockId 注释） */
     val toolbarVisible = !isLocked && controller.imageToolbarBlockId == block.id
@@ -4305,6 +4316,16 @@ private fun BlockImageItem(
                                     controller.clearBlockSelection()
                                 },
                                 onScaleClick = { controller.toggleImageShrunk(block.id) },
+                                /**
+                                 * 图片附件页（v2026-09-10 接线）：
+                                 * 先清选中态（工具栏随高亮一起消失，返回后不残留选中），
+                                 * 再把本块路径抛给页面打开全屏附件页——
+                                 * 页面按路径算出正文全部图片与初始索引（见 InspirationEditScreen）。
+                                 */
+                                onGalleryClick = {
+                                    controller.clearBlockSelection()
+                                    onOpenImageGallery(block.path)
+                                },
                             )
                         }
                     }
@@ -4322,19 +4343,41 @@ private fun BlockImageItem(
  * 由 [Arrangement.spacedBy] 保证 8dp 正间距——布局级保证**触控区互不重叠**，
  * 也不会误触相邻按钮。总宽 = 5×40 + 4×8 + 2×12 = 256dp（[ImageToolbarWidth]）。
  *
- * 本期「备注」「缩小/恢复原尺寸」接实际功能；**附件页 / 复制 / 删除为占位**
- * （onClick = null，点击无操作，后续迭代接入）。
+ * 触控区即按钮盒本身，由父 Row 的正间距保证相邻按钮触控区**不重叠**。
+ *
+ * v2026-09-10：「图片附件页」接线——清选中后由页面打开全屏附件页
+ * （[com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery]）。
+ * **复制 / 删除仍为占位**（onClick = null，点击无操作，后续迭代接入）。
+ *
+ * **阴影实现（v2026-09-10 重写）**：改用 [Modifier.dropShadow] **自绘**阴影，弃用
+ * `Modifier.shadow`（elevation 投影）。原因：后者是 RenderNode elevation 投影、由系统
+ * RenderThread 绘制，工具栏出入场的 scale+alpha 动画（外层 RenderNode 离屏合成 +
+ * 变换矩阵）会让胶囊 outline 的投影出现**方形边角**（左下/右下方角，用户实测）；
+ * dropShadow 按胶囊形状生成模糊位图直接绘制，动画中只是纹理缩放/淡出，**形状恒定**。
+ * 参数为 elevation 6dp 的视觉近似（radius 5dp / 黑 25% / y 偏移 2dp），可真机微调。
  */
 @Composable
 private fun ImageBlockToolbar(
     shrunk: Boolean,
     onNoteClick: () -> Unit,
     onScaleClick: () -> Unit,
+    onGalleryClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
-            .shadow(elevation = 6.dp, shape = CircleShape, clip = false)
+            // 自绘胶囊阴影（v2026-09-10）：替代 Modifier.shadow(6.dp)——后者走 RenderNode
+            // elevation 投影，出入场 scale+alpha 动画中投影出现方角；dropShadow 为 Compose
+            // 层位图阴影，动画中形状恒定。Shadow 是 ui.graphics.shadow 包的新版 API
+            // （非 androidx.compose.ui.graphics.Shadow 文本阴影）。
+            .dropShadow(
+                shape = CircleShape,
+                shadow = Shadow(
+                    radius = 5.dp,
+                    color = Color.Black.copy(alpha = 0.25f),
+                    offset = DpOffset(x = 0.dp, y = 2.dp),
+                ),
+            )
             .background(color = Color.White.copy(alpha = 0.97f), shape = CircleShape)
             .padding(horizontal = 12.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -4347,7 +4390,8 @@ private fun ImageBlockToolbar(
             contentDescription = "缩小 / 恢复原尺寸",
             onClick = onScaleClick,
         )
-        ImageToolbarButton(LucideIcons.Image, "图片附件页", null)
+        /** 图片附件页（v2026-09-10 接线）：清选中 + 页面打开全屏附件页 */
+        ImageToolbarButton(LucideIcons.Image, "图片附件页", onGalleryClick)
         ImageToolbarButton(LucideIcons.Copy, "复制图片", null)
         ImageToolbarButton(LucideIcons.Trash2, "删除图片", null)
     }
