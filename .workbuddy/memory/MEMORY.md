@@ -77,6 +77,11 @@
 - **宿主已声明 configChanges**：`MainActivity` 现为 `orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden`（**不含 uiMode**，深色模式仍走重建）。⇒ 屏幕旋转只 `onConfigurationChanged`、**不重建 Activity**。任何"改 `requestedOrientation`"的页面都依赖这一条，否则全屏 Dialog 会被一起销毁。
 - **横屏 = 真旋转窗口**（用户决策，替代旧的"内容层 rotate(90°) 伪横屏"）：`landscape` → `activity.requestedOrientation = SCREEN_ORIENTATION_LANDSCAPE / UNSPECIFIED`；退出附件页在 `DisposableEffect(activity).onDispose` 兜底恢复方向 + 恢复宿主窗口系统栏。伪横屏的代价：翻页方向被换算成屏幕上下滑动、系统栏无法真隐藏。
 - ⚠️ **缩放手势与翻页手势必须按「指针数」分流**（2026-09-10 用户实测"双指完全无法放大缩小"）：原写法 `if (scale > 1f) { detectTransformGestures { … } }` 是**死锁** —— `scale` 初值就是 `1f`，手势**从未被注册**，而 `scale` 要变大又必须先有手势 ⇒ 缩放永远不可能生效。也**不能**改成无条件 `detectTransformGestures`：它会**无条件消费所有指针** ⇒ `HorizontalPager` 收不到单指拖动、翻页失效。**正解**用 `awaitEachGesture` 自己分流：**双指始终处理缩放并 consume**；**单指仅在 `scale > 1f` 时 consume 用于平移，否则放行给 Pager**。（`event.calculateZoom()` 在单指时恒为 1，可放心调用。）
+- **缩放锚点换算：以双指中心为锚点**（2026-09-10 用户要求补上）。`graphicsLayer` 的缩放围绕**节点中心 C**，只改 `scale` 会变成"从图片中心缩放"，手指定位感明显偏离。
+  - **公式**：令 `d = centroid − C`、`ratio = 新scale / 旧scale`，则 `offsetX/Y = d − (d − offset_old) × ratio`。
+  - **推导**：`p = C + (q − C) × scale + offset`，要求双指中心处的图片点 `q` 在缩放前后不动 ⇒ 代入解出上式。
+  - **取值**：`centroid` 用 `event.calculateCentroid()`（`androidx.compose.foundation.gestures.calculateCentroid`）；`C = size/2`，其中 `size` 取 `AwaitPointerEventScope.size`（**是 getter，布局变化后仍返回最新值**，可放心在长生命周期手势里读）。
+  - 注意只改 `scale` 不修 `offset` 是最容易犯的错——单指平移（`calculatePan` 直接累加）与锚点缩放要**分别处理**，不要混在一起。
 - **缩小与回弹**（2026-09-10 用户决策，取主流相册手感）：`coerceIn(1f, 4f)` 的下限 1f 会让"初始状态（1f = 适配屏幕）捏合"完全没有反馈，看起来像坏了。改为 `coerceIn(MinZoomScale=0.6f, MaxZoomScale=4f)`，并在**手势结束**时若 `scale < 1f` 用 `spring`（`ZoomReboundSpec`）**回弹到 1f** 且清零 offset。
   - ⚠️ **回弹必须放独立协程**（`rememberCoroutineScope().launch { animate(...) }`）：`animate` 是**挂起函数**，若在 `awaitEachGesture` 里直接等待它结束，会**阻塞下一次手势检测** —— 回弹那 ~300ms 内的新手势会被吞掉。
 - **点击切换 UI 显隐的坑（必记）**：`detectTapGestures` 内部会 `down.consume()`，父级 `awaitFirstDown()` 默认 `requireUnconsumed = true` ⇒ **挂在父节点上的 tap 检测永远收不到事件**（子节点的双击检测器已消费）。正解：把 `onTap` 与 `onDoubleTap` 放进**同一个** `detectTapGestures`（在图片自身节点），互斥判定；代价是单击要等双击超时（~300ms）。拖拽自动取消 tap ⇒ 滑动不触发。

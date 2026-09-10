@@ -26,6 +26,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -1029,10 +1030,31 @@ private fun ZoomableImage(
                             val pressedCount = event.changes.count { it.pressed }
                             val shouldHandle = pressedCount > 1 || scale > 1f
                             if (shouldHandle) {
-                                /** 双指才缩放（单指时 calculateZoom 恒为 1，无副作用） */
+                                /**
+                                 * 双指才缩放（单指时 `calculateZoom()` 恒为 1，无副作用），
+                                 * 且**以双指中心为锚点**（v2026-09-10 补）。
+                                 *
+                                 * **推导**：本节点用 `graphicsLayer(scale, translation)` 变换，
+                                 * 其缩放围绕**节点中心 C**（`transformOrigin` 默认 Center）。
+                                 * 屏幕点 `p` 与图片点 `q` 的关系为 `p = C + (q − C) × scale + offset`。
+                                 * 要让双指中心 `centroid` 处对应的图片点**保持不动**，
+                                 * 令 `d = centroid − C`、`ratio = 新scale / 旧scale`，解得：
+                                 * `offset_new = d − (d − offset_old) × ratio`。
+                                 * 只改 `scale` 不修 `offset`，就会"从图片中心缩放"，手指定位感明显偏离。
+                                 */
                                 if (pressedCount > 1) {
-                                    scale = (scale * event.calculateZoom())
+                                    val oldScale = scale
+                                    val newScale = (oldScale * event.calculateZoom())
                                         .coerceIn(MinZoomScale, MaxZoomScale)
+                                    if (newScale != oldScale) {
+                                        val ratio = newScale / oldScale
+                                        val centroid = event.calculateCentroid()
+                                        val dx = centroid.x - size.width / 2f
+                                        val dy = centroid.y - size.height / 2f
+                                        offsetX = dx - (dx - offsetX) * ratio
+                                        offsetY = dy - (dy - offsetY) * ratio
+                                        scale = newScale
+                                    }
                                 }
                                 if (scale > 1f) {
                                     val pan = event.calculatePan()
