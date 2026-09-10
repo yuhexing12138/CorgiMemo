@@ -10,6 +10,7 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import android.util.Log
 import android.view.ViewGroup
+import android.view.Window
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.AnimationSpec
@@ -252,6 +253,31 @@ fun InspirationImageGallery(
         val insetsController = remember(dialogWindow) {
             dialogWindow?.let { WindowInsetsControllerCompat(it, it.decorView) }
         }
+
+        /**
+         * 把 Dialog 窗口设置为「全幅铺满」：忽略系统栏装饰 + 允许画进挖孔区 + 100% 背景遮罩。
+         *
+         * **为什么抽成函数、并在多个时机重复施加**：
+         * 截图逐像素实测表明，只在 `DisposableEffect` 里设置一次**不生效** ——
+         * 修复前后左侧未覆盖宽度占比几乎完全相同（4.64% ↔ 4.61%），
+         * 且灰条亮度 101/240 = 0.42 = `1 − 0.6`，正是 `Theme.Dialog` 的
+         * `backgroundDimAmount` 默认值 ⇒ 说明 `setDimAmount(1f)` 与
+         * `FLAG_LAYOUT_IN_SCREEN` 都在 `show()` 时被主题默认值回滚了。
+         * 故需要：① 窗口创建后 ② `show()` 之后 ③ 每次配置变化后，各施加一次。
+         */
+        fun applyFullBleedWindow(window: Window) {
+            window.attributes = window.attributes.apply {
+                flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                flags = flags or WindowManager.LayoutParams.FLAG_DIM_BEHIND
+                /** 100% 变暗：即使窗口没能铺满，露出的宿主区域也会被压成纯黑 */
+                dimAmount = 1f
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
+        }
+
         DisposableEffect(dialogWindow) {
             val window = dialogWindow
             if (window == null) {
@@ -265,43 +291,22 @@ fun InspirationImageGallery(
                 // 让 Dialog 内容延伸到系统栏后面（黑底铺到状态栏/手势条后面）
                 WindowCompat.setDecorFitsSystemWindows(window, false)
                 /**
-                 * ⚠️ v2026-09-10 修复（**真正的根因**，二次定位后重做）：
-                 * 让 Dialog Window **按整个屏幕**放置，不再被系统栏/挖孔缩进。
+                 * 让 Dialog Window 按**整个屏幕**放置，尽量不被系统栏/挖孔缩进。
                  *
-                 * **为什么上一版只改 cutout 模式没有效果**：
-                 * Compose 的 Dialog 用 `Theme.Dialog` 主题，属于 **floating window**
-                 * （windowIsFloating = true）。这类窗口由 WindowManager 负责把它"贴合"
-                 * 到系统栏 / 挖孔安全区**之内**，于是窗口 frame 本身就被缩进了：
-                 * - 竖屏：窗口顶边 = 状态栏底 ⇒ 整整少了一个状态栏的高度；
-                 * - 横屏：窗口左边 = 挖孔右侧 ⇒ 屏幕左侧露出一条宿主页面。
-                 * `layoutInDisplayCutoutMode` 只覆盖"挖孔"这一项，而竖屏的偏移量
-                 * 恰好也等于状态栏高度 ⇒ 单独改它看不出任何变化。
+                 * 背景：Compose 的 Dialog 用 `Theme.Dialog`（`windowIsFloating = true`），
+                 * 属于 floating window，WindowManager 会把它"贴合"到系统栏 / 挖孔安全区**之内** ——
+                 * 竖屏顶边 = 状态栏底（少一个状态栏高度），横屏左边 = 挖孔右侧（就是左侧那条灰带）。
                  *
-                 * `FLAG_LAYOUT_IN_SCREEN` =「把窗口放在整个屏幕内，忽略周围的装饰
-                 * （例如状态栏）」，这才是让 floating 窗口铺满全屏的关键开关。
+                 * ⚠️ **实测结论**：`FLAG_LAYOUT_IN_SCREEN` + `layoutInDisplayCutoutMode = SHORT_EDGES`
+                 * 在本机 ROM 上**不足以**让窗口铺满 —— 修复前后左侧未覆盖占比 4.64% → 4.61%，
+                 * 几乎没变。因此真正的兜底交给 [applyFullBleedWindow] 里的 **100% dim 遮罩**，
+                 * 以及下方的**宿主侧黑幕**，把露出的区域压成纯黑，与预览底色无缝衔接。
                  *
-                 * **旁证（用户实测）**：录音附件页 `VoicePreviewDialog` 是完全相同的
-                 * 独立 Dialog 写法，顶栏只加了 12dp padding、没有任何 insets 避让，
-                 * 呈现的间距却"刚好正确"——正因为它的窗口同样被下推了一个状态栏高度，
-                 * 属于歪打正着。本页若在这段偏移之上再叠加安全边距，就会**双重避让**，
-                 * 于是怎么调都显得远。
+                 * 旁证：录音附件页 `VoicePreviewDialog` 是完全相同的独立 Dialog 写法，
+                 * 顶栏只加了 12dp padding、没有任何 insets 避让，呈现的间距却"刚好正确" ——
+                 * 正因为它的窗口同样被下推了一个状态栏高度，属于歪打正着。
                  */
-                window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
-                /**
-                 * 兜底（v2026-09-10）：万一窗口仍未能铺满（个别 ROM 会忽略
-                 * FLAG_LAYOUT_IN_SCREEN，把 floating 窗口重新贴合回安全区之内），
-                 * 用 **100% 背景遮罩**把「露出的宿主区域」压成纯黑 ——
-                 * 与预览页的黑色背景无缝衔接，用户就看不到那条未覆盖区域了。
-                 * 窗口若已正常铺满，该设置不产生任何可见影响（遮罩完全被本页盖住）。
-                 */
-                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-                window.setDimAmount(1f)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    window.attributes = window.attributes.apply {
-                        layoutInDisplayCutoutMode =
-                            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                    }
-                }
+                applyFullBleedWindow(window)
                 /**
                  * v2026-09-10 改为**竖屏下始终显示系统栏**（不再无条件沉浸隐藏）：
                  * 实测部分 ROM 在 hide() 后仍绘制状态栏/手势条，但窗口上报的 insets
@@ -340,20 +345,47 @@ fun InspirationImageGallery(
         }
 
         /**
-         * 离开附件页（Dialog 销毁）时的兜底恢复：
-         * - 屏幕方向恢复 `UNSPECIFIED`，避免把宿主 Activity 永久锁在横屏；
-         * - 宿主 Activity 窗口的系统栏恢复显示，避免残留沉浸态影响后续页面。
+         * 宿主侧「黑色幕布」兜底（v2026-09-10，**确定性方案**）。
+         *
+         * 实测本机 ROM 会无视 Dialog 窗口的 `FLAG_LAYOUT_IN_SCREEN` 与挖孔模式，
+         * 把窗口 frame 限制在安全区内 —— 横屏时屏幕左侧始终露出一条宿主页面
+         * （实测占屏宽 4.6%，恰为挖孔安全区宽度；修复前后数值几乎不变）。
+         *
+         * 这里在**宿主 Activity 的内容容器**最上层临时叠一张纯黑 View：
+         * Activity 窗口本身是铺满全屏的（`enableEdgeToEdge` + SHORT_EDGES），
+         * 因此任何"Dialog 没盖住"的区域都会被它压成纯黑，与预览底色无缝衔接。
+         * 若 Dialog 已正常铺满，这层幕布被完全遮住，不产生任何可见影响。
+         *
+         * 同时负责离开页面时的兜底恢复（移除幕布 / 方向 / 宿主窗口系统栏）。
          */
         DisposableEffect(activity) {
+            val blackoutView = activity?.let { act ->
+                val content = act.findViewById<ViewGroup>(android.R.id.content)
+                if (content == null) {
+                    null
+                } else {
+                    android.view.View(act).apply {
+                        setBackgroundColor(android.graphics.Color.BLACK)
+                    }.also { v ->
+                        content.addView(
+                            v,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                }
+            }
             onDispose {
                 try {
+                    /** 先撤幕布，再恢复方向与系统栏，避免退出瞬间闪一帧黑 */
+                    blackoutView?.let { v -> (v.parent as? ViewGroup)?.removeView(v) }
                     activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                     activity?.window?.let { w ->
                         WindowInsetsControllerCompat(w, w.decorView)
                             .show(WindowInsetsCompat.Type.systemBars())
                     }
                 } catch (_: Exception) {
-                    // 忽略 Activity 已销毁的异常
+                    // 忽略 Activity 已销毁时的异常
                 }
             }
         }
@@ -422,11 +454,23 @@ fun InspirationImageGallery(
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
             /**
-             * 旋转 / 配置变化后再次强调「按整个屏幕放置」：
-             * 个别 ROM 在配置变化时会重算窗口 frame，把 floating 窗口重新贴合回
-             * 系统栏安全区之内（表现为横屏旋转后又出现左侧未覆盖），这里补一刀保险。
+             * 旋转 / 配置变化后再次施加「全幅铺满」（含 100% dim 遮罩）：
+             * ROM 在配置变化时会重算窗口 frame，并可能用主题默认值覆盖窗口属性
+             * （见 [applyFullBleedWindow] 的说明），这里补一刀保险。
              */
-            dialogWindow?.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
+            dialogWindow?.let { applyFullBleedWindow(it) }
+        }
+
+        /**
+         * `show()` 之后再施加一次（**关键时机**）。
+         *
+         * Compose Dialog 的 window 是在 `DialogLayout` attach 时才 `show()` 的，
+         * 早于此刻设置的 `dimAmount` / flags 会被主题属性覆盖 —— 这正是修复前后
+         * 左侧未覆盖占比几乎不变（4.64% → 4.61%）、且灰条亮度停在 dim 0.6 的原因。
+         */
+        LaunchedEffect(dialogWindow) {
+            delay(120)
+            dialogWindow?.let { applyFullBleedWindow(it) }
         }
 
         /**
