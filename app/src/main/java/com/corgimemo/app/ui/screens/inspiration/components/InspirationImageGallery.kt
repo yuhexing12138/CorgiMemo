@@ -86,11 +86,14 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
 import coil3.request.crossfade
 import com.corgimemo.app.ui.components.AppSnackbarHost
 import com.corgimemo.app.util.InspirationScreenshot
 import compose.icons.LucideIcons
 import compose.icons.lucideicons.RotateCcwSquare
+import kotlin.math.abs
+import kotlin.math.sign
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -126,6 +129,73 @@ private const val MaxZoomScale = 4f
 
 /** 缩放手势结束后回弹到 1f 的弹簧（比线性补间更柔和，贴近系统相册手感） */
 private val ZoomReboundSpec = spring<Float>(stiffness = Spring.StiffnessMediumLow)
+
+/**
+ * 越界（**首/末页没有相邻页、Pager 滚不动**）时，图片在视觉上最多还能让出的距离。
+ *
+ * 有相邻页时越界位移会 1:1 变成翻页位移（画面完全跟手，没有这一段）；
+ * 只有 Pager 吃不掉位移时（已是首/末页），才由橡皮筋吸收，作为"已经到底了"的反馈，
+ * 并且**硬封顶**在这个距离内 —— 不会拖出大片黑边。
+ */
+private val EdgeOverscrollMaxDrag = 72.dp
+
+/**
+ * 松手时判定「翻过去 / 退回来」的阈值：翻页位移超过**页宽的这个比例**才翻页。
+ *
+ * 未放大时由 Pager 自己的 `snapPositionalThreshold` 决定（竖屏 0.35 / 横屏 0.08）；
+ * 放大后的翻页是**手动驱动** Pager（`dispatchRawDelta`），松手必须自己结算。
+ * 取 0.15 兼顾两种操作：慢速拖动 15% 页宽是个明确意图，快速轻扫的位移通常也有 10%~20%。
+ */
+private const val PageTurnCommitRatio = 0.15f
+
+/**
+ * 橡皮筋阻尼：把「手指越界的原始距离」映射为「图片实际让出的位移」。
+ *
+ * 曲线 `f(x) = max · |x| / (|x| + max)`：**单调递增、渐近 [max]、且永不超过 [max]**，
+ * `f(0) = 0` —— 越界越深，同样的手指位移换来的画面位移越小（阻力感），
+ * 同时保证"最长拖动距离"这个硬上限成立（不会出现拖到全黑的情况）。
+ */
+private fun rubberBand(overscroll: Float, max: Float): Float {
+    val magnitude = abs(overscroll)
+    if (magnitude == 0f || max <= 0f) return 0f
+    return sign(overscroll) * max * magnitude / (magnitude + max)
+}
+
+/**
+ * 计算当前缩放比例下允许的**最大平移量**（x, y）—— 平移边界。
+ *
+ * 图片以 `ContentScale.Fit` 显示：缩放后的可视范围是 `displayW/H × scale`，
+ * 所以最大平移量就是「超出容器的那一半」。结果不小于 0 ——
+ * 图片比容器小时不允许平移（否则就会拖出黑边）。
+ *
+ * [imageAspectRatio] 为 null（图片还没加载完）时按「显示尺寸 == 容器尺寸」取**最宽松**边界，
+ * 避免加载完成前被误判成"没有可平移空间"。
+ */
+private fun maxPanOffsets(
+    containerW: Float,
+    containerH: Float,
+    imageAspectRatio: Float?,
+    scale: Float,
+): Pair<Float, Float> {
+    val displayW: Float
+    val displayH: Float
+    if (imageAspectRatio == null) {
+        displayW = containerW
+        displayH = containerH
+    } else if (imageAspectRatio > containerW / containerH) {
+        // 图片更"宽"：宽度顶满容器
+        displayW = containerW
+        displayH = containerW / imageAspectRatio
+    } else {
+        // 图片更"高"：高度顶满容器
+        displayW = containerH * imageAspectRatio
+        displayH = containerH
+    }
+    return Pair(
+        ((displayW * scale - containerW) / 2f).coerceAtLeast(0f),
+        ((displayH * scale - containerH) / 2f).coerceAtLeast(0f),
+    )
+}
 
 /**
  * 灵感图片全屏预览
@@ -723,6 +793,25 @@ fun InspirationImageGallery(
                     ZoomableImage(
                         path = imagePaths[page],
                         onSingleTap = { chromeVisible = !chromeVisible },
+                        /**
+                         * 越界跟手：把超出的位移直接喂给 Pager 的滚动状态，
+                         * 让相邻的一张**随手指实时滑入**，而不是松手后才动。
+                         *
+                         * 参数已是 Pager 空间的滚动量（正 = 向前 = 下一张）。
+                         * 返回值是**实际消耗量** —— 首/末页已无相邻页时为 0，
+                         * 此时越界量会留在图片的橡皮筋里，松手后回弹。
+                         */
+                        onEdgePull = { deltaPx -> pagerState.dispatchRawDelta(deltaPx) },
+                        /**
+                         * 松手结算：`+1` 翻到下一张 / `-1` 上一张 / `0` 退回本页。
+                         * 目标页用**本页索引 `page`** 推算，不能用 `pagerState.currentPage`：
+                         * 越界跟手期间 Pager 已经在滚动，`currentPage` 可能**已经变成相邻页**，
+                         * 此时再 ±1 会一次跳两页。
+                         */
+                        onEdgeRelease = { direction ->
+                            val target = (page + direction).coerceIn(0, imagePaths.lastIndex)
+                            scope.launch { pagerState.animateScrollToPage(target) }
+                        },
                     )
                 }
 
@@ -960,13 +1049,26 @@ fun InspirationImageGallery(
 
 /**
  * 可缩放/平移的单张图片
- * - 双指捏合：缩放（1x~4x）
- * - 单指拖动：仅在缩放 > 1x 时平移
+ * - 双指捏合：缩放（[MinZoomScale]x ~ [MaxZoomScale]x）
+ * - 单指拖动：仅在缩放 > 1x 时平移，**且被限制在图片边界内**（越界走橡皮筋 + 跟手翻页）
  * - 单击：回调 [onSingleTap]（切换标题/页码/全部按钮显隐）
  * - 双击：放大/还原
  *
  * @param path 图片绝对路径
  * @param onSingleTap 单击图片回调（切换浏览层 UI 显隐）
+ * @param onEdgePull 拖到边界后继续拖时，把超出的位移（**Pager 空间**，正 = 下一张）
+ *        交给 Pager 做实时跟手翻页；返回**实际消耗**的像素（首/末页无相邻页时为 0）
+ * @param onEdgeRelease 松手结算翻页：`+1` = 下一张 / `-1` = 上一张；返回 false 表示
+ *        翻不动（已是首/末页），此时越界让位会回弹
+ *
+ * **平移边界与越界（v2026-09-10，修复"能拖到全黑区域"）**：
+ * - 边界由图片**真实显示尺寸**算出（`ContentScale.Fit` + 原始宽高比），
+ *   仅凭容器尺寸算不出 → 见 [imageAspectRatio]；
+ * - 越界后**没有死区**：位移 1:1 实时交给 Pager（相邻一张随手指滑入，与未放大时手感一致）；
+ *   Pager 吃不掉时（首/末页）才由橡皮筋吸收，上限 [EdgeOverscrollMaxDrag]，松手回弹；
+ * - 缩放（捏合 / 双击）期间**不夹紧边界**以保住锚点，手势结束再统一收回（见代码内注释）；
+ * - 已交给 Pager 的那部分位移会从"图片让位"里扣掉，
+ *   否则「图片让位 + 翻页」会叠加成双倍黑边。
  *
  * **点击检测为何放在这里**（v2026-09-10 修复）：`detectTapGestures` 在处理按下事件时
  * 会立即 `consume()` 掉它；若把「点击页面切换显隐」的检测挂在**父级**节点上，
@@ -981,12 +1083,47 @@ fun InspirationImageGallery(
 private fun ZoomableImage(
     path: String,
     onSingleTap: () -> Unit,
+    onEdgePull: (Float) -> Float,
+    /** 松手结算翻页：`+1` = 下一张 / `-1` = 上一张 / `0` = 位移不够、退回本页 */
+    onEdgeRelease: (Int) -> Unit,
 ) {
     // 缩放比例（[MinZoomScale] ~ [MaxZoomScale]；小于 1f 时松手会回弹到 1f）
     var scale by remember { mutableFloatStateOf(1f) }
-    // 平移偏移
+    // 平移偏移（**已被夹紧在边界内**，不含越界让位）
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
+    /**
+     * 越界阶段图片**额外**让出的位移（橡皮筋，带符号，与 [offsetX] 叠加后生效）。
+     *
+     * 单独存一份而不是直接放宽 [offsetX]：越界位移是**临时**的（松手要么回弹、要么转翻页），
+     * 与真实平移分开后，夹紧、回弹、翻页三处都只围绕这一份状态处理。
+     */
+    var edgePullX by remember { mutableFloatStateOf(0f) }
+    /**
+     * 图片原始宽高比（宽 / 高）；**加载完成前为 null**。
+     *
+     * **平移边界必须依赖它**：图片以 `ContentScale.Fit` 显示，实际显示尺寸由原始比例决定，
+     * 仅凭容器尺寸算不出边界 —— 这正是此前"能把图片拖到全黑区域"的原因。
+     * 为 null 时按「显示尺寸 == 容器尺寸」计算，即取**最宽松**的边界，
+     * 避免加载完成前被误判成"没有可平移空间"。
+     */
+    var imageAspectRatio by remember(path) { mutableStateOf<Float?>(null) }
+    /**
+     * 手势内**未被夹紧**的期望平移量。
+     *
+     * 为什么需要它：越界后 [offsetX] 被夹在边界上不动，若下一帧继续从 [offsetX] 累加，
+     * "往回拖"就永远退不出来（越界量并不在 [offsetX] 里）。用它每帧重算「期望 − 夹紧」
+     * 得到的是**当前**越界量而非累积和，往回拖能自然减小、回到边界内时自动归零。
+     *
+     * ⚠️ 为什么是 `remember` 状态而不是手势内的局部变量：双击缩放由**另一个**手势检测器
+     * 改写 [offsetX]，若期望值只活在捏合/拖动那个手势里，下一次拖动就会用旧值把
+     * 双击算出的锚点结果覆盖掉。
+     */
+    var desiredX by remember { mutableFloatStateOf(0f) }
+    var desiredY by remember { mutableFloatStateOf(0f) }
+    /** 橡皮筋上限换算成像素（阻尼曲线按像素计算） */
+    val density = LocalDensity.current
+    val maxEdgePullPx = with(density) { EdgeOverscrollMaxDrag.toPx() }
     /**
      * 回弹动画用的独立作用域。
      *
@@ -1005,6 +1142,22 @@ private fun ZoomableImage(
                 .crossfade(true)
                 .build(),
             contentDescription = null,
+            /**
+             * 加载成功后记下**原始宽高比**（v2026-09-10）。
+             *
+             * 平移边界依赖它：`ContentScale.Fit` 下图片的实际显示尺寸由原始比例决定，
+             * 只拿容器尺寸算不出边界 —— 这正是"能把图片拖到全黑区域"的根因之一
+             * （改动前这个值恒为 1f，非正方形图片的边界全是错的）。
+             */
+            onState = { state ->
+                if (state is AsyncImagePainter.State.Success) {
+                    val intrinsic = state.painter.intrinsicSize
+                    // Size.Unspecified 的宽高是 NaN，NaN > 0f 恒为 false，无需额外判断
+                    if (intrinsic.width > 0f && intrinsic.height > 0f) {
+                        imageAspectRatio = intrinsic.width / intrinsic.height
+                    }
+                }
+            },
             modifier = Modifier
                 .fillMaxSize()
                 /**
@@ -1021,14 +1174,23 @@ private fun ZoomableImage(
                  * - 双指：**始终**处理缩放（并消费，避免 Pager 同时翻页）；
                  * - 单指：只有已放大（`scale > 1f`）时才消费用于平移，否则**放行**给 Pager 翻页。
                  */
-                .pointerInput(Unit) {
+                .pointerInput(maxEdgePullPx) {
                     awaitEachGesture {
                         // 不要求"未被消费"的按下：祖先（Pager）可能已处理过
                         awaitFirstDown(requireUnconsumed = false)
+                        desiredX = offsetX
+                        desiredY = offsetY
+                        /** 已交给 Pager 的累计位移（**Pager 空间**：正 = 向前 = 下一张） */
+                        var pagedPx = 0f
+                        /** 手指越过边界起点后的**屏幕**位移（下一张方向为正），详见下方推导 */
+                        var screenOverscroll = 0f
+                        /** 上一帧实际交给 Pager 的量：把"内容内位移"还原成"屏幕位移"时要加回来 */
+                        var lastPaged = 0f
                         do {
                             val event = awaitPointerEvent()
                             val pressedCount = event.changes.count { it.pressed }
-                            val shouldHandle = pressedCount > 1 || scale > 1f
+                            val multiTouch = pressedCount > 1
+                            val shouldHandle = multiTouch || scale > 1f
                             if (shouldHandle) {
                                 /**
                                  * 双指才缩放（单指时 `calculateZoom()` 恒为 1，无副作用），
@@ -1042,7 +1204,7 @@ private fun ZoomableImage(
                                  * `offset_new = d − (d − offset_old) × ratio`。
                                  * 只改 `scale` 不修 `offset`，就会"从图片中心缩放"，手指定位感明显偏离。
                                  */
-                                if (pressedCount > 1) {
+                                if (multiTouch) {
                                     val oldScale = scale
                                     val newScale = (oldScale * event.calculateZoom())
                                         .coerceIn(MinZoomScale, MaxZoomScale)
@@ -1054,13 +1216,127 @@ private fun ZoomableImage(
                                         offsetX = dx - (dx - offsetX) * ratio
                                         offsetY = dy - (dy - offsetY) * ratio
                                         scale = newScale
+                                        /**
+                                         * ⚠️ **这里绝不能夹紧边界**（v2026-09-10 实测教训）。
+                                         *
+                                         * 缩小时边界随之变小，锚点换算的结果几乎必然越界；
+                                         * 一旦夹紧，画面就被拽回**中心** —— 锚点换算等于白做，
+                                         * 表现就是"放大时锚点生效、缩小却从中心缩"。
+                                         * 正确做法：手势期间**忠实跟随锚点**（允许短暂露出黑边），
+                                         * 手势结束时再由下面的"越界收回"统一拉回边界内。
+                                         */
+                                        desiredX = offsetX
+                                        desiredY = offsetY
                                     }
                                 }
                                 if (scale > 1f) {
+                                    /**
+                                     * 本帧的平移增量。
+                                     *
+                                     * 已核对源码（`TransformGestureDetector.kt`）：
+                                     * `calculatePan()` = **当前双指中心 − 上一帧双指中心**，
+                                     * 单指时就是这一根手指的位移，双指时就是双指中心的位移，
+                                     * 且 centroid 为 `Unspecified` 时返回 `Offset.Zero`（不会污染坐标）
+                                     * —— 所以这里可以直接一用到底，不必自己按指针数分支。
+                                     */
                                     val pan = event.calculatePan()
                                     // 横屏无需换算：pan 已在本节点局部坐标系（见 KDoc）
-                                    offsetX += pan.x
-                                    offsetY += pan.y
+                                    desiredX += pan.x
+                                    desiredY += pan.y
+
+                                    val (maxOffsetX, maxOffsetY) = maxPanOffsets(
+                                        containerW = size.width.toFloat(),
+                                        containerH = size.height.toFloat(),
+                                        imageAspectRatio = imageAspectRatio,
+                                        scale = scale,
+                                    )
+                                    /**
+                                     * **平移边界限制**（v2026-09-10，用户反馈"能拖到全黑区域"）。
+                                     *
+                                     * 单指拖动：夹紧到边界内，超出部分分两路消费 ——
+                                     * ① 交给 Pager 做**跟手翻页**（相邻一张随手指实时滑入）；
+                                     * ② Pager 吃不掉时（首/末页）才是**橡皮筋让位**（[edgePullX]，
+                                     *    阻尼 + 硬上限 [EdgeOverscrollMaxDrag]）。
+                                     *
+                                     * 多指（捏合缩放中）：**不夹紧**，忠实跟随锚点（理由见上方缩放段）。
+                                     */
+                                    val overscrollX: Float
+                                    if (multiTouch) {
+                                        overscrollX = 0f
+                                        offsetX = desiredX
+                                        offsetY = desiredY
+                                    } else {
+                                        /**
+                                         * **翻页期间把图像钉在出发的那条边界上**：
+                                         * 否则手指往回拖时，图像先在自己的平移余量里往回走，
+                                         * 而 Pager 停在原处不回退 —— 画面与手指不同步。
+                                         */
+                                        if (abs(pagedPx) > 0.5f) {
+                                            desiredX = if (pagedPx > 0f) {
+                                                desiredX.coerceAtMost(-maxOffsetX)
+                                            } else {
+                                                desiredX.coerceAtLeast(maxOffsetX)
+                                            }
+                                        }
+                                        val clampedX = desiredX.coerceIn(-maxOffsetX, maxOffsetX)
+                                        val clampedY = desiredY.coerceIn(-maxOffsetY, maxOffsetY)
+                                        /** 正 = 越过右侧边界（向右拖 = 想看上一张） */
+                                        overscrollX = desiredX - clampedX
+                                        offsetX = clampedX
+                                        offsetY = clampedY
+                                    }
+
+                                    /**
+                                     * 单次拖动交给 Pager 的上限：**0.9 页**。
+                                     *
+                                     * ⚠️ 为什么必须封顶：Pager 是 LazyLayout，本页一旦被完全滑出
+                                     * 视口就会被**回收**，而回收会取消本手势的协程 —— 松手后的
+                                     * 结算逻辑（[onEdgeRelease]）将不再执行，Pager 会永远停在
+                                     * 半页位置。封顶在 0.9 页可保证本页始终留有可见部分。
+                                     */
+                                    val maxPagedPx = size.width * 0.9f
+                                    /**
+                                     * **跟手翻页的位移换算**（本段最容易写错，推导留档）。
+                                     *
+                                     * 记 `v` = 相对**本页内容**的越界量（"下一张"方向为正）、
+                                     * `p` = Pager 已经滚动的量，则手指越过边界起点后的
+                                     * **屏幕**位移是 `f = v + p` —— 内容被 Pager 带走多少，
+                                     * 就要往回补多少（pan 的坐标系随页面一起移动，
+                                     * `PointerInputEventProcessor` 会用**当前**变换重算
+                                     * `previousPosition`，所以这个位移不会重复计入 pan）。
+                                     *
+                                     * 于是**目标** `p* = sign(f) · min(|f|, 上限)`（**没有死区**，
+                                     * 到边界即 1:1 跟手），**增量** `Δp = p* − p`。
+                                     *
+                                     * ⚠️ 两个坑：
+                                     * ① **不能**拿「越界量 − 已翻量」当增量：已翻的量已经体现在
+                                     *    `v` 的缩小里，再减一次会让 `p` 收敛到手指速度的**一半**；
+                                     * ② 翻页中（[pagedPx] ≠ 0）图像被钉在边界上，`v` 不再随手指
+                                     *    变化，此时 `f` 必须**按屏幕位移累加**：
+                                     *    `f += (−pan.x) + 上一帧派发量`，否则往回拖时 Pager 不回退。
+                                     */
+                                    screenOverscroll = if (abs(pagedPx) > 0.5f) {
+                                        screenOverscroll + (-pan.x) + lastPaged
+                                    } else {
+                                        -overscrollX + pagedPx
+                                    }
+                                    lastPaged = 0f
+                                    val pagedTarget = sign(screenOverscroll) *
+                                        abs(screenOverscroll).coerceAtMost(maxPagedPx)
+                                    val pagedDelta = pagedTarget - pagedPx
+                                    if (abs(pagedDelta) > 0.5f) {
+                                        // 首/末页没有相邻页时消耗为 0 → 越界量全留在橡皮筋里
+                                        val consumed = onEdgePull(pagedDelta)
+                                        pagedPx += consumed
+                                        lastPaged = consumed
+                                    }
+                                    /**
+                                     * 交给 Pager 的那部分位移要从"图片让位"里**扣掉**：
+                                     * 否则「图片让位」与「翻页位移」会叠加，缝隙变成两倍宽。
+                                     */
+                                    edgePullX = sign(overscrollX) *
+                                        (abs(rubberBand(overscrollX, maxEdgePullPx)) - abs(pagedPx))
+                                            .coerceAtLeast(0f)
                                 }
                                 /** 消费掉，避免 HorizontalPager 同时响应（翻页与缩放打架） */
                                 event.changes.forEach { change ->
@@ -1068,6 +1344,79 @@ private fun ZoomableImage(
                                 }
                             }
                         } while (event.changes.any { it.pressed })
+
+                        /**
+                         * **手势结束时结算越界**（v2026-09-10）。
+                         *
+                         * 三种去向，按优先级互斥：
+                         * ① 已有位移交给了 Pager（[pagedPx] 非 0）→ 结算到相邻一张或退回本页；
+                         * ② 只是橡皮筋让位（[edgePullX] 非 0，含"首/末页翻不动"）→ 弹回边界；
+                         * ③ 缩放小于 1f → 由下一段整体弹回适配尺寸。
+                         */
+                        if (abs(pagedPx) > 0.5f) {
+                            /**
+                             * 翻页位移超过 [PageTurnCommitRatio] 页宽才真的翻过去，否则**退回本页**
+                             * （`direction = 0`）—— 与未放大时 Pager 的吸附判定同一思路。
+                             */
+                            val committed = abs(pagedPx) > size.width * PageTurnCommitRatio
+                            onEdgeRelease(if (committed) (if (pagedPx > 0f) 1 else -1) else 0)
+                            // 翻页已由 Pager 接手，本页随即离场（或退回），让位直接归零即可
+                            edgePullX = 0f
+                        } else if (abs(edgePullX) > 0.5f) {
+                            /**
+                             * 橡皮筋回弹：同样要放在**独立协程**里 —— `animate` 是挂起函数，
+                             * 若在手势检测里等它结束，回弹期间的新手势会被吞掉。
+                             */
+                            val fromPull = edgePullX
+                            zoomScope.launch {
+                                animate(
+                                    initialValue = 0f,
+                                    targetValue = 1f,
+                                    animationSpec = ZoomReboundSpec,
+                                ) { progress, _ ->
+                                    edgePullX = fromPull * (1f - progress)
+                                }
+                                edgePullX = 0f
+                            }
+                        }
+
+                        /**
+                         * **手势结束把越界的平移收回边界内**（v2026-09-10）。
+                         *
+                         * 捏合缩放期间为了保住"双指中心锚点"，刻意**不**夹紧（见缩放段注释），
+                         * 代价是缩小后 [offsetX]/[offsetY] 可能越界、露出黑边。这里统一收回：
+                         * 缩放小于 1f 时由下一段整体回弹（offset 一并归零）；
+                         * 否则只把越界的那一部分弹回边界。
+                         */
+                        if (scale >= 1f) {
+                            val (maxX, maxY) = maxPanOffsets(
+                                containerW = size.width.toFloat(),
+                                containerH = size.height.toFloat(),
+                                imageAspectRatio = imageAspectRatio,
+                                scale = scale,
+                            )
+                            val targetX = offsetX.coerceIn(-maxX, maxX)
+                            val targetY = offsetY.coerceIn(-maxY, maxY)
+                            if (targetX != offsetX || targetY != offsetY) {
+                                val fromX = offsetX
+                                val fromY = offsetY
+                                // 期望值同步到目标位置，避免下一次拖动用旧值覆盖回弹结果
+                                desiredX = targetX
+                                desiredY = targetY
+                                zoomScope.launch {
+                                    animate(
+                                        initialValue = 0f,
+                                        targetValue = 1f,
+                                        animationSpec = ZoomReboundSpec,
+                                    ) { progress, _ ->
+                                        offsetX = fromX + (targetX - fromX) * progress
+                                        offsetY = fromY + (targetY - fromY) * progress
+                                    }
+                                    offsetX = targetX
+                                    offsetY = targetY
+                                }
+                            }
+                        }
 
                         /**
                          * 手势结束时的**回弹**（v2026-09-10）。
@@ -1085,6 +1434,7 @@ private fun ZoomableImage(
                             val fromScale = scale
                             val fromOffsetX = offsetX
                             val fromOffsetY = offsetY
+                            val fromPull = edgePullX
                             zoomScope.launch {
                                 animate(
                                     initialValue = 0f,
@@ -1094,10 +1444,13 @@ private fun ZoomableImage(
                                     scale = fromScale + (1f - fromScale) * progress
                                     offsetX = fromOffsetX * (1f - progress)
                                     offsetY = fromOffsetY * (1f - progress)
+                                    // 越界让位与缩放同步收回，避免"先缩回再瞬移"的两段感
+                                    edgePullX = fromPull * (1f - progress)
                                 }
                                 scale = 1f
                                 offsetX = 0f
                                 offsetY = 0f
+                                edgePullX = 0f
                             }
                         }
                     }
@@ -1124,6 +1477,7 @@ private fun ZoomableImage(
                                 scale = 1f
                                 offsetX = 0f
                                 offsetY = 0f
+                                edgePullX = 0f
                             } else {
                                 // 当前未放大：**以双击点为锚点**放大到 2x
                                 val newScale = 2f
@@ -1133,15 +1487,22 @@ private fun ZoomableImage(
                                 offsetX = dx - (dx - offsetX) * ratio
                                 offsetY = dy - (dy - offsetY) * ratio
                                 scale = newScale
+                                /**
+                                 * 同捏合缩放：**不夹紧**，忠实跟随锚点。
+                                 * 越界部分由拖动/缩放那个手势结束时的"越界收回"统一拉回边界内
+                                 * （双击的抬手同样会结束那边的手势）。
+                                 */
+                                desiredX = offsetX
+                                desiredY = offsetY
                             }
                         }
                     )
                 }
-                // 应用缩放与平移
+                // 应用缩放与平移（横向再叠加越界的橡皮筋让位）
                 .graphicsLayer(
                     scaleX = scale,
                     scaleY = scale,
-                    translationX = offsetX,
+                    translationX = offsetX + edgePullX,
                     translationY = offsetY
                 )
         )
