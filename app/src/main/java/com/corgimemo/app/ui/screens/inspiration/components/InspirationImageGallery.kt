@@ -15,8 +15,11 @@ import android.view.Window
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -109,6 +112,19 @@ private val ChromeTopGapFromStatusBar = 12.dp
  * 造成按钮"跳一下"的观感。
  */
 private const val ChromePaddingTransitionMillis = 300
+
+/**
+ * 双指缩放的比例区间（v2026-09-10）。
+ *
+ * - 下限 [MinZoomScale] **小于 1f**：初始状态（1f = 适配屏幕）下捏合也有"能缩小"的反馈，
+ *   松手后会自动回弹到 1f（见 `ZoomableImage` 的手势结束处理），不会停在比屏幕更小的状态；
+ * - 上限 4f：与原有放大范围一致。
+ */
+private const val MinZoomScale = 0.6f
+private const val MaxZoomScale = 4f
+
+/** 缩放手势结束后回弹到 1f 的弹簧（比线性补间更柔和，贴近系统相册手感） */
+private val ZoomReboundSpec = spring<Float>(stiffness = Spring.StiffnessMediumLow)
 
 /**
  * 灵感图片全屏预览
@@ -965,11 +981,18 @@ private fun ZoomableImage(
     path: String,
     onSingleTap: () -> Unit,
 ) {
-    // 缩放比例（1f ~ 4f）
+    // 缩放比例（[MinZoomScale] ~ [MaxZoomScale]；小于 1f 时松手会回弹到 1f）
     var scale by remember { mutableFloatStateOf(1f) }
     // 平移偏移
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
+    /**
+     * 回弹动画用的独立作用域。
+     *
+     * `animate` 是**挂起函数**，如果直接在 `awaitEachGesture` 里等待它结束，会阻塞下一次
+     * 手势检测 —— 回弹那 ~300ms 内的新手势会被吞掉。放到独立协程里则回弹与手势互不阻塞。
+     */
+    val zoomScope = rememberCoroutineScope()
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -1008,7 +1031,8 @@ private fun ZoomableImage(
                             if (shouldHandle) {
                                 /** 双指才缩放（单指时 calculateZoom 恒为 1，无副作用） */
                                 if (pressedCount > 1) {
-                                    scale = (scale * event.calculateZoom()).coerceIn(1f, 4f)
+                                    scale = (scale * event.calculateZoom())
+                                        .coerceIn(MinZoomScale, MaxZoomScale)
                                 }
                                 if (scale > 1f) {
                                     val pan = event.calculatePan()
@@ -1022,6 +1046,26 @@ private fun ZoomableImage(
                                 }
                             }
                         } while (event.changes.any { it.pressed })
+
+                        /**
+                         * 手势结束时的**回弹**（v2026-09-10）。
+                         *
+                         * 缩放区间下限 [MinZoomScale] 特意小于 1f，让"初始状态捏合"也有真实的
+                         * 缩小反馈；松手后弹回 1f —— 与主流相册一致：最小最终仍停在"适配屏幕"，
+                         * 不会让图片留在比屏幕更小、四周留黑边的状态。
+                         */
+                        if (scale < 1f) {
+                            zoomScope.launch {
+                                animate(
+                                    initialValue = scale,
+                                    targetValue = 1f,
+                                    animationSpec = ZoomReboundSpec,
+                                ) { value, _ -> scale = value }
+                                scale = 1f
+                                offsetX = 0f
+                                offsetY = 0f
+                            }
+                        }
                     }
                 }
                 // 点击手势：单击切换 UI 显隐 + 双击放大/还原（同一检测器内互斥判定）
