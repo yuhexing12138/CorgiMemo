@@ -12,6 +12,7 @@ import android.util.Log
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -65,6 +66,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -546,8 +548,14 @@ fun InspirationImageGallery(
             withFrameNanos { }
             insetsMeasured = true
         }
-        /** 补间规格：首次测量前用 snap 直接到位，之后才用与旋转动画同长的 tween */
-        val chromePaddingSpec = if (insetsMeasured) {
+        /**
+         * 补间规格：首次测量前用 snap 直接到位，之后才用与旋转动画同长的 tween。
+         *
+         * 注意：`tween()` / `snap()` 都是**泛型函数**（`<T>`），这里必须显式写出
+         * `AnimationSpec<Dp>` 变量类型，否则 if/else 分支缺少目标类型上下文，
+         * Kotlin 无法推断 `T`（会报 "Cannot infer type for type parameter 'T'"）。
+         */
+        val chromePaddingSpec: AnimationSpec<Dp> = if (insetsMeasured) {
             tween(durationMillis = ChromePaddingTransitionMillis)
         } else {
             snap()
