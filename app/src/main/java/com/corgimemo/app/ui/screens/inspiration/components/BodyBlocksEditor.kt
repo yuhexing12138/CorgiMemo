@@ -97,7 +97,6 @@ import compose.icons.lucideicons.Image
 import compose.icons.lucideicons.MessageSquareText
 import compose.icons.lucideicons.Shrink
 import compose.icons.lucideicons.Trash2
-import sh.calvin.reorderable.ReorderableItem
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -3286,12 +3285,21 @@ class BodyBlocksController(
     // ---------- 重排 / 焦点 ----------
 
     /**
-     * 拖拽排序回调（ReorderableColumn 的 onSettle——**手指抬起落定后才到达这里**，
-     * 方案A坑点3：拖拽过程零压栈，一步拖拽恰好一条 [MoveBlockCommand] 撤销记录）。
+     * 拖拽排序回调（**手指抬起落定**时到达这里，方案A坑点3：拖拽过程零压栈，
+     * 一步拖拽恰好一条 [MoveBlockCommand] 撤销记录）。
+     *
+     * v2026-09-10 时序变更：底层换成本项目 fork 的
+     * `com.corgimemo.app.ui.components.reorderable.BlocksReorderableColumn` 后，
+     * 本回调由「落位滑行播完之后」提前到「**手指抬起的同一帧**」——
+     * 原库 `settle()` 是先 `animateTo` 播 300~500ms 弹簧滑行再回调 onSettle，
+     * 导致"图先滑到位、停顿、空行才弹出"。现在换位与补空行同步生效，
+     * 落位滑行由 fork 内的 `BlocksGlideController` 在重排后接续。
+     *
+     * **前提**：本函数必须在 `onSettle` 里被调用（即提交必须发生在落位瞬间），
+     * 才能保证"换位 + 空行"同帧；这也是 fork 存在的唯一理由。
      */
     /**
-     * 拖拽落位（[sh.calvin.reorderable] 的 onSettle）：移动 + 「相邻图片补空行」
-     * 打包成**一个撤销单位**（v2026-09-09）。
+     * 拖拽落位：移动 + 「相邻图片补空行」打包成**一个撤销单位**（v2026-09-09）。
      *
      * 为什么必须补：把图片拖到另一张图旁边会形成 `[图,图]`，两图之间没有
      * 可以打字的位置，用户只能再拖一次才能插入文字。
@@ -3425,24 +3433,34 @@ fun BodyBlocksEditor(
  * 差异在于把手 modifier 交给每个块的 content 自行放置（挂在手柄图标上而非整块），
  * 避免长按拖拽与文本长按选择冲突。
  *
- * **itemKey（v2026-09-09 必填）**：库内部是 `Column { list.forEachIndexed { ... } }`
- * （`sh.calvin.reorderable.ReorderableList.kt`），**item 没有 key**——交换两块时，
- * 第 i 个组合槽位被复用去渲染另一个块，图片块的 `SubcomposeAsyncImage` 因此
- * 重新发起加载，高度先回落到占位高度再弹回，表现为"交换完成瞬间上下跳动"。
- * 用 [key] 把内容按块 id 锚定后，组合身份**跟随块移动**（而非槽位复用），
- * painter 状态随之迁移、不重新加载。
+ * **底层已换成自维护 fork [BlocksReorderableColumn]**（v2026-09-10）：
+ * 原库 `settle()` 是「先播 300~500ms 落位滑行 → 再回调 onSettle」，而我们在 onSettle
+ * 里才做「换位 + 相邻图片补空行」，导致观感永远是「图先滑到位、停顿、空行才弹出」。
+ * fork 把提交提前到手指抬起瞬间（滑行改由 `BlocksGlideController` 在重排后接续），
+ * 于是**换位与空行在同一帧生效**。用法与原库完全一致（list / onSettle / content）。
+ *
+ * **itemKey（v2026-09-09 必填）**：底层内部是 `Column { list.forEachIndexed { ... } }`，
+ * **item 没有 key**——交换两块时，第 i 个组合槽位被复用去渲染另一个块，图片块的
+ * `SubcomposeAsyncImage` 因此重新发起加载，高度先回落到占位高度再弹回，表现为
+ * "交换完成瞬间上下跳动"。用 [key] 把内容按块 id 锚定后，组合身份**跟随块移动**
+ * （而非槽位复用），painter 状态随之迁移、不重新加载。
+ * fork 版还用同一个 key 把"落位滑行"归属到具体块。
  */
 @Composable
 private fun <T> BlocksReorderableColumn(
     items: List<T>,
     onReorder: (fromIndex: Int, toIndex: Int) -> Unit,
     modifier: Modifier = Modifier,
-    /** 块的稳定身份（块 id）——交换时用 [key] 保持组合身份 */
+    /** 块的稳定身份（块 id）——交换时用 [key] 保持组合身份，滑行时按它归属 */
     itemKey: (T) -> Any?,
     content: @Composable (index: Int, item: T, isDragging: Boolean, dragHandleModifier: Modifier) -> Unit,
 ) {
     val context = LocalContext.current
-    sh.calvin.reorderable.ReorderableColumn(
+    /**
+     * 全限定名调用：本包装函数与 fork 版**同名**（`BlocksReorderableColumn`），
+     * 写全限定名避免与自身混淆（Kotlin 里显式 import 虽优先于同包声明，但可读性差）。
+     */
+    com.corgimemo.app.ui.components.reorderable.BlocksReorderableColumn(
         list = items,
         onSettle = { fromIndex, toIndex ->
             if (fromIndex != toIndex) {
@@ -3455,8 +3473,9 @@ private fun <T> BlocksReorderableColumn(
             }
         },
         modifier = modifier,
+        itemKey = itemKey,
     ) { index, item, isDragging ->
-        ReorderableItem {
+        BlocksReorderableItem {
             /**
              * 用块 id 锚定组合身份（v2026-09-09）：拖拽交换后组合跟着块走，
              * 而不是"槽位原地换成另一块"——图片不会重新加载，高度不再抖动。
@@ -4366,8 +4385,8 @@ private fun ImageBlockToolbar(
         modifier = modifier
             .background(color = Color.White.copy(alpha = 0.97f), shape = CircleShape)
             // 阴影色外边框（v2026-09-10）：替代被移除的阴影提供层次感；色值 = 原阴影色
-            // （黑 25%），1dp 贴胶囊外缘（须在 background 之后、padding 之前）。
-            .border(width = 1.dp, color = Color.Black.copy(alpha = 0.25f), shape = CircleShape)
+            // （黑 15%），1dp 贴胶囊外缘（须在 background 之后、padding 之前）。
+            .border(width = 1.dp, color = Color.Black.copy(alpha = 0.15f), shape = CircleShape)
             .padding(horizontal = 12.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
