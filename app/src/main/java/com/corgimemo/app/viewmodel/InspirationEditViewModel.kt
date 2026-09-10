@@ -1,6 +1,7 @@
 package com.corgimemo.app.viewmodel
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -411,6 +412,12 @@ class InspirationEditViewModel @Inject constructor(
                 )
             )
         },
+        /**
+         * debug 构建判定（v2026-09-10）：项目无 BuildConfig，用 ApplicationInfo 的
+         * FLAG_DEBUGGABLE 判定，供 controller 开启"图片载体空块不变量自检"
+         * （违反时写 Logcat：tag `BlockSeparators`）。release 下为 false、零开销。
+         */
+        isDebugBuild = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0,
     )
 
     /** 关联列表 */

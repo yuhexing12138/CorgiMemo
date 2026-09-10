@@ -369,6 +369,11 @@ sealed class BodyBlock {
          * **用途**：维持不变量「载体数 == 图片相邻对数，且每个都夹在两图之间」。
          * 拖拽换位后旧载体若漂到图片组外侧，[BodyBlocksController.normalizeImageSeparators]
          * 会把它删掉（可撤销）——否则每交换一次空行就多一行（"图片上下空行越来越多"）。
+         *
+         * ⚠️ **身份与内容绑定（v2026-09-10 修复）**：用户往载体里打了字，它就不再是载体，
+         * 必须由 [BodyBlocksController.onBlockContentChanged] **即时清掉**本标记，
+         * 否则换位时会被当成"漂移载体"连同用户输入一起删掉。
+         * [BodyBlocksController.normalizeImageSeparators] 另有一条"有内容一律不删"的防御判据。
          */
         val isImageSeparator: Boolean = false,
     ) : BodyBlock()
@@ -907,6 +912,15 @@ internal fun parseMarkdownSegments(markdown: String): List<MdSegment> {
 class BodyBlocksController(
     /** 给每个新建 Text 块的 state 注册 trigger（hashtag/mention/voice），由页面注入 */
     private val registerTriggers: (RichTextState) -> Unit,
+    /**
+     * 是否 debug 构建（v2026-09-10 新增）：开启后会在每次载体归一化后做**不变量自检**
+     * （见 [checkImageSeparatorInvariant]），违反时只写 Logcat 日志。
+     *
+     * 项目**没有 BuildConfig**（见项目约定：版本走 getPackageInfo().versionName），
+     * 故由 ViewModel 用 `ApplicationInfo.FLAG_DEBUGGABLE` 判定后传入；默认 false =
+     * 不检（release 与测试代码无需关心）。
+     */
+    private val isDebugBuild: Boolean = false,
 ) {
     /** 块列表（快照状态，增删自动触发重组） */
     val blocks = mutableStateListOf<BodyBlock>()
@@ -1716,7 +1730,7 @@ class BodyBlocksController(
                 commands += cmd
             }
             /** 整批落定后统一归一化载体空块（此时才形成最终的相邻关系） */
-            commands += normalizeImageSeparators().onEach { it.apply(this) }
+            normalizeImageSeparatorsInto(commands, tag = "批量插图")
         } finally {
             suppressDocChanged = false
             replaying = false
@@ -1849,11 +1863,16 @@ class BodyBlocksController(
      * 外侧成为多余空行；下次换位又补一个新载体 → **每次交换空块 +1**，视觉上
      * 就是图片上下空行越堆越多（还会出现两个空行贴在一起）。
      *
-     * 三条规则（按 [BodyBlock.Text.isImageSeparator] 区分载体与用户空行）：
-     * 1. **删漂移载体**：标记为载体但前后不再同时紧邻图片的块 → 删除；
-     * 2. **压缩间隙**：同一处「图-图间隙」（两图之间只隔着空白块）里多于一个空白块时，
-     *    只保留一个（优先保留带标记的，否则保留最靠上的）——顺带清理历史堆积；
-     * 3. **补插**：两图直接相邻处各插一个载体（标记为 true）。
+     * 两条规则（按 [BodyBlock.Text.isImageSeparator] 区分载体与**用户手打的空白块**）：
+     * 1. **删漂移载体**：标记为载体、**且仍然是空白**（`isEffectivelyEmpty`）、但前后不再
+     *    同时紧邻图片的块 → 删除。带内容的一律不删（防御：正常路径下用户一打字，
+     *    [onBlockContentChanged] 就已把标记清掉，它不再是载体）；
+     * 2. **补插**：两图直接相邻处各插一个载体（标记为 true）。
+     *
+     * **用户手打的空白块永不触碰（v2026-09-10 用户要求）**：无标记的空白块既不删也不
+     * 压缩——哪怕同一图-图间隙里有两个。它们天然承担了"隔开两张图片"的职责，
+     * 规则 2 只在**两图直接相邻**时才补载体，不会多插。
+     * 图片组外侧的历史空行同理不动（无法区分"漂移载体"与"用户有意留白"）。
      *
      * **返回顺序即 apply 顺序**（调用方 `onEach { it.apply(this) }` 即可）：
      * 先删除（索引自后向前）、后插入（索引自后向前）。删除先行保证插入命令的索引
@@ -1861,16 +1880,20 @@ class BodyBlocksController(
      * 撤销时 `CompositeCommand` 逆序回退：插入先按 id 移除（顺序无关），
      * 删除再按升序索引插回（顺序正确）→ 列表精确还原。
      *
-     * 只处理 Image-Image 相邻：Divider 等非文本块与图片相邻属用户主动排版，不强拆；
-     * 图片组**外侧**的历史空行不动（无法区分"漂移载体"与"用户有意留白"）。
+     * 只处理 Image-Image 相邻：Divider 等非文本块与图片相邻属用户主动排版，不强拆。
      */
     private fun normalizeImageSeparators(): List<BodyBlocksCommand> {
         val deletions = mutableListOf<RemoveImageSeparatorCommand>()
 
-        /** ① 漂移载体：带标记但不再夹在两图之间 → 删 */
+        /**
+         * ① 漂移载体：带标记 + **仍为空白** + 不再夹在两图之间 → 删。
+         * 带内容的块一律不删：即便标记因某条罕见路径残留下来，也绝不能连用户输入一起删掉
+         * （正常路径下 [onBlockContentChanged] 已在第一次输入时就清掉了标记）。
+         */
         for (i in blocks.indices.reversed()) {
             val text = blocks[i] as? BodyBlock.Text ?: continue
             if (!text.isImageSeparator) continue
+            if (!isEffectivelyEmpty(text.state)) continue
             val betweenImages = i > 0 && i < blocks.lastIndex &&
                 blocks[i - 1] is BodyBlock.Image && blocks[i + 1] is BodyBlock.Image
             if (!betweenImages) {
@@ -1878,42 +1901,12 @@ class BodyBlocksController(
             }
         }
 
-        /** ② 同一图-图间隙里的多余空白块 → 只留一个 */
         val deletedIds = deletions.map { it.blockId }.toMutableSet()
-        var i = 0
-        while (i < blocks.lastIndex) {
-            /** 从图片块出发，收集它后面连续的"空白 Text 块"（已判删的跳过不计） */
-            if (blocks[i] !is BodyBlock.Image) {
-                i++
-                continue
-            }
-            val blanks = mutableListOf<Int>()
-            var j = i + 1
-            while (j <= blocks.lastIndex) {
-                val candidate = blocks[j]
-                if (candidate is BodyBlock.Text && candidate.id !in deletedIds && isEffectivelyEmpty(candidate.state)) {
-                    blanks += j
-                    j++
-                } else {
-                    break
-                }
-            }
-            /** 只有"连续空白块之后紧跟另一张图片"才算图-图间隙 */
-            val closesWithImage = j <= blocks.lastIndex && blocks[j] is BodyBlock.Image
-            if (blanks.isNotEmpty() && closesWithImage) {
-                val keep = blanks.firstOrNull { (blocks[it] as BodyBlock.Text).isImageSeparator } ?: blanks.first()
-                blanks.filter { it != keep }.forEach { idx ->
-                    val extra = blocks[idx] as BodyBlock.Text
-                    deletions += RemoveImageSeparatorCommand(extra.id, textSpec(extra), idx)
-                    deletedIds += extra.id
-                }
-            }
-            i = j
-        }
 
         /**
-         * ③ 补插：先在"删除已生效"的虚拟列表上找出所有两图相邻处，索引即删除后的坐标系。
+         * ② 补插：先在"删除已生效"的虚拟列表上找出所有两图相邻处，索引即删除后的坐标系。
          * 自后向前遍历，保证插入顺序与 [InsertImageSeparatorCommand] 的坐标约定一致。
+         * 注意判据是"**直接**相邻"：图-图之间有用户手打的空白块时无需补，也不会多插。
          */
         val remaining = blocks.filterNot { it.id in deletedIds }
         val insertions = mutableListOf<InsertImageSeparatorCommand>()
@@ -1931,6 +1924,58 @@ class BodyBlocksController(
         deletions.sortedByDescending { it.index }.forEach { commands += it }
         insertions.forEach { commands += it }
         return commands
+    }
+
+    /**
+     * 归一化载体空块并**立即落盘**（三个结构性入口共用：批量插图 / 插入图片 / 拖拽落位）。
+     *
+     * @param into 该入口自己的命令收集列表（命令按顺序追加；何时压栈由调用方决定，
+     *   从而与主命令打包成同一个撤销单位）
+     * @param tag 自检日志的来源标记
+     */
+    private fun normalizeImageSeparatorsInto(into: MutableList<BodyBlocksCommand>, tag: String) {
+        into += normalizeImageSeparators().onEach { it.apply(this) }
+        checkImageSeparatorInvariant(tag)
+    }
+
+    /**
+     * 图片载体空块**不变量自检**（仅 [isDebugBuild] 生效，v2026-09-10）：
+     * 1. 不允许存在两张**直接相邻**的图片（两者之间必须有可输入的块）；
+     * 2. 每个带标记的载体都必须**恰好夹在两张图片之间**（不得漂到图片组外侧）。
+     *
+     * 只在载体归一化之后调用，所以此时若仍违反 ⇒ 归一化漏了，是**真 bug**：
+     * 前者对应"该补的载体没补"（图片相邻无法输入），后者对应"该删的漂移载体没删"
+     * （空行堆积）。违反时只写 Logcat（`BlockSeparators` tag）、不抛异常——
+     * 编辑过程不该因为自检崩掉。
+     *
+     * @param tag 触发来源，便于在日志里区分是哪个入口
+     */
+    private fun checkImageSeparatorInvariant(tag: String) {
+        if (!isDebugBuild) return
+        var adjacentImages = 0
+        var straySeparators = 0
+        for (i in blocks.indices) {
+            if (i > 0 && blocks[i] is BodyBlock.Image && blocks[i - 1] is BodyBlock.Image) adjacentImages++
+            val text = blocks[i] as? BodyBlock.Text
+            if (text?.isImageSeparator == true) {
+                val betweenImages = i > 0 && i < blocks.lastIndex &&
+                    blocks[i - 1] is BodyBlock.Image && blocks[i + 1] is BodyBlock.Image
+                if (!betweenImages) straySeparators++
+            }
+        }
+        if (adjacentImages != 0 || straySeparators != 0) {
+            android.util.Log.w(
+                "BlockSeparators",
+                "[$tag] 载体空块不变量被破坏：直接相邻图片 $adjacentImages 处、漂移载体 $straySeparators 个；" +
+                    "块序列 = ${blocks.joinToString(" | ") { block ->
+                        when (block) {
+                            is BodyBlock.Image -> "图"
+                            is BodyBlock.Divider -> "线"
+                            is BodyBlock.Text -> if (block.isImageSeparator) "载体" else "文"
+                        }
+                    }}",
+            )
+        }
     }
 
     /**
@@ -2826,7 +2871,7 @@ class BodyBlocksController(
             command.apply(this)
             /** 结构变更（拆块/合并/退列表/插图等）后按位置语义重排连续有序块编号 */
             renumberOrderedBlocks()
-            extra += normalizeImageSeparators().onEach { it.apply(this) }
+            normalizeImageSeparatorsInto(extra, tag = "插入图片")
             if (extra.isNotEmpty()) renumberOrderedBlocks()
         } finally {
             replaying = false
@@ -3503,7 +3548,7 @@ class BodyBlocksController(
              * 补"两图相邻"缺的载体，并删掉这次换位把旧载体甩到图片组外侧的残留
              * （v2026-09-10 修复"反复交换后图片上下空行越来越多"）。
              */
-            extra += normalizeImageSeparators().onEach { it.apply(this) }
+            normalizeImageSeparatorsInto(extra, tag = "拖拽落位")
         } finally {
             replaying = false
         }
@@ -3526,6 +3571,42 @@ class BodyBlocksController(
     /** 块内容变化时回调（由块 Composable 的观察者触发） */
     fun notifyBlockChanged() {
         onDocChanged?.invoke()
+    }
+
+    /**
+     * 块内容变化回调（v2026-09-10 扩展，块 Composable 的 snapshotFlow 观察者调用）：
+     *
+     * 1. **载体身份与内容绑定**：块里一旦有内容，它就不再是"图片载体空块"——
+     *    就地清掉 [BodyBlock.Text.isImageSeparator]。否则用户往载体空行里打了字，
+     *    换位时 [normalizeImageSeparators] 会把它当"漂移载体"删除，**用户输入随之消失**。
+     * 2. 通知 ViewModel 同步（原 [notifyBlockChanged] 的职责）。
+     *
+     * 代价可控：只在"带标记"时才换块对象，一次翻转后不再触发（普通块零开销）。
+     */
+    fun onBlockContentChanged(blockId: String) {
+        demoteImageSeparatorIfFilled(blockId)
+        notifyBlockChanged()
+    }
+
+    /**
+     * 载体降级原语：带标记的块只要不再是空白，就地换成"无标记"的新块对象
+     * （**保持 state / focusRequester 引用不变**——不触发块内 observer 重启、
+     * 不丢编辑历史、光标不动，与 [setCheckboxChecked] 同款手法）。
+     */
+    private fun demoteImageSeparatorIfFilled(blockId: String) {
+        val idx = blocks.indexOfFirst { it.id == blockId }
+        val block = blocks.getOrNull(idx) as? BodyBlock.Text ?: return
+        if (!block.isImageSeparator) return
+        if (isEffectivelyEmpty(block.state)) return
+        blocks[idx] = BodyBlock.Text(
+            block.id,
+            block.state,
+            block.focusRequester,
+            block.checked,
+            block.indentLevel,
+            /** 身份与内容绑定：有内容 ⇒ 永久退出载体身份（v2026-09-10） */
+            isImageSeparator = false,
+        )
     }
 
     // ---------- 内部 ----------
@@ -3883,11 +3964,17 @@ private fun BlockTextItem(
             }
     }
 
-    /** 内容变化 → 通知 controller 同步 ViewModel（key 同 observer：用 state 对象身份，防重建后失联） */
+    /**
+     * 内容变化 → 通知 controller（key 同 observer：用 state 对象身份，防重建后失联）。
+     *
+     * v2026-09-10：改走 [BodyBlocksController.onBlockContentChanged]——除同步 ViewModel 外，
+     * 还负责"载体身份与内容绑定"：往图片载体空行里打字 ⇒ 即时清掉载体标记，
+     * 否则换位时它会被当成漂移载体删掉，连用户输入一起消失。
+     */
     LaunchedEffect(block.state) {
         snapshotFlow { state.annotatedString }
             .collect {
-                controller.notifyBlockChanged()
+                controller.onBlockContentChanged(block.id)
             }
     }
 
