@@ -1680,6 +1680,13 @@ fun InspirationEditScreen(
                     isLocked = isLocked,
                     /** 图片选中工具栏的垂直 clamp 边界（滚动容器窗口 bounds） */
                     viewportBoundsProvider = { editorViewportBounds },
+                    /**
+                     * 工具栏「图片附件页」按钮（v2026-09-10 接线）：
+                     * 复用既有的 [inlineImageViewerPath] 链路打开 [InspirationImageGallery]——
+                     * 该链路会按路径从 bodyBlocks.toMarkdown() 扫出正文全部图片并算出初始索引，
+                     * 同时复用其删除回调（按路径删 Image 块 + notifyInlineMediaChanged）。
+                     */
+                    onOpenImageGallery = { path -> inlineImageViewerPath = path },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -2061,6 +2068,11 @@ fun InspirationEditScreen(
     /**
      * v2026-08-30 内联图片查看器（v2026-08-31 修复）：
      * 点击编辑态正文中的图片 → 进入项目已有的「图片附件」全屏预览模式。
+     *
+     * **v2026-09-10**：入口增至两处——① 原有内联图片点击；
+     * ② 路线 4 图片块选中后，工具栏「图片附件页」按钮
+     * （[BodyBlocksEditor] 的 onOpenImageGallery，先清选中再置本状态）。
+     * 两者都只置路径，索引与图片列表在此统一按 markdown 重算。
      *
      * **v2026-08-31 修复动机**：
      * 旧的实现是 Dialog + Box + InlineImagePreview 单图预览，

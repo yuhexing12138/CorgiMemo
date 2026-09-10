@@ -44,10 +44,22 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.CorgiMemo"
         tools:targetApi="34">
+        <!--
+            MainActivity（唯一承载 Compose 全应用的 Activity）
+
+            v2026-09-10 新增 configChanges：放开方向/尺寸类配置变化，使 Activity **不重建**。
+            - 背景：图片附件页的「横屏查看」通过 requestedOrientation 真正把窗口转到横屏；
+              若未声明 configChanges，旋转会销毁并重建 Activity，导致附件页（Compose Dialog）
+              被直接关闭、页面状态丢失。
+            - 影响：屏幕旋转、分屏/折叠屏尺寸变化、硬键盘显隐都只触发 onConfigurationChanged，
+              Compose 通过 LocalConfiguration 自行响应重组（Compose 官方推荐做法）。
+            - 注意：uiMode（深色模式）**不在**此列表中，保持原有「重建」行为不变。
+        -->
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

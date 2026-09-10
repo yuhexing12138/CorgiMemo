@@ -163,6 +163,9 @@ dependencies {
 
     implementation(libs.androidx.appcompat)
 
+    /** 灵感图片详情页：读取 EXIF「拍摄时间」（androidx.exifinterface，v2026-09-10） */
+    implementation(libs.androidx.exifinterface)
+
     /** 农历库：tyme4kt（基于 6tail/lunar 升级的 KMP 版本） */
     implementation("cn.6tail:tyme4kt:1.4.5")
 
