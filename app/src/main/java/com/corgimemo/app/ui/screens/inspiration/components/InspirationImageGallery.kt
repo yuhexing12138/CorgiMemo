@@ -180,14 +180,15 @@ fun InspirationImageGallery(
     var showDetail by remember { mutableStateOf(false) }
 
     /**
-     * 横屏查看状态（v2026-09-10 重做：**真旋转窗口**）
-     * true = 让宿主 Activity 真正转到横屏（`requestedOrientation = LANDSCAPE`）
-     * + 彻底隐藏系统栏；再点按钮转回竖屏（`UNSPECIFIED`，恢复跟随系统）。
+     * 主动请求的屏幕方向（v2026-09-10 由布尔升级为**三态**）：
+     * `null` = 不干预、跟随系统自动旋转；`true` = 请求横屏；`false` = 请求竖屏。
      *
-     * 不再使用「把内容层旋转 90°」的伪横屏方案——那样翻页方向会被换算成屏幕上下滑动，
-     * 与用户直觉相反，且无法真正隐藏系统栏。
+     * **为什么必须是三态而不是布尔**：要处理「**手动旋转**进来的横屏」——
+     * 此时用户从未点过按钮（本状态仍是 `null`），但屏幕已经是横屏；
+     * 点「退出横屏」时必须**主动请求竖屏**（`SCREEN_ORIENTATION_PORTRAIT`）才能真正转回去，
+     * 用 `null`（`UNSPECIFIED`，跟随系统）在手机仍横握时是无效的。
      */
-    var landscape by remember { mutableStateOf(false) }
+    var orientationOverride by remember { mutableStateOf<Boolean?>(null) }
 
     /**
      * 浏览层 UI（标题/页码/全部按钮）显隐（v2026-09-10）：
@@ -233,7 +234,7 @@ fun InspirationImageGallery(
      * 当前窗口配置与**实际**屏幕方向。
      *
      * - `configuration`：insets 重读的 key —— 真横屏后窗口配置变化，需重新测量系统栏/挖孔；
-     * - `isLandscapeLayout`：系统**真正**转完才变，与 [landscape]（用户意图）严格区分。
+     * - `isLandscapeLayout`：系统**真正**转完才变，与 [orientationOverride]（主动请求）严格区分。
      *   布局必须跟实际方向，否则点按钮后 UI 会在窗口仍是旧方向时就跳到目标边距
      *   （详见下方 `uiSafePadding` 段）。
      *
@@ -241,6 +242,13 @@ fun InspirationImageGallery(
      */
     val configuration = LocalConfiguration.current
     val isLandscapeLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    /**
+     * 当前是否处于横屏 —— 用于**按钮图标/语义**与分支判断：
+     * 「主动请求横屏」**或**「实际已是横屏」取或。
+     * 这样手动旋转进来的横屏，按钮也会正确显示为「退出横屏查看」。
+     */
+    val isLandscapeActive = orientationOverride == true || isLandscapeLayout
 
     /**
      * 注（v2026-09-10）：曾用 `key(isLandscapeLayout)` 尝试"方向变化时重建 Dialog 窗口"，
@@ -333,7 +341,7 @@ fun InspirationImageGallery(
                  * 实测部分 ROM 在 hide() 后仍绘制状态栏/手势条，但窗口上报的 insets
                  * 已归零——「看得见的栏 + 为零的 insets」，UI 无法避让 → 重叠。
                  * 始终显示后 insets 永远真实，UI 按 insets 动态避让（见 uiSafePadding）。
-                 * （横屏下的"彻底隐藏"在下方 LaunchedEffect(landscape) 单独处理。）
+                 * （横屏下的"彻底隐藏"由下方 LaunchedEffect 单独处理。）
                  */
                 insetsController?.show(WindowInsetsCompat.Type.systemBars())
                 insetsController?.isAppearanceLightStatusBars = false
@@ -346,19 +354,20 @@ fun InspirationImageGallery(
 
         /**
          * 横屏查看的方向控制（v2026-09-10 重做：**真旋转窗口**）：
-         * - landscape = true  → 请求宿主 Activity 转到横屏（系统窗口本身横过来，
-         *   而不是把内容层旋转 90° 伪装横屏）；
-         * - landscape = false → 恢复 `UNSPECIFIED`（交还系统自动旋转策略）。
+         * - `true`  → 请求横屏（系统窗口真正横过来）；
+         * - `false` → 请求竖屏（**手动旋转**进来的横屏也能被真正转回去）；
+         * - `null`  → `UNSPECIFIED`，交还系统自动旋转策略。
          *
          * 前置条件：MainActivity 已在清单声明 `configChanges`（orientation|screenSize|…），
          * 否则该请求会重建 Activity，把本 Dialog 一并销毁。
          */
-        LaunchedEffect(activity, landscape) {
+        LaunchedEffect(activity, orientationOverride) {
             try {
-                activity?.requestedOrientation = if (landscape) {
-                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                } else {
-                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                activity?.requestedOrientation = when (orientationOverride) {
+                    true -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    // 手动旋转进来的横屏必须用 PORTRAIT 才能真正转回竖屏（UNSPECIFIED 会被手机姿态带回去）
+                    false -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    null -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                 }
             } catch (_: Exception) {
                 // Activity 正在销毁时设置方向可能抛异常，忽略（退出路径还有兜底恢复）
@@ -390,11 +399,20 @@ fun InspirationImageGallery(
         //   配 BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE，边缘误触后短暂出现再自动收回。
         // - 竖屏：始终显示；附件页黑底 → 浅色图标，详情页白底 → 深色图标。
         //   （宿主窗口只做 show/hide，**不改**图标明暗，避免退出后残留错误明暗）
-        LaunchedEffect(showDetail, landscape, insetsController, activity) {
+        /**
+         * 系统栏显隐（v2026-09-10 修正）：由 [isLandscapeActive]（= 主动请求横屏 **或**
+         * 实际已是横屏）驱动。
+         *
+         * **为什么必须包含实际方向**：**手动旋转**手机时 [orientationOverride] 不会变化，若只看它，
+         * 横屏下就不会隐藏系统栏 —— 状态栏会压住页面顶部的标题/页码/按钮（用户实测截图），
+         * 且与「按钮旋转」的横屏表现不一致（按钮旋转会 hide）。
+         * 取或之后，两种旋转方式的横屏结果完全一致。
+         */
+        LaunchedEffect(showDetail, orientationOverride, isLandscapeLayout, insetsController, activity) {
             val hostController = activity?.window?.let { w ->
                 WindowInsetsControllerCompat(w, w.decorView)
             }
-            if (landscape) {
+            if (isLandscapeActive) {
                 insetsController?.run {
                     hide(WindowInsetsCompat.Type.systemBars())
                     systemBarsBehavior =
@@ -478,7 +496,7 @@ fun InspirationImageGallery(
         /**
          * 旋转动画结束后再补读一次：系统旋转是异步的（约 300ms 完成），
          * 进入横屏的瞬间读到的仍是旋转前的挖孔位置，补读一次可拿到正确值。
-         * 以 [configuration] 为 key（而非用户意图的 landscape），保证读的是真实方向下的值。
+         * 以 [configuration] 为 key（而非方向请求状态），保证读的是真实方向下的值。
          */
         LaunchedEffect(activity, configuration) {
             delay(350)
@@ -655,7 +673,7 @@ fun InspirationImageGallery(
                     modifier = Modifier.fillMaxSize(),
                     flingBehavior = PagerDefaults.flingBehavior(
                         state = pagerState,
-                        snapPositionalThreshold = if (landscape) 0.08f else 0.35f,
+                        snapPositionalThreshold = if (isLandscapeActive) 0.08f else 0.35f,
                     ),
                 ) { page ->
                     /**
@@ -731,7 +749,13 @@ fun InspirationImageGallery(
                             // 横屏查看（v2026-09-10 重做）：真正把窗口转到横屏 / 转回竖屏。
                             // 按钮自身消费点击，不会透传到图片的单击显隐手势
                             IconButton(
-                                onClick = { landscape = !landscape },
+                                /**
+                                 * 点击切换：退出横屏时**主动请求竖屏**（`PORTRAIT`）而不是 `UNSPECIFIED`
+                                 * —— 这样"手动旋转进来的横屏"也能被真正转回竖屏；进入横屏则请求 `LANDSCAPE`。
+                                 */
+                                onClick = {
+                                    orientationOverride = if (isLandscapeActive) false else true
+                                },
                                 modifier = Modifier
                                     .size(40.dp)
                                     .clip(CircleShape)
@@ -739,7 +763,7 @@ fun InspirationImageGallery(
                             ) {
                                 Icon(
                                     imageVector = LucideIcons.RotateCcwSquare,
-                                    contentDescription = if (landscape) "退出横屏查看" else "横屏查看",
+                                    contentDescription = if (isLandscapeActive) "退出横屏查看" else "横屏查看",
                                     tint = Color.White,
                                     modifier = Modifier.size(24.dp)
                                 )

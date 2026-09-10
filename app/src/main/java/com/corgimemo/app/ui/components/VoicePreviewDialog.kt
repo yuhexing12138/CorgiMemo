@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ContentValues
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -365,6 +366,27 @@ fun VoicePreviewDialog(
             windowLeftPx = location[0].toFloat()
             windowTopPx = location[1].toFloat()
             onDispose { }
+        }
+
+        /**
+         * 系统栏显隐**跟随实际方向**（v2026-09-10，与图片附件页统一）。
+         *
+         * 横屏隐藏（沉浸查看，避免状态栏压住页面顶部内容）、竖屏显示。
+         * 用 `configuration.orientation` 而不是任何"用户意图"状态 —— 手动旋转手机同样生效。
+         * 注：本页没有横屏按钮，此前进入后一直 `show`，导致横屏时状态栏可见并遮挡内容。
+         */
+        LaunchedEffect(dialogWindow, configuration.orientation) {
+            val win = dialogWindow ?: return@LaunchedEffect
+            val controller = WindowInsetsControllerCompat(win, win.decorView)
+            if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                controller.isAppearanceLightStatusBars = false
+                controller.isAppearanceLightNavigationBars = false
+            }
         }
 
         val statusBarPadding = with(density) { statusBarTopPx.toDp() }
