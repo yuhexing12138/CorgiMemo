@@ -21,8 +21,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -980,19 +983,45 @@ private fun ZoomableImage(
             contentDescription = null,
             modifier = Modifier
                 .fillMaxSize()
-                // 关键：pointerInput 依赖 scale，scale 变化时重启
-                // scale = 1f（未放大）时不消费指针，让 HorizontalPager 接收单指 pan 用于翻页
-                // scale > 1f（已放大）时消费指针处理平移，让用户能拖动查看图片细节
-                .pointerInput(scale) {
-                    if (scale > 1f) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(1f, 4f)
-                            if (scale > 1f) {
-                                // 横屏无需换算：pan 已在本节点局部坐标系（见 KDoc）
-                                offsetX += pan.x
-                                offsetY += pan.y
+                /**
+                 * 缩放手势（v2026-09-10 修复「双指缩放完全失效」）。
+                 *
+                 * **原实现的死锁**：`if (scale > 1f) { detectTransformGestures { … } }` ——
+                 * `scale` 初值就是 `1f`，所以手势**根本没被注册**；而 `scale` 要变大又必须先有
+                 * 手势 ⇒ 双指缩放永远不可能生效（竖屏、横屏都一样）。
+                 *
+                 * **为什么不能简单地总是 `detectTransformGestures`**：它会**无条件消费所有指针**，
+                 * 于是 `HorizontalPager` 再也收不到单指拖动，翻页会失效。
+                 *
+                 * **正解**：用 `awaitEachGesture` 按**指针数**分流 ——
+                 * - 双指：**始终**处理缩放（并消费，避免 Pager 同时翻页）；
+                 * - 单指：只有已放大（`scale > 1f`）时才消费用于平移，否则**放行**给 Pager 翻页。
+                 */
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        // 不要求"未被消费"的按下：祖先（Pager）可能已处理过
+                        awaitFirstDown(requireUnconsumed = false)
+                        do {
+                            val event = awaitPointerEvent()
+                            val pressedCount = event.changes.count { it.pressed }
+                            val shouldHandle = pressedCount > 1 || scale > 1f
+                            if (shouldHandle) {
+                                /** 双指才缩放（单指时 calculateZoom 恒为 1，无副作用） */
+                                if (pressedCount > 1) {
+                                    scale = (scale * event.calculateZoom()).coerceIn(1f, 4f)
+                                }
+                                if (scale > 1f) {
+                                    val pan = event.calculatePan()
+                                    // 横屏无需换算：pan 已在本节点局部坐标系（见 KDoc）
+                                    offsetX += pan.x
+                                    offsetY += pan.y
+                                }
+                                /** 消费掉，避免 HorizontalPager 同时响应（翻页与缩放打架） */
+                                event.changes.forEach { change ->
+                                    if (change.pressed) change.consume()
+                                }
                             }
-                        }
+                        } while (event.changes.any { it.pressed })
                     }
                 }
                 // 点击手势：单击切换 UI 显隐 + 双击放大/还原（同一检测器内互斥判定）
