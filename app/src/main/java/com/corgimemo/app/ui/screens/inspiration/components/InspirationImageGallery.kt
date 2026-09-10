@@ -6,8 +6,10 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.util.Log
 import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -237,6 +239,28 @@ fun InspirationImageGallery(
                 )
                 // 让 Dialog 内容延伸到系统栏后面（黑底铺到状态栏/手势条后面）
                 WindowCompat.setDecorFitsSystemWindows(window, false)
+                /**
+                 * ⚠️ v2026-09-10 修复（关键根因）：让 Dialog Window 延伸到**屏幕挖孔/刘海区域**。
+                 *
+                 * 背景：`enableEdgeToEdge()` 会给 **Activity 主窗口**设置
+                 * `layoutInDisplayCutoutMode = SHORT_EDGES`（edge-to-edge 的要求），
+                 * 但 Compose Dialog 是**独立窗口**——只调用 setDecorFitsSystemWindows(false)
+                 * 并不会改它的 cutout 模式，于是保持默认 `DEFAULT`：窗口被限制在挖孔
+                 * 安全区**之内**。实测表现为（截图逐像素测量确认）：
+                 * - 竖屏：窗口顶边被下推到状态栏之下（整整一个状态栏高度），
+                 *   叠加 UI 自己的安全边距后，标题/页码/按钮"离时间栏约 1.7 个状态栏高"；
+                 * - 横屏：窗口左边被右推到挖孔右侧（约 32dp），
+                 *   屏幕左侧露出一条宿主页面，形成"未覆盖区域"。
+                 *
+                 * SHORT_EDGES = 允许窗口延伸到**短边**的挖孔区：竖屏是顶部、横屏是左右侧，
+                 * 正好同时解决上面两种场景（API 28+；更低版本无挖孔概念，无需处理）。
+                 */
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    window.attributes = window.attributes.apply {
+                        layoutInDisplayCutoutMode =
+                            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    }
+                }
                 /**
                  * v2026-09-10 改为**竖屏下始终显示系统栏**（不再无条件沉浸隐藏）：
                  * 实测部分 ROM 在 hide() 后仍绘制状态栏/手势条，但窗口上报的 insets
