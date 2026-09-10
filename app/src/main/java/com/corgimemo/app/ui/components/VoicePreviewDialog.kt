@@ -80,6 +80,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.corgimemo.app.util.VoicePlayer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -354,7 +355,8 @@ fun VoicePreviewDialog(
         var windowLeftPx by remember { mutableFloatStateOf(0f) }
         var windowTopPx by remember { mutableFloatStateOf(0f) }
 
-        DisposableEffect(activity, configuration) {
+        /** 读一次 insets 与窗口偏移（旋转期间会被**高频**调用，见下方 LaunchedEffect） */
+        fun refreshInsets() {
             activity?.window?.decorView?.let { ViewCompat.getRootWindowInsets(it) }?.let { root ->
                 val bars = root.getInsets(WindowInsetsCompat.Type.systemBars())
                 /** 系统栏被 hide 时 insets 归零，用「> 0」守卫保留上一次的真实高度 */
@@ -365,7 +367,22 @@ fun VoicePreviewDialog(
             dialogRootView.getLocationOnScreen(location)
             windowLeftPx = location[0].toFloat()
             windowTopPx = location[1].toFloat()
+        }
+        DisposableEffect(activity, configuration) {
+            refreshInsets()
             onDispose { }
+        }
+        /**
+         * 旋转期间**高频重读**（v2026-09-10 修正，与图片附件页一致）。
+         *
+         * 系统旋转异步，insets / 窗口偏移会**滞后到位**；只读一次会让避让边距迟到，
+         * 表现为"画面稳定后元素才发生位移"。改为前 500ms 内每 50ms 读一次。
+         */
+        LaunchedEffect(activity, configuration) {
+            repeat(10) {
+                delay(50)
+                refreshInsets()
+            }
         }
 
         /**
@@ -396,8 +413,10 @@ fun VoicePreviewDialog(
          * 为 true 时窗口四边都已被让开，页面**不能再**叠加系统栏边距。
          */
         val windowInsetActive = windowTopPx > 0.5f || windowLeftPx > 0.5f
-        val topSafePadding = if (windowInsetActive) 0.dp else statusBarPadding
-        val bottomSafePadding = if (windowInsetActive) 0.dp else navBarPadding
+        /** 是否处于横屏 —— 横屏时系统栏已被 hide，系统栏边距必须归零，否则内容会被无谓地下推/上推 */
+        val isLandscapeLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val topSafePadding = if (isLandscapeLayout || windowInsetActive) 0.dp else statusBarPadding
+        val bottomSafePadding = if (isLandscapeLayout || windowInsetActive) 0.dp else navBarPadding
 
         // 注（v2026-09-10）：此处原有的「show() 后重复施加铺满 flags」与「宿主侧黑幕兜底」
         // 已按要求全部移除 —— 语音附件页本身是铺满的，不需要这些兜底。

@@ -494,13 +494,21 @@ fun InspirationImageGallery(
             onDispose { }
         }
         /**
-         * 旋转动画结束后再补读一次：系统旋转是异步的（约 300ms 完成），
-         * 进入横屏的瞬间读到的仍是旋转前的挖孔位置，补读一次可拿到正确值。
+         * 旋转期间**高频重读** insets（v2026-09-10 修正）。
+         *
+         * 系统旋转是异步的：`configuration` 变化时，系统栏 / 挖孔的 insets 往往**还没到位**。
+         * 若只在一段时间后补读一次（旧实现是 `delay(350)` 读一次），安全边距就会在
+         * **旋转动画结束之后**才开始变化 —— 用户看到的是"画面都已经稳定了，按钮却又
+         * 向右上方位移了一下"（竖屏 `top≈36dp` ⇄ 横屏 `start≈挖孔宽、top=0`）。
+         *
+         * 改为前 500ms 内每 50ms 读一次，让边距尽早（与旋转动画同步）到位。
          * 以 [configuration] 为 key（而非方向请求状态），保证读的是真实方向下的值。
          */
         LaunchedEffect(activity, configuration) {
-            delay(350)
-            readSafeInsets()
+            repeat(10) {
+                delay(50)
+                readSafeInsets()
+            }
         }
         val density = LocalDensity.current
         val statusTopPadding = with(density) { statusBarTopPx.toDp() }
@@ -544,12 +552,10 @@ fun InspirationImageGallery(
          * - 横屏：系统栏已隐藏 → 只让出挖孔安全区，同样扣除窗口左边/顶部偏移
          *   （窗口若已被推到挖孔右侧，偏移量恰等于挖孔宽度，补偿后 start 归零）。
          */
-        val windowLeftPadding = with(density) { windowLeftPx.toDp() }
+        // 注：`cutoutXxxPx` 仍在 `readSafeInsets()` 中读取并保留，供将来按
+        // `displayCutout.getBoundingRects()` 做"精确到具体矩形"的避让；当前横屏按
+        // 用户实测结论**不做挖孔避让**（理由见下方 targetXxxPadding 的说明）。
         val windowTopPadding = with(density) { windowTopPx.toDp() }
-        val cutoutLeftPadding = with(density) { cutoutLeftPx.toDp() }
-        val cutoutTopPadding = with(density) { cutoutTopPx.toDp() }
-        val cutoutRightPadding = with(density) { cutoutRightPx.toDp() }
-        val cutoutBottomPadding = with(density) { cutoutBottomPx.toDp() }
 
         /**
          * 首次 insets 测量是否已落地 —— 落地前不做补间。
@@ -576,19 +582,26 @@ fun InspirationImageGallery(
             snap()
         }
 
-        val targetStartPadding = if (isLandscapeLayout) {
-            (cutoutLeftPadding - windowLeftPadding).coerceAtLeast(0.dp)
-        } else {
-            0.dp
-        }
+        /**
+         * 目标安全边距（v2026-09-10 依用户实测修正）。
+         *
+         * - **横屏：四边全部为 0** —— 系统栏已隐藏，顶部无需避让；左侧也**不避让挖孔**：
+         *   `displayCutout` 是按**整条边**报避让量的（该机 `left = 111px ≈ 40dp`），
+         *   而挖孔实际只占左侧边缘**中段**的一小块；本页 UI 是四角布局
+         *   （标题左上 / 页码中上 / 按钮右上 / 删除左下 / 详情·下载右下），
+         *   y 区间与挖孔完全错开 —— 用户实测确认"挖孔不影响左侧按钮的显示与点击"，
+         *   避让它只会让整屏 UI 无谓地右移。
+         * - 竖屏：顶边让出「状态栏底 + [ChromeTopGapFromStatusBar]」，底部让出导航栏。
+         */
+        val targetStartPadding = 0.dp
         val targetTopPadding = if (isLandscapeLayout) {
-            (cutoutTopPadding - windowTopPadding).coerceAtLeast(0.dp)
+            0.dp
         } else {
             (statusTopPadding + ChromeTopGapFromStatusBar - 16.dp - windowTopPadding)
                 .coerceAtLeast(0.dp)
         }
-        val targetEndPadding = if (isLandscapeLayout) cutoutRightPadding else 0.dp
-        val targetBottomPadding = if (isLandscapeLayout) cutoutBottomPadding else navBottomPadding
+        val targetEndPadding = 0.dp
+        val targetBottomPadding = if (isLandscapeLayout) 0.dp else navBottomPadding
 
         /**
          * 四边分别补间（v2026-09-10）。
