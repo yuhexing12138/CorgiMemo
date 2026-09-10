@@ -1099,15 +1099,28 @@ private fun ZoomableImage(
                          * ——这是区分单击/双击的必然代价，否则双击缩放会顺带误触发显隐。
                          */
                         onTap = { onSingleTap() },
-                        onDoubleTap = {
+                        /**
+                         * 双击：放大到 2x / 还原。
+                         *
+                         * 放大时**以双击位置为锚点**（v2026-09-10），与捏合缩放共用同一套换算
+                         * （推导见上方缩放手势段）—— 否则双击后图片从中心放大，被点的那一处会跑掉。
+                         * `size` 取自 `PointerInputScope`（getter，布局变化后仍返回最新值）。
+                         */
+                        onDoubleTap = { tapOffset ->
                             if (scale > 1f) {
-                                // 当前已放大：还原
+                                // 当前已放大：还原到适配尺寸并居中
                                 scale = 1f
                                 offsetX = 0f
                                 offsetY = 0f
                             } else {
-                                // 当前未放大：放大到 2x
-                                scale = 2f
+                                // 当前未放大：**以双击点为锚点**放大到 2x
+                                val newScale = 2f
+                                val ratio = newScale / scale
+                                val dx = tapOffset.x - size.width / 2f
+                                val dy = tapOffset.y - size.height / 2f
+                                offsetX = dx - (dx - offsetX) * ratio
+                                offsetY = dy - (dy - offsetY) * ratio
+                                scale = newScale
                             }
                         }
                     )

@@ -82,6 +82,7 @@
   - **推导**：`p = C + (q − C) × scale + offset`，要求双指中心处的图片点 `q` 在缩放前后不动 ⇒ 代入解出上式。
   - **取值**：`centroid` 用 `event.calculateCentroid()`（`androidx.compose.foundation.gestures.calculateCentroid`）；`C = size/2`，其中 `size` 取 `AwaitPointerEventScope.size`（**是 getter，布局变化后仍返回最新值**，可放心在长生命周期手势里读）。
   - 注意只改 `scale` 不修 `offset` 是最容易犯的错——单指平移（`calculatePan` 直接累加）与锚点缩放要**分别处理**，不要混在一起。
+  - **双击放大同样用这套换算**（2026-09-10 补齐）：`detectTapGestures(onDoubleTap = { tapOffset -> … })` 的第一个参数就是双击位置，直接当 `centroid` 代入同一公式即可。`size` 在 `pointerInput` 的 `PointerInputScope` 作用域内可直接访问（**嵌套 lambda 也能解析到这个隐式 receiver**），无需额外传递。
 - **缩小与回弹**（2026-09-10 用户决策，取主流相册手感）：`coerceIn(1f, 4f)` 的下限 1f 会让"初始状态（1f = 适配屏幕）捏合"完全没有反馈，看起来像坏了。改为 `coerceIn(MinZoomScale=0.6f, MaxZoomScale=4f)`，并在**手势结束**时若 `scale < 1f` 用 `spring`（`ZoomReboundSpec`）**回弹到 1f** 且清零 offset。
   - ⚠️ **回弹必须放独立协程**（`rememberCoroutineScope().launch { animate(...) }`）：`animate` 是**挂起函数**，若在 `awaitEachGesture` 里直接等待它结束，会**阻塞下一次手势检测** —— 回弹那 ~300ms 内的新手势会被吞掉。
 - **点击切换 UI 显隐的坑（必记）**：`detectTapGestures` 内部会 `down.consume()`，父级 `awaitFirstDown()` 默认 `requireUnconsumed = true` ⇒ **挂在父节点上的 tap 检测永远收不到事件**（子节点的双击检测器已消费）。正解：把 `onTap` 与 `onDoubleTap` 放进**同一个** `detectTapGestures`（在图片自身节点），互斥判定；代价是单击要等双击超时（~300ms）。拖拽自动取消 tap ⇒ 滑动不触发。
