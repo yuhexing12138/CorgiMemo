@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
@@ -78,7 +79,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.corgimemo.app.util.VoicePlayer
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -260,36 +260,30 @@ fun VoicePreviewDialog(
     }
 
     // 全屏 Dialog（与 InspirationImageGallery 相同模式）
+    /**
+     * 窗口配置定义在 `Dialog` 外层：供 Dialog 内的 insets 重读使用，
+     * 同时给本文件的诊断埋点当 key（见下方 LaunchedEffect 埋点）。
+     */
+    val configuration = LocalConfiguration.current
+
+    /**
+     * 注（v2026-09-10）：曾用 `key(configuration.orientation)` 尝试"方向变化时重建 Dialog 窗口"，
+     * 实测**无效**，已撤销。真因待诊断埋点的日志数据确认。
+     */
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         val view = LocalView.current
-        val dialogWindow = remember(view) {
-            (view as? DialogWindowProvider)?.window
-        }
-
         /**
-         * 把 Dialog 窗口设置为「全幅铺满」：忽略系统栏装饰 + 允许画进挖孔区 + 100% 背景遮罩。
-         *
-         * 与图片附件页 `InspirationImageGallery` 共用同一套策略与实测结论：
-         * Compose Dialog 用 `Theme.Dialog`（`windowIsFloating = true`）属于 floating window，
-         * WindowManager 会把窗口贴合进系统栏 / 挖孔安全区之内（横屏时左侧露出一条宿主页面）。
-         * 实测该 ROM **无视** `FLAG_LAYOUT_IN_SCREEN` 与挖孔模式，且窗口属性会在 `show()`
-         * 时被主题默认值覆盖（`backgroundDimAmount = 0.6`）⇒ 需在多个时机重复施加，
-         * 并最终由 100% dim 遮罩 + 宿主侧黑幕兜底。
+         * ⚠️ **关键修复（v2026-09-10，与图片附件页同因）**：不能写
+         * `view as? DialogWindowProvider` —— 实测 `LocalView.current` 在 Dialog content 中
+         * 并不是 `DialogLayout` 本身，直接转换恒为 `null`；一旦为 null，下面整段窗口设置
+         * （setLayout / setDecorFitsSystemWindows / 系统栏 show-hide）**全部被跳过**。
+         * 改为沿父链查找（见文件末尾的 [findDialogWindow]）。
          */
-        fun applyFullBleedWindow(window: Window) {
-            window.attributes = window.attributes.apply {
-                flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                flags = flags or WindowManager.LayoutParams.FLAG_DIM_BEHIND
-                /** 100% 变暗：即使窗口没能铺满，露出的宿主区域也会被压成纯黑 */
-                dimAmount = 1f
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    layoutInDisplayCutoutMode =
-                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                }
-            }
+        val dialogWindow = remember(view) {
+            view.findDialogWindow()
         }
 
         DisposableEffect(dialogWindow) {
@@ -303,12 +297,21 @@ fun VoicePreviewDialog(
                 )
                 WindowCompat.setDecorFitsSystemWindows(window, false)
                 /**
-                 * 本页顶栏原本只有 12dp padding、且**没有任何 insets 避让**，之所以"看起来是对的"，
-                 * 纯粹是因为窗口被下推了一个状态栏高度——歪打正着、不可控。
-                 * 现改为让窗口**真正铺满**，再由下方按 insets 显式避让，
-                 * 并与图片附件页共用同一套「窗口偏移补偿」策略。
+                 * ⚠️ **根因修复（v2026-09-10，埋点数据实锤，与图片附件页同因同解）**：
+                 * 日志显示窗口 **frame 自身**被缩进 —— 横屏 `screenX=111`（= 挖孔宽）、
+                 * `screenY=111`（= 状态栏高），且 `padding` 四边全 0、`layInScreen=false`、
+                 * `cutoutMode=0(DEFAULT)`。
+                 * 故需要：① `FLAG_LAYOUT_IN_SCREEN`（忽略系统栏装饰）；
+                 * ② `SHORT_EDGES` 挖孔模式（允许延伸到短边挖孔区）。
+                 * 这两项此前"设过却无效"，是因为 `dialogWindow` 恒为 null、代码从未执行（已修）。
                  */
-                applyFullBleedWindow(window)
+                window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    window.attributes = window.attributes.apply {
+                        layoutInDisplayCutoutMode =
+                            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    }
+                }
                 /**
                  * v2026-09-10 统一为「**始终显示系统栏**」（与图片附件页竖屏策略一致，用户决策）：
                  *
@@ -339,8 +342,12 @@ fun VoicePreviewDialog(
          */
         val activity = LocalContext.current.findActivity()
         val density = LocalDensity.current
-        val configuration = LocalConfiguration.current
+        // 注：`configuration` 定义在 `Dialog` 外层（见 Dialog 之前的声明），这里直接用即可。
         val dialogRootView = LocalView.current
+
+        // 【诊断埋点已移除】2026-09-10：本段原为定位「横屏左侧铺不满」而加的 `GalleryDiag`
+        // 日志。结论已确认并修复（`dialogWindow` 取值 + FLAG_LAYOUT_IN_SCREEN + SHORT_EDGES），
+        // 修复后实测横屏 `decorView 2400x1080 screenX=0 screenY=0`（完全铺满），故整体删除。
         var statusBarTopPx by remember { mutableStateOf(0) }
         var navBarBottomPx by remember { mutableStateOf(0) }
         var windowLeftPx by remember { mutableFloatStateOf(0f) }
@@ -370,56 +377,8 @@ fun VoicePreviewDialog(
         val topSafePadding = if (windowInsetActive) 0.dp else statusBarPadding
         val bottomSafePadding = if (windowInsetActive) 0.dp else navBarPadding
 
-        /**
-         * `show()` 之后、以及每次配置变化（旋转）之后再施加一次（**关键时机**）：
-         * Compose Dialog 的窗口属性会在 `show()` 时被主题默认值覆盖，
-         * ROM 也可能在旋转重算 frame 时重置窗口属性，故这里反复强调。
-         */
-        LaunchedEffect(dialogWindow, configuration) {
-            delay(120)
-            dialogWindow?.let { applyFullBleedWindow(it) }
-        }
-
-        /**
-         * 宿主侧「黑色幕布」兜底（与图片附件页一致，**确定性方案**）。
-         *
-         * 实测该 ROM 会无视 Dialog 窗口的 `FLAG_LAYOUT_IN_SCREEN` 与挖孔模式，把窗口 frame
-         * 限制在安全区内 —— 横屏时屏幕左侧始终露出一条宿主页面（占屏宽约 4.6%，
-         * 恰为挖孔安全区宽度）。
-         *
-         * 这里在**宿主 Activity 的 `android.R.id.content`** 最上层临时叠一张纯黑 View：
-         * Activity 窗口本身铺满全屏（`enableEdgeToEdge` + SHORT_EDGES），
-         * 任何"Dialog 没盖住"的区域都会被压成纯黑，与页面深色背景无缝衔接。
-         * Dialog 若已正常铺满，这层幕布被完全遮住，不产生任何可见影响。
-         */
-        DisposableEffect(activity) {
-            val hostActivity = activity
-            val blackoutView = if (hostActivity == null) {
-                null
-            } else {
-                val content = hostActivity.findViewById<ViewGroup>(android.R.id.content)
-                if (content == null) {
-                    null
-                } else {
-                    android.view.View(hostActivity).apply {
-                        setBackgroundColor(android.graphics.Color.BLACK)
-                    }.also { v ->
-                        content.addView(
-                            v,
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                    }
-                }
-            }
-            onDispose {
-                try {
-                    blackoutView?.let { v -> (v.parent as? ViewGroup)?.removeView(v) }
-                } catch (_: Exception) {
-                    // 忽略 Activity 已销毁时的异常
-                }
-            }
-        }
+        // 注（v2026-09-10）：此处原有的「show() 后重复施加铺满 flags」与「宿主侧黑幕兜底」
+        // 已按要求全部移除 —— 语音附件页本身是铺满的，不需要这些兜底。
 
         Box(
             modifier = Modifier
@@ -889,4 +848,15 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+/**
+ * 从 View 起沿父链向上找到承载 Dialog 窗口的 [DialogWindowProvider]，并取出其 `window`。
+ *
+ * **为什么需要它**：`LocalView.current` 在 Dialog content 中并不保证就是 `DialogLayout`
+ * 本身，直接 `as? DialogWindowProvider` 会得到 `null`，导致调用方的窗口设置被整段跳过。
+ */
+private tailrec fun View.findDialogWindow(): Window? = when (this) {
+    is DialogWindowProvider -> window
+    else -> (parent as? View)?.findDialogWindow()
 }
