@@ -357,6 +357,20 @@ sealed class BodyBlock {
          * （state/history/光标无损）。
          */
         val indentLevel: Int = 1,
+        /**
+         * 是否为「图片载体空块」（v2026-09-10 新增）：编辑器为「两图之间可输入」自动补的
+         * 空 Text 块标记为 true；用户手打的空行恒为 false。
+         *
+         * **为什么不进 markdown**：载体与用户空行在序列化里同为 NBSP 占位段
+         * （[EMPTY_BLOCK_PLACEHOLDER]），文本层面无法区分；标记只是编辑会话的内存身份，
+         * 载入时由 [BodyBlocksController.initialize] 按**位置**（恰好夹在两张图片之间）
+         * 认领回来，命令重建往返由 [BlockSpec.TextSpec.isImageSeparator] 透传。
+         *
+         * **用途**：维持不变量「载体数 == 图片相邻对数，且每个都夹在两图之间」。
+         * 拖拽换位后旧载体若漂到图片组外侧，[BodyBlocksController.normalizeImageSeparators]
+         * 会把它删掉（可撤销）——否则每交换一次空行就多一行（"图片上下空行越来越多"）。
+         */
+        val isImageSeparator: Boolean = false,
     ) : BodyBlock()
 
     /**
@@ -444,6 +458,12 @@ sealed class BlockSpec {
          * [BodyBlocksController.initialize] 解析），state 干净、不参与库的段落缩进。
          */
         val indentLevel: Int = 1,
+        /**
+         * 是否为「图片载体空块」（v2026-09-10 新增）：随 spec 往返，保证
+         * 撤销/重做重建块时不丢载体身份（重建走 [BodyBlocksController.rebuildBlock]）。
+         * 该字段**不进 markdown**（载体与用户空行同为 NBSP 占位段），也不参与序列化。
+         */
+        val isImageSeparator: Boolean = false,
     ) : BlockSpec()
 
     /**
@@ -600,7 +620,7 @@ class MoveBlockCommand(
 }
 
 /**
- * 图片分隔块命令（v2026-09-09 新增）：在 [index] 处插入一个**空 Text 块**。
+ * 图片载体空块插入命令（v2026-09-09 新增）：在 [index] 处插入一个**空 Text 块**。
  *
  * **用途**：保证任意两个 Image 块之间都留有一行可输入的空白块——插入图片 /
  * 拖拽排序都可能造成「图-图相邻」，此时用户无法在两图之间打字。
@@ -610,11 +630,15 @@ class MoveBlockCommand(
  *    会按 focusAfter 落焦、缺失时回退 [BodyBlocksController.focusFirstTextBlock]）；
  * 2. **不暂存原始块**：唯一产物就是那个空 Text 块，revert 直接按 [spec.id] 移除；
  * 3. **不重建任何已有块**：纯插入，不影响其它块的 RichTextState 历史。
+ *
+ * v2026-09-10：**只由 [BodyBlocksController.normalizeImageSeparators] 生成**（补插那一支）；
+ * 配套的 [RemoveImageSeparatorCommand] 负责删除漂移/多余的载体，两者共同维持
+ * 「载体数 == 图片相邻对数」的不变量。
  */
 class InsertImageSeparatorCommand(
     /** 插入位置（插到该索引**之前**，即「后一张图」的索引） */
     val index: Int,
-    /** 空 Text 块描述（markdown 为空 → 重建时预置 ZWSP 与光标） */
+    /** 空 Text 块描述（markdown 为空 + isImageSeparator=true → 重建为带标记的载体空块） */
     val spec: BlockSpec.TextSpec,
 ) : BodyBlocksCommand {
     override fun apply(controller: BodyBlocksController) {
@@ -624,6 +648,39 @@ class InsertImageSeparatorCommand(
 
     override fun revert(controller: BodyBlocksController) {
         controller.removeBlockById(spec.id)
+        controller.afterCommandMutation()
+    }
+}
+
+/**
+ * 图片载体空块删除命令（v2026-09-10 新增）：[InsertImageSeparatorCommand] 的对称操作。
+ *
+ * **用途**：清理两类"不该存在"的载体空块——
+ * 1. **漂移载体**：拖拽换位后旧载体留在原索引（图片走了）→ 落到了图片组外侧；
+ * 2. **间隙冗余**：同一处「图-图间隙」里多于一个空白块（历史堆积）。
+ *
+ * 与 [InsertImageSeparatorCommand] 对称：
+ * - `apply` 按 id 移除（顺序无关，因此一批删除命令的先后不影响结果）；
+ * - `revert` 按 [index] 插回并**复用 [spec.id]**，索引经
+ *   [BodyBlocksController.locateRangeStart] 做防御性定位（先按 id 找，找不到才用记录的索引）。
+ *
+ * 与插入命令一样**完全不动焦点**、不重建任何已有块。
+ */
+class RemoveImageSeparatorCommand(
+    /** 被删载体的块 id */
+    val blockId: String,
+    /** 被删载体的描述（revert 时按原 id 原样重建） */
+    val spec: BlockSpec.TextSpec,
+    /** 删除时的位置（revert 还原用；正常路径下由栈式不变量保证仍然正确） */
+    val index: Int,
+) : BodyBlocksCommand {
+    override fun apply(controller: BodyBlocksController) {
+        controller.removeBlockById(blockId)
+        controller.afterCommandMutation()
+    }
+
+    override fun revert(controller: BodyBlocksController) {
+        controller.insertBlockAt(controller.locateRangeStart(blockId, index), spec)
         controller.afterCommandMutation()
     }
 }
@@ -1087,6 +1144,12 @@ class BodyBlocksController(
          * [markdown] 参数必须是**已剥掉缩进载体（EM 前缀）**的内容。
          */
         indentLevel: Int = 1,
+        /**
+         * 是否为「图片载体空块」（v2026-09-10 新增）：仅由
+         * [normalizeImageSeparators] 补块与 [rebuildBlock]（命令重建）传入 true；
+         * 其余所有构造点默认 false（用户手打的空行、拆块产生的空块等）。
+         */
+        isImageSeparator: Boolean = false,
     ): BodyBlock.Text {
         val state = RichTextState()
         /**
@@ -1170,7 +1233,13 @@ class BodyBlocksController(
         }
         /** 复选框块：checked / indentLevel 属性随块对象携带（markdown 已由调用方剥掉
          *  复选框前缀与缩进载体，v2026-09-07 / v2026-09-08） */
-        return BodyBlock.Text(id, state, checked = checked, indentLevel = indentLevel).also { block ->
+        return BodyBlock.Text(
+            id,
+            state,
+            checked = checked,
+            indentLevel = indentLevel,
+            isImageSeparator = isImageSeparator,
+        ).also { block ->
             /**
              * 组合态归位（v2026-09-08）：复选框块叠加列表段落（如历史数据
              * "- [ ] ␣␣- 内容" 的二级列表编码）时，库列表 TextIndent 会与 App
@@ -1191,13 +1260,16 @@ class BodyBlocksController(
         }
     }
 
-    /** Text 块 → [BlockSpec.TextSpec]（markdown 剥 ZWSP；checked / indentLevel 随 spec，Command 载荷统一出口） */
+    /** Text 块 → [BlockSpec.TextSpec]（markdown 剥 ZWSP；checked / indentLevel / isImageSeparator
+     *  随 spec，Command 载荷统一出口） */
     private fun textSpec(block: BodyBlock.Text): BlockSpec.TextSpec =
         BlockSpec.TextSpec(
             block.id,
             blockMarkdown(block.state),
             checked = block.checked,
             indentLevel = block.indentLevel,
+            /** 载体身份随 spec 往返（v2026-09-10）：撤销重建后仍是载体，下次换位仍能被归一化清理 */
+            isImageSeparator = block.isImageSeparator,
             /** 撤销还原用（v2026-09-08）：层级显式随 spec——removed 块经 rebuildBlock 重建时
              *  会剥掉 markdown 层级前缀（stripListLevelPrefix=true），不传层级则撤销后掉回一级 */
             listLevel = listLevelOfMd(blockMarkdown(block.state)).takeIf { block.state.isList },
@@ -1292,6 +1364,32 @@ class BodyBlocksController(
                     }
                 }
                 is MdSegment.ImageSeg -> blocks += BodyBlock.Image(newBodyBlockId(), seg.path)
+            }
+        }
+        /**
+         * 认领「图片载体空块」（v2026-09-10）：markdown 里载体与用户手打的空行同为
+         * NBSP 占位段（[EMPTY_BLOCK_PLACEHOLDER]），文本层面无法区分，**位置是唯一可靠判据**——
+         * 恰好夹在两张图片之间（前后紧邻都是 Image）的空白块只可能是编辑器为
+         * "两图之间可输入"补的载体：那个位置本来就有载体，用户不会也不能在两图之间再塞一个。
+         *
+         * 认领后才能维持不变量：换位时旧载体漂到图片组外侧 → [normalizeImageSeparators]
+         * 按标记删除，空行数不再随交换次数增长。
+         */
+        for (i in blocks.indices) {
+            val text = blocks[i] as? BodyBlock.Text ?: continue
+            if (text.isImageSeparator || !isEffectivelyEmpty(text.state)) continue
+            val betweenImages = i > 0 && i < blocks.lastIndex &&
+                blocks[i - 1] is BodyBlock.Image && blocks[i + 1] is BodyBlock.Image
+            if (betweenImages) {
+                /** 就地换块对象：复用同一 RichTextState / FocusRequester（载入期无块内历史，零损失） */
+                blocks[i] = BodyBlock.Text(
+                    text.id,
+                    text.state,
+                    text.focusRequester,
+                    text.checked,
+                    text.indentLevel,
+                    isImageSeparator = true,
+                )
             }
         }
         ensureTextBlock()
@@ -1400,10 +1498,19 @@ class BodyBlocksController(
 
         return blocks.mapIndexedNotNull { i, block ->
             val text = textOf(block) ?: return@mapIndexedNotNull null
-            /** 空文本块且前后最近的非空白块都是图片 → 图片间载体空行，纯文本不输出 */
-            val isImageGapFiller = text.isBlank() &&
-                nearestNonBlank(i, -1) is BodyBlock.Image &&
-                nearestNonBlank(i, +1) is BodyBlock.Image
+            /**
+             * 空文本块且（**带载体标记**，或旧数据按位置判定：前后最近的非空白块都是图片）
+             * → 图片间载体空行，纯文本不输出。
+             *
+             * v2026-09-10 加标记分支：载体被换位甩到图片组外侧时位置判定会失效（前后不再是两图），
+             * 但它本质仍是编辑器的排版产物、不该进正文；标记分支把它一并排除
+             * （这对等待归一化清理的中间态同样成立）。
+             */
+            val marked = (block as? BodyBlock.Text)?.isImageSeparator == true
+            val isImageGapFiller = text.isBlank() && (
+                marked ||
+                    (nearestNonBlank(i, -1) is BodyBlock.Image && nearestNonBlank(i, +1) is BodyBlock.Image)
+                )
             if (isImageGapFiller) null else text
         }.joinToString("\n")
     }
@@ -1608,8 +1715,8 @@ class BodyBlocksController(
                 cmd.apply(this)
                 commands += cmd
             }
-            /** 整批落定后统一补空行（此时才形成最终的相邻关系） */
-            commands += buildImageSeparatorCommands().onEach { it.apply(this) }
+            /** 整批落定后统一归一化载体空块（此时才形成最终的相邻关系） */
+            commands += normalizeImageSeparators().onEach { it.apply(this) }
         } finally {
             suppressDocChanged = false
             replaying = false
@@ -1733,27 +1840,96 @@ class BodyBlocksController(
     }
 
     /**
-     * 扫描当前块列表，为每一处「两个 Image 块直接相邻」生成一条
-     * [InsertImageSeparatorCommand]（在两图之间插入一个空 Text 块）。
+     * 图片载体空块的**归一化**：维护不变量
+     * 「载体空块数 == 图片相邻对数，且每个都恰好夹在两张图片之间」。
      *
-     * **自后向前扫描**：先插大索引、后插小索引——插入发生在更靠前的位置时，
-     * 不会影响后面（更大索引）已经算好的位置；反之自前向后会让后续索引整体 +1。
+     * v2026-09-10 新增（修复「反复交换图片后上下空行越来越多」）：
+     * 旧实现只有 [InsertImageSeparatorCommand]（**只增不减**），而拖拽换位是
+     * "移除 + 插入"——被拖图片走了、它原来的载体空块留在原索引上 → 漂到图片组
+     * 外侧成为多余空行；下次换位又补一个新载体 → **每次交换空块 +1**，视觉上
+     * 就是图片上下空行越堆越多（还会出现两个空行贴在一起）。
      *
-     * **幂等**：两图之间已有任何非 Image 块时都不产生命令，因此可安全地在
-     * 任何结构操作之后调用（插图、批量插图、拖拽落位三个入口共用）。
+     * 三条规则（按 [BodyBlock.Text.isImageSeparator] 区分载体与用户空行）：
+     * 1. **删漂移载体**：标记为载体但前后不再同时紧邻图片的块 → 删除；
+     * 2. **压缩间隙**：同一处「图-图间隙」（两图之间只隔着空白块）里多于一个空白块时，
+     *    只保留一个（优先保留带标记的，否则保留最靠上的）——顺带清理历史堆积；
+     * 3. **补插**：两图直接相邻处各插一个载体（标记为 true）。
      *
-     * 只处理 Image-Image 相邻：Divider 等非文本块与图片相邻属用户主动排版，不强拆。
+     * **返回顺序即 apply 顺序**（调用方 `onEach { it.apply(this) }` 即可）：
+     * 先删除（索引自后向前）、后插入（索引自后向前）。删除先行保证插入命令的索引
+     * 落在"删除之后"的坐标系上；各自自后向前保证前面的操作不影响已算好的更大索引。
+     * 撤销时 `CompositeCommand` 逆序回退：插入先按 id 移除（顺序无关），
+     * 删除再按升序索引插回（顺序正确）→ 列表精确还原。
+     *
+     * 只处理 Image-Image 相邻：Divider 等非文本块与图片相邻属用户主动排版，不强拆；
+     * 图片组**外侧**的历史空行不动（无法区分"漂移载体"与"用户有意留白"）。
      */
-    private fun buildImageSeparatorCommands(): List<InsertImageSeparatorCommand> {
-        val commands = mutableListOf<InsertImageSeparatorCommand>()
-        for (i in blocks.lastIndex downTo 1) {
-            if (blocks[i] is BodyBlock.Image && blocks[i - 1] is BodyBlock.Image) {
-                commands += InsertImageSeparatorCommand(
-                    index = i,
-                    spec = BlockSpec.TextSpec(newBodyBlockId(), ""),
+    private fun normalizeImageSeparators(): List<BodyBlocksCommand> {
+        val deletions = mutableListOf<RemoveImageSeparatorCommand>()
+
+        /** ① 漂移载体：带标记但不再夹在两图之间 → 删 */
+        for (i in blocks.indices.reversed()) {
+            val text = blocks[i] as? BodyBlock.Text ?: continue
+            if (!text.isImageSeparator) continue
+            val betweenImages = i > 0 && i < blocks.lastIndex &&
+                blocks[i - 1] is BodyBlock.Image && blocks[i + 1] is BodyBlock.Image
+            if (!betweenImages) {
+                deletions += RemoveImageSeparatorCommand(text.id, textSpec(text), i)
+            }
+        }
+
+        /** ② 同一图-图间隙里的多余空白块 → 只留一个 */
+        val deletedIds = deletions.map { it.blockId }.toMutableSet()
+        var i = 0
+        while (i < blocks.lastIndex) {
+            /** 从图片块出发，收集它后面连续的"空白 Text 块"（已判删的跳过不计） */
+            if (blocks[i] !is BodyBlock.Image) {
+                i++
+                continue
+            }
+            val blanks = mutableListOf<Int>()
+            var j = i + 1
+            while (j <= blocks.lastIndex) {
+                val candidate = blocks[j]
+                if (candidate is BodyBlock.Text && candidate.id !in deletedIds && isEffectivelyEmpty(candidate.state)) {
+                    blanks += j
+                    j++
+                } else {
+                    break
+                }
+            }
+            /** 只有"连续空白块之后紧跟另一张图片"才算图-图间隙 */
+            val closesWithImage = j <= blocks.lastIndex && blocks[j] is BodyBlock.Image
+            if (blanks.isNotEmpty() && closesWithImage) {
+                val keep = blanks.firstOrNull { (blocks[it] as BodyBlock.Text).isImageSeparator } ?: blanks.first()
+                blanks.filter { it != keep }.forEach { idx ->
+                    val extra = blocks[idx] as BodyBlock.Text
+                    deletions += RemoveImageSeparatorCommand(extra.id, textSpec(extra), idx)
+                    deletedIds += extra.id
+                }
+            }
+            i = j
+        }
+
+        /**
+         * ③ 补插：先在"删除已生效"的虚拟列表上找出所有两图相邻处，索引即删除后的坐标系。
+         * 自后向前遍历，保证插入顺序与 [InsertImageSeparatorCommand] 的坐标约定一致。
+         */
+        val remaining = blocks.filterNot { it.id in deletedIds }
+        val insertions = mutableListOf<InsertImageSeparatorCommand>()
+        for (index in remaining.indices.reversed()) {
+            if (index > 0 && remaining[index] is BodyBlock.Image && remaining[index - 1] is BodyBlock.Image) {
+                insertions += InsertImageSeparatorCommand(
+                    index = index,
+                    spec = BlockSpec.TextSpec(newBodyBlockId(), "", isImageSeparator = true),
                 )
             }
         }
+
+        /** 删除按索引降序（撤销时升序插回，位置才对称），随后才是插入命令 */
+        val commands = mutableListOf<BodyBlocksCommand>()
+        deletions.sortedByDescending { it.index }.forEach { commands += it }
+        insertions.forEach { commands += it }
         return commands
     }
 
@@ -2081,6 +2257,8 @@ class BodyBlocksController(
                 block.focusRequester,
                 checked,
                 block.indentLevel,
+                /** 就地换对象也要带上载体身份（v2026-09-10） */
+                isImageSeparator = block.isImageSeparator,
             )
         }
     }
@@ -2100,6 +2278,8 @@ class BodyBlocksController(
                 block.focusRequester,
                 block.checked,
                 indentLevel,
+                /** 就地换对象也要带上载体身份（v2026-09-10） */
+                isImageSeparator = block.isImageSeparator,
             )
         }
     }
@@ -2646,7 +2826,7 @@ class BodyBlocksController(
             command.apply(this)
             /** 结构变更（拆块/合并/退列表/插图等）后按位置语义重排连续有序块编号 */
             renumberOrderedBlocks()
-            extra += buildImageSeparatorCommands().onEach { it.apply(this) }
+            extra += normalizeImageSeparators().onEach { it.apply(this) }
             if (extra.isNotEmpty()) renumberOrderedBlocks()
         } finally {
             replaying = false
@@ -2818,6 +2998,8 @@ class BodyBlocksController(
             stripListLevelPrefix = true,
             checked = spec.checked,
             indentLevel = spec.indentLevel,
+            /** 载体身份随 spec 还原（v2026-09-10），否则撤销后重建的载体被判成"用户空行"而不再清理 */
+            isImageSeparator = spec.isImageSeparator,
         )
         is BlockSpec.ImageSpec -> BodyBlock.Image(spec.id, spec.path, spec.note, spec.shrunk)
         is BlockSpec.DividerSpec -> BodyBlock.Divider(spec.id)
@@ -3316,8 +3498,12 @@ class BodyBlocksController(
         try {
             move.apply(this)
             renumberOrderedBlocks()
-            /** 落位后若与相邻图片贴在一起 → 补空 Text 块（自后向前，索引不漂移） */
-            extra += buildImageSeparatorCommands().onEach { it.apply(this) }
+            /**
+             * 落位后归一化载体空块（自后向前删/插，索引不漂移）：
+             * 补"两图相邻"缺的载体，并删掉这次换位把旧载体甩到图片组外侧的残留
+             * （v2026-09-10 修复"反复交换后图片上下空行越来越多"）。
+             */
+            extra += normalizeImageSeparators().onEach { it.apply(this) }
         } finally {
             replaying = false
         }
