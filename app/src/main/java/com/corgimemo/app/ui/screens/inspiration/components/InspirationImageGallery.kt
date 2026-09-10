@@ -5,12 +5,15 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import android.os.Build
 import android.util.Log
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -49,12 +52,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -81,6 +86,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
+ * 竖屏下标题 / 页码 / 右上按钮的**顶边**与状态栏底部的间距。
+ *
+ * 取 12dp，与录音附件页 `VoicePreviewDialog` 顶栏的上边距保持一致 ——
+ * 两个全屏页面的顶部按钮与文字因此落在**同一条水平线**上。
+ * （此前按「半个状态栏高度」≈20dp 实现，视觉上比录音页低了约 8dp。）
+ */
+private val ChromeTopGapFromStatusBar = 12.dp
+
+/**
+ * 横竖屏切换时 UI 安全边距补间的时长（毫秒）。
+ *
+ * 与系统旋转动画（约 300ms）对齐 —— 边距与画面同时开始变化、同时结束，
+ * 避免竖屏 `top ≈ 36dp` 与横屏 `start = 挖孔宽、top = 0` 之间的**硬切**
+ * 造成按钮"跳一下"的观感。
+ */
+private const val ChromePaddingTransitionMillis = 300
+
+/**
  * 灵感图片全屏预览
  *
  * 使用独立 Dialog Window 渲染，覆盖全屏（含 MainScreen 的 AppBar/BottomBar/柯基悬浮球）。
@@ -98,7 +121,7 @@ import kotlinx.coroutines.withContext
  * v2026-09-10 新增（对照原型）：
  * - 右下角「详情」按钮（保存左侧，Icons.Outlined.Info）：打开图片详情页
  *   [ImageDetailPage]——白底信息页，展示拍摄时间（EXIF）/ 文件信息 / 文件路径
- * - 竖屏：系统栏始终显示、UI 按 insets 避让（顶部留出**半个状态栏高度**的间距）
+ * - 竖屏：系统栏始终显示、UI 按 insets 避让（顶边距状态栏底 [ChromeTopGapFromStatusBar]，与录音附件页同高）
  * - 点击页面切换标题/页码/全部按钮显隐（翻页/缩放是拖拽，滑动不触发）
  * - 详情页打开时系统返回键先关详情页（BackHandler），不退出附件页
  *
@@ -240,21 +263,37 @@ fun InspirationImageGallery(
                 // 让 Dialog 内容延伸到系统栏后面（黑底铺到状态栏/手势条后面）
                 WindowCompat.setDecorFitsSystemWindows(window, false)
                 /**
-                 * ⚠️ v2026-09-10 修复（关键根因）：让 Dialog Window 延伸到**屏幕挖孔/刘海区域**。
+                 * ⚠️ v2026-09-10 修复（**真正的根因**，二次定位后重做）：
+                 * 让 Dialog Window **按整个屏幕**放置，不再被系统栏/挖孔缩进。
                  *
-                 * 背景：`enableEdgeToEdge()` 会给 **Activity 主窗口**设置
-                 * `layoutInDisplayCutoutMode = SHORT_EDGES`（edge-to-edge 的要求），
-                 * 但 Compose Dialog 是**独立窗口**——只调用 setDecorFitsSystemWindows(false)
-                 * 并不会改它的 cutout 模式，于是保持默认 `DEFAULT`：窗口被限制在挖孔
-                 * 安全区**之内**。实测表现为（截图逐像素测量确认）：
-                 * - 竖屏：窗口顶边被下推到状态栏之下（整整一个状态栏高度），
-                 *   叠加 UI 自己的安全边距后，标题/页码/按钮"离时间栏约 1.7 个状态栏高"；
-                 * - 横屏：窗口左边被右推到挖孔右侧（约 32dp），
-                 *   屏幕左侧露出一条宿主页面，形成"未覆盖区域"。
+                 * **为什么上一版只改 cutout 模式没有效果**：
+                 * Compose 的 Dialog 用 `Theme.Dialog` 主题，属于 **floating window**
+                 * （windowIsFloating = true）。这类窗口由 WindowManager 负责把它"贴合"
+                 * 到系统栏 / 挖孔安全区**之内**，于是窗口 frame 本身就被缩进了：
+                 * - 竖屏：窗口顶边 = 状态栏底 ⇒ 整整少了一个状态栏的高度；
+                 * - 横屏：窗口左边 = 挖孔右侧 ⇒ 屏幕左侧露出一条宿主页面。
+                 * `layoutInDisplayCutoutMode` 只覆盖"挖孔"这一项，而竖屏的偏移量
+                 * 恰好也等于状态栏高度 ⇒ 单独改它看不出任何变化。
                  *
-                 * SHORT_EDGES = 允许窗口延伸到**短边**的挖孔区：竖屏是顶部、横屏是左右侧，
-                 * 正好同时解决上面两种场景（API 28+；更低版本无挖孔概念，无需处理）。
+                 * `FLAG_LAYOUT_IN_SCREEN` =「把窗口放在整个屏幕内，忽略周围的装饰
+                 * （例如状态栏）」，这才是让 floating 窗口铺满全屏的关键开关。
+                 *
+                 * **旁证（用户实测）**：录音附件页 `VoicePreviewDialog` 是完全相同的
+                 * 独立 Dialog 写法，顶栏只加了 12dp padding、没有任何 insets 避让，
+                 * 呈现的间距却"刚好正确"——正因为它的窗口同样被下推了一个状态栏高度，
+                 * 属于歪打正着。本页若在这段偏移之上再叠加安全边距，就会**双重避让**，
+                 * 于是怎么调都显得远。
                  */
+                window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
+                /**
+                 * 兜底（v2026-09-10）：万一窗口仍未能铺满（个别 ROM 会忽略
+                 * FLAG_LAYOUT_IN_SCREEN，把 floating 窗口重新贴合回安全区之内），
+                 * 用 **100% 背景遮罩**把「露出的宿主区域」压成纯黑 ——
+                 * 与预览页的黑色背景无缝衔接，用户就看不到那条未覆盖区域了。
+                 * 窗口若已正常铺满，该设置不产生任何可见影响（遮罩完全被本页盖住）。
+                 */
+                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                window.setDimAmount(1f)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     window.attributes = window.attributes.apply {
                         layoutInDisplayCutoutMode =
@@ -355,6 +394,21 @@ fun InspirationImageGallery(
         val configuration = LocalConfiguration.current
 
         /**
+         * **实际**屏幕方向（取自窗口配置），与 [landscape]（用户意图）严格区分 ——
+         * 这是消除「切横竖屏时按钮上下跳动」的关键。
+         *
+         * 点「横屏查看」后 [landscape] 会**立即**翻转，但系统旋转是**异步**的
+         * （窗口先 resize，再播约 300ms 的 Surface 旋转动画）。
+         * 若直接用 [landscape] 驱动安全边距，UI 会在窗口仍是旧方向时就切到目标边距
+         * （竖屏 `top≈36dp` ⇄ 横屏 `start≈挖孔宽、top=0`），于是先"跳"一下，
+         * 等屏幕真转过来再稳定。
+         *
+         * 改用真实方向后，边距切换与窗口 resize / 旋转动画在**同一帧**发生，
+         * 位置变化被旋转动画自然掩盖，不再有突兀跳动。
+         */
+        val isLandscapeLayout = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+        /**
          * 旋转后重新声明 Dialog Window 尺寸（v2026-09-10）：
          * Dialog Window 的 LayoutParams 已是 MATCH_PARENT，但个别 ROM 在配置变化后
          * 会把子窗口尺寸回退成 wrap_content，这里再声明一次做保险，避免横屏后
@@ -365,6 +419,12 @@ fun InspirationImageGallery(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
+            /**
+             * 旋转 / 配置变化后再次强调「按整个屏幕放置」：
+             * 个别 ROM 在配置变化时会重算窗口 frame，把 floating 窗口重新贴合回
+             * 系统栏安全区之内（表现为横屏旋转后又出现左侧未覆盖），这里补一刀保险。
+             */
+            dialogWindow?.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
         }
 
         /**
@@ -378,8 +438,18 @@ fun InspirationImageGallery(
          *
          * 读取时机：进附件页时 + 每次横竖屏切换（[configuration] 变化）时各读一次。
          */
-        var statusBarTopPx by remember { mutableStateOf(0) }
-        var navBarBottomPx by remember { mutableStateOf(0) }
+        /**
+         * 系统栏高度的**初值在首次组合时同步读一次**：
+         * 若从 0 起步，首帧的安全边距就会比目标小一个状态栏高度，随后被 insets
+         * 测量结果"补正" —— 那会让补间动画在刚进页面时先滑一段，很突兀。
+         */
+        val initialSystemBarsInsets = remember {
+            activity?.window?.decorView
+                ?.let { ViewCompat.getRootWindowInsets(it) }
+                ?.getInsets(WindowInsetsCompat.Type.systemBars())
+        }
+        var statusBarTopPx by remember { mutableStateOf(initialSystemBarsInsets?.top ?: 0) }
+        var navBarBottomPx by remember { mutableStateOf(initialSystemBarsInsets?.bottom ?: 0) }
         /** 挖孔（刘海）安全区四边：横屏时系统栏已隐藏，只有挖孔仍需避让 */
         var cutoutLeftPx by remember { mutableStateOf(0) }
         var cutoutTopPx by remember { mutableStateOf(0) }
@@ -394,7 +464,7 @@ fun InspirationImageGallery(
              * 横屏下系统栏已 hide，insets 归零；退出横屏的一瞬间系统栏可能还没 show 回来，
              * 若直接覆盖会让竖屏 UI 贴到屏幕顶 —— 保留上一次的真实高度做兜底。
              */
-            if (!landscape) {
+            if (!isLandscapeLayout) {
                 val bars = root.getInsets(WindowInsetsCompat.Type.systemBars())
                 if (bars.top > 0) statusBarTopPx = bars.top
                 if (bars.bottom > 0) navBarBottomPx = bars.bottom
@@ -406,48 +476,150 @@ fun InspirationImageGallery(
             cutoutRightPx = cutout.right
             cutoutBottomPx = cutout.bottom
         }
-        DisposableEffect(activity, landscape, configuration) {
+        DisposableEffect(activity, configuration) {
             readSafeInsets()
             onDispose { }
         }
         /**
          * 旋转动画结束后再补读一次：系统旋转是异步的（约 300ms 完成），
          * 进入横屏的瞬间读到的仍是旋转前的挖孔位置，补读一次可拿到正确值。
+         * 以 [configuration] 为 key（而非用户意图的 landscape），保证读的是真实方向下的值。
          */
-        LaunchedEffect(activity, landscape) {
+        LaunchedEffect(activity, configuration) {
             delay(350)
             readSafeInsets()
         }
         val density = LocalDensity.current
         val statusTopPadding = with(density) { statusBarTopPx.toDp() }
         val navBottomPadding = with(density) { navBarBottomPx.toDp() }
+
         /**
-         * UI 子层的安全边距（v2026-09-10 重做：真横屏后**不再需要坐标系换算**）：
+         * Dialog 窗口（其内容根 View）在**屏幕坐标系**中的左上角偏移。
          *
-         * - 竖屏：系统栏始终显示。顶部让出「状态栏高度 + 半个状态栏高度」，
-         *   使标题/页码/按钮的**顶边**正好落在状态栏下方**半个状态栏高度**处
-         *   （用户指定）。三者自带 16dp 的内边距，故此处减去 16dp 保持严格对齐；
-         *   底部让出导航栏高度。
-         * - 横屏：系统栏已被彻底隐藏 → 只避让挖孔安全区，让内容不压到挖孔上。
+         * 用途：Compose Dialog 是 floating window，WindowManager 会把窗口 frame 缩进到
+         * 系统栏 / 挖孔安全区之内（详见上方 FLAG_LAYOUT_IN_SCREEN 的注释）。这里实测窗口的
+         * 真实位置，让安全边距**扣掉**这段偏移 —— 于是无论窗口最终是否真的铺满，
+         * 元素都能精确落在「状态栏底 + [ChromeTopGapFromStatusBar]」处。
+         * 窗口正常铺满时该值为 (0, 0)，补偿项自动退化为 0，不影响原有逻辑。
+         *
+         * 双重保障：DisposableEffect 在窗口 attach 后立即读一次（避免首帧闪动），
+         * onGloballyPositioned 再随布局变化刷新（旋转、窗口尺寸变化后仍然准确）。
          */
-        val uiSafePadding = if (landscape) {
-            PaddingValues(
-                start = with(density) { cutoutLeftPx.toDp() },
-                top = with(density) { cutoutTopPx.toDp() },
-                end = with(density) { cutoutRightPx.toDp() },
-                bottom = with(density) { cutoutBottomPx.toDp() },
-            )
-        } else {
-            PaddingValues(
-                top = (statusTopPadding * 1.5f - 16.dp).coerceAtLeast(0.dp),
-                bottom = navBottomPadding,
-            )
+        val dialogRootView = LocalView.current
+        var windowLeftPx by remember { mutableFloatStateOf(0f) }
+        var windowTopPx by remember { mutableFloatStateOf(0f) }
+        DisposableEffect(dialogRootView, configuration) {
+            val location = IntArray(2)
+            dialogRootView.getLocationOnScreen(location)
+            windowLeftPx = location[0].toFloat()
+            windowTopPx = location[1].toFloat()
+            onDispose { }
         }
+
+        /**
+         * UI 子层的安全边距（v2026-09-10 五次调整：`1.5×SB` → `1.5×SB − 16dp`
+         * → 「窗口偏移补偿」 → 「基准改为与录音附件页一致的 12dp」 → **加补间动画**）。
+         *
+         * 目标值（补间前）：
+         * - 竖屏：标题/页码/按钮的**顶边**落在「状态栏底 + [ChromeTopGapFromStatusBar]」处，
+         *   与录音附件页顶栏同高；换算到窗口坐标系需再减去窗口顶部偏移 [windowTopPx]，
+         *   并扣掉元素自身的 16dp 内边距（窗口铺满时即 `状态栏高 − 4dp`）；底部让出导航栏。
+         * - 横屏：系统栏已隐藏 → 只让出挖孔安全区，同样扣除窗口左边/顶部偏移
+         *   （窗口若已被推到挖孔右侧，偏移量恰等于挖孔宽度，补偿后 start 归零）。
+         */
+        val windowLeftPadding = with(density) { windowLeftPx.toDp() }
+        val windowTopPadding = with(density) { windowTopPx.toDp() }
+        val cutoutLeftPadding = with(density) { cutoutLeftPx.toDp() }
+        val cutoutTopPadding = with(density) { cutoutTopPx.toDp() }
+        val cutoutRightPadding = with(density) { cutoutRightPx.toDp() }
+        val cutoutBottomPadding = with(density) { cutoutBottomPx.toDp() }
+
+        /**
+         * 首次 insets 测量是否已落地 —— 落地前不做补间。
+         *
+         * 系统栏高度初值已由 [initialSystemBarsInsets] 同步给出；但若那次读取落空（返回 0），
+         * 随后 `readSafeInsets()` 补正时若带补间，就会看到标题/按钮从屏幕顶部"滑下来"。
+         * 这里先等一帧（让首次测量赋值落地）再启用补间，进入页面即为静态正确位置。
+         */
+        var insetsMeasured by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            withFrameNanos { }
+            insetsMeasured = true
+        }
+        /** 补间规格：首次测量前用 snap 直接到位，之后才用与旋转动画同长的 tween */
+        val chromePaddingSpec = if (insetsMeasured) {
+            tween(durationMillis = ChromePaddingTransitionMillis)
+        } else {
+            snap()
+        }
+
+        val targetStartPadding = if (isLandscapeLayout) {
+            (cutoutLeftPadding - windowLeftPadding).coerceAtLeast(0.dp)
+        } else {
+            0.dp
+        }
+        val targetTopPadding = if (isLandscapeLayout) {
+            (cutoutTopPadding - windowTopPadding).coerceAtLeast(0.dp)
+        } else {
+            (statusTopPadding + ChromeTopGapFromStatusBar - 16.dp - windowTopPadding)
+                .coerceAtLeast(0.dp)
+        }
+        val targetEndPadding = if (isLandscapeLayout) cutoutRightPadding else 0.dp
+        val targetBottomPadding = if (isLandscapeLayout) cutoutBottomPadding else navBottomPadding
+
+        /**
+         * 四边分别补间（v2026-09-10）。
+         *
+         * 横竖屏切换时 `start / top / end / bottom` 的**语义与数值同时改变**
+         * （竖屏 `top ≈ 36dp` ⇄ 横屏 `start = 挖孔宽、top = 0`），硬切会让按钮"跳一下"。
+         * 时长与系统旋转动画对齐（[ChromePaddingTransitionMillis]），两者同时开始、同时结束。
+         *
+         * 注：系统栏高度初值已由 [initialSystemBarsInsets] 同步给出，
+         * 因此进入页面时不会出现"从 0 补间到目标"的滑入。
+         */
+        val animatedStartPadding by animateDpAsState(
+            targetValue = targetStartPadding,
+            animationSpec = chromePaddingSpec,
+            label = "uiSafeStartPadding",
+        )
+        val animatedTopPadding by animateDpAsState(
+            targetValue = targetTopPadding,
+            animationSpec = chromePaddingSpec,
+            label = "uiSafeTopPadding",
+        )
+        val animatedEndPadding by animateDpAsState(
+            targetValue = targetEndPadding,
+            animationSpec = chromePaddingSpec,
+            label = "uiSafeEndPadding",
+        )
+        val animatedBottomPadding by animateDpAsState(
+            targetValue = targetBottomPadding,
+            animationSpec = chromePaddingSpec,
+            label = "uiSafeBottomPadding",
+        )
+        val uiSafePadding = PaddingValues(
+            start = animatedStartPadding,
+            top = animatedTopPadding,
+            end = animatedEndPadding,
+            bottom = animatedBottomPadding,
+        )
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
+                /**
+                 * 刷新窗口在屏幕中的实际偏移（旋转 / 窗口尺寸变化后补偿量仍然准确）。
+                 * 仅当值真的变化时才写 state，避免无谓的重组循环。
+                 */
+                .onGloballyPositioned {
+                    val location = IntArray(2)
+                    dialogRootView.getLocationOnScreen(location)
+                    if (location[0] != windowLeftPx.toInt() || location[1] != windowTopPx.toInt()) {
+                        windowLeftPx = location[0].toFloat()
+                        windowTopPx = location[1].toFloat()
+                    }
+                }
         ) {
             /**
              * 浏览层（v2026-09-10 重做：真横屏后已**取消整体旋转**）。
@@ -518,7 +690,7 @@ fun InspirationImageGallery(
                     ) {
                         // 标题（左上角）："图片附件"——半透明黑底胶囊，与各按钮背景一致（v2026-09-10）
                         // top 与右上按钮组的 16dp 严格一致：三者的顶边因此落在同一条水平线上，
-                        // 即「状态栏下方半个状态栏高度」处（该间距由外层 uiSafePadding 统一给出）
+                        // 即「状态栏底 + ChromeTopGapFromStatusBar」处（该间距由外层 uiSafePadding 统一给出）
                         Text(
                             text = "图片附件",
                             color = Color.White,

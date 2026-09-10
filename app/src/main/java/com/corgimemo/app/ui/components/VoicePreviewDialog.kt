@@ -1,11 +1,15 @@
 package com.corgimemo.app.ui.components
 
+import android.app.Activity
 import android.content.ContentValues
+import android.content.Context
+import android.content.ContextWrapper
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +48,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -54,7 +59,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,6 +71,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -267,29 +276,121 @@ fun VoicePreviewDialog(
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
                 WindowCompat.setDecorFitsSystemWindows(window, false)
+                /**
+                 * v2026-09-10 与图片附件页统一（同一根因，详见 InspirationImageGallery 的注释）：
+                 *
+                 * Compose Dialog 使用 `Theme.Dialog`（`windowIsFloating = true`），属于
+                 * **floating window**，WindowManager 会把窗口 frame 整块贴合进
+                 * 系统栏 / 挖孔安全区**之内**（竖屏顶边 = 状态栏底，横屏左边 = 挖孔右侧）。
+                 *
+                 * 本页顶栏原本只有 12dp padding、且**没有任何 insets 避让**，之所以"看起来是对的"，
+                 * 纯粹是因为窗口被下推了一个状态栏高度——歪打正着、不可控。
+                 * 这里改为让窗口**真正铺满**，再由下方按 insets 显式避让，
+                 * 并与图片附件页共用同一套「窗口偏移补偿」策略。
+                 */
+                window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
+                /**
+                 * 兜底遮罩：万一个别 ROM 忽略 FLAG_LAYOUT_IN_SCREEN，露出的宿主区域
+                 * 会被 100% 变暗压成纯黑，与页面深色背景衔接；正常铺满时无可见影响。
+                 */
+                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                window.setDimAmount(1f)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    window.attributes = window.attributes.apply {
+                        layoutInDisplayCutoutMode =
+                            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    }
+                }
+                /**
+                 * v2026-09-10 统一为「**始终显示系统栏**」（与图片附件页竖屏策略一致，用户决策）：
+                 *
+                 * 原实现进入即 `hide(systemBars())` 做沉浸，但部分 ROM 在 hide() 后**仍绘制**
+                 * 状态栏/手势条，而窗口上报的 insets 已归零——「看得见的栏 + 为零的 insets」
+                 * 会让顶部/底部按 insets 做的避让全部失效。
+                 * 改为始终显示后 insets 永远真实，避让值可预测；
+                 * 页面是深色背景，故配浅色系统栏图标保证可读。
+                 */
                 val controller = WindowInsetsControllerCompat(window, window.decorView)
-                controller.hide(WindowInsetsCompat.Type.systemBars())
-                controller.systemBarsBehavior =
-                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                controller.isAppearanceLightStatusBars = false
+                controller.isAppearanceLightNavigationBars = false
                 onDispose {
                     controller.show(WindowInsetsCompat.Type.systemBars())
                 }
             }
         }
 
+        /**
+         * 系统栏安全边距 + 窗口偏移实测（v2026-09-10 与图片附件页统一）。
+         *
+         * - insets 一律从 **Activity 主窗口** 读：Compose Dialog 是子窗口，
+         *   部分 ROM 派发给它的 insets 为 0，不可靠；
+         * - 同时实测窗口在屏幕中的真实偏移：窗口若已被系统贴合进安全区
+         *   （`FLAG_LAYOUT_IN_SCREEN` 未生效），偏移量恰好等于系统栏尺寸，
+         *   此时页面**不需要**再自行避让，否则就成了双重避让。
+         */
+        val activity = LocalContext.current.findActivity()
+        val density = LocalDensity.current
+        val configuration = LocalConfiguration.current
+        val dialogRootView = LocalView.current
+        var statusBarTopPx by remember { mutableStateOf(0) }
+        var navBarBottomPx by remember { mutableStateOf(0) }
+        var windowLeftPx by remember { mutableFloatStateOf(0f) }
+        var windowTopPx by remember { mutableFloatStateOf(0f) }
+
+        DisposableEffect(activity, configuration) {
+            activity?.window?.decorView?.let { ViewCompat.getRootWindowInsets(it) }?.let { root ->
+                val bars = root.getInsets(WindowInsetsCompat.Type.systemBars())
+                /** 系统栏被 hide 时 insets 归零，用「> 0」守卫保留上一次的真实高度 */
+                if (bars.top > 0) statusBarTopPx = bars.top
+                if (bars.bottom > 0) navBarBottomPx = bars.bottom
+            }
+            val location = IntArray(2)
+            dialogRootView.getLocationOnScreen(location)
+            windowLeftPx = location[0].toFloat()
+            windowTopPx = location[1].toFloat()
+            onDispose { }
+        }
+
+        val statusBarPadding = with(density) { statusBarTopPx.toDp() }
+        val navBarPadding = with(density) { navBarBottomPx.toDp() }
+        /**
+         * 窗口是否已被系统贴合进安全区（浮窗的隐式 inset）。
+         * 为 true 时窗口四边都已被让开，页面**不能再**叠加系统栏边距。
+         */
+        val windowInsetActive = windowTopPx > 0.5f || windowLeftPx > 0.5f
+        val topSafePadding = if (windowInsetActive) 0.dp else statusBarPadding
+        val bottomSafePadding = if (windowInsetActive) 0.dp else navBarPadding
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF1A1A1A))
+                /** 窗口位置随布局变化刷新（旋转 / 尺寸变化后避让判断仍然准确） */
+                .onGloballyPositioned {
+                    val location = IntArray(2)
+                    dialogRootView.getLocationOnScreen(location)
+                    if (location[0] != windowLeftPx.toInt() || location[1] != windowTopPx.toInt()) {
+                        windowLeftPx = location[0].toFloat()
+                        windowTopPx = location[1].toFloat()
+                    }
+                }
         ) {
             Column(
                 modifier = Modifier.fillMaxSize()
             ) {
                 // ========== 顶栏：标题 + 关闭按钮 ==========
+                // top 额外让出系统栏高度（窗口已铺满时）；窗口若已被系统贴合进安全区，
+                // topSafePadding 自动为 0，避免双重避让 —— 视觉与改造前保持一致
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 12.dp + topSafePadding,
+                            bottom = 12.dp,
+                        ),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -578,7 +679,13 @@ fun VoicePreviewDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 12.dp,
+                            /** bottom 额外让出导航栏高度（窗口已铺满时），理由同顶栏 */
+                            bottom = 12.dp + bottomSafePadding,
+                        ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     // 删除按钮
@@ -711,4 +818,16 @@ private fun formatDuration(ms: Int): String {
 private fun getFileName(path: String): String {
     val file = File(path)
     return file.nameWithoutExtension.ifBlank { "录音" }
+}
+
+/**
+ * 从 Context 逐层解包拿到宿主 [Activity]。
+ *
+ * Compose Dialog 的 context 通常是 ContextThemeWrapper 包着 Activity，
+ * 用于读取 Activity 主窗口的真实 insets —— Dialog 子窗口上报的 insets 在部分 ROM 上不可靠。
+ */
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
