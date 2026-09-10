@@ -3910,6 +3910,18 @@ private val ImageToolbarWidth = 256.dp
 private val ImageToolbarHeight = 50.dp
 
 /**
+ * 工具栏阴影外扩 padding（v2026-09-10 阴影切割修复）：AnimatedVisibility 的
+ * fadeIn/fadeOut 使 alpha < 1 → RenderNode 离屏合成，**离屏缓冲只按布局 bounds
+ * 尺寸分配**（ui-graphics 源码：rasterization into an offscreen buffer will be
+ * sized according to the specified size），超出布局边界的阴影光晕被缓冲区直边
+ * 裁切（"阴影边缘被切割"）。外扩一圈透明 padding 让 bounds 包住阴影即可规避；
+ * 值覆盖 dropShadow 扩散（radius 5dp ≈3σ 7.5dp）+ y 偏移 2dp + 余量。
+ * **定位耦合**：[toolbarPopupOffset] 须同步减去此值（可视区左上角 = Popup 内容
+ * 左上角 + padding），否则工具栏整体偏移 12dp。
+ */
+private val ImageToolbarShadowPadding = 12.dp
+
+/**
  * 图片缩小/恢复动画与工具栏退场动画**共用**的时长（v2026-09-09 同步要求）：
  * 点「缩小/恢复」按钮时两者同帧启动、等长播放、同时结束——时长必须单一真相源。
  */
@@ -4071,6 +4083,10 @@ private fun BlockImageItem(
      * Popup offset（组合期计算，与旧 lambda offset 同式）：锚点 = 内层 [Column]
      * （Popup 挂在其中，TopStart 即 Column 左上角）——[frameTopPx] 等实测坐标
      * 也相对同一 Column，**零补偿**。快照（last*）与 viewport clamp 逻辑原样保留。
+     *
+     * v2026-09-10：AnimatedVisibility 内为承载阴影外扩了一圈
+     * [ImageToolbarShadowPadding]（见该常量 KDoc，离屏缓冲裁切规避）——可视工具栏
+     * 左上角 = Popup 内容左上角 + padding，x/y 各减 padding 保持可视位置不变。
      */
     val density = LocalDensity.current
     val toolbarPopupOffset = if (!toolbarPopupMounted) {
@@ -4091,10 +4107,11 @@ private fun BlockImageItem(
                 ?.let { vp -> centerWindowY.coerceIn(vp.top + marginPx, vp.bottom - marginPx) }
                 ?: centerWindowY
             val dy = clampedWindowY - centerWindowY
+            val shadowPadPx = ImageToolbarShadowPadding.toPx()
 
             IntOffset(
-                (centerX - ImageToolbarWidth.toPx() / 2f).roundToInt(),
-                (centerY + dy - ImageToolbarHeight.toPx() / 2f).roundToInt(),
+                (centerX - ImageToolbarWidth.toPx() / 2f - shadowPadPx).roundToInt(),
+                (centerY + dy - ImageToolbarHeight.toPx() / 2f - shadowPadPx).roundToInt(),
             )
         }
     }
@@ -4271,7 +4288,9 @@ private fun BlockImageItem(
                  *
                  * 定位：锚点即本 Column（TopStart = Column 左上角），offset 用
                  * [toolbarPopupOffset]（实测 frame 坐标 + 快照冻结 + viewport clamp，
-                 * 与旧 lambda offset 同式，坐标系一致零补偿）。
+                 * 与旧 lambda offset 同式，坐标系一致；v2026-09-10 起额外减去
+                 * [ImageToolbarShadowPadding]——内容层为承载阴影外扩了一圈 padding，
+                 * 减去后可视工具栏位置与旧版逐像素一致）。
                  */
                 if (toolbarPopupMounted) {
                     Popup(
@@ -4289,44 +4308,56 @@ private fun BlockImageItem(
                         var toolbarAnimatedIn by remember { mutableStateOf(false) }
                         LaunchedEffect(Unit) { toolbarAnimatedIn = true }
 
-                        /** 全限定名：作用域链上有 RowScope，裸名会误解析到
-                         *  RowScope.AnimatedVisibility（横滑扩展，语义不同） */
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = toolbarVisible && toolbarAnimatedIn,
-                            enter = scaleIn(
-                                initialScale = 0.85f,
-                                animationSpec = tween(durationMillis = 180),
-                            ) + fadeIn(animationSpec = tween(durationMillis = 180)),
-                            exit = scaleOut(
-                                targetScale = 0.85f,
-                                /** 与图片缩小/恢复动画等长（共用常量）：同帧启动、同时结束 */
-                                animationSpec = tween(durationMillis = ImageScaleAnimationDurationMillis),
-                            ) + fadeOut(animationSpec = tween(durationMillis = ImageScaleAnimationDurationMillis)),
-                        ) {
-                            ImageBlockToolbar(
-                                /** 图标取点击瞬间快照：退出动画期间保持原样 */
-                                shrunk = lastVisibleShrunk,
-                                onNoteClick = {
-                                    /** 原型交互：备注编辑时退出选中（高亮与工具栏消失，焦点交给输入框） */
-                                    /** 进入编辑态前重置聚焦守卫：否则上次的聚焦记录会让初始回调立刻退出 */
-                                    noteHasBeenFocused = false
-                                    /** 以块对象权威值作为编辑起点（undo/回填后避免编辑到过期文本） */
-                                    noteText = block.note ?: ""
-                                    noteEditing = true
-                                    controller.clearBlockSelection()
-                                },
-                                onScaleClick = { controller.toggleImageShrunk(block.id) },
-                                /**
-                                 * 图片附件页（v2026-09-10 接线）：
-                                 * 先清选中态（工具栏随高亮一起消失，返回后不残留选中），
-                                 * 再把本块路径抛给页面打开全屏附件页——
-                                 * 页面按路径算出正文全部图片与初始索引（见 InspirationEditScreen）。
-                                 */
-                                onGalleryClick = {
-                                    controller.clearBlockSelection()
-                                    onOpenImageGallery(block.path)
-                                },
-                            )
+                        /**
+                         * 阴影外扩 padding（v2026-09-10）：fade 动画 alpha<1 触发
+                         * RenderNode 离屏合成，缓冲区只按布局 bounds 分配，超出
+                         * 边界的阴影光晕被直边裁切（"阴影边缘被切割"）。外扩
+                         * [ImageToolbarShadowPadding] 让 bounds 包住阴影；对称
+                         * padding 不改变 scale 动画的缩放中心。
+                         * **定位耦合**：toolbarPopupOffset 已同步减去同值。
+                         * 已知副作用：工具栏四周 12dp 透明环带落入 Popup 窗口，
+                         * 该环带内的触摸被 Popup 拦截、不再穿透到下方图片。
+                         */
+                        Box(modifier = Modifier.padding(ImageToolbarShadowPadding)) {
+                            /** 全限定名：作用域链上有 RowScope，裸名会误解析到
+                             *  RowScope.AnimatedVisibility（横滑扩展，语义不同） */
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = toolbarVisible && toolbarAnimatedIn,
+                                enter = scaleIn(
+                                    initialScale = 0.85f,
+                                    animationSpec = tween(durationMillis = 180),
+                                ) + fadeIn(animationSpec = tween(durationMillis = 180)),
+                                exit = scaleOut(
+                                    targetScale = 0.85f,
+                                    /** 与图片缩小/恢复动画等长（共用常量）：同帧启动、同时结束 */
+                                    animationSpec = tween(durationMillis = ImageScaleAnimationDurationMillis),
+                                ) + fadeOut(animationSpec = tween(durationMillis = ImageScaleAnimationDurationMillis)),
+                            ) {
+                                ImageBlockToolbar(
+                                    /** 图标取点击瞬间快照：退出动画期间保持原样 */
+                                    shrunk = lastVisibleShrunk,
+                                    onNoteClick = {
+                                        /** 原型交互：备注编辑时退出选中（高亮与工具栏消失，焦点交给输入框） */
+                                        /** 进入编辑态前重置聚焦守卫：否则上次的聚焦记录会让初始回调立刻退出 */
+                                        noteHasBeenFocused = false
+                                        /** 以块对象权威值作为编辑起点（undo/回填后避免编辑到过期文本） */
+                                        noteText = block.note ?: ""
+                                        noteEditing = true
+                                        controller.clearBlockSelection()
+                                    },
+                                    onScaleClick = { controller.toggleImageShrunk(block.id) },
+                                    /**
+                                     * 图片附件页（v2026-09-10 接线）：
+                                     * 先清选中态（工具栏随高亮一起消失，返回后不残留选中），
+                                     * 再把本块路径抛给页面打开全屏附件页——
+                                     * 页面按路径算出正文全部图片与初始索引（见 InspirationEditScreen）。
+                                     */
+                                    onGalleryClick = {
+                                        controller.clearBlockSelection()
+                                        onOpenImageGallery(block.path)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -4355,6 +4386,11 @@ private fun BlockImageItem(
  * 变换矩阵）会让胶囊 outline 的投影出现**方形边角**（左下/右下方角，用户实测）；
  * dropShadow 按胶囊形状生成模糊位图直接绘制，动画中只是纹理缩放/淡出，**形状恒定**。
  * 参数为 elevation 6dp 的视觉近似（radius 5dp / 黑 25% / y 偏移 2dp），可真机微调。
+ *
+ * **阴影切割修复（v2026-09-10 第二步）**：fade 动画 alpha<1 触发离屏合成后，缓冲区
+ * 只按布局 bounds 分配，阴影光晕超出布局边界的部分仍会被直边裁切（"阴影边缘被
+ * 切割"）。解法在调用方：AnimatedVisibility 内外扩 [ImageToolbarShadowPadding]
+ * 让 bounds 包住阴影，offset 同步补偿——本组合函数不感知该 padding。
  */
 @Composable
 private fun ImageBlockToolbar(
