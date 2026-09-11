@@ -38,7 +38,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
@@ -72,6 +71,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.ui.layout.layout
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -83,6 +83,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalDensity
 import com.corgimemo.app.util.toPxFloat
 import androidx.compose.ui.unit.dp
@@ -103,8 +104,9 @@ import com.corgimemo.app.ui.components.RelationPickerBottomSheet
 import com.corgimemo.app.ui.components.LinkedCardPreviewDialog
 import com.corgimemo.app.ui.model.TodoLine
 import com.corgimemo.app.util.ImageUtils
-import com.corgimemo.app.util.ClipboardImageHelper
 import com.corgimemo.app.util.pasteImageOnCtrlV
+import com.corgimemo.app.ui.components.ImagePasteFloatingButton
+import com.corgimemo.app.ui.components.ImagePasteTextToolbar
 import com.corgimemo.app.util.VoicePlayer
 import com.corgimemo.app.util.VoiceRecorder
 import com.corgimemo.app.viewmodel.HomeViewModel
@@ -1100,25 +1102,6 @@ fun TodoEditScreen(
                     )
                 }
 
-                // 🆕 v2026-09-11 粘贴图片按钮：与「复制当前容器」相邻，组成复制 / 粘贴一组操作。
-                // 行为：读取系统剪贴板中的图片，插入到当前聚焦行（addImageToFocusedLine）。
-                // 剪贴板无图片时由 ClipboardImageHelper 给出 Snackbar 提示；尺寸 36dp / 18dp 与同级按钮统一。
-                IconButton(
-                    onClick = {
-                        ClipboardImageHelper.pasteClipboardImage(context) { path ->
-                            addImageToFocusedLine(path)
-                        }
-                    },
-                    modifier = Modifier.size(36.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ContentPaste,
-                        contentDescription = "粘贴图片",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-
                 // 🆕 v2026-07-22 分享按钮：从底部工具栏上移到顶部导航栏
                 // 点击行为完全保持原 EditToolbar 分享按钮的逻辑（ShareCoordinator + 多卡片判断）
                 // 尺寸 36dp / 18dp 与灵感编辑页顶部同款按钮保持统一
@@ -1372,7 +1355,14 @@ fun TodoEditScreen(
             // 附件现在改为行级存储，在每个 CheckboxEditRow 内部渲染（支持子任务缩进）
             // 旧 ReorderableColumn 已被替换为 TodoLine.imagePaths / voiceAttachments 字段
 
+            /** 图片粘贴装饰器：复制图片后，在光标工具栏出现「粘贴图片」浮动入口（替代顶栏按钮） */
+            val imagePasteToolbar = remember(LocalTextToolbar.current) {
+                ImagePasteTextToolbar(LocalTextToolbar.current, context) { path ->
+                    addImageToFocusedLine(path)
+                }
+            }
             /** 复选框文本编辑器（替代原 OutlinedTextField，支持逐行复选框编辑） */
+            CompositionLocalProvider(LocalTextToolbar provides imagePasteToolbar) {
             CheckboxEditText(
                 lines = todoLines,
                 /** 各分组的保存状态（用于控制容器视觉反馈） */
@@ -1557,6 +1547,8 @@ fun TodoEditScreen(
                     .heightIn(min = 200.dp),
                 enabled = !isLocked
             )
+            }
+            ImagePasteFloatingButton(imagePasteToolbar)
 
             if (showLocationPopup) {
                 androidx.compose.material3.AlertDialog(

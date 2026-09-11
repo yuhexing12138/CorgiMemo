@@ -52,7 +52,7 @@ object ClipboardImageHelper {
         val clip = ClipData.newUri(context.contentResolver, "image", uri)
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(clip)
-        GlobalSnackbarController.showMessage("柯基图像+已添加到剪贴板")
+        GlobalSnackbarController.showMessage("已添加到剪贴板")
     }
 
     /**

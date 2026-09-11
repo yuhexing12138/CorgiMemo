@@ -90,3 +90,13 @@ scripts/capture_heap_on_leak.sh
 .workbuddy/kuikly_src/
 .workbuddy/memory/
 .workbuddy/tmp/
+# tmp* 通配：会话级临时目录全覆盖（tmp_androidfont / tmp_lookup / tmp_src 等，含未来新增）
+.workbuddy/tmp*/
+
+# ============================================================
+# 编辑会话事故备份与临时提交信息文件（恢复完成后即无用，不入库）
+# ============================================================
+*.splitbak
+*.splitbak2
+COMMIT_MSG.tmp
+temp_commit_msg.txt
