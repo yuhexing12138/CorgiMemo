@@ -81,6 +81,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.platform.LocalContext
+import com.corgimemo.app.util.ClipboardImageHelper
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.components.ImageHighlightColor
@@ -4594,6 +4595,7 @@ private fun BlockImageItem(
                                 animationSpec = tween(durationMillis = ImageScaleAnimationDurationMillis),
                             ) + fadeOut(animationSpec = tween(durationMillis = ImageScaleAnimationDurationMillis)),
                         ) {
+                            val ctx = LocalContext.current
                             ImageBlockToolbar(
                                 /** 图标取点击瞬间快照：退出动画期间保持原样 */
                                 shrunk = lastVisibleShrunk,
@@ -4623,7 +4625,7 @@ private fun BlockImageItem(
                                  */
                                 onCopyClick = {
                                     ClipboardImageHelper.copyImageToClipboard(
-                                        LocalContext.current,
+                                        ctx,
                                         block.path,
                                     )
                                 },

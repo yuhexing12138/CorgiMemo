@@ -5,10 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.isCtrlPressed
-import androidx.compose.ui.input.key.isMetaPressed
+import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.core.content.FileProvider
 import com.corgimemo.app.ui.components.GlobalSnackbarController
@@ -157,9 +154,13 @@ object ClipboardImageHelper {
  */
 fun Modifier.pasteImageOnCtrlV(context: Context, onInsert: (String) -> Unit): Modifier =
     onPreviewKeyEvent { event ->
-        val isPasteShortcut = (event.isCtrlPressed || event.isMetaPressed) &&
-            event.key == Key.V &&
-            event.type == KeyEventType.KeyDown
+        // 取底层 android.view.KeyEvent 判断（与 CheckboxEditText 既有键盘处理一致）：
+        // Ctrl+V / Cmd+V 的 KeyDown 视为粘贴快捷键。剪贴板含图片时消费事件并重定向为图片插入，
+        // 否则返回 false 放行给输入框做文本粘贴。
+        val native = event.nativeKeyEvent
+        val isPasteShortcut = (native.isCtrlPressed || native.isMetaPressed) &&
+            native.keyCode == AndroidKeyEvent.KEYCODE_V &&
+            native.action == AndroidKeyEvent.ACTION_DOWN
         if (isPasteShortcut && ClipboardImageHelper.hasImageInClipboard(context)) {
             ClipboardImageHelper.pasteClipboardImage(context, onInsert)
             true
