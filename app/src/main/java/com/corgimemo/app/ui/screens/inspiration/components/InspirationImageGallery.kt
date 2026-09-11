@@ -1182,10 +1182,12 @@ private fun ZoomableImage(
                         desiredY = offsetY
                         /** 已交给 Pager 的累计位移（**Pager 空间**：正 = 向前 = 下一张） */
                         var pagedPx = 0f
-                        /** 手指越过边界起点后的**屏幕**位移（下一张方向为正），详见下方推导 */
+                        /**
+                         * 手指越过边界起点后的**屏幕位移**（下一张方向为正），详见下方推导。
+                         * **封顶也加在它身上**（而不是加在翻页目标上），
+                         * 否则往回拖时要先把超出封顶的部分"吃"回去，形成一段死区。
+                         */
                         var screenOverscroll = 0f
-                        /** 上一帧实际交给 Pager 的量：把"内容内位移"还原成"屏幕位移"时要加回来 */
-                        var lastPaged = 0f
                         do {
                             val event = awaitPointerEvent()
                             val pressedCount = event.changes.count { it.pressed }
@@ -1267,16 +1269,15 @@ private fun ZoomableImage(
                                         offsetY = desiredY
                                     } else {
                                         /**
-                                         * **翻页期间把图像钉在出发的那条边界上**：
-                                         * 否则手指往回拖时，图像先在自己的平移余量里往回走，
-                                         * 而 Pager 停在原处不回退 —— 画面与手指不同步。
+                                         * **翻页期间把图像钉死在出发的那条边界上**（v2026-09-11 修正）。
+                                         *
+                                         * 是**冻结**（直接赋边界值），不是"不许往回退"（coerce）：
+                                         * 若只 coerce，Pager 封顶/归零期间 `desiredX` 会随手指继续
+                                         * 积累越界量，等 Pager 退回 0 的瞬间 `scr = -over` 会残留
+                                         * 一个大值 → Pager 向前猛窜一下。
                                          */
                                         if (abs(pagedPx) > 0.5f) {
-                                            desiredX = if (pagedPx > 0f) {
-                                                desiredX.coerceAtMost(-maxOffsetX)
-                                            } else {
-                                                desiredX.coerceAtLeast(maxOffsetX)
-                                            }
+                                            desiredX = if (pagedPx > 0f) -maxOffsetX else maxOffsetX
                                         }
                                         val clampedX = desiredX.coerceIn(-maxOffsetX, maxOffsetX)
                                         val clampedY = desiredY.coerceIn(-maxOffsetY, maxOffsetY)
@@ -1296,39 +1297,44 @@ private fun ZoomableImage(
                                      */
                                     val maxPagedPx = size.width * 0.9f
                                     /**
-                                     * **跟手翻页的位移换算**（本段最容易写错，推导留档）。
+                                     * **跟手翻页的位移换算**（v2026-09-11 按埋点日志实锤修正）。
                                      *
-                                     * 记 `v` = 相对**本页内容**的越界量（"下一张"方向为正）、
-                                     * `p` = Pager 已经滚动的量，则手指越过边界起点后的
-                                     * **屏幕**位移是 `f = v + p` —— 内容被 Pager 带走多少，
-                                     * 就要往回补多少（pan 的坐标系随页面一起移动，
-                                     * `PointerInputEventProcessor` 会用**当前**变换重算
-                                     * `previousPosition`，所以这个位移不会重复计入 pan）。
+                                     * `scr`（screenOverscroll）= 手指越过边界起点后的**屏幕位移**
+                                     * （"下一张"方向为正）。
                                      *
-                                     * 于是**目标** `p* = sign(f) · min(|f|, 上限)`（**没有死区**，
-                                     * 到边界即 1:1 跟手），**增量** `Δp = p* − p`。
+                                     * **`pan` 就是手指的屏幕位移，直接累加即可** ——
+                                     * 节点随 Pager 滚动时，Compose 对当前与上一个事件都用**当前**
+                                     * 节点偏移做本地坐标换算，节点自身位移在相减时恰好抵消
+                                     * （`PointerInputEventProcessor` 用当前 screen→local 变换重算
+                                     * `previousPosition`）。日志实锤：一次手势的 Σpan ≈ 前进 476px +
+                                     * 回退 504px，正好是"从边到边再回来"的物理行程。
                                      *
-                                     * ⚠️ 两个坑：
-                                     * ① **不能**拿「越界量 − 已翻量」当增量：已翻的量已经体现在
-                                     *    `v` 的缩小里，再减一次会让 `p` 收敛到手指速度的**一半**；
-                                     * ② 翻页中（[pagedPx] ≠ 0）图像被钉在边界上，`v` 不再随手指
-                                     *    变化，此时 `f` 必须**按屏幕位移累加**：
-                                     *    `f += (−pan.x) + 上一帧派发量`，否则往回拖时 Pager 不回退。
+                                     * ⚠️ **不要**再加上一帧的派发量（原 `lastPaged`）：
+                                     * 那会把 Pager 自己的运动重复计入，形成**正反馈** ——
+                                     * 日志实锤：手指只动了约 173px，Pager 就冲到 972px 封顶；
+                                     * 回退时 |d| 从 1.4 一路加速到 122.3（教科书式正反馈曲线），
+                                     * 观感就是"Pager 比手指快、来回都不跟手"。
+                                     *
+                                     * **封顶加在 `scr` 上而不是翻页目标上**：若只封顶目标，
+                                     * 手指在封顶值之外的来回拖动全是死区（日志实锤：scr 冲到 1456 后，
+                                     * 往回拖 484px Pager 纹丝不动）—— 这正是"不同步跟手"的主因。
+                                     * 封顶 `scr` 后，往回拖它立刻从封顶值下降，Pager 立即跟手回退。
+                                     *
+                                     * 增量 `Δp = scr − 已翻量`，天然 1:1、天然可逆。
                                      */
                                     screenOverscroll = if (abs(pagedPx) > 0.5f) {
-                                        screenOverscroll + (-pan.x) + lastPaged
+                                        (screenOverscroll - pan.x).coerceIn(-maxPagedPx, maxPagedPx)
                                     } else {
-                                        -overscrollX + pagedPx
+                                        // 还没进入翻页：手指的屏幕位移 = 内容内越界量（Pager 尚未动）
+                                        (-overscrollX + pagedPx).coerceIn(-maxPagedPx, maxPagedPx)
                                     }
-                                    lastPaged = 0f
-                                    val pagedTarget = sign(screenOverscroll) *
-                                        abs(screenOverscroll).coerceAtMost(maxPagedPx)
+                                    val pagedTarget = screenOverscroll
                                     val pagedDelta = pagedTarget - pagedPx
+                                    var consumedDelta = 0f
                                     if (abs(pagedDelta) > 0.5f) {
                                         // 首/末页没有相邻页时消耗为 0 → 越界量全留在橡皮筋里
-                                        val consumed = onEdgePull(pagedDelta)
-                                        pagedPx += consumed
-                                        lastPaged = consumed
+                                        consumedDelta = onEdgePull(pagedDelta)
+                                        pagedPx += consumedDelta
                                     }
                                     /**
                                      * 交给 Pager 的那部分位移要从"图片让位"里**扣掉**：
@@ -1359,7 +1365,8 @@ private fun ZoomableImage(
                              * （`direction = 0`）—— 与未放大时 Pager 的吸附判定同一思路。
                              */
                             val committed = abs(pagedPx) > size.width * PageTurnCommitRatio
-                            onEdgeRelease(if (committed) (if (pagedPx > 0f) 1 else -1) else 0)
+                            val direction = if (committed) (if (pagedPx > 0f) 1 else -1) else 0
+                            onEdgeRelease(direction)
                             // 翻页已由 Pager 接手，本页随即离场（或退回），让位直接归零即可
                             edgePullX = 0f
                         } else if (abs(edgePullX) > 0.5f) {
