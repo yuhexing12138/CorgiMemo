@@ -38,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
@@ -102,6 +103,8 @@ import com.corgimemo.app.ui.components.RelationPickerBottomSheet
 import com.corgimemo.app.ui.components.LinkedCardPreviewDialog
 import com.corgimemo.app.ui.model.TodoLine
 import com.corgimemo.app.util.ImageUtils
+import com.corgimemo.app.util.ClipboardImageHelper
+import com.corgimemo.app.util.pasteImageOnCtrlV
 import com.corgimemo.app.util.VoicePlayer
 import com.corgimemo.app.util.VoiceRecorder
 import com.corgimemo.app.viewmodel.HomeViewModel
@@ -1097,6 +1100,25 @@ fun TodoEditScreen(
                     )
                 }
 
+                // 🆕 v2026-09-11 粘贴图片按钮：与「复制当前容器」相邻，组成复制 / 粘贴一组操作。
+                // 行为：读取系统剪贴板中的图片，插入到当前聚焦行（addImageToFocusedLine）。
+                // 剪贴板无图片时由 ClipboardImageHelper 给出 Snackbar 提示；尺寸 36dp / 18dp 与同级按钮统一。
+                IconButton(
+                    onClick = {
+                        ClipboardImageHelper.pasteClipboardImage(context) { path ->
+                            addImageToFocusedLine(path)
+                        }
+                    },
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentPaste,
+                        contentDescription = "粘贴图片",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+
                 // 🆕 v2026-07-22 分享按钮：从底部工具栏上移到顶部导航栏
                 // 点击行为完全保持原 EditToolbar 分享按钮的逻辑（ShareCoordinator + 多卡片判断）
                 // 尺寸 36dp / 18dp 与灵感编辑页顶部同款按钮保持统一
@@ -1313,7 +1335,10 @@ fun TodoEditScreen(
                 .padding(innerPadding)
                 .background(contentBackgroundColor)
                 .padding(horizontal = 8.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                // v2026-09-11：Ctrl+V / Cmd+V 快捷键粘贴图片（剪贴板含图片时拦截，
+                // 含文本则放行给输入框做文本粘贴）
+                .pasteImageOnCtrlV(context) { path -> addImageToFocusedLine(path) },
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
 

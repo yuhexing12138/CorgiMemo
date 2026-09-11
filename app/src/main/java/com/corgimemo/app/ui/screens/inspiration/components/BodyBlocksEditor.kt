@@ -80,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.platform.LocalContext
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
 import com.corgimemo.app.ui.components.ImageHighlightColor
@@ -4616,6 +4617,16 @@ private fun BlockImageItem(
                                     controller.clearBlockSelection()
                                     onOpenImageGallery(block.path)
                                 },
+                                /**
+                                 * 复制图片（v2026-09-11 接入）：写入系统剪贴板（content URI）
+                                 * + 弹 Snackbar 提示；QQ/微信等外部应用可粘贴，应用内编辑页亦可读回。
+                                 */
+                                onCopyClick = {
+                                    ClipboardImageHelper.copyImageToClipboard(
+                                        LocalContext.current,
+                                        block.path,
+                                    )
+                                },
                             )
                         }
                     }
@@ -4637,7 +4648,9 @@ private fun BlockImageItem(
  *
  * v2026-09-10：「图片附件页」接线——清选中后由页面打开全屏附件页
  * （[com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery]）。
- * **复制 / 删除仍为占位**（onClick = null，点击无操作，后续迭代接入）。
+ * v2026-09-11：「复制图片」接线——点击写入系统剪贴板（content URI）+ 弹 Snackbar
+ * 提示，QQ/微信等外部应用可粘贴，应用内编辑页亦可读回（[ClipboardImageHelper]）。
+ * **删除仍为占位**（onClick = null，点击无操作，后续迭代接入）。
  *
  * **阴影 → 阴影色外边框（v2026-09-10 定版，用户决策）**：先后试过 `Modifier.shadow`
  * （elevation 投影，动画中出方角）、`Modifier.dropShadow` + 外扩 bounds（动画中阴影
@@ -4652,6 +4665,7 @@ private fun ImageBlockToolbar(
     onNoteClick: () -> Unit,
     onScaleClick: () -> Unit,
     onGalleryClick: () -> Unit,
+    onCopyClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -4673,7 +4687,7 @@ private fun ImageBlockToolbar(
         )
         /** 图片附件页（v2026-09-10 接线）：清选中 + 页面打开全屏附件页 */
         ImageToolbarButton(LucideIcons.Image, "图片附件页", onGalleryClick)
-        ImageToolbarButton(LucideIcons.Copy, "复制图片", null)
+        ImageToolbarButton(LucideIcons.Copy, "复制图片", onCopyClick)
         ImageToolbarButton(LucideIcons.Trash2, "删除图片", null)
     }
 }

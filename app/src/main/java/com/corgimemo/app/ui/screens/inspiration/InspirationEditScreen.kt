@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.filled.Lock
@@ -1029,6 +1030,29 @@ fun InspirationEditScreen(
                     )
                 }
 
+                /**
+                 * v2026-09-11 新增：粘贴图片按钮
+                 *
+                 * 行为：读取系统剪贴板中的图片，插入到当前聚焦块光标处（无聚焦则尾插）。
+                 * 剪贴板无图片时由 [ClipboardImageHelper] 给出 Snackbar 提示。
+                 * 与「复制」按钮相邻，组成复制 / 粘贴一组操作。
+                 */
+                IconButton(
+                    onClick = {
+                        ClipboardImageHelper.pasteClipboardImage(context) { path ->
+                            bodyBlocks.insertImageAtFocused(path)
+                        }
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentPaste,
+                        contentDescription = "粘贴图片",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
                 Spacer(modifier = Modifier.weight(1f))
 
                 /** ===== 从底部工具栏移入的 3 个按钮（锁按钮左侧，大小与撤销/重做/锁定一致）===== */
@@ -1670,7 +1694,13 @@ fun InspirationEditScreen(
              * - Enter 拆块 / 块首退格合并 / 图片块两步删除 / 手柄拖拽排序
              * 详见 components/BodyBlocksEditor.kt
              */
-            Box(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // v2026-09-11：Ctrl+V / Cmd+V 快捷键粘贴图片（剪贴板含图片时拦截，
+                    // 含文本则放行给输入框做文本粘贴）
+                    .pasteImageOnCtrlV(context) { path -> bodyBlocks.insertImageAtFocused(path) }
+            ) {
             CompositionLocalProvider(
                 LocalTokenClickHandler provides mediaTokenClickHandler,
                 LocalImageLoader provides CoilRichTextImageLoader,
