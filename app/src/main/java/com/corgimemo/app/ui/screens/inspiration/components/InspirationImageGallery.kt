@@ -95,6 +95,7 @@ import compose.icons.lucideicons.RotateCcwSquare
 import kotlin.math.abs
 import kotlin.math.sign
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1132,6 +1133,15 @@ private fun ZoomableImage(
      */
     val zoomScope = rememberCoroutineScope()
 
+    /**
+     * 当前正在播放的「越界收回」动画（v2026-09-11）。
+     *
+     * ⚠️ 必须用 [Job] 管理：新动画启动前先取消旧的 —— 否则两个动画同时写
+     * [offsetX]/[offsetY] 会互相覆盖、画面抖动。需要取消它的时机：
+     * 双指重新按下（多指要接管 offset）、缩放回弹启动（scale < 1f）。
+     */
+    var settleJob by remember { mutableStateOf<Job?>(null) }
+
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -1175,6 +1185,48 @@ private fun ZoomableImage(
                  * - 单指：只有已放大（`scale > 1f`）时才消费用于平移，否则**放行**给 Pager 翻页。
                  */
                 .pointerInput(maxEdgePullPx) {
+                    /**
+                     * **越界收回动画**（v2026-09-11）：把缩放锚点换算产生的越界 offset，
+                     * 用与「缩小时归位」「松手收回」**同一条弹簧**（[ZoomReboundSpec]）平滑拉回边界。
+                     *
+                     * 为什么需要它：双指缩放期间 offset 不夹紧（锚点优先，允许越界），
+                     * 而双指抬起几乎总有先后 —— 第一根手指一抬就进入单指分支，
+                     * 旧逻辑会在此**瞬间夹紧** → 图片瞬移（用户看到的"生硬归位"）。
+                     * 改为过渡瞬间启动本动画，offset 由动画独占（见手势循环内 settling 分支）。
+                     *
+                     * @return 是否真的启动了动画（offset 已在边界内时为 false，调用方据此跳过 settling）
+                     */
+                    val launchSettleAnimation: () -> Boolean = settle@{
+                        val (maxX, maxY) = maxPanOffsets(
+                            containerW = size.width.toFloat(),
+                            containerH = size.height.toFloat(),
+                            imageAspectRatio = imageAspectRatio,
+                            scale = scale,
+                        )
+                        val targetX = offsetX.coerceIn(-maxX, maxX)
+                        val targetY = offsetY.coerceIn(-maxY, maxY)
+                        // 已在边界内：无事可做
+                        if (targetX == offsetX && targetY == offsetY) return@settle false
+                        val fromX = offsetX
+                        val fromY = offsetY
+                        // 期望值同步到目标位置：动画结束后手势继续用 desired 累加才不会跳变
+                        desiredX = targetX
+                        desiredY = targetY
+                        settleJob?.cancel()
+                        settleJob = zoomScope.launch {
+                            animate(
+                                initialValue = 0f,
+                                targetValue = 1f,
+                                animationSpec = ZoomReboundSpec,
+                            ) { progress, _ ->
+                                offsetX = fromX + (targetX - fromX) * progress
+                                offsetY = fromY + (targetY - fromY) * progress
+                            }
+                            offsetX = targetX
+                            offsetY = targetY
+                        }
+                        true
+                    }
                     awaitEachGesture {
                         // 不要求"未被消费"的按下：祖先（Pager）可能已处理过
                         awaitFirstDown(requireUnconsumed = false)
@@ -1188,11 +1240,21 @@ private fun ZoomableImage(
                          * 否则往回拖时要先把超出封顶的部分"吃"回去，形成一段死区。
                          */
                         var screenOverscroll = 0f
+                        /** 上一帧是否多指：用于捕捉「多指 → 单指」的过渡瞬间 */
+                        var prevMultiTouch = false
+                        /**
+                         * 越界收回动画独占 offset 期间为 true：单指分支**跳过平移写入**
+                         * （不夹紧、不算 over），避免与动画打架；动画结束（[settleJob] 不再活跃）
+                         * 后自动恢复正常拖动。
+                         */
+                        var settling = false
                         do {
                             val event = awaitPointerEvent()
                             val pressedCount = event.changes.count { it.pressed }
                             val multiTouch = pressedCount > 1
                             val shouldHandle = multiTouch || scale > 1f
+                            // 收回动画播完了 → 交还手势（若又来了新的动画，isActive 仍为 true）
+                            if (settling && settleJob?.isActive != true) settling = false
                             if (shouldHandle) {
                                 /**
                                  * 双指才缩放（单指时 `calculateZoom()` 恒为 1，无副作用），
@@ -1207,6 +1269,10 @@ private fun ZoomableImage(
                                  * 只改 `scale` 不修 `offset`，就会"从图片中心缩放"，手指定位感明显偏离。
                                  */
                                 if (multiTouch) {
+                                    // 双指重新接管 offset：进行中的「越界收回」动画立即让位，
+                                    // 否则动画与下面的锚点换算同时写 offset 会互相覆盖、画面抖动
+                                    settleJob?.cancel()
+                                    settling = false
                                     val oldScale = scale
                                     val newScale = (oldScale * event.calculateZoom())
                                         .coerceIn(MinZoomScale, MaxZoomScale)
@@ -1233,6 +1299,22 @@ private fun ZoomableImage(
                                 }
                                 if (scale > 1f) {
                                     /**
+                                     * **多指 → 单指过渡**（v2026-09-11 新增，修复"松手生硬归位"）。
+                                     *
+                                     * 双指抬起几乎总有先后：第一根手指一抬就进入单指分支，
+                                     * 旧逻辑会在此**瞬间把 offset 夹回边界** —— 缩放锚点换算在
+                                     * "未撑满轴"上产生的越界量（如竖屏看方图时纵向 maxOffset = 0）
+                                     * 被直接砍掉，图片瞬移，观感即"生硬的归位动作"。
+                                     *
+                                     * 改为：过渡瞬间启动**与松手收回、缩小时归位同一条弹簧动画**
+                                     * （[launchSettleAnimation]），offset 由动画独占（见 settling 分支），
+                                     * 动画播完自动恢复正常拖动。
+                                     */
+                                    if (!multiTouch && prevMultiTouch) {
+                                        edgePullX = 0f
+                                        settling = launchSettleAnimation()
+                                    }
+                                    /**
                                      * 本帧的平移增量。
                                      *
                                      * 已核对源码（`TransformGestureDetector.kt`）：
@@ -1242,9 +1324,17 @@ private fun ZoomableImage(
                                      * —— 所以这里可以直接一用到底，不必自己按指针数分支。
                                      */
                                     val pan = event.calculatePan()
-                                    // 横屏无需换算：pan 已在本节点局部坐标系（见 KDoc）
-                                    desiredX += pan.x
-                                    desiredY += pan.y
+                                    /**
+                                     * settling（收回动画独占 offset）期间**不累加** pan：
+                                     * 动画结束后 `desired == offset == 边界值`，若此刻仍把
+                                     * 动画期间的手指位移累加进 desired，下一次拖动会把
+                                     * 图片拉到错误的位置（跳变）。
+                                     */
+                                    if (!settling) {
+                                        // 横屏无需换算：pan 已在本节点局部坐标系（见 KDoc）
+                                        desiredX += pan.x
+                                        desiredY += pan.y
+                                    }
 
                                     val (maxOffsetX, maxOffsetY) = maxPanOffsets(
                                         containerW = size.width.toFloat(),
@@ -1267,6 +1357,16 @@ private fun ZoomableImage(
                                         overscrollX = 0f
                                         offsetX = desiredX
                                         offsetY = desiredY
+                                        edgePullX = 0f
+                                    } else if (settling) {
+                                        /**
+                                         * 收回动画**独占** offset：本帧跳过平移写入与翻页判定，
+                                         * 只消费事件（防 Pager 同时响应）。动画播完（循环开头的
+                                         * `settleJob?.isActive` 检查）自动恢复拖动；
+                                         * 期间的本帧拖动输入被丢弃（窗口仅几百毫秒，
+                                         * 远好于瞬移，且越界轴本已无平移空间）。
+                                         */
+                                        overscrollX = 0f
                                     } else {
                                         /**
                                          * **翻页期间把图像钉死在出发的那条边界上**（v2026-09-11 修正）。
@@ -1322,11 +1422,18 @@ private fun ZoomableImage(
                                      *
                                      * 增量 `Δp = scr − 已翻量`，天然 1:1、天然可逆。
                                      */
-                                    screenOverscroll = if (abs(pagedPx) > 0.5f) {
-                                        (screenOverscroll - pan.x).coerceIn(-maxPagedPx, maxPagedPx)
-                                    } else {
-                                        // 还没进入翻页：手指的屏幕位移 = 内容内越界量（Pager 尚未动）
-                                        (-overscrollX + pagedPx).coerceIn(-maxPagedPx, maxPagedPx)
+                                    screenOverscroll = when {
+                                        /**
+                                         * 多指 / 收回动画独占期间：翻页状态**冻结** ——
+                                         * 此时 pan 是双指中心位移（或已被丢弃），
+                                         * 累加会污染翻页位移；保持 scr == 已翻量 → 增量恒 0。
+                                         */
+                                        multiTouch || settling -> screenOverscroll
+                                        abs(pagedPx) > 0.5f ->
+                                            (screenOverscroll - pan.x).coerceIn(-maxPagedPx, maxPagedPx)
+                                        else ->
+                                            // 还没进入翻页：手指的屏幕位移 = 内容内越界量（Pager 尚未动）
+                                            (-overscrollX + pagedPx).coerceIn(-maxPagedPx, maxPagedPx)
                                     }
                                     val pagedTarget = screenOverscroll
                                     val pagedDelta = pagedTarget - pagedPx
@@ -1349,6 +1456,7 @@ private fun ZoomableImage(
                                     if (change.pressed) change.consume()
                                 }
                             }
+                            prevMultiTouch = multiTouch
                         } while (event.changes.any { it.pressed })
 
                         /**
@@ -1388,41 +1496,16 @@ private fun ZoomableImage(
                         }
 
                         /**
-                         * **手势结束把越界的平移收回边界内**（v2026-09-10）。
+                         * **手势结束把越界的平移收回边界内**（v2026-09-11 统一为同一动画）。
                          *
                          * 捏合缩放期间为了保住"双指中心锚点"，刻意**不**夹紧（见缩放段注释），
-                         * 代价是缩小后 [offsetX]/[offsetY] 可能越界、露出黑边。这里统一收回：
-                         * 缩放小于 1f 时由下一段整体回弹（offset 一并归零）；
-                         * 否则只把越界的那一部分弹回边界。
+                         * 代价是松手时 [offsetX]/[offsetY] 可能越界、露出黑边。
+                         * 这里与「多指→单指过渡」「缩小时归位」共用**同一条弹簧**
+                         * （[launchSettleAnimation] / [ZoomReboundSpec]），保证所有"归位"
+                         * 动画手感一致，不再有生硬的跳变。
                          */
                         if (scale >= 1f) {
-                            val (maxX, maxY) = maxPanOffsets(
-                                containerW = size.width.toFloat(),
-                                containerH = size.height.toFloat(),
-                                imageAspectRatio = imageAspectRatio,
-                                scale = scale,
-                            )
-                            val targetX = offsetX.coerceIn(-maxX, maxX)
-                            val targetY = offsetY.coerceIn(-maxY, maxY)
-                            if (targetX != offsetX || targetY != offsetY) {
-                                val fromX = offsetX
-                                val fromY = offsetY
-                                // 期望值同步到目标位置，避免下一次拖动用旧值覆盖回弹结果
-                                desiredX = targetX
-                                desiredY = targetY
-                                zoomScope.launch {
-                                    animate(
-                                        initialValue = 0f,
-                                        targetValue = 1f,
-                                        animationSpec = ZoomReboundSpec,
-                                    ) { progress, _ ->
-                                        offsetX = fromX + (targetX - fromX) * progress
-                                        offsetY = fromY + (targetY - fromY) * progress
-                                    }
-                                    offsetX = targetX
-                                    offsetY = targetY
-                                }
-                            }
+                            launchSettleAnimation()
                         }
 
                         /**
@@ -1438,6 +1521,8 @@ private fun ZoomableImage(
                          * 收尾再对齐到精确值（消除浮点残差）。
                          */
                         if (scale < 1f) {
+                            // 缩放回弹要写 offset：进行中的越界收回动画先让位，避免双动画打架
+                            settleJob?.cancel()
                             val fromScale = scale
                             val fromOffsetX = offsetX
                             val fromOffsetY = offsetY
