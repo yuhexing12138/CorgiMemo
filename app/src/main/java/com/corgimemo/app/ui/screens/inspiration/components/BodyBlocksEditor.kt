@@ -2,6 +2,7 @@ package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -938,6 +939,27 @@ class BodyBlocksController(
      */
     internal var hasInitialized by mutableStateOf(false)
         private set
+
+    /**
+     * 图片「缩小/恢复」动画是否已脱离加载回填期（v2026-09-11 修复重进页闪烁）：
+     *
+     * **为什么需要它**：[BodyBlock.Image.shrunk] 是内存字段，持久化真相在 DB 的
+     * `displayWidthRatio`。[initialize] 解析 markdown 只还原 path（shrunk=false），
+     * 随后 [applyImageProps] 才把 shrunk 回填为 true——这次**后置翻转**会被
+     * [BlockImageItem] 的 `animateFloatAsState` 误判为「值变化」而播放 1f→0.5f
+     * 的缩小动画，表现为重进页时缩小图「从大到小变一下」。
+     *
+     * 解法：加载回填期间本标志为 false，`animateFloatAsState` 用 [snap]（瞬时、
+     * 不播动画），回填造成的 shrunk 翻转直接定格；回填完成（[markImagePropsRestored]）
+     * 后本标志置 true，用户主动点「缩小/恢复」才走 [tween] 平滑缩放。
+     */
+    internal var loadRestoreComplete by mutableStateOf(false)
+        private set
+
+    /** 加载回填结束：放开「缩小/恢复」的平滑动画（见 [loadRestoreComplete] 注释） */
+    internal fun markImagePropsRestored() {
+        loadRestoreComplete = true
+    }
 
     /** 两步删除 / 点击选中的高亮块 id（图片块与分割线块，v2026-09-07 起含分割线） */
     var highlightedBlockId by mutableStateOf<String?>(null)
@@ -4246,11 +4268,21 @@ private fun BlockImageItem(
      * 逐帧跟随，图片整体**真实缩放**（而非 animateContentSize 的容器裁切式）。
      * 与工具栏退场动画共用 [ImageScaleAnimationDurationMillis]：两者同帧启动
      * （toggleImageShrunk 内同帧翻转 shrunk + 清选中）、等长播放、同时结束。
-     * 首组合即为目标值——已缩小块加载时不播动画。
+     *
+     * **加载回填期不播动画（v2026-09-11 修复重进页闪烁）**：[block.shrunk] 是内存字段，
+     * 持久化真相在 DB 的 `displayWidthRatio`。[initialize] 解析 markdown 时 shrunk=false，
+     * 之后 [applyImageProps] 才回填为 true——这次后置翻转若走 [tween] 会被当成值变化，
+     * 表现为重进页时缩小图「从大到小变一下」。[controller.loadRestoreComplete] 为
+     * false 时改用 [snap]（瞬时定格），回填造成的翻转不播动画；回填完成后用户主动
+     * 点「缩小/恢复」才走 [tween] 平滑缩放。
      */
     val animatedWidthFraction by animateFloatAsState(
         targetValue = if (block.shrunk) IMAGE_SHRUNK_WIDTH_RATIO else 1f,
-        animationSpec = tween(durationMillis = ImageScaleAnimationDurationMillis),
+        animationSpec = if (controller.loadRestoreComplete) {
+            tween(durationMillis = ImageScaleAnimationDurationMillis)
+        } else {
+            snap()
+        },
     )
 
     /** 选中图片时收起软键盘用（v2026-09-09） */
@@ -4629,6 +4661,13 @@ private fun BlockImageItem(
                                         block.path,
                                     )
                                 },
+                                /**
+                                 * 删除图片（v2026-09-11 接入）：点击即直接删除（无二次确认），
+                                 * 经 [BodyBlocksController.deleteImageBlock] 走 [ReplaceBlocksCommand]
+                                 * 移除图片块并压入全局撤销栈；命令落地后 [afterCommandMutation] 会
+                                 * 自动收起工具栏（clearBlockSelection）。撤销栈一键即可恢复被删图片。
+                                 */
+                                onDeleteClick = { controller.deleteImageBlock(block.id) },
                             )
                         }
                     }
@@ -4652,7 +4691,9 @@ private fun BlockImageItem(
  * （[com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery]）。
  * v2026-09-11：「复制图片」接线——点击写入系统剪贴板（content URI）+ 弹 Snackbar
  * 提示，QQ/微信等外部应用可粘贴，应用内编辑页亦可读回（[ClipboardImageHelper]）。
- * **删除仍为占位**（onClick = null，点击无操作，后续迭代接入）。
+ * v2026-09-11：「删除图片」接线——点击直接删除（无二次确认），经
+ * [BodyBlocksController.deleteImageBlock] 走 [ReplaceBlocksCommand] 移除图片块并压入
+ * 全局撤销栈，撤销栈一键即可恢复（[afterCommandMutation] 自动收起工具栏）。
  *
  * **阴影 → 阴影色外边框（v2026-09-10 定版，用户决策）**：先后试过 `Modifier.shadow`
  * （elevation 投影，动画中出方角）、`Modifier.dropShadow` + 外扩 bounds（动画中阴影
@@ -4668,6 +4709,8 @@ private fun ImageBlockToolbar(
     onScaleClick: () -> Unit,
     onGalleryClick: () -> Unit,
     onCopyClick: () -> Unit,
+    /** 删除图片：直接删除并压入撤销栈（无二次确认），由调用方接入 [BodyBlocksController.deleteImageBlock] */
+    onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -4690,7 +4733,8 @@ private fun ImageBlockToolbar(
         /** 图片附件页（v2026-09-10 接线）：清选中 + 页面打开全屏附件页 */
         ImageToolbarButton(LucideIcons.Image, "图片附件页", onGalleryClick)
         ImageToolbarButton(LucideIcons.Copy, "复制图片", onCopyClick)
-        ImageToolbarButton(LucideIcons.Trash2, "删除图片", null)
+        /** 删除图片（v2026-09-11 接入）：直接删除并压入撤销栈，无二次确认；撤销可恢复 */
+        ImageToolbarButton(LucideIcons.Trash2, "删除图片", onDeleteClick)
     }
 }
 
