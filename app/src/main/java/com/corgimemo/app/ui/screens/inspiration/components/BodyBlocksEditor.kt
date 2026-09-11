@@ -1,5 +1,7 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -29,6 +31,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -59,7 +63,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -107,12 +116,16 @@ import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import com.mohamedrejeb.richeditor.ui.UndoBehavior
 import compose.icons.LucideIcons
+import compose.icons.lucideicons.ArrowDownToLine
+import compose.icons.lucideicons.ArrowUpToLine
 import compose.icons.lucideicons.Copy
+import compose.icons.lucideicons.Ellipsis
 import compose.icons.lucideicons.Expand
 import compose.icons.lucideicons.Image
 import compose.icons.lucideicons.MessageSquareText
 import compose.icons.lucideicons.Shrink
 import compose.icons.lucideicons.Trash2
+import compose.icons.lucideicons.Waves
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -450,9 +463,10 @@ sealed class BodyBlock {
     ) : BodyBlock()
 
     /**
-     * 分割线块（v2026-09-07 新增）：无内容的纯视觉块（一条水平细线）。
+     * 分割线块（v2026-09-07 新增；v2026-09-11 样式化）：无内容的纯视觉块（一条水平线）。
      *
-     * - markdown 载体为独占段 `"---"`（CommonMark thematic break，见 [DIVIDER_MD]）；
+     * - markdown 载体为独占段（CommonMark thematic break，按 [style] 取
+     *   [DividerStyle.markdown]，默认 `"---"`；见 [DIVIDER_MD]）；
      * - 无 RichTextState，不参与字数统计（[BodyBlocksController.plainText] 只聚合 Text 块）；
      * - 交互（v2026-09-08 第四版：删除走悬浮按钮）：
      *   - **点击** → 切换高亮（[BodyBlocksController.onDividerTapped]），全程不动焦点；
@@ -462,10 +476,14 @@ sealed class BodyBlock {
      *   - **光标存在时**（[BodyBlocksController.onBackspaceAtStart] /
      *     [BodyBlocksController.onDeleteAtEnd]）→ 两步删除：第一次退格/删除先高亮，
      *     第二次删除，语义与图片块一致；
+     *   - **样式**（v2026-09-11）→ 工具条虚线/波浪线按钮切换（[BodyBlocksController.toggleDividerStyle]，
+     *     可撤销），激活态再点恢复实线；
      * - 可参与拖拽排序（[MoveBlockCommand] 按块 id 移动，对此类型透明）。
      */
     class Divider(
         override val id: String,
+        /** 线条样式（v2026-09-11）：实线（默认）/ 虚线 / 波浪线，随 markdown 往返 */
+        val style: DividerStyle = DividerStyle.SOLID,
     ) : BodyBlock()
 }
 
@@ -537,8 +555,15 @@ sealed class BlockSpec {
         val shrunk: Boolean = false,
     ) : BlockSpec()
 
-    /** Divider 块（v2026-09-07）：无载荷（id 即全部，重建时零参数） */
-    data class DividerSpec(override val id: String) : BlockSpec()
+    /**
+     * Divider 块（v2026-09-07；v2026-09-11 加样式载荷）：样式随 spec 往返——
+     * 删除带样式分割线后撤销还原（[ReplaceBlocksCommand] 用 removedSpecs 重建）
+     * 不丢虚线/波浪；既有构造点默认值（实线）不变。
+     */
+    data class DividerSpec(
+        override val id: String,
+        val style: DividerStyle = DividerStyle.SOLID,
+    ) : BlockSpec()
 }
 
 /**
@@ -691,9 +716,11 @@ class MoveBlockCommand(
  * 2. **不暂存原始块**：唯一产物就是那个空 Text 块，revert 直接按 [spec.id] 移除；
  * 3. **不重建任何已有块**：纯插入，不影响其它块的 RichTextState 历史。
  *
- * v2026-09-10：**只由 [BodyBlocksController.normalizeImageSeparators] 生成**（补插那一支）；
+ * 生成来源（v2026-09-11 懒插入改版，两类）：
+ * 1. [BodyBlocksController.normalizeImageSeparators] 补插那一支——两图直接相邻时自动补；
+ * 2. [BodyBlocksController.insertEdgeSeparator]——首/尾图前/后由用户点击边缘空白**懒插入**。
  * 配套的 [RemoveImageSeparatorCommand] 负责删除漂移/多余的载体，两者共同维持
- * 「载体数 == 图片相邻对数」的不变量。
+ * 「两图之间 / 首图之前 / 尾图之后（若已点出）各有恰好一个载体」的不变量。
  */
 class InsertImageSeparatorCommand(
     /** 插入位置（插到该索引**之前**，即「后一张图」的索引） */
@@ -767,6 +794,29 @@ class UpdateImagePropsCommand(
 
     override fun revert(controller: BodyBlocksController) {
         controller.updateImagePropsById(blockId, oldNote, oldShrunk)
+        controller.afterCommandMutation()
+    }
+}
+
+/**
+ * 分割线样式切换命令（v2026-09-11 新增 UI 入口：工具条虚线/波浪线按钮）。
+ *
+ * 与 [UpdateImagePropsCommand] 同模式：显式用户操作、进全局命令栈可撤销；
+ * apply / revert 均为就地换块对象（Divider 块无 RichTextState，重建零损失）。
+ */
+class UpdateDividerStyleCommand(
+    val blockId: String,
+    val oldStyle: DividerStyle,
+    val newStyle: DividerStyle,
+) : BodyBlocksCommand {
+
+    override fun apply(controller: BodyBlocksController) {
+        controller.updateDividerStyleById(blockId, newStyle)
+        controller.afterCommandMutation()
+    }
+
+    override fun revert(controller: BodyBlocksController) {
+        controller.updateDividerStyleById(blockId, oldStyle)
         controller.afterCommandMutation()
     }
 }
@@ -875,15 +925,43 @@ internal sealed class MdSegment {
 /**
  * 分割线的 markdown 载体：CommonMark thematic break，独占一个段落（块间以 `\n\n` 连接）。
  *
- * 只识别整段**恰好**为 `"---"` 的形态（App 自身生成的唯一形态，保守避免把用户
- * 手输的 `***` / `- - -` 等变体误判成分割线）；编辑页 [BodyBlocksController.initialize]
+ * 只识别 App 自身生成的三种形态（v2026-09-11 样式化扩展）：`"---"`（实线默认）、
+ * `"--- dashed"`（虚线）、`"--- wavy"`（波浪线）——后缀即样式标记，保守避免把用户
+ * 手输的 `***` / `- - -` 等变体误判成分割线；编辑页 [BodyBlocksController.initialize]
  * 与详情页 [com.corgimemo.app.ui.screens.inspiration.components.InspirationViewCard]
  * 共用本判定，保证两端往返一致。
  */
 internal const val DIVIDER_MD = "---"
 
-/** 判断单段 markdown（已按 `\n\n` 拆出）是否为分割线段 */
-internal fun isDividerMarkdown(para: String): Boolean = para.trim() == DIVIDER_MD
+/** 虚线分割线的 markdown 载体（`---` + 样式后缀，v2026-09-11） */
+internal const val DIVIDER_MD_DASHED = "--- dashed"
+
+/** 波浪线分割线的 markdown 载体（`---` + 样式后缀，v2026-09-11） */
+internal const val DIVIDER_MD_WAVY = "--- wavy"
+
+/**
+ * 分割线样式（v2026-09-11 工具条切换）：实线（默认）/ 虚线 / 波浪线。
+ * [markdown] 为对应的序列化载体段（与 [parseDividerStyle] 解析对称）。
+ */
+enum class DividerStyle(val markdown: String) {
+    SOLID(DIVIDER_MD),
+    DASHED(DIVIDER_MD_DASHED),
+    WAVY(DIVIDER_MD_WAVY),
+}
+
+/** 判断单段 markdown（已按 `\n\n` 拆出）是否为分割线段（三种样式形态任一） */
+internal fun isDividerMarkdown(para: String): Boolean = parseDividerStyle(para) != null
+
+/**
+ * 解析单段 markdown 的分割线样式；非分割线段返回 null。
+ * 加载（[BodyBlocksController.initialize]）与预览渲染按此取样式。
+ */
+internal fun parseDividerStyle(para: String): DividerStyle? = when (para.trim()) {
+    DIVIDER_MD -> DividerStyle.SOLID
+    DIVIDER_MD_DASHED -> DividerStyle.DASHED
+    DIVIDER_MD_WAVY -> DividerStyle.WAVY
+    else -> null
+}
 
 // ==================== 复选框（v2026-09-07） ====================
 
@@ -1451,8 +1529,11 @@ class BodyBlocksController(
                             // 空白块：createTextBlock("") 预置 ZWSP 退格锚点，与编辑态空块语义一致
                             blocks += createTextBlock("")
                         } else if (isDividerMarkdown(trimmed)) {
-                            // 分割线段（"---"，v2026-09-07）：重建为 Divider 块（无富文本状态）
-                            blocks += BodyBlock.Divider(newBodyBlockId())
+                            // 分割线段（v2026-09-11 样式化：实线/虚线/波浪按 markdown 后缀解析）
+                            blocks += BodyBlock.Divider(
+                                newBodyBlockId(),
+                                parseDividerStyle(trimmed) ?: DividerStyle.SOLID,
+                            )
                         } else if (checkboxMarkdownInfo(trimmed) != null) {
                             // 复选框段（v2026-09-07，"- [ ] 内容" / "- [x] 内容"）：
                             // 剥掉前缀与缩进载体（EM，v2026-09-08）后建 Text 块并携带
@@ -1592,8 +1673,8 @@ class BodyBlocksController(
                     }
                 }
                 is BodyBlock.Image -> "![](${block.path})"
-                /** 分割线块：输出独占段 `---`（thematic break），与 [initialize] 识别对称 */
-                is BodyBlock.Divider -> DIVIDER_MD
+                /** 分割线块：输出独占段（thematic break，样式随 [DividerStyle.markdown]），与 [initialize] 识别对称 */
+                is BodyBlock.Divider -> block.style.markdown
             }
         }
         // 不再过滤空段：块间以空行连接，空白块对应一个非空占位段，保证往返对称
@@ -1981,11 +2062,18 @@ class BodyBlocksController(
      * 外侧成为多余空行；下次换位又补一个新载体 → **每次交换空块 +1**，视觉上
      * 就是图片上下空行越堆越多（还会出现两个空行贴在一起）。
      *
-     * 两条规则（按 [BodyBlock.Text.isImageSeparator] 区分载体与**用户手打的空白块**）：
-     * 1. **删漂移载体**：标记为载体、**且仍然是空白**（`isEffectivelyEmpty`）、但前后不再
-     *    同时紧邻图片的块 → 删除。带内容的一律不删（防御：正常路径下用户一打字，
+     * 三条合法位置（v2026-09-11 扩展，按 [BodyBlock.Text.isImageSeparator] 区分载体与
+     * **用户手打的空白块**）：两图之间 / 首图之前（最前块是图）/ 尾图之后（最后块是图）。
+     * 两条规则：
+     * 1. **删漂移载体**：标记为载体、**且仍然是空白**（`isEffectivelyEmpty`）、但不在
+     *    任一合法位置的块 → 删除。带内容的一律不删（防御：正常路径下用户一打字，
      *    [onBlockContentChanged] 就已把标记清掉，它不再是载体）；
-     * 2. **补插**：两图直接相邻处各插一个载体（标记为 true）。
+     * 2. **补插**：仅**两图直接相邻**处补一个载体（标记为 true）。
+     *    v2026-09-11 懒插入改版：首图前/尾图后**不再自动补**（避免一进编辑页首图
+     *    上方就多出一条空行），改为用户点击首图前/尾图后空白时经
+     *    [BodyBlocksController.insertEdgeSeparator] 懒插入（可撤销）。此处点出的载体
+     *    与两图之间的载体一样落在①的合法位置白名单内，不会被误删；用户在文档
+     *    开头/结尾的有意留白安全（不误标、不误删）。
      *
      * **用户手打的空白块永不触碰（v2026-09-10 用户要求）**：无标记的空白块既不删也不
      * 压缩——哪怕同一图-图间隙里有两个。它们天然承担了"隔开两张图片"的职责，
@@ -1998,13 +2086,18 @@ class BodyBlocksController(
      * 撤销时 `CompositeCommand` 逆序回退：插入先按 id 移除（顺序无关），
      * 删除再按升序索引插回（顺序正确）→ 列表精确还原。
      *
-     * 只处理 Image-Image 相邻：Divider 等非文本块与图片相邻属用户主动排版，不强拆。
+     * 只处理"直接相邻"语义：两图之间要求直接相邻；首/尾载体要求首/尾块**就是**图片——
+     * Divider 等非文本块与图片相邻属用户主动排版，不强拆、也不在其外侧补载体。
      */
     private fun normalizeImageSeparators(): List<BodyBlocksCommand> {
         val deletions = mutableListOf<RemoveImageSeparatorCommand>()
 
         /**
-         * ① 漂移载体：带标记 + **仍为空白** + 不再夹在两图之间 → 删。
+         * ① 漂移载体：带标记 + **仍为空白** + 不在任一合法位置 → 删。
+         * 合法位置（v2026-09-11 懒插入改版 v3）：**紧邻至少一个不可输入块（图片 /
+         * 分割线）且不与另一载体相邻**——覆盖两图之间 / 首图前 / 尾图后 / 分割线
+         * 上下（工具条 toggle 产物）/ 首尾边缘（tap 条懒插入产物）；载体并排 ⇒
+         * 整串全灭，由补插收敛回恰好一行（两图之间恰好一个空行的语义不破坏）。
          * 带内容的块一律不删：即便标记因某条罕见路径残留下来，也绝不能连用户输入一起删掉
          * （正常路径下 [onBlockContentChanged] 已在第一次输入时就清掉了标记）。
          */
@@ -2012,9 +2105,14 @@ class BodyBlocksController(
             val text = blocks[i] as? BodyBlock.Text ?: continue
             if (!text.isImageSeparator) continue
             if (!isEffectivelyEmpty(text.state)) continue
-            val betweenImages = i > 0 && i < blocks.lastIndex &&
-                blocks[i - 1] is BodyBlock.Image && blocks[i + 1] is BodyBlock.Image
-            if (!betweenImages) {
+            /** 合法位置 v3（与 [checkImageSeparatorInvariant] 同源）：紧邻图/线、不邻载体 */
+            val prev = if (i > 0) blocks[i - 1] else null
+            val next = if (i < blocks.lastIndex) blocks[i + 1] else null
+            val neighborNonInput = prev is BodyBlock.Image || prev is BodyBlock.Divider ||
+                next is BodyBlock.Image || next is BodyBlock.Divider
+            val neighborSeparator = (prev as? BodyBlock.Text)?.isImageSeparator == true ||
+                (next as? BodyBlock.Text)?.isImageSeparator == true
+            if (!neighborNonInput || neighborSeparator) {
                 deletions += RemoveImageSeparatorCommand(text.id, textSpec(text), i)
             }
         }
@@ -2022,14 +2120,21 @@ class BodyBlocksController(
         val deletedIds = deletions.map { it.blockId }.toMutableSet()
 
         /**
-         * ② 补插：先在"删除已生效"的虚拟列表上找出所有两图相邻处，索引即删除后的坐标系。
-         * 自后向前遍历，保证插入顺序与 [InsertImageSeparatorCommand] 的坐标约定一致。
-         * 注意判据是"**直接**相邻"：图-图之间有用户手打的空白块时无需补，也不会多插。
+         * ② 补插：先在"删除已生效"的虚拟列表上找出所有需要载体的位置，索引即删除后的坐标系。
+         * 遍历**插入候选位置**（index = size..0，自后向前），两图直接相邻 → 补插
+         * （判据是"**直接**相邻"，图-图之间有用户手打的空白块时无需补，也不会多插）。
+         * 自后向前保证先算好的更大索引不被前面的插入影响。
+         *
+         * v2026-09-11 懒插入改版：首/尾图前/后的载体**不再在此自动补插**——首图前/
+         * 尾图后默认无载体，用户点击边缘空白时经 [BodyBlocksController.insertEdgeSeparator]
+         * 懒插入（可撤销）。
          */
         val remaining = blocks.filterNot { it.id in deletedIds }
         val insertions = mutableListOf<InsertImageSeparatorCommand>()
-        for (index in remaining.indices.reversed()) {
-            if (index > 0 && remaining[index] is BodyBlock.Image && remaining[index - 1] is BodyBlock.Image) {
+        for (index in remaining.size downTo 0) {
+            val atGap = index > 0 && index < remaining.size &&
+                remaining[index] is BodyBlock.Image && remaining[index - 1] is BodyBlock.Image
+            if (atGap) {
                 insertions += InsertImageSeparatorCommand(
                     index = index,
                     spec = BlockSpec.TextSpec(newBodyBlockId(), "", isImageSeparator = true),
@@ -2057,12 +2162,58 @@ class BodyBlocksController(
     }
 
     /**
+     * 首/尾图前/后载体的**懒插入**入口（v2026-09-11 交互改版）：
+     * 首块是**图片或分割线**时，点击首块上方空白 → 在文档最前插入一个载体空块；
+     * 尾块对称——点击尾块下方空白 → 在文档最后追加一个。
+     *
+     * 归一化（[normalizeImageSeparators]）**不再自动补**首/尾载体（避免一进编辑页
+     * 首图上方就多出一条空行），只有用户主动点边缘空白时才插入。插入经
+     * [executeAndPush] 压栈——可撤销（撤销 = 按块 id 移除该载体，列表精确还原）；
+     * 随后写 [pendingFocus] 让新载体块在下一帧落焦、弹软键盘，直接进入编辑态。
+     *
+     * @param head true = 首块前插入（index 0）；false = 尾块后插入（blocks.size）
+     */
+    fun insertEdgeSeparator(head: Boolean) {
+        /**
+         * 守卫与幂等（v2026-09-11 补强，防连点/误点）：
+         * - 边缘块**已是载体**（上次点击已插入）→ 不重复插入，直接把焦点落回它
+         *   （连点两次若都插入，旧载体会被挤成漂移块、下次归一化删除，撤销栈变脏）；
+         * - 边缘块**是图片或分割线** → 插入载体（本交互的主路径；分割线同图属
+         *   不可输入块，v2026-09-11 扩展）；
+         * - 其它（无块 / 纯文本等）→ 无操作（与原纯空白 Spacer 行为一致——
+         *   此时插出的载体不在合法位置，必被归一化删掉，等于无效操作）。
+         */
+        val edgeBlock = if (head) blocks.firstOrNull() else blocks.lastOrNull()
+        when {
+            edgeBlock is BodyBlock.Text && edgeBlock.isImageSeparator ->
+                /** 已有载体：聚焦它（空块 offset 0 即行首），不重复插入 */
+                pendingFocus = FocusSpec(edgeBlock.id, 0)
+            edgeBlock is BodyBlock.Image || edgeBlock is BodyBlock.Divider -> {
+                /** 首图前插到最前；尾图后追加到最后（[insertBlockAt] 内部对越界索引做收敛） */
+                val index = if (head) 0 else blocks.size
+                val command = InsertImageSeparatorCommand(
+                    index = index,
+                    spec = BlockSpec.TextSpec(newBodyBlockId(), "", isImageSeparator = true),
+                )
+                executeAndPush(command)
+                /** 下一帧落到新载体块行首并弹软键盘（与其它插入路径同一焦点机制） */
+                pendingFocus = FocusSpec(command.spec.id, 0)
+            }
+            /** 其它边缘块形态 → 无操作 */
+            else -> Unit
+        }
+    }
+
+    /**
      * 图片载体空块**不变量自检**（仅 [isDebugBuild] 生效，v2026-09-10）：
      * 1. 不允许存在两张**直接相邻**的图片（两者之间必须有可输入的块）；
-     * 2. 每个带标记的载体都必须**恰好夹在两张图片之间**（不得漂到图片组外侧）。
+     * 2. 每个带标记的载体都必须在合法位置（**紧邻图或分割线、且不与另一载体相邻**，
+     *    v2026-09-11 v3），不得漂到不可输入块够不着的地方。
+     *    懒插入改版：首/尾图前/后**没有**载体不算违规——默认无载体，用户点击边缘
+     *    空白 / 分割线工具条按钮才插入，归一化只负责把"点出来的"载体维持住。
      *
      * 只在载体归一化之后调用，所以此时若仍违反 ⇒ 归一化漏了，是**真 bug**：
-     * 前者对应"该补的载体没补"（图片相邻无法输入），后者对应"该删的漂移载体没删"
+     * 前者对应"该补的载体没补"（两图直接相邻无法输入），后者对应"该删的漂移载体没删"
      * （空行堆积）。违反时只写 Logcat（`BlockSeparators` tag）、不抛异常——
      * 编辑过程不该因为自检崩掉。
      *
@@ -2076,9 +2227,17 @@ class BodyBlocksController(
             if (i > 0 && blocks[i] is BodyBlock.Image && blocks[i - 1] is BodyBlock.Image) adjacentImages++
             val text = blocks[i] as? BodyBlock.Text
             if (text?.isImageSeparator == true) {
-                val betweenImages = i > 0 && i < blocks.lastIndex &&
-                    blocks[i - 1] is BodyBlock.Image && blocks[i + 1] is BodyBlock.Image
-                if (!betweenImages) straySeparators++
+                /**
+                 * 合法位置（与 [normalizeImageSeparators] 的删除判据同源，v3）：
+                 * 紧邻至少一个不可输入块（图/线）且不与另一载体相邻。
+                 */
+                val prev = if (i > 0) blocks[i - 1] else null
+                val next = if (i < blocks.lastIndex) blocks[i + 1] else null
+                val neighborNonInput = prev is BodyBlock.Image || prev is BodyBlock.Divider ||
+                    next is BodyBlock.Image || next is BodyBlock.Divider
+                val neighborSeparator = (prev as? BodyBlock.Text)?.isImageSeparator == true ||
+                    (next as? BodyBlock.Text)?.isImageSeparator == true
+                if (!neighborNonInput || neighborSeparator) straySeparators++
             }
         }
         if (adjacentImages != 0 || straySeparators != 0) {
@@ -2237,14 +2396,16 @@ class BodyBlocksController(
      * 的就地替换；焦点落到该空行**行首**（offset 0），用户可直接接着输入
      * （行首 = 原分割线所在位置，视觉上就是"分割线变成了空行"）。
      *
-     * 撤销即原位恢复分割线（revert 用 [ReplaceBlocksCommand.focusBefore] 回到删除前落点）。
+     * 撤销即原位恢复分割线（revert 用 [ReplaceBlocksCommand.focusBefore] 回到删除前落点），
+     * 样式随 [BlockSpec.DividerSpec.style] 一并往返（v2026-09-11 样式切换），恢复不丢。
      *
      * 副作用：新建的空块会按 ZWSP 不变量预置退格锚点，序列化时走 NBSP 占位段
      * （见 [EMPTY_BLOCK_PLACEHOLDER]），与既有空块行为一致。
      */
     fun deleteDividerBlock(blockId: String) {
         val idx = blocks.indexOfFirst { it.id == blockId }
-        if (idx < 0 || blocks.getOrNull(idx) !is BodyBlock.Divider) return
+        /** 捕获被删分割线：样式随 removedSpecs 往返，撤销原位恢复时不丢样式（v2026-09-11） */
+        val removed = blocks.getOrNull(idx) as? BodyBlock.Divider ?: return
         val emptySpec = BlockSpec.TextSpec(newBodyBlockId(), "")
         /**
          * 焦点迁移期保持光标隐藏（v2026-09-08）：删除后焦点要从"下一行"迁到这条
@@ -2255,13 +2416,103 @@ class BodyBlocksController(
         executeAndPush(
             ReplaceBlocksCommand(
                 index = idx,
-                removedSpecs = listOf(BlockSpec.DividerSpec(blockId)),
+                removedSpecs = listOf(BlockSpec.DividerSpec(blockId, removed.style)),
                 insertedSpecs = listOf(emptySpec),
                 focusBefore = currentFocusSpec(),
                 /** 空块 raw 长度 1（ZWSP），偏移 0 由 ZWSP 不变量维护推到 (1, 1) */
                 focusAfter = FocusSpec(emptySpec.id, 0),
             )
         )
+    }
+
+    /**
+     * 分割线邻接载体行**查询**（v2026-09-11 工具条接线）：本分割线 [above] 方向的
+     * 相邻块是否是载体空块——分割线工具条「向上/向下添加载体行」按钮的**激活态依据**
+     * （相邻已是载体 = 已添加 → 图标呈激活色；再点即取消）。读 [blocks]（state），
+     * toggle 后随重组自动刷新。
+     */
+    fun hasDividerNeighborSeparator(blockId: String, above: Boolean): Boolean {
+        val idx = blocks.indexOfFirst { it.id == blockId }
+        if (idx < 0) return false
+        val neighbor = if (above) blocks.getOrNull(idx - 1) else blocks.getOrNull(idx + 1)
+        return neighbor is BodyBlock.Text && neighbor.isImageSeparator
+    }
+
+    /**
+     * 分割线邻接载体行 **toggle**（v2026-09-11 工具条按钮）：在 [above] 方向相邻位置
+     * 添加或取消一行载体空块——
+     * - 相邻块**是载体** → 删除它（取消添加；[RemoveImageSeparatorCommand] 撤销可原位恢复）；
+     * - 相邻块**不是载体**（文本 / 图片 / 分割线 / 越界）→ 插入载体（[above] 插到本
+     *   分割线之前、否则之后；[InsertImageSeparatorCommand] 撤销可移除）。
+     * 每个方向最多一行：按钮本身是 toggle（有则删、无则加），不会重复堆叠。
+     *
+     * **高亮保持**：[executeAndPush] 内部的 [afterCommandMutation] 会清点选态——
+     * 命令同步执行完毕后立即恢复本分割线的高亮与手指位置（同一帧内完成，无闪烁），
+     * 工具条不消失，用户可连续 toggle 上/下或点删除。
+     * **不动焦点**：工具条是 Popup（focusable=false），焦点/软键盘全程不受影响。
+     */
+    fun toggleDividerNeighborSeparator(blockId: String, above: Boolean) {
+        val idx = blocks.indexOfFirst { it.id == blockId }
+        if (idx < 0 || blocks.getOrNull(idx) !is BodyBlock.Divider) return
+        /** 保存点选态：命令收尾（afterCommandMutation）会清，执行后恢复，工具条不闪没 */
+        val savedTapX = highlightedTapX
+        val neighborIndex = if (above) idx - 1 else idx + 1
+        val neighbor = blocks.getOrNull(neighborIndex)
+        if (neighbor is BodyBlock.Text && neighbor.isImageSeparator) {
+            /** 已有载体行 → 取消：删除并压栈（撤销 = 原位插回） */
+            executeAndPush(
+                RemoveImageSeparatorCommand(neighbor.id, textSpec(neighbor), neighborIndex)
+            )
+        } else {
+            /** 无载体行 → 添加：above 插到分割线之前（index=idx），below 插到之后（idx+1） */
+            val insertIndex = if (above) idx else idx + 1
+            executeAndPush(
+                InsertImageSeparatorCommand(
+                    index = insertIndex,
+                    spec = BlockSpec.TextSpec(newBodyBlockId(), "", isImageSeparator = true),
+                )
+            )
+        }
+        /** 恢复点选态：分割线保持高亮、工具条保持在场（同一帧，无闪烁） */
+        highlightedBlockId = blockId
+        highlightedTapX = savedTapX
+    }
+
+    /**
+     * 就地更新分割线样式（v2026-09-11 样式切换，[UpdateDividerStyleCommand] 的底层）：
+     * Divider 块无 RichTextState，**就地换块对象零损失**（仿 [UpdateImagePropsCommand]
+     * 的重建策略）——以同 id + 新样式构造 [BodyBlock.Divider] 替换列表项，
+     * 拖拽 key（块 id）不变，ReorderableColumn 状态不受扰动。
+     *
+     * ⚠️ 可见性必须为 internal（同 [updateImagePropsById]）：apply/revert 在**类外**
+     * 顶层 Command 中调用，private 会报 "it is private" 编译错误（v2026-09-11 实证）。
+     */
+    internal fun updateDividerStyleById(blockId: String, style: DividerStyle) {
+        val idx = blocks.indexOfFirst { it.id == blockId }
+        if (idx < 0 || blocks.getOrNull(idx) !is BodyBlock.Divider) return
+        blocks[idx] = BodyBlock.Divider(blockId, style)
+    }
+
+    /**
+     * 分割线样式 **toggle**（v2026-09-11 工具条虚线/波浪线按钮）：
+     * 当前样式等于 [style] → 回到默认实线（[DividerStyle.SOLID]）；否则切到 [style]。
+     * 压栈 [UpdateDividerStyleCommand]（撤销 = 回旧样式，再重做 = 回新样式）。
+     *
+     * **高亮保持**：与 [toggleDividerNeighborSeparator] 同款——命令收尾
+     * （[afterCommandMutation]）会清点选态，命令同步执行完毕后立即恢复本分割线的
+     * 高亮与手指位置（同一帧内完成，无闪烁），工具条不消失，用户可连续切换样式
+     * （实线→虚线→实线 / 实线→波浪→实线）。
+     * **不动焦点**：工具条是 Popup（focusable=false），焦点/软键盘全程不受影响。
+     */
+    fun toggleDividerStyle(blockId: String, style: DividerStyle) {
+        val current = blocks.firstOrNull { it.id == blockId } as? BodyBlock.Divider ?: return
+        /** 保存点选态：命令收尾（afterCommandMutation）会清，执行后恢复，工具条不闪没 */
+        val savedTapX = highlightedTapX
+        val target = if (current.style == style) DividerStyle.SOLID else style
+        executeAndPush(UpdateDividerStyleCommand(blockId, current.style, target))
+        /** 恢复点选态：分割线保持高亮、工具条保持在场（同一帧，无闪烁） */
+        highlightedBlockId = blockId
+        highlightedTapX = savedTapX
     }
 
     /**
@@ -3167,7 +3418,7 @@ class BodyBlocksController(
             isImageSeparator = spec.isImageSeparator,
         )
         is BlockSpec.ImageSpec -> BodyBlock.Image(spec.id, spec.path, spec.note, spec.shrunk)
-        is BlockSpec.DividerSpec -> BodyBlock.Divider(spec.id)
+        is BlockSpec.DividerSpec -> BodyBlock.Divider(spec.id, spec.style)
     }
 
     /**
@@ -3350,8 +3601,8 @@ class BodyBlocksController(
      * 开始跨块选择（长按文本触发，v2026-09-11）：锚点 = (blockId, offset)，起终点同点。
      * 同时：
      * - 清块级高亮（[clearBlockSelection]）——避免「块选中」与「文字选区」两套高亮重叠；
-     * - 把该块原生光标**折叠**到锚点——长按瞬间原生 TextField 可能已弹出选词高亮，
-     *   折叠光标让它消失，视觉上只剩跨块选区。
+     * - 折叠**所有** Text 块的原生选择（v2026-09-11 统一选区改造）——此前只折叠锚点块，
+     *   若其他块残留原生选区（橙）会与跨块高亮并存，出现"两套选区"的观感。
      */
     fun startCrossSelection(blockId: String, offset: Int) {
         clearBlockSelection()
@@ -3360,7 +3611,12 @@ class BodyBlocksController(
         val clamped = offset.coerceIn(0, len)
         crossSelection = CrossBlockSelection(blockId, clamped, blockId, clamped)
         crossSelecting = true
-        block.state.selection = TextRange(clamped)
+        for (b in blocks) {
+            val state = (b as? BodyBlock.Text)?.state ?: continue
+            if (!state.selection.collapsed) {
+                state.selection = TextRange(state.selection.min)
+            }
+        }
     }
 
     /**
@@ -3397,7 +3653,19 @@ class BodyBlocksController(
         }
     }
 
-    /** 全选全部文本块：首个文本块块首 → 末个文本块块尾（图片/分割线块跳过） */
+    /**
+     * 跨块选区需要弹出操作工具栏时的回调（v2026-09-11 统一选区改造）：
+     * 编辑层接到「计算终点包围盒 + textToolbar.showMenu(复制/剪切/全选)」上。
+     * [selectAllCrossBlock] 在选区建立后触发它——**任何入口的全选**（原生光标
+     * 工具栏重定向 / 跨块工具栏自身的全选按钮）都会走到这里，工具栏自动弹出/刷新。
+     */
+    var onCrossSelectionToolbarRequested: (() -> Unit)? = null
+
+    /**
+     * 全选全部文本块：首个文本块块首 → 末个文本块块尾（图片/分割线块跳过）。
+     * 同时折叠所有块的原生选择（原生单块高亮与跨块高亮不并存），选区建立后
+     * 请求弹跨块工具栏（复制/剪切/全选）——统一后的**唯一全选路径**。
+     */
     fun selectAllCrossBlock() {
         val textBlocks = blocks.filterIsInstance<BodyBlock.Text>()
         val first = textBlocks.firstOrNull() ?: return
@@ -3409,6 +3677,13 @@ class BodyBlocksController(
             endOffset = last.state.annotatedString.text.length,
         )
         crossSelecting = false
+        for (b in blocks) {
+            val state = (b as? BodyBlock.Text)?.state ?: continue
+            if (!state.selection.collapsed) {
+                state.selection = TextRange(state.selection.min)
+            }
+        }
+        onCrossSelectionToolbarRequested?.invoke()
     }
 
     /**
@@ -4010,8 +4285,11 @@ fun BodyBlocksEditor(
      */
     onOpenImageGallery: (String) -> Unit = {},
 ) {
+    /** 编辑器根 Box 左上角（窗口坐标）：跨块手柄绘制从窗口坐标换算回 Box 局部 */
+    var boxTopLeft by remember { mutableStateOf(Offset.Zero) }
     Box(
         modifier = modifier
+            .onGloballyPositioned { boxTopLeft = it.positionInWindow() }
             /**
              * 跨块文字选择手势（v2026-09-11 工具栏改造版）：挂**父容器** + Initial pass
              * 观察。v1 的全屏透明覆盖层（兄弟节点）实测会干扰子级手势检测——正文区
@@ -4019,39 +4297,173 @@ fun BodyBlocksEditor(
              */
             .then(rememberCrossBlockSelectionGesture(controller, isLocked)),
     ) {
-        BlocksReorderableColumn(
-            items = controller.blocks.toList(),
-            onReorder = { from, to -> controller.moveBlock(from, to) },
-            modifier = Modifier.fillMaxWidth(),
-            /** 组合身份锚定块 id：交换时不复用槽位，图片不重载（见函数注释） */
-            itemKey = { it.id },
-        ) { _, block, isDragging, dragHandleModifier ->
-            when (block) {
-                is BodyBlock.Text -> BlockTextItem(
-                    controller = controller,
-                    block = block,
-                    isLocked = isLocked,
-                    isDragging = isDragging,
-                    dragHandleModifier = dragHandleModifier,
-                )
-                is BodyBlock.Image -> BlockImageItem(
-                    controller = controller,
-                    block = block,
-                    isDragging = isDragging,
-                    isLocked = isLocked,
-                    viewportBoundsProvider = viewportBoundsProvider,
-                    dragHandleModifier = dragHandleModifier,
-                    onOpenImageGallery = onOpenImageGallery,
-                )
-                is BodyBlock.Divider -> BlockDividerItem(
-                    controller = controller,
-                    block = block,
-                    isDragging = isDragging,
-                    isLocked = isLocked,
-                    dragHandleModifier = dragHandleModifier,
-                )
+        /**
+         * v2026-09-11 懒插入改版：Column 包裹，块列表首/尾各加一条边缘空白点击条
+         * （[EdgeGapTapBar]）——首块是图时点首条、尾块是图时点尾条，即懒插入载体
+         * 空块进入编辑。两条无条件渲染，同时承担页面原有的顶/底视觉间距。
+         */
+        Column(modifier = Modifier.fillMaxWidth()) {
+            EdgeGapTapBar(
+                head = true,
+                controller = controller,
+                isLocked = isLocked,
+            )
+            BlocksReorderableColumn(
+                items = controller.blocks.toList(),
+                onReorder = { from, to -> controller.moveBlock(from, to) },
+                modifier = Modifier.fillMaxWidth(),
+                /** 组合身份锚定块 id：交换时不复用槽位，图片不重载（见函数注释） */
+                itemKey = { it.id },
+            ) { _, block, isDragging, dragHandleModifier ->
+                when (block) {
+                    is BodyBlock.Text -> BlockTextItem(
+                        controller = controller,
+                        block = block,
+                        isLocked = isLocked,
+                        isDragging = isDragging,
+                        dragHandleModifier = dragHandleModifier,
+                    )
+                    is BodyBlock.Image -> BlockImageItem(
+                        controller = controller,
+                        block = block,
+                        isDragging = isDragging,
+                        isLocked = isLocked,
+                        viewportBoundsProvider = viewportBoundsProvider,
+                        dragHandleModifier = dragHandleModifier,
+                        onOpenImageGallery = onOpenImageGallery,
+                    )
+                    is BodyBlock.Divider -> BlockDividerItem(
+                        controller = controller,
+                        block = block,
+                        isDragging = isDragging,
+                        isLocked = isLocked,
+                        dragHandleModifier = dragHandleModifier,
+                    )
+                }
             }
+            EdgeGapTapBar(
+                head = false,
+                controller = controller,
+                isLocked = isLocked,
+            )
         }
+
+        /**
+         * 跨块选区两端拖拽手柄（v2026-09-11 补齐）：纯绘制层，拖动统一走父容器
+         * 手势层的手柄热区接管（同一锚点计算，画在哪就能拖哪）；选区清除自动隐藏。
+         */
+        CrossBlockSelectionHandles(
+            controller = controller,
+            boxTopLeft = boxTopLeft,
+            modifier = Modifier.matchParentSize(),
+        )
+    }
+}
+
+/**
+ * 首/尾图边缘空白点击条（v2026-09-11 懒插入交互）：
+ *
+ * - **视觉**：无条件渲染、[EDGE_GAP_TAP_BAR_HEIGHT] 高——首图前/尾图后永远有可点的
+ *   空白带；同时承接页面原有的顶/底视觉间距（原页顶 16dp Spacer 职责移交至此，
+ *   高度相同，间距总量不变）。
+ * - **手势**：[detectTapGestures] 点击 → [BodyBlocksController.insertEdgeSeparator]
+ *   懒插入载体空块（可撤销）并落焦弹键盘。锁定态（[isLocked]）只保留视觉、不挂手势。
+ * - **与跨块手势的相容**：本条是编辑器 Column 内的**子级**，跨块长按手势挂根 Box
+ *   （父容器 + Initial pass 观察）——观察期零消费不干扰本条的点击；长按本条时
+ *   其下没有文本布局可命中，跨块选择不会误启动。
+ */
+@Composable
+private fun EdgeGapTapBar(
+    /** true = 首图前（编辑器顶部）；false = 尾图后（编辑器底部） */
+    head: Boolean,
+    controller: BodyBlocksController,
+    isLocked: Boolean,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(EDGE_GAP_TAP_BAR_HEIGHT)
+            .then(
+                /** 锁定态不挂手势：点击不插入载体（视觉间距保留） */
+                if (isLocked) {
+                    Modifier
+                } else {
+                    /** key 用 head：头/尾是两个不同点击目标，切换时重启手势检测 */
+                    Modifier.pointerInput(head) {
+                        detectTapGestures(onTap = { controller.insertEdgeSeparator(head) })
+                    }
+                },
+            ),
+    )
+}
+
+/** 边缘空白点击条高度：与原页顶 Spacer 的 16dp 等高，页面视觉间距总量不变 */
+private val EDGE_GAP_TAP_BAR_HEIGHT = 16.dp
+
+/**
+ * 选区端手柄基准点（窗口坐标）：[isStart] = 选区起点手柄（首字符包围盒**左下**），
+ * 否则终点手柄（末字符包围盒**右下**）。返回 `(x, 字符包围盒 bottom)`——手柄竖线从
+ * bottom 起、圆点在其下方 [CROSS_HANDLE_DROP] + [CROSS_HANDLE_RADIUS] 处。
+ * 原生选区热区接管与跨块自绘手柄**共用本函数**，保证「画在哪就能拖哪」。
+ */
+private fun crossHandleBase(
+    info: BlockLayoutInfo,
+    charOffset: Int,
+    isStart: Boolean,
+): Pair<Float, Float> {
+    val layout = info.layoutResult
+    val len = layout.layoutInput.text.length
+    if (len == 0) return info.topLeftInWindow.x to info.topLeftInWindow.y
+    val box = layout.getBoundingBox(charOffset.coerceIn(0, len - 1))
+    val x = info.topLeftInWindow.x + (if (isStart) box.left else box.right)
+    return x to (info.topLeftInWindow.y + box.bottom)
+}
+
+/**
+ * 跨块选区两端拖拽手柄（v2026-09-11 补齐，原生选择手柄的跨块等价物）：
+ *
+ * - **纯绘制**：[Canvas] 只画不摸——拖动统一走父容器手势层的手柄热区接管
+ *   （`tryStartFromNativeHandle` 与本组件共用 [crossHandleBase] 锚点），
+ *   保证「画在哪就能拖哪」；
+ * - **视觉**：竖线（字符包围盒 bottom → 下沉）+ 实心圆点，色取
+ *   [LocalTextSelectionColors.current.handleColor]——与原生手柄同源同色、主题跟随；
+ * - **生命周期**：`crossSelection == null` 或起/终点布局快照缺失时不绘制（自动隐藏）。
+ */
+@Composable
+private fun CrossBlockSelectionHandles(
+    controller: BodyBlocksController,
+    /** 编辑器根 Box 左上角（窗口坐标）：手柄位置从窗口坐标换算回 Box 局部绘制 */
+    boxTopLeft: Offset,
+    modifier: Modifier = Modifier,
+) {
+    /** draw 阶段不能读 CompositionLocal → 组合期读死 */
+    val handleColor = LocalTextSelectionColors.current.handleColor
+    val dropPx = with(LocalDensity.current) { CROSS_HANDLE_DROP.toPx() }
+    val circleRadiusPx = with(LocalDensity.current) { CROSS_HANDLE_RADIUS.toPx() }
+    val strokeWidthPx = with(LocalDensity.current) { 1.5.dp.toPx() }
+    val selection = controller.crossSelection ?: return
+    val startInfo = controller.blockLayouts[selection.startBlockId] ?: return
+    val endInfo = controller.blockLayouts[selection.endBlockId] ?: return
+    Canvas(modifier) {
+        /** 画一个手柄：[base] = (x, 字符包围盒 bottom)，窗口坐标（先换算回局部） */
+        fun drawHandle(base: Pair<Float, Float>) {
+            val (x, bottom) = base
+            val localX = x - boxTopLeft.x
+            val localBottom = bottom - boxTopLeft.y
+            drawLine(
+                handleColor,
+                start = Offset(localX, localBottom),
+                end = Offset(localX, localBottom + dropPx),
+                strokeWidth = strokeWidthPx,
+            )
+            drawCircle(
+                handleColor,
+                radius = circleRadiusPx,
+                center = Offset(localX, localBottom + dropPx + circleRadiusPx),
+            )
+        }
+        drawHandle(crossHandleBase(startInfo, selection.startOffset, isStart = true))
+        drawHandle(crossHandleBase(endInfo, selection.endOffset - 1, isStart = false))
     }
 }
 
@@ -4094,14 +4506,28 @@ private fun rememberCrossBlockSelectionGesture(
      * 拖拽排序手势正常接管）。
      */
     val blockContentStartPx = with(LocalDensity.current) { BLOCK_CONTENT_PADDING.toPx() }
-
-    /** 选区被清除（点击别处/打字/复制/剪切）→ 同步收起系统工具栏 */
-    SideEffect { controller.onCrossSelectionCleared = { textToolbar.hide() } }
+    /** 原生选区手柄热区半径（px）：按下点距手柄锚点不超过它即接管为跨块拖拽 */
+    val handleHitRadiusPx = with(LocalDensity.current) { NATIVE_HANDLE_HIT_RADIUS.toPx() }
+    /** 手柄锚下沉量 / 圆点半径（px）：热区圆心 = 字符包围盒 bottom + 两者之和 */
+    val handleDropPx = with(LocalDensity.current) { CROSS_HANDLE_DROP.toPx() }
+    val handleRadiusPx = with(LocalDensity.current) { CROSS_HANDLE_RADIUS.toPx() }
+    /**
+     * 专用 Handler：仅承载跨块工具栏的延迟弹出。全选路径的弹出发生在系统
+     * 「全选」按钮回调栈内——回调返回后系统还要 finish 原生菜单（同一 ActionMode
+     * 通道），立即弹出的新菜单会被这次收起波及（实测：全选后跨块工具栏不出现）；
+     * 延迟 [TOOLBAR_SHOW_DEFERRED_MS] 等收起流程走完再弹。removeCallbacksAndMessages(null)
+     * 定向清理本 Handler 上的待执行回调（Handler 实例专用，无其他用途）。
+     */
+    val toolbarHandler = remember { Handler(Looper.getMainLooper()) }
 
     /**
      * 抬指定格：把复制 / 剪切 / 全选挂到系统文本工具栏。
      * [TextToolbar.showMenu] 的 rect 契约是**窗口坐标**——用选区终点末字符包围盒；
      * 空块（ZWSP）退化为块左上角的点矩形。
+     *
+     * ⚠️ 必须声明在下方 [SideEffect] **之前**：Kotlin 局部函数先声明后引用，
+     * SideEffect 里的 lambda 才能捕获到本函数（v3 曾因顺序颠倒报
+     * Unresolved reference 'showCrossBlockToolbar'）。
      */
     fun showCrossBlockToolbar() {
         val sel = controller.crossSelection ?: return
@@ -4136,6 +4562,173 @@ private fun rememberCrossBlockSelectionGesture(
         )
     }
 
+    /**
+     * 延迟弹出跨块工具栏（v2026-09-11 第三轮）：[BodyBlocksController.onCrossSelectionToolbarRequested]
+     * 的实际接线。全选（原生工具栏重定向 / 跨块工具栏自身按钮）的调用栈处于系统菜单
+     * 回调内，须延迟避开原生 ActionMode 收起竞态（见 [toolbarHandler] 注释）；
+     * 长按拖拽抬指路径无此竞态，直接调 [showCrossBlockToolbar] 立即弹。
+     */
+    fun requestCrossBlockToolbarDeferred() {
+        toolbarHandler.removeCallbacksAndMessages(null)
+        toolbarHandler.postDelayed({ showCrossBlockToolbar() }, TOOLBAR_SHOW_DEFERRED_MS)
+    }
+
+    /**
+     * 手柄热区接管（v2026-09-11 第三轮 + 修正）：按下的窗口坐标落在「原生选区手柄」
+     * 或「跨块选区自绘手柄」热区内时，把这次按住拖动升级为跨块拖拽——锚 = 选区对端
+     * （拖终点手柄 → 锚 = 选区开头；拖起点手柄 → 锚 = 选区结尾，normalize 自动换向），
+     * 后续拖动由跨块选区延伸（可拖出块边界）。
+     *
+     * 热区圆心 = 手柄圆点圆心（字符包围盒 bottom + [CROSS_HANDLE_DROP] +
+     * [CROSS_HANDLE_RADIUS]，与 [CrossBlockSelectionHandles] 绘制完全一致），半径
+     * [NATIVE_HANDLE_HIT_RADIUS]。初版锚定包围盒 bottom 本身导致失效：原生水滴
+     * 球体在包围盒**下方约 20dp**，手指按在球体上距锚点接近热区边缘，经常够不到。
+     *
+     * 调用时机（两处，缺一不可）：① down 捕获后立即（按住手柄再拖）；② 位移超
+     * touchSlop 时兜底（长按选词后**不抬手**直接拖手柄——不兜底会先一步 break
+     * 放弃观察，实测无法接管）。折叠光标的水滴（移动光标）不接管，保持原生。
+     *
+     * 原生手柄拖拽为何会被替代：接管后 move 在 Initial pass 消费，原生手柄在
+     * Main pass 看到 isConsumed 自动放弃拖拽——与长按路径同一套接管机制。
+     */
+    fun tryStartFromNativeHandle(downWindowPoint: Offset): Boolean {
+        /** 热区圆心相对包围盒 bottom 的纵向偏移（与绘制圆点圆心完全一致） */
+        val handleCenterDropPx = handleDropPx + handleRadiusPx
+        fun hit(base: Pair<Float, Float>): Boolean {
+            val center = Offset(base.first, base.second + handleCenterDropPx)
+            return (downWindowPoint - center).getDistance() <= handleHitRadiusPx
+        }
+        /** ① 原生选区（长按选词结果）两端手柄 */
+        for (b in controller.blocks) {
+            val text = b as? BodyBlock.Text ?: continue
+            val sel = text.state.selection
+            if (sel.collapsed) continue
+            val info = controller.blockLayouts[b.id] ?: continue
+            if (hit(crossHandleBase(info, sel.min, isStart = true))) {
+                controller.startCrossSelection(b.id, sel.max)
+                return true
+            }
+            if (hit(crossHandleBase(info, sel.max - 1, isStart = false))) {
+                controller.startCrossSelection(b.id, sel.min)
+                return true
+            }
+        }
+        /** ② 跨块选区自身手柄：按住哪端，锚 = 对端（端点微调 / 跨块重选） */
+        controller.crossSelection?.let { sel ->
+            val startInfo = controller.blockLayouts[sel.startBlockId]
+            val endInfo = controller.blockLayouts[sel.endBlockId]
+            if (startInfo != null && endInfo != null) {
+                if (hit(crossHandleBase(startInfo, sel.startOffset, isStart = true))) {
+                    controller.startCrossSelection(sel.endBlockId, sel.endOffset)
+                    return true
+                }
+                if (hit(crossHandleBase(endInfo, sel.endOffset - 1, isStart = false))) {
+                    controller.startCrossSelection(sel.startBlockId, sel.startOffset)
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    /**
+     * 选区本体接管（方案 I，v2026-09-11）：跨块选区激活时，按下点落在**选区文字
+     * 范围内**，把这次按住拖动升级为跨块延伸——原生手柄热区
+     * （[tryStartFromNativeHandle]）未命中时的兜底入口。
+     *
+     * - **范围判定**：hit 块序不早于起点块（同块须 offset >= startOffset）且不晚于
+     *   终点块（同块须 offset <= endOffset）——中间块（含图片/分割线等非文本块）
+     *   整体视为在选区内；
+     * - **动端映射**（与手柄拖动同构）：按压点在选区**前半**（覆盖字符中点之前）
+     *   = 调「起点」（锚 = 结尾）；后半 = 调「终点」（锚 = 开头）。反向延伸由
+     *   normalize 自动换向；
+     * - **轻点永不接管**：本函数只在位移超 slop 的时机②被调用，按一下选区仍是
+     *   原生「弹工具栏」，不抢。
+     *
+     * 已知取舍：接管占用了「按在选区上滚动」——跨块选区激活期间想滚动页面需先
+     * 点空白取消选区（待实机反馈再调）。
+     */
+    fun tryStartFromSelectionBody(downWindowPoint: Offset): Boolean {
+        val sel = controller.crossSelection ?: return false
+        /** 块 id → 列表序：跨块范围/前后比较用（controller.blocks 顺序即视觉顺序） */
+        val order = HashMap<String, Int>()
+        controller.blocks.forEachIndexed { i, b -> order[b.id] = i }
+        val startIdx = order[sel.startBlockId] ?: return false
+        val endIdx = order[sel.endBlockId] ?: return false
+        val (hitBlockId, hitOffset) =
+            controller.hitTestCrossSelection(downWindowPoint) ?: return false
+        val hitIdx = order[hitBlockId] ?: return false
+        /** hit 不早于选区起点：后面的块，或同块 offset 已进选区 */
+        val notBeforeStart =
+            hitIdx > startIdx || (hitIdx == startIdx && hitOffset >= sel.startOffset)
+        /** hit 不晚于选区终点：前面的块，或同块 offset 未出选区 */
+        val notAfterEnd =
+            hitIdx < endIdx || (hitIdx == endIdx && hitOffset <= sel.endOffset)
+        if (!(notBeforeStart && notAfterEnd)) return false
+        /**
+         * 选区覆盖的每段 (blockId, segStart, segEnd)：端块截取选区边界，中间块整段
+         * 计入——用于求「字符中点」划分前/后半（非文本块无字符，自动跳过）。
+         */
+        val segs = (startIdx..endIdx).mapNotNull { i ->
+            val b = controller.blocks.getOrNull(i) as? BodyBlock.Text
+                ?: return@mapNotNull null
+            val len =
+                controller.blockLayouts[b.id]?.layoutResult?.layoutInput?.text?.length ?: 0
+            val segStart = if (i == startIdx) sel.startOffset else 0
+            val segEnd = if (i == endIdx) sel.endOffset else len
+            if (segEnd > segStart) Triple(b.id, segStart, segEnd) else null
+        }
+        val total = segs.sumOf { it.third - it.second }
+        if (total <= 0) return false
+        /** 中点字符的全局序号（选区内第 total/2 个字符）→ 定位其所在块与块内 offset */
+        var remaining = total / 2
+        var midBlockIdx = -1
+        var midOffset = 0
+        for ((blockId, segStart, segEnd) in segs) {
+            val segLen = segEnd - segStart
+            if (remaining < segLen) {
+                midBlockIdx = order[blockId] ?: -1
+                midOffset = segStart + remaining
+                break
+            }
+            remaining -= segLen
+        }
+        /** 前半判定：hit 块序在中点块之前（或同块 offset <= midOffset）= 前半 */
+        val inFirstHalf = when {
+            midBlockIdx < 0 -> false
+            hitIdx < midBlockIdx -> true
+            hitIdx > midBlockIdx -> false
+            else -> hitOffset <= midOffset
+        }
+        /**
+         * 动端映射（与手柄拖动同构）：前半 = 调起点 → 锚 = 结尾端；
+         * 后半 = 调终点 → 锚 = 开头端。
+         */
+        if (inFirstHalf) {
+            controller.startCrossSelection(sel.endBlockId, sel.endOffset)
+        } else {
+            controller.startCrossSelection(sel.startBlockId, sel.startOffset)
+        }
+        /** 接管即收起工具栏：延伸进行中悬浮菜单挡视线（与长按路径同款处理） */
+        textToolbar.hide()
+        return true
+    }
+
+    /**
+     * 任一文本块存在非折叠原生选区（长按选词已发生）→ 长按兜底路径让位：
+     * **长按选词永远优先**，绝不误触"长按直接拖"（用户 2026-09-11 明确要求）。
+     */
+    fun anyNativeSelectionActive(): Boolean = controller.blocks.any { b ->
+        (b as? BodyBlock.Text)?.state?.selection?.collapsed == false
+    }
+
+    /** 选区被清除（点击别处/打字/复制/剪切）→ 同步收起系统工具栏 */
+    SideEffect {
+        controller.onCrossSelectionCleared = { textToolbar.hide() }
+        /** 全选等路径建立选区后请求弹工具栏 → 延迟弹出（避开系统收起竞态） */
+        controller.onCrossSelectionToolbarRequested = { requestCrossBlockToolbarDeferred() }
+    }
+
     if (isLocked) return Modifier
 
     return Modifier
@@ -4150,7 +4743,12 @@ private fun rememberCrossBlockSelectionGesture(
                         down = event.changes.firstOrNull { it.changedToDown() }
                     }
                     val downChange = down
-                    var started = false
+                    /**
+                     * 手柄接管时机①：down 后立即检测——按下点已在原生 / 跨块手柄
+                     * 热区（按住手柄再拖的场景）则以拖拽模式进入循环，move 全部消费。
+                     */
+                    var started =
+                        tryStartFromNativeHandle(editorTopLeft + downChange.position)
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         /** 只跟踪发起按下的那根手指（多指场景其余手指忽略） */
@@ -4173,31 +4771,64 @@ private fun rememberCrossBlockSelectionGesture(
                             /** slop 外位移 = 滚动 / 原生选择 / 排序手势 → 放弃观察该手势 */
                             val moved =
                                 (change.position - downChange.position).getDistance()
-                            if (moved > viewConfiguration.touchSlop) break
-                            if (change.uptimeMillis - downChange.uptimeMillis >=
-                                viewConfiguration.longPressTimeoutMillis
-                            ) {
-                                /** 长按达成：命中文本则启动跨块选区并接管拖动 */
-                                val windowPoint = editorTopLeft + downChange.position
-                                val hit = controller.hitTestCrossSelection(windowPoint)
-                                val hitInfo =
-                                    hit?.let { controller.blockLayouts[it.first] }
+                            when {
                                 /**
-                                 * down 在编辑器内容区左缘之左 = 拖拽手柄 / 复选框区
-                                 * → 放弃观察（不消费），下层手柄的长按拖拽排序正常工作
+                                 * 手柄接管时机②：长按选词后**不抬手**直接拖手柄——位移超
+                                 * slop 时先试手柄接管，命中则以拖拽模式继续；不命中才放弃
+                                 * （不兜底会先一步 break 放弃观察，实测手柄拖拽无法接管）。
                                  */
-                                if (hit == null || hitInfo == null ||
-                                    windowPoint.x <
-                                    hitInfo.topLeftInWindow.x - blockContentStartPx
-                                ) {
-                                    break
+                                moved > viewConfiguration.touchSlop -> {
+                                    /**
+                                     * 手柄热区未命中 → 试选区本体接管（方案 I）：
+                                     * 按在跨块选区文字上拖动 = 延伸（动端按前/后半
+                                     * 判定，见 [tryStartFromSelectionBody]）；两级都
+                                     * 未命中才放弃观察（滚动 / 原生拖选照常）。
+                                     */
+                                    if (!tryStartFromNativeHandle(
+                                            editorTopLeft + downChange.position,
+                                        ) &&
+                                        !tryStartFromSelectionBody(
+                                            editorTopLeft + downChange.position,
+                                        )
+                                    ) {
+                                        break
+                                    }
+                                    started = true
                                 }
-                                controller.startCrossSelection(hit.first, hit.second)
-                                /** 长按瞬间原生浮动工具栏可能已弹出 → 收起 */
-                                textToolbar.hide()
-                                started = true
+                                /**
+                                 * 长按兜底启动 + 让位窗口（长按选词永远优先）：原生长按
+                                 * 选词约 500ms 完成（selection 变非折叠），本路径延迟
+                                 * [CROSS_LONGPRESS_GRACE_MS] 才动手，且启动前检查选词
+                                 * 是否已发生——已发生则不启动也不退出（继续观察，用户拖
+                                 * 原生手柄由时机②接管）。
+                                 */
+                                change.uptimeMillis - downChange.uptimeMillis >=
+                                    viewConfiguration.longPressTimeoutMillis +
+                                        CROSS_LONGPRESS_GRACE_MS &&
+                                    !anyNativeSelectionActive() -> {
+                                    /** 长按达成且选词未发生：命中文本则启动跨块选区 */
+                                    val windowPoint = editorTopLeft + downChange.position
+                                    val hit = controller.hitTestCrossSelection(windowPoint)
+                                    val hitInfo =
+                                        hit?.let { controller.blockLayouts[it.first] }
+                                    /**
+                                     * down 在编辑器内容区左缘之左 = 拖拽手柄 / 复选框区
+                                     * → 放弃观察（不消费），下层手柄的长按拖拽排序正常工作
+                                     */
+                                    if (hit == null || hitInfo == null ||
+                                        windowPoint.x <
+                                        hitInfo.topLeftInWindow.x - blockContentStartPx
+                                    ) {
+                                        break
+                                    }
+                                    controller.startCrossSelection(hit.first, hit.second)
+                                    /** 长按瞬间原生浮动工具栏可能已弹出 → 收起 */
+                                    textToolbar.hide()
+                                    started = true
+                                }
                             }
-                        } else {
+                        }
+                        if (started) {
                             /**
                              * 拖动延伸 + Initial pass 消费：子级（Main pass）看到
                              * isConsumed 自动退出——原生选择拿不到干净事件便不扩展。
@@ -4413,6 +5044,13 @@ private fun BlockTextItem(
     DisposableEffect(block.id) {
         onDispose { controller.unregisterBlockLayout(block.id) }
     }
+
+    /**
+     * 跨块选区高亮色（v2026-09-11 统一选区改造）：取**原生文字选择背景色**
+     * （主题经 LocalTextSelectionColors 提供，与单块选词高亮完全同色）。
+     * 组合期读出为局部值——draw 阶段不能读 CompositionLocal。
+     */
+    val selectionHighlightColor = LocalTextSelectionColors.current.backgroundColor
 
     /** 聚焦到本块（拆分 / 合并 / 插图 / 撤销后由 controller.pendingFocus 驱动） */
     LaunchedEffect(controller.pendingFocus) {
@@ -4638,11 +5276,14 @@ private fun BlockTextItem(
                 }
                 .drawBehind {
                     /**
-                     * 跨块选区高亮（v2026-09-11）：按本块在选区中的本地范围逐行画半透明蓝底。
+                     * 跨块选区高亮（v2026-09-11）：按本块在选区中的本地范围逐行画半透明底。
                      * 坐标系 = 编辑器外框（padding 后），x 加 [textOriginXPx] 校准到文本排版区；
                      * 首行左缘取起字符包围盒、末行右缘取终字符包围盒，中间整行铺满——
-                     * 与系统选区的视觉行为一致。读 crossSelection/lastLayout 为快照读，
-                     * 变化自动触发重绘。
+                     * 读 crossSelection/lastLayout 为快照读，变化自动触发重绘。
+                     *
+                     * 颜色（v2026-09-11 统一选区改造）：用**原生文字选择背景色**
+                     * [LocalTextSelectionColors]——与单块原生选择（拖手柄选词）完全同色，
+                     * 消除「跨块高亮发灰、原生高亮是主题橙」的两套视觉。
                      */
                     val sel = controller.crossSelection ?: return@drawBehind
                     val layout = lastLayout ?: return@drawBehind
@@ -4651,7 +5292,7 @@ private fun BlockTextItem(
                     ) ?: return@drawBehind
                     val (start, end) = range
                     if (end <= start) return@drawBehind
-                    val highlight = Color(0xFF4285F4).copy(alpha = 0.20f)
+                    val highlight = selectionHighlightColor
                     val startLine = layout.getLineForOffset(start)
                     val endLine = layout.getLineForOffset((end - 1).coerceAtLeast(0))
                     for (line in startLine..endLine) {
@@ -4821,6 +5462,19 @@ private fun BlockTextItem(
  * **与文本左右严格对齐**；改动此处务必同步 [BlockTextItem] 的 contentPadding。
  */
 private val BLOCK_CONTENT_PADDING = 16.dp
+
+/** 原生选区手柄的接管热区半径（v2026-09-11 第三轮：拖原生手柄升级为跨块拖拽） */
+private val NATIVE_HANDLE_HIT_RADIUS = 28.dp
+
+/** 全选路径弹跨块工具栏的延迟毫秒（避开系统 ActionMode 收起竞态，见手势层注释） */
+private const val TOOLBAR_SHOW_DEFERRED_MS = 150L
+
+/** 长按兜底启动的让位窗口（ms）：等原生长按选词（约 500ms）完成——长按选词永远优先 */
+private const val CROSS_LONGPRESS_GRACE_MS = 300L
+
+/** 跨块选区手柄：竖线自字符包围盒 bottom 下沉量 / 圆点半径（原生水滴球体在包围盒下方） */
+private val CROSS_HANDLE_DROP = 16.dp
+private val CROSS_HANDLE_RADIUS = 7.dp
 
 /** 图片选中工具栏尺寸：宽 = 5×40dp 触控区 + 4×8dp 间距 + 左右 12dp 内边距；高 = 40dp 触控区 + 上下 5dp 内边距 */
 private val ImageToolbarWidth = 256.dp
@@ -5380,11 +6034,14 @@ private val DividerHighlightColor = Color(0xFFFF9A5C)
  * - **点击**：`pointerInput + detectTapGestures` 替代 `clickable`——除切换高亮外
  *   还要**捕获手指 x 坐标**（删除按钮悬浮位置跟随点击点），`clickable` 拿不到位置；
  *   detectTapGestures 本身无水波纹，等价于原"去波纹 clickable"；
- * - **悬浮删除按钮（v2026-09-08 第四版）**：高亮**且高亮来自点击**时用 `Popup` 渲染
+ * - **悬浮工具条（v2026-09-11 三按钮改版）**：高亮**且高亮来自点击**时用 `Popup` 渲染
  *   （独立窗口，**不被任何父容器裁剪**），水平中心 = 手指 x（clamp 到行内），垂直
- *   悬在分割线上方；点击按钮删除分割线（那一行变空行、焦点落空行行首、可撤销）。
- *   退格 / Delete 两步删除点亮的高亮**不弹按钮**（[BodyBlocksController.highlightForTwoStepDelete]，
- *   避免按钮凭空出现在行首/旧位置）；此时再点击分割线 = 补弹按钮。
+ *   悬在分割线上方；五按钮 = 虚线样式 / 波浪线样式（toggle，当前即该样式时图标变
+ *   暖橙，再点回实线，v2026-09-11 样式切换）/ 向上添加载体行 / 向下添加载体行
+ *   （toggle，相邻已有载体时图标变暖橙，再点取消）/ 删除分割线（那一行变空行、
+ *   焦点落空行行首、可撤销）。
+ *   退格 / Delete 两步删除点亮的高亮**不弹工具条**（[BodyBlocksController.highlightForTwoStepDelete]，
+ *   避免凭空出现在行首/旧位置）；此时再点击分割线 = 补弹工具条。
  *   放弃"点选后软键盘退格删除"（IME 走 `deleteSurroundingText`，Compose 无 API
  *   可拦截，见 [BodyBlocksController.onDividerTapped] 注释）；
  * - **焦点全程不动**：点击分割线不改变焦点，软键盘不收起；
@@ -5404,15 +6061,15 @@ private fun BlockDividerItem(
     val highlighted = controller.highlightedBlockId == block.id
 
     /**
-     * 悬浮删除按钮的显示条件（v2026-09-08）：
+     * 悬浮工具条的显示条件（v2026-09-11 三按钮改版）：
      * - 本块高亮 **且** [BodyBlocksController.highlightedTapX] 非空（高亮来自**点击**，
-     *   有手指位置可跟随）——退格 / Delete 两步删除点亮的高亮**不弹按钮**（无手指
+     *   有手指位置可跟随）——退格 / Delete 两步删除点亮的高亮**不弹工具条**（无手指
      *   位置，凭空出现在行首/旧位置很突兀），见 [BodyBlocksController.highlightForTwoStepDelete]；
      * - 非锁定态。
      */
-    val showDeleteButton = highlighted && !isLocked && controller.highlightedTapX != null
+    val showToolbar = highlighted && !isLocked && controller.highlightedTapX != null
 
-    /** 线体容器宽度（px）：删除按钮水平 clamp 的边界 */
+    /** 线体容器宽度（px）：工具条水平 clamp 的边界 */
     var rowWidthPx by remember(block.id) { mutableStateOf(0) }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -5451,84 +6108,224 @@ private fun BlockDividerItem(
                 .height(25.dp),
             contentAlignment = Alignment.Center,
         ) {
-            HorizontalDivider(
-                modifier = Modifier.fillMaxWidth(),
-                thickness = if (highlighted) 2.dp else 1.dp,
-                color = if (highlighted) {
-                    DividerHighlightColor
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-                },
-            )
+            /** v2026-09-11 样式切换：线体按块样式渲染（实线/虚线/波浪），高亮色规则不变 */
+            DividerLine(style = block.style, highlighted = highlighted)
 
-            if (showDeleteButton) {
-                DividerDeletePopup(tapX = controller.highlightedTapX ?: 0f, rowWidthPx = rowWidthPx) {
-                    controller.deleteDividerBlock(block.id)
-                }
+            if (showToolbar) {
+                /** v2026-09-11 五按钮工具条：样式切换（虚线/波浪）+ 上/下载体行 + 删除 */
+                DividerToolbarPopup(
+                    tapX = controller.highlightedTapX ?: 0f,
+                    rowWidthPx = rowWidthPx,
+                    style = block.style,
+                    hasAbove = controller.hasDividerNeighborSeparator(block.id, above = true),
+                    hasBelow = controller.hasDividerNeighborSeparator(block.id, above = false),
+                    onToggleStyle = { controller.toggleDividerStyle(block.id, it) },
+                    onAddAbove = { controller.toggleDividerNeighborSeparator(block.id, above = true) },
+                    onAddBelow = { controller.toggleDividerNeighborSeparator(block.id, above = false) },
+                    onDelete = { controller.deleteDividerBlock(block.id) },
+                )
             }
         }
     }
 }
 
-/** 悬浮删除按钮几何（dp）：宽度 / 高度 / 与分割线的间距 / 距行两端的边距 */
-private val DividerDeleteButtonWidth = 40.dp
-private val DividerDeleteButtonHeight = 28.dp
-private val DividerDeleteButtonGap = 6.dp
-private val DividerDeleteButtonMargin = 8.dp
+/** 悬浮工具条几何（dp）：胶囊宽（5×40 按钮 + 4×8 间距 + 2×12 水平 padding——
+ *  v2026-09-11 样式按钮加入后 3 按钮 160→5 按钮 256）/ 高（36 按钮 + 2×4 垂直
+ *  padding）/ 与分割线的间距 / 距行两端的边距 */
+private val DividerToolbarWidth = 256.dp
+private val DividerToolbarHeight = 44.dp
+private val DividerToolbarGap = 6.dp
+private val DividerToolbarMargin = 8.dp
 
 /**
- * 高亮态的悬浮"删除"按钮：`Popup` 独立窗口渲染（不被编辑区父容器裁剪，
- * 也不会被软键盘顶走），**水平中心跟随手指点击 x**（clamp 到行内边距内），
- * 垂直悬在分割线上方 [DividerDeleteButtonGap] 处。
+ * 高亮态的悬浮**五按钮工具条**（v2026-09-11 三按钮改版；同日样式切换扩为五按钮）：
+ * `Popup` 独立窗口渲染（不被编辑区父容器裁剪，也不会被软键盘顶走），**水平中心跟随
+ * 手指点击 x**（clamp 到行内边距内），垂直悬在分割线上方 [DividerToolbarGap] 处。
  *
- * 用 alignment = TopStart + IntOffset 计算（相对锚点即线体容器）：
- * - x = clamp(手指x - 按钮半宽, 边距, 行宽 - 边距 - 按钮宽)
- * - y = -(按钮高 + 间距)（负值 = 容器上方）
+ * **视觉一致性**：容器样式与图片工具条 [ImageBlockToolbar] 同款——白底 97% 胶囊、
+ * 1dp 黑 15% 阴影色外边框、正间距排布；按钮规格向原删除按钮看齐（15dp 图标），
+ * 样式按钮加入后整体 256×44dp。
+ * 按钮（左→右）：**虚线样式 / 波浪线样式 / 向上添加载体行 / 向下添加载体行 / 删除**——
+ * - 虚线/波浪：toggle（当前即该样式 → 激活态，再点回默认实线），见
+ *   [BodyBlocksController.toggleDividerStyle]；
+ * - 上/下载体行：toggle（相邻已是载体 = 已添加 → 图标变主题暖橙，再点取消），见
+ *   [BodyBlocksController.toggleDividerNeighborSeparator]。
  *
  * Popup 默认 `focusable = false`：不抢焦点，软键盘状态不受影响。
  */
 @Composable
-private fun DividerDeletePopup(
+private fun DividerToolbarPopup(
     tapX: Float,
     rowWidthPx: Int,
+    /** 当前分割线样式：决定虚线/波浪按钮的激活态（当前即该样式 → 高亮） */
+    style: DividerStyle,
+    /** 上方相邻已是载体行 → 上按钮呈激活态（再点 = 取消添加） */
+    hasAbove: Boolean,
+    /** 下方相邻已是载体行 → 下按钮呈激活态 */
+    hasBelow: Boolean,
+    /** 点虚线/波浪按钮 → toggle 样式（当前即该样式则回默认实线） */
+    onToggleStyle: (DividerStyle) -> Unit,
+    onAddAbove: () -> Unit,
+    onAddBelow: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val density = LocalDensity.current
-    /** 按钮左缘相对线体容器的 x 偏移（px），随手指位置动态变化 */
+    /** 工具条左缘相对线体容器的 x 偏移（px），随手指位置动态变化 */
     val offsetX = remember(tapX, rowWidthPx) {
         with(density) {
-            val half = DividerDeleteButtonWidth.toPx() / 2
-            val min = DividerDeleteButtonMargin.toPx() + half
-            val max = (rowWidthPx - DividerDeleteButtonMargin.toPx() - half).coerceAtLeast(min)
+            val half = DividerToolbarWidth.toPx() / 2
+            val min = DividerToolbarMargin.toPx() + half
+            val max = (rowWidthPx - DividerToolbarMargin.toPx() - half).coerceAtLeast(min)
             (tapX.coerceIn(min, max) - half).roundToInt()
         }
     }
     val offsetY = with(density) {
-        -(DividerDeleteButtonHeight + DividerDeleteButtonGap).toPx().roundToInt()
+        -(DividerToolbarHeight + DividerToolbarGap).toPx().roundToInt()
     }
     Popup(
         alignment = Alignment.TopStart,
         offset = IntOffset(offsetX, offsetY),
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .size(width = DividerDeleteButtonWidth, height = DividerDeleteButtonHeight)
-                .background(
-                    color = DividerHighlightColor,
-                    shape = RoundedCornerShape(7.dp),
-                )
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { onDelete() },
-            contentAlignment = Alignment.Center,
+                .background(color = Color.White.copy(alpha = 0.97f), shape = CircleShape)
+                // 阴影色外边框：与图片工具条同款（1dp 黑 15% 贴胶囊外缘），层次感替代阴影
+                .border(width = 1.dp, color = Color.Black.copy(alpha = 0.15f), shape = CircleShape)
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = LucideIcons.Trash2,
-                contentDescription = "删除分割线",
-                tint = Color.White,
-                modifier = Modifier.size(15.dp),
-            )
+            /** 样式按钮（v2026-09-11）：激活态 = 当前即该样式（图标变暖橙），再点回实线 */
+            DividerToolbarButton(LucideIcons.Ellipsis, "虚线样式", style == DividerStyle.DASHED) {
+                onToggleStyle(DividerStyle.DASHED)
+            }
+            DividerToolbarButton(LucideIcons.Waves, "波浪线样式", style == DividerStyle.WAVY) {
+                onToggleStyle(DividerStyle.WAVY)
+            }
+            DividerToolbarButton(LucideIcons.ArrowUpToLine, "向上添加载体行", hasAbove, onAddAbove)
+            DividerToolbarButton(LucideIcons.ArrowDownToLine, "向下添加载体行", hasBelow, onAddBelow)
+            DividerToolbarButton(LucideIcons.Trash2, "删除分割线", active = false, onClick = onDelete)
         }
     }
+}
+
+/**
+ * 工具条单按钮：40×36dp 触控区 + 15dp Lucide 图标居中（图标规格与原删除按钮一致）。
+ * **激活态**（[active]，载体行已添加）：图标变主题暖橙（[DividerHighlightColor]）——
+ * v2026-09-11 用户确认的"仅图标变色"视觉权重方案；常态灰黑与图片工具条按钮同色。
+ */
+@Composable
+private fun DividerToolbarButton(
+    icon: ImageVector,
+    contentDescription: String,
+    active: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(width = 40.dp, height = 36.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (active) DividerHighlightColor else Color(0xFF3A3A3A),
+            modifier = Modifier.size(15.dp),
+        )
+    }
+}
+
+/**
+ * 分割线线体（v2026-09-11 样式切换）：按 [style] 渲染三种线型，颜色/高亮规则与
+ * 历史实现一致（常态 = onSurfaceVariant 35%、高亮 = [DividerHighlightColor]）——
+ * - [DividerStyle.SOLID]：material3 [HorizontalDivider]，厚度 1dp（高亮 2dp）；
+ * - [DividerStyle.DASHED]：Canvas 虚线（[drawDashedDivider]，6dp 划 / 4dp 空）；
+ * - [DividerStyle.WAVY]：Canvas 二次贝塞尔波浪（[drawWavyDivider]，振幅 2dp、波长 10dp）。
+ *
+ * **零位移约束**：容器 [BlockDividerItem] 固定 25dp 高，波浪线画布 6dp 也在容器内
+ * 居中放置（contentAlignment = Center），增厚只影响描边宽度、不推挤下方内容。
+ */
+@Composable
+private fun DividerLine(style: DividerStyle, highlighted: Boolean) {
+    val color = if (highlighted) {
+        DividerHighlightColor
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+    }
+    when (style) {
+        DividerStyle.SOLID -> HorizontalDivider(
+            modifier = Modifier.fillMaxWidth(),
+            thickness = if (highlighted) 2.dp else 1.dp,
+            color = color,
+        )
+
+        DividerStyle.DASHED -> Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (highlighted) 2.dp else 1.dp),
+        ) {
+            /** 线厚 = 画布高（1dp 常态 / 2dp 高亮），颜色随高亮态切换 */
+            drawDashedDivider(size, color, size.height)
+        }
+
+        DividerStyle.WAVY -> Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp),
+        ) {
+            /** 高亮增厚走描边宽度（1dp→2dp），波形几何不变 */
+            drawWavyDivider(size, color, if (highlighted) 2.dp.toPx() else 1.dp.toPx())
+        }
+    }
+}
+
+/**
+ * 虚线绘制（v2026-09-11 样式切换）：沿水平中线画 6dp 划 / 4dp 空的虚线段，
+ * [strokeWidth] 为线厚。**编辑页与阅读态共用**（[DividerLine] /
+ * InspirationViewCard），保证两处视觉一致。
+ */
+internal fun DrawScope.drawDashedDivider(size: Size, color: Color, strokeWidth: Float) {
+    /** 虚线节奏：6dp 实段 + 4dp 空档（视觉密度与 Ellipsis 图标的点距近似） */
+    val dash = 6.dp.toPx()
+    val gap = 4.dp.toPx()
+    val y = size.height / 2
+    drawLine(
+        color = color,
+        start = Offset(0f, y),
+        end = Offset(size.width, y),
+        strokeWidth = strokeWidth,
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, gap)),
+    )
+}
+
+/**
+ * 波浪线绘制（v2026-09-11 样式切换）：沿水平中线画振幅 2dp、波长 10dp 的
+ * 二次贝塞尔波浪（上下半波交替、圆头收尾）。**编辑页与阅读态共用**——
+ * 波形几何与描边宽度解耦，增厚只改 [strokeWidth]。
+ */
+internal fun DrawScope.drawWavyDivider(size: Size, color: Color, strokeWidth: Float) {
+    val halfWave = 10.dp.toPx() / 2   /** 半波长（每段二次贝塞尔横跨的距离） */
+    val amplitude = 2.dp.toPx()       /** 振幅（控制点偏离中线的距离） */
+    val y = size.height / 2
+    val path = Path()
+    path.moveTo(0f, y)
+    var x = 0f
+    var up = true
+    /** 逐半波推进：上拱/下拱交替，最后不足半波的残段收在中线上 */
+    while (x < size.width) {
+        val endX = (x + halfWave).coerceAtMost(size.width)
+        val ctrlY = y + if (up) -amplitude else amplitude
+        path.quadraticBezierTo(x + halfWave / 2, ctrlY, endX, y)
+        x = endX
+        up = !up
+    }
+    drawPath(
+        path = path,
+        color = color,
+        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+    )
 }

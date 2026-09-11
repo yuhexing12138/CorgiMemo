@@ -1,6 +1,7 @@
 // app/src/main/java/com/corgimemo/app/ui/screens/inspiration/components/InspirationViewCard.kt
 package com.corgimemo.app.ui.screens.inspiration.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -416,8 +417,11 @@ private fun InspirationBodyRichText(
      * 应跳过渲染的"图片间空白段"索引集合（v2026-09-09）：
      * 编辑页保证任意两图之间都有一个空 Text 块（markdown 载体为 NBSP 占位段，
      * 见 BodyBlocksEditor 的 EMPTY_BLOCK_PLACEHOLDER），阅读态不需要这行空白——
-     * 图片由卡面图片区堆叠展示、自行留白。判定：段为空白段，且其**前后最近的
-     * 非空白段**都是图片段 → 跳过（连续多个空白段同时满足时全部跳过）。
+     * 图片由卡面图片区堆叠展示、自行留白。判定（v2026-09-11 v3 扩展分割线）：段为空白段，且
+     * ① 其**前后最近的非空白段**都是图片段；或 ② 位于文档**开头**、其后最近非空白段是
+     * **图片或分割线**段（首载体：图/线上方懒插入产物）；或 ③ 位于文档**结尾**、其前
+     * 最近非空白段是**图片或分割线**段（尾载体）→ 跳过（连续多个空白段同时满足时全部
+     * 跳过；用户留白——另一侧邻的是文本——不受影响）。
      *
      * 只影响渲染：paragraphs 保留原始序列与索引，复选框勾选回写（按原始索引
      * 替换段落、重组整篇 markdown）不受影响。
@@ -425,6 +429,7 @@ private fun InspirationBodyRichText(
     val skipRenderIndexes: Set<Int> = remember(contentFormat) {
         val paras = contentFormat.split("\n\n").map { it.trim('\n') }
         val isImage = paras.map { InspirationImageSegmentRegex.matches(it) }
+        val isDivider = paras.map { isDividerMarkdown(it) }
         val isBlank = paras.map { isBlankBodyParagraph(it) }
         buildSet {
             paras.indices.forEach { i ->
@@ -433,7 +438,15 @@ private fun InspirationBodyRichText(
                 while (prev >= 0 && isBlank[prev]) prev--
                 var next = i + 1
                 while (next < paras.size && isBlank[next]) next++
-                if (prev >= 0 && next < paras.size && isImage[prev] && isImage[next]) add(i)
+                val betweenImages = prev >= 0 && next < paras.size && isImage[prev] && isImage[next]
+                /**
+                 * v2026-09-11 首载体/尾载体（v3 扩展分割线）：一侧到文档边界全是空白、
+                 * 另一侧最近非空白是图片**或分割线**（编辑页边缘 tap 条 / 分割线是
+                 * 首尾块时的懒插入产物）
+                 */
+                val atHead = prev < 0 && next < paras.size && (isImage[next] || isDivider[next])
+                val atTail = next >= paras.size && prev >= 0 && (isImage[prev] || isDivider[prev])
+                if (betweenImages || atHead || atTail) add(i)
             }
         }
     }
@@ -453,17 +466,43 @@ private fun InspirationBodyRichText(
                 InspirationImageSegmentRegex.matches(para) -> Unit
                 isDividerMarkdown(para) -> {
                     /**
-                     * 分割线段（"---"，v2026-09-07）：渲染为一条水平细线（与编辑页
-                     * BlockDividerItem 常态同视觉），不喂给 markdown 解析——库不认识
-                     * thematic break，会把 "---" 渲染成字面文本。
+                     * 分割线段（"---" / "--- dashed" / "--- wavy"，v2026-09-07；
+                     * v2026-09-11 样式切换）：按段落后缀解析线型——实线走
+                     * HorizontalDivider，虚线/波浪**复用编辑页同款绘制函数**
+                     * （[drawDashedDivider] / [drawWavyDivider]，同包 internal），
+                     * 两处视觉一致（常态灰、1dp 描边）。不喂给 markdown 解析——
+                     * 库不认识 thematic break，会把 "---" 渲染成字面文本。
                      */
-                    HorizontalDivider(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 10.dp),
-                        thickness = 1.dp,
-                        color = Color(0xFFDDDDDD)
-                    )
+                    val dividerColor = Color(0xFFDDDDDD)
+                    when (parseDividerStyle(para) ?: DividerStyle.SOLID) {
+                        DividerStyle.SOLID -> HorizontalDivider(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp),
+                            thickness = 1.dp,
+                            color = dividerColor
+                        )
+
+                        DividerStyle.DASHED -> Canvas(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp)
+                                .height(1.dp),
+                        ) {
+                            /** 线厚 = 画布高 1dp（阅读态无高亮态） */
+                            drawDashedDivider(size, dividerColor, size.height)
+                        }
+
+                        DividerStyle.WAVY -> Canvas(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 7.5.dp)
+                                .height(6.dp),
+                        ) {
+                            /** 画布 6dp（波形需要）+ 上下 7.5dp：线中心与实线段落对齐 */
+                            drawWavyDivider(size, dividerColor, 1.dp.toPx())
+                        }
+                    }
                 }
                 else -> {
                     /** 复选框段判定（"- [ ] 内容" / "- [x] 内容"，v2026-09-07） */

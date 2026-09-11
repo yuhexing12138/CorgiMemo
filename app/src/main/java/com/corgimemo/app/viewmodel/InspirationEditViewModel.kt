@@ -899,21 +899,38 @@ class InspirationEditViewModel @Inject constructor(
                  * controller 与命令栈都还在，不应清空重跑；新建灵感没有 loadInspiration
                  * 调用，由 Screen 的 LaunchedEffect(Unit) 负责 initialize("")。
                  */
+                /**
+                 * v2026-09-11 修复「重进页缩小图先大后小」：必须在 initialize **之前**
+                 * 读出持久化属性（此刻块列表尚未组合，suspend 查询的延迟无影响）——
+                 * 若 initialize 先把 Image(shrunk=false) 塞进块列表，下一帧即按满宽
+                 * 渲染，之后的 applyImageProps 回填（哪怕 snap 瞬时跳变）也会造成可见
+                 * 的「先大后小」。改为：先 suspend 读 DB → initialize → **同一主线程
+                 * 切片内、无挂起点**同步回填 → 下一帧首组合即读到 shrunk 终态，直接
+                 * 以半宽呈现，零满宽帧。
+                 */
+                val persistedBlocks = loadContentBlocks(inspirationId)
                 if (!bodyBlocks.hasInitialized) {
                     // triggerDocChanged=false：把已保存内容还原成块列表属于载入，
                     // 不是用户编辑，不应把 _isDirty 置脏；同时保持 _contentFormat
                     // 为 loadInspiration 迁移后的最终值（避免被 toMarkdown 二次序列化改写）。
                     bodyBlocks.initialize(_contentFormat.value, triggerDocChanged = false)
+                    bodyBlocks.applyImageProps(
+                        persistedBlocks.filterIsInstance<ContentBlock.Image>()
+                            .associateBy { it.path }
+                    )
+                    bodyBlocks.markImagePropsRestored()
                 }
 
                 /**
                  * v2026-08-01 Phase 4 回退：图片不再迁移为 Markdown 内联语法。
                  * 图片作为独立 ContentBlock.Image 块加载，由 UI 层 contentBlocks 渲染。
                  * _imagePaths 从数据库的 Image 块同步（用于文件清理追踪）。
+                 * v2026-09-11：复用上面 initialize 前读出的 persistedBlocks（一次 DB 查询两用），
+                 * 不再重复查 content_blocks。
                  */
-                val dbBlocks = contentBlockDao.getBlocksByTodoId(inspirationId, ownerType = "inspiration")
-                val imageBlocks = dbBlocks.filter { it.type == "image" }
-                _imagePaths.value = imageBlocks.map { it.filePath }
+                _imagePaths.value = persistedBlocks
+                    .filterIsInstance<ContentBlock.Image>()
+                    .map { it.path }
 
                 val subTasks = SubTaskManager.getSubTasks(context, inspirationId)
                 _subTasks.value = subTasks

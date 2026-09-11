@@ -94,7 +94,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalTextToolbar
-import com.corgimemo.app.ui.components.ImagePasteFloatingButton
 import com.corgimemo.app.ui.components.ImagePasteTextToolbar
 import com.corgimemo.app.util.pasteImageOnCtrlV
 import com.corgimemo.app.util.toPxFloat
@@ -1679,7 +1678,9 @@ fun InspirationEditScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // v2026-09-11 懒插入改版：原页顶 16dp Spacer 已删除——间距职责移交
+            // BodyBlocksEditor 内部首部的边缘空白点击条（EdgeGapTapBar，同为 16dp 高），
+            // 视觉间距不变；且首块是图时该空白可点击 → 懒插入载体块供编辑。
 
             /** ===== 块级内容编辑器区域（Text/Image 交错 + 手柄拖拽排序 + 两步删除） ===== */
 
@@ -1691,16 +1692,20 @@ fun InspirationEditScreen(
              * - Enter 拆块 / 块首退格合并 / 图片块两步删除 / 手柄拖拽排序
              * 详见 components/BodyBlocksEditor.kt
              */
-            // v2026-09-11：图片粘贴浮动工具栏装饰器
-            // 复制图片后，在编辑区长按 / 点击光标手柄时，像复制文字那样在系统文本工具栏旁
-            // 浮出「粘贴图片」入口（剪贴板无图片时 imagePasteState 为 null，不显形）。
+            // v2026-09-11：图片粘贴装饰器——与粘贴文字完全同一逻辑：复制图片后，点系统
+            // 工具栏的「粘贴」项即插入图片（无多余浮层；剪贴板无图片时文本粘贴不变）。
             // ⚠️ remember 的 calculation 带 @DisallowComposableCalls：lambda 内禁止 @Composable
             // 调用（含 CompositionLocal.current），须先在组合作用域取出再传入（同 Theme.kt 模式）。
             val baseTextToolbar = LocalTextToolbar.current
             val imagePasteToolbar = remember(baseTextToolbar) {
-                ImagePasteTextToolbar(baseTextToolbar, context) { path ->
-                    bodyBlocks.insertImageAtFocused(path)
-                }
+                ImagePasteTextToolbar(
+                    baseTextToolbar,
+                    context,
+                    onInsert = { path -> bodyBlocks.insertImageAtFocused(path) },
+                    // v2026-09-11 统一选区：原生「全选」（光标工具栏）重定向为跨块全选——
+                    // 选中所有文本块内容并弹出跨块工具栏，消除两套全选并存
+                    onCrossBlockSelectAll = { bodyBlocks.selectAllCrossBlock() },
+                )
             }
             Box(
                 modifier = Modifier
@@ -1729,9 +1734,6 @@ fun InspirationEditScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-
-            // 浮动「粘贴图片」入口：与 BodyBlocksEditor 同级，随 imagePasteToolbar 状态显隐。
-            ImagePasteFloatingButton(imagePasteToolbar)
 
             /**
              * v2026-08-01 Phase 2：# 标签触发建议弹窗

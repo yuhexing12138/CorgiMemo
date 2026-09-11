@@ -105,7 +105,6 @@ import com.corgimemo.app.ui.components.LinkedCardPreviewDialog
 import com.corgimemo.app.ui.model.TodoLine
 import com.corgimemo.app.util.ImageUtils
 import com.corgimemo.app.util.pasteImageOnCtrlV
-import com.corgimemo.app.ui.components.ImagePasteFloatingButton
 import com.corgimemo.app.ui.components.ImagePasteTextToolbar
 import com.corgimemo.app.util.VoicePlayer
 import com.corgimemo.app.util.VoiceRecorder
@@ -1355,7 +1354,8 @@ fun TodoEditScreen(
             // 附件现在改为行级存储，在每个 CheckboxEditRow 内部渲染（支持子任务缩进）
             // 旧 ReorderableColumn 已被替换为 TodoLine.imagePaths / voiceAttachments 字段
 
-            /** 图片粘贴装饰器：复制图片后，在光标工具栏出现「粘贴图片」浮动入口（替代顶栏按钮）。
+            /** 图片粘贴装饰器：与粘贴文字完全同一逻辑——复制图片后，点系统工具栏的
+             *  「粘贴」项即插入图片（无多余浮层；剪贴板无图片时文本粘贴不变）。
              *  ⚠️ remember 的 calculation 带 @DisallowComposableCalls：lambda 内禁止 @Composable
              *  调用（含 CompositionLocal.current），须先在组合作用域取出再传入（同 Theme.kt 模式）。 */
             val baseTextToolbar = LocalTextToolbar.current
@@ -1551,7 +1551,6 @@ fun TodoEditScreen(
                 enabled = !isLocked
             )
             }
-            ImagePasteFloatingButton(imagePasteToolbar)
 
             if (showLocationPopup) {
                 androidx.compose.material3.AlertDialog(

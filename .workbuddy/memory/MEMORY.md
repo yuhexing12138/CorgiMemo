@@ -22,9 +22,15 @@
 - 撑满=fillMaxWidth+aspectRatio(真实比例)；进程级 `ImageAspectRatioCache` 防重载高度塌陷。ReorderableColumn 必须传块 id 做 itemKey。
 - **选中工具栏必须 Popup 独立窗口**（focusable=false, clippingEnabled=false）；退场动画需延迟 ≥动画时长再卸载（否则被截断）。
 - 图片间必须空 Text 块（拖拽打包 CompositeCommand 一步撤销）；空块序列化 `EMPTY_BLOCK_PLACEHOLDER`（NBSP）。
-- **载体空块不变量**：「载体空块数 == 图片相邻对数，且每个恰好夹在两图之间」。`BodyBlock.Text.isImageSeparator` 显式标记；`normalizeImageSeparators()` 删除漂移载体（降序）+ 两图相邻处补插（降序）→ 撤销对称。
+- **载体空块不变量（v2026-09-11 懒插入改版 v3）**：`BodyBlock.Text.isImageSeparator` 显式标记；**首/尾图前/后默认无载体**，合法位置判据 =「**紧邻至少一个不可输入块（图/线）且不与另一载体相邻**」——覆盖两图之间/边缘/分割线上下；载体并排⇒整串全灭→补插收敛（两图直接相邻才补、恒一行）。`insertEdgeSeparator(head)` 边缘 tap 条懒插入（守卫：边缘是载体→聚焦；图/线→插入；否则无操作）；分割线工具条 `toggleDividerNeighborSeparator` 上/下 toggle 载体行。命令（Insert/RemoveImageSeparatorCommand）都可撤销。
   - ⚠️ **身份与内容绑定**：载体标记在块一有内容时即刻清掉（`demoteImageSeparatorIfFilled()`）。任何"自动占位块身份"都必须与"是否仍为空"绑定。
   - 用户手打空白块（无标记）永不触碰。
+  - ⚠️ **分割线五按钮工具条（v2026-09-11 样式切换扩容）**：左→右 = Ellipsis 虚线 / Waves 波浪 / ArrowUpToLine / ArrowDownToLine / Trash2，宽 256dp（5×40+4×8+2×12）。样式模型 `DividerStyle`(SOLID/DASHED/WAVY) ↔ markdown `"---"`/`"--- dashed"`/`"--- wavy"`（`parseDividerStyle` 严格全段匹配，保守不误伤手输变体）；切换走 `UpdateDividerStyleCommand`+`toggleDividerStyle`（当前即该样式→回实线；就地换块零损失）。`afterCommandMutation`（=clearBlockSelection）会清点选态 → toggle 内先存 tapX、命令同步执行完立即恢复高亮+tapX（同帧无闪烁）；工具条 Popup 独立窗口、样式对齐图片工具条（白胶囊+黑15%边框）、激活态=图标变 DividerHighlightColor（用户定：仅变色）。线体渲染 `DividerLine`（SOLID=HorizontalDivider / DASHED=PathEffect 虚线 / WAVY=贝塞尔波浪），编辑页+阅读卡复用 `drawDashedDivider`/`drawWavyDivider`（internal 同包）。
+
+### 跨块文字选择（v2026-09-11）
+- ⚠️ **全局手势观察铁律：挂父容器 + PointerEventPass.Initial**。全屏透明覆盖层（兄弟节点 + Main pass 常驻 await）实测会让子级所有点击失效（含覆盖层自己的 clickable）——禁止再用。观察阶段零消费；接管后在 Initial pass consume，子级 Main pass 见 isConsumed 自动退出。
+- 操作入口**挂系统 TextToolbar**（用户明确禁止自建工具条）：抬指定格主动 `textToolbar.showMenu(rect=窗口坐标)`，非null 回调决定菜单项；主动弹出的工具栏不随焦点迁移消失——控制器 `onCrossSelectionCleared` 回调 + clearCrossSelection 真清除时才 invoke → 编辑层 SideEffect 接 `textToolbar.hide()`。
+- 跨块选区模型/布局注册表/hitTest/富文本拼接见 `docs/跨块文字选择优化方案.md` §8。
 
 ## 块级拖拽重排（自维护 fork）
 - `ui/components/reorderable/BlocksReorderableList.kt`（fork 自 `sh.calvin.reorderable:3.1.0`）。唯一改动：`settle()` 改「抓快照→立即 onSettle→滑行交 `BlocksGlideController` 接续」。
