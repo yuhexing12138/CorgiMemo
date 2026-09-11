@@ -38,7 +38,6 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.filled.Lock
@@ -95,7 +94,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalTextToolbar
-import com.corgimemo.app.util.ClipboardImageHelper
+import com.corgimemo.app.ui.components.ImagePasteFloatingButton
+import com.corgimemo.app.ui.components.ImagePasteTextToolbar
 import com.corgimemo.app.util.pasteImageOnCtrlV
 import com.corgimemo.app.util.toPxFloat
 import androidx.compose.ui.unit.dp
@@ -608,7 +608,19 @@ fun InspirationEditScreen(
     LaunchedEffect(bodyBlocks.hasInitialized) {
         if (!bodyBlocks.hasInitialized || hasMigratedBlocks) return@LaunchedEffect
         hasMigratedBlocks = true
-        if (inspirationId == null) return@LaunchedEffect
+        /**
+         * 进入/重载时先关掉「缩小/恢复」平滑动画（见 [BodyBlocksController.resetImagePropsRestore]）：
+         * 本次 [applyImageProps] 回填造成的 shrunk 翻转走 [snap] 瞬时定格，不播动画。
+         */
+        bodyBlocks.resetImagePropsRestore()
+        if (inspirationId == null) {
+            /**
+             * 新建灵感：无 DB 属性回填，[applyImageProps] 不会翻转 shrunk；
+             * 直接放开「缩小/恢复」平滑动画（见 [BodyBlocksController.loadRestoreComplete]）。
+             */
+            bodyBlocks.markImagePropsRestored()
+            return@LaunchedEffect
+        }
 
         try {
             val dbBlocks = viewModel.loadContentBlocks(inspirationId)
@@ -620,6 +632,12 @@ fun InspirationEditScreen(
             bodyBlocks.applyImageProps(
                 dbBlocks.filterIsInstance<ContentBlock.Image>().associateBy { it.path }
             )
+            /**
+             * 属性回填结束：放开「缩小/恢复」平滑动画（见 [BodyBlocksController.loadRestoreComplete]）。
+             * 必须在 [applyImageProps] 之后置位——回填造成的 shrunk 翻转走 [snap] 瞬时定格，
+             * 不播动画；此后用户主动点「缩小/恢复」才走 [tween] 平滑缩放。
+             */
+            bodyBlocks.markImagePropsRestored()
             val existingMd = bodyBlocks.toMarkdown()
             dbBlocks.forEach { block ->
                 when (block) {
@@ -1027,29 +1045,6 @@ fun InspirationEditScreen(
                     Icon(
                         imageVector = Icons.Default.ContentCopy,
                         contentDescription = "复制",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                /**
-                 * v2026-09-11 新增：粘贴图片按钮
-                 *
-                 * 行为：读取系统剪贴板中的图片，插入到当前聚焦块光标处（无聚焦则尾插）。
-                 * 剪贴板无图片时由 [ClipboardImageHelper] 给出 Snackbar 提示。
-                 * 与「复制」按钮相邻，组成复制 / 粘贴一组操作。
-                 */
-                IconButton(
-                    onClick = {
-                        ClipboardImageHelper.pasteClipboardImage(context) { path ->
-                            bodyBlocks.insertImageAtFocused(path)
-                        }
-                    },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ContentPaste,
-                        contentDescription = "粘贴图片",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
                     )
@@ -1696,6 +1691,14 @@ fun InspirationEditScreen(
              * - Enter 拆块 / 块首退格合并 / 图片块两步删除 / 手柄拖拽排序
              * 详见 components/BodyBlocksEditor.kt
              */
+            // v2026-09-11：图片粘贴浮动工具栏装饰器
+            // 复制图片后，在编辑区长按 / 点击光标手柄时，像复制文字那样在系统文本工具栏旁
+            // 浮出「粘贴图片」入口（剪贴板无图片时 imagePasteState 为 null，不显形）。
+            val imagePasteToolbar = remember(LocalTextToolbar.current) {
+                ImagePasteTextToolbar(LocalTextToolbar.current, context) { path ->
+                    bodyBlocks.insertImageAtFocused(path)
+                }
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1706,6 +1709,7 @@ fun InspirationEditScreen(
             CompositionLocalProvider(
                 LocalTokenClickHandler provides mediaTokenClickHandler,
                 LocalImageLoader provides CoilRichTextImageLoader,
+                LocalTextToolbar provides imagePasteToolbar,
             ) {
                 BodyBlocksEditor(
                     controller = bodyBlocks,
@@ -1722,6 +1726,9 @@ fun InspirationEditScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+
+            // 浮动「粘贴图片」入口：与 BodyBlocksEditor 同级，随 imagePasteToolbar 状态显隐。
+            ImagePasteFloatingButton(imagePasteToolbar)
 
             /**
              * v2026-08-01 Phase 2：# 标签触发建议弹窗

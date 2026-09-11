@@ -961,6 +961,15 @@ class BodyBlocksController(
         loadRestoreComplete = true
     }
 
+    /**
+     * 加载回填开始前重置（v2026-09-11）：ViewModel 若跨「退出再进入」被保留，
+     * [loadRestoreComplete] 可能残留为 true，会让第二次进入的回填翻转又走 [tween]
+     * 复现闪烁。每次进入都先关掉平滑动画，回填造成的 shrunk 翻转走 [snap] 瞬时定格。
+     */
+    internal fun resetImagePropsRestore() {
+        loadRestoreComplete = false
+    }
+
     /** 两步删除 / 点击选中的高亮块 id（图片块与分割线块，v2026-09-07 起含分割线） */
     var highlightedBlockId by mutableStateOf<String?>(null)
         private set
