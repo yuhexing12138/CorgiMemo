@@ -54,7 +54,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -70,12 +69,16 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -92,7 +95,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
-import androidx.compose.ui.platform.LocalContext
 import com.corgimemo.app.util.ClipboardImageHelper
 import com.corgimemo.app.animation.HapticFeedbackManager
 import com.corgimemo.app.animation.InteractionType
@@ -3379,10 +3381,20 @@ class BodyBlocksController(
         crossSelecting = false
     }
 
-    /** 取消跨块选区（工具条「取消」/打字/点击空白时调用） */
+    /**
+     * 跨块选区被清除后的回调（v2026-09-11 工具栏改造）：编辑层把它接到系统
+     * TextToolbar 的 hide 上——选区因点击别处 / 打字 / 复制 / 剪切而消失时，
+     * 同步收起弹出的系统工具栏（主动 showMenu 的工具栏不会随焦点迁移自动消失）。
+     */
+    var onCrossSelectionCleared: (() -> Unit)? = null
+
+    /** 取消跨块选区（点击其他块 / 打字 / 复制 / 剪切时调用）；只在真清除时通知回调 */
     fun clearCrossSelection() {
-        crossSelection = null
-        crossSelecting = false
+        if (crossSelection != null || crossSelecting) {
+            crossSelection = null
+            crossSelecting = false
+            onCrossSelectionCleared?.invoke()
+        }
     }
 
     /** 全选全部文本块：首个文本块块首 → 末个文本块块尾（图片/分割线块跳过） */
@@ -3998,7 +4010,15 @@ fun BodyBlocksEditor(
      */
     onOpenImageGallery: (String) -> Unit = {},
 ) {
-    Box(modifier = modifier) {
+    Box(
+        modifier = modifier
+            /**
+             * 跨块文字选择手势（v2026-09-11 工具栏改造版）：挂**父容器** + Initial pass
+             * 观察。v1 的全屏透明覆盖层（兄弟节点）实测会干扰子级手势检测——正文区
+             * 所有点击失效；父容器观察对子级零影响，点击聚焦 / 滚动 / 原生选择照旧。
+             */
+            .then(rememberCrossBlockSelectionGesture(controller, isLocked)),
+    ) {
         BlocksReorderableColumn(
             items = controller.blocks.toList(),
             onReorder = { from, to -> controller.moveBlock(from, to) },
@@ -4032,54 +4052,38 @@ fun BodyBlocksEditor(
                 )
             }
         }
-
-        /**
-         * 跨块文字选择层（v2026-09-11）：盖在块列表之上（同 Box 内后组合 = 高 z）。
-         * - 未激活时不消费事件：点击/滚动/原生单块选择全部照常穿透；
-         * - 长按文本启动跨块选区，拖动延伸、抬指定格，弹工具条操作；
-         * - 锁定态（isLocked）不挂手势，行为与旧版完全一致。
-         */
-        CrossBlockSelectionLayer(
-            controller = controller,
-            isLocked = isLocked,
-            modifier = Modifier.matchParentSize(),
-        )
     }
 }
 
-// ==================== 跨块文字选择层（v2026-09-11 新增） ====================
-
-/** 选区工具条相对终点锚点的上抬距离：往上弹、不压住选区末行文字 */
-private val SelectionToolbarLiftUp = 52.dp
-
-/** 工具条横向 clamp 的估算宽度：4 个文字按钮 + 内边距（精确宽度无需测量，够用即可） */
-private val SelectionToolbarEstimatedWidth = 232.dp
+// ==================== 跨块文字选择手势（v2026-09-11 工具栏改造版） ====================
 
 /**
- * 跨块文字选择层（v2026-09-11）：透明覆盖层 = 全局长按/拖拽手势 + 选区工具条。
+ * 跨块长按手势（v2026-09-11）：返回挂到编辑器**根 Box**（父容器）的 Modifier，
+ * 用 [PointerEventPass.Initial] 观察——父容器在 Initial pass **先于所有子级**看到事件。
  *
- * **手势协议**（自定义 awaitPointerEventScope，不用 detectXxx 系列）：
- * - 按下后**先不消费**：短按（点击定位光标）、slop 内位移（滚动）、slop 外位移
- *   （原生单块选词 / 块拖拽排序）全部穿透给下层，行为与旧版完全一致；
- * - 按住超过系统长按阈值 → 命中测试（[BodyBlocksController.hitTestCrossSelection]）
- *   找到锚点文本块则 [BodyBlocksController.startCrossSelection] 启动跨块选区
- *   （内部折叠原生光标、收起系统浮动工具栏），此后**消费所有 move/up**——
- *   原生选择拿不到 move 事件便不会扩展，两套选区不打架；
- * - 拖动中终点持续跟随手指命中点，抬指 [BodyBlocksController.endCrossSelection]
- *   定格选区并弹出工具条。
+ * **为什么挂父容器而不是全屏覆盖层**（v1 踩坑）：v1 用全屏透明覆盖层（兄弟节点 +
+ * Main pass 常驻 await），实测正文区所有点击（含图片块）全部失效、自建工具条按钮
+ * 也点不到——兄弟覆盖层在该结构下会干扰子级手势检测。改为父容器 + Initial pass
+ * 观察后：观察阶段（未长按）**零消费**，子级的点击聚焦 / 滚动 / 原生选择与"没有
+ * 这个手势"完全一致；长按达成后**在 Initial pass 消费** move/up——子级在 Main pass
+ * 看到 isConsumed 自动退出，原生选择不会扩展，两套选区不打架。
  *
- * v1 限制：拖出编辑器可视区不自动滚动（后续可在手势层接入滚动容器的自动滚）。
+ * **操作入口（工具栏改造）**：抬指定格后不再弹自建工具条（v1 已废弃），改为主动
+ * 调用系统 [TextToolbar.showMenu]——复制 / 剪切 / 全选三项挂到**现有文本工具栏**
+ * （经 [com.corgimemo.app.ui.components.ImagePasteTextToolbar] 装饰链，原生样式与
+ * 行为；粘贴文字仍走块内原生光标，故 onPasteRequested 传 null）。选区清除
+ * （点击别处 / 打字 / 复制 / 剪切）时经 [BodyBlocksController.onCrossSelectionCleared]
+ * 同步收起工具栏。
+ *
+ * v1 遗留限制：拖出编辑器可视区不自动滚动（后续可在手势层接入滚动容器自动滚）。
  */
 @Composable
-private fun CrossBlockSelectionLayer(
+private fun rememberCrossBlockSelectionGesture(
     controller: BodyBlocksController,
     isLocked: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    /** 本层在窗口坐标系的左上角：窗口命中点 → 本层局部坐标（工具条定位用） */
-    var layerTopLeft by remember { mutableStateOf(Offset.Zero) }
-    /** 本层像素宽（工具条横向 clamp） */
-    var layerWidthPx by remember { mutableStateOf(0) }
+): Modifier {
+    /** 编辑器根 Box 在窗口坐标系的左上角：局部命中点 → 窗口坐标（与块布局快照同系） */
+    var editorTopLeft by remember { mutableStateOf(Offset.Zero) }
     val viewConfiguration = LocalViewConfiguration.current
     val textToolbar = LocalTextToolbar.current
     val clipboard = LocalClipboardManager.current
@@ -4091,194 +4095,142 @@ private fun CrossBlockSelectionLayer(
      */
     val blockContentStartPx = with(LocalDensity.current) { BLOCK_CONTENT_PADDING.toPx() }
 
-    Box(
-        modifier = modifier.onGloballyPositioned { coords ->
-            layerTopLeft = coords.positionInWindow()
-            layerWidthPx = coords.size.width
-        },
-    ) {
-        if (!isLocked) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .pointerInput(Unit) {
-                        awaitPointerEventScope {
-                            while (true) {
-                                val down = awaitFirstDown(requireUnconsumed = false)
-                                var started = false
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull() ?: break
-                                    if (change.changedToUp()) {
-                                        /** 抬指：拖动中则定格选区（工具条出现）；否则纯点击穿透 */
-                                        if (started) controller.endCrossSelection()
-                                        break
-                                    }
-                                    if (!started) {
-                                        /** slop 外位移 = 滚动 / 原生选择 / 排序手势 → 放弃接管 */
-                                        val moved =
-                                            (change.position - down.position).getDistance()
-                                        if (moved > viewConfiguration.touchSlop) break
-                                        if (change.uptimeMillis - down.uptimeMillis >=
-                                            viewConfiguration.longPressTimeoutMillis
-                                        ) {
-                                            /** 长按达成：命中文本则启动跨块选区并接管拖动 */
-                                            val windowPoint = layerTopLeft + down.position
-                                            val hit =
-                                                controller.hitTestCrossSelection(windowPoint)
-                                            val hitInfo =
-                                                hit?.let { controller.blockLayouts[it.first] }
-                                            /**
-                                             * down 在编辑器内容区左缘之左 = 拖拽手柄 / 复选框区
-                                             * → 放弃接管（不消费），下层手柄的长按拖拽排序正常工作
-                                             */
-                                            if (hit == null || hitInfo == null ||
-                                                windowPoint.x <
-                                                hitInfo.topLeftInWindow.x - blockContentStartPx
-                                            ) {
-                                                break
-                                            }
-                                            controller.startCrossSelection(hit.first, hit.second)
-                                            /** 长按瞬间原生浮动工具栏可能已弹出 → 收起 */
-                                            textToolbar.hide()
-                                            started = true
-                                        }
-                                    } else {
-                                        /** 拖动延伸 + 消费事件：原生选择拿不到 move 便不会扩展 */
-                                        val windowPoint = layerTopLeft + change.position
-                                        controller.hitTestCrossSelection(windowPoint)?.let { hit ->
-                                            controller.extendCrossSelectionTo(
-                                                hit.first,
-                                                hit.second,
-                                            )
-                                        }
-                                        change.consume()
-                                    }
-                                }
-                            }
-                        }
-                    },
-            )
-        }
+    /** 选区被清除（点击别处/打字/复制/剪切）→ 同步收起系统工具栏 */
+    SideEffect { controller.onCrossSelectionCleared = { textToolbar.hide() } }
 
-        /**
-         * 选区工具条：拖动结束（手指抬起）后出现，锚在选区终点上方；
-         * 拖动中不显示（避免遮挡手指路径）。collapsed 选区也显示（可点「全选」扩全）。
-         */
-        val sel = controller.crossSelection
-        if (sel != null && !controller.crossSelecting) {
-            val endInfo = controller.blockLayouts[sel.endBlockId]
-            if (endInfo != null) {
-                val layout = endInfo.layoutResult
-                val textLen = layout.layoutInput.text.length
-                val off = sel.endOffset.coerceIn(0, textLen)
-                /** 终点锚点（窗口坐标）：末字符包围盒右上角；空块退化为块左上角 */
-                val anchorWindow = if (textLen > 0) {
-                    val box = layout.getBoundingBox((off - 1).coerceAtLeast(0))
-                    Offset(
-                        endInfo.topLeftInWindow.x + box.right,
-                        endInfo.topLeftInWindow.y + box.top,
-                    )
-                } else {
-                    endInfo.topLeftInWindow
-                }
-                val density = LocalDensity.current
-                /** 工具条左上角（本层局部坐标）：终点上抬 + 横向 clamp 不溢出 */
-                val toolbarX = with(density) {
-                    (anchorWindow.x - layerTopLeft.x).coerceIn(
-                        0f,
-                        (layerWidthPx - SelectionToolbarEstimatedWidth.toPx()).coerceAtLeast(0f),
-                    )
-                }
-                val toolbarY = with(density) {
-                    anchorWindow.y - layerTopLeft.y - SelectionToolbarLiftUp.toPx()
-                }
-                CrossBlockSelectionToolbar(
-                    onCopy = {
-                        /** 富文本优先（保留加粗/斜体等 SpanStyle），无样式内容退化纯文本 */
-                        val rich = controller.getSelectedRichText()
-                        val plain = controller.getSelectedPlainText()
-                        when {
-                            rich != null -> clipboard.setText(rich)
-                            plain != null -> clipboard.setText(AnnotatedString(plain))
+    /**
+     * 抬指定格：把复制 / 剪切 / 全选挂到系统文本工具栏。
+     * [TextToolbar.showMenu] 的 rect 契约是**窗口坐标**——用选区终点末字符包围盒；
+     * 空块（ZWSP）退化为块左上角的点矩形。
+     */
+    fun showCrossBlockToolbar() {
+        val sel = controller.crossSelection ?: return
+        val endInfo = controller.blockLayouts[sel.endBlockId] ?: return
+        val layout = endInfo.layoutResult
+        val textLen = layout.layoutInput.text.length
+        val off = sel.endOffset.coerceIn(0, textLen)
+        val anchorRect = if (textLen > 0) {
+            val box = layout.getBoundingBox((off - 1).coerceAtLeast(0))
+            Rect(
+                left = endInfo.topLeftInWindow.x + box.left,
+                top = endInfo.topLeftInWindow.y + box.top,
+                right = endInfo.topLeftInWindow.x + box.right,
+                bottom = endInfo.topLeftInWindow.y + box.bottom,
+            )
+        } else {
+            Rect(endInfo.topLeftInWindow, Size.Zero)
+        }
+        textToolbar.showMenu(
+            rect = anchorRect,
+            onCopyRequested = {
+                copyCrossSelectionToClipboard(controller, clipboard)
+                controller.clearCrossSelection()
+            },
+            /** 跨块选区无粘贴语义：粘贴文字进块走原生块内光标路径 */
+            onPasteRequested = null,
+            onCutRequested = {
+                copyCrossSelectionToClipboard(controller, clipboard)
+                controller.cutCrossSelection()
+            },
+            onSelectAllRequested = { controller.selectAllCrossBlock() },
+        )
+    }
+
+    if (isLocked) return Modifier
+
+    return Modifier
+        .onGloballyPositioned { coords -> editorTopLeft = coords.positionInWindow() }
+        .pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    /** Initial pass 观察按下：父容器先于所有子级看到，不消费 = 子级无感 */
+                    var down: PointerInputChange? = null
+                    while (down == null) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        down = event.changes.firstOrNull { it.changedToDown() }
+                    }
+                    val downChange = down
+                    var started = false
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        /** 只跟踪发起按下的那根手指（多指场景其余手指忽略） */
+                        val change =
+                            event.changes.firstOrNull { it.id == downChange.id } ?: break
+                        if (change.changedToUp()) {
+                            /**
+                             * 抬指：已接管（started）则定格选区、弹系统工具栏并消费 up
+                             * （子级 Main pass 看到 isConsumed，pending 手势安全退出）；
+                             * 未接管则零干预，点击定位光标照常。
+                             */
+                            if (started) {
+                                controller.endCrossSelection()
+                                showCrossBlockToolbar()
+                                change.consume()
+                            }
+                            break
                         }
-                        controller.clearCrossSelection()
-                    },
-                    onCut = {
-                        /** 复制同款入剪贴板，再跨块删除选区文字（各块库内 history 可撤销） */
-                        val rich = controller.getSelectedRichText()
-                        val plain = controller.getSelectedPlainText()
-                        when {
-                            rich != null -> clipboard.setText(rich)
-                            plain != null -> clipboard.setText(AnnotatedString(plain))
+                        if (!started) {
+                            /** slop 外位移 = 滚动 / 原生选择 / 排序手势 → 放弃观察该手势 */
+                            val moved =
+                                (change.position - downChange.position).getDistance()
+                            if (moved > viewConfiguration.touchSlop) break
+                            if (change.uptimeMillis - downChange.uptimeMillis >=
+                                viewConfiguration.longPressTimeoutMillis
+                            ) {
+                                /** 长按达成：命中文本则启动跨块选区并接管拖动 */
+                                val windowPoint = editorTopLeft + downChange.position
+                                val hit = controller.hitTestCrossSelection(windowPoint)
+                                val hitInfo =
+                                    hit?.let { controller.blockLayouts[it.first] }
+                                /**
+                                 * down 在编辑器内容区左缘之左 = 拖拽手柄 / 复选框区
+                                 * → 放弃观察（不消费），下层手柄的长按拖拽排序正常工作
+                                 */
+                                if (hit == null || hitInfo == null ||
+                                    windowPoint.x <
+                                    hitInfo.topLeftInWindow.x - blockContentStartPx
+                                ) {
+                                    break
+                                }
+                                controller.startCrossSelection(hit.first, hit.second)
+                                /** 长按瞬间原生浮动工具栏可能已弹出 → 收起 */
+                                textToolbar.hide()
+                                started = true
+                            }
+                        } else {
+                            /**
+                             * 拖动延伸 + Initial pass 消费：子级（Main pass）看到
+                             * isConsumed 自动退出——原生选择拿不到干净事件便不扩展。
+                             */
+                            val windowPoint = editorTopLeft + change.position
+                            controller.hitTestCrossSelection(windowPoint)?.let { hit ->
+                                controller.extendCrossSelectionTo(
+                                    hit.first,
+                                    hit.second,
+                                )
+                            }
+                            change.consume()
                         }
-                        controller.cutCrossSelection()
-                    },
-                    onSelectAll = { controller.selectAllCrossBlock() },
-                    onCancel = { controller.clearCrossSelection() },
-                    modifier = Modifier.offset {
-                        IntOffset(toolbarX.roundToInt(), toolbarY.roundToInt())
-                    },
-                )
+                    }
+                }
             }
         }
-    }
 }
 
 /**
- * 跨块选区操作工具条（v2026-09-11）：复制 / 剪切 / 全选 / 取消。
- * 视觉沿用图片工具栏的白胶囊 + 1dp 黑 15% 外边框（阴影会在 alpha/scale 动画中被
- * 裁剪的项目踩坑结论：不用 shadow）。
+ * 跨块选区内容写入剪贴板（复制 / 剪切共用，v2026-09-11 工具栏改造）：
+ * 富文本优先（保留加粗/斜体等 SpanStyle），无样式内容退化纯文本。
  */
-@Composable
-private fun CrossBlockSelectionToolbar(
-    onCopy: () -> Unit,
-    onCut: () -> Unit,
-    onSelectAll: () -> Unit,
-    onCancel: () -> Unit,
-    modifier: Modifier = Modifier,
+private fun copyCrossSelectionToClipboard(
+    controller: BodyBlocksController,
+    clipboard: ClipboardManager,
 ) {
-    Row(
-        modifier = modifier
-            .background(color = Color.White.copy(alpha = 0.97f), shape = RoundedCornerShape(20.dp))
-            .border(
-                width = 1.dp,
-                color = Color.Black.copy(alpha = 0.15f),
-                shape = RoundedCornerShape(20.dp),
-            )
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CrossSelectionToolbarButton("复制", onCopy)
-        CrossSelectionToolbarButton("剪切", onCut)
-        CrossSelectionToolbarButton("全选", onSelectAll)
-        CrossSelectionToolbarButton("取消", onCancel)
+    val rich = controller.getSelectedRichText()
+    val plain = controller.getSelectedPlainText()
+    when {
+        rich != null -> clipboard.setText(rich)
+        plain != null -> clipboard.setText(AnnotatedString(plain))
     }
-}
-
-/**
- * 工具条文字按钮：去水波纹（indication = null 必须同时显式传 interactionSource，
- * 否则不生效——项目踩坑结论）；触控区 = 12dp 水平 + 8dp 垂直 padding 的文字盒。
- */
-@Composable
-private fun CrossSelectionToolbarButton(
-    label: String,
-    onClick: () -> Unit,
-) {
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    )
 }
 
 /**
