@@ -1694,8 +1694,11 @@ fun InspirationEditScreen(
             // v2026-09-11：图片粘贴浮动工具栏装饰器
             // 复制图片后，在编辑区长按 / 点击光标手柄时，像复制文字那样在系统文本工具栏旁
             // 浮出「粘贴图片」入口（剪贴板无图片时 imagePasteState 为 null，不显形）。
-            val imagePasteToolbar = remember(LocalTextToolbar.current) {
-                ImagePasteTextToolbar(LocalTextToolbar.current, context) { path ->
+            // ⚠️ remember 的 calculation 带 @DisallowComposableCalls：lambda 内禁止 @Composable
+            // 调用（含 CompositionLocal.current），须先在组合作用域取出再传入（同 Theme.kt 模式）。
+            val baseTextToolbar = LocalTextToolbar.current
+            val imagePasteToolbar = remember(baseTextToolbar) {
+                ImagePasteTextToolbar(baseTextToolbar, context) { path ->
                     bodyBlocks.insertImageAtFocused(path)
                 }
             }
