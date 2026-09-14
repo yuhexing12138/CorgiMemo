@@ -2,6 +2,7 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -195,6 +196,12 @@ fun InspirationViewCard(
                 // 内容 Column：标题、日期、正文、图片、标签、Logo
                 // 顶部 padding 36dp 留白给右上角的字数徽章
                 // 加 verticalScroll 允许内容超出时上下滚动（图片多时）
+                // v2026-09-14 跨块文字选择（路线 A 分阶段·阶段一）：外层包 SelectionContainer，
+                // 使标题 / 正文各段（RichText）/ 标签 / Logo 等文本在长按拖拽时成为同一选区域，
+                // 实现「长按唤起手柄、滑动跨多个 Block 连续选中」。编辑态（BodyBlocksEditor）保持每块
+                // 独立 TextField，不受影响；此改动仅作用于只读浏览态，且 SelectionContainer 会自动
+                // 忽略图片 / 关联 Chip 等非文本节点。
+                SelectionContainer {
                 Column(
                     modifier = Modifier
                         // v2026-08-30 修复（v11/v12）：padding 按轴拆分 + 高度随内容。
@@ -314,6 +321,7 @@ fun InspirationViewCard(
                         )
                     }
                 }
+                } // SelectionContainer 结束（跨块选区域）
                 // 字数徽章：右上角贴边（距离卡片右边缘、距离顶均为 0）
                 // 圆角设计：左上/右上/右下 = 0（无圆角），左下 = 12dp（与 Card 圆角一致）
                 // Card 12dp 圆角自然裁剪徽章右上角，徽章与 Card 边完美融合
