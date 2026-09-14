@@ -1,7 +1,5 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
-import android.os.Handler
-import android.os.Looper
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -48,7 +46,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -87,14 +84,11 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.ClipboardManager
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalTextToolbar
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
@@ -350,44 +344,6 @@ private const val IMAGE_PLACEHOLDER_CHAR = '\uFFFD'
 
 /** 生成稳定块 id：创建 / 加载 / 拆分时分配一次，此后不随编辑变化 */
 fun newBodyBlockId(): String = java.util.UUID.randomUUID().toString()
-
-// ==================== 跨块文字选择（v2026-09-11 新增） ====================
-
-/**
- * 跨块文字选区（v2026-09-11 新增）：起点与终点各自是「块 id + 块内字符偏移」。
- *
- * - 偏移为该块 [RichTextState.annotatedString] 的字符索引（含 ZWSP——空块的
- *   0 号位是退格锚点；拼接/复制输出时会剥掉）；
- * - **归一化不变量**：start 在文档顺序上必须不晚于 end（不同块按 [BodyBlocksController.blocks]
- *   顺序比较，同块按偏移比较）。手势层更新选区时由控制器负责交换，读方无需再判；
- * - null 表示「当前没有跨块选区」。与块内原生选择（`state.selection`）并存：
- *   单块内复制/粘贴仍走系统 TextField 选择，本选区只在跨块手势激活时出现。
- */
-data class CrossBlockSelection(
-    val startBlockId: String,
-    val startOffset: Int,
-    val endBlockId: String,
-    val endOffset: Int,
-)
-
-/**
- * 单块文本布局快照（v2026-09-11 新增）：跨块选择的全局命中测试与高亮绘制依据。
- *
- * 由 [BlockTextItem] 在 `onTextLayout` / `onGloballyPositioned` 时上报给控制器
- * （[BodyBlocksController.registerBlockLayout]）：
- * - [layoutResult]：本块 TextLayoutResult（getOffsetForPosition / getBoundingBox / getLineXxx）；
- * - [topLeftInWindow]：块文本排版原点（编辑器外框左上角 + contentPadding 水平校准）
- *   在**窗口坐标系**的位置——手势层拿到的也是窗口坐标（positionInWindow），同系可比；
- * - [textLength]：有效文本长度（剥 ZWSP 后），命中测试落在块尾之下时取它兜底。
- *
- * 快照随重组刷新；块被删除时由 [BodyBlocksController.unregisterBlockLayout] 清理。
- */
-data class BlockLayoutInfo(
-    val blockId: String,
-    val layoutResult: TextLayoutResult,
-    val topLeftInWindow: Offset,
-    val textLength: Int,
-)
 
 /** 编辑器块：Text 承载富文本状态（含内联语音/话题 token），Image 是块级图片 */
 sealed class BodyBlock {
@@ -1127,39 +1083,6 @@ class BodyBlocksController(
      */
     var imageToolbarBlockId by mutableStateOf<String?>(null)
         private set
-
-    // ---------- 跨块文字选择状态（v2026-09-11 新增） ----------
-
-    /**
-     * 当前跨块选区（null = 未激活）。写路径只有手势层（start/extend）与
-     * 全选/清除三个入口，保证归一化不变量（start ≤ end）由 [normalizeCrossSelection] 统一维护。
-     */
-    var crossSelection by mutableStateOf<CrossBlockSelection?>(null)
-        private set
-
-    /**
-     * 跨块选择**进行中**（手指未抬起）：true 时全局手势层消费拖动、各块隐藏原生光标
-     * 相关 UI；抬起后置 false，但 [crossSelection] 保留供工具条操作，直到取消/复制/剪切。
-     */
-    var crossSelecting by mutableStateOf(false)
-        private set
-
-    /**
-     * 每块文本布局快照（键 = 块 id）：由各 [BlockTextItem] 上报
-     * （[registerBlockLayout] / [unregisterBlockLayout]），手势层命中测试与
-     * 工具条锚点定位共用。块删除/重建时必须清理，防止持有失效 TextLayoutResult。
-     */
-    val blockLayouts: MutableMap<String, BlockLayoutInfo> = mutableStateMapOf()
-
-    /** 上报/刷新某块的布局快照（onTextLayout 与 onGloballyPositioned 都会调用，幂等覆盖） */
-    fun registerBlockLayout(info: BlockLayoutInfo) {
-        blockLayouts[info.blockId] = info
-    }
-
-    /** 块销毁/重建时清理布局快照，避免命中测试命中已不存在的块 */
-    fun unregisterBlockLayout(blockId: String) {
-        blockLayouts.remove(blockId)
-    }
 
     /**
      * 待落焦描述（块 id + 光标偏移，原子打包）。
@@ -3572,247 +3495,6 @@ class BodyBlocksController(
 
     // ---------- 跨块文字选择操作（v2026-09-11 新增） ----------
 
-    /** 读某块在 [blocks] 中的顺序索引；找不到返回 -1（归一化/范围判定的文档顺序基准） */
-    private fun blockIndexOf(blockId: String): Int =
-        blocks.indexOfFirst { it.id == blockId }
-
-    /**
-     * 归一化跨块选区：保证 start 在文档顺序上**不晚于** end（不同块比块索引，同块比偏移）。
-     * 手势拖动方向可能来回（先往上再往下），统一在此交换起终点，读方（高亮/拼接/剪切）
-     * 无需再判断方向。
-     */
-    private fun normalizeCrossSelection(raw: CrossBlockSelection): CrossBlockSelection {
-        val sIdx = blockIndexOf(raw.startBlockId)
-        val eIdx = blockIndexOf(raw.endBlockId)
-        val startBeforeEnd = if (sIdx != eIdx) sIdx <= eIdx else raw.startOffset <= raw.endOffset
-        return if (startBeforeEnd) {
-            raw
-        } else {
-            raw.copy(
-                startBlockId = raw.endBlockId,
-                startOffset = raw.endOffset,
-                endBlockId = raw.startBlockId,
-                endOffset = raw.startOffset,
-            )
-        }
-    }
-
-    /**
-     * 开始跨块选择（长按文本触发，v2026-09-11）：锚点 = (blockId, offset)，起终点同点。
-     * 同时：
-     * - 清块级高亮（[clearBlockSelection]）——避免「块选中」与「文字选区」两套高亮重叠；
-     * - 折叠**所有** Text 块的原生选择（v2026-09-11 统一选区改造）——此前只折叠锚点块，
-     *   若其他块残留原生选区（橙）会与跨块高亮并存，出现"两套选区"的观感。
-     */
-    fun startCrossSelection(blockId: String, offset: Int) {
-        clearBlockSelection()
-        val block = blocks.firstOrNull { it.id == blockId } as? BodyBlock.Text ?: return
-        val len = block.state.annotatedString.text.length
-        val clamped = offset.coerceIn(0, len)
-        crossSelection = CrossBlockSelection(blockId, clamped, blockId, clamped)
-        crossSelecting = true
-        for (b in blocks) {
-            val state = (b as? BodyBlock.Text)?.state ?: continue
-            if (!state.selection.collapsed) {
-                state.selection = TextRange(state.selection.min)
-            }
-        }
-    }
-
-    /**
-     * 拖动延伸跨块选区（终点跟随手指；方向往回时由 [normalizeCrossSelection] 自动交换）。
-     * 偏移 clamp 到当前文本长度——选区激活期间块内容可能已变（打字会清选区，防御兜底）。
-     */
-    fun extendCrossSelectionTo(blockId: String, offset: Int) {
-        val current = crossSelection ?: return
-        val block = blocks.firstOrNull { it.id == blockId } as? BodyBlock.Text ?: return
-        val len = block.state.annotatedString.text.length
-        crossSelection = normalizeCrossSelection(
-            current.copy(endBlockId = blockId, endOffset = offset.coerceIn(0, len)),
-        )
-    }
-
-    /** 手指抬起：拖动阶段结束；选区保留供工具条操作，直到复制/剪切/取消 */
-    fun endCrossSelection() {
-        crossSelecting = false
-    }
-
-    /**
-     * 跨块选区被清除后的回调（v2026-09-11 工具栏改造）：编辑层把它接到系统
-     * TextToolbar 的 hide 上——选区因点击别处 / 打字 / 复制 / 剪切而消失时，
-     * 同步收起弹出的系统工具栏（主动 showMenu 的工具栏不会随焦点迁移自动消失）。
-     */
-    var onCrossSelectionCleared: (() -> Unit)? = null
-
-    /** 取消跨块选区（点击其他块 / 打字 / 复制 / 剪切时调用）；只在真清除时通知回调 */
-    fun clearCrossSelection() {
-        if (crossSelection != null || crossSelecting) {
-            crossSelection = null
-            crossSelecting = false
-            onCrossSelectionCleared?.invoke()
-        }
-    }
-
-    /**
-     * 跨块选区需要弹出操作工具栏时的回调（v2026-09-11 统一选区改造）：
-     * 编辑层接到「计算终点包围盒 + textToolbar.showMenu(复制/剪切/全选)」上。
-     * [selectAllCrossBlock] 在选区建立后触发它——**任何入口的全选**（原生光标
-     * 工具栏重定向 / 跨块工具栏自身的全选按钮）都会走到这里，工具栏自动弹出/刷新。
-     */
-    var onCrossSelectionToolbarRequested: (() -> Unit)? = null
-
-    /**
-     * 全选全部文本块：首个文本块块首 → 末个文本块块尾（图片/分割线块跳过）。
-     * 同时折叠所有块的原生选择（原生单块高亮与跨块高亮不并存），选区建立后
-     * 请求弹跨块工具栏（复制/剪切/全选）——统一后的**唯一全选路径**。
-     */
-    fun selectAllCrossBlock() {
-        val textBlocks = blocks.filterIsInstance<BodyBlock.Text>()
-        val first = textBlocks.firstOrNull() ?: return
-        val last = textBlocks.last()
-        crossSelection = CrossBlockSelection(
-            startBlockId = first.id,
-            startOffset = 0,
-            endBlockId = last.id,
-            endOffset = last.state.annotatedString.text.length,
-        )
-        crossSelecting = false
-        for (b in blocks) {
-            val state = (b as? BodyBlock.Text)?.state ?: continue
-            if (!state.selection.collapsed) {
-                state.selection = TextRange(state.selection.min)
-            }
-        }
-        onCrossSelectionToolbarRequested?.invoke()
-    }
-
-    /**
-     * 计算某文本块在当前跨块选区中的**本地字符范围** `[起点, 终点)`
-     * （annotatedString 索引空间，含 ZWSP）。不在选区内返回 null。
-     *
-     * 块位于起终点之间（完全被包住）→ 整块 `0..len`；所有偏移 clamp 到当前文本长度
-     * （选区激活期间块内容可能已变，防越界崩溃——removeTextRange 对越界 require 抛异常）。
-     */
-    fun localRangeInBlock(
-        selection: CrossBlockSelection,
-        blockId: String,
-        textLength: Int,
-    ): Pair<Int, Int>? {
-        val sIdx = blockIndexOf(selection.startBlockId)
-        val eIdx = blockIndexOf(selection.endBlockId)
-        val bIdx = blockIndexOf(blockId)
-        if (bIdx < 0 || sIdx < 0 || eIdx < 0) return null
-        val loIdx = minOf(sIdx, eIdx)
-        val hiIdx = maxOf(sIdx, eIdx)
-        if (bIdx < loIdx || bIdx > hiIdx) return null
-        /** 归一化后 start 必在前；但历史选区（旧数据）仍按索引方向取值兜底 */
-        val startOffset = if (sIdx <= eIdx) selection.startOffset else selection.endOffset
-        val endOffset = if (sIdx <= eIdx) selection.endOffset else selection.startOffset
-        val rawStart = if (bIdx == loIdx) startOffset else 0
-        val rawEnd = if (bIdx == hiIdx) endOffset else textLength
-        return rawStart.coerceIn(0, textLength) to rawEnd.coerceIn(0, textLength)
-    }
-
-    /**
-     * 全局命中测试：窗口坐标 → (块 id, 块内偏移)。跨块拖拽手势的坐标换算入口。
-     *
-     * - 点落在某文本块的纵 向范围内 → `getOffsetForPosition` 精确定位
-     *   （x 超出行宽时库会取行端，天然支持"手指在行左侧/右侧拖动"）；
-     * - 点落在块间缝隙 / 图片 / 分割线上 → 取**纵 向最近**的文本块，
-     *   按点在其中心线上/下取块首(0)或块尾(len)——与原生编辑器"跨过一半就选整块"的体感一致。
-     *
-     * @return (块 id, 块内偏移)；无任何文本布局快照时返回 null。
-     */
-    fun hitTestCrossSelection(windowPoint: Offset): Pair<String, Int>? {
-        val candidates = blocks.filterIsInstance<BodyBlock.Text>()
-            .mapNotNull { block -> blockLayouts[block.id]?.let { block to it } }
-        if (candidates.isEmpty()) return null
-        for ((block, info) in candidates) {
-            val top = info.topLeftInWindow.y
-            val bottom = top + info.layoutResult.size.height
-            if (windowPoint.y in top..bottom) {
-                val local = Offset(
-                    windowPoint.x - info.topLeftInWindow.x,
-                    windowPoint.y - info.topLeftInWindow.y,
-                )
-                val offset = info.layoutResult.getOffsetForPosition(local)
-                return block.id to offset.coerceIn(0, info.layoutResult.layoutInput.text.length)
-            }
-        }
-        val nearest = candidates.minByOrNull { (_, info) ->
-            val centerY = info.topLeftInWindow.y + info.layoutResult.size.height / 2f
-            abs(windowPoint.y - centerY)
-        } ?: return null
-        val (block, info) = nearest
-        val centerY = info.topLeftInWindow.y + info.layoutResult.size.height / 2f
-        val offset = if (windowPoint.y < centerY) 0 else info.layoutResult.layoutInput.text.length
-        return block.id to offset
-    }
-
-    /** 跨块选区纯文本（块间 `"\n"` 连接、剥 ZWSP）；无选区或选区为空返回 null */
-    fun getSelectedPlainText(): String? {
-        val sel = crossSelection ?: return null
-        val parts = mutableListOf<String>()
-        for (block in blocks) {
-            if (block !is BodyBlock.Text) continue
-            val text = block.state.annotatedString.text
-            val range = localRangeInBlock(sel, block.id, text.length) ?: continue
-            if (range.second <= range.first) continue
-            parts += text.substring(range.first, range.second).replace(ZWSP, "")
-        }
-        return parts.joinToString("\n").ifEmpty { null }
-    }
-
-    /**
-     * 跨块选区富文本（保留加粗/斜体等 SpanStyle，块间 `"\n"` 连接）；无选区返回 null。
-     * 空块整选的片段是 ZWSP：跳过其内容但保留块间换行结构（复制出去不泄漏零宽字符）。
-     */
-    fun getSelectedRichText(): AnnotatedString? {
-        val sel = crossSelection ?: return null
-        val builder = AnnotatedString.Builder()
-        var appendedAny = false
-        for (block in blocks) {
-            if (block !is BodyBlock.Text) continue
-            val annotated = block.state.annotatedString
-            val range = localRangeInBlock(sel, block.id, annotated.text.length) ?: continue
-            if (range.second <= range.first) continue
-            val segment = annotated.subSequence(range.first, range.second)
-            if (segment.text != ZWSP) {
-                if (appendedAny) builder.append("\n")
-                builder.append(segment)
-                appendedAny = true
-            }
-        }
-        return if (appendedAny) builder.toAnnotatedString() else null
-    }
-
-    /**
-     * 剪切跨块选区：对每个受影响文本块删除其本地范围（[RichTextState.removeTextRange]，
-     * 库内自动记录 history）。v1 语义：**只删文字，不删/不合并被包住的整块**——
-     * 完全被选中的文本块删空后走 ZWSP 不变量变回空块，图片/分割线原样保留，
-     * 结构稳定、无块合并边界问题。
-     *
-     * 删除前把该块光标**折叠到块尾**：backspaceMerge 的判据是「删除前 selection 折叠在 0」，
-     * 块尾折叠不满足 → 避免"恰好删了块首字符"被内容 observer 误判成块首退格而触发合并。
-     */
-    fun cutCrossSelection() {
-        val sel = crossSelection ?: return
-        val targets = mutableListOf<Pair<BodyBlock.Text, Pair<Int, Int>>>()
-        for (block in blocks) {
-            if (block !is BodyBlock.Text) continue
-            val text = block.state.annotatedString.text
-            val range = localRangeInBlock(sel, block.id, text.length) ?: continue
-            if (range.second <= range.first) continue
-            targets += block to range
-        }
-        if (targets.isEmpty()) return
-        for ((block, range) in targets.asReversed()) {
-            block.state.selection = TextRange(block.state.annotatedString.text.length)
-            block.state.removeTextRange(TextRange(range.first, range.second))
-        }
-        clearCrossSelection()
-    }
-
     /**
      * 退出「点选非文本块」态：清高亮 + 清点选手指位置（焦点/键盘不动）。
      * 开始输入字符（文本变长）、执行任何命令（[afterCommandMutation]）、
@@ -3835,10 +3517,6 @@ class BodyBlocksController(
      */
     fun onTextBlockPressed() {
         clearBlockSelection()
-        /** 按下文本块即退出跨块选区（v2026-09-11）：点击/重新选择时清掉旧高亮。
-         *  长按启动路径不受影响——down 先清（此时旧选区本就该失效），
-         *  长按阈值后才 startCrossSelection 建立新选区，时序无冲突。 */
-        clearCrossSelection()
     }
 
     /**
@@ -4188,9 +3866,6 @@ class BodyBlocksController(
         focusedBlockId = blockId
         if (hideCursorUntilFocusBlockId != null) hideCursorUntilFocusBlockId = null
         clearBlockSelection()
-        /** 焦点切到某块即退出跨块选区（v2026-09-11）：与"点击其他块取消选择"的
-         *  通用编辑器行为一致；长按启动路径焦点不变，不会误清新建立的选区。 */
-        clearCrossSelection()
     }
 
     /** 块内容变化时回调（由块 Composable 的观察者触发） */
@@ -4285,17 +3960,8 @@ fun BodyBlocksEditor(
      */
     onOpenImageGallery: (String) -> Unit = {},
 ) {
-    /** 编辑器根 Box 左上角（窗口坐标）：跨块手柄绘制从窗口坐标换算回 Box 局部 */
-    var boxTopLeft by remember { mutableStateOf(Offset.Zero) }
     Box(
         modifier = modifier
-            .onGloballyPositioned { boxTopLeft = it.positionInWindow() }
-            /**
-             * 跨块文字选择手势（v2026-09-11 工具栏改造版）：挂**父容器** + Initial pass
-             * 观察。v1 的全屏透明覆盖层（兄弟节点）实测会干扰子级手势检测——正文区
-             * 所有点击失效；父容器观察对子级零影响，点击聚焦 / 滚动 / 原生选择照旧。
-             */
-            .then(rememberCrossBlockSelectionGesture(controller, isLocked)),
     ) {
         /**
          * v2026-09-11 懒插入改版：Column 包裹，块列表首/尾各加一条边缘空白点击条
@@ -4347,16 +4013,6 @@ fun BodyBlocksEditor(
                 isLocked = isLocked,
             )
         }
-
-        /**
-         * 跨块选区两端拖拽手柄（v2026-09-11 补齐）：纯绘制层，拖动统一走父容器
-         * 手势层的手柄热区接管（同一锚点计算，画在哪就能拖哪）；选区清除自动隐藏。
-         */
-        CrossBlockSelectionHandles(
-            controller = controller,
-            boxTopLeft = boxTopLeft,
-            modifier = Modifier.matchParentSize(),
-        )
     }
 }
 
@@ -4400,469 +4056,6 @@ private fun EdgeGapTapBar(
 /** 边缘空白点击条高度：与原页顶 Spacer 的 16dp 等高，页面视觉间距总量不变 */
 private val EDGE_GAP_TAP_BAR_HEIGHT = 16.dp
 
-/**
- * 选区端手柄基准点（窗口坐标）：[isStart] = 选区起点手柄（首字符包围盒**左下**），
- * 否则终点手柄（末字符包围盒**右下**）。返回 `(x, 字符包围盒 bottom)`——手柄竖线从
- * bottom 起、圆点在其下方 [CROSS_HANDLE_DROP] + [CROSS_HANDLE_RADIUS] 处。
- * 原生选区热区接管与跨块自绘手柄**共用本函数**，保证「画在哪就能拖哪」。
- */
-private fun crossHandleBase(
-    info: BlockLayoutInfo,
-    charOffset: Int,
-    isStart: Boolean,
-): Pair<Float, Float> {
-    val layout = info.layoutResult
-    val len = layout.layoutInput.text.length
-    if (len == 0) return info.topLeftInWindow.x to info.topLeftInWindow.y
-    val box = layout.getBoundingBox(charOffset.coerceIn(0, len - 1))
-    val x = info.topLeftInWindow.x + (if (isStart) box.left else box.right)
-    return x to (info.topLeftInWindow.y + box.bottom)
-}
-
-/**
- * 跨块选区两端拖拽手柄（v2026-09-11 补齐，原生选择手柄的跨块等价物）：
- *
- * - **纯绘制**：[Canvas] 只画不摸——拖动统一走父容器手势层的手柄热区接管
- *   （`tryStartFromNativeHandle` 与本组件共用 [crossHandleBase] 锚点），
- *   保证「画在哪就能拖哪」；
- * - **视觉**：竖线（字符包围盒 bottom → 下沉）+ 实心圆点，色取
- *   [LocalTextSelectionColors.current.handleColor]——与原生手柄同源同色、主题跟随；
- * - **生命周期**：`crossSelection == null` 或起/终点布局快照缺失时不绘制（自动隐藏）。
- */
-@Composable
-private fun CrossBlockSelectionHandles(
-    controller: BodyBlocksController,
-    /** 编辑器根 Box 左上角（窗口坐标）：手柄位置从窗口坐标换算回 Box 局部绘制 */
-    boxTopLeft: Offset,
-    modifier: Modifier = Modifier,
-) {
-    /** draw 阶段不能读 CompositionLocal → 组合期读死 */
-    val handleColor = LocalTextSelectionColors.current.handleColor
-    val dropPx = with(LocalDensity.current) { CROSS_HANDLE_DROP.toPx() }
-    val circleRadiusPx = with(LocalDensity.current) { CROSS_HANDLE_RADIUS.toPx() }
-    val strokeWidthPx = with(LocalDensity.current) { 1.5.dp.toPx() }
-    val selection = controller.crossSelection ?: return
-    val startInfo = controller.blockLayouts[selection.startBlockId] ?: return
-    val endInfo = controller.blockLayouts[selection.endBlockId] ?: return
-    Canvas(modifier) {
-        /** 画一个手柄：[base] = (x, 字符包围盒 bottom)，窗口坐标（先换算回局部） */
-        fun drawHandle(base: Pair<Float, Float>) {
-            val (x, bottom) = base
-            val localX = x - boxTopLeft.x
-            val localBottom = bottom - boxTopLeft.y
-            drawLine(
-                handleColor,
-                start = Offset(localX, localBottom),
-                end = Offset(localX, localBottom + dropPx),
-                strokeWidth = strokeWidthPx,
-            )
-            drawCircle(
-                handleColor,
-                radius = circleRadiusPx,
-                center = Offset(localX, localBottom + dropPx + circleRadiusPx),
-            )
-        }
-        drawHandle(crossHandleBase(startInfo, selection.startOffset, isStart = true))
-        drawHandle(crossHandleBase(endInfo, selection.endOffset - 1, isStart = false))
-    }
-}
-
-// ==================== 跨块文字选择手势（v2026-09-11 工具栏改造版） ====================
-
-/**
- * 跨块长按手势（v2026-09-11）：返回挂到编辑器**根 Box**（父容器）的 Modifier，
- * 用 [PointerEventPass.Initial] 观察——父容器在 Initial pass **先于所有子级**看到事件。
- *
- * **为什么挂父容器而不是全屏覆盖层**（v1 踩坑）：v1 用全屏透明覆盖层（兄弟节点 +
- * Main pass 常驻 await），实测正文区所有点击（含图片块）全部失效、自建工具条按钮
- * 也点不到——兄弟覆盖层在该结构下会干扰子级手势检测。改为父容器 + Initial pass
- * 观察后：观察阶段（未长按）**零消费**，子级的点击聚焦 / 滚动 / 原生选择与"没有
- * 这个手势"完全一致；长按达成后**在 Initial pass 消费** move/up——子级在 Main pass
- * 看到 isConsumed 自动退出，原生选择不会扩展，两套选区不打架。
- *
- * **操作入口（工具栏改造）**：抬指定格后不再弹自建工具条（v1 已废弃），改为主动
- * 调用系统 [TextToolbar.showMenu]——复制 / 剪切 / 全选三项挂到**现有文本工具栏**
- * （经 [com.corgimemo.app.ui.components.ImagePasteTextToolbar] 装饰链，原生样式与
- * 行为；粘贴文字仍走块内原生光标，故 onPasteRequested 传 null）。选区清除
- * （点击别处 / 打字 / 复制 / 剪切）时经 [BodyBlocksController.onCrossSelectionCleared]
- * 同步收起工具栏。
- *
- * v1 遗留限制：拖出编辑器可视区不自动滚动（后续可在手势层接入滚动容器自动滚）。
- */
-@Composable
-private fun rememberCrossBlockSelectionGesture(
-    controller: BodyBlocksController,
-    isLocked: Boolean,
-): Modifier {
-    /** 编辑器根 Box 在窗口坐标系的左上角：局部命中点 → 窗口坐标（与块布局快照同系） */
-    var editorTopLeft by remember { mutableStateOf(Offset.Zero) }
-    val viewConfiguration = LocalViewConfiguration.current
-    val textToolbar = LocalTextToolbar.current
-    val clipboard = LocalClipboardManager.current
-    /**
-     * 编辑器内容区左缘校准量（= [BLOCK_CONTENT_PADDING]，即编辑器 contentPadding.start）：
-     * 布局快照的 topLeftInWindow 已加过该值（文本排版原点），减回去即编辑器外框左缘——
-     * down 点落在其左侧 = 拖拽手柄 / 复选框区，**不启动跨块选择**（让下层手柄的长按
-     * 拖拽排序手势正常接管）。
-     */
-    val blockContentStartPx = with(LocalDensity.current) { BLOCK_CONTENT_PADDING.toPx() }
-    /** 原生选区手柄热区半径（px）：按下点距手柄锚点不超过它即接管为跨块拖拽 */
-    val handleHitRadiusPx = with(LocalDensity.current) { NATIVE_HANDLE_HIT_RADIUS.toPx() }
-    /** 手柄锚下沉量 / 圆点半径（px）：热区圆心 = 字符包围盒 bottom + 两者之和 */
-    val handleDropPx = with(LocalDensity.current) { CROSS_HANDLE_DROP.toPx() }
-    val handleRadiusPx = with(LocalDensity.current) { CROSS_HANDLE_RADIUS.toPx() }
-    /**
-     * 专用 Handler：仅承载跨块工具栏的延迟弹出。全选路径的弹出发生在系统
-     * 「全选」按钮回调栈内——回调返回后系统还要 finish 原生菜单（同一 ActionMode
-     * 通道），立即弹出的新菜单会被这次收起波及（实测：全选后跨块工具栏不出现）；
-     * 延迟 [TOOLBAR_SHOW_DEFERRED_MS] 等收起流程走完再弹。removeCallbacksAndMessages(null)
-     * 定向清理本 Handler 上的待执行回调（Handler 实例专用，无其他用途）。
-     */
-    val toolbarHandler = remember { Handler(Looper.getMainLooper()) }
-
-    /**
-     * 抬指定格：把复制 / 剪切 / 全选挂到系统文本工具栏。
-     * [TextToolbar.showMenu] 的 rect 契约是**窗口坐标**——用选区终点末字符包围盒；
-     * 空块（ZWSP）退化为块左上角的点矩形。
-     *
-     * ⚠️ 必须声明在下方 [SideEffect] **之前**：Kotlin 局部函数先声明后引用，
-     * SideEffect 里的 lambda 才能捕获到本函数（v3 曾因顺序颠倒报
-     * Unresolved reference 'showCrossBlockToolbar'）。
-     */
-    fun showCrossBlockToolbar() {
-        val sel = controller.crossSelection ?: return
-        val endInfo = controller.blockLayouts[sel.endBlockId] ?: return
-        val layout = endInfo.layoutResult
-        val textLen = layout.layoutInput.text.length
-        val off = sel.endOffset.coerceIn(0, textLen)
-        val anchorRect = if (textLen > 0) {
-            val box = layout.getBoundingBox((off - 1).coerceAtLeast(0))
-            Rect(
-                left = endInfo.topLeftInWindow.x + box.left,
-                top = endInfo.topLeftInWindow.y + box.top,
-                right = endInfo.topLeftInWindow.x + box.right,
-                bottom = endInfo.topLeftInWindow.y + box.bottom,
-            )
-        } else {
-            Rect(endInfo.topLeftInWindow, Size.Zero)
-        }
-        textToolbar.showMenu(
-            rect = anchorRect,
-            onCopyRequested = {
-                copyCrossSelectionToClipboard(controller, clipboard)
-                controller.clearCrossSelection()
-            },
-            /** 跨块选区无粘贴语义：粘贴文字进块走原生块内光标路径 */
-            onPasteRequested = null,
-            onCutRequested = {
-                copyCrossSelectionToClipboard(controller, clipboard)
-                controller.cutCrossSelection()
-            },
-            onSelectAllRequested = { controller.selectAllCrossBlock() },
-        )
-    }
-
-    /**
-     * 延迟弹出跨块工具栏（v2026-09-11 第三轮）：[BodyBlocksController.onCrossSelectionToolbarRequested]
-     * 的实际接线。全选（原生工具栏重定向 / 跨块工具栏自身按钮）的调用栈处于系统菜单
-     * 回调内，须延迟避开原生 ActionMode 收起竞态（见 [toolbarHandler] 注释）；
-     * 长按拖拽抬指路径无此竞态，直接调 [showCrossBlockToolbar] 立即弹。
-     */
-    fun requestCrossBlockToolbarDeferred() {
-        toolbarHandler.removeCallbacksAndMessages(null)
-        toolbarHandler.postDelayed({ showCrossBlockToolbar() }, TOOLBAR_SHOW_DEFERRED_MS)
-    }
-
-    /**
-     * 手柄热区接管（v2026-09-11 第三轮 + 修正）：按下的窗口坐标落在「原生选区手柄」
-     * 或「跨块选区自绘手柄」热区内时，把这次按住拖动升级为跨块拖拽——锚 = 选区对端
-     * （拖终点手柄 → 锚 = 选区开头；拖起点手柄 → 锚 = 选区结尾，normalize 自动换向），
-     * 后续拖动由跨块选区延伸（可拖出块边界）。
-     *
-     * 热区圆心 = 手柄圆点圆心（字符包围盒 bottom + [CROSS_HANDLE_DROP] +
-     * [CROSS_HANDLE_RADIUS]，与 [CrossBlockSelectionHandles] 绘制完全一致），半径
-     * [NATIVE_HANDLE_HIT_RADIUS]。初版锚定包围盒 bottom 本身导致失效：原生水滴
-     * 球体在包围盒**下方约 20dp**，手指按在球体上距锚点接近热区边缘，经常够不到。
-     *
-     * 调用时机（两处，缺一不可）：① down 捕获后立即（按住手柄再拖）；② 位移超
-     * touchSlop 时兜底（长按选词后**不抬手**直接拖手柄——不兜底会先一步 break
-     * 放弃观察，实测无法接管）。折叠光标的水滴（移动光标）不接管，保持原生。
-     *
-     * 原生手柄拖拽为何会被替代：接管后 move 在 Initial pass 消费，原生手柄在
-     * Main pass 看到 isConsumed 自动放弃拖拽——与长按路径同一套接管机制。
-     */
-    fun tryStartFromNativeHandle(downWindowPoint: Offset): Boolean {
-        /** 热区圆心相对包围盒 bottom 的纵向偏移（与绘制圆点圆心完全一致） */
-        val handleCenterDropPx = handleDropPx + handleRadiusPx
-        fun hit(base: Pair<Float, Float>): Boolean {
-            val center = Offset(base.first, base.second + handleCenterDropPx)
-            return (downWindowPoint - center).getDistance() <= handleHitRadiusPx
-        }
-        /** ① 原生选区（长按选词结果）两端手柄 */
-        for (b in controller.blocks) {
-            val text = b as? BodyBlock.Text ?: continue
-            val sel = text.state.selection
-            if (sel.collapsed) continue
-            val info = controller.blockLayouts[b.id] ?: continue
-            if (hit(crossHandleBase(info, sel.min, isStart = true))) {
-                controller.startCrossSelection(b.id, sel.max)
-                return true
-            }
-            if (hit(crossHandleBase(info, sel.max - 1, isStart = false))) {
-                controller.startCrossSelection(b.id, sel.min)
-                return true
-            }
-        }
-        /** ② 跨块选区自身手柄：按住哪端，锚 = 对端（端点微调 / 跨块重选） */
-        controller.crossSelection?.let { sel ->
-            val startInfo = controller.blockLayouts[sel.startBlockId]
-            val endInfo = controller.blockLayouts[sel.endBlockId]
-            if (startInfo != null && endInfo != null) {
-                if (hit(crossHandleBase(startInfo, sel.startOffset, isStart = true))) {
-                    controller.startCrossSelection(sel.endBlockId, sel.endOffset)
-                    return true
-                }
-                if (hit(crossHandleBase(endInfo, sel.endOffset - 1, isStart = false))) {
-                    controller.startCrossSelection(sel.startBlockId, sel.startOffset)
-                    return true
-                }
-            }
-        }
-        return false
-    }
-
-    /**
-     * 选区本体接管（方案 I，v2026-09-11）：跨块选区激活时，按下点落在**选区文字
-     * 范围内**，把这次按住拖动升级为跨块延伸——原生手柄热区
-     * （[tryStartFromNativeHandle]）未命中时的兜底入口。
-     *
-     * - **范围判定**：hit 块序不早于起点块（同块须 offset >= startOffset）且不晚于
-     *   终点块（同块须 offset <= endOffset）——中间块（含图片/分割线等非文本块）
-     *   整体视为在选区内；
-     * - **动端映射**（与手柄拖动同构）：按压点在选区**前半**（覆盖字符中点之前）
-     *   = 调「起点」（锚 = 结尾）；后半 = 调「终点」（锚 = 开头）。反向延伸由
-     *   normalize 自动换向；
-     * - **轻点永不接管**：本函数只在位移超 slop 的时机②被调用，按一下选区仍是
-     *   原生「弹工具栏」，不抢。
-     *
-     * 已知取舍：接管占用了「按在选区上滚动」——跨块选区激活期间想滚动页面需先
-     * 点空白取消选区（待实机反馈再调）。
-     */
-    fun tryStartFromSelectionBody(downWindowPoint: Offset): Boolean {
-        val sel = controller.crossSelection ?: return false
-        /** 块 id → 列表序：跨块范围/前后比较用（controller.blocks 顺序即视觉顺序） */
-        val order = HashMap<String, Int>()
-        controller.blocks.forEachIndexed { i, b -> order[b.id] = i }
-        val startIdx = order[sel.startBlockId] ?: return false
-        val endIdx = order[sel.endBlockId] ?: return false
-        val (hitBlockId, hitOffset) =
-            controller.hitTestCrossSelection(downWindowPoint) ?: return false
-        val hitIdx = order[hitBlockId] ?: return false
-        /** hit 不早于选区起点：后面的块，或同块 offset 已进选区 */
-        val notBeforeStart =
-            hitIdx > startIdx || (hitIdx == startIdx && hitOffset >= sel.startOffset)
-        /** hit 不晚于选区终点：前面的块，或同块 offset 未出选区 */
-        val notAfterEnd =
-            hitIdx < endIdx || (hitIdx == endIdx && hitOffset <= sel.endOffset)
-        if (!(notBeforeStart && notAfterEnd)) return false
-        /**
-         * 选区覆盖的每段 (blockId, segStart, segEnd)：端块截取选区边界，中间块整段
-         * 计入——用于求「字符中点」划分前/后半（非文本块无字符，自动跳过）。
-         */
-        val segs = (startIdx..endIdx).mapNotNull { i ->
-            val b = controller.blocks.getOrNull(i) as? BodyBlock.Text
-                ?: return@mapNotNull null
-            val len =
-                controller.blockLayouts[b.id]?.layoutResult?.layoutInput?.text?.length ?: 0
-            val segStart = if (i == startIdx) sel.startOffset else 0
-            val segEnd = if (i == endIdx) sel.endOffset else len
-            if (segEnd > segStart) Triple(b.id, segStart, segEnd) else null
-        }
-        val total = segs.sumOf { it.third - it.second }
-        if (total <= 0) return false
-        /** 中点字符的全局序号（选区内第 total/2 个字符）→ 定位其所在块与块内 offset */
-        var remaining = total / 2
-        var midBlockIdx = -1
-        var midOffset = 0
-        for ((blockId, segStart, segEnd) in segs) {
-            val segLen = segEnd - segStart
-            if (remaining < segLen) {
-                midBlockIdx = order[blockId] ?: -1
-                midOffset = segStart + remaining
-                break
-            }
-            remaining -= segLen
-        }
-        /** 前半判定：hit 块序在中点块之前（或同块 offset <= midOffset）= 前半 */
-        val inFirstHalf = when {
-            midBlockIdx < 0 -> false
-            hitIdx < midBlockIdx -> true
-            hitIdx > midBlockIdx -> false
-            else -> hitOffset <= midOffset
-        }
-        /**
-         * 动端映射（与手柄拖动同构）：前半 = 调起点 → 锚 = 结尾端；
-         * 后半 = 调终点 → 锚 = 开头端。
-         */
-        if (inFirstHalf) {
-            controller.startCrossSelection(sel.endBlockId, sel.endOffset)
-        } else {
-            controller.startCrossSelection(sel.startBlockId, sel.startOffset)
-        }
-        /** 接管即收起工具栏：延伸进行中悬浮菜单挡视线（与长按路径同款处理） */
-        textToolbar.hide()
-        return true
-    }
-
-    /**
-     * 任一文本块存在非折叠原生选区（长按选词已发生）→ 长按兜底路径让位：
-     * **长按选词永远优先**，绝不误触"长按直接拖"（用户 2026-09-11 明确要求）。
-     */
-    fun anyNativeSelectionActive(): Boolean = controller.blocks.any { b ->
-        (b as? BodyBlock.Text)?.state?.selection?.collapsed == false
-    }
-
-    /** 选区被清除（点击别处/打字/复制/剪切）→ 同步收起系统工具栏 */
-    SideEffect {
-        controller.onCrossSelectionCleared = { textToolbar.hide() }
-        /** 全选等路径建立选区后请求弹工具栏 → 延迟弹出（避开系统收起竞态） */
-        controller.onCrossSelectionToolbarRequested = { requestCrossBlockToolbarDeferred() }
-    }
-
-    if (isLocked) return Modifier
-
-    return Modifier
-        .onGloballyPositioned { coords -> editorTopLeft = coords.positionInWindow() }
-        .pointerInput(Unit) {
-            awaitPointerEventScope {
-                while (true) {
-                    /** Initial pass 观察按下：父容器先于所有子级看到，不消费 = 子级无感 */
-                    var down: PointerInputChange? = null
-                    while (down == null) {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        down = event.changes.firstOrNull { it.changedToDown() }
-                    }
-                    val downChange = down
-                    /**
-                     * 手柄接管时机①：down 后立即检测——按下点已在原生 / 跨块手柄
-                     * 热区（按住手柄再拖的场景）则以拖拽模式进入循环，move 全部消费。
-                     */
-                    var started =
-                        tryStartFromNativeHandle(editorTopLeft + downChange.position)
-                    while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        /** 只跟踪发起按下的那根手指（多指场景其余手指忽略） */
-                        val change =
-                            event.changes.firstOrNull { it.id == downChange.id } ?: break
-                        if (change.changedToUp()) {
-                            /**
-                             * 抬指：已接管（started）则定格选区、弹系统工具栏并消费 up
-                             * （子级 Main pass 看到 isConsumed，pending 手势安全退出）；
-                             * 未接管则零干预，点击定位光标照常。
-                             */
-                            if (started) {
-                                controller.endCrossSelection()
-                                showCrossBlockToolbar()
-                                change.consume()
-                            }
-                            break
-                        }
-                        if (!started) {
-                            /** slop 外位移 = 滚动 / 原生选择 / 排序手势 → 放弃观察该手势 */
-                            val moved =
-                                (change.position - downChange.position).getDistance()
-                            when {
-                                /**
-                                 * 手柄接管时机②：长按选词后**不抬手**直接拖手柄——位移超
-                                 * slop 时先试手柄接管，命中则以拖拽模式继续；不命中才放弃
-                                 * （不兜底会先一步 break 放弃观察，实测手柄拖拽无法接管）。
-                                 */
-                                moved > viewConfiguration.touchSlop -> {
-                                    /**
-                                     * 手柄热区未命中 → 试选区本体接管（方案 I）：
-                                     * 按在跨块选区文字上拖动 = 延伸（动端按前/后半
-                                     * 判定，见 [tryStartFromSelectionBody]）；两级都
-                                     * 未命中才放弃观察（滚动 / 原生拖选照常）。
-                                     */
-                                    if (!tryStartFromNativeHandle(
-                                            editorTopLeft + downChange.position,
-                                        ) &&
-                                        !tryStartFromSelectionBody(
-                                            editorTopLeft + downChange.position,
-                                        )
-                                    ) {
-                                        break
-                                    }
-                                    started = true
-                                }
-                                /**
-                                 * 长按兜底启动 + 让位窗口（长按选词永远优先）：原生长按
-                                 * 选词约 500ms 完成（selection 变非折叠），本路径延迟
-                                 * [CROSS_LONGPRESS_GRACE_MS] 才动手，且启动前检查选词
-                                 * 是否已发生——已发生则不启动也不退出（继续观察，用户拖
-                                 * 原生手柄由时机②接管）。
-                                 */
-                                change.uptimeMillis - downChange.uptimeMillis >=
-                                    viewConfiguration.longPressTimeoutMillis +
-                                        CROSS_LONGPRESS_GRACE_MS &&
-                                    !anyNativeSelectionActive() -> {
-                                    /** 长按达成且选词未发生：命中文本则启动跨块选区 */
-                                    val windowPoint = editorTopLeft + downChange.position
-                                    val hit = controller.hitTestCrossSelection(windowPoint)
-                                    val hitInfo =
-                                        hit?.let { controller.blockLayouts[it.first] }
-                                    /**
-                                     * down 在编辑器内容区左缘之左 = 拖拽手柄 / 复选框区
-                                     * → 放弃观察（不消费），下层手柄的长按拖拽排序正常工作
-                                     */
-                                    if (hit == null || hitInfo == null ||
-                                        windowPoint.x <
-                                        hitInfo.topLeftInWindow.x - blockContentStartPx
-                                    ) {
-                                        break
-                                    }
-                                    controller.startCrossSelection(hit.first, hit.second)
-                                    /** 长按瞬间原生浮动工具栏可能已弹出 → 收起 */
-                                    textToolbar.hide()
-                                    started = true
-                                }
-                            }
-                        }
-                        if (started) {
-                            /**
-                             * 拖动延伸 + Initial pass 消费：子级（Main pass）看到
-                             * isConsumed 自动退出——原生选择拿不到干净事件便不扩展。
-                             */
-                            val windowPoint = editorTopLeft + change.position
-                            controller.hitTestCrossSelection(windowPoint)?.let { hit ->
-                                controller.extendCrossSelectionTo(
-                                    hit.first,
-                                    hit.second,
-                                )
-                            }
-                            change.consume()
-                        }
-                    }
-                }
-            }
-        }
-}
-
-/**
- * 跨块选区内容写入剪贴板（复制 / 剪切共用，v2026-09-11 工具栏改造）：
- * 富文本优先（保留加粗/斜体等 SpanStyle），无样式内容退化纯文本。
- */
-private fun copyCrossSelectionToClipboard(
-    controller: BodyBlocksController,
-    clipboard: ClipboardManager,
-) {
-    val rich = controller.getSelectedRichText()
-    val plain = controller.getSelectedPlainText()
-    when {
-        rich != null -> clipboard.setText(rich)
-        plain != null -> clipboard.setText(AnnotatedString(plain))
-    }
-}
 
 /**
  * 块级重排列：与全局 [com.corgimemo.app.ui.components.ReorderableColumn] 行为一致，
@@ -5020,38 +4213,6 @@ private fun BlockTextItem(
      */
     var alignmentOffset by remember(block.state) { mutableStateOf(0.dp) }
 
-    // ---------- 跨块文字选择：布局捕获（v2026-09-11 新增） ----------
-
-    /**
-     * 本块编辑器外框在**窗口坐标系**的左上角（onGloballyPositioned 回写）。
-     * 与 [lastLayout] 配对上报给 [BodyBlocksController.registerBlockLayout]，
-     * 供全局手势层做「指针坐标 → 块内偏移」命中测试。
-     */
-    var lastTopLeft by remember(block.state) { mutableStateOf(Offset.Zero) }
-
-    /** 最近一次文本布局结果（onTextLayout 回写）；位置回调到达时若已有布局则一併重上报 */
-    var lastLayout by remember(block.state) { mutableStateOf<TextLayoutResult?>(null) }
-
-    /**
-     * 文本排版原点相对编辑器外框的 x 偏移 = contentPadding.start（16dp）：
-     * TextLayoutResult 的坐标原点是**文本排版区**，命中测试（控制层统一减去上报的
-     * topLeftInWindow）与高亮绘制（编辑器外框坐标系）共用此偏移校准，两处必须一致。
-     * y 方向 contentPadding.top = 0 且 minHeight = 0，文本区与外框顶部对齐，无需校准。
-     */
-    val textOriginXPx = with(density) { BLOCK_CONTENT_PADDING.toPx() }
-
-    /** 块销毁时清理布局快照，防止手势层命中已不存在的块（重建块会重新上报） */
-    DisposableEffect(block.id) {
-        onDispose { controller.unregisterBlockLayout(block.id) }
-    }
-
-    /**
-     * 跨块选区高亮色（v2026-09-11 统一选区改造）：取**原生文字选择背景色**
-     * （主题经 LocalTextSelectionColors 提供，与单块选词高亮完全同色）。
-     * 组合期读出为局部值——draw 阶段不能读 CompositionLocal。
-     */
-    val selectionHighlightColor = LocalTextSelectionColors.current.backgroundColor
-
     /** 聚焦到本块（拆分 / 合并 / 插图 / 撤销后由 controller.pendingFocus 驱动） */
     LaunchedEffect(controller.pendingFocus) {
         val pf = controller.pendingFocus ?: return@LaunchedEffect
@@ -5121,9 +4282,6 @@ private fun BlockTextItem(
                      */
                     if (text.length > lastText.length && composition == null) {
                         controller.clearBlockSelection()
-                        /** 输入即退出跨块选区（v2026-09-11）：文本变长会使选区偏移失真，
-                         *  与块级选中同帧一起清掉（退格变短不触发，避免干扰删除路径） */
-                        controller.clearCrossSelection()
                     }
                     /** 新编辑（非命令重放、非块内 history 恢复、非 IME 组合中间态）
                      *  → 全局 redo 栈失效。退格合并 / 空块删除路径不在此清——
@@ -5260,60 +4418,6 @@ private fun BlockTextItem(
                 )
                 .focusRequester(block.focusRequester)
                 .onFocusChanged { if (it.isFocused) controller.onBlockFocused(block.id) }
-                .onGloballyPositioned { coords ->
-                    /** 跨块选择：编辑器外框窗口坐标回写 + 布局快照重上报（旋转/滚动/重排后坐标会变） */
-                    lastTopLeft = coords.positionInWindow()
-                    lastLayout?.let { layout ->
-                        controller.registerBlockLayout(
-                            BlockLayoutInfo(
-                                blockId = block.id,
-                                layoutResult = layout,
-                                topLeftInWindow = lastTopLeft + Offset(textOriginXPx, 0f),
-                                textLength = effectiveText(layout.layoutInput.text.text).length,
-                            )
-                        )
-                    }
-                }
-                .drawBehind {
-                    /**
-                     * 跨块选区高亮（v2026-09-11）：按本块在选区中的本地范围逐行画半透明底。
-                     * 坐标系 = 编辑器外框（padding 后），x 加 [textOriginXPx] 校准到文本排版区；
-                     * 首行左缘取起字符包围盒、末行右缘取终字符包围盒，中间整行铺满——
-                     * 读 crossSelection/lastLayout 为快照读，变化自动触发重绘。
-                     *
-                     * 颜色（v2026-09-11 统一选区改造）：用**原生文字选择背景色**
-                     * [LocalTextSelectionColors]——与单块原生选择（拖手柄选词）完全同色，
-                     * 消除「跨块高亮发灰、原生高亮是主题橙」的两套视觉。
-                     */
-                    val sel = controller.crossSelection ?: return@drawBehind
-                    val layout = lastLayout ?: return@drawBehind
-                    val range = controller.localRangeInBlock(
-                        sel, block.id, layout.layoutInput.text.length,
-                    ) ?: return@drawBehind
-                    val (start, end) = range
-                    if (end <= start) return@drawBehind
-                    val highlight = selectionHighlightColor
-                    val startLine = layout.getLineForOffset(start)
-                    val endLine = layout.getLineForOffset((end - 1).coerceAtLeast(0))
-                    for (line in startLine..endLine) {
-                        val left = if (line == startLine) {
-                            layout.getBoundingBox(start).left
-                        } else {
-                            layout.getLineLeft(line)
-                        }
-                        val right = if (line == endLine) {
-                            layout.getBoundingBox((end - 1).coerceAtLeast(0)).right
-                        } else {
-                            layout.getLineRight(line)
-                        }
-                        val top = layout.getLineTop(line)
-                        drawRect(
-                            color = highlight,
-                            topLeft = Offset(textOriginXPx + left, top),
-                            size = Size(right - left, layout.getLineBottom(line) - top),
-                        )
-                    }
-                }
                 .graphicsLayer {
                     if (isDragging) {
                         alpha = 0.6f
@@ -5438,16 +4542,6 @@ private fun BlockTextItem(
                 if (block.checked != null) {
                     alignmentOffset = with(density) { textLayoutResult.getLineLeft(0).toDp() }
                 }
-                /** 跨块选择：布局刷新即重上报快照（v2026-09-11），供命中测试与高亮使用 */
-                lastLayout = textLayoutResult
-                controller.registerBlockLayout(
-                    BlockLayoutInfo(
-                        blockId = block.id,
-                        layoutResult = textLayoutResult,
-                        topLeftInWindow = lastTopLeft + Offset(textOriginXPx, 0f),
-                        textLength = effectiveText(textLayoutResult.layoutInput.text.text).length,
-                    )
-                )
             },
         )
     }
@@ -5462,19 +4556,6 @@ private fun BlockTextItem(
  * **与文本左右严格对齐**；改动此处务必同步 [BlockTextItem] 的 contentPadding。
  */
 private val BLOCK_CONTENT_PADDING = 16.dp
-
-/** 原生选区手柄的接管热区半径（v2026-09-11 第三轮：拖原生手柄升级为跨块拖拽） */
-private val NATIVE_HANDLE_HIT_RADIUS = 28.dp
-
-/** 全选路径弹跨块工具栏的延迟毫秒（避开系统 ActionMode 收起竞态，见手势层注释） */
-private const val TOOLBAR_SHOW_DEFERRED_MS = 150L
-
-/** 长按兜底启动的让位窗口（ms）：等原生长按选词（约 500ms）完成——长按选词永远优先 */
-private const val CROSS_LONGPRESS_GRACE_MS = 300L
-
-/** 跨块选区手柄：竖线自字符包围盒 bottom 下沉量 / 圆点半径（原生水滴球体在包围盒下方） */
-private val CROSS_HANDLE_DROP = 16.dp
-private val CROSS_HANDLE_RADIUS = 7.dp
 
 /** 图片选中工具栏尺寸：宽 = 5×40dp 触控区 + 4×8dp 间距 + 左右 12dp 内边距；高 = 40dp 触控区 + 上下 5dp 内边距 */
 private val ImageToolbarWidth = 256.dp

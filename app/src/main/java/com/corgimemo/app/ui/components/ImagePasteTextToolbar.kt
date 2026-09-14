@@ -11,25 +11,18 @@ import com.corgimemo.app.util.ClipboardImageHelper
  *
  * 行为（与粘贴文字完全同一逻辑，无任何额外浮层）：长按/点击光标倒水滴手柄弹出
  * 系统文本工具栏时，若剪贴板含图片，则把工具栏的「粘贴」项接管为插入图片；
- * 否则原样透传文本粘贴。复制 / 剪切一律透传。
- *
- * 全选重定向（v2026-09-11 统一选区）：传入 [onCrossBlockSelectAll] 时，原生「全选」
- * 重定向为跨块全选（选中所有文本块内容并弹出跨块工具栏），消除两套全选并存；
- * 未传入（如待办页）则原生全选原样透传。
+ * 否则原样透传文本粘贴。复制 / 剪切 / 全选一律透传。
  *
  * 自动收起：系统实现（TextActionModeCallback.onActionItemClicked）在执行菜单项
  * 回调后自行 `mode?.finish()`，与粘贴文字的收起行为一致，本类无需干预。
  *
  * @param inner 被装饰的 TextToolbar（通常为主题层提供的 QuietTextToolbar）
  * @param context 上下文（检测剪贴板、弹 Snackbar）
- * @param onCrossBlockSelectAll 跨块全选回调（灵感页传入；null 时原生全选透传）。
- *   注意须排在 [onInsert] 之前，保证待办页「尾 lambda = onInsert」的调用形态不破坏。
  * @param onInsert 粘贴图片时的插入回调（灵感 insertImageAtFocused / 待办 addImageToFocusedLine）
  */
 class ImagePasteTextToolbar(
     private val inner: TextToolbar,
     private val context: Context,
-    private val onCrossBlockSelectAll: (() -> Unit)? = null,
     private val onInsert: (String) -> Unit,
 ) : TextToolbar {
 
@@ -51,10 +44,7 @@ class ImagePasteTextToolbar(
             } else {
                 onPasteRequested
             }
-        // 全选重定向：有跨块全选回调时替换原生「全选」（点完系统自会收起原生工具栏，
-        // 跨块工具栏由 BodyBlocksEditor 选中态呈现）。
-        val selectAllAction = onCrossBlockSelectAll ?: onSelectAllRequested
-        inner.showMenu(rect, onCopyRequested, pasteAction, onCutRequested, selectAllAction)
+        inner.showMenu(rect, onCopyRequested, pasteAction, onCutRequested, onSelectAllRequested)
     }
 
     override fun hide() {

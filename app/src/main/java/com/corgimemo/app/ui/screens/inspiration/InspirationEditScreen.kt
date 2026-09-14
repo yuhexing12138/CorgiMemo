@@ -1702,9 +1702,6 @@ fun InspirationEditScreen(
                     baseTextToolbar,
                     context,
                     onInsert = { path -> bodyBlocks.insertImageAtFocused(path) },
-                    // v2026-09-11 统一选区：原生「全选」（光标工具栏）重定向为跨块全选——
-                    // 选中所有文本块内容并弹出跨块工具栏，消除两套全选并存
-                    onCrossBlockSelectAll = { bodyBlocks.selectAllCrossBlock() },
                 )
             }
             Box(
