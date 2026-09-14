@@ -27,10 +27,12 @@
   - 用户手打空白块（无标记）永不触碰。
   - ⚠️ **分割线五按钮工具条（v2026-09-11 样式切换扩容）**：左→右 = Ellipsis 虚线 / Waves 波浪 / ArrowUpToLine / ArrowDownToLine / Trash2，宽 256dp（5×40+4×8+2×12）。样式模型 `DividerStyle`(SOLID/DASHED/WAVY) ↔ markdown `"---"`/`"--- dashed"`/`"--- wavy"`（`parseDividerStyle` 严格全段匹配，保守不误伤手输变体）；切换走 `UpdateDividerStyleCommand`+`toggleDividerStyle`（当前即该样式→回实线；就地换块零损失）。`afterCommandMutation`（=clearBlockSelection）会清点选态 → toggle 内先存 tapX、命令同步执行完立即恢复高亮+tapX（同帧无闪烁）；工具条 Popup 独立窗口、样式对齐图片工具条（白胶囊+黑15%边框）、激活态=图标变 DividerHighlightColor（用户定：仅变色）。线体渲染 `DividerLine`（SOLID=HorizontalDivider / DASHED=PathEffect 虚线 / WAVY=贝塞尔波浪），编辑页+阅读卡复用 `drawDashedDivider`/`drawWavyDivider`（internal 同包）。
 
-### 跨块文字选择（v2026-09-11）
-- ⚠️ **全局手势观察铁律：挂父容器 + PointerEventPass.Initial**。全屏透明覆盖层（兄弟节点 + Main pass 常驻 await）实测会让子级所有点击失效（含覆盖层自己的 clickable）——禁止再用。观察阶段零消费；接管后在 Initial pass consume，子级 Main pass 见 isConsumed 自动退出。
-- 操作入口**挂系统 TextToolbar**（用户明确禁止自建工具条）：抬指定格主动 `textToolbar.showMenu(rect=窗口坐标)`，非null 回调决定菜单项；主动弹出的工具栏不随焦点迁移消失——控制器 `onCrossSelectionCleared` 回调 + clearCrossSelection 真清除时才 invoke → 编辑层 SideEffect 接 `textToolbar.hide()`。
-- 跨块选区模型/布局注册表/hitTest/富文本拼接见 `docs/跨块文字选择优化方案.md` §8。
+### 跨块文字选择（v2026-09-11）【已删除】
+> ⚠️ **该功能已于 2026-09-14 彻底删除**（提交 `e9abf6f7`）。用户认为"滑动拖拽选区手柄跨多个 Block 连续选中"不符合预期，已移除 `CrossBlockSelection`/`BlockLayoutInfo` 数据模型、控制器方法、`rememberCrossBlockSelectionGesture` 手势、`CrossBlockSelectionHandles` 手柄绘制、`drawBehind` 跨块高亮、`onCrossBlockSelectAll` 全选重定向，以及 12 个失效 import。下方仅作历史参考，相关代码已不在 `BodyBlocksEditor`。原生单块选区（`BasicTextField` 内置）与块级 `clearBlockSelection`（图片/分割线高亮）保留。`docs/跨块文字选择优化方案.md`、`docs/跨块选择-库层钩子能力评估与方案.md` 已孤儿化，建议归档或标 DEPRECATED。
+
+- （历史）⚠️ 全局手势观察铁律：挂父容器 + PointerEventPass.Initial。全屏透明覆盖层（兄弟节点 + Main pass 常驻 await）实测会让子级所有点击失效（含覆盖层自己的 clickable）——禁止再用。观察阶段零消费；接管后在 Initial pass consume，子级 Main pass 见 isConsumed 自动退出。
+- （历史）操作入口挂系统 TextToolbar：抬指定格主动 `textToolbar.showMenu(rect=窗口坐标)`，非null 回调决定菜单项；主动弹出的工具栏不随焦点迁移消失——控制器 `onCrossSelectionCleared` 回调 + clearCrossSelection 真清除时才 invoke → 编辑层 SideEffect 接 `textToolbar.hide()`。
+- （历史）跨块选区模型/布局注册表/hitTest/富文本拼接见 `docs/跨块文字选择优化方案.md` §8。
 
 ## 块级拖拽重排（自维护 fork）
 - `ui/components/reorderable/BlocksReorderableList.kt`（fork 自 `sh.calvin.reorderable:3.1.0`）。唯一改动：`settle()` 改「抓快照→立即 onSettle→滑行交 `BlocksGlideController` 接续」。
