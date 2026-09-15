@@ -2,6 +2,7 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import com.corgimemo.app.ui.theme.ContentFontManager
 import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichText
@@ -513,61 +516,36 @@ private fun InspirationBodyRichText(
                     }
                 }
                 else -> {
-                    /** 复选框段判定（"- [ ] 内容" / "- [x] 内容"，v2026-09-07） */
-                    val checkboxInfo = checkboxMarkdownInfo(para)
-                    if (checkboxInfo != null) {
-                        /**
-                         * 复选框段（v2026-09-07）：复选框标识 + 剥前缀后的富文本，
-                         * 勾选态文字视觉降级（与确认截图图三一致）。**前缀不喂给
-                         * markdown 解析**——库不认识 task list，会把 "- [ ]" 渲染成
-                         * 无序列表 + 字面文本。点击复选框翻转前缀、按原始段落索引
-                         * 重组整篇 markdown 回调父级持久化。
-                         */
-                        val (checked, indentLevel, bodyMd) = checkboxInfo
-                        /**
-                         * 跟随缩进（v2026-09-08，**布局级同步**）：偏移
-                         * `(indentLevel - 1) × 30sp` 加在**复选框图标**的 start padding 上——
-                         * 复选框右移会经 Row 布局**自然推动**其后的段落同距右移，
-                         * 间距恒定；与编辑页同模式。点击勾选翻转前缀时保留缩进载体。
-                         * **左缘对齐**：复选框标识 padding 不再加额外基准（start = P），
-                         * 左缘与普通段落文本左缘（0 + 同档缩进）精确同列。
-                         * ⚠️ 切勿再给段落额外加同一 padding（复选框已推过，叠加即双倍）。
-                         */
-                        val checkboxIndentPadding = with(density) {
-                            ((indentLevel - 1) * LIST_LEVEL_INDENT_SP).sp.toDp()
-                        }
-                        Row(verticalAlignment = Alignment.Top) {
-                            CheckboxBoxIcon(
-                                checked = checked,
-                                onClick = if (onCheckboxToggle != null) {
-                                    {
-                                        val newParas = paragraphs.toMutableList()
-                                        newParas[pIdx] = checkboxMdPrefix(!checked) +
-                                            plainIndentPrefix(indentLevel) + bodyMd
-                                        onCheckboxToggle.invoke(newParas.joinToString("\n\n"))
-                                    }
-                                } else {
-                                    null
-                                },
-                                modifier = Modifier.padding(
-                                    start = checkboxIndentPadding,
-                                    top = 3.dp,
-                                ),
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            InspirationBodyParagraph(
-                                markdown = bodyMd,
-                                fontFamily = fontFamily,
-                                dimmed = checked,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
+                    /**
+                     * 任务列表段（v2026-09-15 改造）：`- [ ] ` / `- [x] ` **整段交给库**渲染
+                     * ——勾选框由 `RichSpanStyle.CheckBox` 按段落 marker 绘制，勾选态文字降级
+                     * 由 `RichTextConfig.taskListCheckedTextColor` 按段落叠加；块内多行时每行
+                     * 各自一个勾选框（与编辑页同机制）。
+                     *
+                     * 缩进不再由 App 布局级承载：库的 `TaskList` 段落按层级前缀（每级 2 空格）
+                     * 自带 TextIndent，`normalizeTaskListMd` 会把旧数据的 EM 载体折算成该前缀。
+                     * 点击勾选框由库命中判定，按段落索引回写整篇 markdown。
+                     */
+                    if (isTaskListMd(para)) {
+                        InspirationBodyParagraph(
+                            markdown = normalizeTaskListMd(para),
+                            fontFamily = fontFamily,
+                            onTaskListToggle = if (onCheckboxToggle != null) {
+                                { newPara ->
+                                    val newParas = paragraphs.toMutableList()
+                                    newParas[pIdx] = newPara
+                                    onCheckboxToggle.invoke(newParas.joinToString("\n\n"))
+                                }
+                            } else {
+                                null
+                            },
+                        )
                     } else {
                         /**
                          * 普通段落（v2026-09-08）：解析缩进载体（EM，App 自管）并剥除
                          * （不喂给 markdown 解析——库 TextIndent 渲染量与编辑页 App
                          * padding 不同源，会导致跨段错位），渲染由 start padding 承载，
-                         * 与编辑页缩进量一致（每级 30sp）、与复选框标识左缘同列。
+                         * 与编辑页缩进量一致（每级 30sp）。
                          */
                         val indentLevel = plainIndentLevelOfMd(para)
                         val content = if (indentLevel > 1) {
@@ -619,8 +597,11 @@ private fun isBlankBodyParagraph(para: String): Boolean =
  *
  * @param markdown 单段 markdown（不含 `\n\n` 段落分隔）。
  * @param fontFamily 本条灵感记录的字体族。
- * @param modifier 布局参数（复选框段的 Row 内 weight(1f) + 缩进 padding 用，v2026-09-08）。
- * @param dimmed 勾选态文字视觉降级（v2026-09-07 新增，复选框段勾选时传入；基础色降透明度）。
+ * @param modifier 布局参数（缩进段落的 start padding 等，v2026-09-08）。
+ * @param dimmed 勾选态文字视觉降级（v2026-09-07；v2026-09-15 起任务列表段落的降级
+ *   改由 [RichTextConfig.taskListCheckedTextColor] 在库内按段落处理，本参数保留兼容）。
+ * @param onTaskListToggle 任务列表勾选框点击回调（v2026-09-15）：入参为该段**新** markdown
+ *   （形如 `- [x] 内容`），父级据此按段落索引重组整篇并持久化；null = 只读。
  */
 @Composable
 private fun InspirationBodyParagraph(
@@ -628,6 +609,7 @@ private fun InspirationBodyParagraph(
     fontFamily: FontFamily,
     modifier: Modifier = Modifier,
     dimmed: Boolean = false,
+    onTaskListToggle: ((newMarkdown: String) -> Unit)? = null,
 ) {
     val richTextState = rememberRichTextState()
     /**
@@ -646,6 +628,12 @@ private fun InspirationBodyParagraph(
         richTextState.config.unorderedListIndent = LIST_LEVEL_INDENT_SP
         /** marker 按层级循环（1./(1)/①/a./Ⅰ./i.），与编辑页一致 */
         richTextState.config.orderedListStyleType = AppOrderedListStyleType
+        /**
+         * 任务列表勾选态文字降级（v2026-09-15）：由**库**按段落应用——只作用于
+         * 已勾选的任务列表段落，故块内多行、部分勾选时能逐段降级。取值与阅读卡
+         * 正文基础色一致（[Color(0xFF666666)] 的 45% 透明）。
+         */
+        richTextState.config.taskListCheckedTextColor = Color(0xFF666666).copy(alpha = 0.45f)
     }
     LaunchedEffect(markdown) {
         /**
@@ -671,7 +659,32 @@ private fun InspirationBodyParagraph(
     }
     RichText(
         state = richTextState,
-        modifier = modifier,
+        modifier = modifier
+            /**
+             * 任务列表勾选框点击（v2026-09-15）：勾选框由库绘制在段落 marker 左侧的
+             * TextIndent 预留区里，那段空白会让 `getOffsetForPosition` clamp 到段落起点，
+             * 因此把指针坐标交给库判定；**命中才消费**，未命中时不影响长按选择等手势。
+             */
+            .pointerInput(markdown, onTaskListToggle) {
+                if (onTaskListToggle == null) return@pointerInput
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial,
+                        )
+                        val layout = richTextState.textLayoutResult
+                        if (layout != null) {
+                            val offset = layout.getOffsetForPosition(down.position)
+                            if (richTextState.toggleTaskListCheckedAtTextOffset(offset)) {
+                                down.consume()
+                                /** 回写本段 markdown（库格式化后的形态，含 `- [x] ` / `- [ ] `） */
+                                onTaskListToggle.invoke(richTextState.toMarkdown())
+                            }
+                        }
+                    }
+                }
+            },
         // 基础样式与改造前纯 Text 完全一致：未设置排版的字符回落下列值，
         // 已设 fontSize/color 的字符以 span 内联值为准（覆盖基础样式）。
         fontFamily = fontFamily,
