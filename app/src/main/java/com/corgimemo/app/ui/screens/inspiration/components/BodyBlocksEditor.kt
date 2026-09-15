@@ -4158,18 +4158,28 @@ private fun BlockTextItem(
                         }
                         Key.Enter, Key.NumPadEnter -> {
                             /**
-                             * 硬回车（v2026-09-15 **取消拆块**）：直接把 `\n` 写进块内，
+                             * 硬回车（v2026-09-15 **取消拆块**）：直接把换行写进块内，
                              * 换行留在同一块内——列表 bullet / 复选框勾选框由库按段落类型
                              * 自动续（库插入 `\n` 时会 slice 新段落并继承段落类型）。
                              *
                              * 唯一例外：**空缩进行**回车 = 减一级缩进（Word 标准行为）。
                              * 缩进是 App 布局级属性、库不知情，故由 App 处理，且此时
-                             * **不插入** `\n`。
+                             * **不插入**换行。
+                             *
+                             * ⚠️ **实验（方案 A，见 docs/灵感编辑页-段内换行与选区手柄问题-技术方案.md）**：
+                             * 这里插的是 `U+2028 LINE SEPARATOR` 而**不是 `\n`**。
+                             * 原因：库只认 `\n`（`checkForParagraphs` 会拿它拆段落），
+                             * 而 `\u2028` ① 让 Compose 正常换行、② 不被库拆段、
+                             * ③ **自身占一个 offset**，使"行尾"在手柄拖拽时有明确归属
+                             * （修"拖到行尾光标跳到下一行"）。若实验不成立则回退为 `"\n"`。
+                             *
+                             * 实验期**暂不改** markdown 往返转换：保存重进时该换行会退化成
+                             * 普通字符（不换行），因此只用测试笔记验证交互，勿用重要内容。
                              */
                             if (isEffectivelyBlankLine(block.state) && block.indentLevel > 1) {
                                 controller.dedentBlockAtContentStart(block)
                             } else {
-                                block.state.addTextAfterSelection("\n")
+                                block.state.addTextAfterSelection("\u2028")
                             }
                             true
                         }
