@@ -1492,8 +1492,9 @@ class BodyBlocksController(
          */
         replaying = true
         try {
-            /** 方法内部已对每个合并命令 apply（见其注释），这里只需触发一次扫描 */
-            normalizeAdjacentTextBlocksInto(mutableListOf())
+            /** 走统一入口但**跳过载体归一化**（加载只做文本块合并，载体身份由中段的
+             *  "按位置认领"逻辑负责，这里不动它）；方法内部已 apply，无需再执行 */
+            normalizeStructureInto(mutableListOf(), tag = "加载", normalizeSeparators = false)
         } finally {
             replaying = false
         }
@@ -1816,10 +1817,9 @@ class BodyBlocksController(
                 cmd.apply(this)
                 commands += cmd
             }
-            /** 整批落定后统一归一化载体空块（此时才形成最终的相邻关系） */
-            normalizeImageSeparatorsInto(commands, tag = "批量插图")
-            /** 相邻文本块合并（v2026-09-15）：与其它结构变更入口保持同一套归一化 */
-            normalizeAdjacentTextBlocksInto(commands)
+            /** 整批落定后统一跑结构归一化（此时才形成最终的相邻关系）：
+             *  载体空块 + 相邻文本块合并，与其它入口共用 [normalizeStructureInto] */
+            normalizeStructureInto(commands, tag = "批量插图")
         } finally {
             suppressDocChanged = false
             replaying = false
@@ -2046,6 +2046,29 @@ class BodyBlocksController(
     private fun normalizeImageSeparatorsInto(into: MutableList<BodyBlocksCommand>, tag: String) {
         into += normalizeImageSeparators().onEach { it.apply(this) }
         checkImageSeparatorInvariant(tag)
+    }
+
+    /**
+     * **结构归一化的唯一入口**（v2026-09-15 收敛）：依次跑全部不变量维护。
+     *
+     * 1. [normalizeImageSeparatorsInto]：载体空块不变量（两图之间恰好一个可输入空块）；
+     * 2. [normalizeAdjacentTextBlocksInto]：相邻普通文本块合并。
+     *
+     * ⚠️ **两个方法都在收集时 apply 自己的命令**——这是本项目约定：调用方拿到 `into`
+     * 之后只用 [pushExecuted] 压栈，而它**只记账、不执行**命令。新增归一化规则时务必照
+     * 这个模式写（`into += cmd` 之后立刻 `cmd.apply(this)`），否则规则会"只进撤销栈、
+     * 从不真正生效"——历史上已经踩过一次（只有加载时才收敛）。
+     *
+     * @param normalizeSeparators 是否跑载体归一化（图片 / 分割线相关命令传 true；
+     *   纯文本类命令传 false，省一次与图片无关的扫描）。
+     */
+    private fun normalizeStructureInto(
+        into: MutableList<BodyBlocksCommand>,
+        tag: String,
+        normalizeSeparators: Boolean = true,
+    ) {
+        if (normalizeSeparators) normalizeImageSeparatorsInto(into, tag = tag)
+        normalizeAdjacentTextBlocksInto(into)
     }
 
     /**
@@ -2703,7 +2726,29 @@ class BodyBlocksController(
      * apply 期间 [replaying] = true，命令自身引发的状态差分不会被 observer
      * 误判为"新编辑"（不清刚清空的 redo 栈、不二次触发结构检测）。
      */
-    private fun executeAndPush(command: BodyBlocksCommand) {
+    /**
+     * **统一的「执行主命令 → 结构归一化 → 压栈」入口**（v2026-09-15 收敛）。
+     *
+     * 顺序固定：
+     * 1. 在 [replaying] 门控内 **apply 主命令**，随后 [renumberOrderedBlocks]；
+     * 2. 跑结构归一化 [normalizeStructureInto]（**它自己 apply 自己的命令**）；
+     * 3. 主命令与归一化命令打包成一个 [CompositeCommand]，由 [pushExecuted] 压栈
+     *    ——⚠️ [pushExecuted] **只记账、不执行**命令。
+     *
+     * **为什么要收敛**：此前 `executeAndPush` / `executeAndPushWithImageSeparators` /
+     * `moveBlock` / `insertImagesAtFocused` 各自手写这套流程——新增一条归一化规则要逐个
+     * 入口补调用，而且"归一化命令要不要自己 apply"两者约定还不一致，出过"只有加载时才
+     * 归一化、编辑过程中静默失效"的缺陷。现在需要维护的只有本函数与 [normalizeStructureInto]。
+     *
+     * @param normalizeSeparators 是否跑载体空块归一化：图片 / 分割线相关命令传 true；
+     *   纯文本类命令传 false——文本变更不改变图片相邻关系，省一次无意义扫描。
+     * @param tag 归一化来源标签（载体不变量自检日志用）。
+     */
+    private fun executeWithNormalization(
+        command: BodyBlocksCommand,
+        normalizeSeparators: Boolean,
+        tag: String,
+    ) {
         val extra = mutableListOf<BodyBlocksCommand>()
         replaying = true
         try {
@@ -2711,13 +2756,7 @@ class BodyBlocksController(
             /** 结构变更（合并/退列表/插图等）后按位置语义重排连续有序块编号，
              *  在 replaying 门控内执行，避免被重写块的 observer 误清 redo 栈。 */
             renumberOrderedBlocks()
-            /**
-             * 结构归一化（v2026-09-15）：相邻文本块自动合并——任何**用户操作**之后都跑，
-             * 保证"块列表里不存在两个相邻的普通文本块"这一不变量始终成立。
-             *
-             * ⚠️ undo / redo 不经过本方法，所以撤销不会被立刻又合并回去（否则撤销无意义）。
-             */
-            normalizeAdjacentTextBlocksInto(extra)
+            normalizeStructureInto(extra, tag = tag, normalizeSeparators = normalizeSeparators)
             if (extra.isNotEmpty()) renumberOrderedBlocks()
         } finally {
             replaying = false
@@ -2726,7 +2765,18 @@ class BodyBlocksController(
     }
 
     /**
-     * 执行并压栈一条命令，随后跑 [normalizeImageSeparatorsInto] 维护载体空块不变量：
+     * 执行并压栈一条**不涉及图片相邻关系**的命令（打字 / 退格 / 缩进 / 插入分割线等）：
+     * 只跑「相邻文本块合并」归一化，跳过载体空块扫描。
+     *
+     * ⚠️ undo / redo 不经过本入口——撤销后不会被立刻又合并回去（否则撤销失去意义）。
+     */
+    private fun executeAndPush(command: BodyBlocksCommand) {
+        executeWithNormalization(command = command, normalizeSeparators = false, tag = "命令")
+    }
+
+    /**
+     * 执行并压栈一条与**图片 / 分割线**相关的命令（插图 / 删图 / 删分割线 / 拖拽落位）：
+     * 走 [executeWithNormalization]，除「相邻文本块合并」外**额外跑载体空块归一化**——
      * **两图直接相邻处补空 Text 块；带标记的空白块不再夹在两图之间则删**
      * （v2026-09-09 插图路径；v2026-09-11 起删除图片路径同样使用——
      * 删中间图后 1[空][空]3 → 清两个漂移载体 + 补一个 → 1[空]3）。
@@ -2736,20 +2786,7 @@ class BodyBlocksController(
      * "撤销一次只撤掉空行、顺序还没变"的中间态。
      */
     private fun executeAndPushWithImageSeparators(command: BodyBlocksCommand) {
-        val extra = mutableListOf<BodyBlocksCommand>()
-        replaying = true
-        try {
-            command.apply(this)
-            /** 结构变更（拆块/合并/退列表/插图等）后按位置语义重排连续有序块编号 */
-            renumberOrderedBlocks()
-            normalizeImageSeparatorsInto(extra, tag = "插入图片")
-            /** 相邻文本块合并（v2026-09-15）：删图 / 删分割线后前后文本块会相邻 */
-            normalizeAdjacentTextBlocksInto(extra)
-            if (extra.isNotEmpty()) renumberOrderedBlocks()
-        } finally {
-            replaying = false
-        }
-        pushExecuted(if (extra.isEmpty()) command else CompositeCommand(listOf(command) + extra))
+        executeWithNormalization(command = command, normalizeSeparators = true, tag = "图片相关")
     }
 
     /** 只压栈不执行（命令已被调用方 apply 过——批量插图的循环路径） */
@@ -3478,33 +3515,15 @@ class BodyBlocksController(
      * 为什么必须补：把图片拖到另一张图旁边会形成 `[图,图]`，两图之间没有
      * 可以打字的位置，用户只能再拖一次才能插入文字。
      *
-     * 为什么不直接用 [executeAndPush]：需要在 move 之后**基于新顺序**计算需要
-     * 补块的位置，再把两条命令合成一条压栈（两步会因中间的列表变化而互相干扰）。
+     * v2026-09-15 收敛：改走通用的 [executeAndPushWithImageSeparators]——"基于新顺序补块"
+     * 与"相邻文本块合并"都由 [normalizeStructureInto] 统一负责，不必再自组装命令与手动压栈。
      */
     fun moveBlock(from: Int, to: Int) {
         if (from == to || from !in blocks.indices || to !in blocks.indices) return
         val blockId = blocks[from].id
-        val move = MoveBlockCommand(blockId = blockId, fromIndex = from, toIndex = to)
-        val extra = mutableListOf<BodyBlocksCommand>()
-        replaying = true
-        try {
-            move.apply(this)
-            renumberOrderedBlocks()
-            /**
-             * 落位后归一化载体空块（自后向前删/插，索引不漂移）：
-             * 补"两图相邻"缺的载体，并删掉这次换位把旧载体甩到图片组外侧的残留
-             * （v2026-09-10 修复"反复交换后图片上下空行越来越多"）。
-             */
-            normalizeImageSeparatorsInto(extra, tag = "拖拽落位")
-            /**
-             * 相邻文本块合并（v2026-09-15）：拖拽可能把两个文本块排到一起，
-             * 同样要在**编辑过程中**立即收敛，不能等到下次加载。
-             */
-            normalizeAdjacentTextBlocksInto(extra)
-        } finally {
-            replaying = false
-        }
-        pushExecuted(if (extra.isEmpty()) move else CompositeCommand(listOf(move) + extra))
+        executeAndPushWithImageSeparators(
+            MoveBlockCommand(blockId = blockId, fromIndex = from, toIndex = to)
+        )
     }
 
     /**
