@@ -1492,9 +1492,8 @@ class BodyBlocksController(
          */
         replaying = true
         try {
-            val mergeCommands = mutableListOf<BodyBlocksCommand>()
-            normalizeAdjacentTextBlocksInto(mergeCommands)
-            mergeCommands.forEach { it.apply(this) }
+            /** 方法内部已对每个合并命令 apply（见其注释），这里只需触发一次扫描 */
+            normalizeAdjacentTextBlocksInto(mutableListOf())
         } finally {
             replaying = false
         }
@@ -2120,7 +2119,7 @@ class BodyBlocksController(
                 sb.append(blockMarkdown(block.state))
             }
 
-            into += ReplaceBlocksCommand(
+            val mergeCommand = ReplaceBlocksCommand(
                 index = start,
                 removedSpecs = group.map { textSpec(it) },
                 insertedSpecs = listOf(
@@ -2139,6 +2138,16 @@ class BodyBlocksController(
                     focusBefore ?: FocusSpec(head.id, 0)
                 },
             )
+            /**
+             * **立即执行**（与 [normalizeImageSeparatorsInto] 同一约定，v2026-09-15 修复）。
+             *
+             * ⚠️ 调用方拿到命令后只做 [pushExecuted]，而它**只压栈、不执行**命令（其注释
+             * 明确写着"命令已被调用方 apply 过"）。此前这里只 `into += command` 而没有
+             * apply，导致合并命令**只进撤销栈、从未真正生效**——表现就是"编辑过程中不合并，
+             * 直到下次加载才收敛"。
+             */
+            mergeCommand.apply(this)
+            into += mergeCommand
         }
     }
 
