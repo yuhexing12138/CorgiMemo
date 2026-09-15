@@ -3952,17 +3952,14 @@ private fun BlockTextItem(
                                 requireUnconsumed = false,
                                 pass = PointerEventPass.Initial,
                             )
-                            val layout = block.state.textLayoutResult
-                            if (layout != null) {
-                                /** 减去编辑器 contentPadding 的 start，得到文本布局坐标 */
-                                val textPos = Offset(
-                                    x = down.position.x - contentPaddingStartPx,
-                                    y = down.position.y,
-                                )
-                                val offset = layout.getOffsetForPosition(textPos)
-                                if (block.state.toggleTaskListCheckedAtTextOffset(offset)) {
-                                    down.consume()
-                                }
+                            /** 减去编辑器 contentPadding 的 start，得到文本布局坐标 */
+                            val textPos = Offset(
+                                x = down.position.x - contentPaddingStartPx,
+                                y = down.position.y,
+                            )
+                            /** 「坐标 → 文本偏移 → 命中判定」都在库内完成（宿主不访问库的排版结果） */
+                            if (block.state.toggleTaskListCheckedAtPosition(textPos)) {
+                                down.consume()
                             }
                         }
                     }

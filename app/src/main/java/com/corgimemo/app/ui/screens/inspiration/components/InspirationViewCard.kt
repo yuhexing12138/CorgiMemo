@@ -673,14 +673,11 @@ private fun InspirationBodyParagraph(
                             requireUnconsumed = false,
                             pass = PointerEventPass.Initial,
                         )
-                        val layout = richTextState.textLayoutResult
-                        if (layout != null) {
-                            val offset = layout.getOffsetForPosition(down.position)
-                            if (richTextState.toggleTaskListCheckedAtTextOffset(offset)) {
-                                down.consume()
-                                /** 回写本段 markdown（库格式化后的形态，含 `- [x] ` / `- [ ] `） */
-                                onTaskListToggle.invoke(richTextState.toMarkdown())
-                            }
+                        /** 「坐标 → 文本偏移 → 命中判定」都在库内完成（宿主不访问库的排版结果） */
+                        if (richTextState.toggleTaskListCheckedAtPosition(down.position)) {
+                            down.consume()
+                            /** 回写本段 markdown（库格式化后的形态，含 `- [x] ` / `- [ ] `） */
+                            onTaskListToggle.invoke(richTextState.toMarkdown())
                         }
                     }
                 }
