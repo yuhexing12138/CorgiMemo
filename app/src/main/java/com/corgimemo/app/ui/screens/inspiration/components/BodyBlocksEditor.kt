@@ -293,10 +293,20 @@ internal val AppOrderedListStyleType: OrderedListStyleType =
  * - [IMAGE_PLACEHOLDER_CHAR]：库的图片内联占位符；
  * - **NBSP（U+00A0）**：任务列表段落的 **marker 占位字符**（v2026-09-15，见库
  *   `TaskList.TaskListMarkerText`）——它出现在 `annotatedString` 里（每个任务
- *   列表段一个），但不该被算进正文文本。
+ *   列表段一个），但不该被算进正文文本；
+ * - [PLAIN_INDENT_CHAR]（EM）：缩进载体。普通段落的段首缩进在 markdown 层（加载时
+ *   已剥），但「相邻文本块合并」会把后块的缩进差异转写成**块内行首 EM**
+ *   （v2026-09-15），故一并剥除，避免污染字数统计与空行判定。
  */
-private fun effectiveText(text: String): String =
-    text.filterNot { it == ZWSP[0] || it == IMAGE_PLACEHOLDER_CHAR || it == '\u00A0' }
+private fun effectiveText(text: String): String = text.filterNot { char ->
+    when (char) {
+        ZWSP[0] -> true
+        IMAGE_PLACEHOLDER_CHAR -> true
+        '\u00A0' -> true
+        PLAIN_INDENT_CHAR -> true
+        else -> false
+    }
+}
 private fun isEffectivelyEmpty(text: String): Boolean = effectiveText(text).isEmpty()
 private fun isEffectivelyEmpty(state: RichTextState): Boolean =
     isEffectivelyEmpty(state.annotatedString.text)
@@ -1472,6 +1482,23 @@ class BodyBlocksController(
             }
         }
         ensureTextBlock()
+
+        /**
+         * 相邻文本块**自动合并**（v2026-09-15）：旧数据是"每行一个块"（块间 `\n\n` 分隔），
+         * 在"换行不新建块"的新模型下应收敛为一个块。
+         *
+         * 属**加载规范化**，不进命令栈（用户确认口径）——否则用户一进页面就能撤销回旧结构。
+         * 在 replaying 门控内执行，避免新建块的 observer 误判成"新编辑"而清 redo 栈。
+         */
+        replaying = true
+        try {
+            val mergeCommands = mutableListOf<BodyBlocksCommand>()
+            normalizeAdjacentTextBlocksInto(mergeCommands)
+            mergeCommands.forEach { it.apply(this) }
+        } finally {
+            replaying = false
+        }
+
         focusedBlockId = null
         highlightedBlockId = null
         /** 换了整篇文档：命令栈与块内 history 一并作废（新块的 history 本就是空的） */
@@ -2018,6 +2045,99 @@ class BodyBlocksController(
     private fun normalizeImageSeparatorsInto(into: MutableList<BodyBlocksCommand>, tag: String) {
         into += normalizeImageSeparators().onEach { it.apply(this) }
         checkImageSeparatorInvariant(tag)
+    }
+
+    /**
+     * 相邻文本块**自动合并**（v2026-09-15，用户确认时机：加载 + 运行时）。
+     *
+     * **不变量**：块列表里不出现"两个相邻的普通 Text 块"。换行不再新建块之后，相邻
+     * 文本块只可能来自历史数据（旧版每行一块）或删图 / 删分割线 / 拖拽重排后的残留，
+     * 这里统一收成一个块，与「块 = 一段连续文本」的模型一致。
+     *
+     * **接缝用单 `\n`**（= 块内软换行，与"回车不拆块"同一语义）。**不能写 `\n\n`**：
+     * 那是块与块之间的 markdown 分隔符，写进块内在下次加载时会被重新拆成两块（等于没合并）。
+     *
+     * **后块缩进差异（用户确认口径）**：后块缩进 ≠ 前块时，把后块的缩进载体（EM 前缀）
+     * 转写到块内该行行首——信息不丢（往返稳定），但渲染出来是**可见宽空格**而不是真缩进
+     * （块缩进是块级布局属性，块内无法逐行缩进）。
+     *
+     * **载体空块不参与合并**：两图之间"可输入空行"的不变量依赖它独立存在。
+     *
+     * 命令形态 [ReplaceBlocksCommand]（removed = 段内**全部**文本块，inserted = 合并块），
+     * 撤销一步即拆回原样的多块（各自原 id，属性随 spec 还原）。
+     *
+     * @param into 收集归一化命令（调用方决定打包进 CompositeCommand 还是直接 apply）。
+     */
+    private fun normalizeAdjacentTextBlocksInto(into: MutableList<BodyBlocksCommand>) {
+        /** 可参与合并的块：普通 Text（载体空块跳过；图片 / 分割线块天然阻断） */
+        fun isMergeable(index: Int): Boolean {
+            val block = blocks[index]
+            return block is BodyBlock.Text && !block.isImageSeparator
+        }
+
+        /** 先切出所有「连续文本块段」（被图片 / 分割线 / 载体空块阻断），再**倒序**生成命令
+         *  —— 倒序保证前面的段合并后不会让后面段的 index 失效（各段删除的块数不同）。 */
+        val segments = mutableListOf<Pair<Int, Int>>()
+        var cursor = 0
+        while (cursor < blocks.size) {
+            val start = cursor
+            while (cursor < blocks.size && isMergeable(cursor)) cursor++
+            if (cursor - start >= 2) segments += start to cursor
+            /** 非文本块（或单个文本块）：前进一格继续找下一段 */
+            if (cursor == start) cursor++
+        }
+        if (segments.isEmpty()) return
+
+        val focusBefore = currentFocusSpec()
+
+        segments.asReversed().forEach { (start, endExclusive) ->
+            val group = (start until endExclusive).map { blocks[it] as BodyBlock.Text }
+            val head = group.first()
+
+            val sb = StringBuilder()
+            /** 焦点若落在段内某块：换算成它在合并块里的 raw 偏移（-1 = 焦点不在段内） */
+            var focusOffsetInMerged = -1
+
+            group.forEachIndexed { idx, block ->
+                if (idx > 0) {
+                    sb.append('\n')
+                    /** 非首块的缩进差异 → 该行行首 EM 前缀（信息不丢；渲染为可见宽空格） */
+                    if (block.indentLevel != head.indentLevel) {
+                        sb.append(plainIndentPrefix(block.indentLevel))
+                    }
+                }
+                if (focusBefore != null && focusBefore.blockId == block.id) {
+                    /**
+                     * 偏移换算（与 [mergeTextBlocks] 同款口径）：入参 offset 是 **raw**
+                     * （含 ZWSP），而 sb 里累加的是剥过 ZWSP 的 markdown，故按「有效字数」
+                     * 折算——clamp 到该块有效长度即可覆盖"光标在块尾"（raw 长度 = 有效 + 1）。
+                     */
+                    val effectiveLength = effectiveText(block.state.annotatedString.text).length
+                    focusOffsetInMerged = sb.length + focusBefore.offset.coerceIn(0, effectiveLength)
+                }
+                sb.append(blockMarkdown(block.state))
+            }
+
+            into += ReplaceBlocksCommand(
+                index = start,
+                removedSpecs = group.map { textSpec(it) },
+                insertedSpecs = listOf(
+                    BlockSpec.TextSpec(
+                        head.id,
+                        sb.toString(),
+                        /** 合并块继承**首块**的缩进档位（与退格合并一致） */
+                        indentLevel = head.indentLevel,
+                        isImageSeparator = false,
+                    )
+                ),
+                focusBefore = focusBefore,
+                focusAfter = if (focusOffsetInMerged >= 0) {
+                    FocusSpec(head.id, focusOffsetInMerged)
+                } else {
+                    focusBefore ?: FocusSpec(head.id, 0)
+                },
+            )
+        }
     }
 
     /**
@@ -2573,16 +2693,25 @@ class BodyBlocksController(
      * 误判为"新编辑"（不清刚清空的 redo 栈、不二次触发结构检测）。
      */
     private fun executeAndPush(command: BodyBlocksCommand) {
+        val extra = mutableListOf<BodyBlocksCommand>()
         replaying = true
         try {
             command.apply(this)
-            /** 结构变更（拆块/合并/退列表/插图等）后按位置语义重排连续有序块编号，
+            /** 结构变更（合并/退列表/插图等）后按位置语义重排连续有序块编号，
              *  在 replaying 门控内执行，避免被重写块的 observer 误清 redo 栈。 */
             renumberOrderedBlocks()
+            /**
+             * 结构归一化（v2026-09-15）：相邻文本块自动合并——任何**用户操作**之后都跑，
+             * 保证"块列表里不存在两个相邻的普通文本块"这一不变量始终成立。
+             *
+             * ⚠️ undo / redo 不经过本方法，所以撤销不会被立刻又合并回去（否则撤销无意义）。
+             */
+            normalizeAdjacentTextBlocksInto(extra)
+            if (extra.isNotEmpty()) renumberOrderedBlocks()
         } finally {
             replaying = false
         }
-        pushExecuted(command)
+        pushExecuted(if (extra.isEmpty()) command else CompositeCommand(listOf(command) + extra))
     }
 
     /**
@@ -2603,6 +2732,8 @@ class BodyBlocksController(
             /** 结构变更（拆块/合并/退列表/插图等）后按位置语义重排连续有序块编号 */
             renumberOrderedBlocks()
             normalizeImageSeparatorsInto(extra, tag = "插入图片")
+            /** 相邻文本块合并（v2026-09-15）：删图 / 删分割线后前后文本块会相邻 */
+            normalizeAdjacentTextBlocksInto(extra)
             if (extra.isNotEmpty()) renumberOrderedBlocks()
         } finally {
             replaying = false
