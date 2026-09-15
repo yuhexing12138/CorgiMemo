@@ -1819,6 +1819,8 @@ class BodyBlocksController(
             }
             /** 整批落定后统一归一化载体空块（此时才形成最终的相邻关系） */
             normalizeImageSeparatorsInto(commands, tag = "批量插图")
+            /** 相邻文本块合并（v2026-09-15）：与其它结构变更入口保持同一套归一化 */
+            normalizeAdjacentTextBlocksInto(commands)
         } finally {
             suppressDocChanged = false
             replaying = false
@@ -3485,6 +3487,11 @@ class BodyBlocksController(
              * （v2026-09-10 修复"反复交换后图片上下空行越来越多"）。
              */
             normalizeImageSeparatorsInto(extra, tag = "拖拽落位")
+            /**
+             * 相邻文本块合并（v2026-09-15）：拖拽可能把两个文本块排到一起，
+             * 同样要在**编辑过程中**立即收敛，不能等到下次加载。
+             */
+            normalizeAdjacentTextBlocksInto(extra)
         } finally {
             replaying = false
         }
