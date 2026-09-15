@@ -1340,6 +1340,12 @@ class BodyBlocksController(
             }
         }
         /** indentLevel（普通段落缩进）/ isImageSeparator（载体身份）随块对象携带 */
+        android.util.Log.d(
+            "SoftLineBreak",
+            "createTextBlock md=${markdown.replace("\n", "⏎")}" +
+                " tree=${state.toText().replace("\n", "⏎")}" +
+                " as=${state.annotatedString.text.replace("\n", "⏎")}",
+        )
         return BodyBlock.Text(
             id,
             state,
@@ -2093,10 +2099,22 @@ class BodyBlocksController(
      * @param into 收集归一化命令（调用方决定打包进 CompositeCommand 还是直接 apply）。
      */
     private fun normalizeAdjacentTextBlocksInto(into: MutableList<BodyBlocksCommand>) {
-        /** 可参与合并的块：普通 Text（载体空块跳过；图片 / 分割线块天然阻断） */
+        /** 可参与合并的块：**纯普通段落**的 Text 块（载体空块跳过；图片 / 分割线块天然阻断） */
         fun isMergeable(index: Int): Boolean {
             val block = blocks[index]
-            return block is BodyBlock.Text && !block.isImageSeparator
+            if (block !is BodyBlock.Text || block.isImageSeparator) return false
+            /**
+             * 含列表 / 任务列表段落的块**不参与合并**（v2026-09-15 按行勾选）：任务列表
+             * 块每行独立（各自的勾选框与勾选状态），合并会把多行压回一个段落、勾选框
+             * 失去行粒度。
+             */
+            val md = blockMarkdown(block.state)
+            return md.lineSequence().none { line ->
+                val t = line.trimStart()
+                t.startsWith("- [ ] ") || t.startsWith("- [x] ") ||
+                    t.startsWith("- ") || t.startsWith("* ") || t.startsWith("> ") ||
+                    (t.length > 2 && t[0].isDigit() && (t[1] == '.' || t[1] == ')'))
+            }
         }
 
         /** 先切出所有「连续文本块段」（被图片 / 分割线 / 载体空块阻断），再**倒序**生成命令
@@ -2609,12 +2627,44 @@ class BodyBlocksController(
             ?.takeIf { it >= 0 }
 
         val focused = focusedIdx?.let { blocks[it] }
-        if (focused is BodyBlock.Text) {
+        if (focused !is BodyBlock.Text) {
+            executeAndPush(buildAppendTaskListCommand())
+            return
+        }
+
+        /**
+         * v2026-09-15 「按行勾选」：多行块**按 `\n` 拆行**，每行一个独立的任务列表块
+         * （各自的勾选框与勾选状态）；单行块直接切换段落类型。
+         *
+         * 为什么拆行：库的复选框是**段落级**（TaskList 段落一个勾选框），而普通段落块
+         * 的多行共存于一个段落（段内 `\n`，方案 D 定稿）——不拆行的话整块共用一个
+         * 勾选框。拆行后每行独立成块：块级 TextField 的手柄拖拽天然不受"段间占位"
+         * 影响，勾选状态也按块独立。
+         */
+        val lines = blockMarkdown(focused.state).split('\n')
+        if (lines.size == 1) {
             focused.state.toggleTaskList()
             onDocChanged?.invoke()
             return
         }
-        executeAndPush(buildAppendTaskListCommand())
+
+        val idx = blocks.indexOfFirst { it.id == focused.id }
+        val insertedSpecs = lines.map { line ->
+            BlockSpec.TextSpec(
+                newBodyBlockId(),
+                if (line.isBlank()) TASK_LIST_MD_UNCHECKED else TASK_LIST_MD_UNCHECKED + line,
+            )
+        }
+        executeAndPush(
+            ReplaceBlocksCommand(
+                index = idx,
+                removedSpecs = listOf(textSpec(focused)),
+                insertedSpecs = insertedSpecs,
+                focusBefore = currentFocusSpec(),
+                /** 焦点落到第一个任务列表项行首 */
+                focusAfter = FocusSpec(insertedSpecs.first().id, 0),
+            )
+        )
     }
 
     /**
