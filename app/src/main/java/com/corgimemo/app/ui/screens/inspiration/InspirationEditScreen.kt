@@ -85,10 +85,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange /** 标题单行化后重算光标 / 选区位置（v2026-09-15）*/
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.input.key.Key /** 标题回车拦截：Key.Enter / Key.NumPadEnter（v2026-09-15）*/
+import androidx.compose.ui.input.key.KeyEventType /** 标题回车拦截：只处理 KeyDown（v2026-09-15）*/
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1542,6 +1548,51 @@ fun InspirationEditScreen(
             remember(titleRichTextState) { titleRichTextState.config.listIndent = 0 }
 
             /**
+             * 上一次观察到的标题文本（v2026-09-15）：用于区分「键盘换行」与「多行粘贴」——
+             * 新文本剥掉换行后与它完全一致 ⇒ 本次变化只多了一个换行 ⇒ 键盘换行（跳正文）；
+             * 否则（同时还多了别的字符）⇒ 粘贴，只做单行化、焦点留在标题。
+             */
+            val lastObservedTitleText = remember { mutableStateOf("") }
+
+            /**
+             * 标题**单行化**（v2026-09-15）：摘掉 [rawText] 中所有换行符后写回标题，
+             * 并把光标 / 选区按「摘掉换行后其前面还剩多少字符」重算，尽量停在用户原编辑位置。
+             *
+             * 写回用 setText（纯文本，不解析 markdown），随后立刻上送 ViewModel——
+             * 调用方在换行分支里 `return` 掉了常规的 state→VM 同步，这条不能漏，
+             * 否则（如粘贴）新文本不会落库。setText 默认把选区折叠到行尾，故写完要补写 selection。
+             */
+            fun collapseTitleNewlines(rawText: String) {
+                val cleaned = rawText.replace("\n", "")
+                /** 摘掉换行后，原索引之前还剩多少字符 */
+                fun mapIndex(index: Int): Int {
+                    val clamped = index.coerceIn(0, rawText.length)
+                    return rawText.substring(0, clamped).count { it != '\n' }
+                }
+                val oldSelection = titleRichTextState.selection
+                /** 用 minOf/maxOf（kotlin.comparisons 默认导入），不依赖 TextRange.min/max 的导入形态 */
+                val mappedStart = mapIndex(minOf(oldSelection.start, oldSelection.end))
+                    .coerceIn(0, cleaned.length)
+                val mappedEnd = mapIndex(maxOf(oldSelection.start, oldSelection.end))
+                    .coerceIn(0, cleaned.length)
+                titleRichTextState.setText(cleaned)
+                titleRichTextState.selection = TextRange(mappedStart, mappedEnd)
+                if (cleaned != title) viewModel.setTitleWithRecommendation(cleaned)
+            }
+
+            /**
+             * 换行落点（v2026-09-15）：标题只允许单行，换行即「进入正文书写」——
+             * 焦点交到正文首块的首行最前面（首块是图片 / 分割线时由 controller
+             * 在文档最前懒插入一个载体空块后再落焦，见 [BodyBlocksController.focusBodyFirstLine]）。
+             *
+             * 三条路径共用本函数：硬键盘回车（onPreviewKeyEvent 拦截）、
+             * 软键盘换行（IME commitText("\n")，靠文本变更检测兜住）、多行粘贴。
+             */
+            fun moveCaretToBodyHead() {
+                bodyBlocks.focusBodyFirstLine()
+            }
+
+            /**
              * 单向同步：viewModel.title → state（loadInspiration / 外部 setTitle 时回填）。
              * 仅在「文本真的不一致」且「用户当前没有正在选择的选区」时才 setText：
              * - loadInspiration / 语音回填时选区是折叠的，正常写入；
@@ -1562,9 +1613,27 @@ fun InspirationEditScreen(
              * 仅文本变化才上送，且本方向只调用 setTitleWithRecommendation、绝不触碰选区，
              * 因此选区伸缩不会触发、也不会破坏用户正在进行的框选（选区零干扰）。
              * 标题为纯文本无背景色 span，选区变化不会重建 annotatedString，本 effect 不会在框选时重跑。
+             *
+             * v2026-09-15 追加「换行拦截」，与正文块 `\n → 拆块` 同一范式：
+             * 标题只允许单行，硬键盘回车已被 onPreviewKeyEvent 拦掉（`\n` 根本不进文本），
+             * 这里兜住另外两条会产生 `\n` 的路径——软键盘换行（IME 直接 commitText("\n")）与
+             * 多行粘贴。剥掉换行后按「本次是否只多了一个换行」区分二者：
+             * - 键盘换行 ⇒ 焦点交到正文首块首行最前（[moveCaretToBodyHead]）；
+             * - 多行粘贴 ⇒ 仅单行化，焦点留在标题（用户仍在标题里编辑）。
+             *
+             * 注意：本分支必须先于常规同步 return，绝不能把带换行的文本写进 ViewModel.title。
              */
             LaunchedEffect(titleRichTextState.annotatedString) {
                 val newText = titleRichTextState.annotatedString.text
+                val previousText = lastObservedTitleText.value
+                lastObservedTitleText.value = newText
+                if (!isLocked && newText.contains('\n')) {
+                    /** 只多了一个换行（其余字符与上一次完全一致）⇒ 判定为键盘换行 */
+                    val isKeyboardNewline = newText.replace("\n", "") == previousText
+                    collapseTitleNewlines(newText)
+                    if (isKeyboardNewline) moveCaretToBodyHead()
+                    return@LaunchedEffect
+                }
                 if (newText != title && !isLocked) {
                     viewModel.setTitleWithRecommendation(newText)
                 }
@@ -1574,6 +1643,26 @@ fun InspirationEditScreen(
                 state = titleRichTextState,
                 modifier = Modifier
                     .fillMaxWidth()
+                    /**
+                     * 回车即进正文（v2026-09-15）：标题是单行输入，硬键盘回车 / 小键盘回车
+                     * 直接吞掉（换行符根本不进标题文本），并把焦点交到正文首块首行最前面。
+                     *
+                     * 与块级编辑器同一范式：onPreviewKeyEvent 在按键下发阶段**先于**输入框被调用，
+                     * 返回 true 即消费事件、阻止输入框插入换行。软键盘换行走 IME commitText("\n")，
+                     * 拿不到按键事件，由上方 annotatedString 观察者的换行拦截兜住——
+                     * 两条通道最终都汇到 [moveCaretToBodyHead]，行为一致。
+                     */
+                    .onPreviewKeyEvent { keyEvent ->
+                        if (keyEvent.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        if (isLocked) return@onPreviewKeyEvent false
+                        when (keyEvent.key) {
+                            Key.Enter, Key.NumPadEnter -> {
+                                moveCaretToBodyHead()
+                                true
+                            }
+                            else -> false
+                        }
+                    }
                     /**
                      * 按下即收起系统浮动工具栏（v2026-09-09）：
                      * 长按标题弹出含"全选"的浮动工具栏后，再次轻点标题行即隐藏工具栏。

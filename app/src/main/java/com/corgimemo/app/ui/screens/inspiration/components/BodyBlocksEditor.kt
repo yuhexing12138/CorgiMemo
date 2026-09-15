@@ -3606,6 +3606,39 @@ class BodyBlocksController(
         applyFocusAndCursor(firstText, 0)
     }
 
+    /**
+     * 「标题区换行」的落点入口（v2026-09-15）：把光标交到**正文首块的首行最前面**。
+     *
+     * 标题是单行输入，用户在标题里换行时不该在标题内产生第二行，而应直接进入正文书写，
+     * 故由编辑页在换行时调用本方法（硬键盘回车经 `onPreviewKeyEvent` 拦截、
+     * 软键盘换行与多行粘贴经标题文本变更检测兜住）。
+     *
+     * 落点分两种情形——首图前默认没有载体空块（懒插入改版），首块是图片时无法在
+     * 「正文最前面」落笔，所以要新建一个空块：
+     * - 首块是 Text 块 → 落焦到它的**内容起点**（见下），保证落下去就能直接打字；
+     * - 首块是图片 / 分割线等**不可输入块** → 复用 [insertEdgeSeparator] 在文档最前插入
+     *   一个载体空块并落焦（自带幂等守卫 + 一步可撤销；载体一有内容即自动降级为普通块）。
+     *
+     * **落点必须是「内容起点」而不是 raw 0**（v2026-09-15）：库里列表 marker（`• ` / `1. `）
+     * 与空块的 ZWSP 占位都是**内联文本**，raw 0 落在它们**之前**——光标画在那儿与
+     * 内容起点视觉无差别，但一打字就会插到 marker 左边，得到 `a• ` / `a\u200B` 这类坏结构：
+     * - 逻辑空块（`text` 以 ZWSP 开头）→ 越过 ZWSP，落 1（与块内 ZWSP 维护兜底同值，显式写可免一次矫正）；
+     * - 列表块 → 交给 [refocusListBlock] 用 marker 前缀反推的精确落点（非列表块内部直接跳过）；
+     * - 其余 → raw 0 即内容起点。
+     */
+    fun focusBodyFirstLine() {
+        val first = blocks.firstOrNull()
+        if (first !is BodyBlock.Text) {
+            /** 图片 / 分割线：在 index 0 懒插入载体空块（其内部已写到 pendingFocus，下一帧落焦） */
+            insertEdgeSeparator(head = true)
+            return
+        }
+        val text = first.state.annotatedString.text
+        applyFocusAndCursor(first, if (text.startsWith(ZWSP)) 1 else 0)
+        /** 列表块：marker 之后才是内容起点（覆盖刚写入的 0；非列表块不进任何分支） */
+        refocusListBlock(first.id)
+    }
+
     // ---------- 删除 / 合并 ----------
 
     /**
