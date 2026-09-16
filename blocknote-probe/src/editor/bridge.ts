@@ -48,7 +48,7 @@ declare global {
     /** Kotlin 注入的原生桥（真机环境存在；dev/浏览器环境缺失） */
     AndroidBridge?: { postMessage(json: string): void };
     /** JS 侧下行消息宿主（Kotlin evaluateJavascript 调用入口） */
-    BlockNoteEditorHost?: { onMessage(json: string): void };
+    BlockNoteEditorHost?: { onMessage(raw: unknown): void };
   }
 }
 
@@ -68,12 +68,14 @@ export function sendUp(msg: UpMessage): void {
   }
 }
 
-/** 绑定下行消息处理器（幂等：重复绑定覆盖前一次） */
+/** 绑定下行消息处理器（幂等：重复绑定覆盖前一次）。
+ *  raw 兼容两种形态：Kotlin evaluateJavascript 注入的「对象字面量」（已是对象）
+ *  与字符串 JSON——typeof 判别后再走解析，避免 "[object Object]" 二次解析错误。 */
 export function bindDown(handler: (msg: DownMessage) => void): void {
   window.BlockNoteEditorHost = {
-    onMessage: (json: string) => {
+    onMessage: (raw: unknown) => {
       try {
-        const msg = JSON.parse(json) as DownMessage;
+        const msg = (typeof raw === "string" ? JSON.parse(raw) : raw) as DownMessage;
         handler(msg);
       } catch (e) {
         sendUp({ type: "error", message: `bad down message: ${String(e)}` });
