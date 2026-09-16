@@ -1,0 +1,112 @@
+import { describe, it, expect, beforeAll } from "vitest";
+import { BlockNoteEditor } from "@blocknote/core";
+import { mdToBlocks, blocksToMd, EMPTY_BLOCK_PLACEHOLDER } from "../../src/editor/markdown/converter";
+
+/** 用户指定的主样本：一段关于秋天的描述（含标题/列表/任务/粗体/引用/分割线三样式） */
+const AUTUMN_MD = `# 秋日短笺
+
+清晨推开窗，桂花香先一步涌进来，**深秋就这样毫无预兆地到了**。院里的银杏一夜之间黄透，风一过，叶子像被谁撒下的金箔，铺满整条小径。
+
+- 上午：整理相册，挑出去年秋天的照片
+- 下午：去郊外看红叶
+  - 带上新的广角镜头
+  - 记得穿防滑的鞋
+
+- [x] 把落叶扫进花坛
+- [ ] 给远方的朋友寄一张明信片
+
+---
+
+*** wavy
+
+--- dashed
+
+午后的阳光变得很低，斜斜地穿过纱帘，在木地板上投下一格一格的光斑。猫睡在光斑里，尾巴偶尔动一动，像在替这个季节打着拍子。
+
+> 秋天不是结束，而是一种温柔的收藏。
+`;
+
+let editor: any;
+
+beforeAll(async () => {
+  editor = BlockNoteEditor.create();
+});
+
+describe("markdown 转换层：mdToBlocks", () => {
+  it("秋天描述样本可解析且块数合理", async () => {
+    const blocks = await mdToBlocks(editor, AUTUMN_MD);
+    expect(blocks.length).toBeGreaterThan(8);
+  });
+
+  it("标题块解析（heading level 1）", async () => {
+    const blocks = await mdToBlocks(editor, AUTUMN_MD);
+    const heading = blocks.find((b) => b.type === "heading");
+    expect(heading).toBeTruthy();
+    expect(heading.props.level).toBe(1);
+  });
+
+  it("任务项勾选态保留（一勾一未勾）", async () => {
+    const blocks = await mdToBlocks(editor, AUTUMN_MD);
+    const checks = blocks.filter((b) => b.type === "checkListItem");
+    expect(checks).toHaveLength(2);
+    expect(checks[0].props.checked).toBe(true);
+    expect(checks[1].props.checked).toBe(false);
+  });
+
+  it("分割线：内置 solid + 样式 wavy/dashed 全部就位", async () => {
+    const blocks = await mdToBlocks(editor, AUTUMN_MD);
+    expect(blocks.some((b) => b.type === "divider")).toBe(true);
+    const styled = blocks.filter((b) => b.type === "dividerStyled");
+    expect(styled.map((b) => b.props.style).sort()).toEqual(["dashed", "wavy"]);
+  });
+
+  it("引用块解析", async () => {
+    const blocks = await mdToBlocks(editor, AUTUMN_MD);
+    expect(blocks.some((b) => b.type === "quote")).toBe(true);
+  });
+
+  it("正文关键词保留（桂花香/金箔）", async () => {
+    const blocks = await mdToBlocks(editor, AUTUMN_MD);
+    const allText = JSON.stringify(blocks);
+    expect(allText).toContain("桂花香");
+    expect(allText).toContain("金箔");
+  });
+
+  it("载体空块占位行（纯 NBSP 行）被剥离", async () => {
+    const md = `第一段\n${EMPTY_BLOCK_PLACEHOLDER}\n第二段`;
+    const blocks = await mdToBlocks(editor, md);
+    const nbSpBlock = blocks.find((b) => JSON.stringify(b).includes("\u00A0"));
+    expect(nbSpBlock).toBeUndefined();
+  });
+});
+
+describe("markdown 转换层：round-trip 往返", () => {
+  it("秋天样本：保存→回读，分割线样式与任务勾选语义等价", async () => {
+    const blocks1 = await mdToBlocks(editor, AUTUMN_MD);
+    const md2 = blocksToMd(editor, blocks1);
+    const blocks2 = await mdToBlocks(editor, md2);
+
+    // 分割线样式集合等价（内置 divider 数量 + 样式化分割线集合）
+    const div1 = {
+      builtin: blocks1.filter((b) => b.type === "divider").length,
+      styled: blocks1.filter((b) => b.type === "dividerStyled").map((b) => b.props.style).sort(),
+    };
+    const div2 = {
+      builtin: blocks2.filter((b) => b.type === "divider").length,
+      styled: blocks2.filter((b) => b.type === "dividerStyled").map((b) => b.props.style).sort(),
+    };
+    expect(div2).toEqual(div1);
+
+    // 任务勾选等价
+    const checks2 = blocks2.filter((b) => b.type === "checkListItem").map((b) => b.props.checked);
+    expect(checks2).toEqual([true, false]);
+
+    // 正文关键词仍在
+    expect(JSON.stringify(blocks2)).toContain("桂花香");
+  });
+
+  it("空文档：不抛错", async () => {
+    const blocks = await mdToBlocks(editor, "");
+    expect(Array.isArray(blocks)).toBe(true);
+  });
+});

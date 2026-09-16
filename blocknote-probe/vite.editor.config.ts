@@ -2,19 +2,12 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
-/**
- * 探针/回归页构建（probe/index.html）
- * 正式编辑器见 vite.editor.config.ts（两入口与 inlineDynamicImports 不兼容，分两次构建）
- */
+/** 正式编辑器构建（editor/index.html），容器加载 assets/blocknote-web/editor/index.html */
 export default defineConfig({
   plugins: [react(), viteSingleFile()],
   build: {
-    outDir: "../app/src/main/assets/blocknote-web/probe",
+    outDir: "../app/src/main/assets/blocknote-web/editor",
     emptyOutDir: true,
     assetsInlineLimit: 100000000,
-  },
-  preview: {
-    port: 4173,
-    strictPort: true,
   },
 });

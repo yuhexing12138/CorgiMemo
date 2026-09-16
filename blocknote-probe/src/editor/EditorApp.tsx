@@ -1,0 +1,184 @@
+import "@blocknote/mantine/style.css";
+import { BlockNoteView } from "@blocknote/mantine";
+import { useCreateBlockNote } from "@blocknote/react";
+import { BlockNoteEditor } from "@blocknote/core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { editorSchema } from "./schema";
+import { bindDown, sendUp, type ThemePayload } from "./bridge";
+import { mdToBlocks, blocksToMd } from "./markdown/converter";
+import "../probe.css";
+import "./editor.css";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+/**
+ * markdown 解析专用的临时 editor 实例（模块级单例）：
+ * tryParseMarkdownToBlocks 是实例方法，正式实例要等 blocks 就绪才创建（鸡生蛋），
+ * 故用一个与正式实例同 schema 的独立实例承担解析。
+ */
+let mdLoaderEditor: any = null;
+function getMdLoader(): any {
+  if (!mdLoaderEditor) {
+    mdLoaderEditor = BlockNoteEditor.create({ schema: editorSchema as any });
+  }
+  return mdLoaderEditor;
+}
+
+/**
+ * 正式编辑器应用（P0）：
+ * - Bridge 装载：init{markdown, readOnly, theme, fontFamily} → mdToBlocks → 编辑器
+ * - 变更上行：onChange 防抖 800ms → blocksToMd → sendUp(changed)
+ * - 主题/字体：下行消息 → CSS 变量（P0 简版；字体文件流由 Kotlin shouldInterceptRequest 提供，S5）
+ * - undo/redo：JS 侧按钮（P0 就位，正式 UI 归属 P1 工具条）
+ */
+export default function EditorApp() {
+  /** init 是否已到达（到达前不挂编辑器） */
+  const [booted, setBooted] = useState(false);
+  const [initialMarkdown, setInitialMarkdown] = useState("");
+  const [readOnly, setReadOnly] = useState(false);
+  const [theme, setTheme] = useState<ThemePayload>({ dark: false, primary: "#1976d2" });
+  const [fontFamily, setFontFamily] = useState("system_default");
+
+  /** editor 实例引用（bridge 下行的 requestSave 需要） */
+  const editorRef = useRef<any>(null);
+
+  /** 变更上行（防抖 800ms） */
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pushChanged = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      try {
+        const md = blocksToMd(editor, editor.document);
+        sendUp({ type: "changed", markdown: md });
+      } catch (e: any) {
+        sendUp({ type: "error", message: `changed: ${e.message}` });
+      }
+    }, 800);
+  }, []);
+
+  // ---- Bridge 下行绑定 ----
+  useEffect(() => {
+    bindDown((msg) => {
+      switch (msg.type) {
+        case "init":
+          (async () => {
+            try {
+              setReadOnly(msg.readOnly);
+              setTheme(msg.theme);
+              setFontFamily(msg.fontFamily);
+              setInitialMarkdown(msg.markdown);
+              setBooted(true);
+            } catch (e: any) {
+              sendUp({ type: "error", message: `init: ${e.message}` });
+            }
+          })();
+          break;
+        case "setReadOnly":
+          setReadOnly(msg.readOnly);
+          break;
+        case "setTheme":
+          setTheme(msg.theme);
+          break;
+        case "setFontFamily":
+          setFontFamily(msg.fontFamily);
+          break;
+        case "requestSave":
+          pushChanged();
+          break;
+      }
+    });
+    sendUp({ type: "ready" });
+    return () => {
+      window.BlockNoteEditorHost = undefined;
+    };
+  }, [pushChanged]);
+
+  if (!booted) {
+    return <div className="editor-loading">正在装载…</div>;
+  }
+  return (
+    <EditorCore
+      initialMarkdown={initialMarkdown}
+      readOnly={readOnly}
+      theme={theme}
+      fontFamily={fontFamily}
+      onReady={(editor) => {
+        editorRef.current = editor;
+      }}
+      onChange={pushChanged}
+    />
+  );
+}
+
+/** 编辑器核心（initial 就绪后挂载，useCreateBlockNote 仅执行一次） */
+function EditorCore(props: {
+  initialMarkdown: string;
+  readOnly: boolean;
+  theme: ThemePayload;
+  fontFamily: string;
+  onReady: (editor: any) => void;
+  onChange: () => void;
+}) {
+  const [initialBlocks, setInitialBlocks] = useState<any[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // markdown → blocks（一次性；解析走模块级 loader 实例）
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const blocks = await mdToBlocks(getMdLoader(), props.initialMarkdown);
+        if (!cancelled) setInitialBlocks(blocks);
+      } catch (e: any) {
+        if (!cancelled) setLoadError(e.message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [props.initialMarkdown]);
+
+  const editor = useCreateBlockNote({
+    schema: editorSchema as any,
+    initialContent: initialBlocks ?? undefined,
+    editable: !props.readOnly,
+  });
+
+  useEffect(() => {
+    props.onReady(editor);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
+
+  if (loadError) {
+    return <div className="editor-loading">装载失败：{loadError}</div>;
+  }
+  if (initialBlocks == null) {
+    return <div className="editor-loading">正在解析正文…</div>;
+  }
+
+  return (
+    <div
+      className="editor-page"
+      style={{
+        // 字体注入：--content-font 由 setFontFamily 下行（S5 由 Kotlin 提供字体流）
+        ["--content-font" as any]:
+          props.fontFamily === "system_default" ? "system-ui" : `var(--ff-${props.fontFamily})`,
+        ["--editor-primary" as any]: props.theme.primary,
+      }}
+    >
+      <div className="editor-toolbar">
+        <button onClick={() => editor.undo()}>↶ 撤销</button>
+        <button onClick={() => editor.redo()}>↷ 重做</button>
+      </div>
+      <div style={{ fontFamily: "var(--content-font, system-ui)" }}>
+        <BlockNoteView
+          editor={editor}
+          theme={props.theme.dark ? "dark" : "light"}
+          onChange={props.onChange}
+        />
+      </div>
+    </div>
+  );
+}

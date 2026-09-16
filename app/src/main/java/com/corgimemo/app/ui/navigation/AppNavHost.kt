@@ -35,6 +35,33 @@ import com.corgimemo.app.ui.screens.date.stats.DateStatsScreen
 import com.corgimemo.app.ui.screens.common.ImagePreviewScreen
 import kotlinx.coroutines.launch
 
+/**
+ * P0 内存 mock 存储：BlockNote 编辑器（迁移 P0）的 markdown 快照。
+ * 进程级单例——页面销毁/重建后内容保留；P1-S13 接 Repository 后删除。
+ */
+object MockNoteStore {
+    /** 初始演示内容（秋天示例，覆盖标题/列表/任务/分割线样式） */
+    var markdown: String = """
+        # 秋日短笺
+
+        清晨推开窗，桂花香先一步涌进来，**深秋就这样毫无预兆地到了**。
+
+        - 上午：整理相册
+        - 下午：去郊外看红叶
+
+        - [x] 把落叶扫进花坛
+        - [ ] 给远方的朋友寄一张明信片
+
+        ---
+
+        --- dashed
+
+        --- wavy
+
+        > 秋天不是结束，而是一种温柔的收藏。
+    """.trimIndent()
+}
+
 @Composable
 fun AppNavHost(
     navController: NavHostController,
@@ -100,6 +127,18 @@ fun AppNavHost(
         /** BlockNote 探针 WebView 容器（POC 专用，adb 直达，见 Screen.BlockNoteProbe 注释） */
         composable(Screen.BlockNoteProbe.route) {
             com.corgimemo.app.ui.screens.probe.BlockNoteProbeScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        /**
+         * BlockNote 正式编辑器容器（迁移 P0，adb 直达）。
+         * P0 使用进程级内存 mock 存储（[MockNoteStore]），P1-S13 接 Repository。
+         */
+        composable(Screen.BlockNoteEditor.route) {
+            com.corgimemo.app.ui.screens.probe.BlockNoteEditorScreen(
+                initialMarkdown = MockNoteStore.markdown,
+                onSaveMarkdown = { MockNoteStore.markdown = it },
                 onBack = { navController.popBackStack() }
             )
         }

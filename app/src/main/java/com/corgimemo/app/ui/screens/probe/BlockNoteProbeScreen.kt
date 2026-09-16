@@ -131,5 +131,5 @@ private fun createProbeWebView(context: Context): WebView = WebView(context).app
             )
         }
     }
-    loadUrl("file:///android_asset/blocknote-probe/index.html")
+    loadUrl("file:///android_asset/blocknote-web/probe/index.html")
 }

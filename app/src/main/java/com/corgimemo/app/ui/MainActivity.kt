@@ -71,6 +71,7 @@ class MainActivity : ComponentActivity() {
         private const val VALUE_EDIT_TODO = "edit_todo"
         private const val VALUE_BACKUP_HISTORY = "backup_history"
         private const val VALUE_BLOCKNOTE_PROBE = "blocknote_probe"
+        private const val VALUE_BLOCKNOTE_EDITOR = "blocknote_editor"
         private const val EXTRA_TODO_ID = "extra_todo_id"
     }
 
@@ -296,6 +297,7 @@ class MainActivity : ComponentActivity() {
             }
             VALUE_BACKUP_HISTORY -> NavigationTarget.BackupHistory
             VALUE_BLOCKNOTE_PROBE -> NavigationTarget.BlockNoteProbe
+            VALUE_BLOCKNOTE_EDITOR -> NavigationTarget.BlockNoteEditor
             else -> null
         }
     }
@@ -311,6 +313,8 @@ sealed class NavigationTarget {
     object BackupHistory : NavigationTarget()
     /** BlockNote 探针 WebView 容器（POC 专用） */
     object BlockNoteProbe : NavigationTarget()
+    /** BlockNote 正式编辑器容器（迁移 P0） */
+    object BlockNoteEditor : NavigationTarget()
 }
 
 /**
@@ -420,6 +424,9 @@ private fun OnboardingRouter(
                 }
                 NavigationTarget.BlockNoteProbe -> {
                     navController.navigate(Screen.BlockNoteProbe.route)
+                }
+                NavigationTarget.BlockNoteEditor -> {
+                    navController.navigate(Screen.BlockNoteEditor.route)
                 }
                 null -> { }
             }
