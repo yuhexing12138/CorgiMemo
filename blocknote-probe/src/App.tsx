@@ -187,6 +187,8 @@ export default function App() {
         <button onClick={() => insertDivider("dashed")}>+ 虚线</button>
         <button onClick={() => insertDivider("wavy")}>+ 波浪</button>
         <button onClick={insertBigText}>+ 24px 文本</button>
+        <button onClick={() => editor.undo()}>↶ 撤销</button>
+        <button onClick={() => editor.redo()}>↷ 重做</button>
         <button onClick={run} disabled={running}>
           {running ? "自检中…" : "重新自检"}
         </button>
