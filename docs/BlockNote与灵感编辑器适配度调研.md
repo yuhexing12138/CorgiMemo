@@ -167,7 +167,19 @@
 - **自定义样式有损属实**：波浪分割线导出为 `***`（样式丢失）、fontSize 导出丢失；
 - **补偿方案已验证可行**：自定义块的 `toExternalHTML` 可输出 `<hr data-divider-style="wavy">`，`parse` 能从 data 属性回读样式——桥接层可以用「data 属性编码」实现本项目分割线样式的 markdown 往返（与本报告 §3.4 #12 的判断一致）。
 
-### 7.5 对总体结论的影响
+### 7.5 真机 POC 结果（2026-09-16，5 点清单 #1/#2/#3）
+
+| 验证项 | 结果 | 备注 |
+|---|---|---|
+| #1 移动端跨块选择 | ✅ 通过 | 长按拖拽跨段落/图片块正常，系统菜单可用（跨块选择检测面板实时显示跨块范围） |
+| #2 中文 IME | ✅ 通过 | Android 键盘走 `beforeinput insertText` 直提通道（无 DOM CompositionEvent，属正常）；候选词上屏/块结构/退格/undo 均正常 |
+| #3 软键盘 inset | ✅ 通过（**需容器 imePadding**） | 顶栏开关对照后确定：**键盘缩放开 = Compose `imePadding` 缩放容器**为正确策略；visualViewport 自适配方案弃用 |
+| #4 undo 接自定义块 | 🟡 部分（随 #2 验证） | 探针页已补 `editor.undo()/redo()` 按钮（BlockNote 默认 UI 无 undo 入口，迁移需自建 UI）；分割线/任务块参与撤销的粒度可顺手复测 |
+| #5 资产加载/冷启动 | ✅（方案性绕过） | singlefile 内联已消除 file:// CORS 风险；预热池属迁移期优化项，非决策阻塞 |
+
+**POC 结论：三个一票否决项全部通过，BlockNote 迁移技术可行性确认。** 容器策略定案（imePadding）；已知成本项新增一条：undo/redo UI 入口需自建。
+
+### 7.6 对总体结论的影响
 
 - 两条自定义 API 路径**均无阻断**，🟡 项成本估算维持；分割线方案修正为 extendBlockSpec（成本不变略降）；
 - markdown 有损需要桥接层编码补偿（已在估算内）；
