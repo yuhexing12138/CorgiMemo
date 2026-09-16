@@ -203,8 +203,11 @@ private fun downMessage(type: String, vararg fields: Pair<String, Any>): JSONObj
 
 /** 下行：Kotlin → JS（evaluateJavascript 调 Bridge 宿主） */
 private fun sendDown(webView: WebView, msg: JSONObject) {
+    Log.d(TAG, "down(${msg.optString("type")})")
     webView.evaluateJavascript("window.BlockNoteEditorHost.onMessage(${msg})", null)
 }
+
+private const val TAG = "BlockNoteEditor"
 
 /** 字体流拦截的伪域名与其路径前缀 */
 private const val FONT_HOST = "corgimemo.local"
@@ -248,10 +251,14 @@ private fun createEditorWebView(
                 /** 上行消息入口（JS→Kotlin），消息格式见 docs/bridge-protocol.md */
                 @JavascriptInterface
                 fun postMessage(json: String) {
+                    Log.d(TAG, "up(${json.take(120)})")
                     try {
                         val msg = JSONObject(json)
                         when (msg.optString("type")) {
-                            "ready" -> mainHandler.post { onReady() }
+                            "ready" -> {
+                                Log.d(TAG, "ready received → sending init")
+                                mainHandler.post { onReady() }
+                            }
                             "changed" -> {
                                 val md = msg.optString("markdown")
                                 mainHandler.post { onChanged(md) }
@@ -270,6 +277,10 @@ private fun createEditorWebView(
         )
 
         webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                Log.d(TAG, "page finished: $url")
+            }
+
             /** S5：字体流拦截——res/font 字体以流回给 WebView（字体单份存储，零体积增量） */
             override fun shouldInterceptRequest(
                 view: WebView,

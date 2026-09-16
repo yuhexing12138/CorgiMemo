@@ -62,7 +62,12 @@ export default function EditorApp() {
 
   // ---- Bridge 下行绑定 ----
   useEffect(() => {
+    // 诊断日志：确认宿主桥是否存在（真机缺失 = ready 上行走不出去）
+    // eslint-disable-next-line no-console
+    console.log("[editor] mounted, AndroidBridge =", !!window.AndroidBridge);
     bindDown((msg) => {
+      // eslint-disable-next-line no-console
+      console.log("[editor] down:", msg.type);
       switch (msg.type) {
         case "init":
           setReadOnly(msg.readOnly);
