@@ -289,11 +289,12 @@ internal val AppOrderedListStyleType: OrderedListStyleType =
 
 /**
  * 剥除"非用户可见内容"字符后取有效文本，用于空行判定 / 字数统计 / 复制全文：
- * - ZWSP：空块退格锚点；
+ * - ZWSP：空块退格锚点 + 任务列表段落的 **marker 零宽占位字符**（v2026-09-16 从
+ *   NBSP 换成 ZWSP 以消除行 0 缩进错位，见库 `TaskList.TaskListMarkerText`）——它
+ *   出现在 `annotatedString` 里（每个任务列表段一个），但不该被算进正文文本；
  * - [IMAGE_PLACEHOLDER_CHAR]：库的图片内联占位符；
- * - **NBSP（U+00A0）**：任务列表段落的 **marker 占位字符**（v2026-09-15，见库
- *   `TaskList.TaskListMarkerText`）——它出现在 `annotatedString` 里（每个任务
- *   列表段一个），但不该被算进正文文本；
+ * - **NBSP（U+00A0）**：空块的 markdown 序列化占位段（[EMPTY_BLOCK_PLACEHOLDER]）
+ *   与旧版任务列表 marker（存量文本），一并剥除；
  * - [PLAIN_INDENT_CHAR]（EM）：缩进载体。普通段落的段首缩进在 markdown 层（加载时
  *   已剥），但「相邻文本块合并」会把后块的缩进差异转写成**块内行首 EM**
  *   （v2026-09-15），故一并剥除，避免污染字数统计与空行判定。
