@@ -130,7 +130,52 @@
 
 ---
 
-## 7. 附录：数据来源
+## 7. 探针实测结果（2026-09-16 补，工程 `blocknote-probe/`）
+
+> 两个半天级探针已在真实依赖（@blocknote/* 0.52.1 + React 19 + Vite 构建）上跑通，8 项自动断言：**5 PASS / 3 INFO / 0 FAIL**。结果截图 `blocknote-probe/probe-result.png`，可复现（`npm run preview`）。
+
+### 7.1 环境实测事实（适配度报告的修订依据）
+
+| 事实 | 内容 | 对报告的影响 |
+|---|---|---|
+| **React 19 强制** | `@blocknote/mantine 0.52.1` → `@mantine/core 9.6.1` peer `react ^19.2.0`，React 18 无法安装（ERESOLVE） | WebView 内 React 栈确定为 19 |
+| **体积实测** | 主 JS 包 1,176KB（**gzip 356KB**）+ CSS 240KB（gzip 38KB）+ Inter 字体 ~390KB（可剔除） | 评估报告中「1.5–2 倍于 editor.js」的估计成立 |
+| **API 签名与文档有差异** | `createReactBlockSpec` 返回**工厂函数**需调用一次；style 的 `propSchema` 是单值 `"boolean" \| "string"`（非对象）；render 走 `contentRef`；`blocksToMarkdownLossy` 为**同步**方法 | 迁移开发需以实际类型为准，文档示例偏旧 |
+
+### 7.2 探针 1：自定义分割线块（createReactBlockSpec）——**路径通畅**
+
+| 断言 | 结果 |
+|---|---|
+| 文档结构：`dividerStyled` 块 + `props.style: "wavy"` | ✅ PASS |
+| HTML 解析：`<div data-divider-style="wavy">` → 自定义块 + 样式回读 | ✅ PASS |
+| schema 注册：blockSpecs 15 项含 `divider`（内置）+ `dividerStyled`（自定义） | ✅ PASS |
+| `<hr>` 归属 | ⚠️ INFO：`<hr />` 被**内置 divider** 解析（props={}） |
+
+**关键发现**：自定义分割线块与内置 divider 在 `<hr>` 粘贴解析上存在抢占——**迁移时的正确路径是 `extendBlockSpec` 扩展内置 divider（追加 style prop），而非新建独立块**，否则粘贴 `<hr>` 的语义分裂。这修正了本报告 §3.2 #7 原先「新建自定义块」的方案。
+
+### 7.3 探针 2：字号行内样式（Custom Styles）——**路径通畅**
+
+| 断言 | 结果 |
+|---|---|
+| 文档 JSON 序列化：`styles.fontSize = "24px"` | ✅ PASS |
+| DOM 渲染：`<span style="font-size: 24px">` | ✅ PASS |
+| schema 注册：styleSpecs 8 项含 `fontSize` | ✅ PASS |
+
+### 7.4 markdown 往返实测（INFO，桥接层设计输入）
+
+- `blocksToMarkdownLossy`（同步）工作正常：标题/任务项（`- [x]`）等常规块往返无损；
+- **自定义样式有损属实**：波浪分割线导出为 `***`（样式丢失）、fontSize 导出丢失；
+- **补偿方案已验证可行**：自定义块的 `toExternalHTML` 可输出 `<hr data-divider-style="wavy">`，`parse` 能从 data 属性回读样式——桥接层可以用「data 属性编码」实现本项目分割线样式的 markdown 往返（与本报告 §3.4 #12 的判断一致）。
+
+### 7.5 对总体结论的影响
+
+- 两条自定义 API 路径**均无阻断**，🟡 项成本估算维持；分割线方案修正为 extendBlockSpec（成本不变略降）；
+- markdown 有损需要桥接层编码补偿（已在估算内）；
+- **POC 决策逻辑不变**，5 点验证清单继续有效。
+
+---
+
+## 8. 附录：数据来源
 
 - BlockNote 官方文档：Built-in Blocks（block-types，含 divider/input rules/DefaultProps）、Custom Block Types（createReactBlockSpec：propSchema/render/toExternalHTML/parse/meta）、Document Structure（Block 模型）。
 - `@blocknote/xl-multi-column` npm 页（yarn classic）：v0.52.1（2026-07-20）、MPL-2.0 + XL GPL-3.0/PROPRIETARY、0.52.0 changelog（Yjs 解耦 withCollaboration、Vite+ 迁移、plain block content）。
