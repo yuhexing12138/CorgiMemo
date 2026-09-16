@@ -637,6 +637,15 @@ object FontCatalog {
         CHILL_LONG_CANG_KAISHU
     )
 
+    /**
+     * Bridge 字体清单：字体 id → (字重 → `R.font.*` 资源 id)。
+     * 供 BlockNote WebView 的 `shouldInterceptRequest` 字体流拦截使用（P0-S5）：
+     * JS 侧按「id + 字重」请求 `https://corgimemo.local/fonts/{id}/{weight}.ttf`，
+     * Kotlin 侧查此表命中 `openRawResource(resId)` 回流，零 APK 体积增量。
+     */
+    fun bridgeFontResMap(): Map<String, Map<Int, Int>> =
+        entries.associate { it.id to it.resByWeight }
+
     /** 全部可选「英文/数字字体」（拉丁回退层；空表示不覆盖，英文/数字走正文字体自带拉丁字形） */
     val latinEntries: List<FontEntry> = listOf(
         SPACE_GROTESK,

@@ -26,9 +26,9 @@ function getMdLoader(): any {
 
 /**
  * 正式编辑器应用（P0）：
- * - Bridge 装载：init{markdown, readOnly, theme, fontFamily} → mdToBlocks → 编辑器
+ * - Bridge 装载：init{markdown, readOnly, theme, fontFamily, fonts} → mdToBlocks → 编辑器
  * - 变更上行：onChange 防抖 800ms → blocksToMd → sendUp(changed)
- * - 主题/字体：下行消息 → CSS 变量（P0 简版；字体文件流由 Kotlin shouldInterceptRequest 提供，S5）
+ * - 主题/字体：下行消息 → CSS 变量；字体文件由 Kotlin shouldInterceptRequest 流式提供（S5）
  * - undo/redo：JS 侧按钮（P0 就位，正式 UI 归属 P1 工具条）
  */
 export default function EditorApp() {
@@ -38,6 +38,8 @@ export default function EditorApp() {
   const [readOnly, setReadOnly] = useState(false);
   const [theme, setTheme] = useState<ThemePayload>({ dark: false, primary: "#1976d2" });
   const [fontFamily, setFontFamily] = useState("system_default");
+  /** 可用字体清单（S5）：id → 字重数组 */
+  const [fontWeights, setFontWeights] = useState<Record<string, number[]>>({});
 
   /** editor 实例引用（bridge 下行的 requestSave 需要） */
   const editorRef = useRef<any>(null);
@@ -63,17 +65,16 @@ export default function EditorApp() {
     bindDown((msg) => {
       switch (msg.type) {
         case "init":
-          (async () => {
-            try {
-              setReadOnly(msg.readOnly);
-              setTheme(msg.theme);
-              setFontFamily(msg.fontFamily);
-              setInitialMarkdown(msg.markdown);
-              setBooted(true);
-            } catch (e: any) {
-              sendUp({ type: "error", message: `init: ${e.message}` });
-            }
-          })();
+          setReadOnly(msg.readOnly);
+          setTheme(msg.theme);
+          setFontFamily(msg.fontFamily);
+          if (msg.fonts) {
+            const map: Record<string, number[]> = {};
+            for (const f of msg.fonts) map[f.id] = f.weights;
+            setFontWeights(map);
+          }
+          setInitialMarkdown(msg.markdown);
+          setBooted(true);
           break;
         case "setReadOnly":
           setReadOnly(msg.readOnly);
@@ -104,6 +105,7 @@ export default function EditorApp() {
       readOnly={readOnly}
       theme={theme}
       fontFamily={fontFamily}
+      fontWeights={fontWeights}
       onReady={(editor) => {
         editorRef.current = editor;
       }}
@@ -112,17 +114,40 @@ export default function EditorApp() {
   );
 }
 
+/** 生成并注入 @font-face（字体文件走 Kotlin shouldInterceptRequest 流） */
+function applyFontFaces(fontWeights: Record<string, number[]>): void {
+  let css = "";
+  for (const [id, weights] of Object.entries(fontWeights)) {
+    for (const w of weights) {
+      css += `@font-face{font-family:"ff-${id}";src:url("https://corgimemo.local/fonts/${id}/${w}.ttf") format("truetype");font-weight:${w};font-display:swap;}\n`;
+    }
+  }
+  let style = document.getElementById("content-fonts") as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "content-fonts";
+    document.head.appendChild(style);
+  }
+  style.textContent = css;
+}
+
 /** 编辑器核心（initial 就绪后挂载，useCreateBlockNote 仅执行一次） */
 function EditorCore(props: {
   initialMarkdown: string;
   readOnly: boolean;
   theme: ThemePayload;
   fontFamily: string;
+  fontWeights: Record<string, number[]>;
   onReady: (editor: any) => void;
   onChange: () => void;
 }) {
   const [initialBlocks, setInitialBlocks] = useState<any[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // @font-face 注入（S5）
+  useEffect(() => {
+    applyFontFaces(props.fontWeights);
+  }, [props.fontWeights]);
 
   // markdown → blocks（一次性；解析走模块级 loader 实例）
   useEffect(() => {
@@ -158,14 +183,21 @@ function EditorCore(props: {
     return <div className="editor-loading">正在解析正文…</div>;
   }
 
+  // 字体栈：系统默认 → system-ui；自定义字体 → "ff-{id}"（@font-face 已注入）
+  const contentFont =
+    props.fontFamily === "system_default"
+      ? "system-ui"
+      : `"ff-${props.fontFamily}", system-ui`;
+
   return (
     <div
       className="editor-page"
       style={{
-        // 字体注入：--content-font 由 setFontFamily 下行（S5 由 Kotlin 提供字体流）
-        ["--content-font" as any]:
-          props.fontFamily === "system_default" ? "system-ui" : `var(--ff-${props.fontFamily})`,
+        ["--content-font" as any]: contentFont,
         ["--editor-primary" as any]: props.theme.primary,
+        ["--editor-bg" as any]: props.theme.dark ? "#1e1e1e" : "#ffffff",
+        ["--editor-fg" as any]: props.theme.dark ? "#e0e0e0" : "#333333",
+        ["--editor-border" as any]: props.theme.dark ? "#444444" : "#cccccc",
       }}
     >
       <div className="editor-toolbar">

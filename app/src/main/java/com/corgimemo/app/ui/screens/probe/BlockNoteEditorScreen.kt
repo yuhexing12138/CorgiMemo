@@ -2,16 +2,21 @@ package com.corgimemo.app.ui.screens.probe
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.Configuration
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,21 +42,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.corgimemo.app.ui.theme.FontCatalog
+import com.corgimemo.app.ui.theme.ThemeManager
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * BlockNote 正式编辑器容器（迁移 P0-S3）
+ * BlockNote 正式编辑器容器（迁移 P0）
  *
- * 职责（对照 docs/bridge-protocol.md v1）：
- * - 注入 AndroidBridge（JS→Kotlin 上行通道）
- * - 编辑器 ready 后下行 init{markdown, readOnly, theme, fontFamily}
- * - 收 changed 更新本地最新 markdown（防抖已在 JS 侧完成）
- * - 离开页面（onDispose）时把最新 markdown 交给 onSave（P0 内存 mock，P1-S13 接 Repository）
- * - BackHandler：返回键走 requestSave 协议后关闭
+ * 职责（对照 docs/bridge-protocol.md）：
+ * - 注入 AndroidBridge（JS→Kotlin 上行通道）；ready 后下行 init（含字体清单 fonts）
+ * - 收 changed 更新本地最新 markdown（防抖在 JS 侧）；离开页面时交给 onSave
+ * - **主题**（S6）：collect ThemeManager（深浅模式 + 六色主色），变化即下行 setTheme
+ * - **字体**（S5）：init 下行字体清单；`shouldInterceptRequest` 拦截
+ *   `https://corgimemo.local/fonts/{id}/{weight}.ttf` 并以 `openRawResource` 流式回流
+ *   （字体留在 res/font/ 单份存储，零 APK 体积增量）；setFontFamily 下行切换
  * - 容器策略：imePadding（POC 定案，见适配度报告 §7.5）
  *
- * 主题/字体的真值在 P0 阶段来自 [resolveTheme]/[resolveFontFamily] 的简化实现，
- * P1 接 ThemeManager / ContentFontManager。
+ * 入口：adb `--es navigate_to blocknote_editor`（P3 起接入正式入口与灰度开关）
  */
 @Composable
 fun BlockNoteEditorScreen(
@@ -61,7 +70,23 @@ fun BlockNoteEditorScreen(
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var ready by remember { mutableStateOf(false) }
     var latestMarkdown by remember { mutableStateOf(initialMarkdown) }
-    val context = LocalContext.current
+
+    // 主题真值（S6）：深浅模式 + 六色主色
+    val themeMode by ThemeManager.themeMode.collectAsState()
+    val themeColor by ThemeManager.themeColor.collectAsState()
+    val isDark = when (themeMode) {
+        "dark" -> true
+        "light" -> false
+        else -> isSystemInDarkTheme()
+    }
+    val primaryHex = primaryColorHex(themeColor)
+
+    /** 主题/字体变化即下行（init 由 ready 触发发全量，此处补增量同步） */
+    androidx.compose.runtime.LaunchedEffect(isDark, primaryHex) {
+        if (ready) {
+            webViewRef?.let { sendDown(it, setThemeMessage(isDark, primaryHex)) }
+        }
+    }
 
     /** 返回键：保存最新快照后关闭（changed 防抖值已持有，requestSave 作为协议兜底） */
     BackHandler {
@@ -72,7 +97,11 @@ fun BlockNoteEditorScreen(
 
     // 离开页面时保存（覆盖系统返回手势之外的销毁路径）
     DisposableEffect(Unit) {
-        onDispose { if (ready) onSaveMarkdown(latestMarkdown) }
+        onDispose {
+            if (ready) {
+                onSaveMarkdown(latestMarkdown)
+            }
+        }
     }
 
     Column(
@@ -108,18 +137,16 @@ fun BlockNoteEditorScreen(
                         context = appContext,
                         onReady = {
                             ready = true
-                            // ready 后下行 init（主题/字体 P0 用简化真值）
                             webViewRef?.let { wv ->
                                 val init = downMessage("init")
                                 init.put("markdown", initialMarkdown)
                                 init.put("readOnly", false)
                                 init.put(
                                     "theme",
-                                    JSONObject()
-                                        .put("dark", resolveIsDarkTheme(appContext))
-                                        .put("primary", "#1976d2")
+                                    JSONObject().put("dark", isDark).put("primary", primaryHex)
                                 )
-                                init.put("fontFamily", resolveFontFamily())
+                                init.put("fontFamily", "system_default")
+                                init.put("fonts", fontsPayload())
                                 sendDown(wv, init)
                             }
                         },
@@ -137,15 +164,33 @@ fun BlockNoteEditorScreen(
     }
 }
 
-/** P0 简化：跟随系统深色模式（P1 接 ThemeManager 六色主题） */
-private fun resolveIsDarkTheme(context: Context): Boolean {
-    val mode = context.resources.configuration.uiMode and
-        android.content.res.Configuration.UI_MODE_NIGHT_MASK
-    return mode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+/** 六色主题 key → 主色 hex（与 Color.kt 的 ThemePresets 表一致；未知 key 兜底暖阳橙） */
+private fun primaryColorHex(key: String): String = when (key) {
+    "pink" -> "#FFB5C2"
+    "green" -> "#7EC8A0"
+    "blue" -> "#7EB8DA"
+    "purple" -> "#B8A0D4"
+    "brown" -> "#C4A882"
+    else -> "#FF9A5C" // orange + 兜底
 }
 
-/** P0 简化：固定系统默认字体（P1 接 ContentFontManager + 字体流拦截） */
-private fun resolveFontFamily(): String = "system_default"
+/** 字体清单载荷：{ 字体id: [字重...] }（JS 侧据此生成 @font-face） */
+private fun fontsPayload(): JSONArray {
+    val arr = JSONArray()
+    FontCatalog.bridgeFontResMap().forEach { (id, weights) ->
+        if (weights.isNotEmpty()) {
+            val weightArr = JSONArray()
+            weights.keys.sorted().forEach { weightArr.put(it) }
+            arr.put(JSONObject().put("id", id).put("weights", weightArr))
+        }
+    }
+    return arr
+}
+
+/** setTheme 下行消息 */
+private fun setThemeMessage(dark: Boolean, primary: String): JSONObject =
+    downMessage("setTheme")
+        .put("theme", JSONObject().put("dark", dark).put("primary", primary))
 
 /** 组装下行消息（键值对 → JSONObject） */
 private fun downMessage(type: String, vararg fields: Pair<String, Any>): JSONObject {
@@ -160,14 +205,23 @@ private fun sendDown(webView: WebView, msg: JSONObject) {
     webView.evaluateJavascript("window.BlockNoteEditorHost.onMessage(${msg})", null)
 }
 
-/** 创建编辑器 WebView：Bridge 注入 + 错误日志（S5 将在此扩展 shouldInterceptRequest 字体流拦截） */
+/** 字体流拦截的伪域名与其路径前缀 */
+private const val FONT_HOST = "corgimemo.local"
+private const val FONT_PATH_PREFIX = "/fonts/"
+
+/**
+ * 创建编辑器 WebView：
+ * - Bridge 注入 + 错误日志
+ * - 字体流拦截（S5）：命中伪域名请求时按 id+字重查 resId，openRawResource 流式回流
+ */
 @SuppressLint("SetJavaScriptEnabled")
 private fun createEditorWebView(
     context: Context,
     onReady: () -> Unit,
     onChanged: (markdown: String) -> Unit
 ): WebView {
-    val mainHandler = android.os.Handler(context.mainLooper)
+    val mainHandler = Handler(Looper.getMainLooper())
+    val appContext = context.applicationContext
 
     val webView = WebView(context).apply {
         layoutParams = ViewGroup.LayoutParams(
@@ -215,6 +269,30 @@ private fun createEditorWebView(
         )
 
         webViewClient = object : WebViewClient() {
+            /** S5：字体流拦截——res/font 字体以流回给 WebView（字体单份存储，零体积增量） */
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest?
+            ): WebResourceResponse? {
+                val url = request?.url ?: return null
+                if (url.host != FONT_HOST) return null
+                val path = url.path ?: return null
+                if (!path.startsWith(FONT_PATH_PREFIX) || !path.endsWith(".ttf")) return null
+                val segments = path.removePrefix(FONT_PATH_PREFIX)
+                    .removeSuffix(".ttf").split("/")
+                if (segments.size != 2) return null
+                val (fontId, weightStr) = segments
+                val weight = weightStr.toIntOrNull() ?: return null
+                val resId = FontCatalog.bridgeFontResMap()[fontId]?.get(weight) ?: return null
+                return try {
+                    // WebResourceResponse 接管流生命周期，由框架负责关闭
+                    WebResourceResponse("font/ttf", null, appContext.resources.openRawResource(resId))
+                } catch (e: Exception) {
+                    Log.e("BlockNoteEditor", "font stream fail: $fontId/$weight", e)
+                    null
+                }
+            }
+
             override fun onReceivedError(
                 view: WebView,
                 request: WebResourceRequest?,

@@ -27,6 +27,8 @@ export type DownMessage =
       theme: ThemePayload;
       /** 字体 id（FontCatalog.id；"system_default" = 系统默认） */
       fontFamily: string;
+      /** 可用字体清单（S5）：JS 据此生成 @font-face，字体文件走 shouldInterceptRequest 流 */
+      fonts?: Array<{ id: string; weights: number[] }>;
     }
   | { type: "setReadOnly"; readOnly: boolean }
   | { type: "setTheme"; theme: ThemePayload }

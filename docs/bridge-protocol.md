@@ -16,7 +16,7 @@
 
 | type | 载荷 | 说明 |
 |---|---|---|
-| `init` | `{ markdown, readOnly, theme, fontFamily }` | 编辑器装载；`markdown` 为 GFM 文本；`theme = { dark: bool, primary: hex }`；`fontFamily` 为 FontCatalog.id（`system_default` = 系统默认） |
+| `init` | `{ markdown, readOnly, theme, fontFamily, fonts }` | 编辑器装载；`markdown` 为 GFM 文本；`theme = { dark: bool, primary: hex }`；`fontFamily` 为 FontCatalog.id（`system_default` = 系统默认）；`fonts = [{ id, weights: number[] }]` 为可用字体清单（v1.1，JS 据此生成 @font-face，文件走 shouldInterceptRequest 流） |
 | `setReadOnly` | `{ readOnly }` | 只读切换 |
 | `setTheme` | `{ theme }` | 主题切换（P1 扩展六色主题） |
 | `setFontFamily` | `{ fontFamily }` | 内容字体切换（配合 shouldInterceptRequest 字体流） |

@@ -14,9 +14,10 @@
   padding: 6px 12px;
   font-size: 13px;
   cursor: pointer;
-  border: 1px solid #ccc;
+  border: 1px solid var(--editor-border, #ccc);
   border-radius: 6px;
-  background: #fff;
+  background: var(--editor-bg, #fff);
+  color: var(--editor-fg, #333);
 }
 
 .editor-loading {
