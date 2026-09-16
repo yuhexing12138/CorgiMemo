@@ -28,3 +28,9 @@
   color: #888;
   font-size: 14px;
 }
+
+/* S9：任务勾选后文字视觉降级（对齐 Compose 版勾选态 40% 降级语义）
+   依赖 :has —— Android WebView Chromium 105+（2022）原生支持 */
+.bn-block-content[data-content-type="checkListItem"]:has(input[type="checkbox"]:checked) .bn-inline-content {
+  opacity: 0.45;
+}

@@ -1,6 +1,12 @@
 import "@blocknote/mantine/style.css";
 import { BlockNoteView } from "@blocknote/mantine";
-import { useCreateBlockNote } from "@blocknote/react";
+import {
+  FormattingToolbar,
+  FormattingToolbarController,
+  useBlockNoteEditor,
+  useComponentsContext,
+  useCreateBlockNote,
+} from "@blocknote/react";
 import { BlockNoteEditor } from "@blocknote/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { editorSchema } from "./schema";
@@ -22,6 +28,112 @@ function getMdLoader(): any {
     mdLoaderEditor = BlockNoteEditor.create({ schema: editorSchema as any });
   }
   return mdLoaderEditor;
+}
+
+/** 字号循环序列（S8）：点击依次加大，末档点击清除 */
+const FONT_SIZE_CYCLE = ["14px", "16px", "18px", "20px", "24px", "28px", "32px"];
+/** 文字颜色循环序列（S8）：BlockNote 内置 textColor 值名 */
+const TEXT_COLOR_CYCLE = ["red", "orange", "yellow", "green", "blue", "purple"];
+
+/** 字号循环应用到当前选区：无 → 最小 → 递增 → 末档清除（S8） */
+function cycleFontSize(editor: any): void {
+  const cur = editor.getActiveStyles()?.fontSize as string | undefined;
+  if (!cur) {
+    editor.addStyles({ fontSize: FONT_SIZE_CYCLE[0] });
+    return;
+  }
+  const i = FONT_SIZE_CYCLE.indexOf(cur);
+  if (i === -1 || i === FONT_SIZE_CYCLE.length - 1) {
+    editor.removeStyles({ fontSize: cur });
+    return;
+  }
+  editor.addStyles({ fontSize: FONT_SIZE_CYCLE[i + 1] });
+}
+
+/** 文字颜色循环应用到当前选区：默认 → 红 → … → 紫 → 清除（S8） */
+function cycleTextColor(editor: any): void {
+  const cur = editor.getActiveStyles()?.textColor as string | undefined;
+  if (!cur || cur === "default") {
+    editor.addStyles({ textColor: TEXT_COLOR_CYCLE[0] });
+    return;
+  }
+  const i = TEXT_COLOR_CYCLE.indexOf(cur);
+  if (i === -1 || i === TEXT_COLOR_CYCLE.length - 1) {
+    editor.removeStyles({ textColor: "default" });
+    return;
+  }
+  editor.addStyles({ textColor: TEXT_COLOR_CYCLE[i + 1] });
+}
+
+/**
+ * 长按连发按钮（S12）：按下立即执行一次，450ms 后每 150ms 重复；抬起/移出停止。
+ * 用于 undo/redo——软键盘没有 Ctrl+Z，长按连退是移动端刚需。
+ */
+function AutoRepeatButton(props: { label: string; title: string; onAction: () => void }) {
+  const timers = useRef<{ delay?: ReturnType<typeof setTimeout>; rep?: ReturnType<typeof setInterval> }>({});
+  const start = () => {
+    props.onAction();
+    timers.current.delay = setTimeout(() => {
+      timers.current.rep = setInterval(props.onAction, 150);
+    }, 450);
+  };
+  const stop = () => {
+    if (timers.current.delay) clearTimeout(timers.current.delay);
+    if (timers.current.rep) clearInterval(timers.current.rep);
+    timers.current = {};
+  };
+  return (
+    <button
+      title={props.title}
+      onPointerDown={start}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onPointerCancel={stop}
+    >
+      {props.label}
+    </button>
+  );
+}
+
+/** S8：字号循环按钮（格式工具栏内）——无 → 最小 → 递增 → 末档清除 */
+function FontSizeButton() {
+  const Components = useComponentsContext()!;
+  const editor = useBlockNoteEditor<any, any, any>();
+  const cur = editor.getActiveStyles()?.fontSize as string | undefined;
+  return (
+    <Components.FormattingToolbar.Button
+      className="bn-button"
+      onClick={() => cycleFontSize(editor)}
+      label={`字号 ${cur ?? "默认"}`}
+      mainTooltip="字号（点击切换，末档清除）"
+    >
+      <span style={{ fontSize: 13, fontWeight: 600 }}>Aa</span>
+    </Components.FormattingToolbar.Button>
+  );
+}
+
+/** S8：文字颜色循环按钮（格式工具栏内）——默认 → 红 → … → 紫 → 清除 */
+function TextColorButton() {
+  const Components = useComponentsContext()!;
+  const editor = useBlockNoteEditor<any, any, any>();
+  const cur = editor.getActiveStyles()?.textColor as string | undefined;
+  return (
+    <Components.FormattingToolbar.Button
+      className="bn-button"
+      onClick={() => cycleTextColor(editor)}
+      label={`文字颜色 ${cur ?? "默认"}`}
+      mainTooltip="文字颜色（点击切换，末档清除）"
+    >
+      <span
+        style={{
+          color: cur && cur !== "default" ? cur : "var(--editor-primary, #1976d2)",
+          fontWeight: 700,
+        }}
+      >
+        A
+      </span>
+    </Components.FormattingToolbar.Button>
+  );
 }
 
 /** 生成并注入 @font-face（字体文件走 Kotlin shouldInterceptRequest 流） */
@@ -211,15 +323,26 @@ function EditorCore(props: {
       }}
     >
       <div className="editor-toolbar">
-        <button onClick={() => editor.undo()}>↶ 撤销</button>
-        <button onClick={() => editor.redo()}>↷ 重做</button>
+        <AutoRepeatButton label="↶ 撤销" title="撤销（长按连发）" onAction={() => editor.undo()} />
+        <AutoRepeatButton label="↷ 重做" title="重做（长按连发）" onAction={() => editor.redo()} />
       </div>
       <div style={{ fontFamily: "var(--content-font, system-ui)" }}>
         <BlockNoteView
           editor={editor}
           theme={props.theme.dark ? "dark" : "light"}
+          formattingToolbar={false}
           onChange={props.onChange}
-        />
+        >
+          <FormattingToolbarController
+            formattingToolbar={() => (
+              <>
+                <FormattingToolbar />
+                <FontSizeButton />
+                <TextColorButton />
+              </>
+            )}
+          />
+        </BlockNoteView>
       </div>
     </div>
   );
