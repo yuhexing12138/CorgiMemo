@@ -71,8 +71,14 @@ export default function App() {
 
   // ---- 真机验证面板状态 ----
   const [selectionText, setSelectionText] = useState("（无选区）");
-  const [compositionText, setCompositionText] = useState("（无组合输入）");
+  const [inputLog, setInputLog] = useState<string[]>([]);
   const [viewportText, setViewportText] = useState("（visualViewport 待监听）");
+
+  /** 追加一条输入事件（保留最近 6 条） */
+  const pushInput = useCallback((line: string) => {
+    const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    setInputLog((prev) => [`${ts}  ${line}`, ...prev].slice(0, 6));
+  }, []);
 
   /** 运行自检并落状态 */
   const run = useCallback(async () => {
@@ -107,23 +113,24 @@ export default function App() {
     return () => document.removeEventListener("selectionchange", onSel);
   }, []);
 
-  // ---- composition 事件（组合输入检测） ----
+  // ---- 输入事件流（双通道）：composition（桌面/iOS 常见）+ beforeinput（Android 实际通道） ----
   useEffect(() => {
-    const onStart = (e: CompositionEvent) =>
-      setCompositionText(`组合中：「${e.data}」（此间输入不触发块更新）`);
-    const onUpdate = (e: CompositionEvent) =>
-      setCompositionText(`组合中：「${e.data}」`);
-    const onEnd = (e: CompositionEvent) =>
-      setCompositionText(`组合结束：「${e.data}」→ 已写入文档`);
+    const onStart = (e: CompositionEvent) => pushInput(`compositionstart "${e.data}"`);
+    const onUpdate = (e: CompositionEvent) => pushInput(`compositionupdate "${e.data}"`);
+    const onEnd = (e: CompositionEvent) => pushInput(`compositionend "${e.data}"`);
+    const onBeforeInput = (e: InputEvent) =>
+      pushInput(`beforeinput ${e.inputType} "${(e.data ?? "").slice(0, 12)}"`);
     document.addEventListener("compositionstart", onStart);
     document.addEventListener("compositionupdate", onUpdate);
     document.addEventListener("compositionend", onEnd);
+    document.addEventListener("beforeinput", onBeforeInput);
     return () => {
       document.removeEventListener("compositionstart", onStart);
       document.removeEventListener("compositionupdate", onUpdate);
       document.removeEventListener("compositionend", onEnd);
+      document.removeEventListener("beforeinput", onBeforeInput);
     };
-  }, []);
+  }, [pushInput]);
 
   // ---- visualViewport（软键盘 inset 观察） ----
   const vvRef = useRef(false);
@@ -196,10 +203,14 @@ export default function App() {
         </div>
         <div className="probe-check probe-info">
           <div className="probe-check-head">
-            <span className="probe-badge">IME</span>
-            <span className="probe-check-name">中文组合输入</span>
+            <span className="probe-badge">输入</span>
+            <span className="probe-check-name">输入事件流（Android 键盘多走 beforeinput，无 composition 属正常）</span>
           </div>
-          <pre className="probe-detail">{compositionText}</pre>
+          <pre className="probe-detail">
+            {inputLog.length > 0
+              ? inputLog.join("\n")
+              : "（在编辑器里打字后，这里会滚动显示输入事件）"}
+          </pre>
         </div>
         <div className="probe-check probe-info">
           <div className="probe-check-head">
