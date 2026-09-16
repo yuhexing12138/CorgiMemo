@@ -918,8 +918,14 @@ internal fun parseDividerStyle(para: String): DividerStyle? = when (para.trim())
  */
 private val TASK_LIST_MD_REGEX = Regex("""^\s*(- \[[ xX]\] )(.*)$""", RegexOption.DOT_MATCHES_ALL)
 
-/** 未勾选任务列表项的 markdown 前缀（与库的编码形态一致，v2026-09-15） */
-internal const val TASK_LIST_MD_UNCHECKED = "- [ ] "
+/** 未勾选任务列表项的 markdown 前缀（与库的编码形态一致，v2026-09-15）。
+ *
+ * v2026-09-16：尾随一个 **NBSP**——children 全空 + 零宽 marker 时行宽为 0，光标
+ * 定位退化到行盒左缘（跑到勾选框左侧，真机实测）；NBSP 有宽度且不可见，把光标
+ * 撑到框右侧、与上下文对齐。App 字数统计（isSkipChar）/库 trim 都不剥它，随
+ * markdown 往返稳定；正式内容由用户输入后插在 NBSP 之前/之后均可。
+ */
+internal const val TASK_LIST_MD_UNCHECKED = "- [ ] \u00A0"
 
 /** 是否为任务列表段（`- [ ] ` / `- [x] ` 开头，v2026-09-15 加载路径用） */
 internal fun isTaskListMd(para: String): Boolean = TASK_LIST_MD_REGEX.containsMatchIn(para)
@@ -941,10 +947,14 @@ internal fun normalizeTaskListMd(para: String): String {
     val body = match.groupValues[2]
 
     val indentLevel = body.countLeadingPlainIndentChars() / PLAIN_INDENT_STEP + 1
-    val content = if (indentLevel > 1) body.dropLeadingPlainIndent() else body
+    /** 剥历史数据尾部 NBSP（v2026-09-16 空任务项光标占位），内容非空时保持干净 */
+    val content = (if (indentLevel > 1) body.dropLeadingPlainIndent() else body)
+        .trimEnd('\u00A0')
 
-    /** 层级空格前缀：库解码端按「源码行首缩进 ÷ 2」还原 level（与列表同款） */
-    return "  ".repeat(indentLevel - 1) + prefix + content
+    /** 层级空格前缀：库解码端按「源码行首缩进 ÷ 2」还原 level（与列表同款）。
+     * 空任务项补回 NBSP（v2026-09-16，见 [TASK_LIST_MD_UNCHECKED]——光标占位）。 */
+    return "  ".repeat(indentLevel - 1) + prefix +
+        if (content.isEmpty()) "\u00A0" else content
 }
 
 /**
@@ -2657,7 +2667,8 @@ class BodyBlocksController(
             removedSpecs = emptyList(),
             insertedSpecs = listOf(taskListSpec),
             focusBefore = currentFocusSpec(),
-            focusAfter = FocusSpec(taskListSpec.id, 0),
+            /** 光标落 NBSP 之后（offset 1）：框右侧、与上文对齐（v2026-09-16） */
+            focusAfter = FocusSpec(taskListSpec.id, 1),
         )
     }
 
