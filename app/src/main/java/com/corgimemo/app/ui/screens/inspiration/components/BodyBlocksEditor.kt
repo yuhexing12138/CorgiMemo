@@ -2612,11 +2612,15 @@ class BodyBlocksController(
     // ---------- 任务列表 / 复选框（v2026-09-15：改由库的段落类型承载） ----------
 
     /**
-     * 工具栏「复选框」按钮入口：对聚焦块切换**任务列表**段落类型。
+     * 工具栏「复选框」按钮入口：对聚焦块光标所在**行**切换任务行标记。
      *
-     * v2026-09-15 改道：不再做块级 `checked` 翻转与块重建，而是调库的
-     * `RichTextState.toggleTaskList()`——段落类型在库内切换，marker、层级缩进、
-     * 勾选框绘制与勾选态文字降级全部由库同步；块对象、块内 history 与光标完全不动。
+     * v2026-09-15 改道：块级 `checked` → 库的段落类型（marker、层级缩进、勾选框
+     * 绘制与文字降级全由库同步；块对象、块内 history 与光标完全不动）。
+     * v2026-09-16「仅光标行转换」：调库的
+     * `RichTextState.toggleTaskListAtTextOffset(光标)`——普通多行段落里**只有光标行**
+     * 变任务行（段落切为 TaskList + `taskLines` 单行集合，**不拆段**），其余行保持
+     * 普通文本（无勾选框、markdown 裸行）；再点一次取消该行（段落因此无任务行时
+     * 整段退回 Default）。纯任务块（段落级）回车续行仍是全行任务项（旧行为）。
      *
      * 未聚焦 / 聚焦块是图片或分割线（不持有光标）→ 尾插一个任务列表空项
      * （[buildAppendTaskListCommand]，焦点落到新项）。
@@ -2632,18 +2636,7 @@ class BodyBlocksController(
             return
         }
 
-        /**
-         * v2026-09-15：整块切换任务列表（撤销"拆行"方案）；v2026-09-16 随库
-         * 「TaskList 行级渲染改造」定稿。
-         *
-         * 拆行方案（多行块按 \n 拆成每行一个任务列表块）已被否决：拆行后每行一个
-         * 独立 TextField，**无法跨块选取文本复制**——这正是"取消拆块"要解决的问题。
-         *
-         * 当前语义：点复选框 = 整块转为任务列表（单段落 + 段内 `\n`）。块内每行的
-         * 勾选框绘制与**行级**勾选状态全由库承载（`RichSpanStyle.CheckBox` 按 `\n`
-         * 分行绘制；`toggleTaskListCheckedAtPosition` 按行命中翻转），App 侧零行级逻辑。
-         */
-        focused.state.toggleTaskList()
+        focused.state.toggleTaskListAtTextOffset(focused.state.selection.min)
         onDocChanged?.invoke()
     }
 
