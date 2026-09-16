@@ -925,7 +925,13 @@ private val TASK_LIST_MD_REGEX = Regex("""^\s*(- \[[ xX]\] )(.*)$""", RegexOptio
  * 撑到框右侧、与上下文对齐。App 字数统计（isSkipChar）/库 trim 都不剥它，随
  * markdown 往返稳定；正式内容由用户输入后插在 NBSP 之前/之后均可。
  */
-internal const val TASK_LIST_MD_UNCHECKED = "- [ ] \u00A0"
+internal const val TASK_LIST_MD_UNCHECKED = "- [ ] " + TASK_ITEM_NBSP
+
+/** 任务项空行的**光标占位字符**（NBSP，v2026-09-16）：任务段落的行内没有实宽字符时
+ *  （回车产生的空行、markdown 空任务项），行宽为 0、光标退化到行盒左缘（勾选框
+ *  左侧）；NBSP 有宽度且不可见（[isSkipChar] 剥除、库 `trim()` 不剥——非
+ *  `Char.isWhitespace`），撑起光标与行几何。 */
+private const val TASK_ITEM_NBSP = "\u00A0"
 
 /** 是否为任务列表段（`- [ ] ` / `- [x] ` 开头，v2026-09-15 加载路径用） */
 internal fun isTaskListMd(para: String): Boolean = TASK_LIST_MD_REGEX.containsMatchIn(para)
@@ -952,9 +958,9 @@ internal fun normalizeTaskListMd(para: String): String {
         .trimEnd('\u00A0')
 
     /** 层级空格前缀：库解码端按「源码行首缩进 ÷ 2」还原 level（与列表同款）。
-     * 空任务项补回 NBSP（v2026-09-16，见 [TASK_LIST_MD_UNCHECKED]——光标占位）。 */
+     * 空任务项补回 NBSP（v2026-09-16，见 [TASK_ITEM_NBSP]——光标占位）。 */
     return "  ".repeat(indentLevel - 1) + prefix +
-        if (content.isEmpty()) "\u00A0" else content
+        if (content.isEmpty()) TASK_ITEM_NBSP else content
 }
 
 /**
@@ -4030,6 +4036,31 @@ private fun BlockTextItem(
                         controller.renumberOrderedBlocks()
                     }
                     lastIsOl = isOl
+
+                    /**
+                     * 任务块**空任务行**的 NBSP 占位维护（v2026-09-16）：任务段落内回车
+                     * 产生的新空行没有实宽字符（marker 是零宽 ZWSP），行宽为 0 → 光标
+                     * 定位退化到行盒左缘（跑到勾选框左侧，真机实测）。检测到「光标折叠
+                     * 在任务段落的空行上」时在光标处补 NBSP（有宽度、不可见、
+                     * [isSkipChar] 剥除），光标留在 NBSP 前 = 框右缘 + 间距，与上文对齐。
+                     *
+                     * 防循环：`text.length == lastText.length + 1` 限定"刚插入单字符"
+                     * （回车特征）——退格删 NBSP 是长度 -1，不会再次补；补后光标下一
+                     * 字符是 NBSP（非行界）也不再满足"空行"判定。
+                     */
+                    if (
+                        state.isTaskList &&
+                        selection.collapsed &&
+                        composition == null &&
+                        text.length == lastText.length + 1
+                    ) {
+                        val cursor = selection.start
+                        val atLineStart = cursor == 0 || text[cursor - 1] == '\n'
+                        val atLineEnd = cursor == text.length || text[cursor] == '\n'
+                        if (atLineStart && atLineEnd) {
+                            state.addTextAtIndex(cursor, TASK_ITEM_NBSP)
+                        }
+                    }
                 }
                 /** ZWSP 不变量维护：空块恢复 \u200B + 光标 (1, 1)，否则软键盘退格下一次又无法检测。
                  *  注意：observer 条件检查必须在 setText 之前——否则 setText 让 text 从 "" 变 "\u200B"
