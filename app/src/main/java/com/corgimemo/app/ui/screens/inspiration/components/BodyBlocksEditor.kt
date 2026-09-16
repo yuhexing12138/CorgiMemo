@@ -918,6 +918,12 @@ internal fun parseDividerStyle(para: String): DividerStyle? = when (para.trim())
  */
 private val TASK_LIST_MD_REGEX = Regex("""^\s*(- \[[ xX]\] )(.*)$""", RegexOption.DOT_MATCHES_ALL)
 
+/** 任务项空行的**光标占位字符**（NBSP，v2026-09-16）：任务段落的行内没有实宽字符时
+ *  （回车产生的空行、markdown 空任务项），行宽为 0、光标退化到行盒左缘（勾选框
+ *  左侧）；NBSP 有宽度且不可见（[isSkipChar] 剥除、库 `trim()` 不剥——非
+ *  `Char.isWhitespace`），撑起光标与行几何。 */
+private const val TASK_ITEM_NBSP = "\u00A0"
+
 /** 未勾选任务列表项的 markdown 前缀（与库的编码形态一致，v2026-09-15）。
  *
  * v2026-09-16：尾随一个 **NBSP**——children 全空 + 零宽 marker 时行宽为 0，光标
@@ -926,12 +932,6 @@ private val TASK_LIST_MD_REGEX = Regex("""^\s*(- \[[ xX]\] )(.*)$""", RegexOptio
  * markdown 往返稳定；正式内容由用户输入后插在 NBSP 之前/之后均可。
  */
 internal const val TASK_LIST_MD_UNCHECKED = "- [ ] " + TASK_ITEM_NBSP
-
-/** 任务项空行的**光标占位字符**（NBSP，v2026-09-16）：任务段落的行内没有实宽字符时
- *  （回车产生的空行、markdown 空任务项），行宽为 0、光标退化到行盒左缘（勾选框
- *  左侧）；NBSP 有宽度且不可见（[isSkipChar] 剥除、库 `trim()` 不剥——非
- *  `Char.isWhitespace`），撑起光标与行几何。 */
-private const val TASK_ITEM_NBSP = "\u00A0"
 
 /** 是否为任务列表段（`- [ ] ` / `- [x] ` 开头，v2026-09-15 加载路径用） */
 internal fun isTaskListMd(para: String): Boolean = TASK_LIST_MD_REGEX.containsMatchIn(para)
