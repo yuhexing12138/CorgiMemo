@@ -2633,38 +2633,18 @@ class BodyBlocksController(
         }
 
         /**
-         * v2026-09-15 「按行勾选」：多行块**按 `\n` 拆行**，每行一个独立的任务列表块
-         * （各自的勾选框与勾选状态）；单行块直接切换段落类型。
+         * v2026-09-15：整块切换任务列表（撤销"拆行"方案）；v2026-09-16 随库
+         * 「TaskList 行级渲染改造」定稿。
          *
-         * 为什么拆行：库的复选框是**段落级**（TaskList 段落一个勾选框），而普通段落块
-         * 的多行共存于一个段落（段内 `\n`，方案 D 定稿）——不拆行的话整块共用一个
-         * 勾选框。拆行后每行独立成块：块级 TextField 的手柄拖拽天然不受"段间占位"
-         * 影响，勾选状态也按块独立。
+         * 拆行方案（多行块按 \n 拆成每行一个任务列表块）已被否决：拆行后每行一个
+         * 独立 TextField，**无法跨块选取文本复制**——这正是"取消拆块"要解决的问题。
+         *
+         * 当前语义：点复选框 = 整块转为任务列表（单段落 + 段内 `\n`）。块内每行的
+         * 勾选框绘制与**行级**勾选状态全由库承载（`RichSpanStyle.CheckBox` 按 `\n`
+         * 分行绘制；`toggleTaskListCheckedAtPosition` 按行命中翻转），App 侧零行级逻辑。
          */
-        val lines = blockMarkdown(focused.state).split('\n')
-        if (lines.size == 1) {
-            focused.state.toggleTaskList()
-            onDocChanged?.invoke()
-            return
-        }
-
-        val idx = blocks.indexOfFirst { it.id == focused.id }
-        val insertedSpecs = lines.map { line ->
-            BlockSpec.TextSpec(
-                newBodyBlockId(),
-                if (line.isBlank()) TASK_LIST_MD_UNCHECKED else TASK_LIST_MD_UNCHECKED + line,
-            )
-        }
-        executeAndPush(
-            ReplaceBlocksCommand(
-                index = idx,
-                removedSpecs = listOf(textSpec(focused)),
-                insertedSpecs = insertedSpecs,
-                focusBefore = currentFocusSpec(),
-                /** 焦点落到第一个任务列表项行首 */
-                focusAfter = FocusSpec(insertedSpecs.first().id, 0),
-            )
-        )
+        focused.state.toggleTaskList()
+        onDocChanged?.invoke()
     }
 
     /**
