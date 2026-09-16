@@ -34,7 +34,10 @@ export type DownMessage =
   | { type: "setTheme"; theme: ThemePayload }
   | { type: "setFontFamily"; fontFamily: string }
   /** 主动要一次快照（返回键/切后台前） */
-  | { type: "requestSave" };
+  | { type: "requestSave" }
+  /** 撤销/重做（v1.2：原页面撤销/重做按钮经桥触发） */
+  | { type: "requestUndo" }
+  | { type: "requestRedo" };
 
 /** 上行消息（JS → Kotlin） */
 export type UpMessage =

@@ -226,6 +226,12 @@ export default function EditorApp() {
         case "requestSave":
           pushChanged();
           break;
+        case "requestUndo":
+          editorRef.current?.undo();
+          break;
+        case "requestRedo":
+          editorRef.current?.redo();
+          break;
       }
     });
     sendUp({ type: "ready" });

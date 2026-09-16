@@ -88,6 +88,20 @@ class InspirationEditViewModel @Inject constructor(
     val isDirty: StateFlow<Boolean> = _isDirty.asStateFlow()
 
     /**
+     * BlockNote 迁移（P1.5）：内容载入完成信号。
+     * - 编辑模式：[loadInspiration] 尾部置 true（最终 contentFormat 就绪）
+     * - 新建模式：UI 层调用 [markContentLoaded] 标记
+     * BlockNote WebView 编辑器以此判定 init 载入时机。
+     */
+    private val _contentLoaded = MutableStateFlow(false)
+    val contentLoaded: StateFlow<Boolean> = _contentLoaded.asStateFlow()
+
+    /** 新建模式（无 loadInspiration 调用）的内容就绪标记 */
+    fun markContentLoaded() {
+        _contentLoaded.value = true
+    }
+
+    /**
      * 当前编辑灵感的"创建时间戳"（v2026-07-31 新增）
      *
      * 用途：编辑页"标题和正文之间"的时间戳行显示。
@@ -945,6 +959,12 @@ class InspirationEditViewModel @Inject constructor(
          * 即可，因为 _isDirty 本身就是个简单的 MutableStateFlow，无需精确同步。
          */
         _isDirty.value = false
+
+        /**
+         * BlockNote 迁移（P1.5）：编辑模式内容载入完成信号。
+         * WebView 编辑器以此判定 init 载入时机（避免以载入前的空 contentFormat 初始化）。
+         */
+        _contentLoaded.value = true
     }
 
     // ==================== 保存方法 ====================

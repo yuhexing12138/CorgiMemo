@@ -157,6 +157,8 @@ import com.mohamedrejeb.richeditor.model.LocalTokenClickHandler
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.model.TokenClickHandler
 import com.corgimemo.app.ui.screens.inspiration.components.BodyBlocksEditor
+import com.corgimemo.app.ui.screens.probe.BlockNoteBridgeController
+import com.corgimemo.app.ui.screens.probe.BlockNoteEditorWebView
 import com.corgimemo.app.ui.components.CoilRichTextImageLoader
 import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.delay
@@ -176,6 +178,12 @@ import kotlin.math.roundToInt
  */
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalRichTextApi::class)
+/**
+ * BlockNote 迁移（P1.5）：正文编辑器替换开关（编译期灰度）。
+ * 置 false 一行即回退 Compose BodyBlocksEditor。
+ */
+private const val USE_BLOCKNOTE_EDITOR = true
+
 @Composable
 fun InspirationEditScreen(
     navController: NavController,
@@ -185,6 +193,33 @@ fun InspirationEditScreen(
 ) {
     val title by viewModel.title.collectAsState()
     val content by viewModel.content.collectAsState()
+
+    /**
+     * BlockNote 迁移（P1.5）：正文编辑区替换开关（编译期）。
+     * - true：正文用 BlockNote WebView 编辑器（跨块选择 + JS 格式工具栏），
+     *   页面其余 UI（标题/标签/底部栏/位置等）保持不变；
+     *   依赖 Compose richTextState 的底部功能（#标签/@提及/字体面板/字号颜色面板/语音/图片插入）
+     *   UI 保留但暂不生效（后续 P1-S10/S11 逐步桥接）。
+     * - false：回退 Compose BodyBlocksEditor（一行关回，灰度兜底）。
+     */
+    val useBlockNoteEditor = USE_BLOCKNOTE_EDITOR
+    val contentLoaded by viewModel.contentLoaded.collectAsState()
+    val blockNoteController = remember { BlockNoteBridgeController() }
+    var blockNoteLoadStarted by remember { mutableStateOf(false) }
+
+    // 内容就绪（编辑模式 loadInspiration 完成 / 新建模式立即）→ 装载 WebView 编辑器（仅一次）
+    androidx.compose.runtime.LaunchedEffect(contentLoaded) {
+        if (useBlockNoteEditor && contentLoaded && !blockNoteLoadStarted) {
+            blockNoteLoadStarted = true
+            blockNoteController.load(if (inspirationId == null) "" else viewModel.contentFormat.value)
+        }
+    }
+    // 新建模式：无 loadInspiration 调用，直接标记内容就绪（空文档）
+    androidx.compose.runtime.LaunchedEffect(inspirationId) {
+        if (inspirationId == null) {
+            viewModel.markContentLoaded()
+        }
+    }
     /**
      * Undo/Redo 状态说明（v2026-09-02 方案A：两套历史隔离）：
      *
@@ -1006,6 +1041,38 @@ fun InspirationEditScreen(
                  * 块编辑器的 `undoBehavior` 保持 Disabled：物理键盘 Ctrl+Z 由编辑器
                  * onPreviewKeyEvent 拦截后调同一入口，两套历史不会交叉错乱。
                  */
+                if (useBlockNoteEditor) {
+                    /**
+                     * BlockNote 模式（P1.5）：撤销/重做经 Bridge 下发到 JS 编辑器
+                     * （canUndo/canRedo 状态未上行，按钮恒可点；无操作时点击无副作用）。
+                     */
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { blockNoteController.undo() },
+                            enabled = !isLocked,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Undo,
+                                contentDescription = "撤销",
+                                tint = if (!isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { blockNoteController.redo() },
+                            enabled = !isLocked,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Redo,
+                                contentDescription = "重做",
+                                tint = if (!isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                } else {
                 val bodyCanUndo = bodyBlocks.canUndo
                 val bodyCanRedo = bodyBlocks.canRedo
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1033,6 +1100,7 @@ fun InspirationEditScreen(
                             modifier = Modifier.size(18.dp)
                         )
                     }
+                }
                 }
 
                 Spacer(modifier = Modifier.width(4.dp))
@@ -1781,6 +1849,23 @@ fun InspirationEditScreen(
              * - Enter 拆块 / 块首退格合并 / 图片块两步删除 / 手柄拖拽排序
              * 详见 components/BodyBlocksEditor.kt
              */
+            if (useBlockNoteEditor) {
+                /**
+                 * BlockNote 迁移（P1.5）：正文编辑区 = BlockNote WebView。
+                 * - 页面其余 UI（标题/标签/底部栏/位置提醒等）保持不变；
+                 * - 数据链路：changed 防抖 markdown → viewModel.setContentFormat（isDirty 置脏，
+                 *   复用原保存流程）；载入由 load()（contentLoaded 门控，见顶部 LaunchedEffect）；
+                 * - 依赖 Compose richTextState 的弹层（#标签/@提及建议）不适用，随 else 分支排除；
+                 * - 底部工具栏正文相关按钮（图片/#/@/语音/字体面板）UI 保留，暂不生效（P1-S10/S11 桥接）。
+                 */
+                BlockNoteEditorWebView(
+                    controller = blockNoteController,
+                    onMarkdownChanged = { md ->
+                        viewModel.setContentFormat(md)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
             // v2026-09-11：图片粘贴装饰器——与粘贴文字完全同一逻辑：复制图片后，点系统
             // 工具栏的「粘贴」项即插入图片（无多余浮层；剪贴板无图片时文本粘贴不变）。
             // ⚠️ remember 的 calculation 带 @DisallowComposableCalls：lambda 内禁止 @Composable
@@ -1920,6 +2005,7 @@ fun InspirationEditScreen(
                 }
             )
             } /** Box 结束 */
+            } /** else（Compose 正文分支）结束 */
 
             /**
              * v2026-08-01 Phase 3：关联已内联为正文中的 atomic token（@ Trigger），
@@ -1939,10 +2025,13 @@ fun InspirationEditScreen(
              * 块内容观察者）触发变更时回调一定已就位，避免迁移内容漏同步。
              */
             androidx.compose.runtime.SideEffect {
-                bodyBlocks.onDocChanged = {
-                    if (bodyBlocks.hasInitialized) {
-                        viewModel.setContent(bodyBlocks.plainText())
-                        viewModel.setContentFormat(bodyBlocks.toMarkdown())
+                if (!useBlockNoteEditor) {
+                    // BlockNote 模式（P1.5）不挂此回调：内容经 WebView changed → setContentFormat
+                    bodyBlocks.onDocChanged = {
+                        if (bodyBlocks.hasInitialized) {
+                            viewModel.setContent(bodyBlocks.plainText())
+                            viewModel.setContentFormat(bodyBlocks.toMarkdown())
+                        }
                     }
                 }
             }
