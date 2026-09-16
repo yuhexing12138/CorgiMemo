@@ -59,6 +59,9 @@ sealed class Screen(val route: String) {
     // 特殊日期快速创建页面（重构版：4 行核心功能 + 下一步）
     object SpecialDateQuickCreate : Screen("date_create")                  // 日期新建快速创建页
 
+    /** BlockNote 探针 WebView 容器（POC 专用，经 intent navigate_to=blocknote_probe 直达，无 UI 入口） */
+    object BlockNoteProbe : Screen("blocknote_probe")
+
     // 日期详情页
     object SpecialDateDetailWithId : Screen("date_detail/{dateId}") {
         /** 带参数的导航路径 */

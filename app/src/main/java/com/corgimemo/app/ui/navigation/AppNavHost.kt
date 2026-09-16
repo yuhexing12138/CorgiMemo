@@ -97,6 +97,13 @@ fun AppNavHost(
             )
         }
 
+        /** BlockNote 探针 WebView 容器（POC 专用，adb 直达，见 Screen.BlockNoteProbe 注释） */
+        composable(Screen.BlockNoteProbe.route) {
+            com.corgimemo.app.ui.screens.probe.BlockNoteProbeScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         composable(Screen.Stats.route) {
             StatsScreen(navController = navController)
         }
