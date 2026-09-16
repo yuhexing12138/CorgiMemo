@@ -306,7 +306,7 @@ private fun createEditorWebView(
             }
         }
 
-        loadUrl("file:///android_asset/blocknote-web/editor/index.html")
+        loadUrl("file:///android_asset/blocknote-web/editor/editor.html")
     }
     return webView
 }
