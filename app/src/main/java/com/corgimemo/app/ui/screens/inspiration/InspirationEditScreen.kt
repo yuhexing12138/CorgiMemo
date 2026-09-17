@@ -294,13 +294,10 @@ fun InspirationEditScreen(
     var pendingPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
     /**
-     * v2026-09-01 路线 4：正文改为 Text/Image 交错块列表
+     * ⚠️ 待清理（BlockNote 迁移遗留）：正文块数据控制器（Text/Image 交错块）
      *
-     * 旧的 contentBlocks（SnapshotStateList）+ highlightedIndex（两步删除索引）
-     * + blockVisibilityStates（可见性追踪）三组状态已由块控制器
-     * [bodyBlocks]（见 components/BodyBlocksEditor.kt）统一取代：
-     * - 块列表 / 两步删除高亮：BodyBlocksController 内部状态
-     * - 可见性懒加载：块级 Composable 直接渲染，不再追踪
+     * 正文 UI 已由 BlockNote WebView 渲染；本 controller 的渲染方已删除
+     * （见 components/BodyBlocksController.kt 文件头说明），仅数据链路仍在依赖。
      */
 
     /** 锁定编辑状态 */
@@ -368,7 +365,7 @@ fun InspirationEditScreen(
      * - **格式工具栏激活态**：[richTextState] 的 `currentSpanStyle` 回显
      *
      * 清理这些链路时，需同步确认上述功能是否已改由 BlockNote 侧承担。
-     * 详见 components/BodyBlocksEditor.kt（备份见「弃用文件/Compose编辑器-弃用备份/」）
+     * 详见 components/BodyBlocksController.kt（原 UI 部分备份见「弃用文件/Compose编辑器-弃用备份/」）
      */
     @OptIn(ExperimentalRichTextApi::class)
     val bodyBlocks = viewModel.bodyBlocks
@@ -1189,12 +1186,12 @@ fun InspirationEditScreen(
                     showVoiceRecordSheet = true
                 },
                 /**
-                 * v2026-08-01 Phase 2 改造：# 按钮改为在光标处插入 # 字符
+                 * ⚠️ 已知边界（BlockNote 迁移遗留，UI 保留但行为待桥接）
                  *
-                 * - 点击后在正文当前光标位置插入 # 字符
-                 * - # 字符触发 hashtag trigger 检测，弹出 TriggerSuggestions 建议弹窗
-                 * - 用户可继续输入标签名或从建议中选择
-                 * - 移除原 TagPickerSheet 弹窗（标签已内联为正文 atomic token）
+                 * 原实现是在光标处插入 `#` 触发 hashtag 建议弹窗；正文切换到
+                 * BlockNote WebView 后，`richTextState` 已不承载正文内容，
+                 * 此处写入不会反映到编辑区。后续需经 Bridge 下发 `insertText` 命令，
+                 * 或改由 JS 侧编辑器自带 trigger 菜单承担。
                  */
                 onTagClick = {
                     if (!isLocked) {
@@ -1202,15 +1199,7 @@ fun InspirationEditScreen(
                     }
                 },
                 /**
-                 * v2026-08-01 Phase 3 改造：@按钮改为插入 @ 字符触发 TriggerSuggestions
-                 *
-                 * - 旧：弹出 RelationPickerBottomSheet（多选弹窗）
-                 * - 新：在光标位置插入 @ 字符，触发 mention trigger 弹出建议列表
-                 * - 与 # 标签按钮行为一致（统一的内联插入体验）
-                 *
-                 * 选中建议后：
-                 * 1. 插入 RichSpanStyle.Token（atomic span）
-                 * 2. 调用 viewModel.addRelation() 即时入库
+                 * ⚠️ 已知边界（同上）：@ 提及按钮待桥接到 BlockNote 侧。
                  */
                 onMentionClick = {
                     if (!isLocked) {
