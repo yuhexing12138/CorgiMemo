@@ -437,8 +437,13 @@ fun InspirationEditScreen(
                 coroutineScope.launch {
                     val savedPath = com.corgimemo.app.util.ImageUtils.copyUriToInternalStorage(context, uri)
                 savedPath?.let { path ->
-                    /** 路线 4：图片作为块级节点插入聚焦块光标处（自动拆块） */
-                    bodyBlocks.insertImageAtFocused(path)
+                    /** 路线 4：图片作为块级节点插入聚焦块光标处（自动拆块）
+                     *  BlockNote 模式（P1.5）：经 Bridge 插入 WebView 编辑器 */
+                    if (useBlockNoteEditor) {
+                        blockNoteController.insertImage(path)
+                    } else {
+                        bodyBlocks.insertImageAtFocused(path)
+                    }
                     viewModel.notifyInlineMediaChanged()
                 }
                 }
@@ -462,8 +467,13 @@ fun InspirationEditScreen(
                 ImageUtils.copyUriToInternalStorage(context, uri)
             }
             if (paths.isNotEmpty()) {
-                /** 路线 4：多张图片批量插入，整个 picker 动作作为单步撤销单位 */
-                bodyBlocks.insertImagesAtFocused(paths)
+                /** 路线 4：多张图片批量插入，整个 picker 动作作为单步撤销单位
+                 *  BlockNote 模式（P1.5）：经 Bridge 逐张插入（JS 侧 Yjs 事务天然合并为一步）*/
+                if (useBlockNoteEditor) {
+                    paths.forEach { path -> blockNoteController.insertImage(path) }
+                } else {
+                    bodyBlocks.insertImagesAtFocused(paths)
+                }
             }
             viewModel.notifyInlineMediaChanged()
         }
@@ -1498,9 +1508,14 @@ fun InspirationEditScreen(
                     bodyBlocks.indentFocusedBlock(delta = -1)
                 },
                 onInsertDivider = {
-                    /** 插入分割线（v2026-09-07）：聚焦块光标处拆块插入 `---` 段，可撤销/可退格删除 */
+                    /** 插入分割线（v2026-09-07）：聚焦块光标处拆块插入 `---` 段，可撤销/可退格删除
+                     *  BlockNote 模式（P1.5）：经 Bridge 插入（S10 后分割线点击可弹样式工具条切换）*/
                     if (!isLocked) {
-                        bodyBlocks.insertDividerAtFocused()
+                        if (useBlockNoteEditor) {
+                            blockNoteController.insertDivider()
+                        } else {
+                            bodyBlocks.insertDividerAtFocused()
+                        }
                     }
                 },
                 onToggleCheckbox = {

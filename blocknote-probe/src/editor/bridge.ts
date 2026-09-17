@@ -37,7 +37,11 @@ export type DownMessage =
   | { type: "requestSave" }
   /** 撤销/重做（v1.2：原页面撤销/重做按钮经桥触发） */
   | { type: "requestUndo" }
-  | { type: "requestRedo" };
+  | { type: "requestRedo" }
+  /** 图片插入（v1.3：原页面相册/相机选图后经桥插入光标处；path 为本地绝对路径） */
+  | { type: "insertImage"; path: string }
+  /** 分割线插入（v1.3：原页面分割线按钮经桥在光标处插入） */
+  | { type: "insertDivider" };
 
 /** 上行消息（JS → Kotlin） */
 export type UpMessage =

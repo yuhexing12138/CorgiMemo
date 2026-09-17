@@ -1,16 +1,17 @@
 import { BlockNoteSchema, defaultBlockSpecs, defaultStyleSpecs } from "@blocknote/core";
-import { DividerStyledBlock } from "../probes/dividerBlock";
+import { StyledDividerBlock } from "../probes/dividerBlock";
 import { fontSizeStyle } from "../probes/fontSizeStyle";
 
 /**
- * 正式编辑器 schema（P0）：
- * 内置块/样式全集 + 三样式分割线自定义块 + 字号行内样式。
- * P1-S10 计划将 dividerStyled 收敛为 extendBlockSpec 扩展内置 divider。
+ * 正式编辑器 schema（P1-S10 定稿）：
+ * **同名覆盖内置 divider**（追加 style prop：solid/dashed/wavy）——类型统一后
+ * `<hr>` 粘贴归属、`---` 回车 input rule、markdown `---` 往返全部保持官方语义。
+ * 另有 fontSize 自定义行内样式（S8）。
  */
 export const editorSchema = BlockNoteSchema.create({
   blockSpecs: {
     ...defaultBlockSpecs,
-    dividerStyled: DividerStyledBlock,
+    divider: StyledDividerBlock,
   },
   styleSpecs: {
     ...defaultStyleSpecs,

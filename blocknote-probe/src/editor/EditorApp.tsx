@@ -11,7 +11,7 @@ import { BlockNoteEditor } from "@blocknote/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { editorSchema } from "./schema";
 import { bindDown, sendUp, type ThemePayload } from "./bridge";
-import { mdToBlocks, blocksToMd } from "./markdown/converter";
+import { mdToBlocks, blocksToMd, toWebImageUrl } from "./markdown/converter";
 import "../probe.css";
 import "./editor.css";
 
@@ -232,6 +232,28 @@ export default function EditorApp() {
         case "requestRedo":
           editorRef.current?.redo();
           break;
+        case "insertImage": {
+          // S11：本地路径 → file:// URL（converter.toWebImageUrl 语义），插入光标所在块之后
+          const path = (msg as any).path as string;
+          const ed = editorRef.current;
+          if (ed && path) {
+            const cursor = ed.getTextCursorPosition();
+            ed.insertBlocks(
+              [{ type: "image", props: { url: toWebImageUrl(path) } }],
+              cursor.block,
+              "after"
+            );
+          }
+          break;
+        }
+        case "insertDivider": {
+          const ed = editorRef.current;
+          if (ed) {
+            const cursor = ed.getTextCursorPosition();
+            ed.insertBlocks([{ type: "divider", props: { style: "solid" } }], cursor.block, "after");
+          }
+          break;
+        }
       }
     });
     sendUp({ type: "ready" });

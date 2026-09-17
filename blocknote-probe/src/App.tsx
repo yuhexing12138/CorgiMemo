@@ -22,7 +22,7 @@ const initialContent: any[] = [
     type: "paragraph",
     content: "真机验证页：长按拖拽跨块选择（跨图片边界）、中文 IME、软键盘 inset。下方面板实时显示检测数据。",
   },
-  { type: "dividerStyled", props: { style: "wavy" } },
+  { type: "divider", props: { style: "wavy" } },
   { type: "heading", content: "第一段标题" },
   {
     type: "paragraph",
@@ -166,7 +166,7 @@ export default function App() {
   const insertDivider = (style: "solid" | "dashed" | "wavy") => {
     const cursor = editor.getTextCursorPosition();
     editor.insertBlocks(
-      [{ type: "dividerStyled", props: { style } }],
+      [{ type: "divider", props: { style } }],
       cursor.block,
       "after"
     );

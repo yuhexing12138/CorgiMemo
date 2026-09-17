@@ -53,11 +53,25 @@ describe("markdown 转换层：mdToBlocks", () => {
     expect(checks[1].props.checked).toBe(false);
   });
 
-  it("分割线：内置 solid + 样式 wavy/dashed 全部就位", async () => {
+  it("分割线：solid + 样式 wavy/dashed 全部就位（S10 同名覆盖统一类型）", async () => {
     const blocks = await mdToBlocks(editor, AUTUMN_MD);
-    expect(blocks.some((b) => b.type === "divider")).toBe(true);
-    const styled = blocks.filter((b) => b.type === "dividerStyled");
-    expect(styled.map((b) => b.props.style).sort()).toEqual(["dashed", "wavy"]);
+    const dividers = blocks.filter((b) => b.type === "divider");
+    // 三条分割线：裸 `---`（solid 默认）+ wavy + dashed
+    expect(dividers).toHaveLength(3);
+    const styles = dividers.map((b) => (b.props as any).style ?? "solid").sort();
+    expect(styles).toEqual(["dashed", "solid", "wavy"]);
+  });
+
+  it("图片：本地路径包装 file:// URL（WebView 可加载）", async () => {
+    const md = "![配图](/data/user/0/com.corgimemo.app/files/imgs/秋景.png)";
+    const blocks = await mdToBlocks(editor, md);
+    const img = blocks.find((b) => b.type === "image");
+    expect(img?.props?.url).toBe(
+      "file:///data/user/0/com.corgimemo.app/files/imgs/%E7%A7%8B%E6%99%AF.png"
+    );
+    // 保存时剥离还原
+    const mdBack = blocksToMd(editor, blocks);
+    expect(mdBack).toContain("(/data/user/0/com.corgimemo.app/files/imgs/秋景.png)");
   });
 
   it("引用块解析", async () => {
@@ -86,16 +100,13 @@ describe("markdown 转换层：round-trip 往返", () => {
     const md2 = blocksToMd(editor, blocks1);
     const blocks2 = await mdToBlocks(editor, md2);
 
-    // 分割线样式集合等价（内置 divider 数量 + 样式化分割线集合）
-    const div1 = {
-      builtin: blocks1.filter((b) => b.type === "divider").length,
-      styled: blocks1.filter((b) => b.type === "dividerStyled").map((b) => b.props.style).sort(),
-    };
-    const div2 = {
-      builtin: blocks2.filter((b) => b.type === "divider").length,
-      styled: blocks2.filter((b) => b.type === "dividerStyled").map((b) => b.props.style).sort(),
-    };
-    expect(div2).toEqual(div1);
+    // 分割线样式集合等价（S10 统一类型：divider + props.style）
+    const styleSig = (bs: any[]) =>
+      bs
+        .filter((b) => b.type === "divider")
+        .map((b) => ((b.props as any).style ?? "solid"))
+        .sort();
+    expect(styleSig(blocks2)).toEqual(styleSig(blocks1));
 
     // 任务勾选等价
     const checks2 = blocks2.filter((b) => b.type === "checkListItem").map((b) => b.props.checked);

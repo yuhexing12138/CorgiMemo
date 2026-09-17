@@ -34,3 +34,9 @@
 .bn-block-content[data-content-type="checkListItem"]:has(input[type="checkbox"]:checked) .bn-inline-content {
   opacity: 0.45;
 }
+
+/* S11：图片块撑满编辑区宽度（对齐 Compose 版「撑满+真实比例」语义） */
+.bn-block-content[data-content-type="image"] img {
+  width: 100% !important;
+  height: auto !important;
+}

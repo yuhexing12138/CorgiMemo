@@ -78,6 +78,13 @@ class BlockNoteBridgeController {
     /** 主动要一次 markdown 快照（返回键/切后台前） */
     fun requestSave() = enqueueCommand(JSONObject().put("type", "requestSave"))
 
+    /** 插入图片到光标处（S11：path 为本地绝对路径，JS 侧转 file:// URL） */
+    fun insertImage(path: String) =
+        enqueueCommand(JSONObject().put("type", "insertImage").put("path", path))
+
+    /** 在光标处插入分割线（S10：solid 默认样式，可在分割线上点击工具条切换） */
+    fun insertDivider() = enqueueCommand(JSONObject().put("type", "insertDivider"))
+
     /** 主题下行（深浅 + 主色） */
     fun setTheme(dark: Boolean, primary: String) {
         val theme = JSONObject().put("dark", dark).put("primary", primary)
