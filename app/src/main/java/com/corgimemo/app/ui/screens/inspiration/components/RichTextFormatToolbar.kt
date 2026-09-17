@@ -131,6 +131,11 @@ fun RichTextFormatToolbar(
     canIncreaseIndent: Boolean = true,
     /** 是否可减少缩进（v2026-09-05 视觉降级）：非列表行置灰禁用（减缩进无效果） */
     canDecreaseIndent: Boolean = true,
+    /**
+     * BlockNote 迁移（P1）：加粗单档模式——true 时 B 按钮点击直接 toggle 加粗
+     * （onSetFontWeight(700)），不展开 B1/B2/B3 字重菜单（HTML 无多档字重概念）。
+     */
+    boldSingleTier: Boolean = false,
     /** 聚焦块是否为复选框块（v2026-09-07 视觉降级）：复选框按钮激活态高亮用 */
     isCheckboxActive: Boolean = false,
     onAlignLeft: () -> Unit = {},
@@ -216,17 +221,22 @@ fun RichTextFormatToolbar(
                 onClick = onSizeColorPanelClick,
                 contentDescription = "字号与颜色"
             )
-            /** 加粗主按钮：点击展开/收起字重菜单；展开时显示左箭头，收起时显示右箭头 */
+            /** 加粗主按钮：点击展开/收起字重菜单；展开时显示左箭头，收起时显示右箭头。
+             *  BlockNote 模式（boldSingleTier=true）：点击直接 toggle 加粗（HTML 无多档字重），不展开菜单 */
             FormatWeightButton(
                 tier = currentTier,
-                expanded = boldExpanded,
-                isActive = currentTier != null,
-                onClick = { boldExpanded = !boldExpanded },
-                contentDescription = "加粗字重"
+                expanded = !boldSingleTier && boldExpanded,
+                isActive = if (boldSingleTier) false else currentTier != null,
+                onClick = {
+                    if (boldSingleTier) onSetFontWeight(700)
+                    else boldExpanded = !boldExpanded
+                },
+                contentDescription = "加粗"
             )
-            /** 展开态：同行显示 B1/B2/B3 子按钮（候选档位 500/700/900；经像素探测无独立字形的档位置灰禁用），选中后自动收起 */
+            /** 展开态：同行显示 B1/B2/B3 子按钮（候选档位 500/700/900；经像素探测无独立字形的档位置灰禁用），选中后自动收起
+             *  BlockNote 模式不展开（单档加粗） */
             AnimatedVisibility(
-                visible = boldExpanded,
+                visible = !boldSingleTier && boldExpanded,
                 enter = expandHorizontally(),
                 exit = shrinkHorizontally()
             ) {
@@ -371,13 +381,15 @@ fun RichTextFormatToolbar(
 
         ToolbarDivider()
 
-        /**
-         * ====== 第五组：块类型（BlockNote 迁移 P1-S10 补充） ======
-         *
-         * 对齐 WebView「+ 菜单」的插入/转换能力：H1/H2/H3、引用、整块代码、表格、页分隔。
-         * 经 [onTransform] 下发 action 到编辑器（BlockNote 模式 = Bridge format("transform")；
-         * Compose 模式 = 空实现，按钮置灰）。
-         */
+        /** ====== 第五组：折叠块 + 块类型（BlockNote 迁移 P1-S10 补充，对齐 + 菜单能力） ====== */
+        FormatButtonGroup {
+            FormatTextButton("▸H", isActive = false, onClick = { onTransform("toggleHeading") }, contentDescription = "可折叠标题", enabled = onTransformEnabled)
+            FormatTextButton("▸≡", isActive = false, onClick = { onTransform("toggleList") }, contentDescription = "可折叠列表", enabled = onTransformEnabled)
+        }
+
+        ToolbarDivider()
+
+        /** ====== 第六组：块类型（BlockNote 迁移 P1-S10 补充） ====== */
         FormatButtonGroup {
             FormatTextButton("H1", isActive = false, onClick = { onTransform("heading1") }, contentDescription = "标题 1", enabled = onTransformEnabled)
             FormatTextButton("H2", isActive = false, onClick = { onTransform("heading2") }, contentDescription = "标题 2", enabled = onTransformEnabled)

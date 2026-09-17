@@ -342,6 +342,14 @@ export default function EditorApp() {
                   } as any);
                   break;
                 }
+                case "toggleHeading":
+                case "toggleList": {
+                  // 可折叠标题/可折叠列表（独立块类型，toggle 语义）
+                  const { block } = ed.getTextCursorPosition();
+                  const targetType = block.type === value ? "paragraph" : value;
+                  ed.updateBlock(block, { type: targetType } as any);
+                  break;
+                }
                 case "quote": {
                   const { block } = ed.getTextCursorPosition();
                   const targetType = block.type === "quote" ? "paragraph" : "quote";

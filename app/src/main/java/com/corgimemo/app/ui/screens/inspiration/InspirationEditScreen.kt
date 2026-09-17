@@ -1605,6 +1605,7 @@ fun InspirationEditScreen(
                     }
                 },
                 onTransformEnabled = useBlockNoteEditor,
+                boldSingleTier = useBlockNoteEditor,
                 onAlignLeft = {
                     if (useBlockNoteEditor) {
                         blockNoteController.format("alignLeft")

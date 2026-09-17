@@ -152,6 +152,8 @@ fun InspirationEditBottomBar(
     onTransform: (String) -> Unit = {},
     /** 块类型按钮可用性（BlockNote 模式 true，Compose 模式 false 置灰） */
     onTransformEnabled: Boolean = false,
+    /** BlockNote 模式加粗单档（点击直接 toggle，不展开 B1/B2/B3 菜单） */
+    boldSingleTier: Boolean = false,
     /** 是否可增加缩进（v2026-09-05 视觉降级）：列表到顶时置灰，透传给 [RichTextFormatToolbar] */
     canIncreaseIndent: Boolean = true,
     /** 是否可减少缩进（v2026-09-05 视觉降级）：非列表行置灰，透传给 [RichTextFormatToolbar] */
@@ -214,6 +216,7 @@ fun InspirationEditBottomBar(
                     onToggleCheckbox = onToggleCheckbox,
                     onTransform = onTransform,
                     onTransformEnabled = onTransformEnabled,
+                    boldSingleTier = boldSingleTier,
                     canIncreaseIndent = canIncreaseIndent,
                     canDecreaseIndent = canDecreaseIndent,
                     isCheckboxActive = isCheckboxActive,
