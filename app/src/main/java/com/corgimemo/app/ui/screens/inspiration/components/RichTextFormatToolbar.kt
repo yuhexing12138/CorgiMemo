@@ -15,21 +15,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
-import androidx.compose.material.icons.automirrored.filled.FormatAlignRight
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.FormatAlignCenter
-import androidx.compose.material.icons.filled.FormatIndentDecrease
-import androidx.compose.material.icons.filled.FormatIndentIncrease
-import androidx.compose.material.icons.filled.FormatItalic
-import androidx.compose.material.icons.filled.FormatListNumbered
-import androidx.compose.material.icons.filled.FormatStrikethrough
-import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
@@ -72,14 +59,17 @@ import compose.icons.lucideicons.Type
 /**
  * 富文本格式工具栏（使用 compose-rich-editor 库）
  *
- * 提供完整的文本格式化操作，与库的 RichTextState 配合使用。
- * 工具栏分为 4 个功能组，每组用竖线分隔：
+ * 提供完整的文本格式化操作，与库的 RichTextState 配合使用（BlockNote 模式经回调桥接 WebView）。
+ * 分类区之间以竖线分隔，分类区内部不设分割线：
  *
- * **功能分组**:
- * 1. **基础样式**: 加粗(B，可展开字重菜单 B1/B2/B3)、斜体(I)、下划线(U)、删除线(S)
- * 2. **列表**: 无序列表、有序列表
- * 3. **对齐**: 左对齐、居中、右对齐（通过 toggleParagraphStyle）
- * 4. **高级**: 链接、代码块
+ * **功能分组**（v2026-09-17 按浮层格式工具栏重桥）:
+ * 1. **第一分类区（浮动格式工具栏 11 键全量桥接，图标与顺序严格一致）**:
+ *    T(字体面板)、Aa(字号颜色面板)、B(RiBold)、I(RiItalic)、U(RiUnderline)、S(RiStrikethrough)、
+ *    对齐×3(RiAlignLeft/Center/Right)、Color(A)、Nest(RiIndentIncrease)、UnNest(RiIndentDecrease)、Link(RiLink)
+ * 2. **Headings**: H1–H6（+ 菜单同款 Ri 图标）
+ * 3. **Subheadings**: 可折叠标题 ▸1–3
+ * 4. **Basic blocks**: 有序/无序/任务列表、段落、代码块、分割线、引用、折叠列表、分页
+ * 5. **Advanced / Media / Others**: 表格；图片/视频/音频/文件；表情
  *
  * 加粗按钮交互：点击 B 展开同行 B1/B2/B3 子按钮（候选档位由当前字体 [com.corgimemo.app.ui.theme.FontEntry.boldTiers] 给出），其余按钮被推开；
  * 档位是否真正可用由 [FontWeightProbe] 运行时像素探测决定，探测不到独立字形的档位按钮置灰禁用；
@@ -209,120 +199,103 @@ fun RichTextFormatToolbar(
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        /** ====== 组一：面板与行内格式（+ 浮层同序前段：字体 / 字号颜色 / B / I / U / S） ====== */
+        /**
+         * ====== 第一分类区：WebView「浮动格式工具栏」11 键全量重桥（v2026-09-17） ======
+         * 按用户要求：先彻底删除旧 11 键，再严格按浮层顺序与图标重建：
+         * T(字体面板) → Aa(字号颜色面板) → B(RiBold) → I(RiItalic) → U(RiUnderline) → S(RiStrikethrough)
+         * → 对齐×3(RiAlignLeft/Center/Right) → Color(A) → Nest(RiIndentIncrease) → UnNest(RiIndentDecrease) → Link(RiLink)。
+         * 图标取自 [com.corgimemo.app.ui.screens.probe.BlockNotePlusMenuIcons]（react-icons/ri 5.6.0，
+         * 与浮层渲染逐字节同款）；区内不设分割线，竖线只出现在分类区之间；T / Aa 暂沿用原按钮不动。
+         */
         FormatButtonGroup {
+            /** T（字体面板，暂不动） */
             FormatIconButton(
                 imageVector = LucideIcons.Type,
                 isActive = isFontPanelOpen,
                 onClick = onFontPickerClick,
                 contentDescription = "字体"
             )
+            /** Aa（字号与颜色面板，暂不动） */
             FormatIconButton(
                 imageVector = LucideIcons.CaseSensitive,
                 isActive = isSizeColorPanelOpen,
                 onClick = onSizeColorPanelClick,
                 contentDescription = "字号与颜色"
             )
-            /** 加粗主按钮：BlockNote 模式（单档）点击直接 toggle 加粗；Compose 模式展开字重菜单 */
-            FormatWeightButton(
-                tier = currentTier,
-                expanded = !boldSingleTier && boldExpanded,
-                isActive = if (boldSingleTier) false else currentTier != null,
-                singleTier = boldSingleTier,
-                onClick = {
-                    if (boldSingleTier) onSetFontWeight(700)
-                    else boldExpanded = !boldExpanded
-                },
-                contentDescription = "加粗"
-            )
-            /** 展开态：同行显示 B1/B2/B3 子按钮（候选档位 500/700/900；经像素探测无独立字形的档位置灰禁用），选中后自动收起
-             *  BlockNote 模式不展开（单档加粗） */
-            AnimatedVisibility(
-                visible = !boldSingleTier && boldExpanded,
-                enter = expandHorizontally(),
-                exit = shrinkHorizontally()
-            ) {
-                Row {
-                    contentEntry.boldTiers.forEachIndexed { index, weight ->
-                        val tier = index + 1
-                        FormatWeightTierButton(
-                            tier = tier,
-                            isActive = currentWeight == weight,
-                            enabled = weight in distinctWeights,
-                            onClick = {
-                                onSetFontWeight(weight)
-                                boldExpanded = false
-                            }
-                        )
+            /** B（浮层 BasicTextStyleButton 同款 RiBold）：BlockNote 单档模式直接 toggle 加粗；
+             *  Compose 模式保留 B1/B2/B3 字重菜单展开逻辑 */
+            if (boldSingleTier) {
+                RiFormatButton(
+                    "RiBold",
+                    onClick = { onSetFontWeight(700) },
+                    contentDescription = "加粗"
+                )
+            } else {
+                FormatWeightButton(
+                    tier = currentTier,
+                    expanded = boldExpanded,
+                    isActive = currentTier != null,
+                    onClick = { boldExpanded = !boldExpanded },
+                    contentDescription = "加粗"
+                )
+                /** 展开态：同行显示 B1/B2/B3 子按钮（经像素探测无独立字形的档位置灰禁用），选中后自动收起 */
+                AnimatedVisibility(
+                    visible = boldExpanded,
+                    enter = expandHorizontally(),
+                    exit = shrinkHorizontally()
+                ) {
+                    Row {
+                        contentEntry.boldTiers.forEachIndexed { index, weight ->
+                            val tier = index + 1
+                            FormatWeightTierButton(
+                                tier = tier,
+                                isActive = currentWeight == weight,
+                                enabled = weight in distinctWeights,
+                                onClick = {
+                                    onSetFontWeight(weight)
+                                    boldExpanded = false
+                                }
+                            )
+                        }
                     }
                 }
             }
-            FormatIconButton(
-                imageVector = Icons.Default.FormatItalic,
+            /** I / U / S（浮层 BasicTextStyleButton 同款图标） */
+            RiFormatButton(
+                "RiItalic",
                 isActive = state.currentSpanStyle.fontStyle == FontStyle.Italic,
                 onClick = onToggleItalic,
                 contentDescription = "斜体"
             )
-            FormatIconButton(
-                imageVector = Icons.Default.FormatUnderlined,
+            RiFormatButton(
+                "RiUnderline",
                 isActive = state.currentSpanStyle.textDecoration?.contains(TextDecoration.Underline) == true,
                 onClick = onToggleUnderline,
                 contentDescription = "下划线"
             )
-            FormatIconButton(
-                imageVector = Icons.Default.FormatStrikethrough,
+            RiFormatButton(
+                "RiStrikethrough",
                 isActive = state.currentSpanStyle.textDecoration?.contains(TextDecoration.LineThrough) == true,
                 onClick = onToggleStrikethrough,
                 contentDescription = "删除线"
             )
-        }
-
-        ToolbarDivider()
-
-        /** ====== 组二（浮层同序中段）：对齐×3 / 颜色 / 嵌套± / 链接 ====== */
-        FormatButtonGroup {
-            FormatIconButton(
-                imageVector = Icons.AutoMirrored.Filled.FormatAlignLeft,
-                isActive = false,
-                onClick = onAlignLeft,
-                contentDescription = "左对齐"
-            )
-            FormatIconButton(
-                imageVector = Icons.Default.FormatAlignCenter,
-                isActive = false,
-                onClick = onAlignCenter,
-                contentDescription = "居中对齐"
-            )
-            FormatIconButton(
-                imageVector = Icons.AutoMirrored.Filled.FormatAlignRight,
-                isActive = false,
-                onClick = onAlignRight,
-                contentDescription = "右对齐"
-            )
-            /** 颜色按钮（浮层 ColorStyleButton 同位）：打开文字/背景色板对话框 */
+            /** 对齐×3（浮层 TextAlignButton 同款 RiAlignLeft / RiAlignCenter / RiAlignRight） */
+            RiFormatButton("RiAlignLeft", onClick = onAlignLeft, contentDescription = "左对齐")
+            RiFormatButton("RiAlignCenter", onClick = onAlignCenter, contentDescription = "居中对齐")
+            RiFormatButton("RiAlignRight", onClick = onAlignRight, contentDescription = "右对齐")
+            /** Color（浮层 ColorStyleButton 即「A」字母样式，文字按钮保持一致）：打开文字/背景色板对话框 */
             FormatTextButton(
                 label = "A",
                 isActive = showColorStyleDialog,
                 onClick = onOpenColorStyleDialog,
                 contentDescription = "颜色"
             )
-            /** 嵌套 +1（浮层 NestBlockButton 同位）：经宿主回调分支（BlockNote=nest / Compose=缩进） */
-            FormatIconButton(
-                imageVector = Icons.Default.FormatIndentIncrease,
-                isActive = false,
-                onClick = onIncreaseIndent,
-                contentDescription = "增加缩进"
-            )
-            /** 嵌套 −1（浮层 UnNestBlockButton 同位） */
-            FormatIconButton(
-                imageVector = Icons.Default.FormatIndentDecrease,
-                isActive = false,
-                onClick = onDecreaseIndent,
-                contentDescription = "减少缩进"
-            )
-            /** 插入链接（BlockNote 模式弹 URL 对话框 → format createLink） */
-            FormatIconButton(
-                imageVector = Icons.Default.Link,
+            /** Nest / UnNest（浮层 NestBlockButton / UnNestBlockButton 同款图标） */
+            RiFormatButton("RiIndentIncrease", onClick = onIncreaseIndent, contentDescription = "增加缩进")
+            RiFormatButton("RiIndentDecrease", onClick = onDecreaseIndent, contentDescription = "减少缩进")
+            /** Link（浮层 CreateLinkButton 同款 RiLink）：BlockNote 模式弹 URL 对话框 → format createLink */
+            RiFormatButton(
+                "RiLink",
                 isActive = state.isLink,
                 onClick = onInsertLink,
                 contentDescription = "插入链接"

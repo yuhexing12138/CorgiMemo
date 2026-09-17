@@ -33,9 +33,18 @@ const WANT = [
   ["file", "RiFile2Line"],
   ["emoji", "RiEmotionFill"],
   ["paragraph", "RiText"],
+  ["bold", "RiBold"],
+  ["italic", "RiItalic"],
+  ["underline", "RiUnderline"],
+  ["strike", "RiStrikethrough"],
+  ["link", "RiLink"],
+  ["align_left", "RiAlignLeft"],
+  ["align_center", "RiAlignCenter"],
+  ["align_right", "RiAlignRight"],
   ["nest", "RiIndentIncrease"],
   ["unnest", "RiIndentDecrease"],
 ];
+
 
 /** Kotlin 字符串字面量转义（\、"、$ 模板符） */
 function ktStr(d) {

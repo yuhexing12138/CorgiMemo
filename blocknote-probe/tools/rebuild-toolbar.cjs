@@ -1,4 +1,16 @@
 /* 一次性重组 RichTextFormatToolbar 的 Row 内容为「+ 菜单分类 + 浮层格式区」目标顺序 */
+/**
+ * ⚠️ 已停用（2026-09-17）：本脚本会用内置 NEW_CONTENT 整段覆盖 RichTextFormatToolbar.kt 的 Row 内容，
+ * 会丢失此后对工具栏的全部手工修改（浮层 11 键重桥等）。后续请直接编辑该 Kotlin 文件。
+ * 确需重跑时设环境变量 FORCE_REBUILD=1。
+ */
+if (!process.env.FORCE_REBUILD) {
+  console.error(
+    "已停用：rebuild-toolbar.cjs 会覆盖 RichTextFormatToolbar.kt 的手工桥接修改。" +
+      "请直接编辑该 Kotlin 文件；确需重跑请设 FORCE_REBUILD=1。"
+  );
+  process.exit(1);
+}
 const fs = require("fs");
 const P = "C:/Users/EDY/Desktop/CorgiMemo/app/src/main/java/com/corgimemo/app/ui/screens/inspiration/components/RichTextFormatToolbar.kt";
 let s = fs.readFileSync(P, "utf8").replace(/\r\n/g, "\n");
