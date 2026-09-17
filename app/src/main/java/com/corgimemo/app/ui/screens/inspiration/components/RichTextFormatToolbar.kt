@@ -209,34 +209,21 @@ fun RichTextFormatToolbar(
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        /** ====== 第一组：基础样式 (字体选择 / 加粗字重菜单 / 斜体 / 下划线 / 删除线) ====== */
+        /** ====== 组一：面板与行内格式（+ 浮层同序前段：字体 / 字号颜色 / B / I / U / S） ====== */
         FormatButtonGroup {
-            /**
-             * 字体选择按钮（位于加粗 B 左侧）：
-             * v2026-09-04 图标由 Material FontDownload 换为 Lucide「Type」（描边风格，
-             * 与字号颜色按钮的 CaseSensitive 配套，视觉更轻盈统一）。
-             * 点击展开/收起字体选择面板（面板由 [InspirationEditBottomBar] 插入在工具栏与相机行之间，
-             * 展开时收起软键盘并把相机行向下推开）；激活态 = 图标变主题 primary 色。
-             */
             FormatIconButton(
                 imageVector = LucideIcons.Type,
                 isActive = isFontPanelOpen,
                 onClick = onFontPickerClick,
                 contentDescription = "字体"
             )
-            /**
-             * 字号与颜色按钮（v2026-09-04 新增，位于字体按钮与加粗 B 之间）：
-             * Lucide「CaseSensitive」图标（与已审核原型一致）；点击展开/收起字号与颜色面板
-             * （与字体面板互斥、占同一槽位，见 [InspirationEditBottomBar]）；激活态与字体按钮同款。
-             */
             FormatIconButton(
                 imageVector = LucideIcons.CaseSensitive,
                 isActive = isSizeColorPanelOpen,
                 onClick = onSizeColorPanelClick,
                 contentDescription = "字号与颜色"
             )
-            /** 加粗主按钮：点击展开/收起字重菜单；展开时显示左箭头，收起时显示右箭头。
-             *  BlockNote 模式（boldSingleTier=true）：点击直接 toggle 加粗（HTML 无多档字重），不展开菜单 */
+            /** 加粗主按钮：BlockNote 模式（单档）点击直接 toggle 加粗；Compose 模式展开字重菜单 */
             FormatWeightButton(
                 tier = currentTier,
                 expanded = !boldSingleTier && boldExpanded,
@@ -288,12 +275,54 @@ fun RichTextFormatToolbar(
                 onClick = onToggleStrikethrough,
                 contentDescription = "删除线"
             )
+        }
+
+        ToolbarDivider()
+
+        /** ====== 组二（浮层同序中段）：对齐×3 / 颜色 / 嵌套± / 链接 ====== */
+        FormatButtonGroup {
             FormatIconButton(
-                imageVector = Icons.Default.Code,
-                isActive = state.isCodeSpan,
-                onClick = onToggleCodeSpan,
-                contentDescription = "代码样式"
+                imageVector = Icons.AutoMirrored.Filled.FormatAlignLeft,
+                isActive = false,
+                onClick = onAlignLeft,
+                contentDescription = "左对齐"
             )
+            FormatIconButton(
+                imageVector = Icons.Default.FormatAlignCenter,
+                isActive = false,
+                onClick = onAlignCenter,
+                contentDescription = "居中对齐"
+            )
+            FormatIconButton(
+                imageVector = Icons.AutoMirrored.Filled.FormatAlignRight,
+                isActive = false,
+                onClick = onAlignRight,
+                contentDescription = "右对齐"
+            )
+            /** 颜色按钮（浮层 ColorStyleButton 同位）：打开文字/背景色板对话框 */
+            FormatIconButton(
+                imageVector = Icons.Default.FormatColorText,
+                isActive = showColorStyleDialog,
+                onClick = onOpenColorStyleDialog,
+                contentDescription = "颜色"
+            )
+            /** 嵌套 +1（浮层 NestBlockButton 同位；BlockNote 模式 nest，Compose 模式缩进+1） */
+            FormatIconButton(
+                imageVector = Icons.Default.FormatIndentIncrease,
+                isActive = false,
+                enabled = !useBlockNoteEditor || onTransformEnabled,
+                onClick = { if (useBlockNoteEditor) blockNoteController.format("indent") else onIncreaseIndent() },
+                contentDescription = "增加缩进"
+            )
+            /** 嵌套 −1（浮层 UnNestBlockButton 同位） */
+            FormatIconButton(
+                imageVector = Icons.Default.FormatIndentDecrease,
+                isActive = false,
+                enabled = !useBlockNoteEditor || onTransformEnabled,
+                onClick = { if (useBlockNoteEditor) blockNoteController.format("outdent") else onDecreaseIndent() },
+                contentDescription = "减少缩进"
+            )
+            /** 插入链接（BlockNote 模式弹 URL 对话框 → format createLink） */
             FormatIconButton(
                 imageVector = Icons.Default.Link,
                 isActive = state.isLink,
@@ -304,7 +333,7 @@ fun RichTextFormatToolbar(
 
         ToolbarDivider()
 
-        /** ====== 第二组：标题与折叠标题（+ 菜单 Headings/Subheadings 合并；▸ 前缀 = 可折叠版） ====== */
+        /** ====== 组三：Headings（+ 菜单 Headings 分类，Ri 同款图标） ====== */
         FormatButtonGroup {
             RiFormatButton("RiH1", onClick = { onTransform("heading1") }, contentDescription = "标题 1", enabled = onTransformEnabled)
             RiFormatButton("RiH2", onClick = { onTransform("heading2") }, contentDescription = "标题 2", enabled = onTransformEnabled)
@@ -312,7 +341,12 @@ fun RichTextFormatToolbar(
             RiFormatButton("RiH4", onClick = { onTransform("heading4") }, contentDescription = "标题 4", enabled = onTransformEnabled)
             RiFormatButton("RiH5", onClick = { onTransform("heading5") }, contentDescription = "标题 5", enabled = onTransformEnabled)
             RiFormatButton("RiH6", onClick = { onTransform("heading6") }, contentDescription = "标题 6", enabled = onTransformEnabled)
-            /** 折叠标题（+ 菜单 Toggle Heading 1-3）：▸ 前缀区分，点击转换（再点退回普通段落） */
+        }
+
+        ToolbarDivider()
+
+        /** ====== 组四：Subheadings（可折叠标题，+ 菜单 Subheadings 分类） ====== */
+        FormatButtonGroup {
             FormatTextButton("▸1", isActive = false, onClick = { onTransform("toggleHeading") }, contentDescription = "可折叠标题 1", enabled = onTransformEnabled)
             FormatTextButton("▸2", isActive = false, onClick = { onTransform("toggleHeading2") }, contentDescription = "可折叠标题 2", enabled = onTransformEnabled)
             FormatTextButton("▸3", isActive = false, onClick = { onTransform("toggleHeading3") }, contentDescription = "可折叠标题 3", enabled = onTransformEnabled)
@@ -320,7 +354,7 @@ fun RichTextFormatToolbar(
 
         ToolbarDivider()
 
-        /** ====== 第四组：Basic blocks（+ 菜单 Basic blocks 分类；图标与 + 菜单同款并按其顺序排列） ====== */
+        /** ====== 组五：Basic blocks（+ 菜单 Basic blocks 分类；图标与 + 菜单同款并按其顺序排列） ====== */
         FormatButtonGroup {
             /** Numbered List（+ 菜单同款 RiListOrdered；激活态跟随光标块类型） */
             RiFormatButton(
@@ -363,24 +397,6 @@ fun RichTextFormatToolbar(
                 onClick = onInsertDivider,
                 contentDescription = "分割线"
             )
-            /**
-             * 增加/减少缩进（v2026-09-05）：列表行做层级缩进（可连续叠加），普通文本行
-             * 点「增加缩进」自动转列表项；边界时置灰禁用。
-             */
-            FormatIconButton(
-                imageVector = Icons.Default.FormatIndentIncrease,
-                isActive = false,
-                enabled = canIncreaseIndent,
-                onClick = onIncreaseIndent,
-                contentDescription = "增加缩进"
-            )
-            FormatIconButton(
-                imageVector = Icons.Default.FormatIndentDecrease,
-                isActive = false,
-                enabled = canDecreaseIndent,
-                onClick = onDecreaseIndent,
-                contentDescription = "减少缩进"
-            )
             /** Quote（+ 菜单 Quote） */
             RiFormatButton("RiQuoteText", onClick = { onTransform("quote") }, contentDescription = "引用", enabled = onTransformEnabled)
             /** Toggle List（+ 菜单 Toggle List） */
@@ -391,14 +407,14 @@ fun RichTextFormatToolbar(
 
         ToolbarDivider()
 
-        /** ====== 第五组：Advanced（+ 菜单 Advanced 分类） ====== */
+        /** ====== 组六：Advanced（+ 菜单 Advanced 分类） ====== */
         FormatButtonGroup {
             RiFormatButton("RiTable2", onClick = { onTransform("table") }, contentDescription = "表格", enabled = onTransformEnabled)
         }
 
         ToolbarDivider()
 
-        /** ====== 第六组：Media（+ 菜单 Media 分类；宿主选择器 → Bridge 插入） ====== */
+        /** ====== 组七：Media（+ 菜单 Media 分类；宿主选择器 → Bridge 插入） ====== */
         FormatButtonGroup {
             RiFormatButton("RiImage2Fill", onClick = { onInsertMedia("image") }, contentDescription = "图片", enabled = onTransformEnabled)
             RiFormatButton("RiFilmLine", onClick = { onInsertMedia("video") }, contentDescription = "视频", enabled = onTransformEnabled)
@@ -408,79 +424,9 @@ fun RichTextFormatToolbar(
 
         ToolbarDivider()
 
-        /** ====== 第七组：Others（+ 菜单 Others 分类） ====== */
+        /** ====== 组八：Others（+ 菜单 Others 分类） ====== */
         FormatButtonGroup {
             RiFormatButton("RiEmotionFill", onClick = onOpenEmojiPicker, contentDescription = "表情", enabled = onTransformEnabled)
-        }
-        ToolbarDivider()
-
-        /** ====== 第八组：浮层格式区（FormattingToolbar 桥接：对齐×3 + 链接对话框） ====== */
-        FormatButtonGroup {
-            FormatIconButton(
-                imageVector = Icons.AutoMirrored.Filled.FormatAlignLeft,
-                isActive = false,
-                onClick = onAlignLeft,
-                contentDescription = "左对齐"
-            )
-            FormatIconButton(
-                imageVector = Icons.Default.FormatAlignCenter,
-                isActive = false,
-                onClick = onAlignCenter,
-                contentDescription = "居中对齐"
-            )
-            FormatIconButton(
-                imageVector = Icons.AutoMirrored.Filled.FormatAlignRight,
-                isActive = false,
-                onClick = onAlignRight,
-                contentDescription = "右对齐"
-            )
-            /** 插入链接（BlockNote 模式弹 URL 对话框 → format createLink） */
-            FormatIconButton(
-                imageVector = Icons.Default.Link,
-                isActive = state.isLink,
-                onClick = onInsertLink,
-                contentDescription = "插入链接"
-            )
-            /** ====== 浮层格式区（FormattingToolbar 同序）：对齐×3 / 颜色 / 嵌套± ====== */
-            FormatIconButton(
-                imageVector = Icons.AutoMirrored.Filled.FormatAlignLeft,
-                isActive = false,
-                onClick = onAlignLeft,
-                contentDescription = "左对齐"
-            )
-            FormatIconButton(
-                imageVector = Icons.Default.FormatAlignCenter,
-                isActive = false,
-                onClick = onAlignCenter,
-                contentDescription = "居中对齐"
-            )
-            FormatIconButton(
-                imageVector = Icons.AutoMirrored.Filled.FormatAlignRight,
-                isActive = false,
-                onClick = onAlignRight,
-                contentDescription = "右对齐"
-            )
-            /** 颜色按钮（浮层 ColorStyleButton 同位）：打开文字/背景色板对话框 */
-            FormatTextButton(
-                label = "A",
-                isActive = showColorStyleDialog,
-                onClick = onOpenColorStyleDialog,
-                contentDescription = "颜色"
-            )
-            /** 嵌套 +1（浮层 NestBlockButton 同位）：经宿主回调分支（BlockNote=nest / Compose=缩进） */
-            FormatIconButton(
-                imageVector = Icons.Default.FormatIndentIncrease,
-                isActive = false,
-                onClick = onIncreaseIndent,
-                contentDescription = "增加缩进"
-            )
-            /** 嵌套 −1（浮层 UnNestBlockButton 同位） */
-            FormatIconButton(
-                imageVector = Icons.Default.FormatIndentDecrease,
-                isActive = false,
-                onClick = onDecreaseIndent,
-                contentDescription = "减少缩进"
-            )
         }
     }
 }
