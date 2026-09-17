@@ -1,5 +1,8 @@
 package com.corgimemo.app.ui.screens.probe
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
@@ -211,7 +214,7 @@ object BlockNotePlusMenuIcons {
     /** 解析缓存 */
     private val cache = mutableMapOf<String, ImageVector>()
 
-    /** 取 ImageVector（同 key 复用；d 数据经 compose PathParser 解析为 PathNode 列表） */
+    /** 取 ImageVector（同 key 复用；d 经 compose vector.PathParser 解析为 PathNode 列表后 addPath） */
     fun vectorFor(riName: String): ImageVector? {
         cache[riName]?.let { return it }
         val def = defs[riName] ?: return null
@@ -223,8 +226,11 @@ object BlockNotePlusMenuIcons {
             viewportHeight = def.viewport,
         )
         for (d in def.paths) {
-            builder.addPathNodes(
-                PathParser().parsePathString(d).toNodes()
+            val nodes = PathParser().parsePathString(d).toNodes()
+            builder.addPath(
+                nodes,
+                pathFillType = PathFillType.NonZero,
+                fill = SolidColor(Color.Black),
             )
         }
         val v = builder.build()
