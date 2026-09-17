@@ -300,26 +300,24 @@ fun RichTextFormatToolbar(
                 contentDescription = "右对齐"
             )
             /** 颜色按钮（浮层 ColorStyleButton 同位）：打开文字/背景色板对话框 */
-            FormatIconButton(
-                imageVector = Icons.Default.FormatColorText,
+            FormatTextButton(
+                label = "A",
                 isActive = showColorStyleDialog,
                 onClick = onOpenColorStyleDialog,
                 contentDescription = "颜色"
             )
-            /** 嵌套 +1（浮层 NestBlockButton 同位；BlockNote 模式 nest，Compose 模式缩进+1） */
+            /** 嵌套 +1（浮层 NestBlockButton 同位）：经宿主回调分支（BlockNote=nest / Compose=缩进） */
             FormatIconButton(
                 imageVector = Icons.Default.FormatIndentIncrease,
                 isActive = false,
-                enabled = !useBlockNoteEditor || onTransformEnabled,
-                onClick = { if (useBlockNoteEditor) blockNoteController.format("indent") else onIncreaseIndent() },
+                onClick = onIncreaseIndent,
                 contentDescription = "增加缩进"
             )
             /** 嵌套 −1（浮层 UnNestBlockButton 同位） */
             FormatIconButton(
                 imageVector = Icons.Default.FormatIndentDecrease,
                 isActive = false,
-                enabled = !useBlockNoteEditor || onTransformEnabled,
-                onClick = { if (useBlockNoteEditor) blockNoteController.format("outdent") else onDecreaseIndent() },
+                onClick = onDecreaseIndent,
                 contentDescription = "减少缩进"
             )
             /** 插入链接（BlockNote 模式弹 URL 对话框 → format createLink） */
