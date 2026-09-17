@@ -294,7 +294,7 @@ fun RichTextFormatToolbar(
 
         ToolbarDivider()
 
-        /** ====== 第二组：Headings（+ 菜单 Headings 分类，Ri 同款图标） ====== */
+        /** ====== 第二组：标题与折叠标题（+ 菜单 Headings/Subheadings 合并；▸ 前缀 = 可折叠版） ====== */
         FormatButtonGroup {
             RiFormatButton("RiH1", onClick = { onTransform("heading1") }, contentDescription = "标题 1", enabled = onTransformEnabled)
             RiFormatButton("RiH2", onClick = { onTransform("heading2") }, contentDescription = "标题 2", enabled = onTransformEnabled)
@@ -302,15 +302,10 @@ fun RichTextFormatToolbar(
             RiFormatButton("RiH4", onClick = { onTransform("heading4") }, contentDescription = "标题 4", enabled = onTransformEnabled)
             RiFormatButton("RiH5", onClick = { onTransform("heading5") }, contentDescription = "标题 5", enabled = onTransformEnabled)
             RiFormatButton("RiH6", onClick = { onTransform("heading6") }, contentDescription = "标题 6", enabled = onTransformEnabled)
-        }
-
-        ToolbarDivider()
-
-        /** ====== 第三组：Subheadings（+ 菜单 Subheadings 分类：可折叠标题） ====== */
-        FormatButtonGroup {
-            RiFormatButton("RiH1", onClick = { onTransform("toggleHeading") }, contentDescription = "可折叠标题 1", enabled = onTransformEnabled)
-            RiFormatButton("RiH2", onClick = { onTransform("toggleHeading2") }, contentDescription = "可折叠标题 2", enabled = onTransformEnabled)
-            RiFormatButton("RiH3", onClick = { onTransform("toggleHeading3") }, contentDescription = "可折叠标题 3", enabled = onTransformEnabled)
+            /** 折叠标题（+ 菜单 Toggle Heading 1-3）：▸ 前缀区分，点击转换（再点退回普通段落） */
+            FormatTextButton("▸1", isActive = false, onClick = { onTransform("toggleHeading") }, contentDescription = "可折叠标题 1", enabled = onTransformEnabled)
+            FormatTextButton("▸2", isActive = false, onClick = { onTransform("toggleHeading2") }, contentDescription = "可折叠标题 2", enabled = onTransformEnabled)
+            FormatTextButton("▸3", isActive = false, onClick = { onTransform("toggleHeading3") }, contentDescription = "可折叠标题 3", enabled = onTransformEnabled)
         }
 
         ToolbarDivider()
