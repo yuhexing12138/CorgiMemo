@@ -58,6 +58,18 @@
   **判据**：宿主传了 `heightIn(min)` 但视觉没生效时，逐层 grep `fillMaxSize`，全部改为 `fillMaxWidth()`。
   自维护组件「不 fill 高度」的约定，**要在每一层都写，不能只写外层**——首版只在 Box 上去掉 `fillMaxSize`，真机仍没占满。
 
+## ⚠️ Compose 高频陷阱
+- **`remember { }` 的 calculation lambda 不是 `@Composable`**：在里面读 `MaterialTheme.colorScheme.*` /
+  `LocalXxx.current` 等组合属性 → 报 `@Composable invocations can only happen from the context of a @Composable function`。
+  **迷惑点：key 位置是合法的**——`remember(MaterialTheme.colorScheme.background) { ... }` 能编过，
+  因为 key 在组合期求值；只有**大括号内**非法。修法：把组合读取提到 `remember` 外部存成普通局部变量：
+  ```kotlin
+  val themeBg = MaterialTheme.colorScheme.background          // 组合期读取 ✅
+  val x = remember(userColor, themeBg) { if (...) themeBg else userColor }  // 纯计算 ✅
+  ```
+  同类：`derivedStateOf { }` 的 lambda、`LaunchedEffect { }` 里读组合属性（后者虽能编过但语义错——不会随主题重组）。
+- **`remember(key)` 的 key 不要传"每次重组都是新实例"的对象**（如新建的 lambda、`listOf(...)`），会导致缓存永久失效。
+
 ## 图片附件页（`InspirationImageGallery`，全屏沉浸预览）
 - `MainActivity` 已声明 `configChanges`（不含 uiMode）→ 旋转不重建，改 `requestedOrientation`。
 - ⚠️ **缩放与翻页按指针数分流**：双指始终缩放并 consume；单指仅 `scale>1f` 时 consume 用于平移，否则放行 Pager。

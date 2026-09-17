@@ -517,6 +517,18 @@ fun InspirationEditScreen(
         }
 
     /**
+     * 主题背景色（先读出为普通局部变量，供下方 `remember` 使用）。
+     *
+     * ⚠️ 必须在此处（**组合上下文内**）求值，不能写进 `remember { ... }` 的 calculation lambda：
+     * `MaterialTheme.colorScheme` 是 `@Composable` 属性读取，而 `remember(key) { calc }` 的
+     * `calc` 是**普通 lambda**（非 `@Composable`，在组合之外执行，用于缓存计算），
+     * 在里面读会报 `@Composable invocations can only happen from the context of a @Composable function`。
+     * 而 `remember` 的 **key 参数本身在组合期求值**，所以 key 位置可以直接写 `MaterialTheme...`——
+     * 「key 合法、lambda 体内非法」正是这个错误容易被忽略的原因。
+     */
+    val themeBackgroundColor = MaterialTheme.colorScheme.background
+
+    /**
      * 内容区**实际生效**背景色（唯一真值，v2026-09-17 收敛）
      *
      * 由 [userPickedBackgroundColor] 做 `Transparent → 主题 background` 的回落得到，
@@ -532,9 +544,9 @@ fun InspirationEditScreen(
      * ⚠️ 用 `remember` 缓存：该值在重组中反复参与 `Color` 相等比较与参数传递，
      * 且 key（用户自选色 + 主题背景）任一变化才需重算。
      */
-    val contentBackgroundColor = remember(userPickedBackgroundColor, MaterialTheme.colorScheme.background) {
+    val contentBackgroundColor = remember(userPickedBackgroundColor, themeBackgroundColor) {
         if (userPickedBackgroundColor == Color.Transparent) {
-            MaterialTheme.colorScheme.background
+            themeBackgroundColor
         } else {
             userPickedBackgroundColor
         }
