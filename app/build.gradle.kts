@@ -9,6 +9,125 @@ plugins {
     id("dagger.hilt.android.plugin")
 }
 
+// ============================================================================
+// BlockNote 编辑器产物构建（v1.8）
+//
+// 背景：app/src/main/assets/blocknote-web/editor/editor.html 是 vite 用
+// viteSingleFile 打出的**单文件内联产物**（约 1.88MB），源码在 blocknote-probe/。
+// Gradle 只把 assets 当静态资源原样打包，**不会**触发 npm 构建——曾因此出现
+// 「JS 源码已改、App 也已重编，但真机仍是旧 bundle」的事故（真机实测踩坑）。
+//
+// 这里把 vite 构建注册为 Gradle task，并让 assets 资源任务依赖它，做到：
+//   1) assembleDebug/Release 自动带上最新产物，不再依赖人工记得跑 npm
+//   2) 用 inputs/outputs 声明实现**增量**——源码未变时 SKIPPED，不浪费 45 秒
+//   3) 任何失败都不阻断 App 编译（仅告警），避免未装 node 的机器无法构建
+//
+// 手动强制重建：./gradlew :app:buildBlockNoteEditor --rerun-tasks
+// ============================================================================
+
+/** blocknote-probe 子工程根目录（vite 工程位置） */
+val blocknoteProbeDir = rootProject.file("blocknote-probe")
+
+/** 编辑器产物输出目录（vite.editor.config.ts 的 outDir 指向此处） */
+val blocknoteEditorOutDir = file("src/main/assets/blocknote-web/editor")
+
+/** 编辑器产物文件名 */
+val blocknoteEditorArtifact = blocknoteEditorOutDir.resolve("editor.html")
+
+/**
+ * 解析 npm 可执行文件路径。
+ *
+ * Windows 下 npm 实际是 npm.cmd（批处理），Gradle 直接执行 "npm" 会因找不到
+ * 可执行文件而失败；这里按平台显式补后缀。
+ */
+fun resolveNpmExecutable(): String {
+    val isWindows = System.getProperty("os.name").lowercase().contains("win")
+    return if (isWindows) "npm.cmd" else "npm"
+}
+
+/**
+ * 构建 BlockNote 编辑器产物（editor.html）。
+ *
+ * 通过 inputs.dir 声明「编辑器源码 + 构建配置」为输入、editor.html 为输出，
+ * 由 Gradle 的增量检查决定是否需要真正执行——源码未动时该 task 显示 UP-TO-DATE。
+ */
+val buildBlockNoteEditor by tasks.registering(Exec::class) {
+    group = "blocknote"
+    description = "构建 BlockNote 编辑器产物（vite build:editor → assets/blocknote-web/editor）"
+
+    workingDir = blocknoteProbeDir
+    commandLine(resolveNpmExecutable(), "run", "build:editor")
+
+    // 增量输入：编辑器源码、入口 html、vite 配置、依赖清单
+    inputs.dir(blocknoteProbeDir.resolve("src"))
+    inputs.file(blocknoteProbeDir.resolve("editor.html"))
+    inputs.file(blocknoteProbeDir.resolve("vite.editor.config.ts"))
+    inputs.file(blocknoteProbeDir.resolve("package.json"))
+    inputs.file(blocknoteProbeDir.resolve("package-lock.json"))
+        .withPropertyName("packageLock")
+        .optional(true)
+
+    // 增量输出：产物本身（vite 每次重排压缩短变量名，内容必然变化，不影响增量判定）
+    outputs.file(blocknoteEditorArtifact)
+
+    /**
+     * 失败标记文件：存在即代表「上次构建失败」，用于强制下次重跑。
+     *
+     * 为什么不直接用 outputs.upToDateWhen { executionResult... }：
+     * up-to-date 检查发生在 task **执行之前**，那会儿 executionResult 还不存在，
+     * 读取会抛异常。所以改用「失败即落一个标记文件」的方式间接判断：
+     * 标记存在 → upToDateWhen 返回 false → 必然重跑；成功则删掉标记。
+     */
+    val failureMarker = layout.buildDirectory.file("blocknote-editor-build.failed")
+    outputs.upToDateWhen { !failureMarker.get().asFile.exists() }
+
+    /**
+     * 失败处理策略：**告警、不阻断 App 编译；失败必重试；绝不销毁已有产物**。
+     *
+     * 两个约束要同时满足：
+     * 1) 未装 node / 依赖缺失的机器仍能编 App → isIgnoreExitValue = true，
+     *    否则 npm 一失败整条构建链就断。
+     * 2) 但吞掉失败后 Gradle 会认为本 task「成功」并缓存该状态，下次直接
+     *    UP-TO-DATE 跳过——开发者修好源码后仍一直拿旧产物，更难排查。
+     *
+     * 解法：失败时落标记文件（配合上面的 upToDateWhen 强制下次重试），
+     * 并保留既有 editor.html——删掉反而会让 App 运行时白屏，比用旧产物更糟。
+     */
+    isIgnoreExitValue = true
+
+    doLast {
+        val marker = failureMarker.get().asFile
+        if (executionResult.get().exitValue != 0) {
+            marker.parentFile?.mkdirs()
+            marker.writeText("exit=${executionResult.get().exitValue}")
+            logger.warn(
+                "[blocknote] 编辑器产物构建失败（exit=${executionResult.get().exitValue}），" +
+                    "App 将继续使用既有的 editor.html，下次构建会自动重试。\n" +
+                    "  排查：cd blocknote-probe && npm install && npm run build:editor"
+            )
+        } else {
+            marker.delete()
+            logger.lifecycle("[blocknote] 编辑器产物已刷新 → $blocknoteEditorArtifact")
+        }
+    }
+}
+
+/**
+ * 让所有 assets 合并任务（mergeDebugAssets / mergeReleaseAssets / …）依赖产物构建。
+ *
+ * ⚠️ 时序问题：AGP 的 merge*Assets task 由 variant API 注册，时机晚于脚本顶层、
+ * 且不保证在 afterEvaluate 之前。用 `tasks.configureEach { }` 而非
+ * `tasks.matching { }.configureEach { }`——前者对**此后注册的每个 task**都执行回调，
+ * 天然不受注册时序影响；后者在调用时刻就绑定了当时的集合快照，会静默失配。
+ *
+ * 用 name 前缀/后缀判断而非类型，是因为 merge*Assets 是 AGP 内部实现类。
+ */
+tasks.configureEach {
+    if (name.startsWith("merge") && name.endsWith("Assets")) {
+        dependsOn(buildBlockNoteEditor)
+    }
+}
+
 /** Release signing is intentionally local-only. Keep the actual values in the
  * repository-root `keystore.properties` file (which is ignored by Git), for
  * example by copying `keystore.properties.example`.

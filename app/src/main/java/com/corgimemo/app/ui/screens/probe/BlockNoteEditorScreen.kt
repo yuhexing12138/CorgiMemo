@@ -256,7 +256,12 @@ private fun createEditorWebView(
                         val msg = JSONObject(json)
                         when (msg.optString("type")) {
                             "ready" -> {
-                                Log.d(TAG, "ready received → sending init")
+                                // v1.8：构建指纹随 ready 上行，便于确认 assets 产物版本
+                                Log.d(
+                                    TAG,
+                                    "ready received | build=${msg.optString("build", "unknown")} " +
+                                        "→ sending init"
+                                )
                                 mainHandler.post { onReady() }
                             }
                             "changed" -> {

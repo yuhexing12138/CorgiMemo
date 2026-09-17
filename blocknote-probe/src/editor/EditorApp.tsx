@@ -10,7 +10,7 @@ import {
 import { BlockNoteEditor } from "@blocknote/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { editorSchema } from "./schema";
-import { bindDown, sendUp, type ThemePayload } from "./bridge";
+import { bindDown, sendUp, BUILD_FINGERPRINT, type ThemePayload } from "./bridge";
 import { mdToBlocks, blocksToMd, toWebImageUrl } from "./markdown/converter";
 import "../probe.css";
 import "./editor.css";
@@ -453,7 +453,8 @@ export default function EditorApp() {
         }
       }
     });
-    sendUp({ type: "ready" });
+    // v1.8：ready 带上构建指纹，宿主打进 logcat，便于确认 WebView 加载的产物版本
+    sendUp({ type: "ready", build: BUILD_FINGERPRINT });
     return () => {
       window.BlockNoteEditorHost = undefined;
     };

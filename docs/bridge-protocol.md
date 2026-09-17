@@ -31,6 +31,8 @@
 | `undoState` | `{ canUndo, canRedo }` | 撤销/重做可用态（v1.7）；历史栈变化后上报，宿主左上角按钮据此置灰 |
 | `error` | `{ message }` | JS 异常上报（Kotlin 侧打 logcat / 展示错误态） |
 
+> `ready` 载荷自 v1.8 起带可选 `build` 字段（构建指纹，见下），故其类型为 `{ build?: string }`。
+
 > `undoState` 的取值经 BlockNote 公开 API `editor.can(editor.undo / editor.redo)` 判定
 > （`StateManager.can()` 置 `isInCan` 使 `exec()` 走 `canExec()` 分支，**只判定不派发**，
 > 不会污染历史栈）。JS 侧做变化去重，仅在布尔态翻转时上行。
@@ -39,8 +41,8 @@
 ## 时序
 
 ```
-WebView 创建 → editor.html 加载 → React 挂载 → bindDown + sendUp(ready)
-Kotlin 收 ready → evaluateJavascript(init{markdown,...})
+WebView 创建 → editor.html 加载 → React 挂载 → bindDown + sendUp(ready{build})
+Kotlin 收 ready → logcat 打印构建指纹 → evaluateJavascript(init{markdown,...})
 JS 收 init → mdToBlocks → 渲染编辑器
 用户编辑 → onChange 防抖 800ms → blocksToMd → sendUp(changed)
           同时 sendUp(undoState) 刷新宿主撤销/重做按钮可用态
@@ -50,8 +52,36 @@ Kotlin 收 changed → 落库（P0 内存态，P1 接 Repository）
               → sendUp(undoState) → Kotlin 更新按钮可用态
 ```
 
+## 构建指纹（v1.8）
+
+`assets/blocknote-web/editor/editor.html` 是**静态资源**——Gradle 只负责原样打包，**不会**触发
+npm/vite 重建。因此「JS 源码改了但真机行为没变」的根因通常就是产物没重建（真机已踩过一次）。
+
+为了让这个问题一眼可查，构建期由 `vite.editor.config.ts` 的 `define` 注入全局常量
+`__BUILD_FINGERPRINT__`，格式为：
+
+```
+<构建时间 YYYY-MM-DD HH:mm:ss> <commit 短 hash><-dirty?>
+例：2026-09-17 18:20:31 a1b2c3d-dirty
+```
+
+- `-dirty` 仅在 `blocknote-probe/src` 有未提交改动时追加（只看编辑器源码，无关文件不影响）
+- git 不可用时 hash 回落 `nogit`，采集失败**不阻断构建**
+- JS 侧 `bridge.ts` 导出 `BUILD_FINGERPRINT`，经 `ready` 上行
+
+Kotlin 侧在 `handleUpMessage` 的 `ready` 分支打出：
+
+```
+adb logcat -s BlockNoteEditor:V | grep "ready received"
+# D BlockNoteEditor: ready received | build=2026-09-17 18:20:31 a1b2c3d
+```
+
+比对这里的 build 与 `git log -1 -- blocknote-probe/src` 的 commit 是否一致，即可判定产物新鲜度。
+
 ## 版本
 
 - v1（2026-09-16，P0）：上述五个下行 + 三个上行。升级时在本文档追加变更记录，JS/Kotlin 两侧同步实现。
 - v1.7（2026-09-17）：新增上行 `undoState`；JS 侧自绘的「撤销/重做」按钮移除，
   统一由宿主顶栏图标按钮承担（点击→`requestUndo`/`requestRedo`，可用态→`undoState`）。
+- v1.8（2026-09-17）：`ready` 新增可选 `build` 构建指纹字段（vite define 注入），
+  宿主打进 logcat 以排查 assets 产物滞后问题；协议本身无行为变化。

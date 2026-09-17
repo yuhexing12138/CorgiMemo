@@ -63,7 +63,16 @@ export type DownMessage =
 
 /** 上行消息（JS → Kotlin） */
 export type UpMessage =
-  | { type: "ready" }
+  | {
+      type: "ready";
+      /**
+       * 构建指纹（v1.8）：由 vite define 在构建期注入，形如
+       * "<构建时间> <commit 短 hash><-dirty?>"。
+       * 宿主收到后打进 logcat，用于排查「JS 源码改了但真机没生效」
+       * ——即 assets 里的产物是否被重新构建过。
+       */
+      build?: string;
+    }
   /** 内容变更快照（JS 侧防抖 800ms） */
   | { type: "changed"; markdown: string }
   /**
@@ -113,3 +122,22 @@ export function bindDown(handler: (msg: DownMessage) => void): void {
     },
   };
 }
+
+/**
+ * 构建指纹（v1.8）
+ *
+ * 由 `vite.editor.config.ts` 的 define 在**构建期**文本替换注入，形如
+ * `"2026-09-17 18:20:31 a1b2c3d"`（构建时间 + commit 短 hash，工作区脏时带 -dirty）。
+ *
+ * 存在的意义：assets 里的 `editor.html` 是**静态资源**，Gradle 不会重新生成它，
+ * 曾经的坑是「JS 源码改了、App 也重编了，但真机仍是旧 bundle」且无从判断。
+ * 现在宿主把该值打进 logcat，一眼就能确认 WebView 加载的是哪一版产物。
+ *
+ * 兜底：直接用 dev server（`npm run dev`）时该常量未被 define 替换，
+ * 此时回落到 "dev"。用 typeof 守卫而非直接引用，避免 ReferenceError。
+ */
+export const BUILD_FINGERPRINT: string =
+  typeof __BUILD_FINGERPRINT__ === "string" ? __BUILD_FINGERPRINT__ : "dev";
+
+/** vite define 注入的全局常量声明（构建期被替换为字符串字面量） */
+declare const __BUILD_FINGERPRINT__: string;

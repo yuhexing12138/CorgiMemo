@@ -181,7 +181,11 @@ class BlockNoteBridgeController {
             val msg = JSONObject(json)
             when (msg.optString("type")) {
                 "ready" -> {
-                    Log.d(TAG, "ready received")
+                    // v1.8：JS 侧带上构建指纹（<构建时间> <commit 短 hash><-dirty?>）。
+                    // assets 里的 editor.html 是静态资源，Gradle 不会重新生成——
+                    // 排查「JS 改了但真机没生效」时，看这一行即可确认加载的产物版本。
+                    val build = msg.optString("build", "unknown")
+                    Log.d(TAG, "ready received | build=$build")
                     ready = true
                     mainHandler.post { flushIfReady() }
                 }
