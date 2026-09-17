@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corgimemo.app.ui.components.longPressRepeat
 import com.corgimemo.app.ui.theme.ContentFontManager
 import com.corgimemo.app.ui.theme.FontWeightProbe
 import com.mohamedrejeb.richeditor.model.RichTextState
@@ -290,9 +291,28 @@ fun RichTextFormatToolbar(
                 onClick = onOpenColorStyleDialog,
                 contentDescription = "颜色"
             )
-            /** Nest / UnNest（浮层 NestBlockButton / UnNestBlockButton 同款图标） */
-            RiFormatButton("RiIndentIncrease", onClick = onIncreaseIndent, contentDescription = "增加缩进")
-            RiFormatButton("RiIndentDecrease", onClick = onDecreaseIndent, contentDescription = "减少缩进")
+            /**
+             * Nest / UnNest（浮层 NestBlockButton / UnNestBlockButton 同款图标）
+             *
+             * v2026-09-17 追加：启用**长按连发**——缩进常需连按多级（最多 6 级），
+             * 逐次点击很累。速度对齐 BlockNote 浮层按钮（450ms 后每 150ms）。
+             * canRepeat 复用既有的 canIncreaseIndent / canDecreaseIndent：
+             * 到顶（6 级）/ 非列表行时不仅按钮置灰，连发也会立即停止，不发无效命令。
+             */
+            RiFormatButton(
+                "RiIndentIncrease",
+                onClick = onIncreaseIndent,
+                contentDescription = "增加缩进",
+                enabled = canIncreaseIndent,
+                canRepeat = canIncreaseIndent,
+            )
+            RiFormatButton(
+                "RiIndentDecrease",
+                onClick = onDecreaseIndent,
+                contentDescription = "减少缩进",
+                enabled = canDecreaseIndent,
+                canRepeat = canDecreaseIndent,
+            )
             /** Link（浮层 CreateLinkButton 同款 RiLink）：BlockNote 模式弹 URL 对话框 → format createLink */
             RiFormatButton(
                 "RiLink",
@@ -405,12 +425,21 @@ fun RichTextFormatToolbar(
 /**
  * BlockNote「+」菜单同款图标按钮（P1-S10/S11）：Ri 矢量图标渲染。
  * 图标缺失时降级为文字（contentDescription 前两字）。
+ *
+ * v2026-09-17 追加：新增 [canRepeat]——传入非 null 时启用**长按连发**
+ * （按下即执行一次 → 450ms 后每 150ms 重复 → 抬手即停），手感对齐 BlockNote
+ * 浮层按钮。适配「连续操作」类按钮（缩进/反缩进需连按多级）。
+ * 传 null（默认）则保持原「即点即走」行为，零回归。
+ *
+ * @param canRepeat 非 null 时启用长按连发，且该值实时决定「是否继续连发」；
+ *                  null = 不启用连发（普通点击）
  */
 @Composable
 private fun RiFormatButton(
     riName: String,
     isActive: Boolean = false,
     enabled: Boolean = true,
+    canRepeat: Boolean? = null,
     contentDescription: String,
     onClick: () -> Unit
 ) {
@@ -422,10 +451,26 @@ private fun RiFormatButton(
     val vector = remember(riName) {
         com.corgimemo.app.ui.screens.probe.BlockNotePlusMenuIcons.vectorFor(riName)
     }
+    /**
+     * 连发开关：仅当调用方显式传入 canRepeat（非 null）时才挂手势 Modifier。
+     * 否则保持原样，避免给所有按钮都引入 pointerInput 的额外开销。
+     */
+    val repeatModifier = if (canRepeat != null) {
+        Modifier.longPressRepeat(
+            onAction = onClick,
+            enabled = enabled,
+            canRepeat = canRepeat,
+        )
+    } else {
+        Modifier
+    }
     IconButton(
-        onClick = onClick,
+        /** 启用连发时动作交给手势 Modifier（否则会双执行）；未启用时走常规 onClick */
+        onClick = if (canRepeat != null) ({}) else onClick,
         enabled = enabled,
-        modifier = Modifier.size(40.dp)
+        modifier = Modifier
+            .size(40.dp)
+            .then(repeatModifier)
     ) {
         if (vector != null) {
             Icon(
