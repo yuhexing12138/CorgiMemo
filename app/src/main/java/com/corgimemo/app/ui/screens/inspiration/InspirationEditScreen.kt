@@ -54,7 +54,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.corgimemo.app.ui.theme.LocalContentTypography
-import com.corgimemo.app.ui.theme.FontPreviewEngine
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -100,10 +99,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalTextToolbar
-import com.corgimemo.app.ui.components.ImagePasteTextToolbar
-import com.corgimemo.app.util.pasteImageOnCtrlV
-import com.corgimemo.app.util.toPxFloat
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
@@ -111,11 +106,8 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import android.graphics.Color as AndroidColor
-import com.corgimemo.app.data.model.CardRelation
-import com.corgimemo.app.data.model.CardSearchResult /** v2026-08-01 Phase 3：@ Trigger 搜索结果数据类 */
 import com.corgimemo.app.ui.components.AppSnackbarHost
 import com.corgimemo.app.ui.screens.inspiration.components.DEFAULT_BODY_SP
-import com.corgimemo.app.ui.screens.inspiration.components.FONT_SIZE_TIERS
 import com.corgimemo.app.ui.screens.inspiration.components.TEXT_COLORS
 /**
  * v2026-08-01 Phase 3：以下 import 已移除（关联改为 @ Trigger 内联插入）
@@ -148,20 +140,13 @@ import com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGalle
 import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils /** v2026-07-31 新增：标题与正文之间"时间戳+字数"行所需的字数统计工具 */
 import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（文本/图片/语音）*/
 import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
-import com.mohamedrejeb.richeditor.model.RichSpanStyle
 import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
-import com.mohamedrejeb.richeditor.ui.material3.TriggerSuggestions
-import com.mohamedrejeb.richeditor.model.LocalImageLoader
-import com.mohamedrejeb.richeditor.model.LocalTokenClickHandler
 import com.mohamedrejeb.richeditor.model.RichTextState
-import com.mohamedrejeb.richeditor.model.TokenClickHandler
-import com.corgimemo.app.ui.screens.inspiration.components.BodyBlocksEditor
 import com.corgimemo.app.ui.screens.probe.BlockNoteBridgeController
 import com.corgimemo.app.ui.screens.probe.BlockNoteEditorWebView
-import com.corgimemo.app.ui.components.CoilRichTextImageLoader
-import androidx.compose.runtime.CompositionLocalProvider
+import com.corgimemo.app.ui.components.LongPressRepeatIconButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -178,12 +163,6 @@ import kotlin.math.roundToInt
  * 路线 4 不再涉及内联渲染与 ▢ 占位字符，故整段删除。
  */
 
-/**
- * BlockNote 迁移（P1.5）：正文编辑器替换开关（编译期灰度）。
- * 置 false 一行即回退 Compose BodyBlocksEditor。
- */
-private const val USE_BLOCKNOTE_EDITOR = true
-
 /** Compose Color → "#RRGGBB"（BlockNote textColor 自由值格式；忽略 alpha） */
 private fun composeColorToHex(c: Color): String = String.format(
     Locale.US,
@@ -193,7 +172,7 @@ private fun composeColorToHex(c: Color): String = String.format(
     (c.blue * 255).toInt()
 )
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalRichTextApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun InspirationEditScreen(
     navController: NavController,
@@ -205,14 +184,10 @@ fun InspirationEditScreen(
     val content by viewModel.content.collectAsState()
 
     /**
-     * BlockNote 迁移（P1.5）：正文编辑区替换开关（编译期）。
-     * - true：正文用 BlockNote WebView 编辑器（跨块选择 + JS 格式工具栏），
-     *   页面其余 UI（标题/标签/底部栏/位置等）保持不变；
-     *   依赖 Compose richTextState 的底部功能（#标签/@提及/字体面板/字号颜色面板/语音/图片插入）
-     *   UI 保留但暂不生效（后续 P1-S10/S11 逐步桥接）。
-     * - false：回退 Compose BodyBlocksEditor（一行关回，灰度兜底）。
+     * 正文编辑区 = BlockNote WebView 编辑器（跨块选择 + JS 格式工具栏）。
+     * 页面其余 UI（标题/标签/底部栏/位置等）保持不变。
+     * 编辑器装载由下方 LaunchedEffect 经 Bridge 下发 init{markdown}。
      */
-    val useBlockNoteEditor = USE_BLOCKNOTE_EDITOR
     val contentLoaded by viewModel.contentLoaded.collectAsState()
     val blockNoteController = remember { BlockNoteBridgeController() }
     var blockNoteLoadStarted by remember { mutableStateOf(false) }
@@ -224,7 +199,7 @@ fun InspirationEditScreen(
 
     // 内容就绪（编辑模式 loadInspiration 完成 / 新建模式立即）→ 装载 WebView 编辑器（仅一次）
     androidx.compose.runtime.LaunchedEffect(contentLoaded) {
-        if (useBlockNoteEditor && contentLoaded && !blockNoteLoadStarted) {
+        if (contentLoaded && !blockNoteLoadStarted) {
             blockNoteLoadStarted = true
             blockNoteController.load(if (inspirationId == null) "" else viewModel.contentFormat.value)
         }
@@ -258,20 +233,8 @@ fun InspirationEditScreen(
     val geofenceEnabled by viewModel.geofenceEnabled.collectAsState()
     val geofenceAddress by viewModel.geofenceAddress.collectAsState()
 
-    // 子任务相关状态
-    val subTasks by viewModel.subTasks.collectAsState()
-
-    // 语音备注相关状态
-    val voiceNotePath by viewModel.voiceNotePath.collectAsState()
-    val voiceDuration by viewModel.voiceDuration.collectAsState()
-
     /** 图片路径列表状态 */
     val imagePaths by viewModel.imagePaths.collectAsState()
-
-    /** ★★★ 标签列表状态（灵感独有功能）★★★ */
-    val tags by viewModel.tags.collectAsState()
-    /** ★ 历史标签列表（从所有灵感聚合去重，用于 TriggerSuggestions 快速选择）★ */
-    val savedTags by viewModel.savedTags.collectAsState()
 
     val context = LocalContext.current
     /** 屏幕密度实例，用于 dp→px 精确转换 */
@@ -322,15 +285,6 @@ fun InspirationEditScreen(
      * 工具栏定位时经 lambda 延迟读取（滚动期间不触发重组）。
      */
     var editorViewportBounds by remember { mutableStateOf<Rect?>(null) }
-    val mediaTokenClickHandler = TokenClickHandler { token, _ ->
-        when (token.triggerId) {
-            "image" -> inlineImageViewerPath = token.id
-            "voice" -> {
-                val filePath = token.id.substringBefore("|")
-                voicePlayer.prepare(filePath).onSuccess { voicePlayer.play() }
-            }
-        }
-    }
     // 是否有录音权限（用于显示录制面板）
     var hasRecordPermission by remember { mutableStateOf(false) }
 
@@ -402,35 +356,32 @@ fun InspirationEditScreen(
     val isDirty by viewModel.isDirty.collectAsState()
 
     /**
-     * 路线 4：块级正文编辑器控制器（Text/Image 交错块）
+     * ⚠️ 待清理（BlockNote 迁移遗留）：块级正文编辑器控制器（Text/Image 交错块）。
      *
-     * - 每个 Text 块一个 RichTextEditor；图片块是独立 Composable
-     * - Enter 拆块 / 块首退格合并 / 图片块两步删除 / 拖拽手柄排序
-     * - 语音 / 话题 / 关联 token 仍内联在 Text 块内（用户要求不变）
-     * 详见 components/BodyBlocksEditor.kt
-     */
-    /**
-     * v2026-09-02 方案A：块编辑器 controller 改由 **ViewModel 持有**
-     * （trigger 注册一并移入 InspirationEditViewModel）——
-     * globalUndoStack（命令栈）随 ViewModel 存活，屏幕旋转不丢历史。
+     * 正文编辑器已切换为 BlockNote WebView（见下方 [BlockNoteEditorWebView]），
+     * 本 controller 的 **UI 渲染方（BodyBlocksEditor）已下线**，但以下数据链路仍在依赖它，
+     * 故暂时保留，待后续专项清理：
+     * - **图片备注 / 缩放属性持久化**：`applyImageProps` / `blocks`（保存时按 path 收集）
+     * - **旧数据媒体迁移**：`appendMediaMarkdown`（content_blocks → 正文内联）
+     * - **语音 token 插入**：`insertVoiceToken`
+     * - **图片删除**：`deleteImageByPath`
+     * - **格式工具栏激活态**：[richTextState] 的 `currentSpanStyle` 回显
      *
-     * - 每个 Text 块一个 RichTextEditor；图片块是独立 Composable
-     * - Enter 拆块 / 块首退格合并 / 图片块两步删除 / 拖拽手柄排序
-     * - 语音 / 话题 / 关联 token 仍内联在 Text 块内（用户要求不变）
-     * 详见 components/BodyBlocksEditor.kt
+     * 清理这些链路时，需同步确认上述功能是否已改由 BlockNote 侧承担。
+     * 详见 components/BodyBlocksEditor.kt（备份见「弃用文件/Compose编辑器-弃用备份/」）
      */
     @OptIn(ExperimentalRichTextApi::class)
     val bodyBlocks = viewModel.bodyBlocks
 
     /**
-     * 兼容层：原"单编辑器富文本状态" → 当前聚焦文本块的状态。
+     * 兼容层：块编辑器「聚焦文本块」的富文本状态（未聚焦时回退第一个文本块）。
      *
-     * 工具栏 / 触发弹窗 / 复制 / 撤销重做 / 语音插入等既有代码继续以
-     * `richTextState` 命名工作，实际作用于"聚焦块"（未聚焦时回退第一个文本块）。
+     * BlockNote 接管正文后，本状态**仅用于格式工具栏的激活态高亮**
+     * （粗体/斜体/列表等按钮的 isActive）与 `#`/`@` 插入等宿主持有逻辑；
+     * 正文内容本身不再经此状态读写（读走 WebView 的 markdown 上行）。
      *
      * 注意：这是**组合期求值**（Kotlin 局部变量不支持自定义 getter）——
-     * 聚焦块变化时 focusedBlockId 快照状态变化 → 重组 → 重新求值拿到新聚焦块，
-     * 因此与"点击时取当前聚焦块"在行为上等价。
+     * 聚焦块变化时 focusedBlockId 快照状态变化 → 重组 → 重新求值拿到新聚焦块。
      */
     val richTextState: RichTextState = bodyBlocks.focusedOrFirstTextState()
 
@@ -452,13 +403,8 @@ fun InspirationEditScreen(
                 coroutineScope.launch {
                     val savedPath = com.corgimemo.app.util.ImageUtils.copyUriToInternalStorage(context, uri)
                 savedPath?.let { path ->
-                    /** 路线 4：图片作为块级节点插入聚焦块光标处（自动拆块）
-                     *  BlockNote 模式（P1.5）：经 Bridge 插入 WebView 编辑器 */
-                    if (useBlockNoteEditor) {
-                        blockNoteController.insertImage(path)
-                    } else {
-                        bodyBlocks.insertImageAtFocused(path)
-                    }
+                    /** 拍照结果作为块级节点插入光标处：经 Bridge 下发到 BlockNote WebView 编辑器 */
+                    blockNoteController.insertImage(path)
                     viewModel.notifyInlineMediaChanged()
                 }
                 }
@@ -482,13 +428,9 @@ fun InspirationEditScreen(
                 ImageUtils.copyUriToInternalStorage(context, uri)
             }
             if (paths.isNotEmpty()) {
-                /** 路线 4：多张图片批量插入，整个 picker 动作作为单步撤销单位
-                 *  BlockNote 模式（P1.5）：经 Bridge 逐张插入（JS 侧 Yjs 事务天然合并为一步）*/
-                if (useBlockNoteEditor) {
-                    paths.forEach { path -> blockNoteController.insertImage(path) }
-                } else {
-                    bodyBlocks.insertImagesAtFocused(paths)
-                }
+                /** 多张图片批量插入：经 Bridge 逐张下发
+                 *  （JS 侧 Yjs 事务天然合并为一步，整个 picker 动作即单步撤销单位）*/
+                paths.forEach { path -> blockNoteController.insertImage(path) }
             }
             viewModel.notifyInlineMediaChanged()
         }
@@ -865,16 +807,6 @@ fun InspirationEditScreen(
     /** v2026-08-01 Phase 2：showTagPicker / pendingDeleteTag 已移除，标签改用 # Trigger 内联插入 */
 
     // ========== v2026-07-22 新增：关联管理状态 ==========
-    /** 关联列表（按当前灵感 id 加载） */
-    val relations by viewModel.relations.collectAsState()
-    /**
-     * 关联ID → 标题映射（由 ViewModel 异步加载并缓存）
-     *
-     * v2026-08-01 Phase 3 后：关联以 @ token 内联在正文中，标题映射仍保留用于：
-     * - mentionSuggestions 排除已关联卡片时的过滤（通过 relations 直接判断）
-     * - 未来可能的长按 token 删除关联功能
-     */
-    val relationTitles by viewModel.relationTitles.collectAsState()
     /**
      * v2026-08-01 Phase 3：以下状态已移除（关联改为 @ Trigger 内联插入）
      * - cardDetail / cardDetailLoading（LinkedCardPreviewDialog 已移除）
@@ -882,49 +814,6 @@ fun InspirationEditScreen(
      * - showRelationPicker（RelationPickerBottomSheet 已移除）
      */
 
-    /**
-     * @ 关联建议列表状态（v2026-08-01 Phase 3 新增）
-     *
-     * TriggerSuggestions 的 suggestions 函数是同步的 `(query: String) -> List<T>`，
-     * 但 viewModel.searchCards 是异步的。因此用此状态作为桥梁：
-     * 1. LaunchedEffect 监听 activeTriggerQuery 变化，异步调用 searchCards
-     * 2. 搜索结果更新到此状态
-     * 3. TriggerSuggestions 的 suggestions 函数直接返回此列表
-     *
-     * **生命周期**：
-     * - 当 activeTriggerQuery 的 triggerId == "mention" 时触发搜索
-     * - 当 trigger 失效（选中/取消）时清空列表
-     */
-    var mentionSuggestions by remember { mutableStateOf<List<CardSearchResult>>(emptyList()) }
-
-    /**
-     * 监听 activeTriggerQuery 变化，异步搜索卡片
-     *
-     * **防抖策略**：
-     * - 每次 query 变化取消上一次搜索任务（LaunchedEffect 自动 cancel-and-restart）
-     * - 延迟 200ms 后触发搜索（避免快速输入时过多 DB 查询）
-     *
-     * **搜索结果处理**：
-     * - 排除已关联的卡片（避免重复添加，因为 addRelation 会拒绝重复）
-     * - 限制最多 50 条（与原 RelationPickerBottomSheet 一致）
-     */
-    @OptIn(ExperimentalRichTextApi::class)
-    androidx.compose.runtime.LaunchedEffect(richTextState.activeTriggerQuery) {
-        val query = richTextState.activeTriggerQuery
-        if (query == null || query.triggerId != "mention") {
-            mentionSuggestions = emptyList()
-            return@LaunchedEffect
-        }
-        // 防抖：延迟 200ms 后搜索
-        delay(200L)
-        viewModel.searchCards(query.query) { results ->
-            // 排除已关联的卡片
-            val excludeIds = relations.map { it.targetType to it.targetId }.toSet()
-            mentionSuggestions = results
-                .filter { (it.cardType to it.cardId) !in excludeIds }
-                .take(50)
-        }
-    }
     /**
      * 位置提醒弹窗状态（v2026-07-22 改造）：
      * - 入口从"输入 # 触发"迁移到"点击工具栏 📍 位置按钮"
@@ -1098,77 +987,32 @@ fun InspirationEditScreen(
                 /**
                  * 撤销 + 重做（紧凑组）
                  *
-                 * v2026-09-02 方案A（两套历史隔离）：统一入口 [BodyBlocksController.undo]
-                 * / [redo] 做焦点判断——聚焦块库内 history 非空则先回退块内富文本
-                 * （打字 / 加粗 / 样式），空则回退全局命令栈（块的增删 / 排序 / 图片块编辑）。
-                 * 块编辑器的 `undoBehavior` 保持 Disabled：物理键盘 Ctrl+Z 由编辑器
-                 * onPreviewKeyEvent 拦截后调同一入口，两套历史不会交叉错乱。
+                 * 撤销/重做经 Bridge 下发到 JS 编辑器。
+                 *
+                 * v2026-09-17：JS 侧自绘的「↺ 撤销 / ↻ 重做」胶囊按钮已移除，
+                 * 此处为唯一入口；可用态经 `undoState` 上行驱动置灰。
+                 *
+                 * v2026-09-17 追加：改用 [LongPressRepeatIconButton] 恢复原 JS 按钮的
+                 * 长按连发手感（按下即执行 → 450ms 后每 150ms）；
+                 * 连发途中若历史栈见底（canUndo/canRedo 翻 false）立即停发。
                  */
-                if (useBlockNoteEditor) {
-                    /**
-                     * BlockNote 模式（P1.5）：撤销/重做经 Bridge 下发到 JS 编辑器。
-                     *
-                     * v2026-09-17：JS 侧自绘的「↺ 撤销 / ↻ 重做」胶囊按钮已移除，
-                     * 此处成为唯一入口；可用态经 `undoState` 上行驱动置灰
-                     * （对齐 Compose 分支的 canUndo/canRedo 语义）。
-                     */
-                    val noteCanUndo = blockNoteController.canUndo
-                    val noteCanRedo = blockNoteController.canRedo
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = { blockNoteController.undo() },
-                            enabled = noteCanUndo && !isLocked,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Undo,
-                                contentDescription = "撤销",
-                                tint = if (noteCanUndo && !isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = { blockNoteController.redo() },
-                            enabled = noteCanRedo && !isLocked,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Redo,
-                                contentDescription = "重做",
-                                tint = if (noteCanRedo && !isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                } else {
-                val bodyCanUndo = bodyBlocks.canUndo
-                val bodyCanRedo = bodyBlocks.canRedo
+                val noteCanUndo = blockNoteController.canUndo && !isLocked
+                val noteCanRedo = blockNoteController.canRedo && !isLocked
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = { bodyBlocks.undo() },
-                        enabled = bodyCanUndo && !isLocked,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Undo,
-                            contentDescription = "撤销",
-                            tint = if (bodyCanUndo && !isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    IconButton(
-                        onClick = { bodyBlocks.redo() },
-                        enabled = bodyCanRedo && !isLocked,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Redo,
-                            contentDescription = "重做",
-                            tint = if (bodyCanRedo && !isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
+                    LongPressRepeatIconButton(
+                        icon = Icons.AutoMirrored.Filled.Undo,
+                        contentDescription = "撤销",
+                        onAction = { blockNoteController.undo() },
+                        enabled = noteCanUndo,
+                        canRepeat = noteCanUndo,
+                    )
+                    LongPressRepeatIconButton(
+                        icon = Icons.AutoMirrored.Filled.Redo,
+                        contentDescription = "重做",
+                        onAction = { blockNoteController.redo() },
+                        enabled = noteCanRedo,
+                        canRepeat = noteCanRedo,
+                    )
                 }
 
                 Spacer(modifier = Modifier.width(4.dp))
@@ -1413,29 +1257,11 @@ fun InspirationEditScreen(
                 onFontPanelDismiss = {
                     val cjkChanged = pendingCjkFontId != contentFontEntry.id
                     val latinChanged = pendingLatinFontId != contentLatinFontId
-                    if (useBlockNoteEditor) {
-                        // BlockNote 模式（P1.5）：「应用」= setFontFamily 下行（S5 字体流，正文即时换字）
-                        if (cjkChanged || latinChanged) {
-                            blockNoteController.setFontFamily(pendingCjkFontId)
-                        }
-                        isFontPanelExpanded = false
-                    } else if (cjkChanged || latinChanged) {
-                        // 应用：点选过程只更新 pending（面板高亮），此处才写内容字体，
-                        // 避免逐次点选经 FontFamilyResolver 全局缓存累积各款字体而 OOM
-                        if (cjkChanged) {
-                            viewModel.onCjkFontSelected(pendingCjkFontId)
-                        }
-                        if (latinChanged) {
-                            viewModel.onLatinFontSelected(pendingLatinFontId)
-                        }
-                        // 清预览池 + 字重探测池：预览位图已缓存、探测结果亦按字体 tag 缓存，
-                        // 释放 Typeface 无损；配合 Theme 层隔离 resolver，常驻字体
-                        // 恒定在「中文 1 + 拉丁 1」两种。应用后 pending == 已应用，
-                        // 面板头按钮变回「完成」，再点一次即收起。
-                        FontPreviewEngine.clearTypefaces()
-                    } else {
-                        isFontPanelExpanded = false
+                    // 「应用」= setFontFamily 下行（字体流，正文即时换字）
+                    if (cjkChanged || latinChanged) {
+                        blockNoteController.setFontFamily(pendingCjkFontId)
                     }
+                    isFontPanelExpanded = false
                 },
                 /**
                  * 字号与颜色按钮（v2026-09-04 新增，字体按钮与 B 之间）：
@@ -1461,71 +1287,29 @@ fun InspirationEditScreen(
                  * 再写目标档；点默认档（[DEFAULT_BODY_SP] = 16sp）只清除不写入（回落正文默认）。
                  */
                 onFontSizeSelect = { sp ->
-                    if (useBlockNoteEditor) {
-                        // BlockNote 模式（P1.5）：字号面板点选 → fontSize 下行（默认档=清除）
-                        blockNoteController.format(
-                            "fontSize",
-                            if (sp == DEFAULT_BODY_SP) "default" else "${sp.sp}px"
-                        )
-                    } else {
-                    val target = sp.sp
-                    val current = richTextState.currentSpanStyle.fontSize
-                    FONT_SIZE_TIERS.forEach { tier ->
-                        richTextState.removeSpanStyle(SpanStyle(fontSize = tier.sp))
-                    }
-                    if (sp != DEFAULT_BODY_SP && current != target) {
-                        richTextState.toggleSpanStyle(SpanStyle(fontSize = target))
-                    }
-                    }
+                    // 字号面板点选 → fontSize 下行（默认档 = 清除，回落正文默认）
+                    blockNoteController.format(
+                        "fontSize",
+                        if (sp == DEFAULT_BODY_SP) "default" else "${sp.sp}px"
+                    )
                 },
                 /**
-                 * 预设色点选（即时生效）：先枚举清除全部预设色 + 当前色
-                 * （removeSpanStyle 仅在值匹配时生效，防历史叠加残留），再写目标色；
-                 * 「默认」项（color = null）只清除不写入（回落主题文字色）。
+                 * 预设色点选（即时生效）：下发 textColor 自由值；
+                 * 「默认」项（color = null）下发 default 清除（回落主题文字色）。
                  */
                 onPresetColorSelect = { idx ->
                     val targetColor = TEXT_COLORS.getOrNull(idx)?.color
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format(
-                            "textColor",
-                            if (targetColor == null) "default" else composeColorToHex(targetColor)
-                        )
-                    } else {
-                    val current = richTextState.currentSpanStyle.color
-                    TEXT_COLORS.forEach { entry ->
-                        entry.color?.let {
-                            richTextState.removeSpanStyle(SpanStyle(color = it))
-                        }
-                    }
-                    if (current.isSpecified && current != targetColor) {
-                        richTextState.removeSpanStyle(SpanStyle(color = current))
-                    }
-                    if (targetColor != null && current != targetColor) {
-                        richTextState.toggleSpanStyle(SpanStyle(color = targetColor))
-                    }
-                    }
+                    blockNoteController.format(
+                        "textColor",
+                        if (targetColor == null) "default" else composeColorToHex(targetColor)
+                    )
                 },
                 /**
-                 * 自定义取色（拖动每帧回调，即时生效）：清除当前色后写入新色。
-                 * 拖动性能考虑不做预设枚举（仅 remove 当前 common 值；
-                 * 库的 applyRichSpanStyleToSelectedText 会以新值分段覆盖选区）。
-                 * hex 来自面板 hsvToHex（格式可信），parse 失败静默忽略本次。
+                 * 自定义取色（拖动每帧回调，即时生效）：直接下发 hex
+                 * （WebView 端 addStyles 幂等，拖动高频无需去重）。
                  */
                 onCustomColorSelect = { hex ->
-                    val parsed = runCatching { Color(AndroidColor.parseColor(hex)) }.getOrNull()
-                    if (useBlockNoteEditor) {
-                        // 拖动高频：直接下发 hex（WebView 端 addStyles 幂等）
-                        blockNoteController.format("textColor", hex)
-                    } else if (parsed != null) {
-                        val targetColor = parsed
-                        val current = richTextState.currentSpanStyle.color
-                        if (current.isSpecified && current != targetColor) {
-                            richTextState.removeSpanStyle(SpanStyle(color = current))
-                        }
-                        if (current != targetColor) {
-                            richTextState.toggleSpanStyle(SpanStyle(color = targetColor))
-                        }
-                    }
+                    blockNoteController.format("textColor", hex)
                 },
                 /**
                  * 中文字体选择：只更新 pending 高亮（分离式预览，正文此时不换字）；
@@ -1539,129 +1323,64 @@ fun InspirationEditScreen(
                     pendingLatinFontId = fontId
                 },
                 /**
-                 * v2026-09-02：格式化操作**无需任何手动撤销处理**（方案A两套历史隔离）。
+                 * 格式化操作全部经 Bridge 下发到 BlockNote（JS 侧 Yjs 历史自行记录，
+                 * 与宿主撤销/重做按钮共用同一历史栈，无需宿主侧手动快照）。
                  *
-                 * 加粗 / 斜体 / 列表等作用于聚焦块（richTextState 兼容层 = 聚焦或首块），
-                 * 走 compose-rich-editor 库 `state.history` 的 Formatting 提交——
-                 * 块内富文本撤销由库自动记录，全局命令栈只管块的增删 / 排序，
-                 * 两套历史互不干扰。
-                 *
-                 * 原先这里调用的 `viewModel.pushRichTextSnapshot(...)` 属于
-                 * 已废弃的 VM 旧撤销栈（UI 层从不消费），早已移除。
+                 * 字重档位桥接为加粗 toggle（HTML 无多档字重概念）。
                  */
                 onSetFontWeight = { weight ->
-                    if (useBlockNoteEditor) {
-                        // BlockNote 模式（P1.5）：字重档位桥接为加粗 toggle（HTML 无多档字重概念）
-                        blockNoteController.format("bold")
-                    } else {
-                    // 设置字重档位（候选为当前内容字体 ContentFontManager.boldTiers，档数随字体变化；
-                    // 无独立字形的档位已置灰禁用、不会进入此回调）：
-                    // 先清除全部档位字重避免叠加，再 toggle 目标档。
-                    // 清除集合与工具栏 FontWeightProbe 探测基准（ContentFontManager，内容字体）共用，
-                    // 保证选档/取消语义一致——若遍历设置页「正文字体」(FontManager) 的 boldTiers，
-                    // 两者字体不同时会出现「按 B1 取消不掉加粗」的档位错配 bug（v2026-09-03 修复）。
-                    // toggle 语义：点当前已选档则取消加粗（回到常规字重）。
-                    val target = FontWeight(weight)
-                    val current = richTextState.currentSpanStyle.fontWeight
-                    ContentFontManager.currentEntry.value.boldTiers.forEach { w ->
-                        richTextState.removeSpanStyle(SpanStyle(fontWeight = FontWeight(w)))
-                    }
-                    if (current != target) {
-                        richTextState.toggleSpanStyle(SpanStyle(fontWeight = target))
-                    }
-                    }
+                    blockNoteController.format("bold")
                 },
                 onToggleItalic = {
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("italic")
-                    } else {
-                        richTextState.toggleSpanStyle(SpanStyle(fontStyle = FontStyle.Italic))
-                    }
+                    blockNoteController.format("italic")
                 },
                 onToggleUnderline = {
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("underline")
-                    } else {
-                        richTextState.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.Underline))
-                    }
+                    blockNoteController.format("underline")
                 },
                 onToggleStrikethrough = {
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("strike")
-                    } else {
-                        richTextState.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.LineThrough))
-                    }
+                    blockNoteController.format("strike")
                 },
                 onInsertUnorderedList = {
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("bulletList")
-                    } else {
-                        richTextState.toggleUnorderedList()
-                    }
+                    blockNoteController.format("bulletList")
                 },
                 onInsertOrderedList = {
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("numberedList")
-                    } else {
-                        richTextState.toggleOrderedList()
-                    }
+                    blockNoteController.format("numberedList")
                 },
                 onIncreaseIndent = {
-                    /** 增加缩进（v2026-09-05）：对聚焦正文块做列表层级 +1（普通文本行自动转列表） */
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("indent")
-                    } else {
-                        bodyBlocks.indentFocusedBlock(delta = +1)
-                    }
+                    /** 增加缩进：对聚焦正文块做列表层级 +1（普通文本行自动转列表） */
+                    blockNoteController.format("indent")
                 },
                 onDecreaseIndent = {
-                    /** 减少缩进（v2026-09-05）：对聚焦正文块做列表层级 -1（一级再减退出列表） */
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("outdent")
-                    } else {
-                        bodyBlocks.indentFocusedBlock(delta = -1)
-                    }
+                    /** 减少缩进：对聚焦正文块做列表层级 -1（一级再减退出列表） */
+                    blockNoteController.format("outdent")
                 },
                 onInsertDivider = {
-                    /** 插入分割线（v2026-09-07）：聚焦块光标处拆块插入 `---` 段，可撤销/可退格删除
-                     *  BlockNote 模式（P1.5）：经 Bridge 插入（S10 后分割线点击可弹样式工具条切换）*/
+                    /** 插入分割线：经 Bridge 插入（点击分割线可弹样式工具条切换） */
                     if (!isLocked) {
-                        if (useBlockNoteEditor) {
-                            blockNoteController.insertDivider()
-                        } else {
-                            bodyBlocks.insertDividerAtFocused()
-                        }
+                        blockNoteController.insertDivider()
                     }
                 },
                 onToggleCheckbox = {
-                    /** 复选框（v2026-09-07）：聚焦块在 复选框块 ↔ 普通块 间切换，可撤销；
-                     *  行首复选框标识可点击勾选（文字视觉降级），markdown 以 `- [ ] `/`- [x] ` 持久化 */
+                    /** 复选框：聚焦块在 复选框块 ↔ 普通块 间切换，可撤销；
+                     *  markdown 以 `- [ ] `/`- [x] ` 持久化 */
                     if (!isLocked) {
-                        if (useBlockNoteEditor) {
-                            blockNoteController.format("checkList")
-                        } else {
-                            bodyBlocks.toggleCheckboxAtFocused()
-                        }
+                        blockNoteController.format("checkList")
                     }
                 },
                 isCheckboxActive = bodyBlocks.isFocusedBlockCheckbox,
                 canIncreaseIndent = bodyBlocks.canIncreaseIndent,
                 canDecreaseIndent = bodyBlocks.canDecreaseIndent,
                 onTransform = { action ->
-                    /** BlockNote 迁移（P1-S10）：块类型转换/插入经 Bridge 下发（Compose 模式按钮置灰） */
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("transform", action)
-                    }
+                    /** 块类型转换：经 Bridge 下发到 JS 编辑器 */
+                    blockNoteController.format("transform", action)
                 },
                 onTransformParagraph = {
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("transform", "paragraph")
-                    }
+                    blockNoteController.format("transform", "paragraph")
                 },
-                onTransformEnabled = useBlockNoteEditor,
-                boldSingleTier = useBlockNoteEditor,
+                onTransformEnabled = true,
+                boldSingleTier = true,
                 onInsertMedia = { kind ->
-                    /** BlockNote 迁移（P1.5）：Media 组 → 宿主选择器（图片复用相册选择器） */
+                    /** Media 组 → 宿主选择器（图片复用相册选择器） */
                     when (kind) {
                         "image" -> showImagePicker = true
                         "video" -> mediaVideoLauncher.launch("video/*")
@@ -1670,55 +1389,28 @@ fun InspirationEditScreen(
                     }
                 },
                 onOpenColorStyleDialog = {
-                    /** BlockNote 模式：颜色按钮 → 打开文字/背景色板对话框 */
-                    if (useBlockNoteEditor) showColorStyleDialog = true
+                    /** 颜色按钮 → 打开文字/背景色板对话框 */
+                    showColorStyleDialog = true
                 },
                 showColorStyleDialog = showColorStyleDialog,
                 onOpenEmojiPicker = {
                     if (!isLocked) blockNoteController.openEmojiPicker()
                 },
                 onAlignLeft = {
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("alignLeft")
-                    } else {
-                        richTextState.toggleParagraphStyle(
-                            androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.Start)
-                        )
-                    }
+                    blockNoteController.format("alignLeft")
                 },
                 onAlignCenter = {
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("alignCenter")
-                    } else {
-                        richTextState.toggleParagraphStyle(
-                            androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.Center)
-                        )
-                    }
+                    blockNoteController.format("alignCenter")
                 },
                 onAlignRight = {
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("alignRight")
-                    } else {
-                        richTextState.toggleParagraphStyle(
-                            androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.End)
-                        )
-                    }
+                    blockNoteController.format("alignRight")
                 },
                 onInsertLink = {
-                    if (useBlockNoteEditor) {
-                        /** BlockNote 模式：弹 URL 输入对话框 → format createLink 下发 */
-                        showLinkDialog = true
-                    } else {
-                        /** 简化实现：为当前选区插入示例链接，后续可扩展为弹窗输入 */
-                        richTextState.addLinkToSelection(url = "https://example.com")
-                    }
+                    /** 弹 URL 输入对话框 → format createLink 下发 */
+                    showLinkDialog = true
                 },
                 onToggleCodeSpan = {
-                    if (useBlockNoteEditor) {
-                        blockNoteController.format("codeSpan")
-                    } else {
-                        richTextState.toggleCodeSpan()
-                    }
+                    blockNoteController.format("codeSpan")
                 },
                 modifier = Modifier.safeAreaForEditBar()
             )
@@ -2020,177 +1712,24 @@ fun InspirationEditScreen(
                 )
             }
 
-            // v2026-09-11 懒插入改版：原页顶 16dp Spacer 已删除——间距职责移交
-            // BodyBlocksEditor 内部首部的边缘空白点击条（EdgeGapTapBar，同为 16dp 高），
-            // 视觉间距不变；且首块是图时该空白可点击 → 懒插入载体块供编辑。
+            // v2026-09-11 懒插入改版 → BlockNote 迁移后：页顶间距由 WebView 编辑器自身首部留白承担。
 
-            /** ===== 块级内容编辑器区域（Text/Image 交错 + 手柄拖拽排序 + 两步删除） ===== */
+            /** ===== 正文内容编辑器区域（BlockNote WebView） ===== */
 
             /**
-             * v2026-09-01 路线 4：正文改为 Text/Image 交错块列表。
-             *
-             * - 图片从"正文内联 + 覆盖层绘制"（重叠根因）改为块级 Composable
-             * - 每个 Text 块一个独立 RichTextEditor；语音 token 仍内联在块内
-             * - Enter 拆块 / 块首退格合并 / 图片块两步删除 / 手柄拖拽排序
-             * 详见 components/BodyBlocksEditor.kt
+             * 正文编辑区 = BlockNote WebView。
+             * - 页面其余 UI（标题/标签/底部栏/位置提醒等）保持不变；
+             * - 数据链路：changed 防抖 markdown → viewModel.setContentFormat（isDirty 置脏，
+             *   复用原保存流程）；载入由 load()（contentLoaded 门控，见顶部 LaunchedEffect）；
+             * - #标签 / @提及 建议弹层由 JS 侧编辑器的 trigger 菜单承担（宿主侧不再订阅）。
              */
-            if (useBlockNoteEditor) {
-                /**
-                 * BlockNote 迁移（P1.5）：正文编辑区 = BlockNote WebView。
-                 * - 页面其余 UI（标题/标签/底部栏/位置提醒等）保持不变；
-                 * - 数据链路：changed 防抖 markdown → viewModel.setContentFormat（isDirty 置脏，
-                 *   复用原保存流程）；载入由 load()（contentLoaded 门控，见顶部 LaunchedEffect）；
-                 * - 依赖 Compose richTextState 的弹层（#标签/@提及建议）不适用，随 else 分支排除；
-                 * - 底部工具栏正文相关按钮（图片/#/@/语音/字体面板）UI 保留，暂不生效（P1-S10/S11 桥接）。
-                 */
-                BlockNoteEditorWebView(
-                    controller = blockNoteController,
-                    onMarkdownChanged = { md ->
-                        viewModel.setContentFormat(md)
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            } else {
-            // v2026-09-11：图片粘贴装饰器——与粘贴文字完全同一逻辑：复制图片后，点系统
-            // 工具栏的「粘贴」项即插入图片（无多余浮层；剪贴板无图片时文本粘贴不变）。
-            // ⚠️ remember 的 calculation 带 @DisallowComposableCalls：lambda 内禁止 @Composable
-            // 调用（含 CompositionLocal.current），须先在组合作用域取出再传入（同 Theme.kt 模式）。
-            val baseTextToolbar = LocalTextToolbar.current
-            val imagePasteToolbar = remember(baseTextToolbar) {
-                ImagePasteTextToolbar(
-                    baseTextToolbar,
-                    context,
-                    onInsert = { path -> bodyBlocks.insertImageAtFocused(path) },
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // v2026-09-11：Ctrl+V / Cmd+V 快捷键粘贴图片（剪贴板含图片时拦截，
-                    // 含文本则放行给输入框做文本粘贴）
-                    .pasteImageOnCtrlV(context) { path -> bodyBlocks.insertImageAtFocused(path) }
-            ) {
-            CompositionLocalProvider(
-                LocalTokenClickHandler provides mediaTokenClickHandler,
-                LocalImageLoader provides CoilRichTextImageLoader,
-                LocalTextToolbar provides imagePasteToolbar,
-            ) {
-                BodyBlocksEditor(
-                    controller = bodyBlocks,
-                    isLocked = isLocked,
-                    /** 图片选中工具栏的垂直 clamp 边界（滚动容器窗口 bounds） */
-                    viewportBoundsProvider = { editorViewportBounds },
-                    /**
-                     * 工具栏「图片附件页」按钮（v2026-09-10 接线）：
-                     * 复用既有的 [inlineImageViewerPath] 链路打开 [InspirationImageGallery]——
-                     * 该链路会按路径从 bodyBlocks.toMarkdown() 扫出正文全部图片并算出初始索引，
-                     * 同时复用其删除回调（按路径删 Image 块 + notifyInlineMediaChanged）。
-                     */
-                    onOpenImageGallery = { path -> inlineImageViewerPath = path },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
-            /**
-             * v2026-08-01 Phase 2：# 标签触发建议弹窗
-             *
-             * 当用户在正文中输入 # 后触发 hashtag trigger，
-             * 此弹窗显示匹配的历史标签（savedTags）供快速选择。
-             *
-             * 选中后插入 RichSpanStyle.Token（atomic span，backspace 整体删除）。
-             */
-            @OptIn(ExperimentalRichTextApi::class)
-            TriggerSuggestions(
-                state = richTextState,
-                triggerId = "hashtag",
-                suggestions = { query ->
-                    savedTags.filter { it.contains(query, ignoreCase = true) }
+            BlockNoteEditorWebView(
+                controller = blockNoteController,
+                onMarkdownChanged = { md ->
+                    viewModel.setContentFormat(md)
                 },
-                onSelect = { tag ->
-                    RichSpanStyle.Token(
-                        triggerId = "hashtag",
-                        id = tag,
-                        label = "#$tag"
-                    )
-                },
-                item = { tag ->
-                    Text(
-                        text = "#$tag",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        fontSize = 14.sp,
-                        color = Color(0xFFFF9A5C),
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+                modifier = Modifier.fillMaxWidth()
             )
-
-            /**
-             * v2026-08-01 Phase 3：@ 关联触发建议弹窗
-             *
-             * 当用户在正文中输入 @ 后触发 mention trigger，
-             * 此弹窗显示匹配的卡片（待办/灵感/日期）供快速选择。
-             *
-             * 选中后：
-             * 1. 插入 RichSpanStyle.Token（atomic span，backspace 整体删除）
-             *    - token id 格式：`类型:ID`（如 `todo:123`），用于序列化
-             *    - token label 格式：`@标题`（如 `@买菜`），用于显示
-             * 2. 调用 viewModel.addRelation() 即时入库（双向插入 + 数量上限检查）
-             *
-             * **混合方案**：token 仅作视觉展示，关联的真相源是 card_relations 表。
-             * 删除 token 不会自动删除关联（需通过其他入口，如长按 token）。
-             */
-            @OptIn(ExperimentalRichTextApi::class)
-            TriggerSuggestions(
-                state = richTextState,
-                triggerId = "mention",
-                suggestions = { _ ->
-                    // 直接返回预加载的 mentionSuggestions（由 LaunchedEffect 异步更新）
-                    mentionSuggestions
-                },
-                onSelect = { card ->
-                    // 即时入库：调用 addRelation（内部 launch 协程，不阻塞 UI）
-                    viewModel.addRelation(card.cardType, card.cardId)
-                    // 返回 Token 用于视觉展示
-                    RichSpanStyle.Token(
-                        triggerId = "mention",
-                        id = "${card.cardType}:${card.cardId}",
-                        label = "@${card.title}"
-                    )
-                },
-                item = { card ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // 类型 emoji 图标
-                        Text(
-                            text = card.typeIcon,
-                            fontSize = 16.sp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        // 卡片标题
-                        Text(
-                            text = card.title,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        // 类型标签
-                        Text(
-                            text = card.typeName,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            )
-            } /** Box 结束 */
-            } /** else（Compose 正文分支）结束 */
 
             /**
              * v2026-08-01 Phase 3：关联已内联为正文中的 atomic token（@ Trigger），
@@ -2199,27 +1738,10 @@ fun InspirationEditScreen(
              */
 
             /**
-             * 路线 4：块内容变化 → 组装整篇 markdown 同步到 ViewModel。
-             *
-             * 保存链路：VM 的 _richTextState 已不再注入（bodyBlocks 管理各块状态），
-             * saveInspiration 会走 `_contentFormat` 回退分支，因此这里必须实时
-             * 用 setContentFormat 维护整篇 markdown；setContent 维护纯文本。
-             *
-             * 用 SideEffect 而不是 LaunchedEffect 赋值 onDocChanged：SideEffect 在
-             * 每次组合生效后同步执行，保证任何 LaunchedEffect（初始化 / 媒体迁移 /
-             * 块内容观察者）触发变更时回调一定已就位，避免迁移内容漏同步。
+             * 正文内容变更 → ViewModel 的链路已由 WebView 承担：
+             * JS 侧 changed（防抖 800ms）上行 markdown → onMarkdownChanged → setContentFormat。
+             * 宿主侧不再需要 SideEffect 挂 onDocChanged 回调。
              */
-            androidx.compose.runtime.SideEffect {
-                if (!useBlockNoteEditor) {
-                    // BlockNote 模式（P1.5）不挂此回调：内容经 WebView changed → setContentFormat
-                    bodyBlocks.onDocChanged = {
-                        if (bodyBlocks.hasInitialized) {
-                            viewModel.setContent(bodyBlocks.plainText())
-                            viewModel.setContentFormat(bodyBlocks.toMarkdown())
-                        }
-                    }
-                }
-            }
 
             /**
              * 位置提醒弹窗（v2026-07-22 改造）

@@ -118,6 +118,10 @@ fun InspirationEditBottomBar(
     currentFontSize: Int,
     currentColorIdx: Int,
     customColorHex: String?,
+    /**
+     * 格式工具栏激活态用的富文本状态（聚焦块）。
+     * BlockNote 接管正文后仅用于按钮 isActive 回显，不参与内容读写。
+     */
     richTextState: RichTextState,
     onPhotoClick: () -> Unit,
     onVoiceClick: () -> Unit,
