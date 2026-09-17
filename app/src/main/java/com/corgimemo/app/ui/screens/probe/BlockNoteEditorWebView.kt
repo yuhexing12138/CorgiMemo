@@ -85,6 +85,31 @@ class BlockNoteBridgeController {
     /** 在光标处插入分割线（S10：solid 默认样式，可在分割线上点击工具条切换） */
     fun insertDivider() = enqueueCommand(JSONObject().put("type", "insertDivider"))
 
+    /** 插入视频/音频/文件块（v1.5：本地路径，JS 转 file:// URL） */
+    fun insertVideo(path: String) =
+        enqueueCommand(JSONObject().put("type", "insertVideo").put("path", path))
+
+    fun insertAudio(path: String) =
+        enqueueCommand(JSONObject().put("type", "insertAudio").put("path", path))
+
+    fun insertFile(path: String) =
+        enqueueCommand(JSONObject().put("type", "insertFile").put("path", path))
+
+    /** 打开表情选择面板（v1.5：JS 自绘网格） */
+    fun openEmojiPicker() = enqueueCommand(JSONObject().put("type", "openEmojiPicker"))
+
+    /**
+     * 格式命令（v1.4）：底部格式工具栏按钮统一入口。
+     * action：bold / italic / underline / strike / fontSize / textColor /
+     *         bulletList / numberedList / checkList / indent / outdent
+     * value：fontSize="18px"、textColor="#ff0000" 或 "default"（清除）；其余 action 无值
+     */
+    fun format(action: String, value: String? = null) {
+        val msg = JSONObject().put("type", "format").put("action", action)
+        if (value != null) msg.put("value", value)
+        enqueueCommand(msg)
+    }
+
     /** 主题下行（深浅 + 主色） */
     fun setTheme(dark: Boolean, primary: String) {
         val theme = JSONObject().put("dark", dark).put("primary", primary)

@@ -150,7 +150,15 @@ fun RichTextFormatToolbar(
      */
     onTransform: (String) -> Unit = {},
     /** 块类型按钮可用性（BlockNote 模式 true；Compose 模式 false 置灰） */
-    onTransformEnabled: Boolean = false
+    onTransformEnabled: Boolean = false,
+    /** BlockNote 迁移（P1.5）：媒体插入请求（"image"/"video"/"audio"/"file" → 宿主选择器） */
+    onInsertMedia: (String) -> Unit = {},
+    /** BlockNote 迁移（P1.5）：打开表情选择面板 */
+    onOpenEmojiPicker: () -> Unit = {},
+    /** BlockNote 迁移（P1.5）：媒体插入请求（"image"/"video"/"audio"/"file" → 宿主选择器） */
+    onInsertMedia: (String) -> Unit = {},
+    /** BlockNote 迁移（P1.5）：打开表情选择面板 */
+    onOpenEmojiPicker: () -> Unit = {}
 ) {
     /** 加粗字重菜单的展开状态（纯 UI 局部状态，置于函数体顶层，不在条件分支内） */
     var boldExpanded by remember { mutableStateOf(false) }
@@ -227,6 +235,7 @@ fun RichTextFormatToolbar(
                 tier = currentTier,
                 expanded = !boldSingleTier && boldExpanded,
                 isActive = if (boldSingleTier) false else currentTier != null,
+                singleTier = boldSingleTier,
                 onClick = {
                     if (boldSingleTier) onSetFontWeight(700)
                     else boldExpanded = !boldExpanded
@@ -273,11 +282,44 @@ fun RichTextFormatToolbar(
                 onClick = onToggleStrikethrough,
                 contentDescription = "删除线"
             )
+            FormatIconButton(
+                imageVector = Icons.Default.Code,
+                isActive = state.isCodeSpan,
+                onClick = onToggleCodeSpan,
+                contentDescription = "代码样式"
+            )
+            FormatIconButton(
+                imageVector = Icons.Default.Link,
+                isActive = state.isLink,
+                onClick = onInsertLink,
+                contentDescription = "插入链接"
+            )
         }
 
         ToolbarDivider()
 
-        /** ====== 第二组：列表 ====== */
+        /** ====== 第二组：Headings（+ 菜单 Headings 分类，Ri 同款图标） ====== */
+        FormatButtonGroup {
+            RiFormatButton("RiH1", onClick = { onTransform("heading1") }, contentDescription = "标题 1", enabled = onTransformEnabled)
+            RiFormatButton("RiH2", onClick = { onTransform("heading2") }, contentDescription = "标题 2", enabled = onTransformEnabled)
+            RiFormatButton("RiH3", onClick = { onTransform("heading3") }, contentDescription = "标题 3", enabled = onTransformEnabled)
+            RiFormatButton("RiH4", onClick = { onTransform("heading4") }, contentDescription = "标题 4", enabled = onTransformEnabled)
+            RiFormatButton("RiH5", onClick = { onTransform("heading5") }, contentDescription = "标题 5", enabled = onTransformEnabled)
+            RiFormatButton("RiH6", onClick = { onTransform("heading6") }, contentDescription = "标题 6", enabled = onTransformEnabled)
+        }
+
+        ToolbarDivider()
+
+        /** ====== 第三组：Subheadings（+ 菜单 Subheadings 分类：可折叠标题） ====== */
+        FormatButtonGroup {
+            RiFormatButton("RiH1", onClick = { onTransform("toggleHeading") }, contentDescription = "可折叠标题 1", enabled = onTransformEnabled)
+            RiFormatButton("RiH2", onClick = { onTransform("toggleHeading2") }, contentDescription = "可折叠标题 2", enabled = onTransformEnabled)
+            RiFormatButton("RiH3", onClick = { onTransform("toggleHeading3") }, contentDescription = "可折叠标题 3", enabled = onTransformEnabled)
+        }
+
+        ToolbarDivider()
+
+        /** ====== 第四组：Basic blocks（+ 菜单 Basic blocks 分类） ====== */
         FormatButtonGroup {
             /**
              * 复选框（v2026-09-07 新增，位于无序列表左侧，按需求图一）：
@@ -335,11 +377,42 @@ fun RichTextFormatToolbar(
                 onClick = onInsertDivider,
                 contentDescription = "分割线"
             )
+            /** 引用（+ 菜单 Quote） */
+            RiFormatButton("RiQuoteText", onClick = { onTransform("quote") }, contentDescription = "引用", enabled = onTransformEnabled)
+            /** 折叠列表（+ 菜单 Toggle List） */
+            RiFormatButton("RiPlayList2Fill", onClick = { onTransform("toggleList") }, contentDescription = "折叠列表", enabled = onTransformEnabled)
+            /** 整块代码（+ 菜单 Code Block） */
+            RiFormatButton("RiCodeBlock", onClick = { onTransform("codeBlock") }, contentDescription = "代码块", enabled = onTransformEnabled)
+            /** 分页（+ 菜单 Page Break） */
+            RiFormatButton("RiFile2Line", onClick = { onTransform("pageBreak") }, contentDescription = "分页", enabled = onTransformEnabled)
         }
 
         ToolbarDivider()
 
-        /** ====== 第三组：对齐方式 ====== */
+        /** ====== 第五组：Advanced（+ 菜单 Advanced 分类） ====== */
+        FormatButtonGroup {
+            RiFormatButton("RiTable2", onClick = { onTransform("table") }, contentDescription = "表格", enabled = onTransformEnabled)
+        }
+
+        ToolbarDivider()
+
+        /** ====== 第六组：Media（+ 菜单 Media 分类；宿主选择器 → Bridge 插入） ====== */
+        FormatButtonGroup {
+            RiFormatButton("RiImage2Fill", onClick = { onInsertMedia("image") }, contentDescription = "图片", enabled = onTransformEnabled)
+            RiFormatButton("RiFilmLine", onClick = { onInsertMedia("video") }, contentDescription = "视频", enabled = onTransformEnabled)
+            RiFormatButton("RiVolumeUpFill", onClick = { onInsertMedia("audio") }, contentDescription = "音频", enabled = onTransformEnabled)
+            RiFormatButton("RiFile2Line", onClick = { onInsertMedia("file") }, contentDescription = "文件", enabled = onTransformEnabled)
+        }
+
+        ToolbarDivider()
+
+        /** ====== 第七组：Others（+ 菜单 Others 分类） ====== */
+        FormatButtonGroup {
+            RiFormatButton("RiEmotionFill", onClick = onOpenEmojiPicker, contentDescription = "表情", enabled = onTransformEnabled)
+        }
+        ToolbarDivider()
+
+        /** ====== 第八组：对齐方式（Compose 原功能保留） ====== */
         FormatButtonGroup {
             FormatIconButton(
                 imageVector = Icons.AutoMirrored.Filled.FormatAlignLeft,
@@ -360,57 +433,52 @@ fun RichTextFormatToolbar(
                 contentDescription = "右对齐"
             )
         }
-
-        ToolbarDivider()
-
-        /** ====== 第四组：高级（链接 + 代码 span） ====== */
-        FormatButtonGroup {
-            FormatIconButton(
-                imageVector = Icons.Default.Link,
-                isActive = state.isLink,
-                onClick = onInsertLink,
-                contentDescription = "插入链接"
-            )
-            FormatIconButton(
-                imageVector = Icons.Default.Code,
-                isActive = state.isCodeSpan,
-                onClick = onToggleCodeSpan,
-                contentDescription = "代码样式"
-            )
-        }
-
-        ToolbarDivider()
-
-        /** ====== 第五组：折叠块 + 块类型（BlockNote 迁移 P1-S10 补充，对齐 + 菜单能力） ====== */
-        FormatButtonGroup {
-            FormatTextButton("▸H", isActive = false, onClick = { onTransform("toggleHeading") }, contentDescription = "可折叠标题", enabled = onTransformEnabled)
-            FormatTextButton("▸≡", isActive = false, onClick = { onTransform("toggleList") }, contentDescription = "可折叠列表", enabled = onTransformEnabled)
-        }
-
-        ToolbarDivider()
-
-        /** ====== 第六组：块类型（BlockNote 迁移 P1-S10 补充） ====== */
-        FormatButtonGroup {
-            FormatTextButton("H1", isActive = false, onClick = { onTransform("heading1") }, contentDescription = "标题 1", enabled = onTransformEnabled)
-            FormatTextButton("H2", isActive = false, onClick = { onTransform("heading2") }, contentDescription = "标题 2", enabled = onTransformEnabled)
-            FormatTextButton("H3", isActive = false, onClick = { onTransform("heading3") }, contentDescription = "标题 3", enabled = onTransformEnabled)
-            FormatTextButton("❝", isActive = false, onClick = { onTransform("quote") }, contentDescription = "引用", enabled = onTransformEnabled)
-            FormatTextButton("{ }", isActive = false, onClick = { onTransform("codeBlock") }, contentDescription = "代码块", enabled = onTransformEnabled)
-            FormatTextButton("表格", isActive = false, onClick = { onTransform("table") }, contentDescription = "表格", enabled = onTransformEnabled)
-            FormatTextButton("分页", isActive = false, onClick = { onTransform("pageBreak") }, contentDescription = "页分隔", enabled = onTransformEnabled)
-        }
     }
 }
 
 /**
- * 格式化工具栏按钮组容器
+ * BlockNote「+」菜单同款图标按钮（P1-S10/S11）：Ri 矢量图标渲染。
+ * 图标缺失时降级为文字（contentDescription 前两字）。
  */
 @Composable
-private fun FormatButtonGroup(
-    content: @Composable () -> Unit
+private fun RiFormatButton(
+    riName: String,
+    isActive: Boolean = false,
+    enabled: Boolean = true,
+    contentDescription: String,
+    onClick: () -> Unit
 ) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    val tint = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+        isActive -> Color(0xFFFF9A5C)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val vector = remember(riName) {
+        com.corgimemo.app.ui.screens.probe.BlockNotePlusMenuIcons.vectorFor(riName)
+    }
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(40.dp)
+    ) {
+        if (vector != null) {
+            Icon(
+                imageVector = vector,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(22.dp)
+            )
+        } else {
+            Text(
+                text = contentDescription.take(2),
+                color = tint,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+        }
+    }
+}
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(horizontal = 6.dp)
     ) {
@@ -510,6 +578,21 @@ private fun FormatTextButton(
 }
 
 /**
+ * 格式化工具栏按钮组容器（组间以竖线分隔）
+ */
+@Composable
+private fun FormatButtonGroup(
+    content: @Composable () -> Unit
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        content()
+    }
+}
+
+/**
  * 加粗主按钮（可展开字重菜单）
  *
  * 显示「B」+ 可选右下标档位数字（B1/B2/B3）+ 展开方向箭头：
@@ -520,7 +603,9 @@ private fun FormatTextButton(
  * @param tier 当前选中档位（1/2/3 对应 B1/B2/B3），null 表示未选中任何档位
  * @param expanded 字重菜单是否展开
  * @param isActive 是否激活（选中了三档之一）
- * @param onClick 点击回调（展开/收起菜单）
+ * @param singleTier 单档模式（BlockNote 迁移 P1.5）：显示纯「B」无下标无箭头，
+ *        点击直接切换加粗（由调用方把 onClick 换成加粗 toggle）
+ * @param onClick 点击回调（展开/收起菜单，或单档加粗切换）
  * @param contentDescription 无障碍描述
  */
 @Composable
@@ -528,6 +613,7 @@ private fun FormatWeightButton(
     tier: Int?,
     expanded: Boolean,
     isActive: Boolean,
+    singleTier: Boolean = false,
     onClick: () -> Unit,
     contentDescription: String
 ) {
@@ -552,8 +638,8 @@ private fun FormatWeightButton(
                 color = tint,
                 fontSize = 15.sp
             )
-            /** 选中档位时显示右下标数字（1/2/3） */
-            if (tier != null) {
+            /** 选中档位时显示右下标数字（1/2/3）；单档模式不显示 */
+            if (tier != null && !singleTier) {
                 Text(
                     text = tier.toString(),
                     color = tint,
@@ -561,7 +647,8 @@ private fun FormatWeightButton(
                     style = LocalTextStyle.current.copy(baselineShift = BaselineShift.Subscript)
                 )
             }
-            /** 展开方向箭头：展开时左箭头，收起时右箭头 */
+            /** 展开方向箭头：展开时左箭头，收起时右箭头；单档模式不显示 */
+
             Icon(
                 imageVector = if (expanded) Icons.Default.KeyboardArrowLeft else Icons.Default.KeyboardArrowRight,
                 contentDescription = null,

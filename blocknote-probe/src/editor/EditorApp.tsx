@@ -177,6 +177,8 @@ export default function EditorApp() {
   const [fontFamily, setFontFamily] = useState("system_default");
   /** 可用字体清单（S5）：id → 字重数组 */
   const [fontWeights, setFontWeights] = useState<Record<string, number[]>>({});
+  /** 表情选择面板显隐（v1.5 openEmojiPicker 下行切换） */
+  const [emojiOpen, setEmojiOpen] = useState(false);
   /** 解析完成的初始块 */
   const [initialBlocks, setInitialBlocks] = useState<any[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -261,6 +263,37 @@ export default function EditorApp() {
           }
           break;
         }
+        case "insertVideo":
+        case "insertAudio":
+        case "insertFile": {
+          // v1.5：媒体/文件块插入（本地路径 → file:// URL；播放/下载经 shouldInterceptRequest 流）
+          const mediaPath = (msg as any).path as string;
+          const mediaEd = editorRef.current;
+          if (mediaEd && mediaPath) {
+            const blockType = msg.type === "insertVideo" ? "video" : msg.type === "insertAudio" ? "audio" : "file";
+            const cursor = mediaEd.getTextCursorPosition();
+            mediaEd.insertBlocks(
+              [
+                {
+                  type: blockType,
+                  props: {
+                    url: toWebImageUrl(mediaPath),
+                    ...(blockType === "file"
+                      ? { name: mediaPath.split("/").pop() ?? "file" }
+                      : {}),
+                  },
+                },
+              ],
+              cursor.block,
+              "after"
+            );
+          }
+          break;
+        }
+        case "openEmojiPicker": {
+          setEmojiOpen((v) => !v);
+          break;
+        }
         case "format": {
           // v1.4：底部格式工具栏桥接（作用于当前选区/光标块）
           const ed = editorRef.current;
@@ -343,11 +376,21 @@ export default function EditorApp() {
                   break;
                 }
                 case "toggleHeading":
+                case "toggleHeading2":
+                case "toggleHeading3":
                 case "toggleList": {
-                  // 可折叠标题/可折叠列表（独立块类型，toggle 语义）
+                  // 可折叠标题/可折叠列表（独立块类型，toggle 语义；带档位的解析尾数）
                   const { block } = ed.getTextCursorPosition();
                   const targetType = block.type === value ? "paragraph" : value;
-                  ed.updateBlock(block, { type: targetType } as any);
+                  if (value === "toggleHeading2" || value === "toggleHeading3") {
+                    const level = Number(value.slice(-1));
+                    ed.updateBlock(block, {
+                      type: targetType,
+                      props: { level },
+                    } as any);
+                  } else {
+                    ed.updateBlock(block, { type: targetType } as any);
+                  }
                   break;
                 }
                 case "quote": {
@@ -439,6 +482,13 @@ export default function EditorApp() {
         editorRef.current = editor;
       }}
       onChange={pushChanged}
+      emojiOpen={emojiOpen}
+      onEmojiClose={() => setEmojiOpen(false)}
+      onEmojiPick={(emoji) => {
+        editorRef.current?.insertInlineContent([
+          { type: "text", text: emoji, styles: {} },
+        ]);
+      }}
     />
   );
 }
@@ -450,6 +500,9 @@ function EditorCore(props: {
   theme: ThemePayload;
   fontFamily: string;
   fontWeights: Record<string, number[]>;
+  emojiOpen: boolean;
+  onEmojiClose: () => void;
+  onEmojiPick: (emoji: string) => void;
   onReady: (editor: any) => void;
   onChange: () => void;
 }) {
@@ -507,6 +560,67 @@ function EditorCore(props: {
             )}
           />
         </BlockNoteView>
+      </div>
+      {props.emojiOpen && (
+        <EmojiGridPanel
+          onPick={(e) => {
+            props.onEmojiPick(e);
+            props.onEmojiClose();
+          }}
+          onClose={props.onEmojiClose}
+        />
+      )}
+    </div>
+  );
+}
+
+/** 常用表情（v1.5 emoji 面板：两行 24 个高频表情，点击插入光标处） */
+const EMOJIS = [
+  "😀", "😄", "😂", "🤣", "😊", "😍", "🤔", "😎",
+  "😭", "😡", "👍", "👎", "👏", "🙏", "💪", "🔥",
+  "❤️", "💚", "💙", "⭐", "🌟", "✨", "💡", "📌",
+  "✅", "❌", "⚠️", "❓", "❗", "💯", "🎯", "🚀",
+];
+
+/** 表情选择网格（v1.5 Emoji 桥接：点击插入光标处） */
+function EmojiGridPanel(props: { onPick: (emoji: string) => void; onClose: () => void }) {
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest(".emoji-panel")) props.onClose();
+    };
+    const t = setTimeout(() => document.addEventListener("click", onDocClick, true), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("click", onDocClick, true);
+    };
+  });
+  return (
+    <div
+      className="emoji-panel"
+      style={{
+        position: "fixed",
+        left: "50%",
+        top: "40%",
+        transform: "translate(-50%, -50%)",
+        background: "var(--editor-bg, #fff)",
+        border: "1px solid var(--editor-border, #ddd)",
+        borderRadius: 12,
+        boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+        padding: 12,
+        zIndex: 10000,
+      }}
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 36px)", gap: 4 }}>
+        {EMOJIS.map((e) => (
+          <button
+            key={e}
+            onClick={() => props.onPick(e)}
+            style={{ fontSize: 22, background: "none", border: "none", cursor: "pointer", padding: 2 }}
+          >
+            {e}
+          </button>
+        ))}
       </div>
     </div>
   );

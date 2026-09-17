@@ -42,6 +42,12 @@ export type DownMessage =
   | { type: "insertImage"; path: string }
   /** 分割线插入（v1.3：原页面分割线按钮经桥在光标处插入） */
   | { type: "insertDivider" }
+  /** 视频/音频/文件插入（v1.5：本地路径，JS 转 file:// URL；媒体播放经 shouldInterceptRequest 流） */
+  | { type: "insertVideo"; path: string }
+  | { type: "insertAudio"; path: string }
+  | { type: "insertFile"; path: string }
+  /** 打开表情选择面板（v1.5：JS 自绘网格，点击插入） */
+  | { type: "openEmojiPicker" }
   /**
    * 格式命令（v1.4：底部格式工具栏按钮经桥作用于当前选区/光标块）。
    * action 取值：

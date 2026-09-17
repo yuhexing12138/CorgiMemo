@@ -489,6 +489,44 @@ fun InspirationEditScreen(
     }
 
     /**
+     * BlockNote 迁移（P1.5）：视频/音频/文件选择 Launcher——
+     * 选后拷贝到内部存储，经 Bridge 插入对应媒体块（file:// URL 由 JS 侧生成）。
+     */
+    val mediaVideoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            coroutineScope.launch {
+                ImageUtils.copyUriToInternalStorage(context, it)?.let { path ->
+                    blockNoteController.insertVideo(path)
+                }
+            }
+        }
+    }
+    val mediaAudioLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            coroutineScope.launch {
+                ImageUtils.copyUriToInternalStorage(context, it)?.let { path ->
+                    blockNoteController.insertAudio(path)
+                }
+            }
+        }
+    }
+    val mediaFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            coroutineScope.launch {
+                ImageUtils.copyUriToInternalStorage(context, it)?.let { path ->
+                    blockNoteController.insertFile(path)
+                }
+            }
+        }
+    }
+
+    /**
      * 相机权限请求 Launcher
      *
      * 在启动相机前先请求 CAMERA 权限，
@@ -1606,6 +1644,18 @@ fun InspirationEditScreen(
                 },
                 onTransformEnabled = useBlockNoteEditor,
                 boldSingleTier = useBlockNoteEditor,
+                onInsertMedia = { kind ->
+                    /** BlockNote 迁移（P1.5）：Media 组 → 宿主选择器（图片复用相册选择器） */
+                    when (kind) {
+                        "image" -> showImagePicker = true
+                        "video" -> mediaVideoLauncher.launch("video/*")
+                        "audio" -> mediaAudioLauncher.launch("audio/*")
+                        "file" -> mediaFileLauncher.launch("*/*")
+                    }
+                },
+                onOpenEmojiPicker = {
+                    if (!isLocked) blockNoteController.openEmojiPicker()
+                },
                 onAlignLeft = {
                     if (useBlockNoteEditor) {
                         blockNoteController.format("alignLeft")
