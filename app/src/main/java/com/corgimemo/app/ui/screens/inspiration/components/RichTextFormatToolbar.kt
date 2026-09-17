@@ -384,20 +384,8 @@ fun RichTextFormatToolbar(
             FormatTextButton("H3", isActive = false, onClick = { onTransform("heading3") }, contentDescription = "标题 3", enabled = onTransformEnabled)
             FormatTextButton("❝", isActive = false, onClick = { onTransform("quote") }, contentDescription = "引用", enabled = onTransformEnabled)
             FormatTextButton("{ }", isActive = false, onClick = { onTransform("codeBlock") }, contentDescription = "代码块", enabled = onTransformEnabled)
-            FormatIconButton(
-                imageVector = Icons.Default.TableChart,
-                isActive = false,
-                onClick = { onTransform("table") },
-                contentDescription = "表格",
-                enabled = onTransformEnabled
-            )
-            FormatIconButton(
-                imageVector = LucideIcons.FilePlus,
-                isActive = false,
-                onClick = { onTransform("pageBreak") },
-                contentDescription = "页分隔",
-                enabled = onTransformEnabled
-            )
+            FormatTextButton("表格", isActive = false, onClick = { onTransform("table") }, contentDescription = "表格", enabled = onTransformEnabled)
+            FormatTextButton("分页", isActive = false, onClick = { onTransform("pageBreak") }, contentDescription = "页分隔", enabled = onTransformEnabled)
         }
     }
 }
