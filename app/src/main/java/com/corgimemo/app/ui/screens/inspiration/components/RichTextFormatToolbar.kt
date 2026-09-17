@@ -154,10 +154,6 @@ fun RichTextFormatToolbar(
     /** BlockNote 迁移（P1.5）：媒体插入请求（"image"/"video"/"audio"/"file" → 宿主选择器） */
     onInsertMedia: (String) -> Unit = {},
     /** BlockNote 迁移（P1.5）：打开表情选择面板 */
-    onOpenEmojiPicker: () -> Unit = {},
-    /** BlockNote 迁移（P1.5）：媒体插入请求（"image"/"video"/"audio"/"file" → 宿主选择器） */
-    onInsertMedia: (String) -> Unit = {},
-    /** BlockNote 迁移（P1.5）：打开表情选择面板 */
     onOpenEmojiPicker: () -> Unit = {}
 ) {
     /** 加粗字重菜单的展开状态（纯 UI 局部状态，置于函数体顶层，不在条件分支内） */
@@ -477,12 +473,6 @@ private fun RiFormatButton(
                 maxLines = 1
             )
         }
-    }
-}
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(horizontal = 6.dp)
-    ) {
-        content()
     }
 }
 

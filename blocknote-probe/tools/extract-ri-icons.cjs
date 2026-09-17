@@ -83,7 +83,7 @@ if (missing.length) {
 function kotlinProp(riName) {
   const { viewport, paths } = extracted[riName];
   const pathsKt = paths
-    .map((d) => `            "${d.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
+    .map((d) => `            "${d.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$/g, "\\$")}"`)
     .join(",\n");
   return `    val ${riName}: RiIconDef by lazy {
         RiIconDef(${viewport}f, listOf(
