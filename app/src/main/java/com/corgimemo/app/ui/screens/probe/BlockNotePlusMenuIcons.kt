@@ -2,8 +2,7 @@ package com.corgimemo.app.ui.screens.probe
 
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.core.graphics.PathParser
-import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.vector.PathParser
 
 /**
  * BlockNote「+」菜单同款图标集（P1-S10/S11 桥接）。
@@ -212,7 +211,7 @@ object BlockNotePlusMenuIcons {
     /** 解析缓存 */
     private val cache = mutableMapOf<String, ImageVector>()
 
-    /** 取 ImageVector（同 key 复用；path 经 androidx PathParser 解析为 Compose Path） */
+    /** 取 ImageVector（同 key 复用；d 数据经 compose PathParser 解析为 PathNode 列表） */
     fun vectorFor(riName: String): ImageVector? {
         cache[riName]?.let { return it }
         val def = defs[riName] ?: return null
@@ -224,8 +223,8 @@ object BlockNotePlusMenuIcons {
             viewportHeight = def.viewport,
         )
         for (d in def.paths) {
-            builder.addPath(
-                PathParser.createPathFromPathData(d).asComposePath()
+            builder.addPathNodes(
+                PathParser().parsePathString(d).toNodes()
             )
         }
         val v = builder.build()
